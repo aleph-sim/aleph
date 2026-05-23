@@ -1,0 +1,7 @@
+# Pinned for contributors. `rustup` installs this automatically on the
+# first `cargo` invocation in the repo. Bumping the channel here flows to
+# CI (which doesn't override) and to every developer's machine.
+[toolchain]
+channel = "stable"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

@@ -1,0 +1,61 @@
+name: Bench
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "crates/**"
+      - "benches/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - ".github/workflows/bench.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write  # bencher posts a results comment on PRs
+
+jobs:
+  bench:
+    name: bench (self-hosted linux/x64)
+    # Same trusted-PR guard as ci.yml — never run benches from a fork
+    # on our self-hosted runner.
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, linux, x64]
+    env:
+      BENCHER_PROJECT: aleph
+      BENCHER_TESTBED: self-hosted-linux-x64
+      BENCHER_ADAPTER: rust_criterion
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      # Gate that bench harness compiles. Today there are no benches,
+      # so this is effectively a no-op; once P0-04 adds `benches/`, any
+      # compile regression here blocks the PR before the runs below.
+      - name: Compile bench harness
+        run: cargo bench --workspace --no-run
+
+      - name: Install bencher CLI
+        uses: bencherdev/bencher@main
+
+      - name: Run benches and upload to bencher.dev
+        env:
+          BENCHER_API_TOKEN: ${{ secrets.BENCHER_API_TOKEN }}
+        run: |
+          bencher run \
+            --project "$BENCHER_PROJECT" \
+            --branch "${{ github.head_ref || github.ref_name }}" \
+            --testbed "$BENCHER_TESTBED" \
+            --adapter "$BENCHER_ADAPTER" \
+            --github-actions "${{ secrets.GITHUB_TOKEN }}" \
+            --err \
+            -- cargo bench --workspace
