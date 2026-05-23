@@ -12,9 +12,15 @@ on:
       - "rust-toolchain.toml"
       - ".github/workflows/bench.yml"
 
+# Concurrency:
+# - Group by PR number when on a PR (so stacked PR pushes cancel each other),
+#   otherwise group by commit SHA (so every push to main gets its own run and
+#   never cancels a sibling — bencher.dev needs every main commit recorded
+#   to keep the baseline timeline complete).
+# - cancel-in-progress only on PR events.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -27,14 +33,19 @@ jobs:
     # on our self-hosted runner.
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 30
     env:
       BENCHER_PROJECT: aleph
       BENCHER_TESTBED: self-hosted-linux-x64
       BENCHER_ADAPTER: rust_criterion
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
 
       - uses: Swatinem/rust-cache@v2
 
@@ -59,12 +70,18 @@ jobs:
           # Repo secret is stored under the name `BENCHER`; the bencher
           # CLI reads it from the env var `BENCHER_API_TOKEN`.
           BENCHER_API_TOKEN: ${{ secrets.BENCHER }}
+          # Pass the GH token via env (not argv) so it doesn't end up in
+          # /proc/<pid>/cmdline on the shared self-hosted runner.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # `--err` intentionally omitted: bencher would otherwise turn any
+        # threshold breach (configured in the bencher.dev UI) into a hard
+        # PR-blocking gate silently, without a code change. When thresholds
+        # become part of the merge contract we'll add it back explicitly.
         run: |
           bencher run \
             --project "$BENCHER_PROJECT" \
             --branch "${{ github.head_ref || github.ref_name }}" \
             --testbed "$BENCHER_TESTBED" \
             --adapter "$BENCHER_ADAPTER" \
-            --github-actions "${{ secrets.GITHUB_TOKEN }}" \
-            --err \
+            --github-actions "$GH_TOKEN" \
             -- cargo bench --workspace

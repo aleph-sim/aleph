@@ -16,18 +16,22 @@ permissions:
 # untrusted forks. Pushes to our own branches and PRs from this repo's
 # branches are trusted; fork PRs skip self-hosted jobs.
 # See: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#hardening-for-self-hosted-runners
-env:
-  TRUSTED_EXPR: ${{ github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository }}
+# The guard is inlined per-job because workflow-level `env` is not in
+# scope for job-level `if:` expressions.
 
 jobs:
   fmt:
     name: rustfmt
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
         with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
           components: rustfmt
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --check
@@ -36,10 +40,14 @@ jobs:
     name: clippy
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
         with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
           components: clippy
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --workspace --all-targets -- -D warnings
@@ -48,13 +56,22 @@ jobs:
     name: test linux ${{ matrix.toolchain }}
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         toolchain: [stable, beta]
     continue-on-error: ${{ matrix.toolchain == 'beta' }}
+    env:
+      # `rust-toolchain.toml` pins `channel = "stable"` and rustup honours
+      # it on every `cargo` invocation inside the repo, which would silently
+      # override the matrix toolchain. `RUSTUP_TOOLCHAIN` takes precedence
+      # over the file, so the beta row actually runs on beta.
+      RUSTUP_TOOLCHAIN: ${{ matrix.toolchain }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.toolchain }}
@@ -65,13 +82,18 @@ jobs:
   test-macos:
     name: test macos ${{ matrix.toolchain }}
     runs-on: macos-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         toolchain: [stable, beta]
     continue-on-error: ${{ matrix.toolchain == 'beta' }}
+    env:
+      RUSTUP_TOOLCHAIN: ${{ matrix.toolchain }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.toolchain }}
