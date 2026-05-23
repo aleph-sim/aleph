@@ -54,8 +54,8 @@ Why rejected at this stage:
 
 Positive:
 - Every consumer gets a battle-tested `Complex<T>` with the full `num-traits` ecosystem (`Float`, `Num`, `Zero`, `One`) — useful for generic gate kernels in P0-06 and tolerance-based proptest invariants in P0-05.
-- FFI to CUDA / PyO3 is trivial: `#[repr(C)]` + `(f64, f64)` matches `cuDoubleComplex` and Python `complex` bit-layout.
-- `Complex<f32>` available for free if/when GPU memory bandwidth becomes the bottleneck.
+- FFI to CUDA / PyO3 should be straightforward: `#[repr(C)]` + `(f64, f64)` matches the field layout of `cuDoubleComplex` and Python's `complex` (verified for `cuDoubleComplex`; PyO3 interop needs `pyo3` built with its `num-complex` feature — to be confirmed when P4 lands).
+- `Complex<f32>` available for free if/when GPU memory bandwidth becomes the bottleneck (lock-in test exists in `aleph-core::tests::f32_precision_works`).
 
 Negative:
 - One extra workspace dependency (`num-complex` + transitive `num-traits`). Compile-time cost is small (~1 s) and both crates are dependency-free leaves.
@@ -63,6 +63,15 @@ Negative:
 
 Neutral:
 - If we ever need to swap the underlying type (e.g., `f16` via a different crate), the `aleph_core::Complex` alias contains the blast radius: change the alias, recompile.
+
+## Constraints this decision imposes on downstream code
+
+1. **`Backend` trait (P0-09) must not expose `&[Complex]` / `&mut [Complex]` in its public API.** Every method either operates on an opaque `Self::State` or returns owned data. The reason: an SoA backend (P1-01) stores amplitudes as `re: Vec<f64>, im: Vec<f64>` and cannot cheaply hand out an AoS `&[Complex]` slice without a copy. Exposing AoS slices would force perpetual SoA↔AoS conversions in the hot path. The trait can still publish `Self::Amplitude = Complex` and let callers reach individual entries via methods like `fn amplitude(&self, idx: usize) -> Complex` — point access is cheap; bulk slice access is not.
+2. **No workspace crate may name `num_complex::Complex` directly.** Enforced by a `disallowed-types` rule in `clippy.toml`; the single allowlisted site is the alias declaration in `aleph-core/src/lib.rs`. This keeps the alias's "change one line to swap the type" contract from drifting as new crates come online.
+3. **The generic parameter `T` is conventionally restricted to `num_traits::Float` types.** Type aliases in Rust can't carry trait bounds, so `Complex<i32>` typechecks at the alias site; the compile error only surfaces deep in a downstream function. Public APIs that take `Complex<T>` should bound `T: Float` explicitly so the error happens at the boundary.
+4. **`pyo3` and `cudarc` integrations must verify their assumed layout** when they land:
+   - PyO3 needs to be built with its `num-complex` cargo feature for `IntoPy<Complex>` / `FromPyObject` to work — to be wired in P4.
+   - cuDoubleComplex / cuComplex are `#[repr(C)] { double|float x, y }`. Field order matches `(re, im)` in `num_complex::Complex`, but cuBLAS / cuFFT may impose stricter alignment than the default `align_of::<Complex<f64>> = 8`. To be verified against the target NVIDIA library in P5; if cuBLAS wants 16-byte alignment, we'll wrap with `#[repr(align(16))]` at the FFI boundary, not at the canonical type.
 
 ## References
 

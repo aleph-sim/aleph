@@ -1,29 +1,53 @@
 //! `aleph-core`: Core primitives: Complex, StateVector, Gate, Circuit.
 //!
-//! Phase 0 — currently exposes the project-wide [`Complex`] type alias.
-//! State-vector / gate / circuit types land in later issues.
+//! Phase 0 — currently exposes the project-wide [`Complex`] type alias
+//! and the [`AMPLITUDE_TOL`] tolerance constant. State-vector / gate /
+//! circuit types land in later issues.
 
 /// Project-wide complex-number type.
 ///
-/// Defaults to `f64` precision. See [ADR 0001](https://github.com/ruslan-splynx/aleph/blob/main/docs/decisions/0001-complex-type.md)
+/// Defaults to `f64` precision. See [ADR 0001](../../../docs/decisions/0001-complex-type.md)
 /// for why we alias [`num_complex::Complex`] rather than rolling our own.
 ///
 /// The generic parameter exists so a future GPU backend can use
 /// `Complex<f32>` (or `Complex<f16>` via a different crate) without
-/// renaming the alias.
+/// renaming the alias. By project convention `T` is expected to
+/// implement [`num_traits::Float`]; the alias itself can't carry trait
+/// bounds (Rust limitation on type aliases), so this is enforced
+/// downstream wherever a function actually performs arithmetic.
+///
+/// # Examples
+///
+/// ```
+/// use aleph_core::Complex;
+///
+/// let z = Complex::new(3.0, 4.0);
+/// assert_eq!(z.norm(), 5.0);
+/// ```
+// The alias is the single place in the workspace that's allowed to
+// name `num_complex::Complex` directly — clippy's `disallowed-types`
+// rule blocks every other reference. See clippy.toml at repo root.
+#[allow(clippy::disallowed_types)]
 pub type Complex<T = f64> = num_complex::Complex<T>;
+
+/// Project-wide tolerance for amplitude comparisons in FP64.
+///
+/// CLAUDE.md § Testing Requirements pins this at `1e-10`. Use this
+/// constant in oracle / kernel tests rather than hard-coding a literal
+/// — keeps tolerance policy in one place.
+pub const AMPLITUDE_TOL: f64 = 1e-10;
 
 #[cfg(test)]
 mod tests {
-    use super::Complex;
+    use super::{Complex, AMPLITUDE_TOL};
 
-    // f64 comparison helper. Use this instead of `assert_eq!` on floats
-    // (which compares bit-for-bit and breaks on the slightest rounding).
+    // Tolerance helper. NaN inputs panic loudly instead of silently
+    // returning false (which would mask kernel bugs that produce NaN).
     fn approx_eq(a: f64, b: f64) {
-        let tol = 1e-12;
+        assert!(!a.is_nan() && !b.is_nan(), "NaN in approx_eq: a={a}, b={b}");
         assert!(
-            (a - b).abs() < tol,
-            "assertion failed: |{a} - {b}| = {} >= {tol}",
+            (a - b).abs() < AMPLITUDE_TOL,
+            "assertion failed: |{a} - {b}| = {} >= {AMPLITUDE_TOL}",
             (a - b).abs()
         );
     }
@@ -85,11 +109,26 @@ mod tests {
     }
 
     #[test]
+    fn f32_precision_works() {
+        // ADR 0001 sells `Complex<f32>` as the GPU-precision path. Lock
+        // in the contract so a future feature-flag change can't silently
+        // remove the `Float` impl we need for f32.
+        let z = Complex::<f32>::new(3.0, 4.0);
+        assert_eq!(z.norm(), 5.0);
+        assert_eq!(z.conj(), Complex::<f32>::new(3.0, -4.0));
+    }
+
+    #[test]
     fn repr_c_layout() {
-        // ADR 0001 leans on `Complex<f64>` being `#[repr(C)]` for future
-        // FFI to `cuDoubleComplex`. Sanity-check size and field order.
+        // ADR 0001 leans on `Complex<f64>` being `#[repr(C)]` with field
+        // order `(re, im)` for future FFI to `cuDoubleComplex`. Cite the
+        // source of truth so the next num-complex bump is easy to audit:
+        // num-complex 0.4.x: `#[repr(C)] pub struct Complex<T> { pub re: T, pub im: T }`.
         assert_eq!(core::mem::size_of::<Complex<f64>>(), 16);
         let z = Complex::new(1.0_f64, 2.0_f64);
+        // SAFETY: `Complex<f64>` is `#[repr(C)] { re: f64, im: f64 }`, total
+        // size 16 bytes with no padding. Transmuting to `[u8; 16]` is a
+        // bit-for-bit reinterpret with matching size and alignment — sound.
         let bytes: [u8; 16] = unsafe { core::mem::transmute(z) };
         let re = f64::from_ne_bytes(bytes[..8].try_into().unwrap());
         let im = f64::from_ne_bytes(bytes[8..].try_into().unwrap());
