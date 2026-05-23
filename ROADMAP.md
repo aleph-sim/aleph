@@ -182,6 +182,6 @@ The simulator is evaluated on these algorithms across all phases:
 
 - `ROADMAP.md` (this file): Strategy and phase overview. Read first.
 - `BACKLOG.md`: Detailed issue specifications. Source of truth for GitHub Issues.
-- `CREATE_ISSUES.md`: Instructions for Claude Code / scripts to create GitHub Issues from `BACKLOG.md`.
+- `CREATE ISSUES.md`: Instructions for Claude Code / scripts to create GitHub Issues from `BACKLOG.md`.
 
-To create the GitHub backlog: follow `CREATE_ISSUES.md`.
+To create the GitHub backlog: follow `CREATE ISSUES.md`.

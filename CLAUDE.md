@@ -13,7 +13,7 @@ Read these three files before doing substantial work:
 
 - `ROADMAP.md` — strategic vision and phases.
 - `BACKLOG.md` — detailed issue specifications (source of truth for all issues).
-- `CREATE_ISSUES.md` — how the GitHub backlog is synced from `BACKLOG.md`.
+- `CREATE ISSUES.md` — how the GitHub backlog is synced from `BACKLOG.md`.
 
 The project is in **Phase 0** (foundation) at the time of writing. See `ROADMAP.md` § 5 for phase definitions.
 
@@ -36,7 +36,7 @@ aleph/
 ├── Cargo.toml              # workspace root
 ├── ROADMAP.md              # strategy
 ├── BACKLOG.md              # detailed issues
-├── CREATE_ISSUES.md        # backlog → GitHub sync
+├── CREATE ISSUES.md        # backlog → GitHub sync
 ├── CLAUDE.md               # this file
 ├── README.md               # public-facing intro
 ├── crates/
@@ -277,7 +277,7 @@ Open a PR titled `[meta] Update CLAUDE.md: <reason>`. Don’t bundle CLAUDE.md c
 |Format               |`cargo fmt`                                            |
 |Benchmark            |`cargo bench --workspace`                              |
 |Profile (Linux)      |`cargo flamegraph --bench qft`                         |
-|Add a new issue      |Edit `BACKLOG.md`, then follow `CREATE_ISSUES.md`      |
+|Add a new issue      |Edit `BACKLOG.md`, then follow `CREATE ISSUES.md`      |
 |Update GitHub issues |Re-run `scripts/sync-issues.sh`                        |
 |Run the CLI          |`cargo run --bin aleph -- run circuit.qasm`             |
 |Python bindings (dev)|`cd crates/aleph-py && maturin develop`                 |
