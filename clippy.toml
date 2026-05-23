@@ -1,1 +1,9 @@
 msrv = "1.75"
+
+# Enforce ADR 0001: `num_complex::Complex` must not be referenced
+# anywhere in the workspace; consumers go through `aleph_core::Complex`
+# (which is itself annotated with `#[allow(clippy::disallowed_types)]`
+# at the alias declaration — the single allowlisted site).
+disallowed-types = [
+    { path = "num_complex::Complex", reason = "use `aleph_core::Complex` (see docs/decisions/0001-complex-type.md)" },
+]
