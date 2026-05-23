@@ -25,8 +25,9 @@ authors = ["aleph contributors"]
 
 [workspace.dependencies]
 # Shared dependencies are declared here and inherited per-crate via
-# `foo.workspace = true`. Empty for now — entries land as crates pull
-# them in (e.g. thiserror, num-complex, rayon).
+# `foo.workspace = true`. Add new entries as crates start using them
+# (e.g. thiserror, rayon) so versions stay aligned across the workspace.
+num-complex = { version = "0.4", default-features = false, features = ["std"] }
 
 [profile.release]
 opt-level = 3
