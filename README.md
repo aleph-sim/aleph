@@ -1,5 +1,7 @@
 # aleph
 
+[![CI](https://github.com/ruslan-splynx/aleph/actions/workflows/ci.yml/badge.svg)](https://github.com/ruslan-splynx/aleph/actions/workflows/ci.yml)
+
 A high-performance quantum circuit simulator written in Rust. Designed for correctness first, with pluggable backends (state vector, MPS, stabilizer), CUDA acceleration, and a path to distributed multi-GPU execution.
 
 > Status: **Phase 0 — Foundation**. Working end-to-end pipeline (parser → IR → naive backend → measurement) is the current milestone. See [`ROADMAP.md`](ROADMAP.md) for phases and [`BACKLOG.md`](BACKLOG.md) for issues.
