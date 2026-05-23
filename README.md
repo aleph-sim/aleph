@@ -1,39 +1,109 @@
-# Algorithm Optimization Playbooks
+# aleph
 
-Per-algorithm guides applying the framework from `OPTIMIZATION_GUIDE.md` to specific quantum algorithms.
+A high-performance quantum circuit simulator written in Rust. Designed for correctness first, with pluggable backends (state vector, MPS, stabilizer), CUDA acceleration, and a path to distributed multi-GPU execution.
 
-## Read order
+> Status: **Phase 0 — Foundation**. Working end-to-end pipeline (parser → IR → naive backend → measurement) is the current milestone. See [`ROADMAP.md`](ROADMAP.md) for phases and [`BACKLOG.md`](BACKLOG.md) for issues.
 
-1. `../OPTIMIZATION_GUIDE.md` — methodology, principles, checklists.
-1. `../OPTIMIZATION_CYCLE.md` — step-by-step iteration playbook.
-1. **This directory** — algorithm-specific opportunities.
+## Quick start
 
-## Playbooks
+Requires Rust **1.75+** (edition 2021).
 
-|Algorithm                      |File                    |Key win                          |When to consult                          |
-|-------------------------------|------------------------|---------------------------------|-----------------------------------------|
-|Quantum Fourier Transform      |<QFT.md>                |Phase polynomial fusion, AQFT    |Working on diagonal gates, QFT/QPE/Shor  |
-|Grover’s algorithm             |<GROVER.md>             |Specialized MCZ, diffusion fusion|Working on multi-controlled gates, search|
-|Variational Quantum Eigensolver|<VQE.md>                |Symbolic params, Pauli grouping  |NISQ chemistry; **highest practical ROI**|
-|QAOA                           |<QAOA.md>               |Diagonal cost-layer fusion, MPS  |Combinatorial optimization, sparse graphs|
-|Random Circuits                |<RANDOM_CIRCUIT.md>     |Generic kernel quality           |Stress testing, supremacy benchmarks     |
-|Stabilizer Circuits            |<STABILIZER_CIRCUITS.md>|Bit-packed tableau, batched shots|QEC, surface codes, Clifford-only        |
+```bash
+# Build everything
+cargo build --workspace
 
-## Structure of each playbook
+# Run all tests
+cargo test --workspace
+
+# Lint + format check (CI gate)
+cargo clippy --workspace --all-targets -- -D warnings
+cargo fmt --check
+
+# Run benchmarks
+cargo bench --workspace
+
+# Run the CLI (once implemented)
+cargo run --bin aleph -- run circuit.qasm
+```
+
+For release builds with native CPU optimizations:
+
+```bash
+RUSTFLAGS="-C target-cpu=native" cargo build --release --workspace
+```
+
+GPU (Phase 5+):
+
+```bash
+cargo build --workspace --features cuda
+```
+
+Python bindings (Phase 4+):
+
+```bash
+cd crates/aleph-py && maturin develop --release
+```
+
+## Workspace layout
+
+```
+aleph/
+├── crates/
+│   ├── aleph-core/      # Complex, StateVector, Gate, Circuit types
+│   ├── aleph-ir/        # Circuit IR + optimization passes
+│   ├── aleph-parser/    # OpenQASM 3.0 parser
+│   ├── aleph-backend/   # Backend trait + naive impl
+│   ├── aleph-sv/        # state vector backends (CPU, later GPU)
+│   ├── aleph-mps/       # MPS tensor network backend
+│   ├── aleph-stab/      # stabilizer (Aaronson–Gottesman) backend
+│   ├── aleph-cli/       # `aleph` binary
+│   └── aleph-py/        # PyO3 Python bindings
+└── scripts/             # GitHub issue sync, etc.
+```
+
+## Project documents
+
+- [`ROADMAP.md`](ROADMAP.md) — strategy and phase plan
+- [`BACKLOG.md`](BACKLOG.md) — detailed issue specifications (source of truth)
+- [`CREATE ISSUES.md`](CREATE%20ISSUES.md) — how the GitHub backlog is synced
+- [`CLAUDE.md`](CLAUDE.md) — instructions for AI assistants working in this repo
+
+## Algorithm optimization playbooks
+
+Per-algorithm guides applying the framework from [`OPTIMIZATION GUIDE.md`](OPTIMIZATION%20GUIDE.md) to specific quantum algorithms.
+
+### Read order
+
+1. [`OPTIMIZATION GUIDE.md`](OPTIMIZATION%20GUIDE.md) — methodology, principles, checklists.
+2. [`OPTIMIZATION CYCLE.md`](OPTIMIZATION%20CYCLE.md) — step-by-step iteration playbook.
+3. Algorithm-specific playbooks below.
+
+### Playbooks
+
+| Algorithm                       | File                                              | Key win                           | When to consult                           |
+|---------------------------------|---------------------------------------------------|-----------------------------------|-------------------------------------------|
+| Quantum Fourier Transform       | [QFT.md](QFT.md)                                  | Phase polynomial fusion, AQFT     | Working on diagonal gates, QFT/QPE/Shor   |
+| Grover's algorithm              | [GROVER.md](GROVER.md)                            | Specialized MCZ, diffusion fusion | Working on multi-controlled gates, search |
+| Variational Quantum Eigensolver | [VQE.md](VQE.md)                                  | Symbolic params, Pauli grouping   | NISQ chemistry; **highest practical ROI** |
+| QAOA                            | [QAOA.md](QAOA.md)                                | Diagonal cost-layer fusion, MPS   | Combinatorial optimization, sparse graphs |
+| Random Circuits                 | [RANDOM CIRCUIT.md](RANDOM%20CIRCUIT.md)          | Generic kernel quality            | Stress testing, supremacy benchmarks      |
+| Stabilizer Circuits             | [STABILIZER CIRCUITS.md](STABILIZER%20CIRCUITS.md) | Bit-packed tableau, batched shots | QEC, surface codes, Clifford-only         |
+
+### Playbook structure
 
 Every playbook follows the same template:
 
 1. **Quick Reference** — algorithm at a glance.
-1. **Algorithm Overview** — brief technical recap.
-1. **Computational Profile** — where the time goes.
-1. **Optimization Ladder** — opportunities in ROI order.
-1. **Pitfalls** — algorithm-specific gotchas.
-1. **Baseline Comparisons** — what to beat (Qiskit Aer / Stim / cuQuantum).
-1. **Phase-by-Phase Sub-goals** — what’s expected at each project phase.
-1. **Success Metrics** — when an optimization PR is considered successful.
-1. **References** — primary literature.
+2. **Algorithm Overview** — brief technical recap.
+3. **Computational Profile** — where the time goes.
+4. **Optimization Ladder** — opportunities in ROI order.
+5. **Pitfalls** — algorithm-specific gotchas.
+6. **Baseline Comparisons** — what to beat (Qiskit Aer / Stim / cuQuantum).
+7. **Phase-by-Phase Sub-goals** — what's expected at each project phase.
+8. **Success Metrics** — when an optimization PR is considered successful.
+9. **References** — primary literature.
 
-## When to add a new playbook
+### When to add a new playbook
 
 Add a playbook when:
 
@@ -41,9 +111,9 @@ Add a playbook when:
 - An algorithm reveals optimization opportunities not captured by the global guide.
 - Multiple PRs on the same algorithm would benefit from shared context.
 
-Follow the template structure. Open a PR titled `[playbook] Add {AlgorithmName} playbook`.
+Follow the template. Open a PR titled `[playbook] Add {AlgorithmName} playbook`.
 
-## When to update an existing playbook
+### When to update an existing playbook
 
 Update a playbook when:
 
@@ -53,3 +123,7 @@ Update a playbook when:
 - A sub-goal is achieved or refined.
 
 Open a PR titled `[playbook] Update {AlgorithmName}: {reason}`.
+
+## License
+
+MIT — see [`LICENSE`](LICENSE).

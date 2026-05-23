@@ -1,0 +1,17 @@
+/target
+**/*.rs.bk
+Cargo.lock.bak
+
+# Editor/IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Python (for aleph-py / maturin in later phases)
+__pycache__/
+*.pyc
+.venv/
+
+# Criterion benchmark output
+/target/criterion/

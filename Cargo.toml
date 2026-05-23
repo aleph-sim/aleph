@@ -1,0 +1,28 @@
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+[workspace.package]
+edition = "2021"
+rust-version = "1.75"
+version = "0.0.0"
+license = "MIT"
+repository = "https://github.com/ruslan-splynx/aleph"
+authors = ["aleph contributors"]
+
+[workspace.dependencies]
+# Shared dependencies are declared here and inherited per-crate via
+# `foo.workspace = true`. Empty for now — entries land as crates pull
+# them in (e.g. thiserror, num-complex, rayon).
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+debug = false
+
+[profile.bench]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+debug = true
