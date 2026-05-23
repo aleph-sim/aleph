@@ -44,10 +44,17 @@ jobs:
       - name: Compile bench harness
         run: cargo bench --workspace --no-run
 
+      # Upload to bencher.dev only when real criterion benches exist.
+      # Until P0-04 lands `benches/`, `cargo bench --workspace` emits
+      # unit-test output (no benches → 0 passed; 0 measured), which the
+      # `rust_criterion` adapter can't parse and the bencher API rejects.
+      # The `hashFiles` check returns "" when no matching files exist.
       - name: Install bencher CLI
+        if: hashFiles('benches/**/*.rs', 'crates/*/benches/**/*.rs') != ''
         uses: bencherdev/bencher@main
 
       - name: Run benches and upload to bencher.dev
+        if: hashFiles('benches/**/*.rs', 'crates/*/benches/**/*.rs') != ''
         env:
           # Repo secret is stored under the name `BENCHER`; the bencher
           # CLI reads it from the env var `BENCHER_API_TOKEN`.
