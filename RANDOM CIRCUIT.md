@@ -1,6 +1,6 @@
 # Playbook: Random Circuits (Sycamore-style)
 
-> **Algorithm-specific optimization guide.** Read after `OPTIMIZATION_GUIDE.md` and `OPTIMIZATION_CYCLE.md`.
+> **Algorithm-specific optimization guide.** Read after `OPTIMIZATION GUIDE.md` and `OPTIMIZATION CYCLE.md`.
 
 Random circuits are the **worst-case stress test** for state vector simulation. There’s nowhere to hide.
 

@@ -1,6 +1,19 @@
 [workspace]
 resolver = "2"
-members = ["crates/*"]
+# Members are enumerated explicitly rather than via `crates/*` glob: a glob
+# treats every matched path as a package and errors if any subdirectory under
+# `crates/` lacks a Cargo.toml (scratch dirs, worktrees, build caches).
+members = [
+    "crates/aleph-core",
+    "crates/aleph-ir",
+    "crates/aleph-parser",
+    "crates/aleph-backend",
+    "crates/aleph-sv",
+    "crates/aleph-mps",
+    "crates/aleph-stab",
+    "crates/aleph-cli",
+    "crates/aleph-py",
+]
 
 [workspace.package]
 edition = "2021"
@@ -25,4 +38,6 @@ debug = false
 opt-level = 3
 lto = "thin"
 codegen-units = 1
-debug = true
+# `line-tables-only` keeps flamegraphs readable without the DWARF-quality
+# pitfalls of full `debug = true` under ThinLTO (rust-lang/rust#60059, #90357).
+debug = "line-tables-only"

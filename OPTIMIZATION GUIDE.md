@@ -1,6 +1,6 @@
 # Optimization Guide
 
-> **The methodology for optimizing this simulator.** Read this before any performance work. The companion document `OPTIMIZATION_CYCLE.md` walks through one full iteration; per-algorithm playbooks under `playbooks/` apply this framework to specific algorithms.
+> **The methodology for optimizing this simulator.** Read this before any performance work. The companion document `OPTIMIZATION CYCLE.md` walks through one full iteration; per-algorithm playbooks (at repo root) apply this framework to specific algorithms.
 
 -----
 
@@ -354,14 +354,14 @@ Every phase exit produces a consolidated report under `docs/perf/phase{n}.md` ag
 
 ## 13. The Per-Algorithm Playbooks
 
-Each algorithm has unique characteristics that drive specific optimization opportunities. The playbooks under `playbooks/` apply this framework algorithm by algorithm:
+Each algorithm has unique characteristics that drive specific optimization opportunities. The playbooks at the repo root apply this framework algorithm by algorithm:
 
-- `playbooks/QFT.md` — Quantum Fourier Transform. Diagonal-gate heavy; phase-precomputation wins.
-- `playbooks/GROVER.md` — Grover’s algorithm. Oracle + diffusion repeated; loop-unroll potential.
-- `playbooks/VQE.md` — Variational Quantum Eigensolver. Many short circuits with shared structure; expectation values dominate.
-- `playbooks/QAOA.md` — Quantum Approximate Optimization. Layered structure; MPS-friendly.
-- `playbooks/RANDOM_CIRCUIT.md` — Sycamore-style random. Worst-case for state vector; tests every kernel.
-- `playbooks/STABILIZER_CIRCUITS.md` — Clifford circuits (surface code). Wrong backend = wrong universe.
+- `QFT.md` — Quantum Fourier Transform. Diagonal-gate heavy; phase-precomputation wins.
+- `GROVER.md` — Grover’s algorithm. Oracle + diffusion repeated; loop-unroll potential.
+- `VQE.md` — Variational Quantum Eigensolver. Many short circuits with shared structure; expectation values dominate.
+- `QAOA.md` — Quantum Approximate Optimization. Layered structure; MPS-friendly.
+- `RANDOM CIRCUIT.md` — Sycamore-style random. Worst-case for state vector; tests every kernel.
+- `STABILIZER CIRCUITS.md` — Clifford circuits (surface code). Wrong backend = wrong universe.
 
 Read the relevant playbook before working on an issue that targets a specific algorithm.
 

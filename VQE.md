@@ -1,6 +1,6 @@
 # Playbook: Variational Quantum Eigensolver (VQE)
 
-> **Algorithm-specific optimization guide.** Read after `OPTIMIZATION_GUIDE.md` and `OPTIMIZATION_CYCLE.md`.
+> **Algorithm-specific optimization guide.** Read after `OPTIMIZATION GUIDE.md` and `OPTIMIZATION CYCLE.md`.
 
 VQE is **the** most common NISQ workload. Optimizing for VQE has the highest real-world payoff of any algorithm in this playbook set.
 
