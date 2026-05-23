@@ -1,13 +1,16 @@
-//! QFT-style benchmark stub for n ∈ {10, 15, 20}.
+//! QFT-shaped placeholder benchmark for n ∈ {10, 15, 20}.
 //!
-//! Until P0-09's naive backend lands there's no Circuit/Backend to run
-//! the actual QFT against. We benchmark a placeholder that does work
-//! proportional to the QFT's O(2^n · n) gate count: build the |0…0⟩
-//! state and walk every amplitude once applying a phase rotation —
-//! roughly matches the bandwidth profile of a real QFT pass through
-//! the state vector. When P0-09 lands, swap the body for a real circuit
-//! invocation; the bench name + parameter shape stays identical so the
-//! bencher.dev timeline is continuous.
+//! Real QFT cost is O(n_qubits · 2^n_qubits) — the controlled-phase
+//! ladder runs n_qubits passes through the state vector. Until
+//! P0-09's naive backend lands, the bench body does an O(n_qubits ·
+//! 2^n_qubits) workload with similar memory-traffic shape: `n_qubits`
+//! sweeps, each applying a per-amplitude phase rotation. Throughput
+//! reported in (amplitudes · passes) = `n_qubits * 2^n_qubits` so the
+//! bencher.dev timeline stays stable when the body gets swapped for a
+//! real circuit invocation.
+//!
+//! Reference: Nielsen & Chuang § 5.1 (Quantum Fourier Transform);
+//! aleph's own `QFT.md` playbook at the repo root.
 
 use aleph_benches::zero_state;
 use aleph_core::Complex;
@@ -18,21 +21,24 @@ const QUBIT_COUNTS: &[u32] = &[10, 15, 20];
 
 fn qft_workload(n_qubits: u32) -> Vec<Complex> {
     let mut amps = zero_state(n_qubits);
-    let n = amps.len();
-    // n iterations of a per-amplitude phase application — same memory
-    // traffic pattern as one sweep of QFT's controlled-phase ladder.
-    for (idx, amp) in amps.iter_mut().enumerate() {
-        let theta = (idx as f64) * std::f64::consts::TAU / (n as f64);
-        let (sin, cos) = theta.sin_cos();
-        *amp *= Complex::new(cos, sin);
+    let dim = amps.len();
+    for _pass in 0..n_qubits {
+        for (idx, amp) in amps.iter_mut().enumerate() {
+            let theta = (idx as f64) * std::f64::consts::TAU / (dim as f64);
+            let (sin, cos) = theta.sin_cos();
+            *amp *= Complex::new(cos, sin);
+        }
     }
     amps
 }
 
 fn bench_qft(c: &mut Criterion) {
-    let mut group = c.benchmark_group("qft/sweep");
+    let mut group = c.benchmark_group("qft");
     for &n in QUBIT_COUNTS {
-        group.throughput(Throughput::Elements(1u64 << n));
+        // Throughput is total per-amplitude ops: n_qubits passes
+        // × 2^n_qubits amplitudes. Matches what a real QFT will
+        // produce on the same input.
+        group.throughput(Throughput::Elements(u64::from(n) * (1u64 << n)));
         group.bench_with_input(BenchmarkId::from_parameter(n), &n, |b, &n| {
             b.iter(|| black_box(qft_workload(n)));
         });

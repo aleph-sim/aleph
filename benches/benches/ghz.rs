@@ -5,6 +5,12 @@
 //! cost of allocating + initialising a `Vec<Complex>` of length `2^n`;
 //! once P0-09 lands the body becomes `backend.apply_circuit(&ghz(n))`
 //! and the bench naturally tracks circuit-execution time instead.
+//!
+//! Memory budget at n=25: a single iteration allocates 2^25 × 16 B ≈
+//! 512 MiB. Criterion runs many iterations per sample but drops the
+//! result between each, so peak resident memory is one buffer, not
+//! cumulative. Bench is comfortably within the EPYC runner's 123 GiB
+//! and a typical 16 GB laptop.
 
 use aleph_benches::zero_state;
 use aleph_core::Complex;
@@ -17,8 +23,8 @@ const QUBIT_COUNTS: &[u32] = &[10, 15, 20, 25];
 
 fn ghz_state(n_qubits: u32) -> Vec<Complex> {
     let mut amps = zero_state(n_qubits);
-    // |0…0⟩ amplitude already set to 1 by zero_state; renormalise to 1/√2
-    // and add |1…1⟩ at the highest index.
+    // |0…0⟩ amplitude already set to 1 by zero_state; renormalise to
+    // 1/√2 and add |1…1⟩ at the highest index.
     amps[0] = Complex::new(SQRT_HALF, 0.0);
     let last = amps.len() - 1;
     amps[last] = Complex::new(SQRT_HALF, 0.0);
@@ -26,10 +32,11 @@ fn ghz_state(n_qubits: u32) -> Vec<Complex> {
 }
 
 fn bench_ghz(c: &mut Criterion) {
-    let mut group = c.benchmark_group("ghz/prepare");
+    let mut group = c.benchmark_group("ghz");
     for &n in QUBIT_COUNTS {
-        // Throughput in amplitudes — bencher.dev plots this as elements/s
-        // once we have real backend execution, so it stays meaningful.
+        // Throughput in amplitudes — bencher.dev plots this as
+        // elements/s, which stays meaningful when bodies get swapped
+        // for real circuit execution.
         group.throughput(Throughput::Elements(1u64 << n));
         group.bench_with_input(BenchmarkId::from_parameter(n), &n, |b, &n| {
             b.iter(|| black_box(ghz_state(n)));

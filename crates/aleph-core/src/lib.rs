@@ -6,8 +6,11 @@
 
 /// Project-wide complex-number type.
 ///
-/// Defaults to `f64` precision. See [ADR 0001](../../../docs/decisions/0001-complex-type.md)
-/// for why we alias [`num_complex::Complex`] rather than rolling our own.
+/// Defaults to `f64` precision. See `docs/decisions/0001-complex-type.md`
+/// at the repo root for why we alias [`num_complex::Complex`] rather than
+/// rolling our own. (Path-relative rustdoc links to files outside the
+/// crate don't resolve under `cargo doc` output, hence the prose
+/// reference instead of a link.)
 ///
 /// The generic parameter exists so a future GPU backend can use
 /// `Complex<f32>` (or `Complex<f16>` via a different crate) without

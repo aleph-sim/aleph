@@ -2,9 +2,9 @@
 //!
 //! Final state: (|00⟩ + |11⟩) / √2. Today we only construct the target
 //! amplitude vector by hand — once P0-09's naive backend lands, the
-//! body becomes `backend.apply_circuit(&bell_circuit())`. The fixture
-//! shape (criterion bench function, parameters, output naming) stays
-//! identical, so bencher.dev sees a continuous timeline.
+//! body becomes `backend.apply_circuit(&bell_circuit())`. The bench
+//! name (`bell`) and `BenchmarkId` shape stay identical, so
+//! bencher.dev sees a continuous timeline.
 
 use aleph_core::Complex;
 use criterion::{criterion_group, criterion_main, Criterion};
@@ -20,11 +20,10 @@ fn bell_state() -> Vec<Complex> {
 }
 
 fn bench_bell(c: &mut Criterion) {
-    c.bench_function("bell/prepare", |b| {
+    c.bench_function("bell", |b| {
         b.iter(|| {
-            // black_box prevents the optimiser from folding the
-            // entire computation away once it sees the return value
-            // is unused.
+            // black_box prevents the optimiser from folding the entire
+            // computation away once it sees the return value is unused.
             black_box(bell_state())
         });
     });

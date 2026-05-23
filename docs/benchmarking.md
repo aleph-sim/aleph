@@ -35,7 +35,7 @@ git checkout <feature>
 cargo bench --bench qft -- --baseline main
 ```
 
-Criterion writes HTML reports to `target/criterion/<bench>/report/index.html`.
+Criterion writes HTML reports to `target/criterion/<group>/<param>/report/index.html` (e.g. `target/criterion/ghz/20/report/index.html`) and a top-level `target/criterion/report/index.html` index page. The `plotters` cargo feature is enabled by default in the workspace dep so plots render without needing system `gnuplot`.
 
 ## Where benchmarks live
 
@@ -59,9 +59,10 @@ Crate-local benches (when a backend wants kernel-level benches: e.g. `crates/ale
 Until [P0-09](../BACKLOG.md) lands the naive `Backend` trait, the four bench fixtures don't execute real circuits — they exercise workloads with similar memory-traffic profiles (allocate `Vec<Complex>` of size `2^n`, sweep with per-amplitude ops). The fixture names, parameter shapes, and `BenchmarkId`s are chosen so the bencher.dev timeline stays continuous when the bench bodies get swapped for real circuit execution.
 
 When you replace a stub:
-- **Keep the criterion group name** (`ghz/prepare`, `qft/sweep`, etc.). Bencher's history is keyed by name.
+- **Keep the criterion group name** (`ghz`, `qft`, `random`) and the bench function name (`bell`). Bencher's history is keyed by name; renames cost timeline continuity.
 - **Keep the parameter list** (`QUBIT_COUNTS`, `DEPTHS`). Adding new sizes is fine; removing one breaks the timeline.
 - **Keep `Throughput::Elements`** as the unit, so plots stay in elements/second rather than ops/second.
+- When a real backend lands and the body becomes `backend.apply_circuit(...)`, swap `b.iter(|| ...)` for `b.iter_batched(|| make_circuit(...), |c| backend.apply_circuit(&c), BatchSize::PerIteration)` so circuit construction isn't billed to bench time.
 
 ## When to add a new bench
 
