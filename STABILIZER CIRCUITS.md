@@ -1,6 +1,6 @@
 # Playbook: Stabilizer Circuits (Surface Code & QEC)
 
-> **Algorithm-specific optimization guide.** Read after `OPTIMIZATION_GUIDE.md` and `OPTIMIZATION_CYCLE.md`.
+> **Algorithm-specific optimization guide.** Read after `OPTIMIZATION GUIDE.md` and `OPTIMIZATION CYCLE.md`.
 
 This playbook covers **Clifford circuits** — circuits using only `{H, S, CNOT, measurement}` and the Pauli gates. The killer app is **quantum error correction** simulation (surface code, repetition code, etc.).
 

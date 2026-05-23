@@ -1,6 +1,6 @@
 # Playbook: QAOA (Quantum Approximate Optimization Algorithm)
 
-> **Algorithm-specific optimization guide.** Read after `OPTIMIZATION_GUIDE.md` and `OPTIMIZATION_CYCLE.md`.
+> **Algorithm-specific optimization guide.** Read after `OPTIMIZATION GUIDE.md` and `OPTIMIZATION CYCLE.md`.
 
 -----
 

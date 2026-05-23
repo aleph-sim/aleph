@@ -1,6 +1,6 @@
 # Playbook: Quantum Fourier Transform (QFT)
 
-> **Algorithm-specific optimization guide.** Read after `OPTIMIZATION_GUIDE.md` and `OPTIMIZATION_CYCLE.md`. Applies the methodology to QFT.
+> **Algorithm-specific optimization guide.** Read after `OPTIMIZATION GUIDE.md` and `OPTIMIZATION CYCLE.md`. Applies the methodology to QFT.
 
 -----
 

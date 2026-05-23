@@ -1,6 +1,6 @@
 # Optimization Cycle
 
-> **Reusable step-by-step playbook for one optimization iteration.** Apply this to every optimization PR. Companion to `OPTIMIZATION_GUIDE.md`.
+> **Reusable step-by-step playbook for one optimization iteration.** Apply this to every optimization PR. Companion to `OPTIMIZATION GUIDE.md`.
 
 -----
 
@@ -43,7 +43,7 @@ Each step has explicit inputs, outputs, and exit criteria. Skipping steps is the
 1. Among open `type:optimization` issues in the current milestone, prefer:
 - Highest priority (`priority:critical` > `priority:high`).
 - Smallest dependency set (no blocking issues).
-- On the optimization hierarchy (see `OPTIMIZATION_GUIDE.md` § 3), highest unconsidered rank.
+- On the optimization hierarchy (see `OPTIMIZATION GUIDE.md` § 3), highest unconsidered rank.
 1. If multiple issues qualify, pick by estimated impact × inverse of effort.
 1. **Don’t** improvise an optimization not in the backlog. If you found a new opportunity, file an issue first, then pick it.
 
@@ -137,7 +137,7 @@ git checkout -b p{phase}-{issue}-{short-desc}
 - L1 miss rate (L1-dcache-load-misses / L1-dcache-loads).
 - LLC miss rate.
 - Branch miss rate.
-1. Compare to roofline ceiling (from `OPTIMIZATION_GUIDE.md` § 4).
+1. Compare to roofline ceiling (from `OPTIMIZATION GUIDE.md` § 4).
 
 **Output**: file `docs/perf/scratch/{issue-id}-profile.md` with the numbers and a brief interpretation.
 
@@ -221,7 +221,7 @@ git checkout -b p{phase}-{issue}-{short-desc}
    Confirm the bottleneck moved as predicted.
 1. Compute roofline percentage. If still <85% and you can do more, decide whether to continue this cycle or stop and file a follow-up.
 
-**Output**: benchmark results in the format from `OPTIMIZATION_GUIDE.md` § 12.
+**Output**: benchmark results in the format from `OPTIMIZATION GUIDE.md` § 12.
 
 **Exit criterion**:
 
@@ -301,7 +301,7 @@ git checkout -b p{phase}-{issue}-{short-desc}
    - Anything left out (and why).
    
    ## Benchmark Results
-   {as per OPTIMIZATION_GUIDE.md § 12}
+   {as per OPTIMIZATION GUIDE.md § 12}
    
    ## Profile Analysis
    - Bottleneck before: ...

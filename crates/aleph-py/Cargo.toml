@@ -1,0 +1,15 @@
+[package]
+name = "aleph-py"
+edition.workspace = true
+rust-version.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lib]
+# `cdylib` is required for maturin / PyO3 to produce a Python-loadable module.
+# `rlib` kept so the crate is still consumable from other workspace members.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
