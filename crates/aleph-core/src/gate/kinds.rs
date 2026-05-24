@@ -244,8 +244,8 @@ impl Gate {
 
             Gate::Toffoli => {
                 let mut m = [[zero; 8]; 8];
-                for i in 0..6 {
-                    m[i][i] = one;
+                for (i, row) in m.iter_mut().enumerate().take(6) {
+                    row[i] = one;
                 }
                 m[6][7] = one;
                 m[7][6] = one;
@@ -253,14 +253,15 @@ impl Gate {
             }
             Gate::Ccz => {
                 let mut m = [[zero; 8]; 8];
-                for i in 0..7 {
-                    m[i][i] = one;
+                for (i, row) in m.iter_mut().enumerate().take(7) {
+                    row[i] = one;
                 }
                 m[7][7] = -one;
                 Ok(GateMatrix::M8x8(m))
             }
 
-            _ => unimplemented!("matrix() arm for {self:?} not yet wired up"),
+            Gate::Unitary1q(m) => Ok(GateMatrix::M2x2(**m)),
+            Gate::Unitary2q(m) => Ok(GateMatrix::M4x4(**m)),
         }
     }
 }
@@ -592,8 +593,8 @@ mod tests {
         let z = cc(0.0, 0.0);
         let o = cc(1.0, 0.0);
         let mut m = [[z; 8]; 8];
-        for i in 0..8 {
-            m[i][i] = o;
+        for (i, row) in m.iter_mut().enumerate() {
+            row[i] = o;
         }
         m
     }
@@ -616,5 +617,27 @@ mod tests {
         let mut expected = identity_m8();
         expected[7][7] = cc(-1.0, 0.0);
         approx_eq_m8(&unwrap_m8(&Gate::Ccz), &expected);
+    }
+
+    #[test]
+    fn matrix_unitary1q_roundtrip() {
+        let s = FRAC_1_SQRT_2;
+        let h = [[cc(s, 0.0), cc(s, 0.0)], [cc(s, 0.0), cc(-s, 0.0)]];
+        let g = Gate::Unitary1q(Box::new(h));
+        approx_eq_m2(&unwrap_m2(&g), &h);
+    }
+
+    #[test]
+    fn matrix_unitary2q_roundtrip() {
+        let z = cc(0.0, 0.0);
+        let o = cc(1.0, 0.0);
+        let m = [
+            [o, z, z, z],
+            [z, o, z, z],
+            [z, z, z, o],
+            [z, z, o, z],
+        ];
+        let g = Gate::Unitary2q(Box::new(m));
+        approx_eq_m4(&unwrap_m4(&g), &m);
     }
 }
