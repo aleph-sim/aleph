@@ -45,17 +45,6 @@ fn block_comment(input: Span<'_>) -> IResult<Span<'_>, ()> {
     Ok((input, ()))
 }
 
-/// Wrap a parser so it skips leading whitespace/comments.
-pub fn ws<'a, F, O>(mut inner: F) -> impl FnMut(Span<'a>) -> IResult<Span<'a>, O>
-where
-    F: Parser<Span<'a>, O, nom::error::Error<Span<'a>>>,
-{
-    move |input| {
-        let (input, _) = skip_ws(input)?;
-        inner.parse(input)
-    }
-}
-
 /// Recognise (but don't consume) the start of an identifier.
 pub(crate) fn ident_start(input: Span<'_>) -> IResult<Span<'_>, char> {
     satisfy(|c: char| c.is_ascii_alphabetic() || c == '_').parse(input)
