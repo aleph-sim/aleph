@@ -40,6 +40,12 @@ dependencies = [
 [[package]]
 name = "aleph-ir"
 version = "0.0.0"
+dependencies = [
+ "aleph-core",
+ "proptest",
+ "smallvec",
+ "thiserror",
+]
 
 [[package]]
 name = "aleph-mps"
