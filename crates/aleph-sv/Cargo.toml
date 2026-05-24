@@ -20,3 +20,7 @@ thiserror     = { workspace = true }
 aleph-parser = { path = "../aleph-parser" }
 proptest     = { workspace = true }
 criterion    = { workspace = true }
+
+[[bench]]
+name = "naive_sv"
+harness = false
