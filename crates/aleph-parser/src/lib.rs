@@ -7,5 +7,6 @@
 //! See `docs/superpowers/specs/2026-05-24-p0-08-openqasm-parser-design.md`.
 
 mod error;
+mod lexer;
 
 pub use error::{EmitError, ParseError, ParseErrorKind};
