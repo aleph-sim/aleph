@@ -94,7 +94,9 @@ mod tests {
             &[3]
         );
         assert!(Instruction::Reset(0).used_clbits().is_empty());
-        assert!(Instruction::Barrier(smallvec![0u32]).used_clbits().is_empty());
+        assert!(Instruction::Barrier(smallvec![0u32])
+            .used_clbits()
+            .is_empty());
         assert!(
             Instruction::Gate(GateInstance::new(Gate::H, smallvec![0u32]))
                 .used_clbits()

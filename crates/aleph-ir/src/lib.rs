@@ -7,6 +7,7 @@
 mod circuit;
 mod error;
 mod instruction;
+mod layers;
 
 pub use circuit::{Circuit, CircuitMetadata};
 pub use error::CircuitError;

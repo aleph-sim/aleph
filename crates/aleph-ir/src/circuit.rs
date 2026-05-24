@@ -78,10 +78,7 @@ impl Circuit {
     }
 
     /// Append any `Instruction` after validating its qubits/clbits.
-    pub fn add_instruction(
-        &mut self,
-        inst: Instruction,
-    ) -> Result<&mut Self, CircuitError> {
+    pub fn add_instruction(&mut self, inst: Instruction) -> Result<&mut Self, CircuitError> {
         self.validate_instruction(&inst)?;
         self.instructions.push(inst);
         Ok(self)
@@ -246,11 +243,7 @@ impl Circuit {
     // --- 2q convenience ---
 
     /// Append `Cnot` with `qubits = [control, target]`.
-    pub fn cnot(
-        &mut self,
-        control: u32,
-        target: u32,
-    ) -> Result<&mut Self, CircuitError> {
+    pub fn cnot(&mut self, control: u32, target: u32) -> Result<&mut Self, CircuitError> {
         self.add_gate(GateInstance::new(
             Gate::Cnot,
             smallvec::smallvec![control, target],
@@ -270,12 +263,7 @@ impl Circuit {
     // --- 3q convenience ---
 
     /// Append `Toffoli` (CCX) with `qubits = [c0, c1, target]`.
-    pub fn ccx(
-        &mut self,
-        c0: u32,
-        c1: u32,
-        target: u32,
-    ) -> Result<&mut Self, CircuitError> {
+    pub fn ccx(&mut self, c0: u32, c1: u32, target: u32) -> Result<&mut Self, CircuitError> {
         self.add_gate(GateInstance::new(
             Gate::Toffoli,
             smallvec::smallvec![c0, c1, target],
@@ -285,11 +273,7 @@ impl Circuit {
     // --- Non-gate convenience ---
 
     /// Measure `qubit` into `clbit`.
-    pub fn measure(
-        &mut self,
-        qubit: u32,
-        clbit: u32,
-    ) -> Result<&mut Self, CircuitError> {
+    pub fn measure(&mut self, qubit: u32, clbit: u32) -> Result<&mut Self, CircuitError> {
         self.add_instruction(Instruction::Measure { qubit, clbit })
     }
 
@@ -306,6 +290,12 @@ impl Circuit {
     ) -> Result<&mut Self, CircuitError> {
         let qs: smallvec::SmallVec<[u32; 8]> = qubits.into_iter().collect();
         self.add_instruction(Instruction::Barrier(qs))
+    }
+
+    /// Group instruction indices into layers of (logically) parallel
+    /// instructions. See `crate::layers` for the algorithm.
+    pub fn layers(&self) -> Vec<Vec<usize>> {
+        crate::layers::extract_layers(self)
     }
 }
 
@@ -697,6 +687,16 @@ mod tests {
             c.barrier([1u32, 1u32]),
             Err(CircuitError::DuplicateQubit { qubit: 1 })
         ));
+    }
+
+    #[test]
+    fn layers_wrapper_matches_extract_layers() {
+        let mut c = Circuit::new(2, 0);
+        c.h(0).unwrap();
+        c.cnot(0, 1).unwrap();
+        let via_method = c.layers();
+        let via_helper = crate::layers::extract_layers(&c);
+        assert_eq!(via_method, via_helper);
     }
 
     #[test]
