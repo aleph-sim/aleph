@@ -10,6 +10,7 @@ mod ast;
 mod error;
 mod expr;
 mod lexer;
+mod lower;
 mod parser;
 
 pub use error::{EmitError, ParseError, ParseErrorKind};
