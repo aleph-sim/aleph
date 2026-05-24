@@ -121,9 +121,28 @@ impl Gate {
 
     /// Unitary matrix of the gate in the computational basis.
     ///
-    /// Returns `Err(GateError::SymbolicParam)` if any parameter is
-    /// `Param::Symbolic`. In Phase 0 this branch is unreachable through
-    /// the public API.
+    /// Returns:
+    /// - `Err(GateError::SymbolicParam)` if any parameter is
+    ///   `Param::Symbolic` (unreachable through the public API in
+    ///   Phase 0; reserved for Phase 4 VQE work).
+    /// - `Err(GateError::NonFiniteParam)` if any parameter is NaN
+    ///   or infinite — these would otherwise propagate as silent
+    ///   NaN entries through `cos`/`sin`.
+    ///
+    /// # Precision notes
+    ///
+    /// Parametric angles are passed straight into `cos`/`sin` with no
+    /// `mod 2π` reduction. For `|θ|` in the typical `[-2π, 2π]` range
+    /// the resulting matrix is unitary to well within `AMPLITUDE_TOL`
+    /// (`1e-10`). For very large `|θ|` (e.g. `>= 1e10`) argument-
+    /// reduction precision loss makes `cos²+sin²` deviate measurably
+    /// from `1`; callers that synthesize such angles should reduce
+    /// them themselves before calling `matrix()`.
+    ///
+    /// `Unitary1q`/`Unitary2q` copy their `[[Complex; N]; N]` payload
+    /// out of the box on each call (256 B for `Unitary2q`). Backends
+    /// that read the same matrix many times should cache the result
+    /// rather than re-calling `matrix()` in a tight loop.
     pub fn matrix(&self) -> Result<crate::gate::GateMatrix, crate::gate::GateError> {
         use crate::gate::{GateError, GateMatrix};
         use std::f64::consts::{FRAC_1_SQRT_2, FRAC_PI_4};
