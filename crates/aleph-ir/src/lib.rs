@@ -1,9 +1,9 @@
-//! `aleph-ir`: Backend-agnostic circuit IR and optimization passes.
+//! `aleph-ir`: Backend-agnostic circuit IR and (future) optimization passes.
 //!
-//! Phase 0 placeholder — implementation lands in later issues.
+//! Phase 0 — provides `Circuit`, `Instruction`, `CircuitMetadata`,
+//! `CircuitError`, and a layer-extraction helper. See
+//! `docs/superpowers/specs/2026-05-24-p0-07-circuit-ir-design.md`.
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn crate_loads() {}
-}
+mod error;
+
+pub use error::CircuitError;
