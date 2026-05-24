@@ -37,7 +37,6 @@ pub enum BackendError {
 }
 
 use aleph_core::{GateInstance, PauliString};
-#[allow(unused_imports)]
 use aleph_ir::Circuit;
 
 /// A simulation backend.
@@ -74,6 +73,41 @@ pub trait Backend {
         state: &Self::State,
         qubits: &[u32],
     ) -> Result<Vec<f64>, BackendError>;
+}
+
+/// Run `circuit` on `backend`, returning the final backend state.
+///
+/// Iterates instructions in order, dispatching `Instruction::Gate` to
+/// `Backend::apply_gate`. Non-gate instructions are handled inline:
+///
+/// * `Measure { qubit, .. }` calls `Backend::measure` (and discards the
+///   outcome — `run` is a state-producing driver, not a sampling one).
+/// * `Reset(q)` is currently rejected as `UnsupportedGate { kind: "reset" }`
+///   because the naive backend deals with mid-circuit reset via
+///   measure-and-conditional-X, which the IR does not yet express
+///   declaratively. P0-13+ may revisit.
+/// * `Barrier(_)` is a no-op (semantic-only).
+///
+/// Returns `EmptyCircuit` only when the circuit declares zero qubits
+/// **and** has zero instructions — the truly-degenerate input.
+pub fn run<B: Backend>(backend: &mut B, circuit: &Circuit) -> Result<B::State, BackendError> {
+    if circuit.num_qubits() == 0 && circuit.is_empty() {
+        return Err(BackendError::EmptyCircuit);
+    }
+    let mut state = backend.allocate(circuit.num_qubits())?;
+    for inst in circuit.instructions() {
+        match inst {
+            aleph_ir::Instruction::Gate(g) => backend.apply_gate(&mut state, g)?,
+            aleph_ir::Instruction::Measure { qubit, .. } => {
+                let _ = backend.measure(&mut state, *qubit)?;
+            }
+            aleph_ir::Instruction::Reset(_) => {
+                return Err(BackendError::UnsupportedGate { kind: "reset" });
+            }
+            aleph_ir::Instruction::Barrier(_) => {}
+        }
+    }
+    Ok(state)
 }
 
 #[cfg(test)]
