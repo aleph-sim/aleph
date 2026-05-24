@@ -148,6 +148,48 @@ impl Circuit {
             }
         }
     }
+
+    // --- 1q standard convenience ---
+
+    /// Append `H` to qubit `q`.
+    pub fn h(&mut self, q: u32) -> Result<&mut Self, CircuitError> {
+        self.add_gate(GateInstance::new(Gate::H, smallvec::smallvec![q]))
+    }
+
+    /// Append `X` to qubit `q`.
+    pub fn x(&mut self, q: u32) -> Result<&mut Self, CircuitError> {
+        self.add_gate(GateInstance::new(Gate::X, smallvec::smallvec![q]))
+    }
+
+    /// Append `Y` to qubit `q`.
+    pub fn y(&mut self, q: u32) -> Result<&mut Self, CircuitError> {
+        self.add_gate(GateInstance::new(Gate::Y, smallvec::smallvec![q]))
+    }
+
+    /// Append `Z` to qubit `q`.
+    pub fn z(&mut self, q: u32) -> Result<&mut Self, CircuitError> {
+        self.add_gate(GateInstance::new(Gate::Z, smallvec::smallvec![q]))
+    }
+
+    /// Append `S` to qubit `q`.
+    pub fn s(&mut self, q: u32) -> Result<&mut Self, CircuitError> {
+        self.add_gate(GateInstance::new(Gate::S, smallvec::smallvec![q]))
+    }
+
+    /// Append `Sdg` to qubit `q`.
+    pub fn sdg(&mut self, q: u32) -> Result<&mut Self, CircuitError> {
+        self.add_gate(GateInstance::new(Gate::Sdg, smallvec::smallvec![q]))
+    }
+
+    /// Append `T` to qubit `q`.
+    pub fn t(&mut self, q: u32) -> Result<&mut Self, CircuitError> {
+        self.add_gate(GateInstance::new(Gate::T, smallvec::smallvec![q]))
+    }
+
+    /// Append `Tdg` to qubit `q`.
+    pub fn tdg(&mut self, q: u32) -> Result<&mut Self, CircuitError> {
+        self.add_gate(GateInstance::new(Gate::Tdg, smallvec::smallvec![q]))
+    }
 }
 
 /// Stable string name for each `Gate` variant — used in
@@ -292,6 +334,70 @@ mod tests {
     fn with_generated_from_sets_metadata() {
         let c = Circuit::new(0, 0).with_generated_from("openqasm:3.0");
         assert_eq!(c.metadata().generated_from.as_deref(), Some("openqasm:3.0"));
+    }
+
+    #[test]
+    fn h_appends_h_gate() {
+        let mut c = Circuit::new(2, 0);
+        c.h(0).unwrap();
+        match &c.instructions()[0] {
+            Instruction::Gate(g) => {
+                assert_eq!(g.gate, Gate::H);
+                assert_eq!(g.qubits.as_slice(), &[0]);
+            }
+            other => panic!("expected Gate, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn h_rejects_oob() {
+        let mut c = Circuit::new(2, 0);
+        assert!(matches!(
+            c.h(5),
+            Err(CircuitError::QubitOutOfRange { qubit: 5, .. })
+        ));
+    }
+
+    #[test]
+    fn one_qubit_standard_set_all_work() {
+        let mut c = Circuit::new(1, 0);
+        c.h(0).unwrap();
+        c.x(0).unwrap();
+        c.y(0).unwrap();
+        c.z(0).unwrap();
+        c.s(0).unwrap();
+        c.sdg(0).unwrap();
+        c.t(0).unwrap();
+        c.tdg(0).unwrap();
+        let variants: Vec<&Gate> = c
+            .instructions()
+            .iter()
+            .map(|i| match i {
+                Instruction::Gate(g) => &g.gate,
+                _ => panic!("expected Gate"),
+            })
+            .collect();
+        assert_eq!(
+            variants,
+            vec![
+                &Gate::H,
+                &Gate::X,
+                &Gate::Y,
+                &Gate::Z,
+                &Gate::S,
+                &Gate::Sdg,
+                &Gate::T,
+                &Gate::Tdg,
+            ]
+        );
+    }
+
+    #[test]
+    fn h_chains_with_question_mark() -> Result<(), CircuitError> {
+        let mut c = Circuit::new(2, 0);
+        c.h(0)?.x(1)?;
+        assert_eq!(c.len(), 2);
+        Ok(())
     }
 
     #[test]
