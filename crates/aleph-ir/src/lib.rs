@@ -4,8 +4,10 @@
 //! `CircuitError`, and a layer-extraction helper. See
 //! `docs/superpowers/specs/2026-05-24-p0-07-circuit-ir-design.md`.
 
+mod circuit;
 mod error;
 mod instruction;
 
+pub use circuit::{Circuit, CircuitMetadata};
 pub use error::CircuitError;
 pub use instruction::Instruction;
