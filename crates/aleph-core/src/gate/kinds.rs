@@ -208,6 +208,40 @@ impl Gate {
                 ]))
             }
 
+            Gate::CRx(p) => {
+                let t = concrete(*p)?;
+                let c = Complex::new((t / 2.0).cos(), 0.0);
+                let nis = Complex::new(0.0, -(t / 2.0).sin());
+                Ok(GateMatrix::M4x4([
+                    [one, zero, zero, zero],
+                    [zero, one, zero, zero],
+                    [zero, zero, c, nis],
+                    [zero, zero, nis, c],
+                ]))
+            }
+            Gate::CRy(p) => {
+                let t = concrete(*p)?;
+                let c = Complex::new((t / 2.0).cos(), 0.0);
+                let s = Complex::new((t / 2.0).sin(), 0.0);
+                Ok(GateMatrix::M4x4([
+                    [one, zero, zero, zero],
+                    [zero, one, zero, zero],
+                    [zero, zero, c, -s],
+                    [zero, zero, s, c],
+                ]))
+            }
+            Gate::CRz(p) => {
+                let t = concrete(*p)?;
+                let neg = Complex::new((t / 2.0).cos(), -(t / 2.0).sin());
+                let pos = Complex::new((t / 2.0).cos(), (t / 2.0).sin());
+                Ok(GateMatrix::M4x4([
+                    [one, zero, zero, zero],
+                    [zero, one, zero, zero],
+                    [zero, zero, neg, zero],
+                    [zero, zero, zero, pos],
+                ]))
+            }
+
             _ => unimplemented!("matrix() arm for {self:?} not yet wired up"),
         }
     }
@@ -475,5 +509,43 @@ mod tests {
             [z, z, z, o],
         ];
         approx_eq_m4(&unwrap_m4(&Gate::Iswap), &expected);
+    }
+
+    #[test]
+    fn matrix_crx_zero_is_identity() {
+        let z = cc(0.0, 0.0);
+        let o = cc(1.0, 0.0);
+        let id4 = [[o, z, z, z], [z, o, z, z], [z, z, o, z], [z, z, z, o]];
+        approx_eq_m4(&unwrap_m4(&Gate::CRx(Param::Concrete(0.0))), &id4);
+        approx_eq_m4(&unwrap_m4(&Gate::CRy(Param::Concrete(0.0))), &id4);
+        approx_eq_m4(&unwrap_m4(&Gate::CRz(Param::Concrete(0.0))), &id4);
+    }
+
+    #[test]
+    fn matrix_crx_pi_acts_as_minus_ix_on_target() {
+        let z = cc(0.0, 0.0);
+        let o = cc(1.0, 0.0);
+        let ni = cc(0.0, -1.0);
+        let expected = [
+            [o, z, z, z],
+            [z, o, z, z],
+            [z, z, z, ni],
+            [z, z, ni, z],
+        ];
+        approx_eq_m4(&unwrap_m4(&Gate::CRx(Param::Concrete(std::f64::consts::PI))), &expected);
+    }
+
+    #[test]
+    fn matrix_crz_pi() {
+        // CRz(π) sets target sub-block to diag(-i, i)
+        let z = cc(0.0, 0.0);
+        let o = cc(1.0, 0.0);
+        let expected = [
+            [o, z, z, z],
+            [z, o, z, z],
+            [z, z, cc(0.0, -1.0), z],
+            [z, z, z, cc(0.0, 1.0)],
+        ];
+        approx_eq_m4(&unwrap_m4(&Gate::CRz(Param::Concrete(std::f64::consts::PI))), &expected);
     }
 }
