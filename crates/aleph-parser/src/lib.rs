@@ -134,10 +134,7 @@ measure q[1] -> c[1];
     fn rejects_trailing_junk() {
         let src = "qubit[1] q; h q[0]; @@@";
         let err = parse(src).unwrap_err();
-        assert!(matches!(
-            err.kind,
-            ParseErrorKind::UnexpectedToken { .. }
-        ));
+        assert!(matches!(err.kind, ParseErrorKind::UnexpectedToken { .. }));
     }
 
     #[test]

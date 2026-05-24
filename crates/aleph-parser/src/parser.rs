@@ -3,19 +3,19 @@
 //! Errors are surfaced as nom errors at this layer; the top-level
 //! `parse` function (Task 13) converts them into `ParseError`.
 
-use nom::IResult;
-use nom::Parser;
 use nom::bytes::complete::tag;
 use nom::character::complete::char as ch;
 use nom::combinator::opt;
 use nom::multi::many0;
+use nom::IResult;
+use nom::Parser;
 
 use crate::ast::{
-    BarrierStmt, Decl, GateStmt, IndexedRef, Include, MeasureStmt, Position, Program, RegOrIdx,
+    BarrierStmt, Decl, GateStmt, Include, IndexedRef, MeasureStmt, Position, Program, RegOrIdx,
     ResetStmt, Stmt,
 };
 use crate::expr::expr as parse_expr;
-use crate::lexer::{Span, ident, skip_ws, string_literal, uint};
+use crate::lexer::{ident, skip_ws, string_literal, uint, Span};
 
 /// Capture the 1-based (line, col) of the *current* position in `input`.
 pub fn pos_of(input: &Span<'_>) -> Position {

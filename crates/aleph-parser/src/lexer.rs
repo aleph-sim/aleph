@@ -4,16 +4,16 @@
 //! [`nom_locate::LocatedSpan<&str>`] so the parser keeps line/col info
 //! and can build [`crate::error::ParseError`]s with accurate positions.
 
-use nom::IResult;
-use nom::Parser;
 use nom::branch::alt;
+use nom::bytes::complete::take_while1;
 use nom::bytes::complete::{is_not, tag, take_until};
+use nom::character::complete::char as ch;
 use nom::character::complete::{multispace1, satisfy};
 use nom::combinator::{opt, recognize, value};
 use nom::multi::many0;
-use nom::bytes::complete::take_while1;
-use nom::character::complete::char as ch;
 use nom::sequence::{pair, tuple};
+use nom::IResult;
+use nom::Parser;
 use nom_locate::LocatedSpan;
 
 pub type Span<'a> = LocatedSpan<&'a str>;
@@ -96,9 +96,10 @@ pub fn float(input: Span<'_>) -> IResult<Span<'_>, f64> {
         )),
     )))
     .parse(input)?;
-    let value: f64 = lit.fragment().parse().map_err(|_| {
-        nom::Err::Error(nom::error::Error::new(rest, nom::error::ErrorKind::Float))
-    })?;
+    let value: f64 = lit
+        .fragment()
+        .parse()
+        .map_err(|_| nom::Err::Error(nom::error::Error::new(rest, nom::error::ErrorKind::Float)))?;
     Ok((rest, value))
 }
 

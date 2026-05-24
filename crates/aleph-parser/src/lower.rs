@@ -173,11 +173,7 @@ pub fn lower(program: Program, source: &str) -> Result<Circuit, ParseError> {
     Ok(circuit)
 }
 
-fn resolve_indexed(
-    regs: &RegisterMap,
-    r: &IndexedRef,
-    source: &str,
-) -> Result<u32, ParseError> {
+fn resolve_indexed(regs: &RegisterMap, r: &IndexedRef, source: &str) -> Result<u32, ParseError> {
     regs.resolve_qubit(&r.name, r.index)
         .map_err(|kind| perr(source, r.pos, kind))
 }
@@ -337,10 +333,7 @@ fn lower_measure(
                 .resolve_clbit(&cr.name, cr.index)
                 .map_err(|kind| perr(source, cr.pos, kind))?;
             circuit
-                .add_instruction(Instruction::Measure {
-                    qubit: q,
-                    clbit: c,
-                })
+                .add_instruction(Instruction::Measure { qubit: q, clbit: c })
                 .map_err(|e| perr(source, m.pos, ParseErrorKind::IrRejected(e)))?;
             Ok(())
         }

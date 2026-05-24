@@ -1,7 +1,7 @@
 //! Snapshot-style tests that the `ParseError::render()` output looks
 //! sensible for the error paths users will actually hit.
 
-use aleph_parser::{ParseError, ParseErrorKind, parse};
+use aleph_parser::{parse, ParseError, ParseErrorKind};
 
 fn err(src: &str) -> ParseError {
     parse(src).unwrap_err()

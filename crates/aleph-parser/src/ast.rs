@@ -28,8 +28,16 @@ pub struct Include {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Decl {
-    Qreg { pos: Position, name: String, size: u32 },
-    Creg { pos: Position, name: String, size: u32 },
+    Qreg {
+        pos: Position,
+        name: String,
+        size: u32,
+    },
+    Creg {
+        pos: Position,
+        name: String,
+        size: u32,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]

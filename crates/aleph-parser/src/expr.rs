@@ -5,12 +5,12 @@
 //! and non-finite intermediate results are surfaced as a structured
 //! error string that the caller wraps in `ParseErrorKind::BadExpression`.
 
-use nom::IResult;
-use nom::Parser;
 use nom::branch::alt;
 use nom::character::complete::char as ch;
+use nom::IResult;
+use nom::Parser;
 
-use crate::lexer::{Span, float, ident, skip_ws};
+use crate::lexer::{float, ident, skip_ws, Span};
 
 /// Parse a full expression and evaluate to `f64`. Returns either the
 /// finite result or a string describing the failure (the caller turns
