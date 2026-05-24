@@ -33,6 +33,9 @@ authors = ["aleph contributors"]
 # (e.g. thiserror, rayon) so versions stay aligned across the workspace.
 num-complex = "0.4"
 criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support", "html_reports", "plotters"] }
+smallvec = "1"
+thiserror = "1"
+proptest = "1"
 
 [profile.release]
 opt-level = 3
