@@ -1,7 +1,8 @@
 //! `Circuit` — the IR's top-level container.
 //!
-//! `instructions` is private so a future DAG refactor stays
-//! non-breaking. Access is via `instructions()`, `len()`,
+//! `instructions`, `num_qubits`, and `num_clbits` are private so a
+//! future DAG refactor and invariant changes stay non-breaking. Access
+//! is via `instructions()`, `num_qubits()`, `num_clbits()`, `len()`,
 //! `is_empty()`, and the `layers()` helper (see `layers.rs`).
 
 use aleph_core::{Gate, GateInstance, Param};
@@ -9,11 +10,26 @@ use aleph_core::{Gate, GateInstance, Param};
 use crate::CircuitError;
 use crate::Instruction;
 
+/// Maximum number of qubits a single `Circuit` may declare. Bounds the
+/// O(num_qubits) bookkeeping in `extract_layers` and prevents
+/// pathological allocations from inputs like `qreg q[u32::MAX]`.
+///
+/// 65,535 is comfortably above anything a Phase-0 backend can simulate
+/// while keeping `layers()`'s `Vec<Option<(usize,usize)>>` allocation
+/// at ~1.5 MB worst case. A fallible `Circuit::try_new` that returns
+/// `CircuitError` instead of panicking will land alongside the parser
+/// in P0-08 (where untrusted input actually enters the system).
+pub const MAX_QUBITS: u32 = 65_535;
+
+/// Maximum number of classical bits a single `Circuit` may declare.
+/// Same rationale as [`MAX_QUBITS`].
+pub const MAX_CLBITS: u32 = 65_535;
+
 /// Backend-agnostic circuit representation.
 #[derive(Debug, Clone)]
 pub struct Circuit {
-    pub num_qubits: u32,
-    pub num_clbits: u32,
+    pub(crate) num_qubits: u32,
+    pub(crate) num_clbits: u32,
     pub(crate) instructions: Vec<Instruction>,
     metadata: CircuitMetadata,
 }
@@ -27,13 +43,40 @@ pub struct CircuitMetadata {
 
 impl Circuit {
     /// Construct an empty circuit with the given qubit/clbit capacity.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `num_qubits > MAX_QUBITS` or `num_clbits > MAX_CLBITS`.
+    /// This is a programmer-error check at construction; untrusted
+    /// callers (parser, RPC) should sanity-check inputs before calling.
+    /// A fallible `try_new` lands in P0-08 alongside the parser.
     pub fn new(num_qubits: u32, num_clbits: u32) -> Self {
+        assert!(
+            num_qubits <= MAX_QUBITS,
+            "Circuit::new: num_qubits={num_qubits} exceeds MAX_QUBITS={MAX_QUBITS}",
+        );
+        assert!(
+            num_clbits <= MAX_CLBITS,
+            "Circuit::new: num_clbits={num_clbits} exceeds MAX_CLBITS={MAX_CLBITS}",
+        );
         Self {
             num_qubits,
             num_clbits,
             instructions: Vec::new(),
             metadata: CircuitMetadata::default(),
         }
+    }
+
+    /// Number of qubits this circuit was constructed with. Immutable
+    /// for the lifetime of the `Circuit`.
+    pub fn num_qubits(&self) -> u32 {
+        self.num_qubits
+    }
+
+    /// Number of classical bits this circuit was constructed with.
+    /// Immutable for the lifetime of the `Circuit`.
+    pub fn num_clbits(&self) -> u32 {
+        self.num_clbits
     }
 
     /// Set the circuit's display name. Consuming — intended for the
@@ -108,6 +151,17 @@ impl Circuit {
         }
     }
 
+    /// Validate a `GateInstance` against the circuit's qubit count.
+    ///
+    /// Checks (in this order): arity, per-qubit range, and uniqueness
+    /// across `qubits ∪ controls`. The uniqueness check is the IR's
+    /// release-build safety net — `GateInstance::new`'s own check is
+    /// `debug_assert`-gated and inert in release builds.
+    ///
+    /// Extra external `controls` beyond what the base gate semantically
+    /// expects are admitted: the IR treats `GateInstance::controlled`
+    /// as a generic mechanism, leaving backend-specific "is this a
+    /// sensible control set for `Gate::X`?" decisions to the backend.
     fn validate_gate(&self, gate: &GateInstance) -> Result<(), CircuitError> {
         let expected = gate.gate.arity();
         let got = gate.qubits.len();
@@ -118,8 +172,13 @@ impl Circuit {
                 got,
             });
         }
+        let mut seen: smallvec::SmallVec<[u32; 6]> = smallvec::SmallVec::new();
         for &q in gate.qubits.iter().chain(gate.controls.iter()) {
             self.check_qubit(q)?;
+            if seen.contains(&q) {
+                return Err(CircuitError::DuplicateQubit { qubit: q });
+            }
+            seen.push(q);
         }
         Ok(())
     }
@@ -133,6 +192,9 @@ impl Circuit {
             }
             Instruction::Reset(q) => self.check_qubit(*q),
             Instruction::Barrier(qs) => {
+                if qs.is_empty() {
+                    return Err(CircuitError::EmptyBarrier);
+                }
                 let mut seen: smallvec::SmallVec<[u32; 8]> = smallvec::SmallVec::new();
                 for &q in qs {
                     self.check_qubit(q)?;
@@ -424,8 +486,8 @@ mod tests {
     #[test]
     fn new_is_empty() {
         let c = Circuit::new(3, 2);
-        assert_eq!(c.num_qubits, 3);
-        assert_eq!(c.num_clbits, 2);
+        assert_eq!(c.num_qubits(), 3);
+        assert_eq!(c.num_clbits(), 2);
         assert!(c.instructions.is_empty());
         assert!(c.metadata.name.is_none());
         assert!(c.metadata.generated_from.is_none());
@@ -687,6 +749,102 @@ mod tests {
             c.barrier([1u32, 1u32]),
             Err(CircuitError::DuplicateQubit { qubit: 1 })
         ));
+    }
+
+    #[test]
+    fn barrier_rejects_empty() {
+        let mut c = Circuit::new(2, 0);
+        assert!(matches!(
+            c.barrier(std::iter::empty::<u32>()),
+            Err(CircuitError::EmptyBarrier)
+        ));
+        assert!(c.is_empty(), "circuit must not be mutated on error");
+    }
+
+    #[test]
+    fn add_gate_rejects_duplicate_qubit_cnot() {
+        // Cnot(0, 0): control == target — ill-defined. GateInstance's
+        // own check is debug-only; the IR must catch this in release.
+        let bad = GateInstance {
+            gate: Gate::Cnot,
+            qubits: smallvec![0u32, 0u32],
+            controls: smallvec![],
+        };
+        let mut c = Circuit::new(2, 0);
+        let err = c.add_gate(bad).unwrap_err();
+        assert_eq!(err, CircuitError::DuplicateQubit { qubit: 0 });
+        assert!(c.is_empty());
+    }
+
+    #[test]
+    fn add_gate_rejects_duplicate_qubit_toffoli() {
+        let bad = GateInstance {
+            gate: Gate::Toffoli,
+            qubits: smallvec![1u32, 0u32, 1u32],
+            controls: smallvec![],
+        };
+        let mut c = Circuit::new(3, 0);
+        let err = c.add_gate(bad).unwrap_err();
+        assert_eq!(err, CircuitError::DuplicateQubit { qubit: 1 });
+    }
+
+    #[test]
+    fn add_gate_rejects_qubit_control_overlap() {
+        let bad = GateInstance {
+            gate: Gate::X,
+            qubits: smallvec![0u32],
+            controls: smallvec![0u32],
+        };
+        let mut c = Circuit::new(2, 0);
+        let err = c.add_gate(bad).unwrap_err();
+        assert_eq!(err, CircuitError::DuplicateQubit { qubit: 0 });
+    }
+
+    #[test]
+    fn add_gate_rejects_oob_control() {
+        let bad = GateInstance {
+            gate: Gate::X,
+            qubits: smallvec![0u32],
+            controls: smallvec![9u32],
+        };
+        let mut c = Circuit::new(2, 0);
+        let err = c.add_gate(bad).unwrap_err();
+        assert_eq!(
+            err,
+            CircuitError::QubitOutOfRange {
+                qubit: 9,
+                num_qubits: 2
+            }
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "exceeds MAX_QUBITS")]
+    fn new_panics_on_too_many_qubits() {
+        let _ = Circuit::new(crate::circuit::MAX_QUBITS + 1, 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "exceeds MAX_CLBITS")]
+    fn new_panics_on_too_many_clbits() {
+        let _ = Circuit::new(0, crate::circuit::MAX_CLBITS + 1);
+    }
+
+    #[test]
+    fn new_accepts_max_qubits() {
+        // Boundary: exactly MAX_QUBITS must succeed.
+        let c = Circuit::new(crate::circuit::MAX_QUBITS, 0);
+        assert_eq!(c.num_qubits(), crate::circuit::MAX_QUBITS);
+    }
+
+    #[test]
+    fn new_accepts_zero_qubits_zero_clbits() {
+        // Empty circuit must build and produce empty layers.
+        let c = Circuit::new(0, 0);
+        assert_eq!(c.num_qubits(), 0);
+        assert_eq!(c.num_clbits(), 0);
+        assert!(c.is_empty());
+        assert_eq!(c.layers(), Vec::<Vec<usize>>::new());
     }
 
     #[test]

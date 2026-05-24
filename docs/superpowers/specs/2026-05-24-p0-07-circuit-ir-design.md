@@ -363,3 +363,30 @@ for (i, inst) in ... {
 ```
 
 The property test in `tests/layers_properties.rs::layers_flatten_to_0_to_len` is the authoritative check. The §6 pseudocode is interpreted with this monotonicity constraint applied.
+
+### 12.2 Post-merge code-review hardening (2026-05-24)
+
+A multi-angle code review on the freshly-implemented branch surfaced four real correctness gaps and two coverage gaps. All are fixed in the same branch before merge.
+
+**Correctness fixes:**
+
+1. **Duplicate-qubit guard now release-safe.** `Circuit::validate_gate` now checks uniqueness across `gate.qubits ∪ gate.controls` in addition to arity and range. Previously, gates like `Cnot(0, 0)`, `Swap(0, 0)`, `Toffoli(0, 0, 0)`, or `controlled(X, [0], [0])` slipped through the IR in release builds — `GateInstance::new`'s own `check_qubit_uniqueness` is `#[cfg(debug_assertions)]`-gated and inert outside debug. `CircuitError::DuplicateQubit` is reused (its message is already generic). Tests: `add_gate_rejects_duplicate_qubit_cnot`, `add_gate_rejects_duplicate_qubit_toffoli`, `add_gate_rejects_qubit_control_overlap`, `add_gate_rejects_oob_control`.
+
+2. **Empty `Barrier` rejected.** `Instruction::Barrier(empty)` was previously accepted and acted as a no-op for layer extraction, allowing disjoint gates on either side to share its layer — violating the documented "synchronization point" semantics. New error variant `CircuitError::EmptyBarrier`; `validate_instruction` rejects empty barriers up front. Test: `barrier_rejects_empty`.
+
+3. **`num_qubits` / `num_clbits` fields encapsulated.** Previously `pub`, allowing user code to mutate them downward after instructions were added, which then panicked inside `extract_layers` via OOB indexing of `last_for_qubit`. Now `pub(crate)`, exposed through `num_qubits()` / `num_clbits()` getters. The counts are immutable for the `Circuit`'s lifetime.
+
+4. **`Circuit::new` bounds `num_qubits` / `num_clbits`.** New `MAX_QUBITS = 65_535` / `MAX_CLBITS = 65_535` constants. `Circuit::new` `assert!`s on overflow, replacing the previous silent acceptance of `u32::MAX` (which triggered ~100 GB allocation in `extract_layers`). Untrusted callers (P0-08 parser, RPC handlers) should add a `try_new` fallible variant returning `CircuitError` — explicitly deferred to P0-08, where the parser is the actual untrusted-input boundary. Tests: `new_panics_on_too_many_qubits`, `new_panics_on_too_many_clbits`, `new_accepts_max_qubits`, `new_accepts_zero_qubits_zero_clbits`.
+
+**Coverage fixes:**
+
+5. **`add_gate`'s controls-OOB branch is now tested.** The `.chain(gate.controls.iter())` range-check path had no coverage; only the targets path was exercised. Added `add_gate_rejects_oob_control`.
+
+6. **Proptest variant coverage broadened.** `arb_circuit` previously sampled only H/Z/S/X/CNOT; the spec §6 algorithm's distinguishing branches (clbit collision via `Measure`, `Reset`/`Barrier` non-commutation, `GateInstance::controlled` qubit union, parametric-diagonal commutation via `Rz`/`Phase`) were unreachable. Rebuilt around an `OpKind` enum that samples every Phase-0 `Instruction` variant including `Measure`/`Reset`/`Barrier`, parametric gates (`Rx`/`Ry`/`Rz`/`Phase`), 3-qubit (`Toffoli`/`Ccz`), and one `GateInstance::controlled` shape. Added a fourth property: `same_clbit_writes_serialize`, asserting that any two `Measure` instructions writing to the same clbit end up in different layers (the §6 clbit non-commutation rule, previously unverified by proptest).
+
+**Design clarification:** the IR's `validate_gate` intentionally admits arbitrary external `controls` beyond what the base `Gate` semantically expects — `GateInstance::controlled` is a generic mechanism, and per-gate "is this a sensible control set?" decisions belong to backends. Added a doc comment on `validate_gate` to pin this policy. `ArityMismatch`'s message still references only `qubits.len()` vs `gate.arity()`; backends that mis-handle extra controls should fail loudly in their own layer.
+
+**Refuted candidates** (kept for the record, not fixed):
+- "`commute_on_qubit`'s `_ => false` catch-all silently widens on future `Instruction` variants" — by design; new variants get added with intent, and the default-conservative behavior is the right starting point for an unknown variant.
+- "`pub(crate)` on `instructions` allows internal bypass of validation" — load-bearing for the in-crate inspection tests; any in-crate optimization pass that needs to splice instructions is expected to call `add_gate`/`add_instruction` and would be reviewed.
+- "Spec/code drift in §12.1 monotonicity not flagged in algorithm doc-comment" — actually documented inline in `layers.rs`; see the `prev_assigned_layer` block comment.

@@ -1,7 +1,9 @@
 //! Error type for circuit construction.
 
 /// Errors returned by `Circuit` builder methods. All variants are
-/// recoverable — `Circuit::new` cannot fail.
+/// recoverable. `Circuit::new` itself panics on bounds violations
+/// (programmer error at construction); see `MAX_QUBITS` / `MAX_CLBITS`
+/// in `crate::circuit`.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum CircuitError {
     #[error("qubit {qubit} out of range (circuit has {num_qubits} qubits)")]
@@ -10,6 +12,10 @@ pub enum CircuitError {
     #[error("clbit {clbit} out of range (circuit has {num_clbits} clbits)")]
     ClbitOutOfRange { clbit: u32, num_clbits: u32 },
 
+    /// Same qubit index appears more than once in a gate's `qubits ∪
+    /// controls` set, or twice inside a `Barrier`. A gate with
+    /// `control == target` (e.g. `Cnot(0, 0)`) is ill-defined; the IR
+    /// rejects it independent of the `GateInstance` debug-assert.
     #[error("duplicate qubit index {qubit} in instruction")]
     DuplicateQubit { qubit: u32 },
 
@@ -19,4 +25,9 @@ pub enum CircuitError {
         expected: usize,
         got: usize,
     },
+
+    /// `Instruction::Barrier(empty)` has no semantic content and would
+    /// silently be a no-op for layer extraction. Reject at construction.
+    #[error("barrier must cover at least one qubit")]
+    EmptyBarrier,
 }
