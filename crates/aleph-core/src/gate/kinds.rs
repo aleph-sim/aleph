@@ -264,6 +264,21 @@ impl Gate {
             Gate::Unitary2q(m) => Ok(GateMatrix::M4x4(**m)),
         }
     }
+
+    /// Whether the matrix is diagonal in the computational basis.
+    ///
+    /// Reports the **algebraic structure**, not the numerical case —
+    /// `Rx(0.0).is_diagonal()` is `false` even though that particular
+    /// matrix is the identity. Backends that special-case diagonal
+    /// gates can therefore trust this flag without per-angle checks.
+    pub fn is_diagonal(&self) -> bool {
+        matches!(
+            self,
+            Gate::Z | Gate::S | Gate::Sdg | Gate::T | Gate::Tdg
+            | Gate::Rz(_) | Gate::Phase(_) | Gate::CRz(_)
+            | Gate::Cz | Gate::Ccz
+        )
+    }
 }
 
 #[cfg(test)]
@@ -639,5 +654,31 @@ mod tests {
         ];
         let g = Gate::Unitary2q(Box::new(m));
         approx_eq_m4(&unwrap_m4(&g), &m);
+    }
+
+    #[test]
+    fn is_diagonal_truth_table() {
+        let p = Param::Concrete(0.5);
+        let diag_gates = [
+            Gate::Z, Gate::S, Gate::Sdg, Gate::T, Gate::Tdg,
+            Gate::Rz(p), Gate::Phase(p), Gate::CRz(p),
+            Gate::Cz, Gate::Ccz,
+        ];
+        for g in &diag_gates {
+            assert!(g.is_diagonal(), "{g:?} should be diagonal");
+        }
+
+        let nondiag_gates = [
+            Gate::H, Gate::X, Gate::Y,
+            Gate::Rx(p), Gate::Ry(p), Gate::U3(p, p, p),
+            Gate::Cnot, Gate::Swap, Gate::Iswap,
+            Gate::CRx(p), Gate::CRy(p),
+            Gate::Toffoli,
+            Gate::Unitary1q(Box::new([[Complex::new(0.0, 0.0); 2]; 2])),
+            Gate::Unitary2q(Box::new([[Complex::new(0.0, 0.0); 4]; 4])),
+        ];
+        for g in &nondiag_gates {
+            assert!(!g.is_diagonal(), "{g:?} should not be diagonal");
+        }
     }
 }
