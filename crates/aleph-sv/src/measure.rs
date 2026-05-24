@@ -80,6 +80,39 @@ pub(crate) fn sample_impl(
     Ok(out)
 }
 
+/// Naive expectation value: copy state, apply each non-identity Pauli
+/// as a 1q gate to the copy, then take `Re(⟨ψ|φ⟩)`.
+///
+/// O(N · k) where N = 2^n and k = `pauli.terms.len()`. P0-11 will add
+/// the Pauli-Z fast path that doesn't need a copy.
+pub(crate) fn expectation_value_impl(
+    state: &CpuState,
+    pauli: &aleph_core::PauliString,
+) -> Result<f64, BackendError> {
+    let n = state.num_qubits;
+    for (q, _) in &pauli.terms {
+        if *q >= n {
+            return Err(BackendError::QubitOutOfRange {
+                qubit: *q,
+                num_qubits: n,
+            });
+        }
+    }
+    let mut tmp = state.amps.clone();
+    for (q, p) in &pauli.terms {
+        if *p == aleph_core::Pauli::I {
+            continue;
+        }
+        let m = p.matrix();
+        crate::kernels::apply_1q(&mut tmp, *q, &[], &m);
+    }
+    let mut acc = Complex::new(0.0, 0.0);
+    for (lhs, rhs) in state.amps.iter().zip(tmp.iter()) {
+        acc += lhs.conj() * (*rhs);
+    }
+    Ok(pauli.coefficient * acc.re)
+}
+
 /// Marginal probabilities over the named qubit subset.
 ///
 /// Returns a vector of length `2^qubits.len()`. The output is indexed

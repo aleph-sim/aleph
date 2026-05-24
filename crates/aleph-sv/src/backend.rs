@@ -106,10 +106,10 @@ impl Backend for NaiveSvBackend {
 
     fn expectation_value(
         &mut self,
-        _state: &Self::State,
-        _pauli: &PauliString,
+        state: &Self::State,
+        pauli: &PauliString,
     ) -> Result<f64, BackendError> {
-        unimplemented!("expectation_value lands in P0-09 Task 15")
+        crate::measure::expectation_value_impl(state, pauli)
     }
 
     fn probabilities(
@@ -355,6 +355,88 @@ mod tests {
             BackendError::QubitOutOfRange {
                 qubit: 5,
                 num_qubits: 2,
+            }
+        );
+    }
+
+    use aleph_core::{Pauli, PauliString};
+
+    #[test]
+    fn expectation_z_on_zero_is_plus_one() {
+        let mut b = NaiveSvBackend::with_seed(0);
+        let s = b.allocate(1).unwrap();
+        let z = PauliString::new(1.0, vec![(0, Pauli::Z)]).unwrap();
+        let ev = b.expectation_value(&s, &z).unwrap();
+        assert!((ev - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn expectation_x_on_plus_is_plus_one() {
+        let mut b = NaiveSvBackend::with_seed(0);
+        let mut s = b.allocate(1).unwrap();
+        b.apply_gate(&mut s, &GateInstance::new(Gate::H, smallvec![0u32]))
+            .unwrap();
+        let x = PauliString::new(1.0, vec![(0, Pauli::X)]).unwrap();
+        let ev = b.expectation_value(&s, &x).unwrap();
+        assert!((ev - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn expectation_x_on_zero_is_zero() {
+        let mut b = NaiveSvBackend::with_seed(0);
+        let s = b.allocate(1).unwrap();
+        let x = PauliString::new(1.0, vec![(0, Pauli::X)]).unwrap();
+        let ev = b.expectation_value(&s, &x).unwrap();
+        assert!(ev.abs() < 1e-12);
+    }
+
+    #[test]
+    fn expectation_z_on_one_is_minus_one() {
+        // X takes |0⟩ to |1⟩, and ⟨1|Z|1⟩ = -1.
+        let mut b = NaiveSvBackend::with_seed(0);
+        let mut s = b.allocate(1).unwrap();
+        b.apply_gate(&mut s, &GateInstance::new(Gate::X, smallvec![0u32]))
+            .unwrap();
+        let z = PauliString::new(1.0, vec![(0, Pauli::Z)]).unwrap();
+        let ev = b.expectation_value(&s, &z).unwrap();
+        assert!((ev - (-1.0)).abs() < 1e-12);
+    }
+
+    #[test]
+    fn expectation_x_on_minus_is_minus_one() {
+        // |−⟩ = HX|0⟩; ⟨−|X|−⟩ = -1.
+        let mut b = NaiveSvBackend::with_seed(0);
+        let mut s = b.allocate(1).unwrap();
+        b.apply_gate(&mut s, &GateInstance::new(Gate::X, smallvec![0u32]))
+            .unwrap();
+        b.apply_gate(&mut s, &GateInstance::new(Gate::H, smallvec![0u32]))
+            .unwrap();
+        let x = PauliString::new(1.0, vec![(0, Pauli::X)]).unwrap();
+        let ev = b.expectation_value(&s, &x).unwrap();
+        assert!((ev - (-1.0)).abs() < 1e-12);
+    }
+
+    #[test]
+    fn expectation_identity_string_is_norm() {
+        let mut b = NaiveSvBackend::with_seed(0);
+        let s = b.allocate(2).unwrap();
+        let ev = b
+            .expectation_value(&s, &PauliString::identity(2.5))
+            .unwrap();
+        assert!((ev - 2.5).abs() < 1e-12);
+    }
+
+    #[test]
+    fn expectation_out_of_range_rejected() {
+        let mut b = NaiveSvBackend::with_seed(0);
+        let s = b.allocate(1).unwrap();
+        let p = PauliString::new(1.0, vec![(5, Pauli::Z)]).unwrap();
+        let err = b.expectation_value(&s, &p).unwrap_err();
+        assert_eq!(
+            err,
+            BackendError::QubitOutOfRange {
+                qubit: 5,
+                num_qubits: 1,
             }
         );
     }
