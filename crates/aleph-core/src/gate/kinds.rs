@@ -42,6 +42,11 @@ pub enum Gate {
     Swap,
     /// `Iswap` — `|01⟩ ↔ i|10⟩`. `qubits = [q0, q1]`.
     Iswap,
+    /// `IswapDg` — adjoint of `Iswap`: `|01⟩ ↔ -i|10⟩`. `qubits = [q0, q1]`.
+    /// Added so that `Iswap.inverse()` stays inside the Clifford group
+    /// instead of falling back to `Unitary2q` (which would defeat
+    /// stabilizer-backend dispatch on `is_clifford()`).
+    IswapDg,
 
     // --- 2q parametric ---
     /// `CRx(θ)`. `qubits = [control, target]`.
@@ -89,6 +94,7 @@ impl Gate {
             | Gate::Cz
             | Gate::Swap
             | Gate::Iswap
+            | Gate::IswapDg
             | Gate::CRx(_)
             | Gate::CRy(_)
             | Gate::CRz(_)
@@ -207,6 +213,15 @@ impl Gate {
                     [zero, zero, zero, one],
                 ]))
             }
+            Gate::IswapDg => {
+                let ni = Complex::new(0.0, -1.0);
+                Ok(GateMatrix::M4x4([
+                    [one, zero, zero, zero],
+                    [zero, zero, ni, zero],
+                    [zero, ni, zero, zero],
+                    [zero, zero, zero, one],
+                ]))
+            }
 
             Gate::CRx(p) => {
                 let t = concrete(*p)?;
@@ -271,20 +286,39 @@ impl Gate {
     /// `Rx(0.0).is_diagonal()` is `false` even though that particular
     /// matrix is the identity. Backends that special-case diagonal
     /// gates can therefore trust this flag without per-angle checks.
+    ///
+    /// Written as an exhaustive `match` (not `matches!`) so the
+    /// compiler forces every new `Gate` variant to declare its
+    /// diagonality explicitly.
     pub fn is_diagonal(&self) -> bool {
-        matches!(
-            self,
+        match self {
             Gate::Z
-                | Gate::S
-                | Gate::Sdg
-                | Gate::T
-                | Gate::Tdg
-                | Gate::Rz(_)
-                | Gate::Phase(_)
-                | Gate::CRz(_)
-                | Gate::Cz
-                | Gate::Ccz
-        )
+            | Gate::S
+            | Gate::Sdg
+            | Gate::T
+            | Gate::Tdg
+            | Gate::Rz(_)
+            | Gate::Phase(_)
+            | Gate::CRz(_)
+            | Gate::Cz
+            | Gate::Ccz => true,
+
+            Gate::H
+            | Gate::X
+            | Gate::Y
+            | Gate::Rx(_)
+            | Gate::Ry(_)
+            | Gate::U3(_, _, _)
+            | Gate::Cnot
+            | Gate::Swap
+            | Gate::Iswap
+            | Gate::IswapDg
+            | Gate::CRx(_)
+            | Gate::CRy(_)
+            | Gate::Toffoli
+            | Gate::Unitary1q(_)
+            | Gate::Unitary2q(_) => false,
+        }
     }
 
     /// Whether the gate belongs to the Clifford group.
@@ -292,29 +326,48 @@ impl Gate {
     /// All parametric variants return `false` even for Clifford-equivalent
     /// angles (e.g. `Rx(π/2)`). See `docs/decisions/0002-gate-clifford-detection.md`
     /// — Phase 2 stabilizer work will revisit angle-aware detection.
+    ///
+    /// Written as an exhaustive `match` (not `matches!`) so the
+    /// compiler forces every new `Gate` variant to declare its
+    /// Clifford-ness explicitly.
     pub fn is_clifford(&self) -> bool {
-        matches!(
-            self,
+        match self {
             Gate::H
-                | Gate::X
-                | Gate::Y
-                | Gate::Z
-                | Gate::S
-                | Gate::Sdg
-                | Gate::Cnot
-                | Gate::Cz
-                | Gate::Swap
-                | Gate::Iswap
-        )
+            | Gate::X
+            | Gate::Y
+            | Gate::Z
+            | Gate::S
+            | Gate::Sdg
+            | Gate::Cnot
+            | Gate::Cz
+            | Gate::Swap
+            | Gate::Iswap
+            | Gate::IswapDg => true,
+
+            Gate::T
+            | Gate::Tdg
+            | Gate::Rx(_)
+            | Gate::Ry(_)
+            | Gate::Rz(_)
+            | Gate::Phase(_)
+            | Gate::U3(_, _, _)
+            | Gate::CRx(_)
+            | Gate::CRy(_)
+            | Gate::CRz(_)
+            | Gate::Toffoli
+            | Gate::Ccz
+            | Gate::Unitary1q(_)
+            | Gate::Unitary2q(_) => false,
+        }
     }
 
     /// Inverse gate: same arity, conjugate-transpose of the matrix.
     ///
     /// Self-inverse variants are returned unchanged. Adjoint pairs swap.
     /// Parametric rotations negate their angle (for `U3(θ, φ, λ)` the
-    /// result is `U3(-θ, -λ, -φ)`). `Iswap` returns
-    /// `Unitary2q(iSWAP†)` because no `IswapDg` variant exists in
-    /// Phase 0.
+    /// result is `U3(-θ, -λ, -φ)`). `Iswap` ↔ `IswapDg` form an
+    /// adjoint pair so the Clifford classification is closed under
+    /// inverse (both report `is_clifford() == true`).
     pub fn inverse(&self) -> Gate {
         match self {
             // self-inverse
@@ -332,6 +385,8 @@ impl Gate {
             Gate::Sdg => Gate::S,
             Gate::T => Gate::Tdg,
             Gate::Tdg => Gate::T,
+            Gate::Iswap => Gate::IswapDg,
+            Gate::IswapDg => Gate::Iswap,
 
             Gate::Rx(p) => Gate::Rx(negate(*p)),
             Gate::Ry(p) => Gate::Ry(negate(*p)),
@@ -342,18 +397,6 @@ impl Gate {
             Gate::CRz(p) => Gate::CRz(negate(*p)),
 
             Gate::U3(t, f, l) => Gate::U3(negate(*t), negate(*l), negate(*f)),
-
-            Gate::Iswap => {
-                let zero = Complex::new(0.0, 0.0);
-                let one = Complex::new(1.0, 0.0);
-                let ni = Complex::new(0.0, -1.0);
-                Gate::Unitary2q(Box::new([
-                    [one, zero, zero, zero],
-                    [zero, zero, ni, zero],
-                    [zero, ni, zero, zero],
-                    [zero, zero, zero, one],
-                ]))
-            }
 
             Gate::Unitary1q(m) => Gate::Unitary1q(Box::new(conj_transpose_2(m))),
             Gate::Unitary2q(m) => Gate::Unitary2q(Box::new(conj_transpose_4(m))),
@@ -480,6 +523,7 @@ mod tests {
             Gate::Cz,
             Gate::Swap,
             Gate::Iswap,
+            Gate::IswapDg,
             Gate::CRx(p),
             Gate::CRy(p),
             Gate::CRz(p),
@@ -654,6 +698,16 @@ mod tests {
     }
 
     #[test]
+    fn matrix_iswap_dg() {
+        // iSWAP† = [[1,0,0,0],[0,0,-i,0],[0,-i,0,0],[0,0,0,1]]
+        let z = cc(0.0, 0.0);
+        let o = cc(1.0, 0.0);
+        let ni = cc(0.0, -1.0);
+        let expected = [[o, z, z, z], [z, z, ni, z], [z, ni, z, z], [z, z, z, o]];
+        approx_eq_m4(&unwrap_m4(&Gate::IswapDg), &expected);
+    }
+
+    #[test]
     fn matrix_crx_zero_is_identity() {
         let z = cc(0.0, 0.0);
         let o = cc(1.0, 0.0);
@@ -812,15 +866,27 @@ mod tests {
     }
 
     #[test]
-    fn inverse_iswap_becomes_unitary2q() {
-        let g = Gate::Iswap.inverse();
-        // Expected matrix: iSWAP† = [[1,0,0,0],[0,0,-i,0],[0,-i,0,0],[0,0,0,1]]
-        let m = unwrap_m4(&g);
+    fn inverse_iswap_pair() {
+        // Iswap ↔ IswapDg form an adjoint pair (closed under inverse,
+        // both Clifford). Multiplying their matrices must give identity.
+        assert_eq!(Gate::Iswap.inverse(), Gate::IswapDg);
+        assert_eq!(Gate::IswapDg.inverse(), Gate::Iswap);
+
+        let m = unwrap_m4(&Gate::Iswap);
+        let m_dg = unwrap_m4(&Gate::IswapDg);
+        // (m · m_dg) should equal the 4x4 identity.
+        let mut prod = [[cc(0.0, 0.0); 4]; 4];
+        for (i, row) in prod.iter_mut().enumerate() {
+            for (j, cell) in row.iter_mut().enumerate() {
+                for k in 0..4 {
+                    *cell += m[i][k] * m_dg[k][j];
+                }
+            }
+        }
         let z = cc(0.0, 0.0);
         let o = cc(1.0, 0.0);
-        let ni = cc(0.0, -1.0);
-        let expected = [[o, z, z, z], [z, z, ni, z], [z, ni, z, z], [z, z, z, o]];
-        approx_eq_m4(&m, &expected);
+        let id4 = [[o, z, z, z], [z, o, z, z], [z, z, o, z], [z, z, z, o]];
+        approx_eq_m4(&prod, &id4);
     }
 
     #[test]
@@ -837,6 +903,7 @@ mod tests {
             Gate::Cz,
             Gate::Swap,
             Gate::Iswap,
+            Gate::IswapDg,
         ];
         for g in &cliff {
             assert!(g.is_clifford(), "{g:?} should be Clifford");
@@ -893,6 +960,7 @@ mod tests {
             Gate::Cnot,
             Gate::Swap,
             Gate::Iswap,
+            Gate::IswapDg,
             Gate::CRx(p),
             Gate::CRy(p),
             Gate::Toffoli,

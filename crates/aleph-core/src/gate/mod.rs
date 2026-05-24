@@ -142,6 +142,7 @@ mod prop_tests {
             Gate::Cz,
             Gate::Swap,
             Gate::Iswap,
+            Gate::IswapDg,
             Gate::Toffoli,
             Gate::Ccz,
         ]
