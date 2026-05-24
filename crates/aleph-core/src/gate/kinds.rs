@@ -279,6 +279,20 @@ impl Gate {
             | Gate::Cz | Gate::Ccz
         )
     }
+
+    /// Whether the gate belongs to the Clifford group.
+    ///
+    /// All parametric variants return `false` even for Clifford-equivalent
+    /// angles (e.g. `Rx(π/2)`). See `docs/decisions/0002-gate-clifford-detection.md`
+    /// — Phase 2 stabilizer work will revisit angle-aware detection.
+    pub fn is_clifford(&self) -> bool {
+        matches!(
+            self,
+            Gate::H | Gate::X | Gate::Y | Gate::Z
+            | Gate::S | Gate::Sdg
+            | Gate::Cnot | Gate::Cz | Gate::Swap | Gate::Iswap
+        )
+    }
 }
 
 #[cfg(test)]
@@ -654,6 +668,32 @@ mod tests {
         ];
         let g = Gate::Unitary2q(Box::new(m));
         approx_eq_m4(&unwrap_m4(&g), &m);
+    }
+
+    #[test]
+    fn is_clifford_truth_table() {
+        let p = Param::Concrete(std::f64::consts::FRAC_PI_2);
+        let cliff = [
+            Gate::H, Gate::X, Gate::Y, Gate::Z, Gate::S, Gate::Sdg,
+            Gate::Cnot, Gate::Cz, Gate::Swap, Gate::Iswap,
+        ];
+        for g in &cliff {
+            assert!(g.is_clifford(), "{g:?} should be Clifford");
+        }
+
+        // Parametric always false in Phase 0 (see ADR-0002), even at π/2.
+        let non_cliff = [
+            Gate::T, Gate::Tdg,
+            Gate::Rx(p), Gate::Ry(p), Gate::Rz(p), Gate::Phase(p),
+            Gate::U3(p, p, p),
+            Gate::CRx(p), Gate::CRy(p), Gate::CRz(p),
+            Gate::Toffoli, Gate::Ccz,
+            Gate::Unitary1q(Box::new([[Complex::new(0.0, 0.0); 2]; 2])),
+            Gate::Unitary2q(Box::new([[Complex::new(0.0, 0.0); 4]; 4])),
+        ];
+        for g in &non_cliff {
+            assert!(!g.is_clifford(), "{g:?} should not be Clifford");
+        }
     }
 
     #[test]
