@@ -30,14 +30,33 @@ pub(crate) fn measure_impl(
             p1 += a.norm_sqr();
         }
     }
-    let outcome: bool = rng.gen::<f64>() < p1;
-    let p = if outcome { p1 } else { 1.0 - p1 };
-    if p < DEGENERATE_BRANCH_THRESHOLD {
-        return Err(BackendError::DegenerateMeasurement {
-            qubit,
-            probability: p,
-        });
-    }
+    // Clamp p1 into [0, 1] to absorb FP drift from a state whose total
+    // norm² has drifted slightly above 1.0 across many gates. Without
+    // this, `1.0 - p1` can be slightly negative, and `p.sqrt()` then
+    // returns NaN, silently poisoning the rest of the state vector.
+    let p1 = p1.clamp(0.0, 1.0);
+    let p0 = 1.0 - p1;
+    // Decide outcome WITHOUT consuming RNG when the answer is forced
+    // by a degenerate branch. This keeps `with_seed(N)` reproducibility
+    // intact for the highly-polarized legal cases and only consumes RNG
+    // on genuine superpositions.
+    let one_degen = p1 < DEGENERATE_BRANCH_THRESHOLD;
+    let zero_degen = p0 < DEGENERATE_BRANCH_THRESHOLD;
+    let (outcome, p) = match (zero_degen, one_degen) {
+        (true, true) => {
+            return Err(BackendError::DegenerateMeasurement {
+                qubit,
+                probability: p1.max(p0),
+            });
+        }
+        (true, false) => (true, p1),
+        (false, true) => (false, p0),
+        (false, false) => {
+            let outcome = rng.gen::<f64>() < p1;
+            let p = if outcome { p1 } else { p0 };
+            (outcome, p)
+        }
+    };
     let norm = p.sqrt();
     for (i, a) in state.amps.iter_mut().enumerate() {
         let bit_set = (i & q_bit) != 0;
@@ -90,6 +109,17 @@ pub(crate) fn expectation_value_impl(
     pauli: &aleph_core::PauliString,
 ) -> Result<f64, BackendError> {
     let n = state.num_qubits;
+    // Revalidate the public invariants on `PauliString`. The fields are
+    // `pub` so a caller can bypass `PauliString::new`'s sort/dedup/finite
+    // checks by direct struct-literal construction. Trusting those
+    // invariants here produced silently-wrong expectation values for
+    // duplicate-qubit terms.
+    if !pauli.coefficient.is_finite() {
+        return Err(BackendError::InvalidPauliString {
+            reason: "non-finite coefficient",
+        });
+    }
+    let mut seen: smallvec::SmallVec<[u32; 6]> = smallvec::SmallVec::new();
     for (q, _) in &pauli.terms {
         if *q >= n {
             return Err(BackendError::QubitOutOfRange {
@@ -97,6 +127,10 @@ pub(crate) fn expectation_value_impl(
                 num_qubits: n,
             });
         }
+        if seen.contains(q) {
+            return Err(BackendError::DuplicateQubit { qubit: *q });
+        }
+        seen.push(*q);
     }
     let mut tmp = state.amps.clone();
     for (q, p) in &pauli.terms {

@@ -17,14 +17,27 @@ pub enum BackendError {
     #[error("duplicate qubit {qubit} in gate or query")]
     DuplicateQubit { qubit: u32 },
 
-    #[error("circuit declares {circuit} qubits but state has {state}")]
-    QubitCountMismatch { circuit: u32, state: u32 },
+    #[error("gate `{kind}` expects {expected} qubits, got {got}")]
+    ArityMismatch {
+        kind: &'static str,
+        expected: usize,
+        got: usize,
+    },
 
     #[error("gate `{kind}` is not supported by this backend")]
     UnsupportedGate { kind: &'static str },
 
+    #[error("IR instruction `{kind}` is not supported by this backend")]
+    UnsupportedInstruction { kind: &'static str },
+
     #[error("backend requires concrete parameters; got symbolic")]
     SymbolicParam,
+
+    #[error("gate `{kind}` has a non-finite (NaN or infinite) parameter")]
+    NonFiniteParam { kind: &'static str },
+
+    #[error("user-supplied matrix is not unitary (max deviation = {deviation:e})")]
+    NonUnitaryMatrix { deviation: f64 },
 
     #[error("cannot run an empty circuit")]
     EmptyCircuit,
@@ -34,6 +47,9 @@ pub enum BackendError {
 
     #[error("requested {requested} qubits exceeds backend limit of {limit}")]
     TooManyQubits { requested: u32, limit: u32 },
+
+    #[error("Pauli string violates its invariants: {reason}")]
+    InvalidPauliString { reason: &'static str },
 }
 
 use aleph_core::{GateInstance, PauliString};
@@ -91,23 +107,54 @@ pub trait Backend {
 /// Returns `EmptyCircuit` only when the circuit declares zero qubits
 /// **and** has zero instructions — the truly-degenerate input.
 pub fn run<B: Backend>(backend: &mut B, circuit: &Circuit) -> Result<B::State, BackendError> {
+    let (state, _outcomes) = run_with_outcomes(backend, circuit)?;
+    Ok(state)
+}
+
+/// One recorded measurement outcome from `run_with_outcomes`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MeasurementRecord {
+    /// Index of the `Instruction::Measure` within `circuit.instructions()`.
+    pub instruction_index: usize,
+    pub qubit: u32,
+    pub clbit: u32,
+    pub outcome: bool,
+}
+
+/// Run `circuit` on `backend` AND return every measurement outcome.
+///
+/// Same semantics as [`run`], but preserves the bool returned by each
+/// `Backend::measure` call. Use this driver when downstream code needs
+/// to inspect mid-circuit outcomes (postselection, oracle comparison
+/// against shot-based references like Qiskit Aer's `meas_level=2`).
+pub fn run_with_outcomes<B: Backend>(
+    backend: &mut B,
+    circuit: &Circuit,
+) -> Result<(B::State, Vec<MeasurementRecord>), BackendError> {
     if circuit.num_qubits() == 0 && circuit.is_empty() {
         return Err(BackendError::EmptyCircuit);
     }
     let mut state = backend.allocate(circuit.num_qubits())?;
-    for inst in circuit.instructions() {
+    let mut outcomes = Vec::new();
+    for (idx, inst) in circuit.instructions().iter().enumerate() {
         match inst {
             aleph_ir::Instruction::Gate(g) => backend.apply_gate(&mut state, g)?,
-            aleph_ir::Instruction::Measure { qubit, .. } => {
-                let _ = backend.measure(&mut state, *qubit)?;
+            aleph_ir::Instruction::Measure { qubit, clbit } => {
+                let outcome = backend.measure(&mut state, *qubit)?;
+                outcomes.push(MeasurementRecord {
+                    instruction_index: idx,
+                    qubit: *qubit,
+                    clbit: *clbit,
+                    outcome,
+                });
             }
             aleph_ir::Instruction::Reset(_) => {
-                return Err(BackendError::UnsupportedGate { kind: "reset" });
+                return Err(BackendError::UnsupportedInstruction { kind: "reset" });
             }
             aleph_ir::Instruction::Barrier(_) => {}
         }
     }
-    Ok(state)
+    Ok((state, outcomes))
 }
 
 #[cfg(test)]

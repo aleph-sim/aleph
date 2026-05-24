@@ -1,7 +1,7 @@
 //! `NaiveSvBackend` — the naive CPU state-vector backend.
 
 use aleph_backend::{Backend, BackendError};
-use aleph_core::{Complex, GateInstance, PauliString};
+use aleph_core::{Complex, Gate, GateError, GateInstance, GateMatrix, PauliString};
 use rand::{rngs::StdRng, SeedableRng};
 
 use crate::state::CpuState;
@@ -60,6 +60,18 @@ impl Backend for NaiveSvBackend {
         gate: &GateInstance,
     ) -> Result<(), BackendError> {
         let n = state.num_qubits;
+        // Arity check before any indexing — the public-fields constructor
+        // path on `GateInstance` lets a release-build caller bypass the
+        // debug_assert in `GateInstance::new`.
+        let expected = gate.gate.arity();
+        let got = gate.qubits.len();
+        if expected != got {
+            return Err(BackendError::ArityMismatch {
+                kind: gate.gate.name(),
+                expected,
+                got,
+            });
+        }
         // Bounds + duplicate checks across qubits ∪ controls.
         let mut seen: smallvec::SmallVec<[u32; 6]> = smallvec::SmallVec::new();
         for &q in gate.qubits.iter().chain(gate.controls.iter()) {
@@ -74,21 +86,33 @@ impl Backend for NaiveSvBackend {
             }
             seen.push(q);
         }
-        // Materialise the matrix; map symbolic-param errors to BackendError.
-        let matrix = gate
-            .gate
-            .matrix()
-            .map_err(|_| BackendError::SymbolicParam)?;
+        // Materialise the matrix; route GateError variants to the right BackendError.
+        let matrix = gate.gate.matrix().map_err(|e| match e {
+            GateError::SymbolicParam => BackendError::SymbolicParam,
+            GateError::NonFiniteParam => BackendError::NonFiniteParam {
+                kind: gate.gate.name(),
+            },
+        })?;
+        // Unitarity check for user-supplied matrices (Unitary1q/2q only —
+        // intrinsic gates are unitary by construction). `1e-10` matches the
+        // project-wide `AMPLITUDE_TOL`.
+        if matches!(gate.gate, Gate::Unitary1q(_) | Gate::Unitary2q(_)) {
+            if let Some(deviation) = unitarity_deviation(&matrix) {
+                if deviation > aleph_core::AMPLITUDE_TOL {
+                    return Err(BackendError::NonUnitaryMatrix { deviation });
+                }
+            }
+        }
         match matrix {
-            aleph_core::GateMatrix::M2x2(m) => {
+            GateMatrix::M2x2(m) => {
                 let t = gate.qubits[0];
                 crate::kernels::apply_1q(&mut state.amps, t, &gate.controls, &m);
             }
-            aleph_core::GateMatrix::M4x4(m) => {
+            GateMatrix::M4x4(m) => {
                 let t = [gate.qubits[0], gate.qubits[1]];
                 crate::kernels::apply_2q(&mut state.amps, t, &gate.controls, &m);
             }
-            aleph_core::GateMatrix::M8x8(m) => {
+            GateMatrix::M8x8(m) => {
                 let t = [gate.qubits[0], gate.qubits[1], gate.qubits[2]];
                 crate::kernels::apply_3q(&mut state.amps, t, &gate.controls, &m);
             }
@@ -119,6 +143,36 @@ impl Backend for NaiveSvBackend {
     ) -> Result<Vec<f64>, BackendError> {
         crate::measure::probabilities_impl(state, qubits)
     }
+}
+
+/// Compute `max_{i,j} |(U·U†)_{i,j} - δ_{i,j}|` for a 2×2, 4×4, or 8×8
+/// matrix. Used to reject non-unitary user-supplied matrices in
+/// `Gate::Unitary1q` / `Gate::Unitary2q`. Returns `None` for sizes the
+/// kernel does not handle (currently no such case — every `GateMatrix`
+/// variant maps here).
+fn unitarity_deviation(matrix: &GateMatrix) -> Option<f64> {
+    fn max_dev<const N: usize>(m: &[[Complex; N]; N]) -> f64 {
+        let mut worst = 0.0_f64;
+        for (i, row_i) in m.iter().enumerate() {
+            for (j, row_j) in m.iter().enumerate() {
+                let mut acc = Complex::new(0.0, 0.0);
+                for (a, b) in row_i.iter().zip(row_j.iter()) {
+                    acc += a * b.conj();
+                }
+                let want = if i == j { 1.0 } else { 0.0 };
+                let dev = (acc - Complex::new(want, 0.0)).norm();
+                if dev > worst {
+                    worst = dev;
+                }
+            }
+        }
+        worst
+    }
+    Some(match matrix {
+        GateMatrix::M2x2(m) => max_dev::<2>(m),
+        GateMatrix::M4x4(m) => max_dev::<4>(m),
+        GateMatrix::M8x8(m) => max_dev::<8>(m),
+    })
 }
 
 #[cfg(test)]
@@ -457,6 +511,110 @@ mod tests {
         assert_eq!(err, BackendError::DuplicateQubit { qubit: 0 });
     }
 
+    #[test]
+    fn apply_gate_arity_mismatch_rejected() {
+        // Direct field-literal construction bypasses `GateInstance::new`'s
+        // debug_assert; the backend must reject in release mode.
+        let mut b = NaiveSvBackend::with_seed(0);
+        let mut s = b.allocate(2).unwrap();
+        let bad = GateInstance {
+            gate: Gate::Cnot,        // arity 2
+            qubits: smallvec![0u32], // only 1 qubit supplied
+            controls: smallvec![],
+        };
+        let err = b.apply_gate(&mut s, &bad).unwrap_err();
+        assert_eq!(
+            err,
+            BackendError::ArityMismatch {
+                kind: "Cnot",
+                expected: 2,
+                got: 1,
+            }
+        );
+    }
+
+    #[test]
+    fn apply_gate_non_finite_param_rejected() {
+        let mut b = NaiveSvBackend::with_seed(0);
+        let mut s = b.allocate(1).unwrap();
+        let bad = GateInstance::new(Gate::Rx(f64::NAN.into()), smallvec![0u32]);
+        let err = b.apply_gate(&mut s, &bad).unwrap_err();
+        assert_eq!(err, BackendError::NonFiniteParam { kind: "Rx" });
+    }
+
+    #[test]
+    fn apply_gate_non_unitary_user_matrix_rejected() {
+        let mut b = NaiveSvBackend::with_seed(0);
+        let mut s = b.allocate(1).unwrap();
+        // 2× identity — not unitary.
+        let two = Complex::new(2.0, 0.0);
+        let zero = Complex::new(0.0, 0.0);
+        let mat = Gate::Unitary1q(Box::new([[two, zero], [zero, two]]));
+        let bad = GateInstance::new(mat, smallvec![0u32]);
+        let err = b.apply_gate(&mut s, &bad).unwrap_err();
+        assert!(
+            matches!(err, BackendError::NonUnitaryMatrix { .. }),
+            "got {err:?}"
+        );
+    }
+
+    #[test]
+    fn apply_gate_legitimate_user_matrix_accepted() {
+        // Identity 2×2 IS unitary.
+        let mut b = NaiveSvBackend::with_seed(0);
+        let mut s = b.allocate(1).unwrap();
+        let one = Complex::new(1.0, 0.0);
+        let zero = Complex::new(0.0, 0.0);
+        let mat = Gate::Unitary1q(Box::new([[one, zero], [zero, one]]));
+        let good = GateInstance::new(mat, smallvec![0u32]);
+        b.apply_gate(&mut s, &good).unwrap();
+    }
+
+    #[test]
+    fn expectation_value_rejects_mutated_duplicates() {
+        // PauliString fields are pub — caller can construct invalid state.
+        use aleph_core::Pauli as P;
+        use aleph_core::PauliString as PS;
+        let mut b = NaiveSvBackend::with_seed(0);
+        let s = b.allocate(1).unwrap();
+        let bad = PS {
+            coefficient: 1.0,
+            terms: vec![(0, P::X), (0, P::Z)],
+        };
+        let err = b.expectation_value(&s, &bad).unwrap_err();
+        assert_eq!(err, BackendError::DuplicateQubit { qubit: 0 });
+    }
+
+    #[test]
+    fn expectation_value_rejects_non_finite_coefficient() {
+        use aleph_core::PauliString as PS;
+        let mut b = NaiveSvBackend::with_seed(0);
+        let s = b.allocate(1).unwrap();
+        let bad = PS {
+            coefficient: f64::NAN,
+            terms: vec![],
+        };
+        let err = b.expectation_value(&s, &bad).unwrap_err();
+        assert!(matches!(err, BackendError::InvalidPauliString { .. }));
+    }
+
+    #[test]
+    fn measure_clamps_p_against_drifted_norm() {
+        // Construct a state whose total norm² is slightly > 1.0 to mimic
+        // FP drift. measure must NOT produce NaN amplitudes.
+        let mut b = NaiveSvBackend::with_seed(0);
+        let mut s = b.allocate(1).unwrap();
+        // Hand-build amps: ~|0⟩ with a tiny over-normalisation.
+        s.amps[0] = Complex::new(1.0 + 1e-15, 0.0);
+        s.amps[1] = Complex::new(0.0, 0.0);
+        let outcome = b.measure(&mut s, 0).unwrap();
+        assert!(!outcome);
+        assert!(s
+            .amplitudes()
+            .iter()
+            .all(|a| a.re.is_finite() && a.im.is_finite()));
+    }
+
     use proptest::prelude::*;
 
     fn random_1q_gate_strategy() -> impl Strategy<Value = Gate> {
@@ -536,6 +694,125 @@ mod tests {
             b.apply_gate(&mut s, &GateInstance::new(Gate::Rx((-theta).into()), smallvec![q])).unwrap();
             for (x, y) in before.iter().zip(s.amplitudes().iter()) {
                 prop_assert!((x - y).norm() < 1e-10);
+            }
+        }
+
+        #[test]
+        fn ry_then_ry_negative_returns_identity(q in 0u32..3u32, theta in -3.0_f64..3.0_f64) {
+            let mut b = NaiveSvBackend::with_seed(0);
+            let mut s = b.allocate(3).unwrap();
+            b.apply_gate(&mut s, &GateInstance::new(Gate::H, smallvec![q])).unwrap();
+            let before: Vec<Complex> = s.amplitudes().to_vec();
+            b.apply_gate(&mut s, &GateInstance::new(Gate::Ry(theta.into()), smallvec![q])).unwrap();
+            b.apply_gate(&mut s, &GateInstance::new(Gate::Ry((-theta).into()), smallvec![q])).unwrap();
+            for (x, y) in before.iter().zip(s.amplitudes().iter()) {
+                prop_assert!((x - y).norm() < 1e-10);
+            }
+        }
+
+        #[test]
+        fn rz_then_rz_negative_returns_identity(q in 0u32..3u32, theta in -3.0_f64..3.0_f64) {
+            let mut b = NaiveSvBackend::with_seed(0);
+            let mut s = b.allocate(3).unwrap();
+            b.apply_gate(&mut s, &GateInstance::new(Gate::H, smallvec![q])).unwrap();
+            let before: Vec<Complex> = s.amplitudes().to_vec();
+            b.apply_gate(&mut s, &GateInstance::new(Gate::Rz(theta.into()), smallvec![q])).unwrap();
+            b.apply_gate(&mut s, &GateInstance::new(Gate::Rz((-theta).into()), smallvec![q])).unwrap();
+            for (x, y) in before.iter().zip(s.amplitudes().iter()) {
+                prop_assert!((x - y).norm() < 1e-10);
+            }
+        }
+
+        #[test]
+        fn s_then_sdg_returns_identity(q in 0u32..3u32) {
+            let mut b = NaiveSvBackend::with_seed(0);
+            let mut s = b.allocate(3).unwrap();
+            b.apply_gate(&mut s, &GateInstance::new(Gate::H, smallvec![q])).unwrap();
+            let before: Vec<Complex> = s.amplitudes().to_vec();
+            b.apply_gate(&mut s, &GateInstance::new(Gate::S, smallvec![q])).unwrap();
+            b.apply_gate(&mut s, &GateInstance::new(Gate::Sdg, smallvec![q])).unwrap();
+            for (x, y) in before.iter().zip(s.amplitudes().iter()) {
+                prop_assert!((x - y).norm() < 1e-12);
+            }
+        }
+
+        #[test]
+        fn t_then_tdg_returns_identity(q in 0u32..3u32) {
+            let mut b = NaiveSvBackend::with_seed(0);
+            let mut s = b.allocate(3).unwrap();
+            b.apply_gate(&mut s, &GateInstance::new(Gate::H, smallvec![q])).unwrap();
+            let before: Vec<Complex> = s.amplitudes().to_vec();
+            b.apply_gate(&mut s, &GateInstance::new(Gate::T, smallvec![q])).unwrap();
+            b.apply_gate(&mut s, &GateInstance::new(Gate::Tdg, smallvec![q])).unwrap();
+            for (x, y) in before.iter().zip(s.amplitudes().iter()) {
+                prop_assert!((x - y).norm() < 1e-12);
+            }
+        }
+
+        #[test]
+        fn iswap_then_iswapdg_returns_identity(a in 0u32..3u32, b_idx in 0u32..3u32) {
+            prop_assume!(a != b_idx);
+            let mut b = NaiveSvBackend::with_seed(0);
+            let mut s = b.allocate(3).unwrap();
+            b.apply_gate(&mut s, &GateInstance::new(Gate::H, smallvec![a])).unwrap();
+            let before: Vec<Complex> = s.amplitudes().to_vec();
+            b.apply_gate(&mut s, &GateInstance::new(Gate::Iswap, smallvec![a, b_idx])).unwrap();
+            b.apply_gate(&mut s, &GateInstance::new(Gate::IswapDg, smallvec![a, b_idx])).unwrap();
+            for (x, y) in before.iter().zip(s.amplitudes().iter()) {
+                prop_assert!((x - y).norm() < 1e-12);
+            }
+        }
+
+        #[test]
+        fn x_squared_is_identity(q in 0u32..3u32) {
+            let mut b = NaiveSvBackend::with_seed(0);
+            let mut s = b.allocate(3).unwrap();
+            b.apply_gate(&mut s, &GateInstance::new(Gate::H, smallvec![q])).unwrap();
+            let before: Vec<Complex> = s.amplitudes().to_vec();
+            b.apply_gate(&mut s, &GateInstance::new(Gate::X, smallvec![q])).unwrap();
+            b.apply_gate(&mut s, &GateInstance::new(Gate::X, smallvec![q])).unwrap();
+            for (x, y) in before.iter().zip(s.amplitudes().iter()) {
+                prop_assert!((x - y).norm() < 1e-12);
+            }
+        }
+
+        #[test]
+        fn y_squared_is_identity(q in 0u32..3u32) {
+            let mut b = NaiveSvBackend::with_seed(0);
+            let mut s = b.allocate(3).unwrap();
+            b.apply_gate(&mut s, &GateInstance::new(Gate::H, smallvec![q])).unwrap();
+            let before: Vec<Complex> = s.amplitudes().to_vec();
+            b.apply_gate(&mut s, &GateInstance::new(Gate::Y, smallvec![q])).unwrap();
+            b.apply_gate(&mut s, &GateInstance::new(Gate::Y, smallvec![q])).unwrap();
+            for (x, y) in before.iter().zip(s.amplitudes().iter()) {
+                prop_assert!((x - y).norm() < 1e-12);
+            }
+        }
+
+        #[test]
+        fn z_squared_is_identity(q in 0u32..3u32) {
+            let mut b = NaiveSvBackend::with_seed(0);
+            let mut s = b.allocate(3).unwrap();
+            b.apply_gate(&mut s, &GateInstance::new(Gate::H, smallvec![q])).unwrap();
+            let before: Vec<Complex> = s.amplitudes().to_vec();
+            b.apply_gate(&mut s, &GateInstance::new(Gate::Z, smallvec![q])).unwrap();
+            b.apply_gate(&mut s, &GateInstance::new(Gate::Z, smallvec![q])).unwrap();
+            for (x, y) in before.iter().zip(s.amplitudes().iter()) {
+                prop_assert!((x - y).norm() < 1e-12);
+            }
+        }
+
+        #[test]
+        fn swap_is_involution(a in 0u32..3u32, b_idx in 0u32..3u32) {
+            prop_assume!(a != b_idx);
+            let mut b = NaiveSvBackend::with_seed(0);
+            let mut s = b.allocate(3).unwrap();
+            b.apply_gate(&mut s, &GateInstance::new(Gate::H, smallvec![a])).unwrap();
+            let before: Vec<Complex> = s.amplitudes().to_vec();
+            b.apply_gate(&mut s, &GateInstance::new(Gate::Swap, smallvec![a, b_idx])).unwrap();
+            b.apply_gate(&mut s, &GateInstance::new(Gate::Swap, smallvec![a, b_idx])).unwrap();
+            for (x, y) in before.iter().zip(s.amplitudes().iter()) {
+                prop_assert!((x - y).norm() < 1e-12);
             }
         }
 

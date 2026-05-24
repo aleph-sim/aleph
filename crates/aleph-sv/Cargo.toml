@@ -11,10 +11,8 @@ authors.workspace = true
 aleph-core    = { path = "../aleph-core" }
 aleph-ir      = { path = "../aleph-ir" }
 aleph-backend = { path = "../aleph-backend" }
-num-complex   = { workspace = true }
 rand          = { workspace = true }
 smallvec      = { workspace = true }
-thiserror     = { workspace = true }
 
 [dev-dependencies]
 aleph-parser = { path = "../aleph-parser" }
