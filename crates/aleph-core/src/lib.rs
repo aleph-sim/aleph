@@ -33,6 +33,9 @@
 #[allow(clippy::disallowed_types)]
 pub type Complex<T = f64> = num_complex::Complex<T>;
 
+pub mod gate;
+pub use gate::{Param, SymbolId};
+
 /// Project-wide tolerance for amplitude comparisons in FP64.
 ///
 /// CLAUDE.md § Testing Requirements pins this at `1e-10`. Use this
