@@ -403,6 +403,16 @@ impl Gate {
     /// result is `U3(-θ, -λ, -φ)`). `Iswap` ↔ `IswapDg` form an
     /// adjoint pair so the Clifford classification is closed under
     /// inverse (both report `is_clifford() == true`).
+    ///
+    /// **Non-finite params:** `inverse()` does **not** reject NaN or
+    /// infinite parameters — the matrix-level guard lives in
+    /// [`Gate::matrix`]. `Rx(NaN).inverse()` returns `Rx(-NaN)`; since
+    /// `NaN != NaN` under `f64` `PartialEq`, this gate is not equal
+    /// to itself, and the involution `g.inverse().inverse() == g`
+    /// does not hold. The property tests intentionally restrict
+    /// `arb_angle` to `[-2π, 2π]` to avoid sampling such params; do
+    /// not widen the range without first guarding `inverse()` to
+    /// short-circuit on non-finite values.
     pub fn inverse(&self) -> Gate {
         match self {
             // self-inverse
