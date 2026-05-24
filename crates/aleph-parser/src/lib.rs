@@ -7,6 +7,7 @@
 //! See `docs/superpowers/specs/2026-05-24-p0-08-openqasm-parser-design.md`.
 
 mod ast;
+mod emit;
 mod error;
 mod expr;
 mod lexer;
@@ -14,6 +15,11 @@ mod lower;
 mod parser;
 
 pub use error::{EmitError, ParseError, ParseErrorKind};
+
+/// Emit an `aleph_ir::Circuit` as OpenQASM 3 source (normalized).
+pub fn emit(circuit: &aleph_ir::Circuit) -> Result<String, EmitError> {
+    emit::emit(circuit)
+}
 
 use lexer::Span;
 
