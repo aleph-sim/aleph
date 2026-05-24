@@ -34,7 +34,7 @@
 pub type Complex<T = f64> = num_complex::Complex<T>;
 
 pub mod gate;
-pub use gate::{Gate, GateError, GateMatrix, Param, SymbolId};
+pub use gate::{Gate, GateError, GateInstance, GateMatrix, Param, SymbolId};
 
 /// Project-wide tolerance for amplitude comparisons in FP64.
 ///
