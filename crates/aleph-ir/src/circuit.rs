@@ -266,6 +266,21 @@ impl Circuit {
     pub fn swap(&mut self, q0: u32, q1: u32) -> Result<&mut Self, CircuitError> {
         self.add_gate(GateInstance::new(Gate::Swap, smallvec::smallvec![q0, q1]))
     }
+
+    // --- 3q convenience ---
+
+    /// Append `Toffoli` (CCX) with `qubits = [c0, c1, target]`.
+    pub fn ccx(
+        &mut self,
+        c0: u32,
+        c1: u32,
+        target: u32,
+    ) -> Result<&mut Self, CircuitError> {
+        self.add_gate(GateInstance::new(
+            Gate::Toffoli,
+            smallvec::smallvec![c0, c1, target],
+        ))
+    }
 }
 
 /// Stable string name for each `Gate` variant — used in
@@ -565,6 +580,28 @@ mod tests {
         let mut c = Circuit::new(2, 0);
         assert!(matches!(
             c.cnot(0, 9),
+            Err(CircuitError::QubitOutOfRange { qubit: 9, .. })
+        ));
+    }
+
+    #[test]
+    fn ccx_records_toffoli_with_correct_qubit_order() {
+        let mut c = Circuit::new(3, 0);
+        c.ccx(0, 1, 2).unwrap();
+        match &c.instructions()[0] {
+            Instruction::Gate(g) => {
+                assert_eq!(g.gate, Gate::Toffoli);
+                assert_eq!(g.qubits.as_slice(), &[0, 1, 2]);
+            }
+            other => panic!("expected Gate, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn ccx_rejects_oob_target() {
+        let mut c = Circuit::new(3, 0);
+        assert!(matches!(
+            c.ccx(0, 1, 9),
             Err(CircuitError::QubitOutOfRange { qubit: 9, .. })
         ));
     }
