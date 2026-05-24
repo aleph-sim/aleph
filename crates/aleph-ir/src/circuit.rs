@@ -4,7 +4,7 @@
 //! non-breaking. Access is via `instructions()`, `len()`,
 //! `is_empty()`, and the `layers()` helper (see `layers.rs`).
 
-use aleph_core::{Gate, GateInstance};
+use aleph_core::{Gate, GateInstance, Param};
 
 use crate::CircuitError;
 use crate::Instruction;
@@ -189,6 +189,58 @@ impl Circuit {
     /// Append `Tdg` to qubit `q`.
     pub fn tdg(&mut self, q: u32) -> Result<&mut Self, CircuitError> {
         self.add_gate(GateInstance::new(Gate::Tdg, smallvec::smallvec![q]))
+    }
+
+    // --- 1q parametric convenience ---
+
+    /// Append `Rx(θ)` to qubit `q`.
+    pub fn rx(&mut self, theta: f64, q: u32) -> Result<&mut Self, CircuitError> {
+        self.add_gate(GateInstance::new(
+            Gate::Rx(Param::Concrete(theta)),
+            smallvec::smallvec![q],
+        ))
+    }
+
+    /// Append `Ry(θ)` to qubit `q`.
+    pub fn ry(&mut self, theta: f64, q: u32) -> Result<&mut Self, CircuitError> {
+        self.add_gate(GateInstance::new(
+            Gate::Ry(Param::Concrete(theta)),
+            smallvec::smallvec![q],
+        ))
+    }
+
+    /// Append `Rz(θ)` to qubit `q`.
+    pub fn rz(&mut self, theta: f64, q: u32) -> Result<&mut Self, CircuitError> {
+        self.add_gate(GateInstance::new(
+            Gate::Rz(Param::Concrete(theta)),
+            smallvec::smallvec![q],
+        ))
+    }
+
+    /// Append `Phase(θ)` (= `diag(1, e^{iθ})`) to qubit `q`.
+    pub fn phase(&mut self, theta: f64, q: u32) -> Result<&mut Self, CircuitError> {
+        self.add_gate(GateInstance::new(
+            Gate::Phase(Param::Concrete(theta)),
+            smallvec::smallvec![q],
+        ))
+    }
+
+    /// Append `U3(θ, φ, λ)` to qubit `q` (Qiskit convention).
+    pub fn u3(
+        &mut self,
+        theta: f64,
+        phi: f64,
+        lambda: f64,
+        q: u32,
+    ) -> Result<&mut Self, CircuitError> {
+        self.add_gate(GateInstance::new(
+            Gate::U3(
+                Param::Concrete(theta),
+                Param::Concrete(phi),
+                Param::Concrete(lambda),
+            ),
+            smallvec::smallvec![q],
+        ))
     }
 }
 
@@ -398,6 +450,58 @@ mod tests {
         c.h(0)?.x(1)?;
         assert_eq!(c.len(), 2);
         Ok(())
+    }
+
+    #[test]
+    fn rx_records_angle() {
+        let mut c = Circuit::new(1, 0);
+        c.rx(0.5, 0).unwrap();
+        match &c.instructions()[0] {
+            Instruction::Gate(g) => {
+                assert_eq!(g.gate, Gate::Rx(Param::Concrete(0.5)));
+                assert_eq!(g.qubits.as_slice(), &[0]);
+            }
+            other => panic!("expected Gate, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn u3_records_all_three_angles() {
+        let mut c = Circuit::new(1, 0);
+        c.u3(0.1, 0.2, 0.3, 0).unwrap();
+        match &c.instructions()[0] {
+            Instruction::Gate(g) => {
+                assert_eq!(
+                    g.gate,
+                    Gate::U3(
+                        Param::Concrete(0.1),
+                        Param::Concrete(0.2),
+                        Param::Concrete(0.3),
+                    )
+                );
+            }
+            other => panic!("expected Gate, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parametric_one_qubit_set_all_work() {
+        let mut c = Circuit::new(1, 0);
+        c.rx(0.1, 0).unwrap();
+        c.ry(0.2, 0).unwrap();
+        c.rz(0.3, 0).unwrap();
+        c.phase(0.4, 0).unwrap();
+        c.u3(0.5, 0.6, 0.7, 0).unwrap();
+        assert_eq!(c.len(), 5);
+    }
+
+    #[test]
+    fn rx_rejects_oob() {
+        let mut c = Circuit::new(2, 0);
+        assert!(matches!(
+            c.rx(0.5, 9),
+            Err(CircuitError::QubitOutOfRange { qubit: 9, .. })
+        ));
     }
 
     #[test]
