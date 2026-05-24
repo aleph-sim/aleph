@@ -281,3 +281,69 @@ Mirrors BACKLOG.md:320 with concrete checks:
 ## 11. Open Questions
 
 None. All three brainstorming decisions are recorded in §3. If implementation surfaces a fourth, it returns here for a spec amendment before code lands.
+
+## 12. Amendments (post-merge)
+
+The sections above record the design that was approved before implementation. The amendments below record decisions that were forced by code review on the implementation PR. The original sections are retained verbatim for historical record; **the amendments here override them where they conflict**.
+
+### 12.1 `Gate::IswapDg` variant added (overrides §4.2 and §5)
+
+Code review of the initial implementation flagged that the originally-planned `Iswap.inverse() → Gate::Unitary2q(iSWAP†)` fallback broke an important algebraic invariant: the inverse of a Clifford gate must itself be Clifford, but `Unitary2q` returns `false` from `is_clifford()`. A future stabilizer-backend dispatcher routing via `if g.is_clifford() { stab_apply } else { sv_apply }` would silently fall off the fast path mid-circuit on any `iSWAP†`.
+
+**Decision:** Add `Gate::IswapDg` as a 2q standard variant. `Iswap.inverse() == IswapDg`, `IswapDg.inverse() == Iswap`, and both return `true` from `is_clifford()`.
+
+**Updated enum literal:**
+
+```rust
+// --- 2q standard ---
+Cnot, Cz, Swap, Iswap, IswapDg,
+```
+
+**Updated `is_clifford()` set:** `H, X, Y, Z, S, Sdg, Cnot, Cz, Swap, Iswap, IswapDg`.
+
+**Updated `inverse()` doc:** `Iswap` ↔ `IswapDg` form an adjoint pair (no `Unitary2q` fallback).
+
+### 12.2 `GateError::NonFiniteParam` added (overrides §4.5)
+
+Code review found that `From<f64> for Param` silently accepted `NaN`/`Inf`, propagating all-NaN matrices through the backend with no diagnostic.
+
+**Decision:** `Gate::matrix()` rejects non-finite concrete params with `GateError::NonFiniteParam`. The full enum is now:
+
+```rust
+#[derive(Debug, thiserror::Error, PartialEq)]
+pub enum GateError {
+    #[error("symbolic parameter cannot produce a concrete matrix")]
+    SymbolicParam,
+    #[error("parameter must be finite (was NaN or infinite)")]
+    NonFiniteParam,
+}
+```
+
+Note: `GateError` also derives `PartialEq` (added during implementation for ergonomic test assertions — see `expect_err` helper in `kinds.rs`).
+
+`Gate::inverse()` deliberately does **not** reject non-finite params; the matrix-level guard is the single chokepoint. See `inverse()` rustdoc for NaN-equality semantics.
+
+### 12.3 `GateMatrix` does **not** derive `PartialEq` (overrides §4.4)
+
+The §4.4 sample shows `#[derive(Debug, Clone, PartialEq)]`. Code review identified this as a float-equality footgun (CLAUDE.md § Common Mistakes).
+
+**Decision:** `GateMatrix` derives only `Debug, Clone`. Tests use `approx_eq_*` helpers at `AMPLITUDE_TOL` tolerance. Error-case tests use an `expect_err` pattern-match helper instead of `assert_eq!` on `Result<GateMatrix, GateError>`.
+
+### 12.4 `GateInstance` ctors `debug_assert` qubit invariants (overrides §4.3)
+
+`GateInstance::new` and `GateInstance::controlled` `debug_assert!`:
+
+1. `qubits.len() == gate.arity()`
+2. Every index in `qubits ∪ controls` appears at most once.
+
+Both checks are debug-only (no-op in release). The `should_panic` test cases are gated with `#[cfg(debug_assertions)]` so `cargo test --release` does not report them as false failures.
+
+### 12.5 Spec §10 acceptance criteria addendum
+
+Add to the §10 checklist:
+
+- [ ] `Gate::matrix()` returns `Err(GateError::NonFiniteParam)` for `Param::Concrete(NaN)`/`Inf` — unit + property tested.
+- [ ] `Gate::IswapDg` is in the Clifford set; `Iswap.inverse() == IswapDg`.
+- [ ] `is_diagonal()` and `is_clifford()` are written as exhaustive `match` (not `matches!`) so new variants force a compile-time decision.
+- [ ] `GateInstance::new`/`controlled` debug-assert arity and qubit-index uniqueness; tests for these are gated with `#[cfg(debug_assertions)]`.
+- [ ] `GateMatrix` does not derive `PartialEq`.

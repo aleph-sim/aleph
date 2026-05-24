@@ -7,11 +7,17 @@
 ## Context
 
 `Gate::is_clifford()` reports whether a gate belongs to the Clifford
-group. Standard gates (H, X, Y, Z, S, Sdg, Cnot, Cz, Swap, Iswap) are
-unambiguously Clifford. Parametric rotations (`Rx(θ)`, `Ry(θ)`,
-`Rz(θ)`, `Phase(θ)`, controlled variants, `U3`) are Clifford **only
-for specific angles** (`θ = k · π/2` for the single-axis rotations;
-`U3` has a narrower set still).
+group. Standard gates (H, X, Y, Z, S, Sdg, Cnot, Cz, Swap, Iswap,
+IswapDg) are unambiguously Clifford. Parametric rotations (`Rx(θ)`,
+`Ry(θ)`, `Rz(θ)`, `Phase(θ)`, controlled variants, `U3`) are Clifford
+**only for specific angles** (`θ = k · π/2` for the single-axis
+rotations; `U3` has a narrower set still).
+
+`IswapDg` was added to the enum after the initial implementation to
+preserve closure of the Clifford set under `inverse()`. Originally
+`Iswap.inverse()` returned `Gate::Unitary2q(iSWAP†)`, which would
+silently fall out of the Clifford fast path. See the
+implementation-PR review notes and spec amendment §12.1.
 
 A correct angle-aware implementation would compare `θ` against `π/2`
 multiples using a floating-point tolerance. The tolerance is its own
