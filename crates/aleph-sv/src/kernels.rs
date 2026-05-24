@@ -38,6 +38,46 @@ pub fn apply_1q(amps: &mut [Complex], target: u32, controls: &[u32], m: &[[Compl
     }
 }
 
+/// Apply a 2-qubit matrix to `targets = [t0, t1]` (with external
+/// `controls`) in place.
+///
+/// **MSB convention (P0-06):** `targets[0]` is the *high* bit of the
+/// matrix index `k`, `targets[1]` is the *low* bit. So matrix row 2
+/// (binary `10`) corresponds to `(targets[0] = 1, targets[1] = 0)`.
+/// This matches `Gate::Cnot` (`qubits = [control, target]`), whose
+/// matrix swaps rows 2 ↔ 3.
+///
+/// Targets must be distinct; the caller (`apply_gate`) enforces this.
+#[allow(dead_code)]
+pub fn apply_2q(amps: &mut [Complex], targets: [u32; 2], controls: &[u32], m: &[[Complex; 4]; 4]) {
+    let t0_bit = 1usize << targets[0];
+    let t1_bit = 1usize << targets[1];
+    let t_mask = t0_bit | t1_bit;
+    let mut ctrl_mask: usize = 0;
+    for &c in controls {
+        ctrl_mask |= 1usize << c;
+    }
+    let len = amps.len();
+    let mut i = 0usize;
+    while i < len {
+        if (i & t_mask) == 0 && (i & ctrl_mask) == ctrl_mask {
+            // MSB convention: matrix index k bit 1 → targets[0], bit 0 → targets[1].
+            // So idx[k] sets t0_bit iff (k & 2) != 0, t1_bit iff (k & 1) != 0.
+            let idx = [
+                i,          // k = 00
+                i | t1_bit, // k = 01
+                i | t0_bit, // k = 10
+                i | t_mask, // k = 11
+            ];
+            let v = [amps[idx[0]], amps[idx[1]], amps[idx[2]], amps[idx[3]]];
+            for r in 0..4 {
+                amps[idx[r]] = m[r][0] * v[0] + m[r][1] * v[1] + m[r][2] * v[2] + m[r][3] * v[3];
+            }
+        }
+        i += 1;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -99,5 +139,48 @@ mod tests {
         amps[0] = Complex::new(1.0, 0.0);
         apply_1q(&mut amps, 1, &[0], &pauli_x());
         assert_eq!(amps[0], Complex::new(1.0, 0.0));
+    }
+
+    /// Canonical `Gate::Cnot` matrix (P0-06):
+    /// swaps rows 2 ↔ 3 with `qubits = [control, target]` and
+    /// control = MSB of the matrix index.
+    fn cnot() -> [[Complex; 4]; 4] {
+        let z = Complex::new(0.0, 0.0);
+        let o = Complex::new(1.0, 0.0);
+        [[o, z, z, z], [z, o, z, z], [z, z, z, o], [z, z, o, z]]
+    }
+
+    #[test]
+    fn cnot_flips_target_when_control_set() {
+        // Targets = [q0, q1]. State amps[1] = 1 corresponds to
+        // (q0 = 1, q1 = 0) in the global state vector.
+        // With MSB convention idx = [0, t1_bit, t0_bit, t_mask] = [0, 2, 1, 3],
+        // amps[1] sits at matrix slot k = 2 (control set, target clear).
+        // Cnot swaps slot 2 ↔ 3 ⇒ amps[1] moves to amps[3].
+        let mut amps = vec![Complex::new(0.0, 0.0); 4];
+        amps[1] = Complex::new(1.0, 0.0);
+        apply_2q(&mut amps, [0, 1], &[], &cnot());
+        assert_eq!(amps[3], Complex::new(1.0, 0.0));
+        assert_eq!(amps[1], Complex::new(0.0, 0.0));
+    }
+
+    #[test]
+    fn cnot_on_zero_state_unchanged() {
+        // amps[0] = 1 (control = 0, target = 0) — Cnot leaves it alone.
+        let mut amps = vec![Complex::new(0.0, 0.0); 4];
+        amps[0] = Complex::new(1.0, 0.0);
+        apply_2q(&mut amps, [0, 1], &[], &cnot());
+        assert_eq!(amps[0], Complex::new(1.0, 0.0));
+    }
+
+    #[test]
+    fn apply_2q_external_control_skips_when_unset() {
+        // 3 qubits, state amps[1] = 1 (q0 = 1, q1 = 0, q2 = 0).
+        // Apply Cnot (q0 = ctrl, q1 = tgt) externally controlled by q2.
+        // Since q2 = 0, gate should NOT fire.
+        let mut amps = vec![Complex::new(0.0, 0.0); 8];
+        amps[1] = Complex::new(1.0, 0.0);
+        apply_2q(&mut amps, [0, 1], &[2], &cnot());
+        assert_eq!(amps[1], Complex::new(1.0, 0.0));
     }
 }
