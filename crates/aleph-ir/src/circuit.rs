@@ -242,6 +242,30 @@ impl Circuit {
             smallvec::smallvec![q],
         ))
     }
+
+    // --- 2q convenience ---
+
+    /// Append `Cnot` with `qubits = [control, target]`.
+    pub fn cnot(
+        &mut self,
+        control: u32,
+        target: u32,
+    ) -> Result<&mut Self, CircuitError> {
+        self.add_gate(GateInstance::new(
+            Gate::Cnot,
+            smallvec::smallvec![control, target],
+        ))
+    }
+
+    /// Append `Cz` on `(q0, q1)`. Symmetric — qubit order does not matter.
+    pub fn cz(&mut self, q0: u32, q1: u32) -> Result<&mut Self, CircuitError> {
+        self.add_gate(GateInstance::new(Gate::Cz, smallvec::smallvec![q0, q1]))
+    }
+
+    /// Append `Swap` on `(q0, q1)`.
+    pub fn swap(&mut self, q0: u32, q1: u32) -> Result<&mut Self, CircuitError> {
+        self.add_gate(GateInstance::new(Gate::Swap, smallvec::smallvec![q0, q1]))
+    }
 }
 
 /// Stable string name for each `Gate` variant — used in
@@ -500,6 +524,47 @@ mod tests {
         let mut c = Circuit::new(2, 0);
         assert!(matches!(
             c.rx(0.5, 9),
+            Err(CircuitError::QubitOutOfRange { qubit: 9, .. })
+        ));
+    }
+
+    #[test]
+    fn cnot_records_qubit_order_control_target() {
+        let mut c = Circuit::new(2, 0);
+        c.cnot(0, 1).unwrap();
+        match &c.instructions()[0] {
+            Instruction::Gate(g) => {
+                assert_eq!(g.gate, Gate::Cnot);
+                assert_eq!(g.qubits.as_slice(), &[0, 1]);
+            }
+            other => panic!("expected Gate, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cz_and_swap_record_qubits() {
+        let mut c = Circuit::new(3, 0);
+        c.cz(0, 2).unwrap();
+        c.swap(1, 2).unwrap();
+        let g0 = match &c.instructions()[0] {
+            Instruction::Gate(g) => g,
+            _ => panic!(),
+        };
+        assert_eq!(g0.gate, Gate::Cz);
+        assert_eq!(g0.qubits.as_slice(), &[0, 2]);
+        let g1 = match &c.instructions()[1] {
+            Instruction::Gate(g) => g,
+            _ => panic!(),
+        };
+        assert_eq!(g1.gate, Gate::Swap);
+        assert_eq!(g1.qubits.as_slice(), &[1, 2]);
+    }
+
+    #[test]
+    fn cnot_rejects_oob_target() {
+        let mut c = Circuit::new(2, 0);
+        assert!(matches!(
+            c.cnot(0, 9),
             Err(CircuitError::QubitOutOfRange { qubit: 9, .. })
         ));
     }
