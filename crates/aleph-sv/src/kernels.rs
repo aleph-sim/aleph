@@ -15,10 +15,7 @@ use aleph_core::Complex;
 /// Iterates the 2^(n-1) basis indices whose `target` bit is zero;
 /// each defines a 2-element subspace `(i, i | t_bit)`. Skips
 /// iterations whose `i` does not have every control bit set.
-// Wired by `apply_gate` in P0-09 Task 11; until then it's only used by
-// the per-module unit tests below.
-#[allow(dead_code)]
-pub fn apply_1q(amps: &mut [Complex], target: u32, controls: &[u32], m: &[[Complex; 2]; 2]) {
+pub(crate) fn apply_1q(amps: &mut [Complex], target: u32, controls: &[u32], m: &[[Complex; 2]; 2]) {
     let t_bit = 1usize << target;
     let mut ctrl_mask: usize = 0;
     for &c in controls {
@@ -48,8 +45,12 @@ pub fn apply_1q(amps: &mut [Complex], target: u32, controls: &[u32], m: &[[Compl
 /// matrix swaps rows 2 ↔ 3.
 ///
 /// Targets must be distinct; the caller (`apply_gate`) enforces this.
-#[allow(dead_code)]
-pub fn apply_2q(amps: &mut [Complex], targets: [u32; 2], controls: &[u32], m: &[[Complex; 4]; 4]) {
+pub(crate) fn apply_2q(
+    amps: &mut [Complex],
+    targets: [u32; 2],
+    controls: &[u32],
+    m: &[[Complex; 4]; 4],
+) {
     let t0_bit = 1usize << targets[0];
     let t1_bit = 1usize << targets[1];
     let t_mask = t0_bit | t1_bit;
@@ -87,8 +88,12 @@ pub fn apply_2q(amps: &mut [Complex], targets: [u32; 2], controls: &[u32], m: &[
 /// corresponds to `(targets[0] = 1, targets[1] = 1, targets[2] = 0)`.
 /// This matches `Gate::Toffoli` (`qubits = [c0, c1, target]`), whose
 /// matrix swaps rows 6 ↔ 7.
-#[allow(dead_code)]
-pub fn apply_3q(amps: &mut [Complex], targets: [u32; 3], controls: &[u32], m: &[[Complex; 8]; 8]) {
+pub(crate) fn apply_3q(
+    amps: &mut [Complex],
+    targets: [u32; 3],
+    controls: &[u32],
+    m: &[[Complex; 8]; 8],
+) {
     let t_bits = [
         1usize << targets[0],
         1usize << targets[1],

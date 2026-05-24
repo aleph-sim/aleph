@@ -4,7 +4,7 @@
 //!
 //! Oracle comparison against Qiskit lands in P0-10.
 
-use aleph_backend::run;
+use aleph_backend::{run, run_with_outcomes, MeasurementRecord};
 use aleph_parser::parse;
 use aleph_sv::NaiveSvBackend;
 
@@ -163,6 +163,38 @@ h q[2];
     let s = run(&mut b, &circ).unwrap();
     let p_marked = s.amplitudes()[7].norm_sqr();
     assert!(p_marked > 0.78, "p_marked = {p_marked}");
+}
+
+#[test]
+fn run_with_outcomes_records_in_instruction_order() {
+    // Bell + two measurements. Outcomes must always agree (perfect
+    // correlation) and be recorded in instruction order with the right
+    // qubit/clbit pairing.
+    let src = r#"
+OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+bit[2] c;
+h q[0];
+cx q[0], q[1];
+measure q[0] -> c[0];
+measure q[1] -> c[1];
+"#;
+    let circ = parse(src).unwrap();
+    let mut b = NaiveSvBackend::with_seed(11);
+    let (_state, outcomes) = run_with_outcomes(&mut b, &circ).unwrap();
+    assert_eq!(outcomes.len(), 2);
+    let first = outcomes[0];
+    let second = outcomes[1];
+    assert_eq!(first.qubit, 0);
+    assert_eq!(first.clbit, 0);
+    assert_eq!(second.qubit, 1);
+    assert_eq!(second.clbit, 1);
+    assert!(first.instruction_index < second.instruction_index);
+    // Bell-state correlation: both outcomes equal.
+    assert_eq!(first.outcome, second.outcome);
+    // Records carry the expected struct shape.
+    let _: &MeasurementRecord = &first;
 }
 
 #[test]

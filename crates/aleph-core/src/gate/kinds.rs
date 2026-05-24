@@ -519,6 +519,59 @@ mod tests {
     };
     use std::f64::consts::FRAC_1_SQRT_2;
 
+    /// Pinning test: `Gate::name()` strings appear in `BackendError`
+    /// messages and downstream consumer logs. Changing any of these
+    /// strings is a breaking change; this test forces explicit intent.
+    #[test]
+    fn gate_name_strings_are_stable() {
+        let cases: &[(Gate, &str)] = &[
+            (Gate::H, "H"),
+            (Gate::X, "X"),
+            (Gate::Y, "Y"),
+            (Gate::Z, "Z"),
+            (Gate::S, "S"),
+            (Gate::Sdg, "Sdg"),
+            (Gate::T, "T"),
+            (Gate::Tdg, "Tdg"),
+            (Gate::Rx(Param::Concrete(0.0)), "Rx"),
+            (Gate::Ry(Param::Concrete(0.0)), "Ry"),
+            (Gate::Rz(Param::Concrete(0.0)), "Rz"),
+            (Gate::Phase(Param::Concrete(0.0)), "Phase"),
+            (
+                Gate::U3(
+                    Param::Concrete(0.0),
+                    Param::Concrete(0.0),
+                    Param::Concrete(0.0),
+                ),
+                "U3",
+            ),
+            (Gate::Cnot, "Cnot"),
+            (Gate::Cz, "Cz"),
+            (Gate::Swap, "Swap"),
+            (Gate::Iswap, "Iswap"),
+            (Gate::IswapDg, "IswapDg"),
+            (Gate::CRx(Param::Concrete(0.0)), "CRx"),
+            (Gate::CRy(Param::Concrete(0.0)), "CRy"),
+            (Gate::CRz(Param::Concrete(0.0)), "CRz"),
+            (Gate::Toffoli, "Toffoli"),
+            (Gate::Ccz, "Ccz"),
+            (
+                Gate::Unitary1q(Box::new([
+                    [Complex::new(1.0, 0.0), Complex::new(0.0, 0.0)],
+                    [Complex::new(0.0, 0.0), Complex::new(1.0, 0.0)],
+                ])),
+                "Unitary1q",
+            ),
+            (
+                Gate::Unitary2q(Box::new([[Complex::new(0.0, 0.0); 4]; 4])),
+                "Unitary2q",
+            ),
+        ];
+        for (gate, want) in cases {
+            assert_eq!(gate.name(), *want, "Gate::name() drift on {gate:?}");
+        }
+    }
+
     fn cc(re: f64, im: f64) -> Complex {
         Complex::new(re, im)
     }

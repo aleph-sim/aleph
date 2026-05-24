@@ -30,6 +30,14 @@ pub(crate) fn measure_impl(
             p1 += a.norm_sqr();
         }
     }
+    // Reject NaN / Inf up front. `f64::clamp` propagates NaN unchanged,
+    // so without this guard a NaN amplitude poisons every comparison
+    // and the function silently produces a NaN state vector.
+    if !p1.is_finite() {
+        return Err(BackendError::InvalidState {
+            reason: "non-finite amplitude norm²",
+        });
+    }
     // Clamp p1 into [0, 1] to absorb FP drift from a state whose total
     // norm² has drifted slightly above 1.0 across many gates. Without
     // this, `1.0 - p1` can be slightly negative, and `p.sqrt()` then
@@ -80,12 +88,34 @@ pub(crate) fn sample_impl(
     shots: u32,
 ) -> Result<Vec<u64>, BackendError> {
     let n = state.amps.len();
+    if n == 0 {
+        return Err(BackendError::InvalidState {
+            reason: "empty state vector",
+        });
+    }
     let mut cdf = Vec::with_capacity(n);
     let mut acc = 0.0_f64;
     for a in &state.amps {
-        acc += a.norm_sqr();
+        let p = a.norm_sqr();
+        if !p.is_finite() {
+            return Err(BackendError::InvalidState {
+                reason: "non-finite amplitude norm²",
+            });
+        }
+        acc += p;
         cdf.push(acc);
     }
+    // Refuse to sample from a state whose total mass is far from 1 — a
+    // signal of upstream corruption. The threshold matches AMPLITUDE_TOL
+    // scaled by qubit count to absorb honest FP drift.
+    let drift_budget = (n as f64).sqrt() * aleph_core::AMPLITUDE_TOL;
+    if (acc - 1.0).abs() > drift_budget {
+        return Err(BackendError::InvalidState {
+            reason: "state norm² deviates from 1 beyond drift budget",
+        });
+    }
+    // Clamp the last CDF entry to 1.0 to absorb the last bit of drift
+    // so `u in [0,1)` always maps to a valid index.
     if let Some(last) = cdf.last_mut() {
         *last = 1.0;
     }

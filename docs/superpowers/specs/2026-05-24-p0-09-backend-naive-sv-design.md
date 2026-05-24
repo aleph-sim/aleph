@@ -163,33 +163,25 @@ pub trait Backend {
 pub fn run<B: Backend>(backend: &mut B, circuit: &Circuit)
     -> Result<B::State, BackendError>;
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, PartialEq)]
 pub enum BackendError {
-    #[error("qubit {qubit} out of range for {num_qubits}-qubit state")]
     QubitOutOfRange { qubit: u32, num_qubits: u32 },
-
-    #[error("duplicate qubit {qubit} in gate or query")]
     DuplicateQubit { qubit: u32 },
-
-    #[error("circuit declares {circuit} qubits but state has {state}")]
-    QubitCountMismatch { circuit: u32, state: u32 },
-
-    #[error("gate `{kind}` is not supported by this backend")]
+    ArityMismatch { kind: &'static str, expected: usize, got: usize },
     UnsupportedGate { kind: &'static str },
-
-    #[error("backend requires concrete parameters; got symbolic")]
+    UnsupportedInstruction { kind: &'static str },
     SymbolicParam,
-
-    #[error("cannot run an empty circuit")]
+    NonFiniteParam { kind: &'static str },
+    NonUnitaryMatrix { deviation: f64 },
     EmptyCircuit,
-
-    #[error("measurement of qubit {qubit} on degenerate branch (p = {probability:e})")]
     DegenerateMeasurement { qubit: u32, probability: f64 },
-
-    #[error("requested {requested} qubits exceeds backend limit of {limit}")]
     TooManyQubits { requested: u32, limit: u32 },
+    InvalidPauliString { reason: &'static str },
+    InvalidState { reason: &'static str },
 }
 ```
+
+(Variant list as of round-2 review; see § 11.1 and § 11.2 for the rationale behind each. `QubitCountMismatch` was removed as unreachable.)
 
 `run` returns `EmptyCircuit` if the circuit has zero instructions AND zero qubits; a 0-instruction non-zero-qubit circuit returns an all-`|0…0⟩` state. (Rationale: `|0…0⟩` is a valid output; only the truly-empty case is an error.)
 
@@ -432,4 +424,37 @@ Records all 10 findings from the `/code-review` pass on the initial implementati
 
 **Dependency hygiene:**
 - Dropped unused `num-complex` and `thiserror` declarations from `aleph-sv/Cargo.toml`.
+
+### 11.2 Second-pass review — NaN containment and defense-in-depth
+
+The first amendment's fixes shipped two regressions and missed several adjacent gaps. Round-2 review surfaced 10 candidates; all are now fixed.
+
+**HIGH — NaN containment regressions in round 1:**
+- `measure_impl`'s `p1.clamp(0.0, 1.0)` propagates NaN unchanged. A state with any NaN amplitude still poisoned the entire vector. Fix: explicit `if !p1.is_finite()` guard returning `BackendError::InvalidState { reason: "non-finite amplitude norm²" }` before the clamp.
+- `unitarity_deviation` tracked the worst element with `if dev > worst` (and then briefly `worst.max(dev)`). Both swallow NaN — `>` because NaN comparisons return false, `f64::max` per IEEE-754-2008 minNum/maxNum. A `Gate::Unitary1q` with NaN entries passed the check at zero deviation. Fix: explicit `if dev.is_nan() { return f64::NAN }` early-return inside `max_dev`.
+
+**MEDIUM — hardening propagation:**
+- `sample_impl` now mirrors `measure_impl`'s defenses: rejects empty state, rejects non-finite per-amp `|a|²`, rejects total norm² outside a √n·`AMPLITUDE_TOL` drift budget.
+- The unitarity check now runs **unconditionally** on every dispatched matrix (`Gate::Unitary1q/2q` *and* intrinsic gates). Cost is constant per gate (≤ 8×8 multiply) and negligible against the kernel itself. Catches pathological cases like `Gate::Rx(1e18)` where argument-reduction precision loss leaves `cos²+sin²` measurably below 1.
+
+**MEDIUM — visibility / API hygiene:**
+- `aleph_sv::kernels::apply_{1,2,3}q` are now `pub(crate)`. They were `pub fn`, which meant external crates could bypass `apply_gate`'s arity/bounds/duplicate guards.
+
+**LOW — doc and test drift:**
+- `run<B>` doc comment now references `BackendError::UnsupportedInstruction` (not the old `UnsupportedGate`) for `Reset` and cross-references `run_with_outcomes`.
+- `aleph_core::Gate::name()` has a pinning test asserting each `(variant, string)` pair so a future rename is a deliberate edit, not a silent drift.
+- `aleph-ir`'s local `gate_variant_name` now delegates to `Gate::name()` instead of duplicating the table.
+- A Tier-1 integration test exercises `run_with_outcomes` end-to-end: parses a Bell-pair-with-measurements circuit, asserts the two `MeasurementRecord`s are in instruction order and that outcomes are perfectly correlated.
+
+**Spec self-consistency:**
+- § 6.2's `BackendError` code block was still listing the removed `QubitCountMismatch` — now updated to match the post-§-11.1 enum surface.
+
+**New error variant introduced this round:**
+- `BackendError::InvalidState { reason: &'static str }` — surfaces upstream state corruption (NaN amplitudes, empty state, norm² off by more than the drift budget) at the measurement / sampling boundary.
+
+**Refuted candidates:** None — all 10 candidates survived verification.
+
+**Deferred (out of scope for P0-09):**
+- `Gate::inverse()` does not validate parameter finiteness; calling `Rx(NaN).inverse()` returns `Rx(NaN)` without error. A future P0-06 amendment can add the check at the IR layer.
+- `BackendError` does not carry `#[non_exhaustive]`. Adding it now would force downstream `match` arms to add `_` catchalls before P0-10's CLI lands. Revisit when the error surface settles.
 

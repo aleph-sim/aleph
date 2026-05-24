@@ -416,33 +416,7 @@ impl Circuit {
 /// Stable string name for each `Gate` variant — used in
 /// `CircuitError::ArityMismatch`.
 fn gate_variant_name(g: &Gate) -> &'static str {
-    match g {
-        Gate::H => "H",
-        Gate::X => "X",
-        Gate::Y => "Y",
-        Gate::Z => "Z",
-        Gate::S => "S",
-        Gate::Sdg => "Sdg",
-        Gate::T => "T",
-        Gate::Tdg => "Tdg",
-        Gate::Rx(_) => "Rx",
-        Gate::Ry(_) => "Ry",
-        Gate::Rz(_) => "Rz",
-        Gate::Phase(_) => "Phase",
-        Gate::U3(_, _, _) => "U3",
-        Gate::Cnot => "Cnot",
-        Gate::Cz => "Cz",
-        Gate::Swap => "Swap",
-        Gate::Iswap => "Iswap",
-        Gate::IswapDg => "IswapDg",
-        Gate::CRx(_) => "CRx",
-        Gate::CRy(_) => "CRy",
-        Gate::CRz(_) => "CRz",
-        Gate::Toffoli => "Toffoli",
-        Gate::Ccz => "Ccz",
-        Gate::Unitary1q(_) => "Unitary1q",
-        Gate::Unitary2q(_) => "Unitary2q",
-    }
+    g.name()
 }
 
 #[cfg(test)]

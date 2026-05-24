@@ -50,6 +50,9 @@ pub enum BackendError {
 
     #[error("Pauli string violates its invariants: {reason}")]
     InvalidPauliString { reason: &'static str },
+
+    #[error("backend state is invalid: {reason}")]
+    InvalidState { reason: &'static str },
 }
 
 use aleph_core::{GateInstance, PauliString};
@@ -96,16 +99,18 @@ pub trait Backend {
 /// Iterates instructions in order, dispatching `Instruction::Gate` to
 /// `Backend::apply_gate`. Non-gate instructions are handled inline:
 ///
-/// * `Measure { qubit, .. }` calls `Backend::measure` (and discards the
-///   outcome — `run` is a state-producing driver, not a sampling one).
-/// * `Reset(q)` is currently rejected as `UnsupportedGate { kind: "reset" }`
-///   because the naive backend deals with mid-circuit reset via
-///   measure-and-conditional-X, which the IR does not yet express
+/// * `Measure { qubit, .. }` calls `Backend::measure` and **discards**
+///   the outcome. Use [`run_with_outcomes`] if you need to keep the
+///   measurement record (e.g. for shot-based oracle comparison).
+/// * `Reset(q)` is rejected as
+///   [`BackendError::UnsupportedInstruction`] `{ kind: "reset" }`
+///   because the naive backend doesn't yet express mid-circuit reset
 ///   declaratively. P0-13+ may revisit.
 /// * `Barrier(_)` is a no-op (semantic-only).
 ///
-/// Returns `EmptyCircuit` only when the circuit declares zero qubits
-/// **and** has zero instructions — the truly-degenerate input.
+/// Returns [`BackendError::EmptyCircuit`] only when the circuit declares
+/// zero qubits **and** has zero instructions — the truly-degenerate
+/// input.
 pub fn run<B: Backend>(backend: &mut B, circuit: &Circuit) -> Result<B::State, BackendError> {
     let (state, _outcomes) = run_with_outcomes(backend, circuit)?;
     Ok(state)
