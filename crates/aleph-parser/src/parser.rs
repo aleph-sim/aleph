@@ -286,17 +286,30 @@ fn stmt(input: Span<'_>) -> IResult<Span<'_>, Stmt> {
 }
 
 fn header(input: Span<'_>) -> IResult<Span<'_>, String> {
+    use nom::combinator::cut;
     let (input, _) = skip_ws(input)?;
     let (input, _) = tag("OPENQASM").parse(input)?;
+    // Past this point any failure should commit (become Failure, not
+    // Error) so `opt(header)` doesn't silently rewind to column 1 and
+    // hide a missing-semicolon diagnostic from the user.
     let (input, _) = skip_ws(input)?;
-    let (input, major) = uint(input)?;
+    let (input, major) = cut(uint).parse(input)?;
+    if major != 3 {
+        // The spec only supports OpenQASM 3.x. Surface a positioned
+        // Failure so the user gets `error at L:C: ...` instead of a
+        // far-downstream syntax error after the wrong-version body.
+        return Err(nom::Err::Failure(nom::error::Error::new(
+            input,
+            nom::error::ErrorKind::Verify,
+        )));
+    }
     let (input, minor) = opt(|i| {
         let (i, _) = ch('.').parse(i)?;
         uint(i)
     })
     .parse(input)?;
     let (input, _) = skip_ws(input)?;
-    let (input, _) = tag(";").parse(input)?;
+    let (input, _) = cut(tag(";")).parse(input)?;
     let version = if let Some(m) = minor {
         format!("{major}.{m}")
     } else {
@@ -306,13 +319,14 @@ fn header(input: Span<'_>) -> IResult<Span<'_>, String> {
 }
 
 fn include_stmt(input: Span<'_>) -> IResult<Span<'_>, Include> {
+    use nom::combinator::cut;
     let (input, _) = skip_ws(input)?;
     let p = pos_of(&input);
     let (input, _) = tag("include").parse(input)?;
     let (input, _) = skip_ws(input)?;
-    let (input, path) = string_literal(input)?;
+    let (input, path) = cut(string_literal).parse(input)?;
     let (input, _) = skip_ws(input)?;
-    let (input, _) = tag(";").parse(input)?;
+    let (input, _) = cut(tag(";")).parse(input)?;
     Ok((
         input,
         Include {

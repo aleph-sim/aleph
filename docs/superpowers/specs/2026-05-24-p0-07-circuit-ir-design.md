@@ -414,3 +414,34 @@ A second `/code-review` pass on the § 12.2 fix-up commit surfaced one new corre
 8. **Stale `layers_properties.proptest-regressions` seed comment removed** — the seed previously pinned the original §6/§12.1 monotonicity bug (fixed in `dc1f34c`/`02380ce`) under the pre-`OpKind` strategy; its comment is now misleading. The file is kept (proptest will write new seeds on demand) but the stale entry is cleared.
 
 **Deferred (documented as `TODO(P0-08)` in code):** the fallible `Circuit::try_new` returning `Result<Self, CircuitError>` for untrusted-input boundaries. The current `Circuit::new` panic on bounds violation is a documented programmer-error contract; the parser in P0-08 is the actual untrusted entry point and will add `try_new` then.
+
+### 12.4 `Circuit::try_new` landed in P0-08 (2026-05-24)
+
+P0-08 closes the `TODO(P0-08)` deferred in § 12.2: a fallible companion to `Circuit::new` is exposed by `aleph-ir` and used by the parser at the untrusted-input boundary.
+
+```rust
+impl Circuit {
+    pub fn try_new(num_qubits: u32, num_clbits: u32) -> Result<Self, CircuitError> {
+        if num_qubits > MAX_QUBITS {
+            return Err(CircuitError::TooManyQubits { requested: num_qubits, max: MAX_QUBITS });
+        }
+        if num_clbits > MAX_CLBITS {
+            return Err(CircuitError::TooManyClbits { requested: num_clbits, max: MAX_CLBITS });
+        }
+        Ok(Self { /* same fields as new */ })
+    }
+}
+```
+
+Two new variants on `CircuitError`:
+
+```rust
+#[error("too many qubits: requested {requested}, max {max}")]
+TooManyQubits { requested: u32, max: u32 },
+#[error("too many clbits: requested {requested}, max {max}")]
+TooManyClbits { requested: u32, max: u32 },
+```
+
+`Circuit::new` keeps the `assert!` and the `TODO(P0-08)` comment is removed. Internal callers that pass hard-coded bounds (tests, examples) continue to use `Circuit::new`; external callers that take bounds from untrusted input (the parser today; future RPC handlers) use `try_new`.
+
+The parser's lowering pass in `crates/aleph-parser/src/lower.rs` calls `try_new(total_qubits, total_clbits)` after summing per-register sizes, and maps the resulting `CircuitError::TooManyQubits` / `TooManyClbits` to `ParseErrorKind::TooManyQubits` / `TooManyClbits` with line/col pointing at the offending declaration. No `Circuit::new` panic path is reachable from `aleph_parser::parse`.

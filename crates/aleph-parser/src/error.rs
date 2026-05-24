@@ -62,6 +62,9 @@ pub enum ParseErrorKind {
     #[error("undeclared register `{name}`")]
     UnknownRegister { name: String },
 
+    #[error("register `{name}` is declared more than once")]
+    DuplicateRegister { name: String },
+
     #[error("index {index} out of bounds for register `{register}` of size {size}")]
     IndexOutOfBounds {
         register: String,
@@ -94,13 +97,18 @@ pub enum ParseErrorKind {
 }
 
 /// Failure during `emit(&Circuit)`.
-#[derive(Debug, Error, PartialEq, Eq)]
+///
+/// `Eq` is not derived because `NonFiniteParam` carries an `f64`.
+#[derive(Debug, Error, PartialEq)]
 pub enum EmitError {
     #[error("gate `{name}` has no OpenQASM 3 standard-subset representation")]
     UnsupportedGate { name: &'static str },
 
     #[error("symbolic parameter cannot be emitted (only Param::Concrete supported)")]
     Symbolic,
+
+    #[error("non-finite parameter ({value}) cannot be emitted as OpenQASM literal")]
+    NonFiniteParam { value: f64 },
 
     #[error("external controls (count = {count}) cannot be emitted in the standard subset")]
     ExternalControls { count: usize },

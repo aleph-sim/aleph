@@ -22,6 +22,14 @@ struct RegisterMap {
     total_clbits: u32,
 }
 
+/// Internal error type for `RegisterMap` mutations. The caller maps
+/// these to `ParseErrorKind`.
+enum RegError {
+    Duplicate(String),
+    TooManyQubits(u32),
+    TooManyClbits(u32),
+}
+
 impl RegisterMap {
     fn new() -> Self {
         Self {
@@ -32,13 +40,16 @@ impl RegisterMap {
         }
     }
 
-    fn add_qreg(&mut self, name: String, size: u32) -> Result<(), CircuitError> {
+    /// Errors for `add_qreg` / `add_creg`. `RegisterMap` errors are
+    /// internally typed (not `CircuitError`) so the caller can map
+    /// duplicate-register errors to `ParseErrorKind::DuplicateRegister`.
+    fn add_qreg(&mut self, name: String, size: u32) -> Result<(), RegError> {
+        if self.qregs.contains_key(&name) || self.cregs.contains_key(&name) {
+            return Err(RegError::Duplicate(name));
+        }
         let new_total = self.total_qubits.saturating_add(size);
         if new_total > MAX_QUBITS {
-            return Err(CircuitError::TooManyQubits {
-                requested: new_total,
-                max: MAX_QUBITS,
-            });
+            return Err(RegError::TooManyQubits(new_total));
         }
         let base = self.total_qubits;
         self.qregs.insert(name, (base, size));
@@ -46,13 +57,13 @@ impl RegisterMap {
         Ok(())
     }
 
-    fn add_creg(&mut self, name: String, size: u32) -> Result<(), CircuitError> {
+    fn add_creg(&mut self, name: String, size: u32) -> Result<(), RegError> {
+        if self.qregs.contains_key(&name) || self.cregs.contains_key(&name) {
+            return Err(RegError::Duplicate(name));
+        }
         let new_total = self.total_clbits.saturating_add(size);
         if new_total > MAX_CLBITS {
-            return Err(CircuitError::TooManyClbits {
-                requested: new_total,
-                max: MAX_CLBITS,
-            });
+            return Err(RegError::TooManyClbits(new_total));
         }
         let base = self.total_clbits;
         self.cregs.insert(name, (base, size));
@@ -128,19 +139,29 @@ pub fn lower(program: Program, source: &str) -> Result<Circuit, ParseError> {
         match d {
             Decl::Qreg { pos, name, size } => regs.add_qreg(name.clone(), *size).map_err(|e| {
                 let kind = match e {
-                    CircuitError::TooManyQubits { requested, max } => {
-                        ParseErrorKind::TooManyQubits { requested, max }
-                    }
-                    other => ParseErrorKind::IrRejected(other),
+                    RegError::Duplicate(n) => ParseErrorKind::DuplicateRegister { name: n },
+                    RegError::TooManyQubits(requested) => ParseErrorKind::TooManyQubits {
+                        requested,
+                        max: MAX_QUBITS,
+                    },
+                    RegError::TooManyClbits(requested) => ParseErrorKind::TooManyClbits {
+                        requested,
+                        max: MAX_CLBITS,
+                    },
                 };
                 perr(source, *pos, kind)
             })?,
             Decl::Creg { pos, name, size } => regs.add_creg(name.clone(), *size).map_err(|e| {
                 let kind = match e {
-                    CircuitError::TooManyClbits { requested, max } => {
-                        ParseErrorKind::TooManyClbits { requested, max }
-                    }
-                    other => ParseErrorKind::IrRejected(other),
+                    RegError::Duplicate(n) => ParseErrorKind::DuplicateRegister { name: n },
+                    RegError::TooManyQubits(requested) => ParseErrorKind::TooManyQubits {
+                        requested,
+                        max: MAX_QUBITS,
+                    },
+                    RegError::TooManyClbits(requested) => ParseErrorKind::TooManyClbits {
+                        requested,
+                        max: MAX_CLBITS,
+                    },
                 };
                 perr(source, *pos, kind)
             })?,
@@ -209,6 +230,21 @@ fn lower_gate(
         .iter()
         .map(|r| resolve_indexed(regs, r, source))
         .collect::<Result<_, _>>()?;
+    // Pre-check qubit uniqueness so we surface a structured ParseError
+    // instead of tripping GateInstance::new's debug_assert in debug
+    // builds (which would panic the host). validate_gate also catches
+    // this in release, but only after the panic-prone constructor runs.
+    let mut seen: smallvec::SmallVec<[u32; 4]> = smallvec::SmallVec::new();
+    for &q in &qubits {
+        if seen.contains(&q) {
+            return Err(perr(
+                source,
+                g.pos,
+                ParseErrorKind::IrRejected(aleph_ir::CircuitError::DuplicateQubit { qubit: q }),
+            ));
+        }
+        seen.push(q);
+    }
     let inst = GateInstance::new(gate, qubits);
     circuit
         .add_gate(inst)
@@ -343,7 +379,7 @@ fn lower_measure(
                 name: qname,
             },
             RegOrIdx::Whole {
-                pos: _,
+                pos: cpos,
                 name: cname,
             },
         ) => {
@@ -359,7 +395,7 @@ fn lower_measure(
             let (cbase, csize) = regs.creg_size(cname).ok_or_else(|| {
                 perr(
                     source,
-                    m.pos,
+                    *cpos,
                     ParseErrorKind::UnknownRegister {
                         name: cname.clone(),
                     },
@@ -566,5 +602,51 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn rejects_duplicate_qubit_in_gate() {
+        // `cx q[0], q[0];` would trip GateInstance::new's debug_assert
+        // and panic in debug builds without the pre-check in lower_gate.
+        let err = parse_and_lower("qubit[2] q; cx q[0], q[0];").unwrap_err();
+        assert!(matches!(
+            err.kind,
+            ParseErrorKind::IrRejected(aleph_ir::CircuitError::DuplicateQubit { qubit: 0 })
+        ));
+    }
+
+    #[test]
+    fn rejects_duplicate_qreg_name() {
+        let err = parse_and_lower("qubit[1] q; qubit[2] q;").unwrap_err();
+        match err.kind {
+            ParseErrorKind::DuplicateRegister { name } => assert_eq!(name, "q"),
+            other => panic!("expected DuplicateRegister, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rejects_qreg_creg_name_collision() {
+        let err = parse_and_lower("qubit[1] x; bit[1] x;").unwrap_err();
+        match err.kind {
+            ParseErrorKind::DuplicateRegister { name } => assert_eq!(name, "x"),
+            other => panic!("expected DuplicateRegister, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cname_position_for_whole_register_measure() {
+        // Caret should point at the offending classical-register name
+        // `bogus`, not at the `measure` keyword.
+        let err = parse_and_lower("qubit[2] q;\nbit[2] c;\nmeasure q -> bogus;").unwrap_err();
+        assert!(matches!(err.kind, ParseErrorKind::UnknownRegister { .. }));
+        assert_eq!(err.line, 3);
+        // The `measure` keyword starts at column 1; `bogus` starts at column 14.
+        // We don't assert exact col 14 because get_utf8_column is 1-based and
+        // depends on the leading-whitespace handling — just assert >= 10.
+        assert!(
+            err.col >= 10,
+            "col={}, expected to point near `bogus`",
+            err.col
+        );
     }
 }

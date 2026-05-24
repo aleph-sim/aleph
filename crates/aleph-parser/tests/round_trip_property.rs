@@ -147,6 +147,9 @@ proptest! {
         prop_assert_eq!(c.len(), c2.len(), "instruction count mismatch");
         prop_assert_eq!(c.num_qubits(), c2.num_qubits());
         prop_assert_eq!(c.num_clbits(), c2.num_clbits());
+        // Spec § 10 invariant: `generated_from` is set by the parser
+        // to "openqasm:3.0" on every successfully-parsed circuit.
+        prop_assert_eq!(c2.metadata().generated_from.as_deref(), Some("openqasm:3.0"));
         for (i, (a, b)) in c.instructions().iter().zip(c2.instructions().iter()).enumerate() {
             prop_assert_eq!(format!("{a:?}"), format!("{b:?}"), "instr {} differs", i);
         }

@@ -395,3 +395,54 @@ None. Decisions during brainstorming were:
 - Emit pretty-printed, one instruction per line. (Q10)
 
 If implementation surfaces a new decision, the spec gets a § 17 amendment before code lands (same pattern as P0-06/P0-07).
+
+## 17. Amendments
+
+### 17.1 Post-implementation code-review fixes (2026-05-24)
+
+A `/code-review` pass on the freshly-implemented branch surfaced four real correctness bugs, three UX gaps, and three polish items. All addressed.
+
+**Correctness:**
+
+1. **Pre-check qubit uniqueness in `lower_gate`.** `cx q[0], q[0];` would otherwise trigger `GateInstance::new`'s `debug_assert` and panic any debug-build host. Now produces `ParseErrorKind::IrRejected(CircuitError::DuplicateQubit { qubit: q })` with the gate statement's source position. Release builds were already protected by `validate_gate`'s uniqueness check from P0-07 § 12.2; this fix unifies the contract between debug and release.
+
+2. **Reject duplicate register declarations.** `RegisterMap::add_qreg` and `add_creg` previously used `HashMap::insert` which silently overwrote duplicates while still advancing `total_qubits`/`total_clbits`. New `RegError` enum and `ParseErrorKind::DuplicateRegister { name }` variant; the check also detects qreg/creg name collisions (`qubit[1] x; bit[1] x;`).
+
+3. **Reject non-finite `Param::Concrete` in `emit`.** `Circuit::add_gate` does not enforce finiteness on f64 params, but the emitter writes `inf`/`NaN` strings the parser cannot re-ingest. New `EmitError::NonFiniteParam { value: f64 }` (and `EmitError` drops the `Eq` derive because f64 has no total equality). `extract_concrete` checks `is_finite` before emitting.
+
+4. **Header missing-`;` no longer reports column 1.** `opt(header)` previously swallowed half-matched header parses, leaving the body parser to fail at offset 0 with a meaningless `error at 1:1: found OPENQASM 3.0`. The header parser now commits via `nom::combinator::cut` after `tag("OPENQASM")` and after the major version, so a missing `;` becomes a positioned `Failure` at the correct line/column. The same fix is applied to `include` after `tag("include")`.
+
+**UX gaps:**
+
+5. **Interleaved register declarations get a clear error.** Source like `qubit[1] q; h q[0]; qubit[1] aux;` previously reported `unexpected token: expected end of input, found 'qubit[1] aux;'`. Now: the trailing-input check in `parse()` inspects the first non-whitespace token and emits `ParseErrorKind::UnsupportedFeature { feature: "register declaration after gate statement" }`. (True interleaving support would require an `items: Vec<Item>` AST refactor and is deferred.)
+
+6. **Common out-of-scope keywords map to `UnsupportedFeature`.** Spec § 2.2 promises that callers writing `if(c==0) x q[0];`, `gphase(...)`, `gate foo a, b { ... }`, `def`, `box`, `delay`, `U(...)` get a clear "intentional, not a bug" message. A best-effort heuristic in `nom_error_to_parse_error` (and the trailing-junk branch) inspects the failure-column source slice and matches a fixed list of keywords. This is heuristic — the parser doesn't structurally recognise these constructs — but covers the common typed-at-a-statement-position cases. Register-broadcast (`cx q, b;`) detection is not yet implemented: the parser fails at `indexed_ref` looking for `[` and produces a generic syntax error.
+
+7. **Header rejects non-3 major versions.** `OPENQASM 2.0;` previously parsed cleanly and failed downstream at the declaration phase. The header now validates `major == 3` and returns a positioned `Failure` otherwise.
+
+**Polish:**
+
+8. **`lower_measure` whole-register branch captures `cpos`.** When `regs.creg_size(cname)` returns `None`, the error now points at the offending clbit-register name instead of the `measure` keyword.
+
+9. **P0-07 spec § 12.4 amendment added** to record that `Circuit::try_new` landed alongside the parser (closes the `TODO(P0-08)` from P0-07 § 12.2).
+
+10. **Proptest now asserts `metadata.generated_from`.** Spec § 10 lists this as a preserved round-trip invariant; the property test was missing the assertion.
+
+**New unit tests** (in `crates/aleph-parser/src/lower.rs::tests` and `src/lib.rs::tests`):
+
+- `rejects_duplicate_qubit_in_gate`
+- `rejects_duplicate_qreg_name`
+- `rejects_qreg_creg_name_collision`
+- `cname_position_for_whole_register_measure`
+- `rejects_nan_param`, `rejects_inf_param` (in `emit.rs::tests`)
+- `header_missing_semicolon_points_at_header`
+- `rejects_openqasm_v2_with_clear_message`
+- `detects_interleaved_register_decl`
+- `detects_unsupported_if_keyword`
+- `detects_unsupported_gate_definition`
+
+**Refuted candidates** (kept for the record, not fixed):
+
+- Division by zero surfaces as `UnexpectedToken { expected: "numeric literal" }` instead of `BadExpression("division by zero")`. The spec § 9 promises the latter; the implementation acknowledges this as a known minor relaxation. Plumbing the inner string through nom's standard error type requires either a custom `ParseError<I>` type or a side-channel. Not worth the additional 50–80 LOC of glue for a rare error path; the position information is preserved.
+- True interleaved decl/stmt ordering (per OpenQASM 3 spec) requires an `items: Vec<Item>` AST refactor and re-ordering the lowering pass. Deferred — Qiskit-emitted code always places decls before statements.
+- Register-broadcast (`cx q, b;`) UnsupportedFeature detection: the parser correctly rejects but with a generic error. Heuristic sniffing would require post-hoc inspection of the surrounding source, which is fragile. Deferred.

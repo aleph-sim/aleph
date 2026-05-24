@@ -115,7 +115,8 @@ fn emit_gate(out: &mut String, g: &GateInstance) -> Result<(), EmitError> {
 
 fn extract_concrete(p: &Param) -> Result<f64, EmitError> {
     match p {
-        Param::Concrete(x) => Ok(*x),
+        Param::Concrete(x) if x.is_finite() => Ok(*x),
+        Param::Concrete(x) => Err(EmitError::NonFiniteParam { value: *x }),
         Param::Symbolic(_) => Err(EmitError::Symbolic),
     }
 }
@@ -152,6 +153,34 @@ mod tests {
         // No `bit[N] c;` line for zero clbits. The `qubit[1] q;` line
         // contains a substring "bit[" but is on a different line.
         assert!(!out.lines().any(|l| l.starts_with("bit[")));
+    }
+
+    #[test]
+    fn rejects_nan_param() {
+        use aleph_core::{Gate, GateInstance, Param};
+        use smallvec::smallvec;
+        let mut c = aleph_ir::Circuit::new(1, 0);
+        c.add_gate(GateInstance::new(
+            Gate::Rx(Param::Concrete(f64::NAN)),
+            smallvec![0u32],
+        ))
+        .unwrap();
+        let err = emit(&c).unwrap_err();
+        assert!(matches!(err, EmitError::NonFiniteParam { value } if value.is_nan()));
+    }
+
+    #[test]
+    fn rejects_inf_param() {
+        use aleph_core::{Gate, GateInstance, Param};
+        use smallvec::smallvec;
+        let mut c = aleph_ir::Circuit::new(1, 0);
+        c.add_gate(GateInstance::new(
+            Gate::Rx(Param::Concrete(f64::INFINITY)),
+            smallvec![0u32],
+        ))
+        .unwrap();
+        let err = emit(&c).unwrap_err();
+        assert!(matches!(err, EmitError::NonFiniteParam { value } if value.is_infinite()));
     }
 
     #[test]
