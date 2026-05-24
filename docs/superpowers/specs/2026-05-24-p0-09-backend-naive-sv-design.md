@@ -395,4 +395,41 @@ None at the time of writing. Likely amendments (record in § 11 if they happen):
 
 ## 11. Amendments
 
-*(none yet — added as drift surfaces during implementation or review)*
+### 11.1 Code-review pass — error-model and validation hardening
+
+Records all 10 findings from the `/code-review` pass on the initial implementation. Every one was CONFIRMED or PLAUSIBLE; all are now fixed on the branch.
+
+**Error enum changes:**
+- **Added** `BackendError::ArityMismatch { kind, expected, got }` — apply_gate now validates `gate.qubits.len() == gate.gate.arity()` before kernel dispatch (was an index-out-of-bounds panic).
+- **Added** `BackendError::NonFiniteParam { kind: &'static str }` — `Gate::matrix()` returns both `GateError::SymbolicParam` and `GateError::NonFiniteParam`; the dispatch now routes them to distinct `BackendError` variants instead of collapsing both into `SymbolicParam`.
+- **Added** `BackendError::UnsupportedInstruction { kind }` — distinguishes a non-Gate IR instruction (`Reset`) from a non-supported gate. `run<B>` now uses this for `Reset` instead of misnaming it `UnsupportedGate`.
+- **Added** `BackendError::NonUnitaryMatrix { deviation }` — `apply_gate` now rejects user-supplied `Gate::Unitary1q` / `Gate::Unitary2q` matrices whose `‖U·U† − I‖_max > AMPLITUDE_TOL`. Intrinsic gates skip the check (unitary by construction).
+- **Added** `BackendError::InvalidPauliString { reason }` — surfaces invariant violations in callers that bypass `PauliString::new` via the public fields.
+- **Removed** `BackendError::QubitCountMismatch` — unreachable through the current API (run always passes `circuit.num_qubits()` to `allocate`). Re-add when a future API exposes pre-allocated state to user-driven `apply_gate`.
+
+**Validation hardening:**
+- `expectation_value_impl` now revalidates `PauliString` invariants (finite coefficient, sorted/dedup terms, in-range qubits) at kernel entry. The `pub` fields made `::new`'s checks bypassable; trusting the invariants produced silently-wrong values for duplicate-qubit terms.
+- `apply_gate` validates arity, qubit range, qubit duplication, parameter finiteness, and (for user matrices) unitarity — in that order.
+
+**Measurement correctness and reproducibility:**
+- `measure_impl` clamps `p1` to `[0, 1]` after the FP sum to absorb drift; without this, `1.0 − p1` could be slightly negative and `p.sqrt()` would return NaN, silently poisoning the state. The threshold check (`p < 1e-300`) is now applied to both branches before consuming RNG state: degenerate cases either error out (both branches tiny) or are decided deterministically (one branch tiny → outcome forced). RNG is only consumed when the choice is genuinely random, preserving `with_seed` reproducibility on highly polarized states and error paths.
+
+**New driver:**
+- `run_with_outcomes<B>(backend, circuit) -> (B::State, Vec<MeasurementRecord>)` returns the per-Measure-instruction `(instruction_index, qubit, clbit, outcome)`. `run<B>` is now a thin wrapper that discards outcomes. P0-10 oracle comparison against shot-based Qiskit Aer references needs the recorded outcomes.
+
+**Test coverage:**
+- Reversibility property tests added for `Ry`, `Rz`, `S·Sdg`, `T·Tdg`, `Iswap·IswapDg`, plus involution tests for `X²`, `Y²`, `Z²`, `Swap²`. Previously only `Rx` had a generic adjoint-reversibility proptest.
+- Regression tests added for every new `BackendError` variant.
+
+**Refuted candidates:** None — all 10 candidates survived verification.
+
+**Deferred:**
+- The QFT-3 integration test still checks only magnitudes (`|a|² = 1/8`), not phase relations. Phase-sensitive QFT correctness will be covered by P0-10's Qiskit oracle harness.
+- `Gate::Unitary1q/2q` unitarity check happens at *apply* time, not *construction* time. P0-06 documented "no unitarity check at construction"; adding one to the constructor would be a P0-06 amendment, out of scope here.
+
+**API additions** (also recorded in `aleph_core`):
+- `Gate::name(&self) -> &'static str` — stable variant-name strings used by `BackendError::{ArityMismatch, NonFiniteParam, UnsupportedGate}` messages.
+
+**Dependency hygiene:**
+- Dropped unused `num-complex` and `thiserror` declarations from `aleph-sv/Cargo.toml`.
+
