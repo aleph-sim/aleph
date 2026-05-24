@@ -58,10 +58,44 @@ impl Backend for NaiveSvBackend {
 
     fn apply_gate(
         &mut self,
-        _state: &mut Self::State,
-        _gate: &GateInstance,
+        state: &mut Self::State,
+        gate: &GateInstance,
     ) -> Result<(), BackendError> {
-        unimplemented!("apply_gate lands in P0-09 Task 11")
+        let n = state.num_qubits;
+        // Bounds + duplicate checks across qubits ∪ controls.
+        let mut seen: smallvec::SmallVec<[u32; 6]> = smallvec::SmallVec::new();
+        for &q in gate.qubits.iter().chain(gate.controls.iter()) {
+            if q >= n {
+                return Err(BackendError::QubitOutOfRange {
+                    qubit: q,
+                    num_qubits: n,
+                });
+            }
+            if seen.contains(&q) {
+                return Err(BackendError::DuplicateQubit { qubit: q });
+            }
+            seen.push(q);
+        }
+        // Materialise the matrix; map symbolic-param errors to BackendError.
+        let matrix = gate
+            .gate
+            .matrix()
+            .map_err(|_| BackendError::SymbolicParam)?;
+        match matrix {
+            aleph_core::GateMatrix::M2x2(m) => {
+                let t = gate.qubits[0];
+                crate::kernels::apply_1q(&mut state.amps, t, &gate.controls, &m);
+            }
+            aleph_core::GateMatrix::M4x4(m) => {
+                let t = [gate.qubits[0], gate.qubits[1]];
+                crate::kernels::apply_2q(&mut state.amps, t, &gate.controls, &m);
+            }
+            aleph_core::GateMatrix::M8x8(m) => {
+                let t = [gate.qubits[0], gate.qubits[1], gate.qubits[2]];
+                crate::kernels::apply_3q(&mut state.amps, t, &gate.controls, &m);
+            }
+        }
+        Ok(())
     }
 
     fn measure(&mut self, _state: &mut Self::State, _qubit: u32) -> Result<bool, BackendError> {
@@ -123,5 +157,96 @@ mod tests {
         let mut b = NaiveSvBackend::with_seed(0);
         let s = b.allocate(0).unwrap();
         assert_eq!(s.amplitudes(), &[Complex::new(1.0, 0.0)]);
+    }
+
+    use aleph_core::Gate;
+    use smallvec::smallvec;
+
+    #[test]
+    fn apply_gate_x_on_q0() {
+        let mut b = NaiveSvBackend::with_seed(0);
+        let mut s = b.allocate(1).unwrap();
+        let gate = GateInstance::new(Gate::X, smallvec![0u32]);
+        b.apply_gate(&mut s, &gate).unwrap();
+        assert_eq!(s.amplitudes()[0], Complex::new(0.0, 0.0));
+        assert_eq!(s.amplitudes()[1], Complex::new(1.0, 0.0));
+    }
+
+    #[test]
+    fn apply_gate_cnot_creates_bell() {
+        let mut b = NaiveSvBackend::with_seed(0);
+        let mut s = b.allocate(2).unwrap();
+        // H on q0, then CX(q0 → q1).
+        b.apply_gate(&mut s, &GateInstance::new(Gate::H, smallvec![0u32]))
+            .unwrap();
+        b.apply_gate(
+            &mut s,
+            &GateInstance::new(Gate::Cnot, smallvec![0u32, 1u32]),
+        )
+        .unwrap();
+        let inv_s2 = std::f64::consts::FRAC_1_SQRT_2;
+        let a = s.amplitudes();
+        assert!((a[0].re - inv_s2).abs() < 1e-12);
+        assert!((a[3].re - inv_s2).abs() < 1e-12);
+        assert!(a[1].norm_sqr() < 1e-24);
+        assert!(a[2].norm_sqr() < 1e-24);
+    }
+
+    #[test]
+    fn apply_gate_external_control_matches_intrinsic_cnot() {
+        // Path A: intrinsic CX.
+        let mut b1 = NaiveSvBackend::with_seed(0);
+        let mut s1 = b1.allocate(2).unwrap();
+        b1.apply_gate(&mut s1, &GateInstance::new(Gate::H, smallvec![0u32]))
+            .unwrap();
+        b1.apply_gate(
+            &mut s1,
+            &GateInstance::new(Gate::Cnot, smallvec![0u32, 1u32]),
+        )
+        .unwrap();
+        // Path B: X on q1 with external control = q0.
+        let mut b2 = NaiveSvBackend::with_seed(0);
+        let mut s2 = b2.allocate(2).unwrap();
+        b2.apply_gate(&mut s2, &GateInstance::new(Gate::H, smallvec![0u32]))
+            .unwrap();
+        b2.apply_gate(
+            &mut s2,
+            &GateInstance::controlled(Gate::X, smallvec![1u32], smallvec![0u32]),
+        )
+        .unwrap();
+        for (a, b) in s1.amplitudes().iter().zip(s2.amplitudes().iter()) {
+            assert!((a - b).norm() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn apply_gate_out_of_range() {
+        let mut b = NaiveSvBackend::with_seed(0);
+        let mut s = b.allocate(1).unwrap();
+        let gate = GateInstance::new(Gate::X, smallvec![5u32]);
+        let err = b.apply_gate(&mut s, &gate).unwrap_err();
+        assert_eq!(
+            err,
+            BackendError::QubitOutOfRange {
+                qubit: 5,
+                num_qubits: 1,
+            }
+        );
+    }
+
+    #[test]
+    fn apply_gate_duplicate_qubit_via_controls() {
+        // `GateInstance::controlled` panics on duplicate qubits in debug
+        // builds, so build the bad instance directly via the public
+        // fields to exercise the backend's release-build safety net.
+        let mut b = NaiveSvBackend::with_seed(0);
+        let mut s = b.allocate(2).unwrap();
+        let gate = GateInstance {
+            gate: Gate::X,
+            qubits: smallvec![0u32],
+            controls: smallvec![0u32],
+        };
+        let err = b.apply_gate(&mut s, &gate).unwrap_err();
+        assert_eq!(err, BackendError::DuplicateQubit { qubit: 0 });
     }
 }
