@@ -104,51 +104,91 @@ impl Gate {
     /// `Param::Symbolic`. In Phase 0 this branch is unreachable through
     /// the public API.
     pub fn matrix(&self) -> Result<crate::gate::GateMatrix, crate::gate::GateError> {
-        use crate::gate::GateMatrix;
+        use crate::gate::{GateError, GateMatrix};
         use std::f64::consts::{FRAC_1_SQRT_2, FRAC_PI_4};
+
+        fn concrete(p: Param) -> Result<f64, GateError> {
+            match p {
+                Param::Concrete(v) => Ok(v),
+                Param::Symbolic(_) => Err(GateError::SymbolicParam),
+            }
+        }
 
         let zero = Complex::new(0.0, 0.0);
         let one = Complex::new(1.0, 0.0);
 
-        Ok(match self {
+        match self {
             Gate::H => {
                 let s = Complex::new(FRAC_1_SQRT_2, 0.0);
-                GateMatrix::M2x2([[s, s], [s, -s]])
+                Ok(GateMatrix::M2x2([[s, s], [s, -s]]))
             }
-            Gate::X => GateMatrix::M2x2([[zero, one], [one, zero]]),
-            Gate::Y => {
-                let pi = Complex::new(0.0, 1.0);
-                let ni = Complex::new(0.0, -1.0);
-                GateMatrix::M2x2([[zero, ni], [pi, zero]])
+            Gate::X => Ok(GateMatrix::M2x2([[zero, one], [one, zero]])),
+            Gate::Y => Ok(GateMatrix::M2x2([
+                [zero, Complex::new(0.0, -1.0)],
+                [Complex::new(0.0, 1.0), zero],
+            ])),
+            Gate::Z => Ok(GateMatrix::M2x2([[one, zero], [zero, -one]])),
+            Gate::S => Ok(GateMatrix::M2x2([
+                [one, zero],
+                [zero, Complex::new(0.0, 1.0)],
+            ])),
+            Gate::Sdg => Ok(GateMatrix::M2x2([
+                [one, zero],
+                [zero, Complex::new(0.0, -1.0)],
+            ])),
+            Gate::T => Ok(GateMatrix::M2x2([
+                [one, zero],
+                [zero, Complex::new(FRAC_PI_4.cos(), FRAC_PI_4.sin())],
+            ])),
+            Gate::Tdg => Ok(GateMatrix::M2x2([
+                [one, zero],
+                [zero, Complex::new(FRAC_PI_4.cos(), -FRAC_PI_4.sin())],
+            ])),
+
+            Gate::Rx(p) => {
+                let t = concrete(*p)?;
+                let c = Complex::new((t / 2.0).cos(), 0.0);
+                let nis = Complex::new(0.0, -(t / 2.0).sin());
+                Ok(GateMatrix::M2x2([[c, nis], [nis, c]]))
             }
-            Gate::Z => GateMatrix::M2x2([[one, zero], [zero, -one]]),
-            Gate::S => {
-                let i = Complex::new(0.0, 1.0);
-                GateMatrix::M2x2([[one, zero], [zero, i]])
+            Gate::Ry(p) => {
+                let t = concrete(*p)?;
+                let c = Complex::new((t / 2.0).cos(), 0.0);
+                let s = Complex::new((t / 2.0).sin(), 0.0);
+                Ok(GateMatrix::M2x2([[c, -s], [s, c]]))
             }
-            Gate::Sdg => {
-                let ni = Complex::new(0.0, -1.0);
-                GateMatrix::M2x2([[one, zero], [zero, ni]])
+            Gate::Rz(p) => {
+                let t = concrete(*p)?;
+                let neg = Complex::new((t / 2.0).cos(), -(t / 2.0).sin());
+                let pos = Complex::new((t / 2.0).cos(), (t / 2.0).sin());
+                Ok(GateMatrix::M2x2([[neg, zero], [zero, pos]]))
             }
-            Gate::T => {
-                let p = Complex::new(FRAC_PI_4.cos(), FRAC_PI_4.sin());
-                GateMatrix::M2x2([[one, zero], [zero, p]])
+            Gate::Phase(p) => {
+                let t = concrete(*p)?;
+                let e = Complex::new(t.cos(), t.sin());
+                Ok(GateMatrix::M2x2([[one, zero], [zero, e]]))
             }
-            Gate::Tdg => {
-                let p = Complex::new(FRAC_PI_4.cos(), -FRAC_PI_4.sin());
-                GateMatrix::M2x2([[one, zero], [zero, p]])
+            Gate::U3(theta, phi, lambda) => {
+                let t = concrete(*theta)?;
+                let f = concrete(*phi)?;
+                let l = concrete(*lambda)?;
+                let c = Complex::new((t / 2.0).cos(), 0.0);
+                let s = Complex::new((t / 2.0).sin(), 0.0);
+                let e_l = Complex::new(l.cos(), l.sin());
+                let e_f = Complex::new(f.cos(), f.sin());
+                let e_fl = Complex::new((f + l).cos(), (f + l).sin());
+                Ok(GateMatrix::M2x2([[c, -e_l * s], [e_f * s, e_fl * c]]))
             }
 
-            // Remaining variants get implemented in subsequent tasks.
             _ => unimplemented!("matrix() arm for {self:?} not yet wired up"),
-        })
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{AMPLITUDE_TOL, gate::GateMatrix};
+    use crate::{AMPLITUDE_TOL, gate::{GateError, GateMatrix}};
     use std::f64::consts::FRAC_1_SQRT_2;
 
     fn cc(re: f64, im: f64) -> Complex {
@@ -276,5 +316,61 @@ mod tests {
         ];
         approx_eq_m2(&unwrap_m2(&Gate::T), &t_expected);
         approx_eq_m2(&unwrap_m2(&Gate::Tdg), &tdg_expected);
+    }
+
+    #[test]
+    fn matrix_rx_zero_is_identity() {
+        let m = unwrap_m2(&Gate::Rx(Param::Concrete(0.0)));
+        let expected = [[cc(1.0, 0.0), cc(0.0, 0.0)], [cc(0.0, 0.0), cc(1.0, 0.0)]];
+        approx_eq_m2(&m, &expected);
+    }
+
+    #[test]
+    fn matrix_rx_pi_is_minus_i_x() {
+        // Rx(π) = [[0, -i], [-i, 0]]
+        let m = unwrap_m2(&Gate::Rx(Param::Concrete(std::f64::consts::PI)));
+        let expected = [[cc(0.0, 0.0), cc(0.0, -1.0)], [cc(0.0, -1.0), cc(0.0, 0.0)]];
+        approx_eq_m2(&m, &expected);
+    }
+
+    #[test]
+    fn matrix_ry_half_pi() {
+        // Ry(π/2) = (1/√2) [[1, -1], [1, 1]]
+        let s = FRAC_1_SQRT_2;
+        let m = unwrap_m2(&Gate::Ry(Param::Concrete(std::f64::consts::FRAC_PI_2)));
+        let expected = [[cc(s, 0.0), cc(-s, 0.0)], [cc(s, 0.0), cc(s, 0.0)]];
+        approx_eq_m2(&m, &expected);
+    }
+
+    #[test]
+    fn matrix_rz_pi_is_iz_minus_phase() {
+        // Rz(π) = diag(e^(-iπ/2), e^(iπ/2)) = diag(-i, i)
+        let m = unwrap_m2(&Gate::Rz(Param::Concrete(std::f64::consts::PI)));
+        let expected = [[cc(0.0, -1.0), cc(0.0, 0.0)], [cc(0.0, 0.0), cc(0.0, 1.0)]];
+        approx_eq_m2(&m, &expected);
+    }
+
+    #[test]
+    fn matrix_phase_pi_is_z() {
+        let m = unwrap_m2(&Gate::Phase(Param::Concrete(std::f64::consts::PI)));
+        let expected = [[cc(1.0, 0.0), cc(0.0, 0.0)], [cc(0.0, 0.0), cc(-1.0, 0.0)]];
+        approx_eq_m2(&m, &expected);
+    }
+
+    #[test]
+    fn matrix_u3_zero_is_identity() {
+        let m = unwrap_m2(&Gate::U3(
+            Param::Concrete(0.0),
+            Param::Concrete(0.0),
+            Param::Concrete(0.0),
+        ));
+        let expected = [[cc(1.0, 0.0), cc(0.0, 0.0)], [cc(0.0, 0.0), cc(1.0, 0.0)]];
+        approx_eq_m2(&m, &expected);
+    }
+
+    #[test]
+    fn matrix_symbolic_param_errors() {
+        let g = Gate::Rx(Param::Symbolic(crate::gate::SymbolId(0)));
+        assert_eq!(g.matrix(), Err(GateError::SymbolicParam));
     }
 }
