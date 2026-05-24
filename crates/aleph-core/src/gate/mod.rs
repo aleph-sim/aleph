@@ -230,5 +230,44 @@ mod prop_tests {
                 prop_assert_eq!(g.inverse(), expected);
             }
         }
+
+        // --- Coverage for the Unitary*.inverse() paths (conj_transpose_2/4) ---
+        //
+        // We need actual unitary matrices to exercise inverse round-trip;
+        // a random complex matrix isn't unitary. Strategy: build U from
+        // a 1-parameter family that is provably unitary
+        // (U = cos(t)·I + i·sin(t)·H, where H is a Hermitian — here Pauli-X
+        // for the 1q case and X⊗X for the 2q case). The matrix isn't a
+        // standard named variant, so it exercises the Unitary* arm.
+        #[test]
+        fn unitary1q_inverse_round_trip(t in arb_angle()) {
+            let c = Complex::new(t.cos(), 0.0);
+            let is = Complex::new(0.0, t.sin());
+            // cos(t)·I + i·sin(t)·X = [[cos, i·sin], [i·sin, cos]] — unitary.
+            let m = [[c, is], [is, c]];
+            let g = Gate::Unitary1q(Box::new(m));
+            let fwd = g.matrix().unwrap();
+            let inv = g.inverse().matrix().unwrap();
+            mul_gm_inv(&fwd, &inv);
+        }
+
+        #[test]
+        fn unitary2q_inverse_round_trip(t in arb_angle()) {
+            let c = Complex::new(t.cos(), 0.0);
+            let is = Complex::new(0.0, t.sin());
+            let z = Complex::new(0.0, 0.0);
+            // cos(t)·I + i·sin(t)·(X⊗X) — unitary 4x4.
+            // X⊗X has 1s on the anti-diagonal.
+            let m = [
+                [c, z, z, is],
+                [z, c, is, z],
+                [z, is, c, z],
+                [is, z, z, c],
+            ];
+            let g = Gate::Unitary2q(Box::new(m));
+            let fwd = g.matrix().unwrap();
+            let inv = g.inverse().matrix().unwrap();
+            mul_gm_inv(&fwd, &inv);
+        }
     }
 }
