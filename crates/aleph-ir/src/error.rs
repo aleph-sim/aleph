@@ -30,4 +30,15 @@ pub enum CircuitError {
     /// silently be a no-op for layer extraction. Reject at construction.
     #[error("barrier must cover at least one qubit")]
     EmptyBarrier,
+
+    /// A `GateInstance` was constructed with more external controls than
+    /// the IR is willing to validate in O(N²) uniqueness-check time.
+    /// Bounded by [`crate::MAX_GATE_CONTROLS`]; existing Phase-0 gate
+    /// shapes use at most 2 controls.
+    #[error("gate {gate} has {controls} external controls but max is {max}")]
+    TooManyControls {
+        gate: &'static str,
+        controls: usize,
+        max: usize,
+    },
 }

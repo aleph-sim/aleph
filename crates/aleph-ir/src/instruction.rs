@@ -18,6 +18,9 @@ pub enum Instruction {
     Reset(u32),
     /// Barrier forbidding optimization passes from crossing this point
     /// for the listed qubits. Inline 8 — larger barriers spill to heap.
+    ///
+    /// Must cover at least one qubit; `Circuit::add_instruction` rejects
+    /// `Barrier(empty)` with [`crate::CircuitError::EmptyBarrier`].
     Barrier(SmallVec<[u32; 8]>),
 }
 

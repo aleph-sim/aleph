@@ -60,14 +60,14 @@ Sub-decisions resolved during design presentation:
 ```rust
 #[derive(Debug, Clone)]
 pub struct Circuit {
-    pub num_qubits: u32,
-    pub num_clbits: u32,
-    instructions: Vec<Instruction>,
+    pub(crate) num_qubits: u32,
+    pub(crate) num_clbits: u32,
+    pub(crate) instructions: Vec<Instruction>,
     metadata: CircuitMetadata,
 }
 ```
 
-`instructions` is **private** so a future refactor to a DAG-style representation (Phase 1+ optimization passes) doesn't break public callers. Access is via `instructions()` (slice) and `layers()` (groups).
+All non-metadata fields are **private**. Access is via `num_qubits()`/`num_clbits()` (getters), `instructions()` (slice), and `layers()` (groups). The field-private design future-proofs a DAG-style refactor (Phase 1+ optimization passes) and prevents the API-misuse panic that would arise from mutating `num_qubits` downward after construction (see § 12.2.3).
 
 ### 4.2 `Instruction`
 
@@ -104,7 +104,7 @@ Kept tiny on purpose. New metadata fields are added as use cases arrive (e.g. P0
 ### 4.4 `CircuitError`
 
 ```rust
-#[derive(Debug, thiserror::Error, PartialEq)]
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum CircuitError {
     #[error("qubit {qubit} out of range (circuit has {num_qubits} qubits)")]
     QubitOutOfRange { qubit: u32, num_qubits: u32 },
@@ -114,10 +114,14 @@ pub enum CircuitError {
     DuplicateQubit { qubit: u32 },
     #[error("gate {gate} has arity {expected} but {got} qubits supplied")]
     ArityMismatch { gate: &'static str, expected: usize, got: usize },
+    #[error("barrier must cover at least one qubit")]
+    EmptyBarrier,
+    #[error("gate {gate} has {controls} external controls but max is {max}")]
+    TooManyControls { gate: &'static str, controls: usize, max: usize },
 }
 ```
 
-`gate: &'static str` (not `Gate`) so the error stays `Clone + Copy`-friendly and the variant name appears in `Display` output without `Debug`-formatting the entire payload.
+`gate: &'static str` (not `Gate`) so the error stays `Clone + Copy`-friendly and the variant name appears in `Display` output without `Debug`-formatting the entire payload. `EmptyBarrier` and `TooManyControls` were added in § 12.2/§ 12.3 — see those amendments for rationale.
 
 ## 5. Public API
 
@@ -390,3 +394,23 @@ A multi-angle code review on the freshly-implemented branch surfaced four real c
 - "`commute_on_qubit`'s `_ => false` catch-all silently widens on future `Instruction` variants" — by design; new variants get added with intent, and the default-conservative behavior is the right starting point for an unknown variant.
 - "`pub(crate)` on `instructions` allows internal bypass of validation" — load-bearing for the in-crate inspection tests; any in-crate optimization pass that needs to splice instructions is expected to call `add_gate`/`add_instruction` and would be reviewed.
 - "Spec/code drift in §12.1 monotonicity not flagged in algorithm doc-comment" — actually documented inline in `layers.rs`; see the `prev_assigned_layer` block comment.
+
+### 12.3 Second-round review polish (2026-05-24)
+
+A second `/code-review` pass on the § 12.2 fix-up commit surfaced one new correctness gap and six polish items. All fixed in the same branch.
+
+**Correctness:**
+
+1. **`validate_gate` bounds `gate.controls.len()` against [`MAX_GATE_CONTROLS`].** New `MAX_GATE_CONTROLS = 8` constant + new error variant `CircuitError::TooManyControls`. `GateInstance` has `pub` fields (`qubits`, `controls`), so a caller can construct an instance with an arbitrarily-large `controls` `SmallVec` directly via struct-literal syntax. The previous round added uniqueness-checking across `qubits ∪ controls` but used an O(N²) linear-scan `seen.contains(&q)`; an adversarial `controls.len() == 1_000_000` would hang the IR for minutes. Phase-0 gates use 0–2 controls (`aleph-core::GateInstance::controlled` inline buffer is `[u32; 2]`); a bound of 8 is generous. Tests: `add_gate_rejects_too_many_controls`, `add_gate_accepts_max_gate_controls`.
+
+**Polish:**
+
+2. **`MAX_QUBITS`/`MAX_CLBITS`/`MAX_GATE_CONTROLS` re-exported from `lib.rs`.** The panic message in `Circuit::new` references `MAX_QUBITS`, but the `circuit` module was private. Downstream code now imports via `aleph_ir::{MAX_QUBITS, MAX_CLBITS, MAX_GATE_CONTROLS}`.
+3. **`Circuit::barrier` rustdoc now documents all three rejection paths** (`EmptyBarrier`, `DuplicateQubit`, `QubitOutOfRange`) and guides users with filter-built qubit lists on how to handle the empty case.
+4. **`Instruction::Barrier` variant doc-comment** now states the "at least one qubit" requirement and points at `CircuitError::EmptyBarrier`.
+5. **Within-controls duplicate now has a dedicated unit test** (`add_gate_rejects_duplicate_within_controls`) — the unified uniqueness loop already handled this case, but no test pinned the branch.
+6. **Proptest `arb_op` is `nc=0`-safe.** Previously, `(0u32..nq, 0u32..nc).prop_map(...)` would panic on strategy construction if `nc == 0` (empty range). Measurement is now conditionally included only when `nc >= 1`, and its weight bumped from 1 (~6.7%) to 4 (~21%) so the `same_clbit_writes_serialize` property actually sees collisions within the default proptest budget. That property also switched from `nc=2` to `nc=1`, guaranteeing collisions when any two measurements appear.
+7. **`every_op_kind_is_constructible` smoke test now uses `assert_eq!(c.len(), ops.len())`** instead of the previous `c.len() > before`, which would have passed even if only one of 20 ops survived. The unused `Param` import and its dead `let _ = Param::Concrete(0.0)` import-use guard line were removed.
+8. **Stale `layers_properties.proptest-regressions` seed comment removed** — the seed previously pinned the original §6/§12.1 monotonicity bug (fixed in `dc1f34c`/`02380ce`) under the pre-`OpKind` strategy; its comment is now misleading. The file is kept (proptest will write new seeds on demand) but the stale entry is cleared.
+
+**Deferred (documented as `TODO(P0-08)` in code):** the fallible `Circuit::try_new` returning `Result<Self, CircuitError>` for untrusted-input boundaries. The current `Circuit::new` panic on bounds violation is a documented programmer-error contract; the parser in P0-08 is the actual untrusted entry point and will add `try_new` then.

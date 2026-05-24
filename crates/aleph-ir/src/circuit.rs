@@ -25,6 +25,15 @@ pub const MAX_QUBITS: u32 = 65_535;
 /// Same rationale as [`MAX_QUBITS`].
 pub const MAX_CLBITS: u32 = 65_535;
 
+/// Maximum number of external `controls` a single `GateInstance` may
+/// carry. Validating uniqueness across `qubits ∪ controls` is O(N²)
+/// over the chained iterator (linear-scan `SmallVec::contains`); an
+/// adversarially-large `controls` list would otherwise hang the IR.
+/// Phase-0 gates use 0–2 controls (`controlled` constructions in
+/// `aleph-core` cap inline at 2). The bound is generous and prevents
+/// unbounded work from `pub`-field literal construction.
+pub const MAX_GATE_CONTROLS: usize = 8;
+
 /// Backend-agnostic circuit representation.
 #[derive(Debug, Clone)]
 pub struct Circuit {
@@ -49,8 +58,13 @@ impl Circuit {
     /// Panics if `num_qubits > MAX_QUBITS` or `num_clbits > MAX_CLBITS`.
     /// This is a programmer-error check at construction; untrusted
     /// callers (parser, RPC) should sanity-check inputs before calling.
-    /// A fallible `try_new` lands in P0-08 alongside the parser.
+    /// A fallible `try_new` returning [`CircuitError`] lands in P0-08
+    /// alongside the OpenQASM parser, where untrusted input actually
+    /// enters the system.
     pub fn new(num_qubits: u32, num_clbits: u32) -> Self {
+        // TODO(P0-08): expose a fallible `try_new` so callers at the
+        // untrusted-input boundary (parser, RPC) can recover. Until
+        // then this is a documented panic on programmer error.
         assert!(
             num_qubits <= MAX_QUBITS,
             "Circuit::new: num_qubits={num_qubits} exceeds MAX_QUBITS={MAX_QUBITS}",
@@ -170,6 +184,13 @@ impl Circuit {
                 gate: gate_variant_name(&gate.gate),
                 expected,
                 got,
+            });
+        }
+        if gate.controls.len() > MAX_GATE_CONTROLS {
+            return Err(CircuitError::TooManyControls {
+                gate: gate_variant_name(&gate.gate),
+                controls: gate.controls.len(),
+                max: MAX_GATE_CONTROLS,
             });
         }
         let mut seen: smallvec::SmallVec<[u32; 6]> = smallvec::SmallVec::new();
@@ -344,8 +365,17 @@ impl Circuit {
         self.add_instruction(Instruction::Reset(qubit))
     }
 
-    /// Insert a barrier covering `qubits`. Accepts any iterator;
-    /// duplicates are rejected with `CircuitError::DuplicateQubit`.
+    /// Insert a barrier covering `qubits`. Accepts any iterator.
+    ///
+    /// Returns:
+    /// - [`CircuitError::EmptyBarrier`] if `qubits` yields no items
+    ///   (a barrier with nothing to synchronize is rejected).
+    /// - [`CircuitError::DuplicateQubit`] if the same qubit appears twice.
+    /// - [`CircuitError::QubitOutOfRange`] if any index ≥ `num_qubits()`.
+    ///
+    /// Callers building the qubit list via a filter (`.iter().filter(...)`)
+    /// should check for emptiness up front if a zero-match result is
+    /// semantically a no-op rather than an error.
     pub fn barrier(
         &mut self,
         qubits: impl IntoIterator<Item = u32>,
@@ -816,6 +846,52 @@ mod tests {
                 num_qubits: 2
             }
         );
+    }
+
+    #[test]
+    fn add_gate_rejects_duplicate_within_controls() {
+        // Duplicate appears only inside `controls`; qubits is fine
+        // and qubits ∩ controls is empty. Exercises the within-controls
+        // branch of the unified uniqueness loop.
+        let bad = GateInstance {
+            gate: Gate::X,
+            qubits: smallvec![0u32],
+            controls: smallvec![1u32, 1u32],
+        };
+        let mut c = Circuit::new(3, 0);
+        let err = c.add_gate(bad).unwrap_err();
+        assert_eq!(err, CircuitError::DuplicateQubit { qubit: 1 });
+    }
+
+    #[test]
+    fn add_gate_rejects_too_many_controls() {
+        let bad = GateInstance {
+            gate: Gate::X,
+            qubits: smallvec![0u32],
+            controls: (1u32..1 + (crate::circuit::MAX_GATE_CONTROLS as u32) + 1).collect(),
+        };
+        let mut c = Circuit::new(64, 0);
+        let err = c.add_gate(bad).unwrap_err();
+        assert_eq!(
+            err,
+            CircuitError::TooManyControls {
+                gate: "X",
+                controls: crate::circuit::MAX_GATE_CONTROLS + 1,
+                max: crate::circuit::MAX_GATE_CONTROLS,
+            }
+        );
+    }
+
+    #[test]
+    fn add_gate_accepts_max_gate_controls() {
+        // Boundary: exactly MAX_GATE_CONTROLS must succeed.
+        let ok = GateInstance {
+            gate: Gate::X,
+            qubits: smallvec![0u32],
+            controls: (1u32..1 + (crate::circuit::MAX_GATE_CONTROLS as u32)).collect(),
+        };
+        let mut c = Circuit::new(64, 0);
+        assert!(c.add_gate(ok).is_ok());
     }
 
     #[test]

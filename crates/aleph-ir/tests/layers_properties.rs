@@ -4,9 +4,10 @@
 //! (clbit collision, parametric-diagonal commutation, controlled-gate
 //! qubit union, Reset/Barrier non-commutation) are all exercised.
 
-use aleph_core::{Gate, GateInstance, Param};
+use aleph_core::{Gate, GateInstance};
 use aleph_ir::{Circuit, Instruction};
 use proptest::prelude::*;
+use proptest::strategy::BoxedStrategy;
 use smallvec::smallvec;
 
 /// One synthesised operation. Apply via [`OpKind::apply`] — the
@@ -81,7 +82,7 @@ fn distinct_triple(nq: u32) -> impl Strategy<Value = (u32, u32, u32)> {
     (0u32..nq, 0u32..nq, 0u32..nq).prop_filter("distinct", |(a, b, c)| a != b && a != c && b != c)
 }
 
-fn arb_op(nq: u32, nc: u32) -> impl Strategy<Value = OpKind> {
+fn arb_op(nq: u32, nc: u32) -> BoxedStrategy<OpKind> {
     // angles bounded — proptest is happiest with finite floats
     let angle = -10.0_f64..10.0_f64;
 
@@ -109,24 +110,39 @@ fn arb_op(nq: u32, nc: u32) -> impl Strategy<Value = OpKind> {
         distinct_triple(nq).prop_map(|(a, b, t)| OpKind::Toffoli(a, b, t)),
         distinct_triple(nq).prop_map(|(a, b, t)| OpKind::Ccz(a, b, t)),
     ];
-    let measurement = (0u32..nq, 0u32..nc).prop_map(|(q, cl)| OpKind::Measure(q, cl));
     let non_gate = prop_oneof![
         (0u32..nq).prop_map(OpKind::Reset),
         (0u32..nq).prop_map(OpKind::Barrier1),
         distinct_pair(nq).prop_map(|(a, b)| OpKind::Barrier2(a, b)),
     ];
 
-    // Weight gates ~heavier than measurements/non-gate so a typical
-    // generated circuit looks gate-dominated, but every variant is
-    // exercised within a default proptest budget.
-    prop_oneof![
-        4 => single,
-        3 => parametric,
-        3 => two_q,
-        2 => three_q,
-        2 => non_gate,
-        1 => measurement,
-    ]
+    // Weight gates heavier than non-gate so a typical generated
+    // circuit looks gate-dominated, but every variant is exercised
+    // within a default proptest budget. Measurement is only included
+    // when `nc >= 1` — `0u32..0` is an empty range and would panic.
+    if nc == 0 {
+        prop_oneof![
+            4 => single,
+            3 => parametric,
+            3 => two_q,
+            2 => three_q,
+            2 => non_gate,
+        ]
+        .boxed()
+    } else {
+        let measurement = (0u32..nq, 0u32..nc).prop_map(|(q, cl)| OpKind::Measure(q, cl));
+        prop_oneof![
+            4 => single,
+            3 => parametric,
+            3 => two_q,
+            2 => three_q,
+            2 => non_gate,
+            // bumped from 1 (~6.7% of ops) to 4 (~21% of ops) so
+            // `same_clbit_writes_serialize` actually sees collisions.
+            4 => measurement,
+        ]
+        .boxed()
+    }
 }
 
 fn arb_circuit(nq: u32, nc: u32, n_ops: usize) -> impl Strategy<Value = Circuit> {
@@ -233,7 +249,7 @@ proptest! {
     }
 
     #[test]
-    fn same_clbit_writes_serialize(c in arb_circuit(3, 2, 12)) {
+    fn same_clbit_writes_serialize(c in arb_circuit(3, 1, 12)) {
         let layers = c.layers();
         let mut layer_of = vec![0usize; c.len()];
         for (li, l) in layers.iter().enumerate() {
@@ -258,13 +274,13 @@ proptest! {
     }
 }
 
-/// Defensive guard: smoke-test that every `OpKind` variant survives a
-/// round trip through `apply`. If a variant ever rejects on a known-
-/// valid input, the dispatch above would silently drop it.
+/// Defensive guard: every `OpKind` variant must survive a round trip
+/// through `apply`. If a variant ever rejects on a known-valid input,
+/// the dispatch above would silently drop it — this test catches that
+/// by asserting the exact count of appended instructions.
 #[test]
 fn every_op_kind_is_constructible() {
-    let mut c = Circuit::new(4, 2);
-    let ops = [
+    let ops: [OpKind; 20] = [
         OpKind::H(0),
         OpKind::X(0),
         OpKind::Y(0),
@@ -286,10 +302,14 @@ fn every_op_kind_is_constructible() {
         OpKind::Barrier1(2),
         OpKind::Barrier2(0, 1),
     ];
-    let before = c.len();
+    let expected = ops.len();
+    let mut c = Circuit::new(4, 2);
     for op in ops {
         op.apply(&mut c);
     }
-    let _ = Param::Concrete(0.0); // import-use guard
-    assert!(c.len() > before, "no OpKind was accepted by the IR");
+    assert_eq!(
+        c.len(),
+        expected,
+        "some OpKind variants were silently rejected by the IR",
+    );
 }

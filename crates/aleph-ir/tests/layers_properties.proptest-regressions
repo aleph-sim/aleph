@@ -4,4 +4,3 @@
 #
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
-cc d6e02f3315fd3ab4f7a5558444949892497c2d4b2cbb320abc6362d8431d1f75 # shrinks to c = Circuit { num_qubits: 4, num_clbits: 0, instructions: [Gate(GateInstance { gate: Cnot, qubits: [0, 1], controls: [] }), Gate(GateInstance { gate: H, qubits: [0], controls: [] }), Gate(GateInstance { gate: H, qubits: [2], controls: [] })], metadata: CircuitMetadata { name: None, generated_from: None } }

@@ -9,6 +9,6 @@ mod error;
 mod instruction;
 mod layers;
 
-pub use circuit::{Circuit, CircuitMetadata};
+pub use circuit::{Circuit, CircuitMetadata, MAX_CLBITS, MAX_GATE_CONTROLS, MAX_QUBITS};
 pub use error::CircuitError;
 pub use instruction::Instruction;
