@@ -78,6 +78,61 @@ pub fn apply_2q(amps: &mut [Complex], targets: [u32; 2], controls: &[u32], m: &[
     }
 }
 
+/// Apply a 3-qubit matrix to `targets = [t0, t1, t2]` (with external
+/// `controls`) in place.
+///
+/// **MSB convention (P0-06):** matrix index `k`'s bits map to targets
+/// from MSB to LSB — bit 2 of `k` is `targets[0]`, bit 1 is
+/// `targets[1]`, bit 0 is `targets[2]`. So `k = 6` (binary `110`)
+/// corresponds to `(targets[0] = 1, targets[1] = 1, targets[2] = 0)`.
+/// This matches `Gate::Toffoli` (`qubits = [c0, c1, target]`), whose
+/// matrix swaps rows 6 ↔ 7.
+#[allow(dead_code)]
+pub fn apply_3q(amps: &mut [Complex], targets: [u32; 3], controls: &[u32], m: &[[Complex; 8]; 8]) {
+    let t_bits = [
+        1usize << targets[0],
+        1usize << targets[1],
+        1usize << targets[2],
+    ];
+    let t_mask = t_bits[0] | t_bits[1] | t_bits[2];
+    let mut ctrl_mask: usize = 0;
+    for &c in controls {
+        ctrl_mask |= 1usize << c;
+    }
+    let len = amps.len();
+    let mut i = 0usize;
+    while i < len {
+        if (i & t_mask) == 0 && (i & ctrl_mask) == ctrl_mask {
+            let mut idx = [0usize; 8];
+            for (k, slot) in idx.iter_mut().enumerate() {
+                // MSB convention: k bit 2 → targets[0], bit 1 → targets[1], bit 0 → targets[2].
+                let bit_t0 = if k & 4 != 0 { t_bits[0] } else { 0 };
+                let bit_t1 = if k & 2 != 0 { t_bits[1] } else { 0 };
+                let bit_t2 = if k & 1 != 0 { t_bits[2] } else { 0 };
+                *slot = i | bit_t0 | bit_t1 | bit_t2;
+            }
+            let v = [
+                amps[idx[0]],
+                amps[idx[1]],
+                amps[idx[2]],
+                amps[idx[3]],
+                amps[idx[4]],
+                amps[idx[5]],
+                amps[idx[6]],
+                amps[idx[7]],
+            ];
+            for r in 0..8 {
+                let mut acc = Complex::new(0.0, 0.0);
+                for c in 0..8 {
+                    acc += m[r][c] * v[c];
+                }
+                amps[idx[r]] = acc;
+            }
+        }
+        i += 1;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -181,6 +236,44 @@ mod tests {
         let mut amps = vec![Complex::new(0.0, 0.0); 8];
         amps[1] = Complex::new(1.0, 0.0);
         apply_2q(&mut amps, [0, 1], &[2], &cnot());
+        assert_eq!(amps[1], Complex::new(1.0, 0.0));
+    }
+
+    /// Canonical `Gate::Toffoli` matrix (P0-06): identity on rows 0..6,
+    /// swap rows 6 ↔ 7. Matches `qubits = [c0, c1, target]` with
+    /// `qubits[0]` as the MSB of the matrix index.
+    fn toffoli() -> [[Complex; 8]; 8] {
+        let z = Complex::new(0.0, 0.0);
+        let o = Complex::new(1.0, 0.0);
+        let mut m = [[z; 8]; 8];
+        for (i, row) in m.iter_mut().enumerate().take(6) {
+            row[i] = o;
+        }
+        m[6][7] = o;
+        m[7][6] = o;
+        m
+    }
+
+    #[test]
+    fn toffoli_flips_target_when_both_controls_set() {
+        // Targets = [q0, q1, q2]. State amps[3] = 1 corresponds to
+        // (q0 = 1, q1 = 1, q2 = 0) globally. With MSB convention this
+        // maps to matrix slot k = 6 (bit 2 = q0 = 1, bit 1 = q1 = 1,
+        // bit 0 = q2 = 0). Toffoli swaps slot 6 ↔ 7 ⇒ amps[3] → amps[7].
+        let mut amps = vec![Complex::new(0.0, 0.0); 8];
+        amps[3] = Complex::new(1.0, 0.0);
+        apply_3q(&mut amps, [0, 1, 2], &[], &toffoli());
+        assert_eq!(amps[7], Complex::new(1.0, 0.0));
+        assert_eq!(amps[3], Complex::new(0.0, 0.0));
+    }
+
+    #[test]
+    fn toffoli_with_single_control_set_is_identity() {
+        // State amps[1] = 1 (q0 = 1, q1 = 0, q2 = 0). Only one control
+        // bit set ⇒ Toffoli acts as identity.
+        let mut amps = vec![Complex::new(0.0, 0.0); 8];
+        amps[1] = Complex::new(1.0, 0.0);
+        apply_3q(&mut amps, [0, 1, 2], &[], &toffoli());
         assert_eq!(amps[1], Complex::new(1.0, 0.0));
     }
 }
