@@ -62,9 +62,6 @@ impl Circuit {
     /// alongside the OpenQASM parser, where untrusted input actually
     /// enters the system.
     pub fn new(num_qubits: u32, num_clbits: u32) -> Self {
-        // TODO(P0-08): expose a fallible `try_new` so callers at the
-        // untrusted-input boundary (parser, RPC) can recover. Until
-        // then this is a documented panic on programmer error.
         assert!(
             num_qubits <= MAX_QUBITS,
             "Circuit::new: num_qubits={num_qubits} exceeds MAX_QUBITS={MAX_QUBITS}",
@@ -79,6 +76,31 @@ impl Circuit {
             instructions: Vec::new(),
             metadata: CircuitMetadata::default(),
         }
+    }
+
+    /// Fallible constructor — same as [`Circuit::new`] but returns a
+    /// recoverable [`CircuitError`] instead of panicking. Intended for
+    /// untrusted-input boundaries (parser, RPC). See spec § 12.4 of
+    /// `docs/superpowers/specs/2026-05-24-p0-07-circuit-ir-design.md`.
+    pub fn try_new(num_qubits: u32, num_clbits: u32) -> Result<Self, CircuitError> {
+        if num_qubits > MAX_QUBITS {
+            return Err(CircuitError::TooManyQubits {
+                requested: num_qubits,
+                max: MAX_QUBITS,
+            });
+        }
+        if num_clbits > MAX_CLBITS {
+            return Err(CircuitError::TooManyClbits {
+                requested: num_clbits,
+                max: MAX_CLBITS,
+            });
+        }
+        Ok(Self {
+            num_qubits,
+            num_clbits,
+            instructions: Vec::new(),
+            metadata: CircuitMetadata::default(),
+        })
     }
 
     /// Number of qubits this circuit was constructed with. Immutable
@@ -921,6 +943,43 @@ mod tests {
         assert_eq!(c.num_clbits(), 0);
         assert!(c.is_empty());
         assert_eq!(c.layers(), Vec::<Vec<usize>>::new());
+    }
+
+    #[test]
+    fn try_new_accepts_max_bounds() {
+        let c = Circuit::try_new(MAX_QUBITS, MAX_CLBITS).unwrap();
+        assert_eq!(c.num_qubits(), MAX_QUBITS);
+        assert_eq!(c.num_clbits(), MAX_CLBITS);
+    }
+
+    #[test]
+    fn try_new_rejects_too_many_qubits() {
+        let err = Circuit::try_new(MAX_QUBITS + 1, 0).unwrap_err();
+        assert_eq!(
+            err,
+            CircuitError::TooManyQubits {
+                requested: MAX_QUBITS + 1,
+                max: MAX_QUBITS,
+            }
+        );
+    }
+
+    #[test]
+    fn try_new_rejects_too_many_clbits() {
+        let err = Circuit::try_new(0, MAX_CLBITS + 1).unwrap_err();
+        assert_eq!(
+            err,
+            CircuitError::TooManyClbits {
+                requested: MAX_CLBITS + 1,
+                max: MAX_CLBITS,
+            }
+        );
+    }
+
+    #[test]
+    fn try_new_zero_zero_works() {
+        let c = Circuit::try_new(0, 0).unwrap();
+        assert!(c.is_empty());
     }
 
     #[test]

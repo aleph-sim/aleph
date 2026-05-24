@@ -41,4 +41,12 @@ pub enum CircuitError {
         controls: usize,
         max: usize,
     },
+
+    /// `Circuit::try_new` rejected a `num_qubits` above [`crate::MAX_QUBITS`].
+    #[error("too many qubits: requested {requested}, max {max}")]
+    TooManyQubits { requested: u32, max: u32 },
+
+    /// `Circuit::try_new` rejected a `num_clbits` above [`crate::MAX_CLBITS`].
+    #[error("too many clbits: requested {requested}, max {max}")]
+    TooManyClbits { requested: u32, max: u32 },
 }
