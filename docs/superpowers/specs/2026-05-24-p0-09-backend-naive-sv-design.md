@@ -231,14 +231,18 @@ Soft cap: `allocate(num_qubits)` returns `BackendError::TooManyQubits { requeste
 
 ### 7.1 Qubit ordering convention (from P0-06)
 
-`qubits[0]` is the **LSB** of the matrix index. For a 2-qubit gate on `[a, b]`, basis order is `|b a⟩`:
+`qubits[0]` is the **MSB** of the matrix index. For a 2-qubit gate on `[a, b]`, basis order is `|a b⟩`:
 
 ```
 matrix row/col 0 → a=0, b=0
-matrix row/col 1 → a=1, b=0
-matrix row/col 2 → a=0, b=1
+matrix row/col 1 → a=0, b=1
+matrix row/col 2 → a=1, b=0
 matrix row/col 3 → a=1, b=1
 ```
+
+This matches `Gate::Cnot` (`qubits = [control, target]`) whose matrix swaps rows 2 ↔ 3 — the control sits at the MSB position. The P0-06 docstring on `Gate::Unitary2q` is the source of truth for this convention.
+
+Qubits in the *global state-vector* index follow the natural mapping: qubit `q` is at bit position `q` of the global amplitude index `i`. The MSB convention only affects how a gate's matrix rows/cols map onto a chosen set of target qubits, not how those qubits live in the global vector.
 
 ### 7.2 1q kernel (indexed-pair)
 
@@ -257,11 +261,11 @@ apply_1q(amps, target, controls, m):
 
 ### 7.3 2q kernel (quadruplet)
 
-Same shape with two target bits `t0, t1` (matrix index `idx = (bit_at_t1 << 1) | bit_at_t0`). For each base `i` with both target bits clear and all controls set, load four amplitudes, multiply by 4×4, store back. Targets must be distinct (`DuplicateQubit`) and disjoint from controls.
+Two target bits `t0, t1` define a 4-element subspace per outer iteration. **MSB convention:** matrix index `k` is `(bit_at_t0 << 1) | bit_at_t1` — i.e. `qubits[0]` lives at the high bit of `k`, `qubits[1]` at the low bit. For each base `i` with both target bits clear and all controls set, load `[amps[i], amps[i|t1_bit], amps[i|t0_bit], amps[i|t0_bit|t1_bit]]` (in that order so they correspond to `k = 0, 1, 2, 3`), multiply by 4×4, store back. Targets must be distinct (`DuplicateQubit`) and disjoint from controls.
 
 ### 7.4 3q kernel (octuplet)
 
-Same shape, 8-element subspace, 8×8 matrix. Targets distinct; targets ∩ controls = ∅.
+Same shape, 8-element subspace, 8×8 matrix. **MSB convention:** matrix index `k`'s bits map to `(qubits[0], qubits[1], qubits[2])` from MSB to LSB — `qubits[0]` is bit 2 of `k`, `qubits[1]` is bit 1, `qubits[2]` is bit 0. Targets distinct; targets ∩ controls = ∅.
 
 ### 7.5 `apply_gate` dispatch
 
