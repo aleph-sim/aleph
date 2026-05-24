@@ -97,11 +97,84 @@ impl Gate {
             Gate::Toffoli | Gate::Ccz => 3,
         }
     }
+
+    /// Unitary matrix of the gate in the computational basis.
+    ///
+    /// Returns `Err(GateError::SymbolicParam)` if any parameter is
+    /// `Param::Symbolic`. In Phase 0 this branch is unreachable through
+    /// the public API.
+    pub fn matrix(&self) -> Result<crate::gate::GateMatrix, crate::gate::GateError> {
+        use crate::gate::GateMatrix;
+        use std::f64::consts::{FRAC_1_SQRT_2, FRAC_PI_4};
+
+        let zero = Complex::new(0.0, 0.0);
+        let one = Complex::new(1.0, 0.0);
+
+        Ok(match self {
+            Gate::H => {
+                let s = Complex::new(FRAC_1_SQRT_2, 0.0);
+                GateMatrix::M2x2([[s, s], [s, -s]])
+            }
+            Gate::X => GateMatrix::M2x2([[zero, one], [one, zero]]),
+            Gate::Y => {
+                let pi = Complex::new(0.0, 1.0);
+                let ni = Complex::new(0.0, -1.0);
+                GateMatrix::M2x2([[zero, ni], [pi, zero]])
+            }
+            Gate::Z => GateMatrix::M2x2([[one, zero], [zero, -one]]),
+            Gate::S => {
+                let i = Complex::new(0.0, 1.0);
+                GateMatrix::M2x2([[one, zero], [zero, i]])
+            }
+            Gate::Sdg => {
+                let ni = Complex::new(0.0, -1.0);
+                GateMatrix::M2x2([[one, zero], [zero, ni]])
+            }
+            Gate::T => {
+                let p = Complex::new(FRAC_PI_4.cos(), FRAC_PI_4.sin());
+                GateMatrix::M2x2([[one, zero], [zero, p]])
+            }
+            Gate::Tdg => {
+                let p = Complex::new(FRAC_PI_4.cos(), -FRAC_PI_4.sin());
+                GateMatrix::M2x2([[one, zero], [zero, p]])
+            }
+
+            // Remaining variants get implemented in subsequent tasks.
+            _ => unimplemented!("matrix() arm for {self:?} not yet wired up"),
+        })
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{AMPLITUDE_TOL, gate::GateMatrix};
+    use std::f64::consts::FRAC_1_SQRT_2;
+
+    fn cc(re: f64, im: f64) -> Complex {
+        Complex::new(re, im)
+    }
+
+    fn approx_eq_m2(actual: &[[Complex; 2]; 2], expected: &[[Complex; 2]; 2]) {
+        for i in 0..2 {
+            for j in 0..2 {
+                let a = actual[i][j];
+                let e = expected[i][j];
+                assert!(
+                    (a.re - e.re).abs() < AMPLITUDE_TOL
+                        && (a.im - e.im).abs() < AMPLITUDE_TOL,
+                    "mismatch at [{i}][{j}]: actual={a:?} expected={e:?}"
+                );
+            }
+        }
+    }
+
+    fn unwrap_m2(g: &Gate) -> [[Complex; 2]; 2] {
+        match g.matrix().expect("concrete") {
+            GateMatrix::M2x2(m) => m,
+            other => panic!("expected M2x2, got {other:?}"),
+        }
+    }
 
     fn boxed_id1() -> Box<[[Complex; 2]; 2]> {
         let zero = Complex::new(0.0, 0.0);
@@ -155,5 +228,53 @@ mod tests {
     fn arity_3q() {
         assert_eq!(Gate::Toffoli.arity(), 3);
         assert_eq!(Gate::Ccz.arity(), 3);
+    }
+
+    #[test]
+    fn matrix_h() {
+        let s = FRAC_1_SQRT_2;
+        let expected = [[cc(s, 0.0), cc(s, 0.0)], [cc(s, 0.0), cc(-s, 0.0)]];
+        approx_eq_m2(&unwrap_m2(&Gate::H), &expected);
+    }
+
+    #[test]
+    fn matrix_x() {
+        let expected = [[cc(0.0, 0.0), cc(1.0, 0.0)], [cc(1.0, 0.0), cc(0.0, 0.0)]];
+        approx_eq_m2(&unwrap_m2(&Gate::X), &expected);
+    }
+
+    #[test]
+    fn matrix_y() {
+        let expected = [[cc(0.0, 0.0), cc(0.0, -1.0)], [cc(0.0, 1.0), cc(0.0, 0.0)]];
+        approx_eq_m2(&unwrap_m2(&Gate::Y), &expected);
+    }
+
+    #[test]
+    fn matrix_z() {
+        let expected = [[cc(1.0, 0.0), cc(0.0, 0.0)], [cc(0.0, 0.0), cc(-1.0, 0.0)]];
+        approx_eq_m2(&unwrap_m2(&Gate::Z), &expected);
+    }
+
+    #[test]
+    fn matrix_s_and_sdg() {
+        let s_expected = [[cc(1.0, 0.0), cc(0.0, 0.0)], [cc(0.0, 0.0), cc(0.0, 1.0)]];
+        let sdg_expected = [[cc(1.0, 0.0), cc(0.0, 0.0)], [cc(0.0, 0.0), cc(0.0, -1.0)]];
+        approx_eq_m2(&unwrap_m2(&Gate::S), &s_expected);
+        approx_eq_m2(&unwrap_m2(&Gate::Sdg), &sdg_expected);
+    }
+
+    #[test]
+    fn matrix_t_and_tdg() {
+        let phase = std::f64::consts::FRAC_PI_4;
+        let t_expected = [
+            [cc(1.0, 0.0), cc(0.0, 0.0)],
+            [cc(0.0, 0.0), cc(phase.cos(), phase.sin())],
+        ];
+        let tdg_expected = [
+            [cc(1.0, 0.0), cc(0.0, 0.0)],
+            [cc(0.0, 0.0), cc(phase.cos(), -phase.sin())],
+        ];
+        approx_eq_m2(&unwrap_m2(&Gate::T), &t_expected);
+        approx_eq_m2(&unwrap_m2(&Gate::Tdg), &tdg_expected);
     }
 }
