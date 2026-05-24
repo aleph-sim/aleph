@@ -180,6 +180,34 @@ impl Gate {
                 Ok(GateMatrix::M2x2([[c, -e_l * s], [e_f * s, e_fl * c]]))
             }
 
+            Gate::Cnot => Ok(GateMatrix::M4x4([
+                [one, zero, zero, zero],
+                [zero, one, zero, zero],
+                [zero, zero, zero, one],
+                [zero, zero, one, zero],
+            ])),
+            Gate::Cz => Ok(GateMatrix::M4x4([
+                [one, zero, zero, zero],
+                [zero, one, zero, zero],
+                [zero, zero, one, zero],
+                [zero, zero, zero, -one],
+            ])),
+            Gate::Swap => Ok(GateMatrix::M4x4([
+                [one, zero, zero, zero],
+                [zero, zero, one, zero],
+                [zero, one, zero, zero],
+                [zero, zero, zero, one],
+            ])),
+            Gate::Iswap => {
+                let i = Complex::new(0.0, 1.0);
+                Ok(GateMatrix::M4x4([
+                    [one, zero, zero, zero],
+                    [zero, zero, i, zero],
+                    [zero, i, zero, zero],
+                    [zero, zero, zero, one],
+                ]))
+            }
+
             _ => unimplemented!("matrix() arm for {self:?} not yet wired up"),
         }
     }
@@ -372,5 +400,80 @@ mod tests {
     fn matrix_symbolic_param_errors() {
         let g = Gate::Rx(Param::Symbolic(crate::gate::SymbolId(0)));
         assert_eq!(g.matrix(), Err(GateError::SymbolicParam));
+    }
+
+    fn approx_eq_m4(actual: &[[Complex; 4]; 4], expected: &[[Complex; 4]; 4]) {
+        for i in 0..4 {
+            for j in 0..4 {
+                let a = actual[i][j];
+                let e = expected[i][j];
+                assert!(
+                    (a.re - e.re).abs() < AMPLITUDE_TOL
+                        && (a.im - e.im).abs() < AMPLITUDE_TOL,
+                    "mismatch at [{i}][{j}]: actual={a:?} expected={e:?}"
+                );
+            }
+        }
+    }
+
+    fn unwrap_m4(g: &Gate) -> [[Complex; 4]; 4] {
+        match g.matrix().expect("concrete") {
+            GateMatrix::M4x4(m) => m,
+            other => panic!("expected M4x4, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn matrix_cnot() {
+        let z = cc(0.0, 0.0);
+        let o = cc(1.0, 0.0);
+        let expected = [
+            [o, z, z, z],
+            [z, o, z, z],
+            [z, z, z, o],
+            [z, z, o, z],
+        ];
+        approx_eq_m4(&unwrap_m4(&Gate::Cnot), &expected);
+    }
+
+    #[test]
+    fn matrix_cz() {
+        let z = cc(0.0, 0.0);
+        let o = cc(1.0, 0.0);
+        let no = cc(-1.0, 0.0);
+        let expected = [
+            [o, z, z, z],
+            [z, o, z, z],
+            [z, z, o, z],
+            [z, z, z, no],
+        ];
+        approx_eq_m4(&unwrap_m4(&Gate::Cz), &expected);
+    }
+
+    #[test]
+    fn matrix_swap() {
+        let z = cc(0.0, 0.0);
+        let o = cc(1.0, 0.0);
+        let expected = [
+            [o, z, z, z],
+            [z, z, o, z],
+            [z, o, z, z],
+            [z, z, z, o],
+        ];
+        approx_eq_m4(&unwrap_m4(&Gate::Swap), &expected);
+    }
+
+    #[test]
+    fn matrix_iswap() {
+        let z = cc(0.0, 0.0);
+        let o = cc(1.0, 0.0);
+        let i = cc(0.0, 1.0);
+        let expected = [
+            [o, z, z, z],
+            [z, z, i, z],
+            [z, i, z, z],
+            [z, z, z, o],
+        ];
+        approx_eq_m4(&unwrap_m4(&Gate::Iswap), &expected);
     }
 }
