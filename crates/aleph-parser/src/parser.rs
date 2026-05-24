@@ -10,7 +10,10 @@ use nom::character::complete::char as ch;
 use nom::combinator::opt;
 use nom::multi::many0;
 
-use crate::ast::{Decl, GateStmt, IndexedRef, Include, Position, Program, RegOrIdx, Stmt};
+use crate::ast::{
+    BarrierStmt, Decl, GateStmt, IndexedRef, Include, MeasureStmt, Position, Program, RegOrIdx,
+    ResetStmt, Stmt,
+};
 use crate::expr::expr as parse_expr;
 use crate::lexer::{Span, ident, skip_ws, string_literal, uint};
 
@@ -213,9 +216,73 @@ fn gate_stmt(input: Span<'_>) -> IResult<Span<'_>, GateStmt> {
     ))
 }
 
+fn barrier_stmt(input: Span<'_>) -> IResult<Span<'_>, BarrierStmt> {
+    let (input, _) = skip_ws(input)?;
+    let p = pos_of(&input);
+    let (input, _) = tag("barrier").parse(input)?;
+    // Require at least one whitespace/comment after the keyword to
+    // avoid matching `barrierfoo` etc.
+    let (input, _) = nom::character::complete::multispace1.parse(input)?;
+    let (input, first) = reg_or_idx(input)?;
+    let (mut input, mut args) = (input, vec![first]);
+    loop {
+        let saved = input;
+        let (next, _) = skip_ws(input)?;
+        if let Ok((next, _)) = tag::<_, _, nom::error::Error<Span<'_>>>(",").parse(next) {
+            let (next, r) = reg_or_idx(next)?;
+            args.push(r);
+            input = next;
+        } else {
+            input = saved;
+            break;
+        }
+    }
+    let (input, _) = skip_ws(input)?;
+    let (input, _) = tag(";").parse(input)?;
+    Ok((input, BarrierStmt { pos: p, args }))
+}
+
+fn measure_stmt(input: Span<'_>) -> IResult<Span<'_>, MeasureStmt> {
+    let (input, _) = skip_ws(input)?;
+    let p = pos_of(&input);
+    let (input, _) = tag("measure").parse(input)?;
+    let (input, _) = nom::character::complete::multispace1.parse(input)?;
+    let (input, source) = reg_or_idx(input)?;
+    let (input, _) = skip_ws(input)?;
+    let (input, _) = tag("->").parse(input)?;
+    let (input, target) = reg_or_idx(input)?;
+    let (input, _) = skip_ws(input)?;
+    let (input, _) = tag(";").parse(input)?;
+    Ok((
+        input,
+        MeasureStmt {
+            pos: p,
+            source,
+            target,
+        },
+    ))
+}
+
+fn reset_stmt(input: Span<'_>) -> IResult<Span<'_>, ResetStmt> {
+    let (input, _) = skip_ws(input)?;
+    let p = pos_of(&input);
+    let (input, _) = tag("reset").parse(input)?;
+    let (input, _) = nom::character::complete::multispace1.parse(input)?;
+    let (input, target) = indexed_ref(input)?;
+    let (input, _) = skip_ws(input)?;
+    let (input, _) = tag(";").parse(input)?;
+    Ok((input, ResetStmt { pos: p, target }))
+}
+
 fn stmt(input: Span<'_>) -> IResult<Span<'_>, Stmt> {
     let (input, _) = skip_ws(input)?;
-    nom::combinator::map(gate_stmt, Stmt::Gate).parse(input)
+    nom::branch::alt((
+        nom::combinator::map(barrier_stmt, Stmt::Barrier),
+        nom::combinator::map(measure_stmt, Stmt::Measure),
+        nom::combinator::map(reset_stmt, Stmt::Reset),
+        nom::combinator::map(gate_stmt, Stmt::Gate),
+    ))
+    .parse(input)
 }
 
 fn header(input: Span<'_>) -> IResult<Span<'_>, String> {
@@ -379,5 +446,83 @@ bit[2] c;"#;
             }
             _ => panic!(),
         }
+    }
+
+    #[test]
+    fn parses_indexed_barrier() {
+        let (_, prog) = program(sp("qubit[2] q; barrier q[0], q[1];")).unwrap();
+        match &prog.stmts[0] {
+            Stmt::Barrier(b) => {
+                assert_eq!(b.args.len(), 2);
+                match &b.args[0] {
+                    RegOrIdx::Indexed(r) => assert_eq!(r.index, 0),
+                    _ => panic!(),
+                }
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn parses_whole_register_barrier() {
+        let (_, prog) = program(sp("qubit[2] q; barrier q;")).unwrap();
+        match &prog.stmts[0] {
+            Stmt::Barrier(b) => {
+                assert_eq!(b.args.len(), 1);
+                match &b.args[0] {
+                    RegOrIdx::Whole { name, .. } => assert_eq!(name, "q"),
+                    _ => panic!(),
+                }
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn parses_indexed_measure() {
+        let (_, prog) = program(sp("qubit[1] q; bit[1] c; measure q[0] -> c[0];")).unwrap();
+        match &prog.stmts[0] {
+            Stmt::Measure(m) => {
+                assert!(matches!(&m.source, RegOrIdx::Indexed(_)));
+                assert!(matches!(&m.target, RegOrIdx::Indexed(_)));
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn parses_whole_register_measure() {
+        let (_, prog) = program(sp("qubit[2] q; bit[2] c; measure q -> c;")).unwrap();
+        match &prog.stmts[0] {
+            Stmt::Measure(m) => {
+                assert!(matches!(&m.source, RegOrIdx::Whole { .. }));
+                assert!(matches!(&m.target, RegOrIdx::Whole { .. }));
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn parses_reset() {
+        let (_, prog) = program(sp("qubit[1] q; reset q[0];")).unwrap();
+        match &prog.stmts[0] {
+            Stmt::Reset(r) => assert_eq!(r.target.index, 0),
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn parses_mixed_program() {
+        let src = r#"OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+bit[2] c;
+h q[0];
+cx q[0], q[1];
+barrier q;
+measure q -> c;
+"#;
+        let (_, prog) = program(sp(src)).unwrap();
+        assert_eq!(prog.stmts.len(), 4);
     }
 }
