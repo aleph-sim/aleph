@@ -281,6 +281,32 @@ impl Circuit {
             smallvec::smallvec![c0, c1, target],
         ))
     }
+
+    // --- Non-gate convenience ---
+
+    /// Measure `qubit` into `clbit`.
+    pub fn measure(
+        &mut self,
+        qubit: u32,
+        clbit: u32,
+    ) -> Result<&mut Self, CircuitError> {
+        self.add_instruction(Instruction::Measure { qubit, clbit })
+    }
+
+    /// Reset `qubit` to `|0⟩`.
+    pub fn reset(&mut self, qubit: u32) -> Result<&mut Self, CircuitError> {
+        self.add_instruction(Instruction::Reset(qubit))
+    }
+
+    /// Insert a barrier covering `qubits`. Accepts any iterator;
+    /// duplicates are rejected with `CircuitError::DuplicateQubit`.
+    pub fn barrier(
+        &mut self,
+        qubits: impl IntoIterator<Item = u32>,
+    ) -> Result<&mut Self, CircuitError> {
+        let qs: smallvec::SmallVec<[u32; 8]> = qubits.into_iter().collect();
+        self.add_instruction(Instruction::Barrier(qs))
+    }
 }
 
 /// Stable string name for each `Gate` variant — used in
@@ -603,6 +629,73 @@ mod tests {
         assert!(matches!(
             c.ccx(0, 1, 9),
             Err(CircuitError::QubitOutOfRange { qubit: 9, .. })
+        ));
+    }
+
+    #[test]
+    fn measure_records_qubit_and_clbit() {
+        let mut c = Circuit::new(2, 2);
+        c.measure(1, 0).unwrap();
+        match c.instructions()[0] {
+            Instruction::Measure { qubit, clbit } => {
+                assert_eq!(qubit, 1);
+                assert_eq!(clbit, 0);
+            }
+            ref other => panic!("expected Measure, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn reset_records_qubit() {
+        let mut c = Circuit::new(2, 0);
+        c.reset(1).unwrap();
+        assert!(matches!(c.instructions()[0], Instruction::Reset(1)));
+    }
+
+    #[test]
+    fn barrier_accepts_iterator_input() {
+        let mut c = Circuit::new(3, 0);
+        c.barrier([0u32, 2u32]).unwrap();
+        match &c.instructions()[0] {
+            Instruction::Barrier(qs) => assert_eq!(qs.as_slice(), &[0, 2]),
+            other => panic!("expected Barrier, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn barrier_accepts_vec_input() {
+        let mut c = Circuit::new(3, 0);
+        c.barrier(vec![0u32, 1u32, 2u32]).unwrap();
+        match &c.instructions()[0] {
+            Instruction::Barrier(qs) => assert_eq!(qs.as_slice(), &[0, 1, 2]),
+            other => panic!("expected Barrier, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn measure_rejects_oob_qubit() {
+        let mut c = Circuit::new(2, 2);
+        assert!(matches!(
+            c.measure(9, 0),
+            Err(CircuitError::QubitOutOfRange { qubit: 9, .. })
+        ));
+    }
+
+    #[test]
+    fn measure_rejects_oob_clbit() {
+        let mut c = Circuit::new(2, 2);
+        assert!(matches!(
+            c.measure(0, 9),
+            Err(CircuitError::ClbitOutOfRange { clbit: 9, .. })
+        ));
+    }
+
+    #[test]
+    fn barrier_rejects_duplicate() {
+        let mut c = Circuit::new(3, 0);
+        assert!(matches!(
+            c.barrier([1u32, 1u32]),
+            Err(CircuitError::DuplicateQubit { qubit: 1 })
         ));
     }
 
