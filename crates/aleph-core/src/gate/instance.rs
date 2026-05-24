@@ -97,6 +97,13 @@ mod tests {
         assert_eq!(inst.controls.as_slice(), &[0, 1]);
     }
 
+    // `debug_assert_eq!` is a no-op in release builds, so the
+    // following `#[should_panic]` tests only make sense when
+    // `debug_assertions` is on. Without this cfg-gate, `cargo test
+    // --release` would report them as `test did not panic as
+    // expected` — a false failure that masks real regressions.
+
+    #[cfg(debug_assertions)]
     #[test]
     #[should_panic(expected = "qubits.len() (1) != gate.arity() (2)")]
     fn new_rejects_arity_mismatch_in_debug() {
@@ -104,6 +111,7 @@ mod tests {
         let _ = GateInstance::new(Gate::Cnot, smallvec![0u32]);
     }
 
+    #[cfg(debug_assertions)]
     #[test]
     #[should_panic(expected = "qubits.len() (3) != gate.arity() (1)")]
     fn controlled_rejects_arity_mismatch_in_debug() {
