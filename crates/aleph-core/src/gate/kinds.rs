@@ -65,8 +65,23 @@ pub enum Gate {
     // --- arbitrary unitary, owned ---
     /// 1-qubit arbitrary unitary. Boxed to keep the enum small in the
     /// common case of standard gates.
+    ///
+    /// Matrix convention: the inner `[[Complex; 2]; 2]` is the gate's
+    /// matrix in the computational basis `{|0⟩, |1⟩}`, applied to the
+    /// single qubit at `GateInstance::qubits[0]`. Row `i`, column `j`
+    /// is `⟨i|U|j⟩`. No unitarity check is performed at construction
+    /// — supplying a non-unitary matrix produces a backend that
+    /// violates `||ψ||² = 1` invariants.
     Unitary1q(Box<[[Complex; 2]; 2]>),
     /// 2-qubit arbitrary unitary. Boxed for the same reason.
+    ///
+    /// Matrix convention: the inner `[[Complex; 4]; 4]` is the gate's
+    /// matrix in the computational basis `{|q0 q1⟩}` indexed `00, 01,
+    /// 10, 11` (i.e. `qubits[0]` is the **most significant bit** of
+    /// the row/column index, matching the [`Gate::Cnot`] layout in
+    /// this file where `qubits = [control, target]` and the matrix
+    /// permutes rows/cols 2 ↔ 3). Row `i`, column `j` is `⟨i|U|j⟩`.
+    /// No unitarity check is performed at construction.
     Unitary2q(Box<[[Complex; 4]; 4]>),
 }
 
