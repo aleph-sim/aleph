@@ -5,8 +5,8 @@
 //! the order of qubits in `GateInstance::qubits`. Backends rely on this
 //! contract — violating it silently mis-applies the gate.
 
-use crate::Complex;
 use crate::gate::Param;
+use crate::Complex;
 
 /// Canonical quantum gate representation used by the IR and backends.
 #[derive(Debug, Clone, PartialEq)]
@@ -274,9 +274,16 @@ impl Gate {
     pub fn is_diagonal(&self) -> bool {
         matches!(
             self,
-            Gate::Z | Gate::S | Gate::Sdg | Gate::T | Gate::Tdg
-            | Gate::Rz(_) | Gate::Phase(_) | Gate::CRz(_)
-            | Gate::Cz | Gate::Ccz
+            Gate::Z
+                | Gate::S
+                | Gate::Sdg
+                | Gate::T
+                | Gate::Tdg
+                | Gate::Rz(_)
+                | Gate::Phase(_)
+                | Gate::CRz(_)
+                | Gate::Cz
+                | Gate::Ccz
         )
     }
 
@@ -288,9 +295,16 @@ impl Gate {
     pub fn is_clifford(&self) -> bool {
         matches!(
             self,
-            Gate::H | Gate::X | Gate::Y | Gate::Z
-            | Gate::S | Gate::Sdg
-            | Gate::Cnot | Gate::Cz | Gate::Swap | Gate::Iswap
+            Gate::H
+                | Gate::X
+                | Gate::Y
+                | Gate::Z
+                | Gate::S
+                | Gate::Sdg
+                | Gate::Cnot
+                | Gate::Cz
+                | Gate::Swap
+                | Gate::Iswap
         )
     }
 
@@ -304,9 +318,15 @@ impl Gate {
     pub fn inverse(&self) -> Gate {
         match self {
             // self-inverse
-            Gate::H | Gate::X | Gate::Y | Gate::Z
-            | Gate::Cnot | Gate::Cz | Gate::Swap
-            | Gate::Toffoli | Gate::Ccz => self.clone(),
+            Gate::H
+            | Gate::X
+            | Gate::Y
+            | Gate::Z
+            | Gate::Cnot
+            | Gate::Cz
+            | Gate::Swap
+            | Gate::Toffoli
+            | Gate::Ccz => self.clone(),
 
             Gate::S => Gate::Sdg,
             Gate::Sdg => Gate::S,
@@ -374,7 +394,10 @@ fn conj_transpose_4(m: &[[Complex; 4]; 4]) -> [[Complex; 4]; 4] {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{AMPLITUDE_TOL, gate::{GateError, GateMatrix}};
+    use crate::{
+        gate::{GateError, GateMatrix},
+        AMPLITUDE_TOL,
+    };
     use std::f64::consts::FRAC_1_SQRT_2;
 
     fn cc(re: f64, im: f64) -> Complex {
@@ -387,8 +410,7 @@ mod tests {
                 let a = actual[i][j];
                 let e = expected[i][j];
                 assert!(
-                    (a.re - e.re).abs() < AMPLITUDE_TOL
-                        && (a.im - e.im).abs() < AMPLITUDE_TOL,
+                    (a.re - e.re).abs() < AMPLITUDE_TOL && (a.im - e.im).abs() < AMPLITUDE_TOL,
                     "mismatch at [{i}][{j}]: actual={a:?} expected={e:?}"
                 );
             }
@@ -421,7 +443,16 @@ mod tests {
 
     #[test]
     fn arity_1q_standard() {
-        for g in [Gate::H, Gate::X, Gate::Y, Gate::Z, Gate::S, Gate::Sdg, Gate::T, Gate::Tdg] {
+        for g in [
+            Gate::H,
+            Gate::X,
+            Gate::Y,
+            Gate::Z,
+            Gate::S,
+            Gate::Sdg,
+            Gate::T,
+            Gate::Tdg,
+        ] {
             assert_eq!(g.arity(), 1, "{g:?}");
         }
     }
@@ -430,7 +461,10 @@ mod tests {
     fn arity_1q_parametric() {
         let p = Param::Concrete(0.0);
         for g in [
-            Gate::Rx(p), Gate::Ry(p), Gate::Rz(p), Gate::Phase(p),
+            Gate::Rx(p),
+            Gate::Ry(p),
+            Gate::Rz(p),
+            Gate::Phase(p),
             Gate::U3(p, p, p),
         ] {
             assert_eq!(g.arity(), 1, "{g:?}");
@@ -442,8 +476,13 @@ mod tests {
     fn arity_2q() {
         let p = Param::Concrete(0.0);
         for g in [
-            Gate::Cnot, Gate::Cz, Gate::Swap, Gate::Iswap,
-            Gate::CRx(p), Gate::CRy(p), Gate::CRz(p),
+            Gate::Cnot,
+            Gate::Cz,
+            Gate::Swap,
+            Gate::Iswap,
+            Gate::CRx(p),
+            Gate::CRy(p),
+            Gate::CRz(p),
         ] {
             assert_eq!(g.arity(), 2, "{g:?}");
         }
@@ -566,8 +605,7 @@ mod tests {
                 let a = actual[i][j];
                 let e = expected[i][j];
                 assert!(
-                    (a.re - e.re).abs() < AMPLITUDE_TOL
-                        && (a.im - e.im).abs() < AMPLITUDE_TOL,
+                    (a.re - e.re).abs() < AMPLITUDE_TOL && (a.im - e.im).abs() < AMPLITUDE_TOL,
                     "mismatch at [{i}][{j}]: actual={a:?} expected={e:?}"
                 );
             }
@@ -585,12 +623,7 @@ mod tests {
     fn matrix_cnot() {
         let z = cc(0.0, 0.0);
         let o = cc(1.0, 0.0);
-        let expected = [
-            [o, z, z, z],
-            [z, o, z, z],
-            [z, z, z, o],
-            [z, z, o, z],
-        ];
+        let expected = [[o, z, z, z], [z, o, z, z], [z, z, z, o], [z, z, o, z]];
         approx_eq_m4(&unwrap_m4(&Gate::Cnot), &expected);
     }
 
@@ -599,12 +632,7 @@ mod tests {
         let z = cc(0.0, 0.0);
         let o = cc(1.0, 0.0);
         let no = cc(-1.0, 0.0);
-        let expected = [
-            [o, z, z, z],
-            [z, o, z, z],
-            [z, z, o, z],
-            [z, z, z, no],
-        ];
+        let expected = [[o, z, z, z], [z, o, z, z], [z, z, o, z], [z, z, z, no]];
         approx_eq_m4(&unwrap_m4(&Gate::Cz), &expected);
     }
 
@@ -612,12 +640,7 @@ mod tests {
     fn matrix_swap() {
         let z = cc(0.0, 0.0);
         let o = cc(1.0, 0.0);
-        let expected = [
-            [o, z, z, z],
-            [z, z, o, z],
-            [z, o, z, z],
-            [z, z, z, o],
-        ];
+        let expected = [[o, z, z, z], [z, z, o, z], [z, o, z, z], [z, z, z, o]];
         approx_eq_m4(&unwrap_m4(&Gate::Swap), &expected);
     }
 
@@ -626,12 +649,7 @@ mod tests {
         let z = cc(0.0, 0.0);
         let o = cc(1.0, 0.0);
         let i = cc(0.0, 1.0);
-        let expected = [
-            [o, z, z, z],
-            [z, z, i, z],
-            [z, i, z, z],
-            [z, z, z, o],
-        ];
+        let expected = [[o, z, z, z], [z, z, i, z], [z, i, z, z], [z, z, z, o]];
         approx_eq_m4(&unwrap_m4(&Gate::Iswap), &expected);
     }
 
@@ -650,13 +668,11 @@ mod tests {
         let z = cc(0.0, 0.0);
         let o = cc(1.0, 0.0);
         let ni = cc(0.0, -1.0);
-        let expected = [
-            [o, z, z, z],
-            [z, o, z, z],
-            [z, z, z, ni],
-            [z, z, ni, z],
-        ];
-        approx_eq_m4(&unwrap_m4(&Gate::CRx(Param::Concrete(std::f64::consts::PI))), &expected);
+        let expected = [[o, z, z, z], [z, o, z, z], [z, z, z, ni], [z, z, ni, z]];
+        approx_eq_m4(
+            &unwrap_m4(&Gate::CRx(Param::Concrete(std::f64::consts::PI))),
+            &expected,
+        );
     }
 
     #[test]
@@ -670,7 +686,10 @@ mod tests {
             [z, z, cc(0.0, -1.0), z],
             [z, z, z, cc(0.0, 1.0)],
         ];
-        approx_eq_m4(&unwrap_m4(&Gate::CRz(Param::Concrete(std::f64::consts::PI))), &expected);
+        approx_eq_m4(
+            &unwrap_m4(&Gate::CRz(Param::Concrete(std::f64::consts::PI))),
+            &expected,
+        );
     }
 
     fn approx_eq_m8(actual: &[[Complex; 8]; 8], expected: &[[Complex; 8]; 8]) {
@@ -679,8 +698,7 @@ mod tests {
                 let a = actual[i][j];
                 let e = expected[i][j];
                 assert!(
-                    (a.re - e.re).abs() < AMPLITUDE_TOL
-                        && (a.im - e.im).abs() < AMPLITUDE_TOL,
+                    (a.re - e.re).abs() < AMPLITUDE_TOL && (a.im - e.im).abs() < AMPLITUDE_TOL,
                     "mismatch at [{i}][{j}]: actual={a:?} expected={e:?}"
                 );
             }
@@ -736,12 +754,7 @@ mod tests {
     fn matrix_unitary2q_roundtrip() {
         let z = cc(0.0, 0.0);
         let o = cc(1.0, 0.0);
-        let m = [
-            [o, z, z, z],
-            [z, o, z, z],
-            [z, z, z, o],
-            [z, z, o, z],
-        ];
+        let m = [[o, z, z, z], [z, o, z, z], [z, z, z, o], [z, z, o, z]];
         let g = Gate::Unitary2q(Box::new(m));
         approx_eq_m4(&unwrap_m4(&g), &m);
     }
@@ -749,9 +762,15 @@ mod tests {
     #[test]
     fn inverse_self_inverse_set() {
         for g in [
-            Gate::H, Gate::X, Gate::Y, Gate::Z,
-            Gate::Cnot, Gate::Cz, Gate::Swap,
-            Gate::Toffoli, Gate::Ccz,
+            Gate::H,
+            Gate::X,
+            Gate::Y,
+            Gate::Z,
+            Gate::Cnot,
+            Gate::Cz,
+            Gate::Swap,
+            Gate::Toffoli,
+            Gate::Ccz,
         ] {
             assert_eq!(g.clone().inverse(), g, "{g:?}");
         }
@@ -800,12 +819,7 @@ mod tests {
         let z = cc(0.0, 0.0);
         let o = cc(1.0, 0.0);
         let ni = cc(0.0, -1.0);
-        let expected = [
-            [o, z, z, z],
-            [z, z, ni, z],
-            [z, ni, z, z],
-            [z, z, z, o],
-        ];
+        let expected = [[o, z, z, z], [z, z, ni, z], [z, ni, z, z], [z, z, z, o]];
         approx_eq_m4(&m, &expected);
     }
 
@@ -813,8 +827,16 @@ mod tests {
     fn is_clifford_truth_table() {
         let p = Param::Concrete(std::f64::consts::FRAC_PI_2);
         let cliff = [
-            Gate::H, Gate::X, Gate::Y, Gate::Z, Gate::S, Gate::Sdg,
-            Gate::Cnot, Gate::Cz, Gate::Swap, Gate::Iswap,
+            Gate::H,
+            Gate::X,
+            Gate::Y,
+            Gate::Z,
+            Gate::S,
+            Gate::Sdg,
+            Gate::Cnot,
+            Gate::Cz,
+            Gate::Swap,
+            Gate::Iswap,
         ];
         for g in &cliff {
             assert!(g.is_clifford(), "{g:?} should be Clifford");
@@ -822,11 +844,18 @@ mod tests {
 
         // Parametric always false in Phase 0 (see ADR-0002), even at π/2.
         let non_cliff = [
-            Gate::T, Gate::Tdg,
-            Gate::Rx(p), Gate::Ry(p), Gate::Rz(p), Gate::Phase(p),
+            Gate::T,
+            Gate::Tdg,
+            Gate::Rx(p),
+            Gate::Ry(p),
+            Gate::Rz(p),
+            Gate::Phase(p),
             Gate::U3(p, p, p),
-            Gate::CRx(p), Gate::CRy(p), Gate::CRz(p),
-            Gate::Toffoli, Gate::Ccz,
+            Gate::CRx(p),
+            Gate::CRy(p),
+            Gate::CRz(p),
+            Gate::Toffoli,
+            Gate::Ccz,
             Gate::Unitary1q(Box::new([[Complex::new(0.0, 0.0); 2]; 2])),
             Gate::Unitary2q(Box::new([[Complex::new(0.0, 0.0); 4]; 4])),
         ];
@@ -839,19 +868,33 @@ mod tests {
     fn is_diagonal_truth_table() {
         let p = Param::Concrete(0.5);
         let diag_gates = [
-            Gate::Z, Gate::S, Gate::Sdg, Gate::T, Gate::Tdg,
-            Gate::Rz(p), Gate::Phase(p), Gate::CRz(p),
-            Gate::Cz, Gate::Ccz,
+            Gate::Z,
+            Gate::S,
+            Gate::Sdg,
+            Gate::T,
+            Gate::Tdg,
+            Gate::Rz(p),
+            Gate::Phase(p),
+            Gate::CRz(p),
+            Gate::Cz,
+            Gate::Ccz,
         ];
         for g in &diag_gates {
             assert!(g.is_diagonal(), "{g:?} should be diagonal");
         }
 
         let nondiag_gates = [
-            Gate::H, Gate::X, Gate::Y,
-            Gate::Rx(p), Gate::Ry(p), Gate::U3(p, p, p),
-            Gate::Cnot, Gate::Swap, Gate::Iswap,
-            Gate::CRx(p), Gate::CRy(p),
+            Gate::H,
+            Gate::X,
+            Gate::Y,
+            Gate::Rx(p),
+            Gate::Ry(p),
+            Gate::U3(p, p, p),
+            Gate::Cnot,
+            Gate::Swap,
+            Gate::Iswap,
+            Gate::CRx(p),
+            Gate::CRy(p),
             Gate::Toffoli,
             Gate::Unitary1q(Box::new([[Complex::new(0.0, 0.0); 2]; 2])),
             Gate::Unitary2q(Box::new([[Complex::new(0.0, 0.0); 4]; 4])),

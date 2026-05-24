@@ -18,7 +18,7 @@ mod prop_tests {
     use proptest::prelude::*;
 
     use super::{Gate, GateMatrix, Param};
-    use crate::{AMPLITUDE_TOL, Complex};
+    use crate::{Complex, AMPLITUDE_TOL};
 
     // --- matrix helpers ---
 
@@ -130,10 +130,20 @@ mod prop_tests {
 
     fn standard_gates() -> Vec<Gate> {
         vec![
-            Gate::H, Gate::X, Gate::Y, Gate::Z,
-            Gate::S, Gate::Sdg, Gate::T, Gate::Tdg,
-            Gate::Cnot, Gate::Cz, Gate::Swap, Gate::Iswap,
-            Gate::Toffoli, Gate::Ccz,
+            Gate::H,
+            Gate::X,
+            Gate::Y,
+            Gate::Z,
+            Gate::S,
+            Gate::Sdg,
+            Gate::T,
+            Gate::Tdg,
+            Gate::Cnot,
+            Gate::Cz,
+            Gate::Swap,
+            Gate::Iswap,
+            Gate::Toffoli,
+            Gate::Ccz,
         ]
     }
 

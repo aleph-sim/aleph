@@ -39,14 +39,8 @@ mod tests {
     fn equality() {
         assert_eq!(Param::Concrete(0.0), Param::Concrete(0.0));
         assert_ne!(Param::Concrete(0.0), Param::Concrete(1.0));
-        assert_eq!(
-            Param::Symbolic(SymbolId(7)),
-            Param::Symbolic(SymbolId(7))
-        );
-        assert_ne!(
-            Param::Symbolic(SymbolId(7)),
-            Param::Symbolic(SymbolId(8))
-        );
+        assert_eq!(Param::Symbolic(SymbolId(7)), Param::Symbolic(SymbolId(7)));
+        assert_ne!(Param::Symbolic(SymbolId(7)), Param::Symbolic(SymbolId(8)));
         assert_ne!(Param::Concrete(0.0), Param::Symbolic(SymbolId(0)));
     }
 }

@@ -64,11 +64,7 @@ mod tests {
 
     #[test]
     fn controlled_carries_controls() {
-        let inst = GateInstance::controlled(
-            Gate::X,
-            smallvec![3u32],
-            smallvec![0u32, 1u32],
-        );
+        let inst = GateInstance::controlled(Gate::X, smallvec![3u32], smallvec![0u32, 1u32]);
         assert_eq!(inst.qubits.as_slice(), &[3]);
         assert_eq!(inst.controls.as_slice(), &[0, 1]);
     }
