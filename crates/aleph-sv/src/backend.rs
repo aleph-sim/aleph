@@ -651,6 +651,66 @@ mod tests {
     }
 
     #[test]
+    fn measure_rejects_nan_in_bit_clear_branch() {
+        // Round-3 finding: round-2's p1-only guard left NaN in the
+        // bit-clear branch unchecked. validate_state now walks every amp.
+        let mut b = NaiveSvBackend::with_seed(0);
+        let mut s = b.allocate(2).unwrap();
+        // Bit 0 of index 0 is clear. Put NaN there; measure on qubit 0
+        // should reject before consuming RNG or collapsing state.
+        s.amps[0] = Complex::new(f64::NAN, 0.0);
+        s.amps[1] = Complex::new(0.5, 0.0);
+        s.amps[2] = Complex::new(0.5, 0.0);
+        s.amps[3] = Complex::new(0.5, 0.0);
+        let err = b.measure(&mut s, 0).unwrap_err();
+        assert!(
+            matches!(err, BackendError::InvalidState { .. }),
+            "got {err:?}"
+        );
+    }
+
+    #[test]
+    fn measure_rejects_unnormalised_state() {
+        // [0.9, 0.9] has total norm² = 1.62; sample rejects it, so
+        // measure must reject it too (symmetry — round-3 finding #3).
+        let mut b = NaiveSvBackend::with_seed(0);
+        let mut s = b.allocate(1).unwrap();
+        s.amps[0] = Complex::new(0.9, 0.0);
+        s.amps[1] = Complex::new(0.9, 0.0);
+        let err = b.measure(&mut s, 0).unwrap_err();
+        assert!(
+            matches!(err, BackendError::InvalidState { .. }),
+            "got {err:?}"
+        );
+    }
+
+    #[test]
+    fn probabilities_rejects_nan_state() {
+        let mut b = NaiveSvBackend::with_seed(0);
+        let mut s = b.allocate(1).unwrap();
+        s.amps[1] = Complex::new(f64::NAN, 0.0);
+        let err = b.probabilities(&s, &[0]).unwrap_err();
+        assert!(
+            matches!(err, BackendError::InvalidState { .. }),
+            "got {err:?}"
+        );
+    }
+
+    #[test]
+    fn expectation_value_rejects_nan_state() {
+        use aleph_core::{Pauli, PauliString};
+        let mut b = NaiveSvBackend::with_seed(0);
+        let mut s = b.allocate(1).unwrap();
+        s.amps[1] = Complex::new(f64::NAN, 0.0);
+        let z = PauliString::new(1.0, vec![(0, Pauli::Z)]).unwrap();
+        let err = b.expectation_value(&s, &z).unwrap_err();
+        assert!(
+            matches!(err, BackendError::InvalidState { .. }),
+            "got {err:?}"
+        );
+    }
+
+    #[test]
     fn measure_clamps_p_against_drifted_norm() {
         // Construct a state whose total norm² is slightly > 1.0 to mimic
         // FP drift. measure must NOT produce NaN amplitudes.

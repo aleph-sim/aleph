@@ -132,6 +132,14 @@ pub struct MeasurementRecord {
 /// `Backend::measure` call. Use this driver when downstream code needs
 /// to inspect mid-circuit outcomes (postselection, oracle comparison
 /// against shot-based references like Qiskit Aer's `meas_level=2`).
+///
+/// **Ordering contract:** the returned `Vec<MeasurementRecord>` is in
+/// the same order as the corresponding `Instruction::Measure` entries
+/// in `circuit.instructions()`. In particular,
+/// `outcomes[i].instruction_index` is strictly increasing and equals
+/// the position of the i-th measurement instruction within the
+/// circuit. Downstream consumers (oracle harness, postselection logic)
+/// may rely on this ordering.
 pub fn run_with_outcomes<B: Backend>(
     backend: &mut B,
     circuit: &Circuit,

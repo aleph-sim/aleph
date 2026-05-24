@@ -81,15 +81,15 @@ fn emit_gate(out: &mut String, g: &GateInstance) -> Result<(), EmitError> {
         Gate::Cnot => ("cx", vec![]),
         Gate::Cz => ("cz", vec![]),
         Gate::Swap => ("swap", vec![]),
-        Gate::Iswap => return Err(EmitError::UnsupportedGate { name: "Iswap" }),
-        Gate::IswapDg => return Err(EmitError::UnsupportedGate { name: "IswapDg" }),
-        Gate::CRx(_) => return Err(EmitError::UnsupportedGate { name: "CRx" }),
-        Gate::CRy(_) => return Err(EmitError::UnsupportedGate { name: "CRy" }),
-        Gate::CRz(_) => return Err(EmitError::UnsupportedGate { name: "CRz" }),
+        g @ Gate::Iswap
+        | g @ Gate::IswapDg
+        | g @ Gate::CRx(_)
+        | g @ Gate::CRy(_)
+        | g @ Gate::CRz(_)
+        | g @ Gate::Ccz
+        | g @ Gate::Unitary1q(_)
+        | g @ Gate::Unitary2q(_) => return Err(EmitError::UnsupportedGate { name: g.name() }),
         Gate::Toffoli => ("ccx", vec![]),
-        Gate::Ccz => return Err(EmitError::UnsupportedGate { name: "Ccz" }),
-        Gate::Unitary1q(_) => return Err(EmitError::UnsupportedGate { name: "Unitary1q" }),
-        Gate::Unitary2q(_) => return Err(EmitError::UnsupportedGate { name: "Unitary2q" }),
     };
     out.push_str(name);
     if !params.is_empty() {

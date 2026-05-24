@@ -163,6 +163,17 @@ pub trait Backend {
 pub fn run<B: Backend>(backend: &mut B, circuit: &Circuit)
     -> Result<B::State, BackendError>;
 
+pub fn run_with_outcomes<B: Backend>(backend: &mut B, circuit: &Circuit)
+    -> Result<(B::State, Vec<MeasurementRecord>), BackendError>;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MeasurementRecord {
+    pub instruction_index: usize,
+    pub qubit: u32,
+    pub clbit: u32,
+    pub outcome: bool,
+}
+
 #[derive(Debug, thiserror::Error, PartialEq)]
 pub enum BackendError {
     QubitOutOfRange { qubit: u32, num_qubits: u32 },
@@ -275,6 +286,8 @@ External `controls` are handled uniformly inside the kernels — no separate "co
 
 ### 7.6 `measure(state, qubit) -> bool`
 
+> **Note:** The original pseudocode below describes the round-0 algorithm. The production implementation adds (a) a `validate_state` preamble that rejects empty / non-finite / un-normalised states with `BackendError::InvalidState`, (b) clamping of both partial sums into `[0, 1]` after `validate_state` bounds the residual drift, and (c) a deterministic forced-outcome path when one branch is below the degeneracy threshold, so RNG is consumed only on genuine superpositions. See § 11.1 and § 11.2 for the rationale.
+
 ```text
 p1 = Σ |amps[i]|² for i where ((i >> qubit) & 1) == 1
 outcome = rng.gen::<f64>() < p1
@@ -290,6 +303,8 @@ return outcome
 ```
 
 ### 7.7 `sample(state, shots) -> Vec<u64>`
+
+> **Note:** Production implementation runs `validate_state` first (rejects empty / non-finite amplitudes / norm² outside the `√n · AMPLITUDE_TOL` drift budget) and clamps the last CDF entry to `1.0` so `u ∈ [0,1)` always maps to a valid index. See § 11.1 / § 11.2.
 
 Build CDF once: `cdf[i] = Σ_{k ≤ i} |amps[k]|²`. For each shot, draw `u = rng.gen::<f64>()` and binary-search (`slice::partition_point`) the CDF for `u`. Returns basis indices `0 .. 2^n`. Cost: O(N + shots·log N). No state mutation.
 
@@ -457,4 +472,25 @@ The first amendment's fixes shipped two regressions and missed several adjacent 
 **Deferred (out of scope for P0-09):**
 - `Gate::inverse()` does not validate parameter finiteness; calling `Rx(NaN).inverse()` returns `Rx(NaN)` without error. A future P0-06 amendment can add the check at the IR layer.
 - `BackendError` does not carry `#[non_exhaustive]`. Adding it now would force downstream `match` arms to add `_` catchalls before P0-10's CLI lands. Revisit when the error surface settles.
+
+### 11.3 Third-pass review — boundary-method symmetry
+
+Round-2 hardened `measure` and `sample` against NaN/Inf/drift but left the round-1 surface incomplete. The third review found that the new guards in `measure` looked at only the bit-set partial sum and missed NaN in the bit-clear branch, and that `probabilities` / `expectation_value` had no equivalent guards at all. All 7 round-3 findings are now closed.
+
+**MEDIUM — boundary symmetry:**
+- A new private `validate_state(&CpuState) -> Result<Vec<f64>, BackendError>` helper centralises the per-amp finite check, empty-vector rejection, and total-norm-² drift-budget check. All four query methods (`measure`, `sample`, `expectation_value`, `probabilities`) now call it as their preamble, eliminating the asymmetry that let `measure` and `probabilities`/`expectation_value` accept corrupted states the others rejected.
+- `measure_impl` now accumulates both partial sums (`p0` and `p1`) from the validated per-amp probabilities, instead of deriving `p0 = 1.0 - p1` from a single-branch partial. An unnormalised state like `[0.9, 0.9]` (true `norm² = 1.62`) is now rejected at the `validate_state` boundary instead of producing biased outcomes.
+
+**LOW — drift containment in dependent crates:**
+- `aleph-parser/src/emit.rs` had eight hardcoded gate-name strings inside `EmitError::UnsupportedGate { name }`. Replaced with `g.name()` so a future Gate rename via the pinning test in `aleph_core` propagates everywhere.
+
+**LOW — doc accuracy:**
+- Spec § 6.2 now includes `run_with_outcomes<B>` and `MeasurementRecord` alongside `run<B>`.
+- Spec § 7.6 and § 7.7 carry an explicit "see § 11.1 / § 11.2" pointer above the original pseudocode, so a fresh reader is not misled into reimplementing the round-0 algorithm.
+- `run_with_outcomes` doc-comment promotes the instruction-iteration order from "implementation detail enforced by an integration test" to "documented contract" — the i-th `MeasurementRecord` corresponds to the i-th `Instruction::Measure` in traversal order, and `instruction_index` is strictly increasing.
+
+**Refuted candidates:** None — all 7 candidates survived verification.
+
+**Deferred:**
+- Performance baseline: the round-2 unconditional unitarity check adds a constant ≤ 8×8 matmul per `apply_gate`. The h_wall criterion bench on `aleph-bench-server` should be re-run before P0-11 to lock in a baseline that reflects the post-round-2 dispatcher cost. Not blocking for P0-09 merge.
 
