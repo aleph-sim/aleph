@@ -115,7 +115,8 @@ impl Gate {
 
         fn concrete(p: Param) -> Result<f64, GateError> {
             match p {
-                Param::Concrete(v) => Ok(v),
+                Param::Concrete(v) if v.is_finite() => Ok(v),
+                Param::Concrete(_) => Err(GateError::NonFiniteParam),
                 Param::Symbolic(_) => Err(GateError::SymbolicParam),
             }
         }
@@ -641,6 +642,39 @@ mod tests {
     fn matrix_symbolic_param_errors() {
         let g = Gate::Rx(Param::Symbolic(crate::gate::SymbolId(0)));
         assert_eq!(g.matrix(), Err(GateError::SymbolicParam));
+    }
+
+    #[test]
+    fn matrix_nan_param_errors() {
+        let g = Gate::Rx(Param::Concrete(f64::NAN));
+        assert_eq!(g.matrix(), Err(GateError::NonFiniteParam));
+    }
+
+    #[test]
+    fn matrix_infinite_param_errors() {
+        for inf in [f64::INFINITY, f64::NEG_INFINITY] {
+            let g = Gate::Phase(Param::Concrete(inf));
+            assert_eq!(g.matrix(), Err(GateError::NonFiniteParam));
+        }
+    }
+
+    #[test]
+    fn matrix_u3_propagates_nonfinite_from_any_param() {
+        // Validate that all three U3 params are checked, not just θ.
+        let nan = Param::Concrete(f64::NAN);
+        let ok = Param::Concrete(0.0);
+        assert_eq!(
+            Gate::U3(nan, ok, ok).matrix(),
+            Err(GateError::NonFiniteParam)
+        );
+        assert_eq!(
+            Gate::U3(ok, nan, ok).matrix(),
+            Err(GateError::NonFiniteParam)
+        );
+        assert_eq!(
+            Gate::U3(ok, ok, nan).matrix(),
+            Err(GateError::NonFiniteParam)
+        );
     }
 
     fn approx_eq_m4(actual: &[[Complex; 4]; 4], expected: &[[Complex; 4]; 4]) {
