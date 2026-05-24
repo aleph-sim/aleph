@@ -9,3 +9,8 @@ authors.workspace = true
 
 [dependencies]
 num-complex = { workspace = true }
+smallvec = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
