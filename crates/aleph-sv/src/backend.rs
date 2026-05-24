@@ -456,4 +456,110 @@ mod tests {
         let err = b.apply_gate(&mut s, &gate).unwrap_err();
         assert_eq!(err, BackendError::DuplicateQubit { qubit: 0 });
     }
+
+    use proptest::prelude::*;
+
+    fn random_1q_gate_strategy() -> impl Strategy<Value = Gate> {
+        prop_oneof![
+            Just(Gate::H),
+            Just(Gate::X),
+            Just(Gate::Y),
+            Just(Gate::Z),
+            Just(Gate::S),
+            Just(Gate::Sdg),
+            Just(Gate::T),
+            Just(Gate::Tdg),
+            (-std::f64::consts::TAU..=std::f64::consts::TAU).prop_map(|t| Gate::Rx(t.into())),
+            (-std::f64::consts::TAU..=std::f64::consts::TAU).prop_map(|t| Gate::Ry(t.into())),
+            (-std::f64::consts::TAU..=std::f64::consts::TAU).prop_map(|t| Gate::Rz(t.into())),
+        ]
+    }
+
+    fn run_program(ops: &[(Gate, u32)], n: u32) -> CpuState {
+        let mut b = NaiveSvBackend::with_seed(0);
+        let mut s = b.allocate(n).unwrap();
+        for (g, q) in ops {
+            b.apply_gate(&mut s, &GateInstance::new(g.clone(), smallvec![*q]))
+                .unwrap();
+        }
+        s
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig { cases: 64, ..ProptestConfig::default() })]
+
+        #[test]
+        fn normalisation_invariant(
+            ops in proptest::collection::vec(
+                (random_1q_gate_strategy(), 0u32..4u32),
+                0..30,
+            )
+        ) {
+            let s = run_program(&ops, 4);
+            let total: f64 = s.amplitudes().iter().map(|a| a.norm_sqr()).sum();
+            prop_assert!((total - 1.0).abs() < 1e-10, "norm² = {total}");
+        }
+
+        #[test]
+        fn h_is_involution(q in 0u32..4u32) {
+            let mut b = NaiveSvBackend::with_seed(0);
+            let mut s = b.allocate(4).unwrap();
+            b.apply_gate(&mut s, &GateInstance::new(Gate::H, smallvec![q])).unwrap();
+            b.apply_gate(&mut s, &GateInstance::new(Gate::H, smallvec![q])).unwrap();
+            prop_assert!((s.amplitudes()[0].re - 1.0).abs() < 1e-12);
+            for a in &s.amplitudes()[1..] {
+                prop_assert!(a.norm() < 1e-12);
+            }
+        }
+
+        #[test]
+        fn cnot_is_involution(c in 0u32..3u32, t in 0u32..3u32) {
+            prop_assume!(c != t);
+            let mut b = NaiveSvBackend::with_seed(0);
+            let mut s = b.allocate(3).unwrap();
+            b.apply_gate(&mut s, &GateInstance::new(Gate::H, smallvec![c])).unwrap();
+            let before: Vec<Complex> = s.amplitudes().to_vec();
+            b.apply_gate(&mut s, &GateInstance::new(Gate::Cnot, smallvec![c, t])).unwrap();
+            b.apply_gate(&mut s, &GateInstance::new(Gate::Cnot, smallvec![c, t])).unwrap();
+            for (x, y) in before.iter().zip(s.amplitudes().iter()) {
+                prop_assert!((x - y).norm() < 1e-12);
+            }
+        }
+
+        #[test]
+        fn rx_then_rx_negative_returns_identity(q in 0u32..3u32, theta in -3.0_f64..3.0_f64) {
+            let mut b = NaiveSvBackend::with_seed(0);
+            let mut s = b.allocate(3).unwrap();
+            b.apply_gate(&mut s, &GateInstance::new(Gate::H, smallvec![q])).unwrap();
+            let before: Vec<Complex> = s.amplitudes().to_vec();
+            b.apply_gate(&mut s, &GateInstance::new(Gate::Rx(theta.into()), smallvec![q])).unwrap();
+            b.apply_gate(&mut s, &GateInstance::new(Gate::Rx((-theta).into()), smallvec![q])).unwrap();
+            for (x, y) in before.iter().zip(s.amplitudes().iter()) {
+                prop_assert!((x - y).norm() < 1e-10);
+            }
+        }
+
+        #[test]
+        fn intrinsic_cnot_matches_external_control(
+            c in 0u32..3u32,
+            t in 0u32..3u32,
+            preamble_q in 0u32..3u32,
+        ) {
+            prop_assume!(c != t);
+            let mut b1 = NaiveSvBackend::with_seed(0);
+            let mut s1 = b1.allocate(3).unwrap();
+            b1.apply_gate(&mut s1, &GateInstance::new(Gate::H, smallvec![preamble_q])).unwrap();
+            b1.apply_gate(&mut s1, &GateInstance::new(Gate::Cnot, smallvec![c, t])).unwrap();
+            let mut b2 = NaiveSvBackend::with_seed(0);
+            let mut s2 = b2.allocate(3).unwrap();
+            b2.apply_gate(&mut s2, &GateInstance::new(Gate::H, smallvec![preamble_q])).unwrap();
+            b2.apply_gate(
+                &mut s2,
+                &GateInstance::controlled(Gate::X, smallvec![t], smallvec![c]),
+            ).unwrap();
+            for (a, b) in s1.amplitudes().iter().zip(s2.amplitudes().iter()) {
+                prop_assert!((a - b).norm() < 1e-12);
+            }
+        }
+    }
 }
