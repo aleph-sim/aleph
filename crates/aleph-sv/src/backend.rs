@@ -114,10 +114,10 @@ impl Backend for NaiveSvBackend {
 
     fn probabilities(
         &mut self,
-        _state: &Self::State,
-        _qubits: &[u32],
+        state: &Self::State,
+        qubits: &[u32],
     ) -> Result<Vec<f64>, BackendError> {
-        unimplemented!("probabilities lands in P0-09 Task 14")
+        crate::measure::probabilities_impl(state, qubits)
     }
 }
 
@@ -307,6 +307,56 @@ mod tests {
         let mut b = NaiveSvBackend::with_seed(0);
         let s = b.allocate(2).unwrap();
         assert!(b.sample(&s, 0).unwrap().is_empty());
+    }
+
+    #[test]
+    fn probabilities_zero_state() {
+        let mut b = NaiveSvBackend::with_seed(0);
+        let s = b.allocate(2).unwrap();
+        assert_eq!(
+            b.probabilities(&s, &[0, 1]).unwrap(),
+            vec![1.0, 0.0, 0.0, 0.0]
+        );
+    }
+
+    #[test]
+    fn probabilities_plus_state_uniform_marginal() {
+        let mut b = NaiveSvBackend::with_seed(0);
+        let mut s = b.allocate(1).unwrap();
+        b.apply_gate(&mut s, &GateInstance::new(Gate::H, smallvec![0u32]))
+            .unwrap();
+        let p = b.probabilities(&s, &[0]).unwrap();
+        assert!((p[0] - 0.5).abs() < 1e-12);
+        assert!((p[1] - 0.5).abs() < 1e-12);
+    }
+
+    #[test]
+    fn probabilities_empty_subset_is_one() {
+        let mut b = NaiveSvBackend::with_seed(0);
+        let s = b.allocate(3).unwrap();
+        assert_eq!(b.probabilities(&s, &[]).unwrap(), vec![1.0]);
+    }
+
+    #[test]
+    fn probabilities_duplicate_qubit_rejected() {
+        let mut b = NaiveSvBackend::with_seed(0);
+        let s = b.allocate(2).unwrap();
+        let err = b.probabilities(&s, &[0, 0]).unwrap_err();
+        assert_eq!(err, BackendError::DuplicateQubit { qubit: 0 });
+    }
+
+    #[test]
+    fn probabilities_out_of_range_rejected() {
+        let mut b = NaiveSvBackend::with_seed(0);
+        let s = b.allocate(2).unwrap();
+        let err = b.probabilities(&s, &[5]).unwrap_err();
+        assert_eq!(
+            err,
+            BackendError::QubitOutOfRange {
+                qubit: 5,
+                num_qubits: 2,
+            }
+        );
     }
 
     #[test]

@@ -79,3 +79,42 @@ pub(crate) fn sample_impl(
     }
     Ok(out)
 }
+
+/// Marginal probabilities over the named qubit subset.
+///
+/// Returns a vector of length `2^qubits.len()`. The output is indexed
+/// with `qubits[0]` as LSB to match the global gate-ordering convention.
+pub(crate) fn probabilities_impl(
+    state: &CpuState,
+    qubits: &[u32],
+) -> Result<Vec<f64>, BackendError> {
+    let n = state.num_qubits;
+    let mut seen: smallvec::SmallVec<[u32; 6]> = smallvec::SmallVec::new();
+    for &q in qubits {
+        if q >= n {
+            return Err(BackendError::QubitOutOfRange {
+                qubit: q,
+                num_qubits: n,
+            });
+        }
+        if seen.contains(&q) {
+            return Err(BackendError::DuplicateQubit { qubit: q });
+        }
+        seen.push(q);
+    }
+    if qubits.is_empty() {
+        return Ok(vec![1.0]);
+    }
+    let out_dim = 1usize << qubits.len();
+    let mut out = vec![0.0_f64; out_dim];
+    for (i, a) in state.amps.iter().enumerate() {
+        let mut k = 0usize;
+        for (pos, &q) in qubits.iter().enumerate() {
+            if (i >> q) & 1 == 1 {
+                k |= 1usize << pos;
+            }
+        }
+        out[k] += a.norm_sqr();
+    }
+    Ok(out)
+}
