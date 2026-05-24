@@ -100,8 +100,8 @@ impl Backend for NaiveSvBackend {
         crate::measure::measure_impl(&mut self.rng, state, qubit)
     }
 
-    fn sample(&mut self, _state: &Self::State, _shots: u32) -> Result<Vec<u64>, BackendError> {
-        unimplemented!("sample lands in P0-09 Task 13")
+    fn sample(&mut self, state: &Self::State, shots: u32) -> Result<Vec<u64>, BackendError> {
+        crate::measure::sample_impl(&mut self.rng, state, shots)
     }
 
     fn expectation_value(
@@ -270,6 +270,43 @@ mod tests {
                 num_qubits: 1,
             }
         );
+    }
+
+    #[test]
+    fn sample_zero_state_only_returns_zero() {
+        let mut b = NaiveSvBackend::with_seed(7);
+        let s = b.allocate(3).unwrap();
+        let shots = b.sample(&s, 100).unwrap();
+        assert_eq!(shots.len(), 100);
+        assert!(shots.iter().all(|&v| v == 0));
+    }
+
+    #[test]
+    fn sample_bell_state_only_returns_00_or_11() {
+        let mut b = NaiveSvBackend::with_seed(7);
+        let mut s = b.allocate(2).unwrap();
+        b.apply_gate(&mut s, &GateInstance::new(Gate::H, smallvec![0u32]))
+            .unwrap();
+        b.apply_gate(
+            &mut s,
+            &GateInstance::new(Gate::Cnot, smallvec![0u32, 1u32]),
+        )
+        .unwrap();
+        let shots = b.sample(&s, 1000).unwrap();
+        assert!(shots.iter().all(|&v| v == 0 || v == 3));
+        let zeros = shots.iter().filter(|&&v| v == 0).count();
+        let threes = shots.iter().filter(|&&v| v == 3).count();
+        assert!(
+            zeros > 100 && threes > 100,
+            "zeros={zeros}, threes={threes}"
+        );
+    }
+
+    #[test]
+    fn sample_zero_shots_returns_empty() {
+        let mut b = NaiveSvBackend::with_seed(0);
+        let s = b.allocate(2).unwrap();
+        assert!(b.sample(&s, 0).unwrap().is_empty());
     }
 
     #[test]
