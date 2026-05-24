@@ -69,7 +69,7 @@ If a directory above doesn’t exist yet, that’s expected — early phases hav
 
 ### Rust style
 
-- Edition: **2021**. Minimum Rust: **1.75**.
+- Edition: **2021**. Minimum Rust: **1.85** (raised from 1.75 in P0-04 to accommodate criterion 0.5's transitive deps).
 - `rustfmt` enforced via `cargo fmt`. Settings in `rustfmt.toml` (default if absent).
 - `clippy` warnings treated as errors in CI: `cargo clippy --workspace --all-targets -- -D warnings`.
 - No `unwrap()` or `expect()` in library code outside of tests and `lazy_static!`-style one-time init. Use `?` with concrete error types via `thiserror`.

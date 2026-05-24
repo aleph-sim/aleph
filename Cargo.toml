@@ -13,11 +13,15 @@ members = [
     "crates/aleph-stab",
     "crates/aleph-cli",
     "crates/aleph-py",
+    "benches",
 ]
 
 [workspace.package]
 edition = "2021"
-rust-version = "1.75"
+# Bumped from 1.75 to 1.85 in P0-04 — criterion 0.5's transitive deps
+# (clap 4.6 → 1.85, half 2.7 → 1.81) need this. CLAUDE.md keeps the same
+# floor; bump both together if criterion or another dep pushes it again.
+rust-version = "1.85"
 version = "0.0.0"
 license = "MIT"
 repository = "https://github.com/ruslan-splynx/aleph"
@@ -28,6 +32,7 @@ authors = ["aleph contributors"]
 # `foo.workspace = true`. Add new entries as crates start using them
 # (e.g. thiserror, rayon) so versions stay aligned across the workspace.
 num-complex = "0.4"
+criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support", "html_reports", "plotters"] }
 
 [profile.release]
 opt-level = 3

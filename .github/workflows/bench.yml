@@ -12,15 +12,16 @@ on:
       - "rust-toolchain.toml"
       - ".github/workflows/bench.yml"
 
-# Concurrency:
-# - Group by PR number when on a PR (so stacked PR pushes cancel each other),
-#   otherwise group by commit SHA (so every push to main gets its own run and
-#   never cancels a sibling — bencher.dev needs every main commit recorded
-#   to keep the baseline timeline complete).
-# - cancel-in-progress only on PR events.
+# Concurrency: serialise every bench run on the single self-hosted
+# runner. Two concurrent `cargo bench` invocations would fight for
+# memory and `target/` locks and produce noisy numbers — the whole
+# point of dedicated bench hardware is stable measurements. We accept
+# the throughput hit (one bench at a time, queued FIFO) in exchange.
+# Runs are never cancelled mid-flight so bencher.dev's main-branch
+# baseline keeps every commit's measurement.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: bench-self-hosted-linux-x64
+  cancel-in-progress: false
 
 permissions:
   contents: read
