@@ -51,6 +51,21 @@ impl Circuit {
     pub fn metadata(&self) -> &CircuitMetadata {
         &self.metadata
     }
+
+    /// Slice over all instructions in execution order.
+    pub fn instructions(&self) -> &[Instruction] {
+        &self.instructions
+    }
+
+    /// Number of instructions in the circuit.
+    pub fn len(&self) -> usize {
+        self.instructions.len()
+    }
+
+    /// Whether the circuit contains no instructions.
+    pub fn is_empty(&self) -> bool {
+        self.instructions.is_empty()
+    }
 }
 
 #[cfg(test)]
@@ -77,6 +92,26 @@ mod tests {
     fn with_generated_from_sets_metadata() {
         let c = Circuit::new(0, 0).with_generated_from("openqasm:3.0");
         assert_eq!(c.metadata().generated_from.as_deref(), Some("openqasm:3.0"));
+    }
+
+    #[test]
+    fn instructions_empty_on_new() {
+        let c = Circuit::new(2, 0);
+        assert_eq!(c.instructions().len(), 0);
+        assert!(c.is_empty());
+        assert_eq!(c.len(), 0);
+    }
+
+    #[test]
+    fn instructions_reports_pushed() {
+        use crate::Instruction;
+        let mut c = Circuit::new(2, 0);
+        c.instructions.push(Instruction::Reset(0));
+        c.instructions.push(Instruction::Reset(1));
+        assert_eq!(c.len(), 2);
+        assert!(!c.is_empty());
+        assert!(matches!(c.instructions()[0], Instruction::Reset(0)));
+        assert!(matches!(c.instructions()[1], Instruction::Reset(1)));
     }
 
     #[test]
