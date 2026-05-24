@@ -343,3 +343,23 @@ OpenQASM round-trip from the BACKLOG is **explicitly deferred** to P0-08.
 ## 11. Open Questions
 
 None. Sub-decisions raised during design review (consuming `with_name`, indices in `layers()`, dual `add_gate`/`add_instruction`) are recorded in §3. If implementation surfaces a new decision, the spec gets a §12 amendment before code lands (same pattern as P0-06).
+
+## 12. Amendments
+
+### 12.1 Layer-extraction monotonicity (2026-05-24)
+
+**Issue:** §6 pseudocode and §8.2 property #1 were internally inconsistent. §6 implemented ASAP scheduling — each instruction gets its earliest possible layer based only on per-qubit/per-clbit dependencies — but §8.2 property #1 ("flattening `layers()` in order reproduces `0..circuit.len()`") requires that the layer assignment be **non-decreasing** in instruction index. ASAP scheduling violates this on inputs like `cnot(0,1); h(0); h(2)` where `h(2)` backfills to layer 0 while `h(0)` sits in layer 1 → flattened order `[0, 2, 1]`.
+
+**Resolution:** the algorithm enforces monotonicity by also bumping `earliest` to at least the previous instruction's assigned layer. Backfilling into the **current** open layer still happens (preserving the §8.1 unit-test case `cnot(0,1); h(2) → [[0, 1]]`), but no instruction can land in a layer strictly earlier than the one immediately before it.
+
+```
+let mut prev_assigned_layer = 0;
+for (i, inst) in ... {
+    let mut earliest = prev_assigned_layer;
+    // ... (same per-qubit / per-clbit logic) ...
+    // place at `earliest`
+    prev_assigned_layer = earliest;
+}
+```
+
+The property test in `tests/layers_properties.rs::layers_flatten_to_0_to_len` is the authoritative check. The §6 pseudocode is interpreted with this monotonicity constraint applied.

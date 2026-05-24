@@ -34,12 +34,18 @@ pub(crate) fn extract_layers(circuit: &Circuit) -> Vec<Vec<usize>> {
     let mut last_for_clbit: Vec<Option<usize>> = vec![None; nc];
 
     let mut layers: Vec<Vec<usize>> = Vec::new();
+    // Monotonicity: each new instruction is placed at a layer >= the
+    // previous instruction's layer. Without this, a later
+    // dep-free instruction could backfill into a layer earlier than
+    // the immediately preceding one, breaking the spec invariant that
+    // flattening `layers` in order reproduces `0..len`.
+    let mut prev_assigned_layer: usize = 0;
 
     for (i, inst) in circuit.instructions().iter().enumerate() {
         let qubits = inst.used_qubits();
         let clbits = inst.used_clbits();
 
-        let mut earliest: usize = 0;
+        let mut earliest: usize = prev_assigned_layer;
 
         for &q in &qubits {
             if let Some((prev_layer, prev_idx)) = last_for_qubit[q as usize] {
@@ -69,6 +75,7 @@ pub(crate) fn extract_layers(circuit: &Circuit) -> Vec<Vec<usize>> {
         for &c in &clbits {
             last_for_clbit[c as usize] = Some(earliest);
         }
+        prev_assigned_layer = earliest;
     }
 
     layers
