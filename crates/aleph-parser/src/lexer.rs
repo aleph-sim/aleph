@@ -83,16 +83,19 @@ pub fn uint(input: Span<'_>) -> IResult<Span<'_>, u32> {
 }
 
 /// Parse a floating-point literal: `123`, `123.456`, `.5`, `1e10`,
-/// `1.5e-3`. Returns the parsed `f64`.
+/// `1.5e-3`. Plain integers like `42` are accepted (parsed as f64).
+/// Returns the parsed `f64`.
 pub fn float(input: Span<'_>) -> IResult<Span<'_>, f64> {
     let (rest, lit) = recognize(tuple((
         opt(alt((ch('+'), ch('-')))),
         alt((
-            // forms like 1.5 or 1.5e-3 or 1.
+            // forms with leading digits: `1`, `1.`, `1.5`, `1e3`, `1.5e-3`
             recognize(tuple((
                 take_while1(|c: char| c.is_ascii_digit()),
-                ch('.'),
-                opt(take_while1(|c: char| c.is_ascii_digit())),
+                opt(tuple((
+                    ch('.'),
+                    opt(take_while1(|c: char| c.is_ascii_digit())),
+                ))),
                 opt(exponent),
             ))),
             // forms like .5 or .5e10
@@ -100,11 +103,6 @@ pub fn float(input: Span<'_>) -> IResult<Span<'_>, f64> {
                 ch('.'),
                 take_while1(|c: char| c.is_ascii_digit()),
                 opt(exponent),
-            ))),
-            // forms like 1 or 1e10 (no dot)
-            recognize(tuple((
-                take_while1(|c: char| c.is_ascii_digit()),
-                exponent,
             ))),
         )),
     )))
