@@ -10,7 +10,8 @@ use nom::character::complete::char as ch;
 use nom::combinator::opt;
 use nom::multi::many0;
 
-use crate::ast::{Decl, Include, Position, Program};
+use crate::ast::{Decl, GateStmt, IndexedRef, Include, Position, Program, RegOrIdx, Stmt};
+use crate::expr::expr as parse_expr;
 use crate::lexer::{Span, ident, skip_ws, string_literal, uint};
 
 /// Capture the 1-based (line, col) of the *current* position in `input`.
@@ -26,6 +27,7 @@ pub fn program(input: Span<'_>) -> IResult<Span<'_>, Program> {
     let (input, header_version) = opt(header).parse(input)?;
     let (input, includes) = many0(include_stmt).parse(input)?;
     let (input, decls) = many0(decl).parse(input)?;
+    let (input, stmts) = many0(stmt).parse(input)?;
     let (input, _) = skip_ws(input)?;
     Ok((
         input,
@@ -33,7 +35,7 @@ pub fn program(input: Span<'_>) -> IResult<Span<'_>, Program> {
             header_version,
             includes,
             decls,
-            stmts: Vec::new(),
+            stmts,
         },
     ))
 }
@@ -88,6 +90,132 @@ fn creg_decl(input: Span<'_>) -> IResult<Span<'_>, Decl> {
 
 fn decl(input: Span<'_>) -> IResult<Span<'_>, Decl> {
     nom::branch::alt((qreg_decl, creg_decl)).parse(input)
+}
+
+fn indexed_ref(input: Span<'_>) -> IResult<Span<'_>, IndexedRef> {
+    let (input, _) = skip_ws(input)?;
+    let p = pos_of(&input);
+    let (input, name) = ident(input)?;
+    let (input, _) = skip_ws(input)?;
+    let (input, _) = tag("[").parse(input)?;
+    let (input, _) = skip_ws(input)?;
+    let (input, index) = uint(input)?;
+    let (input, _) = skip_ws(input)?;
+    let (input, _) = tag("]").parse(input)?;
+    Ok((
+        input,
+        IndexedRef {
+            pos: p,
+            name: name.fragment().to_string(),
+            index,
+        },
+    ))
+}
+
+fn reg_or_idx(input: Span<'_>) -> IResult<Span<'_>, RegOrIdx> {
+    let (input, _) = skip_ws(input)?;
+    let p = pos_of(&input);
+    let (input, name) = ident(input)?;
+    // Optional `[index]` follows.
+    let after_name = input;
+    let (input, _) = skip_ws(input)?;
+    if let Ok((input, _)) = tag::<_, _, nom::error::Error<Span<'_>>>("[").parse(input) {
+        let (input, _) = skip_ws(input)?;
+        let (input, index) = uint(input)?;
+        let (input, _) = skip_ws(input)?;
+        let (input, _) = tag("]").parse(input)?;
+        Ok((
+            input,
+            RegOrIdx::Indexed(IndexedRef {
+                pos: p,
+                name: name.fragment().to_string(),
+                index,
+            }),
+        ))
+    } else {
+        Ok((
+            after_name,
+            RegOrIdx::Whole {
+                pos: p,
+                name: name.fragment().to_string(),
+            },
+        ))
+    }
+}
+
+/// Parse an expression and unwrap the Result<f64, String> payload —
+/// on Err, return a nom Failure so the top-level error converter can
+/// surface a positioned error. (Spec § 9: bad expressions like
+/// `1/0` are rejected; exact error text is best-effort.)
+fn expr_value(input: Span<'_>) -> IResult<Span<'_>, f64> {
+    let saved = input;
+    let (input, v) = parse_expr(input)?;
+    match v {
+        Ok(x) => Ok((input, x)),
+        Err(_) => Err(nom::Err::Failure(nom::error::Error::new(
+            saved,
+            nom::error::ErrorKind::Float,
+        ))),
+    }
+}
+
+fn gate_params(input: Span<'_>) -> IResult<Span<'_>, Vec<f64>> {
+    let (input, _) = skip_ws(input)?;
+    let (input, _) = tag("(").parse(input)?;
+    let (mut input, first) = expr_value(input)?;
+    let mut values = vec![first];
+    loop {
+        let saved = input;
+        let (next, _) = skip_ws(input)?;
+        if let Ok((next, _)) = tag::<_, _, nom::error::Error<Span<'_>>>(",").parse(next) {
+            let (next, v) = expr_value(next)?;
+            values.push(v);
+            input = next;
+        } else {
+            input = saved;
+            break;
+        }
+    }
+    let (input, _) = skip_ws(input)?;
+    let (input, _) = tag(")").parse(input)?;
+    Ok((input, values))
+}
+
+fn gate_stmt(input: Span<'_>) -> IResult<Span<'_>, GateStmt> {
+    let (input, _) = skip_ws(input)?;
+    let p = pos_of(&input);
+    let (input, name) = ident(input)?;
+    let (input, params) = opt(gate_params).parse(input)?;
+    let (input, first) = indexed_ref(input)?;
+    let (mut input, mut args) = (input, vec![first]);
+    loop {
+        let saved = input;
+        let (next, _) = skip_ws(input)?;
+        if let Ok((next, _)) = tag::<_, _, nom::error::Error<Span<'_>>>(",").parse(next) {
+            let (next, r) = indexed_ref(next)?;
+            args.push(r);
+            input = next;
+        } else {
+            input = saved;
+            break;
+        }
+    }
+    let (input, _) = skip_ws(input)?;
+    let (input, _) = tag(";").parse(input)?;
+    Ok((
+        input,
+        GateStmt {
+            pos: p,
+            name: name.fragment().to_string(),
+            params: params.unwrap_or_default(),
+            args,
+        },
+    ))
+}
+
+fn stmt(input: Span<'_>) -> IResult<Span<'_>, Stmt> {
+    let (input, _) = skip_ws(input)?;
+    nom::combinator::map(gate_stmt, Stmt::Gate).parse(input)
 }
 
 fn header(input: Span<'_>) -> IResult<Span<'_>, String> {
@@ -200,5 +328,56 @@ bit[2] c;"#;
         assert_eq!(prog.header_version.as_deref(), Some("3.0"));
         assert_eq!(prog.includes.len(), 1);
         assert_eq!(prog.decls.len(), 2);
+    }
+
+    #[test]
+    fn parses_single_qubit_gate() {
+        let (_, prog) = program(sp("qubit[1] q; h q[0];")).unwrap();
+        assert_eq!(prog.stmts.len(), 1);
+        match &prog.stmts[0] {
+            Stmt::Gate(g) => {
+                assert_eq!(g.name, "h");
+                assert_eq!(g.params.len(), 0);
+                assert_eq!(g.args.len(), 1);
+                assert_eq!(g.args[0].index, 0);
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn parses_two_qubit_gate() {
+        let (_, prog) = program(sp("qubit[2] q; cx q[0], q[1];")).unwrap();
+        match &prog.stmts[0] {
+            Stmt::Gate(g) => {
+                assert_eq!(g.name, "cx");
+                assert_eq!(g.args.len(), 2);
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn parses_parametric_gate() {
+        let (_, prog) = program(sp("qubit[1] q; rx(pi/2) q[0];")).unwrap();
+        match &prog.stmts[0] {
+            Stmt::Gate(g) => {
+                assert_eq!(g.name, "rx");
+                assert_eq!(g.params.len(), 1);
+                assert!((g.params[0] - std::f64::consts::FRAC_PI_2).abs() < 1e-15);
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn parses_u3_with_three_params() {
+        let (_, prog) = program(sp("qubit[1] q; u3(0.1, 0.2, 0.3) q[0];")).unwrap();
+        match &prog.stmts[0] {
+            Stmt::Gate(g) => {
+                assert_eq!(g.params, vec![0.1, 0.2, 0.3]);
+            }
+            _ => panic!(),
+        }
     }
 }
