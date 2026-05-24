@@ -710,23 +710,30 @@ mod tests {
         assert!(m2_bottom_left.im.abs() < AMPLITUDE_TOL);
     }
 
+    fn expect_err(g: &Gate, want: GateError) {
+        match g.matrix() {
+            Err(e) => assert_eq!(e, want, "matrix() error mismatch for {g:?}"),
+            Ok(_) => panic!("matrix() returned Ok for {g:?}, expected {want:?}"),
+        }
+    }
+
     #[test]
     fn matrix_symbolic_param_errors() {
         let g = Gate::Rx(Param::Symbolic(crate::gate::SymbolId(0)));
-        assert_eq!(g.matrix(), Err(GateError::SymbolicParam));
+        expect_err(&g, GateError::SymbolicParam);
     }
 
     #[test]
     fn matrix_nan_param_errors() {
         let g = Gate::Rx(Param::Concrete(f64::NAN));
-        assert_eq!(g.matrix(), Err(GateError::NonFiniteParam));
+        expect_err(&g, GateError::NonFiniteParam);
     }
 
     #[test]
     fn matrix_infinite_param_errors() {
         for inf in [f64::INFINITY, f64::NEG_INFINITY] {
             let g = Gate::Phase(Param::Concrete(inf));
-            assert_eq!(g.matrix(), Err(GateError::NonFiniteParam));
+            expect_err(&g, GateError::NonFiniteParam);
         }
     }
 
@@ -735,18 +742,9 @@ mod tests {
         // Validate that all three U3 params are checked, not just θ.
         let nan = Param::Concrete(f64::NAN);
         let ok = Param::Concrete(0.0);
-        assert_eq!(
-            Gate::U3(nan, ok, ok).matrix(),
-            Err(GateError::NonFiniteParam)
-        );
-        assert_eq!(
-            Gate::U3(ok, nan, ok).matrix(),
-            Err(GateError::NonFiniteParam)
-        );
-        assert_eq!(
-            Gate::U3(ok, ok, nan).matrix(),
-            Err(GateError::NonFiniteParam)
-        );
+        expect_err(&Gate::U3(nan, ok, ok), GateError::NonFiniteParam);
+        expect_err(&Gate::U3(ok, nan, ok), GateError::NonFiniteParam);
+        expect_err(&Gate::U3(ok, ok, nan), GateError::NonFiniteParam);
     }
 
     fn approx_eq_m4(actual: &[[Complex; 4]; 4], expected: &[[Complex; 4]; 4]) {
