@@ -654,6 +654,63 @@ mod tests {
     }
 
     #[test]
+    fn matrix_u3_pi_0_pi_is_x() {
+        // Qiskit convention: U3(π, 0, π) == X (no global phase).
+        let m = unwrap_m2(&Gate::U3(
+            Param::Concrete(std::f64::consts::PI),
+            Param::Concrete(0.0),
+            Param::Concrete(std::f64::consts::PI),
+        ));
+        let expected = [[cc(0.0, 0.0), cc(1.0, 0.0)], [cc(1.0, 0.0), cc(0.0, 0.0)]];
+        approx_eq_m2(&m, &expected);
+    }
+
+    #[test]
+    fn matrix_u3_halfpi_0_pi_is_h() {
+        // Qiskit convention: U3(π/2, 0, π) == H (no global phase).
+        let s = FRAC_1_SQRT_2;
+        let m = unwrap_m2(&Gate::U3(
+            Param::Concrete(std::f64::consts::FRAC_PI_2),
+            Param::Concrete(0.0),
+            Param::Concrete(std::f64::consts::PI),
+        ));
+        let expected = [[cc(s, 0.0), cc(s, 0.0)], [cc(s, 0.0), cc(-s, 0.0)]];
+        approx_eq_m2(&m, &expected);
+    }
+
+    #[test]
+    fn matrix_u3_phi_lambda_order_distinguishable() {
+        // Guard against silently swapped φ↔λ: U3(π/2, π/3, 0) and
+        // U3(π/2, 0, π/3) must differ. With the Qiskit formula,
+        // the bottom-left of U3(θ, φ, λ) is e^(iφ)·sin(θ/2) and the
+        // top-right is -e^(iλ)·sin(θ/2). Swapping φ↔λ would swap
+        // which entry carries the e^(iπ/3) phase.
+        let theta = std::f64::consts::FRAC_PI_2;
+        let pi3 = std::f64::consts::FRAC_PI_3;
+        let m1 = unwrap_m2(&Gate::U3(
+            Param::Concrete(theta),
+            Param::Concrete(pi3),
+            Param::Concrete(0.0),
+        ));
+        let m2 = unwrap_m2(&Gate::U3(
+            Param::Concrete(theta),
+            Param::Concrete(0.0),
+            Param::Concrete(pi3),
+        ));
+        // m1 has the phase on bottom-left (e_phi · s), m2 on top-right.
+        let s = (theta / 2.0).sin();
+        let cos_pi3 = pi3.cos();
+        let sin_pi3 = pi3.sin();
+        // m1[1][0] = e^(iπ/3) · s, m2[1][0] = 1 · s (real).
+        let m1_bottom_left = m1[1][0];
+        let m2_bottom_left = m2[1][0];
+        assert!((m1_bottom_left.re - cos_pi3 * s).abs() < AMPLITUDE_TOL);
+        assert!((m1_bottom_left.im - sin_pi3 * s).abs() < AMPLITUDE_TOL);
+        assert!((m2_bottom_left.re - s).abs() < AMPLITUDE_TOL);
+        assert!(m2_bottom_left.im.abs() < AMPLITUDE_TOL);
+    }
+
+    #[test]
     fn matrix_symbolic_param_errors() {
         let g = Gate::Rx(Param::Symbolic(crate::gate::SymbolId(0)));
         assert_eq!(g.matrix(), Err(GateError::SymbolicParam));
