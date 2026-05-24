@@ -292,53 +292,129 @@ fn build_gate_variant(shape: &GateShape, params: &[f64]) -> Gate {
     }
 }
 
-// Real implementations land in Task 12.
 fn lower_barrier(
-    _circuit: &mut Circuit,
-    _regs: &RegisterMap,
-    _b: &BarrierStmt,
-    _source: &str,
+    circuit: &mut Circuit,
+    regs: &RegisterMap,
+    b: &BarrierStmt,
+    source: &str,
 ) -> Result<(), ParseError> {
-    Err(ParseError::new(
-        0,
-        0,
-        String::new(),
-        ParseErrorKind::UnsupportedFeature {
-            feature: "barrier (pending Task 12)",
-        },
-    ))
+    let mut qubits: smallvec::SmallVec<[u32; 8]> = smallvec::SmallVec::new();
+    for arg in &b.args {
+        match arg {
+            RegOrIdx::Indexed(r) => qubits.push(resolve_indexed(regs, r, source)?),
+            RegOrIdx::Whole { pos, name } => match regs.qreg_size(name) {
+                None => {
+                    return Err(perr(
+                        source,
+                        *pos,
+                        ParseErrorKind::UnknownRegister { name: name.clone() },
+                    ));
+                }
+                Some((base, size)) => {
+                    for i in 0..size {
+                        qubits.push(base + i);
+                    }
+                }
+            },
+        }
+    }
+    circuit
+        .add_instruction(Instruction::Barrier(qubits))
+        .map_err(|e| perr(source, b.pos, ParseErrorKind::IrRejected(e)))?;
+    Ok(())
 }
 
 fn lower_measure(
-    _circuit: &mut Circuit,
-    _regs: &RegisterMap,
-    _m: &MeasureStmt,
-    _source: &str,
+    circuit: &mut Circuit,
+    regs: &RegisterMap,
+    m: &MeasureStmt,
+    source: &str,
 ) -> Result<(), ParseError> {
-    Err(ParseError::new(
-        0,
-        0,
-        String::new(),
-        ParseErrorKind::UnsupportedFeature {
-            feature: "measure (pending Task 12)",
-        },
-    ))
+    match (&m.source, &m.target) {
+        (RegOrIdx::Indexed(qr), RegOrIdx::Indexed(cr)) => {
+            let q = resolve_indexed(regs, qr, source)?;
+            let c = regs
+                .resolve_clbit(&cr.name, cr.index)
+                .map_err(|kind| perr(source, cr.pos, kind))?;
+            circuit
+                .add_instruction(Instruction::Measure {
+                    qubit: q,
+                    clbit: c,
+                })
+                .map_err(|e| perr(source, m.pos, ParseErrorKind::IrRejected(e)))?;
+            Ok(())
+        }
+        (
+            RegOrIdx::Whole {
+                pos: qpos,
+                name: qname,
+            },
+            RegOrIdx::Whole {
+                pos: _,
+                name: cname,
+            },
+        ) => {
+            let (qbase, qsize) = regs.qreg_size(qname).ok_or_else(|| {
+                perr(
+                    source,
+                    *qpos,
+                    ParseErrorKind::UnknownRegister {
+                        name: qname.clone(),
+                    },
+                )
+            })?;
+            let (cbase, csize) = regs.creg_size(cname).ok_or_else(|| {
+                perr(
+                    source,
+                    m.pos,
+                    ParseErrorKind::UnknownRegister {
+                        name: cname.clone(),
+                    },
+                )
+            })?;
+            if qsize != csize {
+                return Err(perr(
+                    source,
+                    m.pos,
+                    ParseErrorKind::SizeMismatch {
+                        lhs: qname.clone(),
+                        lhs_size: qsize,
+                        rhs: cname.clone(),
+                        rhs_size: csize,
+                    },
+                ));
+            }
+            for i in 0..qsize {
+                circuit
+                    .add_instruction(Instruction::Measure {
+                        qubit: qbase + i,
+                        clbit: cbase + i,
+                    })
+                    .map_err(|e| perr(source, m.pos, ParseErrorKind::IrRejected(e)))?;
+            }
+            Ok(())
+        }
+        _ => Err(perr(
+            source,
+            m.pos,
+            ParseErrorKind::UnsupportedFeature {
+                feature: "mixed whole-register / indexed measure",
+            },
+        )),
+    }
 }
 
 fn lower_reset(
-    _circuit: &mut Circuit,
-    _regs: &RegisterMap,
-    _r: &ResetStmt,
-    _source: &str,
+    circuit: &mut Circuit,
+    regs: &RegisterMap,
+    r: &ResetStmt,
+    source: &str,
 ) -> Result<(), ParseError> {
-    Err(ParseError::new(
-        0,
-        0,
-        String::new(),
-        ParseErrorKind::UnsupportedFeature {
-            feature: "reset (pending Task 12)",
-        },
-    ))
+    let q = resolve_indexed(regs, &r.target, source)?;
+    circuit
+        .add_instruction(Instruction::Reset(q))
+        .map_err(|e| perr(source, r.pos, ParseErrorKind::IrRejected(e)))?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -431,5 +507,71 @@ mod tests {
     fn sets_generated_from_metadata() {
         let c = parse_and_lower("qubit[1] q; h q[0];").unwrap();
         assert_eq!(c.metadata().generated_from.as_deref(), Some("openqasm:3.0"));
+    }
+
+    #[test]
+    fn lowers_indexed_barrier() {
+        let c = parse_and_lower("qubit[3] q; barrier q[0], q[2];").unwrap();
+        match &c.instructions()[0] {
+            Instruction::Barrier(qs) => assert_eq!(qs.as_slice(), &[0, 2]),
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn lowers_whole_register_barrier() {
+        let c = parse_and_lower("qubit[3] q; barrier q;").unwrap();
+        match &c.instructions()[0] {
+            Instruction::Barrier(qs) => assert_eq!(qs.as_slice(), &[0, 1, 2]),
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn lowers_indexed_measure() {
+        let c = parse_and_lower("qubit[1] q; bit[1] c; measure q[0] -> c[0];").unwrap();
+        match &c.instructions()[0] {
+            Instruction::Measure { qubit: 0, clbit: 0 } => {}
+            other => panic!("got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn lowers_whole_register_measure() {
+        let c = parse_and_lower("qubit[2] q; bit[2] c; measure q -> c;").unwrap();
+        assert_eq!(c.len(), 2);
+        assert!(matches!(
+            c.instructions()[0],
+            Instruction::Measure { qubit: 0, clbit: 0 }
+        ));
+        assert!(matches!(
+            c.instructions()[1],
+            Instruction::Measure { qubit: 1, clbit: 1 }
+        ));
+    }
+
+    #[test]
+    fn rejects_size_mismatch_in_whole_measure() {
+        let err = parse_and_lower("qubit[2] q; bit[3] c; measure q -> c;").unwrap_err();
+        assert!(matches!(err.kind, ParseErrorKind::SizeMismatch { .. }));
+    }
+
+    #[test]
+    fn lowers_reset() {
+        let c = parse_and_lower("qubit[2] q; reset q[1];").unwrap();
+        assert!(matches!(c.instructions()[0], Instruction::Reset(1)));
+    }
+
+    #[test]
+    fn rejects_oob_clbit_in_measure() {
+        let err = parse_and_lower("qubit[1] q; bit[1] c; measure q[0] -> c[5];").unwrap_err();
+        assert!(matches!(
+            err.kind,
+            ParseErrorKind::IndexOutOfBounds {
+                index: 5,
+                size: 1,
+                ..
+            }
+        ));
     }
 }
