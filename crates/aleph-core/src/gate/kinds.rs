@@ -293,6 +293,82 @@ impl Gate {
             | Gate::Cnot | Gate::Cz | Gate::Swap | Gate::Iswap
         )
     }
+
+    /// Inverse gate: same arity, conjugate-transpose of the matrix.
+    ///
+    /// Self-inverse variants are returned unchanged. Adjoint pairs swap.
+    /// Parametric rotations negate their angle (for `U3(θ, φ, λ)` the
+    /// result is `U3(-θ, -λ, -φ)`). `Iswap` returns
+    /// `Unitary2q(iSWAP†)` because no `IswapDg` variant exists in
+    /// Phase 0.
+    pub fn inverse(&self) -> Gate {
+        match self {
+            // self-inverse
+            Gate::H | Gate::X | Gate::Y | Gate::Z
+            | Gate::Cnot | Gate::Cz | Gate::Swap
+            | Gate::Toffoli | Gate::Ccz => self.clone(),
+
+            Gate::S => Gate::Sdg,
+            Gate::Sdg => Gate::S,
+            Gate::T => Gate::Tdg,
+            Gate::Tdg => Gate::T,
+
+            Gate::Rx(p) => Gate::Rx(negate(*p)),
+            Gate::Ry(p) => Gate::Ry(negate(*p)),
+            Gate::Rz(p) => Gate::Rz(negate(*p)),
+            Gate::Phase(p) => Gate::Phase(negate(*p)),
+            Gate::CRx(p) => Gate::CRx(negate(*p)),
+            Gate::CRy(p) => Gate::CRy(negate(*p)),
+            Gate::CRz(p) => Gate::CRz(negate(*p)),
+
+            Gate::U3(t, f, l) => Gate::U3(negate(*t), negate(*l), negate(*f)),
+
+            Gate::Iswap => {
+                let zero = Complex::new(0.0, 0.0);
+                let one = Complex::new(1.0, 0.0);
+                let ni = Complex::new(0.0, -1.0);
+                Gate::Unitary2q(Box::new([
+                    [one, zero, zero, zero],
+                    [zero, zero, ni, zero],
+                    [zero, ni, zero, zero],
+                    [zero, zero, zero, one],
+                ]))
+            }
+
+            Gate::Unitary1q(m) => Gate::Unitary1q(Box::new(conj_transpose_2(m))),
+            Gate::Unitary2q(m) => Gate::Unitary2q(Box::new(conj_transpose_4(m))),
+        }
+    }
+}
+
+fn negate(p: Param) -> Param {
+    match p {
+        Param::Concrete(v) => Param::Concrete(-v),
+        // Phase 0 has no public way to construct Symbolic, but if a future
+        // refactor exposes it we want negation to round-trip the symbol
+        // unchanged — the consumer can substitute later.
+        Param::Symbolic(s) => Param::Symbolic(s),
+    }
+}
+
+fn conj_transpose_2(m: &[[Complex; 2]; 2]) -> [[Complex; 2]; 2] {
+    let mut out = [[Complex::new(0.0, 0.0); 2]; 2];
+    for (i, row) in out.iter_mut().enumerate() {
+        for (j, cell) in row.iter_mut().enumerate() {
+            *cell = m[j][i].conj();
+        }
+    }
+    out
+}
+
+fn conj_transpose_4(m: &[[Complex; 4]; 4]) -> [[Complex; 4]; 4] {
+    let mut out = [[Complex::new(0.0, 0.0); 4]; 4];
+    for (i, row) in out.iter_mut().enumerate() {
+        for (j, cell) in row.iter_mut().enumerate() {
+            *cell = m[j][i].conj();
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -668,6 +744,69 @@ mod tests {
         ];
         let g = Gate::Unitary2q(Box::new(m));
         approx_eq_m4(&unwrap_m4(&g), &m);
+    }
+
+    #[test]
+    fn inverse_self_inverse_set() {
+        for g in [
+            Gate::H, Gate::X, Gate::Y, Gate::Z,
+            Gate::Cnot, Gate::Cz, Gate::Swap,
+            Gate::Toffoli, Gate::Ccz,
+        ] {
+            assert_eq!(g.clone().inverse(), g, "{g:?}");
+        }
+    }
+
+    #[test]
+    fn inverse_adjoint_pairs() {
+        assert_eq!(Gate::S.inverse(), Gate::Sdg);
+        assert_eq!(Gate::Sdg.inverse(), Gate::S);
+        assert_eq!(Gate::T.inverse(), Gate::Tdg);
+        assert_eq!(Gate::Tdg.inverse(), Gate::T);
+    }
+
+    #[test]
+    fn inverse_parametric_negates() {
+        let theta = 0.7;
+        let p = Param::Concrete(theta);
+        let np = Param::Concrete(-theta);
+        assert_eq!(Gate::Rx(p).inverse(), Gate::Rx(np));
+        assert_eq!(Gate::Ry(p).inverse(), Gate::Ry(np));
+        assert_eq!(Gate::Rz(p).inverse(), Gate::Rz(np));
+        assert_eq!(Gate::Phase(p).inverse(), Gate::Phase(np));
+        assert_eq!(Gate::CRx(p).inverse(), Gate::CRx(np));
+        assert_eq!(Gate::CRy(p).inverse(), Gate::CRy(np));
+        assert_eq!(Gate::CRz(p).inverse(), Gate::CRz(np));
+    }
+
+    #[test]
+    fn inverse_u3_swaps_phi_lambda() {
+        let theta = Param::Concrete(0.3);
+        let phi = Param::Concrete(0.5);
+        let lambda = Param::Concrete(0.7);
+        let expected = Gate::U3(
+            Param::Concrete(-0.3),
+            Param::Concrete(-0.7),
+            Param::Concrete(-0.5),
+        );
+        assert_eq!(Gate::U3(theta, phi, lambda).inverse(), expected);
+    }
+
+    #[test]
+    fn inverse_iswap_becomes_unitary2q() {
+        let g = Gate::Iswap.inverse();
+        // Expected matrix: iSWAP† = [[1,0,0,0],[0,0,-i,0],[0,-i,0,0],[0,0,0,1]]
+        let m = unwrap_m4(&g);
+        let z = cc(0.0, 0.0);
+        let o = cc(1.0, 0.0);
+        let ni = cc(0.0, -1.0);
+        let expected = [
+            [o, z, z, z],
+            [z, z, ni, z],
+            [z, ni, z, z],
+            [z, z, z, o],
+        ];
+        approx_eq_m4(&m, &expected);
     }
 
     #[test]
