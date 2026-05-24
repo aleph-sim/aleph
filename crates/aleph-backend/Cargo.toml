@@ -8,3 +8,6 @@ repository.workspace = true
 authors.workspace = true
 
 [dependencies]
+aleph-core = { path = "../aleph-core" }
+aleph-ir   = { path = "../aleph-ir" }
+thiserror  = { workspace = true }

@@ -36,6 +36,9 @@ pub type Complex<T = f64> = num_complex::Complex<T>;
 pub mod gate;
 pub use gate::{Gate, GateError, GateInstance, GateMatrix, Param, SymbolId};
 
+pub mod pauli;
+pub use pauli::{Pauli, PauliError, PauliString};
+
 /// Project-wide tolerance for amplitude comparisons in FP64.
 ///
 /// CLAUDE.md § Testing Requirements pins this at `1e-10`. Use this
