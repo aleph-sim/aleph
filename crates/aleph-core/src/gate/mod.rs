@@ -168,6 +168,19 @@ mod prop_tests {
         }
     }
 
+    /// Type-level involution: `g.inverse().inverse()` must return a
+    /// `Gate` equal (by `PartialEq`) to `g`. Catches refactors that
+    /// produce a numerically-correct matrix from the wrong variant
+    /// tag (e.g. silently routing `Iswap.inverse()` through
+    /// `Gate::Unitary2q(...)` again — defeating the `IswapDg` fix).
+    #[test]
+    fn standard_gates_double_inverse_is_self() {
+        for g in standard_gates() {
+            let twice = g.clone().inverse().inverse();
+            assert_eq!(twice, g, "{g:?}.inverse().inverse() drifted");
+        }
+    }
+
     proptest! {
         #[test]
         fn parametric_1q_unitary(p in arb_param()) {
@@ -213,6 +226,24 @@ mod prop_tests {
             let m = g.matrix().unwrap();
             let inv = g.inverse().matrix().unwrap();
             mul_gm_inv(&m, &inv);
+        }
+
+        #[test]
+        fn parametric_double_inverse_is_self(p in arb_param()) {
+            for g in [
+                Gate::Rx(p), Gate::Ry(p), Gate::Rz(p), Gate::Phase(p),
+                Gate::CRx(p), Gate::CRy(p), Gate::CRz(p),
+            ] {
+                let twice = g.clone().inverse().inverse();
+                prop_assert_eq!(twice, g);
+            }
+        }
+
+        #[test]
+        fn u3_double_inverse_is_self(a in arb_param(), b in arb_param(), c in arb_param()) {
+            let g = Gate::U3(a, b, c);
+            let twice = g.clone().inverse().inverse();
+            prop_assert_eq!(twice, g);
         }
 
         #[test]
