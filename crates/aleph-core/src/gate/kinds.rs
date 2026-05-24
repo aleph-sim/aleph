@@ -242,6 +242,24 @@ impl Gate {
                 ]))
             }
 
+            Gate::Toffoli => {
+                let mut m = [[zero; 8]; 8];
+                for i in 0..6 {
+                    m[i][i] = one;
+                }
+                m[6][7] = one;
+                m[7][6] = one;
+                Ok(GateMatrix::M8x8(m))
+            }
+            Gate::Ccz => {
+                let mut m = [[zero; 8]; 8];
+                for i in 0..7 {
+                    m[i][i] = one;
+                }
+                m[7][7] = -one;
+                Ok(GateMatrix::M8x8(m))
+            }
+
             _ => unimplemented!("matrix() arm for {self:?} not yet wired up"),
         }
     }
@@ -547,5 +565,56 @@ mod tests {
             [z, z, z, cc(0.0, 1.0)],
         ];
         approx_eq_m4(&unwrap_m4(&Gate::CRz(Param::Concrete(std::f64::consts::PI))), &expected);
+    }
+
+    fn approx_eq_m8(actual: &[[Complex; 8]; 8], expected: &[[Complex; 8]; 8]) {
+        for i in 0..8 {
+            for j in 0..8 {
+                let a = actual[i][j];
+                let e = expected[i][j];
+                assert!(
+                    (a.re - e.re).abs() < AMPLITUDE_TOL
+                        && (a.im - e.im).abs() < AMPLITUDE_TOL,
+                    "mismatch at [{i}][{j}]: actual={a:?} expected={e:?}"
+                );
+            }
+        }
+    }
+
+    fn unwrap_m8(g: &Gate) -> [[Complex; 8]; 8] {
+        match g.matrix().expect("concrete") {
+            GateMatrix::M8x8(m) => m,
+            other => panic!("expected M8x8, got {other:?}"),
+        }
+    }
+
+    fn identity_m8() -> [[Complex; 8]; 8] {
+        let z = cc(0.0, 0.0);
+        let o = cc(1.0, 0.0);
+        let mut m = [[z; 8]; 8];
+        for i in 0..8 {
+            m[i][i] = o;
+        }
+        m
+    }
+
+    #[test]
+    fn matrix_toffoli() {
+        let mut expected = identity_m8();
+        let z = cc(0.0, 0.0);
+        let o = cc(1.0, 0.0);
+        // Swap rows/cols 6 and 7 (|110⟩ ↔ |111⟩).
+        expected[6][6] = z;
+        expected[7][7] = z;
+        expected[6][7] = o;
+        expected[7][6] = o;
+        approx_eq_m8(&unwrap_m8(&Gate::Toffoli), &expected);
+    }
+
+    #[test]
+    fn matrix_ccz() {
+        let mut expected = identity_m8();
+        expected[7][7] = cc(-1.0, 0.0);
+        approx_eq_m8(&unwrap_m8(&Gate::Ccz), &expected);
     }
 }
