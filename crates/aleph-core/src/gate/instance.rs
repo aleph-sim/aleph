@@ -185,21 +185,14 @@ mod tests {
     #[test]
     #[should_panic(expected = "qubit index 3 appears more than once")]
     fn controlled_rejects_duplicate_controls() {
-        let _ = GateInstance::controlled(
-            Gate::H,
-            smallvec![0u32],
-            smallvec![3u32, 3u32],
-        );
+        let _ = GateInstance::controlled(Gate::H, smallvec![0u32], smallvec![3u32, 3u32]);
     }
 
     #[test]
     fn controlled_disjoint_indices_ok() {
         // Sanity: a valid layout still constructs cleanly.
-        let inst = GateInstance::controlled(
-            Gate::Cnot,
-            smallvec![0u32, 1u32],
-            smallvec![2u32, 3u32],
-        );
+        let inst =
+            GateInstance::controlled(Gate::Cnot, smallvec![0u32, 1u32], smallvec![2u32, 3u32]);
         assert_eq!(inst.qubits.as_slice(), &[0, 1]);
         assert_eq!(inst.controls.as_slice(), &[2, 3]);
     }
