@@ -1,9 +1,13 @@
-//! `aleph-sv`: State vector simulator backends (CPU now, GPU later).
+//! `aleph-sv`: naive single-threaded CPU state-vector backend.
 //!
-//! Phase 0 placeholder — implementation lands in later issues.
+//! The reference implementation: simple, correct, and the yardstick
+//! every other backend or future optimization is compared against. See
+//! `docs/superpowers/specs/2026-05-24-p0-09-backend-naive-sv-design.md`.
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn crate_loads() {}
-}
+mod backend;
+mod kernels;
+mod measure;
+mod state;
+
+pub use backend::NaiveSvBackend;
+pub use state::CpuState;
