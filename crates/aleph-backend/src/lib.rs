@@ -36,6 +36,46 @@ pub enum BackendError {
     TooManyQubits { requested: u32, limit: u32 },
 }
 
+use aleph_core::{GateInstance, PauliString};
+#[allow(unused_imports)]
+use aleph_ir::Circuit;
+
+/// A simulation backend.
+///
+/// Backends own no state vector; they construct and return one through
+/// `allocate`, then mutate it in place via `apply_gate` / `measure`.
+/// Query methods (`sample`, `expectation_value`, `probabilities`) take
+/// `&Self::State` and do not mutate the state.
+pub trait Backend {
+    /// Backend-specific representation (state vector, MPS tensors,
+    /// stabilizer tableau, …).
+    type State;
+
+    fn allocate(&mut self, num_qubits: u32) -> Result<Self::State, BackendError>;
+
+    fn apply_gate(
+        &mut self,
+        state: &mut Self::State,
+        gate: &GateInstance,
+    ) -> Result<(), BackendError>;
+
+    fn measure(&mut self, state: &mut Self::State, qubit: u32) -> Result<bool, BackendError>;
+
+    fn sample(&mut self, state: &Self::State, shots: u32) -> Result<Vec<u64>, BackendError>;
+
+    fn expectation_value(
+        &mut self,
+        state: &Self::State,
+        pauli: &PauliString,
+    ) -> Result<f64, BackendError>;
+
+    fn probabilities(
+        &mut self,
+        state: &Self::State,
+        qubits: &[u32],
+    ) -> Result<Vec<f64>, BackendError>;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
