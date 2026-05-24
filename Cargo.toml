@@ -38,6 +38,7 @@ thiserror = "1"
 proptest = "1"
 nom = "7"
 nom_locate = "4"
+rand = "0.8"
 
 [profile.release]
 opt-level = 3
