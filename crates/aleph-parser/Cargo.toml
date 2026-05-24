@@ -8,3 +8,12 @@ repository.workspace = true
 authors.workspace = true
 
 [dependencies]
+aleph-core = { path = "../aleph-core" }
+aleph-ir   = { path = "../aleph-ir" }
+nom        = { workspace = true }
+nom_locate = { workspace = true }
+thiserror  = { workspace = true }
+smallvec   = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
