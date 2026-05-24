@@ -15,3 +15,6 @@ __pycache__/
 
 # Criterion benchmark output
 /target/criterion/
+
+# Claude Code harness state
+/.claude/
