@@ -12,8 +12,6 @@ pub(crate) const MAX_NAIVE_QUBITS: u32 = 28;
 
 /// Naive single-threaded CPU state-vector backend.
 pub struct NaiveSvBackend {
-    // `rng` is consumed by `measure` / `sample` (lands in P0-09 Tasks 12–13).
-    #[allow(dead_code)]
     pub(crate) rng: StdRng,
 }
 
@@ -98,8 +96,8 @@ impl Backend for NaiveSvBackend {
         Ok(())
     }
 
-    fn measure(&mut self, _state: &mut Self::State, _qubit: u32) -> Result<bool, BackendError> {
-        unimplemented!("measure lands in P0-09 Task 12")
+    fn measure(&mut self, state: &mut Self::State, qubit: u32) -> Result<bool, BackendError> {
+        crate::measure::measure_impl(&mut self.rng, state, qubit)
     }
 
     fn sample(&mut self, _state: &Self::State, _shots: u32) -> Result<Vec<u64>, BackendError> {
@@ -225,6 +223,46 @@ mod tests {
         let mut s = b.allocate(1).unwrap();
         let gate = GateInstance::new(Gate::X, smallvec![5u32]);
         let err = b.apply_gate(&mut s, &gate).unwrap_err();
+        assert_eq!(
+            err,
+            BackendError::QubitOutOfRange {
+                qubit: 5,
+                num_qubits: 1,
+            }
+        );
+    }
+
+    #[test]
+    fn measure_zero_state_returns_false() {
+        let mut b = NaiveSvBackend::with_seed(42);
+        let mut s = b.allocate(2).unwrap();
+        let outcome = b.measure(&mut s, 0).unwrap();
+        assert!(!outcome);
+        assert_eq!(s.amplitudes()[0], Complex::new(1.0, 0.0));
+    }
+
+    #[test]
+    fn measure_plus_state_collapses_to_basis() {
+        let mut b = NaiveSvBackend::with_seed(123);
+        let mut s = b.allocate(1).unwrap();
+        b.apply_gate(&mut s, &GateInstance::new(Gate::H, smallvec![0u32]))
+            .unwrap();
+        let outcome = b.measure(&mut s, 0).unwrap();
+        let a = s.amplitudes();
+        if outcome {
+            assert!((a[1].norm() - 1.0).abs() < 1e-12);
+            assert!(a[0].norm() < 1e-12);
+        } else {
+            assert!((a[0].norm() - 1.0).abs() < 1e-12);
+            assert!(a[1].norm() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn measure_qubit_out_of_range() {
+        let mut b = NaiveSvBackend::with_seed(0);
+        let mut s = b.allocate(1).unwrap();
+        let err = b.measure(&mut s, 5).unwrap_err();
         assert_eq!(
             err,
             BackendError::QubitOutOfRange {
