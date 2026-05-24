@@ -5,5 +5,7 @@
 //! `docs/superpowers/specs/2026-05-24-p0-07-circuit-ir-design.md`.
 
 mod error;
+mod instruction;
 
 pub use error::CircuitError;
+pub use instruction::Instruction;
