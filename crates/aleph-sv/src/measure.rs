@@ -309,9 +309,9 @@ mod tests {
     // and only glob the proptest prelude.
     use super::{expectation_value_impl, CpuState};
     use aleph_core::{Complex, Pauli, PauliString};
+    use aleph_test::circuit::arb_op_full;
+    use aleph_test::state::arb_state_vector;
     use proptest::prelude::*;
-    use rand::rngs::StdRng;
-    use rand::{Rng, SeedableRng};
 
     /// Reference implementation: always-clone, kernel-apply path.
     /// Mirrors what `expectation_value_impl` did before the Z fast
@@ -333,70 +333,12 @@ mod tests {
         pauli.coefficient * acc.re
     }
 
-    fn random_normalised_state(n: u32, seed: u64) -> CpuState {
-        let mut rng = StdRng::seed_from_u64(seed);
-        let dim = 1usize << n;
-        let mut amps = Vec::with_capacity(dim);
-        let mut norm2 = 0.0_f64;
-        for _ in 0..dim {
-            let re: f64 = rng.gen_range(-1.0..1.0);
-            let im: f64 = rng.gen_range(-1.0..1.0);
-            norm2 += re * re + im * im;
-            amps.push(Complex::new(re, im));
-        }
-        let inv = norm2.sqrt().recip();
-        for a in &mut amps {
-            *a *= Complex::new(inv, 0.0);
-        }
-        CpuState {
-            num_qubits: n,
-            amps,
-        }
-    }
-
-    /// Minimal op-vocabulary for the `∑ P = 1` proptest. We sample
-    /// from this small subset so the proptest stays under a second.
-    #[derive(Debug, Clone)]
-    enum RandomOp {
-        H(u32),
-        X(u32),
-        Y(u32),
-        Z(u32),
-        S(u32),
-        T(u32),
-        Cnot(u32, u32),
-    }
-
-    impl RandomOp {
-        fn realize(&self, n: u32) -> Option<aleph_core::GateInstance> {
-            use aleph_core::{Gate, GateInstance};
-            use smallvec::smallvec;
-            match *self {
-                RandomOp::H(q) if q < n => Some(GateInstance::new(Gate::H, smallvec![q])),
-                RandomOp::X(q) if q < n => Some(GateInstance::new(Gate::X, smallvec![q])),
-                RandomOp::Y(q) if q < n => Some(GateInstance::new(Gate::Y, smallvec![q])),
-                RandomOp::Z(q) if q < n => Some(GateInstance::new(Gate::Z, smallvec![q])),
-                RandomOp::S(q) if q < n => Some(GateInstance::new(Gate::S, smallvec![q])),
-                RandomOp::T(q) if q < n => Some(GateInstance::new(Gate::T, smallvec![q])),
-                RandomOp::Cnot(c, t) if c < n && t < n && c != t => {
-                    Some(GateInstance::new(Gate::Cnot, smallvec![c, t]))
-                }
-                _ => None,
-            }
-        }
-    }
-
-    fn any_random_op() -> impl Strategy<Value = RandomOp> {
-        let q = 0u32..6;
-        prop_oneof![
-            q.clone().prop_map(RandomOp::H),
-            q.clone().prop_map(RandomOp::X),
-            q.clone().prop_map(RandomOp::Y),
-            q.clone().prop_map(RandomOp::Z),
-            q.clone().prop_map(RandomOp::S),
-            q.clone().prop_map(RandomOp::T),
-            (0u32..6, 0u32..6).prop_map(|(c, t)| RandomOp::Cnot(c, t)),
-        ]
+    /// Draw `(n, amps)` together so the proptest sees a coherent
+    /// pair (vector length matches num_qubits).  See spec §5 — the
+    /// migration from `random_normalised_state(n, seed)` to
+    /// `arb_state_vector` needs `prop_flat_map` to thread `n`.
+    fn arb_n_and_state(max_n: u32) -> impl Strategy<Value = (u32, Vec<Complex>)> {
+        (1u32..=max_n).prop_flat_map(|n| arb_state_vector(n).prop_map(move |amps| (n, amps)))
     }
 
     proptest! {
@@ -407,12 +349,11 @@ mod tests {
         /// copy-and-rotate slow path must agree to 1e-12.
         #[test]
         fn z_fast_path_matches_slow_path(
-            n in 1u32..=5,
-            seed in any::<u64>(),
+            (n, amps) in arb_n_and_state(5),
             mask in any::<u32>(),
             coeff in -2.0_f64..=2.0,
         ) {
-            let state = random_normalised_state(n, seed);
+            let state = CpuState { num_qubits: n, amps };
             // Build a Z-only PauliString from the low n bits of `mask`.
             let mut terms = Vec::new();
             for q in 0..n {
@@ -433,17 +374,27 @@ mod tests {
         /// Sum of marginal probabilities over the full qubit subset
         /// must equal 1 within `√n · AMPLITUDE_TOL`. BACKLOG testing
         /// requirement; see spec §9.
+        ///
+        /// Sources ops from `arb_op_full(6, 0)` (no measurements);
+        /// runs on `n ≤ 6` qubits but filters ops whose qubit
+        /// indices exceed the current `n` and silently drops any
+        /// `apply_gate` rejection (e.g. duplicate-qubit collisions
+        /// on Toffoli/Ccz after the filter).  See spec §5 / plan
+        /// task 11 for the migration rationale.
         #[test]
         fn probabilities_full_basis_sums_to_one(
             n in 1u32..=6,
-            ops in proptest::collection::vec(any_random_op(), 0..30),
+            ops in proptest::collection::vec(arb_op_full(6, 0), 0..30),
         ) {
             use aleph_backend::Backend;
             let mut b = crate::NaiveSvBackend::with_seed(0);
             let mut s = b.allocate(n).unwrap();
             for op in &ops {
-                if let Some(gi) = op.realize(n) {
-                    b.apply_gate(&mut s, &gi).unwrap();
+                if let Some(gi) = op.as_gate_instance() {
+                    let max_q = gi.qubits.iter().chain(gi.controls.iter()).max().copied().unwrap_or(0);
+                    if max_q < n {
+                        let _ = b.apply_gate(&mut s, &gi);
+                    }
                 }
             }
             let qubits: Vec<u32> = (0..n).collect();
