@@ -135,7 +135,20 @@ where
     }
     let state = run(backend, &circuit)?;
     let shots = backend.sample(&state, DISTRIBUTION_SHOTS)?;
-    let dim = 1usize << fixture.num_qubits;
+    // Mirror load_fixture's TooManyQubits guard. load_fixture is the
+    // only constructor today, but `Fixture`'s fields are `pub`, so a
+    // direct struct-literal construction in a future test/helper
+    // could ship a `num_qubits >= usize::BITS` value past load — this
+    // line would then shift-overflow and either panic in debug or
+    // yield dim=0 in release (then panic on the first empirical[idx]
+    // write).
+    let dim = 1usize
+        .checked_shl(fixture.num_qubits)
+        .ok_or_else(|| OracleError::TooManyQubits {
+            name: fixture.name.clone(),
+            num_qubits: fixture.num_qubits,
+            limit: usize::BITS,
+        })?;
     let mut empirical = vec![0u64; dim];
     for s in &shots {
         let idx = *s as usize;
@@ -372,6 +385,29 @@ mod tests {
         );
         let mut b = NaiveSvBackend::with_seed(0);
         let _ = run_distribution_oracle(&mut b, &fx, QASM_BELL);
+    }
+
+    #[test]
+    fn distribution_oracle_rejects_oversized_num_qubits() {
+        // Direct-struct Fixture construction with num_qubits >= usize::BITS
+        // must surface as TooManyQubits, not as a shift-overflow panic.
+        let mut fx = synth("oversized", 1, vec![(1.0, 0.0), (0.0, 0.0)]);
+        fx.num_qubits = 128;
+        let mut b = NaiveSvBackend::with_seed(0);
+        let err = run_distribution_oracle(&mut b, &fx, QASM_BELL).unwrap_err();
+        match err {
+            OracleError::TooManyQubits {
+                num_qubits: 128, ..
+            } => {}
+            // QubitMismatch is also acceptable — circuit has 2 qubits,
+            // fixture says 128, so the earlier check might fire first.
+            OracleError::QubitMismatch {
+                fixture: 128,
+                circuit: 2,
+                ..
+            } => {}
+            other => panic!("expected TooManyQubits or QubitMismatch, got {other:?}"),
+        }
     }
 
     #[test]
