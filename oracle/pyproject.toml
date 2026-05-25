@@ -5,6 +5,8 @@ requires-python = ">=3.11"
 dependencies = [
   "qiskit==1.2.4",
   "qiskit-aer==0.15.1",
+  # Required by qiskit.qasm3.loads (optional in qiskit core).
+  "qiskit-qasm3-import==0.5.1",
 ]
 
 [tool.uv]
