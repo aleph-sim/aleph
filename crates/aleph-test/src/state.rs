@@ -1,6 +1,6 @@
 //! Random normalised state vectors.  See spec §4.1.
 
-use aleph_core::Complex;
+use aleph_core::{Complex, AMPLITUDE_TOL};
 use proptest::prelude::*;
 
 /// Random normalised state vector of `n` qubits.  Output length is
@@ -56,8 +56,11 @@ mod tests {
         #[test]
         fn output_is_normalised((_n, amps) in arb_n_and_state()) {
             let total: f64 = amps.iter().map(|a| a.norm_sqr()).sum();
-            // Drift budget: √dim · AMPLITUDE_TOL.  Same as validate_state.
-            let budget = (amps.len() as f64).sqrt() * 1e-10;
+            // Drift budget: √dim · AMPLITUDE_TOL — must match
+            // `validate_state` exactly so a future tightening of
+            // the constant doesn't silently break downstream
+            // consumers while this self-test stays green.
+            let budget = (amps.len() as f64).sqrt() * AMPLITUDE_TOL;
             prop_assert!((total - 1.0).abs() <= budget, "total = {total}, budget = {budget}");
         }
     }
