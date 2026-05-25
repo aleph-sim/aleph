@@ -265,7 +265,13 @@ pub fn arb_op_full(nq: u32, nc: u32) -> BoxedStrategy<OpKind> {
             3 => two_q,
             2 => three_q,
             2 => non_gate,
-            3 => measurement,
+            // Measure weight is bumped from 1 (proptest default ~6.7%
+            // of ops) to 4 (~21% of ops) so the IR layer test
+            // `same_clbit_writes_serialize` actually sees clbit-write
+            // collisions; without the bump that test became
+            // ineffective.  Restored after the P0-05 migration
+            // dropped it to 3.
+            4 => measurement,
         ]
         .boxed()
     }
