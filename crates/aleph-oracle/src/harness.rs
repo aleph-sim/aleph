@@ -50,7 +50,7 @@ where
             state: actual.len(),
         });
     }
-    assert_state_close(&fixture.name, fixture.num_qubits, actual, expected);
+    assert_state_close(&fixture.name, fixture.num_qubits, &actual, expected);
     Ok(())
 }
 
