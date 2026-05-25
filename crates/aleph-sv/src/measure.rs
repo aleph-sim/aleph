@@ -261,3 +261,154 @@ fn expectation_z_diag(amps: &[Complex], z_mask: u64) -> f64 {
     }
     acc
 }
+
+#[cfg(test)]
+mod tests {
+    // Both `super::*` and `proptest::prelude::*` would glob-import a
+    // `Rng` trait, which trips the `ambiguous_glob_imported_traits`
+    // future-incompat warning. Name parent-module imports explicitly
+    // and only glob the proptest prelude.
+    use super::{expectation_value_impl, CpuState};
+    use aleph_core::{Complex, Pauli, PauliString};
+    use proptest::prelude::*;
+    use rand::rngs::StdRng;
+    use rand::{Rng, SeedableRng};
+
+    /// Reference implementation: always-clone, kernel-apply path.
+    /// Mirrors what `expectation_value_impl` did before the Z fast
+    /// path landed; used by the proptest below to assert the fast
+    /// path agrees on Z-only Pauli strings.
+    fn reference_expectation(state: &CpuState, pauli: &PauliString) -> f64 {
+        let mut tmp = state.amps.clone();
+        for (q, p) in &pauli.terms {
+            if *p == Pauli::I {
+                continue;
+            }
+            let m = p.matrix();
+            crate::kernels::apply_1q(&mut tmp, *q, &[], &m);
+        }
+        let mut acc = Complex::new(0.0, 0.0);
+        for (lhs, rhs) in state.amps.iter().zip(tmp.iter()) {
+            acc += lhs.conj() * (*rhs);
+        }
+        pauli.coefficient * acc.re
+    }
+
+    fn random_normalised_state(n: u32, seed: u64) -> CpuState {
+        let mut rng = StdRng::seed_from_u64(seed);
+        let dim = 1usize << n;
+        let mut amps = Vec::with_capacity(dim);
+        let mut norm2 = 0.0_f64;
+        for _ in 0..dim {
+            let re: f64 = rng.gen_range(-1.0..1.0);
+            let im: f64 = rng.gen_range(-1.0..1.0);
+            norm2 += re * re + im * im;
+            amps.push(Complex::new(re, im));
+        }
+        let inv = norm2.sqrt().recip();
+        for a in &mut amps {
+            *a *= Complex::new(inv, 0.0);
+        }
+        CpuState { num_qubits: n, amps }
+    }
+
+    /// Minimal op-vocabulary for the `∑ P = 1` proptest. We sample
+    /// from this small subset so the proptest stays under a second.
+    #[derive(Debug, Clone)]
+    enum RandomOp {
+        H(u32),
+        X(u32),
+        Y(u32),
+        Z(u32),
+        S(u32),
+        T(u32),
+        Cnot(u32, u32),
+    }
+
+    impl RandomOp {
+        fn realize(&self, n: u32) -> Option<aleph_core::GateInstance> {
+            use aleph_core::{Gate, GateInstance};
+            use smallvec::smallvec;
+            match *self {
+                RandomOp::H(q) if q < n => Some(GateInstance::new(Gate::H, smallvec![q])),
+                RandomOp::X(q) if q < n => Some(GateInstance::new(Gate::X, smallvec![q])),
+                RandomOp::Y(q) if q < n => Some(GateInstance::new(Gate::Y, smallvec![q])),
+                RandomOp::Z(q) if q < n => Some(GateInstance::new(Gate::Z, smallvec![q])),
+                RandomOp::S(q) if q < n => Some(GateInstance::new(Gate::S, smallvec![q])),
+                RandomOp::T(q) if q < n => Some(GateInstance::new(Gate::T, smallvec![q])),
+                RandomOp::Cnot(c, t) if c < n && t < n && c != t => {
+                    Some(GateInstance::new(Gate::Cnot, smallvec![c, t]))
+                }
+                _ => None,
+            }
+        }
+    }
+
+    fn any_random_op() -> impl Strategy<Value = RandomOp> {
+        let q = 0u32..6;
+        prop_oneof![
+            q.clone().prop_map(RandomOp::H),
+            q.clone().prop_map(RandomOp::X),
+            q.clone().prop_map(RandomOp::Y),
+            q.clone().prop_map(RandomOp::Z),
+            q.clone().prop_map(RandomOp::S),
+            q.clone().prop_map(RandomOp::T),
+            (0u32..6, 0u32..6).prop_map(|(c, t)| RandomOp::Cnot(c, t)),
+        ]
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig { cases: 128, ..ProptestConfig::default() })]
+
+        /// Fast-path equivalence: for any Z-only PauliString on any
+        /// concrete normalised state, the diagonal fast path and the
+        /// copy-and-rotate slow path must agree to 1e-12.
+        #[test]
+        fn z_fast_path_matches_slow_path(
+            n in 1u32..=5,
+            seed in any::<u64>(),
+            mask in any::<u32>(),
+            coeff in -2.0_f64..=2.0,
+        ) {
+            let state = random_normalised_state(n, seed);
+            // Build a Z-only PauliString from the low n bits of `mask`.
+            let mut terms = Vec::new();
+            for q in 0..n {
+                if (mask >> q) & 1 == 1 {
+                    terms.push((q, Pauli::Z));
+                }
+            }
+            let ps = PauliString::new(coeff, terms).unwrap();
+            let fast = expectation_value_impl(&state, &ps).unwrap();
+            let slow = reference_expectation(&state, &ps);
+            prop_assert!(
+                (fast - slow).abs() < 1e-12,
+                "n={n} mask={mask:0width$b} coeff={coeff}: fast={fast}, slow={slow}",
+                width = n as usize,
+            );
+        }
+
+        /// Sum of marginal probabilities over the full qubit subset
+        /// must equal 1 within `√n · AMPLITUDE_TOL`. BACKLOG testing
+        /// requirement; see spec §9.
+        #[test]
+        fn probabilities_full_basis_sums_to_one(
+            n in 1u32..=6,
+            ops in proptest::collection::vec(any_random_op(), 0..30),
+        ) {
+            use aleph_backend::Backend;
+            let mut b = crate::NaiveSvBackend::with_seed(0);
+            let mut s = b.allocate(n).unwrap();
+            for op in &ops {
+                if let Some(gi) = op.realize(n) {
+                    b.apply_gate(&mut s, &gi).unwrap();
+                }
+            }
+            let qubits: Vec<u32> = (0..n).collect();
+            let p = b.probabilities(&s, &qubits).unwrap();
+            let sum: f64 = p.iter().sum();
+            let drift = (p.len() as f64).sqrt() * aleph_core::AMPLITUDE_TOL;
+            prop_assert!((sum - 1.0).abs() <= drift, "sum = {sum}");
+        }
+    }
+}
