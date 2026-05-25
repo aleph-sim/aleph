@@ -41,6 +41,16 @@ pub enum OracleError {
     #[error("fixture {name} declares endianness {endianness:?}, only \"little\" is supported")]
     UnsupportedEndianness { name: String, endianness: String },
 
+    #[error(
+        "fixture {name} num_qubits = {num_qubits} exceeds platform usize::BITS = {limit}; \
+         the implied 2^{num_qubits} amplitudes cannot be addressed"
+    )]
+    TooManyQubits {
+        name: String,
+        num_qubits: u32,
+        limit: u32,
+    },
+
     #[error("malformed fixture JSON: {0}")]
     Json(#[from] serde_json::Error),
 
@@ -79,5 +89,18 @@ mod tests {
         assert!(s.contains("kernel_cx"));
         assert!(s.contains("4"));
         assert!(s.contains("8"));
+    }
+
+    #[test]
+    fn too_many_qubits_message_contains_fields() {
+        let e = OracleError::TooManyQubits {
+            name: "oversized_fx".into(),
+            num_qubits: 128,
+            limit: 64,
+        };
+        let s = format!("{e}");
+        assert!(s.contains("oversized_fx"));
+        assert!(s.contains("128"));
+        assert!(s.contains("64"));
     }
 }

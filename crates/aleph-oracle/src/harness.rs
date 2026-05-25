@@ -98,6 +98,151 @@ fn assert_state_close(name: &str, num_qubits: u32, actual: &[Complex], expected:
     }
 }
 
+/// Shot budget for the distribution oracle. Sized so 5σ per-outcome
+/// flake probability is ≤ 5.7e-7 (spec §6.2).
+pub const DISTRIBUTION_SHOTS: u32 = 100_000;
+
+/// Floor added to every per-outcome band. At `DISTRIBUTION_SHOTS =
+/// 100_000` shots, one stray sample on a forbidden outcome
+/// (`p_exact = 0`) already exceeds this floor (1/100_000 = 1e-5 >
+/// 1e-6). The floor is therefore a tightness guarantee, not a
+/// tolerance: any non-zero count on a forbidden outcome fails the
+/// oracle. Spec §6.2.
+pub const DISTRIBUTION_FLOOR: f64 = 1e-6;
+
+/// Sample 100 000 shots through `backend`, then assert the empirical
+/// distribution matches `fixture.statevector.amplitudes` (per-outcome
+/// `5σ + DISTRIBUTION_FLOOR` band, in probability units).
+///
+/// `B::State = aleph_sv::CpuState` is pinned because today only
+/// `NaiveSvBackend` exists; the bound generalises when a second
+/// backend lands (spec §6.4).
+pub fn run_distribution_oracle<B>(
+    backend: &mut B,
+    fixture: &Fixture,
+    qasm_source: &str,
+) -> Result<(), OracleError>
+where
+    B: Backend<State = aleph_sv::CpuState>,
+{
+    let circuit = aleph_parser::parse(qasm_source)?;
+    if circuit.num_qubits() != fixture.num_qubits {
+        return Err(OracleError::QubitMismatch {
+            name: fixture.name.clone(),
+            fixture: fixture.num_qubits,
+            circuit: circuit.num_qubits(),
+        });
+    }
+    let state = run(backend, &circuit)?;
+    let shots = backend.sample(&state, DISTRIBUTION_SHOTS)?;
+    // Mirror load_fixture's TooManyQubits guard. load_fixture is the
+    // only constructor today, but `Fixture`'s fields are `pub`, so a
+    // direct struct-literal construction in a future test/helper
+    // could ship a `num_qubits >= usize::BITS` value past load — this
+    // line would then shift-overflow and either panic in debug or
+    // yield dim=0 in release (then panic on the first empirical[idx]
+    // write).
+    let dim = 1usize
+        .checked_shl(fixture.num_qubits)
+        .ok_or_else(|| OracleError::TooManyQubits {
+            name: fixture.name.clone(),
+            num_qubits: fixture.num_qubits,
+            limit: usize::BITS,
+        })?;
+    let mut empirical = vec![0u64; dim];
+    for s in &shots {
+        let idx = *s as usize;
+        // A well-behaved Backend::sample returns indices in [0, dim).
+        // A regression (e.g., a future alias-table bug, or a non-Naive
+        // backend that mis-computes its sample dimension) would
+        // otherwise panic with a raw `index out of bounds` here —
+        // surface a structured oracle panic naming the fixture and
+        // the offending index instead, mirroring assert_state_close's
+        // structured failure messages.
+        if idx >= dim {
+            panic!(
+                "oracle: {name} sample out of range\n  \
+                 sample idx {idx}  >=  2^{nq} = {dim}\n  \
+                 (basis space has {dim} outcomes; backend returned an out-of-range index)",
+                name = fixture.name,
+                nq = fixture.num_qubits,
+            );
+        }
+        empirical[idx] += 1;
+    }
+    let exact: Vec<f64> = fixture
+        .statevector
+        .amplitudes
+        .iter()
+        .map(|&(re, im)| re * re + im * im)
+        .collect();
+    assert_distribution_close(
+        &fixture.name,
+        fixture.num_qubits,
+        &empirical,
+        &exact,
+        DISTRIBUTION_SHOTS,
+    );
+    Ok(())
+}
+
+fn assert_distribution_close(
+    name: &str,
+    num_qubits: u32,
+    empirical: &[u64],
+    exact: &[f64],
+    shots: u32,
+) {
+    let width = num_qubits as usize;
+    let n_f = shots as f64;
+    for (i, (&count, &p)) in empirical.iter().zip(exact.iter()).enumerate() {
+        // Defensive: a Qiskit fixture should never carry a NaN or a
+        // p outside [0, 1] here (re²+im² is non-negative for finite
+        // inputs and bounded by the normalised-state sum), but mirror
+        // `assert_state_close`'s explicit guard so a pathological
+        // reference is loud, not silent. Without the NaN reject the
+        // band computation below would silently produce NaN for p < 0
+        // (sqrt of a negative product) and `delta > NaN` would be
+        // false — the same regression class P0-10 hardened the state
+        // path against.
+        //
+        // The upper bound is `1.0 + STATE_TOLERANCE` rather than `1.0`
+        // exactly: `re*re + im*im` can round UP by 1 ulp on a finite
+        // input, and a fixture whose dominant amplitude lands at p ≈ 1
+        // (a product/near-product state) would otherwise hard-panic
+        // here. The downstream `(p * (1.0 - p)).max(0.0)` clamp keeps
+        // the variance well-defined for `p` slightly above 1.
+        if !p.is_finite() || !(0.0..=1.0 + STATE_TOLERANCE).contains(&p) {
+            panic!(
+                "oracle: {name} distribution non-finite or out-of-range reference\n  \
+                 index {i}  basis |{i:0width$b}>\n  p_exact {p}",
+                width = width,
+            );
+        }
+        let p_emp = count as f64 / n_f;
+        // Clamp the Bernoulli variance `p*(1-p)` at the product level,
+        // not just `(1-p)`. The earlier shape — `p * (1.0 - p).max(0.0)`
+        // — only saved the second factor; for p outside [0, 1] the
+        // product itself can go negative, and `sqrt` of a negative is
+        // NaN.  The explicit p-range guard above also rejects that
+        // case, but defense-in-depth keeps the formula safe under any
+        // future relaxation of the guard.
+        let variance = (p * (1.0 - p)).max(0.0);
+        let band = 5.0 * (variance / n_f).sqrt() + DISTRIBUTION_FLOOR;
+        let delta = (p_emp - p).abs();
+        if delta > band {
+            panic!(
+                "oracle: {name} distribution mismatch\n  \
+                 basis  |{i:0width$b}>\n  \
+                 exact  {p:.6e}\n  \
+                 empir  {p_emp:.6e}   ({count} / {shots})\n  \
+                 |Δ|    {delta:.3e}   >  band {band:.3e}   (5σ + {DISTRIBUTION_FLOOR:.0e})",
+                width = width,
+            );
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -205,6 +350,114 @@ mod tests {
             &[Complex::new(1.0, 0.0), Complex::new(0.0, 0.0)],
             &[(nan, 0.0), (0.0, 0.0)],
         );
+    }
+
+    const QASM_BELL: &str =
+        "OPENQASM 3.0;\ninclude \"stdgates.inc\";\nqubit[2] q;\nh q[0];\ncx q[0], q[1];\n";
+
+    #[test]
+    fn distribution_oracle_passes_on_bell() {
+        // |Φ+⟩ → P(00) = P(11) = 0.5; P(01) = P(10) = 0.
+        let inv = std::f64::consts::FRAC_1_SQRT_2;
+        let fx = synth(
+            "bell_phi_plus_test",
+            2,
+            vec![(inv, 0.0), (0.0, 0.0), (0.0, 0.0), (inv, 0.0)],
+        );
+        let mut b = NaiveSvBackend::with_seed(0);
+        run_distribution_oracle(&mut b, &fx, QASM_BELL).unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "distribution mismatch")]
+    fn distribution_oracle_detects_wrong_distribution() {
+        // Fixture claims uniform-over-4; circuit actually produces |Φ+⟩.
+        let q = 0.5_f64;
+        let fx = synth(
+            "bell_uniform_wrong",
+            2,
+            vec![
+                (q.sqrt(), 0.0),
+                (q.sqrt(), 0.0),
+                (q.sqrt(), 0.0),
+                (q.sqrt(), 0.0),
+            ],
+        );
+        let mut b = NaiveSvBackend::with_seed(0);
+        let _ = run_distribution_oracle(&mut b, &fx, QASM_BELL);
+    }
+
+    #[test]
+    fn distribution_oracle_rejects_oversized_num_qubits() {
+        // Direct-struct Fixture construction with num_qubits >= usize::BITS
+        // must surface as TooManyQubits, not as a shift-overflow panic.
+        let mut fx = synth("oversized", 1, vec![(1.0, 0.0), (0.0, 0.0)]);
+        fx.num_qubits = 128;
+        let mut b = NaiveSvBackend::with_seed(0);
+        let err = run_distribution_oracle(&mut b, &fx, QASM_BELL).unwrap_err();
+        match err {
+            OracleError::TooManyQubits {
+                num_qubits: 128, ..
+            } => {}
+            // QubitMismatch is also acceptable — circuit has 2 qubits,
+            // fixture says 128, so the earlier check might fire first.
+            OracleError::QubitMismatch {
+                fixture: 128,
+                circuit: 2,
+                ..
+            } => {}
+            other => panic!("expected TooManyQubits or QubitMismatch, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn distribution_oracle_qubit_mismatch_is_harness_error() {
+        // 1-qubit fixture, 2-qubit circuit.
+        let fx = synth("wrong_qubits_dist", 1, vec![(1.0, 0.0), (0.0, 0.0)]);
+        let mut b = NaiveSvBackend::with_seed(0);
+        let err = run_distribution_oracle(&mut b, &fx, QASM_BELL).unwrap_err();
+        match err {
+            OracleError::QubitMismatch {
+                fixture: 1,
+                circuit: 2,
+                ..
+            } => {}
+            other => panic!("expected QubitMismatch, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn distribution_oracle_accepts_p_within_one_ulp_above_one() {
+        // A degenerate single-outcome distribution where p_exact rounds
+        // up by 1 ulp due to fixture FP rounding. The empirical count
+        // matches the rounded reference, and the tightness band
+        // tolerates the residual. Pre-G1 this would have hard-panicked.
+        let p = 1.0_f64 + f64::EPSILON; // ~2.22e-16 above 1
+        assert_distribution_close("p_one_plus_ulp", 1, &[100_000, 0], &[p, 0.0], 100_000);
+    }
+
+    #[test]
+    #[should_panic(expected = "non-finite or out-of-range reference")]
+    fn distribution_oracle_rejects_p_well_above_one() {
+        // STATE_TOLERANCE is 1e-10; anything materially above 1 is a
+        // genuinely malformed reference and must still hard-panic.
+        assert_distribution_close(
+            "p_well_above_one",
+            1,
+            &[100_000, 0],
+            &[1.0 + 1e-6, 0.0],
+            100_000,
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "non-finite or out-of-range reference")]
+    fn distribution_oracle_rejects_negative_reference_p() {
+        // Direct call into assert_distribution_close with a pathological
+        // negative reference probability — would have computed
+        // sqrt(p*(1-p)) on a negative product before the fix, producing
+        // a NaN band that silently passes `delta > band`.
+        assert_distribution_close("neg_p", 1, &[50_000, 50_000], &[-1e-9, 1.0 + 1e-9], 100_000);
     }
 
     #[test]

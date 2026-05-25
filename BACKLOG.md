@@ -561,9 +561,9 @@ These are not gates but are critical primitives. Sampling is hot in VQE/QAOA loo
 
 **Acceptance Criteria**
 
-- [ ] All four primitives implemented for naive backend
-- [ ] Sampling distribution converges to |ψ|² (statistical test with 1M shots)
-- [ ] Expectation value tests vs. analytical results for known states
+- [x] All four primitives implemented for naive backend
+- [x] Sampling distribution converges to |ψ|² (statistical test with 1M shots)
+- [x] Expectation value tests vs. analytical results for known states
 
 **Testing Requirements**
 

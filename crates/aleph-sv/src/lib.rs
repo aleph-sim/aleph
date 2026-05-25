@@ -7,6 +7,7 @@
 mod backend;
 mod kernels;
 mod measure;
+mod sampling;
 mod state;
 
 pub use backend::NaiveSvBackend;
