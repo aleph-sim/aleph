@@ -131,15 +131,14 @@ Notes:
 - **Float precision.** Python's stdlib `json.dumps` writes each float
   via `float.__repr__`, which is the shortest decimal that round-trips
   back to the same IEEE 754 `f64` under a correct-rounding parser.
-  `serde_json`'s number parser is *not* bit-exact for arbitrary `f64`
-  — it can disagree with `f64::from_str` by up to 1 ulp for some
-  inputs (e.g. `-1.8758187233759438e65` ↔ ±1 ulp). For amplitudes in
-  a normalized state vector, `|a| ≤ 1`, so 1 ulp ≤ `f64::EPSILON` ≈
-  `2.22e-16` — **six orders of magnitude tighter than the
-  `STATE_TOLERANCE = 1e-10` oracle tolerance**, so this drift cannot
-  produce a false failure. **Spec amendment §10.5**: round-trip is
-  documented as "within 1 ulp" rather than "bit-exact"; the property
-  test enforces this bound. No custom encoder is needed.
+  `serde_json`'s **default** parser is *not* bit-exact and can drift
+  up to 2 ulps for some inputs (e.g. `-1.8758187233759438e65` →
+  1 ulp, `9.517544802167085e288` → 2 ulps). `aleph-oracle` enables
+  the `float_roundtrip` feature on `serde_json` which switches in a
+  high-precision parser, restoring bit-exact round-trip for all
+  finite `f64`. The property test in `fixture.rs` locks this in. No
+  custom encoder is needed on the Python side. See **§10.5** for
+  the implementation note.
 - **Endianness pinned.** Qiskit uses little-endian qubit ordering
   (qubit 0 is the LSB of the basis-state index `i`).
   `aleph_sv::CpuState::amplitudes()` already follows the same
@@ -492,11 +491,14 @@ tier.
      own crate depends on `aleph-oracle` as a dev-dependency and
      re-runs the same fixtures.
 
-10.5 **f64 round-trip tolerance (added during implementation).**
-     The original spec claimed `serde_json` round-trip was bit-exact;
-     a property test discovered up to 1 ulp drift for some inputs.
-     §4 amended accordingly. Functional impact: none — the drift is
-     six orders of magnitude below `STATE_TOLERANCE`.
+10.5 **`serde_json` `float_roundtrip` (added during implementation).**
+     The original spec claimed `serde_json` round-trip was bit-exact.
+     A property test caught up to 2 ulps of drift under the default
+     parser. `aleph-oracle/Cargo.toml` enables the `float_roundtrip`
+     feature on `serde_json`, which switches to a high-precision
+     parser and restores bit-exactness. The property test
+     `f64_pair_round_trips_through_serde_json` enforces this and
+     also documents the rationale.
 
 ---
 

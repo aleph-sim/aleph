@@ -16,7 +16,7 @@ aleph-parser  = { path = "../aleph-parser" }
 aleph-sv      = { path = "../aleph-sv" }
 num-complex   = { workspace = true }
 serde         = { workspace = true }
-serde_json    = { workspace = true }
+serde_json    = { workspace = true, features = ["float_roundtrip"] }
 thiserror     = { workspace = true }
 
 [dev-dependencies]

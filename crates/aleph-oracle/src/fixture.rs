@@ -146,8 +146,7 @@ mod tests {
     #[test]
     fn load_fixture_rejects_bad_schema_version() {
         let tmp = TestTempDir::new();
-        let json =
-            synth_fixture_json().replace("\"schema_version\": 1", "\"schema_version\": 999");
+        let json = synth_fixture_json().replace("\"schema_version\": 1", "\"schema_version\": 999");
         let path = tmp.path.join("fx.json");
         std::fs::write(&path, json).unwrap();
         let err = load_fixture(&path).unwrap_err();
@@ -178,41 +177,23 @@ mod tests {
 
     use proptest::prelude::*;
 
-    /// Returns the size of one ulp at `x` (the spacing between `x` and
-    /// the next representable `f64`). For subnormals and zero this
-    /// degenerates to `f64::MIN_POSITIVE`.
-    fn one_ulp(x: f64) -> f64 {
-        let bits = x.to_bits();
-        let next = f64::from_bits(bits.wrapping_add(1));
-        (next - x).abs().max(f64::MIN_POSITIVE)
-    }
-
     proptest! {
-        /// Every finite f64 round-trips through `serde_json` to within
-        /// **1 ulp**. `serde_json` is not bit-exact (it drifts ≤ 1 ulp
-        /// for some inputs); see spec §10.5. For amplitudes in a
-        /// normalized state vector this is ≤ `2.22e-16`, six orders
-        /// of magnitude below `STATE_TOLERANCE = 1e-10`.
+        /// Every finite f64 round-trips bit-exactly through
+        /// `serde_json::to_string` / `from_str` when wrapped in a
+        /// `(f64, f64)` tuple. This requires the `float_roundtrip`
+        /// feature on `serde_json` — the default parser can drift up
+        /// to 2 ulps for some inputs (e.g. `9.517544802167085e288`).
+        /// See spec §4 / §10.5.
         #[test]
-        fn f64_pair_round_trips_through_serde_json_within_1_ulp(
+        fn f64_pair_round_trips_through_serde_json(
             re in proptest::num::f64::ANY,
             im in proptest::num::f64::ANY,
         ) {
             prop_assume!(re.is_finite() && im.is_finite());
             let s = serde_json::to_string(&(re, im)).unwrap();
             let (re2, im2): (f64, f64) = serde_json::from_str(&s).unwrap();
-            let re_err = (re - re2).abs();
-            let im_err = (im - im2).abs();
-            prop_assert!(
-                re_err <= one_ulp(re),
-                "re drift > 1 ulp: re={re:e}, re2={re2:e}, err={re_err:e}, ulp={:e}",
-                one_ulp(re)
-            );
-            prop_assert!(
-                im_err <= one_ulp(im),
-                "im drift > 1 ulp: im={im:e}, im2={im2:e}, err={im_err:e}, ulp={:e}",
-                one_ulp(im)
-            );
+            prop_assert_eq!(re.to_bits(), re2.to_bits());
+            prop_assert_eq!(im.to_bits(), im2.to_bits());
         }
     }
 }

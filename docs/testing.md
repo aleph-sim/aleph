@@ -70,9 +70,9 @@ deliberate PR that:
 
 ### f64 round-trip note
 
-`serde_json`'s number parser is not bit-exact with `f64::from_str`
-for arbitrary inputs (drift up to 1 ulp). For amplitudes in a
-normalized state vector this is below `f64::EPSILON ≈ 2.22e-16` —
-six orders of magnitude tighter than the `1e-10` oracle tolerance.
-The property test `f64_pair_round_trips_through_serde_json_within_1_ulp`
-locks this bound in.
+`serde_json`'s **default** parser can drift up to 2 ulps from
+`f64::from_str` on some inputs. `aleph-oracle` enables the
+`float_roundtrip` feature on `serde_json` to switch in a high-precision
+parser; with it, every finite `f64` round-trips bit-exactly through
+the fixture format. The property test
+`f64_pair_round_trips_through_serde_json` locks this in.

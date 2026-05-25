@@ -20,14 +20,18 @@ pub enum OracleError {
         expected: u32,
     },
 
-    #[error("fixture {name} qubit-count mismatch: fixture says {fixture}, parsed circuit has {circuit}")]
+    #[error(
+        "fixture {name} qubit-count mismatch: fixture says {fixture}, parsed circuit has {circuit}"
+    )]
     QubitMismatch {
         name: String,
         fixture: u32,
         circuit: u32,
     },
 
-    #[error("fixture {name} dimension mismatch: fixture has {fixture} amplitudes, state has {state}")]
+    #[error(
+        "fixture {name} dimension mismatch: fixture has {fixture} amplitudes, state has {state}"
+    )]
     DimensionMismatch {
         name: String,
         fixture: usize,

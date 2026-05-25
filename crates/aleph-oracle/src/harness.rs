@@ -54,12 +54,7 @@ where
     Ok(())
 }
 
-fn assert_state_close(
-    name: &str,
-    num_qubits: u32,
-    actual: &[Complex],
-    expected: &[(f64, f64)],
-) {
+fn assert_state_close(name: &str, num_qubits: u32, actual: &[Complex], expected: &[(f64, f64)]) {
     let width = num_qubits as usize;
     for (i, (a, &(er, ei))) in actual.iter().zip(expected.iter()).enumerate() {
         let dre = a.re - er;
