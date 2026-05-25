@@ -90,4 +90,17 @@ mod tests {
         assert!(s.contains("4"));
         assert!(s.contains("8"));
     }
+
+    #[test]
+    fn too_many_qubits_message_contains_fields() {
+        let e = OracleError::TooManyQubits {
+            name: "oversized_fx".into(),
+            num_qubits: 128,
+            limit: 64,
+        };
+        let s = format!("{e}");
+        assert!(s.contains("oversized_fx"));
+        assert!(s.contains("128"));
+        assert!(s.contains("64"));
+    }
 }
