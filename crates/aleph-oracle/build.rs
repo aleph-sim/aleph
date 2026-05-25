@@ -44,27 +44,40 @@ fn main() {
     // a matching `.json` under `oracle/fixtures/`. Forgetting to
     // regenerate after adding a circuit now fails the build with an
     // actionable message instead of silently producing zero tests.
-    let qasm_stems: std::collections::BTreeSet<String> = std::fs::read_dir(&circuits_dir)
-        .unwrap_or_else(|e| panic!("read_dir {}: {e}", circuits_dir.display()))
-        .filter_map(Result::ok)
-        .map(|e| e.path())
-        .filter(|p| p.extension().is_some_and(|x| x == "qasm"))
-        .map(|p| p.file_stem().unwrap().to_string_lossy().into_owned())
-        .collect();
-    let fixture_stems: std::collections::BTreeSet<String> = entries
-        .iter()
-        .map(|p| p.file_stem().unwrap().to_string_lossy().into_owned())
-        .collect();
-    let missing: Vec<&String> = qasm_stems.difference(&fixture_stems).collect();
-    if !missing.is_empty() {
-        let list = missing
+    //
+    // The check is skipped if `oracle/circuits/` is missing entirely
+    // (sparse checkout, Docker layer that ships only fixtures,
+    // vendored-crate publication). The build still succeeds in those
+    // environments — generated tests will fail at runtime if QASM
+    // files are needed but absent, with a clearer error than a
+    // build-script panic.
+    if circuits_dir.is_dir() {
+        let qasm_stems: std::collections::BTreeSet<String> = std::fs::read_dir(&circuits_dir)
+            .unwrap_or_else(|e| panic!("read_dir {}: {e}", circuits_dir.display()))
+            .filter_map(Result::ok)
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|x| x == "qasm"))
+            .map(|p| p.file_stem().unwrap().to_string_lossy().into_owned())
+            .collect();
+        let fixture_stems: std::collections::BTreeSet<String> = entries
             .iter()
-            .map(|s| format!("  - oracle/circuits/{s}.qasm"))
-            .collect::<Vec<_>>()
-            .join("\n");
-        panic!(
-            "the following QASM files have no matching oracle/fixtures/<stem>.json:\n{list}\n\
-             Run scripts/regen-fixtures.sh."
+            .map(|p| p.file_stem().unwrap().to_string_lossy().into_owned())
+            .collect();
+        let missing: Vec<&String> = qasm_stems.difference(&fixture_stems).collect();
+        if !missing.is_empty() {
+            let list = missing
+                .iter()
+                .map(|s| format!("  - oracle/circuits/{s}.qasm"))
+                .collect::<Vec<_>>()
+                .join("\n");
+            panic!(
+                "the following QASM files have no matching oracle/fixtures/<stem>.json:\n{list}\n\
+                 Run scripts/regen-fixtures.sh."
+            );
+        }
+    } else {
+        println!(
+            "cargo:warning=oracle/circuits/ not present; skipping qasm↔fixture symmetry check"
         );
     }
 

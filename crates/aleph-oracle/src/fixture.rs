@@ -57,14 +57,13 @@ pub fn load_fixture(path: &Path) -> Result<Fixture, OracleError> {
     // rejected here, before any backend allocation, so the failure
     // message names the fixture instead of failing inside the
     // harness's dimension check later. P0-11 spec §10.1.
-    let expected_dim =
-        1usize
-            .checked_shl(fx.num_qubits)
-            .ok_or_else(|| OracleError::DimensionMismatch {
-                name: fx.name.clone(),
-                fixture: fx.statevector.amplitudes.len(),
-                state: usize::MAX,
-            })?;
+    let expected_dim = 1usize
+        .checked_shl(fx.num_qubits)
+        .ok_or_else(|| OracleError::TooManyQubits {
+            name: fx.name.clone(),
+            num_qubits: fx.num_qubits,
+            limit: usize::BITS,
+        })?;
     if fx.statevector.amplitudes.len() != expected_dim {
         return Err(OracleError::DimensionMismatch {
             name: fx.name,
@@ -176,6 +175,24 @@ mod tests {
                 ..
             } => {}
             other => panic!("expected SchemaVersion error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn load_fixture_rejects_num_qubits_overflow() {
+        // num_qubits = usize::BITS would overflow 1<<n into None;
+        // the loader must surface a clear TooManyQubits error rather
+        // than a confusing DimensionMismatch{state: usize::MAX}.
+        let tmp = TestTempDir::new();
+        let json = synth_fixture_json().replace("\"num_qubits\": 1", "\"num_qubits\": 128");
+        let path = tmp.path.join("fx.json");
+        std::fs::write(&path, json).unwrap();
+        let err = load_fixture(&path).unwrap_err();
+        match err {
+            OracleError::TooManyQubits {
+                num_qubits: 128, ..
+            } => {}
+            other => panic!("expected TooManyQubits, got {other:?}"),
         }
     }
 

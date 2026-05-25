@@ -41,6 +41,16 @@ pub enum OracleError {
     #[error("fixture {name} declares endianness {endianness:?}, only \"little\" is supported")]
     UnsupportedEndianness { name: String, endianness: String },
 
+    #[error(
+        "fixture {name} num_qubits = {num_qubits} exceeds platform usize::BITS = {limit}; \
+         the implied 2^{num_qubits} amplitudes cannot be addressed"
+    )]
+    TooManyQubits {
+        name: String,
+        num_qubits: u32,
+        limit: u32,
+    },
+
     #[error("malformed fixture JSON: {0}")]
     Json(#[from] serde_json::Error),
 
