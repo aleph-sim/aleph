@@ -168,6 +168,23 @@ pub(crate) fn expectation_value_impl(
         }
         seen.push(*q);
     }
+    // Pauli-Z fast path: diagonal Pauli strings need no state clone
+    // and no kernel apply. ⟨ψ| ⊗ᵢ Zᵢ |ψ⟩ = Σᵢ (-1)^popcount(i & z_mask) · |aᵢ|².
+    let mut z_mask = 0u64;
+    let mut all_z_or_i = true;
+    for (q, p) in &pauli.terms {
+        match p {
+            aleph_core::Pauli::I => {}
+            aleph_core::Pauli::Z => z_mask |= 1u64 << q,
+            aleph_core::Pauli::X | aleph_core::Pauli::Y => {
+                all_z_or_i = false;
+                break;
+            }
+        }
+    }
+    if all_z_or_i {
+        return Ok(pauli.coefficient * expectation_z_diag(&state.amps, z_mask));
+    }
     let mut tmp = state.amps.clone();
     for (q, p) in &pauli.terms {
         if *p == aleph_core::Pauli::I {
@@ -221,4 +238,26 @@ pub(crate) fn probabilities_impl(
         out[k] += *p;
     }
     Ok(out)
+}
+
+/// Diagonal `⟨ψ| ⊗ᵢ Zᵢ |ψ⟩` evaluation for a Z-only Pauli string.
+///
+/// `z_mask` has bit `q` set iff the input Pauli string carries
+/// `(q, Pauli::Z)`. Identity terms contribute nothing to the mask
+/// (their sign is always +1).
+///
+/// `i` is at most `2^28` (`MAX_NAIVE_QUBITS`); `i as u64` is exact.
+/// `count_ones` lowers to `popcnt` on x86-64 and to a single
+/// instruction on aarch64.
+fn expectation_z_diag(amps: &[Complex], z_mask: u64) -> f64 {
+    let mut acc = 0.0_f64;
+    for (i, a) in amps.iter().enumerate() {
+        let sign = if (i as u64 & z_mask).count_ones() & 1 == 0 {
+            1.0
+        } else {
+            -1.0
+        };
+        acc += sign * a.norm_sqr();
+    }
+    acc
 }
