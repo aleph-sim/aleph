@@ -605,10 +605,10 @@ Use `clap` v4 with derive.
 
 **Acceptance Criteria**
 
-- [ ] All commands listed work
-- [ ] Help text auto-generated and readable
-- [ ] Exit codes: 0 success, non-zero on error
-- [ ] Documented in README
+- [x] All commands listed work
+- [x] Help text auto-generated and readable
+- [x] Exit codes: 0 success, non-zero on error
+- [x] Documented in README
 
 **Testing Requirements**
 
