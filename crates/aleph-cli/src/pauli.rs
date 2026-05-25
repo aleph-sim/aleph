@@ -7,7 +7,7 @@
 //! pauli_string  = { 'I' | 'X' | 'Y' | 'Z' }+   (q0 = leftmost char)
 //! ```
 
-use aleph_core::PauliString;
+use aleph_core::{Pauli, PauliString};
 
 /// Parse a `--expectation` argument like `"ZZ"`, `"1.5*ZZ"`, or
 /// `"-0.5*X"` into a [`PauliString`].
@@ -16,8 +16,41 @@ use aleph_core::PauliString;
 /// caller knows the circuit's `num_qubits` and is responsible for
 /// rejecting out-of-range Pauli terms.
 pub fn parse_pauli_arg(raw: &str) -> Result<PauliString, PauliArgError> {
-    let _ = raw;
-    todo!("Task 3");
+    // Split optional "coeff*" prefix from the Pauli body. We split on
+    // the FIRST '*' so a malformed input like "ZZ*1.5" surfaces as an
+    // InvalidChar('*') in the body half rather than a confusing
+    // coefficient-parse error.
+    let (coeff, body) = match raw.find('*') {
+        Some(idx) => {
+            let coeff_str = &raw[..idx];
+            let body = &raw[idx + 1..];
+            // The "*" is only treated as a separator if the left side
+            // parses as f64.  Without this, "ZZ*1.5" would be split as
+            // coeff="ZZ" and produce a confusing BadCoeff error.
+            match coeff_str.parse::<f64>() {
+                Ok(c) => (c, body),
+                Err(_) => (1.0, raw),
+            }
+        }
+        None => (1.0, raw),
+    };
+    if body.is_empty() {
+        return Err(PauliArgError::Empty);
+    }
+    let mut terms = Vec::with_capacity(body.len());
+    for (i, ch) in body.chars().enumerate() {
+        let p = match ch {
+            'I' => Pauli::I,
+            'X' => Pauli::X,
+            'Y' => Pauli::Y,
+            'Z' => Pauli::Z,
+            other => return Err(PauliArgError::InvalidChar { ch: other }),
+        };
+        terms.push((i as u32, p));
+    }
+    // PauliString::new sorts, dedupes (none possible here), drops I,
+    // and rejects non-finite coefficient.
+    Ok(PauliString::new(coeff, terms)?)
 }
 
 #[derive(Debug, thiserror::Error, PartialEq)]
