@@ -25,6 +25,12 @@ impl HasAmplitudes for aleph_sv::CpuState {
     }
 }
 
+impl HasAmplitudes for aleph_sv::SoaState {
+    fn amplitudes(&self) -> Vec<Complex> {
+        self.to_aos()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -34,6 +40,17 @@ mod tests {
     #[test]
     fn fresh_one_qubit_state_is_zero_ket() {
         let mut b = NaiveSvBackend::with_seed(0);
+        let s = b.allocate(1).unwrap();
+        let amps = HasAmplitudes::amplitudes(&s);
+        assert_eq!(amps.len(), 2);
+        assert_eq!(amps[0], Complex::new(1.0, 0.0));
+        assert_eq!(amps[1], Complex::new(0.0, 0.0));
+    }
+
+    #[test]
+    fn fresh_one_qubit_soa_state_is_zero_ket() {
+        use aleph_sv::SoaSvBackend;
+        let mut b = SoaSvBackend::with_seed(0);
         let s = b.allocate(1).unwrap();
         let amps = HasAmplitudes::amplitudes(&s);
         assert_eq!(amps.len(), 2);
