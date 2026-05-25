@@ -774,6 +774,21 @@ mod tests {
     }
 
     #[test]
+    fn sample_rejects_state_with_mismatched_amps_len() {
+        // P0-11 hardening: validate_state must reject states whose
+        // amps.len() is not 2^num_qubits, otherwise AliasTable::draw's
+        // power-of-two precondition could silently bias release builds.
+        let mut b = NaiveSvBackend::with_seed(0);
+        let mut s = b.allocate(2).unwrap(); // num_qubits=2 → expects 4 amps
+        s.amps.push(Complex::new(0.0, 0.0)); // now 5 amps; not pow2
+        let err = b.sample(&s, 10).unwrap_err();
+        assert!(
+            matches!(err, BackendError::InvalidState { .. }),
+            "got {err:?}"
+        );
+    }
+
+    #[test]
     fn measure_clamps_p_against_drifted_norm() {
         // Construct a state whose total norm² is slightly > 1.0 to mimic
         // FP drift. measure must NOT produce NaN amplitudes.

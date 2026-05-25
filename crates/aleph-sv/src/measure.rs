@@ -27,6 +27,21 @@ pub(crate) fn validate_state(state: &CpuState) -> Result<Vec<f64>, BackendError>
             reason: "empty state vector",
         });
     }
+    // Structural invariant: `amps.len() == 2^num_qubits`. P0-11's alias
+    // sampler enforces a power-of-two table only via `debug_assert!`;
+    // release builds would otherwise silently bias `bits & (n-1)` for a
+    // mismatched length. Catch it here at the validation boundary so the
+    // bug surfaces as `InvalidState`, not as biased samples.
+    let expected = 1usize
+        .checked_shl(state.num_qubits)
+        .ok_or(BackendError::InvalidState {
+            reason: "num_qubits exceeds platform usize::BITS",
+        })?;
+    if n != expected {
+        return Err(BackendError::InvalidState {
+            reason: "amps.len() != 2^num_qubits",
+        });
+    }
     let mut probs = Vec::with_capacity(n);
     let mut total = 0.0_f64;
     for a in &state.amps {
