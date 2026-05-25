@@ -114,37 +114,22 @@ pub(crate) fn measure_impl(
     Ok(outcome)
 }
 
-/// Sample basis-state indices from `|amps[i]|²` via inverse-CDF.
+/// Sample basis-state indices from `|amps[i]|²` via Vose's alias method.
 ///
-/// Builds the CDF once, then binary-searches per shot. CDF is clamped
-/// at 1.0 at the last index to absorb floating-point drift; a shot
-/// with `u == 1.0` (rare but possible) maps to the last basis index.
+/// `O(n)` build (`n = 2^num_qubits`) + `O(1)` per shot. Replaces the
+/// `O(log n)`-per-shot inverse-CDF path used in P0-09; see
+/// `crates/aleph-sv/src/sampling.rs` for the build algorithm and
+/// `benches/sample.rs` for the measured speedup.
 pub(crate) fn sample_impl(
     rng: &mut StdRng,
     state: &CpuState,
     shots: u32,
 ) -> Result<Vec<u64>, BackendError> {
     let probs = validate_state(state)?;
-    let n = probs.len();
-    // Build the CDF from the per-amp probabilities `validate_state`
-    // already produced (single pass over the state).
-    let mut cdf = Vec::with_capacity(n);
-    let mut acc = 0.0_f64;
-    for p in &probs {
-        acc += *p;
-        cdf.push(acc);
-    }
-    // Clamp the last CDF entry to 1.0 to absorb the last bit of drift
-    // so `u in [0,1)` always maps to a valid index.
-    if let Some(last) = cdf.last_mut() {
-        *last = 1.0;
-    }
+    let table = crate::sampling::AliasTable::build(&probs);
     let mut out = Vec::with_capacity(shots as usize);
     for _ in 0..shots {
-        let u: f64 = rng.gen();
-        let idx = cdf.partition_point(|&c| c < u);
-        let idx = idx.min(n.saturating_sub(1));
-        out.push(idx as u64);
+        out.push(table.draw(rng) as u64);
     }
     Ok(out)
 }
