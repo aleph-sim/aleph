@@ -21,7 +21,12 @@ pub fn arb_state_vector(n: u32) -> impl Strategy<Value = Vec<Complex>> {
         let norm2: f64 = amps.iter().map(|a| a.norm_sqr()).sum();
         // All-zero is possible but vanishingly unlikely; bias to a
         // valid state by mapping the degenerate case to |0…0⟩.
+        // Zero the residual amplitudes first so the returned vector
+        // is exactly |0…0⟩, not "|0…0⟩ plus 1e-150-scale noise".
         if norm2 < 1e-300 {
+            for a in &mut amps {
+                *a = Complex::new(0.0, 0.0);
+            }
             amps[0] = Complex::new(1.0, 0.0);
             return amps;
         }

@@ -36,6 +36,11 @@ mod tests {
 
         #[test]
         fn z_only_terms_have_only_z(ps in arb_pauli_string(5, false)) {
+            // PauliString::new drops I terms; an all-I draw yields an
+            // empty terms vec and the loop would assert nothing.
+            // Reject those samples as proptest discards so the
+            // assertion is never vacuously satisfied.
+            prop_assume!(!ps.terms.is_empty());
             for (_, p) in &ps.terms {
                 prop_assert_eq!(*p, Pauli::Z);
             }
@@ -43,6 +48,7 @@ mod tests {
 
         #[test]
         fn mixed_terms_are_x_y_or_z(ps in arb_pauli_string(5, true)) {
+            prop_assume!(!ps.terms.is_empty());
             for (_, p) in &ps.terms {
                 prop_assert!(matches!(p, Pauli::X | Pauli::Y | Pauli::Z));
             }
@@ -50,6 +56,8 @@ mod tests {
 
         #[test]
         fn coefficient_is_one(ps in arb_pauli_string(4, true)) {
+            // Coefficient assertion is non-vacuous regardless of
+            // terms (the field exists even when terms is empty).
             prop_assert_eq!(ps.coefficient, 1.0);
         }
     }
