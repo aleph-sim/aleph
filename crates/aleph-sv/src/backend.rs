@@ -465,6 +465,69 @@ mod tests {
     }
 
     #[test]
+    fn expectation_zz_sign_table() {
+        // ⟨ψ|Z⊗Z|ψ⟩ on each computational basis state of 2 qubits.
+        // qubit indexing matches sample/probabilities: q0 = LSB.
+        let cases: &[(u32, f64)] = &[
+            (0b00, 1.0),  // |00⟩ → (+1)(+1) = +1
+            (0b01, -1.0), // |01⟩ → (-1)(+1) = -1
+            (0b10, -1.0), // |10⟩ → (+1)(-1) = -1
+            (0b11, 1.0),  // |11⟩ → (-1)(-1) = +1
+        ];
+        for &(basis, expected) in cases {
+            let mut b = NaiveSvBackend::with_seed(0);
+            let mut s = b.allocate(2).unwrap();
+            if basis & 0b01 != 0 {
+                b.apply_gate(&mut s, &GateInstance::new(Gate::X, smallvec![0u32]))
+                    .unwrap();
+            }
+            if basis & 0b10 != 0 {
+                b.apply_gate(&mut s, &GateInstance::new(Gate::X, smallvec![1u32]))
+                    .unwrap();
+            }
+            let zz = PauliString::new(1.0, vec![(0, Pauli::Z), (1, Pauli::Z)]).unwrap();
+            let ev = b.expectation_value(&s, &zz).unwrap();
+            assert!(
+                (ev - expected).abs() < 1e-12,
+                "basis {basis:02b}: got {ev}, want {expected}"
+            );
+        }
+    }
+
+    #[test]
+    fn expectation_y_on_zero_is_zero() {
+        // Mixed-Pauli fallthrough: ⟨0|Y|0⟩ = 0 (Y has 0 diagonal in
+        // the computational basis). Exercises the non-Z slow path.
+        let mut b = NaiveSvBackend::with_seed(0);
+        let s = b.allocate(1).unwrap();
+        let y = PauliString::new(1.0, vec![(0, Pauli::Y)]).unwrap();
+        let ev = b.expectation_value(&s, &y).unwrap();
+        assert!(ev.abs() < 1e-12, "got {ev}");
+    }
+
+    #[test]
+    fn expectation_z_chain_on_ghz_is_plus_one() {
+        // |GHZ_n⟩ = (|0…0⟩ + |1…1⟩)/√2. ⟨GHZ|Z⊗…⊗Z|GHZ⟩ = +1 for
+        // even n (popcount(0) and popcount(2^n−1) parities sum to even).
+        // Use n = 4 so the answer is unambiguously +1.
+        let mut b = NaiveSvBackend::with_seed(0);
+        let mut s = b.allocate(4).unwrap();
+        b.apply_gate(&mut s, &GateInstance::new(Gate::H, smallvec![0u32]))
+            .unwrap();
+        for t in 1u32..4 {
+            b.apply_gate(&mut s, &GateInstance::new(Gate::Cnot, smallvec![0u32, t]))
+                .unwrap();
+        }
+        let z_all = PauliString::new(
+            1.0,
+            vec![(0, Pauli::Z), (1, Pauli::Z), (2, Pauli::Z), (3, Pauli::Z)],
+        )
+        .unwrap();
+        let ev = b.expectation_value(&s, &z_all).unwrap();
+        assert!((ev - 1.0).abs() < 1e-12, "got {ev}");
+    }
+
+    #[test]
     fn expectation_x_on_minus_is_minus_one() {
         // |−⟩ = HX|0⟩; ⟨−|X|−⟩ = -1.
         let mut b = NaiveSvBackend::with_seed(0);
