@@ -102,9 +102,12 @@ fn assert_state_close(name: &str, num_qubits: u32, actual: &[Complex], expected:
 /// flake probability is ≤ 5.7e-7 (spec §6.2).
 pub const DISTRIBUTION_SHOTS: u32 = 100_000;
 
-/// Floor added to every per-outcome band so a forbidden outcome
-/// (`p_exact = 0`) tolerates the rare integer round-off but rejects
-/// a genuine bug producing several stray samples. Spec §6.2.
+/// Floor added to every per-outcome band. At `DISTRIBUTION_SHOTS =
+/// 100_000` shots, one stray sample on a forbidden outcome
+/// (`p_exact = 0`) already exceeds this floor (1/100_000 = 1e-5 >
+/// 1e-6). The floor is therefore a tightness guarantee, not a
+/// tolerance: any non-zero count on a forbidden outcome fails the
+/// oracle. Spec §6.2.
 pub const DISTRIBUTION_FLOOR: f64 = 1e-6;
 
 /// Sample 100 000 shots through `backend`, then assert the empirical

@@ -68,9 +68,16 @@ impl AliasTable {
                 large.push(l);
             }
         }
-        // Drain leftovers from either stack: due to FP drift the
-        // remaining indices have scaled ≈ 1.0, so the table degenerates
-        // to a self-pointing entry with probability 1.
+        // Drain leftovers from either stack. In the exactly-normalised
+        // case both stacks are empty here; when validate_state has
+        // accepted a slightly over- or under-normalised input within
+        // its `√n · AMPLITUDE_TOL` drift budget, residual entries
+        // hold `scaled[i]` within ≈ ±drift_budget of 1.0. Setting
+        // `prob[i] = 1.0` truncates that residual mass (bounded per
+        // index by ≤ drift_budget/n), which is well below the 5σ
+        // distribution-oracle band and any reasonable downstream
+        // tolerance — but is *not* a faithful redistribution of
+        // residual mass, only a clean self-alias.
         for i in large.drain(..).chain(small.drain(..)) {
             prob[i as usize] = 1.0;
             alias[i as usize] = i;
