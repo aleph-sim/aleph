@@ -160,3 +160,31 @@ preventing regression of bugs the suite previously caught.
    most tests; bump `cases: N` for expensive setups.
 
 [proptest]: https://github.com/proptest-rs/proptest
+
+## SoA backend (P1-01)
+
+`aleph-sv` ships two state-vector backends:
+
+* `NaiveSvBackend` — reference, array-of-structs (`Vec<Complex<f64>>`).
+  Stays as the correctness yardstick.
+* `SoaSvBackend` — Phase-1 perf backend, struct-of-arrays
+  (`Vec<f64>` × 2). Same algorithms, layout chosen for SIMD-friendly
+  sequential memory access (P1-03 / P1-04 add the explicit AVX2 /
+  AVX-512 vectorisation).
+
+Equivalence is pinned three ways:
+
+1. `crates/aleph-oracle/tests/soa_vs_naive.rs::all_fixtures_match_naive`
+   — every committed oracle circuit produces the same state vector
+   on both backends within 1e-12 per amplitude.
+2. Proptest equivalence in `crates/aleph-sv/src/kernels/soa.rs`
+   over `aleph_test::gate::arb_1q_gate` / `arb_2q_gate` against
+   `aleph_test::state::arb_state_vector`.
+3. Both backends pass the full oracle suite vs Qiskit Aer. The
+   `aleph-oracle/build.rs` codegen emits `naive_state`,
+   `naive_distribution`, `soa_state`, `soa_distribution` per
+   fixture (28 × 4 = 112 generated tests).
+
+When introducing a new state-vector backend (e.g. SIMD-specialised
+variants in P1-03), add it to the workhorse equivalence test
++ `build.rs` codegen rather than relying on the oracle alone.
