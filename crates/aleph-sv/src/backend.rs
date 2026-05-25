@@ -805,23 +805,8 @@ mod tests {
             .all(|a| a.re.is_finite() && a.im.is_finite()));
     }
 
+    use aleph_test::gate::arb_1q_gate;
     use proptest::prelude::*;
-
-    fn random_1q_gate_strategy() -> impl Strategy<Value = Gate> {
-        prop_oneof![
-            Just(Gate::H),
-            Just(Gate::X),
-            Just(Gate::Y),
-            Just(Gate::Z),
-            Just(Gate::S),
-            Just(Gate::Sdg),
-            Just(Gate::T),
-            Just(Gate::Tdg),
-            (-std::f64::consts::TAU..=std::f64::consts::TAU).prop_map(|t| Gate::Rx(t.into())),
-            (-std::f64::consts::TAU..=std::f64::consts::TAU).prop_map(|t| Gate::Ry(t.into())),
-            (-std::f64::consts::TAU..=std::f64::consts::TAU).prop_map(|t| Gate::Rz(t.into())),
-        ]
-    }
 
     fn run_program(ops: &[(Gate, u32)], n: u32) -> CpuState {
         let mut b = NaiveSvBackend::with_seed(0);
@@ -839,7 +824,7 @@ mod tests {
         #[test]
         fn normalisation_invariant(
             ops in proptest::collection::vec(
-                (random_1q_gate_strategy(), 0u32..4u32),
+                (arb_1q_gate(), 0u32..4u32),
                 0..30,
             )
         ) {
