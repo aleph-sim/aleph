@@ -185,14 +185,21 @@ fn assert_distribution_close(
     for (i, (&count, &p)) in empirical.iter().zip(exact.iter()).enumerate() {
         // Defensive: a Qiskit fixture should never carry a NaN or a
         // p outside [0, 1] here (re²+im² is non-negative for finite
-        // inputs and ≤ 1 for a normalised state), but mirror
+        // inputs and bounded by the normalised-state sum), but mirror
         // `assert_state_close`'s explicit guard so a pathological
-        // reference is loud, not silent. Without this, the band
-        // computation below would silently produce NaN for p < 0
+        // reference is loud, not silent. Without the NaN reject the
+        // band computation below would silently produce NaN for p < 0
         // (sqrt of a negative product) and `delta > NaN` would be
         // false — the same regression class P0-10 hardened the state
         // path against.
-        if !p.is_finite() || !(0.0..=1.0).contains(&p) {
+        //
+        // The upper bound is `1.0 + STATE_TOLERANCE` rather than `1.0`
+        // exactly: `re*re + im*im` can round UP by 1 ulp on a finite
+        // input, and a fixture whose dominant amplitude lands at p ≈ 1
+        // (a product/near-product state) would otherwise hard-panic
+        // here. The downstream `(p * (1.0 - p)).max(0.0)` clamp keeps
+        // the variance well-defined for `p` slightly above 1.
+        if !p.is_finite() || p < 0.0 || p > 1.0 + STATE_TOLERANCE {
             panic!(
                 "oracle: {name} distribution non-finite or out-of-range reference\n  \
                  index {i}  basis |{i:0width$b}>\n  p_exact {p}",
@@ -381,6 +388,24 @@ mod tests {
             } => {}
             other => panic!("expected QubitMismatch, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn distribution_oracle_accepts_p_within_one_ulp_above_one() {
+        // A degenerate single-outcome distribution where p_exact rounds
+        // up by 1 ulp due to fixture FP rounding. The empirical count
+        // matches the rounded reference, and the tightness band
+        // tolerates the residual. Pre-G1 this would have hard-panicked.
+        let p = 1.0_f64 + f64::EPSILON; // ~2.22e-16 above 1
+        assert_distribution_close("p_one_plus_ulp", 1, &[100_000, 0], &[p, 0.0], 100_000);
+    }
+
+    #[test]
+    #[should_panic(expected = "non-finite or out-of-range reference")]
+    fn distribution_oracle_rejects_p_well_above_one() {
+        // STATE_TOLERANCE is 1e-10; anything materially above 1 is a
+        // genuinely malformed reference and must still hard-panic.
+        assert_distribution_close("p_well_above_one", 1, &[100_000, 0], &[1.0 + 1e-6, 0.0], 100_000);
     }
 
     #[test]
