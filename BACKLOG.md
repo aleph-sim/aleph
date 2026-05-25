@@ -520,7 +520,7 @@ Qiskit Aer is the gold standard. Any disagreement is a bug in our simulator (alm
 - Tolerance: 1e-10 for amplitudes (FP64); 1e-5 for sampled probabilities at 100k shots.
 
 Decision needed: subprocess at test time (slower, fresher) vs. pre-generated fixtures (faster, may drift).
-Recommendation: pre-generate fixtures, regenerate via `make regen-fixtures`.
+Recommendation: pre-generate fixtures, regenerate via `scripts/regen-fixtures.sh`.
 
 **Acceptance Criteria**
 
