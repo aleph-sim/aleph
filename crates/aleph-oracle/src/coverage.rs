@@ -15,7 +15,8 @@ mod tests {
     /// Gate keywords currently lowered by `aleph-parser`. Keep in
     /// sync with `crates/aleph-parser/src/lower.rs`.
     const SUPPORTED_GATES: &[&str] = &[
-        "h", "x", "y", "z", "s", "sdg", "t", "tdg", "rx", "ry", "rz", "cx", "cz", "swap", "ccx",
+        "h", "x", "y", "z", "s", "sdg", "t", "tdg", "rx", "ry", "rz", "p", "u3", "cx", "cz",
+        "swap", "ccx",
     ];
 
     #[test]

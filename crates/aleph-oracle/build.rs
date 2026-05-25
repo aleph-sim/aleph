@@ -97,4 +97,3 @@ fn is_valid_ident(s: &str) -> bool {
     }
     chars.all(|c| c == '_' || c.is_ascii_alphanumeric())
 }
-
