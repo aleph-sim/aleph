@@ -20,8 +20,55 @@ impl AliasTable {
     /// Build from a normalised probability vector. `p` must sum to
     /// `1 ± validate_state`'s drift budget; callers go through
     /// `crate::measure::validate_state` first.
-    pub(crate) fn build(_p: &[f64]) -> Self {
-        todo!("Task 3");
+    pub(crate) fn build(p: &[f64]) -> Self {
+        // Vose 1991, "A linear algorithm for generating random numbers
+        // with a given distribution", Algorithm 3.
+        //
+        // We require `p.len() >= 1`; the only caller (`sample_impl`) is
+        // gated by `validate_state` which rejects empty states.
+        let n = p.len();
+        debug_assert!(n >= 1, "AliasTable::build requires non-empty p");
+        let mut prob = vec![0.0_f64; n];
+        let mut alias = vec![0u32; n];
+        if n == 1 {
+            prob[0] = 1.0;
+            alias[0] = 0;
+            return Self { prob, alias };
+        }
+        let n_f = n as f64;
+        let mut scaled: Vec<f64> = p.iter().map(|q| n_f * q).collect();
+        // Partition indices into `small` (scaled < 1) and `large`
+        // (scaled ≥ 1). Allocate full-size to avoid reallocations.
+        let mut small: Vec<u32> = Vec::with_capacity(n);
+        let mut large: Vec<u32> = Vec::with_capacity(n);
+        for (i, &s) in scaled.iter().enumerate() {
+            if s < 1.0 {
+                small.push(i as u32);
+            } else {
+                large.push(i as u32);
+            }
+        }
+        while let (Some(s), Some(l)) = (small.pop(), large.pop()) {
+            prob[s as usize] = scaled[s as usize];
+            alias[s as usize] = l;
+            // The "+ scaled[s]) - 1.0" grouping mirrors the Vose paper
+            // and keeps round-off symmetric across the two stacks.
+            let new_l = (scaled[l as usize] + scaled[s as usize]) - 1.0;
+            scaled[l as usize] = new_l;
+            if new_l < 1.0 {
+                small.push(l);
+            } else {
+                large.push(l);
+            }
+        }
+        // Drain leftovers from either stack: due to FP drift the
+        // remaining indices have scaled ≈ 1.0, so the table degenerates
+        // to a self-pointing entry with probability 1.
+        for i in large.drain(..).chain(small.drain(..)) {
+            prob[i as usize] = 1.0;
+            alias[i as usize] = i;
+        }
+        Self { prob, alias }
     }
 
     /// One draw. Consumes one `u32` and one `f64` of RNG output.
