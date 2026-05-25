@@ -173,8 +173,7 @@ pub fn arb_op_emittable(nq: u32, nc: u32) -> BoxedStrategy<OpKind> {
 
     // Build the branch vector incrementally so we can omit branches
     // whose qubit-tuple strategies have zero valid outcomes.
-    let mut branches: Vec<(u32, BoxedStrategy<OpKind>)> =
-        vec![(4, single), (3, parametric)];
+    let mut branches: Vec<(u32, BoxedStrategy<OpKind>)> = vec![(4, single), (3, parametric)];
 
     if nq >= 2 {
         let two_q = prop_oneof![
@@ -268,8 +267,7 @@ pub fn arb_op_full(nq: u32, nc: u32) -> BoxedStrategy<OpKind> {
     ]
     .boxed();
 
-    let mut branches: Vec<(u32, BoxedStrategy<OpKind>)> =
-        vec![(4, single), (3, parametric)];
+    let mut branches: Vec<(u32, BoxedStrategy<OpKind>)> = vec![(4, single), (3, parametric)];
 
     if nq >= 2 {
         let two_q = prop_oneof![

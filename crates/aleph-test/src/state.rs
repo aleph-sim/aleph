@@ -1,6 +1,6 @@
 //! Random normalised state vectors.  See spec §4.1.
 
-use aleph_core::{Complex, AMPLITUDE_TOL};
+use aleph_core::Complex;
 use proptest::prelude::*;
 
 /// Random normalised state vector of `n` qubits.  Output length is
@@ -41,6 +41,7 @@ pub fn arb_state_vector(n: u32) -> impl Strategy<Value = Vec<Complex>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aleph_core::AMPLITUDE_TOL;
 
     /// Build a strategy that draws `(n, amps)` so the consumer
     /// proptest sees both `n` and the amplitude vector at once.
