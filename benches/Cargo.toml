@@ -14,7 +14,11 @@ publish = false
 path = "src/lib.rs"
 
 [dependencies]
-aleph-core = { path = "../crates/aleph-core" }
+aleph-core    = { path = "../crates/aleph-core" }
+aleph-ir      = { path = "../crates/aleph-ir" }
+aleph-backend = { path = "../crates/aleph-backend" }
+aleph-sv      = { path = "../crates/aleph-sv" }
+smallvec      = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

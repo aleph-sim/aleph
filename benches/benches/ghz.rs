@@ -1,45 +1,36 @@
-//! GHZ-state preparation benchmark for n ∈ {10, 15, 20, 25}.
+//! GHZ-state preparation end-to-end benchmark for n ∈ {10, 15, 20, 25}.
 //!
-//! GHZ on n qubits = (|0…0⟩ + |1…1⟩) / √2. Two non-zero amplitudes,
-//! `1/√2` each at index 0 and index `2^n − 1`. Today this measures the
-//! cost of allocating + initialising a `Vec<Complex>` of length `2^n`;
-//! once P0-09 lands the body becomes `backend.apply_circuit(&ghz(n))`
-//! and the bench naturally tracks circuit-execution time instead.
+//! Drives `NaiveSvBackend` through the canonical GHZ circuit
+//! (`H q[0]; CX q[0],q[1]; CX q[1],q[2]; …`).  Throughput is
+//! reported in amplitudes (`2^n`) so bencher.dev plots elements/s,
+//! the metric SoA/SIMD work in Phase 1 will move.
 //!
-//! Memory budget at n=25: a single iteration allocates 2^25 × 16 B ≈
-//! 512 MiB. Criterion runs many iterations per sample but drops the
-//! result between each, so peak resident memory is one buffer, not
-//! cumulative. Bench is comfortably within the EPYC runner's 123 GiB
-//! and a typical 16 GB laptop.
+//! Memory budget at n=25: state vector is 2^25 × 16 B ≈ 512 MiB.
+//! Criterion drops the result between iterations so peak resident
+//! memory is one buffer — comfortable on the EPYC runner (123 GiB)
+//! and a 16 GiB laptop alike.
 
-use aleph_benches::zero_state;
-use aleph_core::Complex;
+use aleph_backend::run;
+use aleph_benches::ghz_circuit;
+use aleph_sv::NaiveSvBackend;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use std::hint::black_box;
 
-const SQRT_HALF: f64 = std::f64::consts::FRAC_1_SQRT_2;
-
 const QUBIT_COUNTS: &[u32] = &[10, 15, 20, 25];
-
-fn ghz_state(n_qubits: u32) -> Vec<Complex> {
-    let mut amps = zero_state(n_qubits);
-    // |0…0⟩ amplitude already set to 1 by zero_state; renormalise to
-    // 1/√2 and add |1…1⟩ at the highest index.
-    amps[0] = Complex::new(SQRT_HALF, 0.0);
-    let last = amps.len() - 1;
-    amps[last] = Complex::new(SQRT_HALF, 0.0);
-    amps
-}
 
 fn bench_ghz(c: &mut Criterion) {
     let mut group = c.benchmark_group("ghz");
     for &n in QUBIT_COUNTS {
-        // Throughput in amplitudes — bencher.dev plots this as
-        // elements/s, which stays meaningful when bodies get swapped
-        // for real circuit execution.
+        let circuit = ghz_circuit(n);
         group.throughput(Throughput::Elements(1u64 << n));
-        group.bench_with_input(BenchmarkId::from_parameter(n), &n, |b, &n| {
-            b.iter(|| black_box(ghz_state(n)));
+        group.bench_with_input(BenchmarkId::from_parameter(n), &n, |b, _| {
+            b.iter_with_setup(
+                || NaiveSvBackend::with_seed(0),
+                |mut backend| {
+                    let state = run(&mut backend, &circuit).unwrap();
+                    black_box(state);
+                },
+            );
         });
     }
     group.finish();

@@ -66,11 +66,12 @@ GPU (Phase 5+):
 cargo build --workspace --features cuda
 ```
 
-Python bindings (Phase 4+):
+Python bindings (planned, Phase 4):
 
-```bash
-cd crates/aleph-py && maturin develop --release
-```
+`crates/aleph-py` is a placeholder crate today.  `maturin develop`
+builds successfully but the resulting module exports nothing useful
+yet — Python-facing APIs land in Phase 4 alongside the v0.1 release
+(see `ROADMAP.md` § Phase 4 and `BACKLOG.md` § P4-08).
 
 ## Workspace layout
 

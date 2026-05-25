@@ -93,11 +93,11 @@ Use `edition = "2021"`, `rust-version = "1.75"` minimum. Add `rustfmt.toml` and 
 
 **Acceptance Criteria**
 
-- [ ] `cargo build --workspace` succeeds
-- [ ] `cargo test --workspace` succeeds (no tests yet, but exits 0)
-- [ ] `cargo clippy --workspace -- -D warnings` succeeds
-- [ ] `cargo fmt --check` succeeds
-- [ ] README.md with build instructions exists
+- [x] `cargo build --workspace` succeeds
+- [x] `cargo test --workspace` succeeds (no tests yet, but exits 0)
+- [x] `cargo clippy --workspace -- -D warnings` succeeds
+- [x] `cargo fmt --check` succeeds
+- [x] README.md with build instructions exists
 
 **Testing Requirements**
 
@@ -133,11 +133,11 @@ Use `actions-rs/toolchain` or `dtolnay/rust-toolchain`.
 
 **Acceptance Criteria**
 
-- [ ] CI runs on every PR and main push
-- [ ] Build, test, clippy, fmt all gating
-- [ ] Linux + macOS matrix
-- [ ] Stable Rust required; beta allowed to fail
-- [ ] Benchmark workflow exists (may be no-op until P0-04)
+- [x] CI runs on every PR and main push
+- [x] Build, test, clippy, fmt all gating
+- [x] Linux + macOS matrix
+- [x] Stable Rust required; beta allowed to fail
+- [x] Benchmark workflow exists (may be no-op until P0-04)
 
 **Testing Requirements**
 
@@ -172,9 +172,9 @@ Evaluate:
 
 **Acceptance Criteria**
 
-- [ ] Decision documented in `docs/decisions/0001-complex-type.md` (ADR format)
-- [ ] Type aliased as `aleph_core::Complex` for forward compatibility
-- [ ] All current usage routed through this alias
+- [x] Decision documented in `docs/decisions/0001-complex-type.md` (ADR format)
+- [x] Type aliased as `aleph_core::Complex` for forward compatibility
+- [x] All current usage routed through this alias
 
 **Testing Requirements**
 
@@ -214,10 +214,10 @@ Set up `criterion` benchmarks at the workspace level with a standard set of benc
 
 **Acceptance Criteria**
 
-- [ ] `cargo bench` produces output
-- [ ] At least 4 benchmark fixtures wired up
-- [ ] Documentation in `docs/benchmarking.md`
-- [ ] CI runs benchmarks on PR (may not gate, just report)
+- [x] `cargo bench` produces output
+- [x] At least 4 benchmark fixtures wired up
+- [x] Documentation in `docs/benchmarking.md`
+- [x] CI runs benchmarks on PR (may not gate, just report)
 
 **Testing Requirements**
 
@@ -319,11 +319,11 @@ Consider: should parameters be `f64` or symbolic (for parameterized circuits in 
 
 **Acceptance Criteria**
 
-- [ ] `Gate` enum covers all gates in Tier 1 algorithms
-- [ ] `GateInstance` carries qubit indices
-- [ ] Each gate has a method `matrix() -> SmallMatrix<Complex>` for naive use
-- [ ] Each gate has `is_diagonal()`, `is_clifford()`, `inverse()` methods
-- [ ] Unit tests for matrix correctness
+- [x] `Gate` enum covers all gates in Tier 1 algorithms
+- [x] `GateInstance` carries qubit indices
+- [x] Each gate has a method `matrix() -> SmallMatrix<Complex>` for naive use
+- [x] Each gate has `is_diagonal()`, `is_clifford()`, `inverse()` methods
+- [x] Unit tests for matrix correctness
 
 **Testing Requirements**
 
@@ -378,10 +378,10 @@ The IR should support efficient iteration, qubit dependency analysis (for optimi
 
 **Acceptance Criteria**
 
-- [ ] `Circuit` builder API: `circuit.h(0); circuit.cnot(0, 1); circuit.measure(0, 0);`
-- [ ] Iteration API: `circuit.instructions()`
-- [ ] Layer extraction: `circuit.layers()` returns groups of commuting instructions
-- [ ] Serialization to/from OpenQASM 3.0 string (depends on P0-08)
+- [x] `Circuit` builder API: `circuit.h(0); circuit.cnot(0, 1); circuit.measure(0, 0);`
+- [x] Iteration API: `circuit.instructions()`
+- [x] Layer extraction: `circuit.layers()` returns groups of commuting instructions
+- [x] Serialization to/from OpenQASM 3.0 string (depends on P0-08)
 
 **Testing Requirements**
 
@@ -425,10 +425,10 @@ Use `nom` or `pest` parser combinators. `nom` is more common in the Rust ecosyst
 
 **Acceptance Criteria**
 
-- [ ] Parse the Tier 1 algorithm OpenQASM files (GHZ, QFT, Grover, random circuit)
-- [ ] Produce equivalent `Circuit` IR
-- [ ] Round-trip: Circuit → OpenQASM → Circuit produces equivalent result
-- [ ] Helpful error messages with line/column info
+- [x] Parse the Tier 1 algorithm OpenQASM files (GHZ, QFT, Grover, random circuit)
+- [x] Produce equivalent `Circuit` IR
+- [x] Round-trip: Circuit → OpenQASM → Circuit produces equivalent result
+- [x] Helpful error messages with line/column info
 
 **Testing Requirements**
 
@@ -482,10 +482,10 @@ Naive implementation:
 
 **Acceptance Criteria**
 
-- [ ] Runs all Tier 1 algorithms (GHZ, QFT, Grover, random) up to 20 qubits
-- [ ] Produces correct results vs. Qiskit oracle on all benchmarks
-- [ ] All property tests pass
-- [ ] Code is readable and commented — this is the reference
+- [x] Runs all Tier 1 algorithms (GHZ, QFT, Grover, random) up to 20 qubits
+- [x] Produces correct results vs. Qiskit oracle on all benchmarks
+- [x] All property tests pass
+- [x] Code is readable and commented — this is the reference
 
 **Testing Requirements**
 

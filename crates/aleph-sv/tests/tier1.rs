@@ -77,6 +77,34 @@ fn ghz_20_runs() {
 }
 
 #[test]
+#[ignore = "n=25 needs ~512 MiB state vector; ROADMAP Phase-0 exit criterion. Run with `cargo test --release -- --ignored ghz_25_runs`."]
+fn ghz_25_runs() {
+    // ROADMAP § 7 Phase-0 success metric: "25-qubit GHZ runs
+    // end-to-end".  At n=25 the state vector is 2^25 × 16 B ≈
+    // 512 MiB; default `cargo test` builds with `-O0` and several
+    // checks (validate_state per primitive call, unitarity guard
+    // per gate dispatch) make this take seconds.  Run in release.
+    let circ = parse(&ghz_qasm(25)).unwrap();
+    let mut b = NaiveSvBackend::with_seed(0);
+    let s = run(&mut b, &circ).unwrap();
+    let n = 25;
+    let inv_s2 = std::f64::consts::FRAC_1_SQRT_2;
+    let a = s.amplitudes();
+    let last = (1usize << n) - 1;
+    assert!((a[0].re - inv_s2).abs() < TOL);
+    assert!((a[last].re - inv_s2).abs() < TOL);
+    // Quick sanity check that the "in between" amplitudes are zero
+    // (they form ~33 M samples — check a stride rather than all).
+    for i in (1..last).step_by(1usize << (n - 6)) {
+        assert!(
+            a[i].norm() < TOL,
+            "ghz_25: amp[{i}] = {} should be ≈ 0",
+            a[i].norm()
+        );
+    }
+}
+
+#[test]
 fn qft_3_on_one_probabilities_are_uniform() {
     // QFT applied to any computational basis state |x⟩ yields a state
     // with uniform probability 1/N over basis states. Phases differ by

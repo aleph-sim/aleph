@@ -1,57 +1,95 @@
 //! `aleph-benches`: workspace-level benchmark harness.
 //!
 //! The actual benchmarks live in `benches/*.rs` and are run via
-//! `cargo bench --bench <name>` or `cargo bench --workspace`.
-//! This `lib.rs` exists only so the crate is well-formed; it hosts
-//! shared fixture builders used by individual bench files.
+//! `cargo bench --bench <name>` or `cargo bench --workspace`.  This
+//! `lib.rs` exposes shared circuit-builders the individual bench
+//! files invoke through `NaiveSvBackend` via `aleph_backend::run`.
 //!
 //! See `docs/benchmarking.md` at the repo root for the benchmark
 //! policy (when to add, how to interpret results, how bencher.dev
 //! tracks history). The link is intentionally not a `cargo doc`
 //! intra-doc link because the file lives outside the crate.
 
-use aleph_core::Complex;
+use aleph_core::{Gate, GateInstance};
+use aleph_ir::Circuit;
+use smallvec::smallvec;
 
-/// Allocate a state-vector amplitude buffer of length `2^n_qubits`,
-/// initialised to the computational-basis |0…0⟩ state (first amplitude
-/// is `1 + 0i`, all others `0 + 0i`).
-///
-/// This is the standard starting point for every benchmark fixture in
-/// this crate. Once P0-09 lands the real `Backend` trait, the bench
-/// bodies will hand the buffer (or a strongly-typed `StateVector`
-/// wrapper) to `backend.apply_circuit(...)`; today they exercise the
-/// allocation + initialisation paths so we have a non-trivial baseline
-/// for criterion to measure.
-///
-/// # Panics
-///
-/// Panics (with a clear message) if `n_qubits >= usize::BITS` (i.e. ≥
-/// 64 on 64-bit targets, ≥ 32 on 32-bit targets). The implicit
-/// `1usize << n_qubits` would otherwise overflow into a confusing OOB
-/// on the subsequent index write.
-///
-/// Also (unavoidably) panics if the allocation itself fails — at
-/// `n_qubits = 30` the buffer is 16 GiB, beyond that grows exponentially.
-///
-/// # Examples
-///
-/// ```
-/// use aleph_benches::zero_state;
-///
-/// let amps = zero_state(3); // 2^3 = 8 amplitudes
-/// assert_eq!(amps.len(), 8);
-/// assert_eq!(amps[0].re, 1.0);
-/// assert_eq!(amps[1].re, 0.0);
-/// ```
+/// Bell pair on 2 qubits: `H q[0]; CX q[0], q[1]` → `(|00⟩ + |11⟩)/√2`.
 #[must_use]
-pub fn zero_state(n_qubits: u32) -> Vec<Complex> {
-    assert!(
-        n_qubits < usize::BITS,
-        "zero_state: n_qubits={n_qubits} >= usize::BITS={} (would overflow `1usize << n_qubits`)",
-        usize::BITS
-    );
-    let dim = 1usize << n_qubits;
-    let mut amps = vec![Complex::new(0.0, 0.0); dim];
-    amps[0] = Complex::new(1.0, 0.0);
-    amps
+pub fn bell_circuit() -> Circuit {
+    let mut c = Circuit::new(2, 0);
+    let _ = c.h(0);
+    let _ = c.cnot(0, 1);
+    c
+}
+
+/// GHZ state on `n` qubits: `H q[0]; CX q[0],q[1]; CX q[1],q[2]; …`
+/// → `(|0…0⟩ + |1…1⟩)/√2`.
+#[must_use]
+pub fn ghz_circuit(n: u32) -> Circuit {
+    let mut c = Circuit::new(n, 0);
+    let _ = c.h(0);
+    for t in 1..n {
+        let _ = c.cnot(t - 1, t);
+    }
+    c
+}
+
+/// Textbook QFT on `n` qubits per Nielsen & Chuang § 5.1: per-qubit
+/// `H` followed by a descending ladder of controlled-`Phase` gates.
+/// (Closing SWAPs that reverse the qubit order are omitted — they
+/// don't affect bench-relevant gate-application cost.)
+#[must_use]
+pub fn qft_circuit(n: u32) -> Circuit {
+    let mut c = Circuit::new(n, 0);
+    for j in 0..n {
+        let _ = c.h(j);
+        for k in (j + 1)..n {
+            // Controlled-Phase(π / 2^(k-j)) with `k` as control, `j`
+            // as target.  No builder shortcut for cphase yet —
+            // construct via `GateInstance::controlled(Phase, ...)`.
+            // Phase is diagonal so the controlled form commutes with
+            // its qubit ordering, but we match the textbook (control
+            // = higher-index qubit).
+            let theta = std::f64::consts::PI / (1u64 << (k - j)) as f64;
+            let _ = c.add_gate(GateInstance::controlled(
+                Gate::Phase(theta.into()),
+                smallvec![j],
+                smallvec![k],
+            ));
+        }
+    }
+    c
+}
+
+/// Brick-wall random-circuit-shaped workload, `depth` layers of
+/// alternating-pair CNOTs interleaved with random 1q rotations.  Not
+/// a real Sycamore-style random circuit (no Haar-random SU(4)
+/// blocks), but the bandwidth shape and gate count match what a
+/// state-vector backend pays per layer.
+///
+/// The rotation angles are deterministic (function of `(layer, q)`)
+/// so the bench is reproducible without bringing rand into the
+/// dep tree.
+#[must_use]
+pub fn random_brickwall_circuit(n: u32, depth: usize) -> Circuit {
+    let mut c = Circuit::new(n, 0);
+    for layer in 0..depth {
+        // 1q rotation on every qubit — fills the time-axis with
+        // single-qubit work.
+        for q in 0..n {
+            let theta = ((layer as f64) + (q as f64) * 0.37).cos();
+            let _ = c.rz(theta, q);
+            let _ = c.rx(theta * 1.13, q);
+        }
+        // CNOT layer: even layers pair (0,1),(2,3),…; odd layers
+        // offset by 1 to pair (1,2),(3,4),…  Standard brick-wall.
+        let offset = (layer & 1) as u32;
+        let mut q = offset;
+        while q + 1 < n {
+            let _ = c.cnot(q, q + 1);
+            q += 2;
+        }
+    }
+    c
 }

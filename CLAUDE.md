@@ -193,7 +193,12 @@ Work top-down. Don’t jump to GPU when CPU has unrealized wins.
 1. **Commits**: small, logical, with clear messages. Body explains why.
 1. **PR title**: `[P0-01] Set up Rust workspace`.
 1. **PR body**: must include
-- Reference to issue (`Closes #N`).
+- Reference to issue (`Closes #<issue-number>`).  **Use the
+  issue number, not the PR number** — `Closes #67` to close
+  GitHub Issue 67, not to self-reference the PR.  Prose like
+  "Closes P0-12" does NOT trigger GitHub's auto-close.  P0-06,
+  P0-07, P0-08, and P0-11 all merged with the wrong reference
+  and had to be manually closed later.
 - Summary of approach.
 - Test results (passing tests, oracle comparison).
 - Benchmark numbers if applicable.
@@ -210,6 +215,9 @@ For Phase 0, while there’s no team yet: open PRs anyway, let them sit for an h
 - **Mixing AoS and SoA.** Pick one per backend; document the choice.
 - **Letting `Vec<Complex>` and `(Vec<f64>, Vec<f64>)` representations diverge.** Conversion utilities live in `aleph-core::statevector`.
 - **Floating-point equality in tests.** Always use a tolerance: `assert!((actual - expected).abs() < 1e-10)`.
+- **NaN-silent comparisons.** `NaN > x` and `NaN < x` both return `false` in IEEE-754; `f64::clamp`, `f64::max`, `f64::min` all *swallow* NaN (the latter by IEEE-2008 minNum semantics). Any `>`/`<`/`.clamp`/`.max` gating correctness must be preceded by an explicit `is_finite()` reject — see ADR 0006. Three Phase-0 review rounds regressed on this (P0-09 ×2, P0-10, P0-11); the pattern is sneaky and easy to miss.
+- **Eager-pop in `while let` over multiple `pop()`s.** `while let (Some(a), Some(b)) = (small.pop(), large.pop())` evaluates BOTH pops before the pattern match — when one stack is empty you still consume an element from the other, leaking it. Use `while !small.is_empty() && !large.is_empty()` and pop inside the loop. (P0-11 alias-table bug; caught in test by skewed uniform distribution.)
+- **`Closes #<PR-number>` instead of `<issue-number>` in PR bodies.** See PR Workflow above; GitHub auto-close needs the issue number.
 - **Mutating state vectors in place during tests without restoring.** Tests should be independent; use fresh state per test.
 - **Adding dependencies without thinking.** Every new crate is a security and maintenance liability. Justify in the PR.
 - **Optimizing code that isn’t on the hot path.** Profile.
