@@ -9,9 +9,11 @@ mod kernels;
 mod measure;
 mod measure_soa;
 mod sampling;
+mod soa_backend;
 mod soa_state;
 mod state;
 
 pub use backend::NaiveSvBackend;
+pub use soa_backend::SoaSvBackend;
 pub use soa_state::SoaState;
 pub use state::CpuState;
