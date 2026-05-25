@@ -53,6 +53,24 @@ pub fn load_fixture(path: &Path) -> Result<Fixture, OracleError> {
             endianness: fx.statevector.endianness,
         });
     }
+    // Shape check: `2^num_qubits` amplitudes. A corrupt fixture is
+    // rejected here, before any backend allocation, so the failure
+    // message names the fixture instead of failing inside the
+    // harness's dimension check later. P0-11 spec §10.1.
+    let expected_dim = 1usize.checked_shl(fx.num_qubits).ok_or_else(|| {
+        OracleError::DimensionMismatch {
+            name: fx.name.clone(),
+            fixture: fx.statevector.amplitudes.len(),
+            state: usize::MAX,
+        }
+    })?;
+    if fx.statevector.amplitudes.len() != expected_dim {
+        return Err(OracleError::DimensionMismatch {
+            name: fx.name,
+            fixture: fx.statevector.amplitudes.len(),
+            state: expected_dim,
+        });
+    }
     Ok(fx)
 }
 
@@ -157,6 +175,27 @@ mod tests {
                 ..
             } => {}
             other => panic!("expected SchemaVersion error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn load_fixture_rejects_wrong_amplitude_count() {
+        // num_qubits = 1 → expects 2 amplitudes; supply 3.
+        let tmp = TestTempDir::new();
+        let json = synth_fixture_json().replace(
+            "\"amplitudes\": [[1.0, 0.0], [0.0, 0.0]]",
+            "\"amplitudes\": [[1.0, 0.0], [0.0, 0.0], [0.0, 0.0]]",
+        );
+        let path = tmp.path.join("fx.json");
+        std::fs::write(&path, json).unwrap();
+        let err = load_fixture(&path).unwrap_err();
+        match err {
+            OracleError::DimensionMismatch {
+                fixture: 3,
+                state: 2,
+                ..
+            } => {}
+            other => panic!("expected DimensionMismatch, got {other:?}"),
         }
     }
 
