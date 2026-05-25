@@ -1,12 +1,13 @@
 {
   "aer_version": "0.15.1",
   "counts": {
-    "0": 100000
+    "0": 50080,
+    "1": 49920
   },
   "generated_at": "2026-05-25T05:22:32Z",
-  "name": "identity_1q",
+  "name": "kernel_s",
   "num_qubits": 1,
-  "qasm_path": "circuits/identity_1q.qasm",
+  "qasm_path": "circuits/kernel_s.qasm",
   "qiskit_version": "1.2.4",
   "rng_seed": 0,
   "schema_version": 1,
@@ -14,12 +15,12 @@
   "statevector": {
     "amplitudes": [
       [
-        1.0,
+        0.7071067811865476,
         0.0
       ],
       [
-        0.0,
-        0.0
+        -0.0,
+        0.7071067811865475
       ]
     ],
     "endianness": "little"
