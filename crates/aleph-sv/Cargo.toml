@@ -26,3 +26,7 @@ harness = false
 [[bench]]
 name = "sample"
 harness = false
+
+[[bench]]
+name = "expectation"
+harness = false
