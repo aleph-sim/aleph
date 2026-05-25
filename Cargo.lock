@@ -57,6 +57,21 @@ name = "aleph-mps"
 version = "0.0.0"
 
 [[package]]
+name = "aleph-oracle"
+version = "0.0.0"
+dependencies = [
+ "aleph-backend",
+ "aleph-core",
+ "aleph-ir",
+ "aleph-parser",
+ "aleph-sv",
+ "num-complex",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "aleph-parser"
 version = "0.0.0"
 dependencies = [
