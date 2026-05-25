@@ -212,7 +212,7 @@ fn assert_distribution_close(
         // (a product/near-product state) would otherwise hard-panic
         // here. The downstream `(p * (1.0 - p)).max(0.0)` clamp keeps
         // the variance well-defined for `p` slightly above 1.
-        if !p.is_finite() || p < 0.0 || p > 1.0 + STATE_TOLERANCE {
+        if !p.is_finite() || !(0.0..=1.0 + STATE_TOLERANCE).contains(&p) {
             panic!(
                 "oracle: {name} distribution non-finite or out-of-range reference\n  \
                  index {i}  basis |{i:0width$b}>\n  p_exact {p}",
@@ -441,7 +441,13 @@ mod tests {
     fn distribution_oracle_rejects_p_well_above_one() {
         // STATE_TOLERANCE is 1e-10; anything materially above 1 is a
         // genuinely malformed reference and must still hard-panic.
-        assert_distribution_close("p_well_above_one", 1, &[100_000, 0], &[1.0 + 1e-6, 0.0], 100_000);
+        assert_distribution_close(
+            "p_well_above_one",
+            1,
+            &[100_000, 0],
+            &[1.0 + 1e-6, 0.0],
+            100_000,
+        );
     }
 
     #[test]

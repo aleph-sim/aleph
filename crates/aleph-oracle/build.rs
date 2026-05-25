@@ -37,7 +37,7 @@ fn main() {
     // failing the whole workspace build with a build-script panic.
     // The crate is `publish = false`, so this is for in-tree
     // development scenarios only.
-    let mut entries: Vec<PathBuf> = if fixtures_dir.is_dir() {
+    let entries: Vec<PathBuf> = if fixtures_dir.is_dir() {
         let mut v: Vec<PathBuf> = std::fs::read_dir(&fixtures_dir)
             .unwrap_or_else(|e| panic!("read_dir {}: {e}", fixtures_dir.display()))
             .filter_map(Result::ok)
