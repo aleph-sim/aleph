@@ -11,6 +11,7 @@ members = [
     "crates/aleph-sv",
     "crates/aleph-mps",
     "crates/aleph-stab",
+    "crates/aleph-oracle",
     "crates/aleph-cli",
     "crates/aleph-py",
     "benches",
@@ -39,6 +40,8 @@ proptest = "1"
 nom = "7"
 nom_locate = "4"
 rand = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 
 [profile.release]
 opt-level = 3

@@ -1,0 +1,27 @@
+{
+  "aer_version": "0.15.1",
+  "counts": {
+    "1": 100000
+  },
+  "generated_at": "2026-05-25T05:22:32Z",
+  "name": "kernel_x",
+  "num_qubits": 1,
+  "qasm_path": "circuits/kernel_x.qasm",
+  "qiskit_version": "1.2.4",
+  "rng_seed": 0,
+  "schema_version": 1,
+  "shots": 100000,
+  "statevector": {
+    "amplitudes": [
+      [
+        0.0,
+        0.0
+      ],
+      [
+        1.0,
+        0.0
+      ]
+    ],
+    "endianness": "little"
+  }
+}

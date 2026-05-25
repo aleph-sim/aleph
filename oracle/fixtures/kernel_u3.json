@@ -1,0 +1,28 @@
+{
+  "aer_version": "0.15.1",
+  "counts": {
+    "0": 75241,
+    "1": 24759
+  },
+  "generated_at": "2026-05-25T06:01:38Z",
+  "name": "kernel_u3",
+  "num_qubits": 1,
+  "qasm_path": "circuits/kernel_u3.qasm",
+  "qiskit_version": "1.2.4",
+  "rng_seed": 0,
+  "schema_version": 1,
+  "shots": 100000,
+  "statevector": {
+    "amplitudes": [
+      [
+        0.8660254037844387,
+        0.0
+      ],
+      [
+        0.35355339059327373,
+        0.3535533905932737
+      ]
+    ],
+    "endianness": "little"
+  }
+}

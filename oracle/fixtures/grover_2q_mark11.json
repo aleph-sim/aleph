@@ -1,0 +1,35 @@
+{
+  "aer_version": "0.15.1",
+  "counts": {
+    "11": 100000
+  },
+  "generated_at": "2026-05-25T05:22:32Z",
+  "name": "grover_2q_mark11",
+  "num_qubits": 2,
+  "qasm_path": "circuits/grover_2q_mark11.qasm",
+  "qiskit_version": "1.2.4",
+  "rng_seed": 0,
+  "schema_version": 1,
+  "shots": 100000,
+  "statevector": {
+    "amplitudes": [
+      [
+        -1.962615573354719e-16,
+        3.697785493223493e-32
+      ],
+      [
+        -2.220446049250313e-16,
+        -1.224646799147353e-16
+      ],
+      [
+        -1.9626155733547187e-16,
+        -1.224646799147353e-16
+      ],
+      [
+        -1.0,
+        2.449293598294706e-16
+      ]
+    ],
+    "endianness": "little"
+  }
+}

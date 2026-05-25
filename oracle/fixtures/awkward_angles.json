@@ -1,0 +1,28 @@
+{
+  "aer_version": "0.15.1",
+  "counts": {
+    "0": 72753,
+    "1": 27247
+  },
+  "generated_at": "2026-05-25T05:22:31Z",
+  "name": "awkward_angles",
+  "num_qubits": 1,
+  "qasm_path": "circuits/awkward_angles.qasm",
+  "qiskit_version": "1.2.4",
+  "rng_seed": 0,
+  "schema_version": 1,
+  "shots": 100000,
+  "statevector": {
+    "amplitudes": [
+      [
+        0.8373701267100775,
+        -0.15509186912650724
+      ],
+      [
+        0.5231560604036901,
+        -0.03264229598673646
+      ]
+    ],
+    "endianness": "little"
+  }
+}
