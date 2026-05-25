@@ -135,7 +135,24 @@ where
     let dim = 1usize << fixture.num_qubits;
     let mut empirical = vec![0u64; dim];
     for s in &shots {
-        empirical[*s as usize] += 1;
+        let idx = *s as usize;
+        // A well-behaved Backend::sample returns indices in [0, dim).
+        // A regression (e.g., a future alias-table bug, or a non-Naive
+        // backend that mis-computes its sample dimension) would
+        // otherwise panic with a raw `index out of bounds` here —
+        // surface a structured oracle panic naming the fixture and
+        // the offending index instead, mirroring assert_state_close's
+        // structured failure messages.
+        if idx >= dim {
+            panic!(
+                "oracle: {name} sample out of range\n  \
+                 sample idx {idx}  >=  2^{nq} = {dim}\n  \
+                 (basis space has {dim} outcomes; backend returned an out-of-range index)",
+                name = fixture.name,
+                nq = fixture.num_qubits,
+            );
+        }
+        empirical[idx] += 1;
     }
     let exact: Vec<f64> = fixture
         .statevector
