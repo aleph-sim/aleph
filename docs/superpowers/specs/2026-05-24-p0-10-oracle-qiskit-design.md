@@ -130,12 +130,16 @@ Notes:
   ≲ 1 MB committed. Trivial repo impact. Human-diffable in PR review.
 - **Float precision.** Python's stdlib `json.dumps` writes each float
   via `float.__repr__`, which is the shortest decimal that round-trips
-  back to the same IEEE 754 `f64`. `serde_json` reads JSON numbers
-  into `f64` via a correct-rounding parser. The two together are
-  bit-exact for finite `f64`. No custom encoder is needed.
-  `aleph-oracle` confirms this once with a round-trip property test
-  (`generate random f64 → serde_json round-trip → assert
-  ==`).
+  back to the same IEEE 754 `f64` under a correct-rounding parser.
+  `serde_json`'s number parser is *not* bit-exact for arbitrary `f64`
+  — it can disagree with `f64::from_str` by up to 1 ulp for some
+  inputs (e.g. `-1.8758187233759438e65` ↔ ±1 ulp). For amplitudes in
+  a normalized state vector, `|a| ≤ 1`, so 1 ulp ≤ `f64::EPSILON` ≈
+  `2.22e-16` — **six orders of magnitude tighter than the
+  `STATE_TOLERANCE = 1e-10` oracle tolerance**, so this drift cannot
+  produce a false failure. **Spec amendment §10.5**: round-trip is
+  documented as "within 1 ulp" rather than "bit-exact"; the property
+  test enforces this bound. No custom encoder is needed.
 - **Endianness pinned.** Qiskit uses little-endian qubit ordering
   (qubit 0 is the LSB of the basis-state index `i`).
   `aleph_sv::CpuState::amplitudes()` already follows the same
@@ -487,6 +491,12 @@ tier.
      (MPS, Stab, or GPU), its test file (`tests/<backend>.rs`) in its
      own crate depends on `aleph-oracle` as a dev-dependency and
      re-runs the same fixtures.
+
+10.5 **f64 round-trip tolerance (added during implementation).**
+     The original spec claimed `serde_json` round-trip was bit-exact;
+     a property test discovered up to 1 ulp drift for some inputs.
+     §4 amended accordingly. Functional impact: none — the drift is
+     six orders of magnitude below `STATE_TOLERANCE`.
 
 ---
 
