@@ -114,9 +114,13 @@ pub const DISTRIBUTION_FLOOR: f64 = 1e-6;
 /// distribution matches `fixture.statevector.amplitudes` (per-outcome
 /// `5σ + DISTRIBUTION_FLOOR` band, in probability units).
 ///
-/// Backend bound is generic across any `HasAmplitudes`-bearing state;
-/// the AoS pin from P0-10 spec §6.4 lifted with P1-01 when SoA landed
-/// as the second backend.
+/// Backend bound is `Backend` alone: the distribution oracle never
+/// pulls live amplitudes off `state` (it samples and compares against
+/// the trusted Qiskit reference), so non-AoS backends — including
+/// future Phase-2 MPS / stabilizer backends whose state cannot
+/// cheaply materialise a full amplitude vector — flow through this
+/// function natively. The AoS pin from P0-10 spec §6.4 lifted with
+/// P1-01 when SoA landed as the second backend.
 pub fn run_distribution_oracle<B>(
     backend: &mut B,
     fixture: &Fixture,
@@ -124,7 +128,6 @@ pub fn run_distribution_oracle<B>(
 ) -> Result<(), OracleError>
 where
     B: Backend,
-    B::State: HasAmplitudes,
 {
     let circuit = aleph_parser::parse(qasm_source)?;
     if circuit.num_qubits() != fixture.num_qubits {
