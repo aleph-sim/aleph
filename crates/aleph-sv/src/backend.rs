@@ -99,7 +99,7 @@ impl Backend for NaiveSvBackend {
         // parameters (e.g. `Rx(1e18)` where argument reduction loses precision)
         // can drift out of unitarity. Cost is constant (≤ 8×8 multiply) per
         // gate, negligible vs. the state-vector kernel itself.
-        let deviation = unitarity_deviation(&matrix);
+        let deviation = crate::validation::unitarity_deviation(&matrix);
         if !deviation.is_finite() || deviation > aleph_core::AMPLITUDE_TOL {
             return Err(BackendError::NonUnitaryMatrix { deviation });
         }
@@ -142,44 +142,6 @@ impl Backend for NaiveSvBackend {
         qubits: &[u32],
     ) -> Result<Vec<f64>, BackendError> {
         crate::measure::probabilities_impl(state, qubits)
-    }
-}
-
-/// Compute `max_{i,j} |(U·U†)_{i,j} - δ_{i,j}|` for a 2×2, 4×4, or 8×8
-/// matrix. Used to reject non-unitary matrices before they corrupt the
-/// state vector. Propagates NaN: any NaN entry in `m` produces NaN
-/// output rather than 0, so the caller's `!deviation.is_finite()` check
-/// rejects NaN-bearing matrices instead of letting them through.
-fn unitarity_deviation(matrix: &GateMatrix) -> f64 {
-    fn max_dev<const N: usize>(m: &[[Complex; N]; N]) -> f64 {
-        let mut worst = 0.0_f64;
-        for (i, row_i) in m.iter().enumerate() {
-            for (j, row_j) in m.iter().enumerate() {
-                let mut acc = Complex::new(0.0, 0.0);
-                for (a, b) in row_i.iter().zip(row_j.iter()) {
-                    acc += a * b.conj();
-                }
-                let want = if i == j { 1.0 } else { 0.0 };
-                let dev = (acc - Complex::new(want, 0.0)).norm();
-                // Both `f64::max` and `if dev > worst` *swallow* NaN
-                // (the former by IEEE-754-2008 minNum/maxNum semantics,
-                // the latter because all NaN comparisons return false).
-                // Surface NaN explicitly so the caller's `is_finite`
-                // check rejects the matrix.
-                if dev.is_nan() {
-                    return f64::NAN;
-                }
-                if dev > worst {
-                    worst = dev;
-                }
-            }
-        }
-        worst
-    }
-    match matrix {
-        GateMatrix::M2x2(m) => max_dev::<2>(m),
-        GateMatrix::M4x4(m) => max_dev::<4>(m),
-        GateMatrix::M8x8(m) => max_dev::<8>(m),
     }
 }
 

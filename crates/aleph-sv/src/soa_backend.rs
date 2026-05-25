@@ -6,7 +6,7 @@
 //! rather than `kernels::aos`.
 
 use aleph_backend::{Backend, BackendError};
-use aleph_core::{Complex, GateError, GateInstance, GateMatrix, PauliString};
+use aleph_core::{GateError, GateInstance, GateMatrix, PauliString};
 use rand::{rngs::StdRng, SeedableRng};
 
 use crate::soa_state::SoaState;
@@ -97,7 +97,7 @@ impl Backend for SoaSvBackend {
                 kind: gate.gate.name(),
             },
         })?;
-        let deviation = unitarity_deviation(&matrix);
+        let deviation = crate::validation::unitarity_deviation(&matrix);
         if !deviation.is_finite() || deviation > aleph_core::AMPLITUDE_TOL {
             return Err(BackendError::NonUnitaryMatrix { deviation });
         }
@@ -140,42 +140,10 @@ impl Backend for SoaSvBackend {
     }
 }
 
-/// Identical to `backend.rs::unitarity_deviation` — duplicated rather
-/// than hoisted to avoid a public-API churn in this PR. The function
-/// is ~10 lines; a future ticket can promote it to `kernels::mod` or
-/// a shared `validation.rs` if a third backend lands.
-fn unitarity_deviation(matrix: &GateMatrix) -> f64 {
-    fn max_dev<const N: usize>(m: &[[Complex; N]; N]) -> f64 {
-        let mut worst = 0.0_f64;
-        for (i, row_i) in m.iter().enumerate() {
-            for (j, row_j) in m.iter().enumerate() {
-                let mut acc = Complex::new(0.0, 0.0);
-                for (a, b) in row_i.iter().zip(row_j.iter()) {
-                    acc += a * b.conj();
-                }
-                let want = if i == j { 1.0 } else { 0.0 };
-                let dev = (acc - Complex::new(want, 0.0)).norm();
-                if dev.is_nan() {
-                    return f64::NAN;
-                }
-                if dev > worst {
-                    worst = dev;
-                }
-            }
-        }
-        worst
-    }
-    match matrix {
-        GateMatrix::M2x2(m) => max_dev::<2>(m),
-        GateMatrix::M4x4(m) => max_dev::<4>(m),
-        GateMatrix::M8x8(m) => max_dev::<8>(m),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aleph_core::{Gate, Pauli, PauliString};
+    use aleph_core::{Complex, Gate, Pauli, PauliString};
     use smallvec::smallvec;
 
     #[test]
