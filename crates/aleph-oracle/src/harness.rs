@@ -163,19 +163,32 @@ fn assert_distribution_close(
     let width = num_qubits as usize;
     let n_f = shots as f64;
     for (i, (&count, &p)) in empirical.iter().zip(exact.iter()).enumerate() {
-        // Defensive: a Qiskit fixture should never carry a NaN here,
-        // and `sample` should never return a count that overflows
-        // f64, but mirror `assert_state_close`'s explicit guard so a
-        // pathological input is loud, not silent.
-        if !p.is_finite() {
+        // Defensive: a Qiskit fixture should never carry a NaN or a
+        // p outside [0, 1] here (re²+im² is non-negative for finite
+        // inputs and ≤ 1 for a normalised state), but mirror
+        // `assert_state_close`'s explicit guard so a pathological
+        // reference is loud, not silent. Without this, the band
+        // computation below would silently produce NaN for p < 0
+        // (sqrt of a negative product) and `delta > NaN` would be
+        // false — the same regression class P0-10 hardened the state
+        // path against.
+        if !p.is_finite() || !(0.0..=1.0).contains(&p) {
             panic!(
-                "oracle: {name} distribution non-finite reference\n  \
+                "oracle: {name} distribution non-finite or out-of-range reference\n  \
                  index {i}  basis |{i:0width$b}>\n  p_exact {p}",
                 width = width,
             );
         }
         let p_emp = count as f64 / n_f;
-        let band = 5.0 * (p * (1.0 - p).max(0.0) / n_f).sqrt() + DISTRIBUTION_FLOOR;
+        // Clamp the Bernoulli variance `p*(1-p)` at the product level,
+        // not just `(1-p)`. The earlier shape — `p * (1.0 - p).max(0.0)`
+        // — only saved the second factor; for p outside [0, 1] the
+        // product itself can go negative, and `sqrt` of a negative is
+        // NaN.  The explicit p-range guard above also rejects that
+        // case, but defense-in-depth keeps the formula safe under any
+        // future relaxation of the guard.
+        let variance = (p * (1.0 - p)).max(0.0);
+        let band = 5.0 * (variance / n_f).sqrt() + DISTRIBUTION_FLOOR;
         let delta = (p_emp - p).abs();
         if delta > band {
             panic!(
@@ -348,6 +361,16 @@ mod tests {
             } => {}
             other => panic!("expected QubitMismatch, got {other:?}"),
         }
+    }
+
+    #[test]
+    #[should_panic(expected = "non-finite or out-of-range reference")]
+    fn distribution_oracle_rejects_negative_reference_p() {
+        // Direct call into assert_distribution_close with a pathological
+        // negative reference probability — would have computed
+        // sqrt(p*(1-p)) on a negative product before the fix, producing
+        // a NaN band that silently passes `delta > band`.
+        assert_distribution_close("neg_p", 1, &[50_000, 50_000], &[-1e-9, 1.0 + 1e-9], 100_000);
     }
 
     #[test]
