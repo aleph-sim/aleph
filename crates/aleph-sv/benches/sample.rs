@@ -43,15 +43,19 @@ fn bench_sample(c: &mut Criterion) {
         (16, 100_000, "uniform_n16_shots100k"),
     ] {
         let s = uniform_plus_n(n);
-        group.bench_with_input(BenchmarkId::from_parameter(label), &shots, |bencher, &shots| {
-            bencher.iter_with_setup(
-                || NaiveSvBackend::with_seed(0),
-                |mut backend| {
-                    let v = backend.sample(&s, shots).unwrap();
-                    criterion::black_box(v);
-                },
-            );
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(label),
+            &shots,
+            |bencher, &shots| {
+                bencher.iter_with_setup(
+                    || NaiveSvBackend::with_seed(0),
+                    |mut backend| {
+                        let v = backend.sample(&s, shots).unwrap();
+                        criterion::black_box(v);
+                    },
+                );
+            },
+        );
     }
     {
         let s = ghz_n(10);

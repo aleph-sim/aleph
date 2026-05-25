@@ -138,7 +138,10 @@ mod tests {
         let mean = (N as f64) * 0.125;
         for (i, c) in counts.iter().enumerate() {
             let dev = (*c as f64 - mean).abs();
-            assert!(dev <= 1654.0, "outcome {i}: count {c} deviates by {dev} > 5σ");
+            assert!(
+                dev <= 1654.0,
+                "outcome {i}: count {c} deviates by {dev} > 5σ"
+            );
         }
     }
 

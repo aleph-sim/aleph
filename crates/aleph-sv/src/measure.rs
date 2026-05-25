@@ -309,7 +309,10 @@ mod tests {
         for a in &mut amps {
             *a *= Complex::new(inv, 0.0);
         }
-        CpuState { num_qubits: n, amps }
+        CpuState {
+            num_qubits: n,
+            amps,
+        }
     }
 
     /// Minimal op-vocabulary for the `∑ P = 1` proptest. We sample

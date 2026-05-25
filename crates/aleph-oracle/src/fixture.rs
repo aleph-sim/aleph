@@ -57,13 +57,14 @@ pub fn load_fixture(path: &Path) -> Result<Fixture, OracleError> {
     // rejected here, before any backend allocation, so the failure
     // message names the fixture instead of failing inside the
     // harness's dimension check later. P0-11 spec §10.1.
-    let expected_dim = 1usize.checked_shl(fx.num_qubits).ok_or_else(|| {
-        OracleError::DimensionMismatch {
-            name: fx.name.clone(),
-            fixture: fx.statevector.amplitudes.len(),
-            state: usize::MAX,
-        }
-    })?;
+    let expected_dim =
+        1usize
+            .checked_shl(fx.num_qubits)
+            .ok_or_else(|| OracleError::DimensionMismatch {
+                name: fx.name.clone(),
+                fixture: fx.statevector.amplitudes.len(),
+                state: usize::MAX,
+            })?;
     if fx.statevector.amplitudes.len() != expected_dim {
         return Err(OracleError::DimensionMismatch {
             name: fx.name,

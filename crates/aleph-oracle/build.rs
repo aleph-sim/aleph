@@ -55,9 +55,15 @@ fn main() {
         .iter()
         .map(|p| p.file_stem().unwrap().to_string_lossy().into_owned())
         .collect();
-    for stem in qasm_stems.difference(&fixture_stems) {
+    let missing: Vec<&String> = qasm_stems.difference(&fixture_stems).collect();
+    if !missing.is_empty() {
+        let list = missing
+            .iter()
+            .map(|s| format!("  - oracle/circuits/{s}.qasm"))
+            .collect::<Vec<_>>()
+            .join("\n");
         panic!(
-            "oracle/circuits/{stem}.qasm has no matching oracle/fixtures/{stem}.json. \
+            "the following QASM files have no matching oracle/fixtures/<stem>.json:\n{list}\n\
              Run scripts/regen-fixtures.sh."
         );
     }
