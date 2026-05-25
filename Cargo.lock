@@ -61,6 +61,7 @@ name = "aleph-ir"
 version = "0.0.0"
 dependencies = [
  "aleph-core",
+ "aleph-test",
  "proptest",
  "smallvec",
  "thiserror",
@@ -92,6 +93,7 @@ version = "0.0.0"
 dependencies = [
  "aleph-core",
  "aleph-ir",
+ "aleph-test",
  "nom",
  "nom_locate",
  "proptest",
@@ -115,9 +117,20 @@ dependencies = [
  "aleph-core",
  "aleph-ir",
  "aleph-parser",
+ "aleph-test",
  "criterion",
  "proptest",
  "rand 0.8.6",
+ "smallvec",
+]
+
+[[package]]
+name = "aleph-test"
+version = "0.0.0"
+dependencies = [
+ "aleph-core",
+ "aleph-ir",
+ "proptest",
  "smallvec",
 ]
 

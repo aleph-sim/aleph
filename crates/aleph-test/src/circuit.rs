@@ -109,9 +109,7 @@ impl OpKind {
             OpKind::Cnot(a, b) => Some(GateInstance::new(Gate::Cnot, smallvec![a, b])),
             OpKind::Cz(a, b) => Some(GateInstance::new(Gate::Cz, smallvec![a, b])),
             OpKind::Swap(a, b) => Some(GateInstance::new(Gate::Swap, smallvec![a, b])),
-            OpKind::Toffoli(a, b, t) => {
-                Some(GateInstance::new(Gate::Toffoli, smallvec![a, b, t]))
-            }
+            OpKind::Toffoli(a, b, t) => Some(GateInstance::new(Gate::Toffoli, smallvec![a, b, t])),
             OpKind::Ccz(a, b, t) => Some(GateInstance::new(Gate::Ccz, smallvec![a, b, t])),
             OpKind::Controlled1q(target, ctrl) => Some(GateInstance::controlled(
                 Gate::X,
