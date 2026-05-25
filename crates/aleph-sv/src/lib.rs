@@ -7,6 +7,7 @@
 mod backend;
 mod kernels;
 mod measure;
+mod measure_soa;
 mod sampling;
 mod soa_state;
 mod state;
