@@ -98,6 +98,98 @@ fn assert_state_close(name: &str, num_qubits: u32, actual: &[Complex], expected:
     }
 }
 
+/// Shot budget for the distribution oracle. Sized so 5σ per-outcome
+/// flake probability is ≤ 5.7e-7 (spec §6.2).
+pub const DISTRIBUTION_SHOTS: u32 = 100_000;
+
+/// Floor added to every per-outcome band so a forbidden outcome
+/// (`p_exact = 0`) tolerates the rare integer round-off but rejects
+/// a genuine bug producing several stray samples. Spec §6.2.
+pub const DISTRIBUTION_FLOOR: f64 = 1e-6;
+
+/// Sample 100 000 shots through `backend`, then assert the empirical
+/// distribution matches `fixture.statevector.amplitudes` (per-outcome
+/// `5σ + DISTRIBUTION_FLOOR` band, in probability units).
+///
+/// `B::State = aleph_sv::CpuState` is pinned because today only
+/// `NaiveSvBackend` exists; the bound generalises when a second
+/// backend lands (spec §6.4).
+pub fn run_distribution_oracle<B>(
+    backend: &mut B,
+    fixture: &Fixture,
+    qasm_source: &str,
+) -> Result<(), OracleError>
+where
+    B: Backend<State = aleph_sv::CpuState>,
+{
+    let circuit = aleph_parser::parse(qasm_source)?;
+    if circuit.num_qubits() != fixture.num_qubits {
+        return Err(OracleError::QubitMismatch {
+            name: fixture.name.clone(),
+            fixture: fixture.num_qubits,
+            circuit: circuit.num_qubits(),
+        });
+    }
+    let state = run(backend, &circuit)?;
+    let shots = backend.sample(&state, DISTRIBUTION_SHOTS)?;
+    let dim = 1usize << fixture.num_qubits;
+    let mut empirical = vec![0u64; dim];
+    for s in &shots {
+        empirical[*s as usize] += 1;
+    }
+    let exact: Vec<f64> = fixture
+        .statevector
+        .amplitudes
+        .iter()
+        .map(|&(re, im)| re * re + im * im)
+        .collect();
+    assert_distribution_close(
+        &fixture.name,
+        fixture.num_qubits,
+        &empirical,
+        &exact,
+        DISTRIBUTION_SHOTS,
+    );
+    Ok(())
+}
+
+fn assert_distribution_close(
+    name: &str,
+    num_qubits: u32,
+    empirical: &[u64],
+    exact: &[f64],
+    shots: u32,
+) {
+    let width = num_qubits as usize;
+    let n_f = shots as f64;
+    for (i, (&count, &p)) in empirical.iter().zip(exact.iter()).enumerate() {
+        // Defensive: a Qiskit fixture should never carry a NaN here,
+        // and `sample` should never return a count that overflows
+        // f64, but mirror `assert_state_close`'s explicit guard so a
+        // pathological input is loud, not silent.
+        if !p.is_finite() {
+            panic!(
+                "oracle: {name} distribution non-finite reference\n  \
+                 index {i}  basis |{i:0width$b}>\n  p_exact {p}",
+                width = width,
+            );
+        }
+        let p_emp = count as f64 / n_f;
+        let band = 5.0 * (p * (1.0 - p).max(0.0) / n_f).sqrt() + DISTRIBUTION_FLOOR;
+        let delta = (p_emp - p).abs();
+        if delta > band {
+            panic!(
+                "oracle: {name} distribution mismatch\n  \
+                 basis  |{i:0width$b}>\n  \
+                 exact  {p:.6e}\n  \
+                 empir  {p_emp:.6e}   ({count} / {shots})\n  \
+                 |Δ|    {delta:.3e}   >  band {band:.3e}   (5σ + {DISTRIBUTION_FLOOR:.0e})",
+                width = width,
+            );
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -205,6 +297,57 @@ mod tests {
             &[Complex::new(1.0, 0.0), Complex::new(0.0, 0.0)],
             &[(nan, 0.0), (0.0, 0.0)],
         );
+    }
+
+    const QASM_BELL: &str =
+        "OPENQASM 3.0;\ninclude \"stdgates.inc\";\nqubit[2] q;\nh q[0];\ncx q[0], q[1];\n";
+
+    #[test]
+    fn distribution_oracle_passes_on_bell() {
+        // |Φ+⟩ → P(00) = P(11) = 0.5; P(01) = P(10) = 0.
+        let inv = std::f64::consts::FRAC_1_SQRT_2;
+        let fx = synth(
+            "bell_phi_plus_test",
+            2,
+            vec![(inv, 0.0), (0.0, 0.0), (0.0, 0.0), (inv, 0.0)],
+        );
+        let mut b = NaiveSvBackend::with_seed(0);
+        run_distribution_oracle(&mut b, &fx, QASM_BELL).unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "distribution mismatch")]
+    fn distribution_oracle_detects_wrong_distribution() {
+        // Fixture claims uniform-over-4; circuit actually produces |Φ+⟩.
+        let q = 0.5_f64;
+        let fx = synth(
+            "bell_uniform_wrong",
+            2,
+            vec![
+                (q.sqrt(), 0.0),
+                (q.sqrt(), 0.0),
+                (q.sqrt(), 0.0),
+                (q.sqrt(), 0.0),
+            ],
+        );
+        let mut b = NaiveSvBackend::with_seed(0);
+        let _ = run_distribution_oracle(&mut b, &fx, QASM_BELL);
+    }
+
+    #[test]
+    fn distribution_oracle_qubit_mismatch_is_harness_error() {
+        // 1-qubit fixture, 2-qubit circuit.
+        let fx = synth("wrong_qubits_dist", 1, vec![(1.0, 0.0), (0.0, 0.0)]);
+        let mut b = NaiveSvBackend::with_seed(0);
+        let err = run_distribution_oracle(&mut b, &fx, QASM_BELL).unwrap_err();
+        match err {
+            OracleError::QubitMismatch {
+                fixture: 1,
+                circuit: 2,
+                ..
+            } => {}
+            other => panic!("expected QubitMismatch, got {other:?}"),
+        }
     }
 
     #[test]
