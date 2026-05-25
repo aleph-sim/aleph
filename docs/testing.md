@@ -108,3 +108,55 @@ is ≤ 5.7e-7 at 5σ; per-fixture flake is ≤ 5.8e-4; per-CI-run
 flake across 28 fixtures is ≤ 1.6%. With `seed = 0` pinned the
 result is deterministic per machine, so the empirical flake rate
 is in practice zero.
+
+## Property-based testing (P0-05)
+
+The workspace uses [proptest] for invariant testing. Shared
+strategies live in the `aleph-test` crate (`crates/aleph-test/`),
+consumed as a `[dev-dependencies]` entry by every crate that
+needs them. No production code depends on `proptest`.
+
+### Generators
+
+| Strategy | Module | What it produces |
+|---|---|---|
+| `arb_state_vector(n)` | `aleph_test::state` | Normalised `Vec<Complex>` of length `2^n` |
+| `arb_1q_gate()` / `arb_2q_gate()` / `arb_gate()` | `aleph_test::gate` | Random `Gate` |
+| `arb_diagonal_1q_gate()` | `aleph_test::gate` | Z / S / Sdg / T / Tdg / Rz only |
+| `arb_circuit_emittable(nq, nc, n_ops)` | `aleph_test::circuit` | Emitter-supported `Circuit` (parser tests) |
+| `arb_circuit_full(nq, nc, n_ops)` | `aleph_test::circuit` | Broader-vocabulary `Circuit` (IR layer tests) |
+| `arb_op_emittable(nq, nc)` / `arb_op_full(nq, nc)` | `aleph_test::circuit` | Single random `OpKind` |
+| `arb_pauli_string(n, mix_xy)` | `aleph_test::pauli` | `PauliString` |
+| `distinct_pair(nq)` / `distinct_triple(nq)` | `aleph_test::circuit` | Raw qubit-tuple helpers |
+
+### Invariants exercised
+
+| Invariant | Where |
+|---|---|
+| Norm preservation after any gate | `aleph-sv/src/backend.rs::tests::normalisation_invariant` |
+| Reversibility (`G†·G·ψ = ψ`) | 10+ proptests in `aleph-sv/src/backend.rs` (`*_then_*_negative_returns_identity`, `*_squared_is_identity`) |
+| Diagonal gates leave \|aᵢ\| invariant | `aleph-sv/src/backend.rs::tests::diagonal_gate_preserves_magnitudes` |
+| Σ P(outcome) = 1 over full basis | `aleph-sv/src/measure.rs::tests::probabilities_full_basis_sums_to_one` |
+| Z fast path ≡ slow path (Z-only Pauli) | `aleph-sv/src/measure.rs::tests::z_fast_path_matches_slow_path` |
+| Parser ↔ emitter round-trip | `aleph-parser/tests/round_trip_property.rs::parse_emit_roundtrip` |
+| IR layer partitioning correctness | `aleph-ir/tests/layers_properties.rs` (4 proptests) |
+| f64 round-trip through serde_json | `aleph-oracle/src/fixture.rs::tests::f64_pair_round_trips_through_serde_json` |
+| Pauli arg parser ↔ Display | `aleph-cli/src/pauli.rs::tests::z_only_round_trip` |
+
+### Failure persistence
+
+proptest writes shrunk failure seeds to
+`<crate>/proptest-regressions/*.txt`. **Commit these files** —
+they replay historical failure cases on every future run,
+preventing regression of bugs the suite previously caught.
+
+### Adding a property test
+
+1. Pick or compose a strategy from `aleph_test::*`.
+2. Inside a `proptest! { #[test] fn ... { ... } }` block, assert
+   the invariant with `prop_assert!` (not plain `assert!` — the
+   former shrinks).
+3. Default `ProptestConfig::default()` (256 cases) is fine for
+   most tests; bump `cases: N` for expensive setups.
+
+[proptest]: https://github.com/proptest-rs/proptest

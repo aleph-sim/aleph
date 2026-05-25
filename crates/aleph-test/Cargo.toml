@@ -1,17 +1,18 @@
 [package]
-name = "aleph-ir"
+name = "aleph-test"
 edition.workspace = true
 rust-version.workspace = true
 version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
+publish = false
+
+[lib]
+path = "src/lib.rs"
 
 [dependencies]
 aleph-core = { path = "../aleph-core" }
-smallvec = { workspace = true }
-thiserror = { workspace = true }
-
-[dev-dependencies]
-aleph-test = { path = "../aleph-test" }
+aleph-ir   = { path = "../aleph-ir" }
 proptest   = { workspace = true }
+smallvec   = { workspace = true }

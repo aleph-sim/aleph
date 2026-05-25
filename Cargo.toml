@@ -14,6 +14,7 @@ members = [
     "crates/aleph-oracle",
     "crates/aleph-cli",
     "crates/aleph-py",
+    "crates/aleph-test",
     "benches",
 ]
 

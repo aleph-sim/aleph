@@ -805,23 +805,8 @@ mod tests {
             .all(|a| a.re.is_finite() && a.im.is_finite()));
     }
 
+    use aleph_test::gate::arb_1q_gate;
     use proptest::prelude::*;
-
-    fn random_1q_gate_strategy() -> impl Strategy<Value = Gate> {
-        prop_oneof![
-            Just(Gate::H),
-            Just(Gate::X),
-            Just(Gate::Y),
-            Just(Gate::Z),
-            Just(Gate::S),
-            Just(Gate::Sdg),
-            Just(Gate::T),
-            Just(Gate::Tdg),
-            (-std::f64::consts::TAU..=std::f64::consts::TAU).prop_map(|t| Gate::Rx(t.into())),
-            (-std::f64::consts::TAU..=std::f64::consts::TAU).prop_map(|t| Gate::Ry(t.into())),
-            (-std::f64::consts::TAU..=std::f64::consts::TAU).prop_map(|t| Gate::Rz(t.into())),
-        ]
-    }
 
     fn run_program(ops: &[(Gate, u32)], n: u32) -> CpuState {
         let mut b = NaiveSvBackend::with_seed(0);
@@ -839,7 +824,7 @@ mod tests {
         #[test]
         fn normalisation_invariant(
             ops in proptest::collection::vec(
-                (random_1q_gate_strategy(), 0u32..4u32),
+                (arb_1q_gate(), 0u32..4u32),
                 0..30,
             )
         ) {
@@ -1026,6 +1011,32 @@ mod tests {
             ).unwrap();
             for (a, b) in s1.amplitudes().iter().zip(s2.amplitudes().iter()) {
                 prop_assert!((a - b).norm() < 1e-12);
+            }
+        }
+
+        /// Diagonal 1q gates (Z, S, Sdg, T, Tdg, Rz(θ)) only rotate
+        /// phases; they MUST leave |aᵢ| invariant for every basis
+        /// state.  The existing reversibility proptests verify a
+        /// stronger property — but this targets magnitudes directly
+        /// and would surface a single-direction bug (e.g. a Z kernel
+        /// that accidentally scales an amplitude).  BACKLOG P0-05
+        /// "diagonal gates leave magnitudes unchanged" AC.
+        #[test]
+        fn diagonal_gate_preserves_magnitudes(
+            op in aleph_test::gate::arb_diagonal_1q_gate(),
+            q in 0u32..4u32,
+        ) {
+            let mut b = NaiveSvBackend::with_seed(0);
+            let mut s = b.allocate(4).unwrap();
+            // Non-trivial preamble so the state isn't |0…0⟩.
+            b.apply_gate(&mut s, &GateInstance::new(Gate::H, smallvec![0])).unwrap();
+            b.apply_gate(&mut s, &GateInstance::new(Gate::Cnot, smallvec![0, 1])).unwrap();
+            b.apply_gate(&mut s, &GateInstance::new(Gate::H, smallvec![2])).unwrap();
+            let before: Vec<f64> = s.amplitudes().iter().map(|a| a.norm()).collect();
+            b.apply_gate(&mut s, &GateInstance::new(op, smallvec![q])).unwrap();
+            let after: Vec<f64> = s.amplitudes().iter().map(|a| a.norm()).collect();
+            for (b_mag, a_mag) in before.iter().zip(after.iter()) {
+                prop_assert!((b_mag - a_mag).abs() < 1e-12, "|a| changed: {b_mag} → {a_mag}");
             }
         }
     }
