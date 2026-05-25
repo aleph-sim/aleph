@@ -341,6 +341,16 @@ mod tests {
         (1u32..=max_n).prop_flat_map(|n| arb_state_vector(n).prop_map(move |amps| (n, amps)))
     }
 
+    /// Draw `(n, ops)` together so each op-strategy sees the actual
+    /// `n` it will be applied against — fixes the small-n coverage
+    /// gap from generating with `arb_op_full(6, 0)` and post-filtering
+    /// (round-1 review finding B4).
+    fn arb_n_and_ops() -> impl Strategy<Value = (u32, Vec<aleph_test::circuit::OpKind>)> {
+        (1u32..=6).prop_flat_map(|n| {
+            proptest::collection::vec(arb_op_full(n, 0), 0..30).prop_map(move |ops| (n, ops))
+        })
+    }
+
     proptest! {
         #![proptest_config(ProptestConfig { cases: 128, ..ProptestConfig::default() })]
 
@@ -375,26 +385,31 @@ mod tests {
         /// must equal 1 within `√n · AMPLITUDE_TOL`. BACKLOG testing
         /// requirement; see spec §9.
         ///
-        /// Sources ops from `arb_op_full(6, 0)` (no measurements);
-        /// runs on `n ≤ 6` qubits but filters ops whose qubit
-        /// indices exceed the current `n` and silently drops any
-        /// `apply_gate` rejection (e.g. duplicate-qubit collisions
-        /// on Toffoli/Ccz after the filter).  See spec §5 / plan
-        /// task 11 for the migration rationale.
+        /// Threads `n` through `arb_op_full(n, 0)` via the
+        /// `prop_flat_map` helper above so smaller `n` values see
+        /// proportional op coverage (the previous fixed-`nq=6`
+        /// strategy with a post-filter dropped most multi-qubit ops
+        /// at small `n`, weakening 1q-kernel coverage on `n=1/2`).
+        /// `OpKind::Reset` and `Barrier*` are skipped here because
+        /// `as_gate_instance()` returns `None` for them — this test
+        /// targets gate-application paths only; reset semantics are
+        /// covered by aleph-sv unit tests.
         #[test]
         fn probabilities_full_basis_sums_to_one(
-            n in 1u32..=6,
-            ops in proptest::collection::vec(arb_op_full(6, 0), 0..30),
+            (n, ops) in arb_n_and_ops(),
         ) {
             use aleph_backend::Backend;
             let mut b = crate::NaiveSvBackend::with_seed(0);
             let mut s = b.allocate(n).unwrap();
             for op in &ops {
                 if let Some(gi) = op.as_gate_instance() {
-                    let max_q = gi.qubits.iter().chain(gi.controls.iter()).max().copied().unwrap_or(0);
-                    if max_q < n {
-                        let _ = b.apply_gate(&mut s, &gi);
-                    }
+                    // `arb_op_full` generates ops with qubit indices
+                    // in `[0, n)` (since we now thread `n` through),
+                    // and `distinct_pair`/`distinct_triple` guarantee
+                    // distinct qubits.  Any `apply_gate` error is a
+                    // real backend regression and must surface.
+                    b.apply_gate(&mut s, &gi)
+                        .expect("strategy generated a valid op but apply_gate rejected it");
                 }
             }
             let qubits: Vec<u32> = (0..n).collect();
