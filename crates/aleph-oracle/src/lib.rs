@@ -6,6 +6,7 @@
 //!
 //! See `docs/superpowers/specs/2026-05-24-p0-10-oracle-qiskit-design.md`.
 
+pub mod coverage;
 pub mod error;
 pub mod fixture;
 pub mod harness;
