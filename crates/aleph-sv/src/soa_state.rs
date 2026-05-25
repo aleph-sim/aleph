@@ -29,7 +29,22 @@ impl SoaState {
     /// Materialise as `Vec<Complex>` for oracle / interop paths.
     /// Allocates `2^num_qubits` Complexes. NOT for hot paths —
     /// the SoA backend's primitives operate on `re` / `im` directly.
+    ///
+    /// `re.len() == im.len()` is a structural invariant enforced by
+    /// every measure-path entry via `measure_soa::validate_state_soa`;
+    /// the assertion here mirrors that discipline so a divergent-
+    /// length state surfaces as a clear panic on this path too,
+    /// rather than silently truncating via `zip`'s `min(a, b)`
+    /// semantics. P0-09 round-3 lesson: every state-consuming entry
+    /// point surfaces the same `InvalidState`-style failure.
     pub fn to_aos(&self) -> Vec<Complex> {
+        assert_eq!(
+            self.re.len(),
+            self.im.len(),
+            "SoaState::to_aos: re.len()={} != im.len()={}",
+            self.re.len(),
+            self.im.len(),
+        );
         self.re
             .iter()
             .zip(self.im.iter())
@@ -65,5 +80,19 @@ mod tests {
         assert_eq!(aos.len(), 2);
         assert_eq!(aos[0], Complex::new(0.5, 0.0));
         assert_eq!(aos[1], Complex::new(-0.25, 0.75));
+    }
+
+    #[test]
+    #[should_panic(expected = "re.len()=2 != im.len()=1")]
+    fn to_aos_rejects_mismatched_lens() {
+        // Direct field-literal construction bypasses the backend's
+        // allocate path; `to_aos` must surface the inconsistency
+        // rather than silently truncate via `zip`'s min semantics.
+        let s = SoaState {
+            num_qubits: 1,
+            re: vec![0.5, -0.25],
+            im: vec![0.0],
+        };
+        let _ = s.to_aos();
     }
 }
