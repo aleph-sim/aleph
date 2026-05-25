@@ -8,7 +8,9 @@
 
 pub mod error;
 pub mod fixture;
+pub mod state;
 pub use error::OracleError;
 pub use fixture::{
     load_fixture, load_qasm, workspace_path, Fixture, StateVectorFixture, SCHEMA_VERSION,
 };
+pub use state::HasAmplitudes;
