@@ -225,7 +225,7 @@ pub(crate) fn expectation_value_impl(
             continue;
         }
         let m = p.matrix();
-        crate::kernels::apply_1q(&mut tmp, *q, &[], &m);
+        crate::kernels::aos::apply_1q(&mut tmp, *q, &[], &m);
     }
     let mut acc = Complex::new(0.0, 0.0);
     for (lhs, rhs) in state.amps.iter().zip(tmp.iter()) {
@@ -324,7 +324,7 @@ mod tests {
                 continue;
             }
             let m = p.matrix();
-            crate::kernels::apply_1q(&mut tmp, *q, &[], &m);
+            crate::kernels::aos::apply_1q(&mut tmp, *q, &[], &m);
         }
         let mut acc = Complex::new(0.0, 0.0);
         for (lhs, rhs) in state.amps.iter().zip(tmp.iter()) {

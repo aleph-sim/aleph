@@ -106,15 +106,15 @@ impl Backend for NaiveSvBackend {
         match matrix {
             GateMatrix::M2x2(m) => {
                 let t = gate.qubits[0];
-                crate::kernels::apply_1q(&mut state.amps, t, &gate.controls, &m);
+                crate::kernels::aos::apply_1q(&mut state.amps, t, &gate.controls, &m);
             }
             GateMatrix::M4x4(m) => {
                 let t = [gate.qubits[0], gate.qubits[1]];
-                crate::kernels::apply_2q(&mut state.amps, t, &gate.controls, &m);
+                crate::kernels::aos::apply_2q(&mut state.amps, t, &gate.controls, &m);
             }
             GateMatrix::M8x8(m) => {
                 let t = [gate.qubits[0], gate.qubits[1], gate.qubits[2]];
-                crate::kernels::apply_3q(&mut state.amps, t, &gate.controls, &m);
+                crate::kernels::aos::apply_3q(&mut state.amps, t, &gate.controls, &m);
             }
         }
         Ok(())
