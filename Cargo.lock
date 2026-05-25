@@ -24,8 +24,12 @@ dependencies = [
 name = "aleph-benches"
 version = "0.0.0"
 dependencies = [
+ "aleph-backend",
  "aleph-core",
+ "aleph-ir",
+ "aleph-sv",
  "criterion",
+ "smallvec",
 ]
 
 [[package]]
