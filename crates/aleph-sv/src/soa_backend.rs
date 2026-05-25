@@ -279,7 +279,10 @@ mod tests {
         assert!(shots.iter().all(|&v| v == 0 || v == 3));
         let zeros = shots.iter().filter(|&&v| v == 0).count();
         let threes = shots.iter().filter(|&&v| v == 3).count();
-        assert!(zeros > 100 && threes > 100, "zeros={zeros}, threes={threes}");
+        assert!(
+            zeros > 100 && threes > 100,
+            "zeros={zeros}, threes={threes}"
+        );
     }
 
     #[test]

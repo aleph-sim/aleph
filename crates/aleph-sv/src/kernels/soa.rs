@@ -40,12 +40,12 @@ pub(crate) fn apply_3q(
                 *slot = i | bit_t0 | bit_t1 | bit_t2;
             }
             let v_re = [
-                re[idx[0]], re[idx[1]], re[idx[2]], re[idx[3]], re[idx[4]], re[idx[5]],
-                re[idx[6]], re[idx[7]],
+                re[idx[0]], re[idx[1]], re[idx[2]], re[idx[3]], re[idx[4]], re[idx[5]], re[idx[6]],
+                re[idx[7]],
             ];
             let v_im = [
-                im[idx[0]], im[idx[1]], im[idx[2]], im[idx[3]], im[idx[4]], im[idx[5]],
-                im[idx[6]], im[idx[7]],
+                im[idx[0]], im[idx[1]], im[idx[2]], im[idx[3]], im[idx[4]], im[idx[5]], im[idx[6]],
+                im[idx[7]],
             ];
             for r in 0..8 {
                 let mut acc_re = 0.0_f64;
@@ -128,21 +128,15 @@ pub(crate) fn apply_1q(
             let a1_re = re[j];
             let a1_im = im[j];
             // row 0
-            re[i] = m[0][0].re * a0_re - m[0][0].im * a0_im
-                + m[0][1].re * a1_re
-                - m[0][1].im * a1_im;
-            im[i] = m[0][0].re * a0_im
-                + m[0][0].im * a0_re
-                + m[0][1].re * a1_im
-                + m[0][1].im * a1_re;
+            re[i] =
+                m[0][0].re * a0_re - m[0][0].im * a0_im + m[0][1].re * a1_re - m[0][1].im * a1_im;
+            im[i] =
+                m[0][0].re * a0_im + m[0][0].im * a0_re + m[0][1].re * a1_im + m[0][1].im * a1_re;
             // row 1
-            re[j] = m[1][0].re * a0_re - m[1][0].im * a0_im
-                + m[1][1].re * a1_re
-                - m[1][1].im * a1_im;
-            im[j] = m[1][0].re * a0_im
-                + m[1][0].im * a0_re
-                + m[1][1].re * a1_im
-                + m[1][1].im * a1_re;
+            re[j] =
+                m[1][0].re * a0_re - m[1][0].im * a0_im + m[1][1].re * a1_re - m[1][1].im * a1_im;
+            im[j] =
+                m[1][0].re * a0_im + m[1][0].im * a0_re + m[1][1].re * a1_im + m[1][1].im * a1_re;
         }
         i += 1;
     }

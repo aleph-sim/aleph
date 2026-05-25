@@ -47,10 +47,9 @@ const FIXTURES: &[&str] = &[
 fn all_fixtures_match_naive() {
     for &name in FIXTURES {
         let qasm_path = aleph_oracle::workspace_path(&format!("oracle/circuits/{name}.qasm"));
-        let qasm = aleph_oracle::load_qasm(&qasm_path)
-            .unwrap_or_else(|e| panic!("load qasm {name}: {e}"));
-        let circuit =
-            aleph_parser::parse(&qasm).unwrap_or_else(|e| panic!("parse {name}: {e}"));
+        let qasm =
+            aleph_oracle::load_qasm(&qasm_path).unwrap_or_else(|e| panic!("load qasm {name}: {e}"));
+        let circuit = aleph_parser::parse(&qasm).unwrap_or_else(|e| panic!("parse {name}: {e}"));
 
         let mut naive = NaiveSvBackend::with_seed(0);
         let naive_state =
@@ -58,16 +57,11 @@ fn all_fixtures_match_naive() {
         let naive_amps = naive_state.amplitudes();
 
         let mut soa = SoaSvBackend::with_seed(0);
-        let soa_state =
-            run(&mut soa, &circuit).unwrap_or_else(|e| panic!("soa run {name}: {e}"));
+        let soa_state = run(&mut soa, &circuit).unwrap_or_else(|e| panic!("soa run {name}: {e}"));
         let soa_re = soa_state.re();
         let soa_im = soa_state.im();
 
-        assert_eq!(
-            naive_amps.len(),
-            soa_re.len(),
-            "{name}: amp count mismatch"
-        );
+        assert_eq!(naive_amps.len(), soa_re.len(), "{name}: amp count mismatch");
         assert_eq!(soa_re.len(), soa_im.len(), "{name}: re/im length mismatch");
 
         for i in 0..naive_amps.len() {

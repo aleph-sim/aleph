@@ -18,7 +18,8 @@ use smallvec::smallvec;
 fn qft_circuit(n: u32) -> Circuit {
     let mut c = Circuit::new(n, 0);
     for j in 0..n {
-        c.add_gate(GateInstance::new(Gate::H, smallvec![j])).unwrap();
+        c.add_gate(GateInstance::new(Gate::H, smallvec![j]))
+            .unwrap();
         for k in (j + 1)..n {
             let angle = std::f64::consts::PI / (1u64 << (k - j)) as f64;
             c.add_gate(GateInstance::controlled(
@@ -40,7 +41,8 @@ fn qft_circuit(n: u32) -> Circuit {
 /// `n`-qubit GHZ via H on q0 and CX chain.
 fn ghz_circuit(n: u32) -> Circuit {
     let mut c = Circuit::new(n, 0);
-    c.add_gate(GateInstance::new(Gate::H, smallvec![0])).unwrap();
+    c.add_gate(GateInstance::new(Gate::H, smallvec![0]))
+        .unwrap();
     for t in 1..n {
         c.add_gate(GateInstance::new(Gate::Cnot, smallvec![0, t]))
             .unwrap();
