@@ -7,4 +7,8 @@
 //! See `docs/superpowers/specs/2026-05-24-p0-10-oracle-qiskit-design.md`.
 
 pub mod error;
+pub mod fixture;
 pub use error::OracleError;
+pub use fixture::{
+    load_fixture, load_qasm, workspace_path, Fixture, StateVectorFixture, SCHEMA_VERSION,
+};
