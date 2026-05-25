@@ -29,3 +29,69 @@ impl AliasTable {
         todo!("Task 4");
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rand::SeedableRng;
+
+    #[test]
+    fn single_index_always_returns_0() {
+        let t = AliasTable::build(&[1.0]);
+        let mut rng = StdRng::seed_from_u64(0);
+        for _ in 0..100 {
+            assert_eq!(t.draw(&mut rng), 0);
+        }
+    }
+
+    #[test]
+    fn degenerate_1_0_0_0_always_returns_0() {
+        let t = AliasTable::build(&[1.0, 0.0, 0.0, 0.0]);
+        let mut rng = StdRng::seed_from_u64(0);
+        for _ in 0..1000 {
+            assert_eq!(t.draw(&mut rng), 0);
+        }
+    }
+
+    #[test]
+    fn bell_only_returns_0_or_3() {
+        // |Φ+⟩ has support on indices 0 and 3 only.
+        let t = AliasTable::build(&[0.5, 0.0, 0.0, 0.5]);
+        let mut rng = StdRng::seed_from_u64(0);
+        for _ in 0..10_000 {
+            let i = t.draw(&mut rng);
+            assert!(i == 0 || i == 3, "got {i}");
+        }
+    }
+
+    #[test]
+    fn uniform_8_outcomes_within_5_sigma_at_1m_draws() {
+        let p = [0.125_f64; 8];
+        let t = AliasTable::build(&p);
+        let mut rng = StdRng::seed_from_u64(0);
+        const N: u64 = 1_000_000;
+        let mut counts = [0u64; 8];
+        for _ in 0..N {
+            counts[t.draw(&mut rng) as usize] += 1;
+        }
+        // σ = √(N · p · (1-p)) = √(1e6 · 0.125 · 0.875) ≈ 330.7; 5σ ≈ 1654.
+        let mean = (N as f64) * 0.125;
+        for (i, c) in counts.iter().enumerate() {
+            let dev = (*c as f64 - mean).abs();
+            assert!(dev <= 1654.0, "outcome {i}: count {c} deviates by {dev} > 5σ");
+        }
+    }
+
+    #[test]
+    fn near_normalised_1_plus_1e_minus_15_builds_and_draws() {
+        // Total ≈ 1 + 1e-15; well inside `validate_state`'s drift budget.
+        // Build must not panic and `draw` must return a valid index.
+        let p = [0.25, 0.25, 0.25, 0.25 + 1e-15];
+        let t = AliasTable::build(&p);
+        let mut rng = StdRng::seed_from_u64(0);
+        for _ in 0..100 {
+            let i = t.draw(&mut rng);
+            assert!(i < 4);
+        }
+    }
+}
