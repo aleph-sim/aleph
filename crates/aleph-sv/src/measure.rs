@@ -159,12 +159,15 @@ pub(crate) fn expectation_value_impl(
     pauli: &aleph_core::PauliString,
 ) -> Result<f64, BackendError> {
     let n = state.num_qubits;
-    let _ = validate_state(state)?; // surface state corruption symmetrically
-                                    // Revalidate the public invariants on `PauliString`. The fields are
-                                    // `pub` so a caller can bypass `PauliString::new`'s sort/dedup/finite
-                                    // checks by direct struct-literal construction. Trusting those
-                                    // invariants here produced silently-wrong expectation values for
-                                    // duplicate-qubit terms.
+    // Reuse the per-amp |aᵢ|² vector that validate_state already
+    // computed — the Z fast path below otherwise would walk amps a
+    // second time recomputing `norm_sqr` per element.
+    let probs = validate_state(state)?;
+    // Revalidate the public invariants on `PauliString`. The fields are
+    // `pub` so a caller can bypass `PauliString::new`'s sort/dedup/finite
+    // checks by direct struct-literal construction. Trusting those
+    // invariants here produced silently-wrong expectation values for
+    // duplicate-qubit terms.
     if !pauli.coefficient.is_finite() {
         return Err(BackendError::InvalidPauliString {
             reason: "non-finite coefficient",
@@ -185,9 +188,20 @@ pub(crate) fn expectation_value_impl(
     }
     // Pauli-Z fast path: diagonal Pauli strings need no state clone
     // and no kernel apply. ⟨ψ| ⊗ᵢ Zᵢ |ψ⟩ = Σᵢ (-1)^popcount(i & z_mask) · |aᵢ|².
+    //
+    // The `1u64 << q` mask construction below assumes `q < 64`. The
+    // bounds check above already enforces `q < state.num_qubits`,
+    // which on this backend is capped by `MAX_NAIVE_QUBITS = 28`, but
+    // if a future backend reuses this function with `num_qubits >= 64`
+    // we fall through to the slow path rather than invoking
+    // shift-overflow UB.
     let mut z_mask = 0u64;
     let mut all_z_or_i = true;
     for (q, p) in &pauli.terms {
+        if *q >= 64 {
+            all_z_or_i = false;
+            break;
+        }
         match p {
             aleph_core::Pauli::I => {}
             aleph_core::Pauli::Z => z_mask |= 1u64 << q,
@@ -198,7 +212,7 @@ pub(crate) fn expectation_value_impl(
         }
     }
     if all_z_or_i {
-        return Ok(pauli.coefficient * expectation_z_diag(&state.amps, z_mask));
+        return Ok(pauli.coefficient * expectation_z_diag(&probs, z_mask));
     }
     let mut tmp = state.amps.clone();
     for (q, p) in &pauli.terms {
@@ -261,18 +275,23 @@ pub(crate) fn probabilities_impl(
 /// `(q, Pauli::Z)`. Identity terms contribute nothing to the mask
 /// (their sign is always +1).
 ///
+/// Takes the precomputed `probs` (per-amp `|aᵢ|²`) that
+/// `validate_state` already produced, so the fast path is a single
+/// pass over `probs` — not a second walk recomputing `norm_sqr` on
+/// `state.amps`.
+///
 /// `i` is at most `2^28` (`MAX_NAIVE_QUBITS`); `i as u64` is exact.
 /// `count_ones` lowers to `popcnt` on x86-64 and to a single
 /// instruction on aarch64.
-fn expectation_z_diag(amps: &[Complex], z_mask: u64) -> f64 {
+fn expectation_z_diag(probs: &[f64], z_mask: u64) -> f64 {
     let mut acc = 0.0_f64;
-    for (i, a) in amps.iter().enumerate() {
+    for (i, &p) in probs.iter().enumerate() {
         let sign = if (i as u64 & z_mask).count_ones() & 1 == 0 {
             1.0
         } else {
             -1.0
         };
-        acc += sign * a.norm_sqr();
+        acc += sign * p;
     }
     acc
 }
