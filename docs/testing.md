@@ -99,9 +99,12 @@ Layout:
 - `crates/aleph-oracle/src/harness.rs::run_distribution_oracle`
   is the entry point.
 - `crates/aleph-oracle/build.rs` emits a `mod <stem> { #[test]
-  fn state(); #[test] fn distribution(); }` per fixture, so a
-  failure shows up as `<stem>::state` or `<stem>::distribution`
-  — distinct enough that triage knows which check fired.
+  fn naive_state(); #[test] fn naive_distribution(); #[test]
+  fn soa_state(); #[test] fn soa_distribution(); }` per fixture
+  (P1-01 split this from the original `state` / `distribution`
+  pair so both backends are exercised against every fixture).
+  A failure surfaces as e.g. `<stem>::soa_distribution` — the
+  prefix names the backend, the suffix names the check.
 
 Tolerance derivation (spec §6.2): per-outcome flake probability
 is ≤ 5.7e-7 at 5σ; per-fixture flake is ≤ 5.8e-4; per-CI-run
