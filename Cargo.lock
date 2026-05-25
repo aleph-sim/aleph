@@ -66,6 +66,7 @@ dependencies = [
  "aleph-parser",
  "aleph-sv",
  "num-complex",
+ "proptest",
  "serde",
  "serde_json",
  "thiserror",
