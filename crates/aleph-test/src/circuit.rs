@@ -139,7 +139,15 @@ pub fn distinct_triple(nq: u32) -> impl Strategy<Value = (u32, u32, u32)> {
 /// builder constructs but the emitter doesn't yet round-trip).
 ///
 /// Used by `aleph-parser/tests/round_trip_property.rs`.
+///
+/// The strategy degrades gracefully on small `nq`: multi-qubit
+/// branches whose `distinct_pair` / `distinct_triple` would
+/// reject all candidates (`nq < 2` / `nq < 3`) are omitted from
+/// the union instead of stalling proptest with too-many-rejects.
+/// `nq == 0` is rejected via debug_assert (no valid single-qubit
+/// ops either).
 pub fn arb_op_emittable(nq: u32, nc: u32) -> BoxedStrategy<OpKind> {
+    debug_assert!(nq >= 1, "arb_op_emittable requires nq >= 1, got {nq}");
     let angle = -10.0_f64..10.0_f64;
 
     let single = prop_oneof![
@@ -151,7 +159,8 @@ pub fn arb_op_emittable(nq: u32, nc: u32) -> BoxedStrategy<OpKind> {
         (0u32..nq).prop_map(OpKind::T),
         (0u32..nq).prop_map(OpKind::Sdg),
         (0u32..nq).prop_map(OpKind::Tdg),
-    ];
+    ]
+    .boxed();
     let parametric = prop_oneof![
         (angle.clone(), 0u32..nq).prop_map(|(t, q)| OpKind::Rx(t, q)),
         (angle.clone(), 0u32..nq).prop_map(|(t, q)| OpKind::Ry(t, q)),
@@ -159,40 +168,57 @@ pub fn arb_op_emittable(nq: u32, nc: u32) -> BoxedStrategy<OpKind> {
         (angle.clone(), 0u32..nq).prop_map(|(t, q)| OpKind::Phase(t, q)),
         (angle.clone(), angle.clone(), angle.clone(), 0u32..nq)
             .prop_map(|(a, b, c, q)| OpKind::U3(a, b, c, q)),
-    ];
-    let two_q = prop_oneof![
-        distinct_pair(nq).prop_map(|(a, b)| OpKind::Cnot(a, b)),
-        distinct_pair(nq).prop_map(|(a, b)| OpKind::Cz(a, b)),
-        distinct_pair(nq).prop_map(|(a, b)| OpKind::Swap(a, b)),
-    ];
-    let three_q = distinct_triple(nq).prop_map(|(a, b, t)| OpKind::Toffoli(a, b, t));
-    let non_gate = prop_oneof![
-        (0u32..nq).prop_map(OpKind::Reset),
-        (0u32..nq).prop_map(OpKind::Barrier1),
-        distinct_pair(nq).prop_map(|(a, b)| OpKind::Barrier2(a, b)),
-    ];
+    ]
+    .boxed();
 
-    if nc == 0 {
-        prop_oneof![
-            4 => single,
-            3 => parametric,
-            3 => two_q,
-            2 => three_q,
-            2 => non_gate,
+    // Build the branch vector incrementally so we can omit branches
+    // whose qubit-tuple strategies have zero valid outcomes.
+    let mut branches: Vec<(u32, BoxedStrategy<OpKind>)> =
+        vec![(4, single), (3, parametric)];
+
+    if nq >= 2 {
+        let two_q = prop_oneof![
+            distinct_pair(nq).prop_map(|(a, b)| OpKind::Cnot(a, b)),
+            distinct_pair(nq).prop_map(|(a, b)| OpKind::Cz(a, b)),
+            distinct_pair(nq).prop_map(|(a, b)| OpKind::Swap(a, b)),
         ]
-        .boxed()
+        .boxed();
+        let non_gate_with_pair = prop_oneof![
+            (0u32..nq).prop_map(OpKind::Reset),
+            (0u32..nq).prop_map(OpKind::Barrier1),
+            distinct_pair(nq).prop_map(|(a, b)| OpKind::Barrier2(a, b)),
+        ]
+        .boxed();
+        branches.push((3, two_q));
+        branches.push((2, non_gate_with_pair));
     } else {
-        let measurement = (0u32..nq, 0u32..nc).prop_map(|(q, cl)| OpKind::Measure(q, cl));
-        prop_oneof![
-            4 => single,
-            3 => parametric,
-            3 => two_q,
-            2 => three_q,
-            2 => non_gate,
-            3 => measurement,
+        // nq == 1: distinct_pair would reject everything; drop Cnot/Cz/
+        // Swap/Barrier2 entirely.
+        let non_gate_1q = prop_oneof![
+            (0u32..nq).prop_map(OpKind::Reset),
+            (0u32..nq).prop_map(OpKind::Barrier1),
         ]
-        .boxed()
+        .boxed();
+        branches.push((2, non_gate_1q));
     }
+
+    if nq >= 3 {
+        let three_q = distinct_triple(nq)
+            .prop_map(|(a, b, t)| OpKind::Toffoli(a, b, t))
+            .boxed();
+        branches.push((2, three_q));
+    }
+
+    if nc > 0 {
+        let measurement = (0u32..nq, 0u32..nc)
+            .prop_map(|(q, cl)| OpKind::Measure(q, cl))
+            .boxed();
+        // 3 here matches the original parser-shape weight; the IR
+        // shape (`arb_op_full`) bumps to 4 for collision coverage.
+        branches.push((3, measurement));
+    }
+
+    proptest::strategy::Union::new_weighted(branches).boxed()
 }
 
 /// Random emitter-compatible `Circuit`.  Replaces the inline
@@ -215,7 +241,14 @@ pub fn arb_circuit_emittable(nq: u32, nc: u32, n_ops: usize) -> impl Strategy<Va
 /// pure builder methods bypass).
 ///
 /// Used by `aleph-ir/tests/layers_properties.rs`.
+///
+/// The strategy degrades gracefully on small `nq` (same shape as
+/// `arb_op_emittable`): multi-qubit branches whose
+/// `distinct_pair` / `distinct_triple` would reject all
+/// candidates are omitted from the union.  `nq == 0` is rejected
+/// via debug_assert.
 pub fn arb_op_full(nq: u32, nc: u32) -> BoxedStrategy<OpKind> {
+    debug_assert!(nq >= 1, "arb_op_full requires nq >= 1, got {nq}");
     let angle = -10.0_f64..10.0_f64;
 
     let single = prop_oneof![
@@ -225,56 +258,67 @@ pub fn arb_op_full(nq: u32, nc: u32) -> BoxedStrategy<OpKind> {
         (0u32..nq).prop_map(OpKind::Z),
         (0u32..nq).prop_map(OpKind::S),
         (0u32..nq).prop_map(OpKind::T),
-    ];
+    ]
+    .boxed();
     let parametric = prop_oneof![
         (angle.clone(), 0u32..nq).prop_map(|(t, q)| OpKind::Rx(t, q)),
         (angle.clone(), 0u32..nq).prop_map(|(t, q)| OpKind::Ry(t, q)),
         (angle.clone(), 0u32..nq).prop_map(|(t, q)| OpKind::Rz(t, q)),
         (angle.clone(), 0u32..nq).prop_map(|(t, q)| OpKind::Phase(t, q)),
-    ];
-    let two_q = prop_oneof![
-        distinct_pair(nq).prop_map(|(a, b)| OpKind::Cnot(a, b)),
-        distinct_pair(nq).prop_map(|(a, b)| OpKind::Cz(a, b)),
-        distinct_pair(nq).prop_map(|(a, b)| OpKind::Swap(a, b)),
-        distinct_pair(nq).prop_map(|(t, c)| OpKind::Controlled1q(t, c)),
-    ];
-    let three_q = prop_oneof![
-        distinct_triple(nq).prop_map(|(a, b, t)| OpKind::Toffoli(a, b, t)),
-        distinct_triple(nq).prop_map(|(a, b, t)| OpKind::Ccz(a, b, t)),
-    ];
-    let non_gate = prop_oneof![
-        (0u32..nq).prop_map(OpKind::Reset),
-        (0u32..nq).prop_map(OpKind::Barrier1),
-        distinct_pair(nq).prop_map(|(a, b)| OpKind::Barrier2(a, b)),
-    ];
+    ]
+    .boxed();
 
-    if nc == 0 {
-        prop_oneof![
-            4 => single,
-            3 => parametric,
-            3 => two_q,
-            2 => three_q,
-            2 => non_gate,
+    let mut branches: Vec<(u32, BoxedStrategy<OpKind>)> =
+        vec![(4, single), (3, parametric)];
+
+    if nq >= 2 {
+        let two_q = prop_oneof![
+            distinct_pair(nq).prop_map(|(a, b)| OpKind::Cnot(a, b)),
+            distinct_pair(nq).prop_map(|(a, b)| OpKind::Cz(a, b)),
+            distinct_pair(nq).prop_map(|(a, b)| OpKind::Swap(a, b)),
+            distinct_pair(nq).prop_map(|(t, c)| OpKind::Controlled1q(t, c)),
         ]
-        .boxed()
+        .boxed();
+        let non_gate_with_pair = prop_oneof![
+            (0u32..nq).prop_map(OpKind::Reset),
+            (0u32..nq).prop_map(OpKind::Barrier1),
+            distinct_pair(nq).prop_map(|(a, b)| OpKind::Barrier2(a, b)),
+        ]
+        .boxed();
+        branches.push((3, two_q));
+        branches.push((2, non_gate_with_pair));
     } else {
-        let measurement = (0u32..nq, 0u32..nc).prop_map(|(q, cl)| OpKind::Measure(q, cl));
-        prop_oneof![
-            4 => single,
-            3 => parametric,
-            3 => two_q,
-            2 => three_q,
-            2 => non_gate,
-            // Measure weight is bumped from 1 (proptest default ~6.7%
-            // of ops) to 4 (~21% of ops) so the IR layer test
-            // `same_clbit_writes_serialize` actually sees clbit-write
-            // collisions; without the bump that test became
-            // ineffective.  Restored after the P0-05 migration
-            // dropped it to 3.
-            4 => measurement,
+        let non_gate_1q = prop_oneof![
+            (0u32..nq).prop_map(OpKind::Reset),
+            (0u32..nq).prop_map(OpKind::Barrier1),
         ]
-        .boxed()
+        .boxed();
+        branches.push((2, non_gate_1q));
     }
+
+    if nq >= 3 {
+        let three_q = prop_oneof![
+            distinct_triple(nq).prop_map(|(a, b, t)| OpKind::Toffoli(a, b, t)),
+            distinct_triple(nq).prop_map(|(a, b, t)| OpKind::Ccz(a, b, t)),
+        ]
+        .boxed();
+        branches.push((2, three_q));
+    }
+
+    if nc > 0 {
+        let measurement = (0u32..nq, 0u32..nc)
+            .prop_map(|(q, cl)| OpKind::Measure(q, cl))
+            .boxed();
+        // Measure weight is bumped from 1 (proptest default ~6.7%
+        // of ops) to 4 (~21% of ops) so the IR layer test
+        // `same_clbit_writes_serialize` actually sees clbit-write
+        // collisions; without the bump that test became
+        // ineffective.  Restored after the P0-05 migration
+        // dropped it to 3.
+        branches.push((4, measurement));
+    }
+
+    proptest::strategy::Union::new_weighted(branches).boxed()
 }
 
 /// Random `Circuit` exercising the IR's broader op vocabulary
