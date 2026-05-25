@@ -76,3 +76,35 @@ deliberate PR that:
 parser; with it, every finite `f64` round-trips bit-exactly through
 the fixture format. The property test
 `f64_pair_round_trips_through_serde_json` locks this in.
+
+## Distribution oracle (P0-11)
+
+The state-vector oracle compares amplitudes (an `O(2^n)` exact
+check). The distribution oracle complements it: for each fixture
+it samples `DISTRIBUTION_SHOTS = 100_000` shots through
+`NaiveSvBackend` and asserts the empirical histogram lies within
+a `5σ + 1e-6` band of `|ψ_qiskit|²` per outcome.
+
+This catches bugs the state oracle would miss:
+
+- A regression in `Backend::sample` that ships valid amplitudes
+  but wrong indices.
+- A drift in the alias-table build that shifts probability mass
+  between outcomes while leaving amplitudes intact.
+- A future RNG / seed-handling change that produces correlated
+  shots.
+
+Layout:
+
+- `crates/aleph-oracle/src/harness.rs::run_distribution_oracle`
+  is the entry point.
+- `crates/aleph-oracle/build.rs` emits a `mod <stem> { #[test]
+  fn state(); #[test] fn distribution(); }` per fixture, so a
+  failure shows up as `<stem>::state` or `<stem>::distribution`
+  — distinct enough that triage knows which check fired.
+
+Tolerance derivation (spec §6.2): per-outcome flake probability
+is ≤ 5.7e-7 at 5σ; per-fixture flake is ≤ 5.8e-4; per-CI-run
+flake across 28 fixtures is ≤ 1.6%. With `seed = 0` pinned the
+result is deterministic per machine, so the empirical flake rate
+is in practice zero.
