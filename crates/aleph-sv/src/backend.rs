@@ -1013,5 +1013,31 @@ mod tests {
                 prop_assert!((a - b).norm() < 1e-12);
             }
         }
+
+        /// Diagonal 1q gates (Z, S, Sdg, T, Tdg, Rz(θ)) only rotate
+        /// phases; they MUST leave |aᵢ| invariant for every basis
+        /// state.  The existing reversibility proptests verify a
+        /// stronger property — but this targets magnitudes directly
+        /// and would surface a single-direction bug (e.g. a Z kernel
+        /// that accidentally scales an amplitude).  BACKLOG P0-05
+        /// "diagonal gates leave magnitudes unchanged" AC.
+        #[test]
+        fn diagonal_gate_preserves_magnitudes(
+            op in aleph_test::gate::arb_diagonal_1q_gate(),
+            q in 0u32..4u32,
+        ) {
+            let mut b = NaiveSvBackend::with_seed(0);
+            let mut s = b.allocate(4).unwrap();
+            // Non-trivial preamble so the state isn't |0…0⟩.
+            b.apply_gate(&mut s, &GateInstance::new(Gate::H, smallvec![0])).unwrap();
+            b.apply_gate(&mut s, &GateInstance::new(Gate::Cnot, smallvec![0, 1])).unwrap();
+            b.apply_gate(&mut s, &GateInstance::new(Gate::H, smallvec![2])).unwrap();
+            let before: Vec<f64> = s.amplitudes().iter().map(|a| a.norm()).collect();
+            b.apply_gate(&mut s, &GateInstance::new(op, smallvec![q])).unwrap();
+            let after: Vec<f64> = s.amplitudes().iter().map(|a| a.norm()).collect();
+            for (b_mag, a_mag) in before.iter().zip(after.iter()) {
+                prop_assert!((b_mag - a_mag).abs() < 1e-12, "|a| changed: {b_mag} → {a_mag}");
+            }
+        }
     }
 }
