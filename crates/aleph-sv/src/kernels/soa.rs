@@ -9,6 +9,59 @@
 
 use aleph_core::Complex;
 
+/// Apply a 3-qubit matrix to `targets = [t0, t1, t2]` (with external
+/// `controls`) in place over paired SoA storage. MSB convention:
+/// `targets[0]` is bit 2 of the matrix index, `targets[1]` is bit 1,
+/// `targets[2]` is bit 0 (matches `aos::apply_3q`).
+pub(crate) fn apply_3q(
+    re: &mut [f64],
+    im: &mut [f64],
+    targets: [u32; 3],
+    controls: &[u32],
+    m: &[[Complex; 8]; 8],
+) {
+    debug_assert_eq!(re.len(), im.len());
+    let t_bits = [
+        1usize << targets[0],
+        1usize << targets[1],
+        1usize << targets[2],
+    ];
+    let t_mask = t_bits[0] | t_bits[1] | t_bits[2];
+    let ctrl_mask = super::control_mask(controls);
+    let len = re.len();
+    let mut i = 0usize;
+    while i < len {
+        if (i & t_mask) == 0 && (i & ctrl_mask) == ctrl_mask {
+            let mut idx = [0usize; 8];
+            for (k, slot) in idx.iter_mut().enumerate() {
+                let bit_t0 = if k & 4 != 0 { t_bits[0] } else { 0 };
+                let bit_t1 = if k & 2 != 0 { t_bits[1] } else { 0 };
+                let bit_t2 = if k & 1 != 0 { t_bits[2] } else { 0 };
+                *slot = i | bit_t0 | bit_t1 | bit_t2;
+            }
+            let v_re = [
+                re[idx[0]], re[idx[1]], re[idx[2]], re[idx[3]], re[idx[4]], re[idx[5]],
+                re[idx[6]], re[idx[7]],
+            ];
+            let v_im = [
+                im[idx[0]], im[idx[1]], im[idx[2]], im[idx[3]], im[idx[4]], im[idx[5]],
+                im[idx[6]], im[idx[7]],
+            ];
+            for r in 0..8 {
+                let mut acc_re = 0.0_f64;
+                let mut acc_im = 0.0_f64;
+                for c in 0..8 {
+                    acc_re += m[r][c].re * v_re[c] - m[r][c].im * v_im[c];
+                    acc_im += m[r][c].re * v_im[c] + m[r][c].im * v_re[c];
+                }
+                re[idx[r]] = acc_re;
+                im[idx[r]] = acc_im;
+            }
+        }
+        i += 1;
+    }
+}
+
 /// Apply a 2-qubit matrix to `targets = [t0, t1]` (with external
 /// `controls`) in place over paired SoA storage. MSB convention:
 /// `targets[0]` is the high bit of the matrix index, `targets[1]` is
@@ -178,6 +231,39 @@ mod tests {
         assert!(re[2].abs() < 1e-12);
         assert!((re[3] - inv).abs() < 1e-12);
         assert!(im.iter().all(|x| x.abs() < 1e-12));
+    }
+
+    fn toffoli() -> [[Complex; 8]; 8] {
+        let z = Complex::new(0.0, 0.0);
+        let o = Complex::new(1.0, 0.0);
+        let mut m = [[z; 8]; 8];
+        for (i, row) in m.iter_mut().enumerate().take(6) {
+            row[i] = o;
+        }
+        m[6][7] = o;
+        m[7][6] = o;
+        m
+    }
+
+    #[test]
+    fn toffoli_flips_target_when_both_controls_set_soa() {
+        // amps[3] = 1.0 → (q0 = 1, q1 = 1, q2 = 0); Toffoli swaps k=6 ↔ k=7
+        // → amps[3] moves to amps[7].
+        let mut re = vec![0.0; 8];
+        let mut im = vec![0.0; 8];
+        re[3] = 1.0;
+        apply_3q(&mut re, &mut im, [0, 1, 2], &[], &toffoli());
+        assert!((re[7] - 1.0).abs() < 1e-12);
+        assert!(re[3].abs() < 1e-12);
+    }
+
+    #[test]
+    fn toffoli_with_single_control_set_is_identity_soa() {
+        let mut re = vec![0.0; 8];
+        let mut im = vec![0.0; 8];
+        re[1] = 1.0;
+        apply_3q(&mut re, &mut im, [0, 1, 2], &[], &toffoli());
+        assert!((re[1] - 1.0).abs() < 1e-12);
     }
 
     use aleph_core::GateMatrix;
