@@ -57,6 +57,25 @@ where
 fn assert_state_close(name: &str, num_qubits: u32, actual: &[Complex], expected: &[(f64, f64)]) {
     let width = num_qubits as usize;
     for (i, (a, &(er, ei))) in actual.iter().zip(expected.iter()).enumerate() {
+        // Explicit NaN/infinity guard. Without it, a backend that
+        // produces a NaN amplitude (the exact regression class P0-09
+        // hit twice) would silently pass: NaN comparisons against any
+        // tolerance return false, so `delta > STATE_TOLERANCE` is
+        // false and the loop completes. The check must also reject
+        // expected NaNs so a corrupt fixture is loud, not silent.
+        if !a.re.is_finite() || !a.im.is_finite() || !er.is_finite() || !ei.is_finite() {
+            panic!(
+                "oracle: {name} non-finite amplitude\n  \
+                 index {i}  basis |{i:0width$b}>\n  \
+                 ours      ({:.16e}, {:.16e})\n  \
+                 qiskit    ({:.16e}, {:.16e})",
+                a.re,
+                a.im,
+                er,
+                ei,
+                width = width,
+            );
+        }
         let dre = a.re - er;
         let dim = a.im - ei;
         let delta = (dre * dre + dim * dim).sqrt();
@@ -157,5 +176,47 @@ mod tests {
         );
         let mut b = NaiveSvBackend::with_seed(0);
         run_state_oracle(&mut b, &fx, QASM_H).unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "non-finite amplitude")]
+    fn nan_actual_amplitude_is_not_silent() {
+        // The exact failure mode P0-09 hit: a backend produces NaN.
+        // Without the explicit guard, NaN > 1e-10 is false and the
+        // oracle reports success.
+        let nan = f64::NAN;
+        assert_state_close(
+            "nan_in_state",
+            1,
+            &[Complex::new(nan, 0.0), Complex::new(0.0, 0.0)],
+            &[(0.0, 0.0), (0.0, 0.0)],
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "non-finite amplitude")]
+    fn nan_expected_amplitude_is_not_silent() {
+        // Symmetric guard: a corrupted fixture containing NaN should
+        // fail loudly, not silently match anything.
+        let nan = f64::NAN;
+        assert_state_close(
+            "nan_in_fixture",
+            1,
+            &[Complex::new(1.0, 0.0), Complex::new(0.0, 0.0)],
+            &[(nan, 0.0), (0.0, 0.0)],
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "non-finite amplitude")]
+    fn infinite_amplitude_is_not_silent() {
+        // +Inf amplitudes are equally pathological — neither side of
+        // the oracle should ever produce them in a normalized state.
+        assert_state_close(
+            "inf_in_state",
+            1,
+            &[Complex::new(f64::INFINITY, 0.0), Complex::new(0.0, 0.0)],
+            &[(0.0, 0.0), (0.0, 0.0)],
+        );
     }
 }
