@@ -48,7 +48,14 @@ impl AliasTable {
                 large.push(i as u32);
             }
         }
-        while let (Some(s), Some(l)) = (small.pop(), large.pop()) {
+        // Pop both stacks in lockstep. The `while let (Some, Some) =
+        // (small.pop(), large.pop())` shape would still pop `large`
+        // when `small` is empty, leaking an entry with prob=0.0 and
+        // alias=0 — index 0 would then receive that leaked draw and
+        // skew uniform distributions. Guard the lengths explicitly.
+        while !small.is_empty() && !large.is_empty() {
+            let s = small.pop().unwrap();
+            let l = large.pop().unwrap();
             prob[s as usize] = scaled[s as usize];
             alias[s as usize] = l;
             // The "+ scaled[s]) - 1.0" grouping mirrors the Vose paper
@@ -72,8 +79,14 @@ impl AliasTable {
     }
 
     /// One draw. Consumes one `u32` and one `f64` of RNG output.
-    pub(crate) fn draw(&self, _rng: &mut StdRng) -> u32 {
-        todo!("Task 4");
+    pub(crate) fn draw(&self, rng: &mut StdRng) -> u32 {
+        let i = rng.gen_range(0..self.prob.len() as u32);
+        let u: f64 = rng.gen();
+        if u < self.prob[i as usize] {
+            i
+        } else {
+            self.alias[i as usize]
+        }
     }
 }
 
