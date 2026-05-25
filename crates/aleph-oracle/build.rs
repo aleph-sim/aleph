@@ -10,6 +10,18 @@ use std::fmt::Write;
 use std::path::{Path, PathBuf};
 
 fn main() {
+    // Cheap self-test of the identifier validator. Build scripts can't
+    // host `cargo test` cases, so we sanity-check the few obvious
+    // properties here. The cost is negligible (one call each per build)
+    // and catches a regression in is_valid_ident before any fixture
+    // hits the codegen path.
+    assert!(is_valid_ident("ghz_3"));
+    assert!(is_valid_ident("kernel_h"));
+    assert!(!is_valid_ident("match"));
+    assert!(!is_valid_ident("fn"));
+    assert!(!is_valid_ident(""));
+    assert!(!is_valid_ident("1leading_digit"));
+
     let manifest_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
     let workspace_root = manifest_dir.parent().unwrap().parent().unwrap();
     let fixtures_dir = workspace_root.join("oracle/fixtures");
@@ -30,7 +42,11 @@ fn main() {
         println!("cargo:rerun-if-changed={}", path.display());
         let stem = path.file_stem().unwrap().to_string_lossy().to_string();
         if !is_valid_ident(&stem) {
-            panic!("fixture name {stem:?} is not a valid Rust identifier");
+            panic!(
+                "fixture name {stem:?} is not a valid Rust identifier or is a Rust keyword. \
+                 Rename `oracle/fixtures/{stem}.json` (and the matching .qasm) to something \
+                 ASCII-alphanumeric that isn't a Rust keyword (e.g. prefix with `kernel_`)."
+            );
         }
         let qasm = format!("oracle/circuits/{stem}.qasm");
         let json = format!("oracle/fixtures/{stem}.json");
@@ -57,6 +73,23 @@ fn {stem}() {{
 }
 
 fn is_valid_ident(s: &str) -> bool {
+    // Reject Rust keywords (strict + reserved as of edition 2021).
+    // Without this denylist a fixture named `match.json` would emit
+    // `fn match() { ... }` and the test crate would fail to compile
+    // with a parser error pointing at the auto-generated file rather
+    // than at the offending fixture.
+    const RUST_KEYWORDS: &[&str] = &[
+        "as", "async", "await", "break", "const", "continue", "crate", "dyn", "else", "enum",
+        "extern", "false", "fn", "for", "if", "impl", "in", "let", "loop", "match", "mod", "move",
+        "mut", "pub", "ref", "return", "self", "Self", "static", "struct", "super", "trait",
+        "true", "type", "unsafe", "use", "where", "while",
+        // Reserved but currently unused.
+        "abstract", "become", "box", "do", "final", "macro", "override", "priv", "try", "typeof",
+        "unsized", "virtual", "yield",
+    ];
+    if RUST_KEYWORDS.contains(&s) {
+        return false;
+    }
     let mut chars = s.chars();
     match chars.next() {
         Some(c) if c == '_' || c.is_ascii_alphabetic() => {}
@@ -64,3 +97,4 @@ fn is_valid_ident(s: &str) -> bool {
     }
     chars.all(|c| c == '_' || c.is_ascii_alphanumeric())
 }
+
