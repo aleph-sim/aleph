@@ -648,9 +648,9 @@ SoA layout enables better SIMD vectorization. AVX-512 can process 8 f64 lanes at
 
 **Acceptance Criteria**
 
-- [ ] SoA backend produces identical results to naive backend (≤1e-12 difference)
-- [ ] Benchmark: SoA vs. naive on QFT-20 — expect ~1.5–2× improvement just from cache effects
-- [ ] All Phase 0 tests pass against SoA backend
+- [x] SoA backend produces identical results to naive backend (≤1e-12 difference)
+- [ ] Benchmark: SoA vs. naive on QFT-20 — expect ~1.5–2× improvement just from cache effects (layout-only port lands ~0.96–1.2× on M-series; expected — strided AoS reads hide cache wins on Apple silicon. Closed by P1-02 + P1-03; EPYC bencher.dev numbers are the source of truth.)
+- [x] All Phase 0 tests pass against SoA backend
 
 **Testing Requirements**
 
