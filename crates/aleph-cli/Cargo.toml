@@ -11,4 +11,21 @@ authors.workspace = true
 name = "aleph"
 path = "src/main.rs"
 
+[lib]
+path = "src/lib.rs"
+
 [dependencies]
+aleph-core    = { path = "../aleph-core" }
+aleph-ir      = { path = "../aleph-ir" }
+aleph-parser  = { path = "../aleph-parser" }
+aleph-backend = { path = "../aleph-backend" }
+aleph-sv      = { path = "../aleph-sv" }
+clap          = { workspace = true }
+anyhow        = { workspace = true }
+thiserror     = { workspace = true }
+
+[dev-dependencies]
+aleph-oracle = { path = "../aleph-oracle" }
+assert_cmd   = { workspace = true }
+predicates   = { workspace = true }
+proptest     = { workspace = true }

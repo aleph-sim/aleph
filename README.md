@@ -8,7 +8,7 @@ A high-performance quantum circuit simulator written in Rust. Designed for corre
 
 ## Quick start
 
-Requires Rust **1.75+** (edition 2021).
+Requires Rust **1.85+** (edition 2021).
 
 ```bash
 # Build everything
@@ -23,9 +23,6 @@ cargo fmt --check
 
 # Run benchmarks
 cargo bench --workspace
-
-# Run the CLI (once implemented)
-cargo run --bin aleph -- run circuit.qasm
 ```
 
 For release builds with native CPU optimizations:
@@ -33,6 +30,35 @@ For release builds with native CPU optimizations:
 ```bash
 RUSTFLAGS="-C target-cpu=native" cargo build --release --workspace
 ```
+
+### Using the `aleph` binary
+
+After `cargo build --release --workspace`, the `aleph` binary lives at
+`target/release/aleph`.  Four basic invocations:
+
+```bash
+# Sample 1024 shots from a Bell-state circuit with a fixed RNG seed.
+./target/release/aleph run oracle/circuits/bell_phi_plus.qasm \
+  --shots 1024 --seed 0
+
+# Print the full final state vector (capped at 10 qubits;
+# use --force-statevector to opt out of the cap).
+./target/release/aleph run oracle/circuits/bell_phi_plus.qasm --statevector
+
+# Compute ⟨ψ|ZZ|ψ⟩ and ⟨ψ|XX|ψ⟩ in one run.
+./target/release/aleph run oracle/circuits/bell_phi_plus.qasm \
+  --expectation ZZ --expectation XX
+
+# Single-iteration timing breakdown (parse / run / sample / total).
+./target/release/aleph bench oracle/circuits/bell_phi_plus.qasm
+```
+
+Pauli strings for `--expectation` are positional: qubit 0 is the
+leftmost character.  `IXZI` means X on q1, Z on q2.  Optional
+`coeff*` prefix: `1.5*ZZ`, `-0.5*X`.
+
+See `aleph --help` (and `aleph run --help` / `aleph bench --help`)
+for the full flag list.
 
 GPU (Phase 5+):
 
