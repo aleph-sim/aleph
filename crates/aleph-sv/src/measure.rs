@@ -189,12 +189,17 @@ pub(crate) fn expectation_value_impl(
     // Pauli-Z fast path: diagonal Pauli strings need no state clone
     // and no kernel apply. ⟨ψ| ⊗ᵢ Zᵢ |ψ⟩ = Σᵢ (-1)^popcount(i & z_mask) · |aᵢ|².
     //
-    // The `1u64 << q` mask construction below assumes `q < 64`. The
-    // bounds check above already enforces `q < state.num_qubits`,
-    // which on this backend is capped by `MAX_NAIVE_QUBITS = 28`, but
-    // if a future backend reuses this function with `num_qubits >= 64`
-    // we fall through to the slow path rather than invoking
-    // shift-overflow UB.
+    // The `1u64 << q` mask construction below assumes `q < 64`.  In
+    // the current pipeline `validate_state` already rejects num_qubits
+    // ≥ usize::BITS (via its own checked_shl), and the per-term range
+    // check above enforces q < state.num_qubits, so on any 64-bit
+    // platform q ≤ 62 here.  The explicit `q >= 64` guard is therefore
+    // belt-and-suspenders for callers that might one day bypass
+    // validate_state, *not* the primary defense.  Note this only
+    // saves the fast path's mask construction: the slow path's
+    // `apply_1q` kernel also uses `1usize << q`-style strides, so
+    // a hypothetical future backend running with num_qubits ≥ 64
+    // would need shift-safe kernels everywhere, not just here.
     let mut z_mask = 0u64;
     let mut all_z_or_i = true;
     for (q, p) in &pauli.terms {
