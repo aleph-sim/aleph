@@ -5,3 +5,6 @@
 //! `aleph` backends agree with Qiskit Aer to within `1e-10`.
 //!
 //! See `docs/superpowers/specs/2026-05-24-p0-10-oracle-qiskit-design.md`.
+
+pub mod error;
+pub use error::OracleError;
