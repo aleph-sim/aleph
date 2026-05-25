@@ -524,10 +524,10 @@ Recommendation: pre-generate fixtures, regenerate via `make regen-fixtures`.
 
 **Acceptance Criteria**
 
-- [ ] At least 10 circuits in the test corpus
-- [ ] All tests pass against the naive backend
-- [ ] `make regen-fixtures` regenerates from Python
-- [ ] Documented in `docs/testing.md`
+- [x] At least 10 circuits in the test corpus
+- [x] All tests pass against the naive backend
+- [x] `scripts/regen-fixtures.sh` regenerates from Python (amendment, see spec §10.1)
+- [x] Documented in `docs/testing.md`
 
 **Testing Requirements**
 
