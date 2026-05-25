@@ -8,10 +8,13 @@ use proptest::prelude::*;
 proptest! {
     #[test]
     fn parse_emit_roundtrip(c in arb_circuit_emittable(4, 2, 12)) {
-        let out = match emit(&c) {
-            Ok(s) => s,
-            Err(_) => return Ok(()),
-        };
+        // `arb_circuit_emittable` is specifically curated to only
+        // generate variants the emitter supports — any `emit()` Err
+        // is a regression worth surfacing, not silently skipping.
+        let out = emit(&c).map_err(|e| TestCaseError::fail(format!(
+            "emit() failed on a circuit drawn from arb_circuit_emittable: {e:?}\n\
+             circuit: {c:?}"
+        )))?;
         let c2 = parse(&out).map_err(|e| TestCaseError::fail(format!(
             "re-parse failed.\nemitted:\n{out}\nerror:\n{}",
             e.render()
