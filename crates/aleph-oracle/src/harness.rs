@@ -50,7 +50,7 @@ where
             state: actual.len(),
         });
     }
-    assert_state_close(&fixture.name, fixture.num_qubits, actual, expected);
+    assert_state_close(&fixture.name, fixture.num_qubits, &actual, expected);
     Ok(())
 }
 
@@ -114,16 +114,20 @@ pub const DISTRIBUTION_FLOOR: f64 = 1e-6;
 /// distribution matches `fixture.statevector.amplitudes` (per-outcome
 /// `5σ + DISTRIBUTION_FLOOR` band, in probability units).
 ///
-/// `B::State = aleph_sv::CpuState` is pinned because today only
-/// `NaiveSvBackend` exists; the bound generalises when a second
-/// backend lands (spec §6.4).
+/// Backend bound is `Backend` alone: the distribution oracle never
+/// pulls live amplitudes off `state` (it samples and compares against
+/// the trusted Qiskit reference), so non-AoS backends — including
+/// future Phase-2 MPS / stabilizer backends whose state cannot
+/// cheaply materialise a full amplitude vector — flow through this
+/// function natively. The AoS pin from P0-10 spec §6.4 lifted with
+/// P1-01 when SoA landed as the second backend.
 pub fn run_distribution_oracle<B>(
     backend: &mut B,
     fixture: &Fixture,
     qasm_source: &str,
 ) -> Result<(), OracleError>
 where
-    B: Backend<State = aleph_sv::CpuState>,
+    B: Backend,
 {
     let circuit = aleph_parser::parse(qasm_source)?;
     if circuit.num_qubits() != fixture.num_qubits {
@@ -365,6 +369,21 @@ mod tests {
             vec![(inv, 0.0), (0.0, 0.0), (0.0, 0.0), (inv, 0.0)],
         );
         let mut b = NaiveSvBackend::with_seed(0);
+        run_distribution_oracle(&mut b, &fx, QASM_BELL).unwrap();
+    }
+
+    #[test]
+    fn distribution_oracle_passes_on_bell_with_soa_backend() {
+        // Same fixture as `distribution_oracle_passes_on_bell` — drives
+        // the relaxed B::State: HasAmplitudes bound through SoaSvBackend.
+        use aleph_sv::SoaSvBackend;
+        let inv = std::f64::consts::FRAC_1_SQRT_2;
+        let fx = synth(
+            "bell_phi_plus_test_soa",
+            2,
+            vec![(inv, 0.0), (0.0, 0.0), (0.0, 0.0), (inv, 0.0)],
+        );
+        let mut b = SoaSvBackend::with_seed(0);
         run_distribution_oracle(&mut b, &fx, QASM_BELL).unwrap();
     }
 

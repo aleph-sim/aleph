@@ -110,7 +110,7 @@ fn main() {
             r#"
 mod {stem} {{
     #[test]
-    fn state() {{
+    fn naive_state() {{
         let fx = aleph_oracle::load_fixture(&aleph_oracle::workspace_path({json:?}))
             .expect("load fixture");
         let qasm = aleph_oracle::load_qasm(&aleph_oracle::workspace_path({qasm:?}))
@@ -120,12 +120,32 @@ mod {stem} {{
     }}
 
     #[test]
-    fn distribution() {{
+    fn naive_distribution() {{
         let fx = aleph_oracle::load_fixture(&aleph_oracle::workspace_path({json:?}))
             .expect("load fixture");
         let qasm = aleph_oracle::load_qasm(&aleph_oracle::workspace_path({qasm:?}))
             .expect("load qasm");
         let mut backend = aleph_sv::NaiveSvBackend::with_seed(0);
+        aleph_oracle::run_distribution_oracle(&mut backend, &fx, &qasm).expect("oracle");
+    }}
+
+    #[test]
+    fn soa_state() {{
+        let fx = aleph_oracle::load_fixture(&aleph_oracle::workspace_path({json:?}))
+            .expect("load fixture");
+        let qasm = aleph_oracle::load_qasm(&aleph_oracle::workspace_path({qasm:?}))
+            .expect("load qasm");
+        let mut backend = aleph_sv::SoaSvBackend::with_seed(0);
+        aleph_oracle::run_state_oracle(&mut backend, &fx, &qasm).expect("oracle");
+    }}
+
+    #[test]
+    fn soa_distribution() {{
+        let fx = aleph_oracle::load_fixture(&aleph_oracle::workspace_path({json:?}))
+            .expect("load fixture");
+        let qasm = aleph_oracle::load_qasm(&aleph_oracle::workspace_path({qasm:?}))
+            .expect("load qasm");
+        let mut backend = aleph_sv::SoaSvBackend::with_seed(0);
         aleph_oracle::run_distribution_oracle(&mut backend, &fx, &qasm).expect("oracle");
     }}
 }}

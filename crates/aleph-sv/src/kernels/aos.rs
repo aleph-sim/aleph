@@ -17,10 +17,7 @@ use aleph_core::Complex;
 /// iterations whose `i` does not have every control bit set.
 pub(crate) fn apply_1q(amps: &mut [Complex], target: u32, controls: &[u32], m: &[[Complex; 2]; 2]) {
     let t_bit = 1usize << target;
-    let mut ctrl_mask: usize = 0;
-    for &c in controls {
-        ctrl_mask |= 1usize << c;
-    }
+    let ctrl_mask = super::control_mask(controls);
     let len = amps.len();
     let mut i = 0usize;
     while i < len {
@@ -54,10 +51,7 @@ pub(crate) fn apply_2q(
     let t0_bit = 1usize << targets[0];
     let t1_bit = 1usize << targets[1];
     let t_mask = t0_bit | t1_bit;
-    let mut ctrl_mask: usize = 0;
-    for &c in controls {
-        ctrl_mask |= 1usize << c;
-    }
+    let ctrl_mask = super::control_mask(controls);
     let len = amps.len();
     let mut i = 0usize;
     while i < len {
@@ -100,10 +94,7 @@ pub(crate) fn apply_3q(
         1usize << targets[2],
     ];
     let t_mask = t_bits[0] | t_bits[1] | t_bits[2];
-    let mut ctrl_mask: usize = 0;
-    for &c in controls {
-        ctrl_mask |= 1usize << c;
-    }
+    let ctrl_mask = super::control_mask(controls);
     let len = amps.len();
     let mut i = 0usize;
     while i < len {
