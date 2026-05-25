@@ -35,8 +35,8 @@ pub fn run_circuit<W: Write>(
     // 1. Read + parse.
     let source = std::fs::read_to_string(qasm_path)
         .with_context(|| format!("reading QASM file: {}", qasm_path.display()))?;
-    let circuit = aleph_parser::parse(&source)
-        .with_context(|| format!("parsing {}", qasm_path.display()))?;
+    let circuit =
+        aleph_parser::parse(&source).with_context(|| format!("parsing {}", qasm_path.display()))?;
     let n = circuit.num_qubits();
 
     // 2. Parse + range-check every --expectation BEFORE running.
@@ -105,11 +105,7 @@ pub fn run_circuit<W: Write>(
 /// Run a circuit once and report parse / execute / sample(1024)
 /// wall-times.  No statistics; criterion is the source of truth for
 /// regression-tracking perf numbers.
-pub fn bench_circuit<W: Write>(
-    qasm_path: &Path,
-    seed: Option<u64>,
-    out: &mut W,
-) -> Result<()> {
+pub fn bench_circuit<W: Write>(qasm_path: &Path, seed: Option<u64>, out: &mut W) -> Result<()> {
     let source = std::fs::read_to_string(qasm_path)
         .with_context(|| format!("reading QASM file: {}", qasm_path.display()))?;
     let qasm_name = qasm_path
@@ -118,8 +114,8 @@ pub fn bench_circuit<W: Write>(
         .unwrap_or_else(|| qasm_path.display().to_string());
 
     let parse_start = Instant::now();
-    let circuit = aleph_parser::parse(&source)
-        .with_context(|| format!("parsing {}", qasm_path.display()))?;
+    let circuit =
+        aleph_parser::parse(&source).with_context(|| format!("parsing {}", qasm_path.display()))?;
     let parse_dt = parse_start.elapsed();
 
     let n = circuit.num_qubits();

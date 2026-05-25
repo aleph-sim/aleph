@@ -29,7 +29,11 @@ pub fn format_counts<W: Write>(
     for (idx, count) in &hist {
         let prob = *count as f64 / total_f;
         let idx_us = *idx as usize;
-        writeln!(out, "  |{idx_us:0width$b}⟩  {count}  ({prob:.4})", width = width)?;
+        writeln!(
+            out,
+            "  |{idx_us:0width$b}⟩  {count}  ({prob:.4})",
+            width = width
+        )?;
     }
     Ok(())
 }
