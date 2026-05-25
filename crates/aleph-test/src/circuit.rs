@@ -7,6 +7,7 @@
 use aleph_core::{Gate, GateInstance};
 use aleph_ir::Circuit;
 use proptest::prelude::*;
+use proptest::strategy::BoxedStrategy;
 use smallvec::smallvec;
 
 /// Union of the operation vocabularies the parser and IR tests
@@ -133,4 +134,78 @@ pub fn distinct_pair(nq: u32) -> impl Strategy<Value = (u32, u32)> {
 /// Distinct unordered triple `(a, b, c)` with all three in `[0, nq)`.
 pub fn distinct_triple(nq: u32) -> impl Strategy<Value = (u32, u32, u32)> {
     (0u32..nq, 0u32..nq, 0u32..nq).prop_filter("distinct", |(a, b, c)| a != b && a != c && b != c)
+}
+
+/// `OpKind` vocabulary restricted to variants the emitter can
+/// serialise.  Excludes `Ccz` and `Controlled1q` (which the
+/// builder constructs but the emitter doesn't yet round-trip).
+///
+/// Used by `aleph-parser/tests/round_trip_property.rs`.
+pub fn arb_op_emittable(nq: u32, nc: u32) -> BoxedStrategy<OpKind> {
+    let angle = -10.0_f64..10.0_f64;
+
+    let single = prop_oneof![
+        (0u32..nq).prop_map(OpKind::H),
+        (0u32..nq).prop_map(OpKind::X),
+        (0u32..nq).prop_map(OpKind::Y),
+        (0u32..nq).prop_map(OpKind::Z),
+        (0u32..nq).prop_map(OpKind::S),
+        (0u32..nq).prop_map(OpKind::T),
+        (0u32..nq).prop_map(OpKind::Sdg),
+        (0u32..nq).prop_map(OpKind::Tdg),
+    ];
+    let parametric = prop_oneof![
+        (angle.clone(), 0u32..nq).prop_map(|(t, q)| OpKind::Rx(t, q)),
+        (angle.clone(), 0u32..nq).prop_map(|(t, q)| OpKind::Ry(t, q)),
+        (angle.clone(), 0u32..nq).prop_map(|(t, q)| OpKind::Rz(t, q)),
+        (angle.clone(), 0u32..nq).prop_map(|(t, q)| OpKind::Phase(t, q)),
+        (angle.clone(), angle.clone(), angle.clone(), 0u32..nq)
+            .prop_map(|(a, b, c, q)| OpKind::U3(a, b, c, q)),
+    ];
+    let two_q = prop_oneof![
+        distinct_pair(nq).prop_map(|(a, b)| OpKind::Cnot(a, b)),
+        distinct_pair(nq).prop_map(|(a, b)| OpKind::Cz(a, b)),
+        distinct_pair(nq).prop_map(|(a, b)| OpKind::Swap(a, b)),
+    ];
+    let three_q = distinct_triple(nq).prop_map(|(a, b, t)| OpKind::Toffoli(a, b, t));
+    let non_gate = prop_oneof![
+        (0u32..nq).prop_map(OpKind::Reset),
+        (0u32..nq).prop_map(OpKind::Barrier1),
+        distinct_pair(nq).prop_map(|(a, b)| OpKind::Barrier2(a, b)),
+    ];
+
+    if nc == 0 {
+        prop_oneof![
+            4 => single,
+            3 => parametric,
+            3 => two_q,
+            2 => three_q,
+            2 => non_gate,
+        ]
+        .boxed()
+    } else {
+        let measurement = (0u32..nq, 0u32..nc).prop_map(|(q, cl)| OpKind::Measure(q, cl));
+        prop_oneof![
+            4 => single,
+            3 => parametric,
+            3 => two_q,
+            2 => three_q,
+            2 => non_gate,
+            3 => measurement,
+        ]
+        .boxed()
+    }
+}
+
+/// Random emitter-compatible `Circuit`.  Replaces the inline
+/// `arb_circuit(...)` previously duplicated in
+/// `aleph-parser/tests/round_trip_property.rs`.
+pub fn arb_circuit_emittable(nq: u32, nc: u32, n_ops: usize) -> impl Strategy<Value = Circuit> {
+    proptest::collection::vec(arb_op_emittable(nq, nc), 0..=n_ops).prop_map(move |ops| {
+        let mut c = Circuit::new(nq, nc);
+        for op in ops {
+            op.apply(&mut c);
+        }
+        c
+    })
 }
