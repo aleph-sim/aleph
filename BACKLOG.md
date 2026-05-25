@@ -259,10 +259,10 @@ Define invariants:
 
 **Acceptance Criteria**
 
-- [ ] `proptest` integrated, at least 4 generators
-- [ ] At least 4 invariant tests passing
-- [ ] Tests run as part of `cargo test`
-- [ ] Documentation in `docs/testing.md`
+- [x] `proptest` integrated, at least 4 generators
+- [x] At least 4 invariant tests passing
+- [x] Tests run as part of `cargo test`
+- [x] Documentation in `docs/testing.md`
 
 **Testing Requirements**
 
