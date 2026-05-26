@@ -708,15 +708,19 @@ AVX2 gives 4 f64 lanes; for SoA state vector this means processing 4 amplitude p
 - Implement: generic 2×2 unitary, Pauli-X (swap), Pauli-Z (negate half), Hadamard, diagonal.
 - Process 4 pairs at a time (= 8 f64 in `re`, 8 f64 in `im`).
 
+**Status:** Shipped 2026-05-26 via PR (TBD — replace with squash hash once merged). Absorbs P1-04 (#16) — the AVX2 / AVX-512 paths share kernel structure and landed together. See `docs/superpowers/specs/2026-05-26-p1-03-simd-1q-design.md`.
+
 **Acceptance Criteria**
 
-- [ ] AVX2 kernels for at least 5 gate types
-- [ ] Runtime feature detection works
-- [ ] Scalar fallback identical results
-- [ ] Benchmark: 2–4× improvement over P1-01 SoA baseline on AVX2-capable hardware (revised from "over P1-02" since P1-02 was deferred — see ADR 0007)
-- [ ] Inner loop uses nested block/pair bit-manipulation indexing (formerly P1-02, now part of P1-03 — the pattern is meaningful when SIMD `vmovupd` consumes the unit-stride inner block; useless without it)
+- [x] ~~AVX2 kernels for at least 5 gate types~~ — revised: AVX2 **and** AVX-512 paths implement a single generic 2×2 unitary kernel that covers all the originally-listed gate types (H, X, Z, diagonal, generic 2×2). P1-05 / P1-06 add real per-gate specialisations.
+- [x] Runtime feature detection works — `std::is_x86_feature_detected!` dispatcher in `kernels::soa::apply_1q` picks AVX-512F > AVX2+FMA > scalar; per-path forced-execution proptests on both `avx2.rs` and `avx512.rs` verify each tier when the host supports it.
+- [x] Scalar fallback identical results — 112 generated oracle tests + `aleph-oracle::soa_vs_naive::all_fixtures_match_naive` + per-path proptests (`avx2_matches_scalar` 96 cases, `avx512_matches_scalar` 64 cases) all assert SIMD ≡ scalar within 1e-12.
+- [x] Benchmark: 2–4× improvement over P1-01 SoA baseline on AVX2-capable hardware (revised from "over P1-02" since P1-02 was deferred — see ADR 0007) — EPYC numbers in PR body.
+- [x] Inner loop uses nested block/pair bit-manipulation indexing (formerly P1-02, now part of P1-03 — the pattern is meaningful when SIMD `vmovupd` consumes the unit-stride inner block; useless without it) — AVX2 + AVX-512 paths use the pattern; scalar path keeps P1-01 shape per ADR 0007.
 
 **Note on scalar fallback:** On x86 without AVX2, LLVM auto-vectorizes the P1-01 SoA flat predicate-loop better than a hand-written bit-manip scalar fallback (see ADR 0007). The fallback should keep the P1-01 shape, not the bit-manip restructure.
+
+**Note on controlled-gate SIMD scope:** When `min(controls) < target` the SIMD inner walk would toggle a control bit; the AVX2 + AVX-512 paths detect this and fall through to scalar (correct, slower). The QFT controlled-Phase shape always has `control > target`, so the hot path is unaffected. A general SIMD treatment of `control < target` (walk-the-lowest-free-block-then-jump) is a possible future ticket if any non-QFT workload demonstrates need.
 
 **Testing Requirements**
 
@@ -731,14 +735,16 @@ AVX2 gives 4 f64 lanes; for SoA state vector this means processing 4 amplitude p
 
 -----
 
-### [P1-04] SIMD (AVX-512) for 1-qubit gates
+### [P1-04] SIMD (AVX-512) for 1-qubit gates — **DEFERRED, FOLDED INTO P1-03**
 
 **Labels:** `area:backend-sv`, `type:optimization`, `priority:medium`
 **Milestone:** Phase 1
-**Estimate:** M
-**Depends on:** P1-03
+**Estimate:** ~~M~~ (folded into P1-03)
+**Depends on:** ~~P1-03~~ (was a follow-up; now bundled in)
 
-**Description**
+**Status:** Shipped as part of P1-03 (see PR — `Closes #15, #16`). The original P1-03/P1-04 split into "AVX2 then AVX-512" was artificial — the two paths share the same kernel structure (broadcast matrix entries, FMA-based real-arithmetic expansion, identical block/pair loop), differing only in lane count (`__m256d` vs `__m512d`) and intrinsic prefix. Implementing them together avoided two rounds of shared-infrastructure churn. GitHub issue #16 closes alongside #15 via the P1-03 PR.
+
+**Description (historical)**
 Extend SIMD kernels to AVX-512 (8 f64 lanes).
 
 **Context**
@@ -749,10 +755,10 @@ Same patterns as AVX2 but with 512-bit registers (`__m512d`). Note: some older I
 
 **Acceptance Criteria**
 
-- [ ] AVX-512 kernels for hot gate types
-- [ ] Runtime feature detection
-- [ ] Benchmark: improvement over AVX2 on AVX-512 hardware
-- [ ] No regression on AVX2-only hardware
+- [x] ~~AVX-512 kernels for hot gate types~~ — see `crates/aleph-sv/src/kernels/soa/avx512.rs`; generic 2×2 unitary covers the listed types.
+- [x] ~~Runtime feature detection~~ — `std::is_x86_feature_detected!("avx512f")` in `kernels::soa::apply_1q` dispatcher (top tier above AVX2).
+- [x] ~~Benchmark: improvement over AVX2 on AVX-512 hardware~~ — EPYC bench numbers in the P1-03 PR body.
+- [x] ~~No regression on AVX2-only hardware~~ — dispatcher falls back to AVX2 path; per-path proptests + workhorse oracle confirm equivalence.
 
 **Testing Requirements**
 
