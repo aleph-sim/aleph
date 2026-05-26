@@ -42,7 +42,9 @@ pub(crate) fn control_mask(controls: &[u32]) -> usize {
 /// Bit positions in `fixed.0` are `u32` to match `Gate` qubit indices;
 /// the caller guarantees they are < 64 (in practice < 28, since
 /// `MAX_*_QUBITS ≤ 28`), so the `1usize << pos` shifts never overflow.
-#[allow(dead_code)] // SIMD callers land in subsequent tasks; remove once consumed.
+// Allow dead_code: callers (avx2.rs / avx512.rs) are `#[cfg(target_arch = "x86_64")]`,
+// so on ARM / WASM / RISC-V this helper is unreferenced. Unit tests below run on all targets.
+#[allow(dead_code)]
 pub(crate) fn expand_with_fixed(k: usize, fixed: &[(u32, bool)]) -> usize {
     let mut result: usize = 0;
     let mut k_bit: u32 = 0;

@@ -58,9 +58,36 @@ pub(crate) unsafe fn apply_1q(
             );
             block += outer_step;
         }
-    } else {
-        // Controlled path lands in Task 5; for now, fall through to scalar.
+        return;
+    }
+
+    // If any control is below the target, the inner SIMD walk
+    // `j ∈ 0..target_bit` would toggle a control bit. Fall back to
+    // scalar (correct, slower). The QFT controlled-Phase shape always
+    // has control > target, so this fall-through doesn't fire on the
+    // hot path. See spec §7.
+    if controls.iter().any(|&c| c < target) {
         super::scalar::apply_1q(re, im, target, controls, m);
+        return;
+    }
+
+    // Hoist (target, control_*) sort once. SmallVec keeps it on the
+    // stack — `controls.len()` is at most ~6 in practice (gate enum
+    // constraints), capacity 8 covers all hardware-realistic cases.
+    let mut fixed: smallvec::SmallVec<[(u32, bool); 8]> = smallvec::SmallVec::new();
+    fixed.push((target, false));
+    for &c in controls {
+        fixed.push((c, true));
+    }
+    fixed.sort_unstable_by_key(|&(pos, _)| pos);
+
+    let n_qubits = len.trailing_zeros();
+    let outer_count = 1usize << (n_qubits - fixed.len() as u32);
+    for k in 0..outer_count {
+        let block = crate::kernels::expand_with_fixed(k, &fixed);
+        apply_block_4(
+            re, im, block, target_bit, m00r, m00i, m01r, m01i, m10r, m10i, m11r, m11i, m,
+        );
     }
 }
 
@@ -160,40 +187,52 @@ mod tests {
     proptest! {
         #![proptest_config(ProptestConfig { cases: 64, ..ProptestConfig::default() })]
 
-        /// AVX2 uncontrolled fast path matches the scalar reference within
-        /// 1e-12 across the full 1q-gate strategy and all targets that
-        /// fit (or partially fit) into 4-lane chunks. Skipped on non-AVX2
-        /// hosts at runtime.
+        /// AVX2 controlled path matches scalar reference. Covers both
+        /// orientations: control above target (SIMD path engages) and
+        /// control below target (scalar fall-through engages — same
+        /// kernel under test, the guard delegates correctly).
         #[test]
-        fn avx2_uncontrolled_matches_scalar(
+        fn avx2_matches_scalar(
             gate in arb_1q_gate(),
-            target in 0u32..6,
+            target in 0u32..6u32,
+            ctrl_count in 0u32..=2u32,
+            // Controls deliberately span both sides of target.
+            ctrl_seeds in proptest::collection::vec(0u32..6u32, 0..=2),
             amps in arb_state_vector(6),
         ) {
             if !host_has_avx2_fma() {
                 return Ok(());
             }
+            // Build a duplicate-free control list distinct from target.
+            let mut controls: Vec<u32> = ctrl_seeds.into_iter().take(ctrl_count as usize).collect();
+            controls.retain(|c| *c != target);
+            controls.sort_unstable();
+            controls.dedup();
+
             let m = match gate.matrix().unwrap() {
                 GateMatrix::M2x2(m) => m,
                 _ => unreachable!("arb_1q_gate yields 1q gates"),
             };
             let re_src: Vec<f64> = amps.iter().map(|c| c.re).collect();
             let im_src: Vec<f64> = amps.iter().map(|c| c.im).collect();
+
             // Scalar reference
             let mut re_ref = re_src.clone();
             let mut im_ref = im_src.clone();
-            super::super::scalar::apply_1q(&mut re_ref, &mut im_ref, target, &[], &m);
-            // AVX2 candidate — direct call, bypasses the dispatcher.
+            super::super::scalar::apply_1q(&mut re_ref, &mut im_ref, target, &controls, &m);
+
+            // AVX2 candidate — direct call.
             let mut re_simd = re_src.clone();
             let mut im_simd = im_src.clone();
-            // SAFETY: guarded by host_has_avx2_fma() above.
-            unsafe { super::apply_1q(&mut re_simd, &mut im_simd, target, &[], &m); }
+            // SAFETY: host_has_avx2_fma() guard above.
+            unsafe { super::apply_1q(&mut re_simd, &mut im_simd, target, &controls, &m); }
+
             for k in 0..re_ref.len() {
                 prop_assert!(
                     (re_ref[k] - re_simd[k]).abs() < 1e-12
                         && (im_ref[k] - im_simd[k]).abs() < 1e-12,
-                    "k={k} target={target}: scalar=({}, {}) avx2=({}, {})",
-                    re_ref[k], im_ref[k], re_simd[k], im_simd[k]
+                    "k={k} target={target} controls={:?}: scalar=({}, {}) avx2=({}, {})",
+                    controls, re_ref[k], im_ref[k], re_simd[k], im_simd[k]
                 );
             }
         }
