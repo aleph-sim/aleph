@@ -12,6 +12,8 @@
 
 ## Stage 0 — Qiskit Aer baseline on EPYC
 
+**Status:** Done as of 2026-05-26. Report at `docs/perf/phase1-vs-qiskit.md`. Spec at `docs/superpowers/specs/2026-05-26-stage0-qiskit-baseline-design.md`. Proceeding to Stage 1. Headline: see report.
+
 **Goal:** Concrete numbers for the ROADMAP §7 exit criterion. **Run before any further perf work** so we know whether we're 0.5× / 1× / 2× / 5× Qiskit on the canonical benchmarks. Numbers inform priority but **do not gate Phase 1 completion** — user explicitly chose to ship the full Phase-1 backlog regardless of where we stand vs Qiskit.
 
 **Deliverable:** `docs/perf/phase1-vs-qiskit.md` with the table below populated, committed via a `[meta]` PR.
