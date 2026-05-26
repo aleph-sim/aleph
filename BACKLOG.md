@@ -664,48 +664,27 @@ SoA layout enables better SIMD vectorization. AVX-512 can process 8 f64 lanes at
 
 -----
 
-### [P1-02] Bit-manipulation indexing for 1-qubit gate application
+### [P1-02] Bit-manipulation indexing for 1-qubit gate application — **DEFERRED, FOLDED INTO P1-03**
+
+**Status:** Standalone implementation attempted in PR #76 (closed without merge, 2026-05-26). See [ADR 0007](docs/decisions/0007-soa-x86-perf-finding.md) for the full perf investigation. Short version: on x86 with AVX-512, LLVM auto-vectorizes P1-01's "branchy" predicate-loop as a masked loop (`vporq`/`vpsllvq` packed-quadword ops processing 4-8 indices per cycle); P1-02's branch-free restructure broke that transformation and regressed QFT-20 by ~30% (332 ms → 428 ms on EPYC self-hosted). The bit-manip pattern is still the right shape — but only when paired with explicit SIMD intrinsics (P1-03) where it lets `vmovupd` consume unit-stride inner blocks directly. Implementing it as a standalone optimization is a pessimization.
+
+**P1-03 will subsume P1-02:** the nested block/pair indexing pattern lands as the SoA SIMD kernel's inner loop, not as a layout-only change. Update the P1-03 spec to incorporate the bit-manip work directly.
 
 **Labels:** `area:backend-sv`, `type:optimization`, `priority:critical`
 **Milestone:** Phase 1
-**Estimate:** M
+**Estimate:** ~~M~~ (folded into P1-03)
 **Depends on:** P1-01
-
-**Description**
-Replace naive index loops with bit-twiddling that iterates state vector pairs in cache-friendly order.
-
-**Context**
-For a 1q gate on qubit q, every pair of amplitudes (i, i ⊕ 2^q) where bit q is 0 must be processed. Naive iteration is `for i in 0..N { if bit q of i is 0 { process(i, i^mask) } }` — branch-heavy and cache-unfriendly. The right pattern iterates blocks.
-
-**Technical Details**
-Pattern:
-
-```rust
-let mask = 1usize << q;
-let lo_mask = mask - 1;
-let hi_mask = !((mask << 1) - 1);
-for k in 0..(n_amps >> 1) {
-    let i0 = ((k & hi_mask) << 1) | (k & lo_mask);
-    let i1 = i0 | mask;
-    // apply 2x2 gate to (state[i0], state[i1])
-}
-```
-
-This visits pairs in a deterministic, branch-free order. Combined with SoA, it’s vectorizable.
 
 **Acceptance Criteria**
 
-- [ ] All 1q gates implemented with this pattern
-- [ ] Benchmark: 2–3× improvement over P1-01 on QFT-20
-- [ ] All correctness tests pass
-
-**Testing Requirements**
-
-- Equivalence vs. naive backend.
+- [x] ~~All 1q gates implemented with this pattern~~ — superseded; P1-03 SIMD will use the pattern as its inner loop shape.
+- [x] ~~Benchmark: 2–3× improvement over P1-01 on QFT-20~~ — superseded; P1-03 AC absorbs this target.
+- [x] ~~All correctness tests pass~~ — n/a (no implementation lands).
 
 **References**
 
-- <https://github.com/QuEST-Kit/QuEST/blob/master/QuEST/src/CPU/QuEST_cpu.c>
+- [ADR 0007 — SoA layout-only optimization on x86 loses to LLVM masked-loop auto-vec](docs/decisions/0007-soa-x86-perf-finding.md)
+- <https://github.com/QuEST-Kit/QuEST/blob/master/QuEST/src/CPU/QuEST_cpu.c> — QuEST's bit-manip pattern works because they write SIMD intrinsics from day one, not relying on LLVM auto-vec.
 
 -----
 
@@ -734,7 +713,10 @@ AVX2 gives 4 f64 lanes; for SoA state vector this means processing 4 amplitude p
 - [ ] AVX2 kernels for at least 5 gate types
 - [ ] Runtime feature detection works
 - [ ] Scalar fallback identical results
-- [ ] Benchmark: 2–4× improvement over P1-02 on AVX2-capable hardware
+- [ ] Benchmark: 2–4× improvement over P1-01 SoA baseline on AVX2-capable hardware (revised from "over P1-02" since P1-02 was deferred — see ADR 0007)
+- [ ] Inner loop uses nested block/pair bit-manipulation indexing (formerly P1-02, now part of P1-03 — the pattern is meaningful when SIMD `vmovupd` consumes the unit-stride inner block; useless without it)
+
+**Note on scalar fallback:** On x86 without AVX2, LLVM auto-vectorizes the P1-01 SoA flat predicate-loop better than a hand-written bit-manip scalar fallback (see ADR 0007). The fallback should keep the P1-01 shape, not the bit-manip restructure.
 
 **Testing Requirements**
 
@@ -743,6 +725,7 @@ AVX2 gives 4 f64 lanes; for SoA state vector this means processing 4 amplitude p
 
 **References**
 
+- [ADR 0007 — SoA layout-only optimization on x86 loses to LLVM masked-loop auto-vec](docs/decisions/0007-soa-x86-perf-finding.md) — read first; explains why bit-manip indexing without SIMD is a pessimization on x86.
 - <https://software.intel.com/sites/landingpage/IntrinsicsGuide/>
 - <https://doc.rust-lang.org/std/arch/index.html>
 
