@@ -152,30 +152,28 @@ pub(crate) fn apply_1q(
     let m11_re = m[1][1].re;
     let m11_im = m[1][1].im;
 
-    // Inline closure: apply the 2×2 matrix to the (re,im) pair at
-    // (i0, i1). Reused by both paths so the 8-mul/4-add formula has
-    // a single source of truth.
-    let apply_pair = |re: &mut [f64], im: &mut [f64], i0: usize, i1: usize| {
-        let a0_re = re[i0];
-        let a0_im = im[i0];
-        let a1_re = re[i1];
-        let a1_im = im[i1];
-
-        re[i0] = m00_re * a0_re - m00_im * a0_im + m01_re * a1_re - m01_im * a1_im;
-        im[i0] = m00_re * a0_im + m00_im * a0_re + m01_re * a1_im + m01_im * a1_re;
-        re[i1] = m10_re * a0_re - m10_im * a0_im + m11_re * a1_re - m11_im * a1_im;
-        im[i1] = m10_re * a0_im + m10_im * a0_re + m11_re * a1_im + m11_im * a1_re;
-    };
-
     if controls.is_empty() {
-        // Fast path: pure nested block/pair, no helper.
+        // Fast path: pure nested block/pair, no helper, no closure.
+        // EPYC perf finding (2026-05-26): the earlier `apply_pair`
+        // closure shape blocked LLVM's index-arithmetic auto-vec on
+        // the outer loop AND duplicated the 8-mul body across both
+        // branches (mono'd separately).  Inlining the formula twice
+        // restores vectorizable structure for the uncontrolled path
+        // and lets each branch lower independently.
         let outer_step = target_bit << 1;
         let mut block = 0usize;
         while block < len {
             for j in 0..target_bit {
                 let i0 = block | j;
                 let i1 = i0 | target_bit;
-                apply_pair(re, im, i0, i1);
+                let a0_re = re[i0];
+                let a0_im = im[i0];
+                let a1_re = re[i1];
+                let a1_im = im[i1];
+                re[i0] = m00_re * a0_re - m00_im * a0_im + m01_re * a1_re - m01_im * a1_im;
+                im[i0] = m00_re * a0_im + m00_im * a0_re + m01_re * a1_im + m01_im * a1_re;
+                re[i1] = m10_re * a0_re - m10_im * a0_im + m11_re * a1_re - m11_im * a1_im;
+                im[i1] = m10_re * a0_im + m10_im * a0_re + m11_re * a1_im + m11_im * a1_re;
             }
             block += outer_step;
         }
@@ -192,7 +190,14 @@ pub(crate) fn apply_1q(
         for k in 0..outer_count {
             let i0 = super::expand_with_fixed(k, &fixed);
             let i1 = i0 | target_bit;
-            apply_pair(re, im, i0, i1);
+            let a0_re = re[i0];
+            let a0_im = im[i0];
+            let a1_re = re[i1];
+            let a1_im = im[i1];
+            re[i0] = m00_re * a0_re - m00_im * a0_im + m01_re * a1_re - m01_im * a1_im;
+            im[i0] = m00_re * a0_im + m00_im * a0_re + m01_re * a1_im + m01_im * a1_re;
+            re[i1] = m10_re * a0_re - m10_im * a0_im + m11_re * a1_re - m11_im * a1_im;
+            im[i1] = m10_re * a0_im + m10_im * a0_re + m11_re * a1_im + m11_im * a1_re;
         }
     }
 }
