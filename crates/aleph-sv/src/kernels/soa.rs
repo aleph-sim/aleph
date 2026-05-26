@@ -9,6 +9,10 @@
 
 use aleph_core::Complex;
 
+#[cfg(target_arch = "x86_64")]
+mod avx2;
+#[cfg(target_arch = "x86_64")]
+mod avx512;
 mod scalar;
 
 /// Apply a 3-qubit matrix to `targets = [t0, t1, t2]` (with external
@@ -108,11 +112,12 @@ pub(crate) fn apply_2q(
 }
 
 /// Apply a 1-qubit matrix to `target` (with external `controls`) in
-/// place over a paired `(re, im)` SoA state. See the `aos.rs` analogue
-/// for the index-pair convention. Public entry point — the dispatcher
-/// gains `#[cfg(target_arch = "x86_64")]` SIMD paths in Task 3. For now
-/// this is a thin pass-through to the scalar fallback, preserving
-/// observable behaviour.
+/// place over a paired `(re, im)` SoA state.
+///
+/// Runtime-dispatches to the best available kernel on x86_64
+/// (AVX-512 > AVX2+FMA > scalar). Other architectures use the scalar
+/// path, which LLVM auto-vectorises into NEON / WASM-SIMD packed
+/// doubles (see ADR 0007).
 pub(crate) fn apply_1q(
     re: &mut [f64],
     im: &mut [f64],
@@ -122,6 +127,30 @@ pub(crate) fn apply_1q(
 ) {
     debug_assert_eq!(re.len(), im.len());
     debug_assert!(re.len().is_power_of_two());
+
+    #[cfg(target_arch = "x86_64")]
+    {
+        // `std::is_x86_feature_detected!` caches into an internal
+        // `AtomicU32` after first call; subsequent dispatches cost
+        // one relaxed atomic load. apply_gate is invoked at µs
+        // granularity, so this is noise.
+        if std::is_x86_feature_detected!("avx512f") {
+            // SAFETY: feature detection confirms the target ISA is
+            // available; kernel body relies only on this plus the
+            // debug_asserts above.
+            unsafe {
+                avx512::apply_1q(re, im, target, controls, m);
+            }
+            return;
+        }
+        if std::is_x86_feature_detected!("avx2") && std::is_x86_feature_detected!("fma") {
+            // SAFETY: same as above for avx2+fma.
+            unsafe {
+                avx2::apply_1q(re, im, target, controls, m);
+            }
+            return;
+        }
+    }
     scalar::apply_1q(re, im, target, controls, m);
 }
 
