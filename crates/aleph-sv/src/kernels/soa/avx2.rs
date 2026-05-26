@@ -237,4 +237,115 @@ mod tests {
             }
         }
     }
+
+    /// Helper: AVX2 direct call wrapped in feature-detection skip.
+    /// Returns true if the call actually executed; false if skipped.
+    fn run_avx2(
+        re: &mut [f64],
+        im: &mut [f64],
+        target: u32,
+        controls: &[u32],
+        m: &[[Complex; 2]; 2],
+    ) -> bool {
+        if !host_has_avx2_fma() {
+            return false;
+        }
+        // SAFETY: host_has_avx2_fma() above.
+        unsafe { super::apply_1q(re, im, target, controls, m) };
+        true
+    }
+
+    fn pauli_x() -> [[Complex; 2]; 2] {
+        let z = Complex::new(0.0, 0.0);
+        let o = Complex::new(1.0, 0.0);
+        [[z, o], [o, z]]
+    }
+
+    fn hadamard() -> [[Complex; 2]; 2] {
+        let s = Complex::new(std::f64::consts::FRAC_1_SQRT_2, 0.0);
+        [[s, s], [s, -s]]
+    }
+
+    fn pauli_y() -> [[Complex; 2]; 2] {
+        let z = Complex::new(0.0, 0.0);
+        let pi = Complex::new(0.0, 1.0);
+        let mi = Complex::new(0.0, -1.0);
+        [[z, mi], [pi, z]]
+    }
+
+    /// target=0, target_bit=1 → all tail. AVX2 inner loop runs zero
+    /// iterations; the scalar tail must produce the same result as
+    /// straight scalar apply.
+    #[test]
+    fn avx2_target_zero_all_tail() {
+        let mut re = vec![1.0_f64, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        let mut im = vec![0.0_f64; 8];
+        if !run_avx2(&mut re, &mut im, 0, &[], &pauli_x()) {
+            return;
+        }
+        assert_eq!(re, vec![0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+        assert!(im.iter().all(|x| x.abs() < 1e-12));
+    }
+
+    /// target=1, target_bit=2 < LANES → partial fit; SIMD loop runs zero
+    /// inner iters (`j + 4 ≤ 2` is false), all work falls to tail.
+    #[test]
+    fn avx2_target_one_partial_tail() {
+        let mut re = vec![0.0_f64, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        let mut im = vec![0.0_f64; 8];
+        if !run_avx2(&mut re, &mut im, 1, &[], &pauli_y()) {
+            return;
+        }
+        // Y|0⟩ = i|1⟩, Y|1⟩ = -i|0⟩. State amps[1]=1 means q0=1,q1=0;
+        // Y on q1 maps |q1=0⟩ → i|q1=1⟩, so amps[1] → i·amps[3].
+        assert!(re[1].abs() < 1e-12);
+        assert!((im[3] - 1.0).abs() < 1e-12);
+    }
+
+    /// target=2, target_bit=4 == LANES → exact fit, zero tail.
+    #[test]
+    fn avx2_target_two_exact_fit() {
+        let mut re = vec![1.0_f64, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        let mut im = vec![0.0_f64; 8];
+        if !run_avx2(&mut re, &mut im, 2, &[], &hadamard()) {
+            return;
+        }
+        let s = std::f64::consts::FRAC_1_SQRT_2;
+        // H on q2 mixes amps[0] ↔ amps[4]: both go to s.
+        assert!((re[0] - s).abs() < 1e-12);
+        assert!((re[4] - s).abs() < 1e-12);
+        for k in [1, 2, 3, 5, 6, 7] {
+            assert!(re[k].abs() < 1e-12, "k={k} re={}", re[k]);
+        }
+    }
+
+    /// Control above target — SIMD controlled path engages. n=3,
+    /// target=0, control=2 → CX(c=q2, t=q0). amps[5] (q0=1, q1=0, q2=1)
+    /// flips q0 → moves mass to amps[4].
+    #[test]
+    fn avx2_control_above_target_simd_path() {
+        let mut re = vec![0.0_f64; 8];
+        let mut im = vec![0.0_f64; 8];
+        re[5] = 1.0;
+        if !run_avx2(&mut re, &mut im, 0, &[2], &pauli_x()) {
+            return;
+        }
+        assert!(re[5].abs() < 1e-12);
+        assert!((re[4] - 1.0).abs() < 1e-12);
+    }
+
+    /// Control below target — scalar fall-through engages. n=3,
+    /// target=2, control=0 → CX(c=q0, t=q2). amps[1] (q0=1) flips q2 →
+    /// moves to amps[5].
+    #[test]
+    fn avx2_control_below_target_scalar_fallthrough() {
+        let mut re = vec![0.0_f64; 8];
+        let mut im = vec![0.0_f64; 8];
+        re[1] = 1.0;
+        if !run_avx2(&mut re, &mut im, 2, &[0], &pauli_x()) {
+            return;
+        }
+        assert!(re[1].abs() < 1e-12);
+        assert!((re[5] - 1.0).abs() < 1e-12);
+    }
 }
