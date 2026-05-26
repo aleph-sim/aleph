@@ -1,4 +1,4 @@
-msrv = "1.85"
+msrv = "1.89"
 
 # Enforce ADR 0001: `num_complex::Complex` must not be referenced
 # anywhere in the workspace; consumers go through `aleph_core::Complex`
