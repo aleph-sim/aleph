@@ -155,11 +155,7 @@ mod tests {
             let i1 = i0 | (1usize << 3);
             assert!(seen.insert(i0), "duplicate i0 = {i0:#07b} at k = {k}");
             assert!(seen.insert(i1), "duplicate i1 = {i1:#07b} at k = {k}");
-            assert_eq!(
-                (i0 >> 1) & 1,
-                1,
-                "control bit 1 unset at i0 = {i0:#07b}"
-            );
+            assert_eq!((i0 >> 1) & 1, 1, "control bit 1 unset at i0 = {i0:#07b}");
         }
         assert_eq!(seen.len(), 16);
     }

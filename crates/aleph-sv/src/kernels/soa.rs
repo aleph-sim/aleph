@@ -161,20 +161,10 @@ pub(crate) fn apply_1q(
         let a1_re = re[i1];
         let a1_im = im[i1];
 
-        re[i0] = m00_re * a0_re - m00_im * a0_im
-            + m01_re * a1_re
-            - m01_im * a1_im;
-        im[i0] = m00_re * a0_im
-            + m00_im * a0_re
-            + m01_re * a1_im
-            + m01_im * a1_re;
-        re[i1] = m10_re * a0_re - m10_im * a0_im
-            + m11_re * a1_re
-            - m11_im * a1_im;
-        im[i1] = m10_re * a0_im
-            + m10_im * a0_re
-            + m11_re * a1_im
-            + m11_im * a1_re;
+        re[i0] = m00_re * a0_re - m00_im * a0_im + m01_re * a1_re - m01_im * a1_im;
+        im[i0] = m00_re * a0_im + m00_im * a0_re + m01_re * a1_im + m01_im * a1_re;
+        re[i1] = m10_re * a0_re - m10_im * a0_im + m11_re * a1_re - m11_im * a1_im;
+        im[i1] = m10_re * a0_im + m10_im * a0_re + m11_re * a1_im + m11_im * a1_re;
     };
 
     if controls.is_empty() {
