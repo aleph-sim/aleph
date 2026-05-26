@@ -108,6 +108,12 @@ pub(crate) fn apply_2q(
 /// Apply a 1-qubit matrix to `target` (with external `controls`) in
 /// place over a paired `(re, im)` SoA state. See the `aos.rs` analogue
 /// for the index-pair convention.
+///
+/// Branch-free nested block/pair iteration (P1-02): visits exactly
+/// the `2^(n-1-|controls|)` pairs that mutate, computing each base
+/// index via `base_index_1q`. No per-iteration target/control branch.
+/// Inner block is unit-stride for `controls.is_empty() && target == 0`,
+/// teeing up P1-03 AVX2 vectorisation.
 pub(crate) fn apply_1q(
     re: &mut [f64],
     im: &mut [f64],
@@ -116,29 +122,52 @@ pub(crate) fn apply_1q(
     m: &[[Complex; 2]; 2],
 ) {
     debug_assert_eq!(re.len(), im.len());
-    let t_bit = 1usize << target;
-    let ctrl_mask = super::control_mask(controls);
-    let len = re.len();
-    let mut i = 0usize;
-    while i < len {
-        if i & t_bit == 0 && (i & ctrl_mask) == ctrl_mask {
-            let j = i | t_bit;
-            let a0_re = re[i];
-            let a0_im = im[i];
-            let a1_re = re[j];
-            let a1_im = im[j];
-            // row 0
-            re[i] =
-                m[0][0].re * a0_re - m[0][0].im * a0_im + m[0][1].re * a1_re - m[0][1].im * a1_im;
-            im[i] =
-                m[0][0].re * a0_im + m[0][0].im * a0_re + m[0][1].re * a1_im + m[0][1].im * a1_re;
-            // row 1
-            re[j] =
-                m[1][0].re * a0_re - m[1][0].im * a0_im + m[1][1].re * a1_re - m[1][1].im * a1_im;
-            im[j] =
-                m[1][0].re * a0_im + m[1][0].im * a0_re + m[1][1].re * a1_im + m[1][1].im * a1_re;
-        }
-        i += 1;
+    debug_assert!(
+        re.len().is_power_of_two(),
+        "apply_1q: state length must be a power of two, got {}",
+        re.len()
+    );
+    let target_bit = 1usize << target;
+    // `n_qubits` is encoded by `re.len() = 2^n_qubits` (allocator's
+    // postcondition).  `free_bits = n_qubits - 1 (target) - |controls|`.
+    let n_qubits = re.len().trailing_zeros();
+    let n_free = n_qubits - 1 - controls.len() as u32;
+    let outer_count = 1usize << n_free;
+
+    // Hoist matrix entries — let the compiler keep them in registers
+    // across the inner block instead of refetching from `m` each iter.
+    let m00_re = m[0][0].re;
+    let m00_im = m[0][0].im;
+    let m01_re = m[0][1].re;
+    let m01_im = m[0][1].im;
+    let m10_re = m[1][0].re;
+    let m10_im = m[1][0].im;
+    let m11_re = m[1][1].re;
+    let m11_im = m[1][1].im;
+
+    for k in 0..outer_count {
+        let i0 = super::base_index_1q(k, target, controls);
+        let i1 = i0 | target_bit;
+
+        let a0_re = re[i0];
+        let a0_im = im[i0];
+        let a1_re = re[i1];
+        let a1_im = im[i1];
+
+        re[i0] = m00_re * a0_re - m00_im * a0_im
+            + m01_re * a1_re
+            - m01_im * a1_im;
+        im[i0] = m00_re * a0_im
+            + m00_im * a0_re
+            + m01_re * a1_im
+            + m01_im * a1_re;
+        re[i1] = m10_re * a0_re - m10_im * a0_im
+            + m11_re * a1_re
+            - m11_im * a1_im;
+        im[i1] = m10_re * a0_im
+            + m10_im * a0_re
+            + m11_re * a1_im
+            + m11_im * a1_re;
     }
 }
 

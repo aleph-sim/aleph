@@ -47,7 +47,6 @@ pub(crate) fn control_mask(controls: &[u32]) -> usize {
 /// free slots between them, leaving the fixed slots to be filled in
 /// the same pass (target → 0, controls → 1).  Algorithm is canonical
 /// — cf. QuEST `statevec_unitary` for the reference shape.
-#[allow(dead_code)] // wired in apply_1q in the next commit
 pub(crate) fn base_index_1q(k: usize, target: u32, controls: &[u32]) -> usize {
     // Stack-only for the realistic `controls.len() ≤ 7` range (the
     // `SmallVec<[u32; 6]>` in `apply_gate`'s `seen` set tolerates up
