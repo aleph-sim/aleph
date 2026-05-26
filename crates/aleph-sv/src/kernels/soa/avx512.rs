@@ -64,23 +64,28 @@ pub(crate) unsafe fn apply_1q(
         return;
     }
 
-    // control < target → scalar fall-through (same shape as AVX2).
-    if controls.iter().any(|&c| c < target) {
+    // Same shape as AVX2: fall back to scalar when any control is
+    // at-or-below target (the SIMD inner walk only handles
+    // `controls > target`; see avx2::apply_1q for the full rationale).
+    if controls.iter().any(|&c| c <= target) {
         super::scalar::apply_1q(re, im, target, controls, m);
         return;
     }
 
-    let mut fixed: smallvec::SmallVec<[(u32, bool); 8]> = smallvec::SmallVec::new();
-    fixed.push((target, false));
+    // Renormalise control positions so the outer loop only places
+    // bits above `target + 1`, leaving the low bits zero for the
+    // contiguous SIMD inner walk. See avx2::apply_1q for the full
+    // derivation.
+    let mut fixed_above: smallvec::SmallVec<[(u32, bool); 8]> = smallvec::SmallVec::new();
     for &c in controls {
-        fixed.push((c, true));
+        fixed_above.push((c - target - 1, true));
     }
-    fixed.sort_unstable_by_key(|&(pos, _)| pos);
+    fixed_above.sort_unstable_by_key(|&(pos, _)| pos);
 
     let n_qubits = len.trailing_zeros();
-    let outer_count = 1usize << (n_qubits - fixed.len() as u32);
+    let outer_count = 1usize << (n_qubits - target - 1 - controls.len() as u32);
     for k in 0..outer_count {
-        let block = crate::kernels::expand_with_fixed(k, &fixed);
+        let block = crate::kernels::expand_with_fixed(k, &fixed_above) << (target + 1);
         apply_block_8(
             re, im, block, target_bit, m00r, m00i, m01r, m01i, m10r, m10i, m11r, m11i,
         );

@@ -20,10 +20,13 @@ members = [
 
 [workspace.package]
 edition = "2021"
-# Bumped from 1.75 to 1.85 in P0-04 — criterion 0.5's transitive deps
-# (clap 4.6 → 1.85, half 2.7 → 1.81) need this. CLAUDE.md keeps the same
-# floor; bump both together if criterion or another dep pushes it again.
-rust-version = "1.85"
+# Bumped from 1.75 to 1.85 in P0-04 (criterion 0.5's transitive deps).
+# Bumped from 1.85 to 1.89 in P1-03 — AVX-512 intrinsics (`_mm512_*`,
+# stabilised in 1.89.0, 2025-08-07) are used by the hand-written SIMD
+# kernel at `crates/aleph-sv/src/kernels/soa/avx512.rs`. CLAUDE.md
+# tracks the same floor; bump both together if SIMD or another dep
+# pushes it again.
+rust-version = "1.89"
 version = "0.0.0"
 license = "MIT"
 repository = "https://github.com/ruslan-splynx/aleph"

@@ -61,30 +61,47 @@ pub(crate) unsafe fn apply_1q(
         return;
     }
 
-    // If any control is below the target, the inner SIMD walk
-    // `j ∈ 0..target_bit` would toggle a control bit. Fall back to
-    // scalar (correct, slower). The QFT controlled-Phase shape always
-    // has control > target, so this fall-through doesn't fire on the
-    // hot path. See spec §7.
-    if controls.iter().any(|&c| c < target) {
+    // If any control is at-or-below target, the inner SIMD walk would
+    // either toggle a control bit (c < target) or collide with target
+    // (c == target — also blocked by backend duplicate-qubit check).
+    // Fall back to scalar. The QFT controlled-Phase shape always has
+    // control > target, so this fall-through doesn't fire on the hot
+    // path. See spec §7.
+    if controls.iter().any(|&c| c <= target) {
         super::scalar::apply_1q(re, im, target, controls, m);
         return;
     }
 
-    // Hoist (target, control_*) sort once. SmallVec keeps it on the
-    // stack — `controls.len()` is at most ~6 in practice (gate enum
-    // constraints), capacity 8 covers all hardware-realistic cases.
-    let mut fixed: smallvec::SmallVec<[(u32, bool); 8]> = smallvec::SmallVec::new();
-    fixed.push((target, false));
+    // SIMD controlled path: all controls > target (guarded above).
+    //
+    // The inner SIMD walk reads / writes `LANES` *contiguous* doubles
+    // starting at `block | j` and `block | j + target_bit`. For the
+    // loads / stores to address consecutive amplitudes, `block` must
+    // have its low `target + 1` bits all zero — otherwise `block | j`
+    // for j ∈ [0, LANES) is not equal to `block + j` (the bit-OR
+    // collapses to the same index for j-bits that are already set in
+    // `block`), and we'd both skip valid amplitudes and run off the
+    // end of the buffer.
+    //
+    // To guarantee that, the outer loop iterates only over bits
+    // *above* target. Renormalise control positions by subtracting
+    // `target + 1` so they start at 0 in the "above" coordinate
+    // system, then `expand_with_fixed` lays out free + control bits
+    // densely; left-shift the result by `target + 1` to put them
+    // back at their actual qubit positions.
+    let mut fixed_above: smallvec::SmallVec<[(u32, bool); 8]> = smallvec::SmallVec::new();
     for &c in controls {
-        fixed.push((c, true));
+        fixed_above.push((c - target - 1, true));
     }
-    fixed.sort_unstable_by_key(|&(pos, _)| pos);
+    fixed_above.sort_unstable_by_key(|&(pos, _)| pos);
 
     let n_qubits = len.trailing_zeros();
-    let outer_count = 1usize << (n_qubits - fixed.len() as u32);
+    // Each control is > target and < n_qubits, distinct from target,
+    // so `target + 1 + controls.len() ≤ n_qubits` — the subtraction
+    // never underflows.
+    let outer_count = 1usize << (n_qubits - target - 1 - controls.len() as u32);
     for k in 0..outer_count {
-        let block = crate::kernels::expand_with_fixed(k, &fixed);
+        let block = crate::kernels::expand_with_fixed(k, &fixed_above) << (target + 1);
         apply_block_4(
             re, im, block, target_bit, m00r, m00i, m01r, m01i, m10r, m10i, m11r, m11i, m,
         );
