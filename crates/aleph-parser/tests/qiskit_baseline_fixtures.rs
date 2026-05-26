@@ -36,7 +36,6 @@ fn parses_grover_n20_iters5() {
 #[test]
 fn parses_random_brickwall_n20_d20() {
     let src = std::fs::read_to_string(fixture_path("random_brickwall_n20_d20.qasm")).unwrap();
-    let circuit =
-        aleph_parser::parse(&src).expect("random_brickwall_n20_d20.qasm must parse");
+    let circuit = aleph_parser::parse(&src).expect("random_brickwall_n20_d20.qasm must parse");
     assert_eq!(circuit.num_qubits(), 20);
 }
