@@ -101,7 +101,7 @@ unsafe fn apply_1q_avx512(
 
     let amps_ptr = amps.as_mut_ptr() as *mut f64;
 
-    let mut outer_iter = |block: usize| {
+    let outer_iter = |block: usize| {
         let mut j = 0usize;
         while j + LANES <= target_bit {
             let i0 = block | j;
