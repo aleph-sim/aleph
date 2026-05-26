@@ -21,7 +21,9 @@ fastest x86 backend (`NaiveSvBackend` post-P1-03, i.e. AoS + AVX-512) and
 `AerSimulator(method='statevector')` on three canonical workloads at n = 20:
 
 1. **QFT-20** — Nielsen-Chuang § 5.1 textbook QFT.
-2. **Grover-20** — 1 marked state, 10 iterations of (oracle + diffusion).
+2. **Grover-20** — 1 marked state, 5 iterations of (oracle + diffusion). (Planned
+   as 10 originally; dropped to 5 because 10-iter post-transpile is ~192k gates,
+   over the § 8 risk cap. See § 4.3.)
 3. **Random-20** — brick-wall random circuit, depth 20 (single-qubit Rz/Rx
    layers interleaved with even/odd CNOT layers).
 
@@ -39,8 +41,9 @@ exported to OpenQASM 3, and run on both engines from the same `.qasm` file.
   criterion gets re-measured at Phase 1 closure (P1-14), not now.
 - **Not** a Qiskit Aer multi-method comparison (`density_matrix`, `mps`, etc.).
   Statevector only.
-- **Not** the implementation of a QASM3 **emitter** for aleph-ir. That stays
-  Qiskit-side. A separate `[infra]` issue is filed for the round-trip emitter.
+- **Not** the implementation or extension of aleph's existing QASM3 emitter
+  (`aleph_parser::emit`, added in P0-08). Circuit construction stays Qiskit-side
+  for this ticket.
 
 ## 3. Deliverables
 
@@ -53,18 +56,21 @@ scripts/qiskit-baseline/
 ├── run.py                # builds circuits, transpiles, exports QASM, times Aer
 └── circuits/             # checked-in QASM3 artefacts (deterministic)
     ├── qft_n20.qasm
-    ├── grover_n20_iters10.qasm
+    ├── grover_n20_iters5.qasm
     └── random_brickwall_n20_d20.qasm
 benches/benches/qiskit_baseline.rs   # criterion bench reading the .qasm files
 docs/perf/phase1-vs-qiskit.md        # populated report with the comparison table
 ```
 
-No changes to `crates/`. The Rust bench depends on `aleph-parser` (already a
-workspace member) and `NaiveSvBackend` (the canonical fast x86 path post-P1-03,
-per ADR 0008).
+No changes to `crates/` source. The Rust bench depends on `aleph-parser` (already
+a workspace member) and `NaiveSvBackend` (the canonical fast x86 path post-P1-03,
+per ADR 0008). A parser regression test (`crates/aleph-parser/tests/qiskit_baseline_fixtures.rs`)
+guards against future Qiskit versions emitting gates the parser doesn't accept.
 
-A separate GitHub issue is filed (not implemented): **"QASM3 emitter for
-aleph-ir"** — round-trip QASM round-trip support, deferred to Phase 2 prep.
+> **Note added 2026-05-26 during implementation:** an earlier draft of this spec
+> promised to file a follow-up `[infra]` issue for "QASM3 emitter for aleph-ir".
+> That promise is **moot** — `aleph_parser::emit` already exists (added in P0-08
+> Task 15, `crates/aleph-parser/src/emit.rs`). No follow-up issue is needed.
 
 ## 4. Why this design
 
@@ -76,10 +82,14 @@ Two alternatives were considered and rejected:
   parity is easy to lose when a contributor adds a layer to one but not the
   other. The whole point of a baseline is that the *same circuit* runs on both
   engines.
-- **aleph → QASM → Qiskit (reverse direction):** requires writing a QASM3
-  emitter for aleph-ir, which doesn't exist. Genuinely useful long-term (round-
-  trip serialisation, interop with Cirq / Stim / IBM hardware), but doesn't pay
-  off in Stage 0 and adds days of work to a half-day ticket.
+- **aleph → QASM → Qiskit (reverse direction):** `aleph_parser::emit` already
+  exists (P0-08 Task 15), so the emitter side is free. The actual blocker is
+  that Qiskit becomes the consumer rather than the producer — we'd need to build
+  Grover and QFT in aleph-ir, including a multi-controlled-Z primitive, which
+  doesn't exist yet. That's days of work to a half-day ticket and forces aleph
+  to be the single source of truth for circuit semantics, which inverts the
+  baseline's purpose (we want to measure aleph against Qiskit's idea of these
+  circuits, not the other way round).
 
 Qiskit's `QuantumCircuit.qasm()` / `qiskit.qasm3.dumps()` is mature. aleph-parser
 already handles OpenQASM 3 (per P0-08). Transpiling to a restricted basis
@@ -93,14 +103,18 @@ landed. The headline `aleph` column in the comparison table uses `NaiveSvBackend
 For triangulation, the appendix table also records `SoaSvBackend` numbers so the
 reader can see the SoA / AoS gap on the same workload.
 
-### 4.3 Grover at 10 iterations
+### 4.3 Grover at 5 iterations
 
 A single iteration is too small (oracle + diffusion runs in milliseconds;
 measurement noise dominates). The full textbook count for n=20 (~804 iters)
-balloons wall-clock to minutes per run and adds nothing diagnostic over 10
-iters — the kernel mix is identical. 10 iters keeps wall-clock in the
-single-digit-second range on both engines and gives Grover roughly the same
-weight as QFT in the report.
+balloons wall-clock to minutes per run and adds nothing diagnostic — the kernel
+mix is identical.
+
+**Implementation choice (logged 2026-05-26):** the original plan called for 10
+iterations, but 10-iter transpiles to ~192k gates on the 10-gate basis we use
+— double the § 8 risk-row cap of 100k. Dropped to 5 iters (96,210 gates after
+transpile), which still gives Grover roughly the same wall-clock weight as QFT
+while staying inside the cap.
 
 ### 4.4 Random circuit shape
 
@@ -121,7 +135,7 @@ For each of the three workloads:
      `do_swaps=False` matches `aleph_benches::qft_circuit`'s comment that closing
      SWAPs are omitted.
    - Grover: `qiskit.circuit.library.GroverOperator(oracle, insert_barriers=False)`
-     with a 1-marked-state oracle (state |0…01⟩), wrapped 10× in sequence.
+     with a 1-marked-state oracle (state |0…01⟩), wrapped 5× in sequence (see § 4.3).
    - Random brick-wall: built explicitly in Python mirroring
      `aleph_benches::random_brickwall_circuit` exactly — for each layer
      `l ∈ 0..20` and qubit `q ∈ 0..n`, emit `rz(cos(l + q*0.37), q)` and
@@ -138,7 +152,7 @@ For each of the three workloads:
 3. **Export QASM3** to `circuits/<workload>.qasm` via `qiskit.qasm3.dumps`.
 4. **Time Aer** by running the loaded QASM through
    `AerSimulator(method='statevector', max_parallel_threads=1,
-   max_parallel_experiments=1)`. Use `time.perf_counter` around `simulator.run(qc).result()`. 10 iterations; report median + stdev.
+   max_parallel_experiments=1)`. Use `time.perf_counter` around `simulator.run(qc).result()`. 10 timed iterations (+ 1 untimed warm-up); report median + stdev.
 5. **Emit a JSON summary** `results-qiskit.json` so the Rust bench can consume
    the same metadata.
 
@@ -197,7 +211,7 @@ Reproducibility: scripts/qiskit-baseline/
 | Workload                     |  aleph (ms) | Qiskit Aer (ms) | aleph / Aer | ROADMAP target |
 |------------------------------|------------:|----------------:|------------:|:--------------:|
 | qft/n20                      |     <a>     |       <q>       |    <a/q>×   |     ≤ 2×       |
-| grover/n20 (10 iters)        |     <a>     |       <q>       |    <a/q>×   |     ≤ 2×       |
+| grover/n20 (5 iters)         |     <a>     |       <q>       |    <a/q>×   |     ≤ 2×       |
 | random_brickwall/n20 (d=20)  |     <a>     |       <q>       |    <a/q>×   |     ≤ 2×       |
 
 (Median of 10 runs; stdev in appendix.)
@@ -233,7 +247,8 @@ Stage 1 (SIMD specialisations) and Stage 2 (IR-opt) are expected to close.
       added in this PR.
 - [ ] Stage 0 ships **regardless of ratio**. The numbers are informational; we
       proceed to Stage 1 even at 5× Aer.
-- [ ] Separate GitHub issue filed: "QASM3 emitter for aleph-ir" (Phase 2 prep).
+<!-- (Removed 2026-05-26: aleph_parser::emit already exists from P0-08 Task 15;
+     no separate issue required.) -->
 
 ## 8. Risks & mitigations
 
@@ -254,7 +269,8 @@ These are flagged but resolved later, not in this PR:
   `Backend` default to AoS on x86? Decision belongs in Stage 3 `[meta]` fixup.
 - **25-qubit measurement.** ROADMAP § 7 says 25; Stage 0 measures 20. n=25 lands
   in P1-14.
-- **QASM emitter.** Filed as a separate issue; out of scope.
+- **QASM emitter.** `aleph_parser::emit` already exists (P0-08); circuit
+  construction stays Qiskit-side regardless.
 
 ## 10. Workflow
 
