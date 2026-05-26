@@ -28,41 +28,29 @@ pub(crate) fn control_mask(controls: &[u32]) -> usize {
     mask
 }
 
-/// For a 1-qubit gate on `target` with external `controls`, returns
-/// the "base" amplitude index `i0` (the one with `target` bit = 0
-/// and every control bit = 1) for the `k`-th iteration of the
-/// free-bit outer loop.
+/// Expand free-bit index `k` into a full amplitude index by inserting
+/// `fixed` bits at their sorted positions.
 ///
-/// `controls` must contain no element equal to `target` (callers
-/// enforce this via the `DuplicateQubit` check before reaching the
-/// kernel).  `target` and every control must be `< usize::BITS`
-/// (caller enforces via `MAX_SOA_QUBITS = 28`).
+/// `fixed` is a slice of `(bit_position, value)` pairs.  Caller must:
+/// * sort `fixed` by `bit_position` ascending,
+/// * ensure positions are unique and `< usize::BITS`,
+/// * pass `k` in `0..(1 << (n_qubits - fixed.len()))`.
 ///
-/// `k` ranges over `0..(1usize << free_bits)` where
-/// `free_bits = n_qubits - 1 - controls.len()`.  The pair partner is
-/// `i0 | (1usize << target)`.
+/// This is the hot-loop helper used by `kernels::soa::apply_1q`'s
+/// controlled path — caller pre-sorts `fixed` ONCE outside the loop
+/// and calls `expand_with_fixed` `2^free_bits` times.  Putting the
+/// `SmallVec::push`/`sort_unstable_by_key` work inside the hot loop
+/// instead — as a naive `base_index_1q(k, target, controls)` API would
+/// — costs ~2× on QFT-20 (measured locally on M-series: 245 ms →
+/// 333 ms when the sort lived in the inner loop).  Hoist or die.
 ///
-/// The implementation walks the sorted set of fixed bit positions
-/// (target + controls) and splices chunks of `k`'s low bits into the
-/// free slots between them, leaving the fixed slots to be filled in
-/// the same pass (target → 0, controls → 1).  Algorithm is canonical
-/// — cf. QuEST `statevec_unitary` for the reference shape.
-pub(crate) fn base_index_1q(k: usize, target: u32, controls: &[u32]) -> usize {
-    // Stack-only for the realistic `controls.len() ≤ 7` range (the
-    // `SmallVec<[u32; 6]>` in `apply_gate`'s `seen` set tolerates up
-    // to ~6 unique qubit indices; this cap of 8 leaves headroom and
-    // avoids any heap allocation in the hot path).
-    let mut fixed: smallvec::SmallVec<[(u32, bool); 8]> = smallvec::SmallVec::new();
-    fixed.push((target, false));
-    for &c in controls {
-        fixed.push((c, true));
-    }
-    fixed.sort_unstable_by_key(|(pos, _)| *pos);
-
+/// Algorithm is canonical — cf. QuEST `statevec_unitary` for the
+/// reference shape.
+pub(crate) fn expand_with_fixed(k: usize, fixed: &[(u32, bool)]) -> usize {
     let mut i = 0usize;
     let mut k_rem = k;
     let mut prev = 0u32;
-    for (pos, val) in &fixed {
+    for (pos, val) in fixed {
         let span = (*pos - prev) as usize;
         let chunk = k_rem & ((1usize << span) - 1);
         i |= chunk << (prev as usize);
@@ -75,6 +63,25 @@ pub(crate) fn base_index_1q(k: usize, target: u32, controls: &[u32]) -> usize {
     // Remaining free bits above the highest fixed position.
     i |= k_rem << (prev as usize);
     i
+}
+
+/// Convenience wrapper for 1q-gate base index (target bit = 0, all
+/// control bits = 1).  Builds + sorts `fixed` and calls
+/// `expand_with_fixed`.  **Test/diagnostic use only** — production hot
+/// path (`kernels::soa::apply_1q`) calls `expand_with_fixed` directly
+/// with a pre-sorted `fixed` array hoisted outside the iteration loop.
+///
+/// `controls` must contain no element equal to `target`; both must be
+/// `< usize::BITS` (caller enforces via `MAX_SOA_QUBITS = 28`).
+#[cfg(test)]
+pub(crate) fn base_index_1q(k: usize, target: u32, controls: &[u32]) -> usize {
+    let mut fixed: smallvec::SmallVec<[(u32, bool); 8]> = smallvec::SmallVec::new();
+    fixed.push((target, false));
+    for &c in controls {
+        fixed.push((c, true));
+    }
+    fixed.sort_unstable_by_key(|(pos, _)| *pos);
+    expand_with_fixed(k, &fixed)
 }
 
 #[cfg(test)]

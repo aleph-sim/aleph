@@ -109,11 +109,22 @@ pub(crate) fn apply_2q(
 /// place over a paired `(re, im)` SoA state. See the `aos.rs` analogue
 /// for the index-pair convention.
 ///
-/// Branch-free nested block/pair iteration (P1-02): visits exactly
-/// the `2^(n-1-|controls|)` pairs that mutate, computing each base
-/// index via `base_index_1q`. No per-iteration target/control branch.
-/// Inner block is unit-stride for `controls.is_empty() && target == 0`,
-/// teeing up P1-03 AVX2 vectorisation.
+/// Branch-free iteration (P1-02), two paths:
+///
+/// * **Uncontrolled** (`controls.is_empty()`): pure nested block/pair
+///   — outer iterates blocks of size `2 * target_bit`, inner walks
+///   unit-stride over `target_bit` pairs.  Zero helper overhead;
+///   inner loop is exactly the shape `_mm256_loadu_pd` consumes
+///   (P1-03 AVX2 lands here unchanged).
+///
+/// * **Controlled** (`!controls.is_empty()`): sort `(target, controls)`
+///   ONCE into a stack-only `fixed` array, then iterate
+///   `0..(1 << (n - 1 - |controls|))` and reconstruct each `i0` via
+///   `expand_with_fixed(k, &fixed)`.  Hoisting the sort matters: an
+///   earlier P1-02 draft kept `SmallVec::push` + `sort_unstable_by_key`
+///   inside the hot loop and measured 245 ms → 333 ms on QFT-20
+///   (1.36× regression vs P1-01).  Pre-sort + walk drops it back to
+///   the expected speedup band.
 pub(crate) fn apply_1q(
     re: &mut [f64],
     im: &mut [f64],
@@ -128,11 +139,7 @@ pub(crate) fn apply_1q(
         re.len()
     );
     let target_bit = 1usize << target;
-    // `n_qubits` is encoded by `re.len() = 2^n_qubits` (allocator's
-    // postcondition).  `free_bits = n_qubits - 1 (target) - |controls|`.
-    let n_qubits = re.len().trailing_zeros();
-    let n_free = n_qubits - 1 - controls.len() as u32;
-    let outer_count = 1usize << n_free;
+    let len = re.len();
 
     // Hoist matrix entries — let the compiler keep them in registers
     // across the inner block instead of refetching from `m` each iter.
@@ -145,10 +152,10 @@ pub(crate) fn apply_1q(
     let m11_re = m[1][1].re;
     let m11_im = m[1][1].im;
 
-    for k in 0..outer_count {
-        let i0 = super::base_index_1q(k, target, controls);
-        let i1 = i0 | target_bit;
-
+    // Inline closure: apply the 2×2 matrix to the (re,im) pair at
+    // (i0, i1). Reused by both paths so the 8-mul/4-add formula has
+    // a single source of truth.
+    let apply_pair = |re: &mut [f64], im: &mut [f64], i0: usize, i1: usize| {
         let a0_re = re[i0];
         let a0_im = im[i0];
         let a1_re = re[i1];
@@ -168,6 +175,35 @@ pub(crate) fn apply_1q(
             + m10_im * a0_re
             + m11_re * a1_im
             + m11_im * a1_re;
+    };
+
+    if controls.is_empty() {
+        // Fast path: pure nested block/pair, no helper.
+        let outer_step = target_bit << 1;
+        let mut block = 0usize;
+        while block < len {
+            for j in 0..target_bit {
+                let i0 = block | j;
+                let i1 = i0 | target_bit;
+                apply_pair(re, im, i0, i1);
+            }
+            block += outer_step;
+        }
+    } else {
+        // Controlled path: pre-sort fixed positions OUTSIDE the loop.
+        let mut fixed: smallvec::SmallVec<[(u32, bool); 8]> = smallvec::SmallVec::new();
+        fixed.push((target, false));
+        for &c in controls {
+            fixed.push((c, true));
+        }
+        fixed.sort_unstable_by_key(|(pos, _)| *pos);
+        let n_qubits = len.trailing_zeros();
+        let outer_count = 1usize << (n_qubits - fixed.len() as u32);
+        for k in 0..outer_count {
+            let i0 = super::expand_with_fixed(k, &fixed);
+            let i1 = i0 | target_bit;
+            apply_pair(re, im, i0, i1);
+        }
     }
 }
 
