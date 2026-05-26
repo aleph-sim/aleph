@@ -36,7 +36,9 @@ runs scalar code paths on non-x86-AVX-512 hosts.
 The three workloads:
 
 - `circuits/qft_n20.qasm` — Nielsen-Chuang § 5.1 QFT, no closing SWAPs.
-- `circuits/grover_n20_iters10.qasm` — Grover-20, 1 marked state (|0…01⟩), 10 iterations.
+- `circuits/grover_n20_iters5.qasm` — Grover-20, 1 marked state (|0…01⟩), 5
+  iterations (dropped from a planned 10 because 10-iter transpiles to ~192k
+  gates, exceeding the spec's 100k cap — see design doc § 8).
 - `circuits/random_brickwall_n20_d20.qasm` — brick-wall random circuit (Rz/Rx 1q
   layers + alternating CNOT pairs), depth 20, deterministic angles
   `cos(layer + qubit*0.37)`.
