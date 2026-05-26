@@ -297,31 +297,49 @@ mod tests {
     proptest! {
         #![proptest_config(ProptestConfig { cases: 64, ..ProptestConfig::default() })]
 
-        /// AoS / SoA equivalence on `apply_1q`: for any 1q gate and any
-        /// normalised state, applying through both kernels yields
-        /// matching amplitudes within 1e-12.
+        /// AoS / SoA equivalence on `apply_1q`: for any 1q gate, any
+        /// target qubit, any set of 0-2 distinct external controls,
+        /// and any normalised state, applying through both kernels
+        /// yields matching amplitudes within 1e-12.
+        ///
+        /// The controls set is built deterministically from the
+        /// strategy seed: take qubits `[0..5)` minus `q`, sort by a
+        /// seed-keyed pseudo-random key, take the first `n_ctrls`.
+        /// Distinctness from `q` and among each other is structural.
         #[test]
         fn apply_1q_soa_matches_aos(
             gate in arb_1q_gate(),
             q in 0u32..5,
+            n_ctrls in 0usize..=2,
+            ctrl_seed in any::<u32>(),
             amps in arb_state_vector(5),
         ) {
             let m = match gate.matrix().unwrap() {
                 GateMatrix::M2x2(m) => m,
                 _ => unreachable!("arb_1q_gate yields 1q gates"),
             };
+            // Build a deterministic control set: candidates are 0..5 \ {q},
+            // shuffled by a seed-keyed hash, truncated to n_ctrls, sorted.
+            let mut ctrls: Vec<u32> = (0u32..5).filter(|c| *c != q).collect();
+            ctrls.sort_by_key(|c| ctrl_seed.wrapping_mul(*c + 7));
+            ctrls.truncate(n_ctrls);
+            ctrls.sort_unstable();
+
             let re: Vec<f64> = amps.iter().map(|c| c.re).collect();
             let im: Vec<f64> = amps.iter().map(|c| c.im).collect();
             // AoS reference
             let mut aos_state = amps.clone();
-            aos::apply_1q(&mut aos_state, q, &[], &m);
+            aos::apply_1q(&mut aos_state, q, &ctrls, &m);
             // SoA candidate
             let mut soa_re = re.clone();
             let mut soa_im = im.clone();
-            apply_1q(&mut soa_re, &mut soa_im, q, &[], &m);
+            apply_1q(&mut soa_re, &mut soa_im, q, &ctrls, &m);
             let soa_state = aos_from(&soa_re, &soa_im);
             for (a, b) in aos_state.iter().zip(soa_state.iter()) {
-                prop_assert!((a - b).norm() < 1e-12, "aos {a} vs soa {b}");
+                prop_assert!(
+                    (a - b).norm() < 1e-12,
+                    "ctrls={ctrls:?} q={q}: aos {a} vs soa {b}",
+                );
             }
         }
 
