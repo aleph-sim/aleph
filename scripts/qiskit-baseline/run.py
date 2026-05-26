@@ -100,20 +100,62 @@ def transpile_and_export(qc: QuantumCircuit, name: str) -> QuantumCircuit:
     return tqc
 
 
+def time_aer(tqc: QuantumCircuit) -> dict:
+    """Run `tqc` through AerSimulator(method='statevector') TIMING_RUNS times
+    under single-thread pinning. Returns dict with median, mean, stdev (seconds)."""
+    sim = AerSimulator(
+        method="statevector",
+        max_parallel_threads=1,
+        max_parallel_experiments=1,
+    )
+    # Aer needs a save-statevector to actually compute the state.
+    tqc_with_save = tqc.copy()
+    tqc_with_save.save_statevector()
+    # Warm-up: one run not timed.
+    sim.run(tqc_with_save).result()
+    samples = []
+    for _ in range(TIMING_RUNS):
+        t0 = time.perf_counter()
+        sim.run(tqc_with_save).result()
+        samples.append(time.perf_counter() - t0)
+    return {
+        "samples_s": samples,
+        "median_s": statistics.median(samples),
+        "mean_s": statistics.fmean(samples),
+        "stdev_s": statistics.stdev(samples) if len(samples) > 1 else 0.0,
+    }
+
+
 def main() -> None:
     CIRCUITS_DIR.mkdir(parents=True, exist_ok=True)
-    transpiled = {}
+    results: dict = {
+        "schema_version": 1,
+        "n_qubits": N_QUBITS,
+        "grover_iters": GROVER_ITERS,
+        "random_depth": RANDOM_DEPTH,
+        "timing_runs": TIMING_RUNS,
+        "basis_gates": BASIS_GATES,
+        "workloads": {},
+    }
     for name, builder in WORKLOADS.items():
         print(f"[build] {name} ...", flush=True)
         qc = builder()
         tqc = transpile_and_export(qc, name)
+        gate_count = len(tqc.data)
+        print(f"[build] {name}: {gate_count} gates after transpile", flush=True)
+        print(f"[time]  {name} (Aer) ...", flush=True)
+        timing = time_aer(tqc)
         print(
-            f"[build] {name}: {len(tqc.data)} gates after transpile "
-            f"(was {len(qc.data)} pre-transpile)",
+            f"[time]  {name}: median={timing['median_s']*1000:.2f} ms "
+            f"stdev={timing['stdev_s']*1000:.2f} ms",
             flush=True,
         )
-        transpiled[name] = tqc
-    # (Aer timing lands in Task 4.)
+        results["workloads"][name] = {
+            "gate_count_post_transpile": gate_count,
+            "qiskit_aer": timing,
+        }
+    RESULTS_PATH.write_text(json.dumps(results, indent=2))
+    print(f"[done] results -> {RESULTS_PATH}")
 
 
 if __name__ == "__main__":
