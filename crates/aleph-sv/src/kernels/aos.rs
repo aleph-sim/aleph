@@ -15,7 +15,40 @@ use aleph_core::Complex;
 /// Iterates the 2^(n-1) basis indices whose `target` bit is zero;
 /// each defines a 2-element subspace `(i, i | t_bit)`. Skips
 /// iterations whose `i` does not have every control bit set.
+///
+/// Runtime-dispatches on x86_64 to a packed-complex AVX-512 kernel
+/// (`apply_1q_avx512`, see ADR 0008) when host AVX-512F is available
+/// and the target / control orientation satisfies the SIMD path's
+/// safety contract; otherwise falls through to the scalar body
+/// (which LLVM auto-vectorises into 2-lane `vmulpd xmm` via the
+/// natural Complex layout).
 pub(crate) fn apply_1q(amps: &mut [Complex], target: u32, controls: &[u32], m: &[[Complex; 2]; 2]) {
+    #[cfg(target_arch = "x86_64")]
+    {
+        // AVX-512 packed-complex kernel: 1 `vmovupd zmm` reads 4
+        // complex pairs (1 cache-line per side, 2 streams total),
+        // versus the SoA SIMD attempt's 4 separate streams (see
+        // ADR 0008). Engages when target_bit ≥ LANES (=4) so the
+        // inner loop's contiguous unit-stride load is safe, AND
+        // every control sits above target so the inner walk
+        // doesn't toggle a control bit.
+        if std::is_x86_feature_detected!("avx512f")
+            && (1usize << target) >= 4
+            && controls.iter().all(|&c| c > target)
+        {
+            // SAFETY: feature detection gates the call; the kernel's
+            // bounds + alignment invariants follow from
+            // `1usize << target ≥ 4` (LANES-aligned block stride),
+            // `c > target` for every control (no control-bit
+            // toggling in the inner walk), and the apply_gate-level
+            // qubit-range + duplicate-qubit checks.
+            unsafe {
+                apply_1q_avx512(amps, target, controls, m);
+            }
+            return;
+        }
+    }
+
     let t_bit = 1usize << target;
     let ctrl_mask = super::control_mask(controls);
     let len = amps.len();
@@ -29,6 +62,152 @@ pub(crate) fn apply_1q(amps: &mut [Complex], target: u32, controls: &[u32], m: &
             amps[j] = m[1][0] * a + m[1][1] * b;
         }
         i += 1;
+    }
+}
+
+/// Packed-complex AVX-512 path for AoS `apply_1q`. 4 complex pairs
+/// per `__m512d`, interleaved as `(re_0, im_0, re_1, im_1, re_2,
+/// im_2, re_3, im_3)`.
+///
+/// **Math.** For a 2×2 unitary `U = [[u00, u01], [u10, u11]]` and the
+/// state pair `(z_0, z_1) = (state[i], state[i | t_bit])`, each
+/// output is `new_z_r = u[r][0] * z_0 + u[r][1] * z_1`. Each complex
+/// multiply `u_rk * z_k` is implemented as
+/// `vfmaddsub(u_rk_re_bcast, z_k, u_rk_im_bcast × swap(z_k))`,
+/// where `swap` swaps adjacent doubles via `vpermilpd` with imm 0x55
+/// (each `(re, im)` lane-pair becomes `(im, re)`). `fmaddsub`
+/// alternates SUB / ADD across even / odd lanes, producing
+/// `(re_out, im_out)` for each of the 4 packed complex.
+///
+/// **Performance shape.** Per inner iter (4 complex pairs):
+/// 2 loads + 2 permutes + 4 mul + 4 fmaddsub + 2 add + 2 stores ≈
+/// 16 µops. Vs the SoA layout's would-be packed-AVX-512 kernel:
+/// ~28 µops for 8 pairs across 4 separate streams. Empirically on
+/// EPYC 8124P (Zen 4), this is the path that breaks past the
+/// LLVM-auto-vec'd `vmulpd xmm` AoS baseline — see ADR 0008.
+///
+/// # Safety
+///
+/// Caller MUST ensure all of:
+/// * Host CPU supports AVX-512F.
+/// * `1usize << target ≥ LANES` so the inner block has at least
+///   `LANES` contiguous pairs (no in-block tail; outer step is
+///   `2 * target_bit ≥ 2 * LANES`, keeping i1 + LANES inside the
+///   outer extent).
+/// * Every control's qubit index is strictly greater than `target`,
+///   so the inner SIMD walk's `block | j` for `j ∈ [0, target_bit)`
+///   doesn't toggle any control bit.
+/// * Standard apply_gate invariants: `target` and `controls` are
+///   distinct and in qubit range.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f")]
+unsafe fn apply_1q_avx512(
+    amps: &mut [Complex],
+    target: u32,
+    controls: &[u32],
+    m: &[[Complex; 2]; 2],
+) {
+    use core::arch::x86_64::*;
+
+    const LANES: usize = 4; // 4 complex pairs per __m512d (8 lanes f64)
+
+    let target_bit = 1usize << target;
+    let len = amps.len();
+
+    // Broadcast U matrix entries — constant across all iterations.
+    let m00r = _mm512_set1_pd(m[0][0].re);
+    let m00i = _mm512_set1_pd(m[0][0].im);
+    let m01r = _mm512_set1_pd(m[0][1].re);
+    let m01i = _mm512_set1_pd(m[0][1].im);
+    let m10r = _mm512_set1_pd(m[1][0].re);
+    let m10i = _mm512_set1_pd(m[1][0].im);
+    let m11r = _mm512_set1_pd(m[1][1].re);
+    let m11i = _mm512_set1_pd(m[1][1].im);
+
+    let amps_ptr = amps.as_mut_ptr() as *mut f64;
+
+    let outer_iter = |block: usize| {
+        let mut j = 0usize;
+        while j + LANES <= target_bit {
+            let i0 = block | j;
+            let i1 = i0 + target_bit;
+
+            // Each Complex is 16 bytes (re, im). `amps.as_ptr() as *const f64`
+            // views the storage as paired f64. `_mm512_loadu_pd` reads 8
+            // consecutive doubles = 4 complex starting at `amps[i0]`.
+            // SAFETY: `i0 + LANES ≤ block + target_bit ≤ len` (outer block
+            // stride is `2 * target_bit`, so `block + 2*target_bit ≤ len`);
+            // `i1 + LANES ≤ block + 2*target_bit ≤ len`.
+            let z0 = _mm512_loadu_pd(amps_ptr.add(i0 * 2));
+            let z1 = _mm512_loadu_pd(amps_ptr.add(i1 * 2));
+
+            // vpermilpd imm = 0x55 = 0b01010101: each (low=0, high=1)
+            // pair becomes (high, low). After permute:
+            // (im_0, re_0, im_1, re_1, im_2, re_2, im_3, re_3).
+            let z0_swap = _mm512_permute_pd::<0x55>(z0);
+            let z1_swap = _mm512_permute_pd::<0x55>(z1);
+
+            // U_ij × z_k = vfmaddsub(U_ij_re, z_k, U_ij_im × z_k_swap).
+            // fmaddsub(a, b, c) = (a·b - c, a·b + c, ...) alternating.
+            // Even lanes (re_out): m_re·z_re - m_im·z_im ✓
+            // Odd lanes  (im_out): m_re·z_im + m_im·z_re ✓
+            let t00 = _mm512_mul_pd(m00i, z0_swap);
+            let prod00 = _mm512_fmaddsub_pd(m00r, z0, t00);
+            let t01 = _mm512_mul_pd(m01i, z1_swap);
+            let prod01 = _mm512_fmaddsub_pd(m01r, z1, t01);
+            let new_z0 = _mm512_add_pd(prod00, prod01);
+
+            let t10 = _mm512_mul_pd(m10i, z0_swap);
+            let prod10 = _mm512_fmaddsub_pd(m10r, z0, t10);
+            let t11 = _mm512_mul_pd(m11i, z1_swap);
+            let prod11 = _mm512_fmaddsub_pd(m11r, z1, t11);
+            let new_z1 = _mm512_add_pd(prod10, prod11);
+
+            _mm512_storeu_pd(amps_ptr.add(i0 * 2), new_z0);
+            _mm512_storeu_pd(amps_ptr.add(i1 * 2), new_z1);
+
+            j += LANES;
+        }
+        // Caller guarantees `target_bit ≥ LANES` and `target_bit`
+        // is a power of two ⇒ LANES divides target_bit ⇒ no tail.
+        debug_assert_eq!(j, target_bit);
+    };
+
+    if controls.is_empty() {
+        let outer_step = target_bit << 1;
+        let mut block = 0usize;
+        while block < len {
+            outer_iter(block);
+            block += outer_step;
+        }
+        return;
+    }
+
+    // Controlled SIMD path. Caller's `c > target` guard guarantees
+    // all controls sit above the target bit and the subtraction
+    // `c - target - 1` does not underflow.
+    //
+    // The outer loop must iterate only over bits ABOVE `target + 1`
+    // so that `block`'s low `target + 1` bits are zero — that keeps
+    // the inner SIMD walk's `block | j` contiguous for the
+    // `vmovupd zmm` load. We achieve that by renormalising control
+    // positions (subtract `target + 1`) so `expand_with_fixed` lays
+    // them out densely, then left-shifting by `target + 1` to put
+    // the result back at the actual qubit positions.
+    let mut fixed_above: smallvec::SmallVec<[(u32, bool); 8]> = smallvec::SmallVec::new();
+    for &c in controls {
+        fixed_above.push((c - target - 1, true));
+    }
+    fixed_above.sort_unstable_by_key(|&(pos, _)| pos);
+
+    let n_qubits = len.trailing_zeros();
+    // Subtraction is safe: each control is distinct from target and
+    // < n_qubits, all controls > target, so
+    // `target + 1 + controls.len() ≤ n_qubits`.
+    let outer_count = 1usize << (n_qubits - target - 1 - controls.len() as u32);
+    for k in 0..outer_count {
+        let block = crate::kernels::expand_with_fixed(k, &fixed_above) << (target + 1);
+        outer_iter(block);
     }
 }
 
@@ -271,5 +450,87 @@ mod tests {
         amps[1] = Complex::new(1.0, 0.0);
         apply_3q(&mut amps, [0, 1, 2], &[], &toffoli());
         assert_eq!(amps[1], Complex::new(1.0, 0.0));
+    }
+
+    /// Equivalence: `apply_1q` (dispatcher — prefers AVX-512 on
+    /// capable hosts) must match a scalar reference within 1e-12
+    /// across the full 1q gate set and both target / control
+    /// orientations that the AVX-512 path's safety contract covers
+    /// (plus the orientations that fall through to scalar). On
+    /// non-AVX-512 hosts (and `cfg`-gated out on ARM) both calls
+    /// land in the scalar body, so the test is still valid but
+    /// doesn't exercise the new code path.
+    use aleph_core::GateMatrix;
+    use aleph_test::gate::arb_1q_gate;
+    use aleph_test::state::arb_state_vector;
+    use proptest::prelude::*;
+
+    /// Scalar AoS reference — the body before any AVX-512 dispatch
+    /// was added. Independent from `apply_1q`'s dispatcher so it
+    /// remains a stable comparison point.
+    fn apply_1q_scalar_reference(
+        amps: &mut [Complex],
+        target: u32,
+        controls: &[u32],
+        m: &[[Complex; 2]; 2],
+    ) {
+        let t_bit = 1usize << target;
+        let ctrl_mask = super::super::control_mask(controls);
+        let len = amps.len();
+        let mut i = 0usize;
+        while i < len {
+            if i & t_bit == 0 && (i & ctrl_mask) == ctrl_mask {
+                let j = i | t_bit;
+                let a = amps[i];
+                let b = amps[j];
+                amps[i] = m[0][0] * a + m[0][1] * b;
+                amps[j] = m[1][0] * a + m[1][1] * b;
+            }
+            i += 1;
+        }
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig { cases: 96, ..ProptestConfig::default() })]
+
+        /// AVX-512 dispatcher matches scalar reference. Target up to 6
+        /// exercises the sub-LANES fallback (target ∈ {0, 1}) AND the
+        /// SIMD main loop (target ≥ 2). Controls span both sides of
+        /// target so the scalar-fall-through guard is also exercised.
+        #[test]
+        fn aos_apply_1q_matches_scalar_reference(
+            gate in arb_1q_gate(),
+            target in 0u32..6u32,
+            ctrl_count in 0u32..=2u32,
+            ctrl_seeds in proptest::collection::vec(0u32..6u32, 0..=2),
+            amps in arb_state_vector(6),
+        ) {
+            // Duplicate-free, target-free control list (matches what
+            // apply_gate would deliver).
+            let mut controls: Vec<u32> =
+                ctrl_seeds.into_iter().take(ctrl_count as usize).collect();
+            controls.retain(|c| *c != target);
+            controls.sort_unstable();
+            controls.dedup();
+
+            let m = match gate.matrix().unwrap() {
+                GateMatrix::M2x2(m) => m,
+                _ => unreachable!("arb_1q_gate yields 1q gates"),
+            };
+            let mut ref_state = amps.clone();
+            apply_1q_scalar_reference(&mut ref_state, target, &controls, &m);
+
+            let mut dispatched = amps.clone();
+            apply_1q(&mut dispatched, target, &controls, &m);
+
+            for k in 0..ref_state.len() {
+                let diff = ref_state[k] - dispatched[k];
+                prop_assert!(
+                    diff.norm() < 1e-12,
+                    "k={k} target={target} controls={:?}: ref={} disp={}",
+                    controls, ref_state[k], dispatched[k]
+                );
+            }
+        }
     }
 }
