@@ -695,9 +695,9 @@ This visits pairs in a deterministic, branch-free order. Combined with SoA, it�
 
 **Acceptance Criteria**
 
-- [ ] All 1q gates implemented with this pattern
-- [ ] Benchmark: 2–3× improvement over P1-01 on QFT-20
-- [ ] All correctness tests pass
+- [x] All 1q gates implemented with this pattern
+- [ ] Benchmark: 2–3× improvement over P1-01 on QFT-20 (M-series local lands at ~parity with P1-01 / 1.15× over naive AoS — Apple silicon branch predictor masks the layout-only win, as P1-01 spec §12 anticipated. EPYC bencher.dev numbers are the source of truth; remaining gap closes with P1-03 AVX2.)
+- [x] All correctness tests pass
 
 **Testing Requirements**
 
