@@ -411,8 +411,12 @@ unsafe fn apply_1q_diagonal_avx512(
     }
 }
 
-/// Apply a 2-qubit matrix to `targets = [t0, t1]` (with external
-/// `controls`) in place.
+/// Scalar fallback for 2-qubit gate application.
+///
+/// Handles the cases where the AVX-512 path's safety contract is not
+/// satisfied: `1 << min(targets) < LANES`, non-AVX-512 host, or
+/// external controls below `max(targets)`. Also the only entry-point
+/// on non-x86_64 targets.
 ///
 /// **MSB convention (P0-06):** `targets[0]` is the *high* bit of the
 /// matrix index `k`, `targets[1]` is the *low* bit. So matrix row 2
@@ -421,7 +425,7 @@ unsafe fn apply_1q_diagonal_avx512(
 /// matrix swaps rows 2 ↔ 3.
 ///
 /// Targets must be distinct; the caller (`apply_gate`) enforces this.
-pub(crate) fn apply_2q(
+pub(crate) fn apply_2q_dense_scalar(
     amps: &mut [Complex],
     targets: [u32; 2],
     controls: &[u32],
@@ -450,6 +454,22 @@ pub(crate) fn apply_2q(
         }
         i += 1;
     }
+}
+
+/// Top-level 2q dispatch.  See spec § 4.2 for the detection order:
+/// 1. `classify_2q_permutation` → Identity / CnotHi / CnotLo / Swap fast paths.
+/// 2. `is_diagonal_4x4` → CZ (`is_cz_signature` shortcut) / general diagonal fast path.
+/// 3. Otherwise: AVX-512 dense kernel when contract holds, else `apply_2q_dense_scalar`.
+///
+/// **Placeholder**: this initial commit calls through to `apply_2q_dense_scalar`
+/// unconditionally so behaviour is unchanged.  Tasks 3-11 fill the prelude.
+pub(crate) fn apply_2q(
+    amps: &mut [Complex],
+    targets: [u32; 2],
+    controls: &[u32],
+    m: &[[Complex; 4]; 4],
+) {
+    apply_2q_dense_scalar(amps, targets, controls, m);
 }
 
 /// Apply a 3-qubit matrix to `targets = [t0, t1, t2]` (with external

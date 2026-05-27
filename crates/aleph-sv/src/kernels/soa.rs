@@ -62,11 +62,19 @@ pub(crate) fn apply_3q(
     }
 }
 
-/// Apply a 2-qubit matrix to `targets = [t0, t1]` (with external
-/// `controls`) in place over paired SoA storage. MSB convention:
-/// `targets[0]` is the high bit of the matrix index, `targets[1]` is
-/// the low bit (matches `aos::apply_2q`).
-pub(crate) fn apply_2q(
+/// Scalar fallback for 2-qubit gate application over paired SoA storage.
+///
+/// Handles the cases where the AVX-512 SoA path's safety contract is
+/// not satisfied: `1 << min(targets) < LANES`, non-AVX-512 host, or
+/// external controls below `max(targets)`. Also the only entry-point
+/// on non-x86_64 targets.
+///
+/// **MSB convention (P0-06):** `targets[0]` is the *high* bit of the
+/// matrix index `k`, `targets[1]` is the *low* bit (matches
+/// `aos::apply_2q_dense_scalar`).
+///
+/// Targets must be distinct; the caller (`apply_gate`) enforces this.
+pub(crate) fn apply_2q_dense_scalar(
     re: &mut [f64],
     im: &mut [f64],
     targets: [u32; 2],
@@ -103,6 +111,19 @@ pub(crate) fn apply_2q(
         }
         i += 1;
     }
+}
+
+/// Top-level SoA 2q dispatch.  Mirrors AoS `apply_2q` — see spec § 4.9.
+/// **Placeholder**: calls through to `apply_2q_dense_scalar` until
+/// Tasks 12-14 wire the SoA prelude.
+pub(crate) fn apply_2q(
+    re: &mut [f64],
+    im: &mut [f64],
+    targets: [u32; 2],
+    controls: &[u32],
+    m: &[[Complex; 4]; 4],
+) {
+    apply_2q_dense_scalar(re, im, targets, controls, m);
 }
 
 /// Apply a 1-qubit matrix to `target` (with external `controls`) in
