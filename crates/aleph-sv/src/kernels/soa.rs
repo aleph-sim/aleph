@@ -116,6 +116,11 @@ pub(crate) fn apply_1q(
     m: &[[Complex; 2]; 2],
 ) {
     debug_assert_eq!(re.len(), im.len());
+    // Diagonal fast path (P1-06).  Same heuristic as the AoS path.
+    if super::is_diagonal_2x2(m) {
+        apply_1q_diagonal_soa(re, im, target, controls, m[0][0], m[1][1]);
+        return;
+    }
     let t_bit = 1usize << target;
     let ctrl_mask = super::control_mask(controls);
     let len = re.len();
@@ -142,6 +147,43 @@ pub(crate) fn apply_1q(
     }
 }
 
+/// SoA diagonal 1q fast path.  Each amplitude is a complex pair
+/// `(re[i], im[i])`; the diagonal multiply by `d = (d_re, d_im)` is
+/// `new_re = re*d_re - im*d_im` and `new_im = re*d_im + im*d_re`.
+///
+/// Only the current amp's two streams mix — no cross-amp coupling.
+/// LLVM should auto-vectorise the inner block to 4-lane `vmulpd ymm`
+/// or 8-lane `vmulpd zmm` depending on host features and walk
+/// granularity.
+pub(crate) fn apply_1q_diagonal_soa(
+    re: &mut [f64],
+    im: &mut [f64],
+    target: u32,
+    controls: &[u32],
+    m00: Complex,
+    m11: Complex,
+) {
+    debug_assert_eq!(re.len(), im.len());
+    let t_bit = 1usize << target;
+    let ctrl_mask = super::control_mask(controls);
+    let len = re.len();
+    let mut i = 0usize;
+    while i < len {
+        if (i & ctrl_mask) == ctrl_mask {
+            let (d_re, d_im) = if (i & t_bit) == 0 {
+                (m00.re, m00.im)
+            } else {
+                (m11.re, m11.im)
+            };
+            let r = re[i];
+            let im_v = im[i];
+            re[i] = r * d_re - im_v * d_im;
+            im[i] = r * d_im + im_v * d_re;
+        }
+        i += 1;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -156,6 +198,50 @@ mod tests {
     fn hadamard() -> [[Complex; 2]; 2] {
         let s = Complex::new(std::f64::consts::FRAC_1_SQRT_2, 0.0);
         [[s, s], [s, -s]]
+    }
+
+    #[test]
+    fn apply_1q_diagonal_soa_matches_aos_phase() {
+        let theta = 1.7_f64;
+        let m = [
+            [Complex::new(1.0, 0.0), Complex::new(0.0, 0.0)],
+            [
+                Complex::new(0.0, 0.0),
+                Complex::new(theta.cos(), theta.sin()),
+            ],
+        ];
+        let aos_state_init: Vec<Complex> = (0..8)
+            .map(|k| Complex::new(0.2 * k as f64, -0.05 * k as f64))
+            .collect();
+        let mut aos_state = aos_state_init.clone();
+        let mut soa_re: Vec<f64> = aos_state_init.iter().map(|c| c.re).collect();
+        let mut soa_im: Vec<f64> = aos_state_init.iter().map(|c| c.im).collect();
+        aos::apply_1q(&mut aos_state, 1, &[], &m);
+        apply_1q(&mut soa_re, &mut soa_im, 1, &[], &m); // exercises diagonal route
+        for k in 0..aos_state.len() {
+            assert!((aos_state[k].re - soa_re[k]).abs() < 1e-14);
+            assert!((aos_state[k].im - soa_im[k]).abs() < 1e-14);
+        }
+    }
+
+    #[test]
+    fn apply_1q_diagonal_soa_matches_aos_with_control() {
+        // diag(2, -1) on q=0, controlled by q=2.  4 qubits, 16 amps.
+        let m00 = Complex::new(2.0, 0.0);
+        let m11 = Complex::new(-1.0, 0.0);
+        let m = [[m00, Complex::new(0.0, 0.0)], [Complex::new(0.0, 0.0), m11]];
+        let aos_state_init: Vec<Complex> = (0..16)
+            .map(|k| Complex::new(0.11 * k as f64, 0.05 * k as f64))
+            .collect();
+        let mut aos_state = aos_state_init.clone();
+        let mut soa_re: Vec<f64> = aos_state_init.iter().map(|c| c.re).collect();
+        let mut soa_im: Vec<f64> = aos_state_init.iter().map(|c| c.im).collect();
+        aos::apply_1q(&mut aos_state, 0, &[2], &m);
+        apply_1q(&mut soa_re, &mut soa_im, 0, &[2], &m);
+        for k in 0..aos_state.len() {
+            assert!((aos_state[k].re - soa_re[k]).abs() < 1e-14);
+            assert!((aos_state[k].im - soa_im[k]).abs() < 1e-14);
+        }
     }
 
     #[test]
