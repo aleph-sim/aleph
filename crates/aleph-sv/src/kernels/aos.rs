@@ -1716,15 +1716,157 @@ unsafe fn apply_2q_cz_avx512(amps: &mut [Complex], targets: [u32; 2], external_c
     }
 }
 
-/// Dispatch helper for the diagonal-4x4 branch (catches CZ, controlled-
-/// phase, Rzz, user diagonals).  Routes to `apply_2q_cz_avx512` when
-/// the matrix matches the CZ signature AND the host + qubit orientation
-/// satisfies the Tier A safety contract; otherwise falls through to the
-/// scalar specialised kernel.
+/// Packed AVX-512 general-diagonal 2q specialisation — Tier A
+/// (`1 << min(targets) >= LANES`).
 ///
-/// The general-diagonal AVX-512 path lands in Task 11; for now the
-/// non-CZ diagonal branch always falls through to
-/// `apply_2q_diagonal_scalar`.
+/// Each amplitude `state[i]` is multiplied by `d[k]` where
+/// `k = ((i >> targets[0]) & 1) << 1 | ((i >> targets[1]) & 1)` (MSB
+/// convention, per ADR 0004 / P0-06 §6).  Per outer block we iterate
+/// the four `(q_hi, q_lo) ∈ {0,1}²` sub-blocks, each multiplying the
+/// LANES-wide window by a single broadcast `d[k]` via the P1-06
+/// single-stream complex-multiply idiom (`vpermilpd<0x55>` + `vmulpd`
+/// + `vfmaddsub`).  ~1.25 µops per amplitude on the inner walk.
+///
+/// **Outer-walk (bit-disjointness).** Same renormalise-then-shift idiom
+/// as `apply_2q_cz_avx512`, but `hi` is a *fixed-zero* slot in
+/// `fixed_above` (we enumerate the hi bit per sub-block by OR-ing in
+/// `hi_bit` for the two upper sub-blocks).  The inner SIMD walk owns
+/// bits `[0, lo)` via `j`; bit `lo` is OR'd in per sub-block via
+/// `multiply_block(base | lo_bit, ..)`; bit `hi` is OR'd in via
+/// `multiply_block(base | hi_bit, ..)`; external controls live in the
+/// above-lo subspace as `fixed=true`.
+///
+/// **Sub-block to d[k] mapping.** `k` is defined by `targets[0]` (MSB)
+/// and `targets[1]` (LSB); but the outer-walk thinks in `(q_hi, q_lo)`
+/// coordinates (where lo = min(targets), hi = max(targets)).  When
+/// `targets[0] < targets[1]` (so `targets[0] = lo`, `targets[1] = hi`),
+/// `k = (q_lo << 1) | q_hi`; when `targets[0] > targets[1]`, the usual
+/// `k = (q_hi << 1) | q_lo`.  This disambiguation is the `d_for_*`
+/// tuple below.
+///
+/// # Safety
+///
+/// Caller MUST ensure all of:
+/// * Host CPU supports AVX-512F.
+/// * `1 << min(targets) >= LANES` (= 4) — inner SIMD walk has ≥ LANES
+///   contiguous pairs per sub-block.
+/// * Distinct targets, both in qubit range.
+/// * Every external control's qubit index is strictly greater than
+///   `max(targets)`, so the renormalisation subtraction is safe and
+///   the outer-walk's bit-expansion never toggles an external control
+///   bit.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f")]
+unsafe fn apply_2q_diagonal_avx512(
+    amps: &mut [Complex],
+    targets: [u32; 2],
+    external_controls: &[u32],
+    d: [Complex; 4],
+) {
+    use core::arch::x86_64::*;
+
+    const LANES: usize = 4;
+    let lo = targets[0].min(targets[1]);
+    let hi = targets[0].max(targets[1]);
+    let lo_bit = 1usize << lo;
+    let hi_bit = 1usize << hi;
+    let len = amps.len();
+
+    debug_assert!(
+        lo != hi,
+        "2q-diagonal requires distinct targets: dispatch contract violated"
+    );
+    debug_assert!(
+        lo_bit >= LANES,
+        "lo_bit < LANES: dispatch contract violated"
+    );
+    debug_assert!(
+        external_controls.iter().all(|&c| c > hi),
+        "external control at-or-below hi: dispatch contract violated"
+    );
+
+    // Disambiguate which d[k] each (q_hi, q_lo) sub-block hits.  MSB
+    // convention: k bit 1 = targets[0], k bit 0 = targets[1].
+    let (d_for_hi0_lo0, d_for_hi0_lo1, d_for_hi1_lo0, d_for_hi1_lo1) = if targets[0] < targets[1] {
+        // targets[0] = lo, targets[1] = hi → k = (q_lo << 1) | q_hi
+        //   (q_hi=0, q_lo=0) → k=0
+        //   (q_hi=0, q_lo=1) → k=2
+        //   (q_hi=1, q_lo=0) → k=1
+        //   (q_hi=1, q_lo=1) → k=3
+        (d[0], d[2], d[1], d[3])
+    } else {
+        // targets[0] = hi, targets[1] = lo → k = (q_hi << 1) | q_lo
+        //   (q_hi=0, q_lo=0) → k=0
+        //   (q_hi=0, q_lo=1) → k=1
+        //   (q_hi=1, q_lo=0) → k=2
+        //   (q_hi=1, q_lo=1) → k=3
+        (d[0], d[1], d[2], d[3])
+    };
+
+    let amps_ptr = amps.as_mut_ptr() as *mut f64;
+
+    // Single-stream complex multiply per sub-block.  P1-06 diagonal-1q
+    // idiom: vmovupd → vpermilpd 0x55 → vmulpd(im_bc, swap) →
+    // vfmaddsub(re_bc, z, t).  ~5 µops per LANES amps ≈ 1.25 µops/amp.
+    let multiply_block = |base: usize, d_k: Complex| {
+        let d_re_bc = _mm512_set1_pd(d_k.re);
+        let d_im_bc = _mm512_set1_pd(d_k.im);
+        let mut j = 0usize;
+        while j + LANES <= lo_bit {
+            let i = base | j;
+            // SAFETY: bit-disjointness invariant (see doc-comment
+            // "Outer-walk" section).  `base` ⊆ bits ≥ lo+1 OR'd with
+            // `lo_bit` and/or `hi_bit`; `j` ⊆ [0, lo).  All pieces
+            // pairwise bit-disjoint, so `i = base + j` and
+            // `i + LANES ≤ base + lo_bit ≤ len`.
+            let z = _mm512_loadu_pd(amps_ptr.add(i * 2));
+            let zs = _mm512_permute_pd::<0x55>(z);
+            let t = _mm512_mul_pd(d_im_bc, zs);
+            let out = _mm512_fmaddsub_pd(d_re_bc, z, t);
+            _mm512_storeu_pd(amps_ptr.add(i * 2), out);
+            j += LANES;
+        }
+        debug_assert_eq!(j, lo_bit);
+    };
+
+    // Outer-walk: reserve bits `[0, lo]` for the inner walk + the
+    // lo-bit (OR'd in per sub-block); inject `hi` as `fixed=false`
+    // (we enumerate the hi bit per sub-block via OR-ing in `hi_bit`)
+    // and every external control as `fixed=true` in the above-lo
+    // subspace; then shift up by `lo + 1`.  Subtractions are safe:
+    // `hi > lo` by construction; every external control > hi > lo by
+    // the safety contract.
+    let mut fixed_above: smallvec::SmallVec<[(u32, bool); 8]> = smallvec::SmallVec::new();
+    fixed_above.push((hi - lo - 1, false));
+    for &ec in external_controls {
+        fixed_above.push((ec - lo - 1, true));
+    }
+    fixed_above.sort_unstable_by_key(|&(p, _)| p);
+
+    // Above-lo subspace has `n_qubits - (lo + 1)` positions; one
+    // reserved for `hi` (fixed=0) and `external_controls.len()` for
+    // external control bits (fixed=1).  Remaining free positions
+    // count = n_qubits - lo - 2 - external_controls.len(); each
+    // contributes one bit to the outer-walk index.
+    let n_qubits = len.trailing_zeros();
+    let outer_count = 1usize << (n_qubits - lo - 2 - external_controls.len() as u32);
+    for k in 0..outer_count {
+        let base = crate::kernels::expand_with_fixed(k, &fixed_above) << (lo + 1);
+        // base has: bit hi = 0, every external_control bit = 1, bits
+        // [0, lo] all zero.  Iterate the 4 sub-blocks:
+        multiply_block(base, d_for_hi0_lo0); // (q_hi=0, q_lo=0)
+        multiply_block(base | lo_bit, d_for_hi0_lo1); // (q_hi=0, q_lo=1)
+        multiply_block(base | hi_bit, d_for_hi1_lo0); // (q_hi=1, q_lo=0)
+        multiply_block(base | hi_bit | lo_bit, d_for_hi1_lo1); // (q_hi=1, q_lo=1)
+    }
+}
+
+/// Dispatch helper for the diagonal-4x4 branch (catches CZ, controlled-
+/// phase, Rzz, user diagonals).  Routes to `apply_2q_cz_avx512` (when
+/// the matrix matches the CZ signature) or `apply_2q_diagonal_avx512`
+/// (general diagonal) when the host + qubit orientation satisfies the
+/// Tier A safety contract; otherwise falls through to the scalar
+/// specialised kernel.
 fn dispatch_diagonal_or_cz(
     amps: &mut [Complex],
     targets: [u32; 2],
@@ -1737,16 +1879,21 @@ fn dispatch_diagonal_or_cz(
         let lo = targets[0].min(targets[1]);
         let hi = targets[0].max(targets[1]);
         let lo_bit = 1usize << lo;
-        if is_cz
-            && std::is_x86_feature_detected!("avx512f")
+        if std::is_x86_feature_detected!("avx512f")
             && lo_bit >= 4
             && controls.iter().all(|&c| c > hi)
         {
             // SAFETY: Tier A contract — AVX-512F detected, lo_bit ≥
             // LANES, targets distinct (lo ≠ hi by min/max of distinct
             // inputs), every external control > hi.
-            unsafe {
-                apply_2q_cz_avx512(amps, targets, controls);
+            if is_cz {
+                unsafe {
+                    apply_2q_cz_avx512(amps, targets, controls);
+                }
+            } else {
+                unsafe {
+                    apply_2q_diagonal_avx512(amps, targets, controls, d);
+                }
             }
             return;
         }
@@ -3400,6 +3547,195 @@ mod tests {
             apply_2q_cz_scalar(&mut a, targets, external_controls);
             super::apply_2q(&mut b, targets, external_controls, &cz_matrix);
             assert_amps_close(&a, &b, 1e-15);
+        }
+    }
+
+    /// A general (non-CZ) diagonal used by the Task 11 tests.  Each
+    /// entry has unit magnitude so the kernel exercises full complex
+    /// multiplies rather than degenerating to sign flips.
+    #[cfg(target_arch = "x86_64")]
+    fn nontrivial_diag_4() -> [Complex; 4] {
+        [
+            Complex::new(0.6, 0.8),
+            Complex::new(-0.7, 0.7142857142857143),
+            Complex::new(0.99, -0.1414213562373095),
+            Complex::new(-0.5, -0.8660254037844386),
+        ]
+    }
+
+    /// Tier A AVX-512 general-diagonal 2q equivalence vs the scalar
+    /// specialised kernel.  All `targets = [a, b]` cases satisfy the
+    /// Tier A contract `1 << min(a, b) >= LANES = 4`.  Tolerance is
+    /// 1e-14 (scalar reference uses `Complex::mul`; SIMD uses
+    /// fmaddsub — identical reductions modulo IEEE-754 rounding of
+    /// reorderable adds).
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn apply_2q_diagonal_avx512_tier_a_matches_scalar() {
+        if !std::is_x86_feature_detected!("avx512f") {
+            return;
+        }
+        let d = nontrivial_diag_4();
+        for n in [6u32, 8, 10] {
+            for t in [[2u32, 3], [2, 5], [3, 5], [4, 5]] {
+                if n <= t[0].max(t[1]) {
+                    continue;
+                }
+                if (1usize << t[0].min(t[1])) < 4 {
+                    continue;
+                }
+                let amps0 = random_complex_state(n, 0xd1a9 + n as u64);
+                let mut a = amps0.clone();
+                let mut b = amps0;
+                apply_2q_diagonal_scalar(&mut a, t, &[], d);
+                // SAFETY: AVX-512F detected, lo_bit ≥ LANES = 4,
+                // distinct targets, no external controls.
+                unsafe {
+                    super::apply_2q_diagonal_avx512(&mut b, t, &[], d);
+                }
+                assert_amps_close(&a, &b, 1e-14);
+            }
+        }
+    }
+
+    /// Tier A AVX-512 general-diagonal equivalence with external
+    /// controls (controls strictly above max(targets)).  Pins the
+    /// renormalise-then-shift outer-walk pattern in the external-
+    /// control branch — same shape as the matching CZ test.
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn apply_2q_diagonal_avx512_tier_a_with_controls_matches_scalar() {
+        if !std::is_x86_feature_detected!("avx512f") {
+            return;
+        }
+        let d = nontrivial_diag_4();
+        let cases: &[(u32, [u32; 2], &[u32])] = &[(8, [2, 5], &[7]), (10, [3, 5], &[7, 9])];
+        for &(n, t, ec) in cases {
+            let amps0 = random_complex_state(n, 0xd2b0 + n as u64);
+            let mut a = amps0.clone();
+            let mut b = amps0;
+            apply_2q_diagonal_scalar(&mut a, t, ec, d);
+            // SAFETY: AVX-512F detected, lo_bit ≥ LANES, distinct
+            // targets, every external control > max(targets).
+            unsafe {
+                super::apply_2q_diagonal_avx512(&mut b, t, ec, d);
+            }
+            assert_amps_close(&a, &b, 1e-14);
+        }
+    }
+
+    /// Portable indexing-coverage test for `apply_2q_diagonal_avx512`'s
+    /// outer-walk + 4-sub-block iteration.  Reproduces the four
+    /// `(q_hi, q_lo)` sub-block walks using only integer arithmetic
+    /// (runs on aarch64 too) and asserts:
+    ///
+    /// 1. Every amplitude in the "every external control bit set"
+    ///    subspace is touched exactly once across the four sub-blocks
+    ///    (one load + one store per amp).  Any amp with an external
+    ///    control bit clear is NOT touched (kernel skips it).
+    /// 2. The `apply_2q` end-to-end result (routed via
+    ///    `dispatch_diagonal_or_cz` with a non-CZ diagonal) matches
+    ///    `apply_2q_diagonal_scalar`.
+    ///
+    /// Catches bit-collision bugs in the outer-walk reservation
+    /// pattern that would otherwise only surface on a real AVX-512
+    /// host.
+    #[test]
+    fn apply_2q_diagonal_avx512_tier_a_indexing_covers_state_exactly_once() {
+        let cases: &[(u32, [u32; 2], &[u32])] = &[(6, [2, 3], &[]), (8, [2, 5], &[7])];
+        for &(n_qubits, targets, external_controls) in cases {
+            let len = 1usize << n_qubits;
+            let lo = targets[0].min(targets[1]);
+            let hi = targets[0].max(targets[1]);
+            let lo_bit = 1usize << lo;
+            let hi_bit = 1usize << hi;
+            let lanes = 4usize;
+
+            let mut fixed_above: smallvec::SmallVec<[(u32, bool); 8]> = smallvec::SmallVec::new();
+            fixed_above.push((hi - lo - 1, false));
+            for &ec in external_controls {
+                fixed_above.push((ec - lo - 1, true));
+            }
+            fixed_above.sort_unstable_by_key(|&(p, _)| p);
+
+            let outer_count = 1usize << (n_qubits - lo - 2 - external_controls.len() as u32);
+
+            let mut ec_mask = 0usize;
+            for &c in external_controls {
+                ec_mask |= 1usize << c;
+            }
+
+            let mut touched = vec![0u32; len];
+            for k in 0..outer_count {
+                let base = crate::kernels::expand_with_fixed(k, &fixed_above) << (lo + 1);
+                // base must have: bit hi clear, every ec bit set, bits
+                // [0, lo+1) all zero (i.e. lo also clear since it's in
+                // [0, lo+1)).
+                assert_eq!(
+                    base & ec_mask,
+                    ec_mask,
+                    "base={base:#b} missing ec bits {ec_mask:#b}"
+                );
+                assert_eq!(base & lo_bit, 0, "base={base:#b} has lo_bit set");
+                assert_eq!(base & hi_bit, 0, "base={base:#b} has hi_bit set");
+                assert_eq!(
+                    base & (lo_bit - 1),
+                    0,
+                    "base={base:#b} has bits set in [0, lo)"
+                );
+                for &sub in &[0usize, lo_bit, hi_bit, lo_bit | hi_bit] {
+                    let outer = base | sub;
+                    let mut j = 0usize;
+                    while j + lanes <= lo_bit {
+                        let i = outer | j;
+                        for off in 0..lanes {
+                            assert!(
+                                i + off < len,
+                                "n={n_qubits} t={targets:?}: OOB i+off={} len={}",
+                                i + off,
+                                len
+                            );
+                            touched[i + off] += 1;
+                        }
+                        j += lanes;
+                    }
+                }
+            }
+            // Expected touch counts:
+            //   * every external-control bit set → 1 (kernel walks all
+            //     four (q_hi, q_lo) sub-blocks in the ec-satisfied
+            //     subspace exactly once)
+            //   * any external-control bit clear → 0
+            for (idx, &count) in touched.iter().enumerate() {
+                let in_ec_subspace = (idx & ec_mask) == ec_mask;
+                let expected = if in_ec_subspace { 1u32 } else { 0u32 };
+                assert_eq!(
+                    count, expected,
+                    "n={n_qubits} t={targets:?}: amp {idx} touched {count} times \
+                     (expected {expected}; ec_subspace={in_ec_subspace})"
+                );
+            }
+
+            // End-to-end: apply_2q with a non-CZ diagonal matrix must
+            // match apply_2q_diagonal_scalar (apply_2q routes through
+            // dispatch_diagonal_or_cz for diagonal matrices, and the
+            // non-CZ signature steers to the diagonal kernel).
+            let d = [
+                Complex::new(0.6, 0.8),
+                Complex::new(-0.7, 0.7142857142857143),
+                Complex::new(0.99, -0.1414213562373095),
+                Complex::new(-0.5, -0.8660254037844386),
+            ];
+            let mut m = [[Complex::new(0.0, 0.0); 4]; 4];
+            for k in 0..4 {
+                m[k][k] = d[k];
+            }
+            let amps0 = random_complex_state(n_qubits, 0xd3c1 + n_qubits as u64);
+            let mut a = amps0.clone();
+            let mut b = amps0;
+            apply_2q_diagonal_scalar(&mut a, targets, external_controls, d);
+            super::apply_2q(&mut b, targets, external_controls, &m);
+            assert_amps_close(&a, &b, 1e-14);
         }
     }
 
