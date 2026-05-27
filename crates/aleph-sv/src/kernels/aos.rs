@@ -345,10 +345,24 @@ unsafe fn apply_1q_diagonal_avx512(
         return;
     }
 
-    // Controlled path lands in Task 4.  For now, the no-controls
-    // branch is the only AVX-512 path; controlled diagonal falls back
-    // to scalar.  This is a temporary state — Task 4 completes it.
-    apply_1q_diagonal_scalar(amps, target, controls, m00, m11);
+    // Controlled SIMD path.  Caller's `c > target` guard guarantees
+    // all controls sit above the target bit and `c - target - 1`
+    // does not underflow.  The outer loop iterates over bit-patterns
+    // that have every control set and every below-target bit clear,
+    // letting the inner SIMD walk fill in the target + below-target
+    // bits contiguously.
+    let mut fixed_above: smallvec::SmallVec<[(u32, bool); 8]> = smallvec::SmallVec::new();
+    for &c in controls {
+        fixed_above.push((c - target - 1, true));
+    }
+    fixed_above.sort_unstable_by_key(|&(pos, _)| pos);
+
+    let n_qubits = len.trailing_zeros();
+    let outer_count = 1usize << (n_qubits - target - 1 - controls.len() as u32);
+    for k in 0..outer_count {
+        let block = crate::kernels::expand_with_fixed(k, &fixed_above) << (target + 1);
+        outer_iter(block);
+    }
 }
 
 /// Apply a 2-qubit matrix to `targets = [t0, t1]` (with external
@@ -547,6 +561,31 @@ mod tests {
         super::apply_1q(&mut amps_gen, 1, &[], &m);
         for (d, g) in amps_diag.iter().zip(amps_gen.iter()) {
             assert!((d - g).norm() < 1e-14, "diag {d:?} vs generic {g:?}");
+        }
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn apply_1q_diagonal_avx512_controlled_matches_scalar() {
+        if !std::is_x86_feature_detected!("avx512f") {
+            return;
+        }
+        // 32-amp state (n=5), target=2, control on qubit 4 (above target).
+        let mut amps_avx: Vec<Complex> = (0..32)
+            .map(|k| Complex::new(0.07 * k as f64, -0.03 * k as f64))
+            .collect();
+        let mut amps_sca = amps_avx.clone();
+        let m00 = Complex::new(0.6, 0.8); // arbitrary unit-magnitude
+        let m11 = Complex::new(-0.6, 0.8);
+        unsafe {
+            super::apply_1q_diagonal_avx512(&mut amps_avx, 2, &[4], m00, m11);
+        }
+        super::apply_1q_diagonal_scalar(&mut amps_sca, 2, &[4], m00, m11);
+        for (a, s) in amps_avx.iter().zip(amps_sca.iter()) {
+            assert!(
+                (a - s).norm() < 1e-14,
+                "controlled avx {a:?} vs scalar {s:?}"
+            );
         }
     }
 
