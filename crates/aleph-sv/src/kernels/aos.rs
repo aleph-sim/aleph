@@ -211,6 +211,40 @@ unsafe fn apply_1q_avx512(
     }
 }
 
+/// Scalar fallback for the 1q diagonal fast path.
+///
+/// Walks every amplitude exactly once, multiplying `state[i]` by
+/// `m00` if bit `target` of `i` is 0 and by `m11` otherwise.  No
+/// cross-term mixing — half the loads and stores of the generic
+/// kernel; LLVM auto-vectorises the inner multiply to 2-lane `vmulpd`
+/// xmm on x86_64.
+///
+/// `m00` and `m11` are passed explicitly (rather than the full matrix)
+/// because the caller has already detected the diagonal — passing the
+/// scalars makes the contract explicit and lets the compiler keep
+/// them in registers across the loop.
+// Allow dead_code: caller in apply_1q dispatch lands in Task 5.
+#[allow(dead_code)]
+pub(crate) fn apply_1q_diagonal_scalar(
+    amps: &mut [Complex],
+    target: u32,
+    controls: &[u32],
+    m00: Complex,
+    m11: Complex,
+) {
+    let t_bit = 1usize << target;
+    let ctrl_mask = super::control_mask(controls);
+    let len = amps.len();
+    let mut i = 0usize;
+    while i < len {
+        if (i & ctrl_mask) == ctrl_mask {
+            let d = if (i & t_bit) == 0 { m00 } else { m11 };
+            amps[i] *= d;
+        }
+        i += 1;
+    }
+}
+
 /// Apply a 2-qubit matrix to `targets = [t0, t1]` (with external
 /// `controls`) in place.
 ///
@@ -369,6 +403,68 @@ mod tests {
         amps[0] = Complex::new(1.0, 0.0);
         apply_1q(&mut amps, 1, &[0], &pauli_x());
         assert_eq!(amps[0], Complex::new(1.0, 0.0));
+    }
+
+    // P1-06 diagonal-fast-path tests.
+
+    #[test]
+    fn apply_1q_diagonal_scalar_z_on_q0() {
+        // Z|+⟩ = |-⟩ ; here we test Z on a 2-amp state with both amps nonzero
+        let mut amps = vec![Complex::new(0.5, 0.0), Complex::new(0.7, 0.1)];
+        // m = diag(1, -1)
+        let m00 = Complex::new(1.0, 0.0);
+        let m11 = Complex::new(-1.0, 0.0);
+        super::apply_1q_diagonal_scalar(&mut amps, 0, &[], m00, m11);
+        assert_eq!(amps[0], Complex::new(0.5, 0.0));
+        assert_eq!(amps[1], Complex::new(-0.7, -0.1));
+    }
+
+    #[test]
+    fn apply_1q_diagonal_scalar_matches_generic_phase() {
+        // phase(θ) = diag(1, e^{iθ})
+        let theta = 0.7_f64;
+        let m = [
+            [Complex::new(1.0, 0.0), Complex::new(0.0, 0.0)],
+            [
+                Complex::new(0.0, 0.0),
+                Complex::new(theta.cos(), theta.sin()),
+            ],
+        ];
+        let mut amps_diag = vec![
+            Complex::new(0.3, 0.4),
+            Complex::new(0.5, -0.1),
+            Complex::new(-0.2, 0.6),
+            Complex::new(0.1, 0.8),
+        ];
+        let mut amps_gen = amps_diag.clone();
+        super::apply_1q_diagonal_scalar(&mut amps_diag, 1, &[], m[0][0], m[1][1]);
+        super::apply_1q(&mut amps_gen, 1, &[], &m);
+        for (d, g) in amps_diag.iter().zip(amps_gen.iter()) {
+            assert!((d - g).norm() < 1e-14, "diag {d:?} vs generic {g:?}");
+        }
+    }
+
+    #[test]
+    fn apply_1q_diagonal_scalar_with_external_control() {
+        // 4-amp state (2 qubits).  Diagonal m on qubit 0, control on qubit 1.
+        // Only amps with bit-1 = 1 (indices 2, 3) get touched.
+        let mut amps = vec![
+            Complex::new(1.0, 0.0),
+            Complex::new(2.0, 0.0),
+            Complex::new(3.0, 0.0),
+            Complex::new(4.0, 0.0),
+        ];
+        let m00 = Complex::new(2.0, 0.0);
+        let m11 = Complex::new(-1.0, 0.0);
+        super::apply_1q_diagonal_scalar(&mut amps, 0, &[1], m00, m11);
+        // i=0 (bit1=0): untouched → 1.0
+        // i=1 (bit1=0): untouched → 2.0
+        // i=2 (bit1=1, bit0=0): * m00 = 2 * 3 = 6
+        // i=3 (bit1=1, bit0=1): * m11 = -1 * 4 = -4
+        assert_eq!(amps[0], Complex::new(1.0, 0.0));
+        assert_eq!(amps[1], Complex::new(2.0, 0.0));
+        assert_eq!(amps[2], Complex::new(6.0, 0.0));
+        assert_eq!(amps[3], Complex::new(-4.0, 0.0));
     }
 
     /// Canonical `Gate::Cnot` matrix (P0-06):
