@@ -564,10 +564,11 @@ pub(crate) fn apply_2q_diagonal_scalar(
 /// 2. `is_diagonal_4x4` → CZ (`is_cz_signature` shortcut) / general diagonal fast path.
 /// 3. Otherwise: AVX-512 dense kernel when contract holds, else `apply_2q_dense_scalar`.
 ///
-/// AVX-512 branches for the specialised permutation/diagonal paths and the
-/// generic dense kernel land in Tasks 5+; for now the scalar specialisations
-/// handle every classified case and the generic fall-through routes to
-/// `apply_2q_dense_scalar`.
+/// The AVX-512 dense kernel (`apply_2q_avx512`) handles the Tier-A generic
+/// case where `1 << min(targets) ≥ LANES` and all external controls sit above
+/// `max(targets)`.  Sub-LANES dispatch or below-target controls fall through
+/// to `apply_2q_dense_scalar`.  Specialised permutation / diagonal AVX-512
+/// paths land in subsequent tasks.
 pub(crate) fn apply_2q(
     amps: &mut [Complex],
     targets: [u32; 2],
@@ -603,10 +604,171 @@ pub(crate) fn apply_2q(
         return;
     }
 
-    // 3. Generic dense 4×4.  AVX-512 branches land in Tasks 5+; for now,
-    //    everything falls through to the scalar walk so the workspace
-    //    test suite stays green.
+    // 3. Generic dense 4×4 — SIMD where contract holds, scalar otherwise.
+    #[cfg(target_arch = "x86_64")]
+    {
+        let t_lo = targets[0].min(targets[1]);
+        let t_hi = targets[0].max(targets[1]);
+        if std::is_x86_feature_detected!("avx512f")
+            && (1usize << t_lo) >= 4
+            && controls.iter().all(|&c| c > t_hi)
+        {
+            // SAFETY: feature gate, t_lo_bit ≥ LANES, controls > t_hi.
+            unsafe {
+                apply_2q_avx512(amps, targets, controls, m);
+            }
+            return;
+        }
+    }
     apply_2q_dense_scalar(amps, targets, controls, m);
+}
+
+/// Packed-complex AVX-512 generic 2q dense kernel.  Iterates outer
+/// blocks of `2 * t_hi_bit`; the inner walk steps by LANES = 4 complex
+/// pairs along the low-target axis (requires `1 << t_lo >= LANES`).
+///
+/// **Math.** For each quartet `(z00, z01, z10, z11)`, compute
+/// `new_z_r = Σ_c m[r][c] * z_c`.  Each `m[r][c] * z_c` is one
+/// `vfmaddsub(m_re_bcast, z_c, m_im_bcast × vpermilpd<0x55>(z_c))` —
+/// the same packed-complex idiom as `apply_1q_avx512`, replicated
+/// across four loaded subspaces.
+///
+/// **Per inner iter (LANES quartets = 16 amps):**
+/// 4 loads + 4 permutes + 16 mul + 16 fmaddsub + 12 add + 4 stores
+/// ≈ 56 µops.  Vs scalar 4-quartet (~256 µops): ~4.5× per-amp.
+///
+/// # Safety
+///
+/// Caller MUST ensure all of:
+/// * Host CPU supports AVX-512F.
+/// * `1 << min(targets) >= LANES` (= 4) — inner SIMD walk has ≥ LANES
+///   contiguous pairs per sub-block.
+/// * Every external control's qubit index is strictly greater than
+///   `max(targets)`, so the outer-walk's bit-expansion never toggles
+///   a control bit.
+/// * Distinct targets/controls, all in qubit range.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f")]
+unsafe fn apply_2q_avx512(
+    amps: &mut [Complex],
+    targets: [u32; 2],
+    controls: &[u32],
+    m: &[[Complex; 4]; 4],
+) {
+    use core::arch::x86_64::*;
+
+    const LANES: usize = 4;
+
+    let t_lo = targets[0].min(targets[1]);
+    let t_hi = targets[0].max(targets[1]);
+    let t_lo_bit = 1usize << t_lo;
+    let t_hi_bit = 1usize << t_hi;
+    let t_mask = t_lo_bit | t_hi_bit;
+    let len = amps.len();
+
+    debug_assert!(
+        t_lo_bit >= LANES,
+        "t_lo_bit < LANES: dispatch contract violated"
+    );
+    debug_assert!(
+        controls.iter().all(|&c| c > t_hi),
+        "control at-or-below t_hi: dispatch contract violated"
+    );
+
+    // Compute index permutation: targets[0] is MSB of matrix index k,
+    // targets[1] is LSB.  If targets[0] < targets[1] (i.e. t_lo == targets[0]),
+    // then bit k=1 (lo) corresponds to t_hi_bit memory offset, and
+    // bit k=2 (hi) corresponds to t_lo_bit offset.  The four
+    // sub-block offsets keyed by k=0,1,2,3:
+    let (offset_k1, offset_k2) = if targets[0] < targets[1] {
+        // targets[0]=t_lo, targets[1]=t_hi → k bit 1 (low) selects t_hi_bit
+        (t_hi_bit, t_lo_bit)
+    } else {
+        (t_lo_bit, t_hi_bit)
+    };
+    let offsets = [0usize, offset_k1, offset_k2, t_mask];
+
+    // Broadcast all 16 matrix cells.
+    let mut m_re = [_mm512_setzero_pd(); 16];
+    let mut m_im = [_mm512_setzero_pd(); 16];
+    for r in 0..4 {
+        for c in 0..4 {
+            m_re[r * 4 + c] = _mm512_set1_pd(m[r][c].re);
+            m_im[r * 4 + c] = _mm512_set1_pd(m[r][c].im);
+        }
+    }
+
+    let amps_ptr = amps.as_mut_ptr() as *mut f64;
+
+    let outer_iter = |block: usize| {
+        let mut j = 0usize;
+        while j + LANES <= t_lo_bit {
+            // Load 4 sub-blocks, each LANES complex pairs.
+            // Base index for k=0 is `block | j` (no target bits set).
+            let mut z = [_mm512_setzero_pd(); 4];
+            let mut zs = [_mm512_setzero_pd(); 4];
+            for k in 0..4 {
+                let i_k = block | offsets[k] | j;
+                // SAFETY: i_k + LANES ≤ block + 2 * t_hi_bit ≤ len.
+                // `j` is bounded above by `t_lo_bit - LANES`, and the
+                // outer step is `2 * t_hi_bit`, so each LANES-wide load
+                // lands inside the outer extent.
+                z[k] = _mm512_loadu_pd(amps_ptr.add(i_k * 2));
+                zs[k] = _mm512_permute_pd::<0x55>(z[k]);
+            }
+
+            // Compute each output row.
+            let mut new_z = [_mm512_setzero_pd(); 4];
+            for r in 0..4 {
+                let t0 = _mm512_mul_pd(m_im[r * 4], zs[0]);
+                let mut p = _mm512_fmaddsub_pd(m_re[r * 4], z[0], t0);
+                let t1 = _mm512_mul_pd(m_im[r * 4 + 1], zs[1]);
+                p = _mm512_add_pd(p, _mm512_fmaddsub_pd(m_re[r * 4 + 1], z[1], t1));
+                let t2 = _mm512_mul_pd(m_im[r * 4 + 2], zs[2]);
+                p = _mm512_add_pd(p, _mm512_fmaddsub_pd(m_re[r * 4 + 2], z[2], t2));
+                let t3 = _mm512_mul_pd(m_im[r * 4 + 3], zs[3]);
+                p = _mm512_add_pd(p, _mm512_fmaddsub_pd(m_re[r * 4 + 3], z[3], t3));
+                new_z[r] = p;
+            }
+
+            // Store back into the same 4 sub-blocks.
+            for k in 0..4 {
+                let i_k = block | offsets[k] | j;
+                // SAFETY: same bound as the load above.
+                _mm512_storeu_pd(amps_ptr.add(i_k * 2), new_z[k]);
+            }
+
+            j += LANES;
+        }
+        debug_assert_eq!(j, t_lo_bit);
+    };
+
+    if controls.is_empty() {
+        // Outer-step `2 * t_hi_bit`: smallest stride that clears both
+        // target bits.  For t_lo < t_hi, this is one full t_hi-extent
+        // above and below the t_hi bit; t_lo_bit sits inside.
+        let outer_step = 2usize * t_hi_bit;
+        let mut block = 0usize;
+        while block < len {
+            outer_iter(block);
+            block += outer_step;
+        }
+        return;
+    }
+
+    // Controlled SIMD path: renormalise control positions above t_hi.
+    let mut fixed_above: smallvec::SmallVec<[(u32, bool); 8]> = smallvec::SmallVec::new();
+    for &c in controls {
+        fixed_above.push((c - t_hi - 1, true));
+    }
+    fixed_above.sort_unstable_by_key(|&(pos, _)| pos);
+
+    let n_qubits = len.trailing_zeros();
+    let outer_count = 1usize << (n_qubits - t_hi - 1 - controls.len() as u32);
+    for k in 0..outer_count {
+        let block = crate::kernels::expand_with_fixed(k, &fixed_above) << (t_hi + 1);
+        outer_iter(block);
+    }
 }
 
 /// Apply a 3-qubit matrix to `targets = [t0, t1, t2]` (with external
@@ -1082,6 +1244,48 @@ mod tests {
         apply_2q(&mut a, [2, 3], &[], &m);
         apply_2q_dense_scalar(&mut b, [2, 3], &[], &m);
         assert_amps_close(&a, &b, 1e-14);
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn apply_2q_avx512_generic_matches_scalar() {
+        if !std::is_x86_feature_detected!("avx512f") {
+            eprintln!("skipping: host lacks AVX-512F");
+            return;
+        }
+        // Random non-special unitary-ish matrix; not diagonal, not permutation.
+        // Doesn't need to be unitary for the equivalence test — just dense.
+        let mut m = [[Complex::new(0.0, 0.0); 4]; 4];
+        let mut s: u64 = 1;
+        let mut lcg = || {
+            s = s
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            ((s >> 32) as f64 / (u32::MAX as f64)) * 2.0 - 1.0
+        };
+        for r in 0..4 {
+            for c in 0..4 {
+                m[r][c] = Complex::new(lcg(), lcg());
+            }
+        }
+        for n in [6u32, 8, 10] {
+            for t in [[0u32, 2], [2, 3], [4, 5], [3, 5]] {
+                // Require t_lo >= 2 (LANES=4 means 1<<t_lo >= 4)
+                if (1usize << t[0].min(t[1])) < 4 {
+                    continue;
+                }
+                let amps0 = random_complex_state(n, 0xdead + n as u64);
+                let mut a = amps0.clone();
+                let mut b = amps0;
+                apply_2q_dense_scalar(&mut a, t, &[], &m);
+                // SAFETY: feature-gated; t_lo >= 2 → 1 << t_lo >= 4 = LANES.
+                #[cfg(target_arch = "x86_64")]
+                unsafe {
+                    super::apply_2q_avx512(&mut b, t, &[], &m);
+                }
+                assert_amps_close(&a, &b, 1e-12);
+            }
+        }
     }
 
     #[test]
