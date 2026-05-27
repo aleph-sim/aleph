@@ -45,7 +45,7 @@ pub fn arb_gate() -> impl Strategy<Value = Gate> {
 
 /// Diagonal-only 1q subset for the
 /// "leaves-magnitudes-unchanged" invariant.  Vocabulary:
-/// Z, S, Sdg, T, Tdg, Rz(θ).
+/// Z, S, Sdg, T, Tdg, Rz(θ), Phase(θ).
 pub fn arb_diagonal_1q_gate() -> impl Strategy<Value = Gate> {
     let tau = std::f64::consts::TAU;
     prop_oneof![
@@ -55,6 +55,7 @@ pub fn arb_diagonal_1q_gate() -> impl Strategy<Value = Gate> {
         Just(Gate::T),
         Just(Gate::Tdg),
         (-tau..=tau).prop_map(|t| Gate::Rz(t.into())),
+        (-tau..=tau).prop_map(|t| Gate::Phase(t.into())),
     ]
 }
 
@@ -87,8 +88,8 @@ mod tests {
             // The strategy emits only diagonal 1q variants.  Rx/Ry/H/X/Y
             // would be a strategy bug.
             prop_assert!(!matches!(g, Rx(_) | Ry(_) | H | X | Y), "got non-diagonal {g:?}");
-            // Sanity-check the positive set.
-            prop_assert!(matches!(g, Z | S | Sdg | T | Tdg | Rz(_)), "unexpected {g:?}");
+            // Sanity-check the positive set (now includes Phase).
+            prop_assert!(matches!(g, Z | S | Sdg | T | Tdg | Rz(_) | Phase(_)), "unexpected {g:?}");
         }
     }
 }
