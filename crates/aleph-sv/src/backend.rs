@@ -1001,5 +1001,29 @@ mod tests {
                 prop_assert!((b_mag - a_mag).abs() < 1e-12, "|a| changed: {b_mag} → {a_mag}");
             }
         }
+
+        /// P1-06: diagonal-1q gates routed through `apply_gate` →
+        /// `kernels::aos::apply_1q` → diagonal fast path must preserve
+        /// state-vector norm to 1 ± 1e-12.  Stronger than the
+        /// component-wise magnitude check above (catches a kernel
+        /// that scales every amplitude uniformly).
+        #[test]
+        fn p1_06_diagonal_fast_path_preserves_norm(
+            op in aleph_test::gate::arb_diagonal_1q_gate(),
+            q in 0u32..4u32,
+        ) {
+            let mut b = NaiveSvBackend::with_seed(0);
+            let mut s = b.allocate(4).unwrap();
+            // Non-trivial preamble.
+            for qq in 0..4u32 {
+                b.apply_gate(&mut s, &GateInstance::new(Gate::H, smallvec![qq])).unwrap();
+            }
+            b.apply_gate(&mut s, &GateInstance::new(op, smallvec![q])).unwrap();
+            let norm_sq: f64 = s.amplitudes().iter().map(|a| a.norm_sqr()).sum();
+            prop_assert!(
+                (norm_sq - 1.0).abs() < 1e-12,
+                "norm drifted to {norm_sq}",
+            );
+        }
     }
 }
