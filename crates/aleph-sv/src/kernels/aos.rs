@@ -623,15 +623,29 @@ pub(crate) fn apply_2q(
     apply_2q_dense_scalar(amps, targets, controls, m);
 }
 
-/// Packed-complex AVX-512 generic 2q dense kernel.  Iterates outer
-/// blocks of `2 * t_hi_bit`; the inner walk steps by LANES = 4 complex
-/// pairs along the low-target axis (requires `1 << t_lo >= LANES`).
+/// Packed-complex AVX-512 generic 2q dense kernel.  The inner walk
+/// steps by LANES = 4 complex pairs along the low-target axis
+/// (requires `1 << t_lo >= LANES`); the outer walk enumerates quartet
+/// base indices via [`expand_with_fixed`].
 ///
 /// **Math.** For each quartet `(z00, z01, z10, z11)`, compute
 /// `new_z_r = Σ_c m[r][c] * z_c`.  Each `m[r][c] * z_c` is one
 /// `vfmaddsub(m_re_bcast, z_c, m_im_bcast × vpermilpd<0x55>(z_c))` —
 /// the same packed-complex idiom as `apply_1q_avx512`, replicated
 /// across four loaded subspaces.
+///
+/// **Outer-walk.** Uses `expand_with_fixed` with both `t_lo` and
+/// `t_hi` as `fixed = false` (and any external controls as
+/// `fixed = true`).  This enumerates exactly the quartet base
+/// indices — those with both target bits zero and all control bits
+/// set.  Unlike the 1q kernel's renormalisation-by-target-position
+/// idiom (which works because the inner walk covers *all* bits
+/// below the lone target), this symmetric form correctly covers
+/// bits *between* `t_lo` and `t_hi`: a naive `2 * t_hi_bit` stride
+/// would skip every quartet whose base has a bit set strictly
+/// between the two target positions.
+///
+/// [`expand_with_fixed`]: crate::kernels::expand_with_fixed
 ///
 /// **Per inner iter (LANES quartets = 16 amps):**
 /// 4 loads + 4 permutes + 16 mul + 16 fmaddsub + 12 add + 4 stores
@@ -709,10 +723,11 @@ unsafe fn apply_2q_avx512(
             let mut zs = [_mm512_setzero_pd(); 4];
             for k in 0..4 {
                 let i_k = block | offsets[k] | j;
-                // SAFETY: i_k + LANES ≤ block + 2 * t_hi_bit ≤ len.
-                // `j` is bounded above by `t_lo_bit - LANES`, and the
-                // outer step is `2 * t_hi_bit`, so each LANES-wide load
-                // lands inside the outer extent.
+                // SAFETY: `block` is produced by `expand_with_fixed`
+                // with `(t_lo, false)` and `(t_hi, false)` in the
+                // `fixed` slice, so `block & t_mask == 0`.  `j` is
+                // bounded above by `t_lo_bit - LANES`, and `offsets[k]
+                // ⊆ t_mask`, so `i_k + LANES ≤ len`.
                 z[k] = _mm512_loadu_pd(amps_ptr.add(i_k * 2));
                 zs[k] = _mm512_permute_pd::<0x55>(z[k]);
             }
@@ -743,30 +758,23 @@ unsafe fn apply_2q_avx512(
         debug_assert_eq!(j, t_lo_bit);
     };
 
-    if controls.is_empty() {
-        // Outer-step `2 * t_hi_bit`: smallest stride that clears both
-        // target bits.  For t_lo < t_hi, this is one full t_hi-extent
-        // above and below the t_hi bit; t_lo_bit sits inside.
-        let outer_step = 2usize * t_hi_bit;
-        let mut block = 0usize;
-        while block < len {
-            outer_iter(block);
-            block += outer_step;
-        }
-        return;
-    }
-
-    // Controlled SIMD path: renormalise control positions above t_hi.
-    let mut fixed_above: smallvec::SmallVec<[(u32, bool); 8]> = smallvec::SmallVec::new();
+    // Outer-walk: enumerate quartet base indices via
+    // `expand_with_fixed` with both targets pinned to 0 and every
+    // external control pinned to 1.  See the doc-comment "Outer-walk"
+    // paragraph for why this symmetric form is necessary (and why the
+    // 1q kernel's renormalise-by-target idiom does NOT generalise).
+    let mut fixed: smallvec::SmallVec<[(u32, bool); 8]> = smallvec::SmallVec::new();
+    fixed.push((t_lo, false));
+    fixed.push((t_hi, false));
     for &c in controls {
-        fixed_above.push((c - t_hi - 1, true));
+        fixed.push((c, true));
     }
-    fixed_above.sort_unstable_by_key(|&(pos, _)| pos);
+    fixed.sort_unstable_by_key(|&(pos, _)| pos);
 
     let n_qubits = len.trailing_zeros();
-    let outer_count = 1usize << (n_qubits - t_hi - 1 - controls.len() as u32);
+    let outer_count = 1usize << (n_qubits - 2 - controls.len() as u32);
     for k in 0..outer_count {
-        let block = crate::kernels::expand_with_fixed(k, &fixed_above) << (t_hi + 1);
+        let block = crate::kernels::expand_with_fixed(k, &fixed);
         outer_iter(block);
     }
 }
@@ -1269,7 +1277,7 @@ mod tests {
             }
         }
         for n in [6u32, 8, 10] {
-            for t in [[0u32, 2], [2, 3], [4, 5], [3, 5]] {
+            for t in [[0u32, 2], [2, 3], [4, 5], [3, 5], [2, 5]] {
                 // Require t_lo >= 2 (LANES=4 means 1<<t_lo >= 4)
                 if (1usize << t[0].min(t[1])) < 4 {
                     continue;
@@ -1286,6 +1294,34 @@ mod tests {
                 assert_amps_close(&a, &b, 1e-12);
             }
         }
+    }
+
+    /// Portable enumeration-coverage test for `apply_2q_avx512`'s
+    /// outer-walk.  Verifies that `expand_with_fixed` with both
+    /// targets pinned to 0 produces exactly the set of quartet base
+    /// indices (i.e. indices with both target bits zero) for a
+    /// non-adjacent target pair.  No AVX-512F required — runs on
+    /// every host and pins the enumeration contract regardless of
+    /// the active SIMD kernel.
+    #[test]
+    fn apply_2q_avx512_outer_walk_covers_all_quartets_for_non_adjacent_targets() {
+        // Hand-checked: for n=6, targets=[3,5] (t_lo=3, t_hi=5),
+        // quartet bases are indices i with bit_3 = 0 AND bit_5 = 0.
+        // That's {0..8} ∪ {16..24} = 16 bases.
+        let n_qubits = 6u32;
+        let t_lo = 3u32;
+        let t_hi = 5u32;
+        let fixed: [(u32, bool); 2] = [(t_lo, false), (t_hi, false)];
+        let outer_count = 1usize << (n_qubits - 2);
+        let mut bases: Vec<usize> = (0..outer_count)
+            .map(|k| crate::kernels::expand_with_fixed(k, &fixed))
+            .collect();
+        bases.sort();
+        let expected: Vec<usize> = (0..(1usize << n_qubits))
+            .filter(|&i| (i & ((1 << t_lo) | (1 << t_hi))) == 0)
+            .collect();
+        assert_eq!(bases, expected);
+        assert_eq!(bases.len(), 16);
     }
 
     #[test]
