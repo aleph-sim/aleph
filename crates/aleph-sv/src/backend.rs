@@ -1004,9 +1004,15 @@ mod tests {
 
         /// P1-06: diagonal-1q gates routed through `apply_gate` →
         /// `kernels::aos::apply_1q` → diagonal fast path must preserve
-        /// state-vector norm to 1 ± 1e-12.  Stronger than the
-        /// component-wise magnitude check above (catches a kernel
-        /// that scales every amplitude uniformly).
+        /// state-vector norm to 1 ± 1e-12.  *Weaker* than the
+        /// component-wise magnitude check above — a kernel that
+        /// swaps two equal-magnitude amplitudes would pass this test
+        /// but fail the magnitude one.  Kept as a defense-in-depth
+        /// check that catches a kernel that breaks unitarity globally
+        /// while leaving local magnitudes intact (e.g. a bug in the
+        /// AVX-512 store address calculation that overlaps two amp
+        /// indices, drifting total probability without changing
+        /// per-amp norms).
         #[test]
         fn p1_06_diagonal_fast_path_preserves_norm(
             op in aleph_test::gate::arb_diagonal_1q_gate(),

@@ -137,6 +137,20 @@ unsafe fn apply_1q_avx512(
     let target_bit = 1usize << target;
     let len = amps.len();
 
+    // Pin the # Safety contract as debug-only asserts.  Release-mode
+    // violations would silently produce a no-op (target_bit < LANES)
+    // or an underflowed outer_count (controls below target) — both
+    // catastrophic.  Converting to panic-on-debug guards a future
+    // dispatch-relaxation regression.
+    debug_assert!(
+        target_bit >= LANES,
+        "target_bit < LANES: dispatch contract violated"
+    );
+    debug_assert!(
+        controls.iter().all(|&c| c > target),
+        "control at-or-below target: dispatch contract violated"
+    );
+
     // Broadcast U matrix entries — constant across all iterations.
     let m00r = _mm512_set1_pd(m[0][0].re);
     let m00i = _mm512_set1_pd(m[0][0].im);
@@ -311,6 +325,18 @@ unsafe fn apply_1q_diagonal_avx512(
 
     let target_bit = 1usize << target;
     let len = amps.len();
+
+    // Pin the # Safety contract as debug-only asserts (see
+    // apply_1q_avx512 for the same pattern).  Release-mode
+    // violations would silently no-op or underflow outer_count.
+    debug_assert!(
+        target_bit >= LANES,
+        "target_bit < LANES: dispatch contract violated"
+    );
+    debug_assert!(
+        controls.iter().all(|&c| c > target),
+        "control at-or-below target: dispatch contract violated"
+    );
 
     // Broadcast the two diagonal entries; constant across the walk.
     let m00r = _mm512_set1_pd(m00.re);
