@@ -23,6 +23,29 @@ use aleph_core::Complex;
 /// (which LLVM auto-vectorises into 2-lane `vmulpd xmm` via the
 /// natural Complex layout).
 pub(crate) fn apply_1q(amps: &mut [Complex], target: u32, controls: &[u32], m: &[[Complex; 2]; 2]) {
+    // Diagonal fast path (P1-06).  Detection cost is ~5 ns per call;
+    // negligible vs even the cheapest state-vector kernel.  Catches
+    // Z/S/T/Sdg/Tdg/Rz/Phase intrinsic gates AND any user-supplied
+    // diagonal GenericUnitary(M2x2).
+    if super::is_diagonal_2x2(m) {
+        #[cfg(target_arch = "x86_64")]
+        {
+            if std::is_x86_feature_detected!("avx512f")
+                && (1usize << target) >= 4
+                && controls.iter().all(|&c| c > target)
+            {
+                // SAFETY: identical contract to apply_1q_avx512 — feature gate +
+                // target_bit ≥ LANES + every control above target.
+                unsafe {
+                    apply_1q_diagonal_avx512(amps, target, controls, m[0][0], m[1][1]);
+                }
+                return;
+            }
+        }
+        apply_1q_diagonal_scalar(amps, target, controls, m[0][0], m[1][1]);
+        return;
+    }
+
     #[cfg(target_arch = "x86_64")]
     {
         // AVX-512 packed-complex kernel: 1 `vmovupd zmm` reads 4
@@ -114,6 +137,20 @@ unsafe fn apply_1q_avx512(
     let target_bit = 1usize << target;
     let len = amps.len();
 
+    // Pin the # Safety contract as debug-only asserts.  Release-mode
+    // violations would silently produce a no-op (target_bit < LANES)
+    // or an underflowed outer_count (controls below target) — both
+    // catastrophic.  Converting to panic-on-debug guards a future
+    // dispatch-relaxation regression.
+    debug_assert!(
+        target_bit >= LANES,
+        "target_bit < LANES: dispatch contract violated"
+    );
+    debug_assert!(
+        controls.iter().all(|&c| c > target),
+        "control at-or-below target: dispatch contract violated"
+    );
+
     // Broadcast U matrix entries — constant across all iterations.
     let m00r = _mm512_set1_pd(m[0][0].re);
     let m00i = _mm512_set1_pd(m[0][0].im);
@@ -204,6 +241,169 @@ unsafe fn apply_1q_avx512(
     // Subtraction is safe: each control is distinct from target and
     // < n_qubits, all controls > target, so
     // `target + 1 + controls.len() ≤ n_qubits`.
+    let outer_count = 1usize << (n_qubits - target - 1 - controls.len() as u32);
+    for k in 0..outer_count {
+        let block = crate::kernels::expand_with_fixed(k, &fixed_above) << (target + 1);
+        outer_iter(block);
+    }
+}
+
+/// Scalar fallback for the 1q diagonal fast path.
+///
+/// Walks every amplitude exactly once, multiplying `state[i]` by
+/// `m00` if bit `target` of `i` is 0 and by `m11` otherwise.  No
+/// cross-term mixing — half the loads and stores of the generic
+/// kernel; LLVM auto-vectorises the inner multiply to 2-lane `vmulpd`
+/// xmm on x86_64.
+///
+/// `m00` and `m11` are passed explicitly (rather than the full matrix)
+/// because the caller has already detected the diagonal — passing the
+/// scalars makes the contract explicit and lets the compiler keep
+/// them in registers across the loop.
+pub(crate) fn apply_1q_diagonal_scalar(
+    amps: &mut [Complex],
+    target: u32,
+    controls: &[u32],
+    m00: Complex,
+    m11: Complex,
+) {
+    let t_bit = 1usize << target;
+    let ctrl_mask = super::control_mask(controls);
+    let len = amps.len();
+    let mut i = 0usize;
+    while i < len {
+        if (i & ctrl_mask) == ctrl_mask {
+            let d = if (i & t_bit) == 0 { m00 } else { m11 };
+            amps[i] *= d;
+        }
+        i += 1;
+    }
+}
+
+/// Packed-complex AVX-512 path for the 1q diagonal fast path.
+///
+/// **Math.** For each amplitude `z = state[i]` whose target bit is 0,
+/// `z ← z * m00`; whose target bit is 1, `z ← z * m11`.  No cross-term
+/// arithmetic — single-stream complex multiply per pair.
+///
+/// **Performance shape.** Per inner iter (4 complex pairs):
+/// 1 vmovupd + 1 vpermilpd + 1 vmulpd + 1 vfmaddsub + 1 vmovupd ≈
+/// 5 µops, vs `apply_1q_avx512`'s ~16 µops per 4 pairs (which does
+/// the full 2x2 multiply).  Roughly 3× fewer µops on the AVX-512
+/// path for diagonal gates.
+///
+/// **Block structure.** The target qubit splits the basis index into
+/// contiguous blocks of `target_bit = 1 << target` amps with the same
+/// multiplier.  Outer step = `2 * target_bit`; first sub-block (size
+/// `target_bit`) uses `m00`, second uses `m11`.  Caller guarantees
+/// `target_bit ≥ LANES = 4` so each sub-block has at least one full
+/// LANES-wide load.
+///
+/// # Safety
+///
+/// Caller MUST ensure all of:
+/// * Host CPU supports AVX-512F.
+/// * `1usize << target ≥ LANES` so the inner SIMD walk has at least
+///   `LANES` contiguous pairs per sub-block.
+/// * Every control's qubit index is strictly greater than `target`,
+///   so the inner walk's `block | j` for `j ∈ [0, target_bit)`
+///   doesn't toggle any control bit.
+/// * Standard apply_gate invariants: `target` and `controls` are
+///   distinct and in qubit range.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f")]
+unsafe fn apply_1q_diagonal_avx512(
+    amps: &mut [Complex],
+    target: u32,
+    controls: &[u32],
+    m00: Complex,
+    m11: Complex,
+) {
+    use core::arch::x86_64::*;
+
+    const LANES: usize = 4; // 4 complex pairs per __m512d (8 lanes f64)
+
+    let target_bit = 1usize << target;
+    let len = amps.len();
+
+    // Pin the # Safety contract as debug-only asserts (see
+    // apply_1q_avx512 for the same pattern).  Release-mode
+    // violations would silently no-op or underflow outer_count.
+    debug_assert!(
+        target_bit >= LANES,
+        "target_bit < LANES: dispatch contract violated"
+    );
+    debug_assert!(
+        controls.iter().all(|&c| c > target),
+        "control at-or-below target: dispatch contract violated"
+    );
+
+    // Broadcast the two diagonal entries; constant across the walk.
+    let m00r = _mm512_set1_pd(m00.re);
+    let m00i = _mm512_set1_pd(m00.im);
+    let m11r = _mm512_set1_pd(m11.re);
+    let m11i = _mm512_set1_pd(m11.im);
+
+    let amps_ptr = amps.as_mut_ptr() as *mut f64;
+
+    let outer_iter = |block: usize| {
+        // 0-side: amps[block .. block + target_bit] get * m00
+        let mut j = 0usize;
+        while j + LANES <= target_bit {
+            let i0 = block | j;
+            // SAFETY: i0 + LANES ≤ block + target_bit ≤ len.
+            let z = _mm512_loadu_pd(amps_ptr.add(i0 * 2));
+            // vpermilpd 0x55: each (re, im) pair becomes (im, re).
+            let zs = _mm512_permute_pd::<0x55>(z);
+            // t = m00_im * zs : per pair → (m00.im * im, m00.im * re, ...)
+            let t = _mm512_mul_pd(m00i, zs);
+            // out = vfmaddsub(m00_re, z, t) :
+            //   even lane = m00.re*re - m00.im*im = (m00 * z).re  ✓
+            //   odd  lane = m00.re*im + m00.im*re = (m00 * z).im  ✓
+            let out = _mm512_fmaddsub_pd(m00r, z, t);
+            _mm512_storeu_pd(amps_ptr.add(i0 * 2), out);
+            j += LANES;
+        }
+        debug_assert_eq!(j, target_bit);
+
+        // 1-side: amps[block + target_bit .. block + 2*target_bit] get * m11
+        let mut j = 0usize;
+        while j + LANES <= target_bit {
+            let i1 = block | target_bit | j;
+            // SAFETY: i1 + LANES ≤ block + 2*target_bit ≤ len.
+            let z = _mm512_loadu_pd(amps_ptr.add(i1 * 2));
+            let zs = _mm512_permute_pd::<0x55>(z);
+            let t = _mm512_mul_pd(m11i, zs);
+            let out = _mm512_fmaddsub_pd(m11r, z, t);
+            _mm512_storeu_pd(amps_ptr.add(i1 * 2), out);
+            j += LANES;
+        }
+        debug_assert_eq!(j, target_bit);
+    };
+
+    if controls.is_empty() {
+        let outer_step = target_bit << 1;
+        let mut block = 0usize;
+        while block < len {
+            outer_iter(block);
+            block += outer_step;
+        }
+        return;
+    }
+
+    // Controlled SIMD path.  Caller's `c > target` guard guarantees
+    // all controls sit above the target bit and `c - target - 1`
+    // does not underflow.  The outer loop iterates over bit-patterns
+    // that have every control set and every below-target bit clear,
+    // letting the inner SIMD walk fill in the target + below-target
+    // bits contiguously.
+    let mut fixed_above: smallvec::SmallVec<[(u32, bool); 8]> = smallvec::SmallVec::new();
+    for &c in controls {
+        fixed_above.push((c - target - 1, true));
+    }
+    fixed_above.sort_unstable_by_key(|&(pos, _)| pos);
+
+    let n_qubits = len.trailing_zeros();
     let outer_count = 1usize << (n_qubits - target - 1 - controls.len() as u32);
     for k in 0..outer_count {
         let block = crate::kernels::expand_with_fixed(k, &fixed_above) << (target + 1);
@@ -369,6 +569,153 @@ mod tests {
         amps[0] = Complex::new(1.0, 0.0);
         apply_1q(&mut amps, 1, &[0], &pauli_x());
         assert_eq!(amps[0], Complex::new(1.0, 0.0));
+    }
+
+    // P1-06 diagonal-fast-path tests.
+
+    #[test]
+    fn apply_1q_routes_diagonal_phase_through_fast_path() {
+        // 8-amp state (n=3), Phase(π/4) on q=1, no controls.
+        // Verify result equals what apply_1q_diagonal_scalar produces directly.
+        let theta = std::f64::consts::FRAC_PI_4;
+        let m = [
+            [Complex::new(1.0, 0.0), Complex::new(0.0, 0.0)],
+            [
+                Complex::new(0.0, 0.0),
+                Complex::new(theta.cos(), theta.sin()),
+            ],
+        ];
+        let mut amps_via_dispatch: Vec<Complex> = (0..8)
+            .map(|k| Complex::new(0.1 * k as f64, 0.07 * k as f64))
+            .collect();
+        let mut amps_direct = amps_via_dispatch.clone();
+        super::apply_1q(&mut amps_via_dispatch, 1, &[], &m);
+        super::apply_1q_diagonal_scalar(&mut amps_direct, 1, &[], m[0][0], m[1][1]);
+        for (a, b) in amps_via_dispatch.iter().zip(amps_direct.iter()) {
+            assert!((a - b).norm() < 1e-14);
+        }
+    }
+
+    #[test]
+    fn apply_1q_routes_non_diagonal_through_generic() {
+        // Hadamard on q=0: result should match the textbook H|0⟩ = |+⟩.
+        let s = std::f64::consts::FRAC_1_SQRT_2;
+        let h = [
+            [Complex::new(s, 0.0), Complex::new(s, 0.0)],
+            [Complex::new(s, 0.0), Complex::new(-s, 0.0)],
+        ];
+        let mut amps = vec![Complex::new(1.0, 0.0), Complex::new(0.0, 0.0)];
+        super::apply_1q(&mut amps, 0, &[], &h);
+        assert!((amps[0] - Complex::new(s, 0.0)).norm() < 1e-14);
+        assert!((amps[1] - Complex::new(s, 0.0)).norm() < 1e-14);
+    }
+
+    #[test]
+    fn apply_1q_diagonal_scalar_z_on_q0() {
+        // Z|+⟩ = |-⟩ ; here we test Z on a 2-amp state with both amps nonzero
+        let mut amps = vec![Complex::new(0.5, 0.0), Complex::new(0.7, 0.1)];
+        // m = diag(1, -1)
+        let m00 = Complex::new(1.0, 0.0);
+        let m11 = Complex::new(-1.0, 0.0);
+        super::apply_1q_diagonal_scalar(&mut amps, 0, &[], m00, m11);
+        assert_eq!(amps[0], Complex::new(0.5, 0.0));
+        assert_eq!(amps[1], Complex::new(-0.7, -0.1));
+    }
+
+    #[test]
+    fn apply_1q_diagonal_scalar_matches_generic_phase() {
+        // phase(θ) = diag(1, e^{iθ})
+        let theta = 0.7_f64;
+        let m = [
+            [Complex::new(1.0, 0.0), Complex::new(0.0, 0.0)],
+            [
+                Complex::new(0.0, 0.0),
+                Complex::new(theta.cos(), theta.sin()),
+            ],
+        ];
+        let mut amps_diag = vec![
+            Complex::new(0.3, 0.4),
+            Complex::new(0.5, -0.1),
+            Complex::new(-0.2, 0.6),
+            Complex::new(0.1, 0.8),
+        ];
+        let mut amps_gen = amps_diag.clone();
+        super::apply_1q_diagonal_scalar(&mut amps_diag, 1, &[], m[0][0], m[1][1]);
+        super::apply_1q(&mut amps_gen, 1, &[], &m);
+        for (d, g) in amps_diag.iter().zip(amps_gen.iter()) {
+            assert!((d - g).norm() < 1e-14, "diag {d:?} vs generic {g:?}");
+        }
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn apply_1q_diagonal_avx512_controlled_matches_scalar() {
+        if !std::is_x86_feature_detected!("avx512f") {
+            return;
+        }
+        // 32-amp state (n=5), target=2, control on qubit 4 (above target).
+        let mut amps_avx: Vec<Complex> = (0..32)
+            .map(|k| Complex::new(0.07 * k as f64, -0.03 * k as f64))
+            .collect();
+        let mut amps_sca = amps_avx.clone();
+        let m00 = Complex::new(0.6, 0.8); // arbitrary unit-magnitude
+        let m11 = Complex::new(-0.6, 0.8);
+        unsafe {
+            super::apply_1q_diagonal_avx512(&mut amps_avx, 2, &[4], m00, m11);
+        }
+        super::apply_1q_diagonal_scalar(&mut amps_sca, 2, &[4], m00, m11);
+        for (a, s) in amps_avx.iter().zip(amps_sca.iter()) {
+            assert!(
+                (a - s).norm() < 1e-14,
+                "controlled avx {a:?} vs scalar {s:?}"
+            );
+        }
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn apply_1q_diagonal_avx512_matches_scalar_on_phase() {
+        if !std::is_x86_feature_detected!("avx512f") {
+            return; // smoke on non-AVX-512 hosts: no-op
+        }
+        // 16-amp state (n=4), target=2 (target_bit=4 ≥ LANES), no controls
+        let mut amps_avx: Vec<Complex> = (0..16)
+            .map(|k| Complex::new(0.1 * k as f64, 0.05 * k as f64))
+            .collect();
+        let mut amps_sca = amps_avx.clone();
+        let theta = 0.9_f64;
+        let m00 = Complex::new(1.0, 0.0);
+        let m11 = Complex::new(theta.cos(), theta.sin()); // phase(θ)
+        unsafe {
+            super::apply_1q_diagonal_avx512(&mut amps_avx, 2, &[], m00, m11);
+        }
+        super::apply_1q_diagonal_scalar(&mut amps_sca, 2, &[], m00, m11);
+        for (a, s) in amps_avx.iter().zip(amps_sca.iter()) {
+            assert!((a - s).norm() < 1e-14, "avx {a:?} vs scalar {s:?}");
+        }
+    }
+
+    #[test]
+    fn apply_1q_diagonal_scalar_with_external_control() {
+        // 4-amp state (2 qubits).  Diagonal m on qubit 0, control on qubit 1.
+        // Only amps with bit-1 = 1 (indices 2, 3) get touched.
+        let mut amps = vec![
+            Complex::new(1.0, 0.0),
+            Complex::new(2.0, 0.0),
+            Complex::new(3.0, 0.0),
+            Complex::new(4.0, 0.0),
+        ];
+        let m00 = Complex::new(2.0, 0.0);
+        let m11 = Complex::new(-1.0, 0.0);
+        super::apply_1q_diagonal_scalar(&mut amps, 0, &[1], m00, m11);
+        // i=0 (bit1=0): untouched → 1.0
+        // i=1 (bit1=0): untouched → 2.0
+        // i=2 (bit1=1, bit0=0): * m00 = 2 * 3 = 6
+        // i=3 (bit1=1, bit0=1): * m11 = -1 * 4 = -4
+        assert_eq!(amps[0], Complex::new(1.0, 0.0));
+        assert_eq!(amps[1], Complex::new(2.0, 0.0));
+        assert_eq!(amps[2], Complex::new(6.0, 0.0));
+        assert_eq!(amps[3], Complex::new(-4.0, 0.0));
     }
 
     /// Canonical `Gate::Cnot` matrix (P0-06):

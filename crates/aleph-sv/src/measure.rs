@@ -318,13 +318,50 @@ mod tests {
     /// path landed; used by the proptest below to assert the fast
     /// path agrees on Z-only Pauli strings.
     fn reference_expectation(state: &CpuState, pauli: &PauliString) -> f64 {
+        // Independent slow-path reference: applies Pauli factors directly
+        // by amplitude-index inspection rather than going through
+        // `kernels::aos::apply_1q`.  Since P1-06 routes diagonal-Z through
+        // the same new diagonal kernel as the `all_z_or_i` fast path in
+        // expectation_value_impl, using apply_1q here would make the
+        // `z_fast_path_matches_slow_path` proptest self-validating
+        // (both sides hit the diagonal kernel).  This direct-index walk
+        // gives an independent oracle: Z is diag(+1, -1), X swaps i↔i^bit,
+        // Y = X ⊗ diag(i, -i).
         let mut tmp = state.amps.clone();
         for (q, p) in &pauli.terms {
-            if *p == Pauli::I {
-                continue;
+            let qbit = 1usize << q;
+            match p {
+                Pauli::I => {}
+                Pauli::Z => {
+                    for (i, a) in tmp.iter_mut().enumerate() {
+                        if i & qbit != 0 {
+                            *a = -*a;
+                        }
+                    }
+                }
+                Pauli::X => {
+                    // Swap pairs (i, i|qbit) where i has qbit clear.
+                    for i in 0..tmp.len() {
+                        if i & qbit == 0 {
+                            tmp.swap(i, i | qbit);
+                        }
+                    }
+                }
+                Pauli::Y => {
+                    // Y|0⟩ = i|1⟩, Y|1⟩ = -i|0⟩ on qubit q.
+                    // For each pair (i, j=i|qbit) with qbit clear in i:
+                    //   new[i] = -i * tmp[j],  new[j] = +i * tmp[i]
+                    for i in 0..tmp.len() {
+                        if i & qbit == 0 {
+                            let j = i | qbit;
+                            let a = tmp[i];
+                            let b = tmp[j];
+                            tmp[i] = Complex::new(b.im, -b.re); // -i * b
+                            tmp[j] = Complex::new(-a.im, a.re); // +i * a
+                        }
+                    }
+                }
             }
-            let m = p.matrix();
-            crate::kernels::aos::apply_1q(&mut tmp, *q, &[], &m);
         }
         let mut acc = Complex::new(0.0, 0.0);
         for (lhs, rhs) in state.amps.iter().zip(tmp.iter()) {

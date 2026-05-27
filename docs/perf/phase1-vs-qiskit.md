@@ -135,8 +135,56 @@ RUSTFLAGS="-C target-cpu=native" cargo bench --bench qiskit_baseline -- \
 Pinned versions in `scripts/qiskit-baseline/requirements.txt`. Aer/Qiskit
 versions printed at the top of this report come from `pip freeze`.
 
+## P1-06 update (2026-05-27): diagonal 1q kernel
+
+After landing `apply_1q_diagonal_avx512` + symmetric SoA path. Same EPYC host,
+same `cargo bench --bench qiskit_baseline -- --sample-size 30 --measurement-time 15`,
+same Aer baselines.
+
+### Headline — `NaiveSvBackend`
+
+| Workload                              | Stage 0 (ms) | P1-06 (ms) |  Aer (ms) | aleph / Aer | Δ vs Stage 0 |
+|---------------------------------------|-------------:|-----------:|----------:|------------:|-------------:|
+| `qft_n20`                             |       1098.1 |     1133.0 |     459.3 |     2.47 ×  | **+3.2 %** ⚠️ |
+| `grover_n20_iters5`                   |     92 111.3 |   79 033.2 | 115 597.6 |     0.68 ×  | **-14.2 %** ✓✓ |
+| `random_brickwall_n20_d20`            |        821.6 |      842.2 |   1 138.3 |     0.74 ×  | **+2.5 %** ⚠️ |
+
+QFT regression on the AoS path is real (MAD < 0.07 % — not noise). See
+**ADR 0009** (`docs/decisions/0009-diagonal-fast-path.md`) for the perf-counter
+forensic and the proposed two-stream interleave follow-up.
+
+### Appendix — full backend matrix (P1-06)
+
+| Workload                              | `NaiveSvBackend` (ms) | `SoaSvBackend` (ms) | Aer (ms)   |
+|---------------------------------------|---------------------:|--------------------:|-----------:|
+| `qft_n20`                             |             1 133.01 |            2 252.45 |     459.34 |
+| `grover_n20_iters5`                   |            79 033.15 |          201 129.12 | 115 597.58 |
+| `random_brickwall_n20_d20`            |               842.21 |            2 003.96 |   1 138.31 |
+
+`SoaSvBackend` improves on all three workloads (-11.8 %, -4.7 %, -10.5 %).
+That's expected per ADR 0008's load-pattern finding — SoA's generic 1q kernel
+is slower, so the diagonal fast path has more headroom.
+
+### `perf stat` forensic (qft_n20 naive_aos_avx512, 30 s window)
+
+| Counter                                      | Stage 0 |     P1-06 |     Δ |
+|----------------------------------------------|--------:|----------:|------:|
+| cycles                                       |  85.8 B |    87.4 B | +1.8 % |
+| instructions                                 | 390.7 B |   339.6 B | -13.1 % |
+| FP mul flops                                 | 238.5 B |   195.9 B | -17.8 % |
+| `ls_dispatch.ld_dispatch`                    |  50.1 B |    51.3 B | +2.4 % |
+| `l2_cache_req_stat.ic_dc_miss_in_l2`         |   454 M |     245 M | -46 %  |
+| branch-misses                                |  12.6 M |    13.3 M | +5.2 % |
+
+Compute path wins (fewer instructions, fewer flops, **massive** L2-miss
+improvement) eaten by a 2.4 % load-µop increase, most plausibly explained by
+the diagonal kernel's single-stream walk having less ILP than the generic
+kernel's two-stream interleave. Full discussion in ADR 0009.
+
 ## Related work
 
+- **P1-06** Diagonal 1q kernel: PR <TBD>.
+- **ADR 0009** — Diagonal-gate fast path: `docs/decisions/0009-diagonal-fast-path.md`.
 - **P1-03** AVX-512 packed-complex 1q kernel: PR #80 (`f596e9a`).
 - **ADR 0008** — AoS + AVX-512 beats SoA on Zen 4: `docs/decisions/0008-aos-avx512-beats-soa-simd.md`.
 - **ADR 0007** — SoA-on-x86 perf finding: `docs/decisions/0007-soa-x86-perf-finding.md`.
