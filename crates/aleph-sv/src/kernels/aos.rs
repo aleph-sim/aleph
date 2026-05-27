@@ -320,39 +320,60 @@ unsafe fn apply_1q_diagonal_avx512(
 
     let amps_ptr = amps.as_mut_ptr() as *mut f64;
 
+    // Two-stream interleave: process 2 LANES-blocks per inner iter so the
+    // OoO engine sees two independent dependency chains and can dual-issue.
+    // Recovers the ILP that the generic apply_1q_avx512 gets "for free"
+    // from its z0/z1 pair-mode walk (see ADR 0009 P1-06 forensic).
+    // Guarded by `target_bit >= 2 * LANES = 8`; smaller target_bit falls
+    // through to the single-stream walk below.
+    const STRIDE: usize = 2 * LANES; // 8 complex pairs per inner iter
+
+    let inner_diag = |start: usize, count: usize, d_re: __m512d, d_im: __m512d| {
+        // Process `count` contiguous complex pairs starting at `start`,
+        // multiplying each by the diagonal entry (d_re, d_im).
+        if count >= STRIDE {
+            // 2-stream interleaved path.
+            let mut j = 0usize;
+            while j + STRIDE <= count {
+                let i0 = start + j;
+                let i1 = i0 + LANES;
+                // SAFETY: i1 + LANES ≤ start + count ≤ len (caller bound).
+                let z0 = _mm512_loadu_pd(amps_ptr.add(i0 * 2));
+                let z1 = _mm512_loadu_pd(amps_ptr.add(i1 * 2));
+                let zs0 = _mm512_permute_pd::<0x55>(z0);
+                let zs1 = _mm512_permute_pd::<0x55>(z1);
+                let t0 = _mm512_mul_pd(d_im, zs0);
+                let t1 = _mm512_mul_pd(d_im, zs1);
+                let out0 = _mm512_fmaddsub_pd(d_re, z0, t0);
+                let out1 = _mm512_fmaddsub_pd(d_re, z1, t1);
+                _mm512_storeu_pd(amps_ptr.add(i0 * 2), out0);
+                _mm512_storeu_pd(amps_ptr.add(i1 * 2), out1);
+                j += STRIDE;
+            }
+            // target_bit is a power of 2 ≥ STRIDE ⇒ STRIDE divides target_bit
+            // ⇒ no tail past the 2-stream walk.
+            debug_assert_eq!(j, count);
+        } else {
+            // Single-stream path for target_bit = LANES (i.e. target = 2).
+            let mut j = 0usize;
+            while j + LANES <= count {
+                let i0 = start + j;
+                let z = _mm512_loadu_pd(amps_ptr.add(i0 * 2));
+                let zs = _mm512_permute_pd::<0x55>(z);
+                let t = _mm512_mul_pd(d_im, zs);
+                let out = _mm512_fmaddsub_pd(d_re, z, t);
+                _mm512_storeu_pd(amps_ptr.add(i0 * 2), out);
+                j += LANES;
+            }
+            debug_assert_eq!(j, count);
+        }
+    };
+
     let outer_iter = |block: usize| {
         // 0-side: amps[block .. block + target_bit] get * m00
-        let mut j = 0usize;
-        while j + LANES <= target_bit {
-            let i0 = block | j;
-            // SAFETY: i0 + LANES ≤ block + target_bit ≤ len.
-            let z = _mm512_loadu_pd(amps_ptr.add(i0 * 2));
-            // vpermilpd 0x55: each (re, im) pair becomes (im, re).
-            let zs = _mm512_permute_pd::<0x55>(z);
-            // t = m00_im * zs : per pair → (m00.im * im, m00.im * re, ...)
-            let t = _mm512_mul_pd(m00i, zs);
-            // out = vfmaddsub(m00_re, z, t) :
-            //   even lane = m00.re*re - m00.im*im = (m00 * z).re  ✓
-            //   odd  lane = m00.re*im + m00.im*re = (m00 * z).im  ✓
-            let out = _mm512_fmaddsub_pd(m00r, z, t);
-            _mm512_storeu_pd(amps_ptr.add(i0 * 2), out);
-            j += LANES;
-        }
-        debug_assert_eq!(j, target_bit);
-
+        inner_diag(block, target_bit, m00r, m00i);
         // 1-side: amps[block + target_bit .. block + 2*target_bit] get * m11
-        let mut j = 0usize;
-        while j + LANES <= target_bit {
-            let i1 = block | target_bit | j;
-            // SAFETY: i1 + LANES ≤ block + 2*target_bit ≤ len.
-            let z = _mm512_loadu_pd(amps_ptr.add(i1 * 2));
-            let zs = _mm512_permute_pd::<0x55>(z);
-            let t = _mm512_mul_pd(m11i, zs);
-            let out = _mm512_fmaddsub_pd(m11r, z, t);
-            _mm512_storeu_pd(amps_ptr.add(i1 * 2), out);
-            j += LANES;
-        }
-        debug_assert_eq!(j, target_bit);
+        inner_diag(block | target_bit, target_bit, m11r, m11i);
     };
 
     if controls.is_empty() {
