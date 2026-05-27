@@ -118,18 +118,11 @@ pub(crate) fn is_diagonal_2x2(m: &[[aleph_core::Complex; 2]; 2]) -> bool {
 /// whose off-diagonals exceed `~1e-15` magnitude already fails the
 /// diagonal pre-test (`DIAGONAL_EPS_SQ`), so this looser tolerance only
 /// guards against unitarity-normalisation drift in user-built matrices.
-// Allow dead_code: this constant is wired into the 2q kernel dispatch
-// by subsequent P1-07 tasks; Task 1 only ships the helpers + tests.
-#[allow(dead_code)]
 const PERM_TOL: f64 = 1e-14;
 
 /// Canonical 4×4 permutation matrices recognised by the 2q dispatch.
 /// Other 6 valid 4-element permutations (e.g. `X⊗I = [1,0,3,2]`) fall
 /// through to the generic kernel.
-// Allow dead_code: variants are pattern-matched by the 2q kernel
-// dispatch landing in subsequent P1-07 tasks; Task 1 only ships the
-// classifier + tests.
-#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Perm2qKind {
     /// `π = [0, 1, 2, 3]` — identity.
@@ -156,9 +149,6 @@ pub(crate) enum Perm2qKind {
 /// route the NaN to the fast path (which only consults `m[i][i]`).
 /// Rejecting non-finite off-diagonals forces the generic kernel to
 /// see and propagate the NaN.
-// Allow dead_code: wired into the 2q kernel dispatch by subsequent
-// P1-07 tasks; Task 1 only ships the helper + tests.
-#[allow(dead_code)]
 #[inline]
 pub(crate) fn is_diagonal_4x4(m: &[[aleph_core::Complex; 4]; 4]) -> bool {
     for (r, row) in m.iter().enumerate() {
@@ -185,9 +175,6 @@ pub(crate) fn is_diagonal_4x4(m: &[[aleph_core::Complex; 4]; 4]) -> bool {
 /// within `PERM_TOL`; reject if multiple non-zero entries or any non-zero
 /// off-canonical phase. Check the column-permutation is injective.
 /// Match against the four canonical patterns.
-// Allow dead_code: wired into the 2q kernel dispatch by subsequent
-// P1-07 tasks; Task 1 only ships the classifier + tests.
-#[allow(dead_code)]
 pub(crate) fn classify_2q_permutation(m: &[[aleph_core::Complex; 4]; 4]) -> Option<Perm2qKind> {
     let mut perm = [0u8; 4];
     for (r, row) in m.iter().enumerate() {
@@ -238,9 +225,6 @@ pub(crate) fn classify_2q_permutation(m: &[[aleph_core::Complex; 4]; 4]) -> Opti
 /// Returns true iff the four diagonal entries match the CZ phase
 /// pattern `(1, 1, 1, -1)` within `PERM_TOL`. Detected as a shortcut
 /// to swap the generic 2q-diagonal multiply for `vxorpd` sign-flip.
-// Allow dead_code: wired into the 2q kernel dispatch by subsequent
-// P1-07 tasks; Task 1 only ships the helper + tests.
-#[allow(dead_code)]
 #[inline]
 pub(crate) fn is_cz_signature(d: [aleph_core::Complex; 4]) -> bool {
     // Component-wise comparison matches the contract used by

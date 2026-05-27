@@ -464,7 +464,6 @@ pub(crate) fn apply_2q_dense_scalar(
 /// kernel's `targets[2]`) because the dispatch prelude has already
 /// disambiguated the orientation via `Perm2qKind`.  External
 /// `controls` are appended to the implicit control mask.
-#[allow(dead_code)] // wired up in Task 4
 pub(crate) fn apply_2q_cnot_scalar(
     amps: &mut [Complex],
     control: u32,
@@ -491,7 +490,6 @@ pub(crate) fn apply_2q_cnot_scalar(
 /// Convention: this kernel walks every base index `i` with bits a, b
 /// both zero (and external controls set); for each such i, swap
 /// `state[i | a_bit]` (= a=0, b=1) with `state[i | b_bit]` (= a=1, b=0).
-#[allow(dead_code)] // wired up in Task 4
 pub(crate) fn apply_2q_swap_scalar(
     amps: &mut [Complex],
     targets: [u32; 2],
@@ -514,7 +512,6 @@ pub(crate) fn apply_2q_swap_scalar(
 /// Scalar CZ specialisation: negate `state[i]` for amplitudes where
 /// both target bits are 1 (and external controls satisfied).  Touches
 /// 1/4 of the state vector.
-#[allow(dead_code)] // wired up in Task 4
 pub(crate) fn apply_2q_cz_scalar(
     amps: &mut [Complex],
     targets: [u32; 2],
@@ -540,7 +537,6 @@ pub(crate) fn apply_2q_cz_scalar(
 /// Convention: matches the MSB-first quartet ordering of the generic
 /// 2q kernel.  `targets[0]` is the high bit of `k`, `targets[1]` is
 /// the low bit (per ADR 0004 / P0-06 §6).
-#[allow(dead_code)] // wired up in Task 4
 pub(crate) fn apply_2q_diagonal_scalar(
     amps: &mut [Complex],
     targets: [u32; 2],
@@ -568,14 +564,48 @@ pub(crate) fn apply_2q_diagonal_scalar(
 /// 2. `is_diagonal_4x4` → CZ (`is_cz_signature` shortcut) / general diagonal fast path.
 /// 3. Otherwise: AVX-512 dense kernel when contract holds, else `apply_2q_dense_scalar`.
 ///
-/// **Placeholder**: this initial commit calls through to `apply_2q_dense_scalar`
-/// unconditionally so behaviour is unchanged.  Tasks 3-11 fill the prelude.
+/// AVX-512 branches for the specialised permutation/diagonal paths and the
+/// generic dense kernel land in Tasks 5+; for now the scalar specialisations
+/// handle every classified case and the generic fall-through routes to
+/// `apply_2q_dense_scalar`.
 pub(crate) fn apply_2q(
     amps: &mut [Complex],
     targets: [u32; 2],
     controls: &[u32],
     m: &[[Complex; 4]; 4],
 ) {
+    // 1. Permutation detection (Identity / CNOT / SWAP).
+    match super::classify_2q_permutation(m) {
+        Some(super::Perm2qKind::Identity) => return,
+        Some(super::Perm2qKind::CnotHi) => {
+            apply_2q_cnot_scalar(amps, targets[0], targets[1], controls);
+            return;
+        }
+        Some(super::Perm2qKind::CnotLo) => {
+            apply_2q_cnot_scalar(amps, targets[1], targets[0], controls);
+            return;
+        }
+        Some(super::Perm2qKind::Swap) => {
+            apply_2q_swap_scalar(amps, targets, controls);
+            return;
+        }
+        None => {}
+    }
+
+    // 2. Diagonal-4x4 (catches Cz, controlled-Phase, Rzz, user diagonals).
+    if super::is_diagonal_4x4(m) {
+        let d = [m[0][0], m[1][1], m[2][2], m[3][3]];
+        if super::is_cz_signature(d) {
+            apply_2q_cz_scalar(amps, targets, controls);
+        } else {
+            apply_2q_diagonal_scalar(amps, targets, controls, d);
+        }
+        return;
+    }
+
+    // 3. Generic dense 4×4.  AVX-512 branches land in Tasks 5+; for now,
+    //    everything falls through to the scalar walk so the workspace
+    //    test suite stays green.
     apply_2q_dense_scalar(amps, targets, controls, m);
 }
 
@@ -1016,6 +1046,60 @@ mod tests {
         let mut b = amps0;
         apply_2q_dense_scalar(&mut a, [0, 1], &[3], &m);
         apply_2q_cnot_scalar(&mut b, 0, 1, &[3]);
+        assert_amps_close(&a, &b, 1e-14);
+    }
+
+    #[test]
+    fn apply_2q_prelude_dispatches_identity_as_noop() {
+        let n = 5;
+        let id = {
+            let mut m = [[Complex::new(0.0, 0.0); 4]; 4];
+            for (i, row) in m.iter_mut().enumerate() {
+                row[i] = Complex::new(1.0, 0.0);
+            }
+            m
+        };
+        let amps0 = random_complex_state(n, 0x1234);
+        let mut a = amps0.clone();
+        apply_2q(&mut a, [0, 1], &[], &id);
+        assert_amps_close(&a, &amps0, 1e-15);
+    }
+
+    #[test]
+    fn apply_2q_prelude_dispatches_cnot_matches_dense() {
+        let n = 6;
+        let m = {
+            let mut m = [[Complex::new(0.0, 0.0); 4]; 4];
+            m[0][0] = Complex::new(1.0, 0.0);
+            m[1][1] = Complex::new(1.0, 0.0);
+            m[2][3] = Complex::new(1.0, 0.0);
+            m[3][2] = Complex::new(1.0, 0.0);
+            m
+        };
+        let amps0 = random_complex_state(n, 0x5678);
+        let mut a = amps0.clone();
+        let mut b = amps0;
+        apply_2q(&mut a, [2, 3], &[], &m);
+        apply_2q_dense_scalar(&mut b, [2, 3], &[], &m);
+        assert_amps_close(&a, &b, 1e-14);
+    }
+
+    #[test]
+    fn apply_2q_prelude_dispatches_cz_matches_dense() {
+        let n = 6;
+        let m = {
+            let mut m = [[Complex::new(0.0, 0.0); 4]; 4];
+            m[0][0] = Complex::new(1.0, 0.0);
+            m[1][1] = Complex::new(1.0, 0.0);
+            m[2][2] = Complex::new(1.0, 0.0);
+            m[3][3] = Complex::new(-1.0, 0.0);
+            m
+        };
+        let amps0 = random_complex_state(n, 0x9abc);
+        let mut a = amps0.clone();
+        let mut b = amps0;
+        apply_2q(&mut a, [1, 4], &[], &m);
+        apply_2q_dense_scalar(&mut b, [1, 4], &[], &m);
         assert_amps_close(&a, &b, 1e-14);
     }
 
