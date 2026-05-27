@@ -1328,15 +1328,243 @@ unsafe fn apply_2q_swap_avx512(amps: &mut [Complex], targets: [u32; 2], external
     }
 }
 
-/// Dispatch helper for SWAP.  Routes to the AVX-512 Tier A kernel
-/// when the host + qubit orientation satisfies the safety contract,
-/// otherwise falls through to the scalar SWAP kernel.
+/// Packed AVX-512 SWAP specialisation — Tier B (`min(targets) ∈
+/// {0, 1}` AND `1 << max(targets) >= LANES`).
 ///
-/// Tier coverage:
-/// * **Tier A** (`1 << min(targets) >= LANES`): classic LANES-block
-///   swap-pair across two disjoint windows.
+/// In Tier A the lo target bit sits ≥ LANES, so a swap-pair touches
+/// two disjoint LANES-wide windows.  In Tier B the lo bit sits
+/// *inside* one LANES-wide window — and the hi bit selects between
+/// two adjacent windows.  A swap-pair therefore spans both windows
+/// (one half lives in the `hi = 0` zmm, the other in the `hi = 1`
+/// zmm), so a single `vpermutex2var_pd` per output zmm shuffles the
+/// matching doubles between the two inputs.
 ///
-/// Tier B / C (one or both targets in `{0, 1}`) land in Task 9.
+/// **Permute-index tables** (8 doubles per zmm; doubles `[0, 7]` =
+/// hi=0 input, doubles `[8, 15]` = hi=1 input; output position →
+/// source index):
+/// * `lo = 0` — varying bit 0 inside each zmm is the lo-bit:
+///   * `idx_for_hi0 = [0, 1, 8, 9, 4, 5, 12, 13]`
+///   * `idx_for_hi1 = [2, 3, 10, 11, 6, 7, 14, 15]`
+/// * `lo = 1` — varying bit 1 inside each zmm is the lo-bit:
+///   * `idx_for_hi0 = [0, 1, 2, 3, 8, 9, 10, 11]`
+///   * `idx_for_hi1 = [4, 5, 6, 7, 12, 13, 14, 15]`
+///
+/// **Outer-walk (bit-disjointness).** Same renormalise-then-shift
+/// idiom as `apply_2q_cnot_avx512_tier_b`.  The inner walk owns
+/// bits `[0, hi)` via `j` (which steps by LANES) and the choice
+/// between the two halves of the swap pair (each iteration loads
+/// the `hi = 0` zmm and the `hi = 1` zmm).  The outer walk
+/// reserves bits `[0, hi]` and injects every external control bit
+/// (each renormalised by `-(hi + 1)`) as `fixed=true` in the
+/// above-hi subspace, then shifts the result up by `hi + 1`.
+///
+/// The "loose" form — `expand_with_fixed(k, &[(hi, false), ...])`
+/// — would let `k`'s bits fall into positions `[0, hi)` where they
+/// collide with `j` in the inner walk and with `hi_bit` in the
+/// half-selector.  Same bug class as Task 5's first fix and Task
+/// 6's Tier A renormalisation.
+///
+/// # Safety
+///
+/// Caller MUST ensure all of:
+/// * Host CPU supports AVX-512F.
+/// * `min(targets) ∈ {0, 1}` (i.e. `1 << lo < LANES = 4`).
+/// * `1 << max(targets) >= LANES` (= 4) — the inner SIMD walk has
+///   ≥ LANES contiguous amps per zmm half.
+/// * Distinct targets, both in qubit range.
+/// * Every external control's qubit index is strictly greater than
+///   `max(targets)`, so the renormalisation subtraction is safe
+///   and external controls land above the reserved span.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f")]
+unsafe fn apply_2q_swap_avx512_tier_b(
+    amps: &mut [Complex],
+    targets: [u32; 2],
+    external_controls: &[u32],
+) {
+    use core::arch::x86_64::*;
+
+    const LANES: usize = 4;
+    let lo = targets[0].min(targets[1]);
+    let hi = targets[0].max(targets[1]);
+    let hi_bit = 1usize << hi;
+    let len = amps.len();
+
+    debug_assert!(
+        lo != hi,
+        "SWAP requires distinct targets: dispatch contract violated"
+    );
+    debug_assert!(lo <= 1, "Tier B requires lo ∈ {{0, 1}}");
+    debug_assert!(
+        hi_bit >= LANES,
+        "hi_bit < LANES: dispatch contract violated"
+    );
+    debug_assert!(
+        external_controls.iter().all(|&c| c > hi),
+        "external control at-or-below hi: dispatch contract violated"
+    );
+
+    // SAFETY: permute indices derived in the doc comment above.
+    // `_mm512_setr_epi64` is an immediate-builder, no UB possible.
+    let (idx_for_hi0, idx_for_hi1) = match lo {
+        0 => (
+            _mm512_setr_epi64(0, 1, 8, 9, 4, 5, 12, 13),
+            _mm512_setr_epi64(2, 3, 10, 11, 6, 7, 14, 15),
+        ),
+        1 => (
+            _mm512_setr_epi64(0, 1, 2, 3, 8, 9, 10, 11),
+            _mm512_setr_epi64(4, 5, 6, 7, 12, 13, 14, 15),
+        ),
+        _ => unreachable!("Tier B requires lo ∈ {{0, 1}}"),
+    };
+
+    let amps_ptr = amps.as_mut_ptr() as *mut f64;
+
+    // Outer-walk: reserve bits `[0, hi]` for the inner walk + the
+    // hi-bit half-selector, inject every external control as
+    // `fixed=true` in the above-hi subspace, then shift the result
+    // up by `hi + 1`.  Subtractions are safe because the safety
+    // contract guarantees each external control > hi.
+    let mut fixed_above: smallvec::SmallVec<[(u32, bool); 8]> = smallvec::SmallVec::new();
+    for &ec in external_controls {
+        fixed_above.push((ec - hi - 1, true));
+    }
+    fixed_above.sort_unstable_by_key(|&(pos, _)| pos);
+
+    // Above-hi subspace has `n_qubits - (hi + 1)` positions;
+    // `external_controls.len()` are reserved (fixed=1).  Remaining
+    // free positions count = n_qubits - hi - 1 - ec.len(); each
+    // contributes one bit to the outer-walk index.
+    let n_qubits = len.trailing_zeros();
+    let outer_count = 1usize << (n_qubits - hi - 1 - external_controls.len() as u32);
+    for k in 0..outer_count {
+        let outer = crate::kernels::expand_with_fixed(k, &fixed_above) << (hi + 1);
+        // outer has: bit hi = 0, every external_control bit set,
+        // bits [0, hi) all zero.  We OR in `j` (which steps over
+        // bits [0, hi)) and either 0 or `hi_bit` to select between
+        // the two zmm halves of the swap pair.
+        let mut j = 0usize;
+        while j + LANES <= hi_bit {
+            // SAFETY: bit-disjointness — `outer`'s bits ≥ hi+1
+            // (with hi cleared and every external control set), `j`
+            // ⊆ [0, hi_bit), `hi_bit` is bit hi.  Three pieces
+            // pairwise bit-disjoint, so each LANES-wide load + store
+            // stays within `len`.
+            let i_0 = outer | j;
+            let i_1 = i_0 | hi_bit;
+            let z0 = _mm512_loadu_pd(amps_ptr.add(i_0 * 2));
+            let z1 = _mm512_loadu_pd(amps_ptr.add(i_1 * 2));
+            let new_z0 = _mm512_permutex2var_pd(z0, idx_for_hi0, z1);
+            let new_z1 = _mm512_permutex2var_pd(z0, idx_for_hi1, z1);
+            _mm512_storeu_pd(amps_ptr.add(i_0 * 2), new_z0);
+            _mm512_storeu_pd(amps_ptr.add(i_1 * 2), new_z1);
+            j += LANES;
+        }
+        debug_assert_eq!(j, hi_bit);
+    }
+}
+
+/// Packed AVX-512 SWAP specialisation — Tier C (both targets in
+/// `{0, 1}`).
+///
+/// Both qubits' bits fit inside a single quartet (4 amps = 8
+/// doubles = one zmm).  One load + `vpermutexvar_pd` + store
+/// effects the SWAP by exchanging amp1 (q1=0, q0=1) with amp2
+/// (q1=1, q0=0).  No inner walk needed.  The choice of `lo`/`hi`
+/// is irrelevant — SWAP is symmetric in its targets — so the same
+/// permute index serves both orientations.
+///
+/// **Permute-index table** (q1 = bit 1, q0 = bit 0; amp k =
+/// doubles 2k, 2k+1):
+/// * swap amp1 (doubles 2, 3) ↔ amp2 (doubles 4, 5)
+///   → `[0, 1, 4, 5, 2, 3, 6, 7]`
+///
+/// **Outer-walk.** External controls all sit above the quartet
+/// span (positions ≥ 2) by safety contract.  Each is renormalised
+/// by `-2` and injected as `fixed=true`; free positions ≥ 2 are
+/// enumerated by `k` through `expand_with_fixed`.  The resulting
+/// base — shifted left by 2 — has bits 0 and 1 both zero, i.e.
+/// lands exactly on a quartet boundary.
+///
+/// # Safety
+///
+/// Caller MUST ensure all of:
+/// * Host CPU supports AVX-512F.
+/// * Both targets in `{0, 1}`, distinct.
+/// * Every external control's qubit index is strictly greater
+///   than 1 (so the renormalisation by `-2` is safe and external
+///   controls land above the quartet span).
+/// * `amps.len() >= 4` (at least one quartet).
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f")]
+unsafe fn apply_2q_swap_avx512_tier_c(
+    amps: &mut [Complex],
+    targets: [u32; 2],
+    external_controls: &[u32],
+) {
+    use core::arch::x86_64::*;
+
+    let len = amps.len();
+
+    debug_assert!(
+        targets[0] <= 1 && targets[1] <= 1 && targets[0] != targets[1],
+        "Tier C requires distinct targets in {{0, 1}}"
+    );
+    debug_assert!(len >= 4, "len < 4: dispatch contract violated");
+    debug_assert!(
+        external_controls.iter().all(|&c| c > 1),
+        "external control at-or-below 1: dispatch contract violated"
+    );
+
+    // SWAP exchanges amp1 (q1=0, q0=1) with amp2 (q1=1, q0=0).
+    // Output position → source index in the input zmm.
+    let permute_idx = _mm512_setr_epi64(0, 1, 4, 5, 2, 3, 6, 7);
+
+    let amps_ptr = amps.as_mut_ptr() as *mut f64;
+
+    // Outer-walk: reserve bits [0, 2) for the in-register quartet,
+    // inject every external control (renormalised by -2) as
+    // `fixed=true` in the above-quartet subspace, then shift the
+    // result up by 2 to land on a quartet boundary with all
+    // external controls set.
+    let mut fixed_above: smallvec::SmallVec<[(u32, bool); 8]> = smallvec::SmallVec::new();
+    for &ec in external_controls {
+        fixed_above.push((ec - 2, true));
+    }
+    fixed_above.sort_unstable_by_key(|&(pos, _)| pos);
+
+    let n_qubits = len.trailing_zeros();
+    let outer_count = 1usize << (n_qubits - 2 - external_controls.len() as u32);
+    for k in 0..outer_count {
+        let base = crate::kernels::expand_with_fixed(k, &fixed_above) << 2;
+        // base has bits 0 and 1 zero (post-shift) and every external
+        // control bit set.
+        debug_assert_eq!(base & 3, 0);
+        // SAFETY: bit-disjointness — `base` has bits 0, 1 = 0 and
+        // base ≤ len - 4 (the in-register permute writes 4 amps
+        // starting at base).
+        let z = _mm512_loadu_pd(amps_ptr.add(base * 2));
+        let z2 = _mm512_permutexvar_pd(permute_idx, z);
+        _mm512_storeu_pd(amps_ptr.add(base * 2), z2);
+    }
+}
+
+/// Dispatch helper for SWAP.  Routes to the AVX-512 Tier A / B / C
+/// kernels when the host + qubit orientation satisfies the matching
+/// safety contract, otherwise falls through to the scalar SWAP
+/// kernel.
+///
+/// Tier coverage (SWAP is symmetric, so the routing is keyed on
+/// `lo = min(targets)`, `hi = max(targets)`):
+/// * **Tier A** (`1 << lo >= LANES`): classic LANES-block swap-pair
+///   across two disjoint windows.
+/// * **Tier B** (`lo ∈ {0, 1}` AND `1 << hi >= LANES`): a swap-pair
+///   spans two adjacent LANES-wide windows whose only differing bit
+///   is `hi`; `vpermutex2var_pd` shuffles the matching doubles
+///   between the two zmms.
+/// * **Tier C** (both targets in `{0, 1}`): both targets fit inside
+///   a single quartet (4 amps = 8 doubles = one zmm); a single
+///   load + `vpermutexvar_pd` + store swaps amp1 ↔ amp2 in place.
 fn dispatch_swap(amps: &mut [Complex], targets: [u32; 2], controls: &[u32]) {
     #[cfg(target_arch = "x86_64")]
     {
@@ -1344,6 +1572,7 @@ fn dispatch_swap(amps: &mut [Complex], targets: [u32; 2], controls: &[u32]) {
         let hi = targets[0].max(targets[1]);
         if std::is_x86_feature_detected!("avx512f") && controls.iter().all(|&c| c > hi) {
             let lo_bit = 1usize << lo;
+            let hi_bit = 1usize << hi;
             if lo_bit >= 4 {
                 // SAFETY: Tier A contract — AVX-512F detected, lo_bit ≥
                 // LANES, targets distinct (lo ≠ hi by min/max of
@@ -1353,7 +1582,26 @@ fn dispatch_swap(amps: &mut [Complex], targets: [u32; 2], controls: &[u32]) {
                 }
                 return;
             }
-            // Tier B / C land in Task 9.
+            if hi_bit >= 4 && lo <= 1 {
+                // SAFETY: Tier B contract — AVX-512F detected, lo ∈
+                // {0, 1}, hi_bit ≥ LANES, distinct targets, every
+                // external control > hi.
+                unsafe {
+                    apply_2q_swap_avx512_tier_b(amps, targets, controls);
+                }
+                return;
+            }
+            if lo <= 1 && hi <= 1 {
+                // SAFETY: Tier C contract — AVX-512F detected, both
+                // targets in {0, 1}, distinct, every external control
+                // > hi ≥ 1, len ≥ 4 (guaranteed because there's at
+                // least one quartet whenever both targets fit in {0, 1}
+                // and the state is well-formed at n_qubits ≥ 2).
+                unsafe {
+                    apply_2q_swap_avx512_tier_c(amps, targets, controls);
+                }
+                return;
+            }
         }
     }
     apply_2q_swap_scalar(amps, targets, controls);
@@ -2519,6 +2767,209 @@ mod tests {
 
             // End-to-end: dispatch_swap must match apply_2q_swap_scalar.
             let amps0 = random_complex_state(n_qubits, 0x577a + n_qubits as u64);
+            let mut a = amps0.clone();
+            let mut b = amps0;
+            apply_2q_swap_scalar(&mut a, targets, external_controls);
+            super::dispatch_swap(&mut b, targets, external_controls);
+            assert_amps_close(&a, &b, 1e-14);
+        }
+    }
+
+    /// Tier B AVX-512 SWAP equivalence vs the scalar specialised
+    /// kernel.  Tier B cases: `min(targets) ∈ {0, 1}` AND
+    /// `1 << max(targets) >= LANES = 4`.  Exercises both `lo`
+    /// values across a range of `hi` positions and qubit counts.
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn apply_2q_swap_avx512_tier_b_matches_scalar() {
+        if !std::is_x86_feature_detected!("avx512f") {
+            return;
+        }
+        for n in [6u32, 8, 10] {
+            for t in [[0u32, 2], [0, 3], [1, 2], [1, 3], [0, 5], [1, 5]] {
+                if n <= t[0].max(t[1]) {
+                    continue;
+                }
+                let amps0 = random_complex_state(n, 0x5b00 + n as u64);
+                let mut a = amps0.clone();
+                let mut b = amps0;
+                apply_2q_swap_scalar(&mut a, t, &[]);
+                // SAFETY: AVX-512F detected, lo ∈ {0, 1}, hi_bit ≥
+                // LANES, distinct targets, no external controls.
+                unsafe {
+                    super::apply_2q_swap_avx512_tier_b(&mut b, t, &[]);
+                }
+                assert_amps_close(&a, &b, 1e-14);
+            }
+        }
+    }
+
+    /// Tier C AVX-512 SWAP equivalence vs the scalar specialised
+    /// kernel.  Tier C cases: both targets in `{0, 1}`.  SWAP is
+    /// symmetric, so only one orientation (`[0, 1]`) is tested;
+    /// the dispatch test below pins the symmetric routing.
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn apply_2q_swap_avx512_tier_c_matches_scalar() {
+        if !std::is_x86_feature_detected!("avx512f") {
+            return;
+        }
+        for n in [4u32, 6, 8] {
+            let t = [0u32, 1];
+            let amps0 = random_complex_state(n, 0x5c00 + n as u64);
+            let mut a = amps0.clone();
+            let mut b = amps0;
+            apply_2q_swap_scalar(&mut a, t, &[]);
+            // SAFETY: AVX-512F detected, both targets in {0, 1},
+            // distinct, no external controls, len = 1 << n ≥ 4.
+            unsafe {
+                super::apply_2q_swap_avx512_tier_c(&mut b, t, &[]);
+            }
+            assert_amps_close(&a, &b, 1e-14);
+        }
+    }
+
+    /// Portable indexing-coverage test for the Tier B and Tier C
+    /// SWAP outer-walk + in-register-permute pattern.  Reproduces
+    /// the bit arithmetic in integer form (so the test runs on
+    /// aarch64 too) and additionally validates the per-zmm
+    /// permutation result against the scalar SWAP kernel via
+    /// `dispatch_swap`.  Catches bit-collision bugs in the
+    /// outer-walk reservation pattern that would otherwise only
+    /// surface on a real AVX-512 host.
+    #[test]
+    fn apply_2q_swap_avx512_tier_bc_indexing_covers_state_exactly_once() {
+        // --- Tier B: (n=8, targets=[0, 5], ec=[7]) ---
+        {
+            let n_qubits = 8u32;
+            let targets = [0u32, 5];
+            let external_controls: &[u32] = &[7];
+            let len = 1usize << n_qubits;
+            let hi = targets[0].max(targets[1]);
+            let hi_bit = 1usize << hi;
+            let lanes = 4usize;
+
+            let mut fixed_above: smallvec::SmallVec<[(u32, bool); 8]> = smallvec::SmallVec::new();
+            for &c in external_controls {
+                fixed_above.push((c - hi - 1, true));
+            }
+            fixed_above.sort_unstable_by_key(|&(pos, _)| pos);
+            let outer_count = 1usize << (n_qubits - hi - 1 - external_controls.len() as u32);
+
+            let mut ec_mask = 0usize;
+            for &c in external_controls {
+                ec_mask |= 1usize << c;
+            }
+
+            // Each (k, j) iteration loads LANES amps at i_0 and
+            // LANES amps at i_1 = i_0 | hi_bit, then writes both
+            // back via the permute pair.  Every amp in the
+            // ec-satisfied subspace gets touched exactly once
+            // (every amp has a unique (i_0 / i_1, lane) coordinate).
+            let mut touched = vec![0u32; len];
+            for k in 0..outer_count {
+                let outer = crate::kernels::expand_with_fixed(k, &fixed_above) << (hi + 1);
+                assert_eq!(
+                    outer & ec_mask,
+                    ec_mask,
+                    "Tier B: outer={outer:#b} missing ec bits {ec_mask:#b}"
+                );
+                assert_eq!(
+                    outer & ((1usize << (hi + 1)) - 1),
+                    0,
+                    "Tier B: outer={outer:#b} has bits set in [0, hi]"
+                );
+                let mut j = 0usize;
+                while j + lanes <= hi_bit {
+                    let i_0 = outer | j;
+                    let i_1 = i_0 | hi_bit;
+                    for d in 0..lanes {
+                        assert!(i_0 + d < len, "Tier B: OOB i_0+d={} len={}", i_0 + d, len);
+                        assert!(i_1 + d < len, "Tier B: OOB i_1+d={} len={}", i_1 + d, len);
+                        touched[i_0 + d] += 1;
+                        touched[i_1 + d] += 1;
+                    }
+                    j += lanes;
+                }
+            }
+            // Expected: every amp with every ec bit set is touched
+            // exactly once.  Other amps (any ec bit clear) untouched.
+            // Unlike Tier A, SWAP fixed points (lo, hi) ∈ {(0,0),
+            // (1,1)} are *still* loaded + stored (the zmm carries
+            // both swap-pair members and fixed points; the permute
+            // moves swap-pair doubles and copies fixed-point doubles
+            // through unchanged).  So all four (lo, hi) combinations
+            // appear in the touch counts.
+            for (idx, &count) in touched.iter().enumerate() {
+                let in_ec_subspace = (idx & ec_mask) == ec_mask;
+                let expected = if in_ec_subspace { 1u32 } else { 0u32 };
+                assert_eq!(
+                    count, expected,
+                    "Tier B: amp {idx} touched {count} times (expected {expected}; ec_subspace={in_ec_subspace})"
+                );
+            }
+
+            // End-to-end: dispatch_swap must match apply_2q_swap_scalar.
+            let amps0 = random_complex_state(n_qubits, 0x57b0);
+            let mut a = amps0.clone();
+            let mut b = amps0;
+            apply_2q_swap_scalar(&mut a, targets, external_controls);
+            super::dispatch_swap(&mut b, targets, external_controls);
+            assert_amps_close(&a, &b, 1e-14);
+        }
+
+        // --- Tier C: (n=6, targets=[0, 1], ec=[5]) ---
+        {
+            let n_qubits = 6u32;
+            let targets = [0u32, 1];
+            let external_controls: &[u32] = &[5];
+            let len = 1usize << n_qubits;
+
+            let mut fixed_above: smallvec::SmallVec<[(u32, bool); 8]> = smallvec::SmallVec::new();
+            for &c in external_controls {
+                fixed_above.push((c - 2, true));
+            }
+            fixed_above.sort_unstable_by_key(|&(pos, _)| pos);
+            let outer_count = 1usize << (n_qubits - 2 - external_controls.len() as u32);
+
+            let mut ec_mask = 0usize;
+            for &c in external_controls {
+                ec_mask |= 1usize << c;
+            }
+
+            // Each iteration touches 4 contiguous amps (one quartet).
+            // Every quartet whose external-control bits are all set
+            // should be visited exactly once; amps inside such a
+            // quartet are each touched once.
+            let mut touched = vec![0u32; len];
+            for k in 0..outer_count {
+                let base = crate::kernels::expand_with_fixed(k, &fixed_above) << 2;
+                assert_eq!(base & 3, 0, "Tier C: base not quartet-aligned");
+                assert_eq!(
+                    base & ec_mask,
+                    ec_mask,
+                    "Tier C: base={base:#b} missing ec bits {ec_mask:#b}"
+                );
+                for d in 0..4 {
+                    assert!(
+                        base + d < len,
+                        "Tier C: OOB base+d={} len={}",
+                        base + d,
+                        len
+                    );
+                    touched[base + d] += 1;
+                }
+            }
+            for (idx, &count) in touched.iter().enumerate() {
+                let in_subspace = (idx & ec_mask) == ec_mask;
+                let expected = if in_subspace { 1u32 } else { 0u32 };
+                assert_eq!(
+                    count, expected,
+                    "Tier C: amp {idx} touched {count} times (expected {expected}; in_subspace={in_subspace})"
+                );
+            }
+
+            let amps0 = random_complex_state(n_qubits, 0x57c0);
             let mut a = amps0.clone();
             let mut b = amps0;
             apply_2q_swap_scalar(&mut a, targets, external_controls);
