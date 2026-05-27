@@ -88,18 +88,42 @@ Interpretation:
 gate-tag-agnostic — `is_diagonal_2x2` is a pure matrix predicate, not a tag
 inspection. User-supplied `GenericUnitary(M2x2)` matrices benefit automatically.
 
-## Open follow-up (not blocking this PR)
+## ILP follow-up attempted, rejected
 
-The AoS QFT regression suggests a Stage 1 follow-up worth pursuing in a
-separate small ticket:
+**Hypothesis (initial):** the single-stream walk costs ILP vs the generic
+kernel's z0/z1 pair-mode interleave. Two-stream variant (process 2 LANES-blocks
+per inner iter) should recover the missing 2 % cycles.
 
-- **Two-stream interleave for `apply_1q_diagonal_avx512`.** Process two
-  independent 4-amp blocks per inner iter (8 amps total), matching the
-  generic kernel's z0/z1 ILP pattern. Should recover the missing 2 % cycles
-  on QFT/random while keeping the Grover win.
+**Tried, measured, reverted.** Commit `fab6bf6` (later reverted in `793c2a3`)
+refactored the inner loop to process 8 amps per iter (`z0`, `z1` independent
+chains). Re-benched on EPYC: `qft_n20 naive_aos_avx512` went from 1133 ms
+(single-stream P1-06) to **1201 ms** (two-stream) — **6 % WORSE**, not better.
 
-This is a tactical refinement, not an architectural one — the matrix-detection
-dispatch and the kernel shape stay as designed.
+Real cause of the regression is **not** ILP. Likely candidates remaining:
+
+- Register pressure: two-stream uses 6 zmm simultaneously (z0/z1 + zs0/zs1 +
+  t0/t1) vs single-stream's 3. Zen 4 has 32 zmm but other pressure (broadcasts)
+  may push us close to spill threshold.
+- Code-size / icache: two-stream version has a 1-stream fallback path inside
+  the same function (`STRIDE` check). Branch + larger codeprint may slow the
+  inner cache fetch.
+- Some load-port saturation specific to the single-stream pattern that
+  two-stream doesn't fix.
+
+Further investigation belongs in a P1-06 follow-up ticket — not blocking
+this PR.
+
+## Decision: ship single-stream
+
+The single-stream `apply_1q_diagonal_avx512` (commit `1dd3460` + controlled
+path `c747bf3`) is the version that lands. Regressions on AoS QFT/random are
+small (+3.2 % / +2.5 %), Grover and SoA wins are big (-14 %, -5/-12 %, -10.5 %),
+and the architecture (matrix-detection at kernel layer, symmetric AoS+SoA) is
+the design we want regardless of the per-workload perf trade.
+
+The QFT bottleneck remains. **P1-07 (2q kernel + AVX-512 on `apply_2q`)** is
+the next attack — QFT-20 has 380 `cx` gates (39 % of total) running through a
+scalar `apply_2q`. That's the bigger lever.
 
 ## Related
 
