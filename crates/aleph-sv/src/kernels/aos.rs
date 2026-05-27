@@ -596,11 +596,8 @@ pub(crate) fn apply_2q(
     // 2. Diagonal-4x4 (catches Cz, controlled-Phase, Rzz, user diagonals).
     if super::is_diagonal_4x4(m) {
         let d = [m[0][0], m[1][1], m[2][2], m[3][3]];
-        if super::is_cz_signature(d) {
-            apply_2q_cz_scalar(amps, targets, controls);
-        } else {
-            apply_2q_diagonal_scalar(amps, targets, controls, d);
-        }
+        let is_cz = super::is_cz_signature(d);
+        dispatch_diagonal_or_cz(amps, targets, controls, d, is_cz);
         return;
     }
 
@@ -1605,6 +1602,161 @@ fn dispatch_swap(amps: &mut [Complex], targets: [u32; 2], controls: &[u32]) {
         }
     }
     apply_2q_swap_scalar(amps, targets, controls);
+}
+
+/// Packed AVX-512 CZ specialisation — Tier A (`1 << min(targets) >= LANES`).
+///
+/// CZ negates `state[i]` for amplitudes where both target bits are 1 (and
+/// every external control is satisfied).  Touches only the `(1, 1)`
+/// sub-block — 1/4 of the state vector.  Implemented as a single
+/// `vxorpd` against a sign-mask broadcast (`-0.0`), which flips the sign
+/// bit of every double in the zmm.  Zero multiplies; bandwidth-bound.
+///
+/// **Outer-walk (bit-disjointness).** Same renormalise-then-shift idiom
+/// as the other Tier A 2q kernels (`apply_2q_avx512`,
+/// `apply_2q_cnot_avx512`, `apply_2q_swap_avx512`).  The inner SIMD walk
+/// owns bits `[0, lo)` via `j`.  This kernel targets the `(1, 1)`
+/// sub-block, so both target bits are SET in `outer`: bit `hi` enters
+/// via a `fixed=true` slot in `fixed_above`, and bit `lo` is OR'd in
+/// after the shift via `outer | lo_bit`.  External control bits are
+/// laid out as `fixed=true` in the above-lo subspace.
+///
+/// The "loose" form — `expand_with_fixed(k, &[(lo, true), (hi, true),
+/// ...])` without the shift — pins both target bits to 1 correctly but
+/// lets `k`'s bits fall into positions below `lo` where they collide
+/// with `j` in the inner walk.  Same bug class as Task 5's first fix
+/// and the matching SWAP/CNOT Tier A renormalisations.
+///
+/// **Per inner iter (LANES = 4 amps):** 1 load + 1 xor + 1 store ≈ 3
+/// µops.  Vs scalar CZ (4 amps × ~5 µops per branch+negate = ~20):
+/// ~7× per-amp on the inner walk.
+///
+/// # Safety
+///
+/// Caller MUST ensure all of:
+/// * Host CPU supports AVX-512F.
+/// * `1 << min(targets) >= LANES` (= 4) — inner SIMD walk has ≥ LANES
+///   contiguous pairs per touched sub-block.
+/// * Distinct targets, both in qubit range.
+/// * Every external control's qubit index is strictly greater than
+///   `max(targets)`, so the renormalisation subtraction is safe and
+///   the outer-walk's bit-expansion never toggles an external control
+///   bit.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f")]
+unsafe fn apply_2q_cz_avx512(amps: &mut [Complex], targets: [u32; 2], external_controls: &[u32]) {
+    use core::arch::x86_64::*;
+
+    const LANES: usize = 4;
+    let lo = targets[0].min(targets[1]);
+    let hi = targets[0].max(targets[1]);
+    let lo_bit = 1usize << lo;
+    let hi_bit = 1usize << hi;
+    let len = amps.len();
+
+    debug_assert!(
+        lo != hi,
+        "CZ requires distinct targets: dispatch contract violated"
+    );
+    debug_assert!(
+        lo_bit >= LANES,
+        "lo_bit < LANES: dispatch contract violated"
+    );
+    debug_assert!(
+        external_controls.iter().all(|&c| c > hi),
+        "external control at-or-below hi: dispatch contract violated"
+    );
+
+    let amps_ptr = amps.as_mut_ptr() as *mut f64;
+    // Sign-mask: each double-lane has only its IEEE-754 sign bit set, so
+    // `vxorpd(z, sign_mask)` flips the sign of every double in `z` —
+    // equivalent to `z = -z` for both real and imaginary parts.
+    let sign_mask = _mm512_set1_pd(-0.0_f64);
+
+    // Outer-walk: reserve bits `[0, lo]` for the inner walk + the
+    // lo-bit (OR'd in after the shift), inject `hi` as `fixed=true`
+    // (we target the (1, 1) sub-block) and every external control as
+    // `fixed=true` in the above-lo subspace, then shift up by `lo + 1`.
+    // Subtractions are safe: `hi > lo` by construction (min/max of
+    // distinct targets) and every external control > hi > lo by the
+    // safety contract.
+    let mut fixed_above: smallvec::SmallVec<[(u32, bool); 8]> = smallvec::SmallVec::new();
+    fixed_above.push((hi - lo - 1, true));
+    for &ec in external_controls {
+        fixed_above.push((ec - lo - 1, true));
+    }
+    fixed_above.sort_unstable_by_key(|&(pos, _)| pos);
+
+    // Above-lo subspace has `n_qubits - (lo + 1)` positions; one
+    // reserved for `hi` (fixed=1) and `external_controls.len()` for
+    // external control bits (fixed=1).  Remaining free positions count
+    // = n_qubits - lo - 2 - external_controls.len(); each contributes
+    // one bit to the outer-walk index.
+    let n_qubits = len.trailing_zeros();
+    let outer_count = 1usize << (n_qubits - lo - 2 - external_controls.len() as u32);
+    for k in 0..outer_count {
+        let base = crate::kernels::expand_with_fixed(k, &fixed_above) << (lo + 1);
+        // base has: bit hi = 1, every external_control bit = 1, bits
+        // [0, lo] all zero.  ORing in `lo_bit` sets bit `lo`, so the
+        // resulting `outer` lands on the (1, 1) sub-block.
+        let outer = base | lo_bit;
+        let mut j = 0usize;
+        while j + LANES <= lo_bit {
+            // SAFETY: bit-disjointness invariant — `base` ⊆ bits ≥
+            // lo+1 (hi set, every external control set), `lo_bit` is
+            // bit `lo`, `j` ⊆ [0, lo).  All three pairwise disjoint,
+            // so `i = outer | j = base + lo_bit + j` and
+            // `i + LANES ≤ base + 2 * lo_bit ≤ len`.
+            let i = outer | j;
+            let z = _mm512_loadu_pd(amps_ptr.add(i * 2));
+            let z = _mm512_xor_pd(z, sign_mask);
+            _mm512_storeu_pd(amps_ptr.add(i * 2), z);
+            j += LANES;
+        }
+        debug_assert_eq!(j, lo_bit);
+    }
+}
+
+/// Dispatch helper for the diagonal-4x4 branch (catches CZ, controlled-
+/// phase, Rzz, user diagonals).  Routes to `apply_2q_cz_avx512` when
+/// the matrix matches the CZ signature AND the host + qubit orientation
+/// satisfies the Tier A safety contract; otherwise falls through to the
+/// scalar specialised kernel.
+///
+/// The general-diagonal AVX-512 path lands in Task 11; for now the
+/// non-CZ diagonal branch always falls through to
+/// `apply_2q_diagonal_scalar`.
+fn dispatch_diagonal_or_cz(
+    amps: &mut [Complex],
+    targets: [u32; 2],
+    controls: &[u32],
+    d: [Complex; 4],
+    is_cz: bool,
+) {
+    #[cfg(target_arch = "x86_64")]
+    {
+        let lo = targets[0].min(targets[1]);
+        let hi = targets[0].max(targets[1]);
+        let lo_bit = 1usize << lo;
+        if is_cz
+            && std::is_x86_feature_detected!("avx512f")
+            && lo_bit >= 4
+            && controls.iter().all(|&c| c > hi)
+        {
+            // SAFETY: Tier A contract — AVX-512F detected, lo_bit ≥
+            // LANES, targets distinct (lo ≠ hi by min/max of distinct
+            // inputs), every external control > hi.
+            unsafe {
+                apply_2q_cz_avx512(amps, targets, controls);
+            }
+            return;
+        }
+    }
+    if is_cz {
+        apply_2q_cz_scalar(amps, targets, controls);
+    } else {
+        apply_2q_diagonal_scalar(amps, targets, controls, d);
+    }
 }
 
 /// Apply a 3-qubit matrix to `targets = [t0, t1, t2]` (with external
@@ -3076,6 +3228,179 @@ mod tests {
                 amps[j] = m[1][0] * a + m[1][1] * b;
             }
             i += 1;
+        }
+    }
+
+    /// Tier A AVX-512 CZ equivalence vs the scalar specialised kernel.
+    /// All `targets = [a, b]` cases satisfy the Tier A contract:
+    /// `1 << min(a, b) >= LANES = 4`.  Exercises both adjacent and
+    /// non-adjacent target pairs with `min(targets) ≥ 2`.  CZ is a
+    /// pure sign-flip (no floating arithmetic beyond IEEE-754 sign-bit
+    /// flip), so the tolerance is bit-exact.
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn apply_2q_cz_avx512_tier_a_matches_scalar() {
+        if !std::is_x86_feature_detected!("avx512f") {
+            return;
+        }
+        for n in [6u32, 8, 10] {
+            for t in [[2u32, 3], [2, 5], [3, 5], [4, 5]] {
+                if n <= t[0].max(t[1]) {
+                    continue;
+                }
+                if (1usize << t[0].min(t[1])) < 4 {
+                    continue;
+                }
+                let amps0 = random_complex_state(n, 0x6203 + n as u64);
+                let mut a = amps0.clone();
+                let mut b = amps0;
+                apply_2q_cz_scalar(&mut a, t, &[]);
+                // SAFETY: AVX-512F detected, lo_bit ≥ LANES = 4,
+                // distinct targets, no external controls.
+                unsafe {
+                    super::apply_2q_cz_avx512(&mut b, t, &[]);
+                }
+                assert_amps_close(&a, &b, 1e-15);
+            }
+        }
+    }
+
+    /// Tier A AVX-512 CZ equivalence with external controls (controls
+    /// strictly above max(targets)).  Pins the renormalise-then-shift
+    /// outer-walk pattern in the external-control branch.
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn apply_2q_cz_avx512_tier_a_with_controls_matches_scalar() {
+        if !std::is_x86_feature_detected!("avx512f") {
+            return;
+        }
+        let cases: &[(u32, [u32; 2], &[u32])] = &[(8, [2, 5], &[7]), (10, [3, 5], &[7, 9])];
+        for &(n, t, ec) in cases {
+            let amps0 = random_complex_state(n, 0x6a90 + n as u64);
+            let mut a = amps0.clone();
+            let mut b = amps0;
+            apply_2q_cz_scalar(&mut a, t, ec);
+            // SAFETY: AVX-512F detected, lo_bit ≥ LANES, distinct
+            // targets, every external control > max(targets).
+            unsafe {
+                super::apply_2q_cz_avx512(&mut b, t, ec);
+            }
+            assert_amps_close(&a, &b, 1e-15);
+        }
+    }
+
+    /// Portable indexing-coverage test for `apply_2q_cz_avx512`'s
+    /// outer-walk + inner-walk pattern.  Reproduces `i = outer | j`
+    /// with `outer = base | lo_bit` (i.e. both target bits set) using
+    /// only integer arithmetic (so it runs on aarch64 too) and asserts:
+    ///
+    /// 1. Every amplitude in the "every external control bit set"
+    ///    subspace whose `(lo, hi)` bit pattern is `(1, 1)` is touched
+    ///    exactly once (one load + one store).  All other amplitudes
+    ///    (any of the three sub-blocks `(0,0)`, `(0,1)`, `(1,0)`, OR
+    ///    any external-control bit clear) are NOT touched — CZ only
+    ///    negates the `(1, 1)` sub-block.
+    /// 2. The `apply_2q` end-to-end result (routed via
+    ///    `dispatch_diagonal_or_cz`) matches the scalar CZ kernel.
+    ///
+    /// Catches bit-collision bugs in the outer-walk reservation
+    /// pattern that would otherwise only surface on a real AVX-512
+    /// host.
+    #[test]
+    fn apply_2q_cz_avx512_tier_a_indexing_covers_state_exactly_once() {
+        let cases: &[(u32, [u32; 2], &[u32])] = &[(6, [2, 3], &[]), (8, [2, 5], &[7])];
+        for &(n_qubits, targets, external_controls) in cases {
+            let len = 1usize << n_qubits;
+            let lo = targets[0].min(targets[1]);
+            let hi = targets[0].max(targets[1]);
+            let lo_bit = 1usize << lo;
+            let hi_bit = 1usize << hi;
+            let lanes = 4usize;
+
+            let mut fixed_above: smallvec::SmallVec<[(u32, bool); 8]> = smallvec::SmallVec::new();
+            fixed_above.push((hi - lo - 1, true));
+            for &ec in external_controls {
+                fixed_above.push((ec - lo - 1, true));
+            }
+            fixed_above.sort_unstable_by_key(|&(p, _)| p);
+
+            let outer_count = 1usize << (n_qubits - lo - 2 - external_controls.len() as u32);
+
+            let mut ec_mask = 0usize;
+            for &c in external_controls {
+                ec_mask |= 1usize << c;
+            }
+
+            let mut touched = vec![0u32; len];
+            for k in 0..outer_count {
+                let base = crate::kernels::expand_with_fixed(k, &fixed_above) << (lo + 1);
+                let outer = base | lo_bit;
+                // outer must have: bit lo set, bit hi set, every ec
+                // bit set, bits [0, lo) all zero.
+                assert_eq!(
+                    outer & ec_mask,
+                    ec_mask,
+                    "outer={outer:#b} missing ec bits {ec_mask:#b}"
+                );
+                assert_eq!(outer & lo_bit, lo_bit, "outer={outer:#b} missing lo_bit");
+                assert_eq!(outer & hi_bit, hi_bit, "outer={outer:#b} missing hi_bit");
+                assert_eq!(
+                    outer & (lo_bit - 1),
+                    0,
+                    "outer={outer:#b} has bits set in [0, lo)"
+                );
+                let mut j = 0usize;
+                while j + lanes <= lo_bit {
+                    let i = outer | j;
+                    for d in 0..lanes {
+                        assert!(
+                            i + d < len,
+                            "n={n_qubits} t={targets:?}: OOB i+d={} len={}",
+                            i + d,
+                            len
+                        );
+                        touched[i + d] += 1;
+                    }
+                    j += lanes;
+                }
+            }
+            // Expected touch counts:
+            //   * (lo, hi) = (1, 1) AND every ec bit set → 1
+            //   * any other (lo, hi) sub-block            → 0
+            //   * any ec bit clear                        → 0
+            for (idx, &count) in touched.iter().enumerate() {
+                let bit_lo = (idx & lo_bit) != 0;
+                let bit_hi = (idx & hi_bit) != 0;
+                let in_ec_subspace = (idx & ec_mask) == ec_mask;
+                let in_cz_subblock = bit_lo && bit_hi;
+                let expected = if in_ec_subspace && in_cz_subblock {
+                    1u32
+                } else {
+                    0u32
+                };
+                assert_eq!(
+                    count, expected,
+                    "n={n_qubits} t={targets:?}: amp {idx} touched {count} times \
+                     (expected {expected}; ec_subspace={in_ec_subspace} \
+                     cz_subblock={in_cz_subblock})"
+                );
+            }
+
+            // End-to-end: apply_2q with the CZ matrix must match
+            // apply_2q_cz_scalar (apply_2q routes through
+            // dispatch_diagonal_or_cz for diagonal matrices).
+            let cz_matrix: [[Complex; 4]; 4] = {
+                let z = Complex::new(0.0, 0.0);
+                let o = Complex::new(1.0, 0.0);
+                let n = Complex::new(-1.0, 0.0);
+                [[o, z, z, z], [z, o, z, z], [z, z, o, z], [z, z, z, n]]
+            };
+            let amps0 = random_complex_state(n_qubits, 0x67ca + n_qubits as u64);
+            let mut a = amps0.clone();
+            let mut b = amps0;
+            apply_2q_cz_scalar(&mut a, targets, external_controls);
+            super::apply_2q(&mut b, targets, external_controls, &cz_matrix);
+            assert_amps_close(&a, &b, 1e-15);
         }
     }
 
