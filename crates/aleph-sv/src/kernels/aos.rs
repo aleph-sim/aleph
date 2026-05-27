@@ -634,16 +634,34 @@ pub(crate) fn apply_2q(
 /// the same packed-complex idiom as `apply_1q_avx512`, replicated
 /// across four loaded subspaces.
 ///
-/// **Outer-walk.** Uses `expand_with_fixed` with both `t_lo` and
-/// `t_hi` as `fixed = false` (and any external controls as
-/// `fixed = true`).  This enumerates exactly the quartet base
-/// indices — those with both target bits zero and all control bits
-/// set.  Unlike the 1q kernel's renormalisation-by-target-position
-/// idiom (which works because the inner walk covers *all* bits
-/// below the lone target), this symmetric form correctly covers
-/// bits *between* `t_lo` and `t_hi`: a naive `2 * t_hi_bit` stride
-/// would skip every quartet whose base has a bit set strictly
-/// between the two target positions.
+/// **Outer-walk (bit-disjointness invariant).** The kernel computes
+/// each amplitude index as `i = block | offsets[k] | j`, so for the
+/// `|` to behave as `+` (the only way the SAFETY bound holds), the
+/// three pieces MUST occupy disjoint bit positions:
+///
+/// * `j` walks `[0, t_lo_bit)` in LANES strides — bits `[0, t_lo)`.
+/// * `offsets[k] ∈ {0, t_lo_bit, t_hi_bit, t_lo_bit | t_hi_bit}` —
+///   bits exactly `{t_lo, t_hi}`.
+/// * `block` MUST therefore use only bits strictly above `t_lo`,
+///   with bit `t_hi` clear and every control bit set.
+///
+/// We achieve that with the same renormalise-then-shift idiom as
+/// `apply_1q_avx512` (aos.rs lines 234-248), extended to two
+/// reserved positions: `expand_with_fixed` lays out `t_hi` and every
+/// control at *renormalised* positions (each minus `t_lo + 1`) in
+/// the "above t_lo" subspace, and a left-shift by `t_lo + 1`
+/// promotes the result to actual qubit positions. The inner SIMD
+/// walk then owns bits `[0, t_lo]` exclusively. This handles bits
+/// *between* `t_lo` and `t_hi` correctly because `expand_with_fixed`
+/// honours the fixed-false slot at `t_hi - t_lo - 1` and lets `k`'s
+/// bits flow around it.
+///
+/// The "symmetric" form — `expand_with_fixed(k, &[(t_lo, false),
+/// (t_hi, false), ...])` without the shift — pins the two target
+/// bits to zero correctly, but lets `k`'s bits fall into positions
+/// below `t_lo`, where they collide with the inner walk's `j` and
+/// destroy the bit-disjointness invariant (corrupt indices,
+/// out-of-bounds stores for any non-adjacent target pair).
 ///
 /// [`expand_with_fixed`]: crate::kernels::expand_with_fixed
 ///
@@ -723,11 +741,17 @@ unsafe fn apply_2q_avx512(
             let mut zs = [_mm512_setzero_pd(); 4];
             for k in 0..4 {
                 let i_k = block | offsets[k] | j;
-                // SAFETY: `block` is produced by `expand_with_fixed`
-                // with `(t_lo, false)` and `(t_hi, false)` in the
-                // `fixed` slice, so `block & t_mask == 0`.  `j` is
-                // bounded above by `t_lo_bit - LANES`, and `offsets[k]
-                // ⊆ t_mask`, so `i_k + LANES ≤ len`.
+                // SAFETY: bit-disjointness invariant (see doc-comment
+                // "Outer-walk" section):
+                //   * `block` ⊆ bits ≥ t_lo+1, with bit t_hi clear
+                //     and every control bit set (renormalise-then-
+                //     shift outer-walk below).
+                //   * `offsets[k]` ⊆ {t_lo, t_hi}.
+                //   * `j` ⊆ [0, t_lo).
+                // The three are pairwise bit-disjoint, so
+                //   i_k = block + offsets[k] + j
+                //       ≤ (block | t_mask) + (t_lo_bit - LANES)
+                //       ≤ len - LANES.
                 z[k] = _mm512_loadu_pd(amps_ptr.add(i_k * 2));
                 zs[k] = _mm512_permute_pd::<0x55>(z[k]);
             }
@@ -749,7 +773,8 @@ unsafe fn apply_2q_avx512(
             // Store back into the same 4 sub-blocks.
             for k in 0..4 {
                 let i_k = block | offsets[k] | j;
-                // SAFETY: same bound as the load above.
+                // SAFETY: same bit-disjointness invariant as the
+                // load above ⇒ i_k + LANES ≤ len.
                 _mm512_storeu_pd(amps_ptr.add(i_k * 2), new_z[k]);
             }
 
@@ -758,23 +783,38 @@ unsafe fn apply_2q_avx512(
         debug_assert_eq!(j, t_lo_bit);
     };
 
-    // Outer-walk: enumerate quartet base indices via
-    // `expand_with_fixed` with both targets pinned to 0 and every
-    // external control pinned to 1.  See the doc-comment "Outer-walk"
-    // paragraph for why this symmetric form is necessary (and why the
-    // 1q kernel's renormalise-by-target idiom does NOT generalise).
-    let mut fixed: smallvec::SmallVec<[(u32, bool); 8]> = smallvec::SmallVec::new();
-    fixed.push((t_lo, false));
-    fixed.push((t_hi, false));
+    // Outer-walk: reserve bits `[0, t_lo]` for the inner SIMD walk
+    // (`j` plus the `offsets[k]` injection of t_lo_bit / t_hi_bit) by
+    // renormalising every "fixed" position (t_hi and each external
+    // control) — subtract `t_lo + 1` so they index into the "above
+    // t_lo" subspace — then left-shift `expand_with_fixed`'s result
+    // by `t_lo + 1` to place everything back at the real qubit
+    // positions.  See the doc-comment "Outer-walk (bit-disjointness
+    // invariant)" section for the full derivation; this is the 2q
+    // extension of the `apply_1q_avx512` idiom (aos.rs lines
+    // 234-248).  Controls.len() = 0 collapses naturally — no
+    // separate uncontrolled branch needed.
+    //
+    // Subtraction `t_hi - t_lo - 1` is safe: `t_hi > t_lo` is
+    // guaranteed by construction (we take min/max of distinct
+    // targets).  `c - t_lo - 1` is safe because the dispatch
+    // contract requires every control `c > t_hi > t_lo`.
+    let mut fixed_above: smallvec::SmallVec<[(u32, bool); 8]> = smallvec::SmallVec::new();
+    fixed_above.push((t_hi - t_lo - 1, false));
     for &c in controls {
-        fixed.push((c, true));
+        fixed_above.push((c - t_lo - 1, true));
     }
-    fixed.sort_unstable_by_key(|&(pos, _)| pos);
+    fixed_above.sort_unstable_by_key(|&(pos, _)| pos);
 
+    // Above-t_lo subspace has `n_qubits - (t_lo + 1)` positions;
+    // one is reserved for t_hi (fixed=0) and `controls.len()` are
+    // reserved for control bits (fixed=1).  Remaining free positions
+    // count = n_qubits - t_lo - 2 - controls.len(); each free
+    // position contributes a bit to the outer-walk index.
     let n_qubits = len.trailing_zeros();
-    let outer_count = 1usize << (n_qubits - 2 - controls.len() as u32);
+    let outer_count = 1usize << (n_qubits - t_lo - 2 - controls.len() as u32);
     for k in 0..outer_count {
-        let block = crate::kernels::expand_with_fixed(k, &fixed);
+        let block = crate::kernels::expand_with_fixed(k, &fixed_above) << (t_lo + 1);
         outer_iter(block);
     }
 }
@@ -1296,32 +1336,124 @@ mod tests {
         }
     }
 
-    /// Portable enumeration-coverage test for `apply_2q_avx512`'s
-    /// outer-walk.  Verifies that `expand_with_fixed` with both
-    /// targets pinned to 0 produces exactly the set of quartet base
-    /// indices (i.e. indices with both target bits zero) for a
-    /// non-adjacent target pair.  No AVX-512F required — runs on
-    /// every host and pins the enumeration contract regardless of
-    /// the active SIMD kernel.
+    /// AVX-512 equivalence with at least one external control bit
+    /// above `t_hi`.  Exercises the renormalise-then-shift path with
+    /// `controls.len() > 0`, which the uncontrolled equivalence test
+    /// does not cover.  Non-adjacent targets with `t_lo > 0` give us
+    /// a non-trivial inner `j`-walk too.
+    #[cfg(target_arch = "x86_64")]
     #[test]
-    fn apply_2q_avx512_outer_walk_covers_all_quartets_for_non_adjacent_targets() {
-        // Hand-checked: for n=6, targets=[3,5] (t_lo=3, t_hi=5),
-        // quartet bases are indices i with bit_3 = 0 AND bit_5 = 0.
-        // That's {0..8} ∪ {16..24} = 16 bases.
-        let n_qubits = 6u32;
-        let t_lo = 3u32;
-        let t_hi = 5u32;
-        let fixed: [(u32, bool); 2] = [(t_lo, false), (t_hi, false)];
-        let outer_count = 1usize << (n_qubits - 2);
-        let mut bases: Vec<usize> = (0..outer_count)
-            .map(|k| crate::kernels::expand_with_fixed(k, &fixed))
-            .collect();
-        bases.sort();
-        let expected: Vec<usize> = (0..(1usize << n_qubits))
-            .filter(|&i| (i & ((1 << t_lo) | (1 << t_hi))) == 0)
-            .collect();
-        assert_eq!(bases, expected);
-        assert_eq!(bases.len(), 16);
+    fn apply_2q_avx512_generic_with_controls_matches_scalar() {
+        if !std::is_x86_feature_detected!("avx512f") {
+            eprintln!("skipping: host lacks AVX-512F");
+            return;
+        }
+        let mut m = [[Complex::new(0.0, 0.0); 4]; 4];
+        let mut s: u64 = 1;
+        let mut lcg = || {
+            s = s
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            ((s >> 32) as f64 / (u32::MAX as f64)) * 2.0 - 1.0
+        };
+        for r in 0..4 {
+            for c in 0..4 {
+                m[r][c] = Complex::new(lcg(), lcg());
+            }
+        }
+        // (n, targets, controls).  Every control must sit above
+        // max(targets); t_lo >= 2 to satisfy the LANES contract.
+        let cases: &[(u32, [u32; 2], &[u32])] =
+            &[(8, [2, 5], &[7]), (10, [3, 5], &[8]), (10, [2, 5], &[7, 9])];
+        for &(n, t, controls) in cases {
+            assert!(controls.iter().all(|&c| c > t[0].max(t[1])));
+            let amps0 = random_complex_state(n, 0xc0de + n as u64);
+            let mut a = amps0.clone();
+            let mut b = amps0;
+            apply_2q_dense_scalar(&mut a, t, controls, &m);
+            // SAFETY: feature-gated; t_lo >= 2 ⇒ LANES contract met,
+            // every control > t_hi ⇒ outer-walk contract met.
+            unsafe {
+                super::apply_2q_avx512(&mut b, t, controls, &m);
+            }
+            assert_amps_close(&a, &b, 1e-12);
+        }
+    }
+
+    /// Pin the outer-walk + offsets + inner-j enumeration so that,
+    /// for a non-adjacent target pair, every state-vector amplitude
+    /// is touched exactly once by the SIMD kernel.  Catches
+    /// bit-collision bugs in the outer-walk reservation pattern that
+    /// would otherwise only surface on a real AVX-512 host (and
+    /// silently produce out-of-bounds stores in release mode).
+    ///
+    /// Reproduces the kernel's index computation `i = block |
+    /// offsets[k] | j` using only integer arithmetic, so it runs on
+    /// every target (aarch64, wasm, …) — protecting against
+    /// regressions of the bit-disjointness invariant on hosts where
+    /// the AVX-512 generic equivalence test short-circuits.
+    #[test]
+    fn apply_2q_avx512_indexing_covers_state_exactly_once() {
+        // Two non-adjacent configurations exercising t_lo > 0 with
+        // bits between t_lo and t_hi:
+        //   (n=6, targets=[3,5]): outer_count = 2, one j-step per outer.
+        //   (n=7, targets=[2,5]): outer_count = 8, one j-step per outer.
+        for (n_qubits, targets) in [(6u32, [3u32, 5u32]), (7u32, [2u32, 5u32])] {
+            let len = 1usize << n_qubits;
+            let controls: &[u32] = &[];
+
+            let t_lo = targets[0].min(targets[1]);
+            let t_hi = targets[0].max(targets[1]);
+            let t_lo_bit = 1usize << t_lo;
+            let t_hi_bit = 1usize << t_hi;
+            let t_mask = t_lo_bit | t_hi_bit;
+            let lanes = 4usize;
+
+            let (offset_k1, offset_k2) = if targets[0] < targets[1] {
+                (t_hi_bit, t_lo_bit)
+            } else {
+                (t_lo_bit, t_hi_bit)
+            };
+            let offsets = [0usize, offset_k1, offset_k2, t_mask];
+
+            let mut fixed_above: smallvec::SmallVec<[(u32, bool); 8]> = smallvec::SmallVec::new();
+            fixed_above.push((t_hi - t_lo - 1, false));
+            for &c in controls {
+                fixed_above.push((c - t_lo - 1, true));
+            }
+            fixed_above.sort_unstable_by_key(|&(pos, _)| pos);
+
+            let outer_count = 1usize << (n_qubits - t_lo - 2 - controls.len() as u32);
+
+            let mut touched = vec![0u32; len];
+            for k in 0..outer_count {
+                let block = crate::kernels::expand_with_fixed(k, &fixed_above) << (t_lo + 1);
+                for &off in &offsets {
+                    let mut j = 0usize;
+                    while j + lanes <= t_lo_bit {
+                        let i = block | off | j;
+                        for d in 0..lanes {
+                            assert!(
+                                i + d < len,
+                                "n={n_qubits} targets={targets:?}: outer-walk OOB \
+                                 block={block} off={off} j={j} d={d} i+d={} len={}",
+                                i + d,
+                                len
+                            );
+                            touched[i + d] += 1;
+                        }
+                        j += lanes;
+                    }
+                }
+            }
+            for (idx, &count) in touched.iter().enumerate() {
+                assert_eq!(
+                    count, 1,
+                    "n={n_qubits} targets={targets:?}: amp {idx} touched {count} \
+                     times (must be exactly 1)"
+                );
+            }
+        }
     }
 
     #[test]
