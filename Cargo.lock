@@ -27,6 +27,7 @@ dependencies = [
  "aleph-backend",
  "aleph-core",
  "aleph-ir",
+ "aleph-parser",
  "aleph-sv",
  "criterion",
  "smallvec",
