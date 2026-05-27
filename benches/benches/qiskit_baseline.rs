@@ -16,7 +16,23 @@ use std::hint::black_box;
 use std::path::PathBuf;
 use std::time::Duration;
 
-const WORKLOADS: &[&str] = &["qft_n20", "grover_n20_iters5", "random_brickwall_n20_d20"];
+const ALL_WORKLOADS: &[&str] = &["qft_n20", "grover_n20_iters5", "random_brickwall_n20_d20"];
+
+// Grover-iter5 (96k gates, ~127s/iter on EPYC) is excluded from CI Bench runs
+// because criterion's minimum sample budget pushes the single benchmark past
+// the workflow's 30-min timeout (10 samples × 127s × 2 backends ≈ 42 min).
+// It still runs in manual measurements — set `ALEPH_BENCH_SKIP_GROVER=0`
+// (or leave the `CI` env var unset on a developer machine) to include it.
+fn select_workloads() -> Vec<&'static str> {
+    let skip = std::env::var("ALEPH_BENCH_SKIP_GROVER")
+        .map(|v| v != "0")
+        .unwrap_or_else(|_| std::env::var("CI").is_ok());
+    ALL_WORKLOADS
+        .iter()
+        .copied()
+        .filter(|name| !(skip && name.starts_with("grover_")))
+        .collect()
+}
 
 fn fixture_path(name: &str) -> PathBuf {
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -48,7 +64,7 @@ fn bench_qiskit_baseline(c: &mut Criterion) {
     // setting is per-group rather than per-workload.
     group.throughput(Throughput::Elements(20u64 * (1u64 << 20)));
 
-    for &name in WORKLOADS {
+    for name in select_workloads() {
         let (samples, m_time) = sample_budget_for(name);
         group.sample_size(samples).measurement_time(m_time);
         let path = fixture_path(name);
