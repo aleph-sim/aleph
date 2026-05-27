@@ -1651,7 +1651,6 @@ unsafe fn apply_2q_cz_avx512(amps: &mut [Complex], targets: [u32; 2], external_c
     let lo = targets[0].min(targets[1]);
     let hi = targets[0].max(targets[1]);
     let lo_bit = 1usize << lo;
-    let hi_bit = 1usize << hi;
     let len = amps.len();
 
     debug_assert!(
