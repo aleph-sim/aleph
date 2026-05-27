@@ -456,6 +456,113 @@ pub(crate) fn apply_2q_dense_scalar(
     }
 }
 
+/// Scalar CNOT specialisation: for amplitudes where bit `control` = 1
+/// AND every external control bit is set, swap `state[i]` with
+/// `state[i | t_bit]`.  Zero multiplies; pure swap-pair traffic.
+///
+/// `control` and `target` are passed separately (vs the generic
+/// kernel's `targets[2]`) because the dispatch prelude has already
+/// disambiguated the orientation via `Perm2qKind`.  External
+/// `controls` are appended to the implicit control mask.
+#[allow(dead_code)] // wired up in Task 4
+pub(crate) fn apply_2q_cnot_scalar(
+    amps: &mut [Complex],
+    control: u32,
+    target: u32,
+    external_controls: &[u32],
+) {
+    let c_bit = 1usize << control;
+    let t_bit = 1usize << target;
+    let ctrl_mask = c_bit | super::control_mask(external_controls);
+    let len = amps.len();
+    let mut i = 0usize;
+    while i < len {
+        if (i & ctrl_mask) == ctrl_mask && (i & t_bit) == 0 {
+            amps.swap(i, i | t_bit);
+        }
+        i += 1;
+    }
+}
+
+/// Scalar SWAP specialisation: for amplitudes where bits `a` and `b`
+/// differ (and external controls satisfied), swap `state[i_a0_b1]`
+/// with `state[i_a1_b0]`.
+///
+/// Convention: this kernel walks every base index `i` with bits a, b
+/// both zero (and external controls set); for each such i, swap
+/// `state[i | a_bit]` (= a=0, b=1) with `state[i | b_bit]` (= a=1, b=0).
+#[allow(dead_code)] // wired up in Task 4
+pub(crate) fn apply_2q_swap_scalar(
+    amps: &mut [Complex],
+    targets: [u32; 2],
+    external_controls: &[u32],
+) {
+    let a_bit = 1usize << targets[0];
+    let b_bit = 1usize << targets[1];
+    let t_mask = a_bit | b_bit;
+    let ctrl_mask = super::control_mask(external_controls);
+    let len = amps.len();
+    let mut i = 0usize;
+    while i < len {
+        if (i & t_mask) == 0 && (i & ctrl_mask) == ctrl_mask {
+            amps.swap(i | a_bit, i | b_bit);
+        }
+        i += 1;
+    }
+}
+
+/// Scalar CZ specialisation: negate `state[i]` for amplitudes where
+/// both target bits are 1 (and external controls satisfied).  Touches
+/// 1/4 of the state vector.
+#[allow(dead_code)] // wired up in Task 4
+pub(crate) fn apply_2q_cz_scalar(
+    amps: &mut [Complex],
+    targets: [u32; 2],
+    external_controls: &[u32],
+) {
+    let t0_bit = 1usize << targets[0];
+    let t1_bit = 1usize << targets[1];
+    let t_mask = t0_bit | t1_bit;
+    let ctrl_mask = super::control_mask(external_controls);
+    let len = amps.len();
+    let mut i = 0usize;
+    while i < len {
+        if (i & t_mask) == t_mask && (i & ctrl_mask) == ctrl_mask {
+            amps[i] = -amps[i];
+        }
+        i += 1;
+    }
+}
+
+/// Scalar 2q-diagonal specialisation: multiply `state[i]` by `d[k]`
+/// where `k = ((i >> targets[0]) & 1) << 1 | ((i >> targets[1]) & 1)`.
+///
+/// Convention: matches the MSB-first quartet ordering of the generic
+/// 2q kernel.  `targets[0]` is the high bit of `k`, `targets[1]` is
+/// the low bit (per ADR 0004 / P0-06 §6).
+#[allow(dead_code)] // wired up in Task 4
+pub(crate) fn apply_2q_diagonal_scalar(
+    amps: &mut [Complex],
+    targets: [u32; 2],
+    external_controls: &[u32],
+    d: [Complex; 4],
+) {
+    let t0_bit = 1usize << targets[0];
+    let t1_bit = 1usize << targets[1];
+    let ctrl_mask = super::control_mask(external_controls);
+    let len = amps.len();
+    let mut i = 0usize;
+    while i < len {
+        if (i & ctrl_mask) == ctrl_mask {
+            let k_hi = ((i & t0_bit) != 0) as usize;
+            let k_lo = ((i & t1_bit) != 0) as usize;
+            let k = (k_hi << 1) | k_lo;
+            amps[i] *= d[k];
+        }
+        i += 1;
+    }
+}
+
 /// Top-level 2q dispatch.  See spec § 4.2 for the detection order:
 /// 1. `classify_2q_permutation` → Identity / CnotHi / CnotLo / Swap fast paths.
 /// 2. `is_diagonal_4x4` → CZ (`is_cz_signature` shortcut) / general diagonal fast path.
@@ -779,6 +886,137 @@ mod tests {
         amps[1] = Complex::new(1.0, 0.0);
         apply_2q(&mut amps, [0, 1], &[2], &cnot());
         assert_eq!(amps[1], Complex::new(1.0, 0.0));
+    }
+
+    fn random_complex_state(n_qubits: u32, seed: u64) -> Vec<Complex> {
+        // Tiny deterministic LCG; we only need different per-amp.
+        let mut s = seed.wrapping_add(1);
+        let lcg = |x: &mut u64| {
+            *x = x
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            ((*x >> 32) as f64 / (u32::MAX as f64)) * 2.0 - 1.0
+        };
+        let len = 1usize << n_qubits;
+        let mut amps = Vec::with_capacity(len);
+        for _ in 0..len {
+            amps.push(Complex::new(lcg(&mut s), lcg(&mut s)));
+        }
+        amps
+    }
+
+    fn assert_amps_close(a: &[Complex], b: &[Complex], tol: f64) {
+        assert_eq!(a.len(), b.len());
+        for (ai, bi) in a.iter().zip(b.iter()) {
+            let d = (*ai - *bi).norm_sqr();
+            assert!(d < tol * tol, "diff {} > tol {}", d.sqrt(), tol);
+        }
+    }
+
+    #[test]
+    fn apply_2q_cnot_scalar_matches_dense_scalar_canonical() {
+        let n = 6;
+        let m = {
+            let mut m = [[Complex::new(0.0, 0.0); 4]; 4];
+            m[0][0] = Complex::new(1.0, 0.0);
+            m[1][1] = Complex::new(1.0, 0.0);
+            m[2][3] = Complex::new(1.0, 0.0);
+            m[3][2] = Complex::new(1.0, 0.0);
+            m
+        };
+        for (c, t) in [(0u32, 1), (1, 0), (3, 5), (5, 3)] {
+            let amps0 = random_complex_state(n, 0xabcd);
+            let mut a = amps0.clone();
+            let mut b = amps0;
+            apply_2q_dense_scalar(&mut a, [c, t], &[], &m);
+            apply_2q_cnot_scalar(&mut b, c, t, &[]);
+            assert_amps_close(&a, &b, 1e-14);
+        }
+    }
+
+    #[test]
+    fn apply_2q_swap_scalar_matches_dense_scalar() {
+        let n = 6;
+        let m = {
+            let mut m = [[Complex::new(0.0, 0.0); 4]; 4];
+            m[0][0] = Complex::new(1.0, 0.0);
+            m[1][2] = Complex::new(1.0, 0.0);
+            m[2][1] = Complex::new(1.0, 0.0);
+            m[3][3] = Complex::new(1.0, 0.0);
+            m
+        };
+        for t in [[0u32, 1], [1, 3], [3, 5], [0, 5]] {
+            let amps0 = random_complex_state(n, 0xbeef);
+            let mut a = amps0.clone();
+            let mut b = amps0;
+            apply_2q_dense_scalar(&mut a, t, &[], &m);
+            apply_2q_swap_scalar(&mut b, t, &[]);
+            assert_amps_close(&a, &b, 1e-14);
+        }
+    }
+
+    #[test]
+    fn apply_2q_cz_scalar_matches_dense_scalar() {
+        let n = 6;
+        let m = {
+            let mut m = [[Complex::new(0.0, 0.0); 4]; 4];
+            m[0][0] = Complex::new(1.0, 0.0);
+            m[1][1] = Complex::new(1.0, 0.0);
+            m[2][2] = Complex::new(1.0, 0.0);
+            m[3][3] = Complex::new(-1.0, 0.0);
+            m
+        };
+        for t in [[0u32, 1], [1, 3], [3, 5], [0, 5]] {
+            let amps0 = random_complex_state(n, 0xcafe);
+            let mut a = amps0.clone();
+            let mut b = amps0;
+            apply_2q_dense_scalar(&mut a, t, &[], &m);
+            apply_2q_cz_scalar(&mut b, t, &[]);
+            assert_amps_close(&a, &b, 1e-14);
+        }
+    }
+
+    #[test]
+    fn apply_2q_diagonal_scalar_matches_dense_scalar_random_phases() {
+        let n = 6;
+        // Random diag (e^{iθ_k}): four arbitrary phases.
+        let d = [
+            Complex::new(0.6, 0.8),
+            Complex::new(-0.7, 0.7142857142857143),
+            Complex::new(0.99, -0.1414213562373095),
+            Complex::new(-0.5, -0.8660254037844386),
+        ];
+        let mut m = [[Complex::new(0.0, 0.0); 4]; 4];
+        for k in 0..4 {
+            m[k][k] = d[k];
+        }
+        for t in [[0u32, 1], [1, 3], [3, 5]] {
+            let amps0 = random_complex_state(n, 0xfeed);
+            let mut a = amps0.clone();
+            let mut b = amps0;
+            apply_2q_dense_scalar(&mut a, t, &[], &m);
+            apply_2q_diagonal_scalar(&mut b, t, &[], d);
+            assert_amps_close(&a, &b, 1e-14);
+        }
+    }
+
+    #[test]
+    fn apply_2q_cnot_scalar_respects_external_control() {
+        let n = 5;
+        let m = {
+            let mut m = [[Complex::new(0.0, 0.0); 4]; 4];
+            m[0][0] = Complex::new(1.0, 0.0);
+            m[1][1] = Complex::new(1.0, 0.0);
+            m[2][3] = Complex::new(1.0, 0.0);
+            m[3][2] = Complex::new(1.0, 0.0);
+            m
+        };
+        let amps0 = random_complex_state(n, 0xface);
+        let mut a = amps0.clone();
+        let mut b = amps0;
+        apply_2q_dense_scalar(&mut a, [0, 1], &[3], &m);
+        apply_2q_cnot_scalar(&mut b, 0, 1, &[3]);
+        assert_amps_close(&a, &b, 1e-14);
     }
 
     /// Canonical `Gate::Toffoli` matrix (P0-06): identity on rows 0..6,
