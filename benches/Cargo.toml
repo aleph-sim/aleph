@@ -18,6 +18,7 @@ aleph-core    = { path = "../crates/aleph-core" }
 aleph-ir      = { path = "../crates/aleph-ir" }
 aleph-backend = { path = "../crates/aleph-backend" }
 aleph-sv      = { path = "../crates/aleph-sv" }
+aleph-parser  = { path = "../crates/aleph-parser" }
 smallvec      = { workspace = true }
 
 [dev-dependencies]
@@ -39,4 +40,8 @@ harness = false
 
 [[bench]]
 name = "random"
+harness = false
+
+[[bench]]
+name = "qiskit_baseline"
 harness = false
