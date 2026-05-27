@@ -3577,7 +3577,7 @@ mod tests {
         }
         let d = nontrivial_diag_4();
         for n in [6u32, 8, 10] {
-            for t in [[2u32, 3], [2, 5], [3, 5], [4, 5]] {
+            for t in [[2u32, 3], [2, 5], [3, 5], [4, 5], [5, 2], [5, 3]] {
                 if n <= t[0].max(t[1]) {
                     continue;
                 }
@@ -3609,7 +3609,8 @@ mod tests {
             return;
         }
         let d = nontrivial_diag_4();
-        let cases: &[(u32, [u32; 2], &[u32])] = &[(8, [2, 5], &[7]), (10, [3, 5], &[7, 9])];
+        let cases: &[(u32, [u32; 2], &[u32])] =
+            &[(8, [2, 5], &[7]), (10, [3, 5], &[7, 9]), (8, [5, 2], &[7])];
         for &(n, t, ec) in cases {
             let amps0 = random_complex_state(n, 0xd2b0 + n as u64);
             let mut a = amps0.clone();
@@ -3642,7 +3643,8 @@ mod tests {
     /// host.
     #[test]
     fn apply_2q_diagonal_avx512_tier_a_indexing_covers_state_exactly_once() {
-        let cases: &[(u32, [u32; 2], &[u32])] = &[(6, [2, 3], &[]), (8, [2, 5], &[7])];
+        let cases: &[(u32, [u32; 2], &[u32])] =
+            &[(6, [2, 3], &[]), (8, [2, 5], &[7]), (6, [3, 2], &[])];
         for &(n_qubits, targets, external_controls) in cases {
             let len = 1usize << n_qubits;
             let lo = targets[0].min(targets[1]);
