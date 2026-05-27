@@ -82,9 +82,6 @@ pub(crate) fn expand_with_fixed(k: usize, fixed: &[(u32, bool)]) -> usize {
 /// caller produced as a "true" zero (e.g. `Phase::matrix()` literal
 /// `0.0`) detects as diagonal while any caller-supplied off-diagonal
 /// of magnitude ≥ machine eps falls through.
-// Allow dead_code: callers in `aos.rs` and `soa.rs` land in P1-06
-// Tasks 5 + 6.  Until then, the constant is unreferenced.
-#[allow(dead_code)]
 const DIAGONAL_EPS_SQ: f64 = 1e-30;
 
 /// Returns true iff both off-diagonal entries of a 2×2 matrix have
@@ -94,8 +91,6 @@ const DIAGONAL_EPS_SQ: f64 = 1e-30;
 /// (P1-06).  The cost is 2 complex `norm_sqr` calls + 2 comparisons,
 /// roughly 5 ns per call — negligible against any reasonable
 /// state-vector kernel.
-// Allow dead_code: callers land in P1-06 Tasks 5 + 6.
-#[allow(dead_code)]
 #[inline]
 pub(crate) fn is_diagonal_2x2(m: &[[aleph_core::Complex; 2]; 2]) -> bool {
     m[0][1].norm_sqr() < DIAGONAL_EPS_SQ && m[1][0].norm_sqr() < DIAGONAL_EPS_SQ

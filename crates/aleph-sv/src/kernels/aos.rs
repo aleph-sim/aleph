@@ -23,6 +23,29 @@ use aleph_core::Complex;
 /// (which LLVM auto-vectorises into 2-lane `vmulpd xmm` via the
 /// natural Complex layout).
 pub(crate) fn apply_1q(amps: &mut [Complex], target: u32, controls: &[u32], m: &[[Complex; 2]; 2]) {
+    // Diagonal fast path (P1-06).  Detection cost is ~5 ns per call;
+    // negligible vs even the cheapest state-vector kernel.  Catches
+    // Z/S/T/Sdg/Tdg/Rz/Phase intrinsic gates AND any user-supplied
+    // diagonal GenericUnitary(M2x2).
+    if super::is_diagonal_2x2(m) {
+        #[cfg(target_arch = "x86_64")]
+        {
+            if std::is_x86_feature_detected!("avx512f")
+                && (1usize << target) >= 4
+                && controls.iter().all(|&c| c > target)
+            {
+                // SAFETY: identical contract to apply_1q_avx512 — feature gate +
+                // target_bit ≥ LANES + every control above target.
+                unsafe {
+                    apply_1q_diagonal_avx512(amps, target, controls, m[0][0], m[1][1]);
+                }
+                return;
+            }
+        }
+        apply_1q_diagonal_scalar(amps, target, controls, m[0][0], m[1][1]);
+        return;
+    }
+
     #[cfg(target_arch = "x86_64")]
     {
         // AVX-512 packed-complex kernel: 1 `vmovupd zmm` reads 4
@@ -223,8 +246,6 @@ unsafe fn apply_1q_avx512(
 /// because the caller has already detected the diagonal — passing the
 /// scalars makes the contract explicit and lets the compiler keep
 /// them in registers across the loop.
-// Allow dead_code: caller in apply_1q dispatch lands in Task 5.
-#[allow(dead_code)]
 pub(crate) fn apply_1q_diagonal_scalar(
     amps: &mut [Complex],
     target: u32,
@@ -277,7 +298,6 @@ pub(crate) fn apply_1q_diagonal_scalar(
 ///   distinct and in qubit range.
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx512f")]
-#[allow(dead_code)] // caller in apply_1q dispatch lands in Task 5
 unsafe fn apply_1q_diagonal_avx512(
     amps: &mut [Complex],
     target: u32,
@@ -526,6 +546,43 @@ mod tests {
     }
 
     // P1-06 diagonal-fast-path tests.
+
+    #[test]
+    fn apply_1q_routes_diagonal_phase_through_fast_path() {
+        // 8-amp state (n=3), Phase(π/4) on q=1, no controls.
+        // Verify result equals what apply_1q_diagonal_scalar produces directly.
+        let theta = std::f64::consts::FRAC_PI_4;
+        let m = [
+            [Complex::new(1.0, 0.0), Complex::new(0.0, 0.0)],
+            [
+                Complex::new(0.0, 0.0),
+                Complex::new(theta.cos(), theta.sin()),
+            ],
+        ];
+        let mut amps_via_dispatch: Vec<Complex> = (0..8)
+            .map(|k| Complex::new(0.1 * k as f64, 0.07 * k as f64))
+            .collect();
+        let mut amps_direct = amps_via_dispatch.clone();
+        super::apply_1q(&mut amps_via_dispatch, 1, &[], &m);
+        super::apply_1q_diagonal_scalar(&mut amps_direct, 1, &[], m[0][0], m[1][1]);
+        for (a, b) in amps_via_dispatch.iter().zip(amps_direct.iter()) {
+            assert!((a - b).norm() < 1e-14);
+        }
+    }
+
+    #[test]
+    fn apply_1q_routes_non_diagonal_through_generic() {
+        // Hadamard on q=0: result should match the textbook H|0⟩ = |+⟩.
+        let s = std::f64::consts::FRAC_1_SQRT_2;
+        let h = [
+            [Complex::new(s, 0.0), Complex::new(s, 0.0)],
+            [Complex::new(s, 0.0), Complex::new(-s, 0.0)],
+        ];
+        let mut amps = vec![Complex::new(1.0, 0.0), Complex::new(0.0, 0.0)];
+        super::apply_1q(&mut amps, 0, &[], &h);
+        assert!((amps[0] - Complex::new(s, 0.0)).norm() < 1e-14);
+        assert!((amps[1] - Complex::new(s, 0.0)).norm() < 1e-14);
+    }
 
     #[test]
     fn apply_1q_diagonal_scalar_z_on_q0() {
