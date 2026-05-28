@@ -280,6 +280,90 @@ pub(crate) fn apply_1q_diagonal_scalar(
     }
 }
 
+/// Scalar Pauli-X kernel. Pure amplitude swap; no arithmetic.
+///
+/// Iterates basis indices `i` whose target bit is 0 and every
+/// control bit is set, swapping `amps[i]` with `amps[i | (1 << target)]`.
+#[allow(dead_code)] // wired into dispatch in T3
+pub(crate) fn apply_1q_x_scalar(amps: &mut [Complex], target: u32, controls: &[u32]) {
+    let t_bit = 1usize << target;
+    let ctrl_mask = super::control_mask(controls);
+    let len = amps.len();
+    let mut i = 0usize;
+    while i < len {
+        if i & t_bit == 0 && (i & ctrl_mask) == ctrl_mask {
+            amps.swap(i, i | t_bit);
+        }
+        i += 1;
+    }
+}
+
+/// Scalar Pauli-Y kernel. Swap + sign-flip + (re, im) exchange.
+///
+/// `Y = [[0, -i], [i, 0]]` for `YPos` (canonical Pauli-Y), or
+/// `Y' = [[0, +i], [-i, 0]]` for `YNeg`. `phase_sign = +1.0` selects
+/// YPos, `phase_sign = -1.0` selects YNeg.
+///
+/// For YPos: `amps[i0] ← (im_i1, -re_i1)`, `amps[i1] ← (-im_i0, re_i0)`.
+/// For YNeg: signs flip on both sides.
+#[allow(dead_code)] // wired into dispatch in T3
+pub(crate) fn apply_1q_y_scalar(
+    amps: &mut [Complex],
+    target: u32,
+    controls: &[u32],
+    phase_sign: f64,
+) {
+    debug_assert!(phase_sign == 1.0 || phase_sign == -1.0);
+    let t_bit = 1usize << target;
+    let ctrl_mask = super::control_mask(controls);
+    let len = amps.len();
+    let mut i = 0usize;
+    while i < len {
+        if i & t_bit == 0 && (i & ctrl_mask) == ctrl_mask {
+            let j = i | t_bit;
+            let z0 = amps[i];
+            let z1 = amps[j];
+            // YPos (phase_sign=+1):
+            //   amps[i] = (-i) * z1 = (im1, -re1)
+            //   amps[j] = (+i) * z0 = (-im0, re0)
+            // YNeg (phase_sign=-1): swap signs on both halves.
+            amps[i] = Complex::new(phase_sign * z1.im, -phase_sign * z1.re);
+            amps[j] = Complex::new(-phase_sign * z0.im, phase_sign * z0.re);
+        }
+        i += 1;
+    }
+}
+
+/// Scalar generic anti-diagonal kernel. Full complex multiply on the
+/// two off-diagonal entries + swap.
+///
+/// `m = [[0, a], [b, 0]]`. Following the `apply_1q` convention where
+/// `amps[i] = m[0][0]*z0 + m[0][1]*z1` and `amps[j] = m[1][0]*z0 + m[1][1]*z1`:
+/// `amps[i0] ← a * amps[i1]`, `amps[i1] ← b * amps[i0]`.
+#[allow(dead_code)] // wired into dispatch in T3
+pub(crate) fn apply_1q_antidiag_scalar(
+    amps: &mut [Complex],
+    target: u32,
+    controls: &[u32],
+    a: Complex,
+    b: Complex,
+) {
+    let t_bit = 1usize << target;
+    let ctrl_mask = super::control_mask(controls);
+    let len = amps.len();
+    let mut i = 0usize;
+    while i < len {
+        if i & t_bit == 0 && (i & ctrl_mask) == ctrl_mask {
+            let j = i | t_bit;
+            let z0 = amps[i];
+            let z1 = amps[j];
+            amps[i] = a * z1;
+            amps[j] = b * z0;
+        }
+        i += 1;
+    }
+}
+
 /// Packed-complex AVX-512 path for the 1q diagonal fast path.
 ///
 /// **Math.** For each amplitude `z = state[i]` whose target bit is 0,
@@ -1969,6 +2053,13 @@ mod tests {
         let z = Complex::new(0.0, 0.0);
         let o = Complex::new(1.0, 0.0);
         [[z, o], [o, z]]
+    }
+
+    fn pauli_y_pos() -> [[Complex; 2]; 2] {
+        let z = Complex::new(0.0, 0.0);
+        let pi = Complex::new(0.0, 1.0);
+        let ni = Complex::new(0.0, -1.0);
+        [[z, ni], [pi, z]]
     }
 
     fn hadamard() -> [[Complex; 2]; 2] {
@@ -3807,6 +3898,63 @@ mod tests {
             for (ai, bi) in a.iter().zip(b.iter()) {
                 proptest::prop_assert!(((*ai - *bi).norm_sqr()) < 1e-24);
             }
+        }
+    }
+
+    #[test]
+    fn apply_1q_x_scalar_matches_generic() {
+        // n=4 random-ish state.
+        let mut amps_x: Vec<Complex> = (0..16)
+            .map(|k| Complex::new(k as f64 * 0.13, k as f64 * 0.27))
+            .collect();
+        let mut amps_g = amps_x.clone();
+        super::apply_1q_x_scalar(&mut amps_x, 1, &[]);
+        super::apply_1q(&mut amps_g, 1, &[], &pauli_x());
+        for (a, b) in amps_x.iter().zip(amps_g.iter()) {
+            assert!(
+                (a.re - b.re).abs() < 1e-12 && (a.im - b.im).abs() < 1e-12,
+                "x scalar diverged from generic"
+            );
+        }
+    }
+
+    #[test]
+    fn apply_1q_x_scalar_with_external_control_below_target() {
+        // controls=[0], target=2; classic Tier-C trigger.
+        let mut amps_x: Vec<Complex> = (0..16).map(|k| Complex::new(k as f64, 0.0)).collect();
+        let mut amps_g = amps_x.clone();
+        super::apply_1q_x_scalar(&mut amps_x, 2, &[0]);
+        super::apply_1q(&mut amps_g, 2, &[0], &pauli_x());
+        assert_eq!(amps_x, amps_g);
+    }
+
+    #[test]
+    fn apply_1q_y_scalar_matches_generic_ypos() {
+        let mut amps_y: Vec<Complex> = (0..16)
+            .map(|k| Complex::new(k as f64 * 0.11, 1.0 + k as f64 * 0.23))
+            .collect();
+        let mut amps_g = amps_y.clone();
+        super::apply_1q_y_scalar(&mut amps_y, 2, &[], 1.0);
+        super::apply_1q(&mut amps_g, 2, &[], &pauli_y_pos());
+        for (a, b) in amps_y.iter().zip(amps_g.iter()) {
+            assert!((a.re - b.re).abs() < 1e-12 && (a.im - b.im).abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn apply_1q_antidiag_scalar_matches_generic_phased() {
+        let z = Complex::new(0.0, 0.0);
+        let a = Complex::new(0.5, 0.8660254037844386); // e^{iπ/3}
+        let b = Complex::new(0.5, -0.8660254037844386); // e^{-iπ/3}
+        let m = [[z, a], [b, z]];
+        let mut amps_s: Vec<Complex> = (0..8)
+            .map(|k| Complex::new(k as f64 * 0.17, k as f64 * 0.29))
+            .collect();
+        let mut amps_g = amps_s.clone();
+        super::apply_1q_antidiag_scalar(&mut amps_s, 1, &[], a, b);
+        super::apply_1q(&mut amps_g, 1, &[], &m);
+        for (s, g) in amps_s.iter().zip(amps_g.iter()) {
+            assert!((s.re - g.re).abs() < 1e-12 && (s.im - g.im).abs() < 1e-12);
         }
     }
 }
