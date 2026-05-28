@@ -3159,9 +3159,99 @@ fn dispatch_toffoli(amps: &mut [Complex], targets: [u32; 3], controls: &[u32]) {
     apply_toffoli_scalar(amps, targets, controls);
 }
 
+/// CCZ Tier-A: AVX-512 sign-flip via vxorpd on packed-complex AoS.
+/// Uses `_mm512_xor_pd` with sign mask (0x8000_0000_0000_0000 in
+/// every double lane) for 1-µop latency-1 sign flip per zmm block.
+///
+/// CCZ is symmetric — it has no "target"; every qubit in `mask_bits` acts
+/// as both target and control. The flat block-stride walk checks the
+/// combined mask at each LANES-aligned block base: if all mask bits are
+/// set, sign-flip the entire block. Because mask_lo ≥ LANES_BITS = 2, every
+/// mask bit is at or above log₂(LANES), so the per-block mask check is
+/// uniform across the block's LANES amplitudes — no intra-block ambiguity.
+///
+/// **Inner loop (per matching block):**
+/// 1 `vmovupd` (load zmm) + 1 `vxorpd` (sign flip) + 1 `vmovupd` (store) = 3 µops.
+///
+/// # Safety
+/// Caller MUST guarantee all of:
+/// * Host CPU supports AVX-512F.
+/// * All entries of `mask_bits` are distinct and < n.
+/// * `mask_bits[0]` (the minimum) is ≥ LANES_BITS = 2, so each LANES-block
+///   has a uniform CCZ-mask value (no mask bit falls inside the intra-block
+///   index range `[block_base, block_base + LANES)`).
+/// * `amps.len() == 1 << n` for some n ≥ 3 (circuit invariant).
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f")]
+unsafe fn apply_ccz_avx512_tier_a(amps: &mut [Complex], mask_bits: &[u32]) {
+    use std::arch::x86_64::*;
+
+    const LANES: usize = 4; // complex amps per zmm (8 f64 per zmm)
+
+    debug_assert!(
+        mask_bits.iter().min().copied().unwrap_or(0) >= 2,
+        "Tier-A CCZ contract: every mask bit must be >= LANES_BITS (2)"
+    );
+
+    // Build the combined control+target mask from all qubit positions.
+    let mut mask: usize = 0;
+    for &b in mask_bits {
+        mask |= 1usize << b;
+    }
+
+    let len = amps.len();
+    let amps_ptr = amps.as_mut_ptr() as *mut f64;
+
+    // IEEE-754: -0.0 has exactly the sign bit set (0x8000_0000_0000_0000).
+    // XOR with this value flips the sign bit of every double lane.
+    let sign_mask = _mm512_set1_pd(-0.0_f64);
+
+    let mut block_base = 0usize;
+    while block_base < len {
+        if (block_base & mask) == mask {
+            // SAFETY: block_base + LANES ≤ len because mask_bits are all ≥ 2,
+            // so mask_lo ≥ 4 > LANES; the amplitude count between any two
+            // consecutive matching block_base values is a multiple of LANES.
+            // The state vector length is 1 << n ≥ 8 (n ≥ 3) and is a multiple
+            // of LANES. `amps_ptr.add(block_base * 2)` is within bounds.
+            let p = amps_ptr.add(block_base * 2);
+            let z = _mm512_loadu_pd(p);
+            let neg = _mm512_xor_pd(z, sign_mask);
+            _mm512_storeu_pd(p, neg);
+        }
+        block_base += LANES;
+    }
+}
+
 /// Routes CCZ to the best available tier (spec §5).
-/// Tier-C-only for now; SIMD added in later tasks.
 fn dispatch_ccz(amps: &mut [Complex], targets: [u32; 3], controls: &[u32]) {
+    #[cfg(target_arch = "x86_64")]
+    {
+        const LANES_BITS: u32 = 2; // log2(LANES) where LANES = 4
+
+        // Build the sorted combined mask of all qubit positions (targets +
+        // external controls). CCZ is symmetric — there is no distinct "target".
+        let mut all_mask: smallvec::SmallVec<[u32; 8]> = smallvec::SmallVec::new();
+        for &q in &targets {
+            all_mask.push(q);
+        }
+        for &c in controls {
+            all_mask.push(c);
+        }
+        all_mask.sort();
+        let mask_lo = all_mask[0];
+
+        if std::is_x86_feature_detected!("avx512f") && mask_lo >= LANES_BITS {
+            // Tier-A: every mask bit ≥ LANES_BITS=2, so each zmm block's
+            // full-mask check is uniform — no intra-block ambiguity.
+            // SAFETY: AVX-512F detected, mask_lo ≥ 2, all qubit positions
+            // distinct + in-range (Circuit invariant), n ≥ 3 (Circuit invariant).
+            unsafe {
+                apply_ccz_avx512_tier_a(amps, &all_mask);
+            }
+            return;
+        }
+    }
     apply_ccz_scalar(amps, targets, controls);
 }
 
@@ -6258,6 +6348,115 @@ mod toffoli_tier_a_tests {
         let mut b = a.clone();
         dispatch_toffoli(&mut a, [3, 4, 1], &[]);
         apply_toffoli_scalar(&mut b, [3, 4, 1], &[]);
+        for (x, y) in a.iter().zip(b.iter()) {
+            assert!(
+                (x.re - y.re).abs() < 1e-12,
+                "re mismatch: {} vs {}",
+                x.re,
+                y.re
+            );
+            assert!(
+                (x.im - y.im).abs() < 1e-12,
+                "im mismatch: {} vs {}",
+                x.im,
+                y.im
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod ccz_tier_a_tests {
+    use super::*;
+    use aleph_core::Complex;
+
+    fn random_amps(n: u32, seed: u64) -> Vec<Complex> {
+        let mut s = seed;
+        let mut step = || {
+            s = s
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            ((s >> 33) as f64) / (u32::MAX as f64)
+        };
+        (0..(1 << n)).map(|_| Complex::new(step(), step())).collect()
+    }
+
+    /// Direct-call test: `apply_ccz_avx512_tier_a` with mask_bits = [2, 4, 6]
+    /// (mask_lo = 2 ≥ LANES_BITS) must exactly match `apply_ccz_scalar` with
+    /// targets=[2, 4, 6] and no external controls.
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn ccz_tier_a_direct_call_matches_scalar() {
+        if !std::is_x86_feature_detected!("avx512f") {
+            return;
+        }
+        let mut simd = random_amps(7, 17);
+        let mut scalar = simd.clone();
+        let mask_bits = [2u32, 4u32, 6u32]; // mask_lo = 2 ≥ LANES_BITS = 2.
+        // SAFETY: AVX-512F detected, mask_lo = 2 ≥ LANES_BITS, n=7 ≥ 3, qubits distinct.
+        unsafe {
+            apply_ccz_avx512_tier_a(&mut simd, &mask_bits);
+        }
+        apply_ccz_scalar(&mut scalar, [2, 4, 6], &[]);
+        for (x, y) in simd.iter().zip(scalar.iter()) {
+            assert!(
+                (x.re - y.re).abs() < 1e-12,
+                "re mismatch: {} vs {}",
+                x.re,
+                y.re
+            );
+            assert!(
+                (x.im - y.im).abs() < 1e-12,
+                "im mismatch: {} vs {}",
+                x.im,
+                y.im
+            );
+        }
+    }
+
+    /// Direct-call test with external control: mask_bits = [2, 3, 4, 5] maps to
+    /// targets=[2, 3, 4] + external_control=[5]. Scalar: `apply_ccz_scalar`
+    /// with targets=[2, 3, 4] and controls=[5] must produce identical results.
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn ccz_tier_a_with_external_control() {
+        if !std::is_x86_feature_detected!("avx512f") {
+            return;
+        }
+        let mut simd = random_amps(7, 18);
+        let mut scalar = simd.clone();
+        let mask_bits = [2u32, 3u32, 4u32, 5u32];
+        // SAFETY: AVX-512F detected, mask_lo = 2 ≥ LANES_BITS, n=7 ≥ 3, qubits distinct.
+        unsafe {
+            apply_ccz_avx512_tier_a(&mut simd, &mask_bits);
+        }
+        apply_ccz_scalar(&mut scalar, [2, 3, 4], &[5]);
+        for (x, y) in simd.iter().zip(scalar.iter()) {
+            assert!(
+                (x.re - y.re).abs() < 1e-12,
+                "re mismatch: {} vs {}",
+                x.re,
+                y.re
+            );
+            assert!(
+                (x.im - y.im).abs() < 1e-12,
+                "im mismatch: {} vs {}",
+                x.im,
+                y.im
+            );
+        }
+    }
+
+    /// Cross-arch dispatch test: `dispatch_ccz` with targets=[2, 4, 6] must match
+    /// `apply_ccz_scalar` on all host architectures. On AVX-512 hosts this exercises
+    /// the Tier-A branch (mask_lo = 2 ≥ LANES_BITS); on others it falls through
+    /// to the scalar fallback.
+    #[test]
+    fn dispatch_ccz_routes_tier_a_cross_arch() {
+        let mut a = random_amps(7, 19);
+        let mut b = a.clone();
+        dispatch_ccz(&mut a, [2, 4, 6], &[]);
+        apply_ccz_scalar(&mut b, [2, 4, 6], &[]);
         for (x, y) in a.iter().zip(b.iter()) {
             assert!(
                 (x.re - y.re).abs() < 1e-12,
