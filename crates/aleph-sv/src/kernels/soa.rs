@@ -3019,4 +3019,22 @@ mod tests {
             assert_eq!(im_avx, im_sca, "target={}", target);
         }
     }
+
+    // ---- P1-05 T12: SoA boundary-n test ----
+
+    #[test]
+    fn apply_1q_x_soa_dispatch_boundary_n() {
+        // n=2 < LANES_SOA=8 → scalar path; n=3..=5 spans the tier-B target range.
+        for n in 2..=5u32 {
+            let len = 1usize << n;
+            let mut re: Vec<f64> = (0..len).map(|k| k as f64 * 0.13).collect();
+            let mut im: Vec<f64> = (0..len).map(|k| -(k as f64) * 0.07).collect();
+            let mut re_ref = re.clone();
+            let mut im_ref = im.clone();
+            super::apply_1q(&mut re, &mut im, 0, &[], &pauli_x());
+            super::apply_1q_x_soa_scalar(&mut re_ref, &mut im_ref, 0, &[]);
+            assert_eq!(re, re_ref, "n={}", n);
+            assert_eq!(im, im_ref, "n={}", n);
+        }
+    }
 }

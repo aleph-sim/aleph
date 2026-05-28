@@ -4834,4 +4834,86 @@ mod tests {
             }
         }
     }
+
+    // ---- P1-05 T12: boundary-n + NaN-propagation tests ----
+
+    #[test]
+    fn apply_1q_x_dispatch_n2_no_segfault() {
+        // Bell-state-sized; n=2 < LANES=4 → Tier-B path (target ∈ {0, 1}).
+        // X on target=0 swaps pairs (i, i|1) — t_bit = 1 << 0 = 1, so amps[0]
+        // and amps[1] swap, amps[2] and amps[3] swap.  Starting from |00⟩ =
+        // index 0 set: result is index 1 set.
+        let mut amps: Vec<Complex> = vec![
+            Complex::new(1.0, 0.0),
+            Complex::new(0.0, 0.0),
+            Complex::new(0.0, 0.0),
+            Complex::new(0.0, 0.0),
+        ];
+        super::apply_1q(&mut amps, 0, &[], &pauli_x());
+        assert_eq!(
+            amps,
+            vec![
+                Complex::new(0.0, 0.0),
+                Complex::new(1.0, 0.0),
+                Complex::new(0.0, 0.0),
+                Complex::new(0.0, 0.0),
+            ]
+        );
+    }
+
+    #[test]
+    fn apply_1q_x_dispatch_boundary_n_around_lanes() {
+        // n=2 (< LANES), n=3 (between), n=4 (LANES-bit threshold), n=5 (above).
+        for n in 2..=5u32 {
+            let len = 1usize << n;
+            let mut amps: Vec<Complex> = (0..len)
+                .map(|k| Complex::new(k as f64 * 0.13, k as f64 * -0.07))
+                .collect();
+            let mut amps_ref = amps.clone();
+            super::apply_1q(&mut amps, 0, &[], &pauli_x());
+            super::apply_1q_x_scalar(&mut amps_ref, 0, &[]);
+            assert_eq!(amps, amps_ref, "n={}", n);
+        }
+    }
+
+    #[test]
+    fn nan_diagonal_propagates_through_generic_kernel() {
+        // m has NaN on diagonal → is_antidiagonal_2x2 rejects → generic kernel.
+        let nan = Complex::new(f64::NAN, 0.0);
+        let o = Complex::new(1.0, 0.0);
+        let z = Complex::new(0.0, 0.0);
+        let m = [[nan, o], [o, z]];
+        let mut amps: Vec<Complex> = (0..8).map(|k| Complex::new(k as f64, 0.0)).collect();
+        super::apply_1q(&mut amps, 1, &[], &m);
+        assert!(
+            amps.iter().any(|c| c.re.is_nan() || c.im.is_nan()),
+            "NaN failed to propagate from diagonal"
+        );
+    }
+
+    #[test]
+    fn nan_off_diagonal_propagates_through_generic_antidiag_kernel() {
+        // Diagonals zero, off-diagonal NaN → is_antidiagonal_2x2 passes,
+        // classify_1q_antidiag returns None → generic anti-diag multiplies by NaN.
+        let nan = Complex::new(f64::NAN, 0.0);
+        let o = Complex::new(1.0, 0.0);
+        let z = Complex::new(0.0, 0.0);
+        let m = [[z, nan], [o, z]];
+        let mut amps: Vec<Complex> = (0..8).map(|k| Complex::new(k as f64, 1.0)).collect();
+        super::apply_1q(&mut amps, 1, &[], &m);
+        assert!(
+            amps.iter().any(|c| c.re.is_nan() || c.im.is_nan()),
+            "NaN failed to propagate from off-diagonal"
+        );
+    }
+
+    #[test]
+    fn nan_in_both_off_diagonals_still_propagates() {
+        let nan = Complex::new(f64::NAN, 0.0);
+        let z = Complex::new(0.0, 0.0);
+        let m = [[z, nan], [nan, z]];
+        let mut amps: Vec<Complex> = (0..8).map(|k| Complex::new(k as f64, 1.0)).collect();
+        super::apply_1q(&mut amps, 1, &[], &m);
+        assert!(amps.iter().any(|c| c.re.is_nan() || c.im.is_nan()));
+    }
 }
