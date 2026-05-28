@@ -777,8 +777,8 @@ mod tests {
     fn classify_1q_antidiag_generic_anti() {
         // [[0, e^{iπ/3}], [e^{-iπ/3}, 0]] — anti-diag but not Pauli.
         let zero = aleph_core::Complex::new(0.0, 0.0);
-        let a = aleph_core::Complex::new(0.5, std::f64::consts::FRAC_1_SQRT_2 * 0.5_f64.sqrt());
-        let b = aleph_core::Complex::new(0.5, -std::f64::consts::FRAC_1_SQRT_2 * 0.5_f64.sqrt());
+        let a = aleph_core::Complex::new(0.5, 0.8660254037844386); // e^{iπ/3}: |a|²=0.25+0.75=1
+        let b = aleph_core::Complex::new(0.5, -0.8660254037844386); // e^{-iπ/3}
         let m = [[zero, a], [b, zero]];
         assert!(super::classify_1q_antidiag(&m).is_none());
     }

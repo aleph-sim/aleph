@@ -31,7 +31,11 @@ pub fn apply_1q(amps: &mut [Complex], target: u32, controls: &[u32], m: &[[Compl
                 && (1usize << target) >= 4
                 && controls.iter().all(|&c| c > target)
             {
-                // SAFETY: feature gate + target_bit ≥ LANES + controls > target.
+                // SAFETY: see apply_1q_diagonal_avx512 # Safety —
+                // feature detected + target_bit ≥ LANES (from the
+                // `(1usize << target) >= 4` guard above) + every
+                // control > target (from `c > target` guard) + standard
+                // apply_gate qubit-range + distinct invariants.
                 unsafe {
                     apply_1q_diagonal_avx512(amps, target, controls, m[0][0], m[1][1]);
                 }
@@ -4593,8 +4597,17 @@ mod tests {
     }
 
     #[test]
-    fn apply_1q_x_scalar_with_external_control_below_target() {
-        // controls=[0], target=2; classic Tier-C trigger.
+    fn apply_1q_x_scalar_external_control_below_target_dispatches_to_scalar() {
+        // controls=[0], target=2; c=0 < target=2 so Tier-A and Tier-B both
+        // reject (Tier-A requires c > target; Tier-B requires c >= 2 AND
+        // c > target). Dispatch must route to the scalar fallback.
+        //
+        // This is a dispatch-routing assertion, not a kernel parity test:
+        // scalar correctness is independently verified by
+        // apply_1q_x_scalar_matches_generic (target=1, no controls).
+        // Here we confirm that apply_1q produces the same result as
+        // apply_1q_x_scalar with the below-target control, which is the
+        // only path that correctly applies the gate at c=0, target=2.
         let mut amps_x: Vec<Complex> = (0..16).map(|k| Complex::new(k as f64, 0.0)).collect();
         let mut amps_g = amps_x.clone();
         super::apply_1q_x_scalar(&mut amps_x, 2, &[0]);

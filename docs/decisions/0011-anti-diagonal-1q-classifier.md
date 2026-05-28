@@ -89,6 +89,26 @@ Tier-B dispatch to `controls.iter().all(|&c| c >= log2(LANES))` —
 `c >= 2` for AoS, `c >= 3` for SoA. Kernel `debug_assert!` and SAFETY
 block updated accordingly.
 
+## Tolerance trade-off — diagonal drop in Pauli arms
+
+`is_antidiagonal_2x2` uses `DIAGONAL_EPS_SQ = 1e-30` (admits diagonals
+with magnitude up to ~3.16e-16). `classify_1q_antidiag` uses
+`PERM_TOL = 1e-14` for the off-diagonal Pauli match. A user-supplied
+matrix `[[ε, 1], [1, ε]]` with `ε = 1e-16` passes the anti-diagonal
+predicate (norm_sqr = 1e-32 < 1e-30), classifies as
+`Perm1qKind::X`, and runs the pure-swap kernel — silently dropping
+the `ε · amp` contribution from the diagonal. Per-amplitude error is
+≤ |ε| ≈ ULP, inside the 1e-10 oracle tolerance and well below the
+classifier's own threshold-window mismatch.
+
+This matches the same trade-off the diagonal path makes for sub-eps
+off-diagonals (ADR 0009 § "Tolerance choice"). Both paths are
+heuristic dispatch: matrices that fall inside the tolerance window
+are treated as their canonical form. If a future caller produces
+matrices in the gap between the two thresholds where the dropped term
+matters, tighten `DIAGONAL_EPS_SQ` to `PERM_TOL² = 1e-28` so both
+predicates use the same |entry| ≈ 1e-14 boundary.
+
 ## NaN handling (ADR 0006 carryover)
 
 `is_antidiagonal_2x2` explicitly rejects non-finite diagonal entries
