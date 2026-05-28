@@ -240,7 +240,11 @@ pub fn apply_1q(amps: &mut [Complex], target: u32, controls: &[u32], m: &[[Compl
 ///   distinct and in qubit range.
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx512f")]
-pub(crate) unsafe fn apply_1q_avx512(
+// `pub` so criterion benches (separate compilation units) can reach this
+// via `aleph_sv::kernels::aos::apply_1q_avx512` when the `internal-bench`
+// feature enables `pub mod kernels` in lib.rs. Without that feature the
+// module itself is private, so this visibility is effectively pub(crate).
+pub unsafe fn apply_1q_avx512(
     amps: &mut [Complex],
     target: u32,
     controls: &[u32],
