@@ -2824,6 +2824,93 @@ unsafe fn apply_toffoli_avx512_tier_a(
     }
 }
 
+/// Tier-A outer-walk variant for Toffoli (CCX): handles controls
+/// *below* target by mask-testing every LANES-block uniformly. The
+/// inner loop is structurally identical to `apply_toffoli_avx512_tier_a`
+/// — the difference is the relaxed SAFETY contract: controls may lie
+/// above OR below target, not just strictly above.
+///
+/// **Why this is correct.** The flat block-stride walk increments
+/// `block_base` by LANES (= 4) each step. The mask check
+/// `(block_base & ctrl_mask) != ctrl_mask` tests ALL control bits —
+/// including any that lie below target — against the block's base
+/// index. Because LANES is a power of two and the state vector length
+/// is also a power of two, every control bit position is represented
+/// exactly once across the set of `block_base` values, so no control
+/// check is aliased or skipped.
+///
+/// The `target_bit` check (`block_base & target_bit != 0`) still
+/// gates which half of each target-pair we process — we always process
+/// from the lo-half side and swap with `block_base | target_bit`.
+/// Since `target >= 2`, `target_bit >= LANES`, ensuring each block
+/// either lies fully in the lo-half or fully in the hi-half.
+///
+/// # Safety
+///
+/// Caller MUST guarantee all of:
+/// * Host CPU supports AVX-512F (`is_x86_feature_detected!("avx512f")` true).
+/// * `target >= 2` i.e. `1 << target >= LANES` (== 4) — ensures each
+///   LANES-block is entirely in the lo-half or hi-half of the target pair.
+/// * All elements of `sorted_controls` are distinct, differ from `target`,
+///   and are valid qubit indices (< n where `amps.len() == 1 << n`).
+/// * `amps.len() == 1 << n` for some n ≥ 3 (circuit invariant).
+///
+/// Unlike `apply_toffoli_avx512_tier_a`, this function does NOT
+/// require `c_lo > target` — controls may lie above OR below target.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f")]
+unsafe fn apply_toffoli_avx512_tier_a_outer_walk(
+    amps: &mut [Complex],
+    target: u32,
+    sorted_controls: &[u32],
+) {
+    use std::arch::x86_64::*;
+
+    const LANES: usize = 4; // complex amps per zmm (8 f64 per zmm)
+
+    debug_assert!(
+        target >= 2,
+        "Tier-A outer-walk contract: target must be >= LANES_BITS (2)"
+    );
+
+    let target_bit = 1usize << target;
+    let mut ctrl_mask = 0usize;
+    for &c in sorted_controls {
+        ctrl_mask |= 1usize << c;
+    }
+    let len = amps.len();
+    let amps_ptr = amps.as_mut_ptr() as *mut f64;
+
+    // Flat block-stride walk identical to the clean Tier-A kernel, but
+    // without the `c_lo > target` restriction. The mask check handles
+    // both above-target and below-target control bits uniformly.
+    let mut block_base = 0usize;
+    while block_base < len {
+        if (block_base & target_bit) != 0 {
+            // Hi-half block — the lo-half iteration handles this pair.
+            block_base += LANES;
+            continue;
+        }
+        if (block_base & ctrl_mask) != ctrl_mask {
+            // Not all controls set — gate does not fire here.
+            block_base += LANES;
+            continue;
+        }
+        // SAFETY: `block_base & target_bit == 0` and all control bits set.
+        // `block_base + LANES <= block_base | target_bit < len` because the
+        // state vector has a full power-of-two length and target_bit ≥ LANES.
+        // The hi-half `block_base | target_bit` is similarly within bounds.
+        // Both pointers are multiplied by 2 (f64 offset = amp_index * 2).
+        let lo_ptr = amps_ptr.add(block_base * 2);
+        let hi_ptr = amps_ptr.add((block_base | target_bit) * 2);
+        let z_lo = _mm512_loadu_pd(lo_ptr);
+        let z_hi = _mm512_loadu_pd(hi_ptr);
+        _mm512_storeu_pd(lo_ptr, z_hi);
+        _mm512_storeu_pd(hi_ptr, z_lo);
+        block_base += LANES;
+    }
+}
+
 /// Top-level 3q dispatch. Matrix-detects Toffoli (CCX) and CCZ shapes
 /// per spec §3.1 and routes to specialised paths. Identity short-circuits.
 /// Falls through to the generic 8x8 scalar kernel for arbitrary matrices.
@@ -2855,7 +2942,6 @@ pub(crate) fn apply_3q(
 fn dispatch_toffoli(amps: &mut [Complex], targets: [u32; 3], controls: &[u32]) {
     #[cfg(target_arch = "x86_64")]
     {
-        // Tier-A (AVX-512, task 7): every control above target, target ≥ LANES_BITS.
         const LANES_BITS: u32 = 2; // log2(LANES) where LANES = 4
         let t = targets[2];
 
@@ -2868,13 +2954,23 @@ fn dispatch_toffoli(amps: &mut [Complex], targets: [u32; 3], controls: &[u32]) {
         }
         let c_lo = *all_ctrls.iter().min().unwrap();
 
-        if std::is_x86_feature_detected!("avx512f") && t >= LANES_BITS && c_lo > t {
-            // SAFETY: Tier-A contract satisfied — AVX-512F detected, target ≥ 2
-            // (LANES_BITS), every control in all_ctrls is strictly above target
-            // (c_lo > t implies all entries > t). Qubits distinct + in-range
-            // guaranteed by Circuit invariant.
-            unsafe {
-                apply_toffoli_avx512_tier_a(amps, t, &all_ctrls);
+        if std::is_x86_feature_detected!("avx512f") && t >= LANES_BITS {
+            if c_lo > t {
+                // Tier-A clean: every control strictly above target.
+                // SAFETY: AVX-512F detected, target ≥ 2 (LANES_BITS), every
+                // control in all_ctrls is strictly above target (c_lo > t).
+                // Qubits distinct + in-range guaranteed by Circuit invariant.
+                unsafe {
+                    apply_toffoli_avx512_tier_a(amps, t, &all_ctrls);
+                }
+            } else {
+                // Tier-A outer-walk: some controls at or below target.
+                // SAFETY: AVX-512F detected, target ≥ 2 (LANES_BITS). Controls
+                // may be above or below target — the flat block-stride mask check
+                // handles both uniformly. Qubits distinct + in-range by invariant.
+                unsafe {
+                    apply_toffoli_avx512_tier_a_outer_walk(amps, t, &all_ctrls);
+                }
             }
             return;
         }
@@ -5817,6 +5913,65 @@ mod toffoli_tier_a_tests {
         for (x, y) in via_dispatch.iter().zip(via_scalar.iter()) {
             assert!((x.re - y.re).abs() < 1e-12);
             assert!((x.im - y.im).abs() < 1e-12);
+        }
+    }
+
+    /// n=7 state, c0=0, c1=5, t=2. c_lo=0 < t=2 — outer-walk path.
+    /// Verifies that `apply_toffoli_avx512_tier_a_outer_walk` produces
+    /// the same result as the scalar reference for a control below target.
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn tier_a_outer_walk_control_below_matches_scalar() {
+        if !std::is_x86_feature_detected!("avx512f") {
+            return; // Skip gracefully on non-AVX-512 hosts.
+        }
+        // n=7 state, c0=0, c1=5, t=2. c_lo=0 < t=2 — outer-walk path.
+        let mut simd = random_amps(7, 11);
+        let mut scalar = simd.clone();
+        let sorted = [0u32, 5u32];
+        unsafe {
+            apply_toffoli_avx512_tier_a_outer_walk(&mut simd, 2, &sorted);
+        }
+        apply_toffoli_scalar(&mut scalar, [0, 5, 2], &[]);
+        for (x, y) in simd.iter().zip(scalar.iter()) {
+            assert!(
+                (x.re - y.re).abs() < 1e-12,
+                "re mismatch: {} vs {}",
+                x.re,
+                y.re
+            );
+            assert!(
+                (x.im - y.im).abs() < 1e-12,
+                "im mismatch: {} vs {}",
+                x.im,
+                y.im
+            );
+        }
+    }
+
+    /// Dispatch-routing test: `dispatch_toffoli` must produce the same result
+    /// as the scalar kernel for a control-below-target configuration on all
+    /// host architectures (routes to outer-walk on AVX-512, scalar elsewhere).
+    #[test]
+    fn dispatch_toffoli_routes_outer_walk_below_target() {
+        // n=7 state, c0=0, c1=5, t=2: c_lo=0 < t=2 — outer-walk path on AVX-512.
+        let mut a = random_amps(7, 12);
+        let mut b = a.clone();
+        dispatch_toffoli(&mut a, [0, 5, 2], &[]);
+        apply_toffoli_scalar(&mut b, [0, 5, 2], &[]);
+        for (x, y) in a.iter().zip(b.iter()) {
+            assert!(
+                (x.re - y.re).abs() < 1e-12,
+                "re mismatch: {} vs {}",
+                x.re,
+                y.re
+            );
+            assert!(
+                (x.im - y.im).abs() < 1e-12,
+                "im mismatch: {} vs {}",
+                x.im,
+                y.im
+            );
         }
     }
 }
