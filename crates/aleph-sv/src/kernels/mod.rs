@@ -255,8 +255,8 @@ pub(crate) fn is_cz_signature(d: [aleph_core::Complex; 4]) -> bool {
 /// rounds regressed on the equivalent guard for `is_diagonal_2x2`.
 // Allow dead_code: callers land in T2–T15 of P1-05 (AoS / SoA preludes).
 // Identical rationale as `expand_with_fixed` above.
-#[allow(dead_code)]
 #[inline]
+#[allow(dead_code)]
 pub(crate) fn is_antidiagonal_2x2(m: &[[aleph_core::Complex; 2]; 2]) -> bool {
     let diag = [&m[0][0], &m[1][1]];
     for entry in diag {
@@ -303,6 +303,7 @@ pub(crate) enum Perm1qKind {
 /// anti-diagonal kernel, which propagates NaN through its complex
 /// multiply. No explicit `is_finite` guard needed here.
 // Allow dead_code: callers land in T2–T15 of P1-05 (AoS / SoA preludes).
+#[inline]
 #[allow(dead_code)]
 pub(crate) fn classify_1q_antidiag(m: &[[aleph_core::Complex; 2]; 2]) -> Option<Perm1qKind> {
     let a = m[0][1]; // upper-right
