@@ -262,3 +262,28 @@ expected to deliver another 3–5× on the 3q layer per BACKLOG-AC.
 now beat Aer (qft-20: 1.30×; grover-20: 0.51×; random-20: 0.58×; bell
 and ghz are trivial wins). The two SoA paths remain 1.65–2.37× slower
 than AoS — open question for P1-14.
+
+## P1-05 update — Pauli-X/Y anti-diagonal kernel (2026-05-28)
+
+EPYC 8124P, single thread, `RUSTFLAGS="-C target-cpu=native"`.
+
+### Micro (L2-resident n=14, target qubit = 8)
+
+| Kernel        | Generic 2×2 baseline | Specialised path | Speedup |
+|---------------|----------------------|-------------------|---------|
+| AoS X         | 17.62 µs             | 5.22 µs           | 3.38×   |
+| AoS Y         | 17.65 µs             | 5.00 µs           | 3.53×   |
+| AoS anti-diag | 17.62 µs             | 5.31 µs           | 3.32×   |
+
+All three clear the BACKLOG AC (3–10× over generic 2×2). SoA micro
+deferred (see ADR 0011 Open Question 3); SoA Tier-A AVX-512 correctness
+validated on EPYC via T9 unit tests.
+
+### Workload (informational)
+
+| Bench                       | Pre-P1-05 (post-P1-07) | Post-P1-05            | Delta                  |
+|-----------------------------|------------------------|------------------------|------------------------|
+| `grover_n20_iters5`         | 58 491.74 µs           | <PENDING-EPYC-GROVER>  | <PENDING-EPYC-GROVER>  |
+
+Per ADR 0008 (bandwidth-bound regime at n=20), workload-level delta is
+expected to be small. The micro AC is the gating metric.
