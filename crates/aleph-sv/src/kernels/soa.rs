@@ -113,9 +113,137 @@ pub(crate) fn apply_2q_dense_scalar(
     }
 }
 
-/// Top-level SoA 2q dispatch.  Mirrors AoS `apply_2q` — see spec § 4.9.
-/// **Placeholder**: calls through to `apply_2q_dense_scalar` until
-/// Tasks 12-14 wire the SoA prelude.
+/// Scalar CNOT specialisation over paired SoA storage.  For amplitudes
+/// where bit `control` = 1 AND every external control bit is set, swap
+/// `(re[i], im[i])` with `(re[i | t_bit], im[i | t_bit])`.  Zero
+/// multiplies; pure swap-pair traffic on both streams.
+///
+/// `control` and `target` are passed separately (vs the generic 2q
+/// kernel's `targets[2]`) because the dispatch prelude has already
+/// disambiguated the orientation via `Perm2qKind`.  External
+/// `controls` are appended to the implicit control mask.  Mirror of
+/// `aos::apply_2q_cnot_scalar` with the `re` / `im` split.
+pub(crate) fn apply_2q_cnot_scalar(
+    re: &mut [f64],
+    im: &mut [f64],
+    control: u32,
+    target: u32,
+    external_controls: &[u32],
+) {
+    debug_assert_eq!(re.len(), im.len());
+    let c_bit = 1usize << control;
+    let t_bit = 1usize << target;
+    let ctrl_mask = c_bit | super::control_mask(external_controls);
+    let len = re.len();
+    let mut i = 0usize;
+    while i < len {
+        if (i & ctrl_mask) == ctrl_mask && (i & t_bit) == 0 {
+            re.swap(i, i | t_bit);
+            im.swap(i, i | t_bit);
+        }
+        i += 1;
+    }
+}
+
+/// Scalar SWAP specialisation over paired SoA storage.  Walks every
+/// base index `i` with both target bits zero (and external controls
+/// set); for each such `i`, swap `(re[i | a_bit], im[i | a_bit])`
+/// (a=0, b=1) with `(re[i | b_bit], im[i | b_bit])` (a=1, b=0).
+/// Mirror of `aos::apply_2q_swap_scalar` with the `re` / `im` split.
+pub(crate) fn apply_2q_swap_scalar(
+    re: &mut [f64],
+    im: &mut [f64],
+    targets: [u32; 2],
+    external_controls: &[u32],
+) {
+    debug_assert_eq!(re.len(), im.len());
+    let a_bit = 1usize << targets[0];
+    let b_bit = 1usize << targets[1];
+    let t_mask = a_bit | b_bit;
+    let ctrl_mask = super::control_mask(external_controls);
+    let len = re.len();
+    let mut i = 0usize;
+    while i < len {
+        if (i & t_mask) == 0 && (i & ctrl_mask) == ctrl_mask {
+            re.swap(i | a_bit, i | b_bit);
+            im.swap(i | a_bit, i | b_bit);
+        }
+        i += 1;
+    }
+}
+
+/// Scalar CZ specialisation over paired SoA storage.  Negate
+/// `(re[i], im[i])` for amplitudes where both target bits are 1 (and
+/// external controls satisfied).  Touches 1/4 of the state vector;
+/// no multiplies — single sign-flip per stream.  Mirror of
+/// `aos::apply_2q_cz_scalar` with the `re` / `im` split.
+pub(crate) fn apply_2q_cz_scalar(
+    re: &mut [f64],
+    im: &mut [f64],
+    targets: [u32; 2],
+    external_controls: &[u32],
+) {
+    debug_assert_eq!(re.len(), im.len());
+    let t0_bit = 1usize << targets[0];
+    let t1_bit = 1usize << targets[1];
+    let t_mask = t0_bit | t1_bit;
+    let ctrl_mask = super::control_mask(external_controls);
+    let len = re.len();
+    let mut i = 0usize;
+    while i < len {
+        if (i & t_mask) == t_mask && (i & ctrl_mask) == ctrl_mask {
+            re[i] = -re[i];
+            im[i] = -im[i];
+        }
+        i += 1;
+    }
+}
+
+/// Scalar 2q-diagonal specialisation over paired SoA storage.  For
+/// each amplitude `(re[i], im[i])`, multiply by `d[k]` where
+/// `k = ((i >> targets[0]) & 1) << 1 | ((i >> targets[1]) & 1)`.
+///
+/// MSB convention matches `aos::apply_2q_diagonal_scalar`:
+/// `targets[0]` is the high bit of `k`, `targets[1]` is the low bit
+/// (per ADR 0004 / P0-06 §6).  Each amp is a 2-stream complex
+/// multiply by `d[k]`.
+pub(crate) fn apply_2q_diagonal_scalar(
+    re: &mut [f64],
+    im: &mut [f64],
+    targets: [u32; 2],
+    external_controls: &[u32],
+    d: [Complex; 4],
+) {
+    debug_assert_eq!(re.len(), im.len());
+    let t0_bit = 1usize << targets[0];
+    let t1_bit = 1usize << targets[1];
+    let ctrl_mask = super::control_mask(external_controls);
+    let len = re.len();
+    let mut i = 0usize;
+    while i < len {
+        if (i & ctrl_mask) == ctrl_mask {
+            let k_hi = ((i & t0_bit) != 0) as usize;
+            let k_lo = ((i & t1_bit) != 0) as usize;
+            let k = (k_hi << 1) | k_lo;
+            let d_re = d[k].re;
+            let d_im = d[k].im;
+            let r = re[i];
+            let im_v = im[i];
+            re[i] = r * d_re - im_v * d_im;
+            im[i] = r * d_im + im_v * d_re;
+        }
+        i += 1;
+    }
+}
+
+/// Top-level SoA 2q dispatch.  Mirrors `aos::apply_2q` — see spec § 4.9.
+/// Detection order:
+/// 1. `classify_2q_permutation` → Identity / CnotHi / CnotLo / Swap fast paths.
+/// 2. `is_diagonal_4x4` → CZ (`is_cz_signature` shortcut) / general diagonal fast path.
+/// 3. Otherwise: `apply_2q_dense_scalar`.
+///
+/// All paths are scalar in this task; AVX-512 specialisations land in
+/// Tasks 13/14 (mirror of AoS Tasks 5-11).
 pub(crate) fn apply_2q(
     re: &mut [f64],
     im: &mut [f64],
@@ -123,7 +251,67 @@ pub(crate) fn apply_2q(
     controls: &[u32],
     m: &[[Complex; 4]; 4],
 ) {
+    // 1. Permutation detection (Identity / CNOT / SWAP).
+    match super::classify_2q_permutation(m) {
+        Some(super::Perm2qKind::Identity) => return,
+        Some(super::Perm2qKind::CnotHi) => {
+            dispatch_cnot_soa(re, im, targets[0], targets[1], controls);
+            return;
+        }
+        Some(super::Perm2qKind::CnotLo) => {
+            dispatch_cnot_soa(re, im, targets[1], targets[0], controls);
+            return;
+        }
+        Some(super::Perm2qKind::Swap) => {
+            dispatch_swap_soa(re, im, targets, controls);
+            return;
+        }
+        None => {}
+    }
+
+    // 2. Diagonal-4x4 (catches Cz, controlled-Phase, Rzz, user diagonals).
+    if super::is_diagonal_4x4(m) {
+        let d = [m[0][0], m[1][1], m[2][2], m[3][3]];
+        let is_cz = super::is_cz_signature(d);
+        dispatch_diagonal_or_cz_soa(re, im, targets, controls, d, is_cz);
+        return;
+    }
+
+    // 3. Generic dense 4×4 — scalar for now; AVX-512 lands in Task 14.
     apply_2q_dense_scalar(re, im, targets, controls, m);
+}
+
+/// Dispatch helper for SoA CNOT specialisations.  Placeholder routing
+/// to the scalar kernel; AVX-512 tiers land in Task 13 (mirror of AoS
+/// Tasks 6-8).
+fn dispatch_cnot_soa(re: &mut [f64], im: &mut [f64], control: u32, target: u32, controls: &[u32]) {
+    apply_2q_cnot_scalar(re, im, control, target, controls);
+}
+
+/// Dispatch helper for SoA SWAP.  Placeholder routing to the scalar
+/// kernel; AVX-512 tiers land in Task 13 (mirror of AoS Task 9).
+fn dispatch_swap_soa(re: &mut [f64], im: &mut [f64], targets: [u32; 2], controls: &[u32]) {
+    apply_2q_swap_scalar(re, im, targets, controls);
+}
+
+/// Dispatch helper for the diagonal-4x4 branch (catches CZ,
+/// controlled-Phase, Rzz, user diagonals).  Placeholder routing to
+/// the scalar CZ kernel (when the matrix matches the CZ signature)
+/// or scalar general-diagonal kernel; AVX-512 tiers land in Task 13
+/// (mirror of AoS Tasks 10-11).
+fn dispatch_diagonal_or_cz_soa(
+    re: &mut [f64],
+    im: &mut [f64],
+    targets: [u32; 2],
+    controls: &[u32],
+    d: [Complex; 4],
+    is_cz: bool,
+) {
+    if is_cz {
+        apply_2q_cz_scalar(re, im, targets, controls);
+    } else {
+        apply_2q_diagonal_scalar(re, im, targets, controls, d);
+    }
 }
 
 /// Apply a 1-qubit matrix to `target` (with external `controls`) in
@@ -430,6 +618,128 @@ mod tests {
             for (a, b) in aos_state.iter().zip(soa_state.iter()) {
                 prop_assert!((a - b).norm() < 1e-12, "aos {a} vs soa {b}");
             }
+        }
+    }
+
+    fn random_re_im(n_qubits: u32, seed: u64) -> (Vec<f64>, Vec<f64>) {
+        let mut s = seed.wrapping_add(1);
+        let mut lcg = || {
+            s = s
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            ((s >> 32) as f64 / (u32::MAX as f64)) * 2.0 - 1.0
+        };
+        let len = 1usize << n_qubits;
+        let mut re = Vec::with_capacity(len);
+        let mut im = Vec::with_capacity(len);
+        for _ in 0..len {
+            re.push(lcg());
+            im.push(lcg());
+        }
+        (re, im)
+    }
+
+    fn assert_re_im_close(a: &[f64], b: &[f64], tol: f64) {
+        assert_eq!(a.len(), b.len());
+        for (ai, bi) in a.iter().zip(b.iter()) {
+            assert!(
+                (ai - bi).abs() < tol,
+                "diff {} > tol {}",
+                (ai - bi).abs(),
+                tol
+            );
+        }
+    }
+
+    #[test]
+    fn soa_apply_2q_cnot_scalar_matches_dense_scalar() {
+        let n = 6;
+        let m = {
+            let mut m = [[Complex::new(0.0, 0.0); 4]; 4];
+            m[0][0] = Complex::new(1.0, 0.0);
+            m[1][1] = Complex::new(1.0, 0.0);
+            m[2][3] = Complex::new(1.0, 0.0);
+            m[3][2] = Complex::new(1.0, 0.0);
+            m
+        };
+        for (c, t) in [(0u32, 1), (1, 0), (2, 5), (3, 5)] {
+            let (r0, i0) = random_re_im(n, 0xabcd);
+            let mut ra = r0.clone();
+            let mut ia = i0.clone();
+            let mut rb = r0;
+            let mut ib = i0;
+            apply_2q_dense_scalar(&mut ra, &mut ia, [c, t], &[], &m);
+            apply_2q_cnot_scalar(&mut rb, &mut ib, c, t, &[]);
+            assert_re_im_close(&ra, &rb, 1e-14);
+            assert_re_im_close(&ia, &ib, 1e-14);
+        }
+    }
+
+    #[test]
+    fn soa_apply_2q_prelude_dispatches_identity_as_noop() {
+        let n = 5;
+        let id = {
+            let mut m = [[Complex::new(0.0, 0.0); 4]; 4];
+            for (i, row) in m.iter_mut().enumerate() {
+                row[i] = Complex::new(1.0, 0.0);
+            }
+            m
+        };
+        let (r0, i0) = random_re_im(n, 0x4242);
+        let mut r = r0.clone();
+        let mut imv = i0.clone();
+        apply_2q(&mut r, &mut imv, [0, 1], &[], &id);
+        assert_re_im_close(&r, &r0, 1e-15);
+        assert_re_im_close(&imv, &i0, 1e-15);
+    }
+
+    #[test]
+    fn soa_apply_2q_cz_scalar_matches_dense_scalar() {
+        let n = 6;
+        let m = {
+            let mut m = [[Complex::new(0.0, 0.0); 4]; 4];
+            m[0][0] = Complex::new(1.0, 0.0);
+            m[1][1] = Complex::new(1.0, 0.0);
+            m[2][2] = Complex::new(1.0, 0.0);
+            m[3][3] = Complex::new(-1.0, 0.0);
+            m
+        };
+        for t in [[0u32, 1], [2, 5]] {
+            let (r0, i0) = random_re_im(n, 0xfeed);
+            let mut ra = r0.clone();
+            let mut ia = i0.clone();
+            let mut rb = r0;
+            let mut ib = i0;
+            apply_2q_dense_scalar(&mut ra, &mut ia, t, &[], &m);
+            apply_2q_cz_scalar(&mut rb, &mut ib, t, &[]);
+            assert_re_im_close(&ra, &rb, 1e-14);
+            assert_re_im_close(&ia, &ib, 1e-14);
+        }
+    }
+
+    #[test]
+    fn soa_apply_2q_diagonal_scalar_matches_dense_scalar() {
+        let n = 6;
+        let d = [
+            Complex::new(0.6, 0.8),
+            Complex::new(-0.7, 0.7142857142857143),
+            Complex::new(0.99, -0.1414213562373095),
+            Complex::new(-0.5, -0.8660254037844386),
+        ];
+        let mut m = [[Complex::new(0.0, 0.0); 4]; 4];
+        for (k, row) in m.iter_mut().enumerate() {
+            row[k] = d[k];
+        }
+        for t in [[0u32, 1], [2, 5]] {
+            let (r0, i0) = random_re_im(n, 0x1357);
+            let mut ra = r0.clone();
+            let mut ia = i0.clone();
+            let mut rb = r0;
+            let mut ib = i0;
+            apply_2q_dense_scalar(&mut ra, &mut ia, t, &[], &m);
+            apply_2q_diagonal_scalar(&mut rb, &mut ib, t, &[], d);
+            assert_re_im_close(&ra, &rb, 1e-14);
+            assert_re_im_close(&ia, &ib, 1e-14);
         }
     }
 }
