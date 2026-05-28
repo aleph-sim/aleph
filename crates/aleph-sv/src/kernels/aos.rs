@@ -47,6 +47,19 @@ pub(crate) fn apply_1q(amps: &mut [Complex], target: u32, controls: &[u32], m: &
     if super::is_antidiagonal_2x2(m) {
         match super::classify_1q_antidiag(m) {
             Some(super::Perm1qKind::X) => {
+                #[cfg(target_arch = "x86_64")]
+                {
+                    if std::is_x86_feature_detected!("avx512f")
+                        && (1usize << target) >= 4
+                        && controls.iter().all(|&c| c > target)
+                    {
+                        // SAFETY: feature gate + target_bit ≥ LANES + controls > target.
+                        unsafe {
+                            apply_1q_x_avx512(amps, target, controls);
+                        }
+                        return;
+                    }
+                }
                 apply_1q_x_scalar(amps, target, controls);
                 return;
             }
@@ -493,6 +506,80 @@ unsafe fn apply_1q_diagonal_avx512(
     // that have every control set and every below-target bit clear,
     // letting the inner SIMD walk fill in the target + below-target
     // bits contiguously.
+    let mut fixed_above: smallvec::SmallVec<[(u32, bool); 8]> = smallvec::SmallVec::new();
+    for &c in controls {
+        fixed_above.push((c - target - 1, true));
+    }
+    fixed_above.sort_unstable_by_key(|&(pos, _)| pos);
+
+    let n_qubits = len.trailing_zeros();
+    let outer_count = 1usize << (n_qubits - target - 1 - controls.len() as u32);
+    for k in 0..outer_count {
+        let block = crate::kernels::expand_with_fixed(k, &fixed_above) << (target + 1);
+        outer_iter(block);
+    }
+}
+
+/// Packed-complex AVX-512 Pauli-X kernel (Tier A).
+///
+/// Pure amplitude swap: for each LANES-block (`LANES = 4` complex pairs
+/// = 8 doubles per `__m512d`), load both the i0-block and the
+/// i1-block (= i0 | target_bit), then store crossed. Zero arithmetic.
+///
+/// # Safety
+/// Caller MUST ensure:
+/// * Host CPU supports AVX-512F.
+/// * `1usize << target ≥ LANES = 4`.
+/// * Every control's qubit index is strictly greater than `target`.
+/// * Standard apply_gate invariants: `target` and `controls` are
+///   distinct and in qubit range.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f")]
+unsafe fn apply_1q_x_avx512(amps: &mut [Complex], target: u32, controls: &[u32]) {
+    use core::arch::x86_64::*;
+
+    const LANES: usize = 4;
+
+    let target_bit = 1usize << target;
+    let len = amps.len();
+
+    debug_assert!(
+        target_bit >= LANES,
+        "target_bit < LANES: dispatch contract violated"
+    );
+    debug_assert!(
+        controls.iter().all(|&c| c > target),
+        "control at-or-below target: dispatch contract violated"
+    );
+
+    let amps_ptr = amps.as_mut_ptr() as *mut f64;
+
+    let outer_iter = |block: usize| {
+        let mut j = 0usize;
+        while j + LANES <= target_bit {
+            let i0 = block | j;
+            let i1 = block | target_bit | j;
+            // SAFETY: i0 + LANES ≤ block + target_bit ≤ len; same for i1.
+            let z0 = _mm512_loadu_pd(amps_ptr.add(i0 * 2));
+            let z1 = _mm512_loadu_pd(amps_ptr.add(i1 * 2));
+            _mm512_storeu_pd(amps_ptr.add(i0 * 2), z1);
+            _mm512_storeu_pd(amps_ptr.add(i1 * 2), z0);
+            j += LANES;
+        }
+        debug_assert_eq!(j, target_bit);
+    };
+
+    if controls.is_empty() {
+        let outer_step = target_bit << 1;
+        let mut block = 0usize;
+        while block < len {
+            outer_iter(block);
+            block += outer_step;
+        }
+        return;
+    }
+
+    // Controlled outer walk: identical to apply_1q_diagonal_avx512.
     let mut fixed_above: smallvec::SmallVec<[(u32, bool); 8]> = smallvec::SmallVec::new();
     for &c in controls {
         fixed_above.push((c - target - 1, true));
@@ -3968,5 +4055,46 @@ mod tests {
         for (s, g) in amps_s.iter().zip(amps_g.iter()) {
             assert!((s.re - g.re).abs() < 1e-12 && (s.im - g.im).abs() < 1e-12);
         }
+    }
+
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn apply_1q_x_avx512_matches_scalar() {
+        if !std::is_x86_feature_detected!("avx512f") {
+            eprintln!("skipping: host lacks avx512f");
+            return;
+        }
+        // n=6, target=3 (target_bit=8 ≥ LANES=4).
+        let mut amps_avx: Vec<Complex> = (0..64)
+            .map(|k| Complex::new(k as f64 * 0.11, k as f64 * 0.23 - 1.0))
+            .collect();
+        let mut amps_sca = amps_avx.clone();
+        // SAFETY: feature checked + target_bit=8 ≥ LANES + no controls.
+        unsafe {
+            super::apply_1q_x_avx512(&mut amps_avx, 3, &[]);
+        }
+        super::apply_1q_x_scalar(&mut amps_sca, 3, &[]);
+        for (a, s) in amps_avx.iter().zip(amps_sca.iter()) {
+            assert_eq!(a, s);
+        }
+    }
+
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn apply_1q_x_avx512_matches_scalar_with_control() {
+        if !std::is_x86_feature_detected!("avx512f") {
+            return;
+        }
+        // n=6, target=2, control=4 (above target).
+        let mut amps_avx: Vec<Complex> = (0..64)
+            .map(|k| Complex::new(k as f64, k as f64 * -0.5))
+            .collect();
+        let mut amps_sca = amps_avx.clone();
+        // SAFETY: avx512 + target_bit=4=LANES + control=4 > target=2.
+        unsafe {
+            super::apply_1q_x_avx512(&mut amps_avx, 2, &[4]);
+        }
+        super::apply_1q_x_scalar(&mut amps_sca, 2, &[4]);
+        assert_eq!(amps_avx, amps_sca);
     }
 }
