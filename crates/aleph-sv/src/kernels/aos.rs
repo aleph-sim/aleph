@@ -662,7 +662,10 @@ unsafe fn apply_1q_y_avx512(amps: &mut [Complex], target: u32, controls: &[u32],
     // lane-index order (0..7), so the argument list is the reverse.
     let sign_bit = -0.0f64; // IEEE-754 sign bit; xor toggles sign.
     let zero = 0.0f64;
-    let (mask_i0, mask_i1) = if phase_sign > 0.0 {
+    // Match the `debug_assert!(phase_sign == ±1.0)` contract exactly:
+    // any value other than `1.0` selects the YNeg branch, mirroring the
+    // assert's binary character. `> 0.0` would silently accept e.g. 0.5.
+    let (mask_i0, mask_i1) = if phase_sign == 1.0 {
         (
             // lane 0: zero (re), lane 1: sign (im), lane 2: zero, lane 3: sign, ...
             // args reversed: (lane7, lane6, lane5, lane4, lane3, lane2, lane1, lane0)
