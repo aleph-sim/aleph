@@ -850,10 +850,10 @@ iSWAP, sqrt-SWAP: specialized as needed.
 
 **Acceptance Criteria**
 
-- [ ] Generic 2q kernel
-- [ ] Specialized CNOT, CZ, SWAP
-- [ ] SIMD versions of each
-- [ ] Benchmark: CNOT 5–10× faster than generic 2q kernel
+- [x] Generic 2q kernel
+- [x] Specialized CNOT, CZ, SWAP
+- [x] SIMD versions of each
+- [ ] Benchmark: CNOT 5–10× faster than generic 2q kernel (pending EPYC measurement — Task 17 micro-bench `p1_07/cnot_specialized vs cnot_via_generic`; flip when numbers land in `docs/perf/phase1-vs-qiskit.md`)
 
 **Testing Requirements**
 
@@ -862,6 +862,7 @@ iSWAP, sqrt-SWAP: specialized as needed.
 **References**
 
 - <https://arxiv.org/abs/1601.07195> (“Quantum Supremacy” simulation paper has discussion)
+- ADR 0010 ([[0010-2q-specialised-paths]]) — dispatch tree, three-tier SIMD coverage, AoS / SoA Tier C distinction.
 
 -----
 
