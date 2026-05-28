@@ -335,11 +335,6 @@ pub(crate) fn classify_1q_antidiag(m: &[[aleph_core::Complex; 2]; 2]) -> Option<
 /// Coarser than `DIAGONAL_EPS_SQ`/`PERM_TOL` (which guard inner-loop
 /// hot paths); these detectors are called once per gate dispatch, not
 /// per amplitude.
-// Allow dead_code: callers live in `apply_3q` dispatch which is added
-// in Task 6. The constant and functions are referenced by test code
-// already, but the lint fires for non-test (lib) usage before Task 6
-// wires them into the dispatch prelude.
-#[allow(dead_code)]
 const SHAPE_8X8_TOL: f64 = 1e-12;
 
 /// Returns true if `m` is within `SHAPE_8X8_TOL` of the 8×8 identity.
@@ -352,8 +347,6 @@ const SHAPE_8X8_TOL: f64 = 1e-12;
 /// as "within tolerance". We therefore pair each real/imaginary check
 /// with an explicit `is_finite` reject so NaN-poisoned matrices fall
 /// through to the generic kernel.
-// Allow dead_code: dispatch wiring added in Task 6.
-#[allow(dead_code)]
 #[inline]
 pub(crate) fn is_identity_8x8(m: &[[aleph_core::Complex; 8]; 8]) -> bool {
     for (r, row) in m.iter().enumerate() {
@@ -382,8 +375,6 @@ pub(crate) fn is_identity_8x8(m: &[[aleph_core::Complex; 8]; 8]) -> bool {
 ///
 /// ADR 0006: explicit `is_finite` reject before every magnitude test —
 /// same rationale as `is_identity_8x8`.
-// Allow dead_code: dispatch wiring added in Task 6.
-#[allow(dead_code)]
 #[inline]
 pub(crate) fn is_toffoli(m: &[[aleph_core::Complex; 8]; 8]) -> bool {
     // Rows 0..=5: identity rows.
@@ -437,8 +428,6 @@ pub(crate) fn is_toffoli(m: &[[aleph_core::Complex; 8]; 8]) -> bool {
 ///
 /// ADR 0006: explicit `is_finite` reject before every magnitude test —
 /// same rationale as `is_identity_8x8`.
-// Allow dead_code: dispatch wiring added in Task 6.
-#[allow(dead_code)]
 #[inline]
 pub(crate) fn is_ccz(m: &[[aleph_core::Complex; 8]; 8]) -> bool {
     for (r, row) in m.iter().enumerate() {

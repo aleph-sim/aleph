@@ -2686,8 +2686,6 @@ fn dispatch_diagonal_or_cz(
 /// convention used by all scalar kernels in this file. With
 /// `targets = [c0=0, c1=1, t=2]`, ctrl_mask = `0b011` and target_bit
 /// = `4`; the gate fires at `i = 0b011 = 3` and swaps with `i = 7`.
-// wired into dispatch_toffoli in Task 6
-#[allow(dead_code)]
 pub(crate) fn apply_toffoli_scalar(
     amps: &mut [Complex],
     targets: [u32; 3],
@@ -2719,7 +2717,6 @@ pub(crate) fn apply_toffoli_scalar(
 /// `(1<<targets[0]) | (1<<targets[1]) | (1<<targets[2])` plus one bit
 /// per external control. Amplitude `i` is negated iff `(i & mask) == mask`.
 /// This is symmetric in the order of `targets`.
-#[allow(dead_code)] // wired into dispatch_ccz in Task 6
 pub(crate) fn apply_ccz_scalar(
     amps: &mut [Complex],
     targets: [u32; 3],
@@ -2741,8 +2738,43 @@ pub(crate) fn apply_ccz_scalar(
     }
 }
 
-/// Apply a 3-qubit matrix to `targets = [t0, t1, t2]` (with external
-/// `controls`) in place.
+/// Top-level 3q dispatch. Matrix-detects Toffoli (CCX) and CCZ shapes
+/// per spec §3.1 and routes to specialised paths. Identity short-circuits.
+/// Falls through to the generic 8x8 scalar kernel for arbitrary matrices.
+pub(crate) fn apply_3q(
+    amps: &mut [Complex],
+    targets: [u32; 3],
+    controls: &[u32],
+    m: &[[Complex; 8]; 8],
+) {
+    if super::is_identity_8x8(m) {
+        return;
+    }
+    if super::is_toffoli(m) {
+        dispatch_toffoli(amps, targets, controls);
+        return;
+    }
+    if super::is_ccz(m) {
+        dispatch_ccz(amps, targets, controls);
+        return;
+    }
+    apply_3q_generic(amps, targets, controls, m);
+}
+
+/// Routes Toffoli to the best available tier (spec §4).
+/// Tier-C-only for now; SIMD added in later tasks.
+fn dispatch_toffoli(amps: &mut [Complex], targets: [u32; 3], controls: &[u32]) {
+    apply_toffoli_scalar(amps, targets, controls);
+}
+
+/// Routes CCZ to the best available tier (spec §5).
+/// Tier-C-only for now; SIMD added in later tasks.
+fn dispatch_ccz(amps: &mut [Complex], targets: [u32; 3], controls: &[u32]) {
+    apply_ccz_scalar(amps, targets, controls);
+}
+
+/// Scalar fallback for arbitrary 8×8 matrices. Apply a 3-qubit matrix to
+/// `targets = [t0, t1, t2]` (with external `controls`) in place.
 ///
 /// **MSB convention (P0-06):** matrix index `k`'s bits map to targets
 /// from MSB to LSB — bit 2 of `k` is `targets[0]`, bit 1 is
@@ -2750,7 +2782,7 @@ pub(crate) fn apply_ccz_scalar(
 /// corresponds to `(targets[0] = 1, targets[1] = 1, targets[2] = 0)`.
 /// This matches `Gate::Toffoli` (`qubits = [c0, c1, target]`), whose
 /// matrix swaps rows 6 ↔ 7.
-pub(crate) fn apply_3q(
+fn apply_3q_generic(
     amps: &mut [Complex],
     targets: [u32; 3],
     controls: &[u32],
@@ -5460,5 +5492,118 @@ mod apply_ccz_scalar_tests {
         apply_ccz_scalar(&mut a, [0, 1, 2], &[]);
         apply_ccz_scalar(&mut b, [2, 0, 1], &[]);
         assert_eq!(a, b);
+    }
+}
+
+#[cfg(test)]
+mod apply_3q_prelude_tests {
+    use super::*;
+    use aleph_core::Complex;
+
+    fn toffoli_matrix() -> [[Complex; 8]; 8] {
+        let z = Complex::new(0.0, 0.0);
+        let o = Complex::new(1.0, 0.0);
+        let mut m = [[z; 8]; 8];
+        // Rows 0–5: identity diagonal.
+        m[0][0] = o;
+        m[1][1] = o;
+        m[2][2] = o;
+        m[3][3] = o;
+        m[4][4] = o;
+        m[5][5] = o;
+        // Rows 6–7 swapped (Toffoli).
+        m[6][7] = o;
+        m[7][6] = o;
+        m
+    }
+
+    fn ccz_matrix() -> [[Complex; 8]; 8] {
+        let z = Complex::new(0.0, 0.0);
+        let o = Complex::new(1.0, 0.0);
+        let mut m = [[z; 8]; 8];
+        // Diagonal +1 for rows 0–6, then −1 for row 7 (CCZ).
+        m[0][0] = o;
+        m[1][1] = o;
+        m[2][2] = o;
+        m[3][3] = o;
+        m[4][4] = o;
+        m[5][5] = o;
+        m[6][6] = o;
+        m[7][7] = Complex::new(-1.0, 0.0);
+        m
+    }
+
+    fn random_amps(n: u32, seed: u64) -> Vec<Complex> {
+        // Linear congruential — deterministic, no rand crate dep.
+        let mut s = seed;
+        let mut step = || {
+            s = s
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            ((s >> 33) as f64) / (u32::MAX as f64)
+        };
+        let mut v: Vec<Complex> = (0..(1 << n))
+            .map(|_| Complex::new(step(), step()))
+            .collect();
+        // Normalise.
+        let norm: f64 = v
+            .iter()
+            .map(|c| c.re * c.re + c.im * c.im)
+            .sum::<f64>()
+            .sqrt();
+        for c in &mut v {
+            *c = Complex::new(c.re / norm, c.im / norm);
+        }
+        v
+    }
+
+    #[test]
+    fn apply_3q_routes_toffoli_to_scalar() {
+        let mut a = random_amps(5, 1);
+        let mut b = a.clone();
+        apply_3q(&mut a, [0, 1, 4], &[], &toffoli_matrix());
+        apply_toffoli_scalar(&mut b, [0, 1, 4], &[]);
+        for (x, y) in a.iter().zip(b.iter()) {
+            assert!((x.re - y.re).abs() < 1e-12);
+            assert!((x.im - y.im).abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn apply_3q_routes_ccz_to_scalar() {
+        let mut a = random_amps(5, 2);
+        let mut b = a.clone();
+        apply_3q(&mut a, [0, 1, 4], &[], &ccz_matrix());
+        apply_ccz_scalar(&mut b, [0, 1, 4], &[]);
+        for (x, y) in a.iter().zip(b.iter()) {
+            assert!((x.re - y.re).abs() < 1e-12);
+            assert!((x.im - y.im).abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn apply_3q_generic_unchanged_on_arbitrary_matrix() {
+        let z = Complex::new(0.0, 0.0);
+        let mut m = [[z; 8]; 8];
+        // Hadamard-like 3q matrix (8x8 Walsh-Hadamard, normalised).
+        let s = 1.0 / (8.0_f64.sqrt());
+        for (r, row) in m.iter_mut().enumerate() {
+            for (c, entry) in row.iter_mut().enumerate() {
+                let sign = if (r & c).count_ones() % 2 != 0 {
+                    -1.0
+                } else {
+                    1.0
+                };
+                *entry = Complex::new(sign * s, 0.0);
+            }
+        }
+        let mut a = random_amps(5, 3);
+        let mut b = a.clone();
+        apply_3q(&mut a, [0, 1, 4], &[], &m);
+        apply_3q_generic(&mut b, [0, 1, 4], &[], &m);
+        for (x, y) in a.iter().zip(b.iter()) {
+            assert!((x.re - y.re).abs() < 1e-12);
+            assert!((x.im - y.im).abs() < 1e-12);
+        }
     }
 }
