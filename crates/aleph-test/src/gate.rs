@@ -9,17 +9,17 @@ use proptest::prelude::*;
 pub fn arb_1q_gate() -> impl Strategy<Value = Gate> {
     let tau = std::f64::consts::TAU;
     prop_oneof![
-        Just(Gate::H),
-        Just(Gate::X),
-        Just(Gate::Y),
-        Just(Gate::Z),
-        Just(Gate::S),
-        Just(Gate::Sdg),
-        Just(Gate::T),
-        Just(Gate::Tdg),
-        (-tau..=tau).prop_map(|t| Gate::Rx(t.into())),
-        (-tau..=tau).prop_map(|t| Gate::Ry(t.into())),
-        (-tau..=tau).prop_map(|t| Gate::Rz(t.into())),
+        1 => Just(Gate::H),
+        3 => Just(Gate::X),
+        3 => Just(Gate::Y),
+        1 => Just(Gate::Z),
+        1 => Just(Gate::S),
+        1 => Just(Gate::Sdg),
+        1 => Just(Gate::T),
+        1 => Just(Gate::Tdg),
+        1 => (-tau..=tau).prop_map(|t| Gate::Rx(t.into())),
+        1 => (-tau..=tau).prop_map(|t| Gate::Ry(t.into())),
+        1 => (-tau..=tau).prop_map(|t| Gate::Rz(t.into())),
     ]
 }
 

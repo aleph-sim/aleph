@@ -4916,4 +4916,61 @@ mod tests {
         super::apply_1q(&mut amps, 1, &[], &m);
         assert!(amps.iter().any(|c| c.re.is_nan() || c.im.is_nan()));
     }
+
+    // ---- P1-05 T13: anti-diag classifier dispatch proptest ----
+
+    // P1-05 T13: anti-diag classifier dispatch proptest
+    proptest::proptest! {
+        #[test]
+        fn antidiag_classifier_dispatch_matches_generic(
+            a_re in -1.0f64..1.0,
+            a_im in -1.0f64..1.0,
+            b_re in -1.0f64..1.0,
+            b_im in -1.0f64..1.0,
+            target in 0u32..6,
+            seed in proptest::prelude::any::<u64>(),
+        ) {
+            // Build anti-diagonal matrix (diagonal zeros force the
+            // is_antidiagonal_2x2 path).
+            let z = Complex::new(0.0, 0.0);
+            let a = Complex::new(a_re, a_im);
+            let b = Complex::new(b_re, b_im);
+            let m = [[z, a], [b, z]];
+
+            // Generate a deterministic state from seed.
+            let n: usize = 1 << 6; // n=6 → 64 amps
+            let mut s_dispatch: Vec<Complex> = (0..n)
+                .map(|k| {
+                    let r = ((seed.wrapping_mul(k as u64 + 1)) as f64) * 1e-19;
+                    Complex::new(r.sin(), r.cos())
+                })
+                .collect();
+            let mut s_direct = s_dispatch.clone();
+
+            // Dispatch path (the one under test).
+            super::apply_1q(&mut s_dispatch, target, &[], &m);
+
+            // Direct generic kernel: inline the scalar 2×2 multiply over
+            // the same pair enumeration. Matches the fall-through arm of apply_1q.
+            let t_bit = 1usize << target;
+            let mut i = 0usize;
+            while i < s_direct.len() {
+                if i & t_bit == 0 {
+                    let j = i | t_bit;
+                    let za = s_direct[i];
+                    let zb = s_direct[j];
+                    s_direct[i] = m[0][0] * za + m[0][1] * zb;
+                    s_direct[j] = m[1][0] * za + m[1][1] * zb;
+                }
+                i += 1;
+            }
+
+            for (d, g) in s_dispatch.iter().zip(s_direct.iter()) {
+                proptest::prop_assert!((d.re - g.re).abs() < 1e-12,
+                    "re diverged: dispatch={} direct={}", d.re, g.re);
+                proptest::prop_assert!((d.im - g.im).abs() < 1e-12,
+                    "im diverged: dispatch={} direct={}", d.im, g.im);
+            }
+        }
+    }
 }
