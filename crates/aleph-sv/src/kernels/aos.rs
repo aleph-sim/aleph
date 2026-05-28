@@ -901,8 +901,11 @@ unsafe fn apply_1q_x_avx512_lowbit(amps: &mut [Complex], target: u32, controls: 
     let n_amps = amps.len();
 
     // Index vector for target=1 swap (pair0↔pair2, pair1↔pair3 within zmm).
+    // Pairs occupy 2 lanes each, so the swap is cross-256-bit:
+    // lanes [0,1] (pair0) ↔ lanes [4,5] (pair2); lanes [2,3] (pair1) ↔ lanes [6,7] (pair3).
+    // permutexvar lane k receives src[idx[k]], so lane-order idx = [4,5,6,7,0,1,2,3].
     // _mm512_set_epi64 args: arg 0 → lane 7, arg 7 → lane 0 (reversed).
-    let idx_t1 = _mm512_set_epi64(3, 2, 7, 6, 1, 0, 5, 4);
+    let idx_t1 = _mm512_set_epi64(3, 2, 1, 0, 7, 6, 5, 4);
 
     let ctrl_mask = if controls.is_empty() {
         0usize
@@ -995,7 +998,7 @@ unsafe fn apply_1q_y_avx512_lowbit(
     // Comments below use lane-index order [0..7]; the arg list is the reverse.
     let (idx_t1, mask_t0, mask_t1) = if phase_sign == 1.0 {
         (
-            _mm512_set_epi64(3, 2, 7, 6, 1, 0, 5, 4),
+            _mm512_set_epi64(3, 2, 1, 0, 7, 6, 5, 4),
             // target=0 mask [lane0..7]: [0, sign, sign, 0, 0, sign, sign, 0]
             // → args reversed: (lane7=0, lane6=sign, lane5=sign, lane4=0,
             //                   lane3=0, lane2=sign, lane1=sign, lane0=0)
@@ -1012,7 +1015,7 @@ unsafe fn apply_1q_y_avx512_lowbit(
     } else {
         // YNeg: all signs flip.
         (
-            _mm512_set_epi64(3, 2, 7, 6, 1, 0, 5, 4),
+            _mm512_set_epi64(3, 2, 1, 0, 7, 6, 5, 4),
             _mm512_set_pd(
                 sign_bit, zero, zero, sign_bit, sign_bit, zero, zero, sign_bit,
             ),
@@ -1091,7 +1094,7 @@ unsafe fn apply_1q_antidiag_avx512_lowbit(
     // _mm512_set_pd: arg 0 → lane 7, arg 7 → lane 0 (reversed).
     // Each pair (slot) occupies 2 lanes; comments use lane-index order [0..7].
     let (idx_t1, sr_t0, si_t0, sr_t1, si_t1) = {
-        let idx = _mm512_set_epi64(3, 2, 7, 6, 1, 0, 5, 4);
+        let idx = _mm512_set_epi64(3, 2, 1, 0, 7, 6, 5, 4);
         // target=0: slot 0 (lanes 0,1) → a; slot 1 (lanes 2,3) → b;
         //           slot 2 (lanes 4,5) → a; slot 3 (lanes 6,7) → b.
         // Reversed args: (lane7=b.re, lane6=b.re, lane5=a.re, lane4=a.re,
