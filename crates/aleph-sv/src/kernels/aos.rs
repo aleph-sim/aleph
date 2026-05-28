@@ -100,6 +100,19 @@ pub(crate) fn apply_1q(amps: &mut [Complex], target: u32, controls: &[u32], m: &
                 return;
             }
             None => {
+                #[cfg(target_arch = "x86_64")]
+                {
+                    if std::is_x86_feature_detected!("avx512f")
+                        && (1usize << target) >= 4
+                        && controls.iter().all(|&c| c > target)
+                    {
+                        // SAFETY: feature gate + dispatch contract.
+                        unsafe {
+                            apply_1q_antidiag_avx512(amps, target, controls, m[0][1], m[1][0]);
+                        }
+                        return;
+                    }
+                }
                 apply_1q_antidiag_scalar(amps, target, controls, m[0][1], m[1][0]);
                 return;
             }
@@ -723,6 +736,95 @@ unsafe fn apply_1q_y_avx512(amps: &mut [Complex], target: u32, controls: &[u32],
     // Controlled SIMD path: same renormalise-then-shift idiom as
     // apply_1q_avx512. Caller's `c > target` guard guarantees
     // `c - target - 1` does not underflow.
+    let mut fixed_above: smallvec::SmallVec<[(u32, bool); 8]> = smallvec::SmallVec::new();
+    for &c in controls {
+        fixed_above.push((c - target - 1, true));
+    }
+    fixed_above.sort_unstable_by_key(|&(pos, _)| pos);
+
+    let n_qubits = len.trailing_zeros();
+    let outer_count = 1usize << (n_qubits - target - 1 - controls.len() as u32);
+    for k in 0..outer_count {
+        let block = crate::kernels::expand_with_fixed(k, &fixed_above) << (target + 1);
+        outer_iter(block);
+    }
+}
+
+/// Packed-complex AVX-512 generic anti-diagonal kernel (Tier A).
+///
+/// `m = [[0, a], [b, 0]]`. `amps[i0] ← a * amps[i1]_old`,
+/// `amps[i1] ← b * amps[i0]_old`. Per LANES-block: load z0+z1,
+/// complex-multiply z1 by a → new_i0, complex-multiply z0 by b →
+/// new_i1, store crossed.
+///
+/// # Safety
+/// Caller MUST ensure:
+/// * Host CPU supports AVX-512F.
+/// * `1usize << target ≥ LANES = 4`.
+/// * Every control's qubit index is strictly greater than `target`.
+/// * Standard apply_gate invariants.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f")]
+unsafe fn apply_1q_antidiag_avx512(
+    amps: &mut [Complex],
+    target: u32,
+    controls: &[u32],
+    a: Complex,
+    b: Complex,
+) {
+    use core::arch::x86_64::*;
+
+    const LANES: usize = 4;
+
+    let target_bit = 1usize << target;
+    let len = amps.len();
+    debug_assert!(target_bit >= LANES);
+    debug_assert!(controls.iter().all(|&c| c > target));
+
+    let ar = _mm512_set1_pd(a.re);
+    let ai = _mm512_set1_pd(a.im);
+    let br = _mm512_set1_pd(b.re);
+    let bi = _mm512_set1_pd(b.im);
+
+    let amps_ptr = amps.as_mut_ptr() as *mut f64;
+
+    let outer_iter = |block: usize| {
+        let mut j = 0usize;
+        while j + LANES <= target_bit {
+            let i0 = block | j;
+            let i1 = block | target_bit | j;
+            // SAFETY: in-bounds by outer-walk construction.
+            let z0 = _mm512_loadu_pd(amps_ptr.add(i0 * 2));
+            let z1 = _mm512_loadu_pd(amps_ptr.add(i1 * 2));
+
+            // new_i0 = a * z1 (corrected: m[0][1]*z1 = a*z1)
+            let z1s = _mm512_permute_pd::<0x55>(z1);
+            let t1 = _mm512_mul_pd(ai, z1s);
+            let new_i0 = _mm512_fmaddsub_pd(ar, z1, t1);
+
+            // new_i1 = b * z0 (corrected: m[1][0]*z0 = b*z0)
+            let z0s = _mm512_permute_pd::<0x55>(z0);
+            let t0 = _mm512_mul_pd(bi, z0s);
+            let new_i1 = _mm512_fmaddsub_pd(br, z0, t0);
+
+            _mm512_storeu_pd(amps_ptr.add(i0 * 2), new_i0);
+            _mm512_storeu_pd(amps_ptr.add(i1 * 2), new_i1);
+
+            j += LANES;
+        }
+        debug_assert_eq!(j, target_bit);
+    };
+
+    if controls.is_empty() {
+        let outer_step = target_bit << 1;
+        let mut block = 0usize;
+        while block < len {
+            outer_iter(block);
+            block += outer_step;
+        }
+        return;
+    }
+
     let mut fixed_above: smallvec::SmallVec<[(u32, bool); 8]> = smallvec::SmallVec::new();
     for &c in controls {
         fixed_above.push((c - target - 1, true));
@@ -4301,6 +4403,33 @@ mod tests {
         super::apply_1q_y_scalar(&mut amps_direct, 3, &[], 1.0);
         for (d, x) in amps_dispatch.iter().zip(amps_direct.iter()) {
             assert!((d.re - x.re).abs() < 1e-12 && (d.im - x.im).abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn apply_1q_antidiag_avx512_matches_scalar_phased() {
+        if !std::is_x86_feature_detected!("avx512f") {
+            return;
+        }
+        let a = Complex::new(0.6, 0.8); // |a| = 1
+        let b = Complex::new(0.6, -0.8); // |b| = 1
+        let mut amps_avx: Vec<Complex> = (0..64)
+            .map(|k| Complex::new(k as f64 * 0.05, k as f64 * 0.07 - 1.0))
+            .collect();
+        let mut amps_sca = amps_avx.clone();
+        // SAFETY: avx512 + target_bit=8 ≥ LANES=4 + no controls.
+        unsafe {
+            super::apply_1q_antidiag_avx512(&mut amps_avx, 3, &[], a, b);
+        }
+        super::apply_1q_antidiag_scalar(&mut amps_sca, 3, &[], a, b);
+        for (av, sc) in amps_avx.iter().zip(amps_sca.iter()) {
+            assert!(
+                (av.re - sc.re).abs() < 1e-12 && (av.im - sc.im).abs() < 1e-12,
+                "antidiag avx diverged: avx={:?} scalar={:?}",
+                av,
+                sc
+            );
         }
     }
 }
