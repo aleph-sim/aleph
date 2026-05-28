@@ -918,23 +918,39 @@ Specialized kernels for Toffoli (CCX), CCZ, and arbitrary multi-controlled gates
 Toffoli is used heavily in arithmetic circuits (Shor’s algorithm) and error correction. Doing it as a sequence of CNOTs and T gates is correct but slow.
 
 **Technical Details**
-For CCX on (c1, c2, t): for amplitudes where both control bits = 1, swap pairs at target. Single pass.
+
+For CCX on (c0, c1, t): for amplitudes where both control bits = 1, swap pairs at target. Single pass.
+
+For CCZ on (c0, c1, t): for amplitudes where both control bits = 1, apply phase flip (multiply by −1).
 
 For arbitrary MCX with k controls: amplitudes where all k controls = 1 are affected; iterate with a mask check.
 
+**Spec amendment:** see `docs/superpowers/specs/2026-05-28-p1-08-multi-controlled-design.md` §1.
+
+**Implementation:** Substrate is AoS + AVX-512 packed-complex (per ADR 0008). Matrix-shape dispatch at `apply_3q` prelude (per ADR 0012) detects Toffoli/CCZ 8×8 matrix patterns and routes to `dispatch_toffoli` / `dispatch_ccz`. Fall-through is `apply_3q_generic` (the original scalar 8×8 matrix multiply). Symmetric SoA implementation in `kernels::soa` with LANES_SOA=8 (vs AoS LANES=4) — Tier B has three sub-tiers for SoA (`t ∈ {0, 1, 2}`).
+
+MCX with k controls is **implicit via P1-05**: a `Gate::X` with extra `controls` is dispatched through `apply_1q` to P1-05’s specialised anti-diagonal kernel, which already accepts arbitrary `controls.len()` via `control_mask(controls)`.
+
 **Acceptance Criteria**
 
-- [ ] CCX, CCZ specialized
-- [ ] Generic MCX with up to 8 controls
-- [ ] Benchmark: 3–5× faster than decomposed equivalent
+- [x] CCX, CCZ specialised (AoS + AVX-512 packed-complex). Tier A clean + outer-walk; Tier B in-zmm permute for `t ∈ {0, 1}` (Toffoli); single Tier A path for CCZ via `vxorpd` sign-flip.
+- [x] Generic MCX with up to 8 controls — **implicit via P1-05** anti-diagonal kernel (`apply_1q` with k external controls); verified by `mcx_k{2,4,6}_n20` benches + `multi_ctrl_mcx_k7_8q_oracle` test.
+- [x] Benchmark — `toffoli_chain_n{15,20}`, `ccz_chain_n{15,20}`, `mcx_k{2,4,6}_n20` synthetic chains on EPYC; numbers in `docs/perf/p1-08-multi-controlled.md`.
+- [x] Workload anti-regression — qft_n20 / grover_iter5_n20 / random_brickwall_n20_d20 within 2% on EPYC.
 
 **Testing Requirements**
 
+- Integer-only indexing-coverage tests (`classify_toffoli`, `ccz_pairs_unique`) exhaustively verify dispatch tier classification on n=6. Catches bit-collision bugs pre-SIMD.
+- Property tests (proptest, 64 cases): CCX/CCZ involutivity, CCZ qubit-order symmetry.
+- Oracle tests vs Qiskit Aer: CCX, CCCX, Grover-3q-CCZ, MCX-k7 (the P1-05 verification anchor).
 - Equivalence vs. decomposed (CCX = 6 CNOTs + T gates).
 
 **References**
 
 - Nielsen & Chuang, Section 4.3.
+- ADR 0012: multi-controlled SIMD dispatch pattern.
+- Spec: `docs/superpowers/specs/2026-05-28-p1-08-multi-controlled-design.md`.
+- Plan: `docs/superpowers/plans/2026-05-28-p1-08-multi-controlled.md`.
 
 -----
 
