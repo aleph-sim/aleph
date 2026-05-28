@@ -236,7 +236,7 @@ pub fn apply_1q(amps: &mut [Complex], target: u32, controls: &[u32], m: &[[Compl
 ///   distinct and in qubit range.
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx512f")]
-unsafe fn apply_1q_avx512(
+pub(crate) unsafe fn apply_1q_avx512(
     amps: &mut [Complex],
     target: u32,
     controls: &[u32],

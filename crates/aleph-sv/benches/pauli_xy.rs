@@ -5,6 +5,13 @@
 //! avoiding the bandwidth-bound regime documented in P1-06 lessons
 //! (ADR 0008). For larger n=20 numbers, see the workload benches
 //! and `docs/perf/phase1-vs-qiskit.md`.
+//!
+//! Bench inventory (12 total):
+//!   * `p1_05_specialised_{x,y,antidiag}`             — Tier A target=8 via dispatch
+//!   * `p1_05_specialised_{x,y,antidiag}_tier_b`      — Tier B target=0 via dispatch
+//!   * `p1_05_generic_baseline_{x,y,antidiag}`        — scalar inner-loop (upper bound)
+//!   * `p1_05_generic_avx512_baseline_{x,y,antidiag}` — generic packed-complex AVX-512
+//!                                                        (honest pre-P1-05 baseline)
 
 use aleph_core::Complex;
 use aleph_sv::kernels;
@@ -43,8 +50,9 @@ fn generic_antidiag_matrix() -> [[Complex; 2]; 2] {
     [[z, a], [b, z]]
 }
 
-/// Apply via the dispatch path (engages specialised kernels via
-/// classifier + AVX-512 Tier A on EPYC, scalar fallback elsewhere).
+/// Tier-A path: target=8 → `1 << 8 = 256 ≥ LANES=4`.
+/// Engages the specialised AVX-512 kernels via the dispatcher on EPYC;
+/// falls through to scalar on non-AVX-512 hosts.
 fn bench_specialised(c: &mut Criterion, label: &str, m: [[Complex; 2]; 2]) {
     let mut state = random_state();
     c.bench_function(&format!("p1_05_specialised_{label}"), |b| {
@@ -54,9 +62,20 @@ fn bench_specialised(c: &mut Criterion, label: &str, m: [[Complex; 2]; 2]) {
     });
 }
 
-/// Baseline: generic 2×2 scalar loop with no dispatch overhead.
-/// Inlines the scalar inner body of `apply_1q` directly, giving a
-/// fair upper bound for the specialised path to beat.
+/// Tier-B path: target=0 → `1 << 0 = 1 < LANES=4` (in-register lane permute).
+/// On EPYC this exercises the Tier-B lowbit AVX-512 kernels when amps.len()
+/// is divisible by LANES=4 (always true here with LEN=16384).
+fn bench_specialised_tier_b(c: &mut Criterion, label: &str, m: [[Complex; 2]; 2]) {
+    let mut state = random_state();
+    c.bench_function(&format!("p1_05_specialised_{label}_tier_b"), |b| {
+        b.iter(|| {
+            kernels::aos::apply_1q(black_box(&mut state), 0, black_box(&[]), black_box(&m));
+        })
+    });
+}
+
+/// Scalar upper-bound baseline: generic 2×2 scalar loop with no dispatch
+/// overhead. Gives a fair upper bound for the specialised path to beat.
 fn bench_generic_baseline(c: &mut Criterion, label: &str, m: [[Complex; 2]; 2]) {
     let mut state = random_state();
     c.bench_function(&format!("p1_05_generic_baseline_{label}"), |b| {
@@ -78,14 +97,61 @@ fn bench_generic_baseline(c: &mut Criterion, label: &str, m: [[Complex; 2]; 2]) 
     });
 }
 
+/// Honest AVX-512 baseline: the generic packed-complex `apply_1q_avx512`
+/// kernel at target=8 with no controls — this is what pre-P1-05 dispatch
+/// would have called for any 1q gate on EPYC.  Comparing `p1_05_specialised_*`
+/// against this (not against the scalar baseline) gives the REAL speedup.
+fn bench_generic_avx512_baseline(c: &mut Criterion, label: &str, m: [[Complex; 2]; 2]) {
+    #[cfg(target_arch = "x86_64")]
+    if !std::is_x86_feature_detected!("avx512f") {
+        eprintln!("skipping generic_avx512_baseline_{label}: avx512f not available");
+        return;
+    }
+    #[allow(unused_mut)] // mut only used inside the x86_64 cfg block below
+    let mut state = random_state();
+    c.bench_function(&format!("p1_05_generic_avx512_baseline_{label}"), |b| {
+        b.iter(|| {
+            // SAFETY: feature checked + target_bit=256 ≥ LANES=4 + no controls.
+            #[cfg(target_arch = "x86_64")]
+            unsafe {
+                aleph_sv::kernels::aos::apply_1q_avx512(
+                    black_box(&mut state),
+                    8,
+                    black_box(&[]),
+                    black_box(&m),
+                );
+            }
+            #[cfg(not(target_arch = "x86_64"))]
+            {
+                // Non-x86_64: fall through to the scalar inner body as a no-op
+                // placeholder (bench won't run on these hosts anyway).
+                let _ = &m;
+                black_box(&state);
+            }
+        })
+    });
+}
+
 fn benches(c: &mut Criterion) {
+    // Tier-A specialised kernels (honest comparison: vs generic_avx512_baseline)
     bench_specialised(c, "x", pauli_x_matrix());
     bench_specialised(c, "y", pauli_y_matrix());
     bench_specialised(c, "antidiag", generic_antidiag_matrix());
 
+    // Tier-B specialised kernels (target=0, in-register lane permute)
+    bench_specialised_tier_b(c, "x", pauli_x_matrix());
+    bench_specialised_tier_b(c, "y", pauli_y_matrix());
+    bench_specialised_tier_b(c, "antidiag", generic_antidiag_matrix());
+
+    // Scalar upper-bound baseline (illustrates the gap over a naive loop)
     bench_generic_baseline(c, "x", pauli_x_matrix());
     bench_generic_baseline(c, "y", pauli_y_matrix());
     bench_generic_baseline(c, "antidiag", generic_antidiag_matrix());
+
+    // Honest AVX-512 baseline (pre-P1-05 dispatch; the ADR 0011 reference point)
+    bench_generic_avx512_baseline(c, "x", pauli_x_matrix());
+    bench_generic_avx512_baseline(c, "y", pauli_y_matrix());
+    bench_generic_avx512_baseline(c, "antidiag", generic_antidiag_matrix());
 }
 
 criterion_group!(p1_05, benches);
