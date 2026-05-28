@@ -779,4 +779,119 @@ mod tests {
         let o = aleph_core::Complex::new(1.0, 0.0);
         assert!(super::classify_1q_antidiag(&[[zero, nan], [o, zero]]).is_none());
     }
+
+    // ---- P1-05 T11: portable indexing-coverage test (integer-only, no FP, no SIMD) ----
+
+    mod indexing_coverage {
+        use super::super::{control_mask, expand_with_fixed};
+        use std::collections::HashSet;
+
+        /// Reproduce the anti-diagonal kernel's pair enumeration as
+        /// integer-only operations. Returns the set of (i0, i1) pairs the
+        /// kernel would touch.
+        fn enumerate_pairs(n_qubits: u32, target: u32, controls: &[u32]) -> Vec<(usize, usize)> {
+            let len = 1usize << n_qubits;
+            let t_bit = 1usize << target;
+            let ctrl_mask = control_mask(controls);
+            let mut out = Vec::new();
+            for i in 0..len {
+                if i & t_bit == 0 && (i & ctrl_mask) == ctrl_mask {
+                    out.push((i, i | t_bit));
+                }
+            }
+            out
+        }
+
+        /// Reproduce the SIMD outer-walk's pair enumeration using
+        /// `expand_with_fixed`. MUST equal `enumerate_pairs` element-wise
+        /// (after sorting) for every (target, controls, n) triple.
+        fn enumerate_simd_outer_walk(
+            n_qubits: u32,
+            target: u32,
+            controls: &[u32],
+        ) -> Vec<(usize, usize)> {
+            let t_bit = 1usize << target;
+            // Tier-A SIMD outer-walk (mirror of apply_1q_x_avx512's controlled path):
+            if controls.is_empty() {
+                let mut pairs = Vec::new();
+                let outer_step = t_bit << 1;
+                let mut block = 0usize;
+                while block < (1usize << n_qubits) {
+                    for j in 0..t_bit {
+                        pairs.push((block | j, block | t_bit | j));
+                    }
+                    block += outer_step;
+                }
+                return pairs;
+            }
+            let mut fixed_above: Vec<(u32, bool)> =
+                controls.iter().map(|&c| (c - target - 1, true)).collect();
+            fixed_above.sort_unstable_by_key(|&(p, _)| p);
+            let outer_count = 1usize << (n_qubits - target - 1 - controls.len() as u32);
+            let mut pairs = Vec::new();
+            for k in 0..outer_count {
+                let block = expand_with_fixed(k, &fixed_above) << (target + 1);
+                for j in 0..t_bit {
+                    pairs.push((block | j, block | t_bit | j));
+                }
+            }
+            pairs
+        }
+
+        #[test]
+        fn coverage_matches_naive_no_controls() {
+            for n in 2..=8u32 {
+                for target in 0..n {
+                    let mut naive = enumerate_pairs(n, target, &[]);
+                    let mut simd = enumerate_simd_outer_walk(n, target, &[]);
+                    naive.sort();
+                    simd.sort();
+                    assert_eq!(simd, naive, "n={} target={}: pair sets differ", n, target);
+                }
+            }
+        }
+
+        #[test]
+        fn coverage_matches_naive_with_one_control_above_target() {
+            for n in 3..=8u32 {
+                for target in 0..(n - 1) {
+                    for c in (target + 1)..n {
+                        let mut naive = enumerate_pairs(n, target, &[c]);
+                        let mut simd = enumerate_simd_outer_walk(n, target, &[c]);
+                        naive.sort();
+                        simd.sort();
+                        assert_eq!(
+                            simd, naive,
+                            "n={} target={} c={}: pair sets differ",
+                            n, target, c
+                        );
+                    }
+                }
+            }
+        }
+
+        #[test]
+        fn coverage_pairs_are_disjoint_and_in_range() {
+            for n in 2..=8u32 {
+                let len = 1usize << n;
+                for target in 0..n {
+                    let pairs = enumerate_pairs(n, target, &[]);
+                    let mut seen: HashSet<usize> = HashSet::new();
+                    for (i, j) in &pairs {
+                        assert!(
+                            *i < len && *j < len,
+                            "out of range: ({}, {}) for n={}",
+                            i,
+                            j,
+                            n
+                        );
+                        assert!(seen.insert(*i), "duplicate i={}", i);
+                        assert!(seen.insert(*j), "duplicate j={}", j);
+                        assert_eq!(i & (1 << target), 0);
+                        assert_eq!(j & (1 << target), 1usize << target);
+                    }
+                }
+            }
+        }
+    }
 }
