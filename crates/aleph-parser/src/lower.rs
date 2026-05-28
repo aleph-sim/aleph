@@ -272,6 +272,11 @@ fn resolve_gate_name(name: &str) -> Option<(GateShape, usize)> {
         "cz" => (G::Cz, 0),
         "swap" => (G::Swap, 0),
         "ccx" => (G::Toffoli, 0),
+        // `ccz` is not in stdgates.inc but is a natural extension:
+        // `ccz q[a], q[b], q[c]` lowers to `Gate::Ccz` which sign-flips
+        // the amplitude where all three qubits are |1⟩. The P1-08 dispatch
+        // routes this through the specialised CCZ kernel.
+        "ccz" => (G::Ccz, 0),
         _ => return None,
     })
 }
@@ -295,6 +300,7 @@ enum GateShape {
     Cz,
     Swap,
     Toffoli,
+    Ccz,
 }
 
 fn build_gate_variant(shape: &GateShape, params: &[f64]) -> Gate {
@@ -321,6 +327,7 @@ fn build_gate_variant(shape: &GateShape, params: &[f64]) -> Gate {
         G::Cz => Gate::Cz,
         G::Swap => Gate::Swap,
         G::Toffoli => Gate::Toffoli,
+        G::Ccz => Gate::Ccz,
     }
 }
 

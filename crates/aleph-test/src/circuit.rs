@@ -135,8 +135,9 @@ pub fn distinct_triple(nq: u32) -> impl Strategy<Value = (u32, u32, u32)> {
 }
 
 /// `OpKind` vocabulary restricted to variants the emitter can
-/// serialise.  Excludes `Ccz` and `Controlled1q` (which the
-/// builder constructs but the emitter doesn't yet round-trip).
+/// serialise.  Excludes `Controlled1q` (which the builder constructs
+/// but the emitter doesn't yet round-trip).  `Ccz` is included since
+/// P1-08 wired both parse and emit paths.
 ///
 /// Used by `aleph-parser/tests/round_trip_property.rs`.
 ///
@@ -202,9 +203,11 @@ pub fn arb_op_emittable(nq: u32, nc: u32) -> BoxedStrategy<OpKind> {
     }
 
     if nq >= 3 {
-        let three_q = distinct_triple(nq)
-            .prop_map(|(a, b, t)| OpKind::Toffoli(a, b, t))
-            .boxed();
+        let three_q = prop_oneof![
+            distinct_triple(nq).prop_map(|(a, b, t)| OpKind::Toffoli(a, b, t)),
+            distinct_triple(nq).prop_map(|(a, b, t)| OpKind::Ccz(a, b, t)),
+        ]
+        .boxed();
         branches.push((2, three_q));
     }
 

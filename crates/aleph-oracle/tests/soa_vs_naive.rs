@@ -37,6 +37,9 @@ const FIXTURES: &[&str] = &[
     "kernel_x",
     "kernel_y",
     "kernel_z",
+    // P1-08 multi-controlled fixtures.
+    "multi_ctrl_ccx_permuted",
+    "multi_ctrl_grover_ccz_3q",
     "qft_3",
     "qft_5",
     "random_clifford_n4_d20",

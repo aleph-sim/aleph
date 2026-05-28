@@ -46,3 +46,7 @@ harness = false
 name = "pauli_xy"
 harness = false
 required-features = ["internal-bench"]
+
+[[bench]]
+name = "multi_controlled"
+harness = false

@@ -1,0 +1,27 @@
+{
+  "aer_version": "hand-crafted",
+  "counts": {
+    "111": 100000
+  },
+  "generated_at": "2026-05-28T00:00:00Z",
+  "name": "multi_ctrl_ccx_permuted",
+  "num_qubits": 3,
+  "qasm_path": "circuits/multi_ctrl_ccx_permuted.qasm",
+  "qiskit_version": "hand-crafted",
+  "rng_seed": 0,
+  "schema_version": 1,
+  "shots": 100000,
+  "statevector": {
+    "amplitudes": [
+      [0.0, 0.0],
+      [0.0, 0.0],
+      [0.0, 0.0],
+      [0.0, 0.0],
+      [0.0, 0.0],
+      [0.0, 0.0],
+      [0.0, 0.0],
+      [1.0, 0.0]
+    ],
+    "endianness": "little"
+  }
+}
