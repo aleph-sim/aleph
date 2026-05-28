@@ -42,8 +42,10 @@ pub(crate) fn apply_1q(amps: &mut [Complex], target: u32, controls: &[u32], m: &
         return;
     }
 
-    // 2. Anti-diagonal fast path (P1-05). Scalar-only for now;
-    // AVX-512 Tier A/B added in later tasks.
+    // 2. Anti-diagonal fast path (P1-05). Per-arm dispatch picks
+    // AVX-512 Tier A when its contract holds; otherwise falls back
+    // to the scalar kernel (which is also the Tier-C path for
+    // controls below the target).
     if super::is_antidiagonal_2x2(m) {
         match super::classify_1q_antidiag(m) {
             Some(super::Perm1qKind::X) => {
