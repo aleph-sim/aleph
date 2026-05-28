@@ -2738,6 +2738,92 @@ pub(crate) fn apply_ccz_scalar(
     }
 }
 
+/// Packed AVX-512 Toffoli specialisation — Tier A (clean contract).
+///
+/// Inner loop: loads one LANES-wide zmm from the `target_bit=0` window
+/// and one from the `target_bit=1` window, stores them cross-swapped.
+/// 2 zmm loads + 2 zmm stores per matching block; purely bandwidth-bound.
+///
+/// The Tier-A "clean" contract restricts every control bit strictly above
+/// the target bit. Within a LANES-block the j-index sweeps bits `[0, target)`,
+/// none of which overlap any control bit, so the `ctrl_mask` check on
+/// `block_base` is uniform across the entire block — no partial-block
+/// ambiguity, no outer-walk needed.
+///
+/// # Safety
+///
+/// Caller MUST guarantee all of:
+/// * Host CPU supports AVX-512F (`is_x86_feature_detected!("avx512f")` true).
+/// * `target >= 2` i.e. `1 << target >= LANES` (== 4) — inner SIMD walk
+///   has ≥ LANES contiguous amp pairs per half.
+/// * Every qubit position in `sorted_controls` is strictly greater than
+///   `target` — guarantees no control bit falls inside the inner `j`-sweep
+///   range `[0, target)`.
+/// * `amps.len() == 1 << n` for some n ≥ 3 (circuit invariant).
+/// * `target` and all entries of `sorted_controls` are distinct and < n.
+///
+/// `sorted_controls` contains ALL control qubits (both CCX's inner pair
+/// and any external controls). It need not be sorted; the function only
+/// ORs the bits into a mask.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f")]
+unsafe fn apply_toffoli_avx512_tier_a(
+    amps: &mut [Complex],
+    target: u32,
+    sorted_controls: &[u32],
+) {
+    use std::arch::x86_64::*;
+
+    const LANES: usize = 4; // complex amps per zmm (8 f64 per zmm)
+
+    debug_assert!(
+        target >= 2,
+        "Tier-A contract: target must be >= LANES_BITS (2)"
+    );
+    debug_assert!(
+        sorted_controls.iter().all(|&c| c > target),
+        "Tier-A contract: every control bit must be strictly above target"
+    );
+
+    let target_bit = 1usize << target;
+    let mut ctrl_mask = 0usize;
+    for &c in sorted_controls {
+        ctrl_mask |= 1usize << c;
+    }
+    let len = amps.len();
+    let amps_ptr = amps.as_mut_ptr() as *mut f64;
+
+    // Flat block-stride walk: each block covers LANES consecutive amps.
+    // Skip blocks where target_bit is already set (those are the hi-half;
+    // we always load from the lo-half and its partner simultaneously).
+    // Skip blocks where any control bit is clear (gate does not fire).
+    let mut block_base = 0usize;
+    while block_base < len {
+        if (block_base & target_bit) != 0 {
+            // Already the hi half — the lo-half iteration handles this pair.
+            block_base += LANES;
+            continue;
+        }
+        if (block_base & ctrl_mask) != ctrl_mask {
+            // Not all controls set — gate does not fire here.
+            block_base += LANES;
+            continue;
+        }
+        // SAFETY: `block_base & target_bit == 0` and all control bits set.
+        // `block_base + LANES <= block_base | target_bit < len` because the
+        // state vector has a full power-of-two length and target_bit ≥ LANES.
+        // The hi-half `block_base | target_bit` is similarly within bounds.
+        // Both pointers are multiplied by 2 (f64 offset = amp_index * 2).
+        let lo_ptr = amps_ptr.add(block_base * 2);
+        let hi_ptr = amps_ptr.add((block_base | target_bit) * 2);
+        let z_lo = _mm512_loadu_pd(lo_ptr);
+        let z_hi = _mm512_loadu_pd(hi_ptr);
+        _mm512_storeu_pd(lo_ptr, z_hi);
+        _mm512_storeu_pd(hi_ptr, z_lo);
+        block_base += LANES;
+    }
+}
+
 /// Top-level 3q dispatch. Matrix-detects Toffoli (CCX) and CCZ shapes
 /// per spec §3.1 and routes to specialised paths. Identity short-circuits.
 /// Falls through to the generic 8x8 scalar kernel for arbitrary matrices.
@@ -2762,8 +2848,37 @@ pub(crate) fn apply_3q(
 }
 
 /// Routes Toffoli to the best available tier (spec §4).
-/// Tier-C-only for now; SIMD added in later tasks.
+///
+/// Tier-A (AVX-512, task 7): fires when every control (inner CCX pair +
+/// external) is strictly above the target bit AND target ≥ LANES_BITS.
+/// Falls through to the scalar Tier-C reference otherwise.
 fn dispatch_toffoli(amps: &mut [Complex], targets: [u32; 3], controls: &[u32]) {
+    #[cfg(target_arch = "x86_64")]
+    {
+        // Tier-A (AVX-512, task 7): every control above target, target ≥ LANES_BITS.
+        const LANES_BITS: u32 = 2; // log2(LANES) where LANES = 4
+        let t = targets[2];
+
+        // Merge the CCX's inner control pair with any external controls.
+        let mut all_ctrls: smallvec::SmallVec<[u32; 8]> = smallvec::SmallVec::new();
+        all_ctrls.push(targets[0]);
+        all_ctrls.push(targets[1]);
+        for &c in controls {
+            all_ctrls.push(c);
+        }
+        let c_lo = *all_ctrls.iter().min().unwrap();
+
+        if std::is_x86_feature_detected!("avx512f") && t >= LANES_BITS && c_lo > t {
+            // SAFETY: Tier-A contract satisfied — AVX-512F detected, target ≥ 2
+            // (LANES_BITS), every control in all_ctrls is strictly above target
+            // (c_lo > t implies all entries > t). Qubits distinct + in-range
+            // guaranteed by Circuit invariant.
+            unsafe {
+                apply_toffoli_avx512_tier_a(amps, t, &all_ctrls);
+            }
+            return;
+        }
+    }
     apply_toffoli_scalar(amps, targets, controls);
 }
 
@@ -5602,6 +5717,104 @@ mod apply_3q_prelude_tests {
         apply_3q(&mut a, [0, 1, 4], &[], &m);
         apply_3q_generic(&mut b, [0, 1, 4], &[], &m);
         for (x, y) in a.iter().zip(b.iter()) {
+            assert!((x.re - y.re).abs() < 1e-12);
+            assert!((x.im - y.im).abs() < 1e-12);
+        }
+    }
+}
+
+#[cfg(test)]
+mod toffoli_tier_a_tests {
+    use super::*;
+    use aleph_core::Complex;
+
+    /// Linear-congruential pseudo-random amplitudes — no `rand` crate dep.
+    fn random_amps(n: u32, seed: u64) -> Vec<Complex> {
+        let mut s = seed;
+        let mut step = || {
+            s = s
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            ((s >> 33) as f64) / (u32::MAX as f64)
+        };
+        (0..(1 << n)).map(|_| Complex::new(step(), step())).collect()
+    }
+
+    /// n=8 state, inner controls c0=5 c1=6, target t=2.
+    /// c_lo = min(5,6) = 5 > t=2, and t=2 >= LANES_BITS=2 — clean Tier A.
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn tier_a_matches_scalar_clean_contract() {
+        if !std::is_x86_feature_detected!("avx512f") {
+            return; // Skip gracefully on non-AVX-512 hosts.
+        }
+        let mut simd = random_amps(8, 7);
+        let mut scalar = simd.clone();
+        // all_ctrls = [5, 6]; target = 2.
+        unsafe {
+            apply_toffoli_avx512_tier_a(&mut simd, 2, &[5, 6]);
+        }
+        apply_toffoli_scalar(&mut scalar, [5, 6, 2], &[]);
+        for (x, y) in simd.iter().zip(scalar.iter()) {
+            assert!(
+                (x.re - y.re).abs() < 1e-12,
+                "re mismatch: {} vs {}",
+                x.re,
+                y.re
+            );
+            assert!(
+                (x.im - y.im).abs() < 1e-12,
+                "im mismatch: {} vs {}",
+                x.im,
+                y.im
+            );
+        }
+    }
+
+    /// External control qubit at index 7, inner pair at (3, 4), target=2.
+    /// c_lo = min(3,4,7) = 3 > t=2 ✓. All three controls above target.
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn tier_a_with_external_control_clean() {
+        if !std::is_x86_feature_detected!("avx512f") {
+            return;
+        }
+        let mut simd = random_amps(8, 8);
+        let mut scalar = simd.clone();
+        // SIMD call: all_ctrls = [3, 4, 7], target = 2.
+        unsafe {
+            apply_toffoli_avx512_tier_a(&mut simd, 2, &[3, 4, 7]);
+        }
+        // Scalar call: targets = [3, 4, 2], external_controls = [7].
+        apply_toffoli_scalar(&mut scalar, [3, 4, 2], &[7]);
+        for (x, y) in simd.iter().zip(scalar.iter()) {
+            assert!(
+                (x.re - y.re).abs() < 1e-12,
+                "re mismatch: {} vs {}",
+                x.re,
+                y.re
+            );
+            assert!(
+                (x.im - y.im).abs() < 1e-12,
+                "im mismatch: {} vs {}",
+                x.im,
+                y.im
+            );
+        }
+    }
+
+    /// Smoke-test that `dispatch_toffoli` now routes through Tier A on AVX-512
+    /// hosts when the contract holds, by verifying end-to-end equivalence to
+    /// the scalar path for a mid-sized state.
+    #[test]
+    fn dispatch_toffoli_routes_tier_a_on_avx512() {
+        let n = 8u32;
+        let mut via_dispatch = random_amps(n, 42);
+        let mut via_scalar = via_dispatch.clone();
+        // targets = [c0=5, c1=6, t=2]: c_lo=5 > t=2, t>=2. Tier-A eligible.
+        dispatch_toffoli(&mut via_dispatch, [5, 6, 2], &[]);
+        apply_toffoli_scalar(&mut via_scalar, [5, 6, 2], &[]);
+        for (x, y) in via_dispatch.iter().zip(via_scalar.iter()) {
             assert!((x.re - y.re).abs() < 1e-12);
             assert!((x.im - y.im).abs() < 1e-12);
         }
