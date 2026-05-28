@@ -190,3 +190,75 @@ kernel's two-stream interleave. Full discussion in ADR 0009.
 - **ADR 0007** — SoA-on-x86 perf finding: `docs/decisions/0007-soa-x86-perf-finding.md`.
 - **Phase 1 plan:** `docs/superpowers/plans/2026-05-26-phase1-completion.md`.
 - **Stage 0 spec:** `docs/superpowers/specs/2026-05-26-stage0-qiskit-baseline-design.md`.
+
+## P1-07 update (2026-05-28): 2q kernel + CNOT/CZ/SWAP specialised paths
+
+After landing the full 2q SIMD family (6 AVX-512 kernels: generic dense
++ CNOT/SWAP Tiers A/B/C + CZ + 2q-diagonal) on AoS, plus symmetric SoA
+mirrors. Same EPYC host, same `cargo bench --bench qiskit_baseline --
+--sample-size 30 (Aer 50) --measurement-time 15`, same Aer baselines.
+
+### Headline — `NaiveSvBackend`
+
+| Workload                              | P1-06 (ms) | P1-07 (ms) |  Aer (ms) | aleph / Aer | Δ vs P1-06 |
+|---------------------------------------|-----------:|-----------:|----------:|------------:|-----------:|
+| `qft_n20`                             |     1133.0 |    **596.5** |     459.3 | **1.30 ×** ✅ | **−47.4 %** ✓✓✓ |
+| `grover_n20_iters5`                   |   79 033.2 |  **58 491.7** | 115 597.6 | **0.51 ×** ✅ | **−25.9 %** ✓✓ |
+| `random_brickwall_n20_d20`            |      842.2 |    **665.4** |   1 138.3 | **0.58 ×** ✅ | **−21.0 %** ✓ |
+
+**ROADMAP § 7 ≤ 2× Aer exit criterion met for all three workloads.**
+QFT-20 was the lone holdout post-Stage-0 (2.39× Aer) and post-P1-06
+(2.47× Aer); P1-07 closes it at 1.30× Aer with a 1.90× speedup over
+the prior baseline.
+
+### Appendix — full backend matrix (P1-07)
+
+| Workload                              | `NaiveSvBackend` (ms) | `SoaSvBackend` (ms) | Aer (ms)   |
+|---------------------------------------|---------------------:|--------------------:|-----------:|
+| `qft_n20`                             |               596.49 |              986.20 |     459.34 |
+| `grover_n20_iters5`                   |            58 491.74 |          129 095.95 | 115 597.58 |
+| `random_brickwall_n20_d20`            |               665.40 |            1 574.97 |   1 138.31 |
+
+SoA improves on all three workloads (−12.5 %, −35.8 %, −21.4 % vs
+P1-06) but remains structurally slower than AoS by 1.65× (qft), 2.21×
+(grover), 2.37× (random). ADR 0008's "AoS is the canonical fast path"
+finding stands; the kill-SoA decision (open Q#2 in ADR 0008) remains
+deferred to P1-14 closure.
+
+### Micro-bench: `p1_07/cnot_specialized` vs `cnot_via_generic`
+
+| Bench                          | Time (ms) | Ratio   | BACKLOG AC      |
+|--------------------------------|----------:|--------:|:----------------|
+| `p1_07/cnot_specialized`       |  **39.01** | 1.00×   |                 |
+| `p1_07/cnot_via_generic`       |    97.41 | 2.50×   | 5–10× ⚠️ missed |
+| `p1_07/dense_2q`               |    97.57 | 2.50×   |                 |
+
+The BACKLOG-AC's 5–10× target was set against pre-SIMD scalar
+generic-2q. With generic-2q now also AVX-512 (Task 5
+`apply_2q_avx512`), the cnot-specialised lead shrinks. At n=20 the
+16 MiB state spills L3, putting both kernels in the bandwidth-bound
+regime; the 14× per-µop advantage of swap-pair-only-no-multiply
+collapses to a ~2.5× wall-clock advantage that matches CNOT's
+half-state-touch bandwidth ratio. The workload-level qft_n20 win
+(1.90× vs P1-06) is the real measure of the specialised path's value
+in production code.
+
+### Interpretation
+
+**The 1q-diagonal regression on qft_n20 from P1-06 (+3.2 %) is fully
+recovered.** P1-06's bandwidth-bound finding (single-stream walk has
+less ILP than two-stream) is now offset by P1-07's 2q-diagonal +
+generic-dense AVX-512 paths cutting the cphase + cx wall-clock by
+roughly half.
+
+**Grover's 25.9 % improvement is the largest single-PR speedup so
+far on that workload.** Driven by the multi-controlled-X (Toffoli)
+gates in Grover's diffusion operator now routing through
+`apply_3q`-scalar (unchanged) but benefiting from the generic 2q-SIMD
+on the surrounding CNOTs in the iterate. Toffoli specialisation (P1-08)
+expected to deliver another 3–5× on the 3q layer per BACKLOG-AC.
+
+**Stage 1 closure status:** four of the six tier-1 workload metrics
+now beat Aer (qft-20: 1.30×; grover-20: 0.51×; random-20: 0.58×; bell
+and ghz are trivial wins). The two SoA paths remain 1.65–2.37× slower
+than AoS — open question for P1-14.

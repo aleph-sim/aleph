@@ -1,6 +1,6 @@
 //! Random `Gate` strategies.  See spec §4.2.
 
-use aleph_core::Gate;
+use aleph_core::{Complex, Gate};
 use proptest::prelude::*;
 
 /// Random 1-qubit gate.  Vocabulary:
@@ -57,6 +57,47 @@ pub fn arb_diagonal_1q_gate() -> impl Strategy<Value = Gate> {
         (-tau..=tau).prop_map(|t| Gate::Rz(t.into())),
         (-tau..=tau).prop_map(|t| Gate::Phase(t.into())),
     ]
+}
+
+/// Random `[[Complex; 4]; 4]` matrix matching exactly the CnotHi
+/// canonical pattern (rows 2↔3 swapped, all non-zero entries = +1+0i).
+/// Used in property tests for the AoS/SoA CNOT detection + dispatch.
+pub fn arb_cnot_hi_matrix() -> impl Strategy<Value = [[Complex; 4]; 4]> {
+    Just({
+        let mut m = [[Complex::new(0.0, 0.0); 4]; 4];
+        m[0][0] = Complex::new(1.0, 0.0);
+        m[1][1] = Complex::new(1.0, 0.0);
+        m[2][3] = Complex::new(1.0, 0.0);
+        m[3][2] = Complex::new(1.0, 0.0);
+        m
+    })
+}
+
+/// Random `[[Complex; 4]; 4]` matrix matching exactly the SWAP pattern.
+pub fn arb_swap_matrix() -> impl Strategy<Value = [[Complex; 4]; 4]> {
+    Just({
+        let mut m = [[Complex::new(0.0, 0.0); 4]; 4];
+        m[0][0] = Complex::new(1.0, 0.0);
+        m[1][2] = Complex::new(1.0, 0.0);
+        m[2][1] = Complex::new(1.0, 0.0);
+        m[3][3] = Complex::new(1.0, 0.0);
+        m
+    })
+}
+
+/// Random diagonal 4×4 unitary: each `d[k] = e^{iθ_k}` for independent
+/// `θ_k ∈ [-π, π]`.  Covers CZ (θ_3 ≈ π), generic 2q-diag, controlled-
+/// Phase (θ_0 = θ_1 = θ_2 = 0).
+pub fn arb_diagonal_4x4() -> impl Strategy<Value = [[Complex; 4]; 4]> {
+    let pi = std::f64::consts::PI;
+    ((-pi..=pi), (-pi..=pi), (-pi..=pi), (-pi..=pi)).prop_map(|(t0, t1, t2, t3)| {
+        let mut m = [[Complex::new(0.0, 0.0); 4]; 4];
+        m[0][0] = Complex::new(t0.cos(), t0.sin());
+        m[1][1] = Complex::new(t1.cos(), t1.sin());
+        m[2][2] = Complex::new(t2.cos(), t2.sin());
+        m[3][3] = Complex::new(t3.cos(), t3.sin());
+        m
+    })
 }
 
 #[cfg(test)]

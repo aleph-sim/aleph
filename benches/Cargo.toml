@@ -45,3 +45,7 @@ harness = false
 [[bench]]
 name = "qiskit_baseline"
 harness = false
+
+[[bench]]
+name = "p1_07_microbench"
+harness = false
