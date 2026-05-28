@@ -85,11 +85,11 @@ pub(crate) fn is_ccz(m: &[[Complex; 8]; 8]) -> bool { ... }
 
 ### 3.3 Notation (pinned conventions)
 
-- `LANES = 8` — doubles per zmm register (one AVX-512 zmm = 8 × `f64`).
-- `LANES_AMPS = 4` — complex amplitudes per zmm (each amp is 2 doubles in AoS layout).
-- `LANES_BITS = log2(LANES_AMPS) = 2` — the bit-position threshold for "target inside zmm".
-- All dispatch contracts use the form `target_bit >= LANES` measured in **doubles-offset** (i.e. `(1<<t) * 2 >= LANES`, ≡ `t >= LANES_BITS+1 = 3`). This matches P1-05/P1-07 conventions verbatim — don't introduce a new arithmetic.
+- `LANES = 4` — complex amplitudes per zmm (each amp is 2 × `f64`, so 8 doubles per zmm). The codebase calls this constant `LANES` (verified in `kernels/aos.rs:31`: `(1usize << target) >= 4`).
+- `LANES_BITS = log2(LANES) = 2` — the bit-position threshold for "target inside zmm".
+- All dispatch contracts use the form `(1 << target) >= LANES` measured in **amp-index units** (≡ `t >= LANES_BITS = 2`). This matches P1-05/P1-06/P1-07 conventions verbatim — don't introduce a new arithmetic.
 - Bit-position comparisons (`c_lo > t`) are over **qubit indices**, not byte/double offsets.
+- Tier-B (in-zmm permute) covers `t ∈ {0, 1}` only. `t = 2` already lies in Tier A (`(1<<2) = 4 >= LANES`).
 
 ### 3.4 Tolerance constant
 
@@ -116,9 +116,9 @@ Pre-dispatch sort:
 ### 4.2 Tier A — packed AVX-512 swap
 
 **Contract:**
-- `target_bit >= LANES` (== `t >= 3`).
+- `(1 << target) >= LANES` (== `t >= 2`).
 - `c_lo > t` (every control bit strictly above target).
-- `n >= 4` (state ≥ 16 amps, ≥ 2 LANES blocks).
+- `n >= 3` (state ≥ 8 amps, ≥ 2 LANES blocks).
 
 **Inner loop:**
 ```rust
@@ -140,16 +140,15 @@ Mirrors `dispatch_cnot` Tier-A in P1-07 (aos.rs § ~1929) with `ctrl_mask` cover
 ### 4.3 Tier B — target inside LANES (`t < 3`)
 
 **Contract:**
-- `t < 3` (target_bit < LANES_PAIRS=4)
-- `c_lo >= 3` (controls still above LANES boundary)
-- `n >= 3`
+- `t ∈ {0, 1}` (target_bit < LANES)
+- `c_lo >= LANES_BITS = 2` (controls still above LANES boundary)
+- `n >= 3` (so that there is at least one full zmm block with controls bits well-defined)
 
 **Inner loop:** load 4-complex zmm; `_mm512_permutexvar_pd` with target-dependent index constants:
-- **Tier B.0** (`t = 0`) — swap pair-of-doubles within zmm: index `(2,3, 0,1, 6,7, 4,5)`.
-- **Tier B.1** (`t = 1`) — swap two-pair-groups in the LOW 256, two-pair-groups in the HIGH 256: index `(4,5, 6,7, 0,1, 2,3)`. Pure in-zmm permute.
-- **Tier B.2** (`t = 2`, cross-256) — swap LOW 256 ↔ HIGH 256. Cross-256 permute via `_mm512_shuffle_f64x2(z, z, 0b01_00_11_10)` (1-µop variant); validate codegen emits `vshuff64x2`, fall back to `_mm512_permutexvar_pd` if the shuffle compiles down to multiple µops.
+- **Tier B.0** (`t = 0`) — swap pair-of-doubles within zmm: index `(2,3, 0,1, 6,7, 4,5)`. Pairs `(amp0, amp1)` and `(amp2, amp3)` swap.
+- **Tier B.1** (`t = 1`) — swap two-pair-groups in the LOW 256, two-pair-groups in the HIGH 256: index `(4,5, 6,7, 0,1, 2,3)`. Pairs `(amp0, amp2)` and `(amp1, amp3)` swap (cross-128 within zmm).
 
-These three sub-tiers share the same outer loop + mask-check skeleton; only the permute constant changes. Implementation: one kernel function with a runtime `match t { 0 => ..., 1 => ..., 2 => ... }` selecting the permute constant, **OR** three named kernels routed from `dispatch_toffoli` — pick whichever LLVM auto-resolves more cleanly during impl (revisit at codegen-inspection task in the plan).
+These two sub-tiers share the same outer loop + mask-check skeleton; only the permute constant changes. Implementation: two named kernels (`apply_toffoli_avx512_t0`, `apply_toffoli_avx512_t1`) routed from `dispatch_toffoli`, mirroring the per-arm structure of P1-05's anti-diagonal Tier B.
 
 Mask-check on `block_base` (single ctrl-mask comparison per block, because `c_lo >= 3` means the full block lies under one fixed ctrl-bit pattern).
 
@@ -158,8 +157,9 @@ Mask-check on `block_base` (single ctrl-mask comparison per block, because `c_lo
 ### 4.4 Tier C — scalar fallback
 
 **Fires when:**
-- `n < 3` (state < 8 amps).
-- Any other degenerate case not covered by the Tier-A outer-walk extension.
+- `n < 3` (state < 8 amps, not enough room for one full zmm block plus a target stride).
+- `t ∈ {0, 1}` AND `c_lo < LANES_BITS` (Tier B contract violated and no clean Tier-A path).
+- Any other degenerate case not covered by Tier A/B.
 
 Implementation: straight loop:
 ```rust
@@ -192,8 +192,8 @@ Pre-dispatch:
 ### 5.2 Tier A — AVX-512 in-block sign-flip
 
 **Contract:**
-- `mask_lo >= LANES_BITS` (== `mask_lo >= 3`), so every 4-pair zmm block has a single value of `ccz_mask` bits.
-- `n >= 4` (state ≥ 16 amps).
+- `mask_lo >= LANES_BITS = 2`, so every 4-amp zmm block has a single value of `ccz_mask` bits.
+- `n >= 3` (state ≥ 8 amps, ≥ 2 zmm blocks).
 
 **Inner loop:**
 ```rust
@@ -208,7 +208,7 @@ for block_base in (0..len).step_by(LANES).filter(in_outer_walk) {
 
 `_mm512_xor_pd` on the sign bit is **1 µop latency-1**, cheaper than `_mm512_mul_pd` by `-1.0` (4 µop latency).
 
-**Outer-walk for `mask_lo < 3`:** mirror P1-06's diagonal-1q pattern — outer-walk over bits below LANES_BITS, fold them into the iteration's base offset, and Tier-A SIMD on the remaining bits. Same canonical renormalisation as Toffoli §4.2.
+**Outer-walk for `mask_lo < LANES_BITS`:** mirror P1-06's diagonal-1q pattern — outer-walk over bits below LANES_BITS, fold them into the iteration's base offset, and Tier-A SIMD on the remaining bits. Same canonical renormalisation as Toffoli §4.2.
 
 **Expected µops/amp:** 0.375 (1 load + 1 xor + 1 store per 8 amps).
 
@@ -218,7 +218,7 @@ CCZ is structurally simpler than Toffoli — no permute needed because no swap. 
 
 ### 5.4 Tier C — scalar fallback
 
-**Fires when:** `n < 3`. (For `mask_lo < 3` with `n >= 3`, the Tier-A outer-walk extension covers it.)
+**Fires when:** `n < 3`. (For `mask_lo < LANES_BITS` with `n >= 3`, the Tier-A outer-walk extension covers it.)
 
 ```rust
 for i in 0..1usize << n {
@@ -247,7 +247,7 @@ Lesson from P1-07 ([P1-07 merged](../../../crates/aleph-sv/src/kernels/soa.rs) e
 **Toffoli:**
 - All 8 basis states under `CCX(0, 1, 2)` on `n=3` → expect `|110⟩ ↔ |111⟩`, identity elsewhere.
 - External controls: `CCX(0, 1, 2) + ctx=[3]` on `n=4` → swap only when q3=1.
-- Tier-boundary cases: `t=0` (Tier B.0 in-zmm swap), `t=1` (Tier B.1 dual-256), `t=2` (Tier B.2 cross-256), `t=3` (Tier A entry), `t=4+` (Tier A clean), control below target (Tier A outer-walk), `n=3/4` (sub-LANES → Tier C).
+- Tier-boundary cases: `t=0` (Tier B.0 in-zmm swap), `t=1` (Tier B.1 cross-128), `t=2` (Tier A entry, `(1<<2)=4 == LANES`), `t=3+` (Tier A clean), control below target (Tier A outer-walk), `n=3` (smallest Tier A), `n<3` (Tier C).
 
 **CCZ:**
 - All 8 basis states under `CCZ(0,1,2)` on `n=3` → expect sign flip on `|111⟩`.
