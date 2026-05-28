@@ -623,9 +623,11 @@ unsafe fn apply_2q_diagonal_avx512(
             let r = _mm512_loadu_pd(re_ptr.add(i));
             let m = _mm512_loadu_pd(im_ptr.add(i));
             // new_re = r * d_re - m * d_im
-            let new_r = _mm512_sub_pd(_mm512_mul_pd(r, d_re_bc), _mm512_mul_pd(m, d_im_bc));
+            //        = -(m * d_im) + (r * d_re)   via fnmadd(a,b,c) = c - a*b
+            let new_r = _mm512_fnmadd_pd(m, d_im_bc, _mm512_mul_pd(r, d_re_bc));
             // new_im = r * d_im + m * d_re
-            let new_m = _mm512_add_pd(_mm512_mul_pd(r, d_im_bc), _mm512_mul_pd(m, d_re_bc));
+            //        = (m * d_re) + (r * d_im)    via fmadd(a,b,c) = a*b + c
+            let new_m = _mm512_fmadd_pd(m, d_re_bc, _mm512_mul_pd(r, d_im_bc));
             _mm512_storeu_pd(re_ptr.add(i), new_r);
             _mm512_storeu_pd(im_ptr.add(i), new_m);
             j += LANES_SOA;
@@ -1287,7 +1289,7 @@ mod tests {
                 if (1usize << lo) < LANES_SOA {
                     continue;
                 }
-                let (r0, i0) = random_re_im(n, 0xfeed_cz + n as u64);
+                let (r0, i0) = random_re_im(n, 0xfeed_c2 + n as u64);
                 let mut ra = r0.clone();
                 let mut ia = i0.clone();
                 let mut rb = r0;
