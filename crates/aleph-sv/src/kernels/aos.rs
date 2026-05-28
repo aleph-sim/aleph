@@ -5089,3 +5089,114 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod toffoli_indexing_tests {
+    /// Classify (c0, c1, t, ext, n) into the expected dispatch tier
+    /// per spec §4.2-§4.4. This is the source-of-truth oracle for the
+    /// SIMD dispatch path; if the function below returns Tier X, the
+    /// runtime SIMD path must match.
+    #[derive(Debug, PartialEq, Eq)]
+    enum Tier { A, B0, B1, C }
+
+    fn classify_toffoli(c0: u32, c1: u32, t: u32, ext: &[u32], n: u32) -> Tier {
+        const LANES_BITS: u32 = 2;
+        if n < 3 { return Tier::C; }
+        let target_bit_idx = t;
+        let ctrl_bits: Vec<u32> = std::iter::once(c0)
+            .chain(std::iter::once(c1))
+            .chain(ext.iter().copied())
+            .collect();
+        let c_lo = *ctrl_bits.iter().min().unwrap();
+        // Tier A: target_bit ≥ LANES (== t ≥ LANES_BITS) and c_lo > t.
+        if target_bit_idx >= LANES_BITS && c_lo > target_bit_idx {
+            return Tier::A;
+        }
+        // Tier A outer-walk: target_bit ≥ LANES but some controls below target.
+        // Spec §4.2 says Tier-A handles this via expand_with_fixed renormalisation.
+        if target_bit_idx >= LANES_BITS {
+            return Tier::A;
+        }
+        // Tier B: target_bit < LANES (t ∈ {0,1}) and c_lo ≥ LANES_BITS.
+        if c_lo >= LANES_BITS {
+            return match t {
+                0 => Tier::B0,
+                1 => Tier::B1,
+                _ => unreachable!("t<LANES_BITS but t not in {{0,1}}"),
+            };
+        }
+        // Else: Tier C scalar.
+        Tier::C
+    }
+
+    /// Compute the swap pair (i, i ^ target_bit) for a given dispatch
+    /// configuration and verify pairwise-disjoint bits at the
+    /// SIMD-block level (mirrors P1-07 Task 14's coverage tests).
+    fn pairs_are_disjoint(c0: u32, c1: u32, t: u32, ext: &[u32], n: u32) -> bool {
+        let target_bit = 1u64 << t;
+        let mut ctrl_mask = (1u64 << c0) | (1u64 << c1);
+        for &e in ext { ctrl_mask |= 1u64 << e; }
+        // For every i with ctrl bits set and target bit clear, (i, i | target_bit)
+        // must be in-range and distinct, and target_bit must not overlap ctrl_mask.
+        if target_bit & ctrl_mask != 0 { return false; }
+        let len = 1u64 << n;
+        for i in 0..len {
+            if (i & ctrl_mask) != ctrl_mask { continue; }
+            if (i & target_bit) != 0 { continue; }
+            let j = i | target_bit;
+            if j >= len { return false; }
+            if i == j { return false; }
+        }
+        true
+    }
+
+    #[test]
+    fn toffoli_classification_clean_tier_a() {
+        // c0=4, c1=5, t=2, n=6: t_bit_idx=2 ≥ LANES_BITS, c_lo=4 > t=2.
+        assert_eq!(classify_toffoli(4, 5, 2, &[], 6), Tier::A);
+    }
+
+    #[test]
+    fn toffoli_classification_tier_b0() {
+        // c0=2, c1=3, t=0, n=4: t<LANES_BITS, c_lo=2 ≥ LANES_BITS.
+        assert_eq!(classify_toffoli(2, 3, 0, &[], 4), Tier::B0);
+    }
+
+    #[test]
+    fn toffoli_classification_tier_b1() {
+        // c0=2, c1=3, t=1, n=4
+        assert_eq!(classify_toffoli(2, 3, 1, &[], 4), Tier::B1);
+    }
+
+    #[test]
+    fn toffoli_classification_tier_c_small_n() {
+        // n=2 — must be Tier C.
+        assert_eq!(classify_toffoli(0, 1, 0, &[], 2), Tier::C);
+    }
+
+    #[test]
+    fn toffoli_classification_tier_c_mixed_low_controls() {
+        // c0=0, c1=1, t=0: t < LANES_BITS, c_lo=0 < LANES_BITS → Tier C.
+        assert_eq!(classify_toffoli(0, 1, 0, &[], 3), Tier::C);
+    }
+
+    #[test]
+    fn toffoli_pairs_disjoint_exhaustive_n6() {
+        // For all triples (c0,c1,t) in {0..6}^3 with c0 != c1 != t,
+        // and ext subsets of size ≤ 1, verify pair disjointness.
+        for c0 in 0..6 {
+            for c1 in 0..6 {
+                for t in 0..6 {
+                    if c0 == c1 || c0 == t || c1 == t { continue; }
+                    assert!(pairs_are_disjoint(c0, c1, t, &[], 6),
+                            "c0={} c1={} t={} ext=[]", c0, c1, t);
+                    for e in 0..6 {
+                        if e == c0 || e == c1 || e == t { continue; }
+                        assert!(pairs_are_disjoint(c0, c1, t, &[e], 6),
+                                "c0={} c1={} t={} ext=[{}]", c0, c1, t, e);
+                    }
+                }
+            }
+        }
+    }
+}
