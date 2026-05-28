@@ -9,6 +9,20 @@
 
 use aleph_core::Complex;
 
+/// SIMD-lane width (in **doubles**) for the SoA AVX-512 2q kernels.
+/// One `_mm512_loadu_pd` reads 8 contiguous `f64`s from either the `re`
+/// or `im` stream — i.e. 8 amplitudes' worth of one component.  Tier A
+/// of the SoA SIMD kernels therefore requires
+/// `1 << min(targets) >= LANES_SOA`.
+///
+/// Mirrors `aos.rs`'s in-function `LANES = 4` (which counts complex
+/// pairs per zmm, since AoS interleaves re/im in a `Vec<Complex>`).  The
+/// numeric difference reflects the layout: 8 lanes of one component
+/// (SoA) vs 4 lanes of paired components (AoS) — both fill one zmm.
+#[cfg(target_arch = "x86_64")]
+#[allow(dead_code)] // referenced only by the avx512 paths below
+const LANES_SOA: usize = 8;
+
 /// Apply a 3-qubit matrix to `targets = [t0, t1, t2]` (with external
 /// `controls`) in place over paired SoA storage. MSB convention:
 /// `targets[0]` is bit 2 of the matrix index, `targets[1]` is bit 1,
@@ -236,6 +250,409 @@ pub(crate) fn apply_2q_diagonal_scalar(
     }
 }
 
+/// Packed AVX-512 CNOT specialisation over paired SoA storage — Tier A
+/// (`1 << target >= LANES_SOA = 8` AND `control > target`).
+///
+/// Pure swap-pair traffic, mirror of `aos::apply_2q_cnot_avx512` (Task 6)
+/// but on paired `f64` streams.  For every outer index with bit
+/// `control = 1`, bit `target = 0`, and every external control set,
+/// swap the LANES_SOA-wide window starting at `outer` with the matching
+/// window at `outer | t_bit`.  Per `LANES_SOA` amps: 4 loads + 4 stores
+/// (two zmm loads per stream, two zmm stores per stream) — zero
+/// multiplies, bandwidth-bound.
+///
+/// **Outer-walk (bit-disjointness).** Identical renormalise-then-shift
+/// idiom as the AoS Tier A kernel.  The inner SIMD walk owns bits
+/// `[0, target)` via `j`, and bit `target` is split by the `t_bit`
+/// offset between the two halves of the swap pair.  The outer walk
+/// reserves bits `[0, target]` and injects `control` (fixed=true) plus
+/// every external control (fixed=true) in the above-target subspace,
+/// renormalised by `-(target + 1)`.
+///
+/// The "loose" form — `expand_with_fixed(k, &[(target, false),
+/// (control, true), ...])` — pins target and control to the right
+/// values but lets `k`'s free bits fall into positions below target
+/// where they collide with `j` in the inner walk.  Same bug class as
+/// the AoS Task 5/6 first-fix lessons.
+///
+/// # Safety
+///
+/// Caller MUST ensure all of:
+/// * Host CPU supports AVX-512F.
+/// * `1 << target >= LANES_SOA` (= 8) — inner SIMD walk has ≥ LANES_SOA
+///   contiguous amps per half on each stream.
+/// * `control > target` — Tier A's control-above-target invariant
+///   (matches AoS Tier A; the reverse orientation is not yet wired on
+///   the SoA path).
+/// * Every external control's qubit index is strictly greater than
+///   `max(control, target)`, so the renormalisation subtraction is safe
+///   and the outer-walk's bit-expansion never toggles an external
+///   control bit.
+/// * Distinct + in-range qubits; `re.len() == im.len()`.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f")]
+unsafe fn apply_2q_cnot_avx512(
+    re: &mut [f64],
+    im: &mut [f64],
+    control: u32,
+    target: u32,
+    external_controls: &[u32],
+) {
+    use core::arch::x86_64::*;
+
+    debug_assert_eq!(re.len(), im.len());
+    let t_bit = 1usize << target;
+    let len = re.len();
+
+    debug_assert!(
+        t_bit >= LANES_SOA,
+        "t_bit < LANES_SOA: dispatch contract violated"
+    );
+    debug_assert!(
+        control > target,
+        "Tier A requires control > target (Tier B not wired on SoA path)"
+    );
+    debug_assert!(
+        external_controls.iter().all(|&c| c > target.max(control)),
+        "external control at-or-below max(control, target)"
+    );
+
+    let re_ptr = re.as_mut_ptr();
+    let im_ptr = im.as_mut_ptr();
+
+    let inner_walk = |outer: usize| {
+        let mut j = 0usize;
+        while j + LANES_SOA <= t_bit {
+            let i0 = outer | j;
+            let i1 = i0 | t_bit;
+            // SAFETY: bit-disjointness invariant — `outer`'s bits ≥
+            // target+1 (with control + every external control bit set,
+            // `t_bit` clear), `j` ⊆ [0, target), `t_bit` is bit `target`.
+            // All three pairwise disjoint, so i0 + LANES_SOA ≤ outer +
+            // t_bit ≤ len and i1 + LANES_SOA ≤ outer + 2*t_bit ≤ len.
+            let ar = _mm512_loadu_pd(re_ptr.add(i0));
+            let ai = _mm512_loadu_pd(im_ptr.add(i0));
+            let br = _mm512_loadu_pd(re_ptr.add(i1));
+            let bi = _mm512_loadu_pd(im_ptr.add(i1));
+            _mm512_storeu_pd(re_ptr.add(i0), br);
+            _mm512_storeu_pd(im_ptr.add(i0), bi);
+            _mm512_storeu_pd(re_ptr.add(i1), ar);
+            _mm512_storeu_pd(im_ptr.add(i1), ai);
+            j += LANES_SOA;
+        }
+        debug_assert_eq!(j, t_bit);
+    };
+
+    let mut fixed_above: smallvec::SmallVec<[(u32, bool); 8]> = smallvec::SmallVec::new();
+    fixed_above.push((control - target - 1, true));
+    for &c in external_controls {
+        fixed_above.push((c - target - 1, true));
+    }
+    fixed_above.sort_unstable_by_key(|&(pos, _)| pos);
+
+    let n_qubits = len.trailing_zeros();
+    let outer_count = 1usize << (n_qubits - target - 2 - external_controls.len() as u32);
+    for k in 0..outer_count {
+        let outer = crate::kernels::expand_with_fixed(k, &fixed_above) << (target + 1);
+        inner_walk(outer);
+    }
+}
+
+/// Packed AVX-512 SWAP specialisation over paired SoA storage — Tier A
+/// (`1 << min(targets) >= LANES_SOA = 8`).
+///
+/// Mirror of `aos::apply_2q_swap_avx512` (Task 8) on paired `f64`
+/// streams.  Per outer block with bits `[0, lo]` zero, swap the
+/// LANES_SOA-wide window at `outer | lo_bit` with the window at
+/// `outer | hi_bit` on both streams — same swap-pair traffic as CNOT
+/// but with `hi_bit` as the partner offset instead of `t_bit`.
+///
+/// **Outer-walk.** Same renormalise-then-shift as the AoS analogue.
+/// The inner walk owns bits `[0, lo)` via `j`; bit `hi` enters as a
+/// `fixed=false` slot above lo (the inner walk visits both `hi=0` and
+/// `hi=1` per outer iter); external controls are `fixed=true` above lo.
+///
+/// # Safety
+///
+/// Caller MUST ensure all of:
+/// * Host CPU supports AVX-512F.
+/// * `1 << min(targets) >= LANES_SOA` (= 8) — inner SIMD walk has ≥
+///   LANES_SOA contiguous amps per half on each stream.
+/// * Distinct targets, both in qubit range.
+/// * Every external control's qubit index is strictly greater than
+///   `max(targets)`, so the renormalisation subtraction is safe and
+///   the outer-walk's bit-expansion never toggles an external control
+///   bit.
+/// * `re.len() == im.len()`.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f")]
+unsafe fn apply_2q_swap_avx512(
+    re: &mut [f64],
+    im: &mut [f64],
+    targets: [u32; 2],
+    external_controls: &[u32],
+) {
+    use core::arch::x86_64::*;
+
+    debug_assert_eq!(re.len(), im.len());
+    let lo = targets[0].min(targets[1]);
+    let hi = targets[0].max(targets[1]);
+    let lo_bit = 1usize << lo;
+    let hi_bit = 1usize << hi;
+    let len = re.len();
+
+    debug_assert!(
+        lo != hi,
+        "SWAP requires distinct targets: dispatch contract violated"
+    );
+    debug_assert!(
+        lo_bit >= LANES_SOA,
+        "lo_bit < LANES_SOA: dispatch contract violated"
+    );
+    debug_assert!(
+        external_controls.iter().all(|&c| c > hi),
+        "external control at-or-below hi: dispatch contract violated"
+    );
+
+    let re_ptr = re.as_mut_ptr();
+    let im_ptr = im.as_mut_ptr();
+
+    let inner_walk = |outer: usize| {
+        let mut j = 0usize;
+        while j + LANES_SOA <= lo_bit {
+            // SAFETY: bit-disjointness — `outer` ⊆ bits ≥ lo+1 with
+            // `hi` clear and every external control set; `j` ⊆ [0, lo);
+            // `lo_bit`/`hi_bit` are bits `lo`/`hi`.  All pairwise
+            // disjoint for both i_01 and i_10, so each + LANES_SOA ≤
+            // len.
+            let i_01 = outer | lo_bit | j;
+            let i_10 = outer | hi_bit | j;
+            let ar = _mm512_loadu_pd(re_ptr.add(i_01));
+            let ai = _mm512_loadu_pd(im_ptr.add(i_01));
+            let br = _mm512_loadu_pd(re_ptr.add(i_10));
+            let bi = _mm512_loadu_pd(im_ptr.add(i_10));
+            _mm512_storeu_pd(re_ptr.add(i_01), br);
+            _mm512_storeu_pd(im_ptr.add(i_01), bi);
+            _mm512_storeu_pd(re_ptr.add(i_10), ar);
+            _mm512_storeu_pd(im_ptr.add(i_10), ai);
+            j += LANES_SOA;
+        }
+        debug_assert_eq!(j, lo_bit);
+    };
+
+    let mut fixed_above: smallvec::SmallVec<[(u32, bool); 8]> = smallvec::SmallVec::new();
+    fixed_above.push((hi - lo - 1, false));
+    for &ec in external_controls {
+        fixed_above.push((ec - lo - 1, true));
+    }
+    fixed_above.sort_unstable_by_key(|&(pos, _)| pos);
+
+    let n_qubits = len.trailing_zeros();
+    let outer_count = 1usize << (n_qubits - lo - 2 - external_controls.len() as u32);
+    for k in 0..outer_count {
+        let outer = crate::kernels::expand_with_fixed(k, &fixed_above) << (lo + 1);
+        inner_walk(outer);
+    }
+}
+
+/// Packed AVX-512 CZ specialisation over paired SoA storage — Tier A
+/// (`1 << min(targets) >= LANES_SOA = 8`).
+///
+/// Mirror of `aos::apply_2q_cz_avx512` (Task 10) on paired `f64`
+/// streams.  Sign-flip every amp in the `(1, 1)` sub-block via a single
+/// `vxorpd` against the IEEE-754 sign-bit mask, applied independently
+/// to the `re` and `im` zmm registers.  Per LANES_SOA amps: 2 loads + 2
+/// xors + 2 stores ≈ 6 µops; zero multiplies, bandwidth-bound.
+///
+/// **Outer-walk.** Same renormalise-then-shift as the AoS analogue.
+/// `hi` enters `fixed_above` as `fixed=true` (we target the `(1,1)`
+/// sub-block); `lo_bit` is OR'd into `outer` after the shift so both
+/// target bits are set; external controls are `fixed=true` above lo.
+///
+/// # Safety
+///
+/// Same contract as `apply_2q_swap_avx512` above.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f")]
+unsafe fn apply_2q_cz_avx512(
+    re: &mut [f64],
+    im: &mut [f64],
+    targets: [u32; 2],
+    external_controls: &[u32],
+) {
+    use core::arch::x86_64::*;
+
+    debug_assert_eq!(re.len(), im.len());
+    let lo = targets[0].min(targets[1]);
+    let hi = targets[0].max(targets[1]);
+    let lo_bit = 1usize << lo;
+    let len = re.len();
+
+    debug_assert!(
+        lo != hi,
+        "CZ requires distinct targets: dispatch contract violated"
+    );
+    debug_assert!(
+        lo_bit >= LANES_SOA,
+        "lo_bit < LANES_SOA: dispatch contract violated"
+    );
+    debug_assert!(
+        external_controls.iter().all(|&c| c > hi),
+        "external control at-or-below hi: dispatch contract violated"
+    );
+
+    let re_ptr = re.as_mut_ptr();
+    let im_ptr = im.as_mut_ptr();
+    // Sign-mask: each double-lane has only its IEEE-754 sign bit set,
+    // so `vxorpd(z, sign_mask)` flips the sign of every double in `z` —
+    // equivalent to `z = -z` for both real and imaginary parts.
+    let sign_mask = _mm512_set1_pd(-0.0_f64);
+
+    let mut fixed_above: smallvec::SmallVec<[(u32, bool); 8]> = smallvec::SmallVec::new();
+    fixed_above.push((hi - lo - 1, true));
+    for &ec in external_controls {
+        fixed_above.push((ec - lo - 1, true));
+    }
+    fixed_above.sort_unstable_by_key(|&(pos, _)| pos);
+
+    let n_qubits = len.trailing_zeros();
+    let outer_count = 1usize << (n_qubits - lo - 2 - external_controls.len() as u32);
+    for k in 0..outer_count {
+        let base = crate::kernels::expand_with_fixed(k, &fixed_above) << (lo + 1);
+        // base has: bit hi = 1, every external_control bit = 1, bits
+        // [0, lo] all zero.  ORing in `lo_bit` sets bit `lo`, so the
+        // resulting `outer` lands on the (1, 1) sub-block.
+        let outer = base | lo_bit;
+        let mut j = 0usize;
+        while j + LANES_SOA <= lo_bit {
+            // SAFETY: bit-disjointness — `base` ⊆ bits ≥ lo+1 (hi set,
+            // every external control set), `lo_bit` is bit `lo`, `j`
+            // ⊆ [0, lo).  Pairwise disjoint, so `i = outer | j =
+            // base + lo_bit + j` and `i + LANES_SOA ≤ len`.
+            let i = outer | j;
+            let r = _mm512_loadu_pd(re_ptr.add(i));
+            let m = _mm512_loadu_pd(im_ptr.add(i));
+            _mm512_storeu_pd(re_ptr.add(i), _mm512_xor_pd(r, sign_mask));
+            _mm512_storeu_pd(im_ptr.add(i), _mm512_xor_pd(m, sign_mask));
+            j += LANES_SOA;
+        }
+        debug_assert_eq!(j, lo_bit);
+    }
+}
+
+/// Packed AVX-512 general-diagonal 2q specialisation over paired SoA
+/// storage — Tier A (`1 << min(targets) >= LANES_SOA = 8`).
+///
+/// Mirror of `aos::apply_2q_diagonal_avx512` (Task 11) on paired `f64`
+/// streams.  Per outer block we iterate the four `(q_hi, q_lo) ∈
+/// {0,1}²` sub-blocks; each sub-block multiplies LANES_SOA contiguous
+/// amps by a single broadcast `d[k]`.  The complex multiply expands to
+/// two-stream FMAs:
+///
+/// ```text
+/// new_re = re * d_re - im * d_im   ≈ vfmsub231pd(re, d_re_bc, vmulpd(im, d_im_bc))
+/// new_im = re * d_im + im * d_re   ≈ vfmadd231pd(im, d_re_bc, vmulpd(re, d_im_bc))
+/// ```
+///
+/// Per LANES_SOA amps per sub-block: ~6 µops (2 muls + 2 FMAs + 2
+/// stores plus 2 loads) ≈ 0.75 µops/amp.
+///
+/// **Sub-block to d[k] mapping.** Same disambiguation as the AoS
+/// analogue: `k` is defined by `targets[0]` (MSB) and `targets[1]`
+/// (LSB), but the outer-walk thinks in `(q_hi, q_lo)` coordinates.
+/// When `targets[0] < targets[1]` (`targets[0] = lo`), `k = (q_lo << 1)
+/// | q_hi`; otherwise the usual `k = (q_hi << 1) | q_lo`.
+///
+/// # Safety
+///
+/// Same contract as `apply_2q_swap_avx512` above.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f")]
+unsafe fn apply_2q_diagonal_avx512(
+    re: &mut [f64],
+    im: &mut [f64],
+    targets: [u32; 2],
+    external_controls: &[u32],
+    d: [Complex; 4],
+) {
+    use core::arch::x86_64::*;
+
+    debug_assert_eq!(re.len(), im.len());
+    let lo = targets[0].min(targets[1]);
+    let hi = targets[0].max(targets[1]);
+    let lo_bit = 1usize << lo;
+    let hi_bit = 1usize << hi;
+    let len = re.len();
+
+    debug_assert!(
+        lo != hi,
+        "2q-diagonal requires distinct targets: dispatch contract violated"
+    );
+    debug_assert!(
+        lo_bit >= LANES_SOA,
+        "lo_bit < LANES_SOA: dispatch contract violated"
+    );
+    debug_assert!(
+        external_controls.iter().all(|&c| c > hi),
+        "external control at-or-below hi: dispatch contract violated"
+    );
+
+    // Disambiguate which d[k] each (q_hi, q_lo) sub-block hits.  MSB
+    // convention: k bit 1 = targets[0], k bit 0 = targets[1].
+    let (d_for_hi0_lo0, d_for_hi0_lo1, d_for_hi1_lo0, d_for_hi1_lo1) = if targets[0] < targets[1] {
+        // targets[0] = lo, targets[1] = hi → k = (q_lo << 1) | q_hi
+        (d[0], d[2], d[1], d[3])
+    } else {
+        // targets[0] = hi, targets[1] = lo → k = (q_hi << 1) | q_lo
+        (d[0], d[1], d[2], d[3])
+    };
+
+    let re_ptr = re.as_mut_ptr();
+    let im_ptr = im.as_mut_ptr();
+
+    let multiply_block = |base: usize, d_k: Complex| {
+        let d_re_bc = _mm512_set1_pd(d_k.re);
+        let d_im_bc = _mm512_set1_pd(d_k.im);
+        let mut j = 0usize;
+        while j + LANES_SOA <= lo_bit {
+            // SAFETY: bit-disjointness (see doc-comment).  `base` ⊆
+            // bits ≥ lo+1 OR'd with at most {lo_bit, hi_bit}; `j` ⊆
+            // [0, lo).  Pairwise disjoint, so `i = base + j` and
+            // `i + LANES_SOA ≤ base + lo_bit ≤ len`.
+            let i = base | j;
+            let r = _mm512_loadu_pd(re_ptr.add(i));
+            let m = _mm512_loadu_pd(im_ptr.add(i));
+            // new_re = r * d_re - m * d_im
+            let new_r = _mm512_sub_pd(_mm512_mul_pd(r, d_re_bc), _mm512_mul_pd(m, d_im_bc));
+            // new_im = r * d_im + m * d_re
+            let new_m = _mm512_add_pd(_mm512_mul_pd(r, d_im_bc), _mm512_mul_pd(m, d_re_bc));
+            _mm512_storeu_pd(re_ptr.add(i), new_r);
+            _mm512_storeu_pd(im_ptr.add(i), new_m);
+            j += LANES_SOA;
+        }
+        debug_assert_eq!(j, lo_bit);
+    };
+
+    let mut fixed_above: smallvec::SmallVec<[(u32, bool); 8]> = smallvec::SmallVec::new();
+    fixed_above.push((hi - lo - 1, false));
+    for &ec in external_controls {
+        fixed_above.push((ec - lo - 1, true));
+    }
+    fixed_above.sort_unstable_by_key(|&(p, _)| p);
+
+    let n_qubits = len.trailing_zeros();
+    let outer_count = 1usize << (n_qubits - lo - 2 - external_controls.len() as u32);
+    for k in 0..outer_count {
+        let base = crate::kernels::expand_with_fixed(k, &fixed_above) << (lo + 1);
+        // base has: bit hi = 0, every external_control bit = 1, bits
+        // [0, lo] all zero.  Iterate the 4 sub-blocks:
+        multiply_block(base, d_for_hi0_lo0); // (q_hi=0, q_lo=0)
+        multiply_block(base | lo_bit, d_for_hi0_lo1); // (q_hi=0, q_lo=1)
+        multiply_block(base | hi_bit, d_for_hi1_lo0); // (q_hi=1, q_lo=0)
+        multiply_block(base | hi_bit | lo_bit, d_for_hi1_lo1); // (q_hi=1, q_lo=1)
+    }
+}
+
 /// Top-level SoA 2q dispatch.  Mirrors `aos::apply_2q` — see spec § 4.9.
 /// Detection order:
 /// 1. `classify_2q_permutation` → Identity / CnotHi / CnotLo / Swap fast paths.
@@ -281,24 +698,66 @@ pub(crate) fn apply_2q(
     apply_2q_dense_scalar(re, im, targets, controls, m);
 }
 
-/// Dispatch helper for SoA CNOT specialisations.  Placeholder routing
-/// to the scalar kernel; AVX-512 tiers land in Task 13 (mirror of AoS
-/// Tasks 6-8).
+/// Dispatch helper for SoA CNOT specialisations.  Routes to the Tier A
+/// AVX-512 kernel when the host + qubit orientation satisfies the
+/// safety contract (AVX-512F detected, `1 << target >= LANES_SOA`,
+/// `control > target`, every external control above `max(control,
+/// target)`); otherwise falls through to the scalar specialised
+/// kernel.  Mirror of `aos::dispatch_cnot` (Tier A only — SoA Tier B/C
+/// are not yet wired).
 fn dispatch_cnot_soa(re: &mut [f64], im: &mut [f64], control: u32, target: u32, controls: &[u32]) {
+    #[cfg(target_arch = "x86_64")]
+    {
+        if std::is_x86_feature_detected!("avx512f")
+            && (1usize << target) >= LANES_SOA
+            && control > target
+            && controls.iter().all(|&c| c > target.max(control))
+        {
+            // SAFETY: AVX-512F detected; `1 << target >= LANES_SOA`;
+            // `control > target`; every external control > max(control,
+            // target).  Distinct qubits + in-range are enforced by the
+            // parent `apply_gate` boundary.
+            unsafe {
+                apply_2q_cnot_avx512(re, im, control, target, controls);
+            }
+            return;
+        }
+    }
     apply_2q_cnot_scalar(re, im, control, target, controls);
 }
 
-/// Dispatch helper for SoA SWAP.  Placeholder routing to the scalar
-/// kernel; AVX-512 tiers land in Task 13 (mirror of AoS Task 9).
+/// Dispatch helper for SoA SWAP.  Routes to the Tier A AVX-512 kernel
+/// when the host + qubit orientation satisfies the safety contract;
+/// otherwise falls through to the scalar specialised kernel.  Mirror
+/// of `aos::dispatch_swap` (Tier A only).
 fn dispatch_swap_soa(re: &mut [f64], im: &mut [f64], targets: [u32; 2], controls: &[u32]) {
+    #[cfg(target_arch = "x86_64")]
+    {
+        let lo = targets[0].min(targets[1]);
+        let hi = targets[0].max(targets[1]);
+        if std::is_x86_feature_detected!("avx512f")
+            && (1usize << lo) >= LANES_SOA
+            && controls.iter().all(|&c| c > hi)
+        {
+            // SAFETY: AVX-512F detected; `1 << lo >= LANES_SOA`; every
+            // external control > hi; distinct qubits enforced by parent
+            // `apply_gate`.
+            unsafe {
+                apply_2q_swap_avx512(re, im, targets, controls);
+            }
+            return;
+        }
+    }
     apply_2q_swap_scalar(re, im, targets, controls);
 }
 
 /// Dispatch helper for the diagonal-4x4 branch (catches CZ,
-/// controlled-Phase, Rzz, user diagonals).  Placeholder routing to
-/// the scalar CZ kernel (when the matrix matches the CZ signature)
-/// or scalar general-diagonal kernel; AVX-512 tiers land in Task 13
-/// (mirror of AoS Tasks 10-11).
+/// controlled-Phase, Rzz, user diagonals).  Routes to the matching
+/// Tier A AVX-512 kernel (CZ via `apply_2q_cz_avx512`, general
+/// diagonal via `apply_2q_diagonal_avx512`) when the host + qubit
+/// orientation satisfies the safety contract; otherwise falls through
+/// to the scalar specialised kernels.  Mirror of
+/// `aos::dispatch_diagonal_or_cz` (Tier A only).
 fn dispatch_diagonal_or_cz_soa(
     re: &mut [f64],
     im: &mut [f64],
@@ -307,6 +766,29 @@ fn dispatch_diagonal_or_cz_soa(
     d: [Complex; 4],
     is_cz: bool,
 ) {
+    #[cfg(target_arch = "x86_64")]
+    {
+        let lo = targets[0].min(targets[1]);
+        let hi = targets[0].max(targets[1]);
+        if std::is_x86_feature_detected!("avx512f")
+            && (1usize << lo) >= LANES_SOA
+            && controls.iter().all(|&c| c > hi)
+        {
+            // SAFETY: AVX-512F detected; `1 << lo >= LANES_SOA`; every
+            // external control > hi; distinct qubits enforced by
+            // parent `apply_gate`.
+            if is_cz {
+                unsafe {
+                    apply_2q_cz_avx512(re, im, targets, controls);
+                }
+            } else {
+                unsafe {
+                    apply_2q_diagonal_avx512(re, im, targets, controls, d);
+                }
+            }
+            return;
+        }
+    }
     if is_cz {
         apply_2q_cz_scalar(re, im, targets, controls);
     } else {
@@ -714,6 +1196,250 @@ mod tests {
             apply_2q_cz_scalar(&mut rb, &mut ib, t, &[]);
             assert_re_im_close(&ra, &rb, 1e-14);
             assert_re_im_close(&ia, &ib, 1e-14);
+        }
+    }
+
+    /// Tier A AVX-512 CNOT equivalence vs scalar SoA CNOT.  All
+    /// `(control, target)` cases satisfy `control > target` and
+    /// `1 << target >= LANES_SOA = 8`, i.e. `target >= 3`.
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn soa_apply_2q_cnot_avx512_tier_a_matches_scalar() {
+        if !std::is_x86_feature_detected!("avx512f") {
+            return;
+        }
+        for n in [7u32, 8, 10] {
+            for (c, t) in [(4u32, 3), (5, 3), (6, 4), (7, 5)] {
+                if n <= c.max(t) {
+                    continue;
+                }
+                if (1usize << t) < LANES_SOA || c <= t {
+                    continue;
+                }
+                let (r0, i0) = random_re_im(n, 0xc01f_5a + n as u64);
+                let mut ra = r0.clone();
+                let mut ia = i0.clone();
+                let mut rb = r0;
+                let mut ib = i0;
+                apply_2q_cnot_scalar(&mut ra, &mut ia, c, t, &[]);
+                // SAFETY: AVX-512F detected; t_bit = 1<<t ≥ LANES_SOA;
+                // c > t (Tier A); no external controls.
+                unsafe {
+                    super::apply_2q_cnot_avx512(&mut rb, &mut ib, c, t, &[]);
+                }
+                assert_re_im_close(&ra, &rb, 1e-14);
+                assert_re_im_close(&ia, &ib, 1e-14);
+            }
+        }
+    }
+
+    /// Tier A AVX-512 SWAP equivalence vs scalar SoA SWAP.  All
+    /// `targets` cases satisfy `1 << min(targets) >= LANES_SOA = 8`.
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn soa_apply_2q_swap_avx512_tier_a_matches_scalar() {
+        if !std::is_x86_feature_detected!("avx512f") {
+            return;
+        }
+        for n in [8u32, 10] {
+            for t in [[3u32, 4], [3, 5], [4, 6], [5, 7]] {
+                let hi = t[0].max(t[1]);
+                if n <= hi {
+                    continue;
+                }
+                let lo = t[0].min(t[1]);
+                if (1usize << lo) < LANES_SOA {
+                    continue;
+                }
+                let (r0, i0) = random_re_im(n, 0x5a5a_de + n as u64);
+                let mut ra = r0.clone();
+                let mut ia = i0.clone();
+                let mut rb = r0;
+                let mut ib = i0;
+                apply_2q_swap_scalar(&mut ra, &mut ia, t, &[]);
+                // SAFETY: AVX-512F detected; lo_bit ≥ LANES_SOA;
+                // distinct targets; no external controls.
+                unsafe {
+                    super::apply_2q_swap_avx512(&mut rb, &mut ib, t, &[]);
+                }
+                assert_re_im_close(&ra, &rb, 1e-14);
+                assert_re_im_close(&ia, &ib, 1e-14);
+            }
+        }
+    }
+
+    /// Tier A AVX-512 CZ equivalence vs scalar SoA CZ.  All `targets`
+    /// cases satisfy `1 << min(targets) >= LANES_SOA = 8`.  Pure
+    /// sign-flip so 1e-15 tolerance is appropriate.
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn soa_apply_2q_cz_avx512_tier_a_matches_scalar() {
+        if !std::is_x86_feature_detected!("avx512f") {
+            return;
+        }
+        for n in [8u32, 10] {
+            for t in [[3u32, 4], [3, 5], [4, 6], [5, 7]] {
+                let hi = t[0].max(t[1]);
+                if n <= hi {
+                    continue;
+                }
+                let lo = t[0].min(t[1]);
+                if (1usize << lo) < LANES_SOA {
+                    continue;
+                }
+                let (r0, i0) = random_re_im(n, 0xfeed_cz + n as u64);
+                let mut ra = r0.clone();
+                let mut ia = i0.clone();
+                let mut rb = r0;
+                let mut ib = i0;
+                apply_2q_cz_scalar(&mut ra, &mut ia, t, &[]);
+                // SAFETY: AVX-512F detected; lo_bit ≥ LANES_SOA;
+                // distinct targets; no external controls.
+                unsafe {
+                    super::apply_2q_cz_avx512(&mut rb, &mut ib, t, &[]);
+                }
+                assert_re_im_close(&ra, &rb, 1e-15);
+                assert_re_im_close(&ia, &ib, 1e-15);
+            }
+        }
+    }
+
+    /// Tier A AVX-512 general-diagonal equivalence vs scalar SoA
+    /// diagonal.  Non-CZ d-tuple (the CZ path is exercised by the
+    /// dedicated CZ test above).  Exercises both `targets[0] <
+    /// targets[1]` and `targets[0] > targets[1]` to cover the
+    /// d-tuple disambiguation.
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn soa_apply_2q_diagonal_avx512_tier_a_matches_scalar() {
+        if !std::is_x86_feature_detected!("avx512f") {
+            return;
+        }
+        let d = [
+            Complex::new(0.6, 0.8),
+            Complex::new(-0.7, 0.71_428_571_428_571_43),
+            Complex::new(0.99, -0.141_421_356_237_309_5),
+            Complex::new(-0.5, -0.866_025_403_784_438_6),
+        ];
+        for n in [8u32, 10] {
+            for t in [[3u32, 4], [3, 5], [4, 6], [7, 5], [6, 4]] {
+                let hi = t[0].max(t[1]);
+                if n <= hi {
+                    continue;
+                }
+                let lo = t[0].min(t[1]);
+                if (1usize << lo) < LANES_SOA {
+                    continue;
+                }
+                let (r0, i0) = random_re_im(n, 0x1357_d2 + n as u64);
+                let mut ra = r0.clone();
+                let mut ia = i0.clone();
+                let mut rb = r0;
+                let mut ib = i0;
+                apply_2q_diagonal_scalar(&mut ra, &mut ia, t, &[], d);
+                // SAFETY: AVX-512F detected; lo_bit ≥ LANES_SOA;
+                // distinct targets; no external controls.
+                unsafe {
+                    super::apply_2q_diagonal_avx512(&mut rb, &mut ib, t, &[], d);
+                }
+                assert_re_im_close(&ra, &rb, 1e-14);
+                assert_re_im_close(&ia, &ib, 1e-14);
+            }
+        }
+    }
+
+    /// Portable indexing-coverage check for the SoA Tier A outer-walk
+    /// and inner-walk pattern shared by SWAP / CZ / diagonal.  Uses
+    /// only integer arithmetic (no AVX-512 intrinsics) so it runs on
+    /// aarch64 too; asserts every amp in the swap-pair subspace is
+    /// touched exactly once and every fixed-point (lo, hi) = (0, 0)
+    /// or (1, 1) amp is touched zero times.  Catches bit-collision
+    /// bugs in the renormalise-then-shift outer-walk that would
+    /// otherwise surface only on a real AVX-512 host.
+    #[test]
+    fn soa_apply_2q_tier_a_indexing_covers_state_exactly_once() {
+        // SWAP-shape (hi enters as fixed=false; both i_01 and i_10 get
+        // visited).  Same renormalisation pattern as the diagonal
+        // kernel sans the (1,1) sub-block enumeration — covering it
+        // here covers all four Tier A kernels' outer-walks.
+        let cases: &[(u32, [u32; 2], &[u32])] = &[(8, [3, 4], &[]), (10, [3, 5], &[7])];
+        for &(n_qubits, targets, external_controls) in cases {
+            let len = 1usize << n_qubits;
+            let lo = targets[0].min(targets[1]);
+            let hi = targets[0].max(targets[1]);
+            let lo_bit = 1usize << lo;
+            let hi_bit = 1usize << hi;
+            // LANES_SOA = 8 (one zmm of f64s); hard-coded here so the
+            // test stays portable to non-x86_64 (where the const is
+            // gated out).
+            let lanes = 8usize;
+
+            let mut fixed_above: smallvec::SmallVec<[(u32, bool); 8]> = smallvec::SmallVec::new();
+            fixed_above.push((hi - lo - 1, false));
+            for &ec in external_controls {
+                fixed_above.push((ec - lo - 1, true));
+            }
+            fixed_above.sort_unstable_by_key(|&(p, _)| p);
+
+            let outer_count = 1usize << (n_qubits - lo - 2 - external_controls.len() as u32);
+
+            let mut ec_mask = 0usize;
+            for &c in external_controls {
+                ec_mask |= 1usize << c;
+            }
+
+            let mut touched = vec![0u32; len];
+            for k in 0..outer_count {
+                let outer = crate::kernels::expand_with_fixed(k, &fixed_above) << (lo + 1);
+                assert_eq!(
+                    outer & ec_mask,
+                    ec_mask,
+                    "outer={outer:#b} missing ec bits {ec_mask:#b}"
+                );
+                assert_eq!(
+                    outer & hi_bit,
+                    0,
+                    "outer={outer:#b} has hi_bit={hi_bit:#b} set"
+                );
+                assert_eq!(
+                    outer & ((1usize << (lo + 1)) - 1),
+                    0,
+                    "outer={outer:#b} has bits set in [0, lo]"
+                );
+                for &off in &[lo_bit, hi_bit] {
+                    let mut j = 0usize;
+                    while j + lanes <= lo_bit {
+                        let i = outer | off | j;
+                        for d in 0..lanes {
+                            assert!(
+                                i + d < len,
+                                "n={n_qubits} t={targets:?}: OOB i+d={} len={}",
+                                i + d,
+                                len
+                            );
+                            touched[i + d] += 1;
+                        }
+                        j += lanes;
+                    }
+                }
+            }
+            for (idx, &count) in touched.iter().enumerate() {
+                let bit_lo = (idx & lo_bit) != 0;
+                let bit_hi = (idx & hi_bit) != 0;
+                let in_ec_subspace = (idx & ec_mask) == ec_mask;
+                let swap_pair_member = bit_lo ^ bit_hi;
+                let expected = if in_ec_subspace && swap_pair_member {
+                    1u32
+                } else {
+                    0u32
+                };
+                assert_eq!(
+                    count, expected,
+                    "n={n_qubits} t={targets:?}: amp {idx} touched {count} times \
+                     (expected {expected}; ec_subspace={in_ec_subspace} \
+                     swap_pair_member={swap_pair_member})"
+                );
+            }
         }
     }
 
