@@ -328,6 +328,217 @@ pub(crate) fn classify_1q_antidiag(m: &[[aleph_core::Complex; 2]; 2]) -> Option<
     None
 }
 
+/// Tolerance for 8×8 shape-detector functions (`is_identity_8x8`,
+/// `is_toffoli`, `is_ccz`). `SHAPE_8X8_TOL = 1e-12` admits FP64
+/// rounding drift (~1e-15) with five orders of margin, while still
+/// rejecting any experimentally visible mis-calibration (typ. ≥ 1e-6).
+/// Coarser than `DIAGONAL_EPS_SQ`/`PERM_TOL` (which guard inner-loop
+/// hot paths); these detectors are called once per gate dispatch, not
+/// per amplitude.
+// Allow dead_code: callers live in `apply_3q` dispatch which is added
+// in Task 6. The constant and functions are referenced by test code
+// already, but the lint fires for non-test (lib) usage before Task 6
+// wires them into the dispatch prelude.
+#[allow(dead_code)]
+const SHAPE_8X8_TOL: f64 = 1e-12;
+
+/// Returns true if `m` is within `SHAPE_8X8_TOL` of the 8×8 identity.
+///
+/// Used as the dispatch pre-check in `apply_3q` to skip the generic
+/// 3-qubit kernel entirely when the gate compiles to an identity (e.g.
+/// a global-phase-stripped no-op). ADR 0006: the component-wise
+/// magnitude test (`abs() > TOL`) already rejects NaN because
+/// `NaN > x` is `false`, which would incorrectly classify a NaN entry
+/// as "within tolerance". We therefore pair each real/imaginary check
+/// with an explicit `is_finite` reject so NaN-poisoned matrices fall
+/// through to the generic kernel.
+// Allow dead_code: dispatch wiring added in Task 6.
+#[allow(dead_code)]
+pub(crate) fn is_identity_8x8(m: &[[aleph_core::Complex; 8]; 8]) -> bool {
+    for (r, row) in m.iter().enumerate() {
+        for (c, entry) in row.iter().enumerate() {
+            let expected = if r == c { 1.0 } else { 0.0 };
+            if !entry.re.is_finite() || !entry.im.is_finite() {
+                return false;
+            }
+            if (entry.re - expected).abs() > SHAPE_8X8_TOL {
+                return false;
+            }
+            if entry.im.abs() > SHAPE_8X8_TOL {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// Returns true if `m` is within `SHAPE_8X8_TOL` of the canonical
+/// Toffoli (CCX) matrix: identity on rows 0..=5, then rows 6 ↔ 7
+/// swapped. MSB qubit ordering (ADR 0004): for `[q0, q1, q2]`, the
+/// basis state index is `(q0<<2)|(q1<<1)|q2`, so row 6 = `|110⟩` and
+/// row 7 = `|111⟩`. The CCX gate flips q2 when q0=q1=1, i.e. swaps
+/// `|110⟩ ↔ |111⟩`.
+///
+/// ADR 0006: explicit `is_finite` reject before every magnitude test —
+/// same rationale as `is_identity_8x8`.
+// Allow dead_code: dispatch wiring added in Task 6.
+#[allow(dead_code)]
+pub(crate) fn is_toffoli(m: &[[aleph_core::Complex; 8]; 8]) -> bool {
+    // Rows 0..=5: identity rows.
+    for (r, row) in m.iter().enumerate().take(6) {
+        for (c, entry) in row.iter().enumerate() {
+            let expected = if r == c { 1.0 } else { 0.0 };
+            if !entry.re.is_finite() || !entry.im.is_finite() {
+                return false;
+            }
+            if (entry.re - expected).abs() > SHAPE_8X8_TOL {
+                return false;
+            }
+            if entry.im.abs() > SHAPE_8X8_TOL {
+                return false;
+            }
+        }
+    }
+    // Row 6: e6 -> e7  ⇒  m[6][7] = 1, all other entries 0.
+    for (c, entry) in m[6].iter().enumerate() {
+        let expected = if c == 7 { 1.0 } else { 0.0 };
+        if !entry.re.is_finite() || !entry.im.is_finite() {
+            return false;
+        }
+        if (entry.re - expected).abs() > SHAPE_8X8_TOL {
+            return false;
+        }
+        if entry.im.abs() > SHAPE_8X8_TOL {
+            return false;
+        }
+    }
+    // Row 7: e7 -> e6  ⇒  m[7][6] = 1, all other entries 0.
+    for (c, entry) in m[7].iter().enumerate() {
+        let expected = if c == 6 { 1.0 } else { 0.0 };
+        if !entry.re.is_finite() || !entry.im.is_finite() {
+            return false;
+        }
+        if (entry.re - expected).abs() > SHAPE_8X8_TOL {
+            return false;
+        }
+        if entry.im.abs() > SHAPE_8X8_TOL {
+            return false;
+        }
+    }
+    true
+}
+
+/// Returns true if `m` is within `SHAPE_8X8_TOL` of the canonical
+/// CCZ matrix: diagonal with d[0..6] = +1 and d[7] = -1. MSB qubit
+/// ordering (ADR 0004): d[7] corresponds to basis state `|111⟩`, so
+/// the CCZ gate sign-flips the state with all three qubits set.
+///
+/// ADR 0006: explicit `is_finite` reject before every magnitude test —
+/// same rationale as `is_identity_8x8`.
+// Allow dead_code: dispatch wiring added in Task 6.
+#[allow(dead_code)]
+pub(crate) fn is_ccz(m: &[[aleph_core::Complex; 8]; 8]) -> bool {
+    for (r, row) in m.iter().enumerate() {
+        for (c, entry) in row.iter().enumerate() {
+            let expected_re = match (r, c) {
+                (i, j) if i == j && i < 7 => 1.0,
+                (7, 7) => -1.0,
+                _ => 0.0,
+            };
+            if !entry.re.is_finite() || !entry.im.is_finite() {
+                return false;
+            }
+            if (entry.re - expected_re).abs() > SHAPE_8X8_TOL {
+                return false;
+            }
+            if entry.im.abs() > SHAPE_8X8_TOL {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+#[cfg(test)]
+mod shape_8x8_tests {
+    use super::*;
+    use aleph_core::Complex;
+
+    // Diagonal assignment `m[i][i]` requires the same index for row and column,
+    // which cannot be expressed as a single iterator; suppress the lint here.
+    #[allow(clippy::needless_range_loop)]
+    fn identity_8x8() -> [[Complex; 8]; 8] {
+        let z = Complex::new(0.0, 0.0);
+        let o = Complex::new(1.0, 0.0);
+        let mut m = [[z; 8]; 8];
+        for i in 0..8 {
+            m[i][i] = o;
+        }
+        m
+    }
+
+    #[allow(clippy::needless_range_loop)]
+    fn toffoli_8x8() -> [[Complex; 8]; 8] {
+        // Identity rows 0..=5; swap rows 6 ↔ 7.
+        let z = Complex::new(0.0, 0.0);
+        let o = Complex::new(1.0, 0.0);
+        let mut m = [[z; 8]; 8];
+        for i in 0..6 {
+            m[i][i] = o;
+        }
+        m[6][7] = o;
+        m[7][6] = o;
+        m
+    }
+
+    #[allow(clippy::needless_range_loop)]
+    fn ccz_8x8() -> [[Complex; 8]; 8] {
+        let z = Complex::new(0.0, 0.0);
+        let o = Complex::new(1.0, 0.0);
+        let mut m = [[z; 8]; 8];
+        for i in 0..7 {
+            m[i][i] = o;
+        }
+        m[7][7] = Complex::new(-1.0, 0.0);
+        m
+    }
+
+    #[test]
+    fn identity_detected() {
+        assert!(is_identity_8x8(&identity_8x8()));
+        assert!(!is_identity_8x8(&toffoli_8x8()));
+        assert!(!is_identity_8x8(&ccz_8x8()));
+    }
+
+    #[test]
+    fn toffoli_detected() {
+        assert!(is_toffoli(&toffoli_8x8()));
+        assert!(!is_toffoli(&identity_8x8()));
+        assert!(!is_toffoli(&ccz_8x8()));
+    }
+
+    #[test]
+    fn ccz_detected() {
+        assert!(is_ccz(&ccz_8x8()));
+        assert!(!is_ccz(&identity_8x8()));
+        assert!(!is_ccz(&toffoli_8x8()));
+    }
+
+    #[test]
+    fn toffoli_tolerates_tiny_noise() {
+        let mut m = toffoli_8x8();
+        m[0][1] = Complex::new(1e-14, 0.0);
+        assert!(is_toffoli(&m));
+    }
+
+    #[test]
+    fn toffoli_rejects_visible_noise() {
+        let mut m = toffoli_8x8();
+        m[0][1] = Complex::new(1e-6, 0.0);
+        assert!(!is_toffoli(&m));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::control_mask;
