@@ -337,9 +337,11 @@ pub(crate) fn apply_1q_y_scalar(
 /// Scalar generic anti-diagonal kernel. Full complex multiply on the
 /// two off-diagonal entries + swap.
 ///
-/// `m = [[0, a], [b, 0]]`. Following the `apply_1q` convention where
-/// `amps[i] = m[0][0]*z0 + m[0][1]*z1` and `amps[j] = m[1][0]*z0 + m[1][1]*z1`:
-/// `amps[i0] ← a * amps[i1]`, `amps[i1] ← b * amps[i0]`.
+/// `m = [[0, a], [b, 0]]`. With `i = base index (target-bit clear)` and
+/// `j = i | (1 << target)`, the `apply_1q` row-multiply
+/// `amps[i] = m[0][0]*z0 + m[0][1]*z1`, `amps[j] = m[1][0]*z0 + m[1][1]*z1`
+/// collapses (since `m[0][0] = m[1][1] = 0`) to
+/// `amps[i] ← a * amps[j]_old`, `amps[j] ← b * amps[i]_old`.
 #[allow(dead_code)] // wired into dispatch in T3
 pub(crate) fn apply_1q_antidiag_scalar(
     amps: &mut [Complex],
