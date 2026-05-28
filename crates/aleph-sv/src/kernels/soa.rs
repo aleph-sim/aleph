@@ -1374,11 +1374,101 @@ pub(crate) fn apply_1q(
     m: &[[Complex; 2]; 2],
 ) {
     debug_assert_eq!(re.len(), im.len());
-    // Diagonal fast path (P1-06).  Same heuristic as the AoS path.
+
+    // 1. Diagonal fast path (P1-06).
     if super::is_diagonal_2x2(m) {
         apply_1q_diagonal_soa(re, im, target, controls, m[0][0], m[1][1]);
         return;
     }
+
+    // 2. Anti-diagonal fast path (P1-05). Per-arm dispatch picks
+    // AVX-512 in T9/T10; T8 wires the scalar fallback chain.
+    if super::is_antidiagonal_2x2(m) {
+        match super::classify_1q_antidiag(m) {
+            Some(super::Perm1qKind::X) => {
+                #[cfg(target_arch = "x86_64")]
+                {
+                    if std::is_x86_feature_detected!("avx512f")
+                        && controls.iter().all(|&c| c > target)
+                    {
+                        if (1usize << target) >= 8 {
+                            // SAFETY: feature detected + Tier-A SoA contract.
+                            unsafe {
+                                apply_1q_x_soa_avx512(re, im, target, controls);
+                            }
+                            return;
+                        } else if target <= 2
+                            && re.len().is_multiple_of(8)
+                            && controls.iter().all(|&c| c >= 3)
+                        {
+                            // SAFETY: feature detected + Tier-B SoA contract.
+                            unsafe {
+                                apply_1q_x_soa_avx512_lowbit(re, im, target, controls);
+                            }
+                            return;
+                        }
+                    }
+                }
+                apply_1q_x_soa_scalar(re, im, target, controls);
+                return;
+            }
+            Some(super::Perm1qKind::YPos) => {
+                #[cfg(target_arch = "x86_64")]
+                {
+                    if std::is_x86_feature_detected!("avx512f")
+                        && (1usize << target) >= 8
+                        && controls.iter().all(|&c| c > target)
+                    {
+                        // SAFETY: feature detected + Tier-A SoA contract.
+                        unsafe {
+                            apply_1q_y_soa_avx512(re, im, target, controls, 1.0);
+                        }
+                        return;
+                    }
+                }
+                apply_1q_y_soa_scalar(re, im, target, controls, 1.0);
+                return;
+            }
+            Some(super::Perm1qKind::YNeg) => {
+                #[cfg(target_arch = "x86_64")]
+                {
+                    if std::is_x86_feature_detected!("avx512f")
+                        && (1usize << target) >= 8
+                        && controls.iter().all(|&c| c > target)
+                    {
+                        // SAFETY: feature detected + Tier-A SoA contract.
+                        unsafe {
+                            apply_1q_y_soa_avx512(re, im, target, controls, -1.0);
+                        }
+                        return;
+                    }
+                }
+                apply_1q_y_soa_scalar(re, im, target, controls, -1.0);
+                return;
+            }
+            None => {
+                #[cfg(target_arch = "x86_64")]
+                {
+                    if std::is_x86_feature_detected!("avx512f")
+                        && (1usize << target) >= 8
+                        && controls.iter().all(|&c| c > target)
+                    {
+                        // SAFETY: feature detected + Tier-A SoA contract.
+                        unsafe {
+                            apply_1q_antidiag_soa_avx512(
+                                re, im, target, controls, m[0][1], m[1][0],
+                            );
+                        }
+                        return;
+                    }
+                }
+                apply_1q_antidiag_soa_scalar(re, im, target, controls, m[0][1], m[1][0]);
+                return;
+            }
+        }
+    }
+
+    // 3. Generic 2×2 path (scalar with LLVM auto-vec; same as before).
     let t_bit = 1usize << target;
     let ctrl_mask = super::control_mask(controls);
     let len = re.len();
@@ -1390,12 +1480,10 @@ pub(crate) fn apply_1q(
             let a0_im = im[i];
             let a1_re = re[j];
             let a1_im = im[j];
-            // row 0
             re[i] =
                 m[0][0].re * a0_re - m[0][0].im * a0_im + m[0][1].re * a1_re - m[0][1].im * a1_im;
             im[i] =
                 m[0][0].re * a0_im + m[0][0].im * a0_re + m[0][1].re * a1_im + m[0][1].im * a1_re;
-            // row 1
             re[j] =
                 m[1][0].re * a0_re - m[1][0].im * a0_im + m[1][1].re * a1_re - m[1][1].im * a1_im;
             im[j] =
@@ -1441,6 +1529,429 @@ pub(crate) fn apply_1q_diagonal_soa(
         i += 1;
     }
 }
+
+/// Scalar Pauli-X kernel on SoA streams. Swaps both `re` and `im`
+/// at index pairs `(i, i | (1 << target))` for every `i` with target
+/// bit clear and every control bit set.
+pub(crate) fn apply_1q_x_soa_scalar(re: &mut [f64], im: &mut [f64], target: u32, controls: &[u32]) {
+    debug_assert_eq!(re.len(), im.len());
+    let t_bit = 1usize << target;
+    let ctrl_mask = super::control_mask(controls);
+    let len = re.len();
+    let mut i = 0usize;
+    while i < len {
+        if i & t_bit == 0 && (i & ctrl_mask) == ctrl_mask {
+            let j = i | t_bit;
+            re.swap(i, j);
+            im.swap(i, j);
+        }
+        i += 1;
+    }
+}
+
+/// Scalar Pauli-Y kernel on SoA streams. Per pair `(i, j)`:
+///   re[i], im[i] = phase_sign *  im[j], -phase_sign * re[j]
+///   re[j], im[j] = -phase_sign * im[i_old], phase_sign * re[i_old]
+/// `phase_sign = +1.0` is YPos (canonical); `-1.0` is YNeg.
+pub(crate) fn apply_1q_y_soa_scalar(
+    re: &mut [f64],
+    im: &mut [f64],
+    target: u32,
+    controls: &[u32],
+    phase_sign: f64,
+) {
+    debug_assert_eq!(re.len(), im.len());
+    debug_assert!(phase_sign == 1.0 || phase_sign == -1.0);
+    let t_bit = 1usize << target;
+    let ctrl_mask = super::control_mask(controls);
+    let len = re.len();
+    let mut i = 0usize;
+    while i < len {
+        if i & t_bit == 0 && (i & ctrl_mask) == ctrl_mask {
+            let j = i | t_bit;
+            let r0 = re[i];
+            let i0 = im[i];
+            let r1 = re[j];
+            let i1 = im[j];
+            re[i] = phase_sign * i1;
+            im[i] = -phase_sign * r1;
+            re[j] = -phase_sign * i0;
+            im[j] = phase_sign * r0;
+        }
+        i += 1;
+    }
+}
+
+/// Scalar generic anti-diagonal kernel on SoA. `m = [[0, a], [b, 0]]`.
+/// `new[i] = a * amps[j]_old`, `new[j] = b * amps[i]_old`.
+/// (Corrected form: `a` applies to `j` index, `b` applies to `i` index,
+/// matching `m[0][1]` → row 0 col 1 and `m[1][0]` → row 1 col 0.)
+pub(crate) fn apply_1q_antidiag_soa_scalar(
+    re: &mut [f64],
+    im: &mut [f64],
+    target: u32,
+    controls: &[u32],
+    a: Complex,
+    b: Complex,
+) {
+    debug_assert_eq!(re.len(), im.len());
+    let t_bit = 1usize << target;
+    let ctrl_mask = super::control_mask(controls);
+    let len = re.len();
+    let mut i = 0usize;
+    while i < len {
+        if i & t_bit == 0 && (i & ctrl_mask) == ctrl_mask {
+            let j = i | t_bit;
+            let r0 = re[i];
+            let i0 = im[i];
+            let r1 = re[j];
+            let i1 = im[j];
+            // new[i] = a * (r1, i1)
+            re[i] = a.re * r1 - a.im * i1;
+            im[i] = a.re * i1 + a.im * r1;
+            // new[j] = b * (r0, i0)
+            re[j] = b.re * r0 - b.im * i0;
+            im[j] = b.re * i0 + b.im * r0;
+        }
+        i += 1;
+    }
+}
+
+/// AVX-512 Pauli-X on SoA streams (Tier A).
+///
+/// # Safety
+/// * Host must support AVX-512F.
+/// * `1usize << target ≥ LANES_SOA = 8`.
+/// * Every control > target.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f")]
+unsafe fn apply_1q_x_soa_avx512(re: &mut [f64], im: &mut [f64], target: u32, controls: &[u32]) {
+    use core::arch::x86_64::*;
+
+    const LANES: usize = 8;
+    let target_bit = 1usize << target;
+    debug_assert!(target_bit >= LANES);
+    debug_assert!(controls.iter().all(|&c| c > target));
+
+    let re_ptr = re.as_mut_ptr();
+    let im_ptr = im.as_mut_ptr();
+    let len = re.len();
+
+    let outer_iter = |block: usize| {
+        let mut j = 0usize;
+        while j + LANES <= target_bit {
+            let i0 = block | j;
+            let i1 = block | target_bit | j;
+            // SAFETY: in-bounds by outer-walk construction.
+            let r0 = _mm512_loadu_pd(re_ptr.add(i0));
+            let r1 = _mm512_loadu_pd(re_ptr.add(i1));
+            let m0 = _mm512_loadu_pd(im_ptr.add(i0));
+            let m1 = _mm512_loadu_pd(im_ptr.add(i1));
+            _mm512_storeu_pd(re_ptr.add(i0), r1);
+            _mm512_storeu_pd(re_ptr.add(i1), r0);
+            _mm512_storeu_pd(im_ptr.add(i0), m1);
+            _mm512_storeu_pd(im_ptr.add(i1), m0);
+            j += LANES;
+        }
+        debug_assert_eq!(j, target_bit);
+    };
+
+    if controls.is_empty() {
+        let outer_step = target_bit << 1;
+        let mut block = 0usize;
+        while block < len {
+            outer_iter(block);
+            block += outer_step;
+        }
+        return;
+    }
+
+    let mut fixed_above: smallvec::SmallVec<[(u32, bool); 8]> = smallvec::SmallVec::new();
+    for &c in controls {
+        fixed_above.push((c - target - 1, true));
+    }
+    fixed_above.sort_unstable_by_key(|&(pos, _)| pos);
+
+    let n_qubits = len.trailing_zeros();
+    let outer_count = 1usize << (n_qubits - target - 1 - controls.len() as u32);
+    for k in 0..outer_count {
+        let block = crate::kernels::expand_with_fixed(k, &fixed_above) << (target + 1);
+        outer_iter(block);
+    }
+}
+
+/// AVX-512 Pauli-Y on SoA streams (Tier A).
+///
+/// For YPos (phase_sign=+1):
+///   re[i0_block] ←  im[i1_block]    im[i0_block] ← -re[i1_block]
+///   re[i1_block] ← -im[i0_block]    im[i1_block] ←  re[i0_block]
+///
+/// Sign flip via `_mm512_xor_pd` with broadcast `-0.0` mask.
+///
+/// # Safety
+/// Same as `apply_1q_x_soa_avx512`. `phase_sign ∈ {+1,-1}`.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f")]
+unsafe fn apply_1q_y_soa_avx512(
+    re: &mut [f64],
+    im: &mut [f64],
+    target: u32,
+    controls: &[u32],
+    phase_sign: f64,
+) {
+    use core::arch::x86_64::*;
+
+    const LANES: usize = 8;
+    debug_assert!(phase_sign == 1.0 || phase_sign == -1.0);
+    let target_bit = 1usize << target;
+    debug_assert!(target_bit >= LANES);
+    debug_assert!(controls.iter().all(|&c| c > target));
+
+    let sign_mask = _mm512_set1_pd(-0.0f64); // toggles sign bit on xor
+    let zero_mask = _mm512_set1_pd(0.0f64);
+    // YPos pattern:
+    //   new_re[i0] =  im[i1]   → no sign flip       (xor with zero_mask)
+    //   new_im[i0] = -re[i1]   → sign flip          (xor with sign_mask)
+    //   new_re[i1] = -im[i0]   → sign flip          (xor with sign_mask)
+    //   new_im[i1] =  re[i0]   → no sign flip       (xor with zero_mask)
+    // YNeg: every sign flips.
+    let (mask_new_re_i0, mask_new_im_i0, mask_new_re_i1, mask_new_im_i1) = if phase_sign == 1.0 {
+        (zero_mask, sign_mask, sign_mask, zero_mask)
+    } else {
+        (sign_mask, zero_mask, zero_mask, sign_mask)
+    };
+
+    let re_ptr = re.as_mut_ptr();
+    let im_ptr = im.as_mut_ptr();
+    let len = re.len();
+
+    let outer_iter = |block: usize| {
+        let mut j = 0usize;
+        while j + LANES <= target_bit {
+            let i0 = block | j;
+            let i1 = block | target_bit | j;
+            // SAFETY: in-bounds.
+            let r0 = _mm512_loadu_pd(re_ptr.add(i0));
+            let r1 = _mm512_loadu_pd(re_ptr.add(i1));
+            let m0 = _mm512_loadu_pd(im_ptr.add(i0));
+            let m1 = _mm512_loadu_pd(im_ptr.add(i1));
+            _mm512_storeu_pd(re_ptr.add(i0), _mm512_xor_pd(m1, mask_new_re_i0));
+            _mm512_storeu_pd(im_ptr.add(i0), _mm512_xor_pd(r1, mask_new_im_i0));
+            _mm512_storeu_pd(re_ptr.add(i1), _mm512_xor_pd(m0, mask_new_re_i1));
+            _mm512_storeu_pd(im_ptr.add(i1), _mm512_xor_pd(r0, mask_new_im_i1));
+            j += LANES;
+        }
+        debug_assert_eq!(j, target_bit);
+    };
+
+    if controls.is_empty() {
+        let outer_step = target_bit << 1;
+        let mut block = 0usize;
+        while block < len {
+            outer_iter(block);
+            block += outer_step;
+        }
+        return;
+    }
+
+    let mut fixed_above: smallvec::SmallVec<[(u32, bool); 8]> = smallvec::SmallVec::new();
+    for &c in controls {
+        fixed_above.push((c - target - 1, true));
+    }
+    fixed_above.sort_unstable_by_key(|&(pos, _)| pos);
+
+    let n_qubits = len.trailing_zeros();
+    let outer_count = 1usize << (n_qubits - target - 1 - controls.len() as u32);
+    for k in 0..outer_count {
+        let block = crate::kernels::expand_with_fixed(k, &fixed_above) << (target + 1);
+        outer_iter(block);
+    }
+}
+
+/// AVX-512 generic anti-diagonal on SoA streams (Tier A).
+///
+/// `m = [[0, a], [b, 0]]`. new[i] = a * old[j]; new[j] = b * old[i].
+/// (CORRECTED math: m[0][1]=a goes to new_i0, m[1][0]=b goes to new_i1.
+///  Plan's original prose had a/b swapped; T2/T6 oracle-verified the
+///  correct form on EPYC.)
+///
+/// Complex multiply on SoA: (new_re, new_im) = (s.re * z.re - s.im * z.im,
+///                                              s.re * z.im + s.im * z.re).
+///
+/// # Safety
+/// Same as `apply_1q_x_soa_avx512`.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f")]
+unsafe fn apply_1q_antidiag_soa_avx512(
+    re: &mut [f64],
+    im: &mut [f64],
+    target: u32,
+    controls: &[u32],
+    a: Complex,
+    b: Complex,
+) {
+    use core::arch::x86_64::*;
+
+    const LANES: usize = 8;
+    let target_bit = 1usize << target;
+    debug_assert!(target_bit >= LANES);
+    debug_assert!(controls.iter().all(|&c| c > target));
+
+    let ar = _mm512_set1_pd(a.re);
+    let ai = _mm512_set1_pd(a.im);
+    let br = _mm512_set1_pd(b.re);
+    let bi = _mm512_set1_pd(b.im);
+
+    let re_ptr = re.as_mut_ptr();
+    let im_ptr = im.as_mut_ptr();
+    let len = re.len();
+
+    let outer_iter = |block: usize| {
+        let mut j = 0usize;
+        while j + LANES <= target_bit {
+            let i0 = block | j;
+            let i1 = block | target_bit | j;
+            // SAFETY: in-bounds.
+            let r0 = _mm512_loadu_pd(re_ptr.add(i0));
+            let r1 = _mm512_loadu_pd(re_ptr.add(i1));
+            let m0 = _mm512_loadu_pd(im_ptr.add(i0));
+            let m1 = _mm512_loadu_pd(im_ptr.add(i1));
+
+            // new[i0] = a * (r1, m1)
+            // new_re_i0 = a.re * r1 - a.im * m1
+            // new_im_i0 = a.re * m1 + a.im * r1
+            let new_r_i0 = _mm512_fmsub_pd(ar, r1, _mm512_mul_pd(ai, m1));
+            let new_m_i0 = _mm512_fmadd_pd(ar, m1, _mm512_mul_pd(ai, r1));
+
+            // new[i1] = b * (r0, m0)
+            let new_r_i1 = _mm512_fmsub_pd(br, r0, _mm512_mul_pd(bi, m0));
+            let new_m_i1 = _mm512_fmadd_pd(br, m0, _mm512_mul_pd(bi, r0));
+
+            _mm512_storeu_pd(re_ptr.add(i0), new_r_i0);
+            _mm512_storeu_pd(im_ptr.add(i0), new_m_i0);
+            _mm512_storeu_pd(re_ptr.add(i1), new_r_i1);
+            _mm512_storeu_pd(im_ptr.add(i1), new_m_i1);
+
+            j += LANES;
+        }
+        debug_assert_eq!(j, target_bit);
+    };
+
+    if controls.is_empty() {
+        let outer_step = target_bit << 1;
+        let mut block = 0usize;
+        while block < len {
+            outer_iter(block);
+            block += outer_step;
+        }
+        return;
+    }
+
+    let mut fixed_above: smallvec::SmallVec<[(u32, bool); 8]> = smallvec::SmallVec::new();
+    for &c in controls {
+        fixed_above.push((c - target - 1, true));
+    }
+    fixed_above.sort_unstable_by_key(|&(pos, _)| pos);
+
+    let n_qubits = len.trailing_zeros();
+    let outer_count = 1usize << (n_qubits - target - 1 - controls.len() as u32);
+    for k in 0..outer_count {
+        let block = crate::kernels::expand_with_fixed(k, &fixed_above) << (target + 1);
+        outer_iter(block);
+    }
+}
+
+/// AVX-512 Pauli-X on SoA streams (Tier B): `target ∈ {0, 1, 2}`.
+///
+/// Each `__m512d` of `re[]` (resp. `im[]`) holds 8 amplitudes; since
+/// `1 << target < LANES_SOA = 8`, both elements of every swap pair live
+/// inside a single zmm register.  A lane permute swaps them in-register:
+///
+/// * `target = 0` → swap adjacent doubles within each 128-bit lane:
+///   `_mm512_permute_pd::<0x55>` (control `01 01 01 01`).
+/// * `target = 1` → swap doubles at distance 2 within each 256-bit lane:
+///   `_mm512_permutex_pd::<0x4E>` (control `01 00 11 10`).
+/// * `target = 2` → swap halves of the zmm:
+///   `_mm512_permutexvar_pd` with index `[4,5,6,7,0,1,2,3]`.
+///
+/// For X there is no sign change — same permute applied to both `re` and `im`.
+///
+/// Control mask: if `controls` is non-empty, only outer blocks satisfying
+/// `(block & ctrl_mask) == ctrl_mask` are processed.  The contract
+/// `controls.iter().all(|&c| c > target)` ensures every control bit is
+/// above the 3-bit window, so the mask test on `block` is safe (block
+/// steps by LANES_SOA = 8, which clears bits 0..=2 — i.e. exactly the
+/// target-bit positions).
+///
+/// # Safety
+/// * Host must support AVX-512F.
+/// * `target ∈ {0, 1, 2}` (i.e. `1 << target < LANES_SOA = 8`).
+/// * Every control > target (i.e. `controls.iter().all(|&c| c > target)`).
+/// * `re.len() % LANES_SOA == 0`.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f")]
+unsafe fn apply_1q_x_soa_avx512_lowbit(
+    re: &mut [f64],
+    im: &mut [f64],
+    target: u32,
+    controls: &[u32],
+) {
+    use core::arch::x86_64::*;
+
+    const LANES: usize = 8;
+    debug_assert!((1usize << target) < LANES);
+    // Tier-B SoA contract: the block-level `(block & ctrl_mask) == ctrl_mask`
+    // gate only inspects bits ≥ log2(LANES) = 3 (since block addresses are
+    // LANES-aligned). Any control at qubit index < 3 would alias to 0 in
+    // `block` and the gate would silently no-op for amplitudes that DO have
+    // the control bit set within the LANES-block. Dispatch must filter such
+    // configurations to the scalar fallback.
+    debug_assert!(controls.iter().all(|&c| c >= 3));
+    debug_assert_eq!(re.len() % LANES, 0);
+
+    // Index vector for target=2 swap (lanes [0..3] ↔ lanes [4..7] within zmm).
+    // permutexvar lane k receives src[idx[k]]; lane-order idx = [4,5,6,7,0,1,2,3].
+    // _mm512_set_epi64 args: arg 0 → lane 7, arg 7 → lane 0 (reversed).
+    let idx_t2 = _mm512_set_epi64(3, 2, 1, 0, 7, 6, 5, 4);
+    let ctrl_mask = if controls.is_empty() {
+        0
+    } else {
+        crate::kernels::control_mask(controls)
+    };
+
+    let re_ptr = re.as_mut_ptr();
+    let im_ptr = im.as_mut_ptr();
+    let len = re.len();
+
+    let mut block = 0usize;
+    while block + LANES <= len {
+        if (block & ctrl_mask) == ctrl_mask {
+            // SAFETY: in-bounds — block + LANES ≤ len by loop invariant.
+            let r = _mm512_loadu_pd(re_ptr.add(block));
+            let m = _mm512_loadu_pd(im_ptr.add(block));
+            let (r_p, m_p) = match target {
+                0 => (_mm512_permute_pd::<0x55>(r), _mm512_permute_pd::<0x55>(m)),
+                1 => (_mm512_permutex_pd::<0x4E>(r), _mm512_permutex_pd::<0x4E>(m)),
+                2 => (
+                    _mm512_permutexvar_pd(idx_t2, r),
+                    _mm512_permutexvar_pd(idx_t2, m),
+                ),
+                _ => unreachable!("Tier-B SoA: target out of {{0, 1, 2}}"),
+            };
+            _mm512_storeu_pd(re_ptr.add(block), r_p);
+            _mm512_storeu_pd(im_ptr.add(block), m_p);
+        }
+        block += LANES;
+    }
+}
+
+// Tier-B Y and generic anti-diag SoA: NOT a separate SIMD kernel.
+// The SoA dispatch routes both directly to the scalar kernels in
+// `apply_1q_y_soa_scalar` / `apply_1q_antidiag_soa_scalar` when the
+// Tier-A contract fails (target < 3 OR controls below 3). Lane-by-lane
+// sign-mask construction on split re/im streams at target ∈ {0,1,2}
+// is bug-prone and the workload payoff is minimal. See ADR 0011
+// Open Question 1.
 
 #[cfg(test)]
 mod tests {
@@ -2336,5 +2847,228 @@ mod tests {
         apply_2q_dense_scalar(&mut rb, &mut ib, [0, 1], &[2], &m);
         assert_re_im_close(&ra, &rb, 1e-14);
         assert_re_im_close(&ia, &ib, 1e-14);
+    }
+
+    // ----- P1-05 T8: SoA anti-diagonal scalar oracles vs AoS scalars -----
+
+    #[test]
+    fn apply_1q_x_soa_scalar_matches_aos() {
+        let mut re: Vec<f64> = (0..16).map(|k| k as f64).collect();
+        let mut im: Vec<f64> = (0..16).map(|k| -(k as f64)).collect();
+        let mut amps_aos: Vec<Complex> = (0..16)
+            .map(|k| Complex::new(k as f64, -(k as f64)))
+            .collect();
+        super::apply_1q_x_soa_scalar(&mut re, &mut im, 2, &[]);
+        aos::apply_1q_x_scalar(&mut amps_aos, 2, &[]);
+        for k in 0..16 {
+            assert!((re[k] - amps_aos[k].re).abs() < 1e-12);
+            assert!((im[k] - amps_aos[k].im).abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn apply_1q_y_soa_scalar_pos_matches_aos() {
+        let mut re: Vec<f64> = (0..16).map(|k| k as f64 * 0.13).collect();
+        let mut im: Vec<f64> = (0..16).map(|k| k as f64 * 0.27 + 1.0).collect();
+        let mut amps_aos: Vec<Complex> = re
+            .iter()
+            .zip(im.iter())
+            .map(|(&r, &i)| Complex::new(r, i))
+            .collect();
+        super::apply_1q_y_soa_scalar(&mut re, &mut im, 1, &[], 1.0);
+        aos::apply_1q_y_scalar(&mut amps_aos, 1, &[], 1.0);
+        for k in 0..16 {
+            assert!((re[k] - amps_aos[k].re).abs() < 1e-12);
+            assert!((im[k] - amps_aos[k].im).abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn apply_1q_antidiag_soa_scalar_matches_aos() {
+        let a = Complex::new(0.6, 0.8);
+        let b = Complex::new(0.6, -0.8);
+        let mut re: Vec<f64> = (0..16).map(|k| k as f64 * 0.05).collect();
+        let mut im: Vec<f64> = (0..16).map(|k| k as f64 * 0.11 - 0.3).collect();
+        let mut amps_aos: Vec<Complex> = re
+            .iter()
+            .zip(im.iter())
+            .map(|(&r, &i)| Complex::new(r, i))
+            .collect();
+        super::apply_1q_antidiag_soa_scalar(&mut re, &mut im, 2, &[], a, b);
+        aos::apply_1q_antidiag_scalar(&mut amps_aos, 2, &[], a, b);
+        for k in 0..16 {
+            assert!((re[k] - amps_aos[k].re).abs() < 1e-12);
+            assert!((im[k] - amps_aos[k].im).abs() < 1e-12);
+        }
+    }
+
+    // ----- P1-05 T9: SoA Tier-A AVX-512 anti-diagonal kernels vs scalar -----
+
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn apply_1q_x_soa_avx512_matches_scalar() {
+        if !std::is_x86_feature_detected!("avx512f") {
+            return;
+        }
+        // n=8, target=3 → target_bit=8 = LANES_SOA.
+        let mut re_avx: Vec<f64> = (0..256).map(|k| k as f64 * 0.05).collect();
+        let mut im_avx: Vec<f64> = (0..256).map(|k| k as f64 * 0.11 - 0.5).collect();
+        let mut re_sca = re_avx.clone();
+        let mut im_sca = im_avx.clone();
+        // SAFETY: avx512 detected + target_bit=8 >= LANES_SOA + no controls.
+        unsafe {
+            super::apply_1q_x_soa_avx512(&mut re_avx, &mut im_avx, 3, &[]);
+        }
+        super::apply_1q_x_soa_scalar(&mut re_sca, &mut im_sca, 3, &[]);
+        assert_eq!(re_avx, re_sca);
+        assert_eq!(im_avx, im_sca);
+    }
+
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn apply_1q_y_soa_avx512_pos_matches_scalar() {
+        if !std::is_x86_feature_detected!("avx512f") {
+            return;
+        }
+        let mut re_avx: Vec<f64> = (0..256).map(|k| k as f64 * 0.07 - 2.0).collect();
+        let mut im_avx: Vec<f64> = (0..256).map(|k| k as f64 * 0.13 + 1.0).collect();
+        let mut re_sca = re_avx.clone();
+        let mut im_sca = im_avx.clone();
+        // SAFETY: avx512 detected + target_bit=8 >= LANES_SOA + no controls.
+        unsafe {
+            super::apply_1q_y_soa_avx512(&mut re_avx, &mut im_avx, 3, &[], 1.0);
+        }
+        super::apply_1q_y_soa_scalar(&mut re_sca, &mut im_sca, 3, &[], 1.0);
+        for k in 0..256 {
+            assert!((re_avx[k] - re_sca[k]).abs() < 1e-12);
+            assert!((im_avx[k] - im_sca[k]).abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn apply_1q_antidiag_soa_avx512_matches_scalar() {
+        if !std::is_x86_feature_detected!("avx512f") {
+            return;
+        }
+        let a = Complex::new(0.6, 0.8);
+        let b = Complex::new(0.6, -0.8);
+        let mut re_avx: Vec<f64> = (0..256).map(|k| k as f64 * 0.05).collect();
+        let mut im_avx: Vec<f64> = (0..256).map(|k| -(k as f64) * 0.03).collect();
+        let mut re_sca = re_avx.clone();
+        let mut im_sca = im_avx.clone();
+        // SAFETY: avx512 detected + target_bit=8 >= LANES_SOA + no controls.
+        unsafe {
+            super::apply_1q_antidiag_soa_avx512(&mut re_avx, &mut im_avx, 3, &[], a, b);
+        }
+        super::apply_1q_antidiag_soa_scalar(&mut re_sca, &mut im_sca, 3, &[], a, b);
+        for k in 0..256 {
+            assert!((re_avx[k] - re_sca[k]).abs() < 1e-12);
+            assert!((im_avx[k] - im_sca[k]).abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn apply_1q_x_soa_avx512_lowbit_all_targets_match_scalar() {
+        if !std::is_x86_feature_detected!("avx512f") {
+            return;
+        }
+        for &target in &[0u32, 1u32, 2u32] {
+            let mut re_avx: Vec<f64> = (0..64).map(|k| k as f64 * 0.05).collect();
+            let mut im_avx: Vec<f64> = (0..64).map(|k| -(k as f64) * 0.07).collect();
+            let mut re_sca = re_avx.clone();
+            let mut im_sca = im_avx.clone();
+            // SAFETY: avx512 detected + target ∈ {0,1,2} + no controls +
+            // len = 64 is divisible by LANES_SOA = 8.
+            unsafe {
+                super::apply_1q_x_soa_avx512_lowbit(&mut re_avx, &mut im_avx, target, &[]);
+            }
+            super::apply_1q_x_soa_scalar(&mut re_sca, &mut im_sca, target, &[]);
+            assert_eq!(re_avx, re_sca, "target={}", target);
+            assert_eq!(im_avx, im_sca, "target={}", target);
+        }
+    }
+
+    // ---- P1-05 review B2: SoA Tier-B dispatch boundary oracle ----
+
+    #[test]
+    fn apply_1q_y_soa_dispatch_low_target_routes_to_scalar() {
+        // n=3 (8 amps), target=0. SoA dispatch: 1<<0=1 < LANES_SOA=8 → no Tier-A.
+        // YPos arm has NO Tier-B branch, so falls through to scalar. Verify
+        // equivalence to apply_1q_y_soa_scalar directly.
+        let z = Complex::new(0.0, 0.0);
+        let pi = Complex::new(0.0, 1.0);
+        let ni = Complex::new(0.0, -1.0);
+        let pauli_y_pos = [[z, ni], [pi, z]];
+        let mut re_dispatch: Vec<f64> = (0..8).map(|k| k as f64 * 0.13 - 0.5).collect();
+        let mut im_dispatch: Vec<f64> = (0..8).map(|k| k as f64 * 0.27 + 1.0).collect();
+        let mut re_direct = re_dispatch.clone();
+        let mut im_direct = im_dispatch.clone();
+        super::apply_1q(&mut re_dispatch, &mut im_dispatch, 0, &[], &pauli_y_pos);
+        super::apply_1q_y_soa_scalar(&mut re_direct, &mut im_direct, 0, &[], 1.0);
+        for k in 0..8 {
+            assert!(
+                (re_dispatch[k] - re_direct[k]).abs() < 1e-12,
+                "re[{}] mismatch",
+                k
+            );
+            assert!(
+                (im_dispatch[k] - im_direct[k]).abs() < 1e-12,
+                "im[{}] mismatch",
+                k
+            );
+        }
+    }
+
+    #[test]
+    fn apply_1q_antidiag_soa_dispatch_low_target_routes_to_scalar() {
+        // Same shape for generic anti-diag.
+        // n=3 (8 amps), target=1. SoA dispatch: 1<<1=2 < LANES_SOA=8 → no Tier-A.
+        // Generic anti-diag arm has NO Tier-B branch, falls through to scalar.
+        let z = Complex::new(0.0, 0.0);
+        let a = Complex::new(0.6, 0.8);
+        let b = Complex::new(0.6, -0.8);
+        let m = [[z, a], [b, z]];
+        let mut re_dispatch: Vec<f64> = (0..8).map(|k| k as f64 * 0.05).collect();
+        let mut im_dispatch: Vec<f64> = (0..8).map(|k| k as f64 * 0.11 - 0.3).collect();
+        let mut re_direct = re_dispatch.clone();
+        let mut im_direct = im_dispatch.clone();
+        super::apply_1q(&mut re_dispatch, &mut im_dispatch, 1, &[], &m);
+        super::apply_1q_antidiag_soa_scalar(&mut re_direct, &mut im_direct, 1, &[], a, b);
+        for k in 0..8 {
+            assert!(
+                (re_dispatch[k] - re_direct[k]).abs() < 1e-12,
+                "re[{}] mismatch: dispatch={} direct={}",
+                k,
+                re_dispatch[k],
+                re_direct[k]
+            );
+            assert!(
+                (im_dispatch[k] - im_direct[k]).abs() < 1e-12,
+                "im[{}] mismatch: dispatch={} direct={}",
+                k,
+                im_dispatch[k],
+                im_direct[k]
+            );
+        }
+    }
+
+    // ---- P1-05 T12: SoA boundary-n test ----
+
+    #[test]
+    fn apply_1q_x_soa_dispatch_boundary_n() {
+        // n=2 < LANES_SOA=8 → scalar path; n=3..=5 spans the tier-B target range.
+        for n in 2..=5u32 {
+            let len = 1usize << n;
+            let mut re: Vec<f64> = (0..len).map(|k| k as f64 * 0.13).collect();
+            let mut im: Vec<f64> = (0..len).map(|k| -(k as f64) * 0.07).collect();
+            let mut re_ref = re.clone();
+            let mut im_ref = im.clone();
+            super::apply_1q(&mut re, &mut im, 0, &[], &pauli_x());
+            super::apply_1q_x_soa_scalar(&mut re_ref, &mut im_ref, 0, &[]);
+            assert_eq!(re, re_ref, "n={}", n);
+            assert_eq!(im, im_ref, "n={}", n);
+        }
     }
 }

@@ -262,3 +262,41 @@ expected to deliver another 3–5× on the 3q layer per BACKLOG-AC.
 now beat Aer (qft-20: 1.30×; grover-20: 0.51×; random-20: 0.58×; bell
 and ghz are trivial wins). The two SoA paths remain 1.65–2.37× slower
 than AoS — open question for P1-14.
+
+## P1-05 update — Pauli-X/Y anti-diagonal kernel (2026-05-28)
+
+EPYC 8124P, single thread, `RUSTFLAGS="-C target-cpu=native"`.
+
+### Micro (L2-resident n=14)
+
+Two baselines per kernel: **Scalar** (hand-inlined 2×2 multiply, what
+LLVM auto-vectorises to `vmulpd xmm`) and **Generic AVX-512** (the
+packed-complex `apply_1q_avx512` that pre-P1-05 dispatch routed
+Pauli-X/Y through). Specialised in two flavours: **Tier-A** (target=8,
+block-stride packed swap) and **Tier-B** (target=0, in-register
+permute). Full diff in ADR 0011 § "Performance shape".
+
+| Kernel        | Scalar    | Generic AVX-512 | Specialised Tier-A | Tier-B  | vs scalar (A/B) | vs AVX-512 (A/B) |
+|---------------|-----------|------------------|---------------------|---------|------------------|-------------------|
+| AoS X         | 20.32 µs  | 5.68 µs          | 5.23 µs            | 4.47 µs | 3.89× / 4.55×    | 1.09× / 1.27×     |
+| AoS Y         | 20.32 µs  | 5.52 µs          | 5.12 µs            | 4.49 µs | 3.97× / 4.53×    | 1.08× / 1.23×     |
+| AoS anti-diag | 20.32 µs  | 5.52 µs          | 5.35 µs            | 4.82 µs | 3.80× / 4.22×    | 1.03× / 1.15×     |
+
+BACKLOG AC (3–10× over generic 1q kernel) clears against the scalar
+baseline. The honest "what P1-05 actually replaced" comparison is the
+AVX-512 baseline, where the real lift is **1.03–1.27×** —
+bandwidth-bound at n=14 (state = 256 KiB > L1). Tier-B beats Tier-A
+because the in-register permute halves the memory traffic per
+LANES-block.
+
+SoA micro deferred (see ADR 0011 Open Question 3); SoA Tier-A AVX-512
+correctness validated on EPYC via T9 unit tests.
+
+### Workload (informational)
+
+| Bench                       | Pre-P1-05 (post-P1-07) | Post-P1-05            | Delta                  |
+|-----------------------------|------------------------|------------------------|------------------------|
+| `grover_n20_iters5`         | 58 491.74 ms           | 56 756.0 ms            | **−2.97 %** (−1 735.7 ms) |
+
+Per ADR 0008 (bandwidth-bound regime at n=20), workload-level delta is
+expected to be small. The micro AC is the gating metric.

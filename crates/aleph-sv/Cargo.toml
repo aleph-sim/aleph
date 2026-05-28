@@ -7,6 +7,12 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 
+[features]
+## Exposes `aleph_sv::kernels` as `pub mod` for criterion benches that
+## need direct kernel access (see `lib.rs`: `#[cfg(any(test, feature =
+## "internal-bench"))] pub mod kernels`). Never enable in downstream crates.
+internal-bench = []
+
 [dependencies]
 aleph-core    = { path = "../aleph-core" }
 aleph-ir      = { path = "../aleph-ir" }
@@ -35,3 +41,8 @@ harness = false
 [[bench]]
 name = "soa_vs_naive"
 harness = false
+
+[[bench]]
+name = "pauli_xy"
+harness = false
+required-features = ["internal-bench"]

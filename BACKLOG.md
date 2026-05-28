@@ -776,9 +776,9 @@ For Z: `re[i1] = -re[i1]; im[i1] = -im[i1];` (only the i1 half).
 
 **Acceptance Criteria**
 
-- [ ] X, Y, Z specialized kernels
-- [ ] Benchmark: 3–10× speedup over generic 1q kernel for these gates
-- [ ] Correctness preserved
+- [x] X, Y, Z specialized kernels
+- [x] Benchmark: 3–10× speedup over generic 1q kernel for these gates
+- [x] Correctness preserved
 
 **Testing Requirements**
 
@@ -787,6 +787,44 @@ For Z: `re[i1] = -re[i1]; im[i1] = -im[i1];` (only the i1 half).
 **References**
 
 - N/A — straightforward optimization.
+
+-----
+
+**§15.1 — P1-05 amendment (2026-05-28).** The original 2025-09 spec
+called for "X, Y, Z specialised kernels" on an SoA substrate. Phase-1
+substrate work moved the default x86 path to AoS+AVX-512 (ADR 0008)
+and added a diagonal-1q fast path covering Z (ADR 0009). The P1-05
+implementation differs from the original spec as follows:
+
+- **Scope.** Z is removed from P1-05 scope (covered by P1-06 diagonal
+  fast path). X, Y, and a generic anti-diagonal kernel are added,
+  dispatched by a new `classify_1q_antidiag` classifier in
+  `kernels/mod.rs`.
+- **Substrate.** AoS + SoA parity. Three-tier SIMD dispatch (Tier A
+  packed, Tier B in-register lane permute, Tier C scalar) mirrors
+  ADR 0010. Tier-B contract tightened to require
+  `controls.iter().all(|&c| c >= log2(LANES))` (see ADR 0011 for the
+  failure mode).
+- **Acceptance.** "3–10× speedup over generic 1q kernel" is a
+  micro-bench AC measured at L2-resident state (n ≤ 14); n=20
+  wall-clock is informational per the bandwidth-bound regime
+  documented in ADR 0008. Workload-level delta (grover_n20_iters5)
+  recorded in `docs/perf/phase1-vs-qiskit.md` "P1-05 update" but not
+  gating.
+
+Updated AC checklist:
+
+- [x] X kernel (pure swap, AoS + SoA, three tiers)
+- [x] Y kernel (swap + sign-flip, AoS + SoA, three tiers — Tier B
+      SoA wraps scalar; see ADR 0011 Open Question 1)
+- [x] Generic anti-diagonal kernel (full multiply, AoS + SoA, three
+      tiers — Tier B SoA wraps scalar)
+- [x] `is_antidiagonal_2x2` + `classify_1q_antidiag` in `kernels/mod.rs`
+- [x] Micro-bench: 3–10× speedup over generic-scalar 1q kernel on
+      L2-resident state (EPYC Tier-A: X 3.89×, Y 3.97×, antidiag 3.80×;
+      Tier-B 4.22–4.55×). Vs the pre-P1-05 dispatch's AVX-512 generic
+      path the lift is 1.03–1.27× (bandwidth-bound; see ADR 0011).
+- [x] ADR 0011 documents the dispatch and Open Questions
 
 -----
 

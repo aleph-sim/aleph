@@ -10,8 +10,19 @@
 //!   (P1-01). Same algorithms, layout chosen for SIMD-friendly
 //!   sequential reads — explicit vectorisation lands in P1-03 / P1-04.
 
+// In normal builds `aos` and `soa` are crate-private. When the
+// `internal-bench` feature is active (criterion benches) they are
+// exposed publicly so the bench binary — which compiles as an external
+// crate — can reach `aleph_sv::kernels::aos::apply_1q`.
+#[cfg(not(feature = "internal-bench"))]
 pub(crate) mod aos;
+#[cfg(feature = "internal-bench")]
+pub mod aos;
+
+#[cfg(not(feature = "internal-bench"))]
 pub(crate) mod soa;
+#[cfg(feature = "internal-bench")]
+pub mod soa;
 
 /// Bitwise-OR of `1 << q` over `controls`. Layout-agnostic — used by
 /// both AoS and SoA kernels to compute the control gate-mask.
@@ -239,6 +250,82 @@ pub(crate) fn is_cz_signature(d: [aleph_core::Complex; 4]) -> bool {
         && close(d[1], 1.0, 0.0)
         && close(d[2], 1.0, 0.0)
         && close(d[3], -1.0, 0.0)
+}
+
+/// Returns true iff both diagonal entries of a 2×2 matrix have
+/// squared magnitude below `DIAGONAL_EPS_SQ`. Mirror of
+/// `is_diagonal_2x2`. Used as the dispatch heuristic for the 1q
+/// anti-diagonal fast path (P1-05).
+///
+/// ADR 0006: explicit `is_finite` reject precedes the magnitude
+/// test. A NaN-poisoned diagonal entry compares `false` for every
+/// `<`, which would silently classify the matrix as anti-diagonal
+/// and route the NaN to a swap-only path (which only consults
+/// `m[0][1]`, `m[1][0]`). Rejecting non-finite diagonals forces the
+/// generic kernel to see and propagate the NaN. Three Phase-0 review
+/// rounds regressed on the equivalent guard for `is_diagonal_2x2`.
+#[inline]
+pub(crate) fn is_antidiagonal_2x2(m: &[[aleph_core::Complex; 2]; 2]) -> bool {
+    let diag = [&m[0][0], &m[1][1]];
+    for entry in diag {
+        if !entry.re.is_finite() || !entry.im.is_finite() {
+            return false;
+        }
+        if entry.norm_sqr() >= DIAGONAL_EPS_SQ {
+            return false;
+        }
+    }
+    true
+}
+
+/// Canonical anti-diagonal 1q matrices recognised by the dispatch.
+/// Anti-diagonals not in this set (e.g. arbitrary phased swaps) fall
+/// through to `apply_1q_antidiag_*` which does the full complex
+/// multiply on `m[0][1]` and `m[1][0]`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Perm1qKind {
+    /// `X = [[0, 1], [1, 0]]` — pure swap, zero arithmetic.
+    X,
+    /// `Y = [[0, -i], [i, 0]]` — canonical Pauli-Y.
+    YPos,
+    /// `Y' = [[0, +i], [-i, 0]]` — anti-Pauli-Y. Rare but trivial extension.
+    YNeg,
+}
+
+/// Classifies a 4-entry anti-diagonal matrix as one of `{X, YPos, YNeg}`
+/// or `None` (= caller dispatches to generic anti-diagonal kernel).
+///
+/// Caller MUST have already established `is_antidiagonal_2x2(m)`.
+/// Component-wise comparison within `PERM_TOL = 1e-14`. Component-wise
+/// (not `(z - target).norm_sqr() < PERM_TOL`) because `norm_sqr` is
+/// effectively `|z - target|² < PERM_TOL` ⇒ `|z - target| <
+/// sqrt(PERM_TOL) ≈ 1e-7`, seven orders looser than the documented
+/// tolerance. (Same mistake caught in `is_cz_signature` during P1-07
+/// review.)
+///
+/// NaN handling: if `m[0][1]` or `m[1][0]` is non-finite, every
+/// `close()` predicate yields `false` (NaN comparisons), so the
+/// function returns `None` and the caller routes to the generic
+/// anti-diagonal kernel, which propagates NaN through its complex
+/// multiply. No explicit `is_finite` guard needed here.
+#[inline]
+pub(crate) fn classify_1q_antidiag(m: &[[aleph_core::Complex; 2]; 2]) -> Option<Perm1qKind> {
+    let a = m[0][1]; // upper-right
+    let b = m[1][0]; // lower-left
+    let close = |z: aleph_core::Complex, re: f64, im: f64| {
+        (z.re - re).abs() < PERM_TOL && (z.im - im).abs() < PERM_TOL
+    };
+
+    if close(a, 1.0, 0.0) && close(b, 1.0, 0.0) {
+        return Some(Perm1qKind::X);
+    }
+    if close(a, 0.0, -1.0) && close(b, 0.0, 1.0) {
+        return Some(Perm1qKind::YPos);
+    }
+    if close(a, 0.0, 1.0) && close(b, 0.0, -1.0) {
+        return Some(Perm1qKind::YNeg);
+    }
+    None
 }
 
 #[cfg(test)]
@@ -615,5 +702,207 @@ mod tests {
         let mut m = cnot_hi_matrix();
         m[2][3] = z(1.0 + 1e-15, 0.0); // within PERM_TOL = 1e-14
         assert_eq!(classify_2q_permutation(&m), Some(Perm2qKind::CnotHi));
+    }
+
+    // ---- is_antidiagonal_2x2 ----------------------------------------
+
+    #[test]
+    fn is_antidiagonal_2x2_pauli_x() {
+        let zero = aleph_core::Complex::new(0.0, 0.0);
+        let o = aleph_core::Complex::new(1.0, 0.0);
+        let m = [[zero, o], [o, zero]];
+        assert!(super::is_antidiagonal_2x2(&m));
+    }
+
+    #[test]
+    fn is_antidiagonal_2x2_pauli_y() {
+        let zero = aleph_core::Complex::new(0.0, 0.0);
+        let pi = aleph_core::Complex::new(0.0, 1.0);
+        let ni = aleph_core::Complex::new(0.0, -1.0);
+        let m = [[zero, ni], [pi, zero]];
+        assert!(super::is_antidiagonal_2x2(&m));
+    }
+
+    #[test]
+    fn is_antidiagonal_2x2_rejects_hadamard() {
+        let s = aleph_core::Complex::new(std::f64::consts::FRAC_1_SQRT_2, 0.0);
+        let m = [[s, s], [s, -s]];
+        assert!(!super::is_antidiagonal_2x2(&m));
+    }
+
+    #[test]
+    fn is_antidiagonal_2x2_rejects_pauli_z() {
+        let zero = aleph_core::Complex::new(0.0, 0.0);
+        let o = aleph_core::Complex::new(1.0, 0.0);
+        let no = aleph_core::Complex::new(-1.0, 0.0);
+        let m = [[o, zero], [zero, no]];
+        assert!(!super::is_antidiagonal_2x2(&m));
+    }
+
+    #[test]
+    fn is_antidiagonal_2x2_rejects_nan_diagonal() {
+        let zero = aleph_core::Complex::new(0.0, 0.0);
+        let o = aleph_core::Complex::new(1.0, 0.0);
+        let nan = aleph_core::Complex::new(f64::NAN, 0.0);
+        let m = [[nan, o], [o, zero]];
+        assert!(!super::is_antidiagonal_2x2(&m));
+    }
+
+    // ---- classify_1q_antidiag ----------------------------------------
+
+    #[test]
+    fn classify_1q_antidiag_pauli_x() {
+        let zero = aleph_core::Complex::new(0.0, 0.0);
+        let o = aleph_core::Complex::new(1.0, 0.0);
+        let m = [[zero, o], [o, zero]];
+        assert_eq!(super::classify_1q_antidiag(&m), Some(super::Perm1qKind::X));
+    }
+
+    #[test]
+    fn classify_1q_antidiag_pauli_y() {
+        let zero = aleph_core::Complex::new(0.0, 0.0);
+        let pi = aleph_core::Complex::new(0.0, 1.0);
+        let ni = aleph_core::Complex::new(0.0, -1.0);
+        assert_eq!(
+            super::classify_1q_antidiag(&[[zero, ni], [pi, zero]]),
+            Some(super::Perm1qKind::YPos)
+        );
+        assert_eq!(
+            super::classify_1q_antidiag(&[[zero, pi], [ni, zero]]),
+            Some(super::Perm1qKind::YNeg)
+        );
+    }
+
+    #[test]
+    fn classify_1q_antidiag_generic_anti() {
+        // [[0, e^{iπ/3}], [e^{-iπ/3}, 0]] — anti-diag but not Pauli.
+        let zero = aleph_core::Complex::new(0.0, 0.0);
+        let a = aleph_core::Complex::new(0.5, 0.8660254037844386); // e^{iπ/3}: |a|²=0.25+0.75=1
+        let b = aleph_core::Complex::new(0.5, -0.8660254037844386); // e^{-iπ/3}
+        let m = [[zero, a], [b, zero]];
+        assert!(super::classify_1q_antidiag(&m).is_none());
+    }
+
+    #[test]
+    fn classify_1q_antidiag_nan_off_diagonal_returns_none() {
+        let zero = aleph_core::Complex::new(0.0, 0.0);
+        let nan = aleph_core::Complex::new(f64::NAN, 0.0);
+        let o = aleph_core::Complex::new(1.0, 0.0);
+        assert!(super::classify_1q_antidiag(&[[zero, nan], [o, zero]]).is_none());
+    }
+
+    // ---- P1-05 T11: portable indexing-coverage test (integer-only, no FP, no SIMD) ----
+
+    mod indexing_coverage {
+        use super::super::{control_mask, expand_with_fixed};
+        use std::collections::HashSet;
+
+        /// Reproduce the anti-diagonal kernel's pair enumeration as
+        /// integer-only operations. Returns the set of (i0, i1) pairs the
+        /// kernel would touch.
+        fn enumerate_pairs(n_qubits: u32, target: u32, controls: &[u32]) -> Vec<(usize, usize)> {
+            let len = 1usize << n_qubits;
+            let t_bit = 1usize << target;
+            let ctrl_mask = control_mask(controls);
+            let mut out = Vec::new();
+            for i in 0..len {
+                if i & t_bit == 0 && (i & ctrl_mask) == ctrl_mask {
+                    out.push((i, i | t_bit));
+                }
+            }
+            out
+        }
+
+        /// Reproduce the SIMD outer-walk's pair enumeration using
+        /// `expand_with_fixed`. MUST equal `enumerate_pairs` element-wise
+        /// (after sorting) for every (target, controls, n) triple.
+        fn enumerate_simd_outer_walk(
+            n_qubits: u32,
+            target: u32,
+            controls: &[u32],
+        ) -> Vec<(usize, usize)> {
+            let t_bit = 1usize << target;
+            // Tier-A SIMD outer-walk (mirror of apply_1q_x_avx512's controlled path):
+            if controls.is_empty() {
+                let mut pairs = Vec::new();
+                let outer_step = t_bit << 1;
+                let mut block = 0usize;
+                while block < (1usize << n_qubits) {
+                    for j in 0..t_bit {
+                        pairs.push((block | j, block | t_bit | j));
+                    }
+                    block += outer_step;
+                }
+                return pairs;
+            }
+            let mut fixed_above: Vec<(u32, bool)> =
+                controls.iter().map(|&c| (c - target - 1, true)).collect();
+            fixed_above.sort_unstable_by_key(|&(p, _)| p);
+            let outer_count = 1usize << (n_qubits - target - 1 - controls.len() as u32);
+            let mut pairs = Vec::new();
+            for k in 0..outer_count {
+                let block = expand_with_fixed(k, &fixed_above) << (target + 1);
+                for j in 0..t_bit {
+                    pairs.push((block | j, block | t_bit | j));
+                }
+            }
+            pairs
+        }
+
+        #[test]
+        fn coverage_matches_naive_no_controls() {
+            for n in 2..=8u32 {
+                for target in 0..n {
+                    let mut naive = enumerate_pairs(n, target, &[]);
+                    let mut simd = enumerate_simd_outer_walk(n, target, &[]);
+                    naive.sort();
+                    simd.sort();
+                    assert_eq!(simd, naive, "n={} target={}: pair sets differ", n, target);
+                }
+            }
+        }
+
+        #[test]
+        fn coverage_matches_naive_with_one_control_above_target() {
+            for n in 3..=8u32 {
+                for target in 0..(n - 1) {
+                    for c in (target + 1)..n {
+                        let mut naive = enumerate_pairs(n, target, &[c]);
+                        let mut simd = enumerate_simd_outer_walk(n, target, &[c]);
+                        naive.sort();
+                        simd.sort();
+                        assert_eq!(
+                            simd, naive,
+                            "n={} target={} c={}: pair sets differ",
+                            n, target, c
+                        );
+                    }
+                }
+            }
+        }
+
+        #[test]
+        fn coverage_pairs_are_disjoint_and_in_range() {
+            for n in 2..=8u32 {
+                let len = 1usize << n;
+                for target in 0..n {
+                    let pairs = enumerate_pairs(n, target, &[]);
+                    let mut seen: HashSet<usize> = HashSet::new();
+                    for (i, j) in &pairs {
+                        assert!(
+                            *i < len && *j < len,
+                            "out of range: ({}, {}) for n={}",
+                            i,
+                            j,
+                            n
+                        );
+                        assert!(seen.insert(*i), "duplicate i={}", i);
+                        assert!(seen.insert(*j), "duplicate j={}", j);
+                        assert_eq!(i & (1 << target), 0);
+                        assert_eq!(j & (1 << target), 1usize << target);
+                    }
+                }
+            }
+        }
     }
 }
