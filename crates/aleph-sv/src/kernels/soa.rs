@@ -234,16 +234,21 @@ unsafe fn apply_toffoli_avx512_tier_a_soa(
     }
 }
 
-/// Toffoli Tier-A outer-walk for SoA: same relaxed contract as the AoS
-/// outer-walk variant — controls may lie above OR below target, as long
-/// as `target >= 3`.  The flat block-stride mask check handles both
-/// above-target and below-target control bits uniformly.
+/// Toffoli Tier-A outer-walk for SoA: handles controls at-or-above
+/// `LANES_SOA_BITS = 3` but not strictly above target. Controls below
+/// LANES_SOA_BITS are NOT supported — `block_base` advances by
+/// `LANES_SOA = 8`, so its low 3 bits are always zero, and any
+/// sub-LANES control bit makes the mask test always fail, silently
+/// dropping the gate. `dispatch_toffoli_soa` enforces this; do not
+/// invoke directly without verifying.
 ///
 /// # Safety
 ///
 /// Caller MUST guarantee all of:
 /// * Host CPU supports AVX-512F.
 /// * `target >= 3` i.e. `1 << target >= LANES_SOA` (= 8).
+/// * Every element of `sorted_controls` is `>= LANES_SOA_BITS = 3`.
+///   Sub-LANES controls silently disable the gate.
 /// * All elements of `sorted_controls` are distinct, differ from `target`,
 ///   and are valid qubit indices (< n).
 /// * `re.len() == im.len() == 1 << n` for some n ≥ 4.
@@ -626,16 +631,25 @@ fn dispatch_toffoli_soa(re: &mut [f64], im: &mut [f64], targets: [u32; 3], contr
                     unsafe {
                         apply_toffoli_avx512_tier_a_soa(re, im, t, &all_ctrls);
                     }
-                } else {
-                    // Tier-A outer-walk: some control at or below target.
-                    // SAFETY: AVX-512F detected, target ≥ 3 (LANES_SOA_BITS).
-                    // Controls may be above or below target; flat block-stride
-                    // mask check handles both uniformly.
+                    return;
+                }
+                if c_lo >= LANES_SOA_BITS {
+                    // Tier-A outer-walk: controls at-or-above LANES_SOA_BITS=3
+                    // but some lie between LANES_SOA_BITS and target. The flat
+                    // block-stride walk has block_base advancing by LANES_SOA=8,
+                    // so its low LANES_SOA_BITS bits are always zero; any control
+                    // bit below LANES_SOA_BITS would silently disable the gate
+                    // (the mask test could never pass). We REQUIRE c_lo >=
+                    // LANES_SOA_BITS before invoking the SIMD kernel; sub-LANES
+                    // controls fall through to scalar.
+                    // SAFETY: AVX-512F detected, target ≥ 3, every control
+                    // ≥ LANES_SOA_BITS; qubits distinct + in-range by invariant.
                     unsafe {
                         apply_toffoli_avx512_tier_a_outer_walk_soa(re, im, t, &all_ctrls);
                     }
+                    return;
                 }
-                return;
+                // c_lo < LANES_SOA_BITS: SIMD contract violated, fall through to scalar.
             }
             if t == 0 && c_lo >= LANES_SOA_BITS {
                 // Tier-B.0: target=0, in-zmm permute swap.
@@ -4043,23 +4057,44 @@ mod soa_multi_controlled_tests {
         if !std::is_x86_feature_detected!("avx512f") {
             return;
         }
-        // n=6 (64 amps), target=3 >= 3, controls=[0,5] — c0=0 is BELOW target.
-        let len = 64usize;
+        // n=7 (128 amps), target=5 >= 3, controls=[3, 6]: c_lo=3 ≤ target
+        // (outer-walk path) but both controls ≥ LANES_SOA_BITS=3 (valid).
+        let len = 128usize;
         let re_init: Vec<f64> = (0..len).map(|k| k as f64 * 0.03).collect();
         let im_init: Vec<f64> = (0..len).map(|k| -(k as f64) * 0.02).collect();
         let mut re_avx = re_init.clone();
         let mut im_avx = im_init.clone();
         let mut re_sca = re_init.clone();
         let mut im_sca = im_init.clone();
-        // SAFETY: AVX-512F detected, target=3 >= 3. Controls [0, 5] may be
-        // above or below target (0 < 3, 5 > 3) — outer-walk handles this.
+        // SAFETY: AVX-512F detected, target=5 ≥ 3, both controls ≥ LANES_SOA_BITS=3.
         unsafe {
-            super::apply_toffoli_avx512_tier_a_outer_walk_soa(&mut re_avx, &mut im_avx, 3, &[0, 5]);
+            super::apply_toffoli_avx512_tier_a_outer_walk_soa(&mut re_avx, &mut im_avx, 5, &[3, 6]);
         }
-        super::apply_toffoli_scalar_soa(&mut re_sca, &mut im_sca, [0, 5, 3], &[]);
+        super::apply_toffoli_scalar_soa(&mut re_sca, &mut im_sca, [3, 6, 5], &[]);
         for k in 0..len {
             assert!((re_avx[k] - re_sca[k]).abs() < 1e-13, "re[{}]", k);
             assert!((im_avx[k] - im_sca[k]).abs() < 1e-13, "im[{}]", k);
+        }
+    }
+
+    /// Verifies that `dispatch_toffoli_soa` falls through to the SoA scalar
+    /// path when a control sits below LANES_SOA_BITS=3 — without this
+    /// fallback, the outer-walk SoA SIMD path would silently no-op.
+    #[test]
+    fn dispatch_toffoli_soa_falls_through_to_scalar_when_control_below_lanes_bits() {
+        // n=6, controls=[0, 5], target=3: c_lo=0 < LANES_SOA_BITS=3.
+        let len = 64usize;
+        let re_init: Vec<f64> = (0..len).map(|k| k as f64 * 0.05 + 0.1).collect();
+        let im_init: Vec<f64> = (0..len).map(|k| -(k as f64) * 0.03).collect();
+        let mut re_d = re_init.clone();
+        let mut im_d = im_init.clone();
+        let mut re_s = re_init.clone();
+        let mut im_s = im_init.clone();
+        super::dispatch_toffoli_soa(&mut re_d, &mut im_d, [0, 5, 3], &[]);
+        super::apply_toffoli_scalar_soa(&mut re_s, &mut im_s, [0, 5, 3], &[]);
+        for k in 0..len {
+            assert!((re_d[k] - re_s[k]).abs() < 1e-13, "re[{}]", k);
+            assert!((im_d[k] - im_s[k]).abs() < 1e-13, "im[{}]", k);
         }
     }
 

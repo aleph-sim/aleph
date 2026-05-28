@@ -2825,22 +2825,25 @@ unsafe fn apply_toffoli_avx512_tier_a(
 }
 
 /// Tier-A outer-walk variant for Toffoli (CCX): handles controls
-/// *below* target by mask-testing every LANES-block uniformly. The
-/// inner loop is structurally identical to `apply_toffoli_avx512_tier_a`
-/// — the difference is the relaxed SAFETY contract: controls may lie
-/// above OR below target, not just strictly above.
+/// at-or-above `LANES_BITS` but not strictly above target. The inner
+/// loop is structurally identical to `apply_toffoli_avx512_tier_a` —
+/// the difference is the relaxed SAFETY contract: controls may lie at
+/// any position ≥ LANES_BITS (including at-or-below target between
+/// LANES_BITS and target), but they MUST NOT lie below LANES_BITS.
 ///
-/// **Why this is correct.** The flat block-stride walk increments
-/// `block_base` by LANES (= 4) each step. The mask check
-/// `(block_base & ctrl_mask) != ctrl_mask` tests ALL control bits —
-/// including any that lie below target — against the block's base
-/// index. Because LANES is a power of two and the state vector length
-/// is also a power of two, every control bit position is represented
-/// exactly once across the set of `block_base` values, so no control
-/// check is aliased or skipped.
+/// **Why c_lo >= LANES_BITS is required.** The flat block-stride walk
+/// increments `block_base` by LANES (= 4) each step, so `block_base`
+/// is always a multiple of LANES and its low `LANES_BITS` bits are
+/// always zero. If `ctrl_mask` includes a bit position below
+/// `LANES_BITS`, the test `(block_base & ctrl_mask) != ctrl_mask` is
+/// always true (the required low bit is never set), and the kernel
+/// silently never fires. Caller MUST ensure every control bit is at
+/// or above `LANES_BITS`; otherwise the gate is dropped without
+/// any error indication. The `dispatch_toffoli` prelude enforces
+/// this; do not invoke this function directly without verifying.
 ///
-/// The `target_bit` check (`block_base & target_bit != 0`) still
-/// gates which half of each target-pair we process — we always process
+/// The `target_bit` check (`block_base & target_bit != 0`) gates
+/// which half of each target-pair we process — we always process
 /// from the lo-half side and swap with `block_base | target_bit`.
 /// Since `target >= 2`, `target_bit >= LANES`, ensuring each block
 /// either lies fully in the lo-half or fully in the hi-half.
@@ -2851,12 +2854,16 @@ unsafe fn apply_toffoli_avx512_tier_a(
 /// * Host CPU supports AVX-512F (`is_x86_feature_detected!("avx512f")` true).
 /// * `target >= 2` i.e. `1 << target >= LANES` (== 4) — ensures each
 ///   LANES-block is entirely in the lo-half or hi-half of the target pair.
+/// * Every element of `sorted_controls` is `>= LANES_BITS = 2`. This is
+///   the critical extra precondition vs the docstring's English claim —
+///   sub-LANES controls silently disable the gate.
 /// * All elements of `sorted_controls` are distinct, differ from `target`,
 ///   and are valid qubit indices (< n where `amps.len() == 1 << n`).
 /// * `amps.len() == 1 << n` for some n ≥ 3 (circuit invariant).
 ///
 /// Unlike `apply_toffoli_avx512_tier_a`, this function does NOT
-/// require `c_lo > target` — controls may lie above OR below target.
+/// require `c_lo > target` — controls may lie above OR below target
+/// AS LONG AS each is ≥ LANES_BITS.
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx512f")]
 unsafe fn apply_toffoli_avx512_tier_a_outer_walk(
@@ -3121,16 +3128,25 @@ fn dispatch_toffoli(amps: &mut [Complex], targets: [u32; 3], controls: &[u32]) {
                     unsafe {
                         apply_toffoli_avx512_tier_a(amps, t, &all_ctrls);
                     }
-                } else {
-                    // Tier-A outer-walk: some controls at or below target.
-                    // SAFETY: AVX-512F detected, target ≥ 2 (LANES_BITS). Controls
-                    // may be above or below target — the flat block-stride mask check
-                    // handles both uniformly. Qubits distinct + in-range by invariant.
+                    return;
+                }
+                if c_lo >= LANES_BITS {
+                    // Tier-A outer-walk: controls at-or-above LANES_BITS but
+                    // some lie between LANES_BITS and the target. The flat
+                    // block-stride walk has block_base advancing by LANES, so
+                    // its low LANES_BITS bits are always zero; any control bit
+                    // below LANES_BITS would silently disable the gate (the
+                    // mask test could never pass). We REQUIRE c_lo >= LANES_BITS
+                    // before invoking the SIMD kernel; sub-LANES controls fall
+                    // through to scalar.
+                    // SAFETY: AVX-512F detected, target ≥ 2, every control
+                    // ≥ LANES_BITS; qubits distinct + in-range by invariant.
                     unsafe {
                         apply_toffoli_avx512_tier_a_outer_walk(amps, t, &all_ctrls);
                     }
+                    return;
                 }
-                return;
+                // c_lo < LANES_BITS: SIMD contract violated, fall through to scalar.
             }
             if t == 0 && c_lo >= LANES_BITS {
                 // Tier-B.0: target=0 in-zmm permute swap.
@@ -6287,23 +6303,26 @@ mod toffoli_tier_a_tests {
         }
     }
 
-    /// n=7 state, c0=0, c1=5, t=2. c_lo=0 < t=2 — outer-walk path.
-    /// Verifies that `apply_toffoli_avx512_tier_a_outer_walk` produces
-    /// the same result as the scalar reference for a control below target.
+    /// Verifies that `apply_toffoli_avx512_tier_a_outer_walk` produces the
+    /// same result as the scalar reference under its tightened contract:
+    /// `target >= LANES_BITS=2` AND every control `>= LANES_BITS=2`.
+    /// Configuration: n=8, sorted=[3, 5], target=4 — target above target,
+    /// one control between LANES_BITS and target (3 ≤ target=4 but ≥ 2).
     #[test]
     #[cfg(target_arch = "x86_64")]
     fn tier_a_outer_walk_control_below_matches_scalar() {
         if !std::is_x86_feature_detected!("avx512f") {
             return; // Skip gracefully on non-AVX-512 hosts.
         }
-        // n=7 state, c0=0, c1=5, t=2. c_lo=0 < t=2 — outer-walk path.
-        let mut simd = random_amps(7, 11);
+        let mut simd = random_amps(8, 11);
         let mut scalar = simd.clone();
-        let sorted = [0u32, 5u32];
+        // sorted=[3, 5], target=4: c_lo=3 ≤ t=4 (outer-walk path),
+        // both controls ≥ LANES_BITS=2 (valid contract).
+        let sorted = [3u32, 5u32];
         unsafe {
-            apply_toffoli_avx512_tier_a_outer_walk(&mut simd, 2, &sorted);
+            apply_toffoli_avx512_tier_a_outer_walk(&mut simd, 4, &sorted);
         }
-        apply_toffoli_scalar(&mut scalar, [0, 5, 2], &[]);
+        apply_toffoli_scalar(&mut scalar, [3, 5, 4], &[]);
         for (x, y) in simd.iter().zip(scalar.iter()) {
             assert!(
                 (x.re - y.re).abs() < 1e-12,
@@ -6320,16 +6339,46 @@ mod toffoli_tier_a_tests {
         }
     }
 
+    /// Verifies that `dispatch_toffoli` correctly falls through to the
+    /// scalar path when a control sits below LANES_BITS — the SIMD
+    /// contract cannot be satisfied, so the scalar kernel must take over.
+    /// Without this fallback, the outer-walk SIMD path would silently
+    /// no-op (block_base & low_bit is always zero).
+    #[test]
+    fn dispatch_toffoli_falls_through_to_scalar_when_control_below_lanes_bits() {
+        // n=7, c0=0 (below LANES_BITS=2), c1=5, t=4. c_lo=0 < LANES_BITS.
+        let mut via_dispatch = random_amps(7, 31);
+        let mut via_scalar = via_dispatch.clone();
+        dispatch_toffoli(&mut via_dispatch, [0, 5, 4], &[]);
+        apply_toffoli_scalar(&mut via_scalar, [0, 5, 4], &[]);
+        for (x, y) in via_dispatch.iter().zip(via_scalar.iter()) {
+            assert!(
+                (x.re - y.re).abs() < 1e-12,
+                "re mismatch: {} vs {}",
+                x.re,
+                y.re
+            );
+            assert!(
+                (x.im - y.im).abs() < 1e-12,
+                "im mismatch: {} vs {}",
+                x.im,
+                y.im
+            );
+        }
+    }
+
     /// Dispatch-routing test: `dispatch_toffoli` must produce the same result
-    /// as the scalar kernel for a control-below-target configuration on all
-    /// host architectures (routes to outer-walk on AVX-512, scalar elsewhere).
+    /// as the scalar kernel for a control-below-target configuration where
+    /// every control is still ≥ LANES_BITS=2 (so the outer-walk path is
+    /// valid). Routes to outer-walk on AVX-512, scalar elsewhere.
     #[test]
     fn dispatch_toffoli_routes_outer_walk_below_target() {
-        // n=7 state, c0=0, c1=5, t=2: c_lo=0 < t=2 — outer-walk path on AVX-512.
-        let mut a = random_amps(7, 12);
+        // n=8 state, c0=3, c1=5, t=4: c_lo=3 < t=4 — outer-walk path on AVX-512.
+        // Both controls ≥ LANES_BITS=2 so contract holds.
+        let mut a = random_amps(8, 12);
         let mut b = a.clone();
-        dispatch_toffoli(&mut a, [0, 5, 2], &[]);
-        apply_toffoli_scalar(&mut b, [0, 5, 2], &[]);
+        dispatch_toffoli(&mut a, [3, 5, 4], &[]);
+        apply_toffoli_scalar(&mut b, [3, 5, 4], &[]);
         for (x, y) in a.iter().zip(b.iter()) {
             assert!(
                 (x.re - y.re).abs() < 1e-12,

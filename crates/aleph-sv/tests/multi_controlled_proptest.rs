@@ -104,6 +104,52 @@ proptest! {
         }
     }
 
+    /// Single-application oracle: CCX on a chosen control-target configuration
+    /// must produce the textbook basis swap. This catches "silently-no-op"
+    /// regressions that `ccx_is_involutive` cannot — a kernel that does
+    /// nothing trivially composes to identity, but a kernel that does nothing
+    /// on a single application leaves the state untouched, and the assertion
+    /// below catches that.
+    ///
+    /// We start in basis state with the chosen ctrl pattern set (which means
+    /// the kernel MUST act) and assert exactly one index swap occurred.
+    #[test]
+    fn ccx_single_application_acts_on_all_ones_basis(
+        n in 3u32..=6,
+        c0 in 0u32..6,
+        c1 in 0u32..6,
+        t  in 0u32..6,
+    ) {
+        prop_assume!(c0 != c1 && c0 != t && c1 != t);
+        prop_assume!(c0 < n && c1 < n && t < n);
+
+        let mut backend = NaiveSvBackend::with_seed(0);
+        let mut state = backend.allocate(n).unwrap();
+        // Build |c0=1, c1=1, t=0⟩: apply X on c0 and c1 only.
+        let xc0 = GateInstance::new(Gate::X, smallvec![c0]);
+        let xc1 = GateInstance::new(Gate::X, smallvec![c1]);
+        backend.apply_gate(&mut state, &xc0).unwrap();
+        backend.apply_gate(&mut state, &xc1).unwrap();
+
+        // Apply CCX(c0, c1, t). Expected: |…1…1…0…⟩ → |…1…1…1…⟩.
+        let gi = GateInstance::new(Gate::Toffoli, smallvec![c0, c1, t]);
+        backend.apply_gate(&mut state, &gi).unwrap();
+
+        // The single non-zero amplitude must now be at the index where bits
+        // c0, c1, AND t are all set. A silently-no-op kernel would leave the
+        // amplitude at the original (c0=1, c1=1, t=0) index instead.
+        let expected_idx = (1usize << c0) | (1usize << c1) | (1usize << t);
+        let amps = state.amplitudes();
+        for (i, a) in amps.iter().enumerate() {
+            let want = if i == expected_idx { 1.0 } else { 0.0 };
+            prop_assert!(
+                (a.re - want).abs() < TOL && a.im.abs() < TOL,
+                "amp[{}] = ({}, {}); expected ({}, 0). CCX may be silently no-op",
+                i, a.re, a.im, want
+            );
+        }
+    }
+
     /// CCZ is symmetric in its qubit arguments: CCZ(q0,q1,q2) ≡ CCZ(q2,q0,q1).
     ///
     /// The CCZ matrix is symmetric in all three qubit positions; any permutation

@@ -86,10 +86,10 @@ fn emit_gate(out: &mut String, g: &GateInstance) -> Result<(), EmitError> {
         | g @ Gate::CRx(_)
         | g @ Gate::CRy(_)
         | g @ Gate::CRz(_)
-        | g @ Gate::Ccz
         | g @ Gate::Unitary1q(_)
         | g @ Gate::Unitary2q(_) => return Err(EmitError::UnsupportedGate { name: g.name() }),
         Gate::Toffoli => ("ccx", vec![]),
+        Gate::Ccz => ("ccz", vec![]),
     };
     out.push_str(name);
     if !params.is_empty() {

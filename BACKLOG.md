@@ -936,7 +936,7 @@ MCX with k controls is **implicit via P1-05**: a `Gate::X` with extra `controls`
 - [x] CCX, CCZ specialised (AoS + AVX-512 packed-complex). Tier A clean + outer-walk; Tier B in-zmm permute for `t ∈ {0, 1}` (Toffoli); single Tier A path for CCZ via `vxorpd` sign-flip.
 - [x] Generic MCX with up to 8 controls — **implicit via P1-05** anti-diagonal kernel (`apply_1q` with k external controls); verified by `mcx_k{2,4,6}_n20` benches + `multi_ctrl_mcx_k7_8q_oracle` test.
 - [x] Benchmark — `toffoli_chain_n{15,20}`, `ccz_chain_n{15,20}`, `mcx_k{2,4,6}_n20` synthetic chains on EPYC; numbers in `docs/perf/p1-08-multi-controlled.md`.
-- [x] Workload anti-regression — qft_n20 / grover_iter5_n20 / random_brickwall_n20_d20 within 2% on EPYC.
+- [ ] Workload anti-regression — qft_n20 / grover_iter5_n20 / random_brickwall_n20_d20 within 2% on EPYC. **Partial.** qft_n20 −0.95% ✅; random_brickwall_n20_d20 **+3.12% ⚠️** (above gate but code-presence — random has zero Toffoli/CCZ; analysis in `docs/perf/p1-08-multi-controlled.md`); grover_n20_iters5 deferred to P1-14 (single-iter wall-clock too long for criterion sample sweep). Phase-1 ROADMAP §7 exit (≤ 2× Aer) still cleared on all three.
 
 **Testing Requirements**
 
