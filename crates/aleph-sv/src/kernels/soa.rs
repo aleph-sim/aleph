@@ -1215,12 +1215,16 @@ fn dispatch_cnot_soa(re: &mut [f64], im: &mut [f64], control: u32, target: u32, 
                 }
                 return;
             }
-            // Tier C: both control and target ∈ {0, 1, 2}.
-            if target <= 2 && control <= 2 {
+            // Tier C: both control and target ∈ {0, 1, 2}.  Requires
+            // len ≥ LANES_SOA (= 8) so a single zmm load covers the
+            // 2-qubit subspace and any "extra" low bits.  Two distinct
+            // qubits in {0, 1, 2} only guarantee n_qubits ≥ 2; if
+            // n_qubits == 2 then len == 4 < LANES_SOA and the SIMD load
+            // would OOB.  Fall through to scalar when len is too small.
+            if target <= 2 && control <= 2 && re.len() >= LANES_SOA {
                 // SAFETY: Tier C contract — AVX-512F detected, both ∈
-                // {0, 1, 2}, every external control > 2, len ≥ 8
-                // (n_qubits ≥ 3 since two distinct qubits in {0, 1, 2}
-                // means at least 3 qubits are present in the system).
+                // {0, 1, 2}, every external control > 2, len ≥
+                // LANES_SOA.
                 unsafe {
                     apply_2q_cnot_avx512_tier_c(re, im, control, target, controls);
                 }
@@ -1275,12 +1279,14 @@ fn dispatch_swap_soa(re: &mut [f64], im: &mut [f64], targets: [u32; 2], controls
                 }
                 return;
             }
-            if lo <= 2 && hi <= 2 {
+            // Tier C: both targets in {0, 1, 2}.  Requires len ≥
+            // LANES_SOA (= 8): n_qubits == 2 with targets {0, 1} gives
+            // len == 4 < LANES_SOA and the SIMD load would OOB.  Fall
+            // through to scalar when len is too small.
+            if lo <= 2 && hi <= 2 && re.len() >= LANES_SOA {
                 // SAFETY: Tier C contract — AVX-512F detected, both
                 // targets in {0, 1, 2}, distinct, every external
-                // control > hi ≥ 1, len ≥ 8 (guaranteed because the
-                // state is well-formed at n_qubits ≥ 3 whenever two
-                // distinct qubits in {0, 1, 2} are present).
+                // control > hi ≥ 1, len ≥ LANES_SOA.
                 unsafe {
                     apply_2q_swap_avx512_tier_c(re, im, targets, controls);
                 }
