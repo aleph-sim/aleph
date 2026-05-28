@@ -10,8 +10,19 @@
 //!   (P1-01). Same algorithms, layout chosen for SIMD-friendly
 //!   sequential reads — explicit vectorisation lands in P1-03 / P1-04.
 
+// In normal builds `aos` and `soa` are crate-private. When the
+// `internal-bench` feature is active (criterion benches) they are
+// exposed publicly so the bench binary — which compiles as an external
+// crate — can reach `aleph_sv::kernels::aos::apply_1q`.
+#[cfg(not(feature = "internal-bench"))]
 pub(crate) mod aos;
+#[cfg(feature = "internal-bench")]
+pub mod aos;
+
+#[cfg(not(feature = "internal-bench"))]
 pub(crate) mod soa;
+#[cfg(feature = "internal-bench")]
+pub mod soa;
 
 /// Bitwise-OR of `1 << q` over `controls`. Layout-agnostic — used by
 /// both AoS and SoA kernels to compute the control gate-mask.

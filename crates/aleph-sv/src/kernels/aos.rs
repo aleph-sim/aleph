@@ -22,7 +22,7 @@ use aleph_core::Complex;
 /// safety contract; otherwise falls through to the scalar body
 /// (which LLVM auto-vectorises into 2-lane `vmulpd xmm` via the
 /// natural Complex layout).
-pub(crate) fn apply_1q(amps: &mut [Complex], target: u32, controls: &[u32], m: &[[Complex; 2]; 2]) {
+pub fn apply_1q(amps: &mut [Complex], target: u32, controls: &[u32], m: &[[Complex; 2]; 2]) {
     // 1. Diagonal fast path (P1-06).
     if super::is_diagonal_2x2(m) {
         #[cfg(target_arch = "x86_64")]

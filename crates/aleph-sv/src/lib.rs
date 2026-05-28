@@ -5,7 +5,10 @@
 //! `docs/superpowers/specs/2026-05-24-p0-09-backend-naive-sv-design.md`.
 
 mod backend;
+#[cfg(not(any(test, feature = "internal-bench")))]
 mod kernels;
+#[cfg(any(test, feature = "internal-bench"))]
+pub mod kernels;
 mod measure;
 mod measure_soa;
 mod sampling;

@@ -7,6 +7,11 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 
+[features]
+## Exposes `aleph_sv::bench_exports::kernels` for criterion benches
+## that need direct kernel access. Never enable in downstream crates.
+internal-bench = []
+
 [dependencies]
 aleph-core    = { path = "../aleph-core" }
 aleph-ir      = { path = "../aleph-ir" }
@@ -35,3 +40,8 @@ harness = false
 [[bench]]
 name = "soa_vs_naive"
 harness = false
+
+[[bench]]
+name = "pauli_xy"
+harness = false
+required-features = ["internal-bench"]
