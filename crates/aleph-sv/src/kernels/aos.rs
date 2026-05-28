@@ -2397,9 +2397,9 @@ mod tests {
                 .wrapping_add(1442695040888963407);
             ((s >> 32) as f64 / (u32::MAX as f64)) * 2.0 - 1.0
         };
-        for r in 0..4 {
-            for c in 0..4 {
-                m[r][c] = Complex::new(lcg(), lcg());
+        for row in m.iter_mut() {
+            for cell in row.iter_mut() {
+                *cell = Complex::new(lcg(), lcg());
             }
         }
         for n in [6u32, 8, 10] {
@@ -2442,9 +2442,9 @@ mod tests {
                 .wrapping_add(1442695040888963407);
             ((s >> 32) as f64 / (u32::MAX as f64)) * 2.0 - 1.0
         };
-        for r in 0..4 {
-            for c in 0..4 {
-                m[r][c] = Complex::new(lcg(), lcg());
+        for row in m.iter_mut() {
+            for cell in row.iter_mut() {
+                *cell = Complex::new(lcg(), lcg());
             }
         }
         // (n, targets, controls).  Every control must sit above

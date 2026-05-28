@@ -1783,7 +1783,7 @@ mod tests {
                 if (1usize << t) < LANES_SOA || c <= t {
                     continue;
                 }
-                let (r0, i0) = random_re_im(n, 0xc01f_5a + n as u64);
+                let (r0, i0) = random_re_im(n, 0x00c0_1f5a + n as u64);
                 let mut ra = r0.clone();
                 let mut ia = i0.clone();
                 let mut rb = r0;
@@ -1818,7 +1818,7 @@ mod tests {
                 if (1usize << lo) < LANES_SOA {
                     continue;
                 }
-                let (r0, i0) = random_re_im(n, 0x5a5a_de + n as u64);
+                let (r0, i0) = random_re_im(n, 0x005a_5ade + n as u64);
                 let mut ra = r0.clone();
                 let mut ia = i0.clone();
                 let mut rb = r0;
@@ -1854,7 +1854,7 @@ mod tests {
                 if (1usize << lo) < LANES_SOA {
                     continue;
                 }
-                let (r0, i0) = random_re_im(n, 0xfeed_c2 + n as u64);
+                let (r0, i0) = random_re_im(n, 0x00fe_edc2 + n as u64);
                 let mut ra = r0.clone();
                 let mut ia = i0.clone();
                 let mut rb = r0;
@@ -1884,9 +1884,9 @@ mod tests {
         }
         let d = [
             Complex::new(0.6, 0.8),
-            Complex::new(-0.7, 0.71_428_571_428_571_43),
-            Complex::new(0.99, -0.141_421_356_237_309_5),
-            Complex::new(-0.5, -0.866_025_403_784_438_6),
+            Complex::new(-0.7, 0.7142857142857143),
+            Complex::new(0.99, -0.1414213562373095),
+            Complex::new(-0.5, -0.8660254037844386),
         ];
         for n in [8u32, 10] {
             for t in [[3u32, 4], [3, 5], [4, 6], [7, 5], [6, 4]] {
@@ -1898,7 +1898,7 @@ mod tests {
                 if (1usize << lo) < LANES_SOA {
                     continue;
                 }
-                let (r0, i0) = random_re_im(n, 0x1357_d2 + n as u64);
+                let (r0, i0) = random_re_im(n, 0x0013_57d2 + n as u64);
                 let mut ra = r0.clone();
                 let mut ia = i0.clone();
                 let mut rb = r0;
@@ -2023,7 +2023,8 @@ mod tests {
                 if n <= c.max(t) {
                     continue;
                 }
-                let (r0, i0) = random_re_im(n, 0xb000_5a + n as u64 + ((c as u64) << 8) + t as u64);
+                let (r0, i0) =
+                    random_re_im(n, 0x00b0_005a + n as u64 + ((c as u64) << 8) + t as u64);
                 let mut ra = r0.clone();
                 let mut ia = i0.clone();
                 let mut rb = r0;
@@ -2050,7 +2051,8 @@ mod tests {
         }
         for n in [4u32, 6, 8] {
             for (c, t) in [(0u32, 1), (1, 0), (0, 2), (2, 0), (1, 2), (2, 1)] {
-                let (r0, i0) = random_re_im(n, 0xc000_5a + n as u64 + ((c as u64) << 8) + t as u64);
+                let (r0, i0) =
+                    random_re_im(n, 0x00c0_005a + n as u64 + ((c as u64) << 8) + t as u64);
                 let mut ra = r0.clone();
                 let mut ia = i0.clone();
                 let mut rb = r0;
