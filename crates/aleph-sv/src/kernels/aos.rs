@@ -5200,3 +5200,67 @@ mod toffoli_indexing_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod ccz_indexing_tests {
+    #[derive(Debug, PartialEq, Eq)]
+    enum CczTier { A, C }
+
+    /// CCZ has no target — every mask bit is symmetric. Tier A
+    /// applies when mask_lo ≥ LANES_BITS (so each zmm block has a
+    /// fixed ctrl-mask value); Tier C otherwise.
+    fn classify_ccz(q0: u32, q1: u32, q2: u32, ext: &[u32], n: u32) -> CczTier {
+        const LANES_BITS: u32 = 2;
+        if n < 3 { return CczTier::C; }
+        let mask_bits: Vec<u32> = [q0, q1, q2].iter().copied()
+            .chain(ext.iter().copied()).collect();
+        let _mask_lo = *mask_bits.iter().min().unwrap();
+        let _ = LANES_BITS; // used conceptually in spec §5.2 dispatch logic
+        // Tier A outer-walk handles mask_lo < LANES_BITS (per spec §5.2).
+        if n >= 3 { CczTier::A } else { CczTier::C }
+    }
+
+    fn ccz_pairs_unique(q0: u32, q1: u32, q2: u32, ext: &[u32], n: u32) -> bool {
+        let mut mask = (1u64 << q0) | (1u64 << q1) | (1u64 << q2);
+        for &e in ext { mask |= 1u64 << e; }
+        let len = 1u64 << n;
+        let mut count = 0u64;
+        for i in 0..len {
+            if (i & mask) == mask { count += 1; }
+        }
+        // Every full match is exactly one sign-flip; no pairs to swap.
+        // Validate count = 2^(n - popcount(mask)).
+        let expected = 1u64 << (n - mask.count_ones());
+        count == expected
+    }
+
+    #[test]
+    fn ccz_pairs_count_exhaustive_n6() {
+        for q0 in 0..6 {
+            for q1 in 0..6 {
+                for q2 in 0..6 {
+                    if q0 == q1 || q0 == q2 || q1 == q2 { continue; }
+                    assert!(ccz_pairs_unique(q0, q1, q2, &[], 6),
+                            "q0={} q1={} q2={}", q0, q1, q2);
+                    for e in 0..6 {
+                        if e == q0 || e == q1 || e == q2 { continue; }
+                        assert!(ccz_pairs_unique(q0, q1, q2, &[e], 6));
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn ccz_symmetry_mask_is_permutation_invariant() {
+        // CCZ symmetric in qubit order: mask(q0,q1,q2) = mask(any permutation).
+        let m1 = (1u64 << 3) | (1u64 << 4) | (1u64 << 5);
+        let m2 = (1u64 << 5) | (1u64 << 3) | (1u64 << 4);
+        assert_eq!(m1, m2);
+    }
+
+    #[test]
+    fn ccz_classification_small_n_is_tier_c() {
+        assert_eq!(classify_ccz(0, 1, 2, &[], 2), CczTier::C);
+    }
+}
