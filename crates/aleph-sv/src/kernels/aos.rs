@@ -2671,6 +2671,46 @@ fn dispatch_diagonal_or_cz(
     }
 }
 
+/// Scalar Tier-C reference for Toffoli (CCX). Tier-C fallback of
+/// `dispatch_toffoli` (spec §4.4, wired in Task 6).
+///
+/// `targets = [c0, c1, t]` matches `Gate::Toffoli`'s qubit layout.
+/// `external_controls` are additional control qubits beyond c0 and c1.
+///
+/// Walks every amplitude index `i`; swaps `amps[i]` with
+/// `amps[i | target_bit]` when every control bit (c0, c1, external)
+/// is set in `i` and the target bit is clear. No SIMD — scalar only.
+///
+/// **Indexing convention.** Amplitude index bit `q` corresponds to
+/// qubit `q` (bit 0 = qubit 0, bit 1 = qubit 1, …), matching the
+/// convention used by all scalar kernels in this file. With
+/// `targets = [c0=0, c1=1, t=2]`, ctrl_mask = `0b011` and target_bit
+/// = `4`; the gate fires at `i = 0b011 = 3` and swaps with `i = 7`.
+// wired into dispatch_toffoli in Task 6
+#[allow(dead_code)]
+pub(crate) fn apply_toffoli_scalar(
+    amps: &mut [Complex],
+    targets: [u32; 3],
+    external_controls: &[u32],
+) {
+    let c0 = targets[0];
+    let c1 = targets[1];
+    let t = targets[2];
+    let target_bit = 1usize << t;
+    let mut ctrl_mask = (1usize << c0) | (1usize << c1);
+    for &e in external_controls {
+        ctrl_mask |= 1usize << e;
+    }
+    let len = amps.len();
+    let mut i = 0usize;
+    while i < len {
+        if (i & ctrl_mask) == ctrl_mask && (i & target_bit) == 0 {
+            amps.swap(i, i | target_bit);
+        }
+        i += 1;
+    }
+}
+
 /// Apply a 3-qubit matrix to `targets = [t0, t1, t2]` (with external
 /// `controls`) in place.
 ///
@@ -5262,5 +5302,76 @@ mod ccz_indexing_tests {
     #[test]
     fn ccz_classification_small_n_is_tier_c() {
         assert_eq!(classify_ccz(0, 1, 2, &[], 2), CczTier::C);
+    }
+}
+
+#[cfg(test)]
+mod apply_toffoli_scalar_tests {
+    use super::*;
+    use aleph_core::Complex;
+
+    fn basis_state(n: u32, index: usize) -> Vec<Complex> {
+        let mut amps = vec![Complex::new(0.0, 0.0); 1 << n];
+        amps[index] = Complex::new(1.0, 0.0);
+        amps
+    }
+
+    #[test]
+    fn ccx_swaps_only_11_target_pair() {
+        // targets = [c0=0, c1=1, t=2], n=3.
+        // Amplitude index bit k corresponds to qubit k (same convention
+        // as all scalar kernels in this file; bit 0 = qubit 0).
+        // ctrl_mask = (1<<0)|(1<<1) = 0b011 = 3; target_bit = 1<<2 = 4.
+        // The gate fires when i has bits 0 and 1 set and bit 2 clear,
+        // i.e. i = 0b011 = 3, and swaps with i|4 = 7 = 0b111.
+        for input in 0..8usize {
+            let mut amps = basis_state(3, input);
+            apply_toffoli_scalar(&mut amps, [0, 1, 2], &[]);
+            let expected = if input == 0b011 {
+                0b111
+            } else if input == 0b111 {
+                0b011
+            } else {
+                input
+            };
+            let mut want = vec![Complex::new(0.0, 0.0); 8];
+            want[expected] = Complex::new(1.0, 0.0);
+            assert_eq!(
+                amps, want,
+                "input {:03b} should map to {:03b}",
+                input, expected
+            );
+        }
+    }
+
+    #[test]
+    fn ccx_with_external_control_acts_only_when_ext_set() {
+        // targets = [0,1,2], external_controls = [3], n=4.
+        // ctrl_mask = (1<<0)|(1<<1)|(1<<3) = 0b1011 = 11; target_bit = 4.
+        // Fires when i = 0b1011 = 11 (bits 0,1,3 set, bit 2 clear),
+        // swaps with i|4 = 15 = 0b1111.
+        for input in 0..16usize {
+            let mut amps = basis_state(4, input);
+            apply_toffoli_scalar(&mut amps, [0, 1, 2], &[3]);
+            let expected = if input == 0b1011 {
+                0b1111
+            } else if input == 0b1111 {
+                0b1011
+            } else {
+                input
+            };
+            let mut want = vec![Complex::new(0.0, 0.0); 16];
+            want[expected] = Complex::new(1.0, 0.0);
+            assert_eq!(amps, want);
+        }
+    }
+
+    #[test]
+    fn ccx_involutive() {
+        let mut amps: Vec<Complex> = (0..16).map(|i| Complex::new(i as f64, 0.0)).collect();
+        let original = amps.clone();
+        apply_toffoli_scalar(&mut amps, [0, 1, 2], &[]);
+        apply_toffoli_scalar(&mut amps, [0, 1, 2], &[]);
+        assert_eq!(amps, original);
     }
 }
