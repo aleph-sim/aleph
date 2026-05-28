@@ -1374,11 +1374,37 @@ pub(crate) fn apply_1q(
     m: &[[Complex; 2]; 2],
 ) {
     debug_assert_eq!(re.len(), im.len());
-    // Diagonal fast path (P1-06).  Same heuristic as the AoS path.
+
+    // 1. Diagonal fast path (P1-06).
     if super::is_diagonal_2x2(m) {
         apply_1q_diagonal_soa(re, im, target, controls, m[0][0], m[1][1]);
         return;
     }
+
+    // 2. Anti-diagonal fast path (P1-05). Per-arm dispatch picks
+    // AVX-512 in T9/T10; T8 wires the scalar fallback chain.
+    if super::is_antidiagonal_2x2(m) {
+        match super::classify_1q_antidiag(m) {
+            Some(super::Perm1qKind::X) => {
+                apply_1q_x_soa_scalar(re, im, target, controls);
+                return;
+            }
+            Some(super::Perm1qKind::YPos) => {
+                apply_1q_y_soa_scalar(re, im, target, controls, 1.0);
+                return;
+            }
+            Some(super::Perm1qKind::YNeg) => {
+                apply_1q_y_soa_scalar(re, im, target, controls, -1.0);
+                return;
+            }
+            None => {
+                apply_1q_antidiag_soa_scalar(re, im, target, controls, m[0][1], m[1][0]);
+                return;
+            }
+        }
+    }
+
+    // 3. Generic 2×2 path (scalar with LLVM auto-vec; same as before).
     let t_bit = 1usize << target;
     let ctrl_mask = super::control_mask(controls);
     let len = re.len();
@@ -1390,12 +1416,10 @@ pub(crate) fn apply_1q(
             let a0_im = im[i];
             let a1_re = re[j];
             let a1_im = im[j];
-            // row 0
             re[i] =
                 m[0][0].re * a0_re - m[0][0].im * a0_im + m[0][1].re * a1_re - m[0][1].im * a1_im;
             im[i] =
                 m[0][0].re * a0_im + m[0][0].im * a0_re + m[0][1].re * a1_im + m[0][1].im * a1_re;
-            // row 1
             re[j] =
                 m[1][0].re * a0_re - m[1][0].im * a0_im + m[1][1].re * a1_re - m[1][1].im * a1_im;
             im[j] =
@@ -1437,6 +1461,93 @@ pub(crate) fn apply_1q_diagonal_soa(
             let im_v = im[i];
             re[i] = r * d_re - im_v * d_im;
             im[i] = r * d_im + im_v * d_re;
+        }
+        i += 1;
+    }
+}
+
+/// Scalar Pauli-X kernel on SoA streams. Swaps both `re` and `im`
+/// at index pairs `(i, i | (1 << target))` for every `i` with target
+/// bit clear and every control bit set.
+pub(crate) fn apply_1q_x_soa_scalar(re: &mut [f64], im: &mut [f64], target: u32, controls: &[u32]) {
+    debug_assert_eq!(re.len(), im.len());
+    let t_bit = 1usize << target;
+    let ctrl_mask = super::control_mask(controls);
+    let len = re.len();
+    let mut i = 0usize;
+    while i < len {
+        if i & t_bit == 0 && (i & ctrl_mask) == ctrl_mask {
+            let j = i | t_bit;
+            re.swap(i, j);
+            im.swap(i, j);
+        }
+        i += 1;
+    }
+}
+
+/// Scalar Pauli-Y kernel on SoA streams. Per pair `(i, j)`:
+///   re[i], im[i] = phase_sign *  im[j], -phase_sign * re[j]
+///   re[j], im[j] = -phase_sign * im[i_old], phase_sign * re[i_old]
+/// `phase_sign = +1.0` is YPos (canonical); `-1.0` is YNeg.
+pub(crate) fn apply_1q_y_soa_scalar(
+    re: &mut [f64],
+    im: &mut [f64],
+    target: u32,
+    controls: &[u32],
+    phase_sign: f64,
+) {
+    debug_assert_eq!(re.len(), im.len());
+    debug_assert!(phase_sign == 1.0 || phase_sign == -1.0);
+    let t_bit = 1usize << target;
+    let ctrl_mask = super::control_mask(controls);
+    let len = re.len();
+    let mut i = 0usize;
+    while i < len {
+        if i & t_bit == 0 && (i & ctrl_mask) == ctrl_mask {
+            let j = i | t_bit;
+            let r0 = re[i];
+            let i0 = im[i];
+            let r1 = re[j];
+            let i1 = im[j];
+            re[i] = phase_sign * i1;
+            im[i] = -phase_sign * r1;
+            re[j] = -phase_sign * i0;
+            im[j] = phase_sign * r0;
+        }
+        i += 1;
+    }
+}
+
+/// Scalar generic anti-diagonal kernel on SoA. `m = [[0, a], [b, 0]]`.
+/// `new[i] = a * amps[j]_old`, `new[j] = b * amps[i]_old`.
+/// (Corrected form: `a` applies to `j` index, `b` applies to `i` index,
+/// matching `m[0][1]` → row 0 col 1 and `m[1][0]` → row 1 col 0.)
+pub(crate) fn apply_1q_antidiag_soa_scalar(
+    re: &mut [f64],
+    im: &mut [f64],
+    target: u32,
+    controls: &[u32],
+    a: Complex,
+    b: Complex,
+) {
+    debug_assert_eq!(re.len(), im.len());
+    let t_bit = 1usize << target;
+    let ctrl_mask = super::control_mask(controls);
+    let len = re.len();
+    let mut i = 0usize;
+    while i < len {
+        if i & t_bit == 0 && (i & ctrl_mask) == ctrl_mask {
+            let j = i | t_bit;
+            let r0 = re[i];
+            let i0 = im[i];
+            let r1 = re[j];
+            let i1 = im[j];
+            // new[i] = a * (r1, i1)
+            re[i] = a.re * r1 - a.im * i1;
+            im[i] = a.re * i1 + a.im * r1;
+            // new[j] = b * (r0, i0)
+            re[j] = b.re * r0 - b.im * i0;
+            im[j] = b.re * i0 + b.im * r0;
         }
         i += 1;
     }
@@ -2336,5 +2447,58 @@ mod tests {
         apply_2q_dense_scalar(&mut rb, &mut ib, [0, 1], &[2], &m);
         assert_re_im_close(&ra, &rb, 1e-14);
         assert_re_im_close(&ia, &ib, 1e-14);
+    }
+
+    // ----- P1-05 T8: SoA anti-diagonal scalar oracles vs AoS scalars -----
+
+    #[test]
+    fn apply_1q_x_soa_scalar_matches_aos() {
+        let mut re: Vec<f64> = (0..16).map(|k| k as f64).collect();
+        let mut im: Vec<f64> = (0..16).map(|k| -(k as f64)).collect();
+        let mut amps_aos: Vec<Complex> = (0..16)
+            .map(|k| Complex::new(k as f64, -(k as f64)))
+            .collect();
+        super::apply_1q_x_soa_scalar(&mut re, &mut im, 2, &[]);
+        aos::apply_1q_x_scalar(&mut amps_aos, 2, &[]);
+        for k in 0..16 {
+            assert!((re[k] - amps_aos[k].re).abs() < 1e-12);
+            assert!((im[k] - amps_aos[k].im).abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn apply_1q_y_soa_scalar_pos_matches_aos() {
+        let mut re: Vec<f64> = (0..16).map(|k| k as f64 * 0.13).collect();
+        let mut im: Vec<f64> = (0..16).map(|k| k as f64 * 0.27 + 1.0).collect();
+        let mut amps_aos: Vec<Complex> = re
+            .iter()
+            .zip(im.iter())
+            .map(|(&r, &i)| Complex::new(r, i))
+            .collect();
+        super::apply_1q_y_soa_scalar(&mut re, &mut im, 1, &[], 1.0);
+        aos::apply_1q_y_scalar(&mut amps_aos, 1, &[], 1.0);
+        for k in 0..16 {
+            assert!((re[k] - amps_aos[k].re).abs() < 1e-12);
+            assert!((im[k] - amps_aos[k].im).abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn apply_1q_antidiag_soa_scalar_matches_aos() {
+        let a = Complex::new(0.6, 0.8);
+        let b = Complex::new(0.6, -0.8);
+        let mut re: Vec<f64> = (0..16).map(|k| k as f64 * 0.05).collect();
+        let mut im: Vec<f64> = (0..16).map(|k| k as f64 * 0.11 - 0.3).collect();
+        let mut amps_aos: Vec<Complex> = re
+            .iter()
+            .zip(im.iter())
+            .map(|(&r, &i)| Complex::new(r, i))
+            .collect();
+        super::apply_1q_antidiag_soa_scalar(&mut re, &mut im, 2, &[], a, b);
+        aos::apply_1q_antidiag_scalar(&mut amps_aos, 2, &[], a, b);
+        for k in 0..16 {
+            assert!((re[k] - amps_aos[k].re).abs() < 1e-12);
+            assert!((im[k] - amps_aos[k].im).abs() < 1e-12);
+        }
     }
 }
