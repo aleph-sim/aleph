@@ -23,11 +23,35 @@ use aleph_core::Complex;
 #[allow(dead_code)] // referenced only by the avx512 paths below
 const LANES_SOA: usize = 8;
 
-/// Apply a 3-qubit matrix to `targets = [t0, t1, t2]` (with external
-/// `controls`) in place over paired SoA storage. MSB convention:
-/// `targets[0]` is bit 2 of the matrix index, `targets[1]` is bit 1,
-/// `targets[2]` is bit 0 (matches `aos::apply_3q`).
+/// Top-level 3q dispatch for SoA. Matrix-detects Toffoli (CCX) and CCZ
+/// shapes per spec §3.1 and routes to specialised SoA paths.  Identity
+/// short-circuits.  Falls through to the generic 8×8 scalar kernel for
+/// arbitrary matrices.  Mirror of `aos::apply_3q`.
 pub(crate) fn apply_3q(
+    re: &mut [f64],
+    im: &mut [f64],
+    targets: [u32; 3],
+    controls: &[u32],
+    m: &[[Complex; 8]; 8],
+) {
+    if super::is_identity_8x8(m) {
+        return;
+    }
+    if super::is_toffoli(m) {
+        dispatch_toffoli_soa(re, im, targets, controls);
+        return;
+    }
+    if super::is_ccz(m) {
+        dispatch_ccz_soa(re, im, targets, controls);
+        return;
+    }
+    apply_3q_generic_soa(re, im, targets, controls, m);
+}
+
+/// Scalar fallback for arbitrary 8×8 matrices over SoA storage.
+/// Renamed from the pre-P1-08 `apply_3q`; the public entry-point is now
+/// `apply_3q` (with dispatch).  MSB convention identical to `aos`.
+fn apply_3q_generic_soa(
     re: &mut [f64],
     im: &mut [f64],
     targets: [u32; 3],
@@ -74,6 +98,617 @@ pub(crate) fn apply_3q(
         }
         i += 1;
     }
+}
+
+/// Scalar Tier-C reference for Toffoli (CCX) on SoA storage.
+///
+/// Mirror of `aos::apply_toffoli_scalar` operating on separate `re` and
+/// `im` streams.  Walks every amplitude index `i`; swaps `re[i] ↔
+/// re[i | target_bit]` AND `im[i] ↔ im[i | target_bit]` when every
+/// control bit (c0, c1, external) is set in `i` and the target bit is
+/// clear.
+pub(crate) fn apply_toffoli_scalar_soa(
+    re: &mut [f64],
+    im: &mut [f64],
+    targets: [u32; 3],
+    external_controls: &[u32],
+) {
+    debug_assert_eq!(re.len(), im.len());
+    let c0 = targets[0];
+    let c1 = targets[1];
+    let t = targets[2];
+    let target_bit = 1usize << t;
+    let mut ctrl_mask = (1usize << c0) | (1usize << c1);
+    for &e in external_controls {
+        ctrl_mask |= 1usize << e;
+    }
+    let len = re.len();
+    let mut i = 0usize;
+    while i < len {
+        if (i & ctrl_mask) == ctrl_mask && (i & target_bit) == 0 {
+            re.swap(i, i | target_bit);
+            im.swap(i, i | target_bit);
+        }
+        i += 1;
+    }
+}
+
+/// Scalar Tier-C reference for CCZ on SoA storage.
+///
+/// Mirror of `aos::apply_ccz_scalar` operating on separate `re` and `im`
+/// streams.  Negates `re[i]` AND `im[i]` when all three qubits AND any
+/// external controls are |1⟩, i.e. `(i & mask) == mask`.
+pub(crate) fn apply_ccz_scalar_soa(
+    re: &mut [f64],
+    im: &mut [f64],
+    targets: [u32; 3],
+    external_controls: &[u32],
+) {
+    debug_assert_eq!(re.len(), im.len());
+    let mut mask = (1usize << targets[0])
+        | (1usize << targets[1])
+        | (1usize << targets[2]);
+    for &e in external_controls {
+        mask |= 1usize << e;
+    }
+    let len = re.len();
+    let mut i = 0usize;
+    while i < len {
+        if (i & mask) == mask {
+            re[i] = -re[i];
+            im[i] = -im[i];
+        }
+        i += 1;
+    }
+}
+
+/// Toffoli Tier-A (clean) for SoA: target bit ≥ LANES_SOA=8, every
+/// control strictly above target.  Mirror of `aos::apply_toffoli_avx512_tier_a`
+/// but operating on paired `re`/`im` streams.  Per matching LANES_SOA-wide
+/// block: swap the lo-half and hi-half windows on BOTH streams.
+///
+/// # Safety
+///
+/// Caller MUST guarantee all of:
+/// * Host CPU supports AVX-512F.
+/// * `target >= 3` i.e. `1 << target >= LANES_SOA` (= 8).
+/// * Every qubit position in `sorted_controls` is strictly greater than
+///   `target` — guarantees no control bit aliases into the inner j-sweep
+///   range `[0, target)`.
+/// * `re.len() == im.len() == 1 << n` for some n ≥ 4 (circuit invariant
+///   with target ≥ 3).
+/// * All elements of `sorted_controls` are distinct, differ from `target`,
+///   and are valid qubit indices (< n).
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f")]
+unsafe fn apply_toffoli_avx512_tier_a_soa(
+    re: &mut [f64],
+    im: &mut [f64],
+    target: u32,
+    sorted_controls: &[u32],
+) {
+    use std::arch::x86_64::*;
+
+    debug_assert!(
+        target >= 3,
+        "SoA Tier-A contract: target must be >= LANES_SOA_BITS (3)"
+    );
+    debug_assert!(
+        sorted_controls.iter().all(|&c| c > target),
+        "SoA Tier-A contract: every control bit must be strictly above target"
+    );
+
+    let target_bit = 1usize << target;
+    let mut ctrl_mask = 0usize;
+    for &c in sorted_controls {
+        ctrl_mask |= 1usize << c;
+    }
+    let len = re.len();
+    let re_ptr = re.as_mut_ptr();
+    let im_ptr = im.as_mut_ptr();
+
+    let mut block_base = 0usize;
+    while block_base < len {
+        if (block_base & target_bit) != 0 {
+            block_base += LANES_SOA;
+            continue;
+        }
+        if (block_base & ctrl_mask) != ctrl_mask {
+            block_base += LANES_SOA;
+            continue;
+        }
+        // SAFETY: block_base & target_bit == 0, all control bits set.
+        // target_bit >= LANES_SOA ensures block_base | target_bit ≥
+        // block_base + LANES_SOA; both windows are within [0, len).
+        let lo = block_base;
+        let hi = block_base | target_bit;
+        let ar = _mm512_loadu_pd(re_ptr.add(lo));
+        let ai = _mm512_loadu_pd(im_ptr.add(lo));
+        let br = _mm512_loadu_pd(re_ptr.add(hi));
+        let bi = _mm512_loadu_pd(im_ptr.add(hi));
+        _mm512_storeu_pd(re_ptr.add(lo), br);
+        _mm512_storeu_pd(im_ptr.add(lo), bi);
+        _mm512_storeu_pd(re_ptr.add(hi), ar);
+        _mm512_storeu_pd(im_ptr.add(hi), ai);
+        block_base += LANES_SOA;
+    }
+}
+
+/// Toffoli Tier-A outer-walk for SoA: same relaxed contract as the AoS
+/// outer-walk variant — controls may lie above OR below target, as long
+/// as `target >= 3`.  The flat block-stride mask check handles both
+/// above-target and below-target control bits uniformly.
+///
+/// # Safety
+///
+/// Caller MUST guarantee all of:
+/// * Host CPU supports AVX-512F.
+/// * `target >= 3` i.e. `1 << target >= LANES_SOA` (= 8).
+/// * All elements of `sorted_controls` are distinct, differ from `target`,
+///   and are valid qubit indices (< n).
+/// * `re.len() == im.len() == 1 << n` for some n ≥ 4.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f")]
+unsafe fn apply_toffoli_avx512_tier_a_outer_walk_soa(
+    re: &mut [f64],
+    im: &mut [f64],
+    target: u32,
+    sorted_controls: &[u32],
+) {
+    use std::arch::x86_64::*;
+
+    debug_assert!(
+        target >= 3,
+        "SoA Tier-A outer-walk contract: target must be >= LANES_SOA_BITS (3)"
+    );
+
+    let target_bit = 1usize << target;
+    let mut ctrl_mask = 0usize;
+    for &c in sorted_controls {
+        ctrl_mask |= 1usize << c;
+    }
+    let len = re.len();
+    let re_ptr = re.as_mut_ptr();
+    let im_ptr = im.as_mut_ptr();
+
+    let mut block_base = 0usize;
+    while block_base < len {
+        if (block_base & target_bit) != 0 {
+            block_base += LANES_SOA;
+            continue;
+        }
+        if (block_base & ctrl_mask) != ctrl_mask {
+            block_base += LANES_SOA;
+            continue;
+        }
+        // SAFETY: target_bit >= LANES_SOA ensures the hi window is in bounds.
+        let lo = block_base;
+        let hi = block_base | target_bit;
+        let ar = _mm512_loadu_pd(re_ptr.add(lo));
+        let ai = _mm512_loadu_pd(im_ptr.add(lo));
+        let br = _mm512_loadu_pd(re_ptr.add(hi));
+        let bi = _mm512_loadu_pd(im_ptr.add(hi));
+        _mm512_storeu_pd(re_ptr.add(lo), br);
+        _mm512_storeu_pd(im_ptr.add(lo), bi);
+        _mm512_storeu_pd(re_ptr.add(hi), ar);
+        _mm512_storeu_pd(im_ptr.add(hi), ai);
+        block_base += LANES_SOA;
+    }
+}
+
+/// Toffoli Tier-B.0 for SoA: `target=0`, in-register permute swap.
+///
+/// For `t=0` the target bit is bit 0 of the amplitude index.  Within
+/// each 8-double zmm on each stream, consecutive lane pairs `(0↔1)`,
+/// `(2↔3)`, `(4↔5)`, `(6↔7)` differ only in bit 0.  One
+/// `vpermutexvar_pd` swaps them in place.
+///
+/// **Permute index (lane-0-first):** `(1,0, 3,2, 5,4, 7,6)`.
+/// `_mm512_set_epi64` takes HIGH-to-LOW args (arg 0 → lane 7, arg 7 →
+/// lane 0), so the call is `_mm512_set_epi64(6,7, 4,5, 2,3, 0,1)`.
+///
+/// The SAME permute is applied independently to the `re` and `im` streams.
+///
+/// # Safety
+///
+/// Caller MUST guarantee all of:
+/// * Host CPU supports AVX-512F.
+/// * Every entry in `sorted_controls` is ≥ `LANES_SOA_BITS = 3`.
+/// * `re.len() == im.len() == 1 << n` for some `n ≥ 4`.
+/// * All entries distinct, differ from 0, in-range.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f")]
+unsafe fn apply_toffoli_avx512_tier_b0_soa(
+    re: &mut [f64],
+    im: &mut [f64],
+    sorted_controls: &[u32],
+) {
+    use std::arch::x86_64::*;
+
+    debug_assert!(
+        sorted_controls.iter().all(|&c| c >= 3),
+        "SoA Tier-B.0 contract: every control must be at qubit index >= LANES_SOA_BITS = 3"
+    );
+
+    let mut ctrl_mask = 0usize;
+    for &c in sorted_controls {
+        ctrl_mask |= 1usize << c;
+    }
+    let len = re.len();
+    let re_ptr = re.as_mut_ptr();
+    let im_ptr = im.as_mut_ptr();
+
+    // Swap lane pairs (0↔1, 2↔3, 4↔5, 6↔7): output = (1,0, 3,2, 5,4, 7,6).
+    // _mm512_set_epi64 HIGH-to-LOW: arg0=lane7, arg7=lane0.
+    let perm_idx = _mm512_set_epi64(6, 7, 4, 5, 2, 3, 0, 1);
+
+    let mut block_base = 0usize;
+    while block_base < len {
+        if (block_base & ctrl_mask) != ctrl_mask {
+            block_base += LANES_SOA;
+            continue;
+        }
+        // SAFETY: block_base + LANES_SOA ≤ len; len is a power of two,
+        // loop steps by LANES_SOA, and the last valid block_base is len - LANES_SOA.
+        let zr = _mm512_loadu_pd(re_ptr.add(block_base));
+        let zi = _mm512_loadu_pd(im_ptr.add(block_base));
+        _mm512_storeu_pd(re_ptr.add(block_base), _mm512_permutexvar_pd(perm_idx, zr));
+        _mm512_storeu_pd(im_ptr.add(block_base), _mm512_permutexvar_pd(perm_idx, zi));
+        block_base += LANES_SOA;
+    }
+}
+
+/// Toffoli Tier-B.1 for SoA: `target=1`, in-register permute swap.
+///
+/// For `t=1` the target bit is bit 1 of the amplitude index.  Swap
+/// pairs `(0↔2)`, `(1↔3)`, `(4↔6)`, `(5↔7)`.
+///
+/// **Permute index (lane-0-first):** `(2,3, 0,1, 6,7, 4,5)`.
+/// `_mm512_set_epi64` HIGH-to-LOW: `_mm512_set_epi64(5,4, 7,6, 1,0, 3,2)`.
+///
+/// # Safety  (same as Tier-B.0 but target is 1)
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f")]
+unsafe fn apply_toffoli_avx512_tier_b1_soa(
+    re: &mut [f64],
+    im: &mut [f64],
+    sorted_controls: &[u32],
+) {
+    use std::arch::x86_64::*;
+
+    debug_assert!(
+        sorted_controls.iter().all(|&c| c >= 3),
+        "SoA Tier-B.1 contract: every control must be at qubit index >= LANES_SOA_BITS = 3"
+    );
+
+    let mut ctrl_mask = 0usize;
+    for &c in sorted_controls {
+        ctrl_mask |= 1usize << c;
+    }
+    let len = re.len();
+    let re_ptr = re.as_mut_ptr();
+    let im_ptr = im.as_mut_ptr();
+
+    // Swap pairs (0↔2, 1↔3, 4↔6, 5↔7): output = (2,3, 0,1, 6,7, 4,5).
+    // _mm512_set_epi64 HIGH-to-LOW: arg0=lane7, arg7=lane0.
+    let perm_idx = _mm512_set_epi64(5, 4, 7, 6, 1, 0, 3, 2);
+
+    let mut block_base = 0usize;
+    while block_base < len {
+        if (block_base & ctrl_mask) != ctrl_mask {
+            block_base += LANES_SOA;
+            continue;
+        }
+        // SAFETY: block_base + LANES_SOA ≤ len (same as Tier-B.0).
+        let zr = _mm512_loadu_pd(re_ptr.add(block_base));
+        let zi = _mm512_loadu_pd(im_ptr.add(block_base));
+        _mm512_storeu_pd(re_ptr.add(block_base), _mm512_permutexvar_pd(perm_idx, zr));
+        _mm512_storeu_pd(im_ptr.add(block_base), _mm512_permutexvar_pd(perm_idx, zi));
+        block_base += LANES_SOA;
+    }
+}
+
+/// Toffoli Tier-B.2 for SoA: `target=2`, in-register cross-256 swap.
+///
+/// For `t=2` the target bit is bit 2 of the amplitude index.  Swap the
+/// low 4 lanes with the high 4 lanes: `(0↔4)`, `(1↔5)`, `(2↔6)`, `(3↔7)`.
+///
+/// **Permute index (lane-0-first):** `(4,5,6,7, 0,1,2,3)`.
+/// `_mm512_set_epi64` HIGH-to-LOW: `_mm512_set_epi64(3,2,1,0, 7,6,5,4)`.
+///
+/// # Safety  (same as Tier-B.0 but target is 2)
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f")]
+unsafe fn apply_toffoli_avx512_tier_b2_soa(
+    re: &mut [f64],
+    im: &mut [f64],
+    sorted_controls: &[u32],
+) {
+    use std::arch::x86_64::*;
+
+    debug_assert!(
+        sorted_controls.iter().all(|&c| c >= 3),
+        "SoA Tier-B.2 contract: every control must be at qubit index >= LANES_SOA_BITS = 3"
+    );
+
+    let mut ctrl_mask = 0usize;
+    for &c in sorted_controls {
+        ctrl_mask |= 1usize << c;
+    }
+    let len = re.len();
+    let re_ptr = re.as_mut_ptr();
+    let im_ptr = im.as_mut_ptr();
+
+    // Swap halves (0↔4, 1↔5, 2↔6, 3↔7): output = (4,5,6,7, 0,1,2,3).
+    // _mm512_set_epi64 HIGH-to-LOW: arg0=lane7, arg7=lane0.
+    let perm_idx = _mm512_set_epi64(3, 2, 1, 0, 7, 6, 5, 4);
+
+    let mut block_base = 0usize;
+    while block_base < len {
+        if (block_base & ctrl_mask) != ctrl_mask {
+            block_base += LANES_SOA;
+            continue;
+        }
+        // SAFETY: block_base + LANES_SOA ≤ len (same as Tier-B.0).
+        let zr = _mm512_loadu_pd(re_ptr.add(block_base));
+        let zi = _mm512_loadu_pd(im_ptr.add(block_base));
+        _mm512_storeu_pd(re_ptr.add(block_base), _mm512_permutexvar_pd(perm_idx, zr));
+        _mm512_storeu_pd(im_ptr.add(block_base), _mm512_permutexvar_pd(perm_idx, zi));
+        block_base += LANES_SOA;
+    }
+}
+
+/// CCZ Tier-A for SoA: all mask bits ≥ LANES_SOA_BITS=3.  Sign-flips the
+/// amplitude at every index where the full mask is set.  Applied
+/// independently to both `re` and `im` streams via `_mm512_xor_pd` with
+/// the IEEE-754 sign-bit mask.
+///
+/// Mirror of `aos::apply_ccz_avx512_tier_a` with LANES_SOA=8.  Because
+/// each lane is one f64 (not one Complex), the per-block mask check is
+/// simpler: the full `mask` is either entirely set in `block_base` or
+/// not — no intra-block ambiguity possible when `mask_lo >= 3`.
+///
+/// # Safety
+///
+/// Caller MUST guarantee all of:
+/// * Host CPU supports AVX-512F.
+/// * All entries of `mask_bits` are distinct, < n.
+/// * `mask_bits[0]` (the minimum) is ≥ LANES_SOA_BITS = 3.
+/// * `re.len() == im.len() == 1 << n` for some n ≥ 4 (circuit invariant).
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f")]
+unsafe fn apply_ccz_avx512_tier_a_soa(re: &mut [f64], im: &mut [f64], mask_bits: &[u32]) {
+    use std::arch::x86_64::*;
+
+    debug_assert!(
+        mask_bits.iter().min().copied().unwrap_or(0) >= 3,
+        "SoA CCZ Tier-A contract: every mask bit must be >= LANES_SOA_BITS (3)"
+    );
+
+    let mut mask: usize = 0;
+    for &b in mask_bits {
+        mask |= 1usize << b;
+    }
+
+    let len = re.len();
+    let re_ptr = re.as_mut_ptr();
+    let im_ptr = im.as_mut_ptr();
+
+    // IEEE-754: XOR with -0.0 sign mask flips the sign bit of every f64 lane.
+    let sign_mask = _mm512_set1_pd(-0.0_f64);
+
+    let mut block_base = 0usize;
+    while block_base < len {
+        if (block_base & mask) == mask {
+            // SAFETY: block_base + LANES_SOA ≤ len because mask_lo ≥ 3 →
+            // mask_lo_bit ≥ 8 = LANES_SOA; matching block_base values are
+            // spaced ≥ LANES_SOA apart.  State vector is 1<<n ≥ 16 (n≥4).
+            let pr = re_ptr.add(block_base);
+            let pi = im_ptr.add(block_base);
+            let zr = _mm512_loadu_pd(pr);
+            let zi = _mm512_loadu_pd(pi);
+            _mm512_storeu_pd(pr, _mm512_xor_pd(zr, sign_mask));
+            _mm512_storeu_pd(pi, _mm512_xor_pd(zi, sign_mask));
+        }
+        block_base += LANES_SOA;
+    }
+}
+
+/// CCZ Tier-A outer-walk for SoA: handles mask bits below LANES_SOA_BITS=3.
+///
+/// For each 8-amp block, the "high" mask bits (≥ 3) are checked at
+/// `block_base` level (uniform within block).  The "low" mask bits (< 3)
+/// drive a per-lane blend inside the block: for amp `k ∈ {0..8}`, flip
+/// iff `(k & mask_low) == mask_low`.
+///
+/// **SoA simplification vs AoS.** In SoA each lane IS one amplitude's
+/// `re` (or `im`) component — no AoS "doubling" of lane bits.  The
+/// `lane_mask` is therefore exactly the bitfield of matching `k` values
+/// in `{0..8}`, with no interleaving.  The same `lane_mask` applies to
+/// both the `re` and `im` streams.
+///
+/// # Safety
+///
+/// Caller MUST guarantee all of:
+/// * Host CPU supports AVX-512F.
+/// * All entries of `mask_bits` are distinct, < n.
+/// * `re.len() == im.len() == 1 << n` for some n ≥ 4 (circuit invariant).
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f")]
+unsafe fn apply_ccz_avx512_tier_a_outer_walk_soa(
+    re: &mut [f64],
+    im: &mut [f64],
+    mask_bits: &[u32],
+) {
+    use std::arch::x86_64::*;
+
+    const LANES_SOA_BITS: u32 = 3; // log2(LANES_SOA)
+
+    // Partition mask bits into low (< 3) and high (≥ 3).
+    let mut mask_low: usize = 0;
+    let mut mask_high: usize = 0;
+    for &b in mask_bits {
+        if b < LANES_SOA_BITS {
+            mask_low |= 1usize << b;
+        } else {
+            mask_high |= 1usize << b;
+        }
+    }
+
+    // Per-block lane mask: for amp k in {0..8}, flip iff (k & mask_low) == mask_low.
+    // In SoA each lane position = one amplitude component (no re/im doubling).
+    let lane_mask: u8 = {
+        let mut m = 0u8;
+        for k in 0..8u32 {
+            if (k as usize & mask_low) == mask_low {
+                m |= 1 << k;
+            }
+        }
+        m
+    };
+
+    let len = re.len();
+    let re_ptr = re.as_mut_ptr();
+    let im_ptr = im.as_mut_ptr();
+
+    let sign = _mm512_set1_pd(-0.0_f64);
+
+    let mut block_base = 0usize;
+    while block_base < len {
+        if (block_base & mask_high) != mask_high {
+            block_base += LANES_SOA;
+            continue;
+        }
+        // SAFETY: block_base + LANES_SOA ≤ len; state vector is 1<<n with
+        // n ≥ 4 and block_base is always LANES_SOA-aligned.
+        let pr = re_ptr.add(block_base);
+        let pi = im_ptr.add(block_base);
+        let zr = _mm512_loadu_pd(pr);
+        let zi = _mm512_loadu_pd(pi);
+        let neg_r = _mm512_xor_pd(zr, sign);
+        let neg_i = _mm512_xor_pd(zi, sign);
+        // _mm512_mask_blend_pd(mask, a, b): selects b where bit=1, a where bit=0.
+        _mm512_storeu_pd(pr, _mm512_mask_blend_pd(lane_mask, zr, neg_r));
+        _mm512_storeu_pd(pi, _mm512_mask_blend_pd(lane_mask, zi, neg_i));
+        block_base += LANES_SOA;
+    }
+}
+
+/// Routes Toffoli to the best available SoA tier.  Mirror of
+/// `aos::dispatch_toffoli` with LANES_SOA=8 → `LANES_SOA_BITS=3`.
+///
+/// Tier-A (clean): every control strictly above target AND `target >= 3`.
+/// Tier-A (outer-walk): `target >= 3` but some control at or below target.
+/// Tier-B.0/1/2: `target ∈ {0,1,2}` AND every control ≥ 3.
+/// Tier-C (scalar): all other cases.
+fn dispatch_toffoli_soa(re: &mut [f64], im: &mut [f64], targets: [u32; 3], controls: &[u32]) {
+    #[cfg(target_arch = "x86_64")]
+    {
+        const LANES_SOA_BITS: u32 = 3; // log2(LANES_SOA) where LANES_SOA = 8
+        let t = targets[2];
+
+        // Merge the CCX's inner control pair with any external controls.
+        let mut all_ctrls: smallvec::SmallVec<[u32; 8]> = smallvec::SmallVec::new();
+        all_ctrls.push(targets[0]);
+        all_ctrls.push(targets[1]);
+        for &c in controls {
+            all_ctrls.push(c);
+        }
+        all_ctrls.sort();
+        let c_lo = all_ctrls[0];
+
+        if std::is_x86_feature_detected!("avx512f") {
+            if t >= LANES_SOA_BITS {
+                if c_lo > t {
+                    // Tier-A clean: every control strictly above target.
+                    // SAFETY: AVX-512F detected, target ≥ 3 (LANES_SOA_BITS),
+                    // every control in all_ctrls is strictly above target.
+                    unsafe {
+                        apply_toffoli_avx512_tier_a_soa(re, im, t, &all_ctrls);
+                    }
+                } else {
+                    // Tier-A outer-walk: some control at or below target.
+                    // SAFETY: AVX-512F detected, target ≥ 3 (LANES_SOA_BITS).
+                    // Controls may be above or below target; flat block-stride
+                    // mask check handles both uniformly.
+                    unsafe {
+                        apply_toffoli_avx512_tier_a_outer_walk_soa(re, im, t, &all_ctrls);
+                    }
+                }
+                return;
+            }
+            if t == 0 && c_lo >= LANES_SOA_BITS {
+                // Tier-B.0: target=0, in-zmm permute swap.
+                // SAFETY: AVX-512F detected, target=0 (implicit), every
+                // control ≥ LANES_SOA_BITS=3 (c_lo >= 3).
+                unsafe {
+                    apply_toffoli_avx512_tier_b0_soa(re, im, &all_ctrls);
+                }
+                return;
+            }
+            if t == 1 && c_lo >= LANES_SOA_BITS {
+                // Tier-B.1: target=1, in-zmm permute swap.
+                // SAFETY: AVX-512F detected, target=1 (implicit), every
+                // control ≥ LANES_SOA_BITS=3 (c_lo >= 3).
+                unsafe {
+                    apply_toffoli_avx512_tier_b1_soa(re, im, &all_ctrls);
+                }
+                return;
+            }
+            if t == 2 && c_lo >= LANES_SOA_BITS {
+                // Tier-B.2: target=2, cross-256 in-zmm permute swap.
+                // SAFETY: AVX-512F detected, target=2 (implicit), every
+                // control ≥ LANES_SOA_BITS=3 (c_lo >= 3).
+                unsafe {
+                    apply_toffoli_avx512_tier_b2_soa(re, im, &all_ctrls);
+                }
+                return;
+            }
+        }
+    }
+    apply_toffoli_scalar_soa(re, im, targets, controls);
+}
+
+/// Routes CCZ to the best available SoA tier.  Mirror of
+/// `aos::dispatch_ccz` with LANES_SOA=8 → `LANES_SOA_BITS=3`.
+fn dispatch_ccz_soa(re: &mut [f64], im: &mut [f64], targets: [u32; 3], controls: &[u32]) {
+    #[cfg(target_arch = "x86_64")]
+    {
+        const LANES_SOA_BITS: u32 = 3; // log2(LANES_SOA) where LANES_SOA = 8
+
+        // Build sorted combined mask of all qubit positions.
+        let mut all_mask: smallvec::SmallVec<[u32; 8]> = smallvec::SmallVec::new();
+        for &q in &targets {
+            all_mask.push(q);
+        }
+        for &c in controls {
+            all_mask.push(c);
+        }
+        all_mask.sort();
+        let mask_lo = all_mask[0];
+
+        if std::is_x86_feature_detected!("avx512f") {
+            if mask_lo >= LANES_SOA_BITS {
+                // Tier-A clean: every mask bit ≥ LANES_SOA_BITS=3, per-block
+                // mask check is uniform — no intra-block ambiguity.
+                // SAFETY: AVX-512F detected, mask_lo ≥ 3, all qubit positions
+                // distinct + in-range (Circuit invariant), n ≥ 4.
+                unsafe {
+                    apply_ccz_avx512_tier_a_soa(re, im, &all_mask);
+                }
+            } else {
+                // Tier-A outer-walk: some mask bit < LANES_SOA_BITS=3, so
+                // per-lane blend inside each block.
+                // SAFETY: AVX-512F detected, all qubit positions distinct +
+                // in-range (Circuit invariant), n ≥ 4.
+                unsafe {
+                    apply_ccz_avx512_tier_a_outer_walk_soa(re, im, &all_mask);
+                }
+            }
+            return;
+        }
+    }
+    apply_ccz_scalar_soa(re, im, targets, controls);
 }
 
 /// Scalar fallback for 2-qubit gate application over paired SoA storage.
@@ -3070,5 +3705,596 @@ mod tests {
             assert_eq!(re, re_ref, "n={}", n);
             assert_eq!(im, im_ref, "n={}", n);
         }
+    }
+}
+
+// ---- P1-08 T15: SoA Toffoli + CCZ kernels ----
+
+#[cfg(test)]
+mod soa_multi_controlled_tests {
+    use aleph_core::Complex;
+
+    // Helper: build a Toffoli (CCX) 8×8 matrix (rows 6 ↔ 7 swapped).
+    fn toffoli_m() -> [[Complex; 8]; 8] {
+        let z = Complex::new(0.0, 0.0);
+        let o = Complex::new(1.0, 0.0);
+        let mut m = [[z; 8]; 8];
+        for (i, row) in m.iter_mut().enumerate() {
+            row[i] = o;
+        }
+        // Swap rows 6 and 7 (Toffoli convention: targets=[c0,c1,t]; matrix
+        // index 6 = 0b110 → c0=1, c1=1, t=0; 7 = 0b111 → c0=1, c1=1, t=1).
+        m[6][6] = z;
+        m[6][7] = o;
+        m[7][7] = z;
+        m[7][6] = o;
+        m
+    }
+
+    // Helper: build a CCZ 8×8 matrix (diag with -1 at index 7).
+    fn ccz_m() -> [[Complex; 8]; 8] {
+        let z = Complex::new(0.0, 0.0);
+        let o = Complex::new(1.0, 0.0);
+        let neg = Complex::new(-1.0, 0.0);
+        let mut m = [[z; 8]; 8];
+        for (i, row) in m.iter_mut().enumerate() {
+            row[i] = o;
+        }
+        m[7][7] = neg;
+        m
+    }
+
+    // ---- apply_toffoli_scalar_soa ----
+
+    #[test]
+    fn toffoli_scalar_soa_flips_target_when_both_controls_set() {
+        // 4 qubits (16 amps), targets=[0,1,2], no external controls.
+        // When both c0=0 and c1=1 are set (amp index has bits 0 and 1 set),
+        // bit 2 (the target) should be flipped.  Amp 3 (=0b011) ↔ amp 7 (=0b111).
+        let n = 4;
+        let len = 1usize << n;
+        let mut re: Vec<f64> = (0..len).map(|k| k as f64 * 0.1).collect();
+        let mut im: Vec<f64> = (0..len).map(|k| k as f64 * 0.05 + 0.01).collect();
+        let re_orig = re.clone();
+        let im_orig = im.clone();
+        super::apply_toffoli_scalar_soa(&mut re, &mut im, [0, 1, 2], &[]);
+        // Amps 3 and 7 should be swapped; all others unchanged.
+        assert!((re[3] - re_orig[7]).abs() < 1e-15);
+        assert!((im[3] - im_orig[7]).abs() < 1e-15);
+        assert!((re[7] - re_orig[3]).abs() < 1e-15);
+        assert!((im[7] - im_orig[3]).abs() < 1e-15);
+        // Spot-check an amp that should be unchanged (amp 5 = 0b0101; c0=1, c1=0 → no fire).
+        assert!((re[5] - re_orig[5]).abs() < 1e-15);
+        assert!((im[5] - im_orig[5]).abs() < 1e-15);
+    }
+
+    #[test]
+    fn toffoli_scalar_soa_involutive() {
+        let n = 5;
+        let len = 1usize << n;
+        let re_orig: Vec<f64> = (0..len).map(|k| (k as f64).sin() * 0.3).collect();
+        let im_orig: Vec<f64> = (0..len).map(|k| (k as f64).cos() * 0.4).collect();
+        let mut re = re_orig.clone();
+        let mut im = im_orig.clone();
+        super::apply_toffoli_scalar_soa(&mut re, &mut im, [0, 1, 2], &[]);
+        super::apply_toffoli_scalar_soa(&mut re, &mut im, [0, 1, 2], &[]);
+        for k in 0..len {
+            assert!((re[k] - re_orig[k]).abs() < 1e-14, "re[{}]", k);
+            assert!((im[k] - im_orig[k]).abs() < 1e-14, "im[{}]", k);
+        }
+    }
+
+    #[test]
+    fn toffoli_scalar_soa_external_control_gates() {
+        // External control qubit 3; gate fires only when bits 0,1,3 all set.
+        let n = 4;
+        let len = 1usize << n;
+        let mut re: Vec<f64> = (0..len).map(|k| k as f64 * 0.1).collect();
+        let mut im: Vec<f64> = (0..len).map(|k| -(k as f64) * 0.07).collect();
+        let re_orig = re.clone();
+        let im_orig = im.clone();
+        super::apply_toffoli_scalar_soa(&mut re, &mut im, [0, 1, 2], &[3]);
+        // ctrl_mask = 0b1011 = 11; target_bit = 4.
+        // Only amp 11 (0b1011) and amp 15 (0b1111) should swap.
+        assert!((re[11] - re_orig[15]).abs() < 1e-15);
+        assert!((im[11] - im_orig[15]).abs() < 1e-15);
+        assert!((re[15] - re_orig[11]).abs() < 1e-15);
+        assert!((im[15] - im_orig[11]).abs() < 1e-15);
+        // Amp 3 (0b0011): bits 0,1 set but not bit 3 → no swap.
+        assert!((re[3] - re_orig[3]).abs() < 1e-15);
+        assert!((im[3] - im_orig[3]).abs() < 1e-15);
+    }
+
+    #[test]
+    fn toffoli_scalar_soa_matches_dispatch() {
+        // Verify that apply_3q routes to the scalar SoA Toffoli correctly
+        // (small n=3, Tier-C path).
+        let len = 8usize;
+        let re_init: Vec<f64> = (0..len).map(|k| k as f64 * 0.13 - 0.5).collect();
+        let im_init: Vec<f64> = (0..len).map(|k| -(k as f64) * 0.09 + 0.3).collect();
+        let mut re_disp = re_init.clone();
+        let mut im_disp = im_init.clone();
+        let mut re_sca = re_init.clone();
+        let mut im_sca = im_init.clone();
+        super::apply_3q(&mut re_disp, &mut im_disp, [0, 1, 2], &[], &toffoli_m());
+        super::apply_toffoli_scalar_soa(&mut re_sca, &mut im_sca, [0, 1, 2], &[]);
+        for k in 0..len {
+            assert!((re_disp[k] - re_sca[k]).abs() < 1e-14, "re[{}]", k);
+            assert!((im_disp[k] - im_sca[k]).abs() < 1e-14, "im[{}]", k);
+        }
+    }
+
+    // ---- apply_ccz_scalar_soa ----
+
+    #[test]
+    fn ccz_scalar_soa_sign_flips_only_111() {
+        let n = 4;
+        let len = 1usize << n;
+        let mut re: Vec<f64> = (0..len).map(|k| k as f64 * 0.1 + 1.0).collect();
+        let mut im: Vec<f64> = (0..len).map(|k| -(k as f64) * 0.05).collect();
+        let re_orig = re.clone();
+        let im_orig = im.clone();
+        super::apply_ccz_scalar_soa(&mut re, &mut im, [0, 1, 2], &[]);
+        // mask = 0b0111 = 7; only amp 7 (and amp 15 where bits 0,1,2 all set)
+        // should be negated.
+        for k in 0..len {
+            if (k & 7) == 7 {
+                assert!((re[k] + re_orig[k]).abs() < 1e-15, "re[{}] should negate", k);
+                assert!((im[k] + im_orig[k]).abs() < 1e-15, "im[{}] should negate", k);
+            } else {
+                assert!((re[k] - re_orig[k]).abs() < 1e-15, "re[{}] unchanged", k);
+                assert!((im[k] - im_orig[k]).abs() < 1e-15, "im[{}] unchanged", k);
+            }
+        }
+    }
+
+    #[test]
+    fn ccz_scalar_soa_involutive() {
+        let n = 5;
+        let len = 1usize << n;
+        let re_orig: Vec<f64> = (0..len).map(|k| (k as f64).sin()).collect();
+        let im_orig: Vec<f64> = (0..len).map(|k| (k as f64).cos()).collect();
+        let mut re = re_orig.clone();
+        let mut im = im_orig.clone();
+        super::apply_ccz_scalar_soa(&mut re, &mut im, [0, 1, 2], &[]);
+        super::apply_ccz_scalar_soa(&mut re, &mut im, [0, 1, 2], &[]);
+        for k in 0..len {
+            assert!((re[k] - re_orig[k]).abs() < 1e-14, "re[{}]", k);
+            assert!((im[k] - im_orig[k]).abs() < 1e-14, "im[{}]", k);
+        }
+    }
+
+    #[test]
+    fn ccz_scalar_soa_matches_dispatch() {
+        // Small n=3 → Tier-C scalar path.
+        let len = 8usize;
+        let re_init: Vec<f64> = (0..len).map(|k| k as f64 * 0.17 - 0.6).collect();
+        let im_init: Vec<f64> = (0..len).map(|k| -(k as f64) * 0.11 + 0.4).collect();
+        let mut re_disp = re_init.clone();
+        let mut im_disp = im_init.clone();
+        let mut re_sca = re_init.clone();
+        let mut im_sca = im_init.clone();
+        super::apply_3q(&mut re_disp, &mut im_disp, [0, 1, 2], &[], &ccz_m());
+        super::apply_ccz_scalar_soa(&mut re_sca, &mut im_sca, [0, 1, 2], &[]);
+        for k in 0..len {
+            assert!((re_disp[k] - re_sca[k]).abs() < 1e-14, "re[{}]", k);
+            assert!((im_disp[k] - im_sca[k]).abs() < 1e-14, "im[{}]", k);
+        }
+    }
+
+    // ---- SoA dispatch matches AoS ----
+
+    #[test]
+    fn toffoli_soa_dispatch_matches_aos_n5() {
+        // n=5 (32 amps). targets=[0,1,2] → Tier-B or Tier-A depending on AVX-512.
+        let n = 5;
+        let len = 1usize << n;
+        let aos_init: Vec<Complex> = (0..len)
+            .map(|k| Complex::new(k as f64 * 0.07, -(k as f64) * 0.03))
+            .collect();
+        let mut aos = aos_init.clone();
+        let mut re: Vec<f64> = aos_init.iter().map(|c| c.re).collect();
+        let mut im: Vec<f64> = aos_init.iter().map(|c| c.im).collect();
+        crate::kernels::aos::apply_3q(&mut aos, [0, 1, 2], &[], &toffoli_m());
+        super::apply_3q(&mut re, &mut im, [0, 1, 2], &[], &toffoli_m());
+        for k in 0..len {
+            assert!((re[k] - aos[k].re).abs() < 1e-13, "re[{}]", k);
+            assert!((im[k] - aos[k].im).abs() < 1e-13, "im[{}]", k);
+        }
+    }
+
+    #[test]
+    fn ccz_soa_dispatch_matches_aos_n5() {
+        let n = 5;
+        let len = 1usize << n;
+        let aos_init: Vec<Complex> = (0..len)
+            .map(|k| Complex::new((k as f64).sin() * 0.5, (k as f64).cos() * 0.5))
+            .collect();
+        let mut aos = aos_init.clone();
+        let mut re: Vec<f64> = aos_init.iter().map(|c| c.re).collect();
+        let mut im: Vec<f64> = aos_init.iter().map(|c| c.im).collect();
+        crate::kernels::aos::apply_3q(&mut aos, [0, 1, 2], &[], &ccz_m());
+        super::apply_3q(&mut re, &mut im, [0, 1, 2], &[], &ccz_m());
+        for k in 0..len {
+            assert!((re[k] - aos[k].re).abs() < 1e-13, "re[{}]", k);
+            assert!((im[k] - aos[k].im).abs() < 1e-13, "im[{}]", k);
+        }
+    }
+
+    #[test]
+    fn toffoli_soa_dispatch_matches_aos_n8_tier_a() {
+        // n=8 (256 amps), targets=[2,3,4] → Tier-A (target=4 >= 3=LANES_SOA_BITS).
+        let n = 8;
+        let len = 1usize << n;
+        let aos_init: Vec<Complex> = (0..len)
+            .map(|k| Complex::new(k as f64 * 0.01 - 1.28, -(k as f64) * 0.007))
+            .collect();
+        let mut aos = aos_init.clone();
+        let mut re: Vec<f64> = aos_init.iter().map(|c| c.re).collect();
+        let mut im: Vec<f64> = aos_init.iter().map(|c| c.im).collect();
+        crate::kernels::aos::apply_3q(&mut aos, [2, 3, 4], &[], &toffoli_m());
+        super::apply_3q(&mut re, &mut im, [2, 3, 4], &[], &toffoli_m());
+        for k in 0..len {
+            assert!((re[k] - aos[k].re).abs() < 1e-13, "re[{}]", k);
+            assert!((im[k] - aos[k].im).abs() < 1e-13, "im[{}]", k);
+        }
+    }
+
+    #[test]
+    fn ccz_soa_dispatch_matches_aos_n8_tier_a() {
+        let n = 8;
+        let len = 1usize << n;
+        let aos_init: Vec<Complex> = (0..len)
+            .map(|k| Complex::new((k as f64).sin(), (k as f64).cos()))
+            .collect();
+        let mut aos = aos_init.clone();
+        let mut re: Vec<f64> = aos_init.iter().map(|c| c.re).collect();
+        let mut im: Vec<f64> = aos_init.iter().map(|c| c.im).collect();
+        crate::kernels::aos::apply_3q(&mut aos, [3, 4, 5], &[], &ccz_m());
+        super::apply_3q(&mut re, &mut im, [3, 4, 5], &[], &ccz_m());
+        for k in 0..len {
+            assert!((re[k] - aos[k].re).abs() < 1e-13, "re[{}]", k);
+            assert!((im[k] - aos[k].im).abs() < 1e-13, "im[{}]", k);
+        }
+    }
+
+    // ---- Tier-A outer-walk (control below target) ----
+
+    #[test]
+    fn toffoli_soa_outer_walk_control_below_target_matches_scalar() {
+        // targets=[0,3,4]: c0=0 is BELOW t=4. This triggers outer-walk path.
+        let n = 6;
+        let len = 1usize << n;
+        let re_init: Vec<f64> = (0..len).map(|k| k as f64 * 0.03 - 1.0).collect();
+        let im_init: Vec<f64> = (0..len).map(|k| -(k as f64) * 0.02 + 0.5).collect();
+        let mut re_disp = re_init.clone();
+        let mut im_disp = im_init.clone();
+        let mut re_sca = re_init.clone();
+        let mut im_sca = im_init.clone();
+        super::apply_3q(&mut re_disp, &mut im_disp, [0, 3, 4], &[], &toffoli_m());
+        super::apply_toffoli_scalar_soa(&mut re_sca, &mut im_sca, [0, 3, 4], &[]);
+        for k in 0..len {
+            assert!(
+                (re_disp[k] - re_sca[k]).abs() < 1e-13,
+                "re[{}] disp={} sca={}",
+                k,
+                re_disp[k],
+                re_sca[k]
+            );
+            assert!((im_disp[k] - im_sca[k]).abs() < 1e-13, "im[{}]", k);
+        }
+    }
+
+    #[test]
+    fn ccz_soa_outer_walk_low_bit_matches_scalar() {
+        // targets=[0,1,4]: mask_lo=0 < 3 → outer-walk path.
+        let n = 6;
+        let len = 1usize << n;
+        let re_init: Vec<f64> = (0..len).map(|k| (k as f64).sin() * 0.7).collect();
+        let im_init: Vec<f64> = (0..len).map(|k| (k as f64).cos() * 0.7).collect();
+        let mut re_disp = re_init.clone();
+        let mut im_disp = im_init.clone();
+        let mut re_sca = re_init.clone();
+        let mut im_sca = im_init.clone();
+        super::apply_3q(&mut re_disp, &mut im_disp, [0, 1, 4], &[], &ccz_m());
+        super::apply_ccz_scalar_soa(&mut re_sca, &mut im_sca, [0, 1, 4], &[]);
+        for k in 0..len {
+            assert!(
+                (re_disp[k] - re_sca[k]).abs() < 1e-13,
+                "re[{}] disp={} sca={}",
+                k,
+                re_disp[k],
+                re_sca[k]
+            );
+            assert!((im_disp[k] - im_sca[k]).abs() < 1e-13, "im[{}]", k);
+        }
+    }
+
+    // ---- AVX-512 Tier-A kernels directly ----
+
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn apply_toffoli_avx512_tier_a_soa_matches_scalar() {
+        if !std::is_x86_feature_detected!("avx512f") {
+            return;
+        }
+        // n=5 (32 amps), target=3 >= LANES_SOA_BITS=3, controls=[4] > 3.
+        let len = 32usize;
+        let re_init: Vec<f64> = (0..len).map(|k| k as f64 * 0.05 - 0.8).collect();
+        let im_init: Vec<f64> = (0..len).map(|k| -(k as f64) * 0.04 + 0.6).collect();
+        let mut re_avx = re_init.clone();
+        let mut im_avx = im_init.clone();
+        let mut re_sca = re_init.clone();
+        let mut im_sca = im_init.clone();
+        // SAFETY: AVX-512F detected, target=3 >= 3, controls=[4] > 3.
+        unsafe {
+            super::apply_toffoli_avx512_tier_a_soa(&mut re_avx, &mut im_avx, 3, &[4]);
+        }
+        super::apply_toffoli_scalar_soa(&mut re_sca, &mut im_sca, [0, 4, 3], &[]);
+        for k in 0..len {
+            assert!((re_avx[k] - re_sca[k]).abs() < 1e-13, "re[{}]", k);
+            assert!((im_avx[k] - im_sca[k]).abs() < 1e-13, "im[{}]", k);
+        }
+    }
+
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn apply_toffoli_avx512_tier_a_outer_walk_soa_matches_scalar() {
+        if !std::is_x86_feature_detected!("avx512f") {
+            return;
+        }
+        // n=6 (64 amps), target=3 >= 3, controls=[0,5] — c0=0 is BELOW target.
+        let len = 64usize;
+        let re_init: Vec<f64> = (0..len).map(|k| k as f64 * 0.03).collect();
+        let im_init: Vec<f64> = (0..len).map(|k| -(k as f64) * 0.02).collect();
+        let mut re_avx = re_init.clone();
+        let mut im_avx = im_init.clone();
+        let mut re_sca = re_init.clone();
+        let mut im_sca = im_init.clone();
+        // SAFETY: AVX-512F detected, target=3 >= 3. Controls [0, 5] may be
+        // above or below target (0 < 3, 5 > 3) — outer-walk handles this.
+        unsafe {
+            super::apply_toffoli_avx512_tier_a_outer_walk_soa(&mut re_avx, &mut im_avx, 3, &[0, 5]);
+        }
+        super::apply_toffoli_scalar_soa(&mut re_sca, &mut im_sca, [0, 5, 3], &[]);
+        for k in 0..len {
+            assert!((re_avx[k] - re_sca[k]).abs() < 1e-13, "re[{}]", k);
+            assert!((im_avx[k] - im_sca[k]).abs() < 1e-13, "im[{}]", k);
+        }
+    }
+
+    // ---- AVX-512 Tier-B kernels directly ----
+
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn apply_toffoli_avx512_tier_b0_soa_matches_scalar() {
+        if !std::is_x86_feature_detected!("avx512f") {
+            return;
+        }
+        // n=5 (32 amps), target=0, controls=[3,4] >= LANES_SOA_BITS=3.
+        let len = 32usize;
+        let re_init: Vec<f64> = (0..len).map(|k| k as f64 * 0.1 - 1.5).collect();
+        let im_init: Vec<f64> = (0..len).map(|k| k as f64 * 0.07).collect();
+        let mut re_avx = re_init.clone();
+        let mut im_avx = im_init.clone();
+        let mut re_sca = re_init.clone();
+        let mut im_sca = im_init.clone();
+        // SAFETY: AVX-512F detected, target=0 (implicit), controls=[3,4] >= 3.
+        unsafe {
+            super::apply_toffoli_avx512_tier_b0_soa(&mut re_avx, &mut im_avx, &[3, 4]);
+        }
+        super::apply_toffoli_scalar_soa(&mut re_sca, &mut im_sca, [3, 4, 0], &[]);
+        for k in 0..len {
+            assert!((re_avx[k] - re_sca[k]).abs() < 1e-13, "re[{}]", k);
+            assert!((im_avx[k] - im_sca[k]).abs() < 1e-13, "im[{}]", k);
+        }
+    }
+
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn apply_toffoli_avx512_tier_b1_soa_matches_scalar() {
+        if !std::is_x86_feature_detected!("avx512f") {
+            return;
+        }
+        // n=5 (32 amps), target=1, controls=[3,4] >= LANES_SOA_BITS=3.
+        let len = 32usize;
+        let re_init: Vec<f64> = (0..len).map(|k| k as f64 * 0.09 - 1.0).collect();
+        let im_init: Vec<f64> = (0..len).map(|k| -(k as f64) * 0.06).collect();
+        let mut re_avx = re_init.clone();
+        let mut im_avx = im_init.clone();
+        let mut re_sca = re_init.clone();
+        let mut im_sca = im_init.clone();
+        // SAFETY: AVX-512F detected, target=1 (implicit), controls=[3,4] >= 3.
+        unsafe {
+            super::apply_toffoli_avx512_tier_b1_soa(&mut re_avx, &mut im_avx, &[3, 4]);
+        }
+        super::apply_toffoli_scalar_soa(&mut re_sca, &mut im_sca, [3, 4, 1], &[]);
+        for k in 0..len {
+            assert!((re_avx[k] - re_sca[k]).abs() < 1e-13, "re[{}]", k);
+            assert!((im_avx[k] - im_sca[k]).abs() < 1e-13, "im[{}]", k);
+        }
+    }
+
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn apply_toffoli_avx512_tier_b2_soa_matches_scalar() {
+        if !std::is_x86_feature_detected!("avx512f") {
+            return;
+        }
+        // n=5 (32 amps), target=2, controls=[3,4] >= LANES_SOA_BITS=3.
+        let len = 32usize;
+        let re_init: Vec<f64> = (0..len).map(|k| k as f64 * 0.11 - 0.5).collect();
+        let im_init: Vec<f64> = (0..len).map(|k| -(k as f64) * 0.08 + 0.3).collect();
+        let mut re_avx = re_init.clone();
+        let mut im_avx = im_init.clone();
+        let mut re_sca = re_init.clone();
+        let mut im_sca = im_init.clone();
+        // SAFETY: AVX-512F detected, target=2 (implicit), controls=[3,4] >= 3.
+        unsafe {
+            super::apply_toffoli_avx512_tier_b2_soa(&mut re_avx, &mut im_avx, &[3, 4]);
+        }
+        super::apply_toffoli_scalar_soa(&mut re_sca, &mut im_sca, [3, 4, 2], &[]);
+        for k in 0..len {
+            assert!((re_avx[k] - re_sca[k]).abs() < 1e-13, "re[{}]", k);
+            assert!((im_avx[k] - im_sca[k]).abs() < 1e-13, "im[{}]", k);
+        }
+    }
+
+    // ---- AVX-512 CCZ Tier-A ----
+
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn apply_ccz_avx512_tier_a_soa_matches_scalar() {
+        if !std::is_x86_feature_detected!("avx512f") {
+            return;
+        }
+        // n=6 (64 amps), mask_bits=[3,4,5] — all >= LANES_SOA_BITS=3.
+        let len = 64usize;
+        let re_init: Vec<f64> = (0..len).map(|k| (k as f64).sin() * 0.6).collect();
+        let im_init: Vec<f64> = (0..len).map(|k| (k as f64).cos() * 0.6).collect();
+        let mut re_avx = re_init.clone();
+        let mut im_avx = im_init.clone();
+        let mut re_sca = re_init.clone();
+        let mut im_sca = im_init.clone();
+        // SAFETY: AVX-512F detected, mask_bits all >= 3.
+        unsafe {
+            super::apply_ccz_avx512_tier_a_soa(&mut re_avx, &mut im_avx, &[3, 4, 5]);
+        }
+        super::apply_ccz_scalar_soa(&mut re_sca, &mut im_sca, [3, 4, 5], &[]);
+        for k in 0..len {
+            assert!((re_avx[k] - re_sca[k]).abs() < 1e-13, "re[{}]", k);
+            assert!((im_avx[k] - im_sca[k]).abs() < 1e-13, "im[{}]", k);
+        }
+    }
+
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn apply_ccz_avx512_tier_a_outer_walk_soa_matches_scalar() {
+        if !std::is_x86_feature_detected!("avx512f") {
+            return;
+        }
+        // n=6 (64 amps), mask_bits=[0,1,4] — bits 0,1 < LANES_SOA_BITS=3.
+        let len = 64usize;
+        let re_init: Vec<f64> = (0..len).map(|k| k as f64 * 0.04 - 1.28).collect();
+        let im_init: Vec<f64> = (0..len).map(|k| k as f64 * 0.03 - 0.96).collect();
+        let mut re_avx = re_init.clone();
+        let mut im_avx = im_init.clone();
+        let mut re_sca = re_init.clone();
+        let mut im_sca = im_init.clone();
+        // SAFETY: AVX-512F detected; some mask bits < 3 — outer-walk path.
+        unsafe {
+            super::apply_ccz_avx512_tier_a_outer_walk_soa(&mut re_avx, &mut im_avx, &[0, 1, 4]);
+        }
+        super::apply_ccz_scalar_soa(&mut re_sca, &mut im_sca, [0, 1, 4], &[]);
+        for k in 0..len {
+            assert!((re_avx[k] - re_sca[k]).abs() < 1e-13, "re[{}]", k);
+            assert!((im_avx[k] - im_sca[k]).abs() < 1e-13, "im[{}]", k);
+        }
+    }
+
+    // ---- Involutivity under dispatch (Tier-A / Tier-B paths) ----
+
+    #[test]
+    fn toffoli_dispatch_soa_involutive_n6_tier_a() {
+        // n=6 (64 amps), targets=[3,4,5] → Tier-A on AVX-512, scalar otherwise.
+        let n = 6;
+        let len = 1usize << n;
+        let re_orig: Vec<f64> = (0..len).map(|k| (k as f64).sin()).collect();
+        let im_orig: Vec<f64> = (0..len).map(|k| (k as f64).cos()).collect();
+        let mut re = re_orig.clone();
+        let mut im = im_orig.clone();
+        super::apply_3q(&mut re, &mut im, [3, 4, 5], &[], &toffoli_m());
+        super::apply_3q(&mut re, &mut im, [3, 4, 5], &[], &toffoli_m());
+        for k in 0..len {
+            assert!((re[k] - re_orig[k]).abs() < 1e-13, "re[{}]", k);
+            assert!((im[k] - im_orig[k]).abs() < 1e-13, "im[{}]", k);
+        }
+    }
+
+    #[test]
+    fn toffoli_dispatch_soa_involutive_n5_tier_b0() {
+        // n=5 (32 amps), targets=[3,4,0] → Tier-B.0 (t=0, c_lo=3 >= 3).
+        let n = 5;
+        let len = 1usize << n;
+        let re_orig: Vec<f64> = (0..len).map(|k| k as f64 * 0.11 - 0.5).collect();
+        let im_orig: Vec<f64> = (0..len).map(|k| -(k as f64) * 0.09 + 0.3).collect();
+        let mut re = re_orig.clone();
+        let mut im = im_orig.clone();
+        super::apply_3q(&mut re, &mut im, [3, 4, 0], &[], &toffoli_m());
+        super::apply_3q(&mut re, &mut im, [3, 4, 0], &[], &toffoli_m());
+        for k in 0..len {
+            assert!((re[k] - re_orig[k]).abs() < 1e-13, "re[{}]", k);
+            assert!((im[k] - im_orig[k]).abs() < 1e-13, "im[{}]", k);
+        }
+    }
+
+    #[test]
+    fn toffoli_dispatch_soa_involutive_n5_tier_b1() {
+        // n=5 (32 amps), targets=[3,4,1] → Tier-B.1 (t=1, c_lo=3 >= 3).
+        let n = 5;
+        let len = 1usize << n;
+        let re_orig: Vec<f64> = (0..len).map(|k| k as f64 * 0.13).collect();
+        let im_orig: Vec<f64> = (0..len).map(|k| -(k as f64) * 0.11).collect();
+        let mut re = re_orig.clone();
+        let mut im = im_orig.clone();
+        super::apply_3q(&mut re, &mut im, [3, 4, 1], &[], &toffoli_m());
+        super::apply_3q(&mut re, &mut im, [3, 4, 1], &[], &toffoli_m());
+        for k in 0..len {
+            assert!((re[k] - re_orig[k]).abs() < 1e-13, "re[{}]", k);
+            assert!((im[k] - im_orig[k]).abs() < 1e-13, "im[{}]", k);
+        }
+    }
+
+    #[test]
+    fn toffoli_dispatch_soa_involutive_n5_tier_b2() {
+        // n=5 (32 amps), targets=[3,4,2] → Tier-B.2 (t=2, c_lo=3 >= 3).
+        let n = 5;
+        let len = 1usize << n;
+        let re_orig: Vec<f64> = (0..len).map(|k| k as f64 * 0.17 - 1.0).collect();
+        let im_orig: Vec<f64> = (0..len).map(|k| -(k as f64) * 0.14 + 0.7).collect();
+        let mut re = re_orig.clone();
+        let mut im = im_orig.clone();
+        super::apply_3q(&mut re, &mut im, [3, 4, 2], &[], &toffoli_m());
+        super::apply_3q(&mut re, &mut im, [3, 4, 2], &[], &toffoli_m());
+        for k in 0..len {
+            assert!((re[k] - re_orig[k]).abs() < 1e-13, "re[{}]", k);
+            assert!((im[k] - im_orig[k]).abs() < 1e-13, "im[{}]", k);
+        }
+    }
+
+    #[test]
+    fn ccz_dispatch_soa_involutive_n6_tier_a() {
+        let n = 6;
+        let len = 1usize << n;
+        let re_orig: Vec<f64> = (0..len).map(|k| (k as f64 * 0.07).sin()).collect();
+        let im_orig: Vec<f64> = (0..len).map(|k| (k as f64 * 0.07).cos()).collect();
+        let mut re = re_orig.clone();
+        let mut im = im_orig.clone();
+        super::apply_3q(&mut re, &mut im, [3, 4, 5], &[], &ccz_m());
+        super::apply_3q(&mut re, &mut im, [3, 4, 5], &[], &ccz_m());
+        for k in 0..len {
+            assert!((re[k] - re_orig[k]).abs() < 1e-13, "re[{}]", k);
+            assert!((im[k] - im_orig[k]).abs() < 1e-13, "im[{}]", k);
+        }
+    }
+
+    // ---- apply_3q identity short-circuit ----
+
+    #[test]
+    fn apply_3q_soa_identity_is_noop() {
+        let z = Complex::new(0.0, 0.0);
+        let o = Complex::new(1.0, 0.0);
+        let mut identity = [[z; 8]; 8];
+        for (i, row) in identity.iter_mut().enumerate() {
+            row[i] = o;
+        }
+        let len = 16usize;
+        let re_orig: Vec<f64> = (0..len).map(|k| k as f64 * 0.1).collect();
+        let im_orig: Vec<f64> = (0..len).map(|k| -(k as f64) * 0.05).collect();
+        let mut re = re_orig.clone();
+        let mut im = im_orig.clone();
+        super::apply_3q(&mut re, &mut im, [0, 1, 2], &[], &identity);
+        assert_eq!(re, re_orig);
+        assert_eq!(im, im_orig);
     }
 }
