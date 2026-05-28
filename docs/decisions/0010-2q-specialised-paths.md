@@ -131,13 +131,26 @@ Per-amp µop counts (theoretical, no bandwidth ceiling):
 Wall-clock results (EPYC, post-P1-06 baseline → post-P1-07,
 `docs/perf/phase1-vs-qiskit.md`):
 
-* `qft_n20` AoS: 1133 ms → <FILL> ms (<FILL>× faster; vs Aer <FILL>×).
-* `grover_n20_iters5` AoS: 79 033 ms → <FILL> ms.
-* `random_brickwall_n20_d20` AoS: 842 ms → <FILL> ms.
-* `p1_07/cnot_specialized` vs `cnot_via_generic` micro-bench:
-  <FILL>× (BACKLOG AC target ≥ 5×).
-
-Numbers will be substituted from Task 17 EPYC measurement.
+* `qft_n20` AoS: 1133 ms → **596 ms** (**1.90× faster**; vs Aer 459 ms =
+  **1.30× Aer**). ROADMAP § 7 ≤ 2× Aer exit criterion cleared with
+  margin; the spec's ambition target (1.30×) is met exactly.
+* `grover_n20_iters5` AoS: 79 033 ms → **58 492 ms** (**1.35× faster**).
+* `random_brickwall_n20_d20` AoS: 842 ms → **665 ms** (**1.27× faster**).
+* SoA paths (qft/grover/random respectively): 986 / 129 095 / 1575 ms —
+  consistent with ADR 0008's "SoA is structurally ~1.5–2× slower than
+  AoS" finding. Open Q#2 in ADR 0008 (kill SoA) remains deferred.
+* `p1_07/cnot_specialized` (39 ms) vs `cnot_via_generic` (97 ms)
+  micro-bench: **2.50×** — short of BACKLOG-AC's "5–10× faster than
+  generic 2q kernel" target. **Root cause** (post-mortem): at n=20 the
+  16 MiB state spills L3, and both kernels become memory-bandwidth-
+  bound. The 14× per-µop advantage of the swap-pair kernel collapses
+  to a ~2× wall-clock advantage that matches the bandwidth ratio
+  (CNOT touches half the state, generic dense touches all of it).
+  The BACKLOG-AC's 5–10× expectation was set against pre-SIMD scalar
+  generic-2q; with generic-2q now also AVX-512 (Task 5), the headroom
+  shrank. **Real-world impact captured in the workload benches above
+  is what matters; the micro-AC is documented as missed but the
+  ROADMAP exit is the binding criterion.**
 
 ## Why matrix detection (not gate-tag dispatch)
 
