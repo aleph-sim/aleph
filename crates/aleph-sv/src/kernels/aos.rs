@@ -23,10 +23,7 @@ use aleph_core::Complex;
 /// (which LLVM auto-vectorises into 2-lane `vmulpd xmm` via the
 /// natural Complex layout).
 pub(crate) fn apply_1q(amps: &mut [Complex], target: u32, controls: &[u32], m: &[[Complex; 2]; 2]) {
-    // Diagonal fast path (P1-06).  Detection cost is ~5 ns per call;
-    // negligible vs even the cheapest state-vector kernel.  Catches
-    // Z/S/T/Sdg/Tdg/Rz/Phase intrinsic gates AND any user-supplied
-    // diagonal GenericUnitary(M2x2).
+    // 1. Diagonal fast path (P1-06).
     if super::is_diagonal_2x2(m) {
         #[cfg(target_arch = "x86_64")]
         {
@@ -34,8 +31,7 @@ pub(crate) fn apply_1q(amps: &mut [Complex], target: u32, controls: &[u32], m: &
                 && (1usize << target) >= 4
                 && controls.iter().all(|&c| c > target)
             {
-                // SAFETY: identical contract to apply_1q_avx512 — feature gate +
-                // target_bit ≥ LANES + every control above target.
+                // SAFETY: feature gate + target_bit ≥ LANES + controls > target.
                 unsafe {
                     apply_1q_diagonal_avx512(amps, target, controls, m[0][0], m[1][1]);
                 }
@@ -46,25 +42,37 @@ pub(crate) fn apply_1q(amps: &mut [Complex], target: u32, controls: &[u32], m: &
         return;
     }
 
+    // 2. Anti-diagonal fast path (P1-05). Scalar-only for now;
+    // AVX-512 Tier A/B added in later tasks.
+    if super::is_antidiagonal_2x2(m) {
+        match super::classify_1q_antidiag(m) {
+            Some(super::Perm1qKind::X) => {
+                apply_1q_x_scalar(amps, target, controls);
+                return;
+            }
+            Some(super::Perm1qKind::YPos) => {
+                apply_1q_y_scalar(amps, target, controls, 1.0);
+                return;
+            }
+            Some(super::Perm1qKind::YNeg) => {
+                apply_1q_y_scalar(amps, target, controls, -1.0);
+                return;
+            }
+            None => {
+                apply_1q_antidiag_scalar(amps, target, controls, m[0][1], m[1][0]);
+                return;
+            }
+        }
+    }
+
+    // 3. Generic 2×2 path (unchanged).
     #[cfg(target_arch = "x86_64")]
     {
-        // AVX-512 packed-complex kernel: 1 `vmovupd zmm` reads 4
-        // complex pairs (1 cache-line per side, 2 streams total),
-        // versus the SoA SIMD attempt's 4 separate streams (see
-        // ADR 0008). Engages when target_bit ≥ LANES (=4) so the
-        // inner loop's contiguous unit-stride load is safe, AND
-        // every control sits above target so the inner walk
-        // doesn't toggle a control bit.
         if std::is_x86_feature_detected!("avx512f")
             && (1usize << target) >= 4
             && controls.iter().all(|&c| c > target)
         {
-            // SAFETY: feature detection gates the call; the kernel's
-            // bounds + alignment invariants follow from
-            // `1usize << target ≥ 4` (LANES-aligned block stride),
-            // `c > target` for every control (no control-bit
-            // toggling in the inner walk), and the apply_gate-level
-            // qubit-range + duplicate-qubit checks.
+            // SAFETY: as documented in apply_1q_avx512.
             unsafe {
                 apply_1q_avx512(amps, target, controls, m);
             }
@@ -284,7 +292,6 @@ pub(crate) fn apply_1q_diagonal_scalar(
 ///
 /// Iterates basis indices `i` whose target bit is 0 and every
 /// control bit is set, swapping `amps[i]` with `amps[i | (1 << target)]`.
-#[allow(dead_code)] // wired into dispatch in T3
 pub(crate) fn apply_1q_x_scalar(amps: &mut [Complex], target: u32, controls: &[u32]) {
     let t_bit = 1usize << target;
     let ctrl_mask = super::control_mask(controls);
@@ -306,7 +313,6 @@ pub(crate) fn apply_1q_x_scalar(amps: &mut [Complex], target: u32, controls: &[u
 ///
 /// For YPos: `amps[i0] ← (im_i1, -re_i1)`, `amps[i1] ← (-im_i0, re_i0)`.
 /// For YNeg: signs flip on both sides.
-#[allow(dead_code)] // wired into dispatch in T3
 pub(crate) fn apply_1q_y_scalar(
     amps: &mut [Complex],
     target: u32,
@@ -342,7 +348,6 @@ pub(crate) fn apply_1q_y_scalar(
 /// `amps[i] = m[0][0]*z0 + m[0][1]*z1`, `amps[j] = m[1][0]*z0 + m[1][1]*z1`
 /// collapses (since `m[0][0] = m[1][1] = 0`) to
 /// `amps[i] ← a * amps[j]_old`, `amps[j] ← b * amps[i]_old`.
-#[allow(dead_code)] // wired into dispatch in T3
 pub(crate) fn apply_1q_antidiag_scalar(
     amps: &mut [Complex],
     target: u32,

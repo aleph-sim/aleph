@@ -253,10 +253,7 @@ pub(crate) fn is_cz_signature(d: [aleph_core::Complex; 4]) -> bool {
 /// `m[0][1]`, `m[1][0]`). Rejecting non-finite diagonals forces the
 /// generic kernel to see and propagate the NaN. Three Phase-0 review
 /// rounds regressed on the equivalent guard for `is_diagonal_2x2`.
-// Allow dead_code: callers land in T2–T15 of P1-05 (AoS / SoA preludes).
-// Identical rationale as `expand_with_fixed` above.
 #[inline]
-#[allow(dead_code)]
 pub(crate) fn is_antidiagonal_2x2(m: &[[aleph_core::Complex; 2]; 2]) -> bool {
     let diag = [&m[0][0], &m[1][1]];
     for entry in diag {
@@ -274,8 +271,6 @@ pub(crate) fn is_antidiagonal_2x2(m: &[[aleph_core::Complex; 2]; 2]) -> bool {
 /// Anti-diagonals not in this set (e.g. arbitrary phased swaps) fall
 /// through to `apply_1q_antidiag_*` which does the full complex
 /// multiply on `m[0][1]` and `m[1][0]`.
-// Allow dead_code: callers land in T2–T15 of P1-05 (AoS / SoA preludes).
-#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Perm1qKind {
     /// `X = [[0, 1], [1, 0]]` — pure swap, zero arithmetic.
@@ -302,9 +297,7 @@ pub(crate) enum Perm1qKind {
 /// function returns `None` and the caller routes to the generic
 /// anti-diagonal kernel, which propagates NaN through its complex
 /// multiply. No explicit `is_finite` guard needed here.
-// Allow dead_code: callers land in T2–T15 of P1-05 (AoS / SoA preludes).
 #[inline]
-#[allow(dead_code)]
 pub(crate) fn classify_1q_antidiag(m: &[[aleph_core::Complex; 2]; 2]) -> Option<Perm1qKind> {
     let a = m[0][1]; // upper-right
     let b = m[1][0]; // lower-left
