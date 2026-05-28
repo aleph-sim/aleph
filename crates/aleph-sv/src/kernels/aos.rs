@@ -3784,4 +3784,29 @@ mod tests {
             }
         }
     }
+
+    proptest::proptest! {
+        #![proptest_config(proptest::prelude::ProptestConfig { cases: 32, ..Default::default() })]
+
+        /// Drive `apply_2q` (the dispatch prelude, which routes diagonal
+        /// matrices through the SIMD diagonal/CZ kernel on AVX-512 hosts
+        /// and through scalar paths elsewhere) with arbitrary diagonal
+        /// 4×4 unitaries and verify amplitude-level equivalence against
+        /// `apply_2q_dense_scalar`.  Invariant holds on every host.
+        #[test]
+        fn prop_2q_diagonal_matches_scalar_aos(
+            m in aleph_test::gate::arb_diagonal_4x4(),
+            seed in 0u64..100,
+        ) {
+            let n = 6u32;
+            let amps0 = random_complex_state(n, seed);
+            let mut a = amps0.clone();
+            let mut b = amps0;
+            apply_2q(&mut a, [2, 3], &[], &m);
+            apply_2q_dense_scalar(&mut b, [2, 3], &[], &m);
+            for (ai, bi) in a.iter().zip(b.iter()) {
+                proptest::prop_assert!(((*ai - *bi).norm_sqr()) < 1e-24);
+            }
+        }
+    }
 }
