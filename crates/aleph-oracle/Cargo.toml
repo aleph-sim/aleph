@@ -20,4 +20,5 @@ serde_json    = { workspace = true, features = ["float_roundtrip"] }
 thiserror     = { workspace = true }
 
 [dev-dependencies]
-proptest = { workspace = true }
+proptest  = { workspace = true }
+smallvec  = { workspace = true }

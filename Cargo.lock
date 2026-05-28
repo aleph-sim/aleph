@@ -89,6 +89,7 @@ dependencies = [
  "proptest",
  "serde",
  "serde_json",
+ "smallvec",
  "thiserror",
 ]
 
