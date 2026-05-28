@@ -2711,6 +2711,36 @@ pub(crate) fn apply_toffoli_scalar(
     }
 }
 
+/// Scalar Tier-C reference for CCZ (spec §5.4). Sign-flips the
+/// single amplitude where all three qubits AND any external controls
+/// are |1⟩.
+///
+/// `targets[0..3]` are the three CCZ qubit indices. The mask is
+/// `(1<<targets[0]) | (1<<targets[1]) | (1<<targets[2])` plus one bit
+/// per external control. Amplitude `i` is negated iff `(i & mask) == mask`.
+/// This is symmetric in the order of `targets`.
+#[allow(dead_code)] // wired into dispatch_ccz in Task 6
+pub(crate) fn apply_ccz_scalar(
+    amps: &mut [Complex],
+    targets: [u32; 3],
+    external_controls: &[u32],
+) {
+    let mut mask = (1usize << targets[0])
+        | (1usize << targets[1])
+        | (1usize << targets[2]);
+    for &e in external_controls {
+        mask |= 1usize << e;
+    }
+    let len = amps.len();
+    let mut i = 0usize;
+    while i < len {
+        if (i & mask) == mask {
+            amps[i] = -amps[i];
+        }
+        i += 1;
+    }
+}
+
 /// Apply a 3-qubit matrix to `targets = [t0, t1, t2]` (with external
 /// `controls`) in place.
 ///
@@ -5373,5 +5403,62 @@ mod apply_toffoli_scalar_tests {
         apply_toffoli_scalar(&mut amps, [0, 1, 2], &[]);
         apply_toffoli_scalar(&mut amps, [0, 1, 2], &[]);
         assert_eq!(amps, original);
+    }
+}
+
+#[cfg(test)]
+mod apply_ccz_scalar_tests {
+    use super::*;
+    use aleph_core::Complex;
+
+    fn basis_state(n: u32, index: usize) -> Vec<Complex> {
+        let mut amps = vec![Complex::new(0.0, 0.0); 1 << n];
+        amps[index] = Complex::new(1.0, 0.0);
+        amps
+    }
+
+    #[test]
+    fn ccz_sign_flips_only_111() {
+        // qubits = [0,1,2], n=3. Mask = (1<<0)|(1<<1)|(1<<2) = 0b111 = 7.
+        // Sign flip happens only on amp index 7.
+        for input in 0..8usize {
+            let mut amps = basis_state(3, input);
+            apply_ccz_scalar(&mut amps, [0, 1, 2], &[]);
+            let mut want = vec![Complex::new(0.0, 0.0); 8];
+            let sign = if input == 7 { -1.0 } else { 1.0 };
+            want[input] = Complex::new(sign, 0.0);
+            assert_eq!(amps, want);
+        }
+    }
+
+    #[test]
+    fn ccz_with_external_control_acts_only_when_ext_set() {
+        // qubits = [0,1,2], ctx=[3], n=4. Mask = 0b1111 = 15.
+        for input in 0..16usize {
+            let mut amps = basis_state(4, input);
+            apply_ccz_scalar(&mut amps, [0, 1, 2], &[3]);
+            let mut want = vec![Complex::new(0.0, 0.0); 16];
+            let sign = if input == 15 { -1.0 } else { 1.0 };
+            want[input] = Complex::new(sign, 0.0);
+            assert_eq!(amps, want);
+        }
+    }
+
+    #[test]
+    fn ccz_involutive() {
+        let mut amps: Vec<Complex> = (0..16).map(|i| Complex::new(i as f64, 0.0)).collect();
+        let original = amps.clone();
+        apply_ccz_scalar(&mut amps, [0, 1, 2], &[]);
+        apply_ccz_scalar(&mut amps, [0, 1, 2], &[]);
+        assert_eq!(amps, original);
+    }
+
+    #[test]
+    fn ccz_symmetric_in_qubit_order() {
+        let mut a = vec![Complex::new(1.0, 0.0); 16];
+        let mut b = a.clone();
+        apply_ccz_scalar(&mut a, [0, 1, 2], &[]);
+        apply_ccz_scalar(&mut b, [2, 0, 1], &[]);
+        assert_eq!(a, b);
     }
 }
