@@ -62,7 +62,7 @@ pub fn apply_1q(amps: &mut [Complex], target: u32, controls: &[u32], m: &[[Compl
                             }
                             return;
                         } else if target <= 1
-                            && amps.len() % 4 == 0
+                            && amps.len().is_multiple_of(4)
                             && controls.iter().all(|&c| c >= 2)
                         {
                             // SAFETY: feature gate + Tier-B contract
@@ -91,7 +91,7 @@ pub fn apply_1q(amps: &mut [Complex], target: u32, controls: &[u32], m: &[[Compl
                             }
                             return;
                         } else if target <= 1
-                            && amps.len() % 4 == 0
+                            && amps.len().is_multiple_of(4)
                             && controls.iter().all(|&c| c >= 2)
                         {
                             // SAFETY: feature gate + Tier-B contract.
@@ -118,7 +118,7 @@ pub fn apply_1q(amps: &mut [Complex], target: u32, controls: &[u32], m: &[[Compl
                             }
                             return;
                         } else if target <= 1
-                            && amps.len() % 4 == 0
+                            && amps.len().is_multiple_of(4)
                             && controls.iter().all(|&c| c >= 2)
                         {
                             // SAFETY: feature gate + Tier-B contract.
@@ -145,7 +145,7 @@ pub fn apply_1q(amps: &mut [Complex], target: u32, controls: &[u32], m: &[[Compl
                             }
                             return;
                         } else if target <= 1
-                            && amps.len() % 4 == 0
+                            && amps.len().is_multiple_of(4)
                             && controls.iter().all(|&c| c >= 2)
                         {
                             // SAFETY: feature gate + Tier-B contract.

@@ -1398,7 +1398,7 @@ pub(crate) fn apply_1q(
                             }
                             return;
                         } else if target <= 2
-                            && re.len() % 8 == 0
+                            && re.len().is_multiple_of(8)
                             && controls.iter().all(|&c| c >= 3)
                         {
                             // SAFETY: feature detected + Tier-B SoA contract.
@@ -1945,52 +1945,13 @@ unsafe fn apply_1q_x_soa_avx512_lowbit(
     }
 }
 
-/// Tier-B Y SoA: thin wrapper around the scalar kernel.
-/// Lane-by-lane sign-mask construction for split re/im at target ∈ {0,1,2}
-/// is bug-prone and the workload payoff is minimal (Y rarely lands at
-/// very-low qubit positions). Documented as Open Question in ADR 0011.
-///
-/// # Safety
-/// * Host must support AVX-512F (required by caller's dispatch path).
-/// * `target ∈ {0, 1, 2}`.
-/// * `controls.iter().all(|&c| c > target)`.
-/// * `phase_sign ∈ {+1.0, -1.0}`.
-#[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx512f")]
-unsafe fn apply_1q_y_soa_avx512_lowbit(
-    re: &mut [f64],
-    im: &mut [f64],
-    target: u32,
-    controls: &[u32],
-    phase_sign: f64,
-) {
-    debug_assert!((1usize << target) < 8);
-    debug_assert!(controls.iter().all(|&c| c > target));
-    debug_assert!(phase_sign == 1.0 || phase_sign == -1.0);
-    apply_1q_y_soa_scalar(re, im, target, controls, phase_sign);
-}
-
-/// Tier-B generic anti-diagonal SoA: thin wrapper around the scalar kernel.
-/// Same rationale as `apply_1q_y_soa_avx512_lowbit`. ADR 0011 Open Question.
-///
-/// # Safety
-/// * Host must support AVX-512F (required by caller's dispatch path).
-/// * `target ∈ {0, 1, 2}`.
-/// * `controls.iter().all(|&c| c > target)`.
-#[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx512f")]
-unsafe fn apply_1q_antidiag_soa_avx512_lowbit(
-    re: &mut [f64],
-    im: &mut [f64],
-    target: u32,
-    controls: &[u32],
-    a: Complex,
-    b: Complex,
-) {
-    debug_assert!((1usize << target) < 8);
-    debug_assert!(controls.iter().all(|&c| c > target));
-    apply_1q_antidiag_soa_scalar(re, im, target, controls, a, b);
-}
+// Tier-B Y and generic anti-diag SoA: NOT a separate SIMD kernel.
+// The SoA dispatch routes both directly to the scalar kernels in
+// `apply_1q_y_soa_scalar` / `apply_1q_antidiag_soa_scalar` when the
+// Tier-A contract fails (target < 3 OR controls below 3). Lane-by-lane
+// sign-mask construction on split re/im streams at target ∈ {0,1,2}
+// is bug-prone and the workload payoff is minimal. See ADR 0011
+// Open Question 1.
 
 #[cfg(test)]
 mod tests {
