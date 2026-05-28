@@ -4939,6 +4939,82 @@ mod tests {
         assert!(amps.iter().any(|c| c.re.is_nan() || c.im.is_nan()));
     }
 
+    // ---- P1-05 review B1: controlled tests for Tier-B kernels ----
+
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn apply_1q_x_avx512_lowbit_with_control_matches_scalar() {
+        if !std::is_x86_feature_detected!("avx512f") {
+            return;
+        }
+        // n=5 (32 amps), target=0, control=2. Tier-B contract: target ∈ {0,1}, c >= 2.
+        let mut amps_avx: Vec<Complex> = (0..32)
+            .map(|k| Complex::new(k as f64 * 0.07, k as f64 * -0.13))
+            .collect();
+        let mut amps_sca = amps_avx.clone();
+        // SAFETY: avx512 + target=0 < LANES + len=32 divisible by 4 + c=2 >= 2.
+        unsafe {
+            super::apply_1q_x_avx512_lowbit(&mut amps_avx, 0, &[2]);
+        }
+        super::apply_1q_x_scalar(&mut amps_sca, 0, &[2]);
+        assert_eq!(amps_avx, amps_sca);
+    }
+
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn apply_1q_y_avx512_lowbit_with_control_matches_scalar() {
+        if !std::is_x86_feature_detected!("avx512f") {
+            return;
+        }
+        for &target in &[0u32, 1u32] {
+            let mut amps_avx: Vec<Complex> = (0..32)
+                .map(|k| Complex::new(k as f64 * 0.11 + 1.0, k as f64 * 0.23))
+                .collect();
+            let mut amps_sca = amps_avx.clone();
+            // SAFETY: avx512 + target ∈ {0,1} + len=32 % 4 == 0 + c=2 >= 2 (and > target).
+            unsafe {
+                super::apply_1q_y_avx512_lowbit(&mut amps_avx, target, &[2], 1.0);
+            }
+            super::apply_1q_y_scalar(&mut amps_sca, target, &[2], 1.0);
+            for (a, s) in amps_avx.iter().zip(amps_sca.iter()) {
+                assert!(
+                    (a.re - s.re).abs() < 1e-12 && (a.im - s.im).abs() < 1e-12,
+                    "y_lowbit target={} with control: avx={:?} scalar={:?}",
+                    target,
+                    a,
+                    s
+                );
+            }
+        }
+    }
+
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn apply_1q_antidiag_avx512_lowbit_with_control_matches_scalar() {
+        if !std::is_x86_feature_detected!("avx512f") {
+            return;
+        }
+        let a = Complex::new(0.6, 0.8);
+        let b = Complex::new(0.6, -0.8);
+        let mut amps_avx: Vec<Complex> = (0..32)
+            .map(|k| Complex::new(k as f64 * 0.05, k as f64 * 0.13 - 0.5))
+            .collect();
+        let mut amps_sca = amps_avx.clone();
+        // SAFETY: avx512 + target=0 < LANES + len=32 % 4 == 0 + c=2 >= 2.
+        unsafe {
+            super::apply_1q_antidiag_avx512_lowbit(&mut amps_avx, 0, &[2], a, b);
+        }
+        super::apply_1q_antidiag_scalar(&mut amps_sca, 0, &[2], a, b);
+        for (av, sc) in amps_avx.iter().zip(amps_sca.iter()) {
+            assert!(
+                (av.re - sc.re).abs() < 1e-12 && (av.im - sc.im).abs() < 1e-12,
+                "antidiag_lowbit with control: avx={:?} scalar={:?}",
+                av,
+                sc
+            );
+        }
+    }
+
     // ---- P1-05 T13: anti-diag classifier dispatch proptest ----
 
     // P1-05 T13: anti-diag classifier dispatch proptest

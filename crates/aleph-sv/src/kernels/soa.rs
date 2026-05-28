@@ -2990,6 +2990,70 @@ mod tests {
         }
     }
 
+    // ---- P1-05 review B2: SoA Tier-B dispatch boundary oracle ----
+
+    #[test]
+    fn apply_1q_y_soa_dispatch_low_target_routes_to_scalar() {
+        // n=3 (8 amps), target=0. SoA dispatch: 1<<0=1 < LANES_SOA=8 → no Tier-A.
+        // YPos arm has NO Tier-B branch, so falls through to scalar. Verify
+        // equivalence to apply_1q_y_soa_scalar directly.
+        let z = Complex::new(0.0, 0.0);
+        let pi = Complex::new(0.0, 1.0);
+        let ni = Complex::new(0.0, -1.0);
+        let pauli_y_pos = [[z, ni], [pi, z]];
+        let mut re_dispatch: Vec<f64> = (0..8).map(|k| k as f64 * 0.13 - 0.5).collect();
+        let mut im_dispatch: Vec<f64> = (0..8).map(|k| k as f64 * 0.27 + 1.0).collect();
+        let mut re_direct = re_dispatch.clone();
+        let mut im_direct = im_dispatch.clone();
+        super::apply_1q(&mut re_dispatch, &mut im_dispatch, 0, &[], &pauli_y_pos);
+        super::apply_1q_y_soa_scalar(&mut re_direct, &mut im_direct, 0, &[], 1.0);
+        for k in 0..8 {
+            assert!(
+                (re_dispatch[k] - re_direct[k]).abs() < 1e-12,
+                "re[{}] mismatch",
+                k
+            );
+            assert!(
+                (im_dispatch[k] - im_direct[k]).abs() < 1e-12,
+                "im[{}] mismatch",
+                k
+            );
+        }
+    }
+
+    #[test]
+    fn apply_1q_antidiag_soa_dispatch_low_target_routes_to_scalar() {
+        // Same shape for generic anti-diag.
+        // n=3 (8 amps), target=1. SoA dispatch: 1<<1=2 < LANES_SOA=8 → no Tier-A.
+        // Generic anti-diag arm has NO Tier-B branch, falls through to scalar.
+        let z = Complex::new(0.0, 0.0);
+        let a = Complex::new(0.6, 0.8);
+        let b = Complex::new(0.6, -0.8);
+        let m = [[z, a], [b, z]];
+        let mut re_dispatch: Vec<f64> = (0..8).map(|k| k as f64 * 0.05).collect();
+        let mut im_dispatch: Vec<f64> = (0..8).map(|k| k as f64 * 0.11 - 0.3).collect();
+        let mut re_direct = re_dispatch.clone();
+        let mut im_direct = im_dispatch.clone();
+        super::apply_1q(&mut re_dispatch, &mut im_dispatch, 1, &[], &m);
+        super::apply_1q_antidiag_soa_scalar(&mut re_direct, &mut im_direct, 1, &[], a, b);
+        for k in 0..8 {
+            assert!(
+                (re_dispatch[k] - re_direct[k]).abs() < 1e-12,
+                "re[{}] mismatch: dispatch={} direct={}",
+                k,
+                re_dispatch[k],
+                re_direct[k]
+            );
+            assert!(
+                (im_dispatch[k] - im_direct[k]).abs() < 1e-12,
+                "im[{}] mismatch: dispatch={} direct={}",
+                k,
+                im_dispatch[k],
+                im_direct[k]
+            );
+        }
+    }
+
     // ---- P1-05 T12: SoA boundary-n test ----
 
     #[test]
