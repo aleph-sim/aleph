@@ -72,7 +72,12 @@ pub(crate) fn apply_1q(amps: &mut [Complex], target: u32, controls: &[u32], m: &
             && (1usize << target) >= 4
             && controls.iter().all(|&c| c > target)
         {
-            // SAFETY: as documented in apply_1q_avx512.
+            // SAFETY: feature detection gates the call; the kernel's
+            // bounds + alignment invariants follow from
+            // `1usize << target ≥ 4` (LANES-aligned block stride),
+            // `c > target` for every control (no control-bit
+            // toggling in the inner walk), and the apply_gate-level
+            // qubit-range + duplicate-qubit checks.
             unsafe {
                 apply_1q_avx512(amps, target, controls, m);
             }
