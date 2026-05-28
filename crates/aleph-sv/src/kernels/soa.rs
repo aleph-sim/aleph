@@ -145,9 +145,7 @@ pub(crate) fn apply_ccz_scalar_soa(
     external_controls: &[u32],
 ) {
     debug_assert_eq!(re.len(), im.len());
-    let mut mask = (1usize << targets[0])
-        | (1usize << targets[1])
-        | (1usize << targets[2]);
+    let mut mask = (1usize << targets[0]) | (1usize << targets[1]) | (1usize << targets[2]);
     for &e in external_controls {
         mask |= 1usize << e;
     }
@@ -3853,8 +3851,16 @@ mod soa_multi_controlled_tests {
         // should be negated.
         for k in 0..len {
             if (k & 7) == 7 {
-                assert!((re[k] + re_orig[k]).abs() < 1e-15, "re[{}] should negate", k);
-                assert!((im[k] + im_orig[k]).abs() < 1e-15, "im[{}] should negate", k);
+                assert!(
+                    (re[k] + re_orig[k]).abs() < 1e-15,
+                    "re[{}] should negate",
+                    k
+                );
+                assert!(
+                    (im[k] + im_orig[k]).abs() < 1e-15,
+                    "im[{}] should negate",
+                    k
+                );
             } else {
                 assert!((re[k] - re_orig[k]).abs() < 1e-15, "re[{}] unchanged", k);
                 assert!((im[k] - im_orig[k]).abs() < 1e-15, "im[{}] unchanged", k);

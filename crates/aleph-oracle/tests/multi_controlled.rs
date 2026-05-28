@@ -187,7 +187,8 @@ fn multi_ctrl_cccx_4q_oracle() {
     backend.apply_gate(&mut state, &x3).unwrap();
 
     // CCCX: Gate::Toffoli (c0=0, c1=1, t=2) + external control = 3.
-    let cccx = GateInstance::controlled(Gate::Toffoli, smallvec![0u32, 1u32, 2u32], smallvec![3u32]);
+    let cccx =
+        GateInstance::controlled(Gate::Toffoli, smallvec![0u32, 1u32, 2u32], smallvec![3u32]);
     backend.apply_gate(&mut state, &cccx).unwrap();
 
     let actual = state.amplitudes();

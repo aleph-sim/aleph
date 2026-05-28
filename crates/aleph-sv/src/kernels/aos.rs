@@ -2717,14 +2717,8 @@ pub(crate) fn apply_toffoli_scalar(
 /// `(1<<targets[0]) | (1<<targets[1]) | (1<<targets[2])` plus one bit
 /// per external control. Amplitude `i` is negated iff `(i & mask) == mask`.
 /// This is symmetric in the order of `targets`.
-pub(crate) fn apply_ccz_scalar(
-    amps: &mut [Complex],
-    targets: [u32; 3],
-    external_controls: &[u32],
-) {
-    let mut mask = (1usize << targets[0])
-        | (1usize << targets[1])
-        | (1usize << targets[2]);
+pub(crate) fn apply_ccz_scalar(amps: &mut [Complex], targets: [u32; 3], external_controls: &[u32]) {
+    let mut mask = (1usize << targets[0]) | (1usize << targets[1]) | (1usize << targets[2]);
     for &e in external_controls {
         mask |= 1usize << e;
     }
@@ -2767,11 +2761,7 @@ pub(crate) fn apply_ccz_scalar(
 /// ORs the bits into a mask.
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx512f")]
-unsafe fn apply_toffoli_avx512_tier_a(
-    amps: &mut [Complex],
-    target: u32,
-    sorted_controls: &[u32],
-) {
+unsafe fn apply_toffoli_avx512_tier_a(amps: &mut [Complex], target: u32, sorted_controls: &[u32]) {
     use std::arch::x86_64::*;
 
     const LANES: usize = 4; // complex amps per zmm (8 f64 per zmm)
@@ -2950,10 +2940,7 @@ unsafe fn apply_toffoli_avx512_tier_a_outer_walk(
 ///   are valid qubit indices (< n).
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx512f")]
-unsafe fn apply_toffoli_avx512_tier_b0(
-    amps: &mut [Complex],
-    sorted_controls: &[u32],
-) {
+unsafe fn apply_toffoli_avx512_tier_b0(amps: &mut [Complex], sorted_controls: &[u32]) {
     use std::arch::x86_64::*;
 
     const LANES: usize = 4; // complex amps per zmm (8 f64 per zmm)
@@ -3026,10 +3013,7 @@ unsafe fn apply_toffoli_avx512_tier_b0(
 ///   are valid qubit indices (< n).
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx512f")]
-unsafe fn apply_toffoli_avx512_tier_b1(
-    amps: &mut [Complex],
-    sorted_controls: &[u32],
-) {
+unsafe fn apply_toffoli_avx512_tier_b1(amps: &mut [Complex], sorted_controls: &[u32]) {
     use std::arch::x86_64::*;
 
     const LANES: usize = 4; // complex amps per zmm (8 f64 per zmm)
@@ -3268,10 +3252,7 @@ unsafe fn apply_ccz_avx512_tier_a(amps: &mut [Complex], mask_bits: &[u32]) {
 /// - `amps.len() == 1 << n` for some n ≥ 3 (circuit invariant).
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx512f")]
-unsafe fn apply_ccz_avx512_tier_a_outer_walk(
-    amps: &mut [Complex],
-    mask_bits: &[u32],
-) {
+unsafe fn apply_ccz_avx512_tier_a_outer_walk(amps: &mut [Complex], mask_bits: &[u32]) {
     use std::arch::x86_64::*;
 
     const LANES: usize = 4; // complex amps per zmm (8 f64 per zmm)
@@ -5797,11 +5778,18 @@ mod toffoli_indexing_tests {
     /// SIMD dispatch path; if the function below returns Tier X, the
     /// runtime SIMD path must match.
     #[derive(Debug, PartialEq, Eq)]
-    enum Tier { A, B0, B1, C }
+    enum Tier {
+        A,
+        B0,
+        B1,
+        C,
+    }
 
     fn classify_toffoli(c0: u32, c1: u32, t: u32, ext: &[u32], n: u32) -> Tier {
         const LANES_BITS: u32 = 2;
-        if n < 3 { return Tier::C; }
+        if n < 3 {
+            return Tier::C;
+        }
         let target_bit_idx = t;
         let ctrl_bits: Vec<u32> = std::iter::once(c0)
             .chain(std::iter::once(c1))
@@ -5835,17 +5823,29 @@ mod toffoli_indexing_tests {
     fn pairs_are_disjoint(c0: u32, c1: u32, t: u32, ext: &[u32], n: u32) -> bool {
         let target_bit = 1u64 << t;
         let mut ctrl_mask = (1u64 << c0) | (1u64 << c1);
-        for &e in ext { ctrl_mask |= 1u64 << e; }
+        for &e in ext {
+            ctrl_mask |= 1u64 << e;
+        }
         // For every i with ctrl bits set and target bit clear, (i, i | target_bit)
         // must be in-range and distinct, and target_bit must not overlap ctrl_mask.
-        if target_bit & ctrl_mask != 0 { return false; }
+        if target_bit & ctrl_mask != 0 {
+            return false;
+        }
         let len = 1u64 << n;
         for i in 0..len {
-            if (i & ctrl_mask) != ctrl_mask { continue; }
-            if (i & target_bit) != 0 { continue; }
+            if (i & ctrl_mask) != ctrl_mask {
+                continue;
+            }
+            if (i & target_bit) != 0 {
+                continue;
+            }
             let j = i | target_bit;
-            if j >= len { return false; }
-            if i == j { return false; }
+            if j >= len {
+                return false;
+            }
+            if i == j {
+                return false;
+            }
         }
         true
     }
@@ -5887,13 +5887,28 @@ mod toffoli_indexing_tests {
         for c0 in 0..6 {
             for c1 in 0..6 {
                 for t in 0..6 {
-                    if c0 == c1 || c0 == t || c1 == t { continue; }
-                    assert!(pairs_are_disjoint(c0, c1, t, &[], 6),
-                            "c0={} c1={} t={} ext=[]", c0, c1, t);
+                    if c0 == c1 || c0 == t || c1 == t {
+                        continue;
+                    }
+                    assert!(
+                        pairs_are_disjoint(c0, c1, t, &[], 6),
+                        "c0={} c1={} t={} ext=[]",
+                        c0,
+                        c1,
+                        t
+                    );
                     for e in 0..6 {
-                        if e == c0 || e == c1 || e == t { continue; }
-                        assert!(pairs_are_disjoint(c0, c1, t, &[e], 6),
-                                "c0={} c1={} t={} ext=[{}]", c0, c1, t, e);
+                        if e == c0 || e == c1 || e == t {
+                            continue;
+                        }
+                        assert!(
+                            pairs_are_disjoint(c0, c1, t, &[e], 6),
+                            "c0={} c1={} t={} ext=[{}]",
+                            c0,
+                            c1,
+                            t,
+                            e
+                        );
                     }
                 }
             }
@@ -5904,29 +5919,45 @@ mod toffoli_indexing_tests {
 #[cfg(test)]
 mod ccz_indexing_tests {
     #[derive(Debug, PartialEq, Eq)]
-    enum CczTier { A, C }
+    enum CczTier {
+        A,
+        C,
+    }
 
     /// CCZ has no target — every mask bit is symmetric. Tier A
     /// applies when mask_lo ≥ LANES_BITS (so each zmm block has a
     /// fixed ctrl-mask value); Tier C otherwise.
     fn classify_ccz(q0: u32, q1: u32, q2: u32, ext: &[u32], n: u32) -> CczTier {
         const LANES_BITS: u32 = 2;
-        if n < 3 { return CczTier::C; }
-        let mask_bits: Vec<u32> = [q0, q1, q2].iter().copied()
-            .chain(ext.iter().copied()).collect();
+        if n < 3 {
+            return CczTier::C;
+        }
+        let mask_bits: Vec<u32> = [q0, q1, q2]
+            .iter()
+            .copied()
+            .chain(ext.iter().copied())
+            .collect();
         let _mask_lo = *mask_bits.iter().min().unwrap();
         let _ = LANES_BITS; // used conceptually in spec §5.2 dispatch logic
-        // Tier A outer-walk handles mask_lo < LANES_BITS (per spec §5.2).
-        if n >= 3 { CczTier::A } else { CczTier::C }
+                            // Tier A outer-walk handles mask_lo < LANES_BITS (per spec §5.2).
+        if n >= 3 {
+            CczTier::A
+        } else {
+            CczTier::C
+        }
     }
 
     fn ccz_pairs_unique(q0: u32, q1: u32, q2: u32, ext: &[u32], n: u32) -> bool {
         let mut mask = (1u64 << q0) | (1u64 << q1) | (1u64 << q2);
-        for &e in ext { mask |= 1u64 << e; }
+        for &e in ext {
+            mask |= 1u64 << e;
+        }
         let len = 1u64 << n;
         let mut count = 0u64;
         for i in 0..len {
-            if (i & mask) == mask { count += 1; }
+            if (i & mask) == mask {
+                count += 1;
+            }
         }
         // Every full match is exactly one sign-flip; no pairs to swap.
         // Validate count = 2^(n - popcount(mask)).
@@ -5939,11 +5970,20 @@ mod ccz_indexing_tests {
         for q0 in 0..6 {
             for q1 in 0..6 {
                 for q2 in 0..6 {
-                    if q0 == q1 || q0 == q2 || q1 == q2 { continue; }
-                    assert!(ccz_pairs_unique(q0, q1, q2, &[], 6),
-                            "q0={} q1={} q2={}", q0, q1, q2);
+                    if q0 == q1 || q0 == q2 || q1 == q2 {
+                        continue;
+                    }
+                    assert!(
+                        ccz_pairs_unique(q0, q1, q2, &[], 6),
+                        "q0={} q1={} q2={}",
+                        q0,
+                        q1,
+                        q2
+                    );
                     for e in 0..6 {
-                        if e == q0 || e == q1 || e == q2 { continue; }
+                        if e == q0 || e == q1 || e == q2 {
+                            continue;
+                        }
                         assert!(ccz_pairs_unique(q0, q1, q2, &[e], 6));
                     }
                 }
@@ -6220,7 +6260,9 @@ mod toffoli_tier_a_tests {
                 .wrapping_add(1_442_695_040_888_963_407);
             ((s >> 33) as f64) / (u32::MAX as f64)
         };
-        (0..(1 << n)).map(|_| Complex::new(step(), step())).collect()
+        (0..(1 << n))
+            .map(|_| Complex::new(step(), step()))
+            .collect()
     }
 
     /// n=8 state, inner controls c0=5 c1=6, target t=2.
@@ -6527,7 +6569,9 @@ mod ccz_tier_a_tests {
                 .wrapping_add(1_442_695_040_888_963_407);
             ((s >> 33) as f64) / (u32::MAX as f64)
         };
-        (0..(1 << n)).map(|_| Complex::new(step(), step())).collect()
+        (0..(1 << n))
+            .map(|_| Complex::new(step(), step()))
+            .collect()
     }
 
     /// Direct-call test: `apply_ccz_avx512_tier_a` with mask_bits = [2, 4, 6]
@@ -6542,7 +6586,7 @@ mod ccz_tier_a_tests {
         let mut simd = random_amps(7, 17);
         let mut scalar = simd.clone();
         let mask_bits = [2u32, 4u32, 6u32]; // mask_lo = 2 ≥ LANES_BITS = 2.
-        // SAFETY: AVX-512F detected, mask_lo = 2 ≥ LANES_BITS, n=7 ≥ 3, qubits distinct.
+                                            // SAFETY: AVX-512F detected, mask_lo = 2 ≥ LANES_BITS, n=7 ≥ 3, qubits distinct.
         unsafe {
             apply_ccz_avx512_tier_a(&mut simd, &mask_bits);
         }
