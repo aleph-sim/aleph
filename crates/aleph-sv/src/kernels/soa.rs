@@ -1221,9 +1221,23 @@ fn dispatch_cnot_soa(re: &mut [f64], im: &mut [f64], control: u32, target: u32, 
             // qubits in {0, 1, 2} only guarantee n_qubits ≥ 2; if
             // n_qubits == 2 then len == 4 < LANES_SOA and the SIMD load
             // would OOB.  Fall through to scalar when len is too small.
-            if target <= 2 && control <= 2 && re.len() >= LANES_SOA {
+            //
+            // Additionally, the kernel renormalises external controls
+            // by `(c - 3, true)`, which is sound only when every
+            // external control sits strictly above the in-quartet
+            // subspace, i.e. `c > 2`.  The outer-walk guard `c > max(
+            // control, target)` admits ec=2 when both quartet qubits
+            // are in {0, 1}, so we must add the tighter constraint
+            // `c >= 3` here.  Without it, `2u32 - 3` underflows to
+            // 0xFFFFFFFF and `expand_with_fixed`'s downstream shift
+            // panics in debug / silently corrupts in release.
+            if target <= 2
+                && control <= 2
+                && re.len() >= LANES_SOA
+                && controls.iter().all(|&c| c >= 3)
+            {
                 // SAFETY: Tier C contract — AVX-512F detected, both ∈
-                // {0, 1, 2}, every external control > 2, len ≥
+                // {0, 1, 2}, every external control ≥ 3, len ≥
                 // LANES_SOA.
                 unsafe {
                     apply_2q_cnot_avx512_tier_c(re, im, control, target, controls);
@@ -1283,10 +1297,17 @@ fn dispatch_swap_soa(re: &mut [f64], im: &mut [f64], targets: [u32; 2], controls
             // LANES_SOA (= 8): n_qubits == 2 with targets {0, 1} gives
             // len == 4 < LANES_SOA and the SIMD load would OOB.  Fall
             // through to scalar when len is too small.
-            if lo <= 2 && hi <= 2 && re.len() >= LANES_SOA {
+            //
+            // Additionally, the kernel renormalises external controls
+            // by `(c - 3, true)`; the outer-walk guard `c > hi` admits
+            // ec=2 whenever hi ≤ 1, but the kernel's subtraction would
+            // then underflow.  Tighten to `c >= 3` so the
+            // renormalisation is safe across the full {0,1,2}-quartet
+            // surface.
+            if lo <= 2 && hi <= 2 && re.len() >= LANES_SOA && controls.iter().all(|&c| c >= 3) {
                 // SAFETY: Tier C contract — AVX-512F detected, both
                 // targets in {0, 1, 2}, distinct, every external
-                // control > hi ≥ 1, len ≥ LANES_SOA.
+                // control ≥ 3, len ≥ LANES_SOA.
                 unsafe {
                     apply_2q_swap_avx512_tier_c(re, im, targets, controls);
                 }
@@ -2248,5 +2269,70 @@ mod tests {
             assert_re_im_close(&ra, &rb, 1e-14);
             assert_re_im_close(&ia, &ib, 1e-14);
         }
+    }
+
+    /// Regression test for the SoA Tier C dispatch bug found by
+    /// high-effort code review on the P1-07 PR.  The bug: `dispatch_
+    /// cnot_soa` / `dispatch_swap_soa` Tier C arms admitted external
+    /// controls at qubit 2 while the kernels' `(ec - 3, true)`
+    /// renormalisation requires `ec >= 3`.  With ec=2, the subtraction
+    /// underflowed to 0xFFFFFFFF and crashed `expand_with_fixed`
+    /// downstream (debug panic / release UB).
+    ///
+    /// We verify by routing a CnotHi-shaped matrix through `apply_2q`
+    /// with `targets = [0, 1]` and `external_controls = [2]` on n=4
+    /// (len = 16, well above LANES_SOA = 8 so the Tier-C `len` guard
+    /// would otherwise admit this call).  The dispatch must NOT enter
+    /// Tier C — it must fall through to scalar — and the result must
+    /// match `apply_2q_dense_scalar`.
+    #[test]
+    fn soa_dispatch_cnot_tier_c_rejects_external_control_at_qubit_2() {
+        let n = 4u32;
+        let m = {
+            let mut m = [[Complex::new(0.0, 0.0); 4]; 4];
+            m[0][0] = Complex::new(1.0, 0.0);
+            m[1][1] = Complex::new(1.0, 0.0);
+            m[2][3] = Complex::new(1.0, 0.0);
+            m[3][2] = Complex::new(1.0, 0.0);
+            m
+        };
+        let (r0, i0) = random_re_im(n, 0xc7c2);
+        let mut ra = r0.clone();
+        let mut ia = i0.clone();
+        let mut rb = r0;
+        let mut ib = i0;
+        // Routed through the full apply_2q prelude — pre-fix this
+        // would panic in debug or silently corrupt state in release.
+        apply_2q(&mut ra, &mut ia, [0, 1], &[2], &m);
+        // Reference via dense scalar.
+        apply_2q_dense_scalar(&mut rb, &mut ib, [0, 1], &[2], &m);
+        assert_re_im_close(&ra, &rb, 1e-14);
+        assert_re_im_close(&ia, &ib, 1e-14);
+    }
+
+    /// Mirror of the CNOT regression test for SWAP.  Targets {0, 1}
+    /// with external control at qubit 2 — pre-fix `dispatch_swap_soa`
+    /// admitted ec=2 into the Tier C kernel where the `(ec - 3)`
+    /// renormalisation underflowed.
+    #[test]
+    fn soa_dispatch_swap_tier_c_rejects_external_control_at_qubit_2() {
+        let n = 4u32;
+        let m = {
+            let mut m = [[Complex::new(0.0, 0.0); 4]; 4];
+            m[0][0] = Complex::new(1.0, 0.0);
+            m[1][2] = Complex::new(1.0, 0.0);
+            m[2][1] = Complex::new(1.0, 0.0);
+            m[3][3] = Complex::new(1.0, 0.0);
+            m
+        };
+        let (r0, i0) = random_re_im(n, 0x5402);
+        let mut ra = r0.clone();
+        let mut ia = i0.clone();
+        let mut rb = r0;
+        let mut ib = i0;
+        apply_2q(&mut ra, &mut ia, [0, 1], &[2], &m);
+        apply_2q_dense_scalar(&mut rb, &mut ib, [0, 1], &[2], &m);
+        assert_re_im_close(&ra, &rb, 1e-14);
+        assert_re_im_close(&ia, &ib, 1e-14);
     }
 }
