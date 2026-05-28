@@ -1389,14 +1389,21 @@ pub(crate) fn apply_1q(
                 #[cfg(target_arch = "x86_64")]
                 {
                     if std::is_x86_feature_detected!("avx512f")
-                        && (1usize << target) >= 8
                         && controls.iter().all(|&c| c > target)
                     {
-                        // SAFETY: feature detected + Tier-A SoA contract.
-                        unsafe {
-                            apply_1q_x_soa_avx512(re, im, target, controls);
+                        if (1usize << target) >= 8 {
+                            // SAFETY: feature detected + Tier-A SoA contract.
+                            unsafe {
+                                apply_1q_x_soa_avx512(re, im, target, controls);
+                            }
+                            return;
+                        } else if target <= 2 && re.len() % 8 == 0 {
+                            // SAFETY: feature detected + Tier-B SoA contract.
+                            unsafe {
+                                apply_1q_x_soa_avx512_lowbit(re, im, target, controls);
+                            }
+                            return;
                         }
-                        return;
                     }
                 }
                 apply_1q_x_soa_scalar(re, im, target, controls);
@@ -1849,6 +1856,131 @@ unsafe fn apply_1q_antidiag_soa_avx512(
         let block = crate::kernels::expand_with_fixed(k, &fixed_above) << (target + 1);
         outer_iter(block);
     }
+}
+
+/// AVX-512 Pauli-X on SoA streams (Tier B): `target ∈ {0, 1, 2}`.
+///
+/// Each `__m512d` of `re[]` (resp. `im[]`) holds 8 amplitudes; since
+/// `1 << target < LANES_SOA = 8`, both elements of every swap pair live
+/// inside a single zmm register.  A lane permute swaps them in-register:
+///
+/// * `target = 0` → swap adjacent doubles within each 128-bit lane:
+///   `_mm512_permute_pd::<0x55>` (control `01 01 01 01`).
+/// * `target = 1` → swap doubles at distance 2 within each 256-bit lane:
+///   `_mm512_permutex_pd::<0x4E>` (control `01 00 11 10`).
+/// * `target = 2` → swap halves of the zmm:
+///   `_mm512_permutexvar_pd` with index `[4,5,6,7,0,1,2,3]`.
+///
+/// For X there is no sign change — same permute applied to both `re` and `im`.
+///
+/// Control mask: if `controls` is non-empty, only outer blocks satisfying
+/// `(block & ctrl_mask) == ctrl_mask` are processed.  The contract
+/// `controls.iter().all(|&c| c > target)` ensures every control bit is
+/// above the 3-bit window, so the mask test on `block` is safe (block
+/// steps by LANES_SOA = 8, which clears bits 0..=2 — i.e. exactly the
+/// target-bit positions).
+///
+/// # Safety
+/// * Host must support AVX-512F.
+/// * `target ∈ {0, 1, 2}` (i.e. `1 << target < LANES_SOA = 8`).
+/// * Every control > target (i.e. `controls.iter().all(|&c| c > target)`).
+/// * `re.len() % LANES_SOA == 0`.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f")]
+unsafe fn apply_1q_x_soa_avx512_lowbit(
+    re: &mut [f64],
+    im: &mut [f64],
+    target: u32,
+    controls: &[u32],
+) {
+    use core::arch::x86_64::*;
+
+    const LANES: usize = 8;
+    debug_assert!((1usize << target) < LANES);
+    debug_assert!(controls.iter().all(|&c| c > target));
+    debug_assert_eq!(re.len() % LANES, 0);
+
+    // Index vector for target=2 swap (lanes [0..3] ↔ lanes [4..7] within zmm).
+    // permutexvar lane k receives src[idx[k]]; lane-order idx = [4,5,6,7,0,1,2,3].
+    // _mm512_set_epi64 args: arg 0 → lane 7, arg 7 → lane 0 (reversed).
+    let idx_t2 = _mm512_set_epi64(3, 2, 1, 0, 7, 6, 5, 4);
+    let ctrl_mask = if controls.is_empty() {
+        0
+    } else {
+        crate::kernels::control_mask(controls)
+    };
+
+    let re_ptr = re.as_mut_ptr();
+    let im_ptr = im.as_mut_ptr();
+    let len = re.len();
+
+    let mut block = 0usize;
+    while block + LANES <= len {
+        if (block & ctrl_mask) == ctrl_mask {
+            // SAFETY: in-bounds — block + LANES ≤ len by loop invariant.
+            let r = _mm512_loadu_pd(re_ptr.add(block));
+            let m = _mm512_loadu_pd(im_ptr.add(block));
+            let (r_p, m_p) = match target {
+                0 => (_mm512_permute_pd::<0x55>(r), _mm512_permute_pd::<0x55>(m)),
+                1 => (_mm512_permutex_pd::<0x4E>(r), _mm512_permutex_pd::<0x4E>(m)),
+                2 => (
+                    _mm512_permutexvar_pd(idx_t2, r),
+                    _mm512_permutexvar_pd(idx_t2, m),
+                ),
+                _ => unreachable!("Tier-B SoA: target out of {{0, 1, 2}}"),
+            };
+            _mm512_storeu_pd(re_ptr.add(block), r_p);
+            _mm512_storeu_pd(im_ptr.add(block), m_p);
+        }
+        block += LANES;
+    }
+}
+
+/// Tier-B Y SoA: thin wrapper around the scalar kernel.
+/// Lane-by-lane sign-mask construction for split re/im at target ∈ {0,1,2}
+/// is bug-prone and the workload payoff is minimal (Y rarely lands at
+/// very-low qubit positions). Documented as Open Question in ADR 0011.
+///
+/// # Safety
+/// * Host must support AVX-512F (required by caller's dispatch path).
+/// * `target ∈ {0, 1, 2}`.
+/// * `controls.iter().all(|&c| c > target)`.
+/// * `phase_sign ∈ {+1.0, -1.0}`.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f")]
+unsafe fn apply_1q_y_soa_avx512_lowbit(
+    re: &mut [f64],
+    im: &mut [f64],
+    target: u32,
+    controls: &[u32],
+    phase_sign: f64,
+) {
+    debug_assert!((1usize << target) < 8);
+    debug_assert!(controls.iter().all(|&c| c > target));
+    debug_assert!(phase_sign == 1.0 || phase_sign == -1.0);
+    apply_1q_y_soa_scalar(re, im, target, controls, phase_sign);
+}
+
+/// Tier-B generic anti-diagonal SoA: thin wrapper around the scalar kernel.
+/// Same rationale as `apply_1q_y_soa_avx512_lowbit`. ADR 0011 Open Question.
+///
+/// # Safety
+/// * Host must support AVX-512F (required by caller's dispatch path).
+/// * `target ∈ {0, 1, 2}`.
+/// * `controls.iter().all(|&c| c > target)`.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f")]
+unsafe fn apply_1q_antidiag_soa_avx512_lowbit(
+    re: &mut [f64],
+    im: &mut [f64],
+    target: u32,
+    controls: &[u32],
+    a: Complex,
+    b: Complex,
+) {
+    debug_assert!((1usize << target) < 8);
+    debug_assert!(controls.iter().all(|&c| c > target));
+    apply_1q_antidiag_soa_scalar(re, im, target, controls, a, b);
 }
 
 #[cfg(test)]
@@ -2863,6 +2995,28 @@ mod tests {
         for k in 0..256 {
             assert!((re_avx[k] - re_sca[k]).abs() < 1e-12);
             assert!((im_avx[k] - im_sca[k]).abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn apply_1q_x_soa_avx512_lowbit_all_targets_match_scalar() {
+        if !std::is_x86_feature_detected!("avx512f") {
+            return;
+        }
+        for &target in &[0u32, 1u32, 2u32] {
+            let mut re_avx: Vec<f64> = (0..64).map(|k| k as f64 * 0.05).collect();
+            let mut im_avx: Vec<f64> = (0..64).map(|k| -(k as f64) * 0.07).collect();
+            let mut re_sca = re_avx.clone();
+            let mut im_sca = im_avx.clone();
+            // SAFETY: avx512 detected + target ∈ {0,1,2} + no controls +
+            // len = 64 is divisible by LANES_SOA = 8.
+            unsafe {
+                super::apply_1q_x_soa_avx512_lowbit(&mut re_avx, &mut im_avx, target, &[]);
+            }
+            super::apply_1q_x_soa_scalar(&mut re_sca, &mut im_sca, target, &[]);
+            assert_eq!(re_avx, re_sca, "target={}", target);
+            assert_eq!(im_avx, im_sca, "target={}", target);
         }
     }
 }
