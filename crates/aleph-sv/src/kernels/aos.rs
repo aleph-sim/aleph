@@ -61,7 +61,10 @@ pub(crate) fn apply_1q(amps: &mut [Complex], target: u32, controls: &[u32], m: &
                                 apply_1q_x_avx512(amps, target, controls);
                             }
                             return;
-                        } else if target <= 1 && amps.len() % 4 == 0 {
+                        } else if target <= 1
+                            && amps.len() % 4 == 0
+                            && controls.iter().all(|&c| c >= 2)
+                        {
                             // SAFETY: feature gate + Tier-B contract
                             // (target ∈ {0,1}, controls > target,
                             // amps.len() divisible by LANES).
@@ -87,7 +90,10 @@ pub(crate) fn apply_1q(amps: &mut [Complex], target: u32, controls: &[u32], m: &
                                 apply_1q_y_avx512(amps, target, controls, 1.0);
                             }
                             return;
-                        } else if target <= 1 && amps.len() % 4 == 0 {
+                        } else if target <= 1
+                            && amps.len() % 4 == 0
+                            && controls.iter().all(|&c| c >= 2)
+                        {
                             // SAFETY: feature gate + Tier-B contract.
                             unsafe {
                                 apply_1q_y_avx512_lowbit(amps, target, controls, 1.0);
@@ -111,7 +117,10 @@ pub(crate) fn apply_1q(amps: &mut [Complex], target: u32, controls: &[u32], m: &
                                 apply_1q_y_avx512(amps, target, controls, -1.0);
                             }
                             return;
-                        } else if target <= 1 && amps.len() % 4 == 0 {
+                        } else if target <= 1
+                            && amps.len() % 4 == 0
+                            && controls.iter().all(|&c| c >= 2)
+                        {
                             // SAFETY: feature gate + Tier-B contract.
                             unsafe {
                                 apply_1q_y_avx512_lowbit(amps, target, controls, -1.0);
@@ -135,7 +144,10 @@ pub(crate) fn apply_1q(amps: &mut [Complex], target: u32, controls: &[u32], m: &
                                 apply_1q_antidiag_avx512(amps, target, controls, m[0][1], m[1][0]);
                             }
                             return;
-                        } else if target <= 1 && amps.len() % 4 == 0 {
+                        } else if target <= 1
+                            && amps.len() % 4 == 0
+                            && controls.iter().all(|&c| c >= 2)
+                        {
                             // SAFETY: feature gate + Tier-B contract.
                             unsafe {
                                 apply_1q_antidiag_avx512_lowbit(
@@ -884,8 +896,13 @@ unsafe fn apply_1q_antidiag_avx512(
 /// # Safety
 /// * Host AVX-512F.
 /// * `target ∈ {0, 1}` AND `1 << target < LANES = 4`.
-/// * Every control's qubit index > target. (External controls below
-///   the target route to the scalar fallback.)
+/// * Every control's qubit index `≥ log2(LANES) = 2`. The block-level
+///   `(block & ctrl_mask) == ctrl_mask` test only inspects bits at or
+///   above `log2(LANES)` (since block addresses are LANES-aligned), so
+///   any control with index below 2 would be aliased to 0 in `block`
+///   and the gate would silently no-op for amplitudes that DO have the
+///   control bit set within the LANES-block. Dispatch must filter such
+///   configurations to the scalar fallback.
 /// * `amps.len() % LANES == 0` (always true for `n ≥ 2`).
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx512f")]
@@ -894,7 +911,10 @@ unsafe fn apply_1q_x_avx512_lowbit(amps: &mut [Complex], target: u32, controls: 
 
     const LANES: usize = 4;
     debug_assert!((1usize << target) < LANES);
-    debug_assert!(controls.iter().all(|&c| c > target));
+    debug_assert!(
+        controls.iter().all(|&c| c >= 2),
+        "Tier-B AoS contract: every control must be at qubit index ≥ log2(LANES) = 2"
+    );
     debug_assert_eq!(amps.len() % LANES, 0);
 
     let amps_ptr = amps.as_mut_ptr() as *mut f64;
@@ -985,7 +1005,8 @@ unsafe fn apply_1q_y_avx512_lowbit(
 
     const LANES: usize = 4;
     debug_assert!((1usize << target) < LANES);
-    debug_assert!(controls.iter().all(|&c| c > target));
+    // Tier-B contract: see apply_1q_x_avx512_lowbit Safety block.
+    debug_assert!(controls.iter().all(|&c| c >= 2));
     debug_assert!(phase_sign == 1.0 || phase_sign == -1.0);
     debug_assert_eq!(amps.len() % LANES, 0);
 
@@ -1087,7 +1108,8 @@ unsafe fn apply_1q_antidiag_avx512_lowbit(
 
     const LANES: usize = 4;
     debug_assert!((1usize << target) < LANES);
-    debug_assert!(controls.iter().all(|&c| c > target));
+    // Tier-B contract: see apply_1q_x_avx512_lowbit Safety block.
+    debug_assert!(controls.iter().all(|&c| c >= 2));
     debug_assert_eq!(amps.len() % LANES, 0);
 
     // Build per-lane scalar vectors with the correct scalar in the right slot.

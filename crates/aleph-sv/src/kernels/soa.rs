@@ -1397,7 +1397,10 @@ pub(crate) fn apply_1q(
                                 apply_1q_x_soa_avx512(re, im, target, controls);
                             }
                             return;
-                        } else if target <= 2 && re.len() % 8 == 0 {
+                        } else if target <= 2
+                            && re.len() % 8 == 0
+                            && controls.iter().all(|&c| c >= 3)
+                        {
                             // SAFETY: feature detected + Tier-B SoA contract.
                             unsafe {
                                 apply_1q_x_soa_avx512_lowbit(re, im, target, controls);
@@ -1897,7 +1900,13 @@ unsafe fn apply_1q_x_soa_avx512_lowbit(
 
     const LANES: usize = 8;
     debug_assert!((1usize << target) < LANES);
-    debug_assert!(controls.iter().all(|&c| c > target));
+    // Tier-B SoA contract: the block-level `(block & ctrl_mask) == ctrl_mask`
+    // gate only inspects bits ≥ log2(LANES) = 3 (since block addresses are
+    // LANES-aligned). Any control at qubit index < 3 would alias to 0 in
+    // `block` and the gate would silently no-op for amplitudes that DO have
+    // the control bit set within the LANES-block. Dispatch must filter such
+    // configurations to the scalar fallback.
+    debug_assert!(controls.iter().all(|&c| c >= 3));
     debug_assert_eq!(re.len() % LANES, 0);
 
     // Index vector for target=2 swap (lanes [0..3] ↔ lanes [4..7] within zmm).
