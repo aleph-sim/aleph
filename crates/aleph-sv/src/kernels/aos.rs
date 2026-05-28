@@ -2990,6 +2990,82 @@ unsafe fn apply_toffoli_avx512_tier_b0(
     }
 }
 
+/// Toffoli Tier-B.1: target=1 (within-LANES), in-zmm cross-128 swap.
+/// Swaps amp pairs (a0,a2) and (a1,a3) within each 4-amp zmm block —
+/// equivalent to swapping the low 256 bits of the zmm with the high 256.
+///
+/// **AoS layout permutation.** The zmm holds 8 doubles:
+/// `(a0.re, a0.im, a1.re, a1.im, a2.re, a2.im, a3.re, a3.im)`.
+/// Swapping `a0 ↔ a2` and `a1 ↔ a3` (pairs differing only in bit 1)
+/// produces: `(a2.re, a2.im, a3.re, a3.im, a0.re, a0.im, a1.re, a1.im)`.
+/// As a lane-index permutation: input `(0,1,2,3,4,5,6,7)` → output
+/// `(4,5,6,7,0,1,2,3)`.
+///
+/// **`_mm512_set_epi64` endianness.** The intrinsic stores argument 0 in
+/// lane 7 and argument 7 in lane 0 (HIGH-to-LOW). To produce index vector
+/// `(4,5,6,7,0,1,2,3)` (lane-0-first), the call is
+/// `_mm512_set_epi64(3,2,1,0,7,6,5,4)`.
+///
+/// # Safety
+///
+/// Caller MUST guarantee all of:
+/// * Host CPU supports AVX-512F.
+/// * `target == 1` (implicit — no parameter; this kernel is t=1 only).
+/// * Every entry in `sorted_controls` is ≥ `LANES_BITS = 2`, so each
+///   4-amp block carries a uniform ctrl-mask value (no control bit aliases
+///   into the within-block bit positions 0 or 1).
+/// * `amps.len() == 1 << n` for some `n ≥ 3`.
+/// * All elements of `sorted_controls` are distinct, differ from 1, and
+///   are valid qubit indices (< n).
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f")]
+unsafe fn apply_toffoli_avx512_tier_b1(
+    amps: &mut [Complex],
+    sorted_controls: &[u32],
+) {
+    use std::arch::x86_64::*;
+
+    const LANES: usize = 4; // complex amps per zmm (8 f64 per zmm)
+
+    debug_assert!(
+        sorted_controls.iter().all(|&c| c >= 2),
+        "Tier-B.1 contract: every control must be at qubit index >= log2(LANES) = 2"
+    );
+
+    let mut ctrl_mask = 0usize;
+    for &c in sorted_controls {
+        ctrl_mask |= 1usize << c;
+    }
+    let len = amps.len();
+    let amps_ptr = amps.as_mut_ptr() as *mut f64;
+
+    // Permute index vector for in-zmm cross-128 swap: (a0,a2) ↔ (a1,a3).
+    // Want output lane order (4,5,6,7,0,1,2,3).
+    // _mm512_set_epi64 takes HIGH-to-LOW args, so reverse the lane order:
+    // arg positions 7..0 correspond to output lanes 0..7.
+    let perm_idx = _mm512_set_epi64(3, 2, 1, 0, 7, 6, 5, 4);
+
+    let mut block_base = 0usize;
+    while block_base < len {
+        if (block_base & ctrl_mask) != ctrl_mask {
+            // Not all controls set — gate does not fire for this block.
+            block_base += LANES;
+            continue;
+        }
+        // SAFETY: `block_base + LANES <= len` because len is a power of two
+        // and the loop steps by LANES = 4, so the last valid block_base is
+        // `len - LANES`. Each Complex is 16 bytes, so the pointer arithmetic
+        // `amps_ptr.add(block_base * 2)` advances by `block_base * 2` f64
+        // values = `block_base` Complex values. One zmm load covers LANES
+        // Complex = 8 f64 values, all within [block_base, block_base + LANES).
+        let p = amps_ptr.add(block_base * 2);
+        let z = _mm512_loadu_pd(p);
+        let z_perm = _mm512_permutexvar_pd(perm_idx, z);
+        _mm512_storeu_pd(p, z_perm);
+        block_base += LANES;
+    }
+}
+
 /// Top-level 3q dispatch. Matrix-detects Toffoli (CCX) and CCZ shapes
 /// per spec §3.1 and routes to specialised paths. Identity short-circuits.
 /// Falls through to the generic 8x8 scalar kernel for arbitrary matrices.
@@ -3064,6 +3140,17 @@ fn dispatch_toffoli(amps: &mut [Complex], targets: [u32; 3], controls: &[u32]) {
                 // Qubits distinct + in-range by Circuit invariant.
                 unsafe {
                     apply_toffoli_avx512_tier_b0(amps, &all_ctrls);
+                }
+                return;
+            }
+            if t == 1 && c_lo >= LANES_BITS {
+                // Tier-B.1: target=1 in-zmm cross-128 swap.
+                // SAFETY: AVX-512F detected, target=1 (implicit in kernel),
+                // every control >= LANES_BITS=2 (c_lo >= 2). State vector
+                // length is a power of two with n >= 3 (circuit invariant).
+                // Qubits distinct + in-range by Circuit invariant.
+                unsafe {
+                    apply_toffoli_avx512_tier_b1(amps, &all_ctrls);
                 }
                 return;
             }
@@ -6112,6 +6199,65 @@ mod toffoli_tier_a_tests {
         let mut b = a.clone();
         dispatch_toffoli(&mut a, [3, 4, 0], &[]);
         apply_toffoli_scalar(&mut b, [3, 4, 0], &[]);
+        for (x, y) in a.iter().zip(b.iter()) {
+            assert!(
+                (x.re - y.re).abs() < 1e-12,
+                "re mismatch: {} vs {}",
+                x.re,
+                y.re
+            );
+            assert!(
+                (x.im - y.im).abs() < 1e-12,
+                "im mismatch: {} vs {}",
+                x.im,
+                y.im
+            );
+        }
+    }
+
+    /// Direct-call equivalence: Tier-B.1 kernel vs scalar for n=6, controls=[3,4], t=1.
+    /// `c_lo = 3 >= LANES_BITS = 2`, `t = 1` — Tier-B.1 contract satisfied.
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn tier_b1_direct_call_matches_scalar() {
+        if !std::is_x86_feature_detected!("avx512f") {
+            return;
+        }
+        let mut simd = random_amps(6, 15);
+        let mut scalar = simd.clone();
+        let sorted = [3u32, 4u32];
+        // SAFETY: AVX-512F detected, sorted_controls = [3, 4] all >= 2,
+        // t=1 (implicit), n=6 so len=64 = 1<<6 >= 1<<3.
+        unsafe {
+            apply_toffoli_avx512_tier_b1(&mut simd, &sorted);
+        }
+        apply_toffoli_scalar(&mut scalar, [3, 4, 1], &[]);
+        for (x, y) in simd.iter().zip(scalar.iter()) {
+            assert!(
+                (x.re - y.re).abs() < 1e-12,
+                "re mismatch: {} vs {}",
+                x.re,
+                y.re
+            );
+            assert!(
+                (x.im - y.im).abs() < 1e-12,
+                "im mismatch: {} vs {}",
+                x.im,
+                y.im
+            );
+        }
+    }
+
+    /// Cross-arch dispatch test for Tier-B.1: `dispatch_toffoli` must match
+    /// the scalar kernel for `targets=[3,4,1]` on all host architectures.
+    /// On AVX-512 hosts this exercises the Tier-B.1 branch (t=1, c_lo=3>=2);
+    /// on other hosts it falls through to the scalar fallback.
+    #[test]
+    fn dispatch_toffoli_routes_tier_b1_cross_arch() {
+        let mut a = random_amps(6, 16);
+        let mut b = a.clone();
+        dispatch_toffoli(&mut a, [3, 4, 1], &[]);
+        apply_toffoli_scalar(&mut b, [3, 4, 1], &[]);
         for (x, y) in a.iter().zip(b.iter()) {
             assert!(
                 (x.re - y.re).abs() < 1e-12,
