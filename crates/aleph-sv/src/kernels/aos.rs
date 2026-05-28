@@ -3223,6 +3223,96 @@ unsafe fn apply_ccz_avx512_tier_a(amps: &mut [Complex], mask_bits: &[u32]) {
     }
 }
 
+/// CCZ Tier-A outer-walk: handles mask bits below LANES_BITS via
+/// per-lane-mask `_mm512_mask_blend_pd`. The "high" mask bits (>=
+/// LANES_BITS) are still checked at the block_base level uniformly;
+/// the "low" mask bits (< LANES_BITS) drive the per-lane blend.
+///
+/// For each amp `k ∈ {0,1,2,3}` inside a LANES-block, the lane should
+/// be sign-flipped iff `(k & mask_low) == mask_low` where `mask_low` is
+/// the union of all mask bits below LANES_BITS = 2. Each amp occupies
+/// 2 consecutive doubles (re + im) in AoS layout, so the u8 `lane_mask`
+/// has bit positions `2*k` and `2*k+1` set for matching lanes.
+///
+/// `_mm512_mask_blend_pd(mask, a, b)` selects `b` where the mask bit is
+/// 1, and `a` where the mask bit is 0. With `a = z` (original) and
+/// `b = neg` (sign-flipped), setting `lane_mask` in the matching positions
+/// produces the correct selective sign flip.
+///
+/// **Edge case.** If `mask_low == 0` (no bits below LANES_BITS), then
+/// `(0 & 0) == 0` is true for k=0 only, but the specification for this
+/// function is only invoked when some mask bit IS below LANES_BITS
+/// (`mask_lo < LANES_BITS`). If all amps in the block should flip (e.g.,
+/// every bit in mask_low is the full set), `lane_mask = 0xFF` and
+/// `blend` degenerates to a full flip — identical to Tier-A clean.
+///
+/// # Safety
+/// - Host CPU supports AVX-512F.
+/// - All entries of `mask_bits` are distinct and < n.
+/// - `amps.len() == 1 << n` for some n ≥ 3 (circuit invariant).
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f")]
+unsafe fn apply_ccz_avx512_tier_a_outer_walk(
+    amps: &mut [Complex],
+    mask_bits: &[u32],
+) {
+    use std::arch::x86_64::*;
+
+    const LANES: usize = 4; // complex amps per zmm (8 f64 per zmm)
+    const LANES_BITS: u32 = 2; // log2(LANES)
+
+    // Partition mask bits into low (< LANES_BITS) and high (>= LANES_BITS).
+    let mut mask_low: usize = 0;
+    let mut mask_high: usize = 0;
+    for &b in mask_bits {
+        if b < LANES_BITS {
+            mask_low |= 1usize << b;
+        } else {
+            mask_high |= 1usize << b;
+        }
+    }
+
+    // Per-block lane mask: for amp k in {0..4}, flip iff (k & mask_low) == mask_low.
+    // Each amp occupies 2 doubles (AoS re+im), so bit positions are 2*k and 2*k+1.
+    // Precomputed once — constant per kernel invocation.
+    let lane_mask: u8 = {
+        let mut m = 0u8;
+        for k in 0..4u32 {
+            if (k as usize & mask_low) == mask_low {
+                m |= 1 << (2 * k); // re lane
+                m |= 1 << (2 * k + 1); // im lane
+            }
+        }
+        m
+    };
+
+    let len = amps.len();
+    let amps_ptr = amps.as_mut_ptr() as *mut f64;
+
+    // IEEE-754: -0.0 has exactly the sign bit set; XOR flips sign of every lane.
+    let sign = _mm512_set1_pd(-0.0_f64);
+
+    let mut block_base = 0usize;
+    while block_base < len {
+        // High mask bits must be satisfied at block level (uniform within block).
+        if (block_base & mask_high) != mask_high {
+            block_base += LANES;
+            continue;
+        }
+        // SAFETY: block_base + LANES ≤ len because amps.len() is a power of two
+        // and block_base is always LANES-aligned. `amps_ptr.add(block_base * 2)`
+        // is within bounds because block_base < len.
+        let p = amps_ptr.add(block_base * 2);
+        let z = _mm512_loadu_pd(p);
+        let neg = _mm512_xor_pd(z, sign);
+        // _mm512_mask_blend_pd(mask, a, b): selects b where bit=1, a where bit=0.
+        // lane_mask=1 → take neg (flipped); lane_mask=0 → take z (unchanged).
+        let blended = _mm512_mask_blend_pd(lane_mask, z, neg);
+        _mm512_storeu_pd(p, blended);
+        block_base += LANES;
+    }
+}
+
 /// Routes CCZ to the best available tier (spec §5).
 fn dispatch_ccz(amps: &mut [Complex], targets: [u32; 3], controls: &[u32]) {
     #[cfg(target_arch = "x86_64")]
@@ -3241,13 +3331,23 @@ fn dispatch_ccz(amps: &mut [Complex], targets: [u32; 3], controls: &[u32]) {
         all_mask.sort();
         let mask_lo = all_mask[0];
 
-        if std::is_x86_feature_detected!("avx512f") && mask_lo >= LANES_BITS {
-            // Tier-A: every mask bit ≥ LANES_BITS=2, so each zmm block's
-            // full-mask check is uniform — no intra-block ambiguity.
-            // SAFETY: AVX-512F detected, mask_lo ≥ 2, all qubit positions
-            // distinct + in-range (Circuit invariant), n ≥ 3 (Circuit invariant).
-            unsafe {
-                apply_ccz_avx512_tier_a(amps, &all_mask);
+        if std::is_x86_feature_detected!("avx512f") {
+            if mask_lo >= LANES_BITS {
+                // Tier-A clean: every mask bit ≥ LANES_BITS=2, so each zmm
+                // block's full-mask check is uniform — no intra-block ambiguity.
+                // SAFETY: AVX-512F detected, mask_lo ≥ 2, all qubit positions
+                // distinct + in-range (Circuit invariant), n ≥ 3 (Circuit invariant).
+                unsafe {
+                    apply_ccz_avx512_tier_a(amps, &all_mask);
+                }
+            } else {
+                // Tier-A outer-walk: some mask bit < LANES_BITS=2, so we need
+                // a per-lane blend inside each block.
+                // SAFETY: AVX-512F detected, all qubit positions distinct + in-range
+                // (Circuit invariant), n ≥ 3 (Circuit invariant).
+                unsafe {
+                    apply_ccz_avx512_tier_a_outer_walk(amps, &all_mask);
+                }
             }
             return;
         }
@@ -6470,6 +6570,42 @@ mod ccz_tier_a_tests {
                 x.im,
                 y.im
             );
+        }
+    }
+
+    /// Direct-call test: `apply_ccz_avx512_tier_a_outer_walk` with mask = {0, 3, 5}
+    /// (mask_lo = 0 < LANES_BITS = 2). Must match `apply_ccz_scalar` exactly.
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn ccz_tier_a_outer_walk_low_mask() {
+        if !std::is_x86_feature_detected!("avx512f") {
+            return;
+        }
+        let mut simd = random_amps(6, 19);
+        let mut scalar = simd.clone();
+        // mask = {0, 3, 5} — mask_lo=0 < LANES_BITS.
+        unsafe {
+            apply_ccz_avx512_tier_a_outer_walk(&mut simd, &[0, 3, 5]);
+        }
+        apply_ccz_scalar(&mut scalar, [0, 3, 5], &[]);
+        for (x, y) in simd.iter().zip(scalar.iter()) {
+            assert!((x.re - y.re).abs() < 1e-12);
+            assert!((x.im - y.im).abs() < 1e-12);
+        }
+    }
+
+    /// Cross-arch dispatch test: `dispatch_ccz` with targets=[0, 3, 5] (mask_lo=0 <
+    /// LANES_BITS) must match `apply_ccz_scalar` on all host architectures.
+    /// On AVX-512 hosts this exercises the outer-walk branch.
+    #[test]
+    fn dispatch_ccz_routes_outer_walk_cross_arch() {
+        let mut a = random_amps(6, 20);
+        let mut b = a.clone();
+        dispatch_ccz(&mut a, [0, 3, 5], &[]);
+        apply_ccz_scalar(&mut b, [0, 3, 5], &[]);
+        for (x, y) in a.iter().zip(b.iter()) {
+            assert!((x.re - y.re).abs() < 1e-12);
+            assert!((x.im - y.im).abs() < 1e-12);
         }
     }
 }
