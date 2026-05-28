@@ -354,6 +354,7 @@ const SHAPE_8X8_TOL: f64 = 1e-12;
 /// through to the generic kernel.
 // Allow dead_code: dispatch wiring added in Task 6.
 #[allow(dead_code)]
+#[inline]
 pub(crate) fn is_identity_8x8(m: &[[aleph_core::Complex; 8]; 8]) -> bool {
     for (r, row) in m.iter().enumerate() {
         for (c, entry) in row.iter().enumerate() {
@@ -383,6 +384,7 @@ pub(crate) fn is_identity_8x8(m: &[[aleph_core::Complex; 8]; 8]) -> bool {
 /// same rationale as `is_identity_8x8`.
 // Allow dead_code: dispatch wiring added in Task 6.
 #[allow(dead_code)]
+#[inline]
 pub(crate) fn is_toffoli(m: &[[aleph_core::Complex; 8]; 8]) -> bool {
     // Rows 0..=5: identity rows.
     for (r, row) in m.iter().enumerate().take(6) {
@@ -437,6 +439,7 @@ pub(crate) fn is_toffoli(m: &[[aleph_core::Complex; 8]; 8]) -> bool {
 /// same rationale as `is_identity_8x8`.
 // Allow dead_code: dispatch wiring added in Task 6.
 #[allow(dead_code)]
+#[inline]
 pub(crate) fn is_ccz(m: &[[aleph_core::Complex; 8]; 8]) -> bool {
     for (r, row) in m.iter().enumerate() {
         for (c, entry) in row.iter().enumerate() {
@@ -536,6 +539,20 @@ mod shape_8x8_tests {
         let mut m = toffoli_8x8();
         m[0][1] = Complex::new(1e-6, 0.0);
         assert!(!is_toffoli(&m));
+    }
+
+    #[test]
+    fn identity_tolerates_tiny_noise() {
+        let mut m = identity_8x8();
+        m[0][1] = Complex::new(1e-14, 0.0);
+        assert!(is_identity_8x8(&m));
+    }
+
+    #[test]
+    fn ccz_tolerates_tiny_noise() {
+        let mut m = ccz_8x8();
+        m[0][1] = Complex::new(1e-14, 0.0);
+        assert!(is_ccz(&m));
     }
 }
 
