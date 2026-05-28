@@ -122,19 +122,46 @@ kernel which propagates NaN through its complex multiply. Test
 ## Performance shape
 
 Micro-bench (L2-resident n=14, EPYC 8124P, single thread,
-`RUSTFLAGS="-C target-cpu=native"`):
+`RUSTFLAGS="-C target-cpu=native"`). Three baselines per kernel:
 
-| Kernel       | Generic baseline | Specialised path | Speedup |
-|--------------|------------------|-------------------|---------|
-| AoS X        | 17.62 µs         | 5.22 µs           | 3.38×   |
-| AoS Y        | 17.65 µs         | 5.00 µs           | 3.53×   |
-| AoS antidiag | 17.62 µs         | 5.31 µs           | 3.32×   |
+- **Scalar baseline**: hand-rolled inline 2×2 multiply loop (the path
+  LLVM auto-vectorises to 2-lane `vmulpd xmm`). Anchors the BACKLOG AC.
+- **Generic AVX-512 baseline**: `apply_1q_avx512` packed-complex kernel
+  (what pre-P1-05 dispatch routed Pauli-X/Y through, since they fell
+  past the diagonal classifier into the generic 2×2 arm). This is the
+  HONEST "what P1-05 actually replaced" reference.
+- **Specialised Tier-A** and **Specialised Tier-B**: the new
+  `apply_1q_x_avx512` (block swap) and `apply_1q_x_avx512_lowbit`
+  (in-register permute) kernels.
 
-All three clear the BACKLOG AC of 3–10× speedup over the generic 2×2
-kernel at L2-resident state. SoA micro-bench harness not added in
-P1-05 (deferred to a P1-05-followup ticket if SoA backend remains
-canonical after Phase-1 closure); SoA Tier-A AVX-512 correctness
-validated on EPYC via T9's `apply_1q_x_soa_avx512_matches_scalar`,
+| Kernel       | Scalar | Generic AVX-512 | Specialised Tier-A | Tier-B | vs scalar | vs AVX-512 |
+|--------------|--------|------------------|---------------------|--------|-----------|------------|
+| AoS X        | 20.32 µs | 5.68 µs        | 5.23 µs            | 4.47 µs | 3.89× / 4.55× | 1.09× / 1.27× |
+| AoS Y        | 20.32 µs | 5.52 µs        | 5.12 µs            | 4.49 µs | 3.97× / 4.53× | 1.08× / 1.23× |
+| AoS antidiag | 20.32 µs | 5.52 µs        | 5.35 µs            | 4.82 µs | 3.80× / 4.22× | 1.03× / 1.15× |
+
+(`Tier-A / Tier-B` ratios in the last two columns.)
+
+The BACKLOG AC (3–10× speedup over generic 1q kernel) clears against
+the scalar baseline. Against the honest generic AVX-512 baseline, the
+real lift is ~1.03–1.09× on Tier-A and ~1.15–1.27× on Tier-B. Tier-B
+beats Tier-A at n=14 because the in-register permute path does one
+load + one store per LANES-block, while Tier-A does two loads + two
+stores per LANES-block pair — at this state size the memory-traffic
+saving dominates the µop-count saving.
+
+The narrow margin vs the AVX-512 baseline reflects ADR 0008's
+bandwidth-bound regime: both paths process the same number of bytes
+per amplitude (16 B) and at n=14 (256 KiB state) we are L2-resident
+but not L1-resident, so the wall-clock floor is set by load throughput.
+The specialised path still wins because it strictly reduces µop count
+on the back-end, but the margin shrinks at larger n where bandwidth
+fully dominates (Grover-n20 wall-clock delta is only −2.97 %, below).
+
+SoA micro-bench harness not added in P1-05 (deferred to a
+P1-05-followup ticket if SoA backend remains canonical after Phase-1
+closure); SoA Tier-A AVX-512 correctness validated on EPYC via T9's
+`apply_1q_x_soa_avx512_matches_scalar`,
 `apply_1q_y_soa_avx512_pos_matches_scalar`, and
 `apply_1q_antidiag_soa_avx512_matches_scalar` unit tests.
 

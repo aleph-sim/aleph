@@ -820,8 +820,10 @@ Updated AC checklist:
 - [x] Generic anti-diagonal kernel (full multiply, AoS + SoA, three
       tiers — Tier B SoA wraps scalar)
 - [x] `is_antidiagonal_2x2` + `classify_1q_antidiag` in `kernels/mod.rs`
-- [x] Micro-bench: 3–10× speedup over generic on L2-resident state
-      (EPYC: X 3.38×, Y 3.53×, antidiag 3.32×)
+- [x] Micro-bench: 3–10× speedup over generic-scalar 1q kernel on
+      L2-resident state (EPYC Tier-A: X 3.89×, Y 3.97×, antidiag 3.80×;
+      Tier-B 4.22–4.55×). Vs the pre-P1-05 dispatch's AVX-512 generic
+      path the lift is 1.03–1.27× (bandwidth-bound; see ADR 0011).
 - [x] ADR 0011 documents the dispatch and Open Questions
 
 -----

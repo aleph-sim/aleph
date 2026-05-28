@@ -267,17 +267,30 @@ than AoS — open question for P1-14.
 
 EPYC 8124P, single thread, `RUSTFLAGS="-C target-cpu=native"`.
 
-### Micro (L2-resident n=14, target qubit = 8)
+### Micro (L2-resident n=14)
 
-| Kernel        | Generic 2×2 baseline | Specialised path | Speedup |
-|---------------|----------------------|-------------------|---------|
-| AoS X         | 17.62 µs             | 5.22 µs           | 3.38×   |
-| AoS Y         | 17.65 µs             | 5.00 µs           | 3.53×   |
-| AoS anti-diag | 17.62 µs             | 5.31 µs           | 3.32×   |
+Two baselines per kernel: **Scalar** (hand-inlined 2×2 multiply, what
+LLVM auto-vectorises to `vmulpd xmm`) and **Generic AVX-512** (the
+packed-complex `apply_1q_avx512` that pre-P1-05 dispatch routed
+Pauli-X/Y through). Specialised in two flavours: **Tier-A** (target=8,
+block-stride packed swap) and **Tier-B** (target=0, in-register
+permute). Full diff in ADR 0011 § "Performance shape".
 
-All three clear the BACKLOG AC (3–10× over generic 2×2). SoA micro
-deferred (see ADR 0011 Open Question 3); SoA Tier-A AVX-512 correctness
-validated on EPYC via T9 unit tests.
+| Kernel        | Scalar    | Generic AVX-512 | Specialised Tier-A | Tier-B  | vs scalar (A/B) | vs AVX-512 (A/B) |
+|---------------|-----------|------------------|---------------------|---------|------------------|-------------------|
+| AoS X         | 20.32 µs  | 5.68 µs          | 5.23 µs            | 4.47 µs | 3.89× / 4.55×    | 1.09× / 1.27×     |
+| AoS Y         | 20.32 µs  | 5.52 µs          | 5.12 µs            | 4.49 µs | 3.97× / 4.53×    | 1.08× / 1.23×     |
+| AoS anti-diag | 20.32 µs  | 5.52 µs          | 5.35 µs            | 4.82 µs | 3.80× / 4.22×    | 1.03× / 1.15×     |
+
+BACKLOG AC (3–10× over generic 1q kernel) clears against the scalar
+baseline. The honest "what P1-05 actually replaced" comparison is the
+AVX-512 baseline, where the real lift is **1.03–1.27×** —
+bandwidth-bound at n=14 (state = 256 KiB > L1). Tier-B beats Tier-A
+because the in-register permute halves the memory traffic per
+LANES-block.
+
+SoA micro deferred (see ADR 0011 Open Question 3); SoA Tier-A AVX-512
+correctness validated on EPYC via T9 unit tests.
 
 ### Workload (informational)
 
