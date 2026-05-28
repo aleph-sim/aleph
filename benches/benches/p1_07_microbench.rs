@@ -33,10 +33,23 @@ const N_GATES: usize = 100;
 /// CNOT pair `(control, target)` for gate index `i`. Walks through
 /// adjacent qubit pairs so the memory-access stride varies — keeps
 /// the bench out of the degenerate "one stride forever" cache pattern.
+///
+/// Orientation: `control > target` with `target ≥ 2` for the bulk of
+/// iterations.  The dispatched CNOT path requires `control > target`
+/// to engage Tier A SIMD; small targets engage Tier B / Tier C (also
+/// SIMD).  With the inverted orientation, the perturbed-matrix
+/// "via_generic" leg lands on `apply_2q_avx512` (target ≥ 2 ⇒ t_lo ≥ 2
+/// ⇒ `1 << t_lo ≥ LANES = 4` ⇒ generic-dense AVX-512 engages).  Both
+/// legs are then SIMD-vs-SIMD, which is what the BACKLOG-AC
+/// "CNOT ≥ 5× faster than generic 2q kernel" requires.
 #[inline]
 fn cnot_pair(i: usize) -> (u32, u32) {
-    let c = (i as u32) % (N_QUBITS - 1);
-    (c, c + 1)
+    // target sweeps {2, 3, …, N_QUBITS-2}, control = target+1 (so
+    // control sweeps {3, 4, …, N_QUBITS-1}, always > target).
+    let span = (N_QUBITS - 3) as usize; // = 17 for N_QUBITS = 20
+    let target = ((i % span) + 2) as u32;
+    let control = target + 1;
+    (control, target)
 }
 
 /// Canonical CNOT matrix in MSB-first basis: `|c t⟩` with `c` = high
