@@ -4032,19 +4032,21 @@ mod soa_multi_controlled_tests {
         if !std::is_x86_feature_detected!("avx512f") {
             return;
         }
-        // n=5 (32 amps), target=3 >= LANES_SOA_BITS=3, controls=[4] > 3.
-        let len = 32usize;
+        // n=6 (64 amps), target=3 >= LANES_SOA_BITS=3, controls=[4, 5] > 3.
+        // Clean Tier-A contract: c_lo > target. Scalar takes the same
+        // control set via targets=[c0, c1, target].
+        let len = 64usize;
         let re_init: Vec<f64> = (0..len).map(|k| k as f64 * 0.05 - 0.8).collect();
         let im_init: Vec<f64> = (0..len).map(|k| -(k as f64) * 0.04 + 0.6).collect();
         let mut re_avx = re_init.clone();
         let mut im_avx = im_init.clone();
         let mut re_sca = re_init.clone();
         let mut im_sca = im_init.clone();
-        // SAFETY: AVX-512F detected, target=3 >= 3, controls=[4] > 3.
+        // SAFETY: AVX-512F detected, target=3 >= 3, controls=[4, 5] both > 3.
         unsafe {
-            super::apply_toffoli_avx512_tier_a_soa(&mut re_avx, &mut im_avx, 3, &[4]);
+            super::apply_toffoli_avx512_tier_a_soa(&mut re_avx, &mut im_avx, 3, &[4, 5]);
         }
-        super::apply_toffoli_scalar_soa(&mut re_sca, &mut im_sca, [0, 4, 3], &[]);
+        super::apply_toffoli_scalar_soa(&mut re_sca, &mut im_sca, [4, 5, 3], &[]);
         for k in 0..len {
             assert!((re_avx[k] - re_sca[k]).abs() < 1e-13, "re[{}]", k);
             assert!((im_avx[k] - im_sca[k]).abs() < 1e-13, "im[{}]", k);
