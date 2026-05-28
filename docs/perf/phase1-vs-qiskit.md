@@ -283,7 +283,7 @@ validated on EPYC via T9 unit tests.
 
 | Bench                       | Pre-P1-05 (post-P1-07) | Post-P1-05            | Delta                  |
 |-----------------------------|------------------------|------------------------|------------------------|
-| `grover_n20_iters5`         | 58 491.74 µs           | <PENDING-EPYC-GROVER>  | <PENDING-EPYC-GROVER>  |
+| `grover_n20_iters5`         | 58 491.74 ms           | 56 756.0 ms            | **−2.97 %** (−1 735.7 ms) |
 
 Per ADR 0008 (bandwidth-bound regime at n=20), workload-level delta is
 expected to be small. The micro AC is the gating metric.

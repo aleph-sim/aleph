@@ -120,9 +120,9 @@ validated on EPYC via T9's `apply_1q_x_soa_avx512_matches_scalar`,
 
 Workload (grover_n20_iters5, informational):
 
-- Pre-P1-05 (post-P1-07 baseline): 58 491.74 µs
-- Post-P1-05: <PENDING-EPYC-GROVER>
-- Delta: <PENDING-EPYC-GROVER>
+- Pre-P1-05 (post-P1-07 baseline): 58 491.74 ms
+- Post-P1-05: 56 756.0 ms
+- Delta: −2.97 % (−1 735.7 ms) — consistent with ADR 0008's bandwidth-bound prediction
 
 Per ADR 0008 (bandwidth-bound regime), workload-level delta at n ≥ 20
 is expected to be small (Grover's oracle/diffusion contains few X gates
