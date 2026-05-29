@@ -974,10 +974,10 @@ Edge cases: parametric gates with symbolic params should not be fused (will be r
 
 **Acceptance Criteria**
 
-- [ ] Fusion pass implemented
-- [ ] On VQE ansatz: ≥3× reduction in gate count
-- [ ] Result of fused circuit = result of unfused (to ≤1e-12)
-- [ ] Pass is opt-in via `Circuit.optimize()` or similar
+- [x] Fusion pass implemented
+- [x] On VQE ansatz: ≥3× reduction in gate count
+- [x] Result of fused circuit = result of unfused (to ≤1e-12)
+- [x] Pass is opt-in via `Circuit.optimize()` or similar
 
 **Testing Requirements**
 
