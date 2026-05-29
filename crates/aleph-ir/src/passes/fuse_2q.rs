@@ -117,19 +117,23 @@ impl Pass for Fuse2q {
 
         let mut blocks: Vec<Option<Block>> = Vec::new();
         let mut open: HashMap<u32, usize> = HashMap::new();
-        let mut output: Vec<Instruction> = Vec::with_capacity(input.len());
+        // Each entry is (original_position, instruction). A fused block sorts
+        // at its `first_index`; an inline gate sorts at its own loop index.
+        // The stable sort at the end restores program order without any
+        // reordering across disjoint qubits.
+        let mut output: Vec<(usize, Instruction)> = Vec::with_capacity(input.len());
         let mut transformations: u64 = 0;
 
         fn emit_block(
             b: &Block,
             input: &[Instruction],
-            output: &mut Vec<Instruction>,
+            output: &mut Vec<(usize, Instruction)>,
             transformations: &mut u64,
         ) {
             if b.len == 1 {
                 // Verbatim re-emit — preserves named/specialised gates
                 // (Cnot, Cz, …) and the original 1q gate.
-                output.push(input[b.first_index].clone());
+                output.push((b.first_index, input[b.first_index].clone()));
                 return;
             }
             *transformations += 1;
@@ -140,16 +144,19 @@ impl Pass for Fuse2q {
                     } else {
                         Gate::Unitary1q(Box::new(*m2))
                     };
-                    output.push(Instruction::Gate(GateInstance::new(
-                        gate,
-                        smallvec![b.qubits[0]],
-                    )));
+                    output.push((
+                        b.first_index,
+                        Instruction::Gate(GateInstance::new(gate, smallvec![b.qubits[0]])),
+                    ));
                 }
                 Acc::Two(m4) => {
-                    output.push(Instruction::Gate(GateInstance::new(
-                        Gate::Unitary2q(Box::new(*m4)),
-                        smallvec![b.qubits[0], b.qubits[1]],
-                    )));
+                    output.push((
+                        b.first_index,
+                        Instruction::Gate(GateInstance::new(
+                            Gate::Unitary2q(Box::new(*m4)),
+                            smallvec![b.qubits[0], b.qubits[1]],
+                        )),
+                    ));
                 }
             }
         }
@@ -159,7 +166,7 @@ impl Pass for Fuse2q {
             blocks: &mut [Option<Block>],
             open: &mut HashMap<u32, usize>,
             input: &[Instruction],
-            output: &mut Vec<Instruction>,
+            output: &mut Vec<(usize, Instruction)>,
             transformations: &mut u64,
         ) {
             let Some(b) = blocks[id].take() else { return };
@@ -176,7 +183,7 @@ impl Pass for Fuse2q {
             blocks: &mut [Option<Block>],
             open: &mut HashMap<u32, usize>,
             input: &[Instruction],
-            output: &mut Vec<Instruction>,
+            output: &mut Vec<(usize, Instruction)>,
             transformations: &mut u64,
         ) {
             if let Some(&id) = open.get(&q) {
@@ -196,7 +203,7 @@ impl Pass for Fuse2q {
                         _ => {
                             // Symbolic / unexpected — fence and re-emit.
                             flush_qubit(q, &mut blocks, &mut open, input, &mut output, &mut transformations);
-                            output.push(inst.clone());
+                            output.push((idx, inst.clone()));
                             continue;
                         }
                     };
@@ -239,7 +246,7 @@ impl Pass for Fuse2q {
                             for q in [q0, q1] {
                                 flush_qubit(q, &mut blocks, &mut open, input, &mut output, &mut transformations);
                             }
-                            output.push(inst.clone());
+                            output.push((idx, inst.clone()));
                             continue;
                         }
                     };
@@ -313,34 +320,40 @@ impl Pass for Fuse2q {
                     for q in inst.used_qubits() {
                         flush_qubit(q, &mut blocks, &mut open, input, &mut output, &mut transformations);
                     }
-                    output.push(inst.clone());
+                    output.push((idx, inst.clone()));
                 }
                 Instruction::Barrier(qs) => {
                     for q in qs {
                         flush_qubit(*q, &mut blocks, &mut open, input, &mut output, &mut transformations);
                     }
-                    output.push(inst.clone());
+                    output.push((idx, inst.clone()));
                 }
                 Instruction::Measure { qubit, .. } => {
                     flush_qubit(*qubit, &mut blocks, &mut open, input, &mut output, &mut transformations);
-                    output.push(inst.clone());
+                    output.push((idx, inst.clone()));
                 }
                 Instruction::Reset(qubit) => {
                     flush_qubit(*qubit, &mut blocks, &mut open, input, &mut output, &mut transformations);
-                    output.push(inst.clone());
+                    output.push((idx, inst.clone()));
                 }
             }
         }
 
-        // Final flush in ascending first_index order for determinism.
-        let mut ids: Vec<usize> = (0..blocks.len()).filter(|&i| blocks[i].is_some()).collect();
-        ids.sort_by_key(|&i| blocks[i].as_ref().unwrap().first_index);
-        for id in ids {
+        // Flush any remaining open blocks (order irrelevant — the stable sort
+        // below restores program order by each item's original position).
+        let remaining: Vec<usize> = (0..blocks.len()).filter(|&i| blocks[i].is_some()).collect();
+        for id in remaining {
             flush_block(id, &mut blocks, &mut open, input, &mut output, &mut transformations);
         }
 
+        // Emit in original program order: each fused block sorts at its first
+        // gate's index, each inline gate at its own index. All positions are
+        // distinct (every input index is consumed exactly once), and any two
+        // items sharing a qubit have monotonically increasing positions, so this
+        // preserves all dependencies while never reordering across the program.
+        output.sort_by_key(|(pos, _)| *pos);
         let gates_after = output.len();
-        circuit.instructions = output;
+        circuit.instructions = output.into_iter().map(|(_, inst)| inst).collect();
         Ok(PassStats {
             gates_before,
             gates_after,
