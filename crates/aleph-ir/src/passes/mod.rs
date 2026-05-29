@@ -162,6 +162,9 @@ mod tests {
         // After DCE: H(0), Measure(0) (X(2) removed). Fusion leaves the single
         // H as-is. So 2 instructions remain.
         assert_eq!(stats.gates_after, 2);
-        assert!(c.instructions().iter().all(|i| !i.used_qubits().contains(&2)));
+        assert!(c
+            .instructions()
+            .iter()
+            .all(|i| !i.used_qubits().contains(&2)));
     }
 }

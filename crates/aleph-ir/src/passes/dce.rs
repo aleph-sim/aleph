@@ -87,11 +87,15 @@ mod tests {
     use crate::Instruction;
 
     fn run_pass(c: &mut Circuit) -> PassStats {
-        DeadCodeElim.run(c).expect("DeadCodeElim is infallible in tests")
+        DeadCodeElim
+            .run(c)
+            .expect("DeadCodeElim is infallible in tests")
     }
 
     fn touches(c: &Circuit, q: u32) -> bool {
-        c.instructions().iter().any(|i| i.used_qubits().contains(&q))
+        c.instructions()
+            .iter()
+            .any(|i| i.used_qubits().contains(&q))
     }
 
     #[test]
@@ -134,7 +138,10 @@ mod tests {
         c.barrier([2u32]).unwrap();
         c.measure(0, 0).unwrap();
         let s = run_pass(&mut c);
-        assert_eq!(s.transformations, 0, "barrier makes q2 live, nothing removed");
+        assert_eq!(
+            s.transformations, 0,
+            "barrier makes q2 live, nothing removed"
+        );
         assert!(touches(&c, 2));
         assert_eq!(c.instructions().len(), 3);
     }

@@ -49,11 +49,7 @@ fn marginal(state: &[Complex], measured: &[u32]) -> Vec<f64> {
 /// Assert that running `DeadCodeElim` preserves the marginal distribution
 /// over `measured` qubits. `build` populates a circuit whose terminal
 /// measurements are exactly `measured` (in any order).
-fn assert_dce_preserves_marginal(
-    num_qubits: u32,
-    measured: &[u32],
-    build: impl Fn(&mut Circuit),
-) {
+fn assert_dce_preserves_marginal(num_qubits: u32, measured: &[u32], build: impl Fn(&mut Circuit)) {
     let mut original = Circuit::new(num_qubits, measured.len() as u32);
     build(&mut original);
 
