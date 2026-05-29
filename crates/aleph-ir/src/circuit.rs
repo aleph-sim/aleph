@@ -155,6 +155,12 @@ impl Circuit {
     /// as they ship.
     ///
     /// Returns aggregate [`passes::PassStats`].
+    ///
+    /// **Note:** Optimised circuits may contain `Gate::Unitary1q` or
+    /// `Gate::Unitary1qDiag` variants produced by gate fusion. These
+    /// variants are intentionally not OpenQASM-emittable
+    /// (`aleph_parser::emit` returns `UnsupportedGate`), so callers
+    /// that need a QASM round-trip should emit BEFORE optimising.
     pub fn optimize(&mut self) -> Result<crate::passes::PassStats, crate::passes::PassError> {
         crate::passes::PassPipeline::default_pipeline().run(self)
     }
