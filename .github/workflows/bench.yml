@@ -56,6 +56,13 @@ jobs:
       - name: Compile bench harness
         run: cargo bench --workspace --no-run
 
+      # P1-09 fuse_1q bench is gated behind `aleph-ir`'s `bench-fixtures`
+      # feature (keeps the random-IR fixture helpers out of the public
+      # library surface). `cargo bench --workspace` silently skips it —
+      # so compile + run it explicitly here.
+      - name: Compile aleph-ir bench-fixtures benches
+        run: cargo bench -p aleph-ir --features bench-fixtures --no-run
+
       # Upload to bencher.dev only when real criterion benches exist.
       # Until P0-04 lands `benches/`, `cargo bench --workspace` emits
       # unit-test output (no benches → 0 passed; 0 measured), which the
@@ -86,3 +93,21 @@ jobs:
             --adapter "$BENCHER_ADAPTER" \
             --github-actions "$GH_TOKEN" \
             -- cargo bench --workspace
+
+      # Run the `bench-fixtures`-gated `aleph-ir` benches separately
+      # (see comment above the compile step). Uploaded to bencher.dev
+      # under the same testbed/branch so the fuse_1q numbers join the
+      # main perf timeline.
+      - name: Run aleph-ir bench-fixtures benches and upload to bencher.dev
+        if: hashFiles('crates/aleph-ir/benches/**/*.rs') != ''
+        env:
+          BENCHER_API_TOKEN: ${{ secrets.BENCHER }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          bencher run \
+            --project "$BENCHER_PROJECT" \
+            --branch "${{ github.head_ref || github.ref_name }}" \
+            --testbed "$BENCHER_TESTBED" \
+            --adapter "$BENCHER_ADAPTER" \
+            --github-actions "$GH_TOKEN" \
+            -- cargo bench -p aleph-ir --features bench-fixtures
