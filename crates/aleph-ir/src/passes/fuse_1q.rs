@@ -128,7 +128,7 @@ impl Pass for Fuse1qRuns {
                     flush(
                         *qubit,
                         &mut pending,
-                        &input,
+                        input,
                         &mut output,
                         &mut transformations,
                     );
@@ -138,7 +138,7 @@ impl Pass for Fuse1qRuns {
                     flush(
                         *qubit,
                         &mut pending,
-                        &input,
+                        input,
                         &mut output,
                         &mut transformations,
                     );
