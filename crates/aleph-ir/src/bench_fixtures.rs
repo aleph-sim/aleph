@@ -86,6 +86,10 @@ mod tests {
         let after = c2.len();
         assert_eq!(stats.gates_before, before);
         assert_eq!(stats.gates_after, after);
+        assert!(
+            after > 0,
+            "VQE HEA fused down to 0 instructions — fusion is over-collapsing (catastrophic regression)",
+        );
         let ratio = before as f64 / after as f64;
         assert!(
             ratio >= 3.0,
