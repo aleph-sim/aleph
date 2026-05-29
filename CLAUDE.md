@@ -188,8 +188,10 @@ Work top-down. Don’t jump to GPU when CPU has unrealized wins.
 
 ## PR Workflow
 
+> **No git worktrees.** All branches are created and worked directly in the main checkout at `/Users/ex/GitHub/aleph` — `git checkout -b <branch> origin/main`, edit, commit, push, PR. Do NOT use `git worktree add` or any `.claude/worktrees/*` paths. Previous P1-05/06/07/08/09 work mistakenly used worktrees; that pattern is deprecated. One repo, many branches.
+
 1. **Pick an issue.** Comment “Working on this” so others don’t duplicate.
-1. **Branch name**: `pNN-NN-short-description`. Example: `p0-01-rust-workspace`.
+1. **Branch name**: `pNN-NN-short-description`. Example: `p0-01-rust-workspace`. Create it via `git checkout -b pNN-NN-... origin/main` from the main checkout — no worktree.
 1. **Commits**: small, logical, with clear messages. Body explains why.
 1. **PR title**: `[P0-01] Set up Rust workspace`.
 1. **PR body**: must include
