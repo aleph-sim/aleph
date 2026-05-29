@@ -17,6 +17,15 @@ aleph-test = { path = "../aleph-test" }
 proptest   = { workspace = true }
 criterion  = { workspace = true }
 
+[features]
+# Exposes `bench_fixtures` outside `#[cfg(test)]` so external benches
+# (e.g. `benches/fuse_1q.rs`) can build VQE-HEA inputs. Not part of
+# the crate's public API surface — internal to `aleph-ir`'s bench
+# harness. Workspace-level `cargo bench --workspace` does NOT enable
+# this; run `cargo bench -p aleph-ir --features bench-fixtures`.
+bench-fixtures = []
+
 [[bench]]
 name = "fuse_1q"
 harness = false
+required-features = ["bench-fixtures"]
