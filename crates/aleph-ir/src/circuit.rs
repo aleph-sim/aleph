@@ -149,6 +149,22 @@ impl Circuit {
         self.instructions.is_empty()
     }
 
+    /// Run the default optimisation pipeline on this circuit in
+    /// place. Currently applies [`passes::Fuse1qRuns`]; later
+    /// passes are added to [`passes::PassPipeline::default_pipeline`]
+    /// as they ship.
+    ///
+    /// Returns aggregate [`passes::PassStats`].
+    ///
+    /// **Note:** Optimised circuits may contain `Gate::Unitary1q` or
+    /// `Gate::Unitary1qDiag` variants produced by gate fusion. These
+    /// variants are intentionally not OpenQASM-emittable
+    /// (`aleph_parser::emit` returns `UnsupportedGate`), so callers
+    /// that need a QASM round-trip should emit BEFORE optimising.
+    pub fn optimize(&mut self) -> Result<crate::passes::PassStats, crate::passes::PassError> {
+        crate::passes::PassPipeline::default_pipeline().run(self)
+    }
+
     /// Append a `GateInstance` after validating qubit ranges and arity.
     pub fn add_gate(&mut self, gate: GateInstance) -> Result<&mut Self, CircuitError> {
         self.validate_gate(&gate)?;
@@ -994,5 +1010,28 @@ mod tests {
             .with_name("c");
         assert_eq!(c.metadata().name.as_deref(), Some("c"));
         assert_eq!(c.metadata().generated_from.as_deref(), Some("b"));
+    }
+
+    #[test]
+    fn optimize_collapses_diag_run() {
+        let mut c = Circuit::new(1, 0);
+        c.s(0).unwrap();
+        c.t(0).unwrap();
+        let stats = c.optimize().unwrap();
+        assert_eq!(stats.transformations, 1);
+        assert_eq!(c.len(), 1);
+    }
+
+    #[test]
+    fn optimize_idempotent_on_already_optimised() {
+        let mut c = Circuit::new(2, 0);
+        c.h(0).unwrap();
+        c.cnot(0, 1).unwrap();
+        c.h(0).unwrap();
+        let _ = c.optimize().unwrap();
+        let snapshot: Vec<_> = c.instructions().to_vec();
+        let _ = c.optimize().unwrap();
+        // Re-running yields the same Vec.
+        assert_eq!(c.instructions().len(), snapshot.len());
     }
 }

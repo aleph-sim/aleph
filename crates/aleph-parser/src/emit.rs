@@ -87,6 +87,7 @@ fn emit_gate(out: &mut String, g: &GateInstance) -> Result<(), EmitError> {
         | g @ Gate::CRy(_)
         | g @ Gate::CRz(_)
         | g @ Gate::Unitary1q(_)
+        | g @ Gate::Unitary1qDiag(_)
         | g @ Gate::Unitary2q(_) => return Err(EmitError::UnsupportedGate { name: g.name() }),
         Gate::Toffoli => ("ccx", vec![]),
         Gate::Ccz => ("ccz", vec![]),
@@ -181,6 +182,20 @@ mod tests {
         .unwrap();
         let err = emit(&c).unwrap_err();
         assert!(matches!(err, EmitError::NonFiniteParam { value } if value.is_infinite()));
+    }
+
+    #[test]
+    fn unitary_1q_diag_emits_unsupported() {
+        use aleph_core::{Complex, Gate, GateInstance};
+        use smallvec::smallvec;
+        let g = Gate::Unitary1qDiag(Box::new([Complex::new(1.0, 0.0), Complex::new(0.0, 1.0)]));
+        let mut c = aleph_ir::Circuit::new(1, 0);
+        c.add_gate(GateInstance::new(g, smallvec![0u32])).unwrap();
+        let err = emit(&c).unwrap_err();
+        match err {
+            EmitError::UnsupportedGate { name } => assert_eq!(name, "Unitary1qDiag"),
+            other => panic!("expected UnsupportedGate(Unitary1qDiag), got {other:?}"),
+        }
     }
 
     #[test]

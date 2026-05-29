@@ -67,6 +67,7 @@ version = "0.0.0"
 dependencies = [
  "aleph-core",
  "aleph-test",
+ "criterion",
  "proptest",
  "smallvec",
  "thiserror",

@@ -12,3 +12,7 @@ mod layers;
 pub use circuit::{Circuit, CircuitMetadata, MAX_CLBITS, MAX_GATE_CONTROLS, MAX_QUBITS};
 pub use error::CircuitError;
 pub use instruction::Instruction;
+
+#[cfg(any(test, feature = "bench-fixtures"))]
+pub mod bench_fixtures;
+pub mod passes;

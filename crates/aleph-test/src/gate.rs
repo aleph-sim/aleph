@@ -129,8 +129,19 @@ mod tests {
             // The strategy emits only diagonal 1q variants.  Rx/Ry/H/X/Y
             // would be a strategy bug.
             prop_assert!(!matches!(g, Rx(_) | Ry(_) | H | X | Y), "got non-diagonal {g:?}");
-            // Sanity-check the positive set (now includes Phase).
-            prop_assert!(matches!(g, Z | S | Sdg | T | Tdg | Rz(_) | Phase(_)), "unexpected {g:?}");
+            // NOTE: `Gate::Unitary1qDiag` is NOT in this matches!() set
+            // even though it's algebraically diagonal — the matches!()
+            // pins the strategy's actual emission set, not the universe
+            // of diagonal gates. Round-1 review widened the set for
+            // forward-compat with P1-10/11/12, but round 2 caught that
+            // the strategy itself doesn't emit Unitary1qDiag, so the
+            // widened matches!() became a superset that no longer pins
+            // the strategy's behaviour. When the strategy is extended
+            // to emit Unitary1qDiag, update both together.
+            prop_assert!(
+                matches!(g, Z | S | Sdg | T | Tdg | Rz(_) | Phase(_)),
+                "unexpected {g:?}",
+            );
         }
     }
 }
