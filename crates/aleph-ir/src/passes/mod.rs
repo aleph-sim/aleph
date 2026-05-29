@@ -9,6 +9,7 @@
 use crate::Circuit;
 use thiserror::Error;
 
+pub mod dce;
 pub mod fuse_1q;
 pub mod fuse_2q;
 
