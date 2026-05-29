@@ -15,10 +15,11 @@
 //! 2 emits `Instruction::Reset` (rejected by `aleph_backend::run`
 //! as `UnsupportedInstruction`) and `Instruction::Measure`
 //! (RNG-dependent, irrelevant for unitary equivalence). We filter
-//! both classes out before running. Fusion still has full coverage
-//! of the gate path — the 1q runs the pass actually fuses are
-//! unaffected by which non-gate instructions originally separated
-//! them.
+//! both classes out before running but PRESERVE `Barrier` so the
+//! fusion pass's Barrier-fencing path is actually exercised by the
+//! random-circuit oracle. Fusion still has full coverage of the
+//! gate path — the 1q runs the pass actually fuses are unaffected
+//! by which non-gate instructions originally separated them.
 
 use aleph_backend::run;
 use aleph_core::Complex;
@@ -29,14 +30,24 @@ use proptest::prelude::*;
 
 const TOL: f64 = 1e-12;
 
-/// Build a gate-only twin of `c` by copying only `Instruction::Gate`
-/// entries. `Reset` and `Measure` are dropped (see module doc).
+/// Build a gate-only twin of `c` by copying `Instruction::Gate` and
+/// `Instruction::Barrier` entries. `Reset` and `Measure` are dropped
+/// (see module doc); `Barrier` is preserved so the fusion pass's
+/// Barrier-fencing path is exercised by random circuits.
 fn gate_only(c: &Circuit) -> Circuit {
     let mut out = Circuit::new(c.num_qubits(), c.num_clbits());
     for inst in c.instructions() {
-        if let Instruction::Gate(g) = inst {
-            out.add_gate(g.clone())
-                .expect("gate validated in source circuit must validate in clone");
+        match inst {
+            Instruction::Gate(g) => {
+                out.add_gate(g.clone())
+                    .expect("gate validated in source circuit must validate in clone");
+            }
+            Instruction::Barrier(_) => {
+                out.add_instruction(inst.clone())
+                    .expect("barrier validated in source circuit must validate in clone");
+            }
+            // Drop Reset (rejected by run) and Measure (RNG-dependent).
+            _ => {}
         }
     }
     out
