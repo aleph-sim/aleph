@@ -19,7 +19,10 @@ impl Pass for Fuse1qRuns {
         use smallvec::smallvec;
         use std::collections::HashMap;
 
-        let input: Vec<Instruction> = std::mem::take(&mut circuit.instructions);
+        // Build output to a separate Vec without mutating circuit.instructions
+        // until success — leaves the circuit intact on any future Err path.
+        // (Currently Fuse1qRuns is infallible, but later passes may not be.)
+        let input: &[Instruction] = &circuit.instructions;
         let gates_before = input.len();
 
         struct Pending {
@@ -85,7 +88,7 @@ impl Pass for Fuse1qRuns {
                             // and re-emit verbatim — conservative, never
                             // mis-fuses.
                             _ => {
-                                flush(q, &mut pending, &input, &mut output, &mut transformations);
+                                flush(q, &mut pending, input, &mut output, &mut transformations);
                                 output.push(inst.clone());
                                 continue;
                             }
@@ -110,14 +113,14 @@ impl Pass for Fuse1qRuns {
                         // Multi-qubit or controlled — fence every qubit
                         // it touches.
                         for q in inst.used_qubits() {
-                            flush(q, &mut pending, &input, &mut output, &mut transformations);
+                            flush(q, &mut pending, input, &mut output, &mut transformations);
                         }
                         output.push(inst.clone());
                     }
                 }
                 Instruction::Barrier(qs) => {
                     for q in qs {
-                        flush(*q, &mut pending, &input, &mut output, &mut transformations);
+                        flush(*q, &mut pending, input, &mut output, &mut transformations);
                     }
                     output.push(inst.clone());
                 }
@@ -148,7 +151,7 @@ impl Pass for Fuse1qRuns {
         let mut leftover: Vec<u32> = pending.keys().copied().collect();
         leftover.sort_unstable();
         for q in leftover {
-            flush(q, &mut pending, &input, &mut output, &mut transformations);
+            flush(q, &mut pending, input, &mut output, &mut transformations);
         }
 
         let gates_after = output.len();
