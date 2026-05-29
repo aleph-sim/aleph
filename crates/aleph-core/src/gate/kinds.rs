@@ -83,6 +83,17 @@ pub enum Gate {
     /// permutes rows/cols 2 ↔ 3). Row `i`, column `j` is `⟨i|U|j⟩`.
     /// No unitarity check is performed at construction.
     Unitary2q(Box<[[Complex; 4]; 4]>),
+
+    /// 1-qubit diagonal unitary. Emitted by the 1q-fusion pass when
+    /// every gate in a fused run is diagonal — preserves the
+    /// `is_diagonal()` flag so backends route the gate through the
+    /// P1-06 diagonal kernel instead of the generic 2×2 path.
+    ///
+    /// Matrix is `diag(d0, d1)`; row `i`, column `j` is `⟨i|U|j⟩`
+    /// with `⟨0|U|0⟩ == d0`, `⟨1|U|1⟩ == d1`, off-diagonals zero.
+    /// Box wrapper keeps the enum size unchanged (parity with
+    /// `Unitary1q`/`Unitary2q`).
+    Unitary1qDiag(Box<[Complex; 2]>),
 }
 
 impl Gate {
@@ -103,7 +114,8 @@ impl Gate {
             | Gate::Rz(_)
             | Gate::Phase(_)
             | Gate::U3(_, _, _)
-            | Gate::Unitary1q(_) => 1,
+            | Gate::Unitary1q(_)
+            | Gate::Unitary1qDiag(_) => 1,
 
             Gate::Cnot
             | Gate::Cz
@@ -146,6 +158,7 @@ impl Gate {
             Gate::Toffoli => "Toffoli",
             Gate::Ccz => "Ccz",
             Gate::Unitary1q(_) => "Unitary1q",
+            Gate::Unitary1qDiag(_) => "Unitary1qDiag",
             Gate::Unitary2q(_) => "Unitary2q",
         }
     }
@@ -342,6 +355,10 @@ impl Gate {
             }
 
             Gate::Unitary1q(m) => Ok(GateMatrix::M2x2(**m)),
+            Gate::Unitary1qDiag(d) => {
+                let zero = Complex::new(0.0, 0.0);
+                Ok(GateMatrix::M2x2([[d[0], zero], [zero, d[1]]]))
+            }
             Gate::Unitary2q(m) => Ok(GateMatrix::M4x4(**m)),
         }
     }
@@ -367,7 +384,8 @@ impl Gate {
             | Gate::Phase(_)
             | Gate::CRz(_)
             | Gate::Cz
-            | Gate::Ccz => true,
+            | Gate::Ccz
+            | Gate::Unitary1qDiag(_) => true,
 
             Gate::H
             | Gate::X
@@ -423,6 +441,7 @@ impl Gate {
             | Gate::Toffoli
             | Gate::Ccz
             | Gate::Unitary1q(_)
+            | Gate::Unitary1qDiag(_)
             | Gate::Unitary2q(_) => false,
         }
     }
@@ -475,6 +494,7 @@ impl Gate {
             Gate::U3(t, f, l) => Gate::U3(negate(*t), negate(*l), negate(*f)),
 
             Gate::Unitary1q(m) => Gate::Unitary1q(Box::new(conj_transpose_2(m))),
+            Gate::Unitary1qDiag(d) => Gate::Unitary1qDiag(Box::new([d[0].conj(), d[1].conj()])),
             Gate::Unitary2q(m) => Gate::Unitary2q(Box::new(conj_transpose_4(m))),
         }
     }
@@ -561,6 +581,10 @@ mod tests {
                     [Complex::new(0.0, 0.0), Complex::new(1.0, 0.0)],
                 ])),
                 "Unitary1q",
+            ),
+            (
+                Gate::Unitary1qDiag(Box::new([Complex::new(1.0, 0.0), Complex::new(1.0, 0.0)])),
+                "Unitary1qDiag",
             ),
             (
                 Gate::Unitary2q(Box::new([[Complex::new(0.0, 0.0); 4]; 4])),
@@ -1141,6 +1165,7 @@ mod tests {
             Gate::Toffoli,
             Gate::Ccz,
             Gate::Unitary1q(Box::new([[Complex::new(0.0, 0.0); 2]; 2])),
+            Gate::Unitary1qDiag(Box::new([Complex::new(1.0, 0.0), Complex::new(1.0, 0.0)])),
             Gate::Unitary2q(Box::new([[Complex::new(0.0, 0.0); 4]; 4])),
         ];
         for g in &non_cliff {
@@ -1162,6 +1187,7 @@ mod tests {
             Gate::CRz(p),
             Gate::Cz,
             Gate::Ccz,
+            Gate::Unitary1qDiag(Box::new([Complex::new(1.0, 0.0), Complex::new(0.0, 1.0)])),
         ];
         for g in &diag_gates {
             assert!(g.is_diagonal(), "{g:?} should be diagonal");
@@ -1187,5 +1213,47 @@ mod tests {
         for g in &nondiag_gates {
             assert!(!g.is_diagonal(), "{g:?} should not be diagonal");
         }
+    }
+
+    #[test]
+    fn unitary_1q_diag_basic_shape() {
+        use crate::Complex;
+        let d = Box::new([Complex::new(1.0, 0.0), Complex::new(0.0, 1.0)]);
+        let g = Gate::Unitary1qDiag(d);
+        assert_eq!(g.arity(), 1);
+        assert_eq!(g.name(), "Unitary1qDiag");
+        assert!(g.is_diagonal());
+        assert!(!g.is_clifford());
+    }
+
+    #[test]
+    fn unitary_1q_diag_matrix_has_zero_off_diagonal() {
+        use crate::Complex;
+        let d0 = Complex::new(0.6, 0.8);
+        let d1 = Complex::new(-0.6, 0.8);
+        let g = Gate::Unitary1qDiag(Box::new([d0, d1]));
+        let m = match g.matrix().unwrap() {
+            crate::gate::GateMatrix::M2x2(m) => m,
+            _ => panic!("expected M2x2"),
+        };
+        assert_eq!(m[0][0], d0);
+        assert_eq!(m[1][1], d1);
+        assert_eq!(m[0][1], Complex::new(0.0, 0.0));
+        assert_eq!(m[1][0], Complex::new(0.0, 0.0));
+    }
+
+    #[test]
+    fn unitary_1q_diag_inverse_conjugates_entries() {
+        use crate::Complex;
+        let d0 = Complex::new(0.6, 0.8);
+        let d1 = Complex::new(-0.6, 0.8);
+        let g = Gate::Unitary1qDiag(Box::new([d0, d1]));
+        let inv = g.inverse();
+        let inv_d = match inv {
+            Gate::Unitary1qDiag(d) => d,
+            other => panic!("expected Unitary1qDiag, got {other:?}"),
+        };
+        assert_eq!(inv_d[0], d0.conj());
+        assert_eq!(inv_d[1], d1.conj());
     }
 }
