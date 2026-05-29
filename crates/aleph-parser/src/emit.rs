@@ -188,10 +188,7 @@ mod tests {
     fn unitary_1q_diag_emits_unsupported() {
         use aleph_core::{Complex, Gate, GateInstance};
         use smallvec::smallvec;
-        let g = Gate::Unitary1qDiag(Box::new([
-            Complex::new(1.0, 0.0),
-            Complex::new(0.0, 1.0),
-        ]));
+        let g = Gate::Unitary1qDiag(Box::new([Complex::new(1.0, 0.0), Complex::new(0.0, 1.0)]));
         let mut c = aleph_ir::Circuit::new(1, 0);
         c.add_gate(GateInstance::new(g, smallvec![0u32])).unwrap();
         let err = emit(&c).unwrap_err();
