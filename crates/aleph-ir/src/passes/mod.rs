@@ -10,8 +10,10 @@ use crate::Circuit;
 use thiserror::Error;
 
 pub mod fuse_1q;
+pub mod fuse_2q;
 
 pub use fuse_1q::Fuse1qRuns;
+pub use fuse_2q::Fuse2q;
 
 /// Statistics emitted by a single pass.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -56,10 +58,10 @@ impl PassPipeline {
         Self { passes }
     }
 
-    /// Phase-1 default pipeline. Currently `[Fuse1qRuns]`; later
+    /// Phase-1 default pipeline. Currently `[Fuse1qRuns, Fuse2q]`; later
     /// passes are appended here as they ship.
     pub fn default_pipeline() -> Self {
-        Self::new(vec![Box::new(Fuse1qRuns)])
+        Self::new(vec![Box::new(Fuse1qRuns), Box::new(Fuse2q)])
     }
 
     /// Run every pass in order. Aggregate stats:
@@ -91,6 +93,19 @@ impl PassPipeline {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Circuit;
+
+    #[test]
+    fn default_pipeline_includes_fuse_2q() {
+        // Rx(0); CNOT(0,1) — only Fuse2q can fuse this into one Unitary2q.
+        let mut c = Circuit::new(2, 0);
+        c.rx(0.5, 0).unwrap();
+        c.cnot(0, 1).unwrap();
+        let stats = PassPipeline::default_pipeline().run(&mut c).unwrap();
+        assert_eq!(stats.gates_before, 2);
+        assert_eq!(stats.gates_after, 1);
+        assert!(stats.transformations >= 1);
+    }
 
     struct Noop;
     impl Pass for Noop {

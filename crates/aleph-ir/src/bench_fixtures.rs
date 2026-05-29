@@ -43,6 +43,46 @@ pub fn vqe_hea(n_qubits: u32, depth: u32) -> Circuit {
     c
 }
 
+/// QAOA ansatz on a linear-chain cost Hamiltonian.
+///
+/// Structure:
+/// 1. State prep: `H` on every qubit.
+/// 2. Per layer:
+///    - Cost: for each chain edge `(i, i+1)`, the RZZ(γ) interaction
+///      decomposed as `CNOT(i,i+1); Rz(2γ, i+1); CNOT(i,i+1)`.
+///    - Mixer: `Rx(2β, q)` on every qubit.
+///
+/// Fusion algebra (why this hits the P1-10 ≥1.5× AC):
+/// `Fuse1qRuns` finds NO length-≥2 1q runs here — every 1q gate (`H`,
+/// `Rz` inside a cost triplet, mixer `Rx`) is fenced by CNOTs, so P1-09
+/// leaves the circuit unchanged. `Fuse2q` collapses each cost triplet
+/// `CNOT·Rz·CNOT` into one `Unitary2q` (3× on the cost layer) and absorbs
+/// the `H`/mixer `Rx` gates as pre-/post-1q into neighbouring 2q blocks.
+/// Cost gates dominate (3(n-1) per layer vs n mixer), so the overall
+/// reduction is well above 1.5×.
+///
+/// Angles are deterministic affine functions of qubit/layer indices for
+/// reproducibility.
+pub fn qaoa(n_qubits: u32, depth: u32) -> Circuit {
+    let mut c = Circuit::new(n_qubits, 0);
+    for q in 0..n_qubits {
+        c.h(q).unwrap();
+    }
+    for l in 0..depth {
+        let gamma = 0.3 + 0.01 * (l as f64);
+        let beta = 0.2 + 0.01 * (l as f64);
+        for i in 0..n_qubits.saturating_sub(1) {
+            c.cnot(i, i + 1).unwrap();
+            c.rz(2.0 * gamma, i + 1).unwrap();
+            c.cnot(i, i + 1).unwrap();
+        }
+        for q in 0..n_qubits {
+            c.rx(2.0 * beta, q).unwrap();
+        }
+    }
+    c
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -54,6 +94,42 @@ mod tests {
         // 2 layers = 46 instructions.
         assert_eq!(c.len(), 46);
         assert_eq!(c.num_qubits(), 4);
+    }
+
+    #[test]
+    fn qaoa_shape() {
+        // n=4, p=2: H×4 + 2 layers of [3·(n-1) cost + n mixer]
+        //         = 4 + 2·(3·3 + 4) = 4 + 2·13 = 30 instructions.
+        let c = qaoa(4, 2);
+        assert_eq!(c.num_qubits(), 4);
+        assert_eq!(c.len(), 30);
+    }
+
+    #[test]
+    fn qaoa_fuse2q_beats_p1_09_by_1_5x() {
+        use crate::passes::{Fuse1qRuns, Fuse2q, PassPipeline};
+        let base = qaoa(12, 10);
+
+        // Count after P1-09 alone.
+        let mut a = base.clone();
+        PassPipeline::new(vec![Box::new(Fuse1qRuns)])
+            .run(&mut a)
+            .unwrap();
+        let after_p1_09 = a.len();
+
+        // Count after P1-09 + P1-10.
+        let mut b = base;
+        PassPipeline::new(vec![Box::new(Fuse1qRuns), Box::new(Fuse2q)])
+            .run(&mut b)
+            .unwrap();
+        let after_p1_10 = b.len();
+
+        assert!(after_p1_10 > 0, "over-collapsed to zero");
+        let ratio = after_p1_09 as f64 / after_p1_10 as f64;
+        assert!(
+            ratio >= 1.5,
+            "Fuse2q reduction {ratio:.3}× below 1.5× AC (after_p1_09={after_p1_09}, after_p1_10={after_p1_10})",
+        );
     }
 
     #[test]

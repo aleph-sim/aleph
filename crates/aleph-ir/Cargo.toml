@@ -29,3 +29,8 @@ bench-fixtures = []
 name = "fuse_1q"
 harness = false
 required-features = ["bench-fixtures"]
+
+[[bench]]
+name = "fuse_2q"
+harness = false
+required-features = ["bench-fixtures"]
