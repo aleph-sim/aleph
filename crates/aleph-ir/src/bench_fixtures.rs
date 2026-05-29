@@ -83,6 +83,45 @@ pub fn qaoa(n_qubits: u32, depth: u32) -> Circuit {
     c
 }
 
+/// A circuit with a data register and an unmeasured ancilla register, used
+/// to exercise dead-code elimination (P1-11).
+///
+/// Structure:
+/// 1. Data prep: `H` on each data qubit, then a linear CNOT chain over the
+///    data qubits.
+/// 2. Ancilla "computation": `H` on each ancilla qubit, then a linear CNOT
+///    chain over the ancilla qubits — entangled only among themselves,
+///    never touching a data qubit.
+/// 3. Measure every **data** qubit (ancilla are never measured).
+///
+/// The ancilla-only gates have no data-flow path to any measurement, so
+/// `DeadCodeElim` removes all of them while preserving the measured
+/// distribution over the data qubits. Data qubits are `0..n_data`; ancilla
+/// qubits are `n_data..n_data+n_ancilla`.
+pub fn ancilla_compute(n_data: u32, n_ancilla: u32) -> Circuit {
+    let n = n_data + n_ancilla;
+    let mut c = Circuit::new(n, n_data);
+    // Data prep.
+    for q in 0..n_data {
+        c.h(q).unwrap();
+    }
+    for q in 0..n_data.saturating_sub(1) {
+        c.cnot(q, q + 1).unwrap();
+    }
+    // Ancilla computation (dead w.r.t. the data measurement).
+    for a in 0..n_ancilla {
+        c.h(n_data + a).unwrap();
+    }
+    for a in 0..n_ancilla.saturating_sub(1) {
+        c.cnot(n_data + a, n_data + a + 1).unwrap();
+    }
+    // Measure data qubits only.
+    for q in 0..n_data {
+        c.measure(q, q).unwrap();
+    }
+    c
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -130,6 +169,34 @@ mod tests {
             ratio >= 1.5,
             "Fuse2q reduction {ratio:.3}× below 1.5× AC (after_p1_09={after_p1_09}, after_p1_10={after_p1_10})",
         );
+    }
+
+    #[test]
+    fn ancilla_compute_shape() {
+        // n_data=3, n_ancilla=2:
+        //   data prep: 3 H + 2 CNOT (chain on data) = 5
+        //   ancilla work: 2 H + 1 CNOT (chain on ancilla) = 3
+        //   measure: 3 (data only)
+        // total = 11.
+        let c = ancilla_compute(3, 2);
+        assert_eq!(c.num_qubits(), 5);
+        assert_eq!(c.len(), 11);
+    }
+
+    #[test]
+    fn ancilla_compute_dce_reduces() {
+        use crate::passes::{DeadCodeElim, Pass};
+        let mut c = ancilla_compute(3, 2);
+        let before = c.len();
+        let stats = DeadCodeElim.run(&mut c).unwrap();
+        // The 3 ancilla-only gates (never measured, disjoint from data) are dead.
+        assert_eq!(stats.transformations, 3);
+        assert!(c.len() < before, "DCE must reduce the gate count");
+        // No surviving instruction touches an ancilla qubit (3 or 4).
+        assert!(c
+            .instructions()
+            .iter()
+            .all(|i| !i.used_qubits().iter().any(|&q| q >= 3)));
     }
 
     #[test]
