@@ -247,4 +247,186 @@ mod tests {
             _ => panic!("not a gate"),
         }
     }
+
+    #[test]
+    fn cnot_fences_both_qubits() {
+        // H[0]; CNOT(0,1); H[0]  → H[0], CNOT, H[0]  (two length-1 runs).
+        let mut c = Circuit::new(2, 0);
+        c.h(0).unwrap();
+        c.cnot(0, 1).unwrap();
+        c.h(0).unwrap();
+        let stats = run_pass(&mut c);
+        assert_eq!(stats.transformations, 0);
+        assert_eq!(c.instructions().len(), 3);
+        match &c.instructions()[0] {
+            Instruction::Gate(g) => assert!(matches!(g.gate, Gate::H)),
+            _ => panic!(),
+        }
+        match &c.instructions()[1] {
+            Instruction::Gate(g) => assert!(matches!(g.gate, Gate::Cnot)),
+            _ => panic!(),
+        }
+        match &c.instructions()[2] {
+            Instruction::Gate(g) => assert!(matches!(g.gate, Gate::H)),
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn barrier_fences_listed_qubits_only() {
+        // H[0]; H[1]; Barrier([0]); H[0]; H[1]
+        // Barrier listing q0 only fences q0; q1's run-of-2 across the
+        // barrier fuses normally.
+        //
+        // Walk: H(0) → pending[0]; H(1) → pending[1]; Barrier([0]) →
+        // flush(0) re-emits H(0), push Barrier; H(0) → pending[0];
+        // H(1) → pending[1].matrix = H·H, len=2. End: final flush
+        // sorted: flush(0) re-emits the second H(0); flush(1) emits
+        // one Unitary1q (H·H). Output length = 4 (H, Barrier, H,
+        // Unitary1q). transformations = 1.
+        let mut c = Circuit::new(2, 0);
+        c.h(0).unwrap();
+        c.h(1).unwrap();
+        c.add_instruction(Instruction::Barrier(smallvec::smallvec![0u32]))
+            .unwrap();
+        c.h(0).unwrap();
+        c.h(1).unwrap();
+        let stats = run_pass(&mut c);
+        assert_eq!(stats.transformations, 1);
+        assert_eq!(c.instructions().len(), 4);
+    }
+
+    #[test]
+    fn measure_fences_target_qubit() {
+        // H[0]; Measure(0,0); H[0]  → H[0]; Measure(0,0); H[0]
+        let mut c = Circuit::new(1, 1);
+        c.h(0).unwrap();
+        c.add_instruction(Instruction::Measure { qubit: 0, clbit: 0 })
+            .unwrap();
+        c.h(0).unwrap();
+        let stats = run_pass(&mut c);
+        assert_eq!(stats.transformations, 0);
+        assert_eq!(c.instructions().len(), 3);
+    }
+
+    #[test]
+    fn reset_fences_target_qubit() {
+        let mut c = Circuit::new(1, 0);
+        c.h(0).unwrap();
+        c.add_instruction(Instruction::Reset(0)).unwrap();
+        c.h(0).unwrap();
+        let stats = run_pass(&mut c);
+        assert_eq!(stats.transformations, 0);
+        assert_eq!(c.instructions().len(), 3);
+    }
+
+    #[test]
+    fn controlled_1q_does_not_fuse() {
+        // H[0]; controlled-H(target=0, control=1); H[0]
+        // Middle is a controlled-1q (arity==1 but controls non-empty),
+        // so it fences q0 (and q1 — though q1 is otherwise idle).
+        let mut c = Circuit::new(2, 0);
+        c.h(0).unwrap();
+        c.add_instruction(Instruction::Gate(
+            aleph_core::gate::GateInstance::controlled(
+                Gate::H,
+                smallvec::smallvec![0u32],
+                smallvec::smallvec![1u32],
+            ),
+        ))
+        .unwrap();
+        c.h(0).unwrap();
+        let stats = run_pass(&mut c);
+        assert_eq!(stats.transformations, 0);
+        assert_eq!(c.instructions().len(), 3);
+    }
+
+    #[test]
+    fn per_qubit_runs_are_independent() {
+        // q0: H, S         (mixed run, fuses to Unitary1q)
+        // q1: T, S, Z      (diag run, fuses to Unitary1qDiag)
+        // Interleaved IR order: H(0), T(1), S(0), S(1), Z(1).
+        let mut c = Circuit::new(2, 0);
+        c.h(0).unwrap();
+        c.t(1).unwrap();
+        c.s(0).unwrap();
+        c.s(1).unwrap();
+        c.z(1).unwrap();
+        let stats = run_pass(&mut c);
+        assert_eq!(stats.transformations, 2);
+        assert_eq!(c.instructions().len(), 2);
+        // Final flush is in qubit-id order: q0 first, then q1.
+        match &c.instructions()[0] {
+            Instruction::Gate(g) => {
+                assert_eq!(g.qubits[0], 0);
+                assert!(matches!(g.gate, Gate::Unitary1q(_)));
+            }
+            _ => panic!(),
+        }
+        match &c.instructions()[1] {
+            Instruction::Gate(g) => {
+                assert_eq!(g.qubits[0], 1);
+                assert!(matches!(g.gate, Gate::Unitary1qDiag(_)));
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn rz_h_rz_fused_matrix_matches_hand_computation() {
+        use std::f64::consts::{FRAC_PI_2, FRAC_PI_4};
+        let a = FRAC_PI_4;
+        let b = FRAC_PI_2;
+        let mut c = Circuit::new(1, 0);
+        c.rz(a, 0).unwrap();
+        c.h(0).unwrap();
+        c.rz(b, 0).unwrap();
+        run_pass(&mut c);
+        assert_eq!(c.instructions().len(), 1);
+        let m = match &c.instructions()[0] {
+            Instruction::Gate(g) => match &g.gate {
+                Gate::Unitary1q(m) => **m,
+                other => panic!("expected Unitary1q, got {other:?}"),
+            },
+            _ => panic!(),
+        };
+        // Hand-computed reference: Rz(b) · H · Rz(a).
+        let rz = |t: f64| -> [[Complex; 2]; 2] {
+            let h = t / 2.0;
+            [
+                [Complex::from_polar(1.0, -h), Complex::new(0.0, 0.0)],
+                [Complex::new(0.0, 0.0), Complex::from_polar(1.0, h)],
+            ]
+        };
+        let h_mat: [[Complex; 2]; 2] = {
+            let r = 1.0 / 2.0_f64.sqrt();
+            [
+                [Complex::new(r, 0.0), Complex::new(r, 0.0)],
+                [Complex::new(r, 0.0), Complex::new(-r, 0.0)],
+            ]
+        };
+        let mul = |x: &[[Complex; 2]; 2], y: &[[Complex; 2]; 2]| -> [[Complex; 2]; 2] {
+            let mut out = [[Complex::new(0.0, 0.0); 2]; 2];
+            for i in 0..2 {
+                for j in 0..2 {
+                    for k in 0..2 {
+                        out[i][j] += x[i][k] * y[k][j];
+                    }
+                }
+            }
+            out
+        };
+        let inner = mul(&h_mat, &rz(a));
+        let expected = mul(&rz(b), &inner);
+        for i in 0..2 {
+            for j in 0..2 {
+                assert!(
+                    (m[i][j] - expected[i][j]).norm() < 1e-14,
+                    "m[{i}][{j}]={:?} expected={:?}",
+                    m[i][j],
+                    expected[i][j]
+                );
+            }
+        }
+    }
 }
