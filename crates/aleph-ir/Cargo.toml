@@ -15,3 +15,8 @@ thiserror = { workspace = true }
 [dev-dependencies]
 aleph-test = { path = "../aleph-test" }
 proptest   = { workspace = true }
+criterion  = { workspace = true }
+
+[[bench]]
+name = "fuse_1q"
+harness = false
