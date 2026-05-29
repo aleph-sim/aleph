@@ -61,7 +61,11 @@ fn lift_1q(m2: &M2, q: u32, block_qubits: &[u32; 2]) -> M4 {
             let (hr, lr) = ((r >> 1) & 1, r & 1);
             let (hc, lc) = ((c >> 1) & 1, c & 1);
             *cell = if on_high {
-                if lr == lc { m2[hr][hc] } else { zero }
+                if lr == lc {
+                    m2[hr][hc]
+                } else {
+                    zero
+                }
             } else if hr == hc {
                 m2[lr][lc]
             } else {
@@ -202,7 +206,14 @@ impl Pass for Fuse2q {
                         Ok(GateMatrix::M2x2(m)) => m,
                         _ => {
                             // Symbolic / unexpected — fence and re-emit.
-                            flush_qubit(q, &mut blocks, &mut open, input, &mut output, &mut transformations);
+                            flush_qubit(
+                                q,
+                                &mut blocks,
+                                &mut open,
+                                input,
+                                &mut output,
+                                &mut transformations,
+                            );
                             output.push((idx, inst.clone()));
                             continue;
                         }
@@ -244,7 +255,14 @@ impl Pass for Fuse2q {
                         Ok(GateMatrix::M4x4(m)) => m,
                         _ => {
                             for q in [q0, q1] {
-                                flush_qubit(q, &mut blocks, &mut open, input, &mut output, &mut transformations);
+                                flush_qubit(
+                                    q,
+                                    &mut blocks,
+                                    &mut open,
+                                    input,
+                                    &mut output,
+                                    &mut transformations,
+                                );
                             }
                             output.push((idx, inst.clone()));
                             continue;
@@ -282,7 +300,14 @@ impl Pass for Fuse2q {
                     for q in [q0, q1] {
                         if let Some(&id) = open.get(&q) {
                             if blocks[id].as_ref().unwrap().qubits.len() == 2 {
-                                flush_block(id, &mut blocks, &mut open, input, &mut output, &mut transformations);
+                                flush_block(
+                                    id,
+                                    &mut blocks,
+                                    &mut open,
+                                    input,
+                                    &mut output,
+                                    &mut transformations,
+                                );
                             }
                         }
                     }
@@ -318,22 +343,50 @@ impl Pass for Fuse2q {
                 // ---- non-fusable gate (arity ≥ 3, controlled, etc.) ----
                 Instruction::Gate(_) => {
                     for q in inst.used_qubits() {
-                        flush_qubit(q, &mut blocks, &mut open, input, &mut output, &mut transformations);
+                        flush_qubit(
+                            q,
+                            &mut blocks,
+                            &mut open,
+                            input,
+                            &mut output,
+                            &mut transformations,
+                        );
                     }
                     output.push((idx, inst.clone()));
                 }
                 Instruction::Barrier(qs) => {
                     for q in qs {
-                        flush_qubit(*q, &mut blocks, &mut open, input, &mut output, &mut transformations);
+                        flush_qubit(
+                            *q,
+                            &mut blocks,
+                            &mut open,
+                            input,
+                            &mut output,
+                            &mut transformations,
+                        );
                     }
                     output.push((idx, inst.clone()));
                 }
                 Instruction::Measure { qubit, .. } => {
-                    flush_qubit(*qubit, &mut blocks, &mut open, input, &mut output, &mut transformations);
+                    flush_qubit(
+                        *qubit,
+                        &mut blocks,
+                        &mut open,
+                        input,
+                        &mut output,
+                        &mut transformations,
+                    );
                     output.push((idx, inst.clone()));
                 }
                 Instruction::Reset(qubit) => {
-                    flush_qubit(*qubit, &mut blocks, &mut open, input, &mut output, &mut transformations);
+                    flush_qubit(
+                        *qubit,
+                        &mut blocks,
+                        &mut open,
+                        input,
+                        &mut output,
+                        &mut transformations,
+                    );
                     output.push((idx, inst.clone()));
                 }
             }
@@ -343,7 +396,14 @@ impl Pass for Fuse2q {
         // below restores program order by each item's original position).
         let remaining: Vec<usize> = (0..blocks.len()).filter(|&i| blocks[i].is_some()).collect();
         for id in remaining {
-            flush_block(id, &mut blocks, &mut open, input, &mut output, &mut transformations);
+            flush_block(
+                id,
+                &mut blocks,
+                &mut open,
+                input,
+                &mut output,
+                &mut transformations,
+            );
         }
 
         // Emit in original program order: each fused block sorts at its first
@@ -389,12 +449,16 @@ mod tests {
             [Complex::new(5.0, 0.0), Complex::new(7.0, 0.0)],
         ];
         let out = lift_1q(&m2, 1, &[0, 1]); // q=1 == block_qubits[1] (lo)
-        // out[k_r][k_c] = m2[lo_r][lo_c] * δ(hi_r,hi_c)
+                                            // out[k_r][k_c] = m2[lo_r][lo_c] * δ(hi_r,hi_c)
         for (r, row) in out.iter().enumerate() {
             for (c, &val) in row.iter().enumerate() {
                 let (hr, lr) = ((r >> 1) & 1, r & 1);
                 let (hc, lc) = ((c >> 1) & 1, c & 1);
-                let want = if hr == hc { m2[lr][lc] } else { Complex::new(0.0, 0.0) };
+                let want = if hr == hc {
+                    m2[lr][lc]
+                } else {
+                    Complex::new(0.0, 0.0)
+                };
                 assert!((val - want).norm() < 1e-15, "lo r{r} c{c}");
             }
         }
@@ -411,7 +475,11 @@ mod tests {
             for (c, &val) in row.iter().enumerate() {
                 let (hr, lr) = ((r >> 1) & 1, r & 1);
                 let (hc, lc) = ((c >> 1) & 1, c & 1);
-                let want = if lr == lc { m2[hr][hc] } else { Complex::new(0.0, 0.0) };
+                let want = if lr == lc {
+                    m2[hr][hc]
+                } else {
+                    Complex::new(0.0, 0.0)
+                };
                 assert!((val - want).norm() < 1e-15, "hi r{r} c{c}");
             }
         }
@@ -439,7 +507,10 @@ mod tests {
     fn empty_circuit_no_op() {
         let mut c = Circuit::new(2, 0);
         let s = run_pass(&mut c);
-        assert_eq!((s.gates_before, s.gates_after, s.transformations), (0, 0, 0));
+        assert_eq!(
+            (s.gates_before, s.gates_after, s.transformations),
+            (0, 0, 0)
+        );
     }
 
     #[test]
@@ -480,7 +551,8 @@ mod tests {
     fn measure_fences() {
         let mut c = Circuit::new(2, 1);
         c.cnot(0, 1).unwrap();
-        c.add_instruction(Instruction::Measure { qubit: 0, clbit: 0 }).unwrap();
+        c.add_instruction(Instruction::Measure { qubit: 0, clbit: 0 })
+            .unwrap();
         c.cnot(0, 1).unwrap();
         let s = run_pass(&mut c);
         assert_eq!(s.transformations, 0);
@@ -610,10 +682,14 @@ mod tests {
         assert_eq!(s.transformations, 1);
         // One Unitary2q + the H(2) = 2 instructions.
         assert_eq!(c.instructions().len(), 2);
-        let kinds: Vec<&str> = c.instructions().iter().map(|i| match i {
-            Instruction::Gate(g) => g.gate.name(),
-            _ => "non-gate",
-        }).collect();
+        let kinds: Vec<&str> = c
+            .instructions()
+            .iter()
+            .map(|i| match i {
+                Instruction::Gate(g) => g.gate.name(),
+                _ => "non-gate",
+            })
+            .collect();
         assert!(kinds.contains(&"Unitary2q"));
         assert!(kinds.contains(&"H"));
     }

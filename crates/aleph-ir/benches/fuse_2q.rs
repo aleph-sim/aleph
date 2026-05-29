@@ -12,7 +12,9 @@ fn bench_fuse_2q(c: &mut Criterion) {
     // Report the AC figure once, outside the timing loop.
     let probe = qaoa(12, 10);
     let mut a = probe.clone();
-    PassPipeline::new(vec![Box::new(Fuse1qRuns)]).run(&mut a).unwrap();
+    PassPipeline::new(vec![Box::new(Fuse1qRuns)])
+        .run(&mut a)
+        .unwrap();
     let mut b = probe.clone();
     PassPipeline::new(vec![Box::new(Fuse1qRuns), Box::new(Fuse2q)])
         .run(&mut b)

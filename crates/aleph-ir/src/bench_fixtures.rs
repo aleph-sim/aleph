@@ -112,7 +112,9 @@ mod tests {
 
         // Count after P1-09 alone.
         let mut a = base.clone();
-        PassPipeline::new(vec![Box::new(Fuse1qRuns)]).run(&mut a).unwrap();
+        PassPipeline::new(vec![Box::new(Fuse1qRuns)])
+            .run(&mut a)
+            .unwrap();
         let after_p1_09 = a.len();
 
         // Count after P1-09 + P1-10.

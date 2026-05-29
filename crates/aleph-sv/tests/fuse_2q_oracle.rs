@@ -15,21 +15,29 @@ const TOL: f64 = 1e-12;
 
 fn run_to_state(c: &Circuit) -> Vec<Complex> {
     let mut backend = NaiveSvBackend::with_seed(0);
-    run(&mut backend, c).expect("naive backend executes gate-only IR").amplitudes().to_vec()
+    run(&mut backend, c)
+        .expect("naive backend executes gate-only IR")
+        .amplitudes()
+        .to_vec()
 }
 
 fn assert_fusion_preserves_state(build: impl Fn(&mut Circuit)) {
     let mut unfused = Circuit::new(3, 0);
     build(&mut unfused);
     let mut fused = unfused.clone();
-    fused.optimize().expect("optimize cannot fail on validated circuit");
+    fused
+        .optimize()
+        .expect("optimize cannot fail on validated circuit");
 
     let su = run_to_state(&unfused);
     let sf = run_to_state(&fused);
     assert_eq!(su.len(), sf.len());
     for (i, (a, b)) in su.iter().zip(sf.iter()).enumerate() {
         let diff = (*a - *b).norm();
-        assert!(diff < TOL, "amp[{i}] diff {diff} >= {TOL} (unfused={a:?}, fused={b:?})");
+        assert!(
+            diff < TOL,
+            "amp[{i}] diff {diff} >= {TOL} (unfused={a:?}, fused={b:?})"
+        );
     }
 }
 
