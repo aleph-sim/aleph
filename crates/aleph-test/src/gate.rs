@@ -129,8 +129,14 @@ mod tests {
             // The strategy emits only diagonal 1q variants.  Rx/Ry/H/X/Y
             // would be a strategy bug.
             prop_assert!(!matches!(g, Rx(_) | Ry(_) | H | X | Y), "got non-diagonal {g:?}");
-            // Sanity-check the positive set (now includes Phase).
-            prop_assert!(matches!(g, Z | S | Sdg | T | Tdg | Rz(_) | Phase(_)), "unexpected {g:?}");
+            // Sanity-check the positive set. `Unitary1qDiag` is
+            // accepted for forward-compatibility with P1-10/11/12 work
+            // that may extend the strategy to include fused diagonals;
+            // the current strategy still emits only the named variants.
+            prop_assert!(
+                matches!(g, Z | S | Sdg | T | Tdg | Rz(_) | Phase(_) | Unitary1qDiag(_)),
+                "unexpected {g:?}",
+            );
         }
     }
 }
