@@ -313,7 +313,7 @@ impl Pass for Fuse2q {
                     }
                     // Fold any remaining (1q) open blocks on q0/q1 as pre-1q.
                     let mut pre = ident4();
-                    let mut first_index = idx;
+                    let first_index = idx;
                     let mut len = 1usize;
                     for q in [q0, q1] {
                         if let Some(&id) = open.get(&q) {
@@ -323,7 +323,21 @@ impl Pass for Fuse2q {
                                 let lifted = lift_1q(&m2, q, &[q0, q1]);
                                 pre = mul4(&lifted, &pre);
                             }
-                            first_index = first_index.min(b.first_index);
+                            // NOTE: do NOT update first_index from the pre-1q
+                            // block's first_index here. Keying the block at the
+                            // 2q gate's own index (idx) is the ONLY safe choice.
+                            // The pre-1q gate precedes the 2q gate on one qubit,
+                            // but there may be intervening instructions on the
+                            // OTHER qubit between the pre-1q's index and idx.
+                            // Taking the min would drag the fused block before
+                            // those intervening instructions, reordering dependent
+                            // ops — which is a correctness bug. Keying at idx
+                            // is correct because the 2q gate's index lies within
+                            // the block's run on every shared qubit: pre-1q gates
+                            // are earlier (and have already been consumed from
+                            // open), post-1q gates are later (folded in after).
+                            // So sorting at idx places the block after everything
+                            // that preceded the 2q gate on both qubits.
                             len += b.len;
                         }
                     }
@@ -406,11 +420,22 @@ impl Pass for Fuse2q {
             );
         }
 
-        // Emit in original program order: each fused block sorts at its first
-        // gate's index, each inline gate at its own index. All positions are
-        // distinct (every input index is consumed exactly once), and any two
-        // items sharing a qubit have monotonically increasing positions, so this
-        // preserves all dependencies while never reordering across the program.
+        // Emit in original program order: a 2q block sorts at its 2q gate's
+        // index; a 1q block sorts at its first gate's index; each inline
+        // (non-fused) instruction sorts at its own index.
+        //
+        // Correctness invariant for 2q blocks: the 2q gate's index always lies
+        // within the block's contiguous run on every shared qubit — pre-1q gates
+        // precede it on their respective qubit (and were only folded in because
+        // there was no intervening op on that qubit before the 2q gate), post-1q
+        // gates follow it and are folded in afterwards. Keying at the 2q gate's
+        // index therefore places the fused block after every instruction that
+        // preceded it on either qubit and before every instruction that follows.
+        // Using `min(first_index)` across folded pre-1q members would be wrong:
+        // the pre-1q on one qubit may have an earlier index than an op on the
+        // OTHER qubit, dragging the block before that op and reordering a
+        // dependency. Fuse2q is correct standalone — it does not depend on
+        // Fuse1qRuns having run first.
         output.sort_by_key(|(pos, _)| *pos);
         let gates_after = output.len();
         circuit.instructions = output.into_iter().map(|(_, inst)| inst).collect();
@@ -719,5 +744,112 @@ mod tests {
         assert_eq!(s.transformations, 0);
         assert_eq!(c.instructions().len(), 3);
         assert!(matches!(the_gate(&c, 1), Gate::Toffoli));
+    }
+
+    // ---- regression: standalone reorder across fence (the first_index min bug) ----
+
+    #[test]
+    fn fuse2q_standalone_preserves_order_across_fence() {
+        // Before the fix, Fuse2q keyed the 2q block at min(Z.index, CNOT.index)
+        // = 0 (Z's index), dragging it before Measure(0) which was at index 2.
+        // After the fix the block keys at the 2q gate's own index (3), so the
+        // output order is: H(0) @ idx 1, Measure @ idx 2, Unitary2q @ idx 3.
+        //
+        // Circuit: Z(1) @ 0; H(0) @ 1; Measure(0,0) @ 2; CNOT(0,1) @ 3
+        //   - Z(1) is a pre-1q for CNOT on qubit 1
+        //   - H(0) is flushed verbatim when Measure hits qubit 0
+        //   - Measure fences qubit 0 (and is re-emitted)
+        //   - CNOT opens a fresh 2q block absorbing Z(1) as pre-1q
+        // Expected output (len=3): [H(0), Measure, Unitary2q]
+        let mut c = Circuit::new(2, 1);
+        c.z(1).unwrap(); // idx 0: pre-1q on q1
+        c.h(0).unwrap(); // idx 1: isolated 1q on q0
+        c.add_instruction(Instruction::Measure { qubit: 0, clbit: 0 })
+            .unwrap(); // idx 2: fence on q0
+        c.cnot(0, 1).unwrap(); // idx 3: 2q gate
+
+        let s = run_pass(&mut c);
+        assert_eq!(
+            c.instructions().len(),
+            3,
+            "expected 3 instructions after pass"
+        );
+        // instruction[0]: H (flushed at Measure)
+        assert!(
+            matches!(the_gate(&c, 0), Gate::H),
+            "expected H at position 0"
+        );
+        // instruction[1]: Measure — MUST come before the fused 2q gate
+        assert!(
+            matches!(c.instructions()[1], Instruction::Measure { .. }),
+            "Measure must appear before Unitary2q, got {:?}",
+            c.instructions()[1]
+        );
+        // instruction[2]: Unitary2q (Z absorbed as pre-1q)
+        assert!(
+            matches!(the_gate(&c, 2), Gate::Unitary2q(_)),
+            "expected Unitary2q at position 2"
+        );
+        assert_eq!(
+            s.transformations, 1,
+            "Z+CNOT must count as one transformation"
+        );
+    }
+
+    // ---- new gap tests ----
+
+    #[test]
+    fn same_pair_diagonal_2q_emits_unitary2q() {
+        // Cz(0,1); Cz(0,1) → one Gate::Unitary2q (never downgraded), transformations==1.
+        let mut c = Circuit::new(2, 0);
+        c.cz(0, 1).unwrap();
+        c.cz(0, 1).unwrap();
+        let s = run_pass(&mut c);
+        assert_eq!(s.transformations, 1, "two CZs must fuse");
+        assert_eq!(c.instructions().len(), 1);
+        assert!(
+            matches!(the_gate(&c, 0), Gate::Unitary2q(_)),
+            "2q block must always emit Unitary2q, got {:?}",
+            the_gate(&c, 0)
+        );
+    }
+
+    #[test]
+    fn swap_pre_1q_absorbed() {
+        // Rx(0.4, 0); Swap(0,1) → one Unitary2q, transformations==1.
+        let mut c = Circuit::new(2, 0);
+        c.rx(0.4, 0).unwrap();
+        c.swap(0, 1).unwrap();
+        let s = run_pass(&mut c);
+        assert_eq!(s.transformations, 1);
+        assert_eq!(c.instructions().len(), 1);
+        assert!(matches!(the_gate(&c, 0), Gate::Unitary2q(_)));
+    }
+
+    #[test]
+    fn externally_controlled_2q_not_fused() {
+        // A gate with a non-empty `controls` list is non-fusable (the arity()
+        // check passes but controls.is_empty() fails). Confirm it fences the
+        // qubits it touches and the surrounding H gates are NOT absorbed.
+        //
+        // Circuit: H(0); controlled-H(target=0, controls=[1]); H(0)
+        // The middle instruction is a controlled-1q; it fences q0 and q1.
+        // No 2q fusion should occur; transformations stays 0.
+        use aleph_core::gate::GateInstance;
+        use smallvec::smallvec;
+        let mut c = Circuit::new(2, 0);
+        c.h(0).unwrap();
+        c.add_instruction(Instruction::Gate(GateInstance::controlled(
+            Gate::H,
+            smallvec![0u32], // targets
+            smallvec![1u32], // controls
+        )))
+        .unwrap();
+        c.h(0).unwrap();
+        let s = run_pass(&mut c);
+        assert_eq!(s.transformations, 0, "controlled gate must not be fused");
+        assert_eq!(c.instructions().len(), 3);
+        assert!(matches!(the_gate(&c, 0), Gate::H));
+        assert!(matches!(the_gate(&c, 2), Gate::H));
     }
 }
