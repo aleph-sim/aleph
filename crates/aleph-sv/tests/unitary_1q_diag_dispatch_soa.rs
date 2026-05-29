@@ -7,8 +7,21 @@
 //! machines) the `is_x86_feature_detected!` runtime check returns
 //! `false` and the test is a no-op; on EPYC CI it executes.
 //!
-//! Same math as the Naive test: `X|0⟩ = |1⟩`, then
-//! `diag(1, i)|1⟩ = i·|1⟩` ⇒ `amps == [0, i]`.
+//! **Why n=5, target=q3 instead of n=1, target=q0?** Round-2 code
+//! review caught that the original n=1 circuit had state size 2,
+//! below `LANES_SOA = 8`. Several SoA kernels (e.g. Tier-A diagonal
+//! variants) only fire for `target >= LANES_SOA_BITS = 3` —
+//! see `crates/aleph-sv/src/kernels/soa.rs` lines 172, 192. Even
+//! though `apply_1q_diagonal_soa` itself is a scalar loop today
+//! (relying on LLVM auto-vectorisation), the n=5 / q3 configuration
+//! exercises a state size of 32 amplitudes with the target in the
+//! "high-bit" regime so the test stays meaningful if a future
+//! refactor specialises the dispatch on target position.
+//!
+//! Math: starting from `|00000⟩`, `X` on q3 produces `|01000⟩`
+//! (amp index 8, per ADR 0004 — qubit `q` is bit `q` of the index).
+//! Then `diag(1, i)` on q3 multiplies amplitudes whose bit-3 is set
+//! by `i`. So amp[8] = `i`; all other amps = 0.
 
 use aleph_backend::run;
 use aleph_core::gate::{Gate, GateInstance};
@@ -37,30 +50,39 @@ fn soa_backend_executes_unitary_1q_diag() {
 
     #[allow(unreachable_code)]
     {
-        let mut c = Circuit::new(1, 0);
-        c.x(0).expect("X on q0 of a 1-qubit circuit is in range");
+        // n=5 → state size 32; target=q3 → target_bit = 8 ≥ LANES_SOA.
+        let mut c = Circuit::new(5, 0);
+        c.x(3).expect("X on q3 of a 5-qubit circuit is in range");
         let gate = Gate::Unitary1qDiag(Box::new([
             Complex::new(1.0, 0.0),
             Complex::new(0.0, 1.0), // e^{iπ/2}
         ]));
-        c.add_instruction(Instruction::Gate(GateInstance::new(gate, smallvec![0u32])))
-            .expect("Unitary1qDiag on q0 is a valid 1q gate");
+        c.add_instruction(Instruction::Gate(GateInstance::new(gate, smallvec![3u32])))
+            .expect("Unitary1qDiag on q3 is a valid 1q gate");
 
         let mut backend = SoaSvBackend::with_seed(0);
         let state = run(&mut backend, &c).expect("SoA backend must execute diagonal 1q gate");
         // SoA stores (re, im) split; materialise into AoS for comparison.
         let amps = state.to_aos();
 
-        assert_eq!(amps.len(), 2);
-        assert!(
-            (amps[0] - Complex::new(0.0, 0.0)).norm() < TOL,
-            "amps[0] expected 0, got {:?}",
-            amps[0]
-        );
-        assert!(
-            (amps[1] - Complex::new(0.0, 1.0)).norm() < TOL,
-            "amps[1] expected i, got {:?}",
-            amps[1]
-        );
+        // Per ADR 0004: amp index 8 = binary 01000 ↔ q3=1, others 0.
+        // After X on q3 and diag(1, i) on q3: amp[8] = i, all others = 0.
+        const ONE_AMP_INDEX: usize = 8;
+
+        assert_eq!(amps.len(), 32);
+        for (i, a) in amps.iter().enumerate() {
+            let expected = if i == ONE_AMP_INDEX {
+                Complex::new(0.0, 1.0)
+            } else {
+                Complex::new(0.0, 0.0)
+            };
+            assert!(
+                (*a - expected).norm() < TOL,
+                "amps[{}] expected {:?}, got {:?}",
+                i,
+                expected,
+                a
+            );
+        }
     }
 }
