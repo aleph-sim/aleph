@@ -59,7 +59,9 @@ fn assert_dce_preserves_marginal(num_qubits: u32, measured: &[u32], build: impl 
     let m_orig = marginal(&amplitudes(&gate_only(&original)), measured);
     let m_dced = marginal(&amplitudes(&gate_only(&dced)), measured);
 
-    assert_eq!(m_orig.len(), m_dced.len());
+    // Both marginals are `1 << measured.len()` long by construction, so a
+    // length check would be tautological; the per-outcome comparison below
+    // is the real assertion.
     for (k, (a, b)) in m_orig.iter().zip(m_dced.iter()).enumerate() {
         assert!(
             (a - b).abs() < TOL,

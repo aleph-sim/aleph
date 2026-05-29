@@ -2,9 +2,10 @@
 //!
 //! Each pass implements [`Pass`]. A [`PassPipeline`] runs an ordered
 //! sequence of passes over a [`Circuit`], aggregating per-pass
-//! [`PassStats`]. Phase-1 ships only [`fuse_1q::Fuse1qRuns`]; later
-//! tickets (P1-10/11/12/13) add more passes that plug in by being
-//! pushed onto the pipeline.
+//! [`PassStats`]. Phase-1 ships [`dce::DeadCodeElim`],
+//! [`fuse_1q::Fuse1qRuns`], and [`fuse_2q::Fuse2q`]; later tickets
+//! (P1-12/13) add more passes that plug in by being pushed onto the
+//! pipeline.
 
 use crate::Circuit;
 use thiserror::Error;
