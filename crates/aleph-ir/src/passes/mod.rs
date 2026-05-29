@@ -2,16 +2,19 @@
 //!
 //! Each pass implements [`Pass`]. A [`PassPipeline`] runs an ordered
 //! sequence of passes over a [`Circuit`], aggregating per-pass
-//! [`PassStats`]. Phase-1 ships only [`fuse_1q::Fuse1qRuns`]; later
-//! tickets (P1-10/11/12/13) add more passes that plug in by being
-//! pushed onto the pipeline.
+//! [`PassStats`]. Phase-1 ships [`dce::DeadCodeElim`],
+//! [`fuse_1q::Fuse1qRuns`], and [`fuse_2q::Fuse2q`]; later tickets
+//! (P1-12/13) add more passes that plug in by being pushed onto the
+//! pipeline.
 
 use crate::Circuit;
 use thiserror::Error;
 
+pub mod dce;
 pub mod fuse_1q;
 pub mod fuse_2q;
 
+pub use dce::DeadCodeElim;
 pub use fuse_1q::Fuse1qRuns;
 pub use fuse_2q::Fuse2q;
 
@@ -58,10 +61,14 @@ impl PassPipeline {
         Self { passes }
     }
 
-    /// Phase-1 default pipeline. Currently `[Fuse1qRuns, Fuse2q]`; later
+    /// Phase-1 default pipeline. Currently `[DeadCodeElim, Fuse1qRuns, Fuse2q]`; later
     /// passes are appended here as they ship.
     pub fn default_pipeline() -> Self {
-        Self::new(vec![Box::new(Fuse1qRuns), Box::new(Fuse2q)])
+        Self::new(vec![
+            Box::new(DeadCodeElim),
+            Box::new(Fuse1qRuns),
+            Box::new(Fuse2q),
+        ])
     }
 
     /// Run every pass in order. Aggregate stats:
@@ -142,5 +149,23 @@ mod tests {
         assert_eq!(stats.gates_before, 2);
         assert_eq!(stats.gates_after, 2);
         assert_eq!(stats.transformations, 0);
+    }
+
+    #[test]
+    fn default_pipeline_runs_dce_first() {
+        // X(2) is dead (q2 unmeasured); only DeadCodeElim removes it.
+        let mut c = Circuit::new(3, 1);
+        c.h(0).unwrap();
+        c.x(2).unwrap();
+        c.measure(0, 0).unwrap();
+        let stats = PassPipeline::default_pipeline().run(&mut c).unwrap();
+        assert_eq!(stats.gates_before, 3);
+        // After DCE: H(0), Measure(0) (X(2) removed). Fusion leaves the single
+        // H as-is. So 2 instructions remain.
+        assert_eq!(stats.gates_after, 2);
+        assert!(c
+            .instructions()
+            .iter()
+            .all(|i| !i.used_qubits().contains(&2)));
     }
 }
