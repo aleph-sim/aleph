@@ -208,12 +208,10 @@ impl Pass for Fuse2q {
                                 left_mul2(acc, &m2);
                                 b.diag_only &= g_diag;
                             }
-                            Acc::Two(_) => {
+                            Acc::Two(acc) => {
                                 let bq = [b.qubits[0], b.qubits[1]];
                                 let lifted = lift_1q(&m2, q, &bq);
-                                if let Acc::Two(acc) = &mut b.acc {
-                                    *acc = mul4(&lifted, acc);
-                                }
+                                *acc = mul4(&lifted, acc);
                             }
                         }
                         b.len += 1;
@@ -494,6 +492,45 @@ mod tests {
     }
 
     #[test]
+    fn pre_1q_fused_matrix_matches_hand_computation() {
+        use aleph_core::gate::Param;
+        // Rx(0.7, q0); CNOT(0,1) → Unitary2q whose 4×4 equals
+        // mul4(&cnot, &lift_1q(&rx, 0, &[0,1])).
+        // This distinguishes correct compose order (cnot · pre) from
+        // wrong order (pre · cnot) since mul4 is non-commutative here.
+        let theta = 0.7_f64;
+        let mut c = Circuit::new(2, 0);
+        c.rx(theta, 0).unwrap();
+        c.cnot(0, 1).unwrap();
+        run_pass(&mut c);
+        assert_eq!(c.instructions().len(), 1);
+        let fused = match the_gate(&c, 0) {
+            Gate::Unitary2q(m) => **m,
+            other => panic!("expected Unitary2q, got {other:?}"),
+        };
+        let rx_mat = match Gate::Rx(Param::Concrete(theta)).matrix().unwrap() {
+            GateMatrix::M2x2(m) => m,
+            _ => unreachable!(),
+        };
+        let cnot = match Gate::Cnot.matrix().unwrap() {
+            GateMatrix::M4x4(m) => m,
+            _ => unreachable!(),
+        };
+        let lifted = lift_1q(&rx_mat, 0, &[0, 1]);
+        let want = mul4(&cnot, &lifted);
+        for (k, (frow, wrow)) in fused.iter().zip(want.iter()).enumerate() {
+            for (j, (&fv, &wv)) in frow.iter().zip(wrow.iter()).enumerate() {
+                assert!(
+                    (fv - wv).norm() < 1e-12,
+                    "fused[{k}][{j}] = {:?}, want {:?}",
+                    fv,
+                    wv,
+                );
+            }
+        }
+    }
+
+    #[test]
     fn post_1q_absorbed_into_cnot() {
         // CNOT(0,1); Rz(θ,1) → one Unitary2q.
         let mut c = Circuit::new(2, 0);
@@ -520,15 +557,17 @@ mod tests {
 
     #[test]
     fn same_pair_reversed_operands_merge() {
-        // CNOT(0,1); CZ(1,0) — operand order reversed; reorder_swap path.
+        // CNOT(0,1); CNOT(1,0) — operand order reversed; reorder_swap path.
+        // CNOT is asymmetric, so reorder_swap(CNOT) ≠ CNOT, which means
+        // this test fails if reorder_swap is a no-op.
         let mut c = Circuit::new(2, 0);
         c.cnot(0, 1).unwrap();
-        c.cz(1, 0).unwrap();
+        c.cnot(1, 0).unwrap();
         let s = run_pass(&mut c);
         assert_eq!(s.transformations, 1);
         assert_eq!(c.instructions().len(), 1);
-        // Verify against the hand-built product CZ(1,0)·CNOT(0,1) in the
-        // block's [0,1] convention. CZ is symmetric so CZ(1,0)==CZ(0,1).
+        // Fused = CNOT(1,0) · CNOT(0,1) expressed in block's [0,1] convention.
+        // CNOT(1,0) in [0,1] convention = reorder_swap(CNOT_matrix).
         let fused = match the_gate(&c, 0) {
             Gate::Unitary2q(m) => **m,
             other => panic!("expected Unitary2q, got {other:?}"),
@@ -537,14 +576,12 @@ mod tests {
             GateMatrix::M4x4(m) => m,
             _ => unreachable!(),
         };
-        let cz = match Gate::Cz.matrix().unwrap() {
-            GateMatrix::M4x4(m) => m,
-            _ => unreachable!(),
-        };
-        let want = mul4(&cz, &cnot); // CZ applied after CNOT
-        for r in 0..4 {
-            for c2 in 0..4 {
-                assert!((fused[r][c2] - want[r][c2]).norm() < 1e-12, "r{r} c{c2}");
+        // second gate (CNOT(1,0)) left-multiplies: reorder_swap gives it in
+        // [0,1] convention, then multiply by the first block acc (CNOT(0,1)).
+        let want = mul4(&reorder_swap(&cnot), &cnot);
+        for (r, (frow, wrow)) in fused.iter().zip(want.iter()).enumerate() {
+            for (c2, (&fv, &wv)) in frow.iter().zip(wrow.iter()).enumerate() {
+                assert!((fv - wv).norm() < 1e-12, "r{r} c{c2}");
             }
         }
     }
