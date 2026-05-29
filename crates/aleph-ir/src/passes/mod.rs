@@ -10,6 +10,7 @@ use crate::Circuit;
 use thiserror::Error;
 
 pub mod fuse_1q;
+pub mod fuse_2q;
 
 pub use fuse_1q::Fuse1qRuns;
 
