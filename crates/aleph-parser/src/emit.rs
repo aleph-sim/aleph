@@ -185,6 +185,23 @@ mod tests {
     }
 
     #[test]
+    fn unitary_1q_diag_emits_unsupported() {
+        use aleph_core::{Complex, Gate, GateInstance};
+        use smallvec::smallvec;
+        let g = Gate::Unitary1qDiag(Box::new([
+            Complex::new(1.0, 0.0),
+            Complex::new(0.0, 1.0),
+        ]));
+        let mut c = aleph_ir::Circuit::new(1, 0);
+        c.add_gate(GateInstance::new(g, smallvec![0u32])).unwrap();
+        let err = emit(&c).unwrap_err();
+        match err {
+            EmitError::UnsupportedGate { name } => assert_eq!(name, "Unitary1qDiag"),
+            other => panic!("expected UnsupportedGate(Unitary1qDiag), got {other:?}"),
+        }
+    }
+
+    #[test]
     fn round_trip_through_parse_emit_parse_preserves_instructions() {
         let src = "qubit[2] q; bit[2] c; h q[0]; cx q[0], q[1]; measure q[0] -> c[0]; measure q[1] -> c[1];";
         let c1 = parse(src).unwrap();
