@@ -3,9 +3,9 @@
 //! Each pass implements [`Pass`]. A [`PassPipeline`] runs an ordered
 //! sequence of passes over a [`Circuit`], aggregating per-pass
 //! [`PassStats`]. Phase-1 ships [`dce::DeadCodeElim`],
-//! [`fuse_1q::Fuse1qRuns`], and [`fuse_2q::Fuse2q`]; later tickets
-//! (P1-12/13) add more passes that plug in by being pushed onto the
-//! pipeline.
+//! [`cancel::CancelInversePairs`], [`fuse_1q::Fuse1qRuns`], and
+//! [`fuse_2q::Fuse2q`]; later tickets (P1-13) add more passes that plug
+//! in by being pushed onto the pipeline.
 
 use crate::Circuit;
 use thiserror::Error;
@@ -63,11 +63,15 @@ impl PassPipeline {
         Self { passes }
     }
 
-    /// Phase-1 default pipeline. Currently `[DeadCodeElim, Fuse1qRuns, Fuse2q]`; later
-    /// passes are appended here as they ship.
+    /// Phase-1 default pipeline. Currently
+    /// `[DeadCodeElim, CancelInversePairs, Fuse1qRuns, Fuse2q]`; later
+    /// passes are appended here as they ship. Cancellation runs before
+    /// fusion so exact inverse pairs (e.g. `Rz(θ)·Rz(−θ)`) are deleted
+    /// rather than fused into an identity block that still executes.
     pub fn default_pipeline() -> Self {
         Self::new(vec![
             Box::new(DeadCodeElim),
+            Box::new(CancelInversePairs),
             Box::new(Fuse1qRuns),
             Box::new(Fuse2q),
         ])
@@ -112,6 +116,21 @@ mod tests {
         c.cnot(0, 1).unwrap();
         let stats = PassPipeline::default_pipeline().run(&mut c).unwrap();
         assert_eq!(stats.gates_before, 2);
+        assert_eq!(stats.gates_after, 1);
+        assert!(stats.transformations >= 1);
+    }
+
+    #[test]
+    fn default_pipeline_cancels_inverse_pair_before_fusion() {
+        // H(0); H(0); H(1) — the H·H pair must be removed by cancellation;
+        // fusion alone would instead fuse it into an identity Unitary1q that
+        // still executes. After the pipeline: only H(1) remains.
+        let mut c = Circuit::new(2, 0);
+        c.h(0).unwrap();
+        c.h(0).unwrap();
+        c.h(1).unwrap();
+        let stats = PassPipeline::default_pipeline().run(&mut c).unwrap();
+        assert_eq!(stats.gates_before, 3);
         assert_eq!(stats.gates_after, 1);
         assert!(stats.transformations >= 1);
     }
