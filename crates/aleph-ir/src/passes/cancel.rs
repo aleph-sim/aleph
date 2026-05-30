@@ -357,4 +357,102 @@ mod tests {
         assert_eq!(s.transformations, 0);
         assert_eq!(c.instructions().len(), 2);
     }
+
+    #[test]
+    fn barrier_blocks_cancellation() {
+        // H(0); Barrier([0]); H(0) → kept (barrier severs adjacency).
+        let mut c = Circuit::new(1, 0);
+        c.h(0).unwrap();
+        c.barrier([0u32]).unwrap();
+        c.h(0).unwrap();
+        let s = run_pass(&mut c);
+        assert_eq!(s.transformations, 0);
+        assert_eq!(c.instructions().len(), 3);
+    }
+
+    #[test]
+    fn measure_blocks_cancellation() {
+        // X(0); Measure(0,0); X(0) → kept.
+        let mut c = Circuit::new(1, 1);
+        c.x(0).unwrap();
+        c.measure(0, 0).unwrap();
+        c.x(0).unwrap();
+        let s = run_pass(&mut c);
+        assert_eq!(s.transformations, 0);
+        assert_eq!(c.instructions().len(), 3);
+    }
+
+    #[test]
+    fn reset_blocks_cancellation() {
+        // X(0); Reset(0); X(0) → kept.
+        let mut c = Circuit::new(1, 0);
+        c.x(0).unwrap();
+        c.reset(0).unwrap();
+        c.x(0).unwrap();
+        let s = run_pass(&mut c);
+        assert_eq!(s.transformations, 0);
+        assert_eq!(c.instructions().len(), 3);
+    }
+
+    #[test]
+    fn intervening_gate_on_partial_support_blocks_cancellation() {
+        // CNOT(0,1); X(1); CNOT(0,1) → NOT cancelled: X(1) intervenes on
+        // qubit 1, so the two CNOTs are not adjacent on their full support.
+        let mut c = Circuit::new(2, 0);
+        c.cnot(0, 1).unwrap();
+        c.x(1).unwrap();
+        c.cnot(0, 1).unwrap();
+        let s = run_pass(&mut c);
+        assert_eq!(s.transformations, 0);
+        assert_eq!(c.instructions().len(), 3);
+    }
+
+    #[test]
+    fn nested_single_qubit_cancellation() {
+        // X H H X (all on qubit 0): inner H·H cancels, then the X·X become
+        // adjacent and cancel → ∅.
+        let mut c = Circuit::new(1, 0);
+        c.x(0).unwrap();
+        c.h(0).unwrap();
+        c.h(0).unwrap();
+        c.x(0).unwrap();
+        let s = run_pass(&mut c);
+        assert_eq!(s.transformations, 2);
+        assert!(c.instructions().is_empty());
+    }
+
+    #[test]
+    fn nested_through_two_qubit_gate() {
+        // CNOT(0,1); X(0); X(0); CNOT(0,1) → inner X·X cancels, then the two
+        // CNOTs share the top on both qubits and cancel → ∅.
+        let mut c = Circuit::new(2, 0);
+        c.cnot(0, 1).unwrap();
+        c.x(0).unwrap();
+        c.x(0).unwrap();
+        c.cnot(0, 1).unwrap();
+        let s = run_pass(&mut c);
+        assert_eq!(s.transformations, 2);
+        assert!(c.instructions().is_empty());
+    }
+
+    #[test]
+    fn partial_cancellation_keeps_survivors_in_order() {
+        // H(0); X(0); X(0); Z(1) → X·X cancels; H(0) and Z(1) survive in order.
+        let mut c = Circuit::new(2, 0);
+        c.h(0).unwrap();
+        c.x(0).unwrap();
+        c.x(0).unwrap();
+        c.z(1).unwrap();
+        let s = run_pass(&mut c);
+        assert_eq!(s.transformations, 1);
+        assert_eq!(c.instructions().len(), 2);
+        assert!(matches!(
+            &c.instructions()[0],
+            Instruction::Gate(g) if g.gate == aleph_core::Gate::H
+        ));
+        assert!(matches!(
+            &c.instructions()[1],
+            Instruction::Gate(g) if g.gate == aleph_core::Gate::Z
+        ));
+    }
 }
