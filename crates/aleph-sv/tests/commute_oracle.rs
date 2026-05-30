@@ -17,9 +17,26 @@ fn amplitudes(c: &Circuit) -> Vec<Complex> {
     run(&mut backend, c).unwrap().amplitudes().to_vec()
 }
 
-/// State vector after applying `gates` in order to |0…0⟩ on N qubits.
+/// State vector after applying `gates` in order on N qubits, starting
+/// from a generic prepared state (not |0…0⟩). The state-prep prefix
+/// rotates every qubit into a complex superposition so that commutation
+/// violations that vanish on the |0…0⟩ fixed point — e.g. CNOT(c,t) vs
+/// Z on target t, which only differ when the control is excited — still
+/// manifest as a state difference. Distinct angles avoid symmetry.
 fn state_after(gates: &[GateInstance]) -> Vec<Complex> {
     let mut c = Circuit::new(N, 0);
+    for q in 0..N {
+        let qf = q as f64;
+        c.add_gate(GateInstance::new(
+            Gate::U3(
+                Param::Concrete(0.3 + 0.17 * qf),
+                Param::Concrete(0.5 + 0.11 * qf),
+                Param::Concrete(0.7 + 0.13 * qf),
+            ),
+            [q].to_vec(),
+        ))
+        .unwrap();
+    }
     for gi in gates {
         c.add_gate(gi.clone()).unwrap();
     }
@@ -64,18 +81,17 @@ fn assert_reorder_differs(a: &GateInstance, b: &GateInstance) {
         .any(|(x, y)| (x.re - y.re).abs() > TOL || (x.im - y.im).abs() > TOL);
     assert!(
         differs,
-        "expected non-commuting pair {:?}/{:?} to differ on |0…0⟩",
+        "expected non-commuting pair {:?}/{:?} to differ on the prepared state",
         a.gate, b.gate
     );
 }
 
 #[test]
 fn commuting_pairs_preserve_state() {
-    // Need a non-trivial input on the shared qubits, so prefix the system
-    // into a superposition where order would matter if they didn't commute.
-    // state_after starts from |0…0⟩; for pairs whose action on |0⟩ is
-    // order-insensitive only by luck, we instead rely on the proptest for
-    // breadth and use clearly order-sensitive operators here.
+    // state_after prepares every qubit in a generic complex superposition
+    // before applying the pair, so AB=BA must hold on a non-trivial input
+    // (not just the |0…0⟩ fixed point). Genuinely commuting pairs still
+    // agree exactly.
     assert_reorder_equal(&g(Gate::H, &[0]), &g(Gate::X, &[1])); // disjoint
     assert_reorder_equal(&g(Gate::Z, &[0]), &rz(0.4, 0)); // diagonal
     assert_reorder_equal(&g(Gate::S, &[0]), &g(Gate::T, &[0])); // diagonal
@@ -87,15 +103,14 @@ fn commuting_pairs_preserve_state() {
 
 #[test]
 fn non_commuting_pairs_differ() {
-    // Cases chosen so the two orders differ on |0…0⟩ directly (no state
-    // prep needed). NOTE: a pair like Cnot(0,1) ∥ Z(1) (Z on target) does
-    // NOT differ on |0…0⟩ — the control is |0⟩ so CNOT is identity and Z
-    // fixes |0⟩ — so it is intentionally NOT used here; its
-    // non-commutation is covered by the unit test
-    // `cnot_does_not_commute_with_z_target_or_x_control`.
+    // With the generic state-prep prefix in state_after these now differ
+    // on a non-trivial input. Notably Cnot(0,1) ∥ Z(1) (Z on target),
+    // which is identical on |0…0⟩ (control |0⟩, Z fixes |0⟩), genuinely
+    // differs once the control is excited by the prep.
     assert_reorder_differs(&g(Gate::X, &[0]), &g(Gate::Z, &[0]));
     assert_reorder_differs(&g(Gate::H, &[0]), &g(Gate::X, &[0]));
     assert_reorder_differs(&g(Gate::Cnot, &[0, 1]), &g(Gate::X, &[0])); // X on control
+    assert_reorder_differs(&g(Gate::Cnot, &[0, 1]), &g(Gate::Z, &[1])); // Z on target (off-basis)
 }
 
 use aleph_test::circuit::arb_circuit_emittable;
