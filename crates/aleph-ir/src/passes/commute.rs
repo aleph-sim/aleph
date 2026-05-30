@@ -42,6 +42,8 @@ fn controls_eq_set(a: &[u32], b: &[u32]) -> bool {
     if a.len() != b.len() {
         return false;
     }
+    // Two `to_vec()` allocations are acceptable: control lists are tiny
+    // (`SmallVec<[u32; 2]>`) and this runs per gate-pair, not per amplitude.
     let mut x = a.to_vec();
     let mut y = b.to_vec();
     x.sort_unstable();
@@ -66,9 +68,15 @@ fn cnot_commutes_with_1q(cnot: &GateInstance, other: &GateInstance) -> bool {
     if other.gate.arity() != 1 || !other.controls.is_empty() {
         return false;
     }
-    let control = cnot.qubits[0];
-    let target = cnot.qubits[1];
-    let q = other.qubits[0];
+    // Defensive: avoid raw indexing — the `qubits.len() == arity()` invariant
+    // is only a `debug_assert` in construction, so guard against a malformed
+    // instance panicking in release builds (CLAUDE.md: no panics in lib code).
+    let (Some(&control), Some(&target)) = (cnot.qubits.first(), cnot.qubits.get(1)) else {
+        return false;
+    };
+    let Some(&q) = other.qubits.first() else {
+        return false;
+    };
     if q == target {
         // Commutes with X on the target: gates that are functions of I and X.
         matches!(other.gate, Gate::X | Gate::Rx(_))
@@ -120,14 +128,23 @@ mod tests {
         assert!(gates_commute(&g(Gate::Z, &[0]), &rz(0.4, 0)));
         assert!(gates_commute(&g(Gate::S, &[0]), &g(Gate::T, &[0])));
         assert!(gates_commute(
-            &GateInstance::new(Gate::Phase(aleph_core::Param::Concrete(0.3)), [0u32].to_vec()),
+            &GateInstance::new(
+                Gate::Phase(aleph_core::Param::Concrete(0.3)),
+                [0u32].to_vec()
+            ),
             &g(Gate::Cz, &[0, 1])
         ));
         assert!(gates_commute(
             &rz(0.2, 1),
-            &GateInstance::new(Gate::CRz(aleph_core::Param::Concrete(0.5)), [0u32, 1u32].to_vec())
+            &GateInstance::new(
+                Gate::CRz(aleph_core::Param::Concrete(0.5)),
+                [0u32, 1u32].to_vec()
+            )
         ));
-        assert!(gates_commute(&g(Gate::Cz, &[0, 1]), &g(Gate::Ccz, &[0, 1, 2])));
+        assert!(gates_commute(
+            &g(Gate::Cz, &[0, 1]),
+            &g(Gate::Ccz, &[0, 1, 2])
+        ));
     }
 
     #[test]
@@ -140,7 +157,10 @@ mod tests {
     #[test]
     fn structurally_identical_commute() {
         assert!(gates_commute(&g(Gate::H, &[0]), &g(Gate::H, &[0])));
-        assert!(gates_commute(&g(Gate::Cnot, &[0, 1]), &g(Gate::Cnot, &[0, 1])));
+        assert!(gates_commute(
+            &g(Gate::Cnot, &[0, 1]),
+            &g(Gate::Cnot, &[0, 1])
+        ));
         // Identically-controlled X (controls compared as a set).
         let a = GateInstance::controlled(Gate::X, smallvec![3u32], smallvec![0u32, 1u32]);
         let b = GateInstance::controlled(Gate::X, smallvec![3u32], smallvec![1u32, 0u32]);
@@ -179,7 +199,10 @@ mod tests {
         assert!(!gates_commute(&g(Gate::X, &[0]), &g(Gate::Z, &[0])));
         assert!(!gates_commute(&g(Gate::H, &[0]), &g(Gate::X, &[0])));
         // CNOT(0,1) and CNOT(1,2): control of one is target of the other.
-        assert!(!gates_commute(&g(Gate::Cnot, &[0, 1]), &g(Gate::Cnot, &[1, 2])));
+        assert!(!gates_commute(
+            &g(Gate::Cnot, &[0, 1]),
+            &g(Gate::Cnot, &[1, 2])
+        ));
     }
 
     #[test]
