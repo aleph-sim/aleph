@@ -10,10 +10,12 @@
 use crate::Circuit;
 use thiserror::Error;
 
+pub mod cancel;
 pub mod dce;
 pub mod fuse_1q;
 pub mod fuse_2q;
 
+pub use cancel::CancelInversePairs;
 pub use dce::DeadCodeElim;
 pub use fuse_1q::Fuse1qRuns;
 pub use fuse_2q::Fuse2q;
