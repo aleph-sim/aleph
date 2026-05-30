@@ -6,18 +6,25 @@
 //! [`dce::DeadCodeElim`], [`fuse_1q::Fuse1qRuns`], and
 //! [`fuse_2q::Fuse2q`] — in that pipeline order (cancellation precedes
 //! DCE so DCE can clean up gates newly exposed as dead by cancellation;
-//! see [`PassPipeline::default_pipeline`]). Later tickets (P1-13) add
-//! more passes that plug in by being pushed onto the pipeline.
+//! see [`PassPipeline::default_pipeline`]). Later tickets add more
+//! passes that plug in by being pushed onto the pipeline.
+//!
+//! This module also exports [`commute::gates_commute`], a sound,
+//! conservative commutation predicate over `GateInstance` pairs that
+//! future passes use to decide when gates may be reordered. It is a
+//! free function, not a [`Pass`], and is not part of `default_pipeline`.
 
 use crate::Circuit;
 use thiserror::Error;
 
 pub mod cancel;
+pub mod commute;
 pub mod dce;
 pub mod fuse_1q;
 pub mod fuse_2q;
 
 pub use cancel::CancelInversePairs;
+pub use commute::gates_commute;
 pub use dce::DeadCodeElim;
 pub use fuse_1q::Fuse1qRuns;
 pub use fuse_2q::Fuse2q;
