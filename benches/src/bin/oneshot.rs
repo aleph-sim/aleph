@@ -9,7 +9,9 @@ use aleph_sv::NaiveSvBackend;
 use std::hint::black_box;
 
 fn main() {
-    let path = std::env::args().nth(1).expect("usage: oneshot <circuit.qasm>");
+    let path = std::env::args()
+        .nth(1)
+        .expect("usage: oneshot <circuit.qasm>");
     let src = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));
     let circuit = aleph_parser::parse(&src).unwrap_or_else(|e| panic!("parse {path}: {e:?}"));
     let mut backend = NaiveSvBackend::with_seed(0);

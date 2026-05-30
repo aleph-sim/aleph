@@ -63,11 +63,10 @@ fn fixture_path(name: &str) -> PathBuf {
 /// Per-cell criterion budget. Large n is minutes/iter, so shrink the sample
 /// count (disclosed in the report's RSD table). Grover is the most expensive.
 fn sample_budget_for(name: &str, n: u32) -> (usize, Duration) {
-    if name.starts_with("grover_") && n >= 22 {
-        (10, Duration::from_secs(30))
-    } else if n >= 22 {
-        (10, Duration::from_secs(20))
-    } else if name.starts_with("grover_") {
+    let grover = name.starts_with("grover_");
+    if grover && n >= 22 {
+        (10, Duration::from_secs(30)) // most expensive cell
+    } else if grover || n >= 22 {
         (10, Duration::from_secs(20))
     } else {
         (50, Duration::from_secs(10))
