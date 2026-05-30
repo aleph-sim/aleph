@@ -286,6 +286,7 @@ Open a PR titled `[meta] Update CLAUDE.md: <reason>`. Don’t bundle CLAUDE.md c
 |Benchmark            |`cargo bench --workspace` [^bench-features]            |
 |Benchmark (IR fuse)  |`cargo bench -p aleph-ir --features bench-fixtures`    |
 |Benchmark (IR fuse 2q)|`cargo bench -p aleph-ir --features bench-fixtures --bench fuse_2q`|
+|Benchmark (IR cancel)|`cargo bench -p aleph-ir --features bench-fixtures --bench cancel`|
 |Profile (Linux)      |`cargo flamegraph --bench qft`                         |
 
 [^bench-features]: Per-crate benches with `required-features` are silently skipped by `cargo bench --workspace`. Run them explicitly with their feature flag — e.g., `cargo bench -p aleph-ir --features bench-fixtures` for the P1-09 `fuse_1q` bench and the P1-10 `fuse_2q` bench.

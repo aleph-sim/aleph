@@ -146,10 +146,12 @@ are untouched.
   `bench_fixtures.rs`: a useful base contour plus `pairs` injected
   `g·g†` redundancies interleaved through it.
 - Bench `crates/aleph-ir/benches/cancel.rs`, gated behind the
-  `bench-fixtures` feature. Because `cargo bench --workspace` silently
-  skips `required-features` benches (P1-09 lesson), add the explicit
-  compile+run step to `.github/workflows/bench.yml` and a Quick
-  Reference row to `CLAUDE.md`.
+  `bench-fixtures` feature.
+- The crate-level `bench-fixtures` steps already in
+  `.github/workflows/bench.yml` (`cargo bench -p aleph-ir --features
+  bench-fixtures [--no-run]`) compile and run every feature-gated bench
+  in the crate generically, so the new `cancel` bench needs no workflow
+  change — only the `[[bench]]` registration in `Cargo.toml`.
 - Metric: pass wall-clock + reduction ratio `gates_before/gates_after`.
   Target ≈ `≥ 3×` on a pair-dominated fixture (parity with the
   self-imposed targets in P1-09 VQE 3.09× and P1-10 QAOA 3.85×).
