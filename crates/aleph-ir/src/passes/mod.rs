@@ -2,18 +2,22 @@
 //!
 //! Each pass implements [`Pass`]. A [`PassPipeline`] runs an ordered
 //! sequence of passes over a [`Circuit`], aggregating per-pass
-//! [`PassStats`]. Phase-1 ships [`dce::DeadCodeElim`],
-//! [`fuse_1q::Fuse1qRuns`], and [`fuse_2q::Fuse2q`]; later tickets
-//! (P1-12/13) add more passes that plug in by being pushed onto the
-//! pipeline.
+//! [`PassStats`]. Phase-1 ships [`cancel::CancelInversePairs`],
+//! [`dce::DeadCodeElim`], [`fuse_1q::Fuse1qRuns`], and
+//! [`fuse_2q::Fuse2q`] — in that pipeline order (cancellation precedes
+//! DCE so DCE can clean up gates newly exposed as dead by cancellation;
+//! see [`PassPipeline::default_pipeline`]). Later tickets (P1-13) add
+//! more passes that plug in by being pushed onto the pipeline.
 
 use crate::Circuit;
 use thiserror::Error;
 
+pub mod cancel;
 pub mod dce;
 pub mod fuse_1q;
 pub mod fuse_2q;
 
+pub use cancel::CancelInversePairs;
 pub use dce::DeadCodeElim;
 pub use fuse_1q::Fuse1qRuns;
 pub use fuse_2q::Fuse2q;
@@ -61,10 +65,24 @@ impl PassPipeline {
         Self { passes }
     }
 
-    /// Phase-1 default pipeline. Currently `[DeadCodeElim, Fuse1qRuns, Fuse2q]`; later
+    /// Phase-1 default pipeline. Currently
+    /// `[CancelInversePairs, DeadCodeElim, Fuse1qRuns, Fuse2q]`; later
     /// passes are appended here as they ship.
+    ///
+    /// Cancellation runs **before** dead-code elimination because
+    /// cancelling an inverse pair can expose newly-dead gates — e.g. a
+    /// gate whose only entangling neighbours were a `Swap·Swap` pair
+    /// becomes dead once that pair is deleted. DCE must run afterwards
+    /// to remove them, so the pipeline reaches a fixpoint in a single
+    /// `optimize()` (idempotence). Running DCE first instead would leave
+    /// such gates for a second pass and violate that property.
+    ///
+    /// Cancellation also runs before fusion so exact inverse pairs
+    /// (e.g. `Rz(θ)·Rz(−θ)`) are deleted rather than fused into an
+    /// identity block that still executes.
     pub fn default_pipeline() -> Self {
         Self::new(vec![
+            Box::new(CancelInversePairs),
             Box::new(DeadCodeElim),
             Box::new(Fuse1qRuns),
             Box::new(Fuse2q),
@@ -114,6 +132,21 @@ mod tests {
         assert!(stats.transformations >= 1);
     }
 
+    #[test]
+    fn default_pipeline_cancels_inverse_pair_before_fusion() {
+        // H(0); H(0); H(1) — the H·H pair must be removed by cancellation;
+        // fusion alone would instead fuse it into an identity Unitary1q that
+        // still executes. After the pipeline: only H(1) remains.
+        let mut c = Circuit::new(2, 0);
+        c.h(0).unwrap();
+        c.h(0).unwrap();
+        c.h(1).unwrap();
+        let stats = PassPipeline::default_pipeline().run(&mut c).unwrap();
+        assert_eq!(stats.gates_before, 3);
+        assert_eq!(stats.gates_after, 1);
+        assert!(stats.transformations >= 1);
+    }
+
     struct Noop;
     impl Pass for Noop {
         fn name(&self) -> &'static str {
@@ -152,8 +185,10 @@ mod tests {
     }
 
     #[test]
-    fn default_pipeline_runs_dce_first() {
+    fn default_pipeline_removes_dead_gates() {
         // X(2) is dead (q2 unmeasured); only DeadCodeElim removes it.
+        // CancelInversePairs is a no-op on this input, so the count is
+        // unaffected by its now running ahead of DCE in the pipeline.
         let mut c = Circuit::new(3, 1);
         c.h(0).unwrap();
         c.x(2).unwrap();

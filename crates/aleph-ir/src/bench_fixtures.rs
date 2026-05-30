@@ -122,6 +122,26 @@ pub fn ancilla_compute(n_data: u32, n_ancilla: u32) -> Circuit {
     c
 }
 
+/// Circuit dominated by cancellable redundancy. Per step: one surviving
+/// `Rz` rotation (distinct angle, so consecutive survivors never cancel)
+/// followed by an `H·H` and an `X·X` self-inverse pair that the
+/// cancellation pass deletes. `pairs` steps → `5·pairs` gates in, `pairs`
+/// gates out (5× reduction). Deterministic; `q` cycles across the
+/// register so the redundancy is spread over all qubits.
+pub fn cancel_redundant(n_qubits: u32, pairs: u32) -> Circuit {
+    assert!(n_qubits >= 1, "cancel_redundant needs at least one qubit");
+    let mut c = Circuit::new(n_qubits, 0);
+    for p in 0..pairs {
+        let q = p % n_qubits;
+        c.rz(0.1 + 0.001 * (p as f64), q).unwrap(); // survives
+        c.h(q).unwrap();
+        c.h(q).unwrap(); // cancels
+        c.x(q).unwrap();
+        c.x(q).unwrap(); // cancels
+    }
+    c
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -238,5 +258,15 @@ mod tests {
             ratio >= 3.0,
             "VQE HEA fusion ratio {ratio} below 3× AC (before={before}, after={after})",
         );
+    }
+
+    #[test]
+    fn cancel_redundant_reduces_5x() {
+        use crate::passes::{CancelInversePairs, Pass};
+        let mut c = cancel_redundant(4, 20);
+        assert_eq!(c.len(), 100); // 5 gates × 20 steps
+        let s = CancelInversePairs.run(&mut c).unwrap();
+        assert_eq!(s.gates_after, 20); // only the Rz survivors
+        assert_eq!(c.len(), 20);
     }
 }
