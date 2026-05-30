@@ -1,10 +1,15 @@
-"""Qiskit Aer baseline harness for aleph Phase 1, Stage 0.
+"""Qiskit Aer baseline harness for aleph Phase 1.
 
-Builds three workloads (QFT-20, Grover-20 x 10 iters, random-brickwall-20),
-transpiles each to the basis aleph-parser supports, exports QASM3, and times
+Builds the full Phase-1 matrix — {GHZ, QFT, Grover, random-brickwall} ×
+n ∈ {15, 20, 22, 25} — transpiles each to the basis aleph-parser supports,
+exports QASM3 (committed under circuits/), and times
 AerSimulator(method='statevector') under single-thread pinning.
 
-Spec: docs/superpowers/specs/2026-05-26-stage0-qiskit-baseline-design.md
+Flags: `--gen-only` regenerates circuits without timing; `--workloads a,b`
+times only the named subset (default: full matrix).
+
+Specs: docs/superpowers/specs/2026-05-26-stage0-qiskit-baseline-design.md
+       docs/superpowers/specs/2026-05-30-p1-14-phase1-perf-report-design.md
 """
 from __future__ import annotations
 
@@ -21,10 +26,9 @@ from qiskit_aer import AerSimulator
 # Grover-10 transpiles to ~192k gates (well over the spec's 100k threshold).
 # Per design doc section 8, drop to 5 iters; the kernel mix is identical, the
 # wall-clock just halves.  Documented choice; not a defect.
-N_QUBITS = 20
+N_QUBITS_LIST = [15, 20, 22, 25]
 GROVER_ITERS = 5
 RANDOM_DEPTH = 20
-TIMING_RUNS = 10
 BASIS_GATES = ["h", "x", "z", "rz", "rx", "ry", "cx", "cz", "ccx", "p"]
 
 CIRCUITS_DIR = Path(__file__).parent / "circuits"
@@ -83,11 +87,47 @@ def build_random_brickwall(n: int, depth: int) -> QuantumCircuit:
     return qc
 
 
-WORKLOADS = {
-    "qft_n20": lambda: build_qft(N_QUBITS),
-    "grover_n20_iters5": lambda: build_grover(N_QUBITS, GROVER_ITERS),
-    "random_brickwall_n20_d20": lambda: build_random_brickwall(N_QUBITS, RANDOM_DEPTH),
+def build_ghz(n: int) -> QuantumCircuit:
+    """GHZ state on `n` qubits: H on q0, then a CNOT chain q_i -> q_{i+1}."""
+    qc = QuantumCircuit(n, name=f"ghz_n{n}")
+    qc.h(0)
+    for q in range(n - 1):
+        qc.cx(q, q + 1)
+    return qc
+
+
+FAMILY_BUILDERS = {
+    "ghz": lambda n: build_ghz(n),
+    "qft": lambda n: build_qft(n),
+    "grover": lambda n: build_grover(n, GROVER_ITERS),
+    "random_brickwall": lambda n: build_random_brickwall(n, RANDOM_DEPTH),
 }
+
+
+def workload_name(family: str, n: int) -> str:
+    if family == "grover":
+        return f"grover_n{n}_iters{GROVER_ITERS}"
+    if family == "random_brickwall":
+        return f"random_brickwall_n{n}_d{RANDOM_DEPTH}"
+    return f"{family}_n{n}"
+
+
+def all_workloads() -> list[tuple[str, str, int]]:
+    """(name, family, n) for the full matrix, families in stable order."""
+    return [
+        (workload_name(fam, n), fam, n)
+        for fam in FAMILY_BUILDERS
+        for n in N_QUBITS_LIST
+    ]
+
+
+def timing_runs_for(n: int) -> int:
+    """Fewer timed Aer runs at large n (each is minutes). Disclosed in the report."""
+    if n <= 20:
+        return 10
+    if n == 22:
+        return 5
+    return 3  # n == 25
 
 
 def transpile_and_export(qc: QuantumCircuit, name: str) -> QuantumCircuit:
@@ -100,9 +140,9 @@ def transpile_and_export(qc: QuantumCircuit, name: str) -> QuantumCircuit:
     return tqc
 
 
-def time_aer(tqc: QuantumCircuit) -> dict:
-    """Run `tqc` through AerSimulator(method='statevector') TIMING_RUNS times
-    under single-thread pinning. Returns dict with median, mean, stdev (seconds)."""
+def time_aer(tqc: QuantumCircuit, runs: int) -> dict:
+    """Run `tqc` through AerSimulator(method='statevector') `runs` times under
+    single-thread pinning. Returns dict with median, mean, stdev (seconds)."""
     sim = AerSimulator(
         method="statevector",
         max_parallel_threads=1,
@@ -114,7 +154,7 @@ def time_aer(tqc: QuantumCircuit) -> dict:
     # Warm-up: one run not timed.
     sim.run(tqc_with_save).result()
     samples = []
-    for _ in range(TIMING_RUNS):
+    for _ in range(runs):
         t0 = time.perf_counter()
         sim.run(tqc_with_save).result()
         samples.append(time.perf_counter() - t0)
@@ -127,30 +167,56 @@ def time_aer(tqc: QuantumCircuit) -> dict:
 
 
 def main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Qiskit Aer Phase-1 baseline harness")
+    parser.add_argument(
+        "--gen-only",
+        action="store_true",
+        help="Only generate/export circuits/*.qasm; do not time Aer.",
+    )
+    parser.add_argument(
+        "--workloads",
+        type=str,
+        default="",
+        help="Comma-separated workload names to time (default: full matrix).",
+    )
+    args = parser.parse_args()
+
     CIRCUITS_DIR.mkdir(parents=True, exist_ok=True)
+    matrix = all_workloads()
+    selected = (
+        set(args.workloads.split(",")) if args.workloads else {name for name, _, _ in matrix}
+    )
+
     results: dict = {
-        "schema_version": 1,
-        "n_qubits": N_QUBITS,
+        "schema_version": 2,
+        "n_qubits_list": N_QUBITS_LIST,
         "grover_iters": GROVER_ITERS,
         "random_depth": RANDOM_DEPTH,
-        "timing_runs": TIMING_RUNS,
         "basis_gates": BASIS_GATES,
         "workloads": {},
     }
-    for name, builder in WORKLOADS.items():
+    for name, family, n in matrix:
         print(f"[build] {name} ...", flush=True)
-        qc = builder()
+        qc = FAMILY_BUILDERS[family](n)
         tqc = transpile_and_export(qc, name)
         gate_count = len(tqc.data)
         print(f"[build] {name}: {gate_count} gates after transpile", flush=True)
-        print(f"[time]  {name} (Aer) ...", flush=True)
-        timing = time_aer(tqc)
+        if args.gen_only or name not in selected:
+            continue
+        runs = timing_runs_for(n)
+        print(f"[time]  {name} (Aer, {runs} runs) ...", flush=True)
+        timing = time_aer(tqc, runs)
         print(
             f"[time]  {name}: median={timing['median_s']*1000:.2f} ms "
             f"stdev={timing['stdev_s']*1000:.2f} ms",
             flush=True,
         )
         results["workloads"][name] = {
+            "n": n,
+            "family": family,
+            "timing_runs": runs,
             "gate_count_post_transpile": gate_count,
             "qiskit_aer": timing,
         }

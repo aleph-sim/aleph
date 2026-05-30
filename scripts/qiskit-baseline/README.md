@@ -1,53 +1,82 @@
-# Qiskit Aer baseline (Phase 1, Stage 0)
+# Qiskit Aer baseline (Phase 1)
 
-Reproducibility harness for `docs/perf/phase1-vs-qiskit.md`. Produces a
-single-thread, same-circuit comparison between aleph and Qiskit Aer across
-QFT-20, Grover-20 (10 iters), and random-brickwall-20.
+Reproducibility harness for the Phase-1 exit report
+[`docs/perf/phase1.md`](../../docs/perf/phase1.md). Produces a single-thread,
+same-circuit comparison between aleph and Qiskit Aer across the full matrix:
 
-## Reproducing on EPYC
+| family             | n ∈            | notes                                   |
+|--------------------|----------------|-----------------------------------------|
+| `ghz`              | 15, 20, 22, 25 | H + CNOT chain                          |
+| `qft`              | 15, 20, 22, 25 | textbook QFT, no closing SWAPs          |
+| `grover`           | 15, 20, 22, 25 | 1 marked state, 5 iterations (`_iters5`)|
+| `random_brickwall` | 15, 20, 22, 25 | depth 20, deterministic angles (`_d20`) |
+
+Both sides load the SAME committed `circuits/*.qasm` (aleph via `aleph-parser`,
+Aer via `qasm3`), so gate counts are identical by construction. Circuits are
+generated deterministically by `run.py` and committed; `requirements.txt` pins
+the Qiskit version so a re-run reproduces them byte-for-byte (Grover's `mcx`
+decomposition varies by Qiskit version; QFT/random are stable).
+
+## Workload naming
+
+`run.py` and `benches/benches/qiskit_baseline.rs` must agree on names:
+`ghz_n{n}`, `qft_n{n}`, `grover_n{n}_iters5`, `random_brickwall_n{n}_d20`.
+
+## Regenerating the circuits
 
 ```bash
-# 1. Time Qiskit Aer
-ssh root@195.154.249.85
-cd /tmp/aleph-forensics                 # NOT the GH Actions runner workdir
-git clone https://github.com/<owner>/aleph.git && cd aleph
-git checkout <branch>
 cd scripts/qiskit-baseline
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
-  taskset -c 0 python run.py
-# Produces results-qiskit.json and writes circuits/*.qasm if missing.
-
-# 2. Time aleph against the same QASM files
-cd ../..
-RUSTFLAGS="-C target-cpu=native" cargo bench \
-  --bench qiskit_baseline -- --save-baseline phase1-baseline
+python run.py --gen-only          # writes all 16 circuits/*.qasm, no timing
 ```
 
-## Reproducing locally (M-series, Linux, etc.)
+## Reproducing on EPYC (the authoritative measurement)
 
-Same commands minus `taskset` and `OMP_*` pinning, but **note**: local numbers
-are not authoritative. EPYC + AVX-512 is the comparison target. The Rust bench
-runs scalar code paths on non-x86-AVX-512 hosts.
+EPYC + AVX-512 is the comparison target; local numbers are not authoritative
+(the Rust bench runs scalar paths on non-x86-AVX-512 hosts). Run on an
+otherwise-idle host; do NOT push to `benches/**` mid-run (CI Bench shares the
+runner).
 
-## Circuits
+```bash
+# 0. Sync + build the one-shot RSS binary
+ssh root@195.154.249.85
+cd /tmp/aleph-forensics && git clone https://github.com/<owner>/aleph.git && cd aleph
+git checkout <branch>
+RUSTFLAGS="-C target-cpu=native" cargo build --release -p aleph-benches --bin oneshot
 
-The three workloads:
+# 1. Time Qiskit Aer over the full matrix, single-thread-pinned
+cd scripts/qiskit-baseline
+python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
+OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+  taskset -c 0 python run.py            # -> results-qiskit.json
+# (subset: python run.py --workloads qft_n25,ghz_n25)
 
-- `circuits/qft_n20.qasm` — Nielsen-Chuang § 5.1 QFT, no closing SWAPs.
-- `circuits/grover_n20_iters5.qasm` — Grover-20, 1 marked state (|0…01⟩), 5
-  iterations (dropped from a planned 10 because 10-iter transpiles to ~192k
-  gates, exceeding the spec's 100k cap — see design doc § 8).
-- `circuits/random_brickwall_n20_d20.qasm` — brick-wall random circuit (Rz/Rx 1q
-  layers + alternating CNOT pairs), depth 20, deterministic angles
-  `cos(layer + qubit*0.37)`.
+# 2. Time aleph over the same QASM, AVX-512 verified
+cd ../..
+ALEPH_BENCH_FULL_MATRIX=1 RUSTFLAGS="-C target-cpu=native" \
+  cargo bench -p aleph-benches --bench qiskit_baseline -- --save-baseline phase1-final
 
-All three are transpiled by Qiskit to the basis
-`[h, x, z, rz, rx, ry, cx, cz, ccx, p]` at `optimization_level=0` so we measure
-engines, not the transpiler.
+# 3. Peak RSS (per family at the headline n)
+/usr/bin/time -v ./target/release/oneshot scripts/qiskit-baseline/circuits/qft_n25.qasm 2>&1 \
+  | grep 'Maximum resident'
+```
 
-## Updating the QASM files
+`ALEPH_BENCH_FULL_MATRIX=1` enables all 16 cells; without it the bench runs a
+cheap CI subset (n ≤ 20, no grover) that stays under the Bench workflow's
+30-minute timeout. Aer timing uses fewer runs at large n (`timing_runs_for`:
+10 at n≤20, 5 at n=22, 3 at n=25); the aleph side shrinks criterion's
+`sample_size` similarly (`sample_budget_for`). Both are disclosed in the
+report's RSD/sample-count table.
 
-`run.py` regenerates `circuits/*.qasm` deterministically on every run. To
-refresh after a Qiskit version bump, simply re-run; commit the diff.
+## Reproducing locally (M-series, etc.)
+
+Same commands minus `taskset` and `OMP_*` pinning. Local circuit generation is
+deterministic and matches EPYC; only the timing numbers are non-authoritative.
+
+## Output
+
+- `results-qiskit.json` — Aer median/stdev + post-transpile gate counts.
+- `target/criterion/**/estimates.json` — aleph medians (or the bencher.dev upload).
+- The report is [`docs/perf/phase1.md`](../../docs/perf/phase1.md); the Stage-0
+  snapshot it supersedes is `docs/perf/phase1-vs-qiskit.md`.

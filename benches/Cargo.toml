@@ -21,6 +21,10 @@ aleph-sv      = { path = "../crates/aleph-sv" }
 aleph-parser  = { path = "../crates/aleph-parser" }
 smallvec      = { workspace = true }
 
+[[bin]]
+name = "oneshot"
+path = "src/bin/oneshot.rs"
+
 [dev-dependencies]
 criterion = { workspace = true }
 
