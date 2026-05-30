@@ -173,4 +173,35 @@ mod tests {
         let cc = GateInstance::controlled(Gate::Cnot, smallvec![0u32, 1u32], smallvec![2u32]);
         assert!(!gates_commute(&cc, &g(Gate::X, &[1])));
     }
+
+    #[test]
+    fn non_commuting_pairs_are_false() {
+        assert!(!gates_commute(&g(Gate::X, &[0]), &g(Gate::Z, &[0])));
+        assert!(!gates_commute(&g(Gate::H, &[0]), &g(Gate::X, &[0])));
+        // CNOT(0,1) and CNOT(1,2): control of one is target of the other.
+        assert!(!gates_commute(&g(Gate::Cnot, &[0, 1]), &g(Gate::Cnot, &[1, 2])));
+    }
+
+    #[test]
+    fn commute_is_symmetric() {
+        // gates_commute(a,b) must equal gates_commute(b,a) for every case.
+        let cases: &[(GateInstance, GateInstance)] = &[
+            (g(Gate::H, &[0]), g(Gate::X, &[1])),       // disjoint → true
+            (g(Gate::Z, &[0]), rz(0.4, 0)),             // both diagonal → true
+            (g(Gate::Cnot, &[0, 1]), g(Gate::X, &[1])), // cnot/target → true
+            (g(Gate::Cnot, &[0, 1]), g(Gate::Z, &[0])), // cnot/control → true
+            (g(Gate::X, &[0]), g(Gate::Z, &[0])),       // → false
+            (g(Gate::Cnot, &[0, 1]), g(Gate::Y, &[1])), // → false
+            (g(Gate::Cnot, &[0, 1]), g(Gate::Cnot, &[1, 2])), // → false
+        ];
+        for (a, b) in cases {
+            assert_eq!(
+                gates_commute(a, b),
+                gates_commute(b, a),
+                "asymmetry on {:?} / {:?}",
+                a.gate,
+                b.gate
+            );
+        }
+    }
 }
