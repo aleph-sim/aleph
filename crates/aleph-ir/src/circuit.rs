@@ -151,8 +151,9 @@ impl Circuit {
 
     /// Run the default optimisation pipeline on this circuit in
     /// place. Currently applies
-    /// `[DeadCodeElim, Fuse1qRuns, Fuse2q]`; later passes are added
-    /// to [`passes::PassPipeline::default_pipeline`] as they ship.
+    /// `[CancelInversePairs, DeadCodeElim, Fuse1qRuns, Fuse2q]`; later
+    /// passes are added to
+    /// [`passes::PassPipeline::default_pipeline`] as they ship.
     ///
     /// Returns aggregate [`passes::PassStats`].
     ///
