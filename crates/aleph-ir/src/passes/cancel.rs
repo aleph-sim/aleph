@@ -184,4 +184,69 @@ mod tests {
         assert_eq!(s.transformations, 0);
         assert_eq!(c.instructions().len(), 2);
     }
+
+    #[test]
+    fn s_sdg_cancels() {
+        // S(0); Sdg(0) → ∅  (adjoint pair, not self-inverse).
+        let mut c = Circuit::new(1, 0);
+        c.s(0).unwrap();
+        c.sdg(0).unwrap();
+        let s = run_pass(&mut c);
+        assert_eq!(s.transformations, 1);
+        assert!(c.instructions().is_empty());
+    }
+
+    #[test]
+    fn t_tdg_cancels_both_orders() {
+        for build in [
+            |c: &mut Circuit| {
+                c.t(0).unwrap();
+                c.tdg(0).unwrap();
+            },
+            |c: &mut Circuit| {
+                c.tdg(0).unwrap();
+                c.t(0).unwrap();
+            },
+        ] {
+            let mut c = Circuit::new(1, 0);
+            build(&mut c);
+            let s = run_pass(&mut c);
+            assert_eq!(s.transformations, 1);
+            assert!(c.instructions().is_empty());
+        }
+    }
+
+    #[test]
+    fn rz_theta_rz_neg_theta_cancels() {
+        // Rz(0.3); Rz(-0.3) → ∅  (exact f64 negation).
+        let mut c = Circuit::new(1, 0);
+        c.rz(0.3, 0).unwrap();
+        c.rz(-0.3, 0).unwrap();
+        let s = run_pass(&mut c);
+        assert_eq!(s.transformations, 1);
+        assert!(c.instructions().is_empty());
+    }
+
+    #[test]
+    fn rz_same_sign_does_not_cancel() {
+        // Rz(0.3); Rz(0.3) is Rz(0.6), NOT identity → kept.
+        let mut c = Circuit::new(1, 0);
+        c.rz(0.3, 0).unwrap();
+        c.rz(0.3, 0).unwrap();
+        let s = run_pass(&mut c);
+        assert_eq!(s.transformations, 0);
+        assert_eq!(c.instructions().len(), 2);
+    }
+
+    #[test]
+    fn rz_near_but_unequal_angle_does_not_cancel() {
+        // Cancellation requires exact -θ; a 1e-12 mismatch must NOT cancel
+        // (that is fusion/tolerance territory, not exact-inverse deletion).
+        let mut c = Circuit::new(1, 0);
+        c.rz(0.3, 0).unwrap();
+        c.rz(-0.3 + 1e-12, 0).unwrap();
+        let s = run_pass(&mut c);
+        assert_eq!(s.transformations, 0);
+        assert_eq!(c.instructions().len(), 2);
+    }
 }
