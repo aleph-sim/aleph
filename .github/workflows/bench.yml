@@ -26,6 +26,11 @@ concurrency:
 permissions:
   contents: read
   pull-requests: write  # bencher posts a results comment on PRs
+  checks: write  # on push-to-main there is no PR, so bencher falls back
+                 # to creating a GitHub Check Run with the perf summary;
+                 # that POST needs checks:write (without it the step 403s
+                 # and the whole Bench job goes red even though all benches
+                 # ran and uploaded to bencher.dev fine).
 
 jobs:
   bench:
