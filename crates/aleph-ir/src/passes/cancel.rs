@@ -140,6 +140,8 @@ impl Pass for CancelInversePairs {
 mod tests {
     use super::*;
     use crate::Circuit;
+    use aleph_core::{Gate, GateInstance};
+    use smallvec::smallvec;
 
     fn run_pass(c: &mut Circuit) -> PassStats {
         CancelInversePairs
@@ -245,6 +247,112 @@ mod tests {
         let mut c = Circuit::new(1, 0);
         c.rz(0.3, 0).unwrap();
         c.rz(-0.3 + 1e-12, 0).unwrap();
+        let s = run_pass(&mut c);
+        assert_eq!(s.transformations, 0);
+        assert_eq!(c.instructions().len(), 2);
+    }
+
+    #[test]
+    fn cnot_cnot_same_qubits_cancels() {
+        // CNOT(0,1); CNOT(0,1) → ∅
+        let mut c = Circuit::new(2, 0);
+        c.cnot(0, 1).unwrap();
+        c.cnot(0, 1).unwrap();
+        let s = run_pass(&mut c);
+        assert_eq!(s.transformations, 1);
+        assert!(c.instructions().is_empty());
+    }
+
+    #[test]
+    fn cnot_reversed_roles_does_not_cancel() {
+        // CNOT(0,1); CNOT(1,0) are different operations → kept.
+        let mut c = Circuit::new(2, 0);
+        c.cnot(0, 1).unwrap();
+        c.cnot(1, 0).unwrap();
+        let s = run_pass(&mut c);
+        assert_eq!(s.transformations, 0);
+        assert_eq!(c.instructions().len(), 2);
+    }
+
+    #[test]
+    fn cz_swap_toffoli_cancel() {
+        // CZ(0,1)·CZ(0,1), SWAP(0,1)·SWAP(0,1), Toffoli·Toffoli all self-inverse.
+        let mut c = Circuit::new(3, 0);
+        c.cz(0, 1).unwrap();
+        c.cz(0, 1).unwrap();
+        c.swap(0, 1).unwrap();
+        c.swap(0, 1).unwrap();
+        c.ccx(0, 1, 2).unwrap();
+        c.ccx(0, 1, 2).unwrap();
+        let s = run_pass(&mut c);
+        assert_eq!(s.transformations, 3);
+        assert!(c.instructions().is_empty());
+    }
+
+    #[test]
+    fn iswap_iswapdg_cancels() {
+        // Iswap(0,1); IswapDg(0,1) → ∅  (adjoint pair via add_gate).
+        let mut c = Circuit::new(2, 0);
+        c.add_gate(GateInstance::new(Gate::Iswap, smallvec![0u32, 1u32]))
+            .unwrap();
+        c.add_gate(GateInstance::new(Gate::IswapDg, smallvec![0u32, 1u32]))
+            .unwrap();
+        let s = run_pass(&mut c);
+        assert_eq!(s.transformations, 1);
+        assert!(c.instructions().is_empty());
+    }
+
+    #[test]
+    fn controlled_x_same_controls_cancels_control_order_independent() {
+        // ctrl-X target=3 controls={0,1}; then controls={1,0} → cancels
+        // (controls compared as a set).
+        let mut c = Circuit::new(4, 0);
+        c.add_gate(GateInstance::controlled(
+            Gate::X,
+            smallvec![3u32],
+            smallvec![0u32, 1u32],
+        ))
+        .unwrap();
+        c.add_gate(GateInstance::controlled(
+            Gate::X,
+            smallvec![3u32],
+            smallvec![1u32, 0u32],
+        ))
+        .unwrap();
+        let s = run_pass(&mut c);
+        assert_eq!(s.transformations, 1);
+        assert!(c.instructions().is_empty());
+    }
+
+    #[test]
+    fn controlled_x_different_controls_does_not_cancel() {
+        // Same target, different control set → not the same operation → kept.
+        let mut c = Circuit::new(4, 0);
+        c.add_gate(GateInstance::controlled(
+            Gate::X,
+            smallvec![3u32],
+            smallvec![0u32],
+        ))
+        .unwrap();
+        c.add_gate(GateInstance::controlled(
+            Gate::X,
+            smallvec![3u32],
+            smallvec![1u32],
+        ))
+        .unwrap();
+        let s = run_pass(&mut c);
+        assert_eq!(s.transformations, 0);
+        assert_eq!(c.instructions().len(), 2);
+    }
+
+    #[test]
+    fn symmetric_gate_reordered_qubits_not_cancelled_v1() {
+        // Cz(0,1) and Cz(1,0) ARE the same operation, but v1 compares targets
+        // positionally and conservatively does NOT cancel them. Documents the
+        // deferral (symmetric-gate normalisation is future work).
+        let mut c = Circuit::new(2, 0);
+        c.cz(0, 1).unwrap();
+        c.cz(1, 0).unwrap();
         let s = run_pass(&mut c);
         assert_eq!(s.transformations, 0);
         assert_eq!(c.instructions().len(), 2);
