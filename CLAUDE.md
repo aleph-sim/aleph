@@ -15,7 +15,7 @@ Read these three files before doing substantial work:
 - `BACKLOG.md` — detailed issue specifications (source of truth for all issues).
 - `CREATE ISSUES.md` — how the GitHub backlog is synced from `BACKLOG.md`.
 
-The project is in **Phase 0** (foundation) at the time of writing. See `ROADMAP.md` § 5 for phase definitions.
+The project has completed **Phase 0** (foundation) and **Phase 1** (single-threaded CPU optimization) — both ROADMAP § 7 exit metrics are met (`docs/perf/phase0.md`, `docs/perf/phase1.md`). Phase 1 closed with all Tier-1 algorithms within 2× of Qiskit Aer single-thread at 25 qubits. **Phase 2** (multi-threaded CPU) is next. See `ROADMAP.md` § 5 for phase definitions.
 
 -----
 
@@ -206,7 +206,7 @@ Work top-down. Don’t jump to GPU when CPU has unrealized wins.
 1. **CI must be green.** Build, tests, clippy, fmt all gating.
 1. **Self-review first.** Re-read the diff with fresh eyes before requesting review.
 
-For Phase 0, while there’s no team yet: open PRs anyway, let them sit for an hour, re-review, then merge. The discipline pays off when others join.
+While there’s no team yet: open PRs anyway, let them sit for an hour, re-review, then merge. The discipline pays off when others join.
 
 -----
 

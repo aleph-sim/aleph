@@ -148,8 +148,8 @@ The simulator is evaluated on these algorithms across all phases:
 
 **Per phase**:
 
-- Phase 0: 25-qubit GHZ runs end-to-end, all property tests pass, benchmark harness produces reports.
-- Phase 1: Single-thread time within 2× of Qiskit Aer for QFT, Grover, random circuits at 25 qubits.
+- Phase 0 ✅ **met**: 25-qubit GHZ runs end-to-end, all property tests pass, benchmark harness produces reports. See `docs/perf/phase0.md`.
+- Phase 1 ✅ **met**: single-thread time within 2× of Qiskit Aer for QFT, Grover, random circuits at 25 qubits. All 16 matrix cells ≤ 2× Aer on EPYC (worst: qft_n25 = 1.73×; aleph is *faster* than Aer on Grover, random, and GHZ at n=25). See `docs/perf/phase1.md`.
 - Phase 2: ≥12× speedup on 16 cores vs. single-thread.
 - Phase 3: Stabilizer backend handles 1000+ qubit Clifford circuits; MPS handles 100+ qubit shallow circuits.
 - Phase 4: Published benchmark report, GitHub release v0.1.
