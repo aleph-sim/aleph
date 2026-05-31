@@ -1153,13 +1153,13 @@ Phase exit criterion. Without numbers, we don’t know if Phase 1 succeeded.
 
 **Acceptance Criteria**
 
-- [ ] Report committed
-- [ ] All Tier 1 algorithms benchmarked
-- [ ] Targets met or specific follow-up issues filed for misses
+- [x] Report committed — `docs/perf/phase1.md` (2026-05-31).
+- [x] All Tier 1 algorithms benchmarked — full {GHZ, QFT, Grover, random} × n{15,20,22,25} matrix on EPYC 8124P.
+- [x] Targets met or specific follow-up issues filed for misses — **all 16 cells ≤ 2× Aer; ROADMAP §7 met (worst: qft_n25 = 1.73×); no follow-ups needed.** (Stage-0's qft_n20 2.39× miss → 1.22× post-P1-06/07.)
 
 **Testing Requirements**
 
-- Benchmark CI runs the report’s measurements.
+- Benchmark CI runs the report’s measurements. The full matrix is gated behind `ALEPH_BENCH_FULL_MATRIX=1` (a manual EPYC run); CI runs a cheap subset (n ≤ 20, no grover) to stay under the Bench workflow's 30-min timeout.
 
 **References**
 

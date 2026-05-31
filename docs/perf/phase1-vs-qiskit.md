@@ -1,5 +1,11 @@
 # Phase 1 baseline: aleph vs Qiskit Aer (EPYC, single thread)
 
+> **Superseded by [`phase1.md`](./phase1.md).** This is the Stage-0 snapshot
+> (2026-05-27, pre-P1-06/07, n=20 only) kept for historical reference. The
+> canonical Phase-1 closure numbers — the full {GHZ, QFT, Grover, random} ×
+> n{15,20,22,25} matrix on the post-P1-13 backend — live in `phase1.md`.
+> Notably, the `qft_n20` 2.39× miss recorded below is now 1.22× there.
+
 **Date:** 2026-05-27
 **Host:** AMD EPYC 8124P (16 cores / 32 threads, Zen 4), 123 GiB RAM,
 kernel 7.0.0-15-generic (Ubuntu)
