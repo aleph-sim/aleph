@@ -11,3 +11,9 @@ authors.workspace = true
 aleph-core = { path = "../aleph-core" }
 aleph-ir   = { path = "../aleph-ir" }
 thiserror  = { workspace = true }
+
+[dev-dependencies]
+aleph-sv     = { path = "../aleph-sv" }
+aleph-parser = { path = "../aleph-parser" }
+aleph-test   = { path = "../aleph-test" }
+proptest     = { workspace = true }
