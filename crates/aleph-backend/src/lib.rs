@@ -53,9 +53,13 @@ pub enum BackendError {
 
     #[error("backend state is invalid: {reason}")]
     InvalidState { reason: &'static str },
+
+    #[error("optimization pipeline failed: {0}")]
+    Optimization(#[from] PassError),
 }
 
 use aleph_core::{GateInstance, PauliString};
+use aleph_ir::passes::PassError;
 use aleph_ir::Circuit;
 
 /// A simulation backend.
