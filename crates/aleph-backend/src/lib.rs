@@ -194,9 +194,15 @@ pub fn run_optimized<B: Backend>(
 
 /// [`run_optimized`] preserving measurement outcomes.
 ///
-/// Same ordering contract as [`run_with_outcomes`]. The optimization
-/// pipeline must not reorder gates across `Measure`/`Barrier`; that
-/// invariant is pinned by `tests/run_optimized_oracle.rs`.
+/// The outcomes are in the same order, and `outcome`/`qubit`/`clbit` match what
+/// [`run_with_outcomes`] returns for the same circuit and seed (the optimization
+/// pipeline must not reorder gates across `Measure`/`Barrier`; that invariant is
+/// pinned by `tests/run_optimized_oracle.rs`). **Note:** each record's
+/// `instruction_index` refers to the *optimized* circuit, so it can be smaller
+/// than the index of the same measurement in the caller's input circuit (fusion
+/// and cancellation drop earlier gates). Compare on `(qubit, clbit, outcome)`,
+/// not on the absolute `instruction_index`, when relating outcomes back to the
+/// pre-optimization circuit.
 pub fn run_optimized_with_outcomes<B: Backend>(
     backend: &mut B,
     circuit: &Circuit,
