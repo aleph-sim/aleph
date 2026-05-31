@@ -29,7 +29,10 @@ already won without fusion.
 | circuit | raw gates → fused | EPYC wall-clock (raw→opt) | speedup |
 |---------|-------------------|---------------------------|---------|
 | qft_n20 | 970 → 190         | 596 ms → 243 ms           | **2.45×** |
-| qft_n25 | 1525 → 325        | (to measure; ~2.4× expected) | — |
+| qft_n25 | 1525 → 300        | 40 128 ms → 13 891 ms     | **2.89×** |
+
+At n=25 this flips `qft_n25` from 1.73× *behind* Aer (39 683 ms raw vs Aer
+22 877 ms) to ~**0.61× ahead** (13 891 ms optimized vs Aer 22 877 ms).
 
 Local (relative) speedups confirm fusion helps **every** family and harms none:
 GHZ 1.1×, QFT 3.9×, Grover 1.4×, random 2.0×.
