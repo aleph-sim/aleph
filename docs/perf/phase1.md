@@ -271,8 +271,8 @@ ghz_n20 20→19.
 | random | 25 |     10 283.000 | 51 314.705 |   0.20×   |     3.58×      | ✅ |
 | Grover | 15 |        402.870 |  2 641.294 |   0.15×   |     1.42×      | ✅ |
 
-Peak RSS at n=25 (optimized `oneshot`): GHZ 514.6 MiB, QFT 515.2 MiB,
-random 515.2 MiB — unchanged from raw (within ~3 MiB of the 512 MiB theoretical
+Peak RSS at n=25 (optimized `oneshot`): GHZ 515.0 MiB, QFT 515.6 MiB,
+random 515.8 MiB — unchanged from raw (within ~4 MiB of the 512 MiB theoretical
 floor); fusion rewrites the IR, not the state vector.
 
 ### ROADMAP § 7 exit verdict (optimized) — MET with margin on every family
