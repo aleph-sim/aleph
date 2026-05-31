@@ -113,11 +113,12 @@ guard:
   (fusion changes peak buffers negligibly but keeps the path identical to the
   bench).
 - **Re-measure the full matrix on EPYC** with `run_optimized` (the heavy phase;
-  grover_n25 is again the multi-hour long pole). Update `docs/perf/phase1.md`
-  **in place**: replace the headline tables with optimized numbers, and add a
-  short note that the prior figures were raw single-gate kernel throughput
-  (preserve that framing so the improvement is legible, not hidden). Re-state the
-  ROADMAP §7 verdict with the optimized numbers (QFT now ≤ 1×).
+  grover_n25 is again the multi-hour long pole). Add a **new "Optimized
+  pipeline" section** to `docs/perf/phase1.md` alongside the existing raw tables
+  rather than overwriting them: the original numbers stay as the raw single-gate
+  kernel-throughput baseline; the new section presents optimized-vs-Aer with its
+  own headline tables and re-states the ROADMAP §7 verdict (QFT now ≤ 1×).
+  Keeping both makes the fusion win legible and preserves the P1-14 history.
 - Keep the CI-safe gating (`ALEPH_BENCH_FULL_MATRIX`) and sample budgets as-is.
 
 ## 6. Verification
