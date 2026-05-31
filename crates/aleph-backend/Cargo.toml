@@ -17,3 +17,4 @@ aleph-sv     = { path = "../aleph-sv" }
 aleph-parser = { path = "../aleph-parser" }
 aleph-test   = { path = "../aleph-test" }
 proptest     = { workspace = true }
+smallvec     = { workspace = true }

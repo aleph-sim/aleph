@@ -21,6 +21,7 @@ dependencies = [
  "aleph-sv",
  "aleph-test",
  "proptest",
+ "smallvec",
  "thiserror",
 ]
 
