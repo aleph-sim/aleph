@@ -13,8 +13,13 @@
 //! locally but EPYC is the authoritative measurement target.
 //!
 //! `SoaSvBackend` is included for appendix-table triangulation (n ≤ 20 only).
+//!
+//! The timed body runs `run_optimized` (optimize + simulate) — the honest
+//! comparison against Qiskit Aer, which fuses gates by default; the raw `run`
+//! path remains the oracle reference. The optimize cost is intentionally inside
+//! the timed region (Aer's fusion is inside its own timing too).
 
-use aleph_backend::run;
+use aleph_backend::run_optimized;
 use aleph_sv::{NaiveSvBackend, SoaSvBackend};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use std::hint::black_box;
@@ -96,7 +101,7 @@ fn bench_qiskit_baseline(c: &mut Criterion) {
                 b.iter_with_setup(
                     || NaiveSvBackend::with_seed(0),
                     |mut backend| {
-                        let state = run(&mut backend, circuit).unwrap();
+                        let state = run_optimized(&mut backend, circuit).unwrap();
                         black_box(state);
                     },
                 );
@@ -109,7 +114,7 @@ fn bench_qiskit_baseline(c: &mut Criterion) {
                 b.iter_with_setup(
                     || SoaSvBackend::with_seed(0),
                     |mut backend| {
-                        let state = run(&mut backend, circuit).unwrap();
+                        let state = run_optimized(&mut backend, circuit).unwrap();
                         black_box(state);
                     },
                 );
