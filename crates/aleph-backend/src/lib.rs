@@ -174,6 +174,38 @@ pub fn run_with_outcomes<B: Backend>(
     Ok((state, outcomes))
 }
 
+/// Optimize `circuit` with the default IR pipeline, then simulate.
+///
+/// Unlike [`run`], which executes the circuit verbatim (the raw reference
+/// path used by oracle tests), this first runs `Circuit::optimize`
+/// (`PassPipeline::default_pipeline`: cancellation, DCE, and 1q/2q fusion).
+/// Semantics are preserved — see the end-to-end oracle in
+/// `tests/run_optimized_oracle.rs` — and the win is far fewer state-vector
+/// passes (QFT collapses ~5x: 970->190 gates at n=20).
+///
+/// The optimization runs on a clone, so the caller's `circuit` is untouched.
+pub fn run_optimized<B: Backend>(
+    backend: &mut B,
+    circuit: &Circuit,
+) -> Result<B::State, BackendError> {
+    let (state, _outcomes) = run_optimized_with_outcomes(backend, circuit)?;
+    Ok(state)
+}
+
+/// [`run_optimized`] preserving measurement outcomes.
+///
+/// Same ordering contract as [`run_with_outcomes`]. The optimization
+/// pipeline must not reorder gates across `Measure`/`Barrier`; that
+/// invariant is pinned by `tests/run_optimized_oracle.rs`.
+pub fn run_optimized_with_outcomes<B: Backend>(
+    backend: &mut B,
+    circuit: &Circuit,
+) -> Result<(B::State, Vec<MeasurementRecord>), BackendError> {
+    let mut optimized = circuit.clone();
+    optimized.optimize()?; // PassError -> BackendError via #[from]
+    run_with_outcomes(backend, &optimized)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
