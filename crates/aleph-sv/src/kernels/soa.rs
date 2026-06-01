@@ -7,6 +7,8 @@
 //! compiler can vectorise the inner loop, and P1-03 will land an
 //! explicit AVX2 specialisation on top.
 
+#[cfg(target_arch = "x86_64")]
+use crate::kernels::tuning::{self, GateClass};
 use aleph_core::Complex;
 
 /// SIMD-lane width (in **doubles**) for the SoA AVX-512 2q kernels.
@@ -206,7 +208,16 @@ unsafe fn apply_toffoli_avx512_tier_a_soa(
     let im_bp = crate::kernels::BlockPtr(im.as_mut_ptr());
 
     let count = len / LANES_SOA;
+    let n_qubits = len.trailing_zeros();
+    let max_target = sorted_controls
+        .iter()
+        .copied()
+        .max()
+        .unwrap_or(target)
+        .max(target);
+    let policy = tuning::resolve_policy(GateClass::ThreeQ, tuning::pos_class(max_target, n_qubits));
     crate::kernels::par_blocks(
+        policy,
         count,
         len,
         |k| k * LANES_SOA,
@@ -279,7 +290,16 @@ unsafe fn apply_toffoli_avx512_tier_a_outer_walk_soa(
     let im_bp = crate::kernels::BlockPtr(im.as_mut_ptr());
 
     let count = len / LANES_SOA;
+    let n_qubits = len.trailing_zeros();
+    let max_target = sorted_controls
+        .iter()
+        .copied()
+        .max()
+        .unwrap_or(target)
+        .max(target);
+    let policy = tuning::resolve_policy(GateClass::ThreeQ, tuning::pos_class(max_target, n_qubits));
     crate::kernels::par_blocks(
+        policy,
         count,
         len,
         |k| k * LANES_SOA,
@@ -509,7 +529,11 @@ unsafe fn apply_ccz_avx512_tier_a_soa(re: &mut [f64], im: &mut [f64], mask_bits:
     let sign_mask = _mm512_set1_pd(-0.0_f64);
 
     let count = len / LANES_SOA;
+    let n_qubits = len.trailing_zeros();
+    let max_target = mask_bits.iter().copied().max().unwrap_or(0);
+    let policy = tuning::resolve_policy(GateClass::ThreeQ, tuning::pos_class(max_target, n_qubits));
     crate::kernels::par_blocks(
+        policy,
         count,
         len,
         |k| k * LANES_SOA,
@@ -592,7 +616,11 @@ unsafe fn apply_ccz_avx512_tier_a_outer_walk_soa(
     let sign = _mm512_set1_pd(-0.0_f64);
 
     let count = len / LANES_SOA;
+    let n_qubits = len.trailing_zeros();
+    let max_target = mask_bits.iter().copied().max().unwrap_or(0);
+    let policy = tuning::resolve_policy(GateClass::ThreeQ, tuning::pos_class(max_target, n_qubits));
     crate::kernels::par_blocks(
+        policy,
         count,
         len,
         |k| k * LANES_SOA,
@@ -1020,8 +1048,13 @@ unsafe fn apply_2q_cnot_avx512(
     fixed_above.sort_unstable_by_key(|&(pos, _)| pos);
 
     let n_qubits = len.trailing_zeros();
+    let policy = tuning::resolve_policy(
+        GateClass::TwoQCnot,
+        tuning::pos_class(control.max(target), n_qubits),
+    );
     let outer_count = 1usize << (n_qubits - target - 2 - external_controls.len() as u32);
     crate::kernels::par_blocks(
+        policy,
         outer_count,
         len,
         |k| crate::kernels::expand_with_fixed(k, &fixed_above) << (target + 1),
@@ -1123,8 +1156,13 @@ unsafe fn apply_2q_cnot_avx512_tier_b(
     fixed_above.sort_unstable_by_key(|&(pos, _)| pos);
 
     let n_qubits = len.trailing_zeros();
+    let policy = tuning::resolve_policy(
+        GateClass::TwoQCnot,
+        tuning::pos_class(control.max(target), n_qubits),
+    );
     let outer_count = 1usize << (n_qubits - control - 1 - external_controls.len() as u32);
     crate::kernels::par_blocks(
+        policy,
         outer_count,
         len,
         |k| crate::kernels::expand_with_fixed(k, &fixed_above) << (control + 1),
@@ -1248,8 +1286,13 @@ unsafe fn apply_2q_cnot_avx512_tier_c(
     fixed_above.sort_unstable_by_key(|&(pos, _)| pos);
 
     let n_qubits = len.trailing_zeros();
+    let policy = tuning::resolve_policy(
+        GateClass::TwoQCnot,
+        tuning::pos_class(control.max(target), n_qubits),
+    );
     let outer_count = 1usize << (n_qubits - 3 - external_controls.len() as u32);
     crate::kernels::par_blocks(
+        policy,
         outer_count,
         len,
         |k| crate::kernels::expand_with_fixed(k, &fixed_above) << 3,
@@ -1359,8 +1402,10 @@ unsafe fn apply_2q_swap_avx512(
     fixed_above.sort_unstable_by_key(|&(pos, _)| pos);
 
     let n_qubits = len.trailing_zeros();
+    let policy = tuning::resolve_policy(GateClass::TwoQSwap, tuning::pos_class(hi, n_qubits));
     let outer_count = 1usize << (n_qubits - lo - 2 - external_controls.len() as u32);
     crate::kernels::par_blocks(
+        policy,
         outer_count,
         len,
         |k| crate::kernels::expand_with_fixed(k, &fixed_above) << (lo + 1),
@@ -1479,8 +1524,10 @@ unsafe fn apply_2q_swap_avx512_tier_b(
     fixed_above.sort_unstable_by_key(|&(pos, _)| pos);
 
     let n_qubits = len.trailing_zeros();
+    let policy = tuning::resolve_policy(GateClass::TwoQSwap, tuning::pos_class(hi, n_qubits));
     let outer_count = 1usize << (n_qubits - hi - 1 - external_controls.len() as u32);
     crate::kernels::par_blocks(
+        policy,
         outer_count,
         len,
         |k| crate::kernels::expand_with_fixed(k, &fixed_above) << (hi + 1),
@@ -1602,8 +1649,10 @@ unsafe fn apply_2q_swap_avx512_tier_c(
     fixed_above.sort_unstable_by_key(|&(pos, _)| pos);
 
     let n_qubits = len.trailing_zeros();
+    let policy = tuning::resolve_policy(GateClass::TwoQSwap, tuning::pos_class(hi, n_qubits));
     let outer_count = 1usize << (n_qubits - 3 - external_controls.len() as u32);
     crate::kernels::par_blocks(
+        policy,
         outer_count,
         len,
         |k| crate::kernels::expand_with_fixed(k, &fixed_above) << 3,
@@ -1682,8 +1731,10 @@ unsafe fn apply_2q_cz_avx512(
     fixed_above.sort_unstable_by_key(|&(pos, _)| pos);
 
     let n_qubits = len.trailing_zeros();
+    let policy = tuning::resolve_policy(GateClass::TwoQCz, tuning::pos_class(hi, n_qubits));
     let outer_count = 1usize << (n_qubits - lo - 2 - external_controls.len() as u32);
     crate::kernels::par_blocks(
+        policy,
         outer_count,
         len,
         |k| crate::kernels::expand_with_fixed(k, &fixed_above) << (lo + 1),
@@ -1817,8 +1868,10 @@ unsafe fn apply_2q_diagonal_avx512(
     fixed_above.sort_unstable_by_key(|&(p, _)| p);
 
     let n_qubits = len.trailing_zeros();
+    let policy = tuning::resolve_policy(GateClass::TwoQDiag, tuning::pos_class(hi, n_qubits));
     let outer_count = 1usize << (n_qubits - lo - 2 - external_controls.len() as u32);
     crate::kernels::par_blocks(
+        policy,
         outer_count,
         len,
         |k| crate::kernels::expand_with_fixed(k, &fixed_above) << (lo + 1),
@@ -2369,10 +2422,14 @@ unsafe fn apply_1q_x_soa_avx512(re: &mut [f64], im: &mut [f64], target: u32, con
         debug_assert_eq!(j, target_bit);
     };
 
+    let n_qubits = len.trailing_zeros();
+    let policy =
+        tuning::resolve_policy(GateClass::OneQAntidiag, tuning::pos_class(target, n_qubits));
+
     if controls.is_empty() {
         let outer_step = target_bit << 1;
         let count = len / outer_step;
-        crate::kernels::par_blocks(count, len, |k| k * outer_step, outer_iter);
+        crate::kernels::par_blocks(policy, count, len, |k| k * outer_step, outer_iter);
         return;
     }
 
@@ -2382,9 +2439,9 @@ unsafe fn apply_1q_x_soa_avx512(re: &mut [f64], im: &mut [f64], target: u32, con
     }
     fixed_above.sort_unstable_by_key(|&(pos, _)| pos);
 
-    let n_qubits = len.trailing_zeros();
     let outer_count = 1usize << (n_qubits - target - 1 - controls.len() as u32);
     crate::kernels::par_blocks(
+        policy,
         outer_count,
         len,
         |k| crate::kernels::expand_with_fixed(k, &fixed_above) << (target + 1),
@@ -2458,10 +2515,14 @@ unsafe fn apply_1q_y_soa_avx512(
         debug_assert_eq!(j, target_bit);
     };
 
+    let n_qubits = len.trailing_zeros();
+    let policy =
+        tuning::resolve_policy(GateClass::OneQAntidiag, tuning::pos_class(target, n_qubits));
+
     if controls.is_empty() {
         let outer_step = target_bit << 1;
         let count = len / outer_step;
-        crate::kernels::par_blocks(count, len, |k| k * outer_step, outer_iter);
+        crate::kernels::par_blocks(policy, count, len, |k| k * outer_step, outer_iter);
         return;
     }
 
@@ -2471,9 +2532,9 @@ unsafe fn apply_1q_y_soa_avx512(
     }
     fixed_above.sort_unstable_by_key(|&(pos, _)| pos);
 
-    let n_qubits = len.trailing_zeros();
     let outer_count = 1usize << (n_qubits - target - 1 - controls.len() as u32);
     crate::kernels::par_blocks(
+        policy,
         outer_count,
         len,
         |k| crate::kernels::expand_with_fixed(k, &fixed_above) << (target + 1),
@@ -2552,10 +2613,14 @@ unsafe fn apply_1q_antidiag_soa_avx512(
         debug_assert_eq!(j, target_bit);
     };
 
+    let n_qubits = len.trailing_zeros();
+    let policy =
+        tuning::resolve_policy(GateClass::OneQAntidiag, tuning::pos_class(target, n_qubits));
+
     if controls.is_empty() {
         let outer_step = target_bit << 1;
         let count = len / outer_step;
-        crate::kernels::par_blocks(count, len, |k| k * outer_step, outer_iter);
+        crate::kernels::par_blocks(policy, count, len, |k| k * outer_step, outer_iter);
         return;
     }
 
@@ -2565,9 +2630,9 @@ unsafe fn apply_1q_antidiag_soa_avx512(
     }
     fixed_above.sort_unstable_by_key(|&(pos, _)| pos);
 
-    let n_qubits = len.trailing_zeros();
     let outer_count = 1usize << (n_qubits - target - 1 - controls.len() as u32);
     crate::kernels::par_blocks(
+        policy,
         outer_count,
         len,
         |k| crate::kernels::expand_with_fixed(k, &fixed_above) << (target + 1),
@@ -2638,7 +2703,12 @@ unsafe fn apply_1q_x_soa_avx512_lowbit(
     let len = re.len();
 
     let count = len / LANES;
+    let policy = tuning::resolve_policy(
+        GateClass::OneQAntidiag,
+        tuning::pos_class(target, len.trailing_zeros()),
+    );
     crate::kernels::par_blocks(
+        policy,
         count,
         len,
         |k| k * LANES,

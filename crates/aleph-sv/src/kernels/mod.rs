@@ -24,7 +24,12 @@ pub(crate) mod soa;
 #[cfg(feature = "internal-bench")]
 pub mod soa;
 
-use std::sync::OnceLock;
+#[cfg(not(feature = "internal-bench"))]
+pub(crate) mod tuning;
+#[cfg(feature = "internal-bench")]
+pub mod tuning;
+
+use crate::kernels::tuning::ChunkPolicy;
 
 /// Raw write pointer shareable across rayon worker threads.
 ///
@@ -90,30 +95,10 @@ impl ComplexPtr {
 unsafe impl Send for ComplexPtr {}
 unsafe impl Sync for ComplexPtr {}
 
-/// Minimum state-vector length (in amplitudes) before gate kernels go
-/// parallel. Below this, rayon's task overhead outweighs the win, so the
-/// kernel runs sequentially — keeping small circuits and unit tests fast
-/// and trivially deterministic. Overridable via `ALEPH_PAR_MIN_AMPS`
-/// (read once): tests set it to `0` to force the parallel path at small
-/// `n`, and it is the knob P2-04 will tune. Default `1 << 18` ≈ 256K
-/// amplitudes ≈ 4 MiB (comfortably past L2 on the EPYC target).
-// Allow dead_code: only reached via `par_blocks`, whose sole callers are
-// x86_64 SIMD kernels (see `BlockPtr`).
-#[allow(dead_code)]
-fn par_min_amps() -> usize {
-    static MIN: OnceLock<usize> = OnceLock::new();
-    *MIN.get_or_init(|| {
-        std::env::var("ALEPH_PAR_MIN_AMPS")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(1usize << 18)
-    })
-}
-
 /// Run `body(block_of(k))` for every `k` in `0..count`.
 ///
 /// Sequential when the state vector (`len` amplitudes) is below
-/// `par_min_amps()`, otherwise rayon-parallel over the block index. The
+/// `policy.min_amps`, otherwise rayon-parallel over the block index. The
 /// `block_of(k)` bases MUST be pairwise-disjoint blocks (the
 /// SIMD-kernel invariant) so parallel `body` calls never race.
 ///
@@ -125,12 +110,13 @@ fn par_min_amps() -> usize {
 // `BlockPtr`); the `par_tests` module exercises it on every target.
 #[allow(dead_code)]
 pub(crate) fn par_blocks(
+    policy: ChunkPolicy,
     count: usize,
     len: usize,
     block_of: impl Fn(usize) -> usize + Sync,
     body: impl Fn(usize) + Sync,
 ) {
-    if len < par_min_amps() {
+    if len < policy.min_amps {
         for k in 0..count {
             body(block_of(k));
         }
@@ -141,7 +127,7 @@ pub(crate) fn par_blocks(
         // contiguous batch of blocks sequentially.
         (0..count)
             .into_par_iter()
-            .with_min_len(64)
+            .with_min_len(policy.grain.max(1)) // grain==0 is a misconfiguration; clamp to 1
             .for_each(|k| body(block_of(k)));
     }
 }
@@ -168,6 +154,7 @@ pub(crate) fn par_blocks(
 /// `par_blocks(outer_count, …)`.
 #[allow(dead_code)]
 pub(crate) fn par_units(
+    policy: ChunkPolicy,
     outer_count: usize,
     units_per_block: usize,
     stride: usize,
@@ -180,6 +167,7 @@ pub(crate) fn par_units(
     let unit_bits = units_per_block.trailing_zeros();
     let unit_mask = units_per_block - 1;
     par_blocks(
+        policy,
         total,
         len,
         move |u| base_of(u >> unit_bits) + (u & unit_mask) * stride,
@@ -1290,17 +1278,13 @@ mod tests {
 #[cfg(test)]
 mod par_tests {
     use super::par_blocks;
+    use crate::kernels::tuning::ChunkPolicy;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    // par_blocks must call `body(block_of(k))` for every k in 0..count
-    // exactly once — the contract both the sequential and rayon branches
-    // must honour. We count visits per block and assert the all-ones
-    // coverage vector. `force_parallel` toggles the threshold branch by
-    // feeding an over-threshold `len`.
-    fn coverage(count: usize, force_parallel: bool) -> Vec<usize> {
+    fn coverage(count: usize, policy: ChunkPolicy, len: usize) -> Vec<usize> {
         let hits: Vec<AtomicUsize> = (0..count).map(|_| AtomicUsize::new(0)).collect();
-        let len = if force_parallel { usize::MAX } else { 0 };
         par_blocks(
+            policy,
             count,
             len,
             |k| k,
@@ -1313,11 +1297,21 @@ mod par_tests {
 
     #[test]
     fn par_blocks_visits_each_block_once_sequential() {
-        assert!(coverage(1000, false).iter().all(|&h| h == 1));
+        let p = ChunkPolicy {
+            min_amps: usize::MAX,
+            grain: 64,
+        };
+        assert!(coverage(1000, p, 0).iter().all(|&h| h == 1));
     }
 
     #[test]
-    fn par_blocks_visits_each_block_once_parallel() {
-        assert!(coverage(1000, true).iter().all(|&h| h == 1));
+    fn par_blocks_visits_each_block_once_parallel_across_grains() {
+        for grain in [1usize, 16, 64, 1024] {
+            let p = ChunkPolicy { min_amps: 0, grain };
+            assert!(
+                coverage(1000, p, usize::MAX).iter().all(|&h| h == 1),
+                "grain={grain} dropped/duplicated a block"
+            );
+        }
     }
 }
