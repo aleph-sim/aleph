@@ -1,7 +1,7 @@
 //! `NaiveSvBackend` — the naive CPU state-vector backend.
 
 use aleph_backend::{Backend, BackendError};
-use aleph_core::{Complex, GateError, GateInstance, GateMatrix, PauliString};
+use aleph_core::{AlignedBuf, Complex, GateError, GateInstance, GateMatrix, PauliString};
 use rand::{rngs::StdRng, SeedableRng};
 
 use crate::state::CpuState;
@@ -49,7 +49,7 @@ impl Backend for NaiveSvBackend {
             });
         }
         let dim = 1usize << num_qubits;
-        let mut amps = vec![Complex::new(0.0, 0.0); dim];
+        let mut amps = AlignedBuf::<Complex>::zeroed(dim);
         amps[0] = Complex::new(1.0, 0.0);
         Ok(CpuState { num_qubits, amps })
     }
@@ -742,7 +742,10 @@ mod tests {
         // power-of-two precondition could silently bias release builds.
         let mut b = NaiveSvBackend::with_seed(0);
         let mut s = b.allocate(2).unwrap(); // num_qubits=2 → expects 4 amps
-        s.amps.push(Complex::new(0.0, 0.0)); // now 5 amps; not pow2
+                                            // Replace the buffer with a length-5 one to break the pow2 invariant;
+                                            // AlignedBuf is fixed-size so we reconstruct rather than push.
+        let zero = Complex::new(0.0, 0.0);
+        s.amps = AlignedBuf::from_slice(&[zero, zero, zero, zero, zero]); // 5 amps; not pow2
         let err = b.sample(&s, 10).unwrap_err();
         assert!(
             matches!(err, BackendError::InvalidState { .. }),
@@ -765,6 +768,13 @@ mod tests {
             .amplitudes()
             .iter()
             .all(|a| a.re.is_finite() && a.im.is_finite()));
+    }
+
+    #[test]
+    fn allocated_state_is_cache_line_aligned() {
+        let mut b = NaiveSvBackend::with_seed(0);
+        let s = b.allocate(20).unwrap();
+        assert_eq!(s.amplitudes().as_ptr() as usize % aleph_core::CACHE_LINE, 0);
     }
 
     use aleph_test::gate::arb_1q_gate;
