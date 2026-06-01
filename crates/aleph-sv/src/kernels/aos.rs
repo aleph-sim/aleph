@@ -7,6 +7,7 @@
 //! This matches `Gate::Cnot` (`qubits = [control, target]`) whose
 //! matrix swaps rows 2 ↔ 3.
 
+use crate::kernels::tuning::{self, GateClass};
 use aleph_core::Complex;
 
 /// Apply a 1-qubit matrix to `target` (possibly with external
@@ -192,10 +193,15 @@ pub fn apply_1q(amps: &mut [Complex], target: u32, controls: &[u32], m: &[[Compl
     let ctrl_mask = super::control_mask(controls);
     let len = amps.len();
     let cp = super::ComplexPtr(amps.as_mut_ptr());
+    let policy = tuning::resolve_policy(
+        GateClass::OneQGeneric,
+        tuning::pos_class(target, len.trailing_zeros()),
+    );
     // Flat per-amplitude walk: parallel over the full index range (no
     // count-starvation — every base index `i` with bit `target` clear
     // writes its own disjoint pair `{i, i|t_bit}`).
     super::par_blocks(
+        policy,
         len,
         len,
         |k| k,
@@ -269,6 +275,7 @@ pub unsafe fn apply_1q_avx512(
 
     let target_bit = 1usize << target;
     let len = amps.len();
+    let n_qubits = len.trailing_zeros();
 
     // Pin the # Safety contract as debug-only asserts.  Release-mode
     // violations would silently produce a no-op (target_bit < LANES)
@@ -341,11 +348,14 @@ pub unsafe fn apply_1q_avx512(
     // Caller guarantees `target_bit ≥ LANES` (both powers of two), so
     // `units_per_block ≥ 1` is a power of two.
     let units_per_block = target_bit / LANES;
+    let policy =
+        tuning::resolve_policy(GateClass::OneQGeneric, tuning::pos_class(target, n_qubits));
 
     if controls.is_empty() {
         let outer_step = target_bit << 1;
         let outer_count = len / outer_step;
         crate::kernels::par_units(
+            policy,
             outer_count,
             units_per_block,
             LANES,
@@ -373,12 +383,9 @@ pub unsafe fn apply_1q_avx512(
     }
     fixed_above.sort_unstable_by_key(|&(pos, _)| pos);
 
-    let n_qubits = len.trailing_zeros();
-    // Subtraction is safe: each control is distinct from target and
-    // < n_qubits, all controls > target, so
-    // `target + 1 + controls.len() ≤ n_qubits`.
     let outer_count = 1usize << (n_qubits - target - 1 - controls.len() as u32);
     crate::kernels::par_units(
+        policy,
         outer_count,
         units_per_block,
         LANES,
@@ -411,7 +418,12 @@ pub(crate) fn apply_1q_diagonal_scalar(
     let ctrl_mask = super::control_mask(controls);
     let len = amps.len();
     let cp = super::ComplexPtr(amps.as_mut_ptr());
+    let policy = tuning::resolve_policy(
+        GateClass::OneQDiag,
+        tuning::pos_class(target, len.trailing_zeros()),
+    );
     super::par_blocks(
+        policy,
         len,
         len,
         |k| k,
@@ -438,9 +450,14 @@ pub(crate) fn apply_1q_x_scalar(amps: &mut [Complex], target: u32, controls: &[u
     let ctrl_mask = super::control_mask(controls);
     let len = amps.len();
     let cp = super::ComplexPtr(amps.as_mut_ptr());
+    let policy = tuning::resolve_policy(
+        GateClass::OneQAntidiag,
+        tuning::pos_class(target, len.trailing_zeros()),
+    );
     // Flat per-amplitude walk: each base index `i` (target bit clear) writes
     // the disjoint pair {i, i|t_bit}, so concurrent tasks never alias.
     super::par_blocks(
+        policy,
         len,
         len,
         |k| k,
@@ -480,9 +497,14 @@ pub(crate) fn apply_1q_y_scalar(
     let ctrl_mask = super::control_mask(controls);
     let len = amps.len();
     let cp = super::ComplexPtr(amps.as_mut_ptr());
+    let policy = tuning::resolve_policy(
+        GateClass::OneQAntidiag,
+        tuning::pos_class(target, len.trailing_zeros()),
+    );
     // Flat per-amplitude walk: each base index `i` (target bit clear) writes
     // the disjoint pair {i, i|t_bit}, so concurrent tasks never alias.
     super::par_blocks(
+        policy,
         len,
         len,
         |k| k,
@@ -526,9 +548,14 @@ pub(crate) fn apply_1q_antidiag_scalar(
     let ctrl_mask = super::control_mask(controls);
     let len = amps.len();
     let cp = super::ComplexPtr(amps.as_mut_ptr());
+    let policy = tuning::resolve_policy(
+        GateClass::OneQAntidiag,
+        tuning::pos_class(target, len.trailing_zeros()),
+    );
     // Flat per-amplitude walk: each base index `i` (target bit clear) writes
     // the disjoint pair {i, i|t_bit}, so concurrent tasks never alias.
     super::par_blocks(
+        policy,
         len,
         len,
         |k| k,
@@ -651,10 +678,13 @@ unsafe fn apply_1q_diagonal_avx512(
         debug_assert_eq!(j, target_bit);
     };
 
+    let n_qubits = len.trailing_zeros();
+    let policy = tuning::resolve_policy(GateClass::OneQDiag, tuning::pos_class(target, n_qubits));
+
     if controls.is_empty() {
         let outer_step = target_bit << 1;
         let count = len / outer_step;
-        crate::kernels::par_blocks(count, len, |k| k * outer_step, outer_iter);
+        crate::kernels::par_blocks(policy, count, len, |k| k * outer_step, outer_iter);
         return;
     }
 
@@ -670,9 +700,9 @@ unsafe fn apply_1q_diagonal_avx512(
     }
     fixed_above.sort_unstable_by_key(|&(pos, _)| pos);
 
-    let n_qubits = len.trailing_zeros();
     let outer_count = 1usize << (n_qubits - target - 1 - controls.len() as u32);
     crate::kernels::par_blocks(
+        policy,
         outer_count,
         len,
         |k| crate::kernels::expand_with_fixed(k, &fixed_above) << (target + 1),
@@ -730,10 +760,14 @@ unsafe fn apply_1q_x_avx512(amps: &mut [Complex], target: u32, controls: &[u32])
         debug_assert_eq!(j, target_bit);
     };
 
+    let n_qubits = len.trailing_zeros();
+    let policy =
+        tuning::resolve_policy(GateClass::OneQAntidiag, tuning::pos_class(target, n_qubits));
+
     if controls.is_empty() {
         let outer_step = target_bit << 1;
         let count = len / outer_step;
-        crate::kernels::par_blocks(count, len, |k| k * outer_step, outer_iter);
+        crate::kernels::par_blocks(policy, count, len, |k| k * outer_step, outer_iter);
         return;
     }
 
@@ -744,9 +778,9 @@ unsafe fn apply_1q_x_avx512(amps: &mut [Complex], target: u32, controls: &[u32])
     }
     fixed_above.sort_unstable_by_key(|&(pos, _)| pos);
 
-    let n_qubits = len.trailing_zeros();
     let outer_count = 1usize << (n_qubits - target - 1 - controls.len() as u32);
     crate::kernels::par_blocks(
+        policy,
         outer_count,
         len,
         |k| crate::kernels::expand_with_fixed(k, &fixed_above) << (target + 1),
@@ -843,10 +877,14 @@ unsafe fn apply_1q_y_avx512(amps: &mut [Complex], target: u32, controls: &[u32],
         debug_assert_eq!(j, target_bit);
     };
 
+    let n_qubits = len.trailing_zeros();
+    let policy =
+        tuning::resolve_policy(GateClass::OneQAntidiag, tuning::pos_class(target, n_qubits));
+
     if controls.is_empty() {
         let outer_step = target_bit << 1;
         let count = len / outer_step;
-        crate::kernels::par_blocks(count, len, |k| k * outer_step, outer_iter);
+        crate::kernels::par_blocks(policy, count, len, |k| k * outer_step, outer_iter);
         return;
     }
 
@@ -859,9 +897,9 @@ unsafe fn apply_1q_y_avx512(amps: &mut [Complex], target: u32, controls: &[u32],
     }
     fixed_above.sort_unstable_by_key(|&(pos, _)| pos);
 
-    let n_qubits = len.trailing_zeros();
     let outer_count = 1usize << (n_qubits - target - 1 - controls.len() as u32);
     crate::kernels::par_blocks(
+        policy,
         outer_count,
         len,
         |k| crate::kernels::expand_with_fixed(k, &fixed_above) << (target + 1),
@@ -935,10 +973,14 @@ unsafe fn apply_1q_antidiag_avx512(
         debug_assert_eq!(j, target_bit);
     };
 
+    let n_qubits = len.trailing_zeros();
+    let policy =
+        tuning::resolve_policy(GateClass::OneQAntidiag, tuning::pos_class(target, n_qubits));
+
     if controls.is_empty() {
         let outer_step = target_bit << 1;
         let count = len / outer_step;
-        crate::kernels::par_blocks(count, len, |k| k * outer_step, outer_iter);
+        crate::kernels::par_blocks(policy, count, len, |k| k * outer_step, outer_iter);
         return;
     }
 
@@ -948,9 +990,9 @@ unsafe fn apply_1q_antidiag_avx512(
     }
     fixed_above.sort_unstable_by_key(|&(pos, _)| pos);
 
-    let n_qubits = len.trailing_zeros();
     let outer_count = 1usize << (n_qubits - target - 1 - controls.len() as u32);
     crate::kernels::par_blocks(
+        policy,
         outer_count,
         len,
         |k| crate::kernels::expand_with_fixed(k, &fixed_above) << (target + 1),
@@ -1008,7 +1050,12 @@ unsafe fn apply_1q_x_avx512_lowbit(amps: &mut [Complex], target: u32, controls: 
     };
 
     let count = n_amps / LANES;
+    let policy = tuning::resolve_policy(
+        GateClass::OneQAntidiag,
+        tuning::pos_class(target, n_amps.trailing_zeros()),
+    );
     crate::kernels::par_blocks(
+        policy,
         count,
         n_amps,
         |k| k * LANES,
@@ -1132,7 +1179,12 @@ unsafe fn apply_1q_y_avx512_lowbit(
     };
 
     let count = n_amps / LANES;
+    let policy = tuning::resolve_policy(
+        GateClass::OneQAntidiag,
+        tuning::pos_class(target, n_amps.trailing_zeros()),
+    );
     crate::kernels::par_blocks(
+        policy,
         count,
         n_amps,
         |k| k * LANES,
@@ -1226,7 +1278,12 @@ unsafe fn apply_1q_antidiag_avx512_lowbit(
     let n_amps = amps.len();
 
     let count = n_amps / LANES;
+    let policy = tuning::resolve_policy(
+        GateClass::OneQAntidiag,
+        tuning::pos_class(target, n_amps.trailing_zeros()),
+    );
     crate::kernels::par_blocks(
+        policy,
         count,
         n_amps,
         |k| k * LANES,
@@ -1284,10 +1341,15 @@ pub(crate) fn apply_2q_dense_scalar(
     let ctrl_mask = super::control_mask(controls);
     let len = amps.len();
     let cp = super::ComplexPtr(amps.as_mut_ptr());
+    let policy = tuning::resolve_policy(
+        GateClass::TwoQDense,
+        tuning::pos_class(targets[0].max(targets[1]), len.trailing_zeros()),
+    );
     // Flat per-amplitude walk: each base index `i` (both target bits clear)
     // writes the disjoint quartet {i, i|t1_bit, i|t0_bit, i|t_mask}, so
     // concurrent tasks never alias.
     super::par_blocks(
+        policy,
         len,
         len,
         |k| k,
@@ -1339,9 +1401,14 @@ pub(crate) fn apply_2q_cnot_scalar(
     let ctrl_mask = c_bit | super::control_mask(external_controls);
     let len = amps.len();
     let cp = super::ComplexPtr(amps.as_mut_ptr());
+    let policy = tuning::resolve_policy(
+        GateClass::TwoQCnot,
+        tuning::pos_class(control.max(target), len.trailing_zeros()),
+    );
     // Flat per-amplitude walk: each base index `i` (target bit clear, controls set)
     // writes the disjoint pair {i, i|t_bit}, so concurrent tasks never alias.
     super::par_blocks(
+        policy,
         len,
         len,
         |k| k,
@@ -1380,9 +1447,14 @@ pub(crate) fn apply_2q_swap_scalar(
     let ctrl_mask = super::control_mask(external_controls);
     let len = amps.len();
     let cp = super::ComplexPtr(amps.as_mut_ptr());
+    let policy = tuning::resolve_policy(
+        GateClass::TwoQSwap,
+        tuning::pos_class(targets[0].max(targets[1]), len.trailing_zeros()),
+    );
     // Flat per-amplitude walk: each base index `i` (both target bits clear)
     // writes the disjoint pair {i|a_bit, i|b_bit}, so concurrent tasks never alias.
     super::par_blocks(
+        policy,
         len,
         len,
         |k| k,
@@ -1418,9 +1490,14 @@ pub(crate) fn apply_2q_cz_scalar(
     let ctrl_mask = super::control_mask(external_controls);
     let len = amps.len();
     let cp = super::ComplexPtr(amps.as_mut_ptr());
+    let policy = tuning::resolve_policy(
+        GateClass::TwoQCz,
+        tuning::pos_class(targets[0].max(targets[1]), len.trailing_zeros()),
+    );
     // Flat per-amplitude walk: each amplitude index is written at most once;
     // no cross-amplitude coupling, so concurrent tasks never alias.
     super::par_blocks(
+        policy,
         len,
         len,
         |k| k,
@@ -1453,7 +1530,12 @@ pub(crate) fn apply_2q_diagonal_scalar(
     let ctrl_mask = super::control_mask(external_controls);
     let len = amps.len();
     let cp = super::ComplexPtr(amps.as_mut_ptr());
+    let policy = tuning::resolve_policy(
+        GateClass::TwoQDiag,
+        tuning::pos_class(targets[0].max(targets[1]), len.trailing_zeros()),
+    );
     super::par_blocks(
+        policy,
         len,
         len,
         |k| k,
@@ -1723,8 +1805,10 @@ unsafe fn apply_2q_avx512(
     // count = n_qubits - t_lo - 2 - controls.len(); each free
     // position contributes a bit to the outer-walk index.
     let n_qubits = len.trailing_zeros();
+    let policy = tuning::resolve_policy(GateClass::TwoQDense, tuning::pos_class(t_hi, n_qubits));
     let outer_count = 1usize << (n_qubits - t_lo - 2 - controls.len() as u32);
     crate::kernels::par_blocks(
+        policy,
         outer_count,
         len,
         |k| crate::kernels::expand_with_fixed(k, &fixed_above) << (t_lo + 1),
@@ -1845,8 +1929,13 @@ unsafe fn apply_2q_cnot_avx512(
     // positions count = n_qubits - target - 2 - external_controls.len();
     // each contributes one bit to the outer-walk index.
     let n_qubits = len.trailing_zeros();
+    let policy = tuning::resolve_policy(
+        GateClass::TwoQCnot,
+        tuning::pos_class(control.max(target), n_qubits),
+    );
     let outer_count = 1usize << (n_qubits - target - 2 - external_controls.len() as u32);
     crate::kernels::par_blocks(
+        policy,
         outer_count,
         len,
         |k| crate::kernels::expand_with_fixed(k, &fixed_above) << (target + 1),
@@ -1944,6 +2033,10 @@ unsafe fn apply_2q_cnot_avx512_tier_b(
     // free positions count = n_qubits - control - 1 - ec.len(); each
     // contributes one bit to the outer-walk index.
     let n_qubits = len.trailing_zeros();
+    let policy = tuning::resolve_policy(
+        GateClass::TwoQCnot,
+        tuning::pos_class(control.max(target), n_qubits),
+    );
     let outer_count = 1usize << (n_qubits - control - 1 - external_controls.len() as u32);
 
     let outer_iter = |base: usize| {
@@ -1969,6 +2062,7 @@ unsafe fn apply_2q_cnot_avx512_tier_b(
         debug_assert_eq!(j, c_bit);
     };
     crate::kernels::par_blocks(
+        policy,
         outer_count,
         len,
         |k| crate::kernels::expand_with_fixed(k, &fixed_above) << (control + 1),
@@ -2053,6 +2147,10 @@ unsafe fn apply_2q_cnot_avx512_tier_c(
     fixed_above.sort_unstable_by_key(|&(pos, _)| pos);
 
     let n_qubits = len.trailing_zeros();
+    let policy = tuning::resolve_policy(
+        GateClass::TwoQCnot,
+        tuning::pos_class(control.max(target), n_qubits),
+    );
     let outer_count = 1usize << (n_qubits - 2 - external_controls.len() as u32);
 
     let outer_iter = |base: usize| {
@@ -2069,6 +2167,7 @@ unsafe fn apply_2q_cnot_avx512_tier_c(
         _mm512_storeu_pd(amps_ptr.add(base * 2), z2);
     };
     crate::kernels::par_blocks(
+        policy,
         outer_count,
         len,
         |k| crate::kernels::expand_with_fixed(k, &fixed_above) << 2,
@@ -2252,8 +2351,10 @@ unsafe fn apply_2q_swap_avx512(amps: &mut [Complex], targets: [u32; 2], external
     // positions count = n_qubits - lo - 2 - external_controls.len();
     // each contributes one bit to the outer-walk index.
     let n_qubits = len.trailing_zeros();
+    let policy = tuning::resolve_policy(GateClass::TwoQSwap, tuning::pos_class(hi, n_qubits));
     let outer_count = 1usize << (n_qubits - lo - 2 - external_controls.len() as u32);
     crate::kernels::par_blocks(
+        policy,
         outer_count,
         len,
         |k| crate::kernels::expand_with_fixed(k, &fixed_above) << (lo + 1),
@@ -2369,6 +2470,7 @@ unsafe fn apply_2q_swap_avx512_tier_b(
     // free positions count = n_qubits - hi - 1 - ec.len(); each
     // contributes one bit to the outer-walk index.
     let n_qubits = len.trailing_zeros();
+    let policy = tuning::resolve_policy(GateClass::TwoQSwap, tuning::pos_class(hi, n_qubits));
     let outer_count = 1usize << (n_qubits - hi - 1 - external_controls.len() as u32);
 
     let outer_iter = |outer: usize| {
@@ -2397,6 +2499,7 @@ unsafe fn apply_2q_swap_avx512_tier_b(
         debug_assert_eq!(j, hi_bit);
     };
     crate::kernels::par_blocks(
+        policy,
         outer_count,
         len,
         |k| crate::kernels::expand_with_fixed(k, &fixed_above) << (hi + 1),
@@ -2474,6 +2577,10 @@ unsafe fn apply_2q_swap_avx512_tier_c(
     fixed_above.sort_unstable_by_key(|&(pos, _)| pos);
 
     let n_qubits = len.trailing_zeros();
+    let policy = tuning::resolve_policy(
+        GateClass::TwoQSwap,
+        tuning::pos_class(targets[0].max(targets[1]), n_qubits),
+    );
     let outer_count = 1usize << (n_qubits - 2 - external_controls.len() as u32);
 
     let outer_iter = |base: usize| {
@@ -2489,6 +2596,7 @@ unsafe fn apply_2q_swap_avx512_tier_c(
         _mm512_storeu_pd(amps_ptr.add(base * 2), z2);
     };
     crate::kernels::par_blocks(
+        policy,
         outer_count,
         len,
         |k| crate::kernels::expand_with_fixed(k, &fixed_above) << 2,
@@ -2642,6 +2750,7 @@ unsafe fn apply_2q_cz_avx512(amps: &mut [Complex], targets: [u32; 2], external_c
     // = n_qubits - lo - 2 - external_controls.len(); each contributes
     // one bit to the outer-walk index.
     let n_qubits = len.trailing_zeros();
+    let policy = tuning::resolve_policy(GateClass::TwoQCz, tuning::pos_class(hi, n_qubits));
     let outer_count = 1usize << (n_qubits - lo - 2 - external_controls.len() as u32);
 
     let outer_iter = |base: usize| {
@@ -2666,6 +2775,7 @@ unsafe fn apply_2q_cz_avx512(amps: &mut [Complex], targets: [u32; 2], external_c
         debug_assert_eq!(j, lo_bit);
     };
     crate::kernels::par_blocks(
+        policy,
         outer_count,
         len,
         |k| crate::kernels::expand_with_fixed(k, &fixed_above) << (lo + 1),
@@ -2824,7 +2934,9 @@ unsafe fn apply_2q_diagonal_avx512(
         let out = _mm512_fmaddsub_pd(d_re_bc, z, t);
         _mm512_storeu_pd(amps_ptr.add(i * 2), out);
     };
-    crate::kernels::par_blocks(total_units, len, |k| k, unit);
+    let n_qubits = len.trailing_zeros();
+    let policy = tuning::resolve_policy(GateClass::TwoQDiag, tuning::pos_class(hi, n_qubits));
+    crate::kernels::par_blocks(policy, total_units, len, |k| k, unit);
 }
 
 /// Dispatch helper for the diagonal-4x4 branch (catches CZ, controlled-
@@ -2901,9 +3013,15 @@ pub(crate) fn apply_toffoli_scalar(
     }
     let len = amps.len();
     let cp = super::ComplexPtr(amps.as_mut_ptr());
+    let max_target = targets[0].max(targets[1]).max(targets[2]);
+    let policy = tuning::resolve_policy(
+        GateClass::ThreeQ,
+        tuning::pos_class(max_target, len.trailing_zeros()),
+    );
     // Flat per-amplitude walk: each base index `i` (target bit clear, controls set)
     // writes the disjoint pair {i, i|target_bit}, so concurrent tasks never alias.
     super::par_blocks(
+        policy,
         len,
         len,
         |k| k,
@@ -2939,9 +3057,15 @@ pub(crate) fn apply_ccz_scalar(amps: &mut [Complex], targets: [u32; 3], external
     }
     let len = amps.len();
     let cp = super::ComplexPtr(amps.as_mut_ptr());
+    let max_target = targets[0].max(targets[1]).max(targets[2]);
+    let policy = tuning::resolve_policy(
+        GateClass::ThreeQ,
+        tuning::pos_class(max_target, len.trailing_zeros()),
+    );
     // Flat per-amplitude walk: each amplitude index is written at most once;
     // no cross-amplitude coupling, so concurrent tasks never alias.
     super::par_blocks(
+        policy,
         len,
         len,
         |k| k,
@@ -3013,7 +3137,16 @@ unsafe fn apply_toffoli_avx512_tier_a(amps: &mut [Complex], target: u32, sorted_
     // we always load from the lo-half and its partner simultaneously).
     // Skip blocks where any control bit is clear (gate does not fire).
     let count = len / LANES;
+    let n_qubits = len.trailing_zeros();
+    let max_target = sorted_controls
+        .iter()
+        .copied()
+        .max()
+        .unwrap_or(target)
+        .max(target);
+    let policy = tuning::resolve_policy(GateClass::ThreeQ, tuning::pos_class(max_target, n_qubits));
     crate::kernels::par_blocks(
+        policy,
         count,
         len,
         |k| k * LANES,
@@ -3110,7 +3243,16 @@ unsafe fn apply_toffoli_avx512_tier_a_outer_walk(
     // without the `c_lo > target` restriction. The mask check handles
     // both above-target and below-target control bits uniformly.
     let count = len / LANES;
+    let n_qubits = len.trailing_zeros();
+    let max_target = sorted_controls
+        .iter()
+        .copied()
+        .max()
+        .unwrap_or(target)
+        .max(target);
+    let policy = tuning::resolve_policy(GateClass::ThreeQ, tuning::pos_class(max_target, n_qubits));
     crate::kernels::par_blocks(
+        policy,
         count,
         len,
         |k| k * LANES,
@@ -3438,7 +3580,11 @@ unsafe fn apply_ccz_avx512_tier_a(amps: &mut [Complex], mask_bits: &[u32]) {
     let sign_mask = _mm512_set1_pd(-0.0_f64);
 
     let count = len / LANES;
+    let n_qubits = len.trailing_zeros();
+    let max_target = mask_bits.iter().copied().max().unwrap_or(0);
+    let policy = tuning::resolve_policy(GateClass::ThreeQ, tuning::pos_class(max_target, n_qubits));
     crate::kernels::par_blocks(
+        policy,
         count,
         len,
         |k| k * LANES,
@@ -3527,7 +3673,11 @@ unsafe fn apply_ccz_avx512_tier_a_outer_walk(amps: &mut [Complex], mask_bits: &[
     let sign = _mm512_set1_pd(-0.0_f64);
 
     let count = len / LANES;
+    let n_qubits = len.trailing_zeros();
+    let max_target = mask_bits.iter().copied().max().unwrap_or(0);
+    let policy = tuning::resolve_policy(GateClass::ThreeQ, tuning::pos_class(max_target, n_qubits));
     crate::kernels::par_blocks(
+        policy,
         count,
         len,
         |k| k * LANES,
@@ -3617,10 +3767,16 @@ fn apply_3q_generic(
     let ctrl_mask = super::control_mask(controls);
     let len = amps.len();
     let cp = super::ComplexPtr(amps.as_mut_ptr());
+    let max_target = targets[0].max(targets[1]).max(targets[2]);
+    let policy = tuning::resolve_policy(
+        GateClass::ThreeQ,
+        tuning::pos_class(max_target, len.trailing_zeros()),
+    );
     // Flat per-amplitude walk: each base index `i` (all target bits clear) writes
     // the disjoint octet of 8 amplitudes indexed by idx[0..8]; concurrent tasks
     // never alias because distinct base indices produce disjoint octets.
     super::par_blocks(
+        policy,
         len,
         len,
         |k| k,

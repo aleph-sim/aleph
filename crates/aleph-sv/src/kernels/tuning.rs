@@ -29,10 +29,6 @@ pub(crate) const DEFAULT_POLICY: ChunkPolicy = ChunkPolicy {
     grain: 64,
 };
 
-// Some variants are constructed only in P2-04 Task 2 kernels; all are
-// part of the designed API surface and must be present now for Task 2
-// to compile cleanly.
-#[allow(dead_code)] // wired into kernels in P2-04 Task 2
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum GateClass {
     OneQGeneric,
@@ -46,9 +42,6 @@ pub(crate) enum GateClass {
     ThreeQ,
 }
 
-// All variants are constructed in tests and will be used in P2-04 Task 2
-// when kernels call `pos_class` to look up their policy.
-#[allow(dead_code)] // wired into kernels in P2-04 Task 2
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum PosClass {
     Low,
@@ -65,14 +58,11 @@ pub(crate) enum RefCpu {
 
 /// Target-position buckets. Constants are design choices, not tuned.
 /// `+ HIGH_BAND` (not `n - HIGH_BAND`) avoids underflow for small `n`.
-#[allow(dead_code)] // wired into kernels in P2-04 Task 2
 const LOW_BAND: u32 = 2;
-#[allow(dead_code)] // wired into kernels in P2-04 Task 2
 const HIGH_BAND: u32 = 2;
 
 /// Classify by the *dominant* (maximum) target index — that governs the
 /// outer stride and whether `par_units` flattening is in play.
-#[allow(dead_code)] // wired into kernels in P2-04 Task 2
 pub(crate) fn pos_class(max_target: u32, n: u32) -> PosClass {
     debug_assert!(max_target < n, "max_target {max_target} must be < n {n}");
     if max_target < LOW_BAND {
@@ -97,9 +87,6 @@ pub(crate) fn chunk_policy(cpu: RefCpu, _class: GateClass, _pos: PosClass) -> Ch
 
 /// Resolve the effective policy for a kernel invocation. Precedence:
 /// test override → env per-field override → table.
-///
-/// Wired into kernels in P2-04 Task 2.
-#[allow(dead_code)] // wired into kernels in P2-04 Task 2
 #[inline]
 pub(crate) fn resolve_policy(class: GateClass, pos: PosClass) -> ChunkPolicy {
     #[cfg(test)]
@@ -119,9 +106,6 @@ pub(crate) fn resolve_policy(class: GateClass, pos: PosClass) -> ChunkPolicy {
 }
 
 /// Returns the parsed value of `ALEPH_PAR_MIN_AMPS` env var, if set and valid.
-///
-/// Wired into kernels in P2-04 Task 2.
-#[allow(dead_code)] // wired into kernels in P2-04 Task 2
 fn env_min_amps() -> Option<usize> {
     static V: OnceLock<Option<usize>> = OnceLock::new();
     *V.get_or_init(|| {
@@ -132,9 +116,6 @@ fn env_min_amps() -> Option<usize> {
 }
 
 /// Returns the parsed value of `ALEPH_PAR_GRAIN` env var, if set and valid.
-///
-/// Wired into kernels in P2-04 Task 2.
-#[allow(dead_code)] // wired into kernels in P2-04 Task 2
 fn env_grain() -> Option<usize> {
     static V: OnceLock<Option<usize>> = OnceLock::new();
     *V.get_or_init(|| {
@@ -145,9 +126,6 @@ fn env_grain() -> Option<usize> {
 }
 
 /// Detect and cache the reference CPU model for this process.
-///
-/// Wired into kernels in P2-04 Task 2.
-#[allow(dead_code)] // wired into kernels in P2-04 Task 2
 pub(crate) fn cpu_model() -> RefCpu {
     static M: OnceLock<RefCpu> = OnceLock::new();
     *M.get_or_init(|| {
