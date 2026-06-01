@@ -18,25 +18,34 @@ floating-point reduction, so the result is invariant to `RAYON_NUM_THREADS`
 (verified at 1e-12 vs. the Naive backend across {1,2,4,8} threads;
 `scripts/p2-01-thread-sweep.sh`).
 
-**The P2-01 acceptance gate (≥6× on QFT-25 at 8 cores) is NOT met on this
-hardware: measured 1.6×.** The investigation (§3–§5) shows this is dominated by
-two factors that are not parallelization defects — an all-core frequency throttle
-and memory-bandwidth saturation — plus one genuine code limitation that we fixed
-(count-starvation, §4). On this single-socket, frequency-capped box the
-6×/8-core and 12×/16-core targets are not physically reachable for
-bandwidth-bound state-vector simulation regardless of code quality.
+**The P2-01 acceptance gate (≥6× on QFT-25 at 8 cores) is not met on this
+hardware: clean measurement is 3.37× at 8 cores (3.69× at 16).** But that is far
+better than it first appears: this box's all-core frequency throttle (§3) caps
+the *ideal* 8-core speedup at ≈ 4.3×, so 3.37× is **~78% of the
+frequency-adjusted ceiling** — the parallelization itself is good. The remaining
+gap to the fixed ≥6× target is the hosted box's frequency cap plus memory-
+bandwidth saturation at high core counts (8→16 cores buys only 3.37×→3.69×),
+not a parallelization defect.
 
-## 2. Headline numbers (QFT-25, raw `run`)
+> **Measurement correction.** Earlier drafts reported 1.6×. Those runs were
+> contaminated: pushing to `benches/**` triggered the self-hosted
+> `cargo bench --workspace` CI job on the *same* EPYC runner, racing every manual
+> measurement and inflating the 1-thread baseline (11.16 s under contention vs
+> 8.41 s idle). All numbers below are re-measured on a verified-idle box
+> (`uptime` load ≈ 0).
 
-| Threads | Time | Speedup vs 1 |
-|--------:|-----:|-------------:|
-| 1  | 11.16 s | 1.00× |
-| 8  |  7.06 s | 1.58× |
-| 16 |  6.94 s | 1.61× |
+## 2. Headline numbers (QFT-25, raw `run`, idle box)
 
-Scaling plateaus by 8 threads. For contrast, a dense-2q brick-wall circuit
-(`random`, n=20, higher arithmetic intensity, partly L3-resident) reaches 2.2×
-at 8 threads. Both are far below linear.
+| Threads | Time | Speedup vs 1 | Efficiency | Efficiency vs freq-adjusted ideal |
+|--------:|-----:|-------------:|-----------:|----------------------------------:|
+| 1  | 8.41 s | 1.00× | — | — |
+| 8  | 2.50 s | **3.37×** | 42% | **78%** |
+| 16 | 2.28 s | **3.69×** | 23% | 43% |
+
+8-core scaling is good once the frequency throttle is accounted for (§3). The
+8→16 step buys almost nothing (3.37×→3.69×) — that is memory-bandwidth
+saturation (§5). The pre-fused path (`run_optimized`) measures identically
+(3.35× at 8), since QFT does not fuse meaningfully (§8).
 
 ## 3. Root cause — frequency throttle (environmental)
 
@@ -45,12 +54,13 @@ The hosted EPYC instance drops its all-core clock sharply under load:
 | Load | Active-core MHz |
 |------|----------------:|
 | 1 thread (boost)   | **2995** |
-| 8 threads (all-core) | **1628** |
+| all-core (8–16 threads) | **≈1620** |
 
-That is a **1.84× per-core frequency handicap** at 8 threads (the box's own
-`lscpu` reports "CPU scaling 55%"). This alone caps the *ideal* 8-core speedup at
-≈ 8 × (1628/2995) ≈ 4.3×, before any memory or algorithmic effect. It is a
-property of the benchmark host, not of aleph.
+That is a **≈1.85× per-core frequency handicap** under multicore load (the box's
+own `lscpu` reports "CPU scaling 55%"). It caps the *ideal* 8-core speedup at
+≈ 8 × (1620/2995) ≈ 4.3× and the 16-core ideal at ≈ 8.6×, before any memory or
+algorithmic effect. It is a property of the benchmark host, not of aleph — which
+is why the measured 3.37× at 8 cores (§2) is ~78% of what this box can give.
 
 ## 4. Root cause — count-starvation (code; fixed)
 
@@ -74,22 +84,29 @@ QFT-dominant controlled-phase kernel (`apply_2q_diagonal_avx512`). High-qubit
 gates now parallelize fully (1.03× → 4.86×), while low-qubit gates are unchanged
 (`units_per_block == 1` degenerates to the original driver).
 
-## 5. Root cause — memory bandwidth (fundamental)
+## 5. Second ceiling — memory bandwidth (fundamental)
 
-Despite the count-starvation fix, **QFT-25 barely moved (1.54× → 1.58×).** QFT is
-≈ 92% controlled-phase gates, the lowest-intensity gate in the set (1 read + 1
-write + 1 complex multiply per amplitude). At n=25 the 512 MiB state vector is
-pure DRAM streaming; a few cores saturate memory bandwidth, so additional cores
-add little — the same reason the dense (higher-intensity) `random` circuit scales
-better (2.2×) than QFT (1.6×). The count-starvation fix is real and valuable
-(proven 4.86× on high-qubit workloads, and it matters more on hardware that is
-not bandwidth- and frequency-capped), but it cannot move a workload whose ceiling
-is memory bandwidth.
+Above the frequency floor, the remaining limit is memory bandwidth. The clearest
+evidence is the 8→16-core step: QFT-25 goes only 3.37× → 3.69× for 2× the cores
+(23% efficiency at 16). QFT is ≈ 92% controlled-phase gates, the lowest-intensity
+gate in the set (1 read + 1 write + 1 complex multiply per amplitude); at n=25 the
+512 MiB state vector is pure DRAM streaming, so once a handful of cores saturate
+the memory controllers, more cores add little. The cross-machine check (§8)
+confirms it: a second box (Ryzen, scalar path) shows the same saturating shape.
 
-Note also that the honest end-to-end path is `run_optimized` (gate fusion;
-qft-parity / PR #96). Fusion collapses the QFT cphase ladder (~36× less work,
-10.97 s → ~0.30 s) but its multicore scaling is similarly bandwidth-limited
-(~1.3–1.45×) — fewer, denser passes, still streaming.
+The count-starvation fix (§4) is what lets the *low* core counts scale well — it
+is essential to reach 3.37× at 8 (without it, high-qubit gates pin a large serial
+fraction). It cannot push past the bandwidth ceiling at high core counts, but
+that ceiling sits well above where the unfixed code stalled.
+
+Note also the honest end-to-end path is `run_optimized` (gate fusion;
+qft-parity / PR #96). For QFT specifically, fusion does **not** materially
+reduce work: the controlled-phase ladder acts on distinct qubit pairs, so the
+cphase gates do not fuse into each other, and only the per-qubit `H` gets
+absorbed into an adjacent cphase. A pre-fused QFT-25 therefore runs in
+essentially the same time as the raw circuit and shows the same bandwidth-bound
+scaling (measured: see §8). Fusion is a large win for circuits with fusible 1q
+runs / adjacent 2q blocks (VQE, QAOA), but QFT is not one of them.
 
 ## 6. What landed
 
@@ -106,44 +123,55 @@ qft-parity / PR #96). Fusion collapses the QFT cphase ladder (~36× less work,
    (`apply_1q_{diagonal,x,y,antidiag}_avx512`, 2q cnot/swap/cz/dense tiers, 3q
    tier-A, and the SoA mirrors). Mechanical; will not change QFT (bandwidth) but
    improves high-qubit-gate scaling and matters on non-throttled hardware.
-2. **Re-validate on non-throttled, multi-channel/multi-socket hardware** before
-   judging the ROADMAP §7 ≥12×/16-core exit — the current box cannot demonstrate
-   it for bandwidth-bound SV simulation regardless of code.
+2. **Hardware ceiling is a known constraint, not a TODO.** The two available
+   boxes are an EPYC 8124P (AVX-512, but all-core frequency-throttled to ~54%)
+   and a Ryzen 9 3900 (no AVX-512, dual-channel desktop) — no GPU. Neither can
+   demonstrate the ROADMAP §7 ≥12×/16-core exit for bandwidth-bound SV
+   simulation: the EPYC's frequency cap alone limits 16-core to ≈8.6× ideal, and
+   bandwidth pulls the realized figure to ~3.7×. Judge the parallelization by
+   *efficiency-vs-frequency-adjusted-ideal* (≈78% at 8 cores), and treat the
+   absolute ≥12× as gated on hardware we do not have.
 3. **P2-04 chunk-size tuning** of `ALEPH_PAR_MIN_AMPS` and the `with_min_len`
    grain per gate type / qubit position.
 4. **Revisit the P2-01 / ROADMAP scaling targets** for bandwidth-bound kernels —
    an efficiency-relative-to-bandwidth or compute-bound-regime metric is more
    honest than a fixed ≥6×/≥12× for memory-streaming gate application.
 
-## 8. Addendum — scalar-path parallelization (follow-up)
+## 8. Cross-checks — scalar path, second machine, and the fused path
 
-P2-01 parallelized only the AVX-512 kernels; on non-AVX-512 hosts (Zen 2, ARM,
-older Intel) the dispatch falls back to the **scalar** kernels, which were left
-sequential. A follow-up branch parallelized those too: a `ComplexPtr` (`*mut
-Complex` Send/Sync wrapper) + `par_blocks(len, len, |k| k, body)` over the flat
-per-amplitude walk. The scalar kernels are pure `0..len` walks with a per-index
-guard, so they have **no count-starvation** — full parallelism at any qubit.
+**Scalar path.** P2-01 parallelized only the AVX-512 kernels; on non-AVX-512
+hosts (Zen 2, ARM, older Intel) the dispatch falls back to the **scalar** kernels.
+A follow-up parallelized those too (`ComplexPtr` + `par_blocks(len, len, |k| k,
+body)` over the flat per-amplitude walk — pure `0..len` with a per-index guard, so
+**no count-starvation**).
 
-Cross-check on a second box (AMD Ryzen 9 3900, Zen 2, 12c/24t, **no AVX-512**,
-dual-channel DDR4):
+**Two boxes, two code paths, and pre-fused vs raw**, all QFT-25 on a verified-idle
+machine:
 
-| Path / box | QFT-25 T=1 | T=8 | Plateau |
-|------------|-----------:|----:|--------:|
-| AVX-512 / EPYC 8124P | 11.16 s | 1.6× | yes |
-| Scalar / Ryzen 9 3900 | 12.83 s | **2.11×** | yes (≈8 threads) |
+| Box / path | T=1 | T=8 | T=16 |
+|------------|----:|----:|-----:|
+| EPYC 8124P / AVX-512, raw | 8.41 s | **3.37×** | 3.69× |
+| EPYC 8124P / AVX-512, pre-fused | 8.40 s | 3.35× | — |
+| Ryzen 9 3900 / scalar, raw | 13.05 s | **2.15×** | — |
+| Ryzen 9 3900 / scalar, pre-fused | 13.13 s | 2.16× | — |
 
-The scalar path scales somewhat better (higher arithmetic intensity per core, and
-the Ryzen throttles less), but **both paths on both machines plateau, bandwidth-
-bound, far below the ≥6× target.** Two independent CPUs and two code paths
-agreeing reinforces §5: state-vector gate application is fundamentally memory-
-bandwidth-bound, and the ≥6×/8-core / ≥12×/16-core goals require either much
-higher memory bandwidth (more channels / sockets) or higher arithmetic intensity
-(fusion, cache blocking) — not more threads. Notably the scalar single-thread
-time (12.83 s) is within ~15% of the AVX-512 single-thread time (11.16 s): for
-this memory-bound workload the SIMD advantage is largely eaten by the memory
-wall.
+Three findings:
 
-## 8. Reproduce
+1. **Pre-fused ≈ raw.** On both machines the `run_optimized` (pre-fused) path
+   measures the same as raw — because **QFT does not fuse meaningfully**: the
+   controlled-phase ladder acts on distinct qubit pairs (cphase gates do not fuse
+   into each other), and only the per-qubit `H` is absorbed into an adjacent gate.
+   Fusion is a large win for VQE/QAOA-style circuits with fusible 1q runs and
+   adjacent 2q blocks, but not for QFT. (This corrects an earlier draft that
+   claimed fusion gave ~36× less QFT work — that was a misread n=20 figure.)
+2. **Both plateau (bandwidth).** EPYC 8→16 cores buys 3.37×→3.69×; Ryzen
+   saturates by ~8 threads at 2.15×. Two independent CPUs agree: SV gate
+   application is memory-bandwidth-bound at high core counts.
+3. **SIMD eaten by the memory wall.** Ryzen scalar single-thread (13.05 s) is
+   within ~55% of EPYC AVX-512 single-thread (8.41 s) despite no vectorization —
+   for this bandwidth-bound workload the SIMD advantage is heavily damped.
+
+## 9. Reproduce
 
 ```bash
 # Correctness (thread-count invariance, forced parallel at small n):
