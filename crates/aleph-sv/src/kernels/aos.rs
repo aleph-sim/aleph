@@ -2622,34 +2622,17 @@ unsafe fn apply_2q_diagonal_avx512(
 
     let bp = crate::kernels::BlockPtr(amps.as_mut_ptr() as *mut f64);
 
-    // Single-stream complex multiply per sub-block.  P1-06 diagonal-1q
-    // idiom: vmovupd → vpermilpd 0x55 → vmulpd(im_bc, swap) →
-    // vfmaddsub(re_bc, z, t).  ~5 µops per LANES amps ≈ 1.25 µops/amp.
-    let multiply_block = |base: usize, d_k: Complex| {
-        let amps_ptr = bp.ptr();
-        let d_re_bc = _mm512_set1_pd(d_k.re);
-        let d_im_bc = _mm512_set1_pd(d_k.im);
-        let mut j = 0usize;
-        while j + LANES <= lo_bit {
-            let i = base | j;
-            // SAFETY: bit-disjointness invariant (see doc-comment
-            // "Outer-walk" section).  `base` ⊆ bits ≥ lo+1 OR'd with
-            // `lo_bit` and/or `hi_bit`; `j` ⊆ [0, lo).  All pieces
-            // pairwise bit-disjoint, so `i = base + j` and
-            // `i + LANES ≤ base + lo_bit ≤ len`.
-            let z = _mm512_loadu_pd(amps_ptr.add(i * 2));
-            let zs = _mm512_permute_pd::<0x55>(z);
-            let t = _mm512_mul_pd(d_im_bc, zs);
-            let out = _mm512_fmaddsub_pd(d_re_bc, z, t);
-            _mm512_storeu_pd(amps_ptr.add(i * 2), out);
-            j += LANES;
-        }
-        debug_assert_eq!(j, lo_bit);
-    };
+    // The four (q_hi, q_lo) sub-blocks, each as (bit-offset, phase).
+    // MSB convention disambiguated above into d_for_hiX_loY.
+    let subs: [(usize, Complex); 4] = [
+        (0, d_for_hi0_lo0),
+        (lo_bit, d_for_hi0_lo1),
+        (hi_bit, d_for_hi1_lo0),
+        (hi_bit | lo_bit, d_for_hi1_lo1),
+    ];
 
     // Outer-walk: reserve bits `[0, lo]` for the inner walk + the
     // lo-bit (OR'd in per sub-block); inject `hi` as `fixed=false`
-    // (we enumerate the hi bit per sub-block via OR-ing in `hi_bit`)
     // and every external control as `fixed=true` in the above-lo
     // subspace; then shift up by `lo + 1`.  Subtractions are safe:
     // `hi > lo` by construction; every external control > hi > lo by
@@ -2661,28 +2644,47 @@ unsafe fn apply_2q_diagonal_avx512(
     }
     fixed_above.sort_unstable_by_key(|&(p, _)| p);
 
-    // Above-lo subspace has `n_qubits - (lo + 1)` positions; one
-    // reserved for `hi` (fixed=0) and `external_controls.len()` for
-    // external control bits (fixed=1).  Remaining free positions
-    // count = n_qubits - lo - 2 - external_controls.len(); each
-    // contributes one bit to the outer-walk index.
     let n_qubits = len.trailing_zeros();
     let outer_count = 1usize << (n_qubits - lo - 2 - external_controls.len() as u32);
 
-    let outer_iter = |base: usize| {
-        // base has: bit hi = 0, every external_control bit = 1, bits
-        // [0, lo] all zero.  Iterate the 4 sub-blocks:
-        multiply_block(base, d_for_hi0_lo0); // (q_hi=0, q_lo=0)
-        multiply_block(base | lo_bit, d_for_hi0_lo1); // (q_hi=0, q_lo=1)
-        multiply_block(base | hi_bit, d_for_hi1_lo0); // (q_hi=1, q_lo=0)
-        multiply_block(base | hi_bit | lo_bit, d_for_hi1_lo1); // (q_hi=1, q_lo=1)
+    // Flatten outer-block × 4 sub-blocks × inner-j into one parallel
+    // dimension of size `outer_count * 4 * (lo_bit/LANES)` =
+    // `2^(n-2-ctrls)` — independent of `lo`, so a high-qubit gate
+    // (small `outer_count`) still parallelizes (P2-01 count-starvation).
+    // Decoded per unit: block_k → expand_with_fixed base; sub ∈ 0..4
+    // picks the bit-offset + phase; `jk` is the inner LANES step.
+    let inner_units = lo_bit / LANES; // power of two ≥ 1
+    let units_per_block = 4 * inner_units; // power of two
+    let total_units = outer_count * units_per_block;
+    let upb_bits = units_per_block.trailing_zeros();
+    let upb_mask = units_per_block - 1;
+    let iu_bits = inner_units.trailing_zeros();
+    let iu_mask = inner_units - 1;
+
+    let unit = |u: usize| {
+        let amps_ptr = bp.ptr();
+        let block_k = u >> upb_bits;
+        let rem = u & upb_mask;
+        let sub = rem >> iu_bits; // 0..4
+        let jk = rem & iu_mask;
+        let (sub_off, d_k) = subs[sub];
+        let base = crate::kernels::expand_with_fixed(block_k, &fixed_above) << (lo + 1);
+        let i = base | sub_off | (jk * LANES);
+
+        // P1-06 diagonal-1q idiom: vmovupd → vpermilpd 0x55 →
+        // vmulpd(im_bc, swap) → vfmaddsub(re_bc, z, t).
+        // SAFETY: `base` ⊆ bits ≥ lo+1; `sub_off` ⊆ {lo_bit, hi_bit};
+        // `jk*LANES` ⊆ [0, lo). All pairwise bit-disjoint, so
+        // `i = base + sub_off + jk*LANES` and `i + LANES ≤ len`.
+        let d_re_bc = _mm512_set1_pd(d_k.re);
+        let d_im_bc = _mm512_set1_pd(d_k.im);
+        let z = _mm512_loadu_pd(amps_ptr.add(i * 2));
+        let zs = _mm512_permute_pd::<0x55>(z);
+        let t = _mm512_mul_pd(d_im_bc, zs);
+        let out = _mm512_fmaddsub_pd(d_re_bc, z, t);
+        _mm512_storeu_pd(amps_ptr.add(i * 2), out);
     };
-    crate::kernels::par_blocks(
-        outer_count,
-        len,
-        |k| crate::kernels::expand_with_fixed(k, &fixed_above) << (lo + 1),
-        outer_iter,
-    );
+    crate::kernels::par_blocks(total_units, len, |k| k, unit);
 }
 
 /// Dispatch helper for the diagonal-4x4 branch (catches CZ, controlled-
