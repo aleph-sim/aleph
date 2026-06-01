@@ -760,7 +760,9 @@ mod tests {
         let mut b = NaiveSvBackend::with_seed(0);
         let s = b.allocate(12).unwrap();
         assert_eq!(s.amplitudes()[0], Complex::new(1.0, 0.0));
-        assert!(s.amplitudes()[1..].iter().all(|&z| z == Complex::new(0.0, 0.0)));
+        assert!(s.amplitudes()[1..]
+            .iter()
+            .all(|&z| z == Complex::new(0.0, 0.0)));
     }
 
     #[test]

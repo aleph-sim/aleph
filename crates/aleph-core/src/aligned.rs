@@ -164,7 +164,10 @@ impl<T> AlignedBuf<T> {
     #[cfg(feature = "numa")]
     pub fn zeroed_first_touch(len: usize) -> Self {
         const {
-            assert!(mem::size_of::<T>() != 0, "AlignedBuf<T> requires a non-ZST T")
+            assert!(
+                mem::size_of::<T>() != 0,
+                "AlignedBuf<T> requires a non-ZST T"
+            )
         };
         const {
             assert!(
@@ -206,7 +209,11 @@ impl<T> AlignedBuf<T> {
             });
         }
 
-        Self { ptr, len, _marker: PhantomData }
+        Self {
+            ptr,
+            len,
+            _marker: PhantomData,
+        }
     }
 
     /// State-buffer constructor used by the SV backends: first-touch parallel
@@ -408,7 +415,11 @@ mod tests {
         for n in [1usize, 4, 1000, 70_000] {
             let buf = AlignedBuf::<f64>::zeroed_first_touch(n);
             assert_eq!(buf.len(), n);
-            assert_eq!(buf.as_ptr() as usize % CACHE_LINE, 0, "len {n} not 64-aligned");
+            assert_eq!(
+                buf.as_ptr() as usize % CACHE_LINE,
+                0,
+                "len {n} not 64-aligned"
+            );
             assert!(buf.iter().all(|&x| x == 0.0), "len {n} not all-zero");
         }
     }
@@ -448,16 +459,23 @@ mod tests {
             (1usize, 1usize, 16usize),
             (1, 8, 16),
             (1000, 4, 16),
-            (1 << 20, 8, 16),        // 1M Complex, 8 threads
-            (1 << 20, 20, 8),        // 1M f64, 20 threads (Xeon core count)
-            ((1 << 20) + 7, 6, 16),  // non-page-multiple len
-            (300, 16, 8),            // many threads, tiny len
+            (1 << 20, 8, 16),       // 1M Complex, 8 threads
+            (1 << 20, 20, 8),       // 1M f64, 20 threads (Xeon core count)
+            ((1 << 20) + 7, 6, 16), // non-page-multiple len
+            (300, 16, 8),           // many threads, tiny len
         ];
         for (len, nt, es) in cases {
             let chunk = first_touch_chunk_len(len, nt, es);
-            assert!(chunk > 0, "chunk must be positive: len={len} nt={nt} es={es}");
+            assert!(
+                chunk > 0,
+                "chunk must be positive: len={len} nt={nt} es={es}"
+            );
             let per_page = (FIRST_TOUCH_PAGE / es).max(1);
-            assert_eq!(chunk % per_page, 0, "chunk {chunk} not page-aligned (es={es})");
+            assert_eq!(
+                chunk % per_page,
+                0,
+                "chunk {chunk} not page-aligned (es={es})"
+            );
 
             // Reconstruct the chunks: contiguous, disjoint, exact cover of [0,len).
             let n_chunks = len.div_ceil(chunk);
