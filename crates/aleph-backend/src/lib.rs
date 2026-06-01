@@ -53,9 +53,13 @@ pub enum BackendError {
 
     #[error("backend state is invalid: {reason}")]
     InvalidState { reason: &'static str },
+
+    #[error("optimization pipeline failed: {0}")]
+    Optimization(#[from] PassError),
 }
 
 use aleph_core::{GateInstance, PauliString};
+use aleph_ir::passes::PassError;
 use aleph_ir::Circuit;
 
 /// A simulation backend.
@@ -168,6 +172,44 @@ pub fn run_with_outcomes<B: Backend>(
         }
     }
     Ok((state, outcomes))
+}
+
+/// Optimize `circuit` with the default IR pipeline, then simulate.
+///
+/// Unlike [`run`], which executes the circuit verbatim (the raw reference
+/// path used by oracle tests), this first runs `Circuit::optimize`
+/// (`PassPipeline::default_pipeline`: cancellation, DCE, and 1q/2q fusion).
+/// Semantics are preserved — see the end-to-end oracle in
+/// `tests/run_optimized_oracle.rs` — and the win is far fewer state-vector
+/// passes (QFT collapses ~5x: 970->190 gates at n=20).
+///
+/// The optimization runs on a clone, so the caller's `circuit` is untouched.
+pub fn run_optimized<B: Backend>(
+    backend: &mut B,
+    circuit: &Circuit,
+) -> Result<B::State, BackendError> {
+    let (state, _outcomes) = run_optimized_with_outcomes(backend, circuit)?;
+    Ok(state)
+}
+
+/// [`run_optimized`] preserving measurement outcomes.
+///
+/// The outcomes are in the same order, and `outcome`/`qubit`/`clbit` match what
+/// [`run_with_outcomes`] returns for the same circuit and seed (the optimization
+/// pipeline must not reorder gates across `Measure`/`Barrier`; that invariant is
+/// pinned by `tests/run_optimized_oracle.rs`). **Note:** each record's
+/// `instruction_index` refers to the *optimized* circuit, so it can be smaller
+/// than the index of the same measurement in the caller's input circuit (fusion
+/// and cancellation drop earlier gates). Compare on `(qubit, clbit, outcome)`,
+/// not on the absolute `instruction_index`, when relating outcomes back to the
+/// pre-optimization circuit.
+pub fn run_optimized_with_outcomes<B: Backend>(
+    backend: &mut B,
+    circuit: &Circuit,
+) -> Result<(B::State, Vec<MeasurementRecord>), BackendError> {
+    let mut optimized = circuit.clone();
+    optimized.optimize()?; // PassError -> BackendError via #[from]
+    run_with_outcomes(backend, &optimized)
 }
 
 #[cfg(test)]

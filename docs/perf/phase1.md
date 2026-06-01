@@ -226,3 +226,84 @@ ALEPH_BENCH_FULL_MATRIX=1 RUSTFLAGS="-C target-cpu=native" \
 Grover/random n=25 are the long poles (grover_n25 ≈ 1.8 h/iter for Aer, ~1.2 h
 for aleph; the full aleph matrix took ~12 h end-to-end, dominated by
 grover_n25's 10 criterion samples). The non-grover matrix completes in minutes.
+
+-----
+
+## Optimized pipeline (`run_optimized`) — the honest comparison
+
+The headline tables above are **raw single-gate kernel throughput**: the run
+path executed each parsed gate verbatim, with the P1-09…P1-13 IR optimization
+passes (cancellation, DCE, 1q/2q fusion) **not** applied. Qiskit Aer fuses gates
+by default, so those tables compare un-fused aleph against fused Aer. This
+section re-measures with `run_optimized` (aleph's `Circuit::optimize()` —
+`default_pipeline` — then simulate), the apples-to-apples comparison. Same EPYC
+8124P, same pinning, same committed QASM, same Aer numbers
+(`results-qiskit.json`). aleph = `NaiveSvBackend` (AoS + AVX-512, 236× `vmulpd
+zmm` verified in the bench binary). Aer columns are reproduced from the raw
+tables (Aer is unchanged).
+
+`default_pipeline` gate-count reduction (per family, representative):
+qft_n20 970→190, qft_n25 1525→300, random_n20 990→192, grover_n15 47805→12083,
+ghz_n20 20→19.
+
+> **Scope note:** to keep this re-measurement to ~1–2 h, the long-pole
+> grover cells (n=20/22/25) were not re-timed — Grover already cleared the
+> exit bar in the raw tables and gains further from fusion (grover_n15 below).
+> Every QFT cell (the only family that was over 1×) and all GHZ/random cells
+> were re-measured. The `speedup` column is optimized vs the raw aleph median
+> from the tables above.
+
+### Optimized headline — aleph vs Aer
+
+| family | n  | aleph_opt (ms) | Aer (ms)   | aleph/Aer | speedup vs raw | ≤2× |
+|--------|----|---------------:|-----------:|:---------:|:--------------:|:---:|
+| GHZ    | 15 |          0.343 |      3.198 |   0.11×   |     1.27×      | ✅ |
+| GHZ    | 20 |         18.287 |    116.360 |   0.16×   |     1.12×      | ✅ |
+| GHZ    | 22 |        119.250 |    547.858 |   0.22×   |     1.13×      | ✅ |
+| GHZ    | 25 |      1 161.900 |  5 257.424 |   0.22×   |     1.13×      | ✅ |
+| QFT    | 15 |          4.536 |     17.488 |   0.26×   |     2.08×      | ✅ |
+| QFT    | 20 |        241.100 |    460.575 |   0.52×   |     2.34×      | ✅ |
+| QFT    | 22 |      1 361.900 |  2 231.787 |   0.61×   |     2.76×      | ✅ |
+| QFT    | 25 |     13 911.000 | 22 877.305 | **0.61×** |   **2.85×**    | ✅ |
+| random | 15 |          4.639 |     41.152 |   0.11×   |     2.90×      | ✅ |
+| random | 20 |        200.880 |  1 146.579 |   0.18×   |     3.17×      | ✅ |
+| random | 22 |      1 033.900 |  5 153.504 |   0.20×   |     3.58×      | ✅ |
+| random | 25 |     10 283.000 | 51 314.705 |   0.20×   |     3.58×      | ✅ |
+| Grover | 15 |        402.870 |  2 641.294 |   0.15×   |     1.42×      | ✅ |
+
+Peak RSS at n=25 (optimized `oneshot`): GHZ 515.0 MiB, QFT 515.6 MiB,
+random 515.8 MiB — unchanged from raw (within ~4 MiB of the 512 MiB theoretical
+floor); fusion rewrites the IR, not the state vector.
+
+### ROADMAP § 7 exit verdict (optimized) — MET with margin on every family
+
+With the optimization pipeline enabled, **QFT is at or below 1× Aer at every n**
+(0.26× / 0.52× / 0.61× / 0.61×). The lone raw-path laggard — `qft_n25` at 1.73×
+*behind* Aer — becomes **0.61×, i.e. 1.6× ahead**. aleph is now faster than Aer
+on all four Tier-1 families at n=25:
+
+| algorithm | aleph/Aer @ n25 (optimized) | raw | verdict |
+|-----------|:---------------------------:|:---:|:-------:|
+| QFT       | **0.61×** | 1.73× | ✅ 1.6× ahead |
+| Grover    | 0.15× (n15; n25 not re-timed, ≤0.67× raw) | 0.67× | ✅ ahead |
+| random    | **0.20×** | 0.72× | ✅ 5× ahead |
+| GHZ       | **0.22×** | 0.25× | ✅ 4.5× ahead |
+
+### Why it was raw before
+
+P1-14's bench called the raw `run` driver, which never invoked
+`Circuit::optimize()` — so the passes shipped in P1-09…P1-13 had no effect on the
+measured numbers. The fix (the `qft-parity` change) adds an opt-in
+`run_optimized` driver, proves it semantics-preserving end-to-end
+(`crates/aleph-backend/tests/run_optimized_oracle.rs`, fused ≡ raw within
+1e-12), and points the bench + `oneshot` at it. No new kernels, passes, or gate
+variants — the win was entirely from running optimization that already existed.
+
+Reproduce: as the raw matrix above, but the aleph side now runs `run_optimized`
+automatically (the bench and `oneshot` were switched). Filter to skip the long
+grover poles, e.g.:
+```
+ALEPH_BENCH_FULL_MATRIX=1 RUSTFLAGS="-C target-cpu=native" taskset -c 0 \
+  cargo bench -p aleph-benches --bench qiskit_baseline -- --save-baseline qft-parity \
+  "(ghz|qft|random_brickwall)_n|grover_n1[05]"
+```
