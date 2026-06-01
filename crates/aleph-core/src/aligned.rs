@@ -209,6 +209,20 @@ impl<T> AlignedBuf<T> {
         Self { ptr, len, _marker: PhantomData }
     }
 
+    /// State-buffer constructor used by the SV backends: first-touch parallel
+    /// init under the `numa` feature, plain [`zeroed`](Self::zeroed) otherwise.
+    /// Keeps the `cfg` in one place so call sites stay feature-agnostic.
+    pub fn zeroed_state(len: usize) -> Self {
+        #[cfg(feature = "numa")]
+        {
+            Self::zeroed_first_touch(len)
+        }
+        #[cfg(not(feature = "numa"))]
+        {
+            Self::zeroed(len)
+        }
+    }
+
     /// Allocate and copy the contents of `src`.
     pub fn from_slice(src: &[T]) -> Self
     where
@@ -411,6 +425,16 @@ mod tests {
     #[test]
     fn first_touch_complex_round_trips() {
         let buf = AlignedBuf::<crate::Complex>::zeroed_first_touch(70_000);
+        assert_eq!(buf.len(), 70_000);
+        assert_eq!(buf.as_ptr() as usize % CACHE_LINE, 0);
+        assert!(buf.iter().all(|&z| z == crate::Complex::new(0.0, 0.0)));
+    }
+
+    #[test]
+    fn zeroed_state_is_zeroed_and_aligned() {
+        // Routes to first-touch under `numa`, plain `zeroed` otherwise; both must
+        // yield an all-zero, 64-aligned buffer of the right length.
+        let buf = AlignedBuf::<crate::Complex>::zeroed_state(70_000);
         assert_eq!(buf.len(), 70_000);
         assert_eq!(buf.as_ptr() as usize % CACHE_LINE, 0);
         assert!(buf.iter().all(|&z| z == crate::Complex::new(0.0, 0.0)));
