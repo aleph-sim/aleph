@@ -49,7 +49,7 @@ impl Backend for NaiveSvBackend {
             });
         }
         let dim = 1usize << num_qubits;
-        let mut amps = AlignedBuf::<Complex>::zeroed(dim);
+        let mut amps = AlignedBuf::<Complex>::zeroed_state(dim);
         amps[0] = Complex::new(1.0, 0.0);
         Ok(CpuState { num_qubits, amps })
     }
@@ -750,6 +750,17 @@ mod tests {
             matches!(err, BackendError::InvalidState { .. }),
             "got {err:?}"
         );
+    }
+
+    #[cfg(feature = "numa")]
+    #[test]
+    fn allocate_zero_state_under_numa() {
+        // n=12 → 4096 Complex = 64 KiB, spanning many pages, so the first-touch
+        // parallel path is exercised end-to-end and must still yield |0…0⟩.
+        let mut b = NaiveSvBackend::with_seed(0);
+        let s = b.allocate(12).unwrap();
+        assert_eq!(s.amplitudes()[0], Complex::new(1.0, 0.0));
+        assert!(s.amplitudes()[1..].iter().all(|&z| z == Complex::new(0.0, 0.0)));
     }
 
     #[test]
