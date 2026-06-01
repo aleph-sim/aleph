@@ -86,10 +86,14 @@ better (2.2×) than QFT (1.6×). The count-starvation fix is real and valuable
 not bandwidth- and frequency-capped), but it cannot move a workload whose ceiling
 is memory bandwidth.
 
-Note also that the honest end-to-end path is `run_optimized` (gate fusion;
-qft-parity / PR #96). Fusion collapses the QFT cphase ladder (~36× less work,
-10.97 s → ~0.30 s) but its multicore scaling is similarly bandwidth-limited
-(~1.3–1.45×) — fewer, denser passes, still streaming.
+Note also the honest end-to-end path is `run_optimized` (gate fusion;
+qft-parity / PR #96). For QFT specifically, fusion does **not** materially
+reduce work: the controlled-phase ladder acts on distinct qubit pairs, so the
+cphase gates do not fuse into each other, and only the per-qubit `H` gets
+absorbed into an adjacent cphase. A pre-fused QFT-25 therefore runs in
+essentially the same time as the raw circuit and shows the same bandwidth-bound
+scaling (measured: see §8). Fusion is a large win for circuits with fusible 1q
+runs / adjacent 2q blocks (VQE, QAOA), but QFT is not one of them.
 
 ## 6. What landed
 
