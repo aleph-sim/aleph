@@ -58,3 +58,8 @@ required-features = ["internal-bench"]
 [[bench]]
 name = "multi_controlled"
 harness = false
+
+[[bench]]
+name = "chunk_tune"
+harness = false
+required-features = ["internal-bench"]
