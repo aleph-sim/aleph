@@ -121,6 +121,47 @@ pub(crate) fn par_blocks(
     }
 }
 
+/// Flatten an outer-block × inner-SIMD-unit iteration into a single
+/// parallel dimension of size `outer_count * units_per_block`, so the
+/// available parallelism is **independent of which qubit the gate
+/// targets**.
+///
+/// The block-walk kernels nest two loops: an outer walk over
+/// `outer_count` blocks and an inner SIMD walk over `units_per_block`
+/// LANES-wide units within each block. `par_blocks` alone parallelizes
+/// only the outer dimension, which collapses to 1 for a gate on the top
+/// qubit (`outer_count == 1`) — that gate then runs fully sequentially
+/// despite the inner walk covering the whole state. Flattening exposes
+/// the product as the parallel dimension instead.
+///
+/// `base_of(block_k)` returns the block's base amplitude index; unit
+/// `unit_k` within the block lives at `base_of(block_k) + unit_k *
+/// stride`. `body(i0)` processes the one SIMD unit at amplitude `i0`.
+/// `units_per_block` MUST be a power of two (it is `target_bit / LANES`,
+/// a ratio of powers of two), so the block/unit split is a shift+mask.
+/// When `units_per_block == 1` this degenerates exactly to
+/// `par_blocks(outer_count, …)`.
+#[allow(dead_code)]
+pub(crate) fn par_units(
+    outer_count: usize,
+    units_per_block: usize,
+    stride: usize,
+    len: usize,
+    base_of: impl Fn(usize) -> usize + Sync,
+    body: impl Fn(usize) + Sync,
+) {
+    debug_assert!(units_per_block.is_power_of_two());
+    let total = outer_count * units_per_block;
+    let unit_bits = units_per_block.trailing_zeros();
+    let unit_mask = units_per_block - 1;
+    par_blocks(
+        total,
+        len,
+        move |u| base_of(u >> unit_bits) + (u & unit_mask) * stride,
+        body,
+    );
+}
+
 /// Bitwise-OR of `1 << q` over `controls`. Layout-agnostic — used by
 /// both AoS and SoA kernels to compute the control gate-mask.
 ///

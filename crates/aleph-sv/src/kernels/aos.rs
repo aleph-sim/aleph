@@ -283,58 +283,63 @@ pub unsafe fn apply_1q_avx512(
 
     let bp = crate::kernels::BlockPtr(amps.as_mut_ptr() as *mut f64);
 
-    let outer_iter = |block: usize| {
+    // One SIMD unit = the LANES-wide amplitude pair (i0, i0+target_bit).
+    // Flattening the outer block walk with the inner j-walk (via
+    // `par_units`) keeps the parallel dimension at `len / (2*LANES)`
+    // regardless of `target` — without this, a gate on a high qubit has
+    // `outer_count == 1` and cannot parallelize (P2-01 count-starvation).
+    let pair = |i0: usize| {
         let amps_ptr = bp.ptr();
-        let mut j = 0usize;
-        while j + LANES <= target_bit {
-            let i0 = block | j;
-            let i1 = i0 + target_bit;
+        let i1 = i0 + target_bit;
 
-            // Each Complex is 16 bytes (re, im). `amps.as_ptr() as *const f64`
-            // views the storage as paired f64. `_mm512_loadu_pd` reads 8
-            // consecutive doubles = 4 complex starting at `amps[i0]`.
-            // SAFETY: `i0 + LANES ≤ block + target_bit ≤ len` (outer block
-            // stride is `2 * target_bit`, so `block + 2*target_bit ≤ len`);
-            // `i1 + LANES ≤ block + 2*target_bit ≤ len`.
-            let z0 = _mm512_loadu_pd(amps_ptr.add(i0 * 2));
-            let z1 = _mm512_loadu_pd(amps_ptr.add(i1 * 2));
+        // Each Complex is 16 bytes (re, im). `_mm512_loadu_pd` reads 8
+        // consecutive doubles = 4 complex starting at `amps[i0]`.
+        // SAFETY: `i0 + LANES ≤ block + target_bit ≤ len` (outer block
+        // stride is `2 * target_bit`); `i1 + LANES ≤ block + 2*target_bit ≤ len`.
+        let z0 = _mm512_loadu_pd(amps_ptr.add(i0 * 2));
+        let z1 = _mm512_loadu_pd(amps_ptr.add(i1 * 2));
 
-            // vpermilpd imm = 0x55 = 0b01010101: each (low=0, high=1)
-            // pair becomes (high, low). After permute:
-            // (im_0, re_0, im_1, re_1, im_2, re_2, im_3, re_3).
-            let z0_swap = _mm512_permute_pd::<0x55>(z0);
-            let z1_swap = _mm512_permute_pd::<0x55>(z1);
+        // vpermilpd imm = 0x55 = 0b01010101: each (low=0, high=1)
+        // pair becomes (high, low). After permute:
+        // (im_0, re_0, im_1, re_1, im_2, re_2, im_3, re_3).
+        let z0_swap = _mm512_permute_pd::<0x55>(z0);
+        let z1_swap = _mm512_permute_pd::<0x55>(z1);
 
-            // U_ij × z_k = vfmaddsub(U_ij_re, z_k, U_ij_im × z_k_swap).
-            // fmaddsub(a, b, c) = (a·b - c, a·b + c, ...) alternating.
-            // Even lanes (re_out): m_re·z_re - m_im·z_im ✓
-            // Odd lanes  (im_out): m_re·z_im + m_im·z_re ✓
-            let t00 = _mm512_mul_pd(m00i, z0_swap);
-            let prod00 = _mm512_fmaddsub_pd(m00r, z0, t00);
-            let t01 = _mm512_mul_pd(m01i, z1_swap);
-            let prod01 = _mm512_fmaddsub_pd(m01r, z1, t01);
-            let new_z0 = _mm512_add_pd(prod00, prod01);
+        // U_ij × z_k = vfmaddsub(U_ij_re, z_k, U_ij_im × z_k_swap).
+        // fmaddsub(a, b, c) = (a·b - c, a·b + c, ...) alternating.
+        // Even lanes (re_out): m_re·z_re - m_im·z_im ✓
+        // Odd lanes  (im_out): m_re·z_im + m_im·z_re ✓
+        let t00 = _mm512_mul_pd(m00i, z0_swap);
+        let prod00 = _mm512_fmaddsub_pd(m00r, z0, t00);
+        let t01 = _mm512_mul_pd(m01i, z1_swap);
+        let prod01 = _mm512_fmaddsub_pd(m01r, z1, t01);
+        let new_z0 = _mm512_add_pd(prod00, prod01);
 
-            let t10 = _mm512_mul_pd(m10i, z0_swap);
-            let prod10 = _mm512_fmaddsub_pd(m10r, z0, t10);
-            let t11 = _mm512_mul_pd(m11i, z1_swap);
-            let prod11 = _mm512_fmaddsub_pd(m11r, z1, t11);
-            let new_z1 = _mm512_add_pd(prod10, prod11);
+        let t10 = _mm512_mul_pd(m10i, z0_swap);
+        let prod10 = _mm512_fmaddsub_pd(m10r, z0, t10);
+        let t11 = _mm512_mul_pd(m11i, z1_swap);
+        let prod11 = _mm512_fmaddsub_pd(m11r, z1, t11);
+        let new_z1 = _mm512_add_pd(prod10, prod11);
 
-            _mm512_storeu_pd(amps_ptr.add(i0 * 2), new_z0);
-            _mm512_storeu_pd(amps_ptr.add(i1 * 2), new_z1);
-
-            j += LANES;
-        }
-        // Caller guarantees `target_bit ≥ LANES` and `target_bit`
-        // is a power of two ⇒ LANES divides target_bit ⇒ no tail.
-        debug_assert_eq!(j, target_bit);
+        _mm512_storeu_pd(amps_ptr.add(i0 * 2), new_z0);
+        _mm512_storeu_pd(amps_ptr.add(i1 * 2), new_z1);
     };
+
+    // Caller guarantees `target_bit ≥ LANES` (both powers of two), so
+    // `units_per_block ≥ 1` is a power of two.
+    let units_per_block = target_bit / LANES;
 
     if controls.is_empty() {
         let outer_step = target_bit << 1;
-        let count = len / outer_step;
-        crate::kernels::par_blocks(count, len, |k| k * outer_step, outer_iter);
+        let outer_count = len / outer_step;
+        crate::kernels::par_units(
+            outer_count,
+            units_per_block,
+            LANES,
+            len,
+            |bk| bk * outer_step,
+            pair,
+        );
         return;
     }
 
@@ -360,11 +365,13 @@ pub unsafe fn apply_1q_avx512(
     // < n_qubits, all controls > target, so
     // `target + 1 + controls.len() ≤ n_qubits`.
     let outer_count = 1usize << (n_qubits - target - 1 - controls.len() as u32);
-    crate::kernels::par_blocks(
+    crate::kernels::par_units(
         outer_count,
+        units_per_block,
+        LANES,
         len,
-        |k| crate::kernels::expand_with_fixed(k, &fixed_above) << (target + 1),
-        outer_iter,
+        |bk| crate::kernels::expand_with_fixed(bk, &fixed_above) << (target + 1),
+        pair,
     );
 }
 
