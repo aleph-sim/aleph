@@ -45,5 +45,32 @@ fn bench_qft_scaling(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_qft_scaling);
+/// Fused-path scaling: QFT pre-optimized once (the `run_optimized`
+/// default pipeline — cancellation, DCE, 1q/2q fusion) then simulated
+/// through the parallel kernels. This is the honest end-to-end path
+/// (fusion is how production simulators raise arithmetic intensity);
+/// pre-fusing outside the timed loop isolates the parallel-kernel
+/// scaling from the one-time optimize cost. Compare its T1→T8 curve
+/// against the raw `qft_scaling` group.
+fn bench_qft_scaling_fused(c: &mut Criterion) {
+    let mut group = c.benchmark_group("qft_scaling_fused");
+    group.sample_size(10);
+    for &n in QUBIT_COUNTS {
+        let mut circuit = qft_circuit(n);
+        circuit.optimize().expect("optimize pipeline");
+        group.throughput(Throughput::Elements(u64::from(n) * (1u64 << n)));
+        group.bench_with_input(BenchmarkId::from_parameter(n), &n, |b, _| {
+            b.iter_with_setup(
+                || NaiveSvBackend::with_seed(0),
+                |mut backend| {
+                    let state = run(&mut backend, &circuit).unwrap();
+                    black_box(state);
+                },
+            );
+        });
+    }
+    group.finish();
+}
+
+criterion_group!(benches, bench_qft_scaling, bench_qft_scaling_fused);
 criterion_main!(benches);
