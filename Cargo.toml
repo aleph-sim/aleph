@@ -39,6 +39,7 @@ authors = ["aleph contributors"]
 num-complex = "0.4"
 criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support", "html_reports", "plotters"] }
 smallvec = "1"
+rayon = "1.10"
 thiserror = "1"
 proptest = "1"
 nom = "7"

@@ -202,34 +202,38 @@ unsafe fn apply_toffoli_avx512_tier_a_soa(
         ctrl_mask |= 1usize << c;
     }
     let len = re.len();
-    let re_ptr = re.as_mut_ptr();
-    let im_ptr = im.as_mut_ptr();
+    let re_bp = crate::kernels::BlockPtr(re.as_mut_ptr());
+    let im_bp = crate::kernels::BlockPtr(im.as_mut_ptr());
 
-    let mut block_base = 0usize;
-    while block_base < len {
-        if (block_base & target_bit) != 0 {
-            block_base += LANES_SOA;
-            continue;
-        }
-        if (block_base & ctrl_mask) != ctrl_mask {
-            block_base += LANES_SOA;
-            continue;
-        }
-        // SAFETY: block_base & target_bit == 0, all control bits set.
-        // target_bit >= LANES_SOA ensures block_base | target_bit ≥
-        // block_base + LANES_SOA; both windows are within [0, len).
-        let lo = block_base;
-        let hi = block_base | target_bit;
-        let ar = _mm512_loadu_pd(re_ptr.add(lo));
-        let ai = _mm512_loadu_pd(im_ptr.add(lo));
-        let br = _mm512_loadu_pd(re_ptr.add(hi));
-        let bi = _mm512_loadu_pd(im_ptr.add(hi));
-        _mm512_storeu_pd(re_ptr.add(lo), br);
-        _mm512_storeu_pd(im_ptr.add(lo), bi);
-        _mm512_storeu_pd(re_ptr.add(hi), ar);
-        _mm512_storeu_pd(im_ptr.add(hi), ai);
-        block_base += LANES_SOA;
-    }
+    let count = len / LANES_SOA;
+    crate::kernels::par_blocks(
+        count,
+        len,
+        |k| k * LANES_SOA,
+        |block_base| {
+            let re_ptr = re_bp.ptr();
+            let im_ptr = im_bp.ptr();
+            if (block_base & target_bit) != 0 {
+                return;
+            }
+            if (block_base & ctrl_mask) != ctrl_mask {
+                return;
+            }
+            // SAFETY: block_base & target_bit == 0, all control bits set.
+            // target_bit >= LANES_SOA ensures block_base | target_bit ≥
+            // block_base + LANES_SOA; both windows are within [0, len).
+            let lo = block_base;
+            let hi = block_base | target_bit;
+            let ar = _mm512_loadu_pd(re_ptr.add(lo));
+            let ai = _mm512_loadu_pd(im_ptr.add(lo));
+            let br = _mm512_loadu_pd(re_ptr.add(hi));
+            let bi = _mm512_loadu_pd(im_ptr.add(hi));
+            _mm512_storeu_pd(re_ptr.add(lo), br);
+            _mm512_storeu_pd(im_ptr.add(lo), bi);
+            _mm512_storeu_pd(re_ptr.add(hi), ar);
+            _mm512_storeu_pd(im_ptr.add(hi), ai);
+        },
+    );
 }
 
 /// Toffoli Tier-A outer-walk for SoA: handles controls at-or-above
@@ -271,32 +275,36 @@ unsafe fn apply_toffoli_avx512_tier_a_outer_walk_soa(
         ctrl_mask |= 1usize << c;
     }
     let len = re.len();
-    let re_ptr = re.as_mut_ptr();
-    let im_ptr = im.as_mut_ptr();
+    let re_bp = crate::kernels::BlockPtr(re.as_mut_ptr());
+    let im_bp = crate::kernels::BlockPtr(im.as_mut_ptr());
 
-    let mut block_base = 0usize;
-    while block_base < len {
-        if (block_base & target_bit) != 0 {
-            block_base += LANES_SOA;
-            continue;
-        }
-        if (block_base & ctrl_mask) != ctrl_mask {
-            block_base += LANES_SOA;
-            continue;
-        }
-        // SAFETY: target_bit >= LANES_SOA ensures the hi window is in bounds.
-        let lo = block_base;
-        let hi = block_base | target_bit;
-        let ar = _mm512_loadu_pd(re_ptr.add(lo));
-        let ai = _mm512_loadu_pd(im_ptr.add(lo));
-        let br = _mm512_loadu_pd(re_ptr.add(hi));
-        let bi = _mm512_loadu_pd(im_ptr.add(hi));
-        _mm512_storeu_pd(re_ptr.add(lo), br);
-        _mm512_storeu_pd(im_ptr.add(lo), bi);
-        _mm512_storeu_pd(re_ptr.add(hi), ar);
-        _mm512_storeu_pd(im_ptr.add(hi), ai);
-        block_base += LANES_SOA;
-    }
+    let count = len / LANES_SOA;
+    crate::kernels::par_blocks(
+        count,
+        len,
+        |k| k * LANES_SOA,
+        |block_base| {
+            let re_ptr = re_bp.ptr();
+            let im_ptr = im_bp.ptr();
+            if (block_base & target_bit) != 0 {
+                return;
+            }
+            if (block_base & ctrl_mask) != ctrl_mask {
+                return;
+            }
+            // SAFETY: target_bit >= LANES_SOA ensures the hi window is in bounds.
+            let lo = block_base;
+            let hi = block_base | target_bit;
+            let ar = _mm512_loadu_pd(re_ptr.add(lo));
+            let ai = _mm512_loadu_pd(im_ptr.add(lo));
+            let br = _mm512_loadu_pd(re_ptr.add(hi));
+            let bi = _mm512_loadu_pd(im_ptr.add(hi));
+            _mm512_storeu_pd(re_ptr.add(lo), br);
+            _mm512_storeu_pd(im_ptr.add(lo), bi);
+            _mm512_storeu_pd(re_ptr.add(hi), ar);
+            _mm512_storeu_pd(im_ptr.add(hi), ai);
+        },
+    );
 }
 
 /// Toffoli Tier-B.0 for SoA: `target=0`, in-register permute swap.
@@ -494,15 +502,23 @@ unsafe fn apply_ccz_avx512_tier_a_soa(re: &mut [f64], im: &mut [f64], mask_bits:
     }
 
     let len = re.len();
-    let re_ptr = re.as_mut_ptr();
-    let im_ptr = im.as_mut_ptr();
+    let re_bp = crate::kernels::BlockPtr(re.as_mut_ptr());
+    let im_bp = crate::kernels::BlockPtr(im.as_mut_ptr());
 
     // IEEE-754: XOR with -0.0 sign mask flips the sign bit of every f64 lane.
     let sign_mask = _mm512_set1_pd(-0.0_f64);
 
-    let mut block_base = 0usize;
-    while block_base < len {
-        if (block_base & mask) == mask {
+    let count = len / LANES_SOA;
+    crate::kernels::par_blocks(
+        count,
+        len,
+        |k| k * LANES_SOA,
+        |block_base| {
+            let re_ptr = re_bp.ptr();
+            let im_ptr = im_bp.ptr();
+            if (block_base & mask) != mask {
+                return;
+            }
             // SAFETY: block_base + LANES_SOA ≤ len because mask_lo ≥ 3 →
             // mask_lo_bit ≥ 8 = LANES_SOA; matching block_base values are
             // spaced ≥ LANES_SOA apart.  State vector is 1<<n ≥ 16 (n≥4).
@@ -512,9 +528,8 @@ unsafe fn apply_ccz_avx512_tier_a_soa(re: &mut [f64], im: &mut [f64], mask_bits:
             let zi = _mm512_loadu_pd(pi);
             _mm512_storeu_pd(pr, _mm512_xor_pd(zr, sign_mask));
             _mm512_storeu_pd(pi, _mm512_xor_pd(zi, sign_mask));
-        }
-        block_base += LANES_SOA;
-    }
+        },
+    );
 }
 
 /// CCZ Tier-A outer-walk for SoA: handles mask bits below LANES_SOA_BITS=3.
@@ -571,30 +586,35 @@ unsafe fn apply_ccz_avx512_tier_a_outer_walk_soa(
     };
 
     let len = re.len();
-    let re_ptr = re.as_mut_ptr();
-    let im_ptr = im.as_mut_ptr();
+    let re_bp = crate::kernels::BlockPtr(re.as_mut_ptr());
+    let im_bp = crate::kernels::BlockPtr(im.as_mut_ptr());
 
     let sign = _mm512_set1_pd(-0.0_f64);
 
-    let mut block_base = 0usize;
-    while block_base < len {
-        if (block_base & mask_high) != mask_high {
-            block_base += LANES_SOA;
-            continue;
-        }
-        // SAFETY: block_base + LANES_SOA ≤ len; state vector is 1<<n with
-        // n ≥ 4 and block_base is always LANES_SOA-aligned.
-        let pr = re_ptr.add(block_base);
-        let pi = im_ptr.add(block_base);
-        let zr = _mm512_loadu_pd(pr);
-        let zi = _mm512_loadu_pd(pi);
-        let neg_r = _mm512_xor_pd(zr, sign);
-        let neg_i = _mm512_xor_pd(zi, sign);
-        // _mm512_mask_blend_pd(mask, a, b): selects b where bit=1, a where bit=0.
-        _mm512_storeu_pd(pr, _mm512_mask_blend_pd(lane_mask, zr, neg_r));
-        _mm512_storeu_pd(pi, _mm512_mask_blend_pd(lane_mask, zi, neg_i));
-        block_base += LANES_SOA;
-    }
+    let count = len / LANES_SOA;
+    crate::kernels::par_blocks(
+        count,
+        len,
+        |k| k * LANES_SOA,
+        |block_base| {
+            let re_ptr = re_bp.ptr();
+            let im_ptr = im_bp.ptr();
+            if (block_base & mask_high) != mask_high {
+                return;
+            }
+            // SAFETY: block_base + LANES_SOA ≤ len; state vector is 1<<n with
+            // n ≥ 4 and block_base is always LANES_SOA-aligned.
+            let pr = re_ptr.add(block_base);
+            let pi = im_ptr.add(block_base);
+            let zr = _mm512_loadu_pd(pr);
+            let zi = _mm512_loadu_pd(pi);
+            let neg_r = _mm512_xor_pd(zr, sign);
+            let neg_i = _mm512_xor_pd(zi, sign);
+            // _mm512_mask_blend_pd(mask, a, b): selects b where bit=1, a where bit=0.
+            _mm512_storeu_pd(pr, _mm512_mask_blend_pd(lane_mask, zr, neg_r));
+            _mm512_storeu_pd(pi, _mm512_mask_blend_pd(lane_mask, zi, neg_i));
+        },
+    );
 }
 
 /// Routes Toffoli to the best available SoA tier.  Mirror of
@@ -964,10 +984,12 @@ unsafe fn apply_2q_cnot_avx512(
         "external control at-or-below max(control, target)"
     );
 
-    let re_ptr = re.as_mut_ptr();
-    let im_ptr = im.as_mut_ptr();
+    let re_bp = crate::kernels::BlockPtr(re.as_mut_ptr());
+    let im_bp = crate::kernels::BlockPtr(im.as_mut_ptr());
 
     let inner_walk = |outer: usize| {
+        let re_ptr = re_bp.ptr();
+        let im_ptr = im_bp.ptr();
         let mut j = 0usize;
         while j + LANES_SOA <= t_bit {
             let i0 = outer | j;
@@ -999,10 +1021,12 @@ unsafe fn apply_2q_cnot_avx512(
 
     let n_qubits = len.trailing_zeros();
     let outer_count = 1usize << (n_qubits - target - 2 - external_controls.len() as u32);
-    for k in 0..outer_count {
-        let outer = crate::kernels::expand_with_fixed(k, &fixed_above) << (target + 1);
-        inner_walk(outer);
-    }
+    crate::kernels::par_blocks(
+        outer_count,
+        len,
+        |k| crate::kernels::expand_with_fixed(k, &fixed_above) << (target + 1),
+        inner_walk,
+    );
 }
 
 /// Packed AVX-512 CNOT specialisation over paired SoA storage — Tier B
@@ -1084,8 +1108,8 @@ unsafe fn apply_2q_cnot_avx512_tier_b(
         _ => unreachable!(),
     };
 
-    let re_ptr = re.as_mut_ptr();
-    let im_ptr = im.as_mut_ptr();
+    let re_bp = crate::kernels::BlockPtr(re.as_mut_ptr());
+    let im_bp = crate::kernels::BlockPtr(im.as_mut_ptr());
 
     // Outer-walk: reserve bits `[0, control]` for the inner walk + the
     // control bit itself, inject every external control as `fixed=true`
@@ -1100,28 +1124,34 @@ unsafe fn apply_2q_cnot_avx512_tier_b(
 
     let n_qubits = len.trailing_zeros();
     let outer_count = 1usize << (n_qubits - control - 1 - external_controls.len() as u32);
-    for k in 0..outer_count {
-        let base = crate::kernels::expand_with_fixed(k, &fixed_above) << (control + 1);
-        let outer = base | c_bit;
-        // outer has: bit control = 1, every external_control = 1, bits
-        // [0, control) all zero.  Bit `target` is in [0, control) and
-        // is therefore 0 in outer — the LANES_SOA-wide load picks up
-        // amps with mixed target-bit values (j enumerates bits
-        // [0, control) and the in-register permute swaps matching pairs).
-        let mut j = 0usize;
-        while j + LANES_SOA <= c_bit {
-            // SAFETY: bit-disjointness — `outer`'s bits ≥ control+1
-            // (with control set), `j` ⊆ [0, c_bit).  Disjoint, so
-            // `i + LANES_SOA ≤ outer + c_bit ≤ len`.
-            let i = outer | j;
-            let zr = _mm512_loadu_pd(re_ptr.add(i));
-            let zi = _mm512_loadu_pd(im_ptr.add(i));
-            _mm512_storeu_pd(re_ptr.add(i), _mm512_permutexvar_pd(permute_idx, zr));
-            _mm512_storeu_pd(im_ptr.add(i), _mm512_permutexvar_pd(permute_idx, zi));
-            j += LANES_SOA;
-        }
-        debug_assert_eq!(j, c_bit);
-    }
+    crate::kernels::par_blocks(
+        outer_count,
+        len,
+        |k| crate::kernels::expand_with_fixed(k, &fixed_above) << (control + 1),
+        |base| {
+            let re_ptr = re_bp.ptr();
+            let im_ptr = im_bp.ptr();
+            let outer = base | c_bit;
+            // outer has: bit control = 1, every external_control = 1, bits
+            // [0, control) all zero.  Bit `target` is in [0, control) and
+            // is therefore 0 in outer — the LANES_SOA-wide load picks up
+            // amps with mixed target-bit values (j enumerates bits
+            // [0, control) and the in-register permute swaps matching pairs).
+            let mut j = 0usize;
+            while j + LANES_SOA <= c_bit {
+                // SAFETY: bit-disjointness — `outer`'s bits ≥ control+1
+                // (with control set), `j` ⊆ [0, c_bit).  Disjoint, so
+                // `i + LANES_SOA ≤ outer + c_bit ≤ len`.
+                let i = outer | j;
+                let zr = _mm512_loadu_pd(re_ptr.add(i));
+                let zi = _mm512_loadu_pd(im_ptr.add(i));
+                _mm512_storeu_pd(re_ptr.add(i), _mm512_permutexvar_pd(permute_idx, zr));
+                _mm512_storeu_pd(im_ptr.add(i), _mm512_permutexvar_pd(permute_idx, zi));
+                j += LANES_SOA;
+            }
+            debug_assert_eq!(j, c_bit);
+        },
+    );
 }
 
 /// Packed AVX-512 CNOT specialisation over paired SoA storage — Tier C
@@ -1204,8 +1234,8 @@ unsafe fn apply_2q_cnot_avx512_tier_c(
         _ => unreachable!("Tier C requires distinct control,target ∈ {{0, 1, 2}}"),
     };
 
-    let re_ptr = re.as_mut_ptr();
-    let im_ptr = im.as_mut_ptr();
+    let re_bp = crate::kernels::BlockPtr(re.as_mut_ptr());
+    let im_bp = crate::kernels::BlockPtr(im.as_mut_ptr());
 
     // Outer-walk: reserve bits [0, 3) for the in-register 8-amp window,
     // inject every external control (renormalised by -3) as `fixed=true`
@@ -1219,16 +1249,22 @@ unsafe fn apply_2q_cnot_avx512_tier_c(
 
     let n_qubits = len.trailing_zeros();
     let outer_count = 1usize << (n_qubits - 3 - external_controls.len() as u32);
-    for k in 0..outer_count {
-        let base = crate::kernels::expand_with_fixed(k, &fixed_above) << 3;
-        debug_assert_eq!(base & 7, 0);
-        // SAFETY: bit-disjointness — `base` has bits 0,1,2 = 0 and
-        // base + LANES_SOA ≤ len (one zmm load per stream).
-        let zr = _mm512_loadu_pd(re_ptr.add(base));
-        let zi = _mm512_loadu_pd(im_ptr.add(base));
-        _mm512_storeu_pd(re_ptr.add(base), _mm512_permutexvar_pd(permute_idx, zr));
-        _mm512_storeu_pd(im_ptr.add(base), _mm512_permutexvar_pd(permute_idx, zi));
-    }
+    crate::kernels::par_blocks(
+        outer_count,
+        len,
+        |k| crate::kernels::expand_with_fixed(k, &fixed_above) << 3,
+        |base| {
+            let re_ptr = re_bp.ptr();
+            let im_ptr = im_bp.ptr();
+            debug_assert_eq!(base & 7, 0);
+            // SAFETY: bit-disjointness — `base` has bits 0,1,2 = 0 and
+            // base + LANES_SOA ≤ len (one zmm load per stream).
+            let zr = _mm512_loadu_pd(re_ptr.add(base));
+            let zi = _mm512_loadu_pd(im_ptr.add(base));
+            _mm512_storeu_pd(re_ptr.add(base), _mm512_permutexvar_pd(permute_idx, zr));
+            _mm512_storeu_pd(im_ptr.add(base), _mm512_permutexvar_pd(permute_idx, zi));
+        },
+    );
 }
 
 /// Packed AVX-512 SWAP specialisation over paired SoA storage — Tier A
@@ -1287,10 +1323,12 @@ unsafe fn apply_2q_swap_avx512(
         "external control at-or-below hi: dispatch contract violated"
     );
 
-    let re_ptr = re.as_mut_ptr();
-    let im_ptr = im.as_mut_ptr();
+    let re_bp = crate::kernels::BlockPtr(re.as_mut_ptr());
+    let im_bp = crate::kernels::BlockPtr(im.as_mut_ptr());
 
     let inner_walk = |outer: usize| {
+        let re_ptr = re_bp.ptr();
+        let im_ptr = im_bp.ptr();
         let mut j = 0usize;
         while j + LANES_SOA <= lo_bit {
             // SAFETY: bit-disjointness — `outer` ⊆ bits ≥ lo+1 with
@@ -1322,10 +1360,12 @@ unsafe fn apply_2q_swap_avx512(
 
     let n_qubits = len.trailing_zeros();
     let outer_count = 1usize << (n_qubits - lo - 2 - external_controls.len() as u32);
-    for k in 0..outer_count {
-        let outer = crate::kernels::expand_with_fixed(k, &fixed_above) << (lo + 1);
-        inner_walk(outer);
-    }
+    crate::kernels::par_blocks(
+        outer_count,
+        len,
+        |k| crate::kernels::expand_with_fixed(k, &fixed_above) << (lo + 1),
+        inner_walk,
+    );
 }
 
 /// Packed AVX-512 SWAP specialisation over paired SoA storage — Tier B
@@ -1426,8 +1466,8 @@ unsafe fn apply_2q_swap_avx512_tier_b(
         _ => unreachable!("Tier B requires lo ∈ {{0, 1, 2}}"),
     };
 
-    let re_ptr = re.as_mut_ptr();
-    let im_ptr = im.as_mut_ptr();
+    let re_bp = crate::kernels::BlockPtr(re.as_mut_ptr());
+    let im_bp = crate::kernels::BlockPtr(im.as_mut_ptr());
 
     // Outer-walk: reserve bits `[0, hi]` for the inner walk + the
     // hi-bit half-selector, inject every external control as
@@ -1440,35 +1480,41 @@ unsafe fn apply_2q_swap_avx512_tier_b(
 
     let n_qubits = len.trailing_zeros();
     let outer_count = 1usize << (n_qubits - hi - 1 - external_controls.len() as u32);
-    for k in 0..outer_count {
-        let outer = crate::kernels::expand_with_fixed(k, &fixed_above) << (hi + 1);
-        // outer has: bit hi = 0, every external_control bit set,
-        // bits [0, hi) all zero.  OR in `j` (step over [0, hi)) and
-        // either 0 or `hi_bit` to select between the two zmm halves.
-        let mut j = 0usize;
-        while j + LANES_SOA <= hi_bit {
-            // SAFETY: bit-disjointness — `outer`'s bits ≥ hi+1 (with
-            // hi cleared and ec bits set), `j` ⊆ [0, hi_bit), `hi_bit`
-            // is bit hi.  Pairwise disjoint, so each LANES_SOA-wide
-            // load + store stays within `len`.
-            let i_0 = outer | j;
-            let i_1 = i_0 | hi_bit;
-            let zr0 = _mm512_loadu_pd(re_ptr.add(i_0));
-            let zr1 = _mm512_loadu_pd(re_ptr.add(i_1));
-            let zi0 = _mm512_loadu_pd(im_ptr.add(i_0));
-            let zi1 = _mm512_loadu_pd(im_ptr.add(i_1));
-            let new_zr0 = _mm512_permutex2var_pd(zr0, idx_for_hi0, zr1);
-            let new_zr1 = _mm512_permutex2var_pd(zr0, idx_for_hi1, zr1);
-            let new_zi0 = _mm512_permutex2var_pd(zi0, idx_for_hi0, zi1);
-            let new_zi1 = _mm512_permutex2var_pd(zi0, idx_for_hi1, zi1);
-            _mm512_storeu_pd(re_ptr.add(i_0), new_zr0);
-            _mm512_storeu_pd(re_ptr.add(i_1), new_zr1);
-            _mm512_storeu_pd(im_ptr.add(i_0), new_zi0);
-            _mm512_storeu_pd(im_ptr.add(i_1), new_zi1);
-            j += LANES_SOA;
-        }
-        debug_assert_eq!(j, hi_bit);
-    }
+    crate::kernels::par_blocks(
+        outer_count,
+        len,
+        |k| crate::kernels::expand_with_fixed(k, &fixed_above) << (hi + 1),
+        |outer| {
+            let re_ptr = re_bp.ptr();
+            let im_ptr = im_bp.ptr();
+            // outer has: bit hi = 0, every external_control bit set,
+            // bits [0, hi) all zero.  OR in `j` (step over [0, hi)) and
+            // either 0 or `hi_bit` to select between the two zmm halves.
+            let mut j = 0usize;
+            while j + LANES_SOA <= hi_bit {
+                // SAFETY: bit-disjointness — `outer`'s bits ≥ hi+1 (with
+                // hi cleared and ec bits set), `j` ⊆ [0, hi_bit), `hi_bit`
+                // is bit hi.  Pairwise disjoint, so each LANES_SOA-wide
+                // load + store stays within `len`.
+                let i_0 = outer | j;
+                let i_1 = i_0 | hi_bit;
+                let zr0 = _mm512_loadu_pd(re_ptr.add(i_0));
+                let zr1 = _mm512_loadu_pd(re_ptr.add(i_1));
+                let zi0 = _mm512_loadu_pd(im_ptr.add(i_0));
+                let zi1 = _mm512_loadu_pd(im_ptr.add(i_1));
+                let new_zr0 = _mm512_permutex2var_pd(zr0, idx_for_hi0, zr1);
+                let new_zr1 = _mm512_permutex2var_pd(zr0, idx_for_hi1, zr1);
+                let new_zi0 = _mm512_permutex2var_pd(zi0, idx_for_hi0, zi1);
+                let new_zi1 = _mm512_permutex2var_pd(zi0, idx_for_hi1, zi1);
+                _mm512_storeu_pd(re_ptr.add(i_0), new_zr0);
+                _mm512_storeu_pd(re_ptr.add(i_1), new_zr1);
+                _mm512_storeu_pd(im_ptr.add(i_0), new_zi0);
+                _mm512_storeu_pd(im_ptr.add(i_1), new_zi1);
+                j += LANES_SOA;
+            }
+            debug_assert_eq!(j, hi_bit);
+        },
+    );
 }
 
 /// Packed AVX-512 SWAP specialisation over paired SoA storage — Tier C
@@ -1543,8 +1589,8 @@ unsafe fn apply_2q_swap_avx512_tier_c(
         _ => unreachable!("Tier C requires distinct targets in {{0, 1, 2}}"),
     };
 
-    let re_ptr = re.as_mut_ptr();
-    let im_ptr = im.as_mut_ptr();
+    let re_bp = crate::kernels::BlockPtr(re.as_mut_ptr());
+    let im_bp = crate::kernels::BlockPtr(im.as_mut_ptr());
 
     // Outer-walk: reserve bits [0, 3), inject ec (renormalised by -3)
     // as `fixed=true`, shift up by 3 to land on an LANES_SOA-aligned
@@ -1557,16 +1603,22 @@ unsafe fn apply_2q_swap_avx512_tier_c(
 
     let n_qubits = len.trailing_zeros();
     let outer_count = 1usize << (n_qubits - 3 - external_controls.len() as u32);
-    for k in 0..outer_count {
-        let base = crate::kernels::expand_with_fixed(k, &fixed_above) << 3;
-        debug_assert_eq!(base & 7, 0);
-        // SAFETY: bit-disjointness — `base` has bits 0,1,2 = 0 and
-        // base + LANES_SOA ≤ len (one zmm load per stream).
-        let zr = _mm512_loadu_pd(re_ptr.add(base));
-        let zi = _mm512_loadu_pd(im_ptr.add(base));
-        _mm512_storeu_pd(re_ptr.add(base), _mm512_permutexvar_pd(permute_idx, zr));
-        _mm512_storeu_pd(im_ptr.add(base), _mm512_permutexvar_pd(permute_idx, zi));
-    }
+    crate::kernels::par_blocks(
+        outer_count,
+        len,
+        |k| crate::kernels::expand_with_fixed(k, &fixed_above) << 3,
+        |base| {
+            let re_ptr = re_bp.ptr();
+            let im_ptr = im_bp.ptr();
+            debug_assert_eq!(base & 7, 0);
+            // SAFETY: bit-disjointness — `base` has bits 0,1,2 = 0 and
+            // base + LANES_SOA ≤ len (one zmm load per stream).
+            let zr = _mm512_loadu_pd(re_ptr.add(base));
+            let zi = _mm512_loadu_pd(im_ptr.add(base));
+            _mm512_storeu_pd(re_ptr.add(base), _mm512_permutexvar_pd(permute_idx, zr));
+            _mm512_storeu_pd(im_ptr.add(base), _mm512_permutexvar_pd(permute_idx, zi));
+        },
+    );
 }
 
 /// Packed AVX-512 CZ specialisation over paired SoA storage — Tier A
@@ -1615,8 +1667,8 @@ unsafe fn apply_2q_cz_avx512(
         "external control at-or-below hi: dispatch contract violated"
     );
 
-    let re_ptr = re.as_mut_ptr();
-    let im_ptr = im.as_mut_ptr();
+    let re_bp = crate::kernels::BlockPtr(re.as_mut_ptr());
+    let im_bp = crate::kernels::BlockPtr(im.as_mut_ptr());
     // Sign-mask: each double-lane has only its IEEE-754 sign bit set,
     // so `vxorpd(z, sign_mask)` flips the sign of every double in `z` —
     // equivalent to `z = -z` for both real and imaginary parts.
@@ -1631,27 +1683,33 @@ unsafe fn apply_2q_cz_avx512(
 
     let n_qubits = len.trailing_zeros();
     let outer_count = 1usize << (n_qubits - lo - 2 - external_controls.len() as u32);
-    for k in 0..outer_count {
-        let base = crate::kernels::expand_with_fixed(k, &fixed_above) << (lo + 1);
-        // base has: bit hi = 1, every external_control bit = 1, bits
-        // [0, lo] all zero.  ORing in `lo_bit` sets bit `lo`, so the
-        // resulting `outer` lands on the (1, 1) sub-block.
-        let outer = base | lo_bit;
-        let mut j = 0usize;
-        while j + LANES_SOA <= lo_bit {
-            // SAFETY: bit-disjointness — `base` ⊆ bits ≥ lo+1 (hi set,
-            // every external control set), `lo_bit` is bit `lo`, `j`
-            // ⊆ [0, lo).  Pairwise disjoint, so `i = outer | j =
-            // base + lo_bit + j` and `i + LANES_SOA ≤ len`.
-            let i = outer | j;
-            let r = _mm512_loadu_pd(re_ptr.add(i));
-            let m = _mm512_loadu_pd(im_ptr.add(i));
-            _mm512_storeu_pd(re_ptr.add(i), _mm512_xor_pd(r, sign_mask));
-            _mm512_storeu_pd(im_ptr.add(i), _mm512_xor_pd(m, sign_mask));
-            j += LANES_SOA;
-        }
-        debug_assert_eq!(j, lo_bit);
-    }
+    crate::kernels::par_blocks(
+        outer_count,
+        len,
+        |k| crate::kernels::expand_with_fixed(k, &fixed_above) << (lo + 1),
+        |base| {
+            let re_ptr = re_bp.ptr();
+            let im_ptr = im_bp.ptr();
+            // base has: bit hi = 1, every external_control bit = 1, bits
+            // [0, lo] all zero.  ORing in `lo_bit` sets bit `lo`, so the
+            // resulting `outer` lands on the (1, 1) sub-block.
+            let outer = base | lo_bit;
+            let mut j = 0usize;
+            while j + LANES_SOA <= lo_bit {
+                // SAFETY: bit-disjointness — `base` ⊆ bits ≥ lo+1 (hi set,
+                // every external control set), `lo_bit` is bit `lo`, `j`
+                // ⊆ [0, lo).  Pairwise disjoint, so `i = outer | j =
+                // base + lo_bit + j` and `i + LANES_SOA ≤ len`.
+                let i = outer | j;
+                let r = _mm512_loadu_pd(re_ptr.add(i));
+                let m = _mm512_loadu_pd(im_ptr.add(i));
+                _mm512_storeu_pd(re_ptr.add(i), _mm512_xor_pd(r, sign_mask));
+                _mm512_storeu_pd(im_ptr.add(i), _mm512_xor_pd(m, sign_mask));
+                j += LANES_SOA;
+            }
+            debug_assert_eq!(j, lo_bit);
+        },
+    );
 }
 
 /// Packed AVX-512 general-diagonal 2q specialisation over paired SoA
@@ -1721,10 +1779,12 @@ unsafe fn apply_2q_diagonal_avx512(
         (d[0], d[1], d[2], d[3])
     };
 
-    let re_ptr = re.as_mut_ptr();
-    let im_ptr = im.as_mut_ptr();
+    let re_bp = crate::kernels::BlockPtr(re.as_mut_ptr());
+    let im_bp = crate::kernels::BlockPtr(im.as_mut_ptr());
 
     let multiply_block = |base: usize, d_k: Complex| {
+        let re_ptr = re_bp.ptr();
+        let im_ptr = im_bp.ptr();
         let d_re_bc = _mm512_set1_pd(d_k.re);
         let d_im_bc = _mm512_set1_pd(d_k.im);
         let mut j = 0usize;
@@ -1758,15 +1818,19 @@ unsafe fn apply_2q_diagonal_avx512(
 
     let n_qubits = len.trailing_zeros();
     let outer_count = 1usize << (n_qubits - lo - 2 - external_controls.len() as u32);
-    for k in 0..outer_count {
-        let base = crate::kernels::expand_with_fixed(k, &fixed_above) << (lo + 1);
-        // base has: bit hi = 0, every external_control bit = 1, bits
-        // [0, lo] all zero.  Iterate the 4 sub-blocks:
-        multiply_block(base, d_for_hi0_lo0); // (q_hi=0, q_lo=0)
-        multiply_block(base | lo_bit, d_for_hi0_lo1); // (q_hi=0, q_lo=1)
-        multiply_block(base | hi_bit, d_for_hi1_lo0); // (q_hi=1, q_lo=0)
-        multiply_block(base | hi_bit | lo_bit, d_for_hi1_lo1); // (q_hi=1, q_lo=1)
-    }
+    crate::kernels::par_blocks(
+        outer_count,
+        len,
+        |k| crate::kernels::expand_with_fixed(k, &fixed_above) << (lo + 1),
+        |base| {
+            // base has: bit hi = 0, every external_control bit = 1, bits
+            // [0, lo] all zero.  Iterate the 4 sub-blocks:
+            multiply_block(base, d_for_hi0_lo0); // (q_hi=0, q_lo=0)
+            multiply_block(base | lo_bit, d_for_hi0_lo1); // (q_hi=0, q_lo=1)
+            multiply_block(base | hi_bit, d_for_hi1_lo0); // (q_hi=1, q_lo=0)
+            multiply_block(base | hi_bit | lo_bit, d_for_hi1_lo1); // (q_hi=1, q_lo=1)
+        },
+    );
 }
 
 /// Top-level SoA 2q dispatch.  Mirrors `aos::apply_2q` — see spec § 4.9.
@@ -2280,11 +2344,13 @@ unsafe fn apply_1q_x_soa_avx512(re: &mut [f64], im: &mut [f64], target: u32, con
     debug_assert!(target_bit >= LANES);
     debug_assert!(controls.iter().all(|&c| c > target));
 
-    let re_ptr = re.as_mut_ptr();
-    let im_ptr = im.as_mut_ptr();
+    let re_bp = crate::kernels::BlockPtr(re.as_mut_ptr());
+    let im_bp = crate::kernels::BlockPtr(im.as_mut_ptr());
     let len = re.len();
 
     let outer_iter = |block: usize| {
+        let re_ptr = re_bp.ptr();
+        let im_ptr = im_bp.ptr();
         let mut j = 0usize;
         while j + LANES <= target_bit {
             let i0 = block | j;
@@ -2305,11 +2371,8 @@ unsafe fn apply_1q_x_soa_avx512(re: &mut [f64], im: &mut [f64], target: u32, con
 
     if controls.is_empty() {
         let outer_step = target_bit << 1;
-        let mut block = 0usize;
-        while block < len {
-            outer_iter(block);
-            block += outer_step;
-        }
+        let count = len / outer_step;
+        crate::kernels::par_blocks(count, len, |k| k * outer_step, outer_iter);
         return;
     }
 
@@ -2321,10 +2384,12 @@ unsafe fn apply_1q_x_soa_avx512(re: &mut [f64], im: &mut [f64], target: u32, con
 
     let n_qubits = len.trailing_zeros();
     let outer_count = 1usize << (n_qubits - target - 1 - controls.len() as u32);
-    for k in 0..outer_count {
-        let block = crate::kernels::expand_with_fixed(k, &fixed_above) << (target + 1);
-        outer_iter(block);
-    }
+    crate::kernels::par_blocks(
+        outer_count,
+        len,
+        |k| crate::kernels::expand_with_fixed(k, &fixed_above) << (target + 1),
+        outer_iter,
+    );
 }
 
 /// AVX-512 Pauli-Y on SoA streams (Tier A).
@@ -2368,11 +2433,13 @@ unsafe fn apply_1q_y_soa_avx512(
         (sign_mask, zero_mask, zero_mask, sign_mask)
     };
 
-    let re_ptr = re.as_mut_ptr();
-    let im_ptr = im.as_mut_ptr();
+    let re_bp = crate::kernels::BlockPtr(re.as_mut_ptr());
+    let im_bp = crate::kernels::BlockPtr(im.as_mut_ptr());
     let len = re.len();
 
     let outer_iter = |block: usize| {
+        let re_ptr = re_bp.ptr();
+        let im_ptr = im_bp.ptr();
         let mut j = 0usize;
         while j + LANES <= target_bit {
             let i0 = block | j;
@@ -2393,11 +2460,8 @@ unsafe fn apply_1q_y_soa_avx512(
 
     if controls.is_empty() {
         let outer_step = target_bit << 1;
-        let mut block = 0usize;
-        while block < len {
-            outer_iter(block);
-            block += outer_step;
-        }
+        let count = len / outer_step;
+        crate::kernels::par_blocks(count, len, |k| k * outer_step, outer_iter);
         return;
     }
 
@@ -2409,10 +2473,12 @@ unsafe fn apply_1q_y_soa_avx512(
 
     let n_qubits = len.trailing_zeros();
     let outer_count = 1usize << (n_qubits - target - 1 - controls.len() as u32);
-    for k in 0..outer_count {
-        let block = crate::kernels::expand_with_fixed(k, &fixed_above) << (target + 1);
-        outer_iter(block);
-    }
+    crate::kernels::par_blocks(
+        outer_count,
+        len,
+        |k| crate::kernels::expand_with_fixed(k, &fixed_above) << (target + 1),
+        outer_iter,
+    );
 }
 
 /// AVX-512 generic anti-diagonal on SoA streams (Tier A).
@@ -2449,11 +2515,13 @@ unsafe fn apply_1q_antidiag_soa_avx512(
     let br = _mm512_set1_pd(b.re);
     let bi = _mm512_set1_pd(b.im);
 
-    let re_ptr = re.as_mut_ptr();
-    let im_ptr = im.as_mut_ptr();
+    let re_bp = crate::kernels::BlockPtr(re.as_mut_ptr());
+    let im_bp = crate::kernels::BlockPtr(im.as_mut_ptr());
     let len = re.len();
 
     let outer_iter = |block: usize| {
+        let re_ptr = re_bp.ptr();
+        let im_ptr = im_bp.ptr();
         let mut j = 0usize;
         while j + LANES <= target_bit {
             let i0 = block | j;
@@ -2486,11 +2554,8 @@ unsafe fn apply_1q_antidiag_soa_avx512(
 
     if controls.is_empty() {
         let outer_step = target_bit << 1;
-        let mut block = 0usize;
-        while block < len {
-            outer_iter(block);
-            block += outer_step;
-        }
+        let count = len / outer_step;
+        crate::kernels::par_blocks(count, len, |k| k * outer_step, outer_iter);
         return;
     }
 
@@ -2502,10 +2567,12 @@ unsafe fn apply_1q_antidiag_soa_avx512(
 
     let n_qubits = len.trailing_zeros();
     let outer_count = 1usize << (n_qubits - target - 1 - controls.len() as u32);
-    for k in 0..outer_count {
-        let block = crate::kernels::expand_with_fixed(k, &fixed_above) << (target + 1);
-        outer_iter(block);
-    }
+    crate::kernels::par_blocks(
+        outer_count,
+        len,
+        |k| crate::kernels::expand_with_fixed(k, &fixed_above) << (target + 1),
+        outer_iter,
+    );
 }
 
 /// AVX-512 Pauli-X on SoA streams (Tier B): `target ∈ {0, 1, 2}`.
@@ -2566,30 +2633,36 @@ unsafe fn apply_1q_x_soa_avx512_lowbit(
         crate::kernels::control_mask(controls)
     };
 
-    let re_ptr = re.as_mut_ptr();
-    let im_ptr = im.as_mut_ptr();
+    let re_bp = crate::kernels::BlockPtr(re.as_mut_ptr());
+    let im_bp = crate::kernels::BlockPtr(im.as_mut_ptr());
     let len = re.len();
 
-    let mut block = 0usize;
-    while block + LANES <= len {
-        if (block & ctrl_mask) == ctrl_mask {
-            // SAFETY: in-bounds — block + LANES ≤ len by loop invariant.
-            let r = _mm512_loadu_pd(re_ptr.add(block));
-            let m = _mm512_loadu_pd(im_ptr.add(block));
-            let (r_p, m_p) = match target {
-                0 => (_mm512_permute_pd::<0x55>(r), _mm512_permute_pd::<0x55>(m)),
-                1 => (_mm512_permutex_pd::<0x4E>(r), _mm512_permutex_pd::<0x4E>(m)),
-                2 => (
-                    _mm512_permutexvar_pd(idx_t2, r),
-                    _mm512_permutexvar_pd(idx_t2, m),
-                ),
-                _ => unreachable!("Tier-B SoA: target out of {{0, 1, 2}}"),
-            };
-            _mm512_storeu_pd(re_ptr.add(block), r_p);
-            _mm512_storeu_pd(im_ptr.add(block), m_p);
-        }
-        block += LANES;
-    }
+    let count = len / LANES;
+    crate::kernels::par_blocks(
+        count,
+        len,
+        |k| k * LANES,
+        |block| {
+            let re_ptr = re_bp.ptr();
+            let im_ptr = im_bp.ptr();
+            if (block & ctrl_mask) == ctrl_mask {
+                // SAFETY: in-bounds — block + LANES ≤ len by loop invariant.
+                let r = _mm512_loadu_pd(re_ptr.add(block));
+                let m = _mm512_loadu_pd(im_ptr.add(block));
+                let (r_p, m_p) = match target {
+                    0 => (_mm512_permute_pd::<0x55>(r), _mm512_permute_pd::<0x55>(m)),
+                    1 => (_mm512_permutex_pd::<0x4E>(r), _mm512_permutex_pd::<0x4E>(m)),
+                    2 => (
+                        _mm512_permutexvar_pd(idx_t2, r),
+                        _mm512_permutexvar_pd(idx_t2, m),
+                    ),
+                    _ => unreachable!("Tier-B SoA: target out of {{0, 1, 2}}"),
+                };
+                _mm512_storeu_pd(re_ptr.add(block), r_p);
+                _mm512_storeu_pd(im_ptr.add(block), m_p);
+            }
+        },
+    );
 }
 
 // Tier-B Y and generic anti-diag SoA: NOT a separate SIMD kernel.

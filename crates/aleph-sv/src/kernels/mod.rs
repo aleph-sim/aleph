@@ -24,6 +24,144 @@ pub(crate) mod soa;
 #[cfg(feature = "internal-bench")]
 pub mod soa;
 
+use std::sync::OnceLock;
+
+/// Raw write pointer shareable across rayon worker threads.
+///
+/// The kernels drive their outer walk over pairwise-disjoint amplitude
+/// blocks (the SIMD-kernel invariant: `block | offsets | j` occupy
+/// disjoint bit-fields). `par_blocks` hands each parallel task a
+/// distinct block, so no two threads ever write the same byte — the
+/// pointer behaves as a partition into disjoint `&mut` slices.
+///
+/// SAFETY: callers MUST only use this with `par_blocks`, whose
+/// `block_of` produces disjoint block bases. Aliased writes would be
+/// undefined behaviour; the disjointness is what makes the `Send`/`Sync`
+/// impls sound.
+// Allow dead_code: every constructor is in a `#[cfg(target_arch =
+// "x86_64")]` SIMD kernel, so on ARM / WASM / RISC-V the type is
+// unreferenced (same situation as `expand_with_fixed` below).
+#[allow(dead_code)]
+#[derive(Clone, Copy)]
+pub(crate) struct BlockPtr(pub(crate) *mut f64);
+
+#[allow(dead_code)]
+impl BlockPtr {
+    /// Read the raw pointer back out.
+    ///
+    /// Kernels MUST extract the pointer through this `&self` accessor
+    /// (not a direct `bp.0` field read) so the enclosing closure
+    /// captures the whole `BlockPtr` — which is `Sync` — rather than the
+    /// bare `*mut f64` field, which is not. Rust 2021's disjoint capture
+    /// would otherwise capture `bp.0` precisely and reject the closure
+    /// from rayon's `Sync` bound.
+    #[inline(always)]
+    pub(crate) fn ptr(&self) -> *mut f64 {
+        self.0
+    }
+}
+// SAFETY: see the type-level note — concurrent use only ever touches
+// disjoint regions, so sharing the pointer across threads is sound.
+unsafe impl Send for BlockPtr {}
+unsafe impl Sync for BlockPtr {}
+
+/// Minimum state-vector length (in amplitudes) before gate kernels go
+/// parallel. Below this, rayon's task overhead outweighs the win, so the
+/// kernel runs sequentially — keeping small circuits and unit tests fast
+/// and trivially deterministic. Overridable via `ALEPH_PAR_MIN_AMPS`
+/// (read once): tests set it to `0` to force the parallel path at small
+/// `n`, and it is the knob P2-04 will tune. Default `1 << 18` ≈ 256K
+/// amplitudes ≈ 4 MiB (comfortably past L2 on the EPYC target).
+// Allow dead_code: only reached via `par_blocks`, whose sole callers are
+// x86_64 SIMD kernels (see `BlockPtr`).
+#[allow(dead_code)]
+fn par_min_amps() -> usize {
+    static MIN: OnceLock<usize> = OnceLock::new();
+    *MIN.get_or_init(|| {
+        std::env::var("ALEPH_PAR_MIN_AMPS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(1usize << 18)
+    })
+}
+
+/// Run `body(block_of(k))` for every `k` in `0..count`.
+///
+/// Sequential when the state vector (`len` amplitudes) is below
+/// `par_min_amps()`, otherwise rayon-parallel over the block index. The
+/// `block_of(k)` bases MUST be pairwise-disjoint blocks (the
+/// SIMD-kernel invariant) so parallel `body` calls never race.
+///
+/// The result is bit-identical regardless of thread count: each block
+/// writes disjoint memory and there is no cross-thread floating-point
+/// reduction, so no operation is ever reordered. Oracle equivalence
+/// (1e-12) therefore holds for any `RAYON_NUM_THREADS`.
+// Allow dead_code: callers are x86_64-only SIMD kernels (see
+// `BlockPtr`); the `par_tests` module exercises it on every target.
+#[allow(dead_code)]
+pub(crate) fn par_blocks(
+    count: usize,
+    len: usize,
+    block_of: impl Fn(usize) -> usize + Sync,
+    body: impl Fn(usize) + Sync,
+) {
+    if len < par_min_amps() {
+        for k in 0..count {
+            body(block_of(k));
+        }
+    } else {
+        use rayon::prelude::*;
+        // `with_min_len` keeps fine-grained (low-target) kernels from
+        // drowning in per-element task overhead: each task runs a
+        // contiguous batch of blocks sequentially.
+        (0..count)
+            .into_par_iter()
+            .with_min_len(64)
+            .for_each(|k| body(block_of(k)));
+    }
+}
+
+/// Flatten an outer-block × inner-SIMD-unit iteration into a single
+/// parallel dimension of size `outer_count * units_per_block`, so the
+/// available parallelism is **independent of which qubit the gate
+/// targets**.
+///
+/// The block-walk kernels nest two loops: an outer walk over
+/// `outer_count` blocks and an inner SIMD walk over `units_per_block`
+/// LANES-wide units within each block. `par_blocks` alone parallelizes
+/// only the outer dimension, which collapses to 1 for a gate on the top
+/// qubit (`outer_count == 1`) — that gate then runs fully sequentially
+/// despite the inner walk covering the whole state. Flattening exposes
+/// the product as the parallel dimension instead.
+///
+/// `base_of(block_k)` returns the block's base amplitude index; unit
+/// `unit_k` within the block lives at `base_of(block_k) + unit_k *
+/// stride`. `body(i0)` processes the one SIMD unit at amplitude `i0`.
+/// `units_per_block` MUST be a power of two (it is `target_bit / LANES`,
+/// a ratio of powers of two), so the block/unit split is a shift+mask.
+/// When `units_per_block == 1` this degenerates exactly to
+/// `par_blocks(outer_count, …)`.
+#[allow(dead_code)]
+pub(crate) fn par_units(
+    outer_count: usize,
+    units_per_block: usize,
+    stride: usize,
+    len: usize,
+    base_of: impl Fn(usize) -> usize + Sync,
+    body: impl Fn(usize) + Sync,
+) {
+    debug_assert!(units_per_block.is_power_of_two());
+    let total = outer_count * units_per_block;
+    let unit_bits = units_per_block.trailing_zeros();
+    let unit_mask = units_per_block - 1;
+    par_blocks(
+        total,
+        len,
+        move |u| base_of(u >> unit_bits) + (u & unit_mask) * stride,
+        body,
+    );
+}
+
 /// Bitwise-OR of `1 << q` over `controls`. Layout-agnostic — used by
 /// both AoS and SoA kernels to compute the control gate-mask.
 ///
@@ -1121,5 +1259,40 @@ mod tests {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod par_tests {
+    use super::par_blocks;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    // par_blocks must call `body(block_of(k))` for every k in 0..count
+    // exactly once — the contract both the sequential and rayon branches
+    // must honour. We count visits per block and assert the all-ones
+    // coverage vector. `force_parallel` toggles the threshold branch by
+    // feeding an over-threshold `len`.
+    fn coverage(count: usize, force_parallel: bool) -> Vec<usize> {
+        let hits: Vec<AtomicUsize> = (0..count).map(|_| AtomicUsize::new(0)).collect();
+        let len = if force_parallel { usize::MAX } else { 0 };
+        par_blocks(
+            count,
+            len,
+            |k| k,
+            |slot| {
+                hits[slot].fetch_add(1, Ordering::Relaxed);
+            },
+        );
+        hits.iter().map(|a| a.load(Ordering::Relaxed)).collect()
+    }
+
+    #[test]
+    fn par_blocks_visits_each_block_once_sequential() {
+        assert!(coverage(1000, false).iter().all(|&h| h == 1));
+    }
+
+    #[test]
+    fn par_blocks_visits_each_block_once_parallel() {
+        assert!(coverage(1000, true).iter().all(|&h| h == 1));
     }
 }

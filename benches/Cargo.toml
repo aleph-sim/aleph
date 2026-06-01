@@ -13,6 +13,13 @@ publish = false
 # `src/main.rs`; benches live under `benches/`.
 path = "src/lib.rs"
 
+[features]
+# Opt-in gate for the P2-01 parallel-scaling bench (`qft_scaling`). Kept
+# out of the default set so `cargo bench --workspace` / CI skip its
+# expensive n=25 (512 MiB) runs; enable explicitly for deliberate EPYC
+# scaling sweeps.
+scaling-bench = []
+
 [dependencies]
 aleph-core    = { path = "../crates/aleph-core" }
 aleph-ir      = { path = "../crates/aleph-ir" }
@@ -53,3 +60,8 @@ harness = false
 [[bench]]
 name = "p1_07_microbench"
 harness = false
+
+[[bench]]
+name = "qft_scaling"
+harness = false
+required-features = ["scaling-bench"]
