@@ -284,7 +284,7 @@ pub unsafe fn apply_1q_avx512(
     let bp = crate::kernels::BlockPtr(amps.as_mut_ptr() as *mut f64);
 
     let outer_iter = |block: usize| {
-        let amps_ptr = bp.0;
+        let amps_ptr = bp.ptr();
         let mut j = 0usize;
         while j + LANES <= target_bit {
             let i0 = block | j;

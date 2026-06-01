@@ -44,6 +44,22 @@ use std::sync::OnceLock;
 #[allow(dead_code)]
 #[derive(Clone, Copy)]
 pub(crate) struct BlockPtr(pub(crate) *mut f64);
+
+#[allow(dead_code)]
+impl BlockPtr {
+    /// Read the raw pointer back out.
+    ///
+    /// Kernels MUST extract the pointer through this `&self` accessor
+    /// (not a direct `bp.0` field read) so the enclosing closure
+    /// captures the whole `BlockPtr` — which is `Sync` — rather than the
+    /// bare `*mut f64` field, which is not. Rust 2021's disjoint capture
+    /// would otherwise capture `bp.0` precisely and reject the closure
+    /// from rayon's `Sync` bound.
+    #[inline(always)]
+    pub(crate) fn ptr(&self) -> *mut f64 {
+        self.0
+    }
+}
 // SAFETY: see the type-level note — concurrent use only ever touches
 // disjoint regions, so sharing the pointer across threads is sound.
 unsafe impl Send for BlockPtr {}
