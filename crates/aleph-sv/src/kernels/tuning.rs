@@ -74,6 +74,7 @@ const HIGH_BAND: u32 = 2;
 /// outer stride and whether `par_units` flattening is in play.
 #[allow(dead_code)] // wired into kernels in P2-04 Task 2
 pub(crate) fn pos_class(max_target: u32, n: u32) -> PosClass {
+    debug_assert!(max_target < n, "max_target {max_target} must be < n {n}");
     if max_target < LOW_BAND {
         PosClass::Low
     } else if max_target + HIGH_BAND >= n {
@@ -233,7 +234,11 @@ mod tests {
         for class in [
             GateClass::OneQGeneric,
             GateClass::OneQDiag,
+            GateClass::OneQAntidiag,
+            GateClass::TwoQDense,
             GateClass::TwoQCnot,
+            GateClass::TwoQCz,
+            GateClass::TwoQSwap,
             GateClass::TwoQDiag,
             GateClass::ThreeQ,
         ] {
@@ -256,6 +261,11 @@ mod tests {
 
     #[test]
     fn pos_class_small_n_does_not_underflow() {
+        // n=1 (single-qubit circuit): the only target (0) classifies as Low
+        // because the Low check (max_target < LOW_BAND) fires before High.
+        // Documented, not a bug — chunk policy for n=1 is moot (state is
+        // 2 amplitudes, always sequential).
+        assert_eq!(pos_class(0, 1), PosClass::Low);
         assert_eq!(pos_class(0, 2), PosClass::Low);
         assert_eq!(pos_class(1, 2), PosClass::Low);
     }
