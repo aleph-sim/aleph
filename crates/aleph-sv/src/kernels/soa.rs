@@ -202,18 +202,18 @@ unsafe fn apply_toffoli_avx512_tier_a_soa(
         ctrl_mask |= 1usize << c;
     }
     let len = re.len();
-    let re_ptr = re.as_mut_ptr();
-    let im_ptr = im.as_mut_ptr();
+    let re_bp = crate::kernels::BlockPtr(re.as_mut_ptr());
+    let im_bp = crate::kernels::BlockPtr(im.as_mut_ptr());
 
-    let mut block_base = 0usize;
-    while block_base < len {
+    let count = len / LANES_SOA;
+    crate::kernels::par_blocks(count, len, |k| k * LANES_SOA, |block_base| {
+        let re_ptr = re_bp.ptr();
+        let im_ptr = im_bp.ptr();
         if (block_base & target_bit) != 0 {
-            block_base += LANES_SOA;
-            continue;
+            return;
         }
         if (block_base & ctrl_mask) != ctrl_mask {
-            block_base += LANES_SOA;
-            continue;
+            return;
         }
         // SAFETY: block_base & target_bit == 0, all control bits set.
         // target_bit >= LANES_SOA ensures block_base | target_bit ≥
@@ -228,8 +228,7 @@ unsafe fn apply_toffoli_avx512_tier_a_soa(
         _mm512_storeu_pd(im_ptr.add(lo), bi);
         _mm512_storeu_pd(re_ptr.add(hi), ar);
         _mm512_storeu_pd(im_ptr.add(hi), ai);
-        block_base += LANES_SOA;
-    }
+    });
 }
 
 /// Toffoli Tier-A outer-walk for SoA: handles controls at-or-above
@@ -271,18 +270,18 @@ unsafe fn apply_toffoli_avx512_tier_a_outer_walk_soa(
         ctrl_mask |= 1usize << c;
     }
     let len = re.len();
-    let re_ptr = re.as_mut_ptr();
-    let im_ptr = im.as_mut_ptr();
+    let re_bp = crate::kernels::BlockPtr(re.as_mut_ptr());
+    let im_bp = crate::kernels::BlockPtr(im.as_mut_ptr());
 
-    let mut block_base = 0usize;
-    while block_base < len {
+    let count = len / LANES_SOA;
+    crate::kernels::par_blocks(count, len, |k| k * LANES_SOA, |block_base| {
+        let re_ptr = re_bp.ptr();
+        let im_ptr = im_bp.ptr();
         if (block_base & target_bit) != 0 {
-            block_base += LANES_SOA;
-            continue;
+            return;
         }
         if (block_base & ctrl_mask) != ctrl_mask {
-            block_base += LANES_SOA;
-            continue;
+            return;
         }
         // SAFETY: target_bit >= LANES_SOA ensures the hi window is in bounds.
         let lo = block_base;
@@ -295,8 +294,7 @@ unsafe fn apply_toffoli_avx512_tier_a_outer_walk_soa(
         _mm512_storeu_pd(im_ptr.add(lo), bi);
         _mm512_storeu_pd(re_ptr.add(hi), ar);
         _mm512_storeu_pd(im_ptr.add(hi), ai);
-        block_base += LANES_SOA;
-    }
+    });
 }
 
 /// Toffoli Tier-B.0 for SoA: `target=0`, in-register permute swap.
@@ -494,27 +492,29 @@ unsafe fn apply_ccz_avx512_tier_a_soa(re: &mut [f64], im: &mut [f64], mask_bits:
     }
 
     let len = re.len();
-    let re_ptr = re.as_mut_ptr();
-    let im_ptr = im.as_mut_ptr();
+    let re_bp = crate::kernels::BlockPtr(re.as_mut_ptr());
+    let im_bp = crate::kernels::BlockPtr(im.as_mut_ptr());
 
     // IEEE-754: XOR with -0.0 sign mask flips the sign bit of every f64 lane.
     let sign_mask = _mm512_set1_pd(-0.0_f64);
 
-    let mut block_base = 0usize;
-    while block_base < len {
-        if (block_base & mask) == mask {
-            // SAFETY: block_base + LANES_SOA ≤ len because mask_lo ≥ 3 →
-            // mask_lo_bit ≥ 8 = LANES_SOA; matching block_base values are
-            // spaced ≥ LANES_SOA apart.  State vector is 1<<n ≥ 16 (n≥4).
-            let pr = re_ptr.add(block_base);
-            let pi = im_ptr.add(block_base);
-            let zr = _mm512_loadu_pd(pr);
-            let zi = _mm512_loadu_pd(pi);
-            _mm512_storeu_pd(pr, _mm512_xor_pd(zr, sign_mask));
-            _mm512_storeu_pd(pi, _mm512_xor_pd(zi, sign_mask));
+    let count = len / LANES_SOA;
+    crate::kernels::par_blocks(count, len, |k| k * LANES_SOA, |block_base| {
+        let re_ptr = re_bp.ptr();
+        let im_ptr = im_bp.ptr();
+        if (block_base & mask) != mask {
+            return;
         }
-        block_base += LANES_SOA;
-    }
+        // SAFETY: block_base + LANES_SOA ≤ len because mask_lo ≥ 3 →
+        // mask_lo_bit ≥ 8 = LANES_SOA; matching block_base values are
+        // spaced ≥ LANES_SOA apart.  State vector is 1<<n ≥ 16 (n≥4).
+        let pr = re_ptr.add(block_base);
+        let pi = im_ptr.add(block_base);
+        let zr = _mm512_loadu_pd(pr);
+        let zi = _mm512_loadu_pd(pi);
+        _mm512_storeu_pd(pr, _mm512_xor_pd(zr, sign_mask));
+        _mm512_storeu_pd(pi, _mm512_xor_pd(zi, sign_mask));
+    });
 }
 
 /// CCZ Tier-A outer-walk for SoA: handles mask bits below LANES_SOA_BITS=3.
@@ -571,16 +571,17 @@ unsafe fn apply_ccz_avx512_tier_a_outer_walk_soa(
     };
 
     let len = re.len();
-    let re_ptr = re.as_mut_ptr();
-    let im_ptr = im.as_mut_ptr();
+    let re_bp = crate::kernels::BlockPtr(re.as_mut_ptr());
+    let im_bp = crate::kernels::BlockPtr(im.as_mut_ptr());
 
     let sign = _mm512_set1_pd(-0.0_f64);
 
-    let mut block_base = 0usize;
-    while block_base < len {
+    let count = len / LANES_SOA;
+    crate::kernels::par_blocks(count, len, |k| k * LANES_SOA, |block_base| {
+        let re_ptr = re_bp.ptr();
+        let im_ptr = im_bp.ptr();
         if (block_base & mask_high) != mask_high {
-            block_base += LANES_SOA;
-            continue;
+            return;
         }
         // SAFETY: block_base + LANES_SOA ≤ len; state vector is 1<<n with
         // n ≥ 4 and block_base is always LANES_SOA-aligned.
@@ -593,8 +594,7 @@ unsafe fn apply_ccz_avx512_tier_a_outer_walk_soa(
         // _mm512_mask_blend_pd(mask, a, b): selects b where bit=1, a where bit=0.
         _mm512_storeu_pd(pr, _mm512_mask_blend_pd(lane_mask, zr, neg_r));
         _mm512_storeu_pd(pi, _mm512_mask_blend_pd(lane_mask, zi, neg_i));
-        block_base += LANES_SOA;
-    }
+    });
 }
 
 /// Routes Toffoli to the best available SoA tier.  Mirror of
