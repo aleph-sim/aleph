@@ -2832,23 +2832,22 @@ unsafe fn apply_toffoli_avx512_tier_a(amps: &mut [Complex], target: u32, sorted_
         ctrl_mask |= 1usize << c;
     }
     let len = amps.len();
-    let amps_ptr = amps.as_mut_ptr() as *mut f64;
+    let bp = crate::kernels::BlockPtr(amps.as_mut_ptr() as *mut f64);
 
     // Flat block-stride walk: each block covers LANES consecutive amps.
     // Skip blocks where target_bit is already set (those are the hi-half;
     // we always load from the lo-half and its partner simultaneously).
     // Skip blocks where any control bit is clear (gate does not fire).
-    let mut block_base = 0usize;
-    while block_base < len {
+    let count = len / LANES;
+    crate::kernels::par_blocks(count, len, |k| k * LANES, |block_base| {
+        let amps_ptr = bp.ptr();
         if (block_base & target_bit) != 0 {
             // Already the hi half — the lo-half iteration handles this pair.
-            block_base += LANES;
-            continue;
+            return;
         }
         if (block_base & ctrl_mask) != ctrl_mask {
             // Not all controls set — gate does not fire here.
-            block_base += LANES;
-            continue;
+            return;
         }
         // SAFETY: `block_base & target_bit == 0` and all control bits set.
         // `block_base + LANES <= block_base | target_bit < len` because the
@@ -2861,8 +2860,7 @@ unsafe fn apply_toffoli_avx512_tier_a(amps: &mut [Complex], target: u32, sorted_
         let z_hi = _mm512_loadu_pd(hi_ptr);
         _mm512_storeu_pd(lo_ptr, z_hi);
         _mm512_storeu_pd(hi_ptr, z_lo);
-        block_base += LANES;
-    }
+    });
 }
 
 /// Tier-A outer-walk variant for Toffoli (CCX): handles controls
@@ -2927,22 +2925,21 @@ unsafe fn apply_toffoli_avx512_tier_a_outer_walk(
         ctrl_mask |= 1usize << c;
     }
     let len = amps.len();
-    let amps_ptr = amps.as_mut_ptr() as *mut f64;
+    let bp = crate::kernels::BlockPtr(amps.as_mut_ptr() as *mut f64);
 
     // Flat block-stride walk identical to the clean Tier-A kernel, but
     // without the `c_lo > target` restriction. The mask check handles
     // both above-target and below-target control bits uniformly.
-    let mut block_base = 0usize;
-    while block_base < len {
+    let count = len / LANES;
+    crate::kernels::par_blocks(count, len, |k| k * LANES, |block_base| {
+        let amps_ptr = bp.ptr();
         if (block_base & target_bit) != 0 {
             // Hi-half block — the lo-half iteration handles this pair.
-            block_base += LANES;
-            continue;
+            return;
         }
         if (block_base & ctrl_mask) != ctrl_mask {
             // Not all controls set — gate does not fire here.
-            block_base += LANES;
-            continue;
+            return;
         }
         // SAFETY: `block_base & target_bit == 0` and all control bits set.
         // `block_base + LANES <= block_base | target_bit < len` because the
@@ -2955,8 +2952,7 @@ unsafe fn apply_toffoli_avx512_tier_a_outer_walk(
         let z_hi = _mm512_loadu_pd(hi_ptr);
         _mm512_storeu_pd(lo_ptr, z_hi);
         _mm512_storeu_pd(hi_ptr, z_lo);
-        block_base += LANES;
-    }
+    });
 }
 
 /// Toffoli Tier-B.0: target=0 (within-LANES), in-zmm permute swap.
@@ -3251,27 +3247,28 @@ unsafe fn apply_ccz_avx512_tier_a(amps: &mut [Complex], mask_bits: &[u32]) {
     }
 
     let len = amps.len();
-    let amps_ptr = amps.as_mut_ptr() as *mut f64;
+    let bp = crate::kernels::BlockPtr(amps.as_mut_ptr() as *mut f64);
 
     // IEEE-754: -0.0 has exactly the sign bit set (0x8000_0000_0000_0000).
     // XOR with this value flips the sign bit of every double lane.
     let sign_mask = _mm512_set1_pd(-0.0_f64);
 
-    let mut block_base = 0usize;
-    while block_base < len {
-        if (block_base & mask) == mask {
-            // SAFETY: block_base + LANES ≤ len because mask_bits are all ≥ 2,
-            // so mask_lo ≥ 4 > LANES; the amplitude count between any two
-            // consecutive matching block_base values is a multiple of LANES.
-            // The state vector length is 1 << n ≥ 8 (n ≥ 3) and is a multiple
-            // of LANES. `amps_ptr.add(block_base * 2)` is within bounds.
-            let p = amps_ptr.add(block_base * 2);
-            let z = _mm512_loadu_pd(p);
-            let neg = _mm512_xor_pd(z, sign_mask);
-            _mm512_storeu_pd(p, neg);
+    let count = len / LANES;
+    crate::kernels::par_blocks(count, len, |k| k * LANES, |block_base| {
+        let amps_ptr = bp.ptr();
+        if (block_base & mask) != mask {
+            return;
         }
-        block_base += LANES;
-    }
+        // SAFETY: block_base + LANES ≤ len because mask_bits are all ≥ 2,
+        // so mask_lo ≥ 4 > LANES; the amplitude count between any two
+        // consecutive matching block_base values is a multiple of LANES.
+        // The state vector length is 1 << n ≥ 8 (n ≥ 3) and is a multiple
+        // of LANES. `amps_ptr.add(block_base * 2)` is within bounds.
+        let p = amps_ptr.add(block_base * 2);
+        let z = _mm512_loadu_pd(p);
+        let neg = _mm512_xor_pd(z, sign_mask);
+        _mm512_storeu_pd(p, neg);
+    });
 }
 
 /// CCZ Tier-A outer-walk: handles mask bits below LANES_BITS via
@@ -3335,17 +3332,17 @@ unsafe fn apply_ccz_avx512_tier_a_outer_walk(amps: &mut [Complex], mask_bits: &[
     };
 
     let len = amps.len();
-    let amps_ptr = amps.as_mut_ptr() as *mut f64;
+    let bp = crate::kernels::BlockPtr(amps.as_mut_ptr() as *mut f64);
 
     // IEEE-754: -0.0 has exactly the sign bit set; XOR flips sign of every lane.
     let sign = _mm512_set1_pd(-0.0_f64);
 
-    let mut block_base = 0usize;
-    while block_base < len {
+    let count = len / LANES;
+    crate::kernels::par_blocks(count, len, |k| k * LANES, |block_base| {
+        let amps_ptr = bp.ptr();
         // High mask bits must be satisfied at block level (uniform within block).
         if (block_base & mask_high) != mask_high {
-            block_base += LANES;
-            continue;
+            return;
         }
         // SAFETY: block_base + LANES ≤ len because amps.len() is a power of two
         // and block_base is always LANES-aligned. `amps_ptr.add(block_base * 2)`
@@ -3357,8 +3354,7 @@ unsafe fn apply_ccz_avx512_tier_a_outer_walk(amps: &mut [Complex], mask_bits: &[
         // lane_mask=1 → take neg (flipped); lane_mask=0 → take z (unchanged).
         let blended = _mm512_mask_blend_pd(lane_mask, z, neg);
         _mm512_storeu_pd(p, blended);
-        block_base += LANES;
-    }
+    });
 }
 
 /// Routes CCZ to the best available tier (spec §5).
