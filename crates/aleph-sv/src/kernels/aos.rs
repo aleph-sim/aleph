@@ -547,9 +547,10 @@ unsafe fn apply_1q_diagonal_avx512(
     let m11r = _mm512_set1_pd(m11.re);
     let m11i = _mm512_set1_pd(m11.im);
 
-    let amps_ptr = amps.as_mut_ptr() as *mut f64;
+    let bp = crate::kernels::BlockPtr(amps.as_mut_ptr() as *mut f64);
 
     let outer_iter = |block: usize| {
+        let amps_ptr = bp.ptr();
         // 0-side: amps[block .. block + target_bit] get * m00
         let mut j = 0usize;
         while j + LANES <= target_bit {
@@ -586,11 +587,8 @@ unsafe fn apply_1q_diagonal_avx512(
 
     if controls.is_empty() {
         let outer_step = target_bit << 1;
-        let mut block = 0usize;
-        while block < len {
-            outer_iter(block);
-            block += outer_step;
-        }
+        let count = len / outer_step;
+        crate::kernels::par_blocks(count, len, |k| k * outer_step, outer_iter);
         return;
     }
 
@@ -608,10 +606,12 @@ unsafe fn apply_1q_diagonal_avx512(
 
     let n_qubits = len.trailing_zeros();
     let outer_count = 1usize << (n_qubits - target - 1 - controls.len() as u32);
-    for k in 0..outer_count {
-        let block = crate::kernels::expand_with_fixed(k, &fixed_above) << (target + 1);
-        outer_iter(block);
-    }
+    crate::kernels::par_blocks(
+        outer_count,
+        len,
+        |k| crate::kernels::expand_with_fixed(k, &fixed_above) << (target + 1),
+        outer_iter,
+    );
 }
 
 /// Packed-complex AVX-512 Pauli-X kernel (Tier A).
@@ -646,9 +646,10 @@ unsafe fn apply_1q_x_avx512(amps: &mut [Complex], target: u32, controls: &[u32])
         "control at-or-below target: dispatch contract violated"
     );
 
-    let amps_ptr = amps.as_mut_ptr() as *mut f64;
+    let bp = crate::kernels::BlockPtr(amps.as_mut_ptr() as *mut f64);
 
     let outer_iter = |block: usize| {
+        let amps_ptr = bp.ptr();
         let mut j = 0usize;
         while j + LANES <= target_bit {
             let i0 = block | j;
@@ -665,11 +666,8 @@ unsafe fn apply_1q_x_avx512(amps: &mut [Complex], target: u32, controls: &[u32])
 
     if controls.is_empty() {
         let outer_step = target_bit << 1;
-        let mut block = 0usize;
-        while block < len {
-            outer_iter(block);
-            block += outer_step;
-        }
+        let count = len / outer_step;
+        crate::kernels::par_blocks(count, len, |k| k * outer_step, outer_iter);
         return;
     }
 
@@ -682,10 +680,12 @@ unsafe fn apply_1q_x_avx512(amps: &mut [Complex], target: u32, controls: &[u32])
 
     let n_qubits = len.trailing_zeros();
     let outer_count = 1usize << (n_qubits - target - 1 - controls.len() as u32);
-    for k in 0..outer_count {
-        let block = crate::kernels::expand_with_fixed(k, &fixed_above) << (target + 1);
-        outer_iter(block);
-    }
+    crate::kernels::par_blocks(
+        outer_count,
+        len,
+        |k| crate::kernels::expand_with_fixed(k, &fixed_above) << (target + 1),
+        outer_iter,
+    );
 }
 
 /// Packed-complex AVX-512 Pauli-Y kernel (Tier A).
@@ -753,9 +753,10 @@ unsafe fn apply_1q_y_avx512(amps: &mut [Complex], target: u32, controls: &[u32],
         )
     };
 
-    let amps_ptr = amps.as_mut_ptr() as *mut f64;
+    let bp = crate::kernels::BlockPtr(amps.as_mut_ptr() as *mut f64);
 
     let outer_iter = |block: usize| {
+        let amps_ptr = bp.ptr();
         let mut j = 0usize;
         while j + LANES <= target_bit {
             let i0 = block | j;
@@ -778,11 +779,8 @@ unsafe fn apply_1q_y_avx512(amps: &mut [Complex], target: u32, controls: &[u32],
 
     if controls.is_empty() {
         let outer_step = target_bit << 1;
-        let mut block = 0usize;
-        while block < len {
-            outer_iter(block);
-            block += outer_step;
-        }
+        let count = len / outer_step;
+        crate::kernels::par_blocks(count, len, |k| k * outer_step, outer_iter);
         return;
     }
 
@@ -797,10 +795,12 @@ unsafe fn apply_1q_y_avx512(amps: &mut [Complex], target: u32, controls: &[u32],
 
     let n_qubits = len.trailing_zeros();
     let outer_count = 1usize << (n_qubits - target - 1 - controls.len() as u32);
-    for k in 0..outer_count {
-        let block = crate::kernels::expand_with_fixed(k, &fixed_above) << (target + 1);
-        outer_iter(block);
-    }
+    crate::kernels::par_blocks(
+        outer_count,
+        len,
+        |k| crate::kernels::expand_with_fixed(k, &fixed_above) << (target + 1),
+        outer_iter,
+    );
 }
 
 /// Packed-complex AVX-512 generic anti-diagonal kernel (Tier A).
@@ -839,9 +839,10 @@ unsafe fn apply_1q_antidiag_avx512(
     let br = _mm512_set1_pd(b.re);
     let bi = _mm512_set1_pd(b.im);
 
-    let amps_ptr = amps.as_mut_ptr() as *mut f64;
+    let bp = crate::kernels::BlockPtr(amps.as_mut_ptr() as *mut f64);
 
     let outer_iter = |block: usize| {
+        let amps_ptr = bp.ptr();
         let mut j = 0usize;
         while j + LANES <= target_bit {
             let i0 = block | j;
@@ -870,11 +871,8 @@ unsafe fn apply_1q_antidiag_avx512(
 
     if controls.is_empty() {
         let outer_step = target_bit << 1;
-        let mut block = 0usize;
-        while block < len {
-            outer_iter(block);
-            block += outer_step;
-        }
+        let count = len / outer_step;
+        crate::kernels::par_blocks(count, len, |k| k * outer_step, outer_iter);
         return;
     }
 
@@ -886,10 +884,12 @@ unsafe fn apply_1q_antidiag_avx512(
 
     let n_qubits = len.trailing_zeros();
     let outer_count = 1usize << (n_qubits - target - 1 - controls.len() as u32);
-    for k in 0..outer_count {
-        let block = crate::kernels::expand_with_fixed(k, &fixed_above) << (target + 1);
-        outer_iter(block);
-    }
+    crate::kernels::par_blocks(
+        outer_count,
+        len,
+        |k| crate::kernels::expand_with_fixed(k, &fixed_above) << (target + 1),
+        outer_iter,
+    );
 }
 
 /// Packed-complex AVX-512 Pauli-X kernel — Tier B (target < LANES).
@@ -925,7 +925,7 @@ unsafe fn apply_1q_x_avx512_lowbit(amps: &mut [Complex], target: u32, controls: 
     );
     debug_assert_eq!(amps.len() % LANES, 0);
 
-    let amps_ptr = amps.as_mut_ptr() as *mut f64;
+    let bp = crate::kernels::BlockPtr(amps.as_mut_ptr() as *mut f64);
     let n_amps = amps.len();
 
     // Index vector for target=1 swap (pair0↔pair2, pair1↔pair3 within zmm).
@@ -941,8 +941,9 @@ unsafe fn apply_1q_x_avx512_lowbit(amps: &mut [Complex], target: u32, controls: 
         crate::kernels::control_mask(controls)
     };
 
-    let mut block = 0usize;
-    while block + LANES <= n_amps {
+    let count = n_amps / LANES;
+    crate::kernels::par_blocks(count, n_amps, |k| k * LANES, |block| {
+        let amps_ptr = bp.ptr();
         // Gate the block on the control bits: every control bit MUST
         // be set in `block`. Tier-B has `c > target` so `c ≥ 1` for
         // target=0 and `c ≥ 2` for target=1; ctrl bits never overlap
@@ -964,8 +965,7 @@ unsafe fn apply_1q_x_avx512_lowbit(amps: &mut [Complex], target: u32, controls: 
             };
             _mm512_storeu_pd(amps_ptr.add(block * 2), swapped);
         }
-        block += LANES;
-    }
+    });
 }
 
 /// Packed-complex AVX-512 Pauli-Y kernel — Tier B (target < LANES).
@@ -1018,7 +1018,7 @@ unsafe fn apply_1q_y_avx512_lowbit(
     debug_assert!(phase_sign == 1.0 || phase_sign == -1.0);
     debug_assert_eq!(amps.len() % LANES, 0);
 
-    let amps_ptr = amps.as_mut_ptr() as *mut f64;
+    let bp = crate::kernels::BlockPtr(amps.as_mut_ptr() as *mut f64);
     let n_amps = amps.len();
     let sign_bit = -0.0f64;
     let zero = 0.0f64;
@@ -1060,8 +1060,9 @@ unsafe fn apply_1q_y_avx512_lowbit(
         crate::kernels::control_mask(controls)
     };
 
-    let mut block = 0usize;
-    while block + LANES <= n_amps {
+    let count = n_amps / LANES;
+    crate::kernels::par_blocks(count, n_amps, |k| k * LANES, |block| {
+        let amps_ptr = bp.ptr();
         if controls.is_empty() || (block & ctrl_mask) == ctrl_mask {
             // SAFETY: in-bounds.
             let z = _mm512_loadu_pd(amps_ptr.add(block * 2));
@@ -1076,8 +1077,7 @@ unsafe fn apply_1q_y_avx512_lowbit(
             let out = _mm512_xor_pd(swapped_re_im, mask);
             _mm512_storeu_pd(amps_ptr.add(block * 2), out);
         }
-        block += LANES;
-    }
+    });
 }
 
 /// Packed-complex AVX-512 generic anti-diagonal kernel — Tier B
@@ -1146,11 +1146,12 @@ unsafe fn apply_1q_antidiag_avx512_lowbit(
         crate::kernels::control_mask(controls)
     };
 
-    let amps_ptr = amps.as_mut_ptr() as *mut f64;
+    let bp = crate::kernels::BlockPtr(amps.as_mut_ptr() as *mut f64);
     let n_amps = amps.len();
 
-    let mut block = 0usize;
-    while block + LANES <= n_amps {
+    let count = n_amps / LANES;
+    crate::kernels::par_blocks(count, n_amps, |k| k * LANES, |block| {
+        let amps_ptr = bp.ptr();
         if controls.is_empty() || (block & ctrl_mask) == ctrl_mask {
             // SAFETY: in-bounds.
             let z = _mm512_loadu_pd(amps_ptr.add(block * 2));
@@ -1173,8 +1174,7 @@ unsafe fn apply_1q_antidiag_avx512_lowbit(
             let out = _mm512_fmaddsub_pd(sr, permuted, t);
             _mm512_storeu_pd(amps_ptr.add(block * 2), out);
         }
-        block += LANES;
-    }
+    });
 }
 
 /// Scalar fallback for 2-qubit gate application.
