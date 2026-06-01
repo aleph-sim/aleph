@@ -21,6 +21,37 @@ use std::alloc::{self, Layout};
 /// exactly `LANES = 4` complex amplitudes, the AoS SIMD unit width.
 pub const CACHE_LINE: usize = 64;
 
+/// Page granularity for first-touch chunking. Keeping chunk boundaries on a
+/// page multiple stops a single page from being faulted by two workers (which
+/// would split its amplitudes across two NUMA nodes). 4 KiB is the base page
+/// on x86-64 and aarch64; this is a *granularity*, not an exactness claim —
+/// under transparent huge pages a boundary may land inside a larger page, a
+/// negligible placement nit that is never incorrect.
+#[cfg(feature = "numa")]
+// Used by `first_touch_chunk_len` and the parallel-init pass added in later P2-03 tasks.
+#[allow(dead_code)]
+const FIRST_TOUCH_PAGE: usize = 4096;
+
+/// Contiguous chunk length, in elements, for the first-touch parallel init.
+///
+/// Splits `[0, len)` into roughly `n_threads` contiguous chunks so each rayon
+/// worker faults one chunk's pages, then rounds the chunk up to a whole number
+/// of [`FIRST_TOUCH_PAGE`] pages so no page is split between two workers. Pure
+/// function of its inputs (no rayon / globals) so the partition is unit-testable
+/// without NUMA hardware. Returns at least one page of elements for `len > 0`.
+#[cfg(feature = "numa")]
+// Called by the parallel-init pass added in later P2-03 tasks and by the test below.
+#[allow(dead_code)]
+fn first_touch_chunk_len(len: usize, n_threads: usize, elem_size: usize) -> usize {
+    debug_assert!(len > 0 && n_threads > 0 && elem_size > 0);
+    // Elements per page (≥ 1; an element larger than a page degenerates to
+    // per-element granularity, which is the finest useful split).
+    let per_page = (FIRST_TOUCH_PAGE / elem_size).max(1);
+    let target = len.div_ceil(n_threads); // ~equal contiguous chunks
+    let chunk = target.div_ceil(per_page) * per_page; // round up to whole pages
+    chunk.max(per_page)
+}
+
 /// A fixed-size, `CACHE_LINE`-aligned, owned heap buffer of `T`.
 ///
 /// See the module docs for the element-type contract (POD/`Copy`, no
@@ -275,5 +306,41 @@ mod tests {
         let buf = AlignedBuf::<crate::Complex>::from_slice(&src);
         assert_eq!(&*buf, &src);
         assert_eq!(buf.as_ptr() as usize % CACHE_LINE, 0);
+    }
+
+    #[cfg(feature = "numa")]
+    #[test]
+    fn first_touch_partition_covers_range_once() {
+        // (len, n_threads, elem_size) — Complex is 16 B, f64 is 8 B.
+        let cases = [
+            (1usize, 1usize, 16usize),
+            (1, 8, 16),
+            (1000, 4, 16),
+            (1 << 20, 8, 16),        // 1M Complex, 8 threads
+            (1 << 20, 20, 8),        // 1M f64, 20 threads (Xeon core count)
+            ((1 << 20) + 7, 6, 16),  // non-page-multiple len
+            (300, 16, 8),            // many threads, tiny len
+        ];
+        for (len, nt, es) in cases {
+            let chunk = first_touch_chunk_len(len, nt, es);
+            assert!(chunk > 0, "chunk must be positive: len={len} nt={nt} es={es}");
+            let per_page = (FIRST_TOUCH_PAGE / es).max(1);
+            assert_eq!(chunk % per_page, 0, "chunk {chunk} not page-aligned (es={es})");
+
+            // Reconstruct the chunks: contiguous, disjoint, exact cover of [0,len).
+            let n_chunks = len.div_ceil(chunk);
+            let mut prev_end = 0usize;
+            let mut covered = 0usize;
+            for c in 0..n_chunks {
+                let start = c * chunk;
+                let end = (start + chunk).min(len);
+                assert_eq!(start, prev_end, "gap/overlap before chunk {c}");
+                assert!(start < end, "empty chunk {c}");
+                covered += end - start;
+                prev_end = end;
+            }
+            assert_eq!(prev_end, len, "partition did not reach len={len}");
+            assert_eq!(covered, len, "coverage {covered} != len {len}");
+        }
     }
 }
