@@ -63,13 +63,45 @@ Expected ordering: **first-touch ≥ interleave > baseline**.
 
 ## Results — 2-socket Intel Xeon Silver 4114 (2× 10C/20T, 2 NUMA nodes)
 
-> **Pending measurement on the Xeon (P2-03 Task 9).** Both current bench boxes
-> (EPYC 8124P, Ryzen 9 3900) are single NUMA node and cannot exhibit a NUMA
-> effect; the EPYC reports `available: 1 nodes (0)`. The table below is filled
-> from the real 2-socket run before the PR merges.
+Measured 2026-06-01 on a 2-socket Xeon Silver 4114 (2 NUMA nodes, `node
+distances` 10/21 ≈ 2.1× remote penalty, 40 logical CPUs, 123 GB). Workload:
+`qft_scaling` (QFT through the AoS+AVX-512 `NaiveSvBackend`, `target-cpu=native`)
+at `RAYON_NUM_THREADS=40` so both sockets are fully engaged. Criterion
+`sample_size = 10`; each policy compared to the baseline via `--baseline`.
+Allocation happens inside the timed path, so first-touch's upfront parallel-zero
+cost is included in these numbers, not hidden.
 
-| Workload | Baseline (node 0) | Interleave | First-touch (Tier 1) | First-touch + pin (Tier 2) |
-|----------|------------------:|-----------:|---------------------:|---------------------------:|
-| _TBD_    | _TBD_             | _TBD_      | _TBD_                | _TBD_                      |
+The EPYC 8124P and Ryzen 9 3900 bench boxes are single NUMA node and cannot
+exhibit any NUMA effect (the EPYC reports `available: 1 nodes (0)`); this is why
+the measurement runs on the 2-socket Xeon.
+
+The box was verified idle before this run — in particular `cat /proc/mdstat`
+showed no RAID resync (an earlier run was discarded because the NVMe RAID1 was
+mid-resync at ~205 MB/s, contaminating a bandwidth-bound benchmark).
+
+| Workload (n=25, 512 MiB) | Median time | vs baseline |
+|--------------------------|------------:|------------:|
+| Baseline (default alloc, all pages on node 0) | 5.496 s | — |
+| Interleave (`numactl --interleave=all`)       | 3.747 s | **−31.8 %** (1.47×) |
+| First-touch, Tier 1 (no pinning)              | 3.426 s | **−37.7 %** (1.60×) |
+| First-touch, Tier 2 (`numactl --localalloc`)  | 3.432 s | **−37.6 %** (1.60×) |
+
+| Workload (n=22, 64 MiB) | Median time | vs baseline |
+|-------------------------|------------:|------------:|
+| Baseline                | 471.0 ms | — |
+| Interleave              | 386.3 ms | −18.0 % |
+| First-touch, Tier 1     | 336.5 ms | −28.6 % |
+| First-touch, Tier 2     | 340.7 ms | −27.7 % |
+
+All non-baseline changes are statistically significant (criterion `p = 0.00 <
+0.05`). The ordering **first-touch ≥ interleave > baseline** holds, and notably
+first-touch **beats interleave even without pinning** (Tier 1, −37.7 % vs
+−31.8 % at n=25): the parallel init already spreads pages across both nodes *and*
+biases each page toward the worker that faults it. External `--localalloc`
+pinning (Tier 2) adds nothing beyond Tier 1 (−37.6 % vs −37.7 %, within noise),
+so in-process per-worker affinity was not needed (kept out of scope — see P2-03
+design §5). The effect grows with state size (−37.7 % at 512 MiB vs −28.6 % at
+64 MiB), consistent with the bandwidth-wall analysis (ADR 0008): the larger the
+state, the more of each gate sweep hits remote memory under the node-0 baseline.
 
 [`AlignedBuf::zeroed_first_touch`]: ../crates/aleph-core/src/aligned.rs

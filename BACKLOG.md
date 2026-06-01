@@ -1264,9 +1264,9 @@ On multi-socket NUMA, accessing remote memory is 2–3× slower than local. Defa
 
 **Acceptance Criteria**
 
-- [ ] NUMA-aware build option
-- [ ] Benchmark on 2-socket machine: improvement over default allocator
-- [ ] Documentation on enabling
+- [x] NUMA-aware build option — non-default `numa` cargo feature (`aleph-core`/`aleph-sv`); `AlignedBuf::zeroed_first_touch` parallel first-touch init.
+- [x] Benchmark on 2-socket machine: improvement over default allocator — Xeon Silver 4114 (2 NUMA nodes), QFT-25 first-touch **−37.7 %** vs default allocator (and beats interleave's −31.8 %); see `docs/numa.md`.
+- [x] Documentation on enabling — `docs/numa.md` (enable, locality contract, interleave fallback, results) + `scripts/numa-bench.sh`.
 
 **Testing Requirements**
 
