@@ -2280,11 +2280,13 @@ unsafe fn apply_1q_x_soa_avx512(re: &mut [f64], im: &mut [f64], target: u32, con
     debug_assert!(target_bit >= LANES);
     debug_assert!(controls.iter().all(|&c| c > target));
 
-    let re_ptr = re.as_mut_ptr();
-    let im_ptr = im.as_mut_ptr();
+    let re_bp = crate::kernels::BlockPtr(re.as_mut_ptr());
+    let im_bp = crate::kernels::BlockPtr(im.as_mut_ptr());
     let len = re.len();
 
     let outer_iter = |block: usize| {
+        let re_ptr = re_bp.ptr();
+        let im_ptr = im_bp.ptr();
         let mut j = 0usize;
         while j + LANES <= target_bit {
             let i0 = block | j;
@@ -2305,11 +2307,8 @@ unsafe fn apply_1q_x_soa_avx512(re: &mut [f64], im: &mut [f64], target: u32, con
 
     if controls.is_empty() {
         let outer_step = target_bit << 1;
-        let mut block = 0usize;
-        while block < len {
-            outer_iter(block);
-            block += outer_step;
-        }
+        let count = len / outer_step;
+        crate::kernels::par_blocks(count, len, |k| k * outer_step, outer_iter);
         return;
     }
 
@@ -2321,10 +2320,12 @@ unsafe fn apply_1q_x_soa_avx512(re: &mut [f64], im: &mut [f64], target: u32, con
 
     let n_qubits = len.trailing_zeros();
     let outer_count = 1usize << (n_qubits - target - 1 - controls.len() as u32);
-    for k in 0..outer_count {
-        let block = crate::kernels::expand_with_fixed(k, &fixed_above) << (target + 1);
-        outer_iter(block);
-    }
+    crate::kernels::par_blocks(
+        outer_count,
+        len,
+        |k| crate::kernels::expand_with_fixed(k, &fixed_above) << (target + 1),
+        outer_iter,
+    );
 }
 
 /// AVX-512 Pauli-Y on SoA streams (Tier A).
@@ -2368,11 +2369,13 @@ unsafe fn apply_1q_y_soa_avx512(
         (sign_mask, zero_mask, zero_mask, sign_mask)
     };
 
-    let re_ptr = re.as_mut_ptr();
-    let im_ptr = im.as_mut_ptr();
+    let re_bp = crate::kernels::BlockPtr(re.as_mut_ptr());
+    let im_bp = crate::kernels::BlockPtr(im.as_mut_ptr());
     let len = re.len();
 
     let outer_iter = |block: usize| {
+        let re_ptr = re_bp.ptr();
+        let im_ptr = im_bp.ptr();
         let mut j = 0usize;
         while j + LANES <= target_bit {
             let i0 = block | j;
@@ -2393,11 +2396,8 @@ unsafe fn apply_1q_y_soa_avx512(
 
     if controls.is_empty() {
         let outer_step = target_bit << 1;
-        let mut block = 0usize;
-        while block < len {
-            outer_iter(block);
-            block += outer_step;
-        }
+        let count = len / outer_step;
+        crate::kernels::par_blocks(count, len, |k| k * outer_step, outer_iter);
         return;
     }
 
@@ -2409,10 +2409,12 @@ unsafe fn apply_1q_y_soa_avx512(
 
     let n_qubits = len.trailing_zeros();
     let outer_count = 1usize << (n_qubits - target - 1 - controls.len() as u32);
-    for k in 0..outer_count {
-        let block = crate::kernels::expand_with_fixed(k, &fixed_above) << (target + 1);
-        outer_iter(block);
-    }
+    crate::kernels::par_blocks(
+        outer_count,
+        len,
+        |k| crate::kernels::expand_with_fixed(k, &fixed_above) << (target + 1),
+        outer_iter,
+    );
 }
 
 /// AVX-512 generic anti-diagonal on SoA streams (Tier A).
@@ -2449,11 +2451,13 @@ unsafe fn apply_1q_antidiag_soa_avx512(
     let br = _mm512_set1_pd(b.re);
     let bi = _mm512_set1_pd(b.im);
 
-    let re_ptr = re.as_mut_ptr();
-    let im_ptr = im.as_mut_ptr();
+    let re_bp = crate::kernels::BlockPtr(re.as_mut_ptr());
+    let im_bp = crate::kernels::BlockPtr(im.as_mut_ptr());
     let len = re.len();
 
     let outer_iter = |block: usize| {
+        let re_ptr = re_bp.ptr();
+        let im_ptr = im_bp.ptr();
         let mut j = 0usize;
         while j + LANES <= target_bit {
             let i0 = block | j;
@@ -2486,11 +2490,8 @@ unsafe fn apply_1q_antidiag_soa_avx512(
 
     if controls.is_empty() {
         let outer_step = target_bit << 1;
-        let mut block = 0usize;
-        while block < len {
-            outer_iter(block);
-            block += outer_step;
-        }
+        let count = len / outer_step;
+        crate::kernels::par_blocks(count, len, |k| k * outer_step, outer_iter);
         return;
     }
 
@@ -2502,10 +2503,12 @@ unsafe fn apply_1q_antidiag_soa_avx512(
 
     let n_qubits = len.trailing_zeros();
     let outer_count = 1usize << (n_qubits - target - 1 - controls.len() as u32);
-    for k in 0..outer_count {
-        let block = crate::kernels::expand_with_fixed(k, &fixed_above) << (target + 1);
-        outer_iter(block);
-    }
+    crate::kernels::par_blocks(
+        outer_count,
+        len,
+        |k| crate::kernels::expand_with_fixed(k, &fixed_above) << (target + 1),
+        outer_iter,
+    );
 }
 
 /// AVX-512 Pauli-X on SoA streams (Tier B): `target ∈ {0, 1, 2}`.
@@ -2566,12 +2569,14 @@ unsafe fn apply_1q_x_soa_avx512_lowbit(
         crate::kernels::control_mask(controls)
     };
 
-    let re_ptr = re.as_mut_ptr();
-    let im_ptr = im.as_mut_ptr();
+    let re_bp = crate::kernels::BlockPtr(re.as_mut_ptr());
+    let im_bp = crate::kernels::BlockPtr(im.as_mut_ptr());
     let len = re.len();
 
-    let mut block = 0usize;
-    while block + LANES <= len {
+    let count = len / LANES;
+    crate::kernels::par_blocks(count, len, |k| k * LANES, |block| {
+        let re_ptr = re_bp.ptr();
+        let im_ptr = im_bp.ptr();
         if (block & ctrl_mask) == ctrl_mask {
             // SAFETY: in-bounds — block + LANES ≤ len by loop invariant.
             let r = _mm512_loadu_pd(re_ptr.add(block));
@@ -2588,8 +2593,7 @@ unsafe fn apply_1q_x_soa_avx512_lowbit(
             _mm512_storeu_pd(re_ptr.add(block), r_p);
             _mm512_storeu_pd(im_ptr.add(block), m_p);
         }
-        block += LANES;
-    }
+    });
 }
 
 // Tier-B Y and generic anti-diag SoA: NOT a separate SIMD kernel.
