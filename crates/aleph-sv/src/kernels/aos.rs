@@ -281,9 +281,10 @@ pub unsafe fn apply_1q_avx512(
     let m11r = _mm512_set1_pd(m[1][1].re);
     let m11i = _mm512_set1_pd(m[1][1].im);
 
-    let amps_ptr = amps.as_mut_ptr() as *mut f64;
+    let bp = crate::kernels::BlockPtr(amps.as_mut_ptr() as *mut f64);
 
     let outer_iter = |block: usize| {
+        let amps_ptr = bp.0;
         let mut j = 0usize;
         while j + LANES <= target_bit {
             let i0 = block | j;
@@ -332,11 +333,8 @@ pub unsafe fn apply_1q_avx512(
 
     if controls.is_empty() {
         let outer_step = target_bit << 1;
-        let mut block = 0usize;
-        while block < len {
-            outer_iter(block);
-            block += outer_step;
-        }
+        let count = len / outer_step;
+        crate::kernels::par_blocks(count, len, |k| k * outer_step, outer_iter);
         return;
     }
 
@@ -362,10 +360,12 @@ pub unsafe fn apply_1q_avx512(
     // < n_qubits, all controls > target, so
     // `target + 1 + controls.len() ≤ n_qubits`.
     let outer_count = 1usize << (n_qubits - target - 1 - controls.len() as u32);
-    for k in 0..outer_count {
-        let block = crate::kernels::expand_with_fixed(k, &fixed_above) << (target + 1);
-        outer_iter(block);
-    }
+    crate::kernels::par_blocks(
+        outer_count,
+        len,
+        |k| crate::kernels::expand_with_fixed(k, &fixed_above) << (target + 1),
+        outer_iter,
+    );
 }
 
 /// Scalar fallback for the 1q diagonal fast path.
