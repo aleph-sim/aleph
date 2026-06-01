@@ -190,7 +190,10 @@ impl<T> AlignedBuf<T> {
         {
             use rayon::prelude::*;
             (0..n_chunks).into_par_iter().for_each(|c| {
-                let base = send; // Copy the Send wrapper into the task.
+                // Bind the whole wrapper, NOT `send.0`: Rust-2021 precise capture
+                // would otherwise grab the bare `*mut T` field (which is neither
+                // `Send` nor `Sync`) and the closure would fail to be `Send`.
+                let base = send;
                 let start = c * chunk;
                 let end = (start + chunk).min(len);
                 // SAFETY: `first_touch_chunk_len`'s chunks are pairwise-disjoint and
