@@ -1,7 +1,8 @@
 //! `SoaSvBackend` — struct-of-arrays CPU state-vector backend.
 //!
 //! Mirrors `NaiveSvBackend` (P0-09) but stores amplitudes as paired
-//! `Vec<f64>` for SIMD-friendly memory access. Same validation
+//! `AlignedBuf<f64>` (64-byte-aligned, P2-02) for SIMD-friendly memory
+//! access. Same validation
 //! discipline; same unitarity guard; dispatches to `kernels::soa`
 //! rather than `kernels::aos`.
 
