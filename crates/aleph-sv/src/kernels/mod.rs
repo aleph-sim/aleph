@@ -1275,9 +1275,14 @@ mod par_tests {
     fn coverage(count: usize, force_parallel: bool) -> Vec<usize> {
         let hits: Vec<AtomicUsize> = (0..count).map(|_| AtomicUsize::new(0)).collect();
         let len = if force_parallel { usize::MAX } else { 0 };
-        par_blocks(count, len, |k| k, |slot| {
-            hits[slot].fetch_add(1, Ordering::Relaxed);
-        });
+        par_blocks(
+            count,
+            len,
+            |k| k,
+            |slot| {
+                hits[slot].fetch_add(1, Ordering::Relaxed);
+            },
+        );
         hits.iter().map(|a| a.load(Ordering::Relaxed)).collect()
     }
 

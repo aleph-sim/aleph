@@ -949,30 +949,35 @@ unsafe fn apply_1q_x_avx512_lowbit(amps: &mut [Complex], target: u32, controls: 
     };
 
     let count = n_amps / LANES;
-    crate::kernels::par_blocks(count, n_amps, |k| k * LANES, |block| {
-        let amps_ptr = bp.ptr();
-        // Gate the block on the control bits: every control bit MUST
-        // be set in `block`. Tier-B has `c > target` so `c ≥ 1` for
-        // target=0 and `c ≥ 2` for target=1; ctrl bits never overlap
-        // the in-register swap region.
-        if controls.is_empty() || (block & ctrl_mask) == ctrl_mask {
-            // SAFETY: block + LANES ≤ n_amps.
-            let z = _mm512_loadu_pd(amps_ptr.add(block * 2));
-            let swapped = if target == 0 {
-                // _mm512_permutex_pd::<0x4E>: immediate 0x4E = 0b01001110.
-                // Each pair of bits selects which of the 4 f64-doubles within
-                // each 256-bit half goes to each output position.
-                // [2,3,0,1, 2,3,0,1] in the lo/hi 256-bit lanes → swaps pair0↔pair1
-                // and pair2↔pair3 within each zmm.
-                _mm512_permutex_pd::<0x4E>(z)
-            } else {
-                // idx_t1 = [4,5,6,7, 0,1,2,3] (lane-index order) →
-                // swaps pair0↔pair2 and pair1↔pair3.
-                _mm512_permutexvar_pd(idx_t1, z)
-            };
-            _mm512_storeu_pd(amps_ptr.add(block * 2), swapped);
-        }
-    });
+    crate::kernels::par_blocks(
+        count,
+        n_amps,
+        |k| k * LANES,
+        |block| {
+            let amps_ptr = bp.ptr();
+            // Gate the block on the control bits: every control bit MUST
+            // be set in `block`. Tier-B has `c > target` so `c ≥ 1` for
+            // target=0 and `c ≥ 2` for target=1; ctrl bits never overlap
+            // the in-register swap region.
+            if controls.is_empty() || (block & ctrl_mask) == ctrl_mask {
+                // SAFETY: block + LANES ≤ n_amps.
+                let z = _mm512_loadu_pd(amps_ptr.add(block * 2));
+                let swapped = if target == 0 {
+                    // _mm512_permutex_pd::<0x4E>: immediate 0x4E = 0b01001110.
+                    // Each pair of bits selects which of the 4 f64-doubles within
+                    // each 256-bit half goes to each output position.
+                    // [2,3,0,1, 2,3,0,1] in the lo/hi 256-bit lanes → swaps pair0↔pair1
+                    // and pair2↔pair3 within each zmm.
+                    _mm512_permutex_pd::<0x4E>(z)
+                } else {
+                    // idx_t1 = [4,5,6,7, 0,1,2,3] (lane-index order) →
+                    // swaps pair0↔pair2 and pair1↔pair3.
+                    _mm512_permutexvar_pd(idx_t1, z)
+                };
+                _mm512_storeu_pd(amps_ptr.add(block * 2), swapped);
+            }
+        },
+    );
 }
 
 /// Packed-complex AVX-512 Pauli-Y kernel — Tier B (target < LANES).
@@ -1068,23 +1073,28 @@ unsafe fn apply_1q_y_avx512_lowbit(
     };
 
     let count = n_amps / LANES;
-    crate::kernels::par_blocks(count, n_amps, |k| k * LANES, |block| {
-        let amps_ptr = bp.ptr();
-        if controls.is_empty() || (block & ctrl_mask) == ctrl_mask {
-            // SAFETY: in-bounds.
-            let z = _mm512_loadu_pd(amps_ptr.add(block * 2));
-            let permuted = if target == 0 {
-                _mm512_permutex_pd::<0x4E>(z)
-            } else {
-                _mm512_permutexvar_pd(idx_t1, z)
-            };
-            // Swap (re, im) → (im, re) per pair.
-            let swapped_re_im = _mm512_permute_pd::<0x55>(permuted);
-            let mask = if target == 0 { mask_t0 } else { mask_t1 };
-            let out = _mm512_xor_pd(swapped_re_im, mask);
-            _mm512_storeu_pd(amps_ptr.add(block * 2), out);
-        }
-    });
+    crate::kernels::par_blocks(
+        count,
+        n_amps,
+        |k| k * LANES,
+        |block| {
+            let amps_ptr = bp.ptr();
+            if controls.is_empty() || (block & ctrl_mask) == ctrl_mask {
+                // SAFETY: in-bounds.
+                let z = _mm512_loadu_pd(amps_ptr.add(block * 2));
+                let permuted = if target == 0 {
+                    _mm512_permutex_pd::<0x4E>(z)
+                } else {
+                    _mm512_permutexvar_pd(idx_t1, z)
+                };
+                // Swap (re, im) → (im, re) per pair.
+                let swapped_re_im = _mm512_permute_pd::<0x55>(permuted);
+                let mask = if target == 0 { mask_t0 } else { mask_t1 };
+                let out = _mm512_xor_pd(swapped_re_im, mask);
+                _mm512_storeu_pd(amps_ptr.add(block * 2), out);
+            }
+        },
+    );
 }
 
 /// Packed-complex AVX-512 generic anti-diagonal kernel — Tier B
@@ -1157,31 +1167,36 @@ unsafe fn apply_1q_antidiag_avx512_lowbit(
     let n_amps = amps.len();
 
     let count = n_amps / LANES;
-    crate::kernels::par_blocks(count, n_amps, |k| k * LANES, |block| {
-        let amps_ptr = bp.ptr();
-        if controls.is_empty() || (block & ctrl_mask) == ctrl_mask {
-            // SAFETY: in-bounds.
-            let z = _mm512_loadu_pd(amps_ptr.add(block * 2));
-            let permuted = if target == 0 {
-                _mm512_permutex_pd::<0x4E>(z)
-            } else {
-                _mm512_permutexvar_pd(idx_t1, z)
-            };
-            let (sr, si) = if target == 0 {
-                (sr_t0, si_t0)
-            } else {
-                (sr_t1, si_t1)
-            };
-            // Complex multiply: z' = sr * permuted ± si * permilpd<0x55>(permuted)
-            // fmaddsub(a, b, c) = (a·b - c, a·b + c, ...) alternating.
-            // Even lanes (re_out): sr*re - si*im ✓
-            // Odd  lanes (im_out): sr*im + si*re ✓
-            let zs = _mm512_permute_pd::<0x55>(permuted);
-            let t = _mm512_mul_pd(si, zs);
-            let out = _mm512_fmaddsub_pd(sr, permuted, t);
-            _mm512_storeu_pd(amps_ptr.add(block * 2), out);
-        }
-    });
+    crate::kernels::par_blocks(
+        count,
+        n_amps,
+        |k| k * LANES,
+        |block| {
+            let amps_ptr = bp.ptr();
+            if controls.is_empty() || (block & ctrl_mask) == ctrl_mask {
+                // SAFETY: in-bounds.
+                let z = _mm512_loadu_pd(amps_ptr.add(block * 2));
+                let permuted = if target == 0 {
+                    _mm512_permutex_pd::<0x4E>(z)
+                } else {
+                    _mm512_permutexvar_pd(idx_t1, z)
+                };
+                let (sr, si) = if target == 0 {
+                    (sr_t0, si_t0)
+                } else {
+                    (sr_t1, si_t1)
+                };
+                // Complex multiply: z' = sr * permuted ± si * permilpd<0x55>(permuted)
+                // fmaddsub(a, b, c) = (a·b - c, a·b + c, ...) alternating.
+                // Even lanes (re_out): sr*re - si*im ✓
+                // Odd  lanes (im_out): sr*im + si*re ✓
+                let zs = _mm512_permute_pd::<0x55>(permuted);
+                let t = _mm512_mul_pd(si, zs);
+                let out = _mm512_fmaddsub_pd(sr, permuted, t);
+                _mm512_storeu_pd(amps_ptr.add(block * 2), out);
+            }
+        },
+    );
 }
 
 /// Scalar fallback for 2-qubit gate application.
@@ -2848,28 +2863,33 @@ unsafe fn apply_toffoli_avx512_tier_a(amps: &mut [Complex], target: u32, sorted_
     // we always load from the lo-half and its partner simultaneously).
     // Skip blocks where any control bit is clear (gate does not fire).
     let count = len / LANES;
-    crate::kernels::par_blocks(count, len, |k| k * LANES, |block_base| {
-        let amps_ptr = bp.ptr();
-        if (block_base & target_bit) != 0 {
-            // Already the hi half — the lo-half iteration handles this pair.
-            return;
-        }
-        if (block_base & ctrl_mask) != ctrl_mask {
-            // Not all controls set — gate does not fire here.
-            return;
-        }
-        // SAFETY: `block_base & target_bit == 0` and all control bits set.
-        // `block_base + LANES <= block_base | target_bit < len` because the
-        // state vector has a full power-of-two length and target_bit ≥ LANES.
-        // The hi-half `block_base | target_bit` is similarly within bounds.
-        // Both pointers are multiplied by 2 (f64 offset = amp_index * 2).
-        let lo_ptr = amps_ptr.add(block_base * 2);
-        let hi_ptr = amps_ptr.add((block_base | target_bit) * 2);
-        let z_lo = _mm512_loadu_pd(lo_ptr);
-        let z_hi = _mm512_loadu_pd(hi_ptr);
-        _mm512_storeu_pd(lo_ptr, z_hi);
-        _mm512_storeu_pd(hi_ptr, z_lo);
-    });
+    crate::kernels::par_blocks(
+        count,
+        len,
+        |k| k * LANES,
+        |block_base| {
+            let amps_ptr = bp.ptr();
+            if (block_base & target_bit) != 0 {
+                // Already the hi half — the lo-half iteration handles this pair.
+                return;
+            }
+            if (block_base & ctrl_mask) != ctrl_mask {
+                // Not all controls set — gate does not fire here.
+                return;
+            }
+            // SAFETY: `block_base & target_bit == 0` and all control bits set.
+            // `block_base + LANES <= block_base | target_bit < len` because the
+            // state vector has a full power-of-two length and target_bit ≥ LANES.
+            // The hi-half `block_base | target_bit` is similarly within bounds.
+            // Both pointers are multiplied by 2 (f64 offset = amp_index * 2).
+            let lo_ptr = amps_ptr.add(block_base * 2);
+            let hi_ptr = amps_ptr.add((block_base | target_bit) * 2);
+            let z_lo = _mm512_loadu_pd(lo_ptr);
+            let z_hi = _mm512_loadu_pd(hi_ptr);
+            _mm512_storeu_pd(lo_ptr, z_hi);
+            _mm512_storeu_pd(hi_ptr, z_lo);
+        },
+    );
 }
 
 /// Tier-A outer-walk variant for Toffoli (CCX): handles controls
@@ -2940,28 +2960,33 @@ unsafe fn apply_toffoli_avx512_tier_a_outer_walk(
     // without the `c_lo > target` restriction. The mask check handles
     // both above-target and below-target control bits uniformly.
     let count = len / LANES;
-    crate::kernels::par_blocks(count, len, |k| k * LANES, |block_base| {
-        let amps_ptr = bp.ptr();
-        if (block_base & target_bit) != 0 {
-            // Hi-half block — the lo-half iteration handles this pair.
-            return;
-        }
-        if (block_base & ctrl_mask) != ctrl_mask {
-            // Not all controls set — gate does not fire here.
-            return;
-        }
-        // SAFETY: `block_base & target_bit == 0` and all control bits set.
-        // `block_base + LANES <= block_base | target_bit < len` because the
-        // state vector has a full power-of-two length and target_bit ≥ LANES.
-        // The hi-half `block_base | target_bit` is similarly within bounds.
-        // Both pointers are multiplied by 2 (f64 offset = amp_index * 2).
-        let lo_ptr = amps_ptr.add(block_base * 2);
-        let hi_ptr = amps_ptr.add((block_base | target_bit) * 2);
-        let z_lo = _mm512_loadu_pd(lo_ptr);
-        let z_hi = _mm512_loadu_pd(hi_ptr);
-        _mm512_storeu_pd(lo_ptr, z_hi);
-        _mm512_storeu_pd(hi_ptr, z_lo);
-    });
+    crate::kernels::par_blocks(
+        count,
+        len,
+        |k| k * LANES,
+        |block_base| {
+            let amps_ptr = bp.ptr();
+            if (block_base & target_bit) != 0 {
+                // Hi-half block — the lo-half iteration handles this pair.
+                return;
+            }
+            if (block_base & ctrl_mask) != ctrl_mask {
+                // Not all controls set — gate does not fire here.
+                return;
+            }
+            // SAFETY: `block_base & target_bit == 0` and all control bits set.
+            // `block_base + LANES <= block_base | target_bit < len` because the
+            // state vector has a full power-of-two length and target_bit ≥ LANES.
+            // The hi-half `block_base | target_bit` is similarly within bounds.
+            // Both pointers are multiplied by 2 (f64 offset = amp_index * 2).
+            let lo_ptr = amps_ptr.add(block_base * 2);
+            let hi_ptr = amps_ptr.add((block_base | target_bit) * 2);
+            let z_lo = _mm512_loadu_pd(lo_ptr);
+            let z_hi = _mm512_loadu_pd(hi_ptr);
+            _mm512_storeu_pd(lo_ptr, z_hi);
+            _mm512_storeu_pd(hi_ptr, z_lo);
+        },
+    );
 }
 
 /// Toffoli Tier-B.0: target=0 (within-LANES), in-zmm permute swap.
@@ -3263,21 +3288,26 @@ unsafe fn apply_ccz_avx512_tier_a(amps: &mut [Complex], mask_bits: &[u32]) {
     let sign_mask = _mm512_set1_pd(-0.0_f64);
 
     let count = len / LANES;
-    crate::kernels::par_blocks(count, len, |k| k * LANES, |block_base| {
-        let amps_ptr = bp.ptr();
-        if (block_base & mask) != mask {
-            return;
-        }
-        // SAFETY: block_base + LANES ≤ len because mask_bits are all ≥ 2,
-        // so mask_lo ≥ 4 > LANES; the amplitude count between any two
-        // consecutive matching block_base values is a multiple of LANES.
-        // The state vector length is 1 << n ≥ 8 (n ≥ 3) and is a multiple
-        // of LANES. `amps_ptr.add(block_base * 2)` is within bounds.
-        let p = amps_ptr.add(block_base * 2);
-        let z = _mm512_loadu_pd(p);
-        let neg = _mm512_xor_pd(z, sign_mask);
-        _mm512_storeu_pd(p, neg);
-    });
+    crate::kernels::par_blocks(
+        count,
+        len,
+        |k| k * LANES,
+        |block_base| {
+            let amps_ptr = bp.ptr();
+            if (block_base & mask) != mask {
+                return;
+            }
+            // SAFETY: block_base + LANES ≤ len because mask_bits are all ≥ 2,
+            // so mask_lo ≥ 4 > LANES; the amplitude count between any two
+            // consecutive matching block_base values is a multiple of LANES.
+            // The state vector length is 1 << n ≥ 8 (n ≥ 3) and is a multiple
+            // of LANES. `amps_ptr.add(block_base * 2)` is within bounds.
+            let p = amps_ptr.add(block_base * 2);
+            let z = _mm512_loadu_pd(p);
+            let neg = _mm512_xor_pd(z, sign_mask);
+            _mm512_storeu_pd(p, neg);
+        },
+    );
 }
 
 /// CCZ Tier-A outer-walk: handles mask bits below LANES_BITS via
@@ -3347,23 +3377,28 @@ unsafe fn apply_ccz_avx512_tier_a_outer_walk(amps: &mut [Complex], mask_bits: &[
     let sign = _mm512_set1_pd(-0.0_f64);
 
     let count = len / LANES;
-    crate::kernels::par_blocks(count, len, |k| k * LANES, |block_base| {
-        let amps_ptr = bp.ptr();
-        // High mask bits must be satisfied at block level (uniform within block).
-        if (block_base & mask_high) != mask_high {
-            return;
-        }
-        // SAFETY: block_base + LANES ≤ len because amps.len() is a power of two
-        // and block_base is always LANES-aligned. `amps_ptr.add(block_base * 2)`
-        // is within bounds because block_base < len.
-        let p = amps_ptr.add(block_base * 2);
-        let z = _mm512_loadu_pd(p);
-        let neg = _mm512_xor_pd(z, sign);
-        // _mm512_mask_blend_pd(mask, a, b): selects b where bit=1, a where bit=0.
-        // lane_mask=1 → take neg (flipped); lane_mask=0 → take z (unchanged).
-        let blended = _mm512_mask_blend_pd(lane_mask, z, neg);
-        _mm512_storeu_pd(p, blended);
-    });
+    crate::kernels::par_blocks(
+        count,
+        len,
+        |k| k * LANES,
+        |block_base| {
+            let amps_ptr = bp.ptr();
+            // High mask bits must be satisfied at block level (uniform within block).
+            if (block_base & mask_high) != mask_high {
+                return;
+            }
+            // SAFETY: block_base + LANES ≤ len because amps.len() is a power of two
+            // and block_base is always LANES-aligned. `amps_ptr.add(block_base * 2)`
+            // is within bounds because block_base < len.
+            let p = amps_ptr.add(block_base * 2);
+            let z = _mm512_loadu_pd(p);
+            let neg = _mm512_xor_pd(z, sign);
+            // _mm512_mask_blend_pd(mask, a, b): selects b where bit=1, a where bit=0.
+            // lane_mask=1 → take neg (flipped); lane_mask=0 → take z (unchanged).
+            let blended = _mm512_mask_blend_pd(lane_mask, z, neg);
+            _mm512_storeu_pd(p, blended);
+        },
+    );
 }
 
 /// Routes CCZ to the best available tier (spec §5).

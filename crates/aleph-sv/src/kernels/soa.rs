@@ -206,29 +206,34 @@ unsafe fn apply_toffoli_avx512_tier_a_soa(
     let im_bp = crate::kernels::BlockPtr(im.as_mut_ptr());
 
     let count = len / LANES_SOA;
-    crate::kernels::par_blocks(count, len, |k| k * LANES_SOA, |block_base| {
-        let re_ptr = re_bp.ptr();
-        let im_ptr = im_bp.ptr();
-        if (block_base & target_bit) != 0 {
-            return;
-        }
-        if (block_base & ctrl_mask) != ctrl_mask {
-            return;
-        }
-        // SAFETY: block_base & target_bit == 0, all control bits set.
-        // target_bit >= LANES_SOA ensures block_base | target_bit ≥
-        // block_base + LANES_SOA; both windows are within [0, len).
-        let lo = block_base;
-        let hi = block_base | target_bit;
-        let ar = _mm512_loadu_pd(re_ptr.add(lo));
-        let ai = _mm512_loadu_pd(im_ptr.add(lo));
-        let br = _mm512_loadu_pd(re_ptr.add(hi));
-        let bi = _mm512_loadu_pd(im_ptr.add(hi));
-        _mm512_storeu_pd(re_ptr.add(lo), br);
-        _mm512_storeu_pd(im_ptr.add(lo), bi);
-        _mm512_storeu_pd(re_ptr.add(hi), ar);
-        _mm512_storeu_pd(im_ptr.add(hi), ai);
-    });
+    crate::kernels::par_blocks(
+        count,
+        len,
+        |k| k * LANES_SOA,
+        |block_base| {
+            let re_ptr = re_bp.ptr();
+            let im_ptr = im_bp.ptr();
+            if (block_base & target_bit) != 0 {
+                return;
+            }
+            if (block_base & ctrl_mask) != ctrl_mask {
+                return;
+            }
+            // SAFETY: block_base & target_bit == 0, all control bits set.
+            // target_bit >= LANES_SOA ensures block_base | target_bit ≥
+            // block_base + LANES_SOA; both windows are within [0, len).
+            let lo = block_base;
+            let hi = block_base | target_bit;
+            let ar = _mm512_loadu_pd(re_ptr.add(lo));
+            let ai = _mm512_loadu_pd(im_ptr.add(lo));
+            let br = _mm512_loadu_pd(re_ptr.add(hi));
+            let bi = _mm512_loadu_pd(im_ptr.add(hi));
+            _mm512_storeu_pd(re_ptr.add(lo), br);
+            _mm512_storeu_pd(im_ptr.add(lo), bi);
+            _mm512_storeu_pd(re_ptr.add(hi), ar);
+            _mm512_storeu_pd(im_ptr.add(hi), ai);
+        },
+    );
 }
 
 /// Toffoli Tier-A outer-walk for SoA: handles controls at-or-above
@@ -274,27 +279,32 @@ unsafe fn apply_toffoli_avx512_tier_a_outer_walk_soa(
     let im_bp = crate::kernels::BlockPtr(im.as_mut_ptr());
 
     let count = len / LANES_SOA;
-    crate::kernels::par_blocks(count, len, |k| k * LANES_SOA, |block_base| {
-        let re_ptr = re_bp.ptr();
-        let im_ptr = im_bp.ptr();
-        if (block_base & target_bit) != 0 {
-            return;
-        }
-        if (block_base & ctrl_mask) != ctrl_mask {
-            return;
-        }
-        // SAFETY: target_bit >= LANES_SOA ensures the hi window is in bounds.
-        let lo = block_base;
-        let hi = block_base | target_bit;
-        let ar = _mm512_loadu_pd(re_ptr.add(lo));
-        let ai = _mm512_loadu_pd(im_ptr.add(lo));
-        let br = _mm512_loadu_pd(re_ptr.add(hi));
-        let bi = _mm512_loadu_pd(im_ptr.add(hi));
-        _mm512_storeu_pd(re_ptr.add(lo), br);
-        _mm512_storeu_pd(im_ptr.add(lo), bi);
-        _mm512_storeu_pd(re_ptr.add(hi), ar);
-        _mm512_storeu_pd(im_ptr.add(hi), ai);
-    });
+    crate::kernels::par_blocks(
+        count,
+        len,
+        |k| k * LANES_SOA,
+        |block_base| {
+            let re_ptr = re_bp.ptr();
+            let im_ptr = im_bp.ptr();
+            if (block_base & target_bit) != 0 {
+                return;
+            }
+            if (block_base & ctrl_mask) != ctrl_mask {
+                return;
+            }
+            // SAFETY: target_bit >= LANES_SOA ensures the hi window is in bounds.
+            let lo = block_base;
+            let hi = block_base | target_bit;
+            let ar = _mm512_loadu_pd(re_ptr.add(lo));
+            let ai = _mm512_loadu_pd(im_ptr.add(lo));
+            let br = _mm512_loadu_pd(re_ptr.add(hi));
+            let bi = _mm512_loadu_pd(im_ptr.add(hi));
+            _mm512_storeu_pd(re_ptr.add(lo), br);
+            _mm512_storeu_pd(im_ptr.add(lo), bi);
+            _mm512_storeu_pd(re_ptr.add(hi), ar);
+            _mm512_storeu_pd(im_ptr.add(hi), ai);
+        },
+    );
 }
 
 /// Toffoli Tier-B.0 for SoA: `target=0`, in-register permute swap.
@@ -499,22 +509,27 @@ unsafe fn apply_ccz_avx512_tier_a_soa(re: &mut [f64], im: &mut [f64], mask_bits:
     let sign_mask = _mm512_set1_pd(-0.0_f64);
 
     let count = len / LANES_SOA;
-    crate::kernels::par_blocks(count, len, |k| k * LANES_SOA, |block_base| {
-        let re_ptr = re_bp.ptr();
-        let im_ptr = im_bp.ptr();
-        if (block_base & mask) != mask {
-            return;
-        }
-        // SAFETY: block_base + LANES_SOA ≤ len because mask_lo ≥ 3 →
-        // mask_lo_bit ≥ 8 = LANES_SOA; matching block_base values are
-        // spaced ≥ LANES_SOA apart.  State vector is 1<<n ≥ 16 (n≥4).
-        let pr = re_ptr.add(block_base);
-        let pi = im_ptr.add(block_base);
-        let zr = _mm512_loadu_pd(pr);
-        let zi = _mm512_loadu_pd(pi);
-        _mm512_storeu_pd(pr, _mm512_xor_pd(zr, sign_mask));
-        _mm512_storeu_pd(pi, _mm512_xor_pd(zi, sign_mask));
-    });
+    crate::kernels::par_blocks(
+        count,
+        len,
+        |k| k * LANES_SOA,
+        |block_base| {
+            let re_ptr = re_bp.ptr();
+            let im_ptr = im_bp.ptr();
+            if (block_base & mask) != mask {
+                return;
+            }
+            // SAFETY: block_base + LANES_SOA ≤ len because mask_lo ≥ 3 →
+            // mask_lo_bit ≥ 8 = LANES_SOA; matching block_base values are
+            // spaced ≥ LANES_SOA apart.  State vector is 1<<n ≥ 16 (n≥4).
+            let pr = re_ptr.add(block_base);
+            let pi = im_ptr.add(block_base);
+            let zr = _mm512_loadu_pd(pr);
+            let zi = _mm512_loadu_pd(pi);
+            _mm512_storeu_pd(pr, _mm512_xor_pd(zr, sign_mask));
+            _mm512_storeu_pd(pi, _mm512_xor_pd(zi, sign_mask));
+        },
+    );
 }
 
 /// CCZ Tier-A outer-walk for SoA: handles mask bits below LANES_SOA_BITS=3.
@@ -577,24 +592,29 @@ unsafe fn apply_ccz_avx512_tier_a_outer_walk_soa(
     let sign = _mm512_set1_pd(-0.0_f64);
 
     let count = len / LANES_SOA;
-    crate::kernels::par_blocks(count, len, |k| k * LANES_SOA, |block_base| {
-        let re_ptr = re_bp.ptr();
-        let im_ptr = im_bp.ptr();
-        if (block_base & mask_high) != mask_high {
-            return;
-        }
-        // SAFETY: block_base + LANES_SOA ≤ len; state vector is 1<<n with
-        // n ≥ 4 and block_base is always LANES_SOA-aligned.
-        let pr = re_ptr.add(block_base);
-        let pi = im_ptr.add(block_base);
-        let zr = _mm512_loadu_pd(pr);
-        let zi = _mm512_loadu_pd(pi);
-        let neg_r = _mm512_xor_pd(zr, sign);
-        let neg_i = _mm512_xor_pd(zi, sign);
-        // _mm512_mask_blend_pd(mask, a, b): selects b where bit=1, a where bit=0.
-        _mm512_storeu_pd(pr, _mm512_mask_blend_pd(lane_mask, zr, neg_r));
-        _mm512_storeu_pd(pi, _mm512_mask_blend_pd(lane_mask, zi, neg_i));
-    });
+    crate::kernels::par_blocks(
+        count,
+        len,
+        |k| k * LANES_SOA,
+        |block_base| {
+            let re_ptr = re_bp.ptr();
+            let im_ptr = im_bp.ptr();
+            if (block_base & mask_high) != mask_high {
+                return;
+            }
+            // SAFETY: block_base + LANES_SOA ≤ len; state vector is 1<<n with
+            // n ≥ 4 and block_base is always LANES_SOA-aligned.
+            let pr = re_ptr.add(block_base);
+            let pi = im_ptr.add(block_base);
+            let zr = _mm512_loadu_pd(pr);
+            let zi = _mm512_loadu_pd(pi);
+            let neg_r = _mm512_xor_pd(zr, sign);
+            let neg_i = _mm512_xor_pd(zi, sign);
+            // _mm512_mask_blend_pd(mask, a, b): selects b where bit=1, a where bit=0.
+            _mm512_storeu_pd(pr, _mm512_mask_blend_pd(lane_mask, zr, neg_r));
+            _mm512_storeu_pd(pi, _mm512_mask_blend_pd(lane_mask, zi, neg_i));
+        },
+    );
 }
 
 /// Routes Toffoli to the best available SoA tier.  Mirror of
@@ -2618,26 +2638,31 @@ unsafe fn apply_1q_x_soa_avx512_lowbit(
     let len = re.len();
 
     let count = len / LANES;
-    crate::kernels::par_blocks(count, len, |k| k * LANES, |block| {
-        let re_ptr = re_bp.ptr();
-        let im_ptr = im_bp.ptr();
-        if (block & ctrl_mask) == ctrl_mask {
-            // SAFETY: in-bounds — block + LANES ≤ len by loop invariant.
-            let r = _mm512_loadu_pd(re_ptr.add(block));
-            let m = _mm512_loadu_pd(im_ptr.add(block));
-            let (r_p, m_p) = match target {
-                0 => (_mm512_permute_pd::<0x55>(r), _mm512_permute_pd::<0x55>(m)),
-                1 => (_mm512_permutex_pd::<0x4E>(r), _mm512_permutex_pd::<0x4E>(m)),
-                2 => (
-                    _mm512_permutexvar_pd(idx_t2, r),
-                    _mm512_permutexvar_pd(idx_t2, m),
-                ),
-                _ => unreachable!("Tier-B SoA: target out of {{0, 1, 2}}"),
-            };
-            _mm512_storeu_pd(re_ptr.add(block), r_p);
-            _mm512_storeu_pd(im_ptr.add(block), m_p);
-        }
-    });
+    crate::kernels::par_blocks(
+        count,
+        len,
+        |k| k * LANES,
+        |block| {
+            let re_ptr = re_bp.ptr();
+            let im_ptr = im_bp.ptr();
+            if (block & ctrl_mask) == ctrl_mask {
+                // SAFETY: in-bounds — block + LANES ≤ len by loop invariant.
+                let r = _mm512_loadu_pd(re_ptr.add(block));
+                let m = _mm512_loadu_pd(im_ptr.add(block));
+                let (r_p, m_p) = match target {
+                    0 => (_mm512_permute_pd::<0x55>(r), _mm512_permute_pd::<0x55>(m)),
+                    1 => (_mm512_permutex_pd::<0x4E>(r), _mm512_permutex_pd::<0x4E>(m)),
+                    2 => (
+                        _mm512_permutexvar_pd(idx_t2, r),
+                        _mm512_permutexvar_pd(idx_t2, m),
+                    ),
+                    _ => unreachable!("Tier-B SoA: target out of {{0, 1, 2}}"),
+                };
+                _mm512_storeu_pd(re_ptr.add(block), r_p);
+                _mm512_storeu_pd(im_ptr.add(block), m_p);
+            }
+        },
+    );
 }
 
 // Tier-B Y and generic anti-diag SoA: NOT a separate SIMD kernel.
