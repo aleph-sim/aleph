@@ -51,8 +51,14 @@ for k in 0..outer_count {
 
 1. Replace `let amps_ptr = amps.as_mut_ptr() as *mut f64;` with
    `let bp = crate::kernels::BlockPtr(amps.as_mut_ptr() as *mut f64);`
-   and make `outer_iter`'s first line `let amps_ptr = bp.0;`.
-   (SoA: wrap both — `let re_bp = BlockPtr(re.as_mut_ptr()); let im_bp = BlockPtr(im.as_mut_ptr());` and rederive both inside.)
+   and make `outer_iter`'s first line `let amps_ptr = bp.ptr();`.
+   (SoA: wrap both — `let re_bp = BlockPtr(re.as_mut_ptr()); let im_bp = BlockPtr(im.as_mut_ptr());` and rederive both inside via `re_bp.ptr()` / `im_bp.ptr()`.)
+
+   **CRITICAL (proven on EPYC in Task 1):** extract the pointer through
+   the `bp.ptr()` `&self` accessor, NEVER a direct `bp.0` field read.
+   Rust 2021 disjoint closure capture would grab the bare `*mut f64`
+   field (`!Sync`) and the closure fails `par_blocks`' `Fn + Sync` bound;
+   `bp.ptr()` forces whole-`BlockPtr` capture (`&BlockPtr: Sync`).
 
 2. Replace the driver loop:
 
