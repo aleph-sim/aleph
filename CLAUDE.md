@@ -165,6 +165,7 @@ Do not skip oracle tests because they’re slow. Mark them with `#[ignore]` only
 
 ### When optimizing
 
+1. **Verify the bench machine is idle before measuring.** Check `uptime` (load ≈ 0) and `pgrep -af "cargo bench|bencher run|Runner.Worker"` for competing jobs first. The self-hosted CI runner shares the EPYC box, so a push to `main` or `benches/**` can kick off `cargo bench --workspace` mid-measurement and silently inflate your baseline. P2-01 reported QFT-25 at 1.6× this way; the clean idle-box number was 3.37×. If a baseline shows wide criterion CI or a ratio looks suspiciously low, re-measure on a verified-idle box.
 1. **Profile first.** Use `cargo flamegraph` or `perf` (Linux). Never optimize blindly.
 1. **Benchmark the smallest possible unit.** A gate kernel benchmark is more meaningful than a full circuit benchmark when targeting that kernel.
 1. **Compare against the previous best** via criterion’s `--baseline`. Report relative speedup, not absolute time (absolute times vary by machine).
