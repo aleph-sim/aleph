@@ -21,12 +21,18 @@ for g in "${GATES[@]}"; do
   for t in "${TARGETS[@]}"; do
     for ma in "${MIN_AMPS[@]}"; do
       for gr in "${GRAINS[@]}"; do
+        # Tolerate a single bad cell (compile/panic/no-match) so it can't
+        # abort the whole multi-hundred-cell sweep under `set -e`.
         out=$(ALEPH_TUNE_GATE="$g" ALEPH_TUNE_TARGET="$t" ALEPH_TUNE_N="$N" \
               ALEPH_PAR_MIN_AMPS="$ma" ALEPH_PAR_GRAIN="$gr" \
               RUSTFLAGS="-C target-cpu=native" \
               cargo bench -p aleph-sv --features internal-bench --bench chunk_tune \
-                -- --warm-up-time 1 --measurement-time 3 --noplot 2>/dev/null)
-        med=$(echo "$out" | grep -oE 'time:[[:space:]]*\[[^]]+\]' | head -1 | awk '{print $3, $4}')
+                -- --warm-up-time 1 --measurement-time 3 --noplot 2>/dev/null) \
+          || { echo "$g $t $ma $gr FAILED"; continue; }
+        # criterion line: "time:   [<lo> <unit> <median> <unit> <hi> <unit>]"
+        # after grep, awk fields: $2=[<lo> $3=<unit> $4=<median> $5=<unit> ...
+        med=$(echo "$out" | grep -oE 'time:[[:space:]]*\[[^]]+\]' | head -1 | awk '{print $4, $5}') || true
+        med=${med:-NA}
         echo "$g $t $ma $gr $med"
       done
     done
