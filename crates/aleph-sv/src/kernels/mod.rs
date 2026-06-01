@@ -124,7 +124,7 @@ pub(crate) fn par_blocks(
         // contiguous batch of blocks sequentially.
         (0..count)
             .into_par_iter()
-            .with_min_len(policy.grain.max(1)) // grain==0 would panic in rayon
+            .with_min_len(policy.grain.max(1)) // grain==0 is a misconfiguration; clamp to 1
             .for_each(|k| body(block_of(k)));
     }
 }

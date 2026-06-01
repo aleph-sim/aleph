@@ -159,24 +159,20 @@ fn detect_cpu_from(env: Option<&str>, brand: Option<&str>) -> RefCpu {
 #[cfg(target_arch = "x86_64")]
 fn cpu_brand_string() -> Option<String> {
     use std::arch::x86_64::__cpuid;
-    // SAFETY: `__cpuid` is always callable on x86_64. We first read the
-    // max extended leaf (0x8000_0000); the brand-string leaves
-    // 0x8000_0002..=0x8000_0004 are valid only if it is >= 0x8000_0004.
-    // No memory is touched; the intrinsic only reads CPU registers.
-    unsafe {
-        if __cpuid(0x8000_0000).eax < 0x8000_0004 {
-            return None;
-        }
-        let mut bytes = Vec::with_capacity(48);
-        for leaf in [0x8000_0002u32, 0x8000_0003, 0x8000_0004] {
-            let r = __cpuid(leaf);
-            for reg in [r.eax, r.ebx, r.ecx, r.edx] {
-                bytes.extend_from_slice(&reg.to_le_bytes());
-            }
-        }
-        let s = String::from_utf8_lossy(&bytes);
-        Some(s.trim_end_matches(['\0', ' ']).to_string())
+    // The brand-string leaves 0x8000_0002..=0x8000_0004 are valid only when
+    // the max extended leaf (0x8000_0000 -> eax) is >= 0x8000_0004; guard first.
+    if __cpuid(0x8000_0000).eax < 0x8000_0004 {
+        return None;
     }
+    let mut bytes = Vec::with_capacity(48);
+    for leaf in [0x8000_0002u32, 0x8000_0003, 0x8000_0004] {
+        let r = __cpuid(leaf);
+        for reg in [r.eax, r.ebx, r.ecx, r.edx] {
+            bytes.extend_from_slice(&reg.to_le_bytes());
+        }
+    }
+    let s = String::from_utf8_lossy(&bytes);
+    Some(s.trim_end_matches(['\0', ' ']).to_string())
 }
 
 #[cfg(not(target_arch = "x86_64"))]

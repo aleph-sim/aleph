@@ -383,6 +383,9 @@ pub unsafe fn apply_1q_avx512(
     }
     fixed_above.sort_unstable_by_key(|&(pos, _)| pos);
 
+    // Subtraction is safe: each control is distinct from target and
+    // < n_qubits, all controls > target, so
+    // `target + 1 + controls.len() ≤ n_qubits`.
     let outer_count = 1usize << (n_qubits - target - 1 - controls.len() as u32);
     crate::kernels::par_units(
         policy,
