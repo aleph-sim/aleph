@@ -27,8 +27,9 @@ pub const CACHE_LINE: usize = 64;
 /// destructors run). Construct with [`AlignedBuf::zeroed`] or
 /// [`AlignedBuf::from_slice`]; access through `Deref`/`DerefMut` to `[T]`.
 pub struct AlignedBuf<T> {
-    /// Non-null, 64-aligned. For `len == 0` this is a 64-aligned sentinel
-    /// (`CACHE_LINE as *mut T`) that is never dereferenced.
+    /// Non-null and aligned-for-`T`. For `len == 0` this is `NonNull::dangling()`
+    /// (a provenance-safe, never-dereferenced sentinel); for `len > 0` it is the
+    /// 64-aligned base of an owned heap block.
     ptr: NonNull<T>,
     len: usize,
     _marker: PhantomData<T>,
@@ -45,20 +46,24 @@ impl<T> AlignedBuf<T> {
         let size = len.saturating_mul(mem::size_of::<T>());
         match Layout::from_size_align(size, CACHE_LINE) {
             Ok(l) => l,
-            // Unreachable for in-domain `len`; route to the OOM handler.
+            // Unreachable for in-domain `len` (`dim ≤ 2^28`, so the size never
+            // approaches `isize::MAX`): `from_size_align` only errors on
+            // overflow/oversize, which cannot happen here. The dummy
+            // `Layout::new::<u8>()` is never actually allocated — it only feeds
+            // the diverging OOM handler so the `Err` arm has a return type.
             Err(_) => alloc::handle_alloc_error(Layout::new::<u8>()),
         }
     }
 
-    /// 64-aligned, non-null, never-dereferenced sentinel for `len == 0`.
+    /// Provenance-safe, never-dereferenced sentinel for `len == 0`.
     fn empty() -> Self {
-        // SAFETY: `CACHE_LINE` (64) is non-zero, so `new_unchecked` is sound;
-        // the pointer is aligned for any `T` we use (size ∈ {8,16} | 64) and
-        // is only ever handed to `slice::from_raw_parts(_, 0)`, which is
-        // valid for a non-null, aligned pointer at length 0.
-        let ptr = unsafe { NonNull::new_unchecked(CACHE_LINE as *mut T) };
+        // `NonNull::dangling()` is non-null and aligned for `T` (its address is
+        // `align_of::<T>()`). It is the canonical zero-length base: it is only
+        // ever handed to `slice::from_raw_parts(_, 0)`, which is valid for a
+        // non-null, aligned pointer at length 0. Note it is NOT 64-aligned, but
+        // that is fine — a zero-length buffer owns no data and is never read.
         Self {
-            ptr,
+            ptr: NonNull::dangling(),
             len: 0,
             _marker: PhantomData,
         }
@@ -69,6 +74,18 @@ impl<T> AlignedBuf<T> {
     /// The all-zero bit pattern must be a valid `T` (holds for `f64` /
     /// `Complex`).
     pub fn zeroed(len: usize) -> Self {
+        const {
+            assert!(
+                mem::size_of::<T>() != 0,
+                "AlignedBuf<T> requires a non-ZST T"
+            )
+        };
+        const {
+            assert!(
+                !mem::needs_drop::<T>(),
+                "AlignedBuf<T> does not run element destructors; T must not need Drop"
+            )
+        };
         if len == 0 {
             return Self::empty();
         }
@@ -88,6 +105,18 @@ impl<T> AlignedBuf<T> {
     where
         T: Copy,
     {
+        const {
+            assert!(
+                mem::size_of::<T>() != 0,
+                "AlignedBuf<T> requires a non-ZST T"
+            )
+        };
+        const {
+            assert!(
+                !mem::needs_drop::<T>(),
+                "AlignedBuf<T> does not run element destructors; T must not need Drop"
+            )
+        };
         let len = src.len();
         if len == 0 {
             return Self::empty();
@@ -135,7 +164,9 @@ impl<T> Drop for AlignedBuf<T> {
         let layout = Self::layout(self.len);
         // SAFETY: `ptr` came from `alloc`/`alloc_zeroed` with exactly this
         // layout; we free the block once. Element destructors are
-        // intentionally not run (POD element contract, see module docs).
+        // intentionally not run — the POD element contract (see module docs)
+        // is machine-enforced by the `!needs_drop::<T>()` const assert in the
+        // constructors, so `T` provably has no destructor to run.
         unsafe {
             alloc::dealloc(self.ptr.as_ptr() as *mut u8, layout);
         }
@@ -166,7 +197,10 @@ mod tests {
 
     #[test]
     fn zeroed_is_cache_line_aligned() {
-        for n in [0usize, 1, 4, 1000] {
+        // Only the allocating cases carry the 64-alignment guarantee; the
+        // `len == 0` sentinel (`NonNull::dangling()`) is intentionally not
+        // 64-aligned and is covered by `empty_buf_is_zero_len`.
+        for n in [1usize, 4, 1000] {
             let buf = AlignedBuf::<f64>::zeroed(n);
             assert_eq!(
                 buf.as_ptr() as usize % CACHE_LINE,
@@ -175,6 +209,15 @@ mod tests {
             );
             assert_eq!(buf.len(), n);
         }
+    }
+
+    #[test]
+    fn empty_buf_is_zero_len() {
+        // The `len == 0` sentinel owns no data: it is zero-length and empty,
+        // but makes no 64-alignment promise (it is `NonNull::dangling()`).
+        let buf = AlignedBuf::<f64>::zeroed(0);
+        assert_eq!(buf.len(), 0);
+        assert!(buf.is_empty());
     }
 
     #[test]
@@ -210,8 +253,26 @@ mod tests {
     fn clone_is_independent_copy() {
         let mut a = AlignedBuf::<f64>::from_slice(&[1.0, 2.0, 3.0]);
         let b = a.clone();
+        assert_ne!(a.as_ptr(), b.as_ptr(), "clone must allocate a fresh block");
         a[0] = 99.0;
         assert_eq!(&*b, &[1.0, 2.0, 3.0]);
         assert_eq!(b.as_ptr() as usize % CACHE_LINE, 0);
+    }
+
+    #[test]
+    fn complex_zeroed_and_round_trip() {
+        // Exercise the production element type end-to-end.
+        let zeros = AlignedBuf::<crate::Complex>::zeroed(8);
+        assert_eq!(zeros.as_ptr() as usize % CACHE_LINE, 0);
+        assert_eq!(zeros.len(), 8);
+        assert!(zeros.iter().all(|&z| z == crate::Complex::new(0.0, 0.0)));
+
+        let src = [
+            crate::Complex::new(1.0, -2.0),
+            crate::Complex::new(3.0, 4.0),
+        ];
+        let buf = AlignedBuf::<crate::Complex>::from_slice(&src);
+        assert_eq!(&*buf, &src);
+        assert_eq!(buf.as_ptr() as usize % CACHE_LINE, 0);
     }
 }
