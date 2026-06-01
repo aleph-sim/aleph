@@ -65,6 +65,31 @@ impl BlockPtr {
 unsafe impl Send for BlockPtr {}
 unsafe impl Sync for BlockPtr {}
 
+/// `*mut Complex` analogue of [`BlockPtr`] for the scalar fallback
+/// kernels, which operate on whole `Complex` amplitudes rather than the
+/// paired-`f64` view the AVX-512 kernels use.
+///
+/// Same disjointness contract: each parallel task writes a distinct set
+/// of amplitudes (selected by a per-index guard), so concurrent use is
+/// sound. Read the pointer back through [`ComplexPtr::ptr`] (not `.0`)
+/// so the enclosing closure captures the whole `Copy` wrapper — which is
+/// `Sync` — rather than the bare `!Sync` `*mut Complex` field (Rust 2021
+/// disjoint capture; see [`BlockPtr::ptr`]).
+#[allow(dead_code)]
+#[derive(Clone, Copy)]
+pub(crate) struct ComplexPtr(pub(crate) *mut aleph_core::Complex);
+
+#[allow(dead_code)]
+impl ComplexPtr {
+    #[inline(always)]
+    pub(crate) fn ptr(&self) -> *mut aleph_core::Complex {
+        self.0
+    }
+}
+// SAFETY: as BlockPtr — guarded per-index writes never alias across tasks.
+unsafe impl Send for ComplexPtr {}
+unsafe impl Sync for ComplexPtr {}
+
 /// Minimum state-vector length (in amplitudes) before gate kernels go
 /// parallel. Below this, rayon's task overhead outweighs the win, so the
 /// kernel runs sequentially — keeping small circuits and unit tests fast
