@@ -24,6 +24,8 @@ pub(crate) mod soa;
 #[cfg(feature = "internal-bench")]
 pub mod soa;
 
+pub(crate) mod tuning;
+
 use std::sync::OnceLock;
 
 /// Raw write pointer shareable across rayon worker threads.

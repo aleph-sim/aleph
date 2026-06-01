@@ -1,0 +1,286 @@
+//! P2-04: per-(gate, qubit-position) chunk-size policy.
+//!
+//! The SV kernels parallelise via `par_blocks`/`par_units`, whose two
+//! knobs — the sequential cutoff (`min_amps`) and the rayon grain
+//! (`grain`, i.e. `with_min_len`) — depend on the gate (work per
+//! amplitude) and the target qubit (stride / `par_units` regime). This
+//! module maps `(cpu_model, gate_class, position) -> ChunkPolicy`.
+//!
+//! Design: `docs/superpowers/specs/2026-06-01-p2-04-chunk-tuning-design.md`.
+//!
+//! No-regression contract: `RefCpu::Generic` (and every untuned cell)
+//! returns `DEFAULT_POLICY` == the pre-P2-04 hardcoded values, so unknown
+//! hardware behaves exactly as before. Results are bit-identical for ANY
+//! policy: the knobs only re-partition disjoint-write tasks, never reorder
+//! a floating-point reduction (see `par_blocks` doc).
+
+use std::sync::OnceLock;
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) struct ChunkPolicy {
+    pub(crate) min_amps: usize,
+    pub(crate) grain: usize,
+}
+
+/// The pre-P2-04 hardcoded values: sequential below 2^18 amplitudes,
+/// rayon `with_min_len(64)`.
+pub(crate) const DEFAULT_POLICY: ChunkPolicy = ChunkPolicy {
+    min_amps: 1 << 18,
+    grain: 64,
+};
+
+// Some variants are constructed only in P2-04 Task 2 kernels; all are
+// part of the designed API surface and must be present now for Task 2
+// to compile cleanly.
+#[allow(dead_code)] // wired into kernels in P2-04 Task 2
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum GateClass {
+    OneQGeneric,
+    OneQDiag,
+    OneQAntidiag,
+    TwoQDense,
+    TwoQCnot,
+    TwoQCz,
+    TwoQSwap,
+    TwoQDiag,
+    ThreeQ,
+}
+
+// All variants are constructed in tests and will be used in P2-04 Task 2
+// when kernels call `pos_class` to look up their policy.
+#[allow(dead_code)] // wired into kernels in P2-04 Task 2
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum PosClass {
+    Low,
+    Mid,
+    High,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum RefCpu {
+    Epyc8124P,
+    Ryzen3900,
+    Generic,
+}
+
+/// Target-position buckets. Constants are design choices, not tuned.
+/// `+ HIGH_BAND` (not `n - HIGH_BAND`) avoids underflow for small `n`.
+#[allow(dead_code)] // wired into kernels in P2-04 Task 2
+const LOW_BAND: u32 = 2;
+#[allow(dead_code)] // wired into kernels in P2-04 Task 2
+const HIGH_BAND: u32 = 2;
+
+/// Classify by the *dominant* (maximum) target index — that governs the
+/// outer stride and whether `par_units` flattening is in play.
+#[allow(dead_code)] // wired into kernels in P2-04 Task 2
+pub(crate) fn pos_class(max_target: u32, n: u32) -> PosClass {
+    if max_target < LOW_BAND {
+        PosClass::Low
+    } else if max_target + HIGH_BAND >= n {
+        PosClass::High
+    } else {
+        PosClass::Mid
+    }
+}
+
+/// The tuned table. Populated for high-traffic cells in a later task;
+/// every other cell (and all of `Generic`) returns `DEFAULT_POLICY`.
+pub(crate) fn chunk_policy(cpu: RefCpu, _class: GateClass, _pos: PosClass) -> ChunkPolicy {
+    match cpu {
+        RefCpu::Generic => DEFAULT_POLICY,
+        // A later task replaces these arms with measured per-(class,pos) values.
+        RefCpu::Epyc8124P => DEFAULT_POLICY,
+        RefCpu::Ryzen3900 => DEFAULT_POLICY,
+    }
+}
+
+/// Resolve the effective policy for a kernel invocation. Precedence:
+/// test override → env per-field override → table.
+///
+/// Wired into kernels in P2-04 Task 2.
+#[allow(dead_code)] // wired into kernels in P2-04 Task 2
+#[inline]
+pub(crate) fn resolve_policy(class: GateClass, pos: PosClass) -> ChunkPolicy {
+    #[cfg(test)]
+    {
+        if let Some(p) = test_override::get() {
+            return p;
+        }
+    }
+    let mut p = chunk_policy(cpu_model(), class, pos);
+    if let Some(v) = env_min_amps() {
+        p.min_amps = v;
+    }
+    if let Some(v) = env_grain() {
+        p.grain = v;
+    }
+    p
+}
+
+/// Returns the parsed value of `ALEPH_PAR_MIN_AMPS` env var, if set and valid.
+///
+/// Wired into kernels in P2-04 Task 2.
+#[allow(dead_code)] // wired into kernels in P2-04 Task 2
+fn env_min_amps() -> Option<usize> {
+    static V: OnceLock<Option<usize>> = OnceLock::new();
+    *V.get_or_init(|| {
+        std::env::var("ALEPH_PAR_MIN_AMPS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+    })
+}
+
+/// Returns the parsed value of `ALEPH_PAR_GRAIN` env var, if set and valid.
+///
+/// Wired into kernels in P2-04 Task 2.
+#[allow(dead_code)] // wired into kernels in P2-04 Task 2
+fn env_grain() -> Option<usize> {
+    static V: OnceLock<Option<usize>> = OnceLock::new();
+    *V.get_or_init(|| {
+        std::env::var("ALEPH_PAR_GRAIN")
+            .ok()
+            .and_then(|s| s.parse().ok())
+    })
+}
+
+/// Detect and cache the reference CPU model for this process.
+///
+/// Wired into kernels in P2-04 Task 2.
+#[allow(dead_code)] // wired into kernels in P2-04 Task 2
+pub(crate) fn cpu_model() -> RefCpu {
+    static M: OnceLock<RefCpu> = OnceLock::new();
+    *M.get_or_init(|| {
+        let env = std::env::var("ALEPH_CPU_MODEL").ok();
+        detect_cpu_from(env.as_deref(), cpu_brand_string().as_deref())
+    })
+}
+
+/// Pure detection worker (testable without touching the `OnceLock`s or
+/// real CPUID). `env` is `ALEPH_CPU_MODEL`; `brand` is the CPUID brand
+/// string. Env wins.
+fn detect_cpu_from(env: Option<&str>, brand: Option<&str>) -> RefCpu {
+    if let Some(e) = env {
+        return match e.to_ascii_lowercase().as_str() {
+            "epyc" => RefCpu::Epyc8124P,
+            "ryzen" => RefCpu::Ryzen3900,
+            _ => RefCpu::Generic,
+        };
+    }
+    if let Some(b) = brand {
+        if b.contains("EPYC 8124P") {
+            return RefCpu::Epyc8124P;
+        }
+        if b.contains("Ryzen 9 3900") {
+            return RefCpu::Ryzen3900;
+        }
+    }
+    RefCpu::Generic
+}
+
+#[cfg(target_arch = "x86_64")]
+fn cpu_brand_string() -> Option<String> {
+    use std::arch::x86_64::__cpuid;
+    // SAFETY: `__cpuid` is always callable on x86_64. We first read the
+    // max extended leaf (0x8000_0000); the brand-string leaves
+    // 0x8000_0002..=0x8000_0004 are valid only if it is >= 0x8000_0004.
+    // No memory is touched; the intrinsic only reads CPU registers.
+    unsafe {
+        if __cpuid(0x8000_0000).eax < 0x8000_0004 {
+            return None;
+        }
+        let mut bytes = Vec::with_capacity(48);
+        for leaf in [0x8000_0002u32, 0x8000_0003, 0x8000_0004] {
+            let r = __cpuid(leaf);
+            for reg in [r.eax, r.ebx, r.ecx, r.edx] {
+                bytes.extend_from_slice(&reg.to_le_bytes());
+            }
+        }
+        let s = String::from_utf8_lossy(&bytes);
+        Some(s.trim_end_matches(['\0', ' ']).to_string())
+    }
+}
+
+#[cfg(not(target_arch = "x86_64"))]
+fn cpu_brand_string() -> Option<String> {
+    None
+}
+
+/// Test-only policy override (thread-local), so a later invariance test
+/// can force several policies in one process without fighting the env
+/// `OnceLock`s.
+#[cfg(test)]
+pub(crate) mod test_override {
+    use super::ChunkPolicy;
+    use std::cell::Cell;
+    thread_local! {
+        static OVERRIDE: Cell<Option<ChunkPolicy>> = const { Cell::new(None) };
+    }
+    #[allow(dead_code)] // used in P2-04 Task 2 invariance tests
+    pub(crate) fn set(p: Option<ChunkPolicy>) {
+        OVERRIDE.with(|c| c.set(p));
+    }
+    pub(crate) fn get() -> Option<ChunkPolicy> {
+        OVERRIDE.with(|c| c.get())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn generic_cell_is_the_legacy_default() {
+        for class in [
+            GateClass::OneQGeneric,
+            GateClass::OneQDiag,
+            GateClass::TwoQCnot,
+            GateClass::TwoQDiag,
+            GateClass::ThreeQ,
+        ] {
+            for pos in [PosClass::Low, PosClass::Mid, PosClass::High] {
+                assert_eq!(chunk_policy(RefCpu::Generic, class, pos), DEFAULT_POLICY);
+            }
+        }
+    }
+
+    #[test]
+    fn pos_class_boundaries() {
+        // n = 25: Low if target < 2; High if target + 2 >= 25 (i.e. >= 23); else Mid.
+        assert_eq!(pos_class(0, 25), PosClass::Low);
+        assert_eq!(pos_class(1, 25), PosClass::Low);
+        assert_eq!(pos_class(2, 25), PosClass::Mid);
+        assert_eq!(pos_class(22, 25), PosClass::Mid);
+        assert_eq!(pos_class(23, 25), PosClass::High);
+        assert_eq!(pos_class(24, 25), PosClass::High);
+    }
+
+    #[test]
+    fn pos_class_small_n_does_not_underflow() {
+        assert_eq!(pos_class(0, 2), PosClass::Low);
+        assert_eq!(pos_class(1, 2), PosClass::Low);
+    }
+
+    #[test]
+    fn cpu_model_env_override() {
+        assert_eq!(detect_cpu_from(Some("epyc"), None), RefCpu::Epyc8124P);
+        assert_eq!(detect_cpu_from(Some("ryzen"), None), RefCpu::Ryzen3900);
+        assert_eq!(detect_cpu_from(Some("generic"), None), RefCpu::Generic);
+        assert_eq!(detect_cpu_from(Some("nonsense"), None), RefCpu::Generic);
+    }
+
+    #[test]
+    fn cpu_model_brand_match() {
+        assert_eq!(
+            detect_cpu_from(None, Some("AMD EPYC 8124P 16-Core Processor")),
+            RefCpu::Epyc8124P
+        );
+        assert_eq!(
+            detect_cpu_from(None, Some("AMD Ryzen 9 3900 12-Core Processor")),
+            RefCpu::Ryzen3900
+        );
+        assert_eq!(
+            detect_cpu_from(None, Some("Intel(R) Xeon(R) Silver 4114")),
+            RefCpu::Generic
+        );
+    }
+}
