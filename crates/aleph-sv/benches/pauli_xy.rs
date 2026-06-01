@@ -11,7 +11,7 @@
 //!   * `p1_05_specialised_{x,y,antidiag}_tier_b`      — Tier B target=0 via dispatch
 //!   * `p1_05_generic_baseline_{x,y,antidiag}`        — scalar inner-loop (upper bound)
 //!   * `p1_05_generic_avx512_baseline_{x,y,antidiag}` — generic packed-complex AVX-512
-//!                                                        (honest pre-P1-05 baseline)
+//!     (honest pre-P1-05 baseline)
 
 use aleph_core::Complex;
 use aleph_sv::kernels;

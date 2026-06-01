@@ -17,9 +17,9 @@
 use std::sync::OnceLock;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(crate) struct ChunkPolicy {
-    pub(crate) min_amps: usize,
-    pub(crate) grain: usize,
+pub struct ChunkPolicy {
+    pub min_amps: usize,
+    pub grain: usize,
 }
 
 /// The pre-P2-04 hardcoded values: sequential below 2^18 amplitudes,
@@ -89,7 +89,7 @@ pub(crate) fn chunk_policy(cpu: RefCpu, _class: GateClass, _pos: PosClass) -> Ch
 /// test override → env per-field override → table.
 #[inline]
 pub(crate) fn resolve_policy(class: GateClass, pos: PosClass) -> ChunkPolicy {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "internal-bench"))]
     {
         if let Some(p) = test_override::get() {
             return p;
@@ -183,18 +183,22 @@ fn cpu_brand_string() -> Option<String> {
 /// Test-only policy override (thread-local), so a later invariance test
 /// can force several policies in one process without fighting the env
 /// `OnceLock`s.
-#[cfg(test)]
-pub(crate) mod test_override {
+///
+/// Exposed publicly under `internal-bench` so integration tests (which
+/// compile as a separate crate) can reach `test_override::set/get`
+/// without `cfg(test)` being in scope.
+#[cfg(any(test, feature = "internal-bench"))]
+pub mod test_override {
     use super::ChunkPolicy;
     use std::cell::Cell;
     thread_local! {
         static OVERRIDE: Cell<Option<ChunkPolicy>> = const { Cell::new(None) };
     }
-    #[allow(dead_code)] // used in P2-04 Task 2 invariance tests
-    pub(crate) fn set(p: Option<ChunkPolicy>) {
+    #[allow(dead_code)] // used from integration tests under internal-bench
+    pub fn set(p: Option<ChunkPolicy>) {
         OVERRIDE.with(|c| c.set(p));
     }
-    pub(crate) fn get() -> Option<ChunkPolicy> {
+    pub fn get() -> Option<ChunkPolicy> {
         OVERRIDE.with(|c| c.get())
     }
 }

@@ -30,6 +30,10 @@ aleph-test   = { path = "../aleph-test" }
 proptest     = { workspace = true }
 criterion    = { workspace = true }
 
+[[test]]
+name = "policy_invariance"
+required-features = ["internal-bench"]
+
 [[bench]]
 name = "naive_sv"
 harness = false

@@ -1567,12 +1567,7 @@ pub(crate) fn apply_2q_diagonal_scalar(
 /// `max(targets)`.  Sub-LANES dispatch or below-target controls fall through
 /// to `apply_2q_dense_scalar`.  Specialised permutation / diagonal AVX-512
 /// paths land in subsequent tasks.
-pub(crate) fn apply_2q(
-    amps: &mut [Complex],
-    targets: [u32; 2],
-    controls: &[u32],
-    m: &[[Complex; 4]; 4],
-) {
+pub fn apply_2q(amps: &mut [Complex], targets: [u32; 2], controls: &[u32], m: &[[Complex; 4]; 4]) {
     // 1. Permutation detection (Identity / CNOT / SWAP).
     match super::classify_2q_permutation(m) {
         Some(super::Perm2qKind::Identity) => return,

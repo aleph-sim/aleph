@@ -24,7 +24,10 @@ pub(crate) mod soa;
 #[cfg(feature = "internal-bench")]
 pub mod soa;
 
+#[cfg(not(feature = "internal-bench"))]
 pub(crate) mod tuning;
+#[cfg(feature = "internal-bench")]
+pub mod tuning;
 
 use crate::kernels::tuning::ChunkPolicy;
 
