@@ -248,12 +248,12 @@ mod tests {
 
     fn zero_ket(n: u32) -> SoaState {
         let dim = 1usize << n;
-        let mut re = vec![0.0; dim];
+        let mut re = aleph_core::AlignedBuf::<f64>::zeroed(dim);
         re[0] = 1.0;
         SoaState {
             num_qubits: n,
             re,
-            im: vec![0.0; dim],
+            im: aleph_core::AlignedBuf::<f64>::zeroed(dim),
         }
     }
 
@@ -261,8 +261,8 @@ mod tests {
     fn validate_rejects_empty_state() {
         let s = SoaState {
             num_qubits: 0,
-            re: vec![],
-            im: vec![],
+            re: aleph_core::AlignedBuf::from_slice(&[]),
+            im: aleph_core::AlignedBuf::from_slice(&[]),
         };
         assert!(matches!(
             validate_state_soa(&s),
@@ -274,8 +274,8 @@ mod tests {
     fn validate_rejects_mismatched_lens() {
         let s = SoaState {
             num_qubits: 1,
-            re: vec![1.0, 0.0],
-            im: vec![0.0],
+            re: aleph_core::AlignedBuf::from_slice(&[1.0, 0.0]),
+            im: aleph_core::AlignedBuf::from_slice(&[0.0]),
         };
         assert!(matches!(
             validate_state_soa(&s),
@@ -297,8 +297,8 @@ mod tests {
     fn validate_rejects_unnormalised_state() {
         let s = SoaState {
             num_qubits: 1,
-            re: vec![0.9, 0.9],
-            im: vec![0.0, 0.0],
+            re: aleph_core::AlignedBuf::from_slice(&[0.9, 0.9]),
+            im: aleph_core::AlignedBuf::from_slice(&[0.0, 0.0]),
         };
         assert!(matches!(
             validate_state_soa(&s),

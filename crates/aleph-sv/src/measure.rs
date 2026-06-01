@@ -44,7 +44,7 @@ pub(crate) fn validate_state(state: &CpuState) -> Result<Vec<f64>, BackendError>
     }
     let mut probs = Vec::with_capacity(n);
     let mut total = 0.0_f64;
-    for a in &state.amps {
+    for a in state.amps.iter() {
         let p = a.norm_sqr();
         if !p.is_finite() {
             return Err(BackendError::InvalidState {
@@ -400,7 +400,7 @@ mod tests {
             mask in any::<u32>(),
             coeff in -2.0_f64..=2.0,
         ) {
-            let state = CpuState { num_qubits: n, amps };
+            let state = CpuState { num_qubits: n, amps: aleph_core::AlignedBuf::from_slice(&amps) };
             // Build a Z-only PauliString from the low n bits of `mask`.
             let mut terms = Vec::new();
             for q in 0..n {

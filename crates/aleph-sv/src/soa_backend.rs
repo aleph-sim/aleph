@@ -1,12 +1,13 @@
 //! `SoaSvBackend` — struct-of-arrays CPU state-vector backend.
 //!
 //! Mirrors `NaiveSvBackend` (P0-09) but stores amplitudes as paired
-//! `Vec<f64>` for SIMD-friendly memory access. Same validation
+//! `AlignedBuf<f64>` (64-byte-aligned, P2-02) for SIMD-friendly memory
+//! access. Same validation
 //! discipline; same unitarity guard; dispatches to `kernels::soa`
 //! rather than `kernels::aos`.
 
 use aleph_backend::{Backend, BackendError};
-use aleph_core::{GateError, GateInstance, GateMatrix, PauliString};
+use aleph_core::{AlignedBuf, GateError, GateInstance, GateMatrix, PauliString};
 use rand::{rngs::StdRng, SeedableRng};
 
 use crate::soa_state::SoaState;
@@ -54,12 +55,12 @@ impl Backend for SoaSvBackend {
             });
         }
         let dim = 1usize << num_qubits;
-        let mut re = vec![0.0; dim];
+        let mut re = AlignedBuf::<f64>::zeroed(dim);
         re[0] = 1.0;
         Ok(SoaState {
             num_qubits,
             re,
-            im: vec![0.0; dim],
+            im: AlignedBuf::<f64>::zeroed(dim),
         })
     }
 
@@ -145,6 +146,20 @@ mod tests {
     use super::*;
     use aleph_core::{Complex, Gate, Pauli, PauliString};
     use smallvec::smallvec;
+
+    #[test]
+    fn allocated_soa_state_is_cache_line_aligned() {
+        let mut b = SoaSvBackend::new();
+        // n=1 (small alloc): system allocator wouldn't incidentally 64-align —
+        // AlignedBuf::zeroed is what forces it.
+        let s1 = b.allocate(1).unwrap();
+        assert_eq!(s1.re().as_ptr() as usize % aleph_core::CACHE_LINE, 0);
+        assert_eq!(s1.im().as_ptr() as usize % aleph_core::CACHE_LINE, 0);
+        // n=20 (large alloc) sanity check.
+        let s20 = b.allocate(20).unwrap();
+        assert_eq!(s20.re().as_ptr() as usize % aleph_core::CACHE_LINE, 0);
+        assert_eq!(s20.im().as_ptr() as usize % aleph_core::CACHE_LINE, 0);
+    }
 
     #[test]
     fn allocate_initialises_zero_ket() {

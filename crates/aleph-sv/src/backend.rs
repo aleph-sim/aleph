@@ -1,7 +1,7 @@
 //! `NaiveSvBackend` — the naive CPU state-vector backend.
 
 use aleph_backend::{Backend, BackendError};
-use aleph_core::{Complex, GateError, GateInstance, GateMatrix, PauliString};
+use aleph_core::{AlignedBuf, Complex, GateError, GateInstance, GateMatrix, PauliString};
 use rand::{rngs::StdRng, SeedableRng};
 
 use crate::state::CpuState;
@@ -49,7 +49,7 @@ impl Backend for NaiveSvBackend {
             });
         }
         let dim = 1usize << num_qubits;
-        let mut amps = vec![Complex::new(0.0, 0.0); dim];
+        let mut amps = AlignedBuf::<Complex>::zeroed(dim);
         amps[0] = Complex::new(1.0, 0.0);
         Ok(CpuState { num_qubits, amps })
     }
@@ -742,7 +742,9 @@ mod tests {
         // power-of-two precondition could silently bias release builds.
         let mut b = NaiveSvBackend::with_seed(0);
         let mut s = b.allocate(2).unwrap(); // num_qubits=2 → expects 4 amps
-        s.amps.push(Complex::new(0.0, 0.0)); // now 5 amps; not pow2
+                                            // Replace the buffer with a length-5 one to break the pow2 invariant;
+                                            // AlignedBuf is fixed-size so we reconstruct rather than push.
+        s.amps = AlignedBuf::from_slice(&[Complex::new(0.0, 0.0); 5]); // 5 amps; not pow2
         let err = b.sample(&s, 10).unwrap_err();
         assert!(
             matches!(err, BackendError::InvalidState { .. }),
@@ -765,6 +767,26 @@ mod tests {
             .amplitudes()
             .iter()
             .all(|a| a.re.is_finite() && a.im.is_finite()));
+    }
+
+    #[test]
+    fn allocated_state_is_cache_line_aligned() {
+        let mut b = NaiveSvBackend::with_seed(0);
+        // n=1 (dim=2, 32 bytes): small-alloc path where the system allocator
+        // does NOT incidentally hand out cache-line alignment — AlignedBuf::zeroed
+        // is what forces it here. This is the case that actually guards the
+        // allocate -> AlignedBuf plumbing.
+        let s1 = b.allocate(1).unwrap();
+        assert_eq!(
+            s1.amplitudes().as_ptr() as usize % aleph_core::CACHE_LINE,
+            0
+        );
+        // n=20 (16 MiB): large alloc sanity check (mmap would align this anyway).
+        let s20 = b.allocate(20).unwrap();
+        assert_eq!(
+            s20.amplitudes().as_ptr() as usize % aleph_core::CACHE_LINE,
+            0
+        );
     }
 
     use aleph_test::gate::arb_1q_gate;

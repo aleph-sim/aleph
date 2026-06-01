@@ -1,13 +1,13 @@
-//! `SoaState` — struct-of-arrays state vector: two parallel `Vec<f64>`
-//! for the real and imaginary parts, indexed by basis state.
+//! `SoaState` — struct-of-arrays state vector: two parallel 64-byte-aligned
+//! buffers for the real and imaginary parts, indexed by basis state.
 
-use aleph_core::Complex;
+use aleph_core::{AlignedBuf, Complex};
 
 #[derive(Debug, Clone)]
 pub struct SoaState {
     pub(crate) num_qubits: u32,
-    pub(crate) re: Vec<f64>,
-    pub(crate) im: Vec<f64>,
+    pub(crate) re: AlignedBuf<f64>,
+    pub(crate) im: AlignedBuf<f64>,
 }
 
 impl SoaState {
@@ -61,8 +61,8 @@ mod tests {
     fn getters_match_construction() {
         let s = SoaState {
             num_qubits: 3,
-            re: vec![0.0; 8],
-            im: vec![0.0; 8],
+            re: AlignedBuf::zeroed(8),
+            im: AlignedBuf::zeroed(8),
         };
         assert_eq!(s.num_qubits(), 3);
         assert_eq!(s.re().len(), 8);
@@ -73,8 +73,8 @@ mod tests {
     fn to_aos_roundtrips_paired_values() {
         let s = SoaState {
             num_qubits: 1,
-            re: vec![0.5, -0.25],
-            im: vec![0.0, 0.75],
+            re: AlignedBuf::from_slice(&[0.5, -0.25]),
+            im: AlignedBuf::from_slice(&[0.0, 0.75]),
         };
         let aos = s.to_aos();
         assert_eq!(aos.len(), 2);
@@ -90,8 +90,8 @@ mod tests {
         // rather than silently truncate via `zip`'s min semantics.
         let s = SoaState {
             num_qubits: 1,
-            re: vec![0.5, -0.25],
-            im: vec![0.0],
+            re: AlignedBuf::from_slice(&[0.5, -0.25]),
+            im: AlignedBuf::from_slice(&[0.0]),
         };
         let _ = s.to_aos();
     }
