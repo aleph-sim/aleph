@@ -55,12 +55,12 @@ impl Backend for SoaSvBackend {
             });
         }
         let dim = 1usize << num_qubits;
-        let mut re = AlignedBuf::<f64>::zeroed(dim);
+        let mut re = AlignedBuf::<f64>::zeroed_state(dim);
         re[0] = 1.0;
         Ok(SoaState {
             num_qubits,
             re,
-            im: AlignedBuf::<f64>::zeroed(dim),
+            im: AlignedBuf::<f64>::zeroed_state(dim),
         })
     }
 

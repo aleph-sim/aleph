@@ -21,6 +21,33 @@ use std::alloc::{self, Layout};
 /// exactly `LANES = 4` complex amplitudes, the AoS SIMD unit width.
 pub const CACHE_LINE: usize = 64;
 
+/// Page granularity for first-touch chunking. Keeping chunk boundaries on a
+/// page multiple stops a single page from being faulted by two workers (which
+/// would split its amplitudes across two NUMA nodes). 4 KiB is the base page
+/// on x86-64 and aarch64; this is a *granularity*, not an exactness claim —
+/// under transparent huge pages a boundary may land inside a larger page, a
+/// negligible placement nit that is never incorrect.
+#[cfg(feature = "numa")]
+const FIRST_TOUCH_PAGE: usize = 4096;
+
+/// Contiguous chunk length, in elements, for the first-touch parallel init.
+///
+/// Splits `[0, len)` into roughly `n_threads` contiguous chunks so each rayon
+/// worker faults one chunk's pages, then rounds the chunk up to a whole number
+/// of [`FIRST_TOUCH_PAGE`] pages so no page is split between two workers. Pure
+/// function of its inputs (no rayon / globals) so the partition is unit-testable
+/// without NUMA hardware. Returns at least one page of elements for `len > 0`.
+#[cfg(feature = "numa")]
+fn first_touch_chunk_len(len: usize, n_threads: usize, elem_size: usize) -> usize {
+    debug_assert!(len > 0 && n_threads > 0 && elem_size > 0);
+    // Elements per page (≥ 1; an element larger than a page degenerates to
+    // per-element granularity, which is the finest useful split).
+    let per_page = (FIRST_TOUCH_PAGE / elem_size).max(1);
+    let target = len.div_ceil(n_threads); // ~equal contiguous chunks
+    let chunk = target.div_ceil(per_page) * per_page; // round up to whole pages
+    chunk.max(per_page)
+}
+
 /// A fixed-size, `CACHE_LINE`-aligned, owned heap buffer of `T`.
 ///
 /// See the module docs for the element-type contract (POD/`Copy`, no
@@ -34,6 +61,30 @@ pub struct AlignedBuf<T> {
     len: usize,
     _marker: PhantomData<T>,
 }
+
+/// Minimal `Send`/`Sync` raw-pointer wrapper so the first-touch parallel pass
+/// can hand each rayon task the base pointer. The pass writes only pairwise-
+/// disjoint ranges, so concurrent use is data-race-free.
+#[cfg(feature = "numa")]
+struct SendPtr<T>(*mut T);
+
+// Manual `Copy`/`Clone` without the implicit `T: Copy`/`T: Clone` bound that
+// `#[derive]` would add: we copy the raw pointer value only, not `T` itself.
+#[cfg(feature = "numa")]
+impl<T> Copy for SendPtr<T> {}
+#[cfg(feature = "numa")]
+impl<T> Clone for SendPtr<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+// SAFETY: the only user (the first-touch pass) writes disjoint ranges; the
+// wrapper introduces no aliasing beyond what that disjointness already upholds.
+#[cfg(feature = "numa")]
+unsafe impl<T> Send for SendPtr<T> {}
+#[cfg(feature = "numa")]
+unsafe impl<T> Sync for SendPtr<T> {}
 
 impl<T> AlignedBuf<T> {
     /// Layout for `len` elements at 64-byte alignment.
@@ -97,6 +148,85 @@ impl<T> AlignedBuf<T> {
             ptr,
             len,
             _marker: PhantomData,
+        }
+    }
+
+    /// Allocate `len` elements, zero-initialised via a **first-touch** parallel
+    /// pass so each page is faulted by the rayon worker that zeroes it.
+    ///
+    /// Observationally identical to [`zeroed`](Self::zeroed) — all-zero, 64-byte
+    /// aligned, `len == 0` → the dangling sentinel. The difference is page
+    /// placement: on a NUMA host the parallel write spreads pages across nodes
+    /// instead of faulting them all onto the allocating thread's node. See
+    /// `docs/numa.md`. Available only under the `numa` feature.
+    ///
+    /// The all-zero bit pattern must be a valid `T` (holds for `f64` / `Complex`).
+    #[cfg(feature = "numa")]
+    pub fn zeroed_first_touch(len: usize) -> Self {
+        const {
+            assert!(
+                mem::size_of::<T>() != 0,
+                "AlignedBuf<T> requires a non-ZST T"
+            )
+        };
+        const {
+            assert!(
+                !mem::needs_drop::<T>(),
+                "AlignedBuf<T> does not run element destructors; T must not need Drop"
+            )
+        };
+        if len == 0 {
+            return Self::empty();
+        }
+        let layout = Self::layout(len);
+        // SAFETY: `layout` has non-zero size (`len > 0`, `size_of::<T>() > 0`). We
+        // allocate *uninitialised* (not `alloc_zeroed`) precisely so the pages are
+        // not pre-faulted by the allocator; the parallel pass below performs the
+        // first write to every byte before any read through `Deref`.
+        let raw = unsafe { alloc::alloc(layout) } as *mut T;
+        let ptr = NonNull::new(raw).unwrap_or_else(|| alloc::handle_alloc_error(layout));
+
+        let n_threads = rayon::current_num_threads().max(1);
+        let chunk = first_touch_chunk_len(len, n_threads, mem::size_of::<T>());
+        let n_chunks = len.div_ceil(chunk);
+        let send = SendPtr(ptr.as_ptr());
+        {
+            use rayon::prelude::*;
+            (0..n_chunks).into_par_iter().for_each(|c| {
+                // Bind the whole wrapper, NOT `send.0`: Rust-2021 precise capture
+                // would otherwise grab the bare `*mut T` field (which is neither
+                // `Send` nor `Sync`) and the closure would fail to be `Send`.
+                let base = send;
+                let start = c * chunk;
+                let end = (start + chunk).min(len);
+                // SAFETY: `first_touch_chunk_len`'s chunks are pairwise-disjoint and
+                // cover `[0, len)` exactly (coverage test in this module), so each
+                // task writes a unique, in-bounds range. `write_bytes` sets
+                // `(end - start) * size_of::<T>()` bytes to 0 — a valid `T`.
+                unsafe {
+                    core::ptr::write_bytes(base.0.add(start), 0u8, end - start);
+                }
+            });
+        }
+
+        Self {
+            ptr,
+            len,
+            _marker: PhantomData,
+        }
+    }
+
+    /// State-buffer constructor used by the SV backends: first-touch parallel
+    /// init under the `numa` feature, plain [`zeroed`](Self::zeroed) otherwise.
+    /// Keeps the `cfg` in one place so call sites stay feature-agnostic.
+    pub fn zeroed_state(len: usize) -> Self {
+        #[cfg(feature = "numa")]
+        {
+            Self::zeroed_first_touch(len)
+        }
+        #[cfg(not(feature = "numa"))]
+        {
+            Self::zeroed(len)
         }
     }
 
@@ -275,5 +405,92 @@ mod tests {
         let buf = AlignedBuf::<crate::Complex>::from_slice(&src);
         assert_eq!(&*buf, &src);
         assert_eq!(buf.as_ptr() as usize % CACHE_LINE, 0);
+    }
+
+    #[cfg(feature = "numa")]
+    #[test]
+    fn first_touch_matches_zeroed() {
+        // 70_000 elems spans many pages and exceeds n_threads * per_page, so the
+        // parallel path actually splits into multiple chunks.
+        for n in [1usize, 4, 1000, 70_000] {
+            let buf = AlignedBuf::<f64>::zeroed_first_touch(n);
+            assert_eq!(buf.len(), n);
+            assert_eq!(
+                buf.as_ptr() as usize % CACHE_LINE,
+                0,
+                "len {n} not 64-aligned"
+            );
+            assert!(buf.iter().all(|&x| x == 0.0), "len {n} not all-zero");
+        }
+    }
+
+    #[cfg(feature = "numa")]
+    #[test]
+    fn first_touch_empty_is_zero_len() {
+        let buf = AlignedBuf::<f64>::zeroed_first_touch(0);
+        assert_eq!(buf.len(), 0);
+        assert!(buf.is_empty());
+    }
+
+    #[cfg(feature = "numa")]
+    #[test]
+    fn first_touch_complex_round_trips() {
+        let buf = AlignedBuf::<crate::Complex>::zeroed_first_touch(70_000);
+        assert_eq!(buf.len(), 70_000);
+        assert_eq!(buf.as_ptr() as usize % CACHE_LINE, 0);
+        assert!(buf.iter().all(|&z| z == crate::Complex::new(0.0, 0.0)));
+    }
+
+    #[test]
+    fn zeroed_state_is_zeroed_and_aligned() {
+        // Routes to first-touch under `numa`, plain `zeroed` otherwise; both must
+        // yield an all-zero, 64-aligned buffer of the right length.
+        let buf = AlignedBuf::<crate::Complex>::zeroed_state(70_000);
+        assert_eq!(buf.len(), 70_000);
+        assert_eq!(buf.as_ptr() as usize % CACHE_LINE, 0);
+        assert!(buf.iter().all(|&z| z == crate::Complex::new(0.0, 0.0)));
+    }
+
+    #[cfg(feature = "numa")]
+    #[test]
+    fn first_touch_partition_covers_range_once() {
+        // (len, n_threads, elem_size) — Complex is 16 B, f64 is 8 B.
+        let cases = [
+            (1usize, 1usize, 16usize),
+            (1, 8, 16),
+            (1000, 4, 16),
+            (1 << 20, 8, 16),       // 1M Complex, 8 threads
+            (1 << 20, 20, 8),       // 1M f64, 20 threads (Xeon core count)
+            ((1 << 20) + 7, 6, 16), // non-page-multiple len
+            (300, 16, 8),           // many threads, tiny len
+        ];
+        for (len, nt, es) in cases {
+            let chunk = first_touch_chunk_len(len, nt, es);
+            assert!(
+                chunk > 0,
+                "chunk must be positive: len={len} nt={nt} es={es}"
+            );
+            let per_page = (FIRST_TOUCH_PAGE / es).max(1);
+            assert_eq!(
+                chunk % per_page,
+                0,
+                "chunk {chunk} not page-aligned (es={es})"
+            );
+
+            // Reconstruct the chunks: contiguous, disjoint, exact cover of [0,len).
+            let n_chunks = len.div_ceil(chunk);
+            let mut prev_end = 0usize;
+            let mut covered = 0usize;
+            for c in 0..n_chunks {
+                let start = c * chunk;
+                let end = (start + chunk).min(len);
+                assert_eq!(start, prev_end, "gap/overlap before chunk {c}");
+                assert!(start < end, "empty chunk {c}");
+                covered += end - start;
+                prev_end = end;
+            }
+            assert_eq!(prev_end, len, "partition did not reach len={len}");
+            assert_eq!(covered, len, "coverage {covered} != len {len}");
+        }
     }
 }

@@ -11,6 +11,19 @@ authors.workspace = true
 num-complex = { workspace = true }
 smallvec = { workspace = true }
 thiserror = { workspace = true }
+rayon = { workspace = true, optional = true }
+
+[features]
+## First-touch NUMA-aware allocation (`AlignedBuf::zeroed_first_touch`).
+## Off by default: `AlignedBuf` then stays dependency-free and codegen is
+## unchanged. See docs/numa.md and P2-03.
+numa = ["dep:rayon"]
 
 [dev-dependencies]
 proptest = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name = "numa_first_touch"
+harness = false
+required-features = ["numa"]
