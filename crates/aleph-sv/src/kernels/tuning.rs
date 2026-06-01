@@ -74,14 +74,33 @@ pub(crate) fn pos_class(max_target: u32, n: u32) -> PosClass {
     }
 }
 
-/// The tuned table. Populated for high-traffic cells in a later task;
-/// every other cell (and all of `Generic`) returns `DEFAULT_POLICY`.
+/// The per-CPU chunk-policy table.
+///
+/// Empirical result (P2-04 sweep, 2026-06-01, `scripts/tune-chunks.sh`,
+/// raw data in `docs/perf/data/p2-04-tune-{epyc,ryzen}.log`; analysis in
+/// `docs/perf/phase2-p2-04.md`): **every cell on both reference CPUs is
+/// within ~0.4 % (noise) of `grain = 64`**, the pre-P2-04 default, so no
+/// cell is encoded away from `DEFAULT_POLICY`. The genuine signals were
+/// negative — they confirm the default rather than beat it:
+///   * `grain >= 256` *regresses* the stride-heavy AVX-512 kernels
+///     (cnot/cphase/zdiag at a mid target) by 8–15 % on EPYC; `grain = 64`
+///     sits safely in the optimal band.
+///   * `min_amps` is inert at perf-relevant sizes: at n >= ~21 the state
+///     length always exceeds any sane cutoff, so the kernel is always
+///     parallel and the cutoff never fires. It only gates tiny states,
+///     which are microseconds regardless.
+///   * Ryzen (scalar, no AVX-512) is bandwidth-bound and totally flat
+///     across the whole grid — consistent with P2-02/P2-03.
+///
+/// The table therefore returns `DEFAULT_POLICY` for all current CPUs. The
+/// CPU-dispatch machinery is retained as the wired, tested hook for a
+/// future CPU or kernel that *does* show chunk sensitivity — adding a
+/// tuned cell is a one-line match arm, re-measured via the same sweep.
 pub(crate) fn chunk_policy(cpu: RefCpu, _class: GateClass, _pos: PosClass) -> ChunkPolicy {
     match cpu {
-        RefCpu::Generic => DEFAULT_POLICY,
-        // A later task replaces these arms with measured per-(class,pos) values.
-        RefCpu::Epyc8124P => DEFAULT_POLICY,
-        RefCpu::Ryzen3900 => DEFAULT_POLICY,
+        // All arms measured == DEFAULT_POLICY (grain 64 near-optimal; see
+        // doc above). Differentiated cells go here once a sweep finds one.
+        RefCpu::Generic | RefCpu::Epyc8124P | RefCpu::Ryzen3900 => DEFAULT_POLICY,
     }
 }
 
@@ -222,6 +241,25 @@ mod tests {
         ] {
             for pos in [PosClass::Low, PosClass::Mid, PosClass::High] {
                 assert_eq!(chunk_policy(RefCpu::Generic, class, pos), DEFAULT_POLICY);
+            }
+        }
+    }
+
+    // Empirical conclusion of the P2-04 sweep: grain=64 (the default) is
+    // within noise of optimal on both reference CPUs, so their high-traffic
+    // cells are left at DEFAULT_POLICY. This guards against silently
+    // encoding a different value without re-running scripts/tune-chunks.sh.
+    #[test]
+    fn reference_cpu_high_traffic_cells_measured_as_default() {
+        let high_traffic = [
+            (GateClass::OneQGeneric, PosClass::Low),
+            (GateClass::OneQDiag, PosClass::Mid),
+            (GateClass::TwoQCnot, PosClass::Mid),
+            (GateClass::TwoQDiag, PosClass::High),
+        ];
+        for cpu in [RefCpu::Epyc8124P, RefCpu::Ryzen3900] {
+            for (class, pos) in high_traffic {
+                assert_eq!(chunk_policy(cpu, class, pos), DEFAULT_POLICY);
             }
         }
     }
