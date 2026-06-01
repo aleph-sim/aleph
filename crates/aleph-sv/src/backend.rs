@@ -744,8 +744,7 @@ mod tests {
         let mut s = b.allocate(2).unwrap(); // num_qubits=2 → expects 4 amps
                                             // Replace the buffer with a length-5 one to break the pow2 invariant;
                                             // AlignedBuf is fixed-size so we reconstruct rather than push.
-        let zero = Complex::new(0.0, 0.0);
-        s.amps = AlignedBuf::from_slice(&[zero, zero, zero, zero, zero]); // 5 amps; not pow2
+        s.amps = AlignedBuf::from_slice(&[Complex::new(0.0, 0.0); 5]); // 5 amps; not pow2
         let err = b.sample(&s, 10).unwrap_err();
         assert!(
             matches!(err, BackendError::InvalidState { .. }),
@@ -773,8 +772,21 @@ mod tests {
     #[test]
     fn allocated_state_is_cache_line_aligned() {
         let mut b = NaiveSvBackend::with_seed(0);
-        let s = b.allocate(20).unwrap();
-        assert_eq!(s.amplitudes().as_ptr() as usize % aleph_core::CACHE_LINE, 0);
+        // n=1 (dim=2, 32 bytes): small-alloc path where the system allocator
+        // does NOT incidentally hand out cache-line alignment — AlignedBuf::zeroed
+        // is what forces it here. This is the case that actually guards the
+        // allocate -> AlignedBuf plumbing.
+        let s1 = b.allocate(1).unwrap();
+        assert_eq!(
+            s1.amplitudes().as_ptr() as usize % aleph_core::CACHE_LINE,
+            0
+        );
+        // n=20 (16 MiB): large alloc sanity check (mmap would align this anyway).
+        let s20 = b.allocate(20).unwrap();
+        assert_eq!(
+            s20.amplitudes().as_ptr() as usize % aleph_core::CACHE_LINE,
+            0
+        );
     }
 
     use aleph_test::gate::arb_1q_gate;
