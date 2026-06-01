@@ -191,17 +191,25 @@ pub fn apply_1q(amps: &mut [Complex], target: u32, controls: &[u32], m: &[[Compl
     let t_bit = 1usize << target;
     let ctrl_mask = super::control_mask(controls);
     let len = amps.len();
-    let mut i = 0usize;
-    while i < len {
+    let cp = super::ComplexPtr(amps.as_mut_ptr());
+    // Flat per-amplitude walk: parallel over the full index range (no
+    // count-starvation — every base index `i` with bit `target` clear
+    // writes its own disjoint pair `{i, i|t_bit}`).
+    super::par_blocks(len, len, |k| k, |i| {
         if i & t_bit == 0 && (i & ctrl_mask) == ctrl_mask {
+            let p = cp.ptr();
             let j = i | t_bit;
-            let a = amps[i];
-            let b = amps[j];
-            amps[i] = m[0][0] * a + m[0][1] * b;
-            amps[j] = m[1][0] * a + m[1][1] * b;
+            // SAFETY: `i < len`, `j = i | t_bit < len`; distinct base
+            // indices (bit target clear) produce disjoint {i, j} pairs,
+            // so concurrent writes never alias.
+            unsafe {
+                let a = *p.add(i);
+                let b = *p.add(j);
+                *p.add(i) = m[0][0] * a + m[0][1] * b;
+                *p.add(j) = m[1][0] * a + m[1][1] * b;
+            }
         }
-        i += 1;
-    }
+    });
 }
 
 /// Packed-complex AVX-512 path for AoS `apply_1q`. 4 complex pairs
@@ -397,14 +405,18 @@ pub(crate) fn apply_1q_diagonal_scalar(
     let t_bit = 1usize << target;
     let ctrl_mask = super::control_mask(controls);
     let len = amps.len();
-    let mut i = 0usize;
-    while i < len {
+    let cp = super::ComplexPtr(amps.as_mut_ptr());
+    super::par_blocks(len, len, |k| k, |i| {
         if (i & ctrl_mask) == ctrl_mask {
             let d = if (i & t_bit) == 0 { m00 } else { m11 };
-            amps[i] *= d;
+            // SAFETY: `i < len`; each amplitude index is written exactly
+            // once across the whole walk, so no aliasing across tasks.
+            unsafe {
+                let p = cp.ptr();
+                *p.add(i) = *p.add(i) * d;
+            }
         }
-        i += 1;
-    }
+    });
 }
 
 /// Scalar Pauli-X kernel. Pure amplitude swap; no arithmetic.
@@ -1335,16 +1347,19 @@ pub(crate) fn apply_2q_diagonal_scalar(
     let t1_bit = 1usize << targets[1];
     let ctrl_mask = super::control_mask(external_controls);
     let len = amps.len();
-    let mut i = 0usize;
-    while i < len {
+    let cp = super::ComplexPtr(amps.as_mut_ptr());
+    super::par_blocks(len, len, |k| k, |i| {
         if (i & ctrl_mask) == ctrl_mask {
             let k_hi = ((i & t0_bit) != 0) as usize;
             let k_lo = ((i & t1_bit) != 0) as usize;
             let k = (k_hi << 1) | k_lo;
-            amps[i] *= d[k];
+            // SAFETY: `i < len`; each amplitude index written exactly once.
+            unsafe {
+                let p = cp.ptr();
+                *p.add(i) = *p.add(i) * d[k];
+            }
         }
-        i += 1;
-    }
+    });
 }
 
 /// Top-level 2q dispatch.  See spec § 4.2 for the detection order:
