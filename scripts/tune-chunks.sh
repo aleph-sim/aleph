@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 # scripts/tune-chunks.sh — P2-04 chunk-size grid sweep.
 # Usage: ALEPH_CPU_MODEL=epyc ./scripts/tune-chunks.sh 2>&1 | tee tune-$(hostname).log
 # Run ONLY on a verified-idle box (uptime ~0; no cargo bench / bencher run).
