@@ -1493,9 +1493,10 @@ unsafe fn apply_2q_avx512(
         }
     }
 
-    let amps_ptr = amps.as_mut_ptr() as *mut f64;
+    let bp = crate::kernels::BlockPtr(amps.as_mut_ptr() as *mut f64);
 
     let outer_iter = |block: usize| {
+        let amps_ptr = bp.ptr();
         let mut j = 0usize;
         while j + LANES <= t_lo_bit {
             // Load 4 sub-blocks, each LANES complex pairs.
@@ -1576,10 +1577,12 @@ unsafe fn apply_2q_avx512(
     // position contributes a bit to the outer-walk index.
     let n_qubits = len.trailing_zeros();
     let outer_count = 1usize << (n_qubits - t_lo - 2 - controls.len() as u32);
-    for k in 0..outer_count {
-        let block = crate::kernels::expand_with_fixed(k, &fixed_above) << (t_lo + 1);
-        outer_iter(block);
-    }
+    crate::kernels::par_blocks(
+        outer_count,
+        len,
+        |k| crate::kernels::expand_with_fixed(k, &fixed_above) << (t_lo + 1),
+        outer_iter,
+    );
 }
 
 /// Packed AVX-512 CNOT specialisation — Tier A (`1 << target >= LANES`
@@ -1651,13 +1654,14 @@ unsafe fn apply_2q_cnot_avx512(
         "external control at-or-below max(control, target)"
     );
 
-    let amps_ptr = amps.as_mut_ptr() as *mut f64;
+    let bp = crate::kernels::BlockPtr(amps.as_mut_ptr() as *mut f64);
 
     // Inner walk: swap LANES amps at `outer | j` with `outer | j | t_bit`.
     // By the outer-walk reservation, bits `[0, target]` of `outer` are zero
     // (target itself is reserved by the renormalise-then-shift), so
     // `outer | j` = `outer + j` and `outer | j | t_bit` = `outer + j + t_bit`.
     let inner_walk = |outer: usize| {
+        let amps_ptr = bp.ptr();
         let mut j = 0usize;
         while j + LANES <= t_bit {
             let i0 = outer | j;
@@ -1695,10 +1699,12 @@ unsafe fn apply_2q_cnot_avx512(
     // each contributes one bit to the outer-walk index.
     let n_qubits = len.trailing_zeros();
     let outer_count = 1usize << (n_qubits - target - 2 - external_controls.len() as u32);
-    for k in 0..outer_count {
-        let outer = crate::kernels::expand_with_fixed(k, &fixed_above) << (target + 1);
-        inner_walk(outer);
-    }
+    crate::kernels::par_blocks(
+        outer_count,
+        len,
+        |k| crate::kernels::expand_with_fixed(k, &fixed_above) << (target + 1),
+        inner_walk,
+    );
 }
 
 /// Packed AVX-512 CNOT specialisation — Tier B (`target ∈ {0, 1}` AND
@@ -1772,7 +1778,7 @@ unsafe fn apply_2q_cnot_avx512_tier_b(
         _ => unreachable!(),
     };
 
-    let amps_ptr = amps.as_mut_ptr() as *mut f64;
+    let bp = crate::kernels::BlockPtr(amps.as_mut_ptr() as *mut f64);
 
     // Outer-walk: reserve bits `[0, control]` for the inner walk + the
     // control bit itself, inject every external control as `fixed=true`
@@ -1792,8 +1798,9 @@ unsafe fn apply_2q_cnot_avx512_tier_b(
     // contributes one bit to the outer-walk index.
     let n_qubits = len.trailing_zeros();
     let outer_count = 1usize << (n_qubits - control - 1 - external_controls.len() as u32);
-    for k in 0..outer_count {
-        let base = crate::kernels::expand_with_fixed(k, &fixed_above) << (control + 1);
+
+    let outer_iter = |base: usize| {
+        let amps_ptr = bp.ptr();
         let outer = base | c_bit;
         // outer has: bit control=1, every external_control=1, bits
         // [0, control) all zero.  Bit `target` is in [0, control) and
@@ -1813,7 +1820,13 @@ unsafe fn apply_2q_cnot_avx512_tier_b(
             j += LANES;
         }
         debug_assert_eq!(j, c_bit);
-    }
+    };
+    crate::kernels::par_blocks(
+        outer_count,
+        len,
+        |k| crate::kernels::expand_with_fixed(k, &fixed_above) << (control + 1),
+        outer_iter,
+    );
 }
 
 /// Packed AVX-512 CNOT specialisation — Tier C (both `control` and
@@ -1879,7 +1892,7 @@ unsafe fn apply_2q_cnot_avx512_tier_c(
         _ => unreachable!("Tier C requires distinct control,target ∈ {{0, 1}}"),
     };
 
-    let amps_ptr = amps.as_mut_ptr() as *mut f64;
+    let bp = crate::kernels::BlockPtr(amps.as_mut_ptr() as *mut f64);
 
     // Outer-walk: reserve bits [0, 2) for the in-register quartet,
     // inject every external control (renormalised by -2) as
@@ -1894,8 +1907,9 @@ unsafe fn apply_2q_cnot_avx512_tier_c(
 
     let n_qubits = len.trailing_zeros();
     let outer_count = 1usize << (n_qubits - 2 - external_controls.len() as u32);
-    for k in 0..outer_count {
-        let base = crate::kernels::expand_with_fixed(k, &fixed_above) << 2;
+
+    let outer_iter = |base: usize| {
+        let amps_ptr = bp.ptr();
         // base has bits 0 and 1 zero (positions 0, 1 in fixed_above's
         // post-shift namespace are free, and they shift out by `<< 2`
         // leaving 0).  Every external control bit is set.
@@ -1906,7 +1920,13 @@ unsafe fn apply_2q_cnot_avx512_tier_c(
         let z = _mm512_loadu_pd(amps_ptr.add(base * 2));
         let z2 = _mm512_permutexvar_pd(permute_idx, z);
         _mm512_storeu_pd(amps_ptr.add(base * 2), z2);
-    }
+    };
+    crate::kernels::par_blocks(
+        outer_count,
+        len,
+        |k| crate::kernels::expand_with_fixed(k, &fixed_above) << 2,
+        outer_iter,
+    );
 }
 
 /// Dispatch helper for CNOT specialisations.  Routes to the AVX-512
@@ -2034,7 +2054,7 @@ unsafe fn apply_2q_swap_avx512(amps: &mut [Complex], targets: [u32; 2], external
         "external control at-or-below hi: dispatch contract violated"
     );
 
-    let amps_ptr = amps.as_mut_ptr() as *mut f64;
+    let bp = crate::kernels::BlockPtr(amps.as_mut_ptr() as *mut f64);
 
     // Inner walk: swap LANES amps at `outer | lo_bit | j` (lo-bit=1,
     // hi-bit=0) with LANES amps at `outer | hi_bit | j` (lo-bit=0,
@@ -2043,6 +2063,7 @@ unsafe fn apply_2q_swap_avx512(amps: &mut [Complex], targets: [u32; 2], external
     // hi is a fixed-false slot above lo), so `outer | lo_bit | j` =
     // `outer + lo_bit + j` and similarly for hi.
     let inner_walk = |outer: usize| {
+        let amps_ptr = bp.ptr();
         let mut j = 0usize;
         while j + LANES <= lo_bit {
             // SAFETY: bit-disjointness invariant —
@@ -2085,10 +2106,12 @@ unsafe fn apply_2q_swap_avx512(amps: &mut [Complex], targets: [u32; 2], external
     // each contributes one bit to the outer-walk index.
     let n_qubits = len.trailing_zeros();
     let outer_count = 1usize << (n_qubits - lo - 2 - external_controls.len() as u32);
-    for k in 0..outer_count {
-        let outer = crate::kernels::expand_with_fixed(k, &fixed_above) << (lo + 1);
-        inner_walk(outer);
-    }
+    crate::kernels::par_blocks(
+        outer_count,
+        len,
+        |k| crate::kernels::expand_with_fixed(k, &fixed_above) << (lo + 1),
+        inner_walk,
+    );
 }
 
 /// Packed AVX-512 SWAP specialisation — Tier B (`min(targets) ∈
@@ -2181,7 +2204,7 @@ unsafe fn apply_2q_swap_avx512_tier_b(
         _ => unreachable!("Tier B requires lo ∈ {{0, 1}}"),
     };
 
-    let amps_ptr = amps.as_mut_ptr() as *mut f64;
+    let bp = crate::kernels::BlockPtr(amps.as_mut_ptr() as *mut f64);
 
     // Outer-walk: reserve bits `[0, hi]` for the inner walk + the
     // hi-bit half-selector, inject every external control as
@@ -2200,8 +2223,9 @@ unsafe fn apply_2q_swap_avx512_tier_b(
     // contributes one bit to the outer-walk index.
     let n_qubits = len.trailing_zeros();
     let outer_count = 1usize << (n_qubits - hi - 1 - external_controls.len() as u32);
-    for k in 0..outer_count {
-        let outer = crate::kernels::expand_with_fixed(k, &fixed_above) << (hi + 1);
+
+    let outer_iter = |outer: usize| {
+        let amps_ptr = bp.ptr();
         // outer has: bit hi = 0, every external_control bit set,
         // bits [0, hi) all zero.  We OR in `j` (which steps over
         // bits [0, hi)) and either 0 or `hi_bit` to select between
@@ -2224,7 +2248,13 @@ unsafe fn apply_2q_swap_avx512_tier_b(
             j += LANES;
         }
         debug_assert_eq!(j, hi_bit);
-    }
+    };
+    crate::kernels::par_blocks(
+        outer_count,
+        len,
+        |k| crate::kernels::expand_with_fixed(k, &fixed_above) << (hi + 1),
+        outer_iter,
+    );
 }
 
 /// Packed AVX-512 SWAP specialisation — Tier C (both targets in
@@ -2283,7 +2313,7 @@ unsafe fn apply_2q_swap_avx512_tier_c(
     // Output position → source index in the input zmm.
     let permute_idx = _mm512_setr_epi64(0, 1, 4, 5, 2, 3, 6, 7);
 
-    let amps_ptr = amps.as_mut_ptr() as *mut f64;
+    let bp = crate::kernels::BlockPtr(amps.as_mut_ptr() as *mut f64);
 
     // Outer-walk: reserve bits [0, 2) for the in-register quartet,
     // inject every external control (renormalised by -2) as
@@ -2298,8 +2328,9 @@ unsafe fn apply_2q_swap_avx512_tier_c(
 
     let n_qubits = len.trailing_zeros();
     let outer_count = 1usize << (n_qubits - 2 - external_controls.len() as u32);
-    for k in 0..outer_count {
-        let base = crate::kernels::expand_with_fixed(k, &fixed_above) << 2;
+
+    let outer_iter = |base: usize| {
+        let amps_ptr = bp.ptr();
         // base has bits 0 and 1 zero (post-shift) and every external
         // control bit set.
         debug_assert_eq!(base & 3, 0);
@@ -2309,7 +2340,13 @@ unsafe fn apply_2q_swap_avx512_tier_c(
         let z = _mm512_loadu_pd(amps_ptr.add(base * 2));
         let z2 = _mm512_permutexvar_pd(permute_idx, z);
         _mm512_storeu_pd(amps_ptr.add(base * 2), z2);
-    }
+    };
+    crate::kernels::par_blocks(
+        outer_count,
+        len,
+        |k| crate::kernels::expand_with_fixed(k, &fixed_above) << 2,
+        outer_iter,
+    );
 }
 
 /// Dispatch helper for SWAP.  Routes to the AVX-512 Tier A / B / C
@@ -2432,7 +2469,7 @@ unsafe fn apply_2q_cz_avx512(amps: &mut [Complex], targets: [u32; 2], external_c
         "external control at-or-below hi: dispatch contract violated"
     );
 
-    let amps_ptr = amps.as_mut_ptr() as *mut f64;
+    let bp = crate::kernels::BlockPtr(amps.as_mut_ptr() as *mut f64);
     // Sign-mask: each double-lane has only its IEEE-754 sign bit set, so
     // `vxorpd(z, sign_mask)` flips the sign of every double in `z` —
     // equivalent to `z = -z` for both real and imaginary parts.
@@ -2459,8 +2496,9 @@ unsafe fn apply_2q_cz_avx512(amps: &mut [Complex], targets: [u32; 2], external_c
     // one bit to the outer-walk index.
     let n_qubits = len.trailing_zeros();
     let outer_count = 1usize << (n_qubits - lo - 2 - external_controls.len() as u32);
-    for k in 0..outer_count {
-        let base = crate::kernels::expand_with_fixed(k, &fixed_above) << (lo + 1);
+
+    let outer_iter = |base: usize| {
+        let amps_ptr = bp.ptr();
         // base has: bit hi = 1, every external_control bit = 1, bits
         // [0, lo] all zero.  ORing in `lo_bit` sets bit `lo`, so the
         // resulting `outer` lands on the (1, 1) sub-block.
@@ -2479,7 +2517,13 @@ unsafe fn apply_2q_cz_avx512(amps: &mut [Complex], targets: [u32; 2], external_c
             j += LANES;
         }
         debug_assert_eq!(j, lo_bit);
-    }
+    };
+    crate::kernels::par_blocks(
+        outer_count,
+        len,
+        |k| crate::kernels::expand_with_fixed(k, &fixed_above) << (lo + 1),
+        outer_iter,
+    );
 }
 
 /// Packed AVX-512 general-diagonal 2q specialisation — Tier A
@@ -2569,12 +2613,13 @@ unsafe fn apply_2q_diagonal_avx512(
         (d[0], d[1], d[2], d[3])
     };
 
-    let amps_ptr = amps.as_mut_ptr() as *mut f64;
+    let bp = crate::kernels::BlockPtr(amps.as_mut_ptr() as *mut f64);
 
     // Single-stream complex multiply per sub-block.  P1-06 diagonal-1q
     // idiom: vmovupd → vpermilpd 0x55 → vmulpd(im_bc, swap) →
     // vfmaddsub(re_bc, z, t).  ~5 µops per LANES amps ≈ 1.25 µops/amp.
     let multiply_block = |base: usize, d_k: Complex| {
+        let amps_ptr = bp.ptr();
         let d_re_bc = _mm512_set1_pd(d_k.re);
         let d_im_bc = _mm512_set1_pd(d_k.im);
         let mut j = 0usize;
@@ -2616,15 +2661,21 @@ unsafe fn apply_2q_diagonal_avx512(
     // contributes one bit to the outer-walk index.
     let n_qubits = len.trailing_zeros();
     let outer_count = 1usize << (n_qubits - lo - 2 - external_controls.len() as u32);
-    for k in 0..outer_count {
-        let base = crate::kernels::expand_with_fixed(k, &fixed_above) << (lo + 1);
+
+    let outer_iter = |base: usize| {
         // base has: bit hi = 0, every external_control bit = 1, bits
         // [0, lo] all zero.  Iterate the 4 sub-blocks:
         multiply_block(base, d_for_hi0_lo0); // (q_hi=0, q_lo=0)
         multiply_block(base | lo_bit, d_for_hi0_lo1); // (q_hi=0, q_lo=1)
         multiply_block(base | hi_bit, d_for_hi1_lo0); // (q_hi=1, q_lo=0)
         multiply_block(base | hi_bit | lo_bit, d_for_hi1_lo1); // (q_hi=1, q_lo=1)
-    }
+    };
+    crate::kernels::par_blocks(
+        outer_count,
+        len,
+        |k| crate::kernels::expand_with_fixed(k, &fixed_above) << (lo + 1),
+        outer_iter,
+    );
 }
 
 /// Dispatch helper for the diagonal-4x4 branch (catches CZ, controlled-
