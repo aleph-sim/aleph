@@ -115,6 +115,34 @@ qft-parity / PR #96). Fusion collapses the QFT cphase ladder (~36× less work,
    an efficiency-relative-to-bandwidth or compute-bound-regime metric is more
    honest than a fixed ≥6×/≥12× for memory-streaming gate application.
 
+## 8. Addendum — scalar-path parallelization (follow-up)
+
+P2-01 parallelized only the AVX-512 kernels; on non-AVX-512 hosts (Zen 2, ARM,
+older Intel) the dispatch falls back to the **scalar** kernels, which were left
+sequential. A follow-up branch parallelized those too: a `ComplexPtr` (`*mut
+Complex` Send/Sync wrapper) + `par_blocks(len, len, |k| k, body)` over the flat
+per-amplitude walk. The scalar kernels are pure `0..len` walks with a per-index
+guard, so they have **no count-starvation** — full parallelism at any qubit.
+
+Cross-check on a second box (AMD Ryzen 9 3900, Zen 2, 12c/24t, **no AVX-512**,
+dual-channel DDR4):
+
+| Path / box | QFT-25 T=1 | T=8 | Plateau |
+|------------|-----------:|----:|--------:|
+| AVX-512 / EPYC 8124P | 11.16 s | 1.6× | yes |
+| Scalar / Ryzen 9 3900 | 12.83 s | **2.11×** | yes (≈8 threads) |
+
+The scalar path scales somewhat better (higher arithmetic intensity per core, and
+the Ryzen throttles less), but **both paths on both machines plateau, bandwidth-
+bound, far below the ≥6× target.** Two independent CPUs and two code paths
+agreeing reinforces §5: state-vector gate application is fundamentally memory-
+bandwidth-bound, and the ≥6×/8-core / ≥12×/16-core goals require either much
+higher memory bandwidth (more channels / sockets) or higher arithmetic intensity
+(fusion, cache blocking) — not more threads. Notably the scalar single-thread
+time (12.83 s) is within ~15% of the AVX-512 single-thread time (11.16 s): for
+this memory-bound workload the SIMD advantage is largely eaten by the memory
+wall.
+
 ## 8. Reproduce
 
 ```bash

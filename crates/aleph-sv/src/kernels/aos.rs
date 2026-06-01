@@ -195,21 +195,26 @@ pub fn apply_1q(amps: &mut [Complex], target: u32, controls: &[u32], m: &[[Compl
     // Flat per-amplitude walk: parallel over the full index range (no
     // count-starvation — every base index `i` with bit `target` clear
     // writes its own disjoint pair `{i, i|t_bit}`).
-    super::par_blocks(len, len, |k| k, |i| {
-        if i & t_bit == 0 && (i & ctrl_mask) == ctrl_mask {
-            let p = cp.ptr();
-            let j = i | t_bit;
-            // SAFETY: `i < len`, `j = i | t_bit < len`; distinct base
-            // indices (bit target clear) produce disjoint {i, j} pairs,
-            // so concurrent writes never alias.
-            unsafe {
-                let a = *p.add(i);
-                let b = *p.add(j);
-                *p.add(i) = m[0][0] * a + m[0][1] * b;
-                *p.add(j) = m[1][0] * a + m[1][1] * b;
+    super::par_blocks(
+        len,
+        len,
+        |k| k,
+        |i| {
+            if i & t_bit == 0 && (i & ctrl_mask) == ctrl_mask {
+                let p = cp.ptr();
+                let j = i | t_bit;
+                // SAFETY: `i < len`, `j = i | t_bit < len`; distinct base
+                // indices (bit target clear) produce disjoint {i, j} pairs,
+                // so concurrent writes never alias.
+                unsafe {
+                    let a = *p.add(i);
+                    let b = *p.add(j);
+                    *p.add(i) = m[0][0] * a + m[0][1] * b;
+                    *p.add(j) = m[1][0] * a + m[1][1] * b;
+                }
             }
-        }
-    });
+        },
+    );
 }
 
 /// Packed-complex AVX-512 path for AoS `apply_1q`. 4 complex pairs
@@ -406,17 +411,22 @@ pub(crate) fn apply_1q_diagonal_scalar(
     let ctrl_mask = super::control_mask(controls);
     let len = amps.len();
     let cp = super::ComplexPtr(amps.as_mut_ptr());
-    super::par_blocks(len, len, |k| k, |i| {
-        if (i & ctrl_mask) == ctrl_mask {
-            let d = if (i & t_bit) == 0 { m00 } else { m11 };
-            // SAFETY: `i < len`; each amplitude index is written exactly
-            // once across the whole walk, so no aliasing across tasks.
-            unsafe {
-                let p = cp.ptr();
-                *p.add(i) = *p.add(i) * d;
+    super::par_blocks(
+        len,
+        len,
+        |k| k,
+        |i| {
+            if (i & ctrl_mask) == ctrl_mask {
+                let d = if (i & t_bit) == 0 { m00 } else { m11 };
+                // SAFETY: `i < len`; each amplitude index is written exactly
+                // once across the whole walk, so no aliasing across tasks.
+                unsafe {
+                    let p = cp.ptr();
+                    *p.add(i) = *p.add(i) * d;
+                }
             }
-        }
-    });
+        },
+    );
 }
 
 /// Scalar Pauli-X kernel. Pure amplitude swap; no arithmetic.
@@ -430,20 +440,25 @@ pub(crate) fn apply_1q_x_scalar(amps: &mut [Complex], target: u32, controls: &[u
     let cp = super::ComplexPtr(amps.as_mut_ptr());
     // Flat per-amplitude walk: each base index `i` (target bit clear) writes
     // the disjoint pair {i, i|t_bit}, so concurrent tasks never alias.
-    super::par_blocks(len, len, |k| k, |i| {
-        if i & t_bit == 0 && (i & ctrl_mask) == ctrl_mask {
-            let j = i | t_bit;
-            // SAFETY: `i < len`, `j = i | t_bit < len`; distinct base indices
-            // (target bit clear) produce disjoint {i, j} pairs — no aliasing.
-            unsafe {
-                let p = cp.ptr();
-                let a = *p.add(i);
-                let b = *p.add(j);
-                *p.add(i) = b;
-                *p.add(j) = a;
+    super::par_blocks(
+        len,
+        len,
+        |k| k,
+        |i| {
+            if i & t_bit == 0 && (i & ctrl_mask) == ctrl_mask {
+                let j = i | t_bit;
+                // SAFETY: `i < len`, `j = i | t_bit < len`; distinct base indices
+                // (target bit clear) produce disjoint {i, j} pairs — no aliasing.
+                unsafe {
+                    let p = cp.ptr();
+                    let a = *p.add(i);
+                    let b = *p.add(j);
+                    *p.add(i) = b;
+                    *p.add(j) = a;
+                }
             }
-        }
-    });
+        },
+    );
 }
 
 /// Scalar Pauli-Y kernel. Swap + sign-flip + (re, im) exchange.
@@ -467,24 +482,29 @@ pub(crate) fn apply_1q_y_scalar(
     let cp = super::ComplexPtr(amps.as_mut_ptr());
     // Flat per-amplitude walk: each base index `i` (target bit clear) writes
     // the disjoint pair {i, i|t_bit}, so concurrent tasks never alias.
-    super::par_blocks(len, len, |k| k, |i| {
-        if i & t_bit == 0 && (i & ctrl_mask) == ctrl_mask {
-            let j = i | t_bit;
-            // SAFETY: `i < len`, `j = i | t_bit < len`; distinct base indices
-            // (target bit clear) produce disjoint {i, j} pairs — no aliasing.
-            unsafe {
-                let p = cp.ptr();
-                let z0 = *p.add(i);
-                let z1 = *p.add(j);
-                // YPos (phase_sign=+1):
-                //   amps[i] = (-i) * z1 = (im1, -re1)
-                //   amps[j] = (+i) * z0 = (-im0, re0)
-                // YNeg (phase_sign=-1): swap signs on both halves.
-                *p.add(i) = Complex::new(phase_sign * z1.im, -phase_sign * z1.re);
-                *p.add(j) = Complex::new(-phase_sign * z0.im, phase_sign * z0.re);
+    super::par_blocks(
+        len,
+        len,
+        |k| k,
+        |i| {
+            if i & t_bit == 0 && (i & ctrl_mask) == ctrl_mask {
+                let j = i | t_bit;
+                // SAFETY: `i < len`, `j = i | t_bit < len`; distinct base indices
+                // (target bit clear) produce disjoint {i, j} pairs — no aliasing.
+                unsafe {
+                    let p = cp.ptr();
+                    let z0 = *p.add(i);
+                    let z1 = *p.add(j);
+                    // YPos (phase_sign=+1):
+                    //   amps[i] = (-i) * z1 = (im1, -re1)
+                    //   amps[j] = (+i) * z0 = (-im0, re0)
+                    // YNeg (phase_sign=-1): swap signs on both halves.
+                    *p.add(i) = Complex::new(phase_sign * z1.im, -phase_sign * z1.re);
+                    *p.add(j) = Complex::new(-phase_sign * z0.im, phase_sign * z0.re);
+                }
             }
-        }
-    });
+        },
+    );
 }
 
 /// Scalar generic anti-diagonal kernel. Full complex multiply on the
@@ -508,20 +528,25 @@ pub(crate) fn apply_1q_antidiag_scalar(
     let cp = super::ComplexPtr(amps.as_mut_ptr());
     // Flat per-amplitude walk: each base index `i` (target bit clear) writes
     // the disjoint pair {i, i|t_bit}, so concurrent tasks never alias.
-    super::par_blocks(len, len, |k| k, |i| {
-        if i & t_bit == 0 && (i & ctrl_mask) == ctrl_mask {
-            let j = i | t_bit;
-            // SAFETY: `i < len`, `j = i | t_bit < len`; distinct base indices
-            // (target bit clear) produce disjoint {i, j} pairs — no aliasing.
-            unsafe {
-                let p = cp.ptr();
-                let z0 = *p.add(i);
-                let z1 = *p.add(j);
-                *p.add(i) = a * z1;
-                *p.add(j) = b * z0;
+    super::par_blocks(
+        len,
+        len,
+        |k| k,
+        |i| {
+            if i & t_bit == 0 && (i & ctrl_mask) == ctrl_mask {
+                let j = i | t_bit;
+                // SAFETY: `i < len`, `j = i | t_bit < len`; distinct base indices
+                // (target bit clear) produce disjoint {i, j} pairs — no aliasing.
+                unsafe {
+                    let p = cp.ptr();
+                    let z0 = *p.add(i);
+                    let z1 = *p.add(j);
+                    *p.add(i) = a * z1;
+                    *p.add(j) = b * z0;
+                }
             }
-        }
-    });
+        },
+    );
 }
 
 /// Packed-complex AVX-512 path for the 1q diagonal fast path.
@@ -1262,32 +1287,37 @@ pub(crate) fn apply_2q_dense_scalar(
     // Flat per-amplitude walk: each base index `i` (both target bits clear)
     // writes the disjoint quartet {i, i|t1_bit, i|t0_bit, i|t_mask}, so
     // concurrent tasks never alias.
-    super::par_blocks(len, len, |k| k, |i| {
-        if (i & t_mask) == 0 && (i & ctrl_mask) == ctrl_mask {
-            // MSB convention: matrix index k bit 1 → targets[0], bit 0 → targets[1].
-            // So idx[k] sets t0_bit iff (k & 2) != 0, t1_bit iff (k & 1) != 0.
-            let idx = [
-                i,          // k = 00
-                i | t1_bit, // k = 01
-                i | t0_bit, // k = 10
-                i | t_mask, // k = 11
-            ];
-            // SAFETY: all idx[] < len (base i has both target bits clear, OR-ing
-            // in target bits keeps the result < len); distinct base indices produce
-            // disjoint quartets — no aliasing across tasks. Read all 4 before writing.
-            unsafe {
-                let p = cp.ptr();
-                let v0 = *p.add(idx[0]);
-                let v1 = *p.add(idx[1]);
-                let v2 = *p.add(idx[2]);
-                let v3 = *p.add(idx[3]);
-                *p.add(idx[0]) = m[0][0] * v0 + m[0][1] * v1 + m[0][2] * v2 + m[0][3] * v3;
-                *p.add(idx[1]) = m[1][0] * v0 + m[1][1] * v1 + m[1][2] * v2 + m[1][3] * v3;
-                *p.add(idx[2]) = m[2][0] * v0 + m[2][1] * v1 + m[2][2] * v2 + m[2][3] * v3;
-                *p.add(idx[3]) = m[3][0] * v0 + m[3][1] * v1 + m[3][2] * v2 + m[3][3] * v3;
+    super::par_blocks(
+        len,
+        len,
+        |k| k,
+        |i| {
+            if (i & t_mask) == 0 && (i & ctrl_mask) == ctrl_mask {
+                // MSB convention: matrix index k bit 1 → targets[0], bit 0 → targets[1].
+                // So idx[k] sets t0_bit iff (k & 2) != 0, t1_bit iff (k & 1) != 0.
+                let idx = [
+                    i,          // k = 00
+                    i | t1_bit, // k = 01
+                    i | t0_bit, // k = 10
+                    i | t_mask, // k = 11
+                ];
+                // SAFETY: all idx[] < len (base i has both target bits clear, OR-ing
+                // in target bits keeps the result < len); distinct base indices produce
+                // disjoint quartets — no aliasing across tasks. Read all 4 before writing.
+                unsafe {
+                    let p = cp.ptr();
+                    let v0 = *p.add(idx[0]);
+                    let v1 = *p.add(idx[1]);
+                    let v2 = *p.add(idx[2]);
+                    let v3 = *p.add(idx[3]);
+                    *p.add(idx[0]) = m[0][0] * v0 + m[0][1] * v1 + m[0][2] * v2 + m[0][3] * v3;
+                    *p.add(idx[1]) = m[1][0] * v0 + m[1][1] * v1 + m[1][2] * v2 + m[1][3] * v3;
+                    *p.add(idx[2]) = m[2][0] * v0 + m[2][1] * v1 + m[2][2] * v2 + m[2][3] * v3;
+                    *p.add(idx[3]) = m[3][0] * v0 + m[3][1] * v1 + m[3][2] * v2 + m[3][3] * v3;
+                }
             }
-        }
-    });
+        },
+    );
 }
 
 /// Scalar CNOT specialisation: for amplitudes where bit `control` = 1
@@ -1311,20 +1341,25 @@ pub(crate) fn apply_2q_cnot_scalar(
     let cp = super::ComplexPtr(amps.as_mut_ptr());
     // Flat per-amplitude walk: each base index `i` (target bit clear, controls set)
     // writes the disjoint pair {i, i|t_bit}, so concurrent tasks never alias.
-    super::par_blocks(len, len, |k| k, |i| {
-        if (i & ctrl_mask) == ctrl_mask && (i & t_bit) == 0 {
-            let j = i | t_bit;
-            // SAFETY: `i < len`, `j = i | t_bit < len`; distinct base indices
-            // (target bit clear) produce disjoint {i, j} pairs — no aliasing.
-            unsafe {
-                let p = cp.ptr();
-                let a = *p.add(i);
-                let b = *p.add(j);
-                *p.add(i) = b;
-                *p.add(j) = a;
+    super::par_blocks(
+        len,
+        len,
+        |k| k,
+        |i| {
+            if (i & ctrl_mask) == ctrl_mask && (i & t_bit) == 0 {
+                let j = i | t_bit;
+                // SAFETY: `i < len`, `j = i | t_bit < len`; distinct base indices
+                // (target bit clear) produce disjoint {i, j} pairs — no aliasing.
+                unsafe {
+                    let p = cp.ptr();
+                    let a = *p.add(i);
+                    let b = *p.add(j);
+                    *p.add(i) = b;
+                    *p.add(j) = a;
+                }
             }
-        }
-    });
+        },
+    );
 }
 
 /// Scalar SWAP specialisation: for amplitudes where bits `a` and `b`
@@ -1347,21 +1382,26 @@ pub(crate) fn apply_2q_swap_scalar(
     let cp = super::ComplexPtr(amps.as_mut_ptr());
     // Flat per-amplitude walk: each base index `i` (both target bits clear)
     // writes the disjoint pair {i|a_bit, i|b_bit}, so concurrent tasks never alias.
-    super::par_blocks(len, len, |k| k, |i| {
-        if (i & t_mask) == 0 && (i & ctrl_mask) == ctrl_mask {
-            let ia = i | a_bit;
-            let ib = i | b_bit;
-            // SAFETY: `ia < len`, `ib < len`; distinct base indices (both target
-            // bits clear) produce disjoint pairs {ia, ib} — no aliasing.
-            unsafe {
-                let p = cp.ptr();
-                let a = *p.add(ia);
-                let b = *p.add(ib);
-                *p.add(ia) = b;
-                *p.add(ib) = a;
+    super::par_blocks(
+        len,
+        len,
+        |k| k,
+        |i| {
+            if (i & t_mask) == 0 && (i & ctrl_mask) == ctrl_mask {
+                let ia = i | a_bit;
+                let ib = i | b_bit;
+                // SAFETY: `ia < len`, `ib < len`; distinct base indices (both target
+                // bits clear) produce disjoint pairs {ia, ib} — no aliasing.
+                unsafe {
+                    let p = cp.ptr();
+                    let a = *p.add(ia);
+                    let b = *p.add(ib);
+                    *p.add(ia) = b;
+                    *p.add(ib) = a;
+                }
             }
-        }
-    });
+        },
+    );
 }
 
 /// Scalar CZ specialisation: negate `state[i]` for amplitudes where
@@ -1380,15 +1420,20 @@ pub(crate) fn apply_2q_cz_scalar(
     let cp = super::ComplexPtr(amps.as_mut_ptr());
     // Flat per-amplitude walk: each amplitude index is written at most once;
     // no cross-amplitude coupling, so concurrent tasks never alias.
-    super::par_blocks(len, len, |k| k, |i| {
-        if (i & t_mask) == t_mask && (i & ctrl_mask) == ctrl_mask {
-            // SAFETY: `i < len`; each amplitude written exactly once — no aliasing.
-            unsafe {
-                let p = cp.ptr();
-                *p.add(i) = -*p.add(i);
+    super::par_blocks(
+        len,
+        len,
+        |k| k,
+        |i| {
+            if (i & t_mask) == t_mask && (i & ctrl_mask) == ctrl_mask {
+                // SAFETY: `i < len`; each amplitude written exactly once — no aliasing.
+                unsafe {
+                    let p = cp.ptr();
+                    *p.add(i) = -*p.add(i);
+                }
             }
-        }
-    });
+        },
+    );
 }
 
 /// Scalar 2q-diagonal specialisation: multiply `state[i]` by `d[k]`
@@ -1408,18 +1453,23 @@ pub(crate) fn apply_2q_diagonal_scalar(
     let ctrl_mask = super::control_mask(external_controls);
     let len = amps.len();
     let cp = super::ComplexPtr(amps.as_mut_ptr());
-    super::par_blocks(len, len, |k| k, |i| {
-        if (i & ctrl_mask) == ctrl_mask {
-            let k_hi = ((i & t0_bit) != 0) as usize;
-            let k_lo = ((i & t1_bit) != 0) as usize;
-            let k = (k_hi << 1) | k_lo;
-            // SAFETY: `i < len`; each amplitude index written exactly once.
-            unsafe {
-                let p = cp.ptr();
-                *p.add(i) = *p.add(i) * d[k];
+    super::par_blocks(
+        len,
+        len,
+        |k| k,
+        |i| {
+            if (i & ctrl_mask) == ctrl_mask {
+                let k_hi = ((i & t0_bit) != 0) as usize;
+                let k_lo = ((i & t1_bit) != 0) as usize;
+                let k = (k_hi << 1) | k_lo;
+                // SAFETY: `i < len`; each amplitude index written exactly once.
+                unsafe {
+                    let p = cp.ptr();
+                    *p.add(i) = *p.add(i) * d[k];
+                }
             }
-        }
-    });
+        },
+    );
 }
 
 /// Top-level 2q dispatch.  See spec § 4.2 for the detection order:
@@ -2853,20 +2903,25 @@ pub(crate) fn apply_toffoli_scalar(
     let cp = super::ComplexPtr(amps.as_mut_ptr());
     // Flat per-amplitude walk: each base index `i` (target bit clear, controls set)
     // writes the disjoint pair {i, i|target_bit}, so concurrent tasks never alias.
-    super::par_blocks(len, len, |k| k, |i| {
-        if (i & ctrl_mask) == ctrl_mask && (i & target_bit) == 0 {
-            let j = i | target_bit;
-            // SAFETY: `i < len`, `j = i | target_bit < len`; distinct base indices
-            // (target bit clear) produce disjoint {i, j} pairs — no aliasing.
-            unsafe {
-                let p = cp.ptr();
-                let a = *p.add(i);
-                let b = *p.add(j);
-                *p.add(i) = b;
-                *p.add(j) = a;
+    super::par_blocks(
+        len,
+        len,
+        |k| k,
+        |i| {
+            if (i & ctrl_mask) == ctrl_mask && (i & target_bit) == 0 {
+                let j = i | target_bit;
+                // SAFETY: `i < len`, `j = i | target_bit < len`; distinct base indices
+                // (target bit clear) produce disjoint {i, j} pairs — no aliasing.
+                unsafe {
+                    let p = cp.ptr();
+                    let a = *p.add(i);
+                    let b = *p.add(j);
+                    *p.add(i) = b;
+                    *p.add(j) = a;
+                }
             }
-        }
-    });
+        },
+    );
 }
 
 /// Scalar Tier-C reference for CCZ (spec §5.4). Sign-flips the
@@ -2886,15 +2941,20 @@ pub(crate) fn apply_ccz_scalar(amps: &mut [Complex], targets: [u32; 3], external
     let cp = super::ComplexPtr(amps.as_mut_ptr());
     // Flat per-amplitude walk: each amplitude index is written at most once;
     // no cross-amplitude coupling, so concurrent tasks never alias.
-    super::par_blocks(len, len, |k| k, |i| {
-        if (i & mask) == mask {
-            // SAFETY: `i < len`; each amplitude written exactly once — no aliasing.
-            unsafe {
-                let p = cp.ptr();
-                *p.add(i) = -*p.add(i);
+    super::par_blocks(
+        len,
+        len,
+        |k| k,
+        |i| {
+            if (i & mask) == mask {
+                // SAFETY: `i < len`; each amplitude written exactly once — no aliasing.
+                unsafe {
+                    let p = cp.ptr();
+                    *p.add(i) = -*p.add(i);
+                }
             }
-        }
-    });
+        },
+    );
 }
 
 /// Packed AVX-512 Toffoli specialisation — Tier A (clean contract).
@@ -3560,40 +3620,45 @@ fn apply_3q_generic(
     // Flat per-amplitude walk: each base index `i` (all target bits clear) writes
     // the disjoint octet of 8 amplitudes indexed by idx[0..8]; concurrent tasks
     // never alias because distinct base indices produce disjoint octets.
-    super::par_blocks(len, len, |k| k, |i| {
-        if (i & t_mask) == 0 && (i & ctrl_mask) == ctrl_mask {
-            let mut idx = [0usize; 8];
-            for (k, slot) in idx.iter_mut().enumerate() {
-                // MSB convention: k bit 2 → targets[0], bit 1 → targets[1], bit 0 → targets[2].
-                let bit_t0 = if k & 4 != 0 { t_bits[0] } else { 0 };
-                let bit_t1 = if k & 2 != 0 { t_bits[1] } else { 0 };
-                let bit_t2 = if k & 1 != 0 { t_bits[2] } else { 0 };
-                *slot = i | bit_t0 | bit_t1 | bit_t2;
-            }
-            // SAFETY: all idx[] < len (base `i` has all target bits clear; OR-ing
-            // in target bits keeps each result < len); distinct base indices produce
-            // disjoint octets — no aliasing across tasks. Read all 8 before writing.
-            unsafe {
-                let p = cp.ptr();
-                let v0 = *p.add(idx[0]);
-                let v1 = *p.add(idx[1]);
-                let v2 = *p.add(idx[2]);
-                let v3 = *p.add(idx[3]);
-                let v4 = *p.add(idx[4]);
-                let v5 = *p.add(idx[5]);
-                let v6 = *p.add(idx[6]);
-                let v7 = *p.add(idx[7]);
-                let v = [v0, v1, v2, v3, v4, v5, v6, v7];
-                for r in 0..8 {
-                    let mut acc = Complex::new(0.0, 0.0);
-                    for c in 0..8 {
-                        acc += m[r][c] * v[c];
+    super::par_blocks(
+        len,
+        len,
+        |k| k,
+        |i| {
+            if (i & t_mask) == 0 && (i & ctrl_mask) == ctrl_mask {
+                let mut idx = [0usize; 8];
+                for (k, slot) in idx.iter_mut().enumerate() {
+                    // MSB convention: k bit 2 → targets[0], bit 1 → targets[1], bit 0 → targets[2].
+                    let bit_t0 = if k & 4 != 0 { t_bits[0] } else { 0 };
+                    let bit_t1 = if k & 2 != 0 { t_bits[1] } else { 0 };
+                    let bit_t2 = if k & 1 != 0 { t_bits[2] } else { 0 };
+                    *slot = i | bit_t0 | bit_t1 | bit_t2;
+                }
+                // SAFETY: all idx[] < len (base `i` has all target bits clear; OR-ing
+                // in target bits keeps each result < len); distinct base indices produce
+                // disjoint octets — no aliasing across tasks. Read all 8 before writing.
+                unsafe {
+                    let p = cp.ptr();
+                    let v0 = *p.add(idx[0]);
+                    let v1 = *p.add(idx[1]);
+                    let v2 = *p.add(idx[2]);
+                    let v3 = *p.add(idx[3]);
+                    let v4 = *p.add(idx[4]);
+                    let v5 = *p.add(idx[5]);
+                    let v6 = *p.add(idx[6]);
+                    let v7 = *p.add(idx[7]);
+                    let v = [v0, v1, v2, v3, v4, v5, v6, v7];
+                    for r in 0..8 {
+                        let mut acc = Complex::new(0.0, 0.0);
+                        for c in 0..8 {
+                            acc += m[r][c] * v[c];
+                        }
+                        *p.add(idx[r]) = acc;
                     }
-                    *p.add(idx[r]) = acc;
                 }
             }
-        }
-    });
+        },
+    );
 }
 
 #[cfg(test)]
