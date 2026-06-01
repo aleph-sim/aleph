@@ -142,9 +142,10 @@ impl<T> AlignedBuf<T> {
 impl<T> Deref for AlignedBuf<T> {
     type Target = [T];
     fn deref(&self) -> &[T] {
-        // SAFETY: `ptr` is non-null, 64-aligned, and points to `len`
-        // initialised `T` (zeroed or copied); for `len == 0` the sentinel is
-        // a valid zero-length base.
+        // SAFETY: `ptr` is non-null and points to `len` initialised `T`
+        // (zeroed or copied) at 64-byte alignment when `len > 0`; for
+        // `len == 0` the dangling sentinel (aligned for `T`, never read) is a
+        // valid zero-length base.
         unsafe { slice::from_raw_parts(self.ptr.as_ptr(), self.len) }
     }
 }
