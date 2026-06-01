@@ -46,6 +46,15 @@ parameter makes that failure mode structurally impossible and matches the repo's
 "explicit, bit-identical, no hidden state" ethos (the `par_blocks` doc comment, the
 P2-01 precise-capture lesson).
 
+**Leaf-local realization.** `ChunkPolicy` is an explicit parameter of
+`par_blocks`/`par_units`, but it is computed **in the leaf kernel** one line before
+the call — not threaded through the dispatchers. Each leaf kernel already *is* a
+specific gate class (e.g. `apply_1q_diagonal_avx512` ⟹ `OneQDiag`) and has the
+`target`(s) and `len`, so it derives its own `PosClass` locally. This keeps the
+entry fns (`apply_1q`/`apply_2q`/`apply_3q` × {aos, soa}) and the ~10 sub-dispatchers
+**untouched**, and is the most misuse-proof realization of A (no long threading
+chain to get wrong, no hidden state).
+
 Shape:
 
 ```rust
@@ -54,19 +63,16 @@ fn par_blocks(policy: ChunkPolicy, count, len, block_of, body) {
     else { (0..count).into_par_iter().with_min_len(policy.grain).for_each(...) }
 }
 
-unsafe fn apply_1q_diagonal_avx512(policy: ChunkPolicy, amps, target, controls, d0, d1) {
-    par_blocks(policy, count, len, |k| ..., |i0| ...);   // forwarded
-}
-
-pub fn apply_1q(amps, target, controls, m) {
+unsafe fn apply_1q_diagonal_avx512(amps, target, controls, d0, d1) {
+    let n = amps.len().trailing_zeros();
     let policy = resolve_policy(GateClass::OneQDiag, pos_class(target, n));
-    // ... dispatch to the right kernel, passing `policy`
+    par_blocks(policy, count, len, |k| ..., |i0| ...);   // explicit param
 }
 ```
 
-Edit surface: the `par_blocks`/`par_units` signatures, the ~20 leaf kernel
-signatures (aos + soa), all 23 call sites, and the 6 dispatch fns
-(`apply_1q`/`apply_2q`/`apply_3q` × {aos, soa}). Mechanical and one-time.
+Edit surface: the `par_blocks`/`par_units` signatures + all **23 call sites** (each
+gains one preceding `let policy = resolve_policy(...)` line). No entry-fn or
+dispatcher signature changes.
 
 ## Components
 
