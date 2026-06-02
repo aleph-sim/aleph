@@ -1,0 +1,38 @@
+# P2-05 tier1_scaling raw criterion times (mean of [low mean high]), n=25, raw `run`
+# Measured 2026-06-02 on verified-idle boxes, RUSTFLAGS="-C target-cpu=native".
+# Bench: benches/benches/tier1_scaling.rs, filter "tier1_scaling/(ghz|qft|random)".
+# Grover excluded: grover_n25_iters5 single-thread baseline ~13 CPU-h (criterion
+# estimated 48286 s for the 10-sample floor) — intractable for a T1-anchored sweep.
+# Ryzen deferred this round (RAID10 resync, box not idle).
+
+=== EPYC 8124P (AVX-512, 16c/32t), single socket ===
+# T    ghz(s)    qft(s)    random(s)
+1      1.4716    34.531    39.496
+2      0.90137   22.768    23.594
+4      0.61705   17.850    17.732
+8      0.46702   15.983    15.522
+16     0.41033   15.012    14.462
+32     0.40996   14.747    14.264
+
+# speedup vs T1:
+#         ghz    qft    random
+# T8     3.15   2.16   2.54
+# T16    3.59   2.30   2.73   (efficiency@16: 22% / 14% / 17%)
+# T32    3.59   2.34   2.77
+
+=== NUMA 2x Xeon Silver 4114 (AVX-512, 20c/40t, 2 sockets / 2 NUMA nodes) ===
+# T    ghz(s)    qft(s)    random(s)
+1      2.1437    78.724    76.276
+2      1.4119    52.810    46.447
+4      0.98104   38.293    32.516
+8      0.83549   36.765    32.085
+16     0.81054   34.721    32.757
+32     0.79964   36.102    33.160
+40     0.80886   36.434    33.341
+
+# speedup vs T1:
+#         ghz    qft    random
+# T8     2.57   2.14   2.38
+# T16    2.64   2.27   2.33   (efficiency@16: 17% / 14% / 15%)
+# T32    2.68   2.18   2.30   <- QFT/random REGRESS past one socket (cross-NUMA)
+# T40    2.65   2.16   2.29      default allocator faults all pages to node 0
