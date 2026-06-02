@@ -1348,6 +1348,159 @@ Phase exit criterion.
 
 -----
 
+### [P2-06] Diagonal gate fusion pass
+
+**Labels:** `area:ir`, `type:optimization`, `priority:high`
+**Milestone:** Phase 2
+**Depends on:** P1-09, P1-10
+
+**Description**
+Add an IR pass that fuses a run of consecutive **diagonal** gates acting on overlapping qubits into a single diagonal operation, applied to the state vector in one memory pass.
+
+**Context**
+P2-05 showed state-vector simulation is memory-bandwidth-bound: each gate streams the full 2^n state (512 MiB at n=25) with near-zero arithmetic intensity, so wall-clock is dominated by passes over memory, not FLOPs. The worst Tier-1 workload is QFT: the live `tier1_scaling` sweep measured the Aer-comparable `qft_n25.qasm` fixture (1526 ops, ≈92% controlled-phase) at only 2.16×@8 / 2.30×@16 on EPYC. Controlled-phase, `rz`, `p`, `z`, `s`, `t` are all **diagonal in the computational basis**, and a product of diagonal operators is itself diagonal — so the entire cphase ladder between two `H` gates in QFT can collapse into a *single* per-amplitude phase multiply instead of one full-state pass per gate. The existing `Fuse2q` pass only merges adjacent 2q gates into a dense 4×4; it does not exploit diagonality. This is the highest-ROI memory-pass reduction available at the IR level (no new hardware), targeting exactly the workload that scales worst.
+
+**Technical Details**
+
+- New `passes::FuseDiagonalRuns` pass: walk the circuit per qubit-set, accumulate maximal runs of diagonal gates (no intervening non-diagonal gate on any shared qubit) into one operation.
+- Represent the fused result as a per-amplitude phase vector or an extended `Gate::Unitary1qDiag`/multi-qubit diagonal variant; kernel applies it in a single `par_units` pass (multiply each amplitude by its accumulated complex phase).
+- Classify diagonal gates centrally (reuse the `DIAGONAL_EPS_SQ` predicate already used by the 1q-diagonal kernel dispatch).
+- Wire into `default_pipeline()` after cancellation/DCE, before/with `Fuse2q`; run-to-fixpoint compatible.
+
+**Acceptance Criteria**
+
+- [ ] QFT-25 controlled-phase ladder collapses to ≤ 2 diagonal passes per qubit; total gate-pass count drops ≥ 5× vs unfused.
+- [ ] Oracle equivalence vs unfused within 1e-12 across Tier-1 fixtures (raw and via the pipeline).
+- [ ] Criterion improvement on `tier1_scaling`/qft (fixture) on the EPYC bench box, reported in the PR.
+
+**Testing Requirements**
+
+- Property test: fused diagonal run ≡ sequential application on a generic input state (not |0…0⟩).
+- Standalone pass test + pipeline idempotence test.
+- Benchmark before/after on the EPYC box.
+
+**References**
+
+- `docs/perf/phase2.md` §1, §3 (bandwidth-bound finding; QFT cphase dominance).
+- Qiskit Aer `fusion` / diagonal-gate handling (read, re-implement).
+
+-----
+
+### [P2-07] Deep k-qubit gate fusion (FuseKq, k ≤ 5)
+
+**Labels:** `area:ir`, `type:optimization`, `priority:high`
+**Milestone:** Phase 2
+**Depends on:** P1-09, P1-10
+
+**Description**
+Generalise the existing 1q/2q fusion to fuse runs of adjacent gates spanning up to **k = 5** qubits into a single dense 2^k × 2^k unitary applied in one state-vector pass.
+
+**Context**
+The general antidote to the memory wall (P2-05) is raising arithmetic intensity: one pass over the 512 MiB state that does a 2^k × 2^k matrix–vector product per 2^k-amplitude block does O(2^k) FLOPs per amplitude moved, instead of O(1) for a single gate. Fusing up to ~5 qubits is the standard technique in Qiskit Aer and qsim and is the biggest lever for fusible circuits (VQE/QAOA/random brick-wall), which P2-05 measured at 2.5–2.8×@16 — better than QFT but still far from linear because they currently apply many small gates. `Fuse1qRuns` + `Fuse2q` already exist; this extends the same machinery to a configurable max-k.
+
+**Technical Details**
+
+- New `passes::FuseKq { max_qubits: usize }` (default 4–5; tunable): greedily grow a fused block over adjacent gates sharing a small qubit support, bounded by `max_qubits`.
+- Build the dense 2^k × 2^k matrix by composing member gates in circuit order; emit a `Gate::UnitaryKq` (generalise the existing 2q dense kernel to a k-qubit dense kernel over the 2^k-amplitude block).
+- Cost model: only fuse when the fused dense apply is cheaper than the sum of member passes (avoid fusing across very high qubits where the dense block explodes cache footprint — interacts with P2-04 grain findings and P2-09).
+- AVX-512 dense k-qubit kernel (AoS + SoA), reuse the renormalised outer-walk indexing pattern from P1-07.
+
+**Acceptance Criteria**
+
+- [ ] Configurable `max_qubits`; `default_pipeline()` uses a sensible default (4 or 5).
+- [ ] VQE/QAOA/random pass-count reduction and criterion speedup on EPYC, reported in the PR.
+- [ ] Oracle equivalence vs unfused within 1e-12 across Tier-1 fixtures.
+
+**Testing Requirements**
+
+- Property test: fused k-qubit block ≡ sequential application on a generic state, for k = 3,4,5.
+- Indexing-coverage test for the k-qubit dense kernel (integer reproduction of `block | offsets | j` disjointness).
+- Benchmark before/after on the EPYC box.
+
+**References**
+
+- `docs/perf/phase2.md` §3 (arithmetic-intensity argument).
+- Smelyanskiy et al. / Qiskit Aer fusion; qsim gate fusion (read, re-implement).
+- ADR on P1-07 2q dense kernel (renormalised outer-walk).
+
+-----
+
+### [P2-08] Optional FP32 (single-precision) state-vector mode
+
+**Labels:** `area:backend-sv`, `area:core`, `type:optimization`, `priority:medium`
+**Milestone:** Phase 2
+**Depends on:** P1-01, P0-09
+
+**Description**
+Add an opt-in single-precision (`Complex<f32>`) state-vector backend variant that halves the bytes moved per gate.
+
+**Context**
+On a bandwidth-bound kernel (P2-05), wall-clock scales with bytes streamed. `Complex<f64>` is 16 bytes/amplitude; `Complex<f32>` is 8 — a direct ~2× on memory traffic and therefore ~1.5–2× wall-clock for large n where DRAM streaming dominates, at the cost of accuracy (≈1e-6 instead of ≈1e-10). This is the cheapest single change that attacks the actual bottleneck (bytes), and is standard in Aer (`precision: single`). FP64 remains the default and the oracle-reference path; FP32 is an explicit large-n performance mode.
+
+**Technical Details**
+
+- Parameterise the SV backends over the float type (generic `T: Float` or a parallel `f32` instantiation of `CpuState`/`SoaState` + kernels), or a dedicated `Fp32SvBackend`.
+- AVX-512 `f32` kernels: 16 lanes/zmm vs 8 for `f64` — extend the existing kernel set or generate via the same macros.
+- CLI / API flag (`--precision f32`); default stays `f64`.
+- Keep the conversion utilities in `aleph-core::statevector` consistent across precisions.
+
+**Acceptance Criteria**
+
+- [ ] Opt-in FP32 mode; FP64 remains default and unchanged.
+- [ ] ~1.5–2× wall-clock vs FP64 on a bandwidth-bound workload at n ≥ 24 (EPYC), reported in the PR.
+- [ ] Oracle equivalence vs Qiskit Aer single-precision within 1e-5 amplitudes; FP64 oracle path untouched.
+
+**Testing Requirements**
+
+- Property tests (normalization, unitarity) at the FP32 tolerance.
+- Oracle comparison at 1e-5 for FP32; existing 1e-10 FP64 oracles still pass.
+- Benchmark FP32 vs FP64 on the EPYC box.
+
+**References**
+
+- `docs/perf/phase2.md` §1 (bytes-moved is the bottleneck).
+- Qiskit Aer `precision` option (read, re-implement).
+
+-----
+
+### [P2-09] Cache-blocked multi-gate application
+
+**Labels:** `area:backend-sv`, `type:optimization`, `priority:medium`
+**Milestone:** Phase 2
+**Depends on:** P2-01
+
+**Description**
+Apply a *batch* of gates to each cache-resident tile of the state vector before moving on, and reorder qubit indices so frequently-interacting qubits map to low (cache-local) bits — keeping data hot in L2/L3 instead of streaming the whole state from DRAM per gate.
+
+**Context**
+P2-05 established that the per-gate full-state DRAM stream is the limiter. Gates on **low** qubits touch near-contiguous addresses that fit in cache; gates on **high** qubits stride across the whole array. If consecutive gates act within a cache-sized tile, the tile can be loaded once and many gates applied while it is hot — turning N DRAM passes into 1. This is the hardest CPU-side lever (it changes the apply schedule, not just a kernel) but it is the one that genuinely *avoids* the memory wall rather than working within it; complements P2-06/P2-07 (which reduce pass count) and the P2-03 NUMA placement.
+
+**Technical Details**
+
+- Block the state into L2/L3-sized tiles; for each tile, apply the maximal prefix of upcoming gates whose support is confined to the tile's low-qubit window before advancing.
+- Qubit-relabelling pass (IR level) that maps high-interaction qubits to low bit positions, with the inverse permutation applied to results/measurements.
+- Interacts with P2-04 grain tuning and P2-07 fusion; gate scheduling becomes tile-aware.
+- Validate with `perf stat -e cache-misses,LLC-load-misses` (L2/L3 miss reduction is the primary signal, not just wall-clock).
+
+**Acceptance Criteria**
+
+- [ ] Measurable L2/L3 cache-miss reduction (`perf stat`) on a low-qubit-heavy circuit, reported in the PR.
+- [ ] Speedup in the cache-resident regime (intermediate n where tiling helps), reported on the EPYC box.
+- [ ] Oracle equivalence preserved (qubit relabelling is transparent to results) within 1e-12.
+
+**Testing Requirements**
+
+- Oracle equivalence with and without relabelling/tiling across Tier-1 fixtures.
+- Property test: qubit-permutation round-trip preserves the state.
+- `perf stat` cache-miss before/after on the EPYC box.
+
+**References**
+
+- `docs/perf/phase2.md` §1, §3 (memory-pass argument; low- vs high-qubit stride).
+- QuEST / Aer cache-blocking and qubit-reordering (read, re-implement).
+
+-----
+
 # Phase 3 — Alternative Backends
 
 Goal: stabilizer and MPS backends working; automatic backend selection.
