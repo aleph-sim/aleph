@@ -3,6 +3,7 @@
 **Phase:** 2 (multi-threaded CPU) · **Issue:** #31 (P2-05) · **Date:** 2026-06-02
 **Consolidates:** P2-01 (#27), P2-02 (#28), P2-03 (#29), P2-04 (#30).
 **Bench:** `benches/benches/tier1_scaling.rs` (feature `scaling-bench`).
+**Raw data:** `docs/perf/data/p2-05-tier1-scaling.log` (live EPYC + NUMA sweep, 2026-06-02).
 **Hardware (all reference boxes, verified-idle per CLAUDE.md idle-check):**
 
 - **EPYC** — AMD EPYC 8124P (Siena), 16 physical / 32 SMT, single socket, 1 NUMA
@@ -18,9 +19,12 @@ Toolchain: Rust 1.95, `RUSTFLAGS="-C target-cpu=native"`, criterion release buil
 The ROADMAP §7 Phase-2 exit — **≥ 12× speedup on 16 cores vs single-thread**,
 equivalently **≥ 75 % parallel efficiency at 16 threads** (the P2-05 spec's
 target; 0.75 × 16 = 12) — **is not met on any hardware available to this
-project, and cannot be on this hardware regardless of code.** The measured QFT-25
-efficiency at 16 threads is **23 %** on the EPYC box (3.69×), and the same
-saturating shape reproduces on a second CPU and a second (scalar) code path.
+project, and cannot be on this hardware regardless of code.** A live `tier1_scaling`
+sweep (§3) puts 16-thread efficiency at **14–22 % across GHZ/QFT/random on two
+independent AVX-512 boxes** (EPYC single-socket and a 2-socket Xeon); the
+P2-01 `qft_scaling` builder circuit measured 23 % @16t (§2). The same saturating
+shape reproduces on a third CPU (Ryzen, scalar path), and the 2-socket box even
+*regresses* past one socket (§3) — every angle agrees.
 
 This is **not a parallelization defect.** State-vector gate application is
 **memory-bandwidth-bound** at high core counts: at n=25 the 512 MiB state vector
@@ -86,31 +90,68 @@ the thread-scaling ceiling: correct page placement raises the achievable
 bandwidth on a 2-socket box; it does not change the bandwidth-bound *shape* of
 the per-thread curve.
 
-## 3. Full Tier-1 matrix — measured + pending
+## 3. Full Tier-1 matrix — `tier1_scaling`, live sweep
 
-The `tier1_scaling` bench measures GHZ / QFT / Grover / random at n=25, swept via
-`RAYON_NUM_THREADS`. The cells below are the **measured** state of the project's
-data. Cells marked **`pending HW run`** have **no fabricated numbers**: the bench
-is delivered ready and produces them with one command (§7). No box reaches the
-spec's 32/64-thread points except via SMT (EPYC 32t, NUMA 40t); 64 physical
-threads is **unreachable on available hardware** (§5).
+The `tier1_scaling` bench (this PR) measures GHZ / QFT / random at n=25 through the
+AVX-512 `NaiveSvBackend`, swept across `RAYON_NUM_THREADS` on two verified-idle
+boxes (2026-06-02). Each cell is `speedup×` vs that box's T1, with the **16-thread
+efficiency** (the ROADMAP target column) called out. **Grover is excluded** and
+left pending — see the box below.
 
-| Workload (n=25) | Box | T1 | T2 | T4 | T8 | T16 | T32 |
-|---|---|---|---|---|---|---|---|
-| QFT     | EPYC  | 8.41 s | pending | pending | **3.37×** | **3.69×** | pending |
-| QFT     | Ryzen | 12.64 s | pending | pending | **2.11×** | — (12c) | — |
-| GHZ     | EPYC  | pending HW run — *trivial workload, see §4.5* |
-| Grover  | EPYC  | pending HW run |
-| Random  | EPYC  | pending HW run |
+> **These are a *different* QFT circuit than §2.** §2 reports P2-01's `qft_scaling`,
+> built by the Rust `qft_circuit(n)` (~325 gates). This bench parses the **Aer-
+> comparable `qft_n25.qasm` fixture** (1526 ops — Qiskit decomposes every
+> controlled-phase + adds the final swaps), so its absolute times are ~4× larger
+> *and its speedup is lower* (EPYC 2.16×@8 vs the builder's 3.37×@8). That is not a
+> contradiction: the fixture QFT is ≈92% controlled-phase, the **lowest-arithmetic-
+> intensity** gate in the set, so it saturates memory bandwidth even harder. The
+> two QFT families bracket the bandwidth-bound regime; neither is "wrong".
 
-Honest scope note: the multi-thread numbers measured during P2-01..04 targeted
-QFT-25 (the workload over the Stage-0 Aer target and the clearest bandwidth
-probe). GHZ/Grover/random full sweeps, and the intermediate 2/4/32-thread QFT
-points, were **not** measured and are not invented here. The expectation, given
-§4, is that Grover and random show the same bandwidth-bound plateau (Grover
-carries Toffoli/CCZ, random is brick-wall — both higher arithmetic intensity than
-QFT's cphase, so if anything they scale *slightly* better at low thread counts,
-but hit the same wall); GHZ is degenerate (§4.5). Confirming this is follow-up §6.3.
+### EPYC 8124P (AVX-512, 16c/32t), raw `run`
+
+| Workload | T1 | T2 | T4 | T8 | T16 (eff) | T32 |
+|---|---:|---:|---:|---:|---:|---:|
+| GHZ    | 1.47 s | 1.63× | 2.38× | 3.15× | 3.59× (**22%**) | 3.59× |
+| QFT    | 34.5 s | 1.52× | 1.93× | 2.16× | 2.30× (**14%**) | 2.34× |
+| random | 39.5 s | 1.67× | 2.23× | 2.54× | 2.73× (**17%**) | 2.77× |
+
+### NUMA 2× Xeon 4114 (AVX-512, 20c/40t, **2 sockets**), raw `run`
+
+| Workload | T1 | T2 | T4 | T8 | T16 (eff) | T32 | T40 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| GHZ    | 2.14 s | 1.52× | 2.19× | 2.57× | 2.64× (**17%**) | 2.68× | 2.65× |
+| QFT    | 78.7 s | 1.49× | 2.06× | 2.14× | **2.27×** (**14%**) | 2.18× | 2.16× |
+| random | 76.3 s | 1.64× | 2.35× | 2.38× | 2.33× (**15%**) | 2.30× | 2.29× |
+
+Three findings, all reinforcing §1:
+
+1. **16-thread efficiency is 14–22% on both AVX-512 boxes** — nowhere near the
+   ≥75% / ≥12× exit. The lowest-intensity workload (QFT, ≈92% cphase) scales
+   worst (2.16–2.27×@16); higher-intensity random and the gate-light GHZ scale a
+   little better, exactly as a bandwidth-bound model predicts.
+2. **NUMA shows a textbook cross-socket regression.** QFT peaks at **2.27×@16**
+   then *goes backwards* — 2.18×@32, 2.16×@40 — as threads spill onto the second
+   socket. The default allocator faults the whole 512 MiB state onto node 0, so
+   socket-1 threads pay remote-memory latency and *subtract* throughput. This is
+   precisely the failure mode P2-03's first-touch allocation removes (§4.3): with
+   the `numa` feature the same box gains −37.7% (§2). Default-allocator scaling
+   saturates at one socket's bandwidth.
+3. **GHZ plateaus at an allocation floor, not a bandwidth one.** Its time bottoms
+   out at ~0.41 s (EPYC) / ~0.80 s (NUMA) and stops improving (T16==T32); that
+   floor is one-time state allocation + the 25-gate body, not kernel throughput
+   (§4.5). Its "3.59×" is an allocation artifact, not a parallel-scaling signal.
+
+> **Grover is pending — and intractably so at low thread counts.**
+> `grover_n25_iters5.qasm` decomposes into thousands of multi-controlled gates;
+> its **single-thread baseline is ≈13 CPU-hours** (criterion's measured estimate:
+> 48 286 s for the 10-sample floor). A T1-anchored efficiency sweep is therefore
+> not feasible in a normal measurement window, and no fabricated number is
+> substituted. Follow-up §6.3: measure Grover with a reduced harness (1 sample,
+> high-thread-only, or a smaller iteration count) on a dedicated long run.
+>
+> **Ryzen** was unavailable for a clean sweep this round — its RAID10 array was
+> mid-resync (degraded, `[2/1]` mirrors), so the box was not idle. The report
+> keeps its earlier-measured P2-02 QFT scalar number (§2).
 
 ## 4. Root-cause synthesis — what the four Phase-2 tickets established
 
@@ -139,11 +180,14 @@ the default — large grain (≥256) *regresses* stride-heavy AVX-512 kernels by
 +7–15 %; `min_amps` is inert at n≥21 (always parallel). Nothing to tune toward.
 
 ### 4.5 GHZ-25 is a degenerate scaling workload
-GHZ-25 is 1 H + 24 CNOT = **25 gates total**, running in milliseconds and
-dominated by state allocation/initialization, not gate-kernel throughput. Its
-"efficiency" is allocation+setup noise, not a bandwidth-scaling signal. It is
-included for spec completeness and annotated as such — never reported as a
-meaningful parallel-efficiency data point.
+GHZ-25 is 1 H + 24 CNOT = **25 gates total**. At n=25 each gate still streams the
+full 512 MiB state, so a single run is ~1.5 s (EPYC) / ~2.1 s (NUMA) — not
+milliseconds — but as threads increase the gate body parallelizes until the time
+hits a **one-time state-allocation floor** (~0.41 s EPYC / ~0.80 s NUMA, measured
+§3) and stops improving (T16==T32). Its apparent "3.59×" is dominated by that
+fixed allocation cost, not gate-kernel throughput, so it is an allocation-bound
+artifact rather than a bandwidth-scaling signal. Included for spec completeness
+and annotated as such — never reported as a meaningful parallel-efficiency point.
 
 ## 5. The 64-core / ≥12× target is hardware-gated
 
@@ -174,9 +218,11 @@ defect.
    memory-streaming SV kernels. A fixed ≥12×/≥75 % is not an honest gate for a
    bandwidth-bound workload (first flagged in P2-01 follow-up #4). This report
    **recommends** the `[meta]`; it does not edit ROADMAP.md here.
-3. **Run the full `tier1_scaling` sweep** (GHZ/Grover/random, and the
-   intermediate 2/4/32-thread QFT points) on EPYC + NUMA + Ryzen to fill the
-   *pending* cells of §3. The bench is ready (§7).
+3. **Measure Grover** — the one remaining `pending` cell (§3). `grover_n25_iters5`
+   is ≈13 CPU-h single-threaded, so it needs a reduced harness (fewer samples /
+   high-thread-only / smaller iteration count) on a dedicated long run, and a
+   clean Ryzen scalar sweep once its RAID resync completes. GHZ/QFT/random are
+   now measured on EPYC + NUMA (§3).
 4. **Propagate `par_units` flattening** to the remaining inner-loop kernels
    (carried from P2-01 follow-up #1) — improves high-qubit-gate scaling on
    non-throttled hardware; will not move the QFT bandwidth number.
