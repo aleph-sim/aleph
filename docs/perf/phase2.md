@@ -198,6 +198,6 @@ cargo build -p aleph-benches --features "scaling-bench numa" --release
 ```
 
 Measure only on a **verified-idle** box (`uptime` ≈ 0, no competing
-`cargo bench`/runner jobs); deliver code to the self-hosted EPYC runner via
-`git bundle`, not a GitHub push, to avoid racing the CI Bench job (CLAUDE.md;
-`phase2-p2-01.md` §1).
+`cargo bench`/runner jobs; idle-check per CLAUDE.md and `phase2-p2-01.md` §1);
+deliver code to the self-hosted EPYC runner via `git bundle`, not a GitHub push,
+to avoid racing the CI Bench job (technique recorded in `phase2-p2-04.md`).

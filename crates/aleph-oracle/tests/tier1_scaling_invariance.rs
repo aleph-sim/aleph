@@ -69,7 +69,14 @@ fn assert_backends_agree(name: &str, label: &str, circuit: &Circuit) {
     }
 }
 
+// ~90 s in debug (8 n=15 simulations: 4 fixtures × {raw, optimized}), well over
+// the CLAUDE.md 30 s bar, so it is `#[ignore]` and excluded from the default
+// `cargo test --workspace`. Run it explicitly — `cargo test -p aleph-oracle
+// --test tier1_scaling_invariance -- --ignored`, or across thread counts via
+// `./scripts/p2-05-thread-sweep.sh` (which passes `--ignored`). CI runs ignored
+// tests on the nightly schedule.
 #[test]
+#[ignore = "~90s; run via scripts/p2-05-thread-sweep.sh or `-- --ignored`"]
 fn tier1_fixtures_match_across_backends() {
     for &name in FIXTURES {
         let path =

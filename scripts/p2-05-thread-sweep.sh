@@ -10,6 +10,9 @@
 # Run from the workspace root. On an AVX-512 host (EPYC) this exercises the
 # SIMD kernels; on a non-x86 host it exercises the scalar dispatch and the
 # par_blocks driver — still a meaningful invariance proof.
+#
+# The test is `#[ignore]` (~90s, over the CLAUDE.md 30s bar), so we pass
+# `--ignored` to run it; the default `cargo test --workspace` skips it.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -17,7 +20,7 @@ cd "$(dirname "$0")/.."
 for t in 1 2 4 8; do
   echo "== RAYON_NUM_THREADS=$t (ALEPH_PAR_MIN_AMPS=0, forced parallel) =="
   RAYON_NUM_THREADS=$t ALEPH_PAR_MIN_AMPS=0 \
-    cargo test -p aleph-oracle --test tier1_scaling_invariance --quiet
+    cargo test -p aleph-oracle --test tier1_scaling_invariance --quiet -- --ignored
 done
 
 echo
