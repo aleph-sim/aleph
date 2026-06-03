@@ -399,7 +399,7 @@ const AVX512_LANES_F32_KQ: usize = 16;
 ///   (guaranteed by the 28-qubit software cap: `2 * 2^28 < i32::MAX`).
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx512f")]
-pub unsafe fn apply_kq_avx512_f32(
+pub(crate) unsafe fn apply_kq_avx512_f32(
     amps: &mut [Complex<f32>],
     qubits: &[u32],
     k: u8,
@@ -627,7 +627,7 @@ pub fn apply_diagonal_phase_scalar_f32(amps: &mut [Complex<f32>], dp: &aleph_ir:
 ///   dispatcher only calls this when `len ≥ 8` and `len` is a power of two.
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx512f,avx512vpopcntdq")]
-pub unsafe fn apply_diagonal_phase_avx512_f32(
+pub(crate) unsafe fn apply_diagonal_phase_avx512_f32(
     amps: &mut [Complex<f32>],
     dp: &aleph_ir::DiagonalPhase,
 ) {
@@ -774,7 +774,7 @@ pub fn apply_diagonal_phase_f32(amps: &mut [Complex<f32>], dp: &aleph_ir::Diagon
 // `pub` (like `aos::apply_1q_avx512`) so the `internal-bench`-gated
 // integration test can reach this; effectively `pub(crate)` without the
 // feature (the module is private).
-pub unsafe fn apply_1q_dense_avx512_f32(
+pub(crate) unsafe fn apply_1q_dense_avx512_f32(
     amps: &mut [Complex<f32>],
     target: u32,
     controls: &[u32],
@@ -948,7 +948,7 @@ pub unsafe fn apply_1q_dense_avx512_f32(
 // `pub` (like `aos::apply_1q_diagonal_avx512`) so the `internal-bench`-gated
 // integration test can reach this; effectively `pub(crate)` without the
 // feature (the module is private).
-pub unsafe fn apply_1q_diag_avx512_f32(
+pub(crate) unsafe fn apply_1q_diag_avx512_f32(
     amps: &mut [Complex<f32>],
     target: u32,
     controls: &[u32],
