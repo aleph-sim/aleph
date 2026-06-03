@@ -317,6 +317,37 @@ pub(crate) fn apply_2q_f32(
     apply_2q_dense_scalar_f32(amps, targets, controls, m);
 }
 
+/// Scalar f32 multi-qubit diagonal-phase application. Mirror of
+/// `diagonal_phase::apply_diagonal_phase_scalar_aos`. Phase angle computed
+/// in f64 (rule 9), rotation factors cast to f32 for the amplitude multiply.
+pub(crate) fn apply_diagonal_phase_scalar_f32(
+    amps: &mut [Complex<f32>],
+    dp: &aleph_ir::DiagonalPhase,
+) {
+    use crate::kernels::diagonal_phase::phase_at;
+    use crate::kernels::tuning::DEFAULT_POLICY;
+    let len = amps.len();
+    let p = ComplexF32Ptr(amps.as_mut_ptr());
+    par_blocks(
+        DEFAULT_POLICY,
+        len,
+        len,
+        |k| k,
+        move |k| {
+            // SAFETY: each k in 0..len is distinct; par_blocks bodies write
+            // disjoint indices, so no aliasing across tasks.
+            let amp = unsafe { &mut *p.ptr().add(k) };
+            let phi = phase_at(dp, k as u64); // f64 — rule 9: angle precision kept in f64
+            let (s, co) = phi.sin_cos();
+            let (s, co) = (s as f32, co as f32);
+            let re = amp.re * co - amp.im * s;
+            let im = amp.re * s + amp.im * co;
+            amp.re = re;
+            amp.im = im;
+        },
+    );
+}
+
 /// Top-level f32 1q dispatch: diagonal fast path, else generic dense.
 /// (Phase B adds AVX-512 arms guarded by `is_x86_feature_detected`.)
 pub(crate) fn apply_1q_f32(
@@ -424,6 +455,28 @@ mod tests {
         apply_kq_scalar_f32(&mut amps, &[0, 1], 2, &data);
         assert!((amps[2].re - 1.0).abs() < 1e-6);
         assert!(amps[1].norm() < 1e-6);
+    }
+
+    #[test]
+    fn diagonal_phase_global_rotation() {
+        // DiagonalPhase with a single empty-conds term (global phase π/2):
+        // every amplitude is rotated by π/2, i.e. multiplied by i.
+        // Starting from |0> (re=1, im=0), the result should be (re≈0, im≈1).
+        use aleph_ir::{DiagonalPhase, PhaseTerm};
+        use smallvec::smallvec;
+        let dp = DiagonalPhase {
+            n_qubits: 1,
+            terms: vec![PhaseTerm {
+                conds: smallvec![], // empty conds = global phase (fires for all indices)
+                angle: std::f64::consts::FRAC_PI_2,
+            }],
+        };
+        let mut amps = vec![c(1.0, 0.0), c(0.0, 0.0)];
+        apply_diagonal_phase_scalar_f32(&mut amps, &dp);
+        // e^{iπ/2} = i on |0>.
+        assert!(amps[0].re.abs() < 1e-6 && (amps[0].im - 1.0).abs() < 1e-6);
+        // |1> (amplitude 0) is also rotated by i (global phase), but starts at 0 — stays 0.
+        assert!(amps[1].re.abs() < 1e-6 && amps[1].im.abs() < 1e-6);
     }
 
     #[test]
