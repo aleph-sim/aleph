@@ -14,4 +14,9 @@ pub enum GateError {
     /// state vector with no diagnostic.
     #[error("parameter must be finite (was NaN or infinite)")]
     NonFiniteParam,
+    /// A dense k-qubit unitary with k > 3 has no fixed-size `GateMatrix`
+    /// representation (the enum stops at 8×8); backends read its data
+    /// directly. Returned by `Gate::matrix()` for `UnitaryKq` with k > 3.
+    #[error("gate matrix is not representable as a fixed-size GateMatrix")]
+    Unrepresentable,
 }

@@ -126,14 +126,21 @@ mod tests {
     }
     impl TestTempDir {
         fn new() -> Self {
+            // A monotonic per-process counter guarantees a unique path even
+            // when two tests run in parallel within the same nanosecond — a
+            // SystemTime-only name collides under `cargo test --workspace`'s
+            // concurrency, panicking on `create_dir` with AlreadyExists.
+            use std::sync::atomic::{AtomicU64, Ordering};
+            static COUNTER: AtomicU64 = AtomicU64::new(0);
             let mut p = std::env::temp_dir();
             p.push(format!(
-                "aleph-oracle-test-{}-{}",
+                "aleph-oracle-test-{}-{}-{}",
                 std::process::id(),
                 std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap()
-                    .as_nanos()
+                    .as_nanos(),
+                COUNTER.fetch_add(1, Ordering::Relaxed)
             ));
             std::fs::create_dir(&p).unwrap();
             Self { path: p }

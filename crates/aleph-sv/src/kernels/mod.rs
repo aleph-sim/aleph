@@ -15,6 +15,7 @@
 // exposed publicly so the bench binary — which compiles as an external
 // crate — can reach `aleph_sv::kernels::aos::apply_1q`.
 pub(crate) mod diagonal_phase;
+pub(crate) mod unitary_kq;
 
 #[cfg(not(feature = "internal-bench"))]
 pub(crate) mod aos;

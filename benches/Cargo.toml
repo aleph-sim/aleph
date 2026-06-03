@@ -75,3 +75,8 @@ required-features = ["scaling-bench"]
 name = "diagonal_fusion"
 harness = false
 required-features = ["scaling-bench"]
+
+[[bench]]
+name = "fuse_kq"
+harness = false
+required-features = ["scaling-bench"]

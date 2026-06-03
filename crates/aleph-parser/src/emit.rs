@@ -94,7 +94,8 @@ fn emit_gate(out: &mut String, g: &GateInstance) -> Result<(), EmitError> {
         | g @ Gate::CRz(_)
         | g @ Gate::Unitary1q(_)
         | g @ Gate::Unitary1qDiag(_)
-        | g @ Gate::Unitary2q(_) => return Err(EmitError::UnsupportedGate { name: g.name() }),
+        | g @ Gate::Unitary2q(_)
+        | g @ Gate::UnitaryKq { .. } => return Err(EmitError::UnsupportedGate { name: g.name() }),
         Gate::Toffoli => ("ccx", vec![]),
         Gate::Ccz => ("ccz", vec![]),
     };
@@ -225,6 +226,32 @@ mod tests {
         match err {
             EmitError::UnsupportedGate { name } => assert_eq!(name, "DiagonalPhase"),
             other => panic!("expected UnsupportedGate(DiagonalPhase), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn unitary_kq_emits_unsupported() {
+        // `UnitaryKq` is a post-optimization dense fused block with no
+        // OpenQASM surface syntax; emit must refuse it cleanly (not panic).
+        // It only ever exists after `FuseKq`, never round-tripped.
+        use aleph_core::{Complex, Gate, GateInstance};
+        use smallvec::smallvec;
+        // 3-qubit identity payload (k=3, len 64).
+        let mut data = vec![Complex::new(0.0, 0.0); 64];
+        for i in 0..8 {
+            data[i * 8 + i] = Complex::new(1.0, 0.0);
+        }
+        let g = Gate::UnitaryKq {
+            k: 3,
+            data: data.into_boxed_slice(),
+        };
+        let mut c = aleph_ir::Circuit::new(3, 0);
+        c.add_gate(GateInstance::new(g, smallvec![0u32, 1, 2]))
+            .unwrap();
+        let err = emit(&c).unwrap_err();
+        match err {
+            EmitError::UnsupportedGate { name } => assert_eq!(name, "UnitaryKq"),
+            other => panic!("expected UnsupportedGate(UnitaryKq), got {other:?}"),
         }
     }
 

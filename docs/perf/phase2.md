@@ -312,3 +312,76 @@ RUSTFLAGS="-C target-cpu=native" \
   cargo bench -p aleph-benches --bench diagonal_fusion --features scaling-bench
 # the instruction-count reduction table prints to stderr at startup.
 ```
+
+-----
+
+## 9. P2-07 — deep k-qubit gate fusion (issue #107)
+
+`FuseKq` (a new IR pass, runs **last** in `default_pipeline()`) greedily merges
+chains of the dense 1q/2q blocks the earlier passes produced (`Unitary1q`,
+`Unitary2q`) into a single dense `Gate::UnitaryKq` over ≤ `max_qubits` qubits,
+applied in **one** state-vector pass by a scalar + AVX-512 generic-`k` matvec
+kernel (renormalised outer-walk generalized from P1-07). Cost model: only a
+block spanning **≥ 3 qubits** that absorbed **≥ 2 gates** becomes dense — so 1q/2q
+and lone `Cnot`/`Cz`/`Swap` keep their specialized kernels (no regression on
+cheap gates). Unlike P2-06's diagonal kernel (pure memory streaming), the dense
+matvec does `2^k` complex-muls per amplitude — it **raises arithmetic
+intensity**, the regime where AVX-512 actually pays.
+
+### Instruction-count (memory-pass) reduction (EPYC, `max_qubits = 4`)
+
+| workload (n=25)       | without | with | reduction |
+|-----------------------|--------:|-----:|----------:|
+| random brick-wall     |     241 |  129 |   1.87×   |
+| QAOA-like             |     167 |   72 |   2.32×   |
+| VQE-like              |     156 |  156 |   1.00×   |
+
+VQE shows **no** `FuseKq` reduction — and that is correct: its entangler is `Cz`,
+which is **diagonal**, so the whole CZ-ladder + `Rz` structure is already
+collapsed into a `DiagonalPhase` by `FuseDiagonalRuns` (P2-06) before `FuseKq`
+runs. `FuseKq`'s wins are specifically on **non-diagonal** (`Cnot`-entangled)
+fusible circuits, which `FuseDiagonalRuns` cannot touch.
+
+### Wall-clock (EPYC 8124P, AoS + AVX-512 `NaiveSvBackend`, idle-verified)
+
+`run` of the pipeline-optimized circuit, without vs with `FuseKq` (criterion,
+`sample_size = 10`, `target-cpu=native`):
+
+| workload              |   without |     with | speedup |
+|-----------------------|----------:|---------:|--------:|
+| random n=22           | 608.4 ms  | 368.5 ms | 1.65×   |
+| random n=25           | 5.075 s   | 2.688 s  | **1.89×** |
+| QAOA n=22             | 375.0 ms  | 137.3 ms | 2.73×   |
+| QAOA n=25             | 3.136 s   | 1.337 s  | **2.34×** |
+| VQE n=25              | 1.887 s   | 1.887 s  | 1.00×   |
+
+Wall-clock tracks the pass-count reduction closely (random 1.89× vs 1.87× count;
+QAOA 2.34× vs 2.32×) — because dense fusion raises arithmetic intensity, the
+extra per-amplitude FLOPs are not the bottleneck; fewer DRAM streams over the
+`2^n` state is. The scalar↔AVX-512 kernel matched bit-for-bit on the equivalence
+tests (EPYC); with `target-cpu=native` the `with` column runs the SIMD path.
+
+### `max_qubits` sweep → default = 4
+
+QAOA-25, `FuseKq { max_qubits }` then `run`:
+
+| max_qubits | time     |
+|-----------:|---------:|
+| 2          | 3.126 s  | (≈ no fusion — span < 3 never fuses) |
+| 3          | 1.903 s  |
+| **4**      | **1.337 s** |
+| 5          | 1.446 s  |
+
+`max_qubits = 4` wins; **`k = 5` is slower** — the 32×32 dense block's
+`2^k`-per-amplitude FLOP cost outweighs the marginal extra pass reduction. The
+`FuseKq::default()` cap is therefore **4**, empirically confirmed (the same
+data-driven approach P2-04 used for grain).
+
+### Reproduce
+
+```bash
+# idle-verified EPYC box; deliver via git bundle (not a GitHub push):
+RUSTFLAGS="-C target-cpu=native" \
+  cargo bench -p aleph-benches --bench fuse_kq --features scaling-bench
+# the instruction-count reduction table prints to stderr at startup.
+```
