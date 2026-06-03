@@ -205,6 +205,30 @@ mod tests {
     }
 
     #[test]
+    fn diagonal_phase_emits_unsupported() {
+        // `DiagonalPhase` is a post-optimization IR node with no OpenQASM
+        // surface syntax; emit must refuse it cleanly (not panic). It only
+        // ever exists after `FuseDiagonalRuns`, never round-tripped.
+        use aleph_ir::{DiagonalPhase, Instruction, PhaseTerm};
+        use smallvec::smallvec;
+        let dp = DiagonalPhase {
+            n_qubits: 1,
+            terms: vec![PhaseTerm {
+                conds: smallvec![0b1u64],
+                angle: std::f64::consts::FRAC_PI_4,
+            }],
+        };
+        let mut c = aleph_ir::Circuit::new(1, 0);
+        c.add_instruction(Instruction::DiagonalPhase(Box::new(dp)))
+            .unwrap();
+        let err = emit(&c).unwrap_err();
+        match err {
+            EmitError::UnsupportedGate { name } => assert_eq!(name, "DiagonalPhase"),
+            other => panic!("expected UnsupportedGate(DiagonalPhase), got {other:?}"),
+        }
+    }
+
+    #[test]
     fn round_trip_through_parse_emit_parse_preserves_instructions() {
         let src = "qubit[2] q; bit[2] c; h q[0]; cx q[0], q[1]; measure q[0] -> c[0]; measure q[1] -> c[1];";
         let c1 = parse(src).unwrap();
