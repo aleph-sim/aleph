@@ -172,6 +172,71 @@ fn fusion_fires_on_decomposed_qft() {
 }
 
 // ---------------------------------------------------------------------------
+// Full default-pipeline equivalence: now that FuseDiagonalRuns is wired into
+// `Circuit::optimize()`, the WHOLE pipeline (not just the standalone pass) must
+// preserve the exact statevector (global phase included) at 1e-12 on a generic
+// input, through NaiveSvBackend (AoS). This guards against an interaction
+// between FuseDiagonalRuns and the other pipeline passes (Cancel/DCE/Fuse1q/
+// Fuse2q) corrupting the state.
+// ---------------------------------------------------------------------------
+
+/// Assert `optimize()` (the full default pipeline) ≡ the unoptimised circuit,
+/// global phase included, through `NaiveSvBackend`.
+fn assert_pipeline_equiv(base: &Circuit) {
+    let aref = naive_amps(base);
+
+    let mut opt = base.clone();
+    opt.optimize().unwrap();
+    let aopt = naive_amps(&opt);
+
+    assert_eq!(aref.len(), aopt.len());
+    for (x, (u, f)) in aref.iter().zip(aopt.iter()).enumerate() {
+        assert!(
+            (*u - *f).norm() < TOL,
+            "pipeline amp {x}: unoptimised {u:?} vs optimised {f:?} (diff {})",
+            (*u - *f).norm()
+        );
+    }
+}
+
+#[test]
+fn builder_qft_full_pipeline_equiv_generic_state() {
+    for n in [3u32, 5, 8] {
+        let mut c = Circuit::new(n, 0);
+        generic_prefix(&mut c, n);
+        append_qft_builder(&mut c, n);
+        assert_pipeline_equiv(&c);
+    }
+}
+
+#[test]
+fn decomposed_qft_full_pipeline_equiv_generic_state() {
+    for n in [3u32, 5, 7] {
+        let mut c = Circuit::new(n, 0);
+        generic_prefix(&mut c, n);
+        append_qft_decomposed(&mut c, n);
+        assert_pipeline_equiv(&c);
+    }
+}
+
+#[test]
+fn full_pipeline_produces_diagonal_phase_on_qft() {
+    // Guard against a vacuous pipeline-equivalence test: confirm the full
+    // pipeline (via optimize) really emits a DiagonalPhase.
+    let n = 5u32;
+    let mut c = Circuit::new(n, 0);
+    generic_prefix(&mut c, n);
+    append_qft_builder(&mut c, n);
+    c.optimize().unwrap();
+    assert!(
+        c.instructions()
+            .iter()
+            .any(|i| matches!(i, aleph_ir::Instruction::DiagonalPhase(_))),
+        "expected the full pipeline to produce at least one DiagonalPhase"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Proptest: random {diagonal ∪ cnot} runs ≡ unfused, on a generic state.
 // ---------------------------------------------------------------------------
 

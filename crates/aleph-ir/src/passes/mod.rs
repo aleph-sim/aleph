@@ -2,10 +2,12 @@
 //!
 //! Each pass implements [`Pass`]. A [`PassPipeline`] runs an ordered
 //! sequence of passes over a [`Circuit`], aggregating per-pass
-//! [`PassStats`]. Phase-1 ships [`cancel::CancelInversePairs`],
-//! [`dce::DeadCodeElim`], [`fuse_1q::Fuse1qRuns`], and
+//! [`PassStats`]. The default pipeline ships
+//! [`cancel::CancelInversePairs`], [`dce::DeadCodeElim`],
+//! [`fuse_diagonal::FuseDiagonalRuns`], [`fuse_1q::Fuse1qRuns`], and
 //! [`fuse_2q::Fuse2q`] — in that pipeline order (cancellation precedes
 //! DCE so DCE can clean up gates newly exposed as dead by cancellation;
+//! diagonal fusion precedes `Fuse2q` so raw `cx`s are still absorbable;
 //! see [`PassPipeline::default_pipeline`]). Later tickets add more
 //! passes that plug in by being pushed onto the pipeline.
 //!
@@ -74,9 +76,9 @@ impl PassPipeline {
         Self { passes }
     }
 
-    /// Phase-1 default pipeline. Currently
-    /// `[CancelInversePairs, DeadCodeElim, Fuse1qRuns, Fuse2q]`; later
-    /// passes are appended here as they ship.
+    /// Default pipeline. Currently
+    /// `[CancelInversePairs, DeadCodeElim, FuseDiagonalRuns, Fuse1qRuns, Fuse2q]`;
+    /// later passes are appended here as they ship.
     ///
     /// Cancellation runs **before** dead-code elimination because
     /// cancelling an inverse pair can expose newly-dead gates — e.g. a
@@ -89,10 +91,34 @@ impl PassPipeline {
     /// Cancellation also runs before fusion so exact inverse pairs
     /// (e.g. `Rz(θ)·Rz(−θ)`) are deleted rather than fused into an
     /// identity block that still executes.
+    ///
+    /// [`FuseDiagonalRuns`] runs after Cancel/DCE and **before**
+    /// [`Fuse2q`]. It must precede `Fuse2q` so that raw `cx`s are still
+    /// available for the diagonal pass to absorb into a `DiagonalPhase`:
+    /// once `Fuse2q` has buried a `cx` inside a non-diagonal dense 4×4
+    /// `Unitary2q` block, the diagonal pass can no longer recognise or
+    /// fuse it. An emitted [`Instruction::DiagonalPhase`](crate::Instruction)
+    /// is itself a hard run-breaker for `FuseDiagonalRuns` (it is never a
+    /// run member), so re-running the pass over its *own* output is a
+    /// no-op.
+    ///
+    /// Note: the *pipeline* is convergent and deterministic but not
+    /// strictly idempotent in a single `optimize()`. `FuseDiagonalRuns`
+    /// uses a conservative "whole-run-or-nothing" v1 rule — a
+    /// {diagonal ∪ cx} run whose net GF(2) permutation is not the
+    /// identity is re-emitted verbatim. `Fuse2q` running afterwards can
+    /// then remove the lone unpaired `cx` (folding it into a `Unitary2q`),
+    /// re-exposing a permutation-closed diagonal sub-run that the *next*
+    /// `optimize()` fuses. The state vector is preserved exactly at every
+    /// step; only the gate count can shrink for one extra round.
+    /// `optimize()` reaches its fixpoint within two passes. (A future
+    /// ticket may split runs at the last identity-permutation prefix,
+    /// restoring strict one-pass idempotence.)
     pub fn default_pipeline() -> Self {
         Self::new(vec![
             Box::new(CancelInversePairs),
             Box::new(DeadCodeElim),
+            Box::new(FuseDiagonalRuns),
             Box::new(Fuse1qRuns),
             Box::new(Fuse2q),
         ])
@@ -191,6 +217,40 @@ mod tests {
         assert_eq!(stats.gates_before, 2);
         assert_eq!(stats.gates_after, 2);
         assert_eq!(stats.transformations, 0);
+    }
+
+    #[test]
+    fn default_pipeline_fuses_diagonal_ladder_and_is_idempotent() {
+        use smallvec::smallvec;
+        // Builder-style controlled-Phase ladder between two H's collapses.
+        let mut c = Circuit::new(3, 0);
+        c.h(2).unwrap();
+        for (t, k) in [(0u32, 2u32), (1, 2), (0, 1)] {
+            c.add_gate(aleph_core::GateInstance::controlled(
+                aleph_core::Gate::Phase(0.5.into()),
+                smallvec![t],
+                smallvec![k],
+            ))
+            .unwrap();
+        }
+        let mut a = c.clone();
+        PassPipeline::default_pipeline().run(&mut a).unwrap();
+        // a DiagonalPhase was produced
+        assert!(
+            a.instructions()
+                .iter()
+                .any(|i| matches!(i, crate::Instruction::DiagonalPhase(_))),
+            "pipeline should produce a DiagonalPhase"
+        );
+        // idempotent: running the pipeline again changes nothing
+        let mut b = a.clone();
+        let s2 = PassPipeline::default_pipeline().run(&mut b).unwrap();
+        assert_eq!(
+            a.len(),
+            b.len(),
+            "second pipeline run must not change length"
+        );
+        assert_eq!(s2.transformations, 0, "second pipeline run is a no-op");
     }
 
     #[test]
