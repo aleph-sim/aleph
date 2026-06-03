@@ -120,6 +120,15 @@ impl Backend for NaiveSvBackend {
         Ok(())
     }
 
+    fn apply_diagonal_phase(
+        &mut self,
+        state: &mut Self::State,
+        dp: &aleph_ir::DiagonalPhase,
+    ) -> Result<(), BackendError> {
+        crate::kernels::diagonal_phase::apply_diagonal_phase_aos(&mut state.amps, dp);
+        Ok(())
+    }
+
     fn measure(&mut self, state: &mut Self::State, qubit: u32) -> Result<bool, BackendError> {
         crate::measure::measure_impl(&mut self.rng, state, qubit)
     }

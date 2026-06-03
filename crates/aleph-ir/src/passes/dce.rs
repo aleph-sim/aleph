@@ -67,6 +67,16 @@ impl Pass for DeadCodeElim {
                         transformations += 1;
                     }
                 }
+                // DiagonalPhase is a fused diagonal operator produced by an
+                // earlier pass. Treat it conservatively like a Barrier: mark
+                // all its qubits live and keep it unconditionally. A later
+                // dedicated pass may refine this.
+                Instruction::DiagonalPhase(_) => {
+                    for q in inst.used_qubits() {
+                        live.insert(q);
+                    }
+                    kept_rev.push(inst.clone());
+                }
             }
         }
 

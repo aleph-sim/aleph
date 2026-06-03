@@ -247,3 +247,68 @@ Measure only on a **verified-idle** box (`uptime` ≈ 0, no competing
 `cargo bench`/runner jobs; idle-check per CLAUDE.md and `phase2-p2-01.md` §1);
 deliver code to the self-hosted EPYC runner via `git bundle`, not a GitHub push,
 to avoid racing the CI Bench job (technique recorded in `phase2-p2-04.md`).
+
+-----
+
+## 8. P2-06 — diagonal-run fusion (issue #106)
+
+`FuseDiagonalRuns` (a new IR pass) collapses a maximal run of `{diagonal gates
+∪ cx}` into a single `Instruction::DiagonalPhase` applied in **one** streaming
+state-vector pass. It tracks a GF(2) bit-permutation across the run, so the
+interleaved `cx`s of a *decomposed* QFT are **absorbed** (monomial algebra:
+`cx·D·cx` is diagonal) rather than breaking the run. Both QFT encodings
+therefore collapse: the builder controlled-`Phase` ladder and the
+Aer-comparable `qft_n25.qasm` fixture (lowered to `p`+`cx`). The fused operator
+is a symbolic list of `(AND-of-parity-masks → angle)` terms — no `2^n` storage —
+applied by a scalar + AVX-512 (`VPOPCNTQ` parity + scalar-extract sincos) kernel
+in AoS and SoA. Correctness is gated at 1e-12 (global phase included) by the
+`diagonal_fusion_oracle` equivalence tests on a generic input state, validated
+on the EPYC AVX-512 box.
+
+### Instruction-count (memory-pass) reduction
+
+The acceptance target was ≥ 5× fewer gate-passes on QFT-25. Measured (gates
+remaining after the pipeline, without vs with `FuseDiagonalRuns`):
+
+| circuit              | without | with | reduction |
+|----------------------|--------:|-----:|----------:|
+| builder QFT n=20     |     210 |   39 |   5.38×   |
+| builder QFT n=22     |     253 |   43 |   5.88×   |
+| builder QFT n=25     |     325 |   49 |   6.63×   |
+| fixture QFT n=25     |     300 |   47 |   6.38×   |
+
+The remaining ~`n`+`n` instructions are the `n` Hadamards (non-diagonal, one
+pass each) plus the `n` per-level fused diagonals — exactly the `≈ 2n`-pass
+lower bound the design predicted.
+
+### Wall-clock (EPYC 8124P, AoS + AVX-512 `NaiveSvBackend`, idle-verified)
+
+End-to-end `run` time of the pipeline-optimized circuit, without vs with the
+diagonal pass (criterion, `sample_size = 10`, `target-cpu=native`):
+
+| circuit                       | without   | with      | speedup |
+|-------------------------------|----------:|----------:|--------:|
+| builder QFT n=22              | 205.2 ms  | 111.9 ms  | 1.83×   |
+| builder QFT n=25              | 2.164 s   | 1.068 s   | 2.03×   |
+| **fixture QFT n=25 (`p`+`cx`)** | 3.703 s   | 1.121 s   | **3.30×** |
+
+The decomposed fixture — the workload the acceptance criteria name — gets the
+largest speedup (**3.30×**): its `cx`+`p` decomposition carried the most
+redundant full-state passes, all absorbed into the per-level diagonals.
+
+Wall-clock speedup (2–3.3×) is smaller than the pass-count reduction (≈ 6×)
+because the surviving Hadamard passes are pure memory streams while each fused
+`DiagonalPhase` pass now does more arithmetic per amplitude (term evaluation).
+Both are bandwidth-bound; the win is fewer DRAM streams over the `2^n` state,
+exactly the Phase-2 thesis (§1). The AVX-512 kernel matched the scalar kernel
+bit-for-bit on the equivalence tests; with `target-cpu=native` the `with`
+column runs the SIMD path.
+
+### Reproduce
+
+```bash
+# idle-verified EPYC box; deliver via git bundle (not a GitHub push):
+RUSTFLAGS="-C target-cpu=native" \
+  cargo bench -p aleph-benches --bench diagonal_fusion --features scaling-bench
+# the instruction-count reduction table prints to stderr at startup.
+```

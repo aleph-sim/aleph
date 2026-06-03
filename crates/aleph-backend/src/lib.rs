@@ -96,6 +96,21 @@ pub trait Backend {
         state: &Self::State,
         qubits: &[u32],
     ) -> Result<Vec<f64>, BackendError>;
+
+    /// Apply a fused multi-qubit diagonal (`Instruction::DiagonalPhase`).
+    ///
+    /// Default implementation rejects it as unsupported, so backends that
+    /// never see optimized circuits (MPS/stabilizer, for now) need not
+    /// implement it. State-vector backends override this.
+    fn apply_diagonal_phase(
+        &mut self,
+        _state: &mut Self::State,
+        _dp: &aleph_ir::DiagonalPhase,
+    ) -> Result<(), BackendError> {
+        Err(BackendError::UnsupportedInstruction {
+            kind: "diagonal_phase",
+        })
+    }
 }
 
 /// Run `circuit` on `backend`, returning the final backend state.
@@ -169,6 +184,9 @@ pub fn run_with_outcomes<B: Backend>(
                 return Err(BackendError::UnsupportedInstruction { kind: "reset" });
             }
             aleph_ir::Instruction::Barrier(_) => {}
+            aleph_ir::Instruction::DiagonalPhase(dp) => {
+                backend.apply_diagonal_phase(&mut state, dp)?;
+            }
         }
     }
     Ok((state, outcomes))
@@ -229,5 +247,82 @@ mod tests {
             probability: 1e-301,
         };
         assert!(e.to_string().contains("p = 1e-301"));
+    }
+
+    /// Minimal stub backend that does NOT override `apply_diagonal_phase`.
+    /// Used to verify the default trait-method path surfaces the correct error.
+    struct StubBackend;
+
+    impl Backend for StubBackend {
+        type State = ();
+
+        fn allocate(&mut self, _num_qubits: u32) -> Result<Self::State, BackendError> {
+            Ok(())
+        }
+
+        fn apply_gate(
+            &mut self,
+            _state: &mut Self::State,
+            _gate: &aleph_core::GateInstance,
+        ) -> Result<(), BackendError> {
+            Ok(())
+        }
+
+        fn measure(&mut self, _state: &mut Self::State, _qubit: u32) -> Result<bool, BackendError> {
+            Ok(false)
+        }
+
+        fn sample(&mut self, _state: &Self::State, _shots: u32) -> Result<Vec<u64>, BackendError> {
+            Ok(vec![])
+        }
+
+        fn expectation_value(
+            &mut self,
+            _state: &Self::State,
+            _pauli: &aleph_core::PauliString,
+        ) -> Result<f64, BackendError> {
+            Ok(0.0)
+        }
+
+        fn probabilities(
+            &mut self,
+            _state: &Self::State,
+            qubits: &[u32],
+        ) -> Result<Vec<f64>, BackendError> {
+            Ok(vec![0.0; 1 << qubits.len()])
+        }
+    }
+
+    /// `run` on a circuit containing a `DiagonalPhase` instruction must
+    /// propagate `UnsupportedInstruction { kind: "diagonal_phase" }` when
+    /// the backend uses the default (non-overriding) implementation.
+    #[test]
+    fn default_apply_diagonal_phase_returns_unsupported() {
+        use aleph_ir::{Circuit, DiagonalPhase, Instruction, PhaseTerm};
+        use smallvec::smallvec;
+
+        // Build a 1-qubit circuit with a single DiagonalPhase instruction:
+        // P(π/4) on qubit 0 — fires when bit 0 is set.
+        let dp = DiagonalPhase {
+            n_qubits: 1,
+            terms: vec![PhaseTerm {
+                conds: smallvec![0b1u64],
+                angle: std::f64::consts::FRAC_PI_4,
+            }],
+        };
+        let mut circuit = Circuit::new(1, 0);
+        circuit
+            .add_instruction(Instruction::DiagonalPhase(Box::new(dp)))
+            .expect("valid 1-qubit DiagonalPhase");
+
+        let mut stub = StubBackend;
+        let result = run(&mut stub, &circuit);
+        assert_eq!(
+            result,
+            Err(BackendError::UnsupportedInstruction {
+                kind: "diagonal_phase"
+            }),
+            "default apply_diagonal_phase must return UnsupportedInstruction"
+        );
     }
 }

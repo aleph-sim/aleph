@@ -48,6 +48,12 @@ fn emit_instruction(out: &mut String, inst: &Instruction) -> Result<(), EmitErro
             out.push(';');
             Ok(())
         }
+        // DiagonalPhase is a post-optimization IR node; the parser never
+        // produces it. Reject emission: a circuit containing this variant
+        // should be lowered to gates before serialisation.
+        Instruction::DiagonalPhase(_) => Err(EmitError::UnsupportedGate {
+            name: "DiagonalPhase",
+        }),
     }
 }
 
@@ -195,6 +201,30 @@ mod tests {
         match err {
             EmitError::UnsupportedGate { name } => assert_eq!(name, "Unitary1qDiag"),
             other => panic!("expected UnsupportedGate(Unitary1qDiag), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn diagonal_phase_emits_unsupported() {
+        // `DiagonalPhase` is a post-optimization IR node with no OpenQASM
+        // surface syntax; emit must refuse it cleanly (not panic). It only
+        // ever exists after `FuseDiagonalRuns`, never round-tripped.
+        use aleph_ir::{DiagonalPhase, Instruction, PhaseTerm};
+        use smallvec::smallvec;
+        let dp = DiagonalPhase {
+            n_qubits: 1,
+            terms: vec![PhaseTerm {
+                conds: smallvec![0b1u64],
+                angle: std::f64::consts::FRAC_PI_4,
+            }],
+        };
+        let mut c = aleph_ir::Circuit::new(1, 0);
+        c.add_instruction(Instruction::DiagonalPhase(Box::new(dp)))
+            .unwrap();
+        let err = emit(&c).unwrap_err();
+        match err {
+            EmitError::UnsupportedGate { name } => assert_eq!(name, "DiagonalPhase"),
+            other => panic!("expected UnsupportedGate(DiagonalPhase), got {other:?}"),
         }
     }
 

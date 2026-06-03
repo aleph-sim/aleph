@@ -151,17 +151,18 @@ impl Circuit {
 
     /// Run the default optimisation pipeline on this circuit in
     /// place. Currently applies
-    /// `[CancelInversePairs, DeadCodeElim, Fuse1qRuns, Fuse2q]`; later
-    /// passes are added to
+    /// `[CancelInversePairs, DeadCodeElim, FuseDiagonalRuns, Fuse1qRuns, Fuse2q]`;
+    /// later passes are added to
     /// [`passes::PassPipeline::default_pipeline`] as they ship.
     ///
     /// Returns aggregate [`passes::PassStats`].
     ///
     /// **Note:** Optimised circuits may contain `Gate::Unitary1q` or
-    /// `Gate::Unitary1qDiag` variants produced by gate fusion. These
-    /// variants are intentionally not OpenQASM-emittable
-    /// (`aleph_parser::emit` returns `UnsupportedGate`), so callers
-    /// that need a QASM round-trip should emit BEFORE optimising.
+    /// `Gate::Unitary1qDiag` variants produced by gate fusion, or an
+    /// `Instruction::DiagonalPhase` produced by `FuseDiagonalRuns`. None
+    /// are OpenQASM-emittable (`aleph_parser::emit` returns
+    /// `UnsupportedGate`), so callers that need a QASM round-trip should
+    /// emit BEFORE optimising.
     pub fn optimize(&mut self) -> Result<crate::passes::PassStats, crate::passes::PassError> {
         crate::passes::PassPipeline::default_pipeline().run(self)
     }
@@ -265,6 +266,10 @@ impl Circuit {
                 }
                 Ok(())
             }
+            // DiagonalPhase is a post-optimization instruction inserted by
+            // passes, not via the public builder API; skip qubit range
+            // validation (the pass is responsible for correct qubit indices).
+            Instruction::DiagonalPhase(_) => Ok(()),
         }
     }
 
