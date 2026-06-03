@@ -33,6 +33,7 @@ pub use dce::DeadCodeElim;
 pub use fuse_1q::Fuse1qRuns;
 pub use fuse_2q::Fuse2q;
 pub use fuse_diagonal::FuseDiagonalRuns;
+pub use fuse_kq::FuseKq;
 
 /// Statistics emitted by a single pass.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
