@@ -164,6 +164,85 @@ pub(crate) fn apply_2q_dense_scalar_f32(
     );
 }
 
+/// Scalar fallback for arbitrary 8×8 matrices. Apply a 3-qubit matrix to
+/// `targets = [t0, t1, t2]` (with external `controls`) in place.
+///
+/// **MSB convention (P0-06):** matrix index `k`'s bits map to targets
+/// from MSB to LSB — bit 2 of `k` is `targets[0]`, bit 1 is
+/// `targets[1]`, bit 0 is `targets[2]`. So `k = 6` (binary `110`)
+/// corresponds to `(targets[0] = 1, targets[1] = 1, targets[2] = 0)`.
+/// This matches `Gate::Toffoli` (`qubits = [c0, c1, target]`), whose
+/// matrix swaps rows 6 ↔ 7.
+///
+/// Mirrors `aos::apply_3q_generic` with `Complex<f32>` substituted for
+/// `Complex<f64>` and `ComplexF32Ptr` substituted for `ComplexPtr`.
+/// Index algebra, SAFETY reasoning, and `par_blocks` call structure are
+/// identical.
+pub(crate) fn apply_3q_generic_f32(
+    amps: &mut [Complex<f32>],
+    targets: [u32; 3],
+    controls: &[u32],
+    m: &[[Complex<f32>; 8]; 8],
+) {
+    let t_bits = [
+        1usize << targets[0],
+        1usize << targets[1],
+        1usize << targets[2],
+    ];
+    let t_mask = t_bits[0] | t_bits[1] | t_bits[2];
+    let ctrl_mask = control_mask(controls);
+    let len = amps.len();
+    let cp = ComplexF32Ptr(amps.as_mut_ptr());
+    let max_target = targets[0].max(targets[1]).max(targets[2]);
+    let policy = tuning::resolve_policy(
+        GateClass::ThreeQ,
+        tuning::pos_class(max_target, len.trailing_zeros()),
+    );
+    // Flat per-amplitude walk: each base index `i` (all target bits clear) writes
+    // the disjoint octet of 8 amplitudes indexed by idx[0..8]; concurrent tasks
+    // never alias because distinct base indices produce disjoint octets.
+    par_blocks(
+        policy,
+        len,
+        len,
+        |k| k,
+        |i| {
+            if (i & t_mask) == 0 && (i & ctrl_mask) == ctrl_mask {
+                let mut idx = [0usize; 8];
+                for (k, slot) in idx.iter_mut().enumerate() {
+                    // MSB convention: k bit 2 → targets[0], bit 1 → targets[1], bit 0 → targets[2].
+                    let bit_t0 = if k & 4 != 0 { t_bits[0] } else { 0 };
+                    let bit_t1 = if k & 2 != 0 { t_bits[1] } else { 0 };
+                    let bit_t2 = if k & 1 != 0 { t_bits[2] } else { 0 };
+                    *slot = i | bit_t0 | bit_t1 | bit_t2;
+                }
+                // SAFETY: all idx[] < len (base `i` has all target bits clear; OR-ing
+                // in target bits keeps each result < len); distinct base indices produce
+                // disjoint octets — no aliasing across tasks. Read all 8 before writing.
+                unsafe {
+                    let p = cp.ptr();
+                    let v0 = *p.add(idx[0]);
+                    let v1 = *p.add(idx[1]);
+                    let v2 = *p.add(idx[2]);
+                    let v3 = *p.add(idx[3]);
+                    let v4 = *p.add(idx[4]);
+                    let v5 = *p.add(idx[5]);
+                    let v6 = *p.add(idx[6]);
+                    let v7 = *p.add(idx[7]);
+                    let v = [v0, v1, v2, v3, v4, v5, v6, v7];
+                    for r in 0..8 {
+                        let mut acc = Complex::<f32>::new(0.0, 0.0);
+                        for c in 0..8 {
+                            acc += m[r][c] * v[c];
+                        }
+                        *p.add(idx[r]) = acc;
+                    }
+                }
+            }
+        },
+    );
+}
+
 /// Top-level f32 2q dispatch. Phase B adds an AVX-512 dense arm; for now
 /// always the scalar dense kernel (correct for CNOT/CZ/SWAP/dense alike —
 /// the f64 specializations are non-fused-path optimizations out of scope).
@@ -228,6 +307,37 @@ mod tests {
         apply_1q_f32(&mut amps, 0, &[], &s);
         assert!((amps[0].re - 0.5).abs() < 1e-6 && amps[0].im.abs() < 1e-6);
         assert!(amps[1].re.abs() < 1e-6 && (amps[1].im - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn toffoli_flips_target_when_controls_set() {
+        // 8-amp state; index = (q0<<2)|(q1<<1)|q2 (MSB convention, qubits[0]=q0).
+        //
+        // Index adjustment: with the kernel's MSB convention, `targets[0]` is the
+        // HIGH bit of the matrix-index k (bit 2), `targets[1]` the middle (bit 1),
+        // and `targets[2]` the LOW bit (bit 0).  With `targets=[0,1,2]` the mapping
+        // from matrix-index k to amplitude-index is:
+        //   idx[k] = (k&4 → bit targets[0]=0) | (k&2 → bit targets[1]=1) | (k&1 → bit targets[2]=2)
+        //         = (k>>2)<<0 | ((k>>1)&1)<<1 | (k&1)<<2
+        // which is a bit-reversal of k.  So matrix k=6 (110₂) maps to amp 3 (011₂),
+        // not 6.  To get k=n mapping directly to amp n (identity) we need
+        // `targets=[2,1,0]` — highest qubit-index in targets[0] (MSB of k).
+        let zero = c(0.0, 0.0);
+        let mut amps = vec![zero; 8];
+        amps[6] = c(1.0, 0.0); // |110>
+        let mut t = [[zero; 8]; 8];
+        for (i, row) in t.iter_mut().enumerate() {
+            row[i] = c(1.0, 0.0);
+        }
+        t[6][6] = zero;
+        t[7][7] = zero;
+        t[6][7] = c(1.0, 0.0);
+        t[7][6] = c(1.0, 0.0);
+        // targets=[2,1,0] so that matrix-index k maps directly to amplitude-index k
+        // (no bit reversal), matching the 6↔7 swap in the matrix above.
+        apply_3q_generic_f32(&mut amps, [2, 1, 0], &[], &t);
+        assert!(amps[6].norm() < 1e-6);
+        assert!((amps[7].re - 1.0).abs() < 1e-6);
     }
 
     #[test]
