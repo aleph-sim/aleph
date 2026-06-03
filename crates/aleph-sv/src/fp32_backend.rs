@@ -97,12 +97,7 @@ impl Backend for Fp32SvBackend {
         // directly. Intercept before matrix() so `Unrepresentable` never fires.
         if let aleph_core::Gate::UnitaryKq { k, data } = &gate.gate {
             let data_f32: Vec<Complex<f32>> = data.iter().copied().map(narrow).collect();
-            crate::kernels::aos_f32::apply_kq_scalar_f32(
-                &mut state.amps,
-                &gate.qubits,
-                *k,
-                &data_f32,
-            );
+            crate::kernels::aos_f32::apply_kq_f32(&mut state.amps, &gate.qubits, *k, &data_f32);
             return Ok(());
         }
         let matrix = gate.gate.matrix().map_err(|e| match e {

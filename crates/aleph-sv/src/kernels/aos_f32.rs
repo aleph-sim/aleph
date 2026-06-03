@@ -272,7 +272,11 @@ pub(crate) fn apply_3q_generic_f32(
 /// counters produce distinct `base` values that differ in at least one FREE
 /// bit position, so `base_a | offsets[m] ≠ base_b | offsets[n]` for any m, n
 /// — disjoint writes, no aliasing.
-pub(crate) fn apply_kq_scalar_f32(
+// `pub` (like the other f32 scalar references) so the `internal-bench`-gated
+// integration test `tests/fp32_simd_scalar.rs` can call this forced scalar
+// reference directly. Without that feature `kernels` is private, so the
+// effective visibility is `pub(crate)`.
+pub fn apply_kq_scalar_f32(
     amps: &mut [Complex<f32>],
     qubits: &[u32],
     k: u8,
@@ -318,6 +322,202 @@ pub(crate) fn apply_kq_scalar_f32(
             }
         },
     );
+}
+
+/// Top-level f32 dense k-qubit dispatch. Routes to the AVX-512 outer-walk
+/// kernel when the contract holds (AVX-512F present, `k <= 4`, and at least
+/// one full SIMD group of outer blocks), else the scalar reference.
+///
+/// `pub` (like the scalar reference) so the `internal-bench`-gated
+/// integration test `tests/fp32_simd_scalar.rs` can drive the dispatcher
+/// end-to-end. Without the feature `kernels` is private, so the effective
+/// visibility is `pub(crate)`.
+pub fn apply_kq_f32(amps: &mut [Complex<f32>], qubits: &[u32], k: u8, data: &[Complex<f32>]) {
+    #[cfg(target_arch = "x86_64")]
+    {
+        // SIMD path mirrors the f64 `unitary_kq::apply_kq_aos` contract:
+        // vectorize the outer walk across LANES_F32_KQ (= 16) outer blocks at
+        // once. Needs `outer = amps.len() >> k >= LANES_F32_KQ` (a power of
+        // two, hence a multiple of 16 → no scalar tail). The gather/scatter
+        // path is f32-only for k <= 4 (k=5 routes to the validated scalar
+        // kernel — kq SIMD is a smaller lever than the 1q/2q dense kernels).
+        let outer = amps.len() >> k;
+        if k <= 4 && outer >= AVX512_LANES_F32_KQ && std::is_x86_feature_detected!("avx512f") {
+            // SAFETY: avx512f detected immediately above; `k <= 4`;
+            // `outer >= 16` and `outer = 2^(n-k)` is a power of two, hence a
+            // multiple of 16, so every block is processed with no scalar tail.
+            // The 28-qubit software cap bounds the f32 element offset
+            // `2 * (base | offsets) < 2^29 < i32::MAX`, so the i32 gather/scatter
+            // indices never overflow.
+            unsafe { apply_kq_avx512_f32(amps, qubits, k, data) };
+            return;
+        }
+    }
+    apply_kq_scalar_f32(amps, qubits, k, data);
+}
+
+/// SIMD width for the f32 dense kq outer walk: one `_mm512_i32gather_ps`
+/// fills 16 f32 lanes, so 16 outer blocks are processed per group. (Distinct
+/// from the *interleaved* `LANES_F32 = 8` used by the 1q/2q dense kernels —
+/// the kq kernel keeps re/im in SEPARATE vectors, SoA-in-register, exactly
+/// like the f64 source's separate `__m512d` re/im accumulators, so each lane
+/// carries one block's real OR imag scalar and all 16 lanes are live.)
+#[cfg(target_arch = "x86_64")]
+const AVX512_LANES_F32_KQ: usize = 16;
+
+/// AVX-512 AoS dense `apply_kq` for f32. Single-precision mirror of
+/// `unitary_kq::apply_kq_avx512_aos` (the f64 source) per the P2-08 f64→f32
+/// substitution rules.
+///
+/// **Lane layout (mirrors the f64 source).** The f64 kernel vectorizes the
+/// OUTER walk: it processes `AVX512_LANES` (= 8 for f64) independent outer
+/// blocks per group, one SIMD lane per block. The dense `2^k × 2^k` matvec is
+/// identical across the lanes, so each matrix cell `data[r*dim+c]` is a scalar
+/// **broadcast** (`_mm512_set1_*`) and the per-lane input `in[block][c]` drives
+/// a packed complex FMA across the lanes. re and im live in SEPARATE vectors
+/// (`acc_re`/`acc_im`), so this is SoA-in-register — NOT the interleaved
+/// packed-complex idiom used by the 1q/2q dense kernels. The f32 version
+/// processes `AVX512_LANES_F32_KQ` (= 16) outer blocks per group, since
+/// `_mm512_i32gather_ps` fills 16 f32 lanes (vs the f64 `_mm512_i64gather_pd`'s
+/// 8 f64 lanes).
+///
+/// The lanes' c-th amplitude lives at `base_b | offsets[c]` for the 16 block
+/// bases `base_b` (`expand_with_fixed` scatters the free bits, so the bases are
+/// not contiguous); gathered with `_mm512_i32gather_ps` and scattered back with
+/// `_mm512_i32scatter_ps`. AoS interleave: amplitude index `i` → f32 element
+/// `2*i` (re), `2*i + 1` (im); the `targets_offsets_fixed` / `expand_with_fixed`
+/// index construction is precision-independent and copied verbatim.
+///
+/// # Safety
+///
+/// Caller MUST ensure all of:
+/// * Host CPU supports `avx512f`.
+/// * `k <= 4`.
+/// * `outer = amps.len() >> k >= AVX512_LANES_F32_KQ` (= 16); since `outer` is
+///   a power of two this makes it a multiple of 16, so there is no scalar tail.
+/// * The largest f32 element index `2 * (base | offsets[m]) + 1` fits in `i32`
+///   (guaranteed by the 28-qubit software cap: `2 * 2^28 < i32::MAX`).
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f")]
+pub unsafe fn apply_kq_avx512_f32(
+    amps: &mut [Complex<f32>],
+    qubits: &[u32],
+    k: u8,
+    data: &[Complex<f32>],
+) {
+    use crate::kernels::expand_with_fixed;
+    use crate::kernels::unitary_kq::targets_offsets_fixed;
+    use core::arch::x86_64::*;
+
+    let dim = 1usize << k;
+    let (offsets, fixed) = targets_offsets_fixed(qubits, k);
+    let len = amps.len();
+    let outer = len >> k;
+    debug_assert_eq!(outer % AVX512_LANES_F32_KQ, 0);
+
+    // Pre-split each matrix cell into broadcast real/imag vectors — constant
+    // across all outer blocks (mirrors the f64 source's `d_re`/`d_im`).
+    let mut d_re = vec![_mm512_setzero_ps(); dim * dim];
+    let mut d_im = vec![_mm512_setzero_ps(); dim * dim];
+    for (cell, d) in data.iter().enumerate().take(dim * dim) {
+        d_re[cell] = _mm512_set1_ps(d.re);
+        d_im[cell] = _mm512_set1_ps(d.im);
+    }
+
+    // Flat `*mut f32` view over the interleaved Complex<f32> storage.
+    let bp = BlockPtrF32(amps.as_mut_ptr() as *mut f32);
+    let groups = outer / AVX512_LANES_F32_KQ;
+
+    crate::kernels::par_blocks(
+        crate::kernels::tuning::DEFAULT_POLICY,
+        groups,
+        len,
+        |g| g,
+        move |g| {
+            // SAFETY: par_blocks hands each task a distinct group index `g`.
+            // The 16 counters g*16..g*16+16 map (via expand_with_fixed) to 16
+            // distinct base indices; combined with offsets[m] they cover 16
+            // disjoint 2^k-blocks, themselves disjoint from every other group's
+            // blocks (the scalar kernel's coverage invariant, in groups of 16).
+            // So gather/scatter across tasks never alias. BlockPtrF32 is
+            // Send+Sync; avx512f is guaranteed by this fn's #[target_feature].
+            let ptr = bp.ptr();
+            let counter0 = g * AVX512_LANES_F32_KQ;
+
+            // Base index (target bits cleared) for each of the 16 lanes.
+            let mut bases = [0i32; AVX512_LANES_F32_KQ];
+            for (lane, b) in bases.iter_mut().enumerate() {
+                *b = expand_with_fixed(counter0 + lane, &fixed) as i32;
+            }
+            let base_v = _mm512_loadu_si512(bases.as_ptr() as *const _);
+
+            // Gather the 2^k inputs (one __m512 per matrix column), as separate
+            // real/imag vectors. AoS f32: re at f32 element 2*idx, im at 2*idx+1.
+            let mut in_re = vec![_mm512_setzero_ps(); dim];
+            let mut in_im = vec![_mm512_setzero_ps(); dim];
+            for c in 0..dim {
+                // f32 element index of amplitude (base | offsets[c]) is 2*(base|off).
+                let amp_idx = _mm512_or_si512(base_v, _mm512_set1_epi32(offsets[c] as i32));
+                let re_idx = _mm512_slli_epi32::<1>(amp_idx); // *2
+                let im_idx = _mm512_add_epi32(re_idx, _mm512_set1_epi32(1));
+                // scale = 4 bytes per f32; indices are in f32-element units.
+                in_re[c] = _mm512_i32gather_ps::<4>(re_idx, ptr as *const f32);
+                in_im[c] = _mm512_i32gather_ps::<4>(im_idx, ptr as *const f32);
+            }
+
+            // Matvec: out[r] = Σ_c data[r*dim+c] * in[c], complex, per lane.
+            for r in 0..dim {
+                let mut acc_re = _mm512_setzero_ps();
+                let mut acc_im = _mm512_setzero_ps();
+                for c in 0..dim {
+                    di_fma_f32(
+                        &mut acc_re,
+                        &mut acc_im,
+                        d_re[r * dim + c],
+                        d_im[r * dim + c],
+                        in_re[c],
+                        in_im[c],
+                    );
+                }
+                // Scatter back to amplitude (base | offsets[r]).
+                let amp_idx = _mm512_or_si512(base_v, _mm512_set1_epi32(offsets[r] as i32));
+                let re_idx = _mm512_slli_epi32::<1>(amp_idx);
+                let im_idx = _mm512_add_epi32(re_idx, _mm512_set1_epi32(1));
+                _mm512_i32scatter_ps::<4>(ptr, re_idx, acc_re);
+                _mm512_i32scatter_ps::<4>(ptr, im_idx, acc_im);
+            }
+        },
+    );
+}
+
+/// Packed complex multiply-accumulate across 16 f32 lanes (SoA-in-register):
+///   acc_re += d_re*in_re - d_im*in_im
+///   acc_im += d_re*in_im + d_im*in_re
+/// where `d_re`/`d_im` are per-cell broadcasts and `in_re`/`in_im` vary per
+/// lane. Single-precision mirror of `unitary_kq::di_fma` — same operation,
+/// `_ps` substituted for `_pd`.
+///
+/// # Safety
+///
+/// Caller MUST ensure the host supports `avx512f`.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f")]
+#[inline]
+unsafe fn di_fma_f32(
+    acc_re: &mut core::arch::x86_64::__m512,
+    acc_im: &mut core::arch::x86_64::__m512,
+    d_re: core::arch::x86_64::__m512,
+    d_im: core::arch::x86_64::__m512,
+    in_re: core::arch::x86_64::__m512,
+    in_im: core::arch::x86_64::__m512,
+) {
+    use core::arch::x86_64::*;
+    // acc_re += d_re*in_re - d_im*in_im
+    *acc_re = _mm512_fmadd_ps(d_re, in_re, *acc_re);
+    *acc_re = _mm512_fnmadd_ps(d_im, in_im, *acc_re);
+    // acc_im += d_re*in_im + d_im*in_re
+    *acc_im = _mm512_fmadd_ps(d_re, in_im, *acc_im);
+    *acc_im = _mm512_fmadd_ps(d_im, in_re, *acc_im);
 }
 
 /// Top-level f32 2q dispatch. Phase B adds an AVX-512 dense arm; for now

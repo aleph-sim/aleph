@@ -17,7 +17,7 @@
 use aleph_core::Complex;
 use aleph_sv::kernels::aos_f32::{
     apply_1q_dense_scalar_f32, apply_1q_diag_scalar_f32, apply_1q_f32, apply_2q_dense_scalar_f32,
-    apply_2q_f32,
+    apply_2q_f32, apply_kq_f32, apply_kq_scalar_f32,
 };
 
 /// Deterministic, non-trivial, well-spread complex pattern.
@@ -255,6 +255,82 @@ fn dense_2q_simd_matches_scalar() {
                         );
                     }
                 }
+            }
+        }
+    }
+}
+
+/// Deterministic dense `2^k × 2^k` matrix with every entry nonzero in both
+/// real and imaginary parts. Not unitary — the SIMD≡scalar comparison only
+/// needs both paths to apply the SAME linear map; varied magnitudes exercise
+/// the full `2^k × 2^k` matvec (every broadcast `data[r*dim+c]` term and the
+/// `m_im` half of the complex-multiply).
+fn dense_kq_m(k: u8) -> Vec<Complex<f32>> {
+    let dim = 1usize << k;
+    (0..dim * dim)
+        .map(|i| {
+            let rr = ((i as f32) * 0.07 + 0.3).sin() * 0.4 - 0.2;
+            let ii = ((i as f32) * 0.11 + 0.5).cos() * 0.4 - 0.15;
+            Complex::new(rr, ii)
+        })
+        .collect()
+}
+
+#[test]
+fn kq_simd_matches_scalar() {
+    // The f32 kq SIMD arm engages when `outer = (1<<n) >> k >= 16` (= the
+    // 16-lane i32 gather group) AND `k <= 4`. At n=12 every k ∈ {2,3,4} has
+    // `outer ∈ {2^10, 2^9, 2^8} ≥ 16`, so the dispatcher takes the SIMD path
+    // on AVX-512 (and scalar on aarch64, where the comparison is trivially
+    // equal but the harness still exercises the index algebra).
+    let n = 12u32;
+    for k in [2u8, 3, 4] {
+        let data = dense_kq_m(k);
+
+        // Qubit subsets covering low and high positions (and non-adjacent
+        // spreads). `targets_offsets_fixed` sorts internally, so order in the
+        // slice is irrelevant; pick distinct, in-range subsets of size k.
+        let subsets: Vec<Vec<u32>> = match k {
+            2 => vec![
+                vec![0, 1],   // lowest pair
+                vec![0, 11],  // low + top
+                vec![10, 11], // top pair
+                vec![3, 7],   // mid spread
+            ],
+            3 => vec![
+                vec![0, 1, 2],   // lowest triple
+                vec![0, 5, 11],  // low + mid + top
+                vec![9, 10, 11], // top triple
+                vec![1, 4, 8],   // non-adjacent spread
+            ],
+            4 => vec![
+                vec![0, 1, 2, 3],   // lowest quad
+                vec![0, 4, 8, 11],  // spread incl top
+                vec![8, 9, 10, 11], // top quad
+                vec![2, 5, 7, 10],  // non-adjacent spread
+            ],
+            _ => unreachable!(),
+        };
+
+        for qubits in subsets {
+            let base = fill(n);
+            let mut a_simd = base.clone();
+            let mut a_scalar = base.clone();
+
+            // Dispatcher → kq SIMD arm on AVX-512, scalar elsewhere.
+            apply_kq_f32(&mut a_simd, &qubits, k, &data);
+            // Forced scalar reference.
+            apply_kq_scalar_f32(&mut a_scalar, &qubits, k, &data);
+
+            for i in 0..a_simd.len() {
+                assert!(
+                    (a_simd[i].re - a_scalar[i].re).abs() < 1e-5
+                        && (a_simd[i].im - a_scalar[i].im).abs() < 1e-5,
+                    "kq mismatch n={n} k={k} qubits={qubits:?} i={i}: \
+                     simd={:?} scalar={:?}",
+                    a_simd[i],
+                    a_scalar[i]
+                );
             }
         }
     }
