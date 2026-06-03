@@ -76,7 +76,7 @@ pub(crate) fn apply_1q_diag_scalar_f32(
     let len = amps.len();
     let cp = ComplexF32Ptr(amps.as_mut_ptr());
     let policy = tuning::resolve_policy(
-        GateClass::OneQGeneric,
+        GateClass::OneQDiag,
         tuning::pos_class(target, len.trailing_zeros()),
     );
     par_blocks(

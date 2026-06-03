@@ -9,8 +9,9 @@ use rand::{rngs::StdRng, SeedableRng};
 
 use crate::fp32_state::Fp32CpuState;
 
-/// Soft qubit cap. `Complex<f32>` is 8 B/amp: 2^29 × 8 B = 4 GiB. The
-/// project software cap (28, matching the f64 backends) still bounds us.
+/// Soft qubit cap, set to the project-wide 28-qubit software limit (matching
+/// the f64 backends). At 8 B/amp the memory ceiling is higher than f64's
+/// (2^29 amps = 4 GiB vs f64's 2^28), but the 28-qubit cap binds first.
 pub(crate) const MAX_FP32_QUBITS: u32 = 28;
 
 /// Opt-in single-precision CPU state-vector backend.
