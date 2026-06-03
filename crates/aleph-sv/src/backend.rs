@@ -87,9 +87,16 @@ impl Backend for NaiveSvBackend {
             seen.push(q);
         }
         // Materialise the matrix; route GateError variants to the right BackendError.
+        // TODO(P2-07 Task 6): intercept UnitaryKq before matrix() and dispatch to apply_kq kernel.
         let matrix = gate.gate.matrix().map_err(|e| match e {
             GateError::SymbolicParam => BackendError::SymbolicParam,
             GateError::NonFiniteParam => BackendError::NonFiniteParam {
+                kind: gate.gate.name(),
+            },
+            // UnitaryKq has no fixed-size GateMatrix; the kernel dispatch
+            // (Task 6) will intercept it before this point. Until then,
+            // surface as UnsupportedGate rather than a mysterious panic.
+            GateError::Unrepresentable => BackendError::UnsupportedGate {
                 kind: gate.gate.name(),
             },
         })?;

@@ -84,6 +84,17 @@ pub enum Gate {
     /// No unitarity check is performed at construction.
     Unitary2q(Box<[[Complex; 4]; 4]>),
 
+    /// Dense `k`-qubit unitary, `2 ≤ k ≤ 5`. `data` is the row-major
+    /// `2^k × 2^k` matrix (`data.len() == 1 << (2*k)`). Produced by
+    /// `passes::FuseKq`; applied by the backend's `apply_kq` kernel,
+    /// which reads `data` directly (no `GateMatrix` round-trip — that
+    /// enum stops at 8×8). Operand convention matches `Unitary2q`:
+    /// `qubits[0]` is the MSB of the matrix index.
+    UnitaryKq {
+        k: u8,
+        data: Box<[Complex]>,
+    },
+
     /// 1-qubit diagonal unitary. Emitted by the 1q-fusion pass when
     /// every gate in a fused run is diagonal — preserves the
     /// `is_diagonal()` flag so backends route the gate through the
@@ -128,6 +139,8 @@ impl Gate {
             | Gate::Unitary2q(_) => 2,
 
             Gate::Toffoli | Gate::Ccz => 3,
+
+            Gate::UnitaryKq { k, .. } => *k as usize,
         }
     }
 
@@ -160,6 +173,7 @@ impl Gate {
             Gate::Unitary1q(_) => "Unitary1q",
             Gate::Unitary1qDiag(_) => "Unitary1qDiag",
             Gate::Unitary2q(_) => "Unitary2q",
+            Gate::UnitaryKq { .. } => "UnitaryKq",
         }
     }
 
@@ -360,6 +374,12 @@ impl Gate {
                 Ok(GateMatrix::M2x2([[d[0], zero], [zero, d[1]]]))
             }
             Gate::Unitary2q(m) => Ok(GateMatrix::M4x4(**m)),
+            // UnitaryKq with k > 3 has no fixed-size GateMatrix variant (the
+            // enum stops at 8×8 / 3-qubit). k ≤ 3 could technically be
+            // represented, but backends bypass GateMatrix for UnitaryKq
+            // entirely (direct data read), so we always return Unrepresentable
+            // to prevent silent wrong routing through the fixed-size dispatch.
+            Gate::UnitaryKq { .. } => Err(GateError::Unrepresentable),
         }
     }
 
@@ -401,7 +421,8 @@ impl Gate {
             | Gate::CRy(_)
             | Gate::Toffoli
             | Gate::Unitary1q(_)
-            | Gate::Unitary2q(_) => false,
+            | Gate::Unitary2q(_)
+            | Gate::UnitaryKq { .. } => false,
         }
     }
 
@@ -442,7 +463,8 @@ impl Gate {
             | Gate::Ccz
             | Gate::Unitary1q(_)
             | Gate::Unitary1qDiag(_)
-            | Gate::Unitary2q(_) => false,
+            | Gate::Unitary2q(_)
+            | Gate::UnitaryKq { .. } => false,
         }
     }
 
@@ -496,6 +518,19 @@ impl Gate {
             Gate::Unitary1q(m) => Gate::Unitary1q(Box::new(conj_transpose_2(m))),
             Gate::Unitary1qDiag(d) => Gate::Unitary1qDiag(Box::new([d[0].conj(), d[1].conj()])),
             Gate::Unitary2q(m) => Gate::Unitary2q(Box::new(conj_transpose_4(m))),
+            Gate::UnitaryKq { k, data } => {
+                let dim = 1usize << *k;
+                let mut out = vec![Complex::new(0.0, 0.0); data.len()];
+                for i in 0..dim {
+                    for j in 0..dim {
+                        out[j * dim + i] = data[i * dim + j].conj();
+                    }
+                }
+                Gate::UnitaryKq {
+                    k: *k,
+                    data: out.into_boxed_slice(),
+                }
+            }
         }
     }
 }
@@ -1255,5 +1290,65 @@ mod tests {
         };
         assert_eq!(inv_d[0], d0.conj());
         assert_eq!(inv_d[1], d1.conj());
+    }
+
+    #[test]
+    fn unitary_kq_core_methods() {
+        use crate::Complex;
+        let mut data = vec![Complex::new(0.0, 0.0); 64];
+        for i in 0..8 {
+            data[i * 8 + i] = Complex::new(1.0, 0.0);
+        }
+        let g = Gate::UnitaryKq {
+            k: 3,
+            data: data.clone().into_boxed_slice(),
+        };
+        assert_eq!(g.arity(), 3);
+        assert_eq!(g.name(), "UnitaryKq");
+        assert!(!g.is_diagonal());
+        assert!(!g.is_clifford());
+        match g.inverse() {
+            Gate::UnitaryKq { k, data: inv } => {
+                assert_eq!(k, 3);
+                assert_eq!(inv.len(), 64);
+                for i in 0..8 {
+                    for j in 0..8 {
+                        let want = if i == j {
+                            Complex::new(1.0, 0.0)
+                        } else {
+                            Complex::new(0.0, 0.0)
+                        };
+                        assert!((inv[i * 8 + j] - want).norm() < 1e-15);
+                    }
+                }
+            }
+            other => panic!("expected UnitaryKq, got {other:?}"),
+        }
+        let big = Gate::UnitaryKq {
+            k: 4,
+            data: vec![Complex::new(0.0, 0.0); 256].into_boxed_slice(),
+        };
+        assert!(matches!(
+            big.matrix(),
+            Err(crate::gate::GateError::Unrepresentable)
+        ));
+    }
+
+    #[test]
+    fn unitary_kq_inverse_is_conjugate_transpose() {
+        use crate::Complex;
+        let mut data = vec![Complex::new(0.0, 0.0); 16];
+        data[1] = Complex::new(0.0, 2.0); // entry (0,1) = 2i  [row 0, col 1 → index 0*4+1 = 1]
+        let g = Gate::UnitaryKq {
+            k: 2,
+            data: data.into_boxed_slice(),
+        };
+        match g.inverse() {
+            Gate::UnitaryKq { data: inv, .. } => {
+                assert!((inv[4] - Complex::new(0.0, -2.0)).norm() < 1e-15); // (1,0) = conj(2i) = -2i  [1*4+0 = 4]
+                assert!(inv[1].norm() < 1e-15); // (0,1) should be zero in the inverse
+            }
+            other => panic!("got {other:?}"),
+        }
     }
 }
