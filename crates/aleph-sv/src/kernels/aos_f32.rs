@@ -10,7 +10,7 @@
 use aleph_core::Complex;
 
 use crate::kernels::tuning::{self, GateClass};
-use crate::kernels::{control_mask, par_blocks, ComplexF32Ptr};
+use crate::kernels::{control_mask, is_diagonal_2x2_f32, par_blocks, ComplexF32Ptr};
 
 /// Generic 2×2 application on an f32 AoS slice. Correct for any 2×2
 /// matrix (diagonal, anti-diagonal, dense); the diagonal fast path in
@@ -61,6 +61,57 @@ pub(crate) fn apply_1q_dense_scalar_f32(
     );
 }
 
+/// Diagonal 2×2 fast path: only the two diagonal entries matter, each
+/// amplitude scaled in place (no pairing). Mirrors
+/// `aos::apply_1q_diagonal_scalar`.
+pub(crate) fn apply_1q_diag_scalar_f32(
+    amps: &mut [Complex<f32>],
+    target: u32,
+    controls: &[u32],
+    d0: Complex<f32>,
+    d1: Complex<f32>,
+) {
+    let t_bit = 1usize << target;
+    let ctrl_mask = control_mask(controls);
+    let len = amps.len();
+    let cp = ComplexF32Ptr(amps.as_mut_ptr());
+    let policy = tuning::resolve_policy(
+        GateClass::OneQGeneric,
+        tuning::pos_class(target, len.trailing_zeros()),
+    );
+    par_blocks(
+        policy,
+        len,
+        len,
+        |k| k,
+        |i| {
+            if (i & ctrl_mask) == ctrl_mask {
+                let p = cp.ptr();
+                let d = if i & t_bit == 0 { d0 } else { d1 };
+                // SAFETY: i < len; each index written once, no aliasing.
+                unsafe {
+                    *p.add(i) = d * *p.add(i);
+                }
+            }
+        },
+    );
+}
+
+/// Top-level f32 1q dispatch: diagonal fast path, else generic dense.
+/// (Phase B adds AVX-512 arms guarded by `is_x86_feature_detected`.)
+pub(crate) fn apply_1q_f32(
+    amps: &mut [Complex<f32>],
+    target: u32,
+    controls: &[u32],
+    m: &[[Complex<f32>; 2]; 2],
+) {
+    if is_diagonal_2x2_f32(m) {
+        apply_1q_diag_scalar_f32(amps, target, controls, m[0][0], m[1][1]);
+        return;
+    }
+    apply_1q_dense_scalar_f32(amps, target, controls, m);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -88,5 +139,15 @@ mod tests {
         apply_1q_dense_scalar_f32(&mut amps, 0, &[], &hm);
         assert!((amps[0].re - h).abs() < 1e-6);
         assert!((amps[1].re - h).abs() < 1e-6);
+    }
+
+    #[test]
+    fn diag_dispatch_phase_gate() {
+        // S gate = diag(1, i) on |+> ; check q0 amplitude picks up i on |1>.
+        let mut amps = vec![c(0.5, 0.0), c(0.5, 0.0)];
+        let s = [[c(1.0, 0.0), c(0.0, 0.0)], [c(0.0, 0.0), c(0.0, 1.0)]];
+        apply_1q_f32(&mut amps, 0, &[], &s);
+        assert!((amps[0].re - 0.5).abs() < 1e-6 && amps[0].im.abs() < 1e-6);
+        assert!(amps[1].re.abs() < 1e-6 && (amps[1].im - 0.5).abs() < 1e-6);
     }
 }

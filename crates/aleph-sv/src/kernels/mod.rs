@@ -322,6 +322,27 @@ pub(crate) fn is_diagonal_2x2(m: &[[aleph_core::Complex; 2]; 2]) -> bool {
     true
 }
 
+/// f32 analogue of [`is_diagonal_2x2`] (P2-08). `EPS_SQ = 1e-14` ⇒
+/// `|m_off| < 1e-7`, just above f32 machine epsilon (~1.19e-7), so a
+/// literal-`0.0` off-diagonal detects as diagonal while a genuine
+/// off-diagonal of magnitude ≥ eps falls through. ADR 0006: explicit
+/// `is_finite` reject precedes the magnitude test (a NaN off-diagonal must
+/// reach the generic kernel, not be silently classified diagonal).
+#[inline]
+pub(crate) fn is_diagonal_2x2_f32(m: &[[aleph_core::Complex<f32>; 2]; 2]) -> bool {
+    const EPS_SQ: f32 = 1e-14;
+    let off = [&m[0][1], &m[1][0]];
+    for entry in off {
+        if !entry.re.is_finite() || !entry.im.is_finite() {
+            return false;
+        }
+        if entry.norm_sqr() >= EPS_SQ {
+            return false;
+        }
+    }
+    true
+}
+
 /// Tolerance for permutation-matrix detection in `classify_2q_permutation`.
 /// `PERM_TOL = 1e-14` requires `(|m[r][c]|² - 1).abs() < 1e-14` AND
 /// `(re - 1).abs() < 1e-14` AND `im.abs() < 1e-14`. Any "almost-permutation"
