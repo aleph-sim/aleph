@@ -2,22 +2,157 @@
 //! `DiagonalPhase`, absorbing interleaved `cx` via monomial tracking.
 //! See docs/superpowers/specs/2026-06-02-p2-06-diagonal-fusion-design.md.
 
+use crate::passes::{Pass, PassError, PassStats};
 use crate::PhaseTerm;
+use crate::{Circuit, DiagonalPhase, Instruction};
 use aleph_core::{GateInstance, GateMatrix};
 use smallvec::SmallVec;
+
+/// Fuses maximal runs of {diagonal gates ∪ Cnot} into one
+/// [`DiagonalPhase`], absorbing interleaved `cx` via the [`Perm`]
+/// tracker. Conservative: a run whose net permutation is not the
+/// identity is re-emitted verbatim. See the design doc for the
+/// monomial algebra.
+pub struct FuseDiagonalRuns;
+
+impl Pass for FuseDiagonalRuns {
+    fn name(&self) -> &'static str {
+        "FuseDiagonalRuns"
+    }
+
+    fn run(&self, circuit: &mut Circuit) -> Result<PassStats, PassError> {
+        let n = circuit.num_qubits();
+        let before = circuit.len();
+        if n > 64 {
+            return Err(PassError::InternalInvariant(
+                "DiagonalPhase mask width > 64",
+            ));
+        }
+        let input = circuit.instructions.clone();
+        let mut out: Vec<Instruction> = Vec::with_capacity(input.len());
+        let mut transformations = 0u64;
+
+        let mut i = 0usize;
+        while i < input.len() {
+            if !is_run_member(&input[i]) {
+                out.push(input[i].clone());
+                i += 1;
+                continue;
+            }
+            let mut j = i;
+            while j < input.len() && is_run_member(&input[j]) {
+                j += 1;
+            }
+            let run = &input[i..j];
+            match fuse_run(run, n) {
+                Some(dp) => {
+                    out.push(Instruction::DiagonalPhase(Box::new(dp)));
+                    transformations += 1;
+                }
+                None => out.extend_from_slice(run),
+            }
+            i = j;
+        }
+        let after = out.len();
+        circuit.instructions = out;
+        Ok(PassStats {
+            gates_before: before,
+            gates_after: after,
+            transformations,
+        })
+    }
+}
+
+/// A run member is a diagonal gate or a bare `Cnot`. Everything else
+/// (measure, reset, barrier, non-diagonal gate, an existing
+/// `DiagonalPhase`) is a hard fence.
+fn is_run_member(inst: &Instruction) -> bool {
+    match inst {
+        Instruction::Gate(g) => g.gate.is_diagonal() || matches!(g.gate, aleph_core::Gate::Cnot),
+        _ => false,
+    }
+}
+
+/// Try to fuse a run into one [`DiagonalPhase`]. Returns `None` (caller
+/// re-emits the run verbatim) when the net permutation is not the
+/// identity, the cost model rejects the run, or a gate's matrix is
+/// non-extractable.
+fn fuse_run(run: &[Instruction], n: u32) -> Option<DiagonalPhase> {
+    let mut perm = Perm::identity(n);
+    let mut terms: Vec<PhaseTerm> = Vec::new();
+    let mut diag_gate_count = 0usize;
+    let mut support: u64 = 0;
+
+    for inst in run {
+        let g = match inst {
+            Instruction::Gate(g) => g,
+            _ => return None,
+        };
+        if matches!(g.gate, aleph_core::Gate::Cnot) {
+            perm.cx(g.qubits[0], g.qubits[1]);
+            support |= 1u64 << g.qubits[0];
+            support |= 1u64 << g.qubits[1];
+        } else {
+            let mut t = diagonal_to_terms(g, &perm)?;
+            diag_gate_count += 1;
+            for q in g.qubits.iter().chain(g.controls.iter()) {
+                support |= 1u64 << q;
+            }
+            terms.append(&mut t);
+        }
+    }
+
+    if !perm.is_identity() {
+        return None;
+    }
+    let span = support.count_ones();
+    if span <= 1 || diag_gate_count < 2 {
+        return None;
+    }
+
+    let terms = canonicalize(terms);
+    Some(DiagonalPhase { n_qubits: n, terms })
+}
+
+/// Merge terms with identical condition-sets (order-insensitive) by
+/// summing angles; drop angles ≡ 0 mod 2π; deterministic order via a
+/// `BTreeMap` keyed on the sorted condition masks. The empty-`conds`
+/// (global-phase) term sorts to key `vec![]` and is preserved when its
+/// angle is non-negligible.
+fn canonicalize(terms: Vec<PhaseTerm>) -> Vec<PhaseTerm> {
+    use std::collections::BTreeMap;
+    let mut map: BTreeMap<Vec<u64>, f64> = BTreeMap::new();
+    for mut t in terms {
+        t.conds.sort_unstable();
+        map.entry(t.conds.to_vec())
+            .and_modify(|a| *a += t.angle)
+            .or_insert(t.angle);
+    }
+    let two_pi = 2.0 * std::f64::consts::PI;
+    map.into_iter()
+        .filter_map(|(conds, angle)| {
+            let a = angle.rem_euclid(two_pi);
+            if a < PHASE_EPS || (two_pi - a) < PHASE_EPS {
+                None
+            } else {
+                Some(PhaseTerm {
+                    conds: conds.into(),
+                    angle,
+                })
+            }
+        })
+        .collect()
+}
 
 /// GF(2) bit-permutation tracker. `row[i]` is the mask such that the
 /// i-th output bit equals `parity(row[i] & x)`. Starts as identity.
 /// A `cx(c, t)` on the LEFT of the accumulated product does
 /// `row[t] ^= row[c]` (design §1.2).
-// Used by FuseDiagonalRuns (Task 4/5).
-#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Perm {
     row: Vec<u64>,
 }
 
-#[allow(dead_code)]
 impl Perm {
     pub(crate) fn identity(n: u32) -> Self {
         Perm {
@@ -38,8 +173,6 @@ impl Perm {
 }
 
 /// Drop terms whose angle is within this of a 2π multiple.
-// Used by FuseDiagonalRuns (Task 5).
-#[allow(dead_code)]
 pub(crate) const PHASE_EPS: f64 = 1e-12;
 
 /// Expand a diagonal `GateInstance` into additive phase terms in the
@@ -55,8 +188,6 @@ pub(crate) const PHASE_EPS: f64 = 1e-12;
 /// `S`. External controls gate the whole operator, so every term picks
 /// up the control images (the `S=∅` global term thereby becomes
 /// conditioned on the controls).
-// Used by FuseDiagonalRuns (Task 5).
-#[allow(dead_code)]
 pub(crate) fn diagonal_to_terms(g: &GateInstance, perm: &Perm) -> Option<Vec<PhaseTerm>> {
     if !g.gate.is_diagonal() {
         return None;
@@ -124,8 +255,6 @@ pub(crate) fn diagonal_to_terms(g: &GateInstance, perm: &Perm) -> Option<Vec<Pha
 
 /// Diagonal entries (length 2^arity), MSB-first. `None` for symbolic/
 /// non-finite params (`Gate::matrix` returns `Err`).
-// Used by FuseDiagonalRuns (Task 5).
-#[allow(dead_code)]
 fn diagonal_entries(g: &GateInstance) -> Option<Vec<aleph_core::Complex>> {
     match g.gate.matrix().ok()? {
         GateMatrix::M2x2(m) => Some(vec![m[0][0], m[1][1]]),
@@ -214,6 +343,109 @@ mod terms_tests {
         assert!((dp_phase(&terms, 0b01) - 0.5).abs() < 1e-15); // 1^0 = 1
         assert!((dp_phase(&terms, 0b10) - 0.5).abs() < 1e-15); // 0^1 = 1
         assert!(dp_phase(&terms, 0b11).abs() < 1e-15); // 1^1 = 0
+    }
+}
+
+#[cfg(test)]
+mod pass_tests {
+    use super::*;
+    use crate::passes::Pass;
+    use crate::{Circuit, Instruction};
+    use smallvec::smallvec;
+    use std::f64::consts::PI;
+
+    #[test]
+    fn cx_p_cx_reconstructs_controlled_phase() {
+        // p(π/4) q1 ; cx(1,0) ; p(-π/4) q0 ; cx(1,0) ; p(π/4) q0
+        // == cp(π/2) on (control=1, target=0): phase π/2 iff bits 0&1 set.
+        let mut c = Circuit::new(2, 0);
+        c.add_gate(aleph_core::GateInstance::new(
+            aleph_core::Gate::Phase((PI / 4.0).into()),
+            smallvec![1u32],
+        ))
+        .unwrap();
+        c.cnot(1, 0).unwrap();
+        c.add_gate(aleph_core::GateInstance::new(
+            aleph_core::Gate::Phase((-PI / 4.0).into()),
+            smallvec![0u32],
+        ))
+        .unwrap();
+        c.cnot(1, 0).unwrap();
+        c.add_gate(aleph_core::GateInstance::new(
+            aleph_core::Gate::Phase((PI / 4.0).into()),
+            smallvec![0u32],
+        ))
+        .unwrap();
+
+        let stats = FuseDiagonalRuns.run(&mut c).unwrap();
+        assert_eq!(c.len(), 1, "whole run collapses to one op");
+        let dp = match &c.instructions()[0] {
+            Instruction::DiagonalPhase(dp) => dp.clone(),
+            other => panic!("expected DiagonalPhase, got {other:?}"),
+        };
+        for x in 0u64..4 {
+            let want = if x == 0b11 { PI / 2.0 } else { 0.0 };
+            let got = dp.phase_at(x);
+            let d = (got - want).rem_euclid(2.0 * PI);
+            assert!(
+                d < 1e-12 || (2.0 * PI - d) < 1e-12,
+                "x={x:b} got={got} want={want}"
+            );
+        }
+        assert!(stats.transformations >= 1);
+    }
+
+    #[test]
+    fn run_with_nonidentity_perm_is_left_unchanged() {
+        let mut c = Circuit::new(2, 0);
+        c.add_gate(aleph_core::GateInstance::new(
+            aleph_core::Gate::Phase(0.3.into()),
+            smallvec![0u32],
+        ))
+        .unwrap();
+        c.cnot(0, 1).unwrap();
+        let before = c.instructions().to_vec();
+        FuseDiagonalRuns.run(&mut c).unwrap();
+        assert_eq!(c.len(), before.len(), "non-identity perm: run untouched");
+        assert!(c
+            .instructions()
+            .iter()
+            .all(|i| !matches!(i, Instruction::DiagonalPhase(_))));
+    }
+
+    #[test]
+    fn lone_single_qubit_diag_run_not_fused() {
+        let mut c = Circuit::new(1, 0);
+        c.t(0).unwrap();
+        c.s(0).unwrap();
+        FuseDiagonalRuns.run(&mut c).unwrap();
+        assert!(c
+            .instructions()
+            .iter()
+            .all(|i| !matches!(i, Instruction::DiagonalPhase(_))));
+    }
+
+    #[test]
+    fn barrier_is_a_hard_fence() {
+        let mut c = Circuit::new(2, 0);
+        c.add_gate(aleph_core::GateInstance::new(
+            aleph_core::Gate::Phase(0.3.into()),
+            smallvec![0u32],
+        ))
+        .unwrap();
+        c.cnot(0, 1).unwrap();
+        c.barrier([0u32, 1u32]).unwrap();
+        c.add_gate(aleph_core::GateInstance::new(
+            aleph_core::Gate::Phase(0.3.into()),
+            smallvec![1u32],
+        ))
+        .unwrap();
+        c.cnot(0, 1).unwrap();
+        FuseDiagonalRuns.run(&mut c).unwrap();
+        assert!(c
+            .instructions()
+            .iter()
+            .any(|i| matches!(i, Instruction::Barrier(_))));
     }
 }
 
