@@ -31,6 +31,15 @@ impl HasAmplitudes for aleph_sv::SoaState {
     }
 }
 
+impl HasAmplitudes for aleph_sv::Fp32CpuState {
+    fn amplitudes(&self) -> Vec<Complex> {
+        // Widen single-precision amplitudes to f64 for oracle comparison.
+        // The widening is exact; the FP32 oracle tolerance (1e-5) absorbs
+        // the single-precision accumulation error already in the state.
+        self.to_aos_f64()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -54,6 +63,18 @@ mod tests {
         let s = b.allocate(1).unwrap();
         let amps = HasAmplitudes::amplitudes(&s);
         assert_eq!(amps.len(), 2);
+        assert_eq!(amps[0], Complex::new(1.0, 0.0));
+        assert_eq!(amps[1], Complex::new(0.0, 0.0));
+    }
+
+    #[test]
+    fn fresh_one_qubit_fp32_state_is_zero_ket() {
+        use aleph_sv::Fp32SvBackend;
+        let mut b = Fp32SvBackend::with_seed(0);
+        let s = b.allocate(1).unwrap();
+        let amps = HasAmplitudes::amplitudes(&s);
+        assert_eq!(amps.len(), 2);
+        // Widened from f32; |0> amplitudes are exactly representable.
         assert_eq!(amps[0], Complex::new(1.0, 0.0));
         assert_eq!(amps[1], Complex::new(0.0, 0.0));
     }

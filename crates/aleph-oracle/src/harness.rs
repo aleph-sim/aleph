@@ -17,6 +17,15 @@ use crate::state::HasAmplitudes;
 /// Maximum per-amplitude complex deviation (matches BACKLOG.md §P0-10).
 pub const STATE_TOLERANCE: f64 = 1e-10;
 
+/// Per-amplitude tolerance for the single-precision (FP32) state oracle
+/// (BACKLOG.md §P2-08). The trusted fixtures are exact (FP64) Qiskit-Aer
+/// statevectors; comparing an `Fp32SvBackend` run against that exact
+/// reference at 1e-5 bounds the f32 accumulation error against the true
+/// answer — strictly stronger than the §P2-08 acceptance criterion
+/// "equivalence vs Qiskit Aer single-precision within 1e-5", and needs
+/// no new fixtures. The f64 oracle path stays at `STATE_TOLERANCE` (1e-10).
+pub const FP32_STATE_TOLERANCE: f64 = 1e-5;
+
 /// Parse QASM, run it through `backend`, assert the final state
 /// matches `fixture.statevector.amplitudes` to within
 /// `STATE_TOLERANCE`. Returns `Err(OracleError)` for harness-level
@@ -27,6 +36,24 @@ pub fn run_state_oracle<B>(
     backend: &mut B,
     fixture: &Fixture,
     qasm_source: &str,
+) -> Result<(), OracleError>
+where
+    B: Backend,
+    B::State: HasAmplitudes,
+{
+    run_state_oracle_with_tol(backend, fixture, qasm_source, STATE_TOLERANCE)
+}
+
+/// Tolerance-parameterized variant of [`run_state_oracle`]. Identical
+/// behavior, but asserts each amplitude matches the fixture within `tol`
+/// instead of the hard-coded `STATE_TOLERANCE`. Used by the FP32 oracle
+/// (`tol = FP32_STATE_TOLERANCE = 1e-5`); the f64 path calls in with
+/// `STATE_TOLERANCE` (1e-10) and is byte-identical to the original.
+pub fn run_state_oracle_with_tol<B>(
+    backend: &mut B,
+    fixture: &Fixture,
+    qasm_source: &str,
+    tol: f64,
 ) -> Result<(), OracleError>
 where
     B: Backend,
@@ -50,11 +77,17 @@ where
             state: actual.len(),
         });
     }
-    assert_state_close(&fixture.name, fixture.num_qubits, &actual, expected);
+    assert_state_close(&fixture.name, fixture.num_qubits, &actual, expected, tol);
     Ok(())
 }
 
-fn assert_state_close(name: &str, num_qubits: u32, actual: &[Complex], expected: &[(f64, f64)]) {
+fn assert_state_close(
+    name: &str,
+    num_qubits: u32,
+    actual: &[Complex],
+    expected: &[(f64, f64)],
+    tol: f64,
+) {
     let width = num_qubits as usize;
     for (i, (a, &(er, ei))) in actual.iter().zip(expected.iter()).enumerate() {
         // Explicit NaN/infinity guard. Without it, a backend that
@@ -79,7 +112,7 @@ fn assert_state_close(name: &str, num_qubits: u32, actual: &[Complex], expected:
         let dre = a.re - er;
         let dim = a.im - ei;
         let delta = (dre * dre + dim * dim).sqrt();
-        if delta > STATE_TOLERANCE {
+        if delta > tol {
             panic!(
                 "oracle: {name} amplitude mismatch\n  \
                  index {i}  basis |{i:0width$b}>\n  \
@@ -91,7 +124,7 @@ fn assert_state_close(name: &str, num_qubits: u32, actual: &[Complex], expected:
                 er,
                 ei,
                 delta,
-                STATE_TOLERANCE,
+                tol,
                 width = width,
             );
         }
@@ -339,6 +372,7 @@ mod tests {
             1,
             &[Complex::new(nan, 0.0), Complex::new(0.0, 0.0)],
             &[(0.0, 0.0), (0.0, 0.0)],
+            STATE_TOLERANCE,
         );
     }
 
@@ -353,6 +387,7 @@ mod tests {
             1,
             &[Complex::new(1.0, 0.0), Complex::new(0.0, 0.0)],
             &[(nan, 0.0), (0.0, 0.0)],
+            STATE_TOLERANCE,
         );
     }
 
@@ -489,6 +524,7 @@ mod tests {
             1,
             &[Complex::new(f64::INFINITY, 0.0), Complex::new(0.0, 0.0)],
             &[(0.0, 0.0), (0.0, 0.0)],
+            STATE_TOLERANCE,
         );
     }
 }
