@@ -567,10 +567,9 @@ pub fn apply_2q_f32(
 /// Scalar f32 multi-qubit diagonal-phase application. Mirror of
 /// `diagonal_phase::apply_diagonal_phase_scalar_aos`. Phase angle computed
 /// in f64 (rule 9), rotation factors cast to f32 for the amplitude multiply.
-pub(crate) fn apply_diagonal_phase_scalar_f32(
-    amps: &mut [Complex<f32>],
-    dp: &aleph_ir::DiagonalPhase,
-) {
+// `pub` so the `internal-bench`-gated integration test can call the forced
+// scalar reference directly; effectively `pub(crate)` without the feature.
+pub fn apply_diagonal_phase_scalar_f32(amps: &mut [Complex<f32>], dp: &aleph_ir::DiagonalPhase) {
     use crate::kernels::diagonal_phase::phase_at;
     use crate::kernels::tuning::DEFAULT_POLICY;
     let len = amps.len();
@@ -593,6 +592,136 @@ pub(crate) fn apply_diagonal_phase_scalar_f32(
             amp.im = im;
         },
     );
+}
+
+/// AVX-512 f32 diagonal-phase kernel. Processes 8 consecutive
+/// `Complex<f32>` (16 interleaved f32) per step.
+///
+/// **Precision (rule 9).** The phase ANGLE and its `sin_cos` are computed
+/// in **f64**, by directly reusing the f64 kernel's `phases_at_block`
+/// (`VPOPCNTQ`-parity over 64-bit index lanes) and `sincos_block` (scalar
+/// `f64::sin_cos` per lane). Only the final amplitude rotation narrows the
+/// per-lane `(cos, sin)` to f32 and multiplies the `Complex<f32>` state.
+/// This is identical angle math to the f64 kernel and to the scalar f32
+/// reference (`apply_diagonal_phase_scalar_f32`), so the two f32 paths
+/// agree to f32 rounding.
+///
+/// **Amplitude width.** We deliberately process the SAME 8 amplitudes per
+/// iteration as the f64 kernel (not 16): the popcount/phase work lives in
+/// 64-bit index lanes (`__m512d` / `__m512i`, 8 lanes), so reusing it
+/// verbatim keeps the intricate parity-lane mapping bit-identical to the
+/// validated f64 kernel. 8 `Complex<f32>` are exactly 16 f32 = one
+/// `__m512`, so the rotation is one load / one store per step.
+///
+/// The per-lane complex rotation `z' = z·(cos + i·sin)` is done by
+/// de-interleaving the 16 f32 into 8 reals + 8 imags (low 8 lanes via
+/// `vpermps`), computing `new_re = re·cos − im·sin`,
+/// `new_im = re·sin + im·cos` with per-lane f32 `cos`/`sin`, then
+/// re-interleaving (`vpermt2ps`) and storing.
+///
+/// # Safety
+///
+/// Caller MUST ensure all of:
+/// * Host supports `avx512f` and `avx512vpopcntdq`.
+/// * `amps.len()` is a multiple of 8 — guaranteed for `n ≥ 3`; the
+///   dispatcher only calls this when `len ≥ 8` and `len` is a power of two.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f,avx512vpopcntdq")]
+pub unsafe fn apply_diagonal_phase_avx512_f32(
+    amps: &mut [Complex<f32>],
+    dp: &aleph_ir::DiagonalPhase,
+) {
+    use crate::kernels::diagonal_phase::{phases_at_block, sincos_block};
+    use crate::kernels::par_blocks;
+    use crate::kernels::tuning::DEFAULT_POLICY;
+    use core::arch::x86_64::*;
+
+    const LANES: usize = 8; // 8 amplitudes / step (matches the f64 kernel)
+
+    let len = amps.len();
+    debug_assert_eq!(len % LANES, 0);
+
+    // Flat f32 view (re, im interleaved).
+    let bp = BlockPtrF32(amps.as_mut_ptr() as *mut f32);
+
+    // De-interleave indices for `vpermps`: gather the 8 real parts (flat
+    // even f32 offsets 0,2,…,14) into output lanes 0..7, and the 8 imag
+    // parts (odd offsets 1,3,…,15) likewise. `_mm512_set_epi32` is
+    // high-lane-first, so lane 0 gets the last argument. Lanes 8..15 are
+    // unused (set to 0).
+    let re_gather = _mm512_set_epi32(0, 0, 0, 0, 0, 0, 0, 0, 14, 12, 10, 8, 6, 4, 2, 0);
+    let im_gather = _mm512_set_epi32(0, 0, 0, 0, 0, 0, 0, 0, 15, 13, 11, 9, 7, 5, 3, 1);
+
+    // Re-interleave: produce (re0,im0,re1,im1,…,re7,im7) from `new_re`
+    // (lanes 0..7, treated as `a`) and `new_im` (lanes 0..7, treated as
+    // `b` = source lanes 16..23). Output lane 2k ← re_k (index k),
+    // lane 2k+1 ← im_k (index 16+k).
+    let inter_idx = _mm512_set_epi32(23, 7, 22, 6, 21, 5, 20, 4, 19, 3, 18, 2, 17, 1, 16, 0);
+
+    let count = len / LANES;
+    par_blocks(
+        DEFAULT_POLICY,
+        count,
+        len,
+        |k| k * LANES,
+        move |base| {
+            // SAFETY: par_blocks hands each task a distinct `base` (multiple
+            // of LANES); the 16-f32 window [2*base, 2*base+16) covers the 8
+            // Complex<f32> at amps[base..base+8], pairwise-disjoint across
+            // tasks and in-bounds (base + 8 ≤ len ⇒ 2*base + 16 ≤ 2*len).
+            // BlockPtrF32 is Send+Sync; AVX-512F + VPOPCNTDQ are guaranteed
+            // by this fn's #[target_feature] contract (dispatcher checked).
+            let p = bp.ptr().add(base * 2);
+
+            // Phase angle + sin/cos for the 8 indices base..base+8, computed
+            // entirely in f64 (rule 9) by reusing the validated f64 helpers.
+            let phi = phases_at_block(dp, base);
+            let (cos_pd, sin_pd) = sincos_block(phi);
+
+            // Narrow the 8-lane f64 cos/sin to 8-lane f32 (lanes 0..7).
+            let cos = _mm512_castps256_ps512(_mm512_cvtpd_ps(cos_pd));
+            let sin = _mm512_castps256_ps512(_mm512_cvtpd_ps(sin_pd));
+
+            // Load 16 f32 = 8 complex; de-interleave into reals/imags.
+            let z = _mm512_loadu_ps(p);
+            let re8 = _mm512_permutexvar_ps(re_gather, z);
+            let im8 = _mm512_permutexvar_ps(im_gather, z);
+
+            // new_re = re*cos - im*sin ; new_im = re*sin + im*cos
+            let new_re = _mm512_fmsub_ps(re8, cos, _mm512_mul_ps(im8, sin));
+            let new_im = _mm512_fmadd_ps(re8, sin, _mm512_mul_ps(im8, cos));
+
+            // Re-interleave (new_re = a lanes 0..7, new_im = b lanes 16..23).
+            let out = _mm512_permutex2var_ps(new_re, inter_idx, new_im);
+            _mm512_storeu_ps(p, out);
+        },
+    );
+}
+
+/// Apply a multi-qubit diagonal phase to an f32 AoS slice, dispatching to
+/// the AVX-512 kernel when the host supports `avx512f` + `avx512vpopcntdq`
+/// (mirroring the f64 `diagonal_phase::apply_diagonal_phase_aos`
+/// contract), otherwise the scalar f32 reference.
+// `pub` so the `internal-bench`-gated integration test can drive the
+// dispatcher; effectively `pub(crate)` without the feature.
+pub fn apply_diagonal_phase_f32(amps: &mut [Complex<f32>], dp: &aleph_ir::DiagonalPhase) {
+    #[cfg(target_arch = "x86_64")]
+    {
+        if amps.len() >= 8
+            && std::is_x86_feature_detected!("avx512f")
+            && std::is_x86_feature_detected!("avx512vpopcntdq")
+        {
+            // SAFETY: both required features are detected immediately above,
+            // and `amps.len() >= 8`; since `len` is a power of two ≥ 8 it is
+            // a multiple of 8, so the SIMD kernel processes the whole buffer
+            // with no scalar tail.
+            unsafe {
+                apply_diagonal_phase_avx512_f32(amps, dp);
+            }
+            return;
+        }
+    }
+    apply_diagonal_phase_scalar_f32(amps, dp);
 }
 
 /// Packed-complex AVX-512 path for f32 AoS `apply_1q`. 8 complex pairs

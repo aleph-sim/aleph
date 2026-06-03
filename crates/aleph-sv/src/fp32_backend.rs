@@ -162,7 +162,7 @@ impl Backend for Fp32SvBackend {
         state: &mut Self::State,
         dp: &aleph_ir::DiagonalPhase,
     ) -> Result<(), BackendError> {
-        crate::kernels::aos_f32::apply_diagonal_phase_scalar_f32(&mut state.amps, dp);
+        crate::kernels::aos_f32::apply_diagonal_phase_f32(&mut state.amps, dp);
         Ok(())
     }
 

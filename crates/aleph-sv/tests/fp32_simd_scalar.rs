@@ -17,7 +17,8 @@
 use aleph_core::Complex;
 use aleph_sv::kernels::aos_f32::{
     apply_1q_dense_scalar_f32, apply_1q_diag_scalar_f32, apply_1q_f32, apply_2q_dense_scalar_f32,
-    apply_2q_f32, apply_kq_f32, apply_kq_scalar_f32,
+    apply_2q_f32, apply_diagonal_phase_f32, apply_diagonal_phase_scalar_f32, apply_kq_f32,
+    apply_kq_scalar_f32,
 };
 
 /// Deterministic, non-trivial, well-spread complex pattern.
@@ -274,6 +275,73 @@ fn dense_kq_m(k: u8) -> Vec<Complex<f32>> {
             Complex::new(rr, ii)
         })
         .collect()
+}
+
+/// A multi-term `DiagonalPhase` exercising a global term, single-cond
+/// terms, and a multi-cond (controlled-phase-style) term, with angles
+/// spanning > 2π and negative values so a broken `VPOPCNTQ` parity,
+/// lane-offset order, narrowing, or de-/re-interleave shows up. Mirrors the
+/// f64 `equiv_fixture_dp` and the Task-8 scalar test. `n_qubits = 12`
+/// matches the n=12 state below.
+fn diag_phase_dp() -> aleph_ir::DiagonalPhase {
+    use aleph_ir::PhaseTerm;
+    use smallvec::smallvec;
+    aleph_ir::DiagonalPhase {
+        n_qubits: 12,
+        terms: vec![
+            PhaseTerm {
+                conds: smallvec![],
+                angle: 0.9,
+            }, // global
+            PhaseTerm {
+                conds: smallvec![0b0000_0000_0001],
+                angle: 7.3, // > 2π
+            },
+            PhaseTerm {
+                conds: smallvec![0b0000_0000_0010],
+                angle: -2.4, // negative
+            },
+            PhaseTerm {
+                conds: smallvec![0b1000_0000_0000],
+                angle: 1.05,
+            },
+            PhaseTerm {
+                conds: smallvec![0b0000_0000_0100, 0b0000_0000_1000],
+                angle: -3.9, // multi-cond (controlled phase)
+            },
+            PhaseTerm {
+                conds: smallvec![0b0000_0000_0001, 0b1000_0000_0000],
+                angle: 5.5,
+            },
+        ],
+    }
+}
+
+#[test]
+fn diagonal_phase_simd_matches_scalar() {
+    // n=12 ⇒ len 4096, a multiple of the 8-amplitude SIMD step. The
+    // dispatcher routes to the AVX-512 arm on AVX-512 + VPOPCNTDQ hosts and
+    // to scalar elsewhere (trivially equal on aarch64, a genuine SIMD≡scalar
+    // check on EPYC).
+    let dp = diag_phase_dp();
+    let n = dp.n_qubits;
+    let base = fill(n);
+
+    let mut a_simd = base.clone();
+    let mut a_scalar = base.clone();
+
+    apply_diagonal_phase_f32(&mut a_simd, &dp);
+    apply_diagonal_phase_scalar_f32(&mut a_scalar, &dp);
+
+    for i in 0..a_simd.len() {
+        assert!(
+            (a_simd[i].re - a_scalar[i].re).abs() < 1e-5
+                && (a_simd[i].im - a_scalar[i].im).abs() < 1e-5,
+            "diagonal-phase mismatch i={i}: simd={:?} scalar={:?}",
+            a_simd[i],
+            a_scalar[i]
+        );
+    }
 }
 
 #[test]
