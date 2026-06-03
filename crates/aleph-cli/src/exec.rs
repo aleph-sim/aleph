@@ -7,10 +7,33 @@ use std::time::Instant;
 use anyhow::{anyhow, Context, Result};
 
 use aleph_backend::{run, Backend};
-use aleph_sv::NaiveSvBackend;
+use aleph_core::Complex;
+use aleph_sv::{Fp32SvBackend, NaiveSvBackend};
 
+use crate::cli::Precision;
 use crate::output;
 use crate::pauli::parse_pauli_arg;
+
+/// Bridges the two backends' differently-typed amplitude buffers
+/// (`&[Complex<f64>]` vs `&[Complex<f32>]`) to a uniform `Vec<Complex<f64>>`
+/// for the `--statevector` view.  The f64 path clones verbatim (byte-identical
+/// to the historical `state.amplitudes()` dump); the f32 path widens via the
+/// backend's `to_aos_f64()`.
+trait AmpsF64 {
+    fn amps_f64(&self) -> Vec<Complex>;
+}
+
+impl AmpsF64 for aleph_sv::CpuState {
+    fn amps_f64(&self) -> Vec<Complex> {
+        self.amplitudes().to_vec()
+    }
+}
+
+impl AmpsF64 for aleph_sv::Fp32CpuState {
+    fn amps_f64(&self) -> Vec<Complex> {
+        self.to_aos_f64()
+    }
+}
 
 /// Default shot count when the user passes no view flag.
 pub const DEFAULT_SHOTS: u32 = 1024;
@@ -23,6 +46,7 @@ pub const STATEVECTOR_CAP_QUBITS: u32 = 10;
 /// Parse + run + print views (counts / statevector / expectation) per
 /// the user's flags.  Validates all CLI arguments BEFORE running the
 /// circuit so a bad input does not produce partial output.
+#[allow(clippy::too_many_arguments)]
 pub fn run_circuit<W: Write>(
     qasm_path: &Path,
     shots_opt: Option<u32>,
@@ -30,6 +54,7 @@ pub fn run_circuit<W: Write>(
     force_statevector: bool,
     expectations: &[String],
     seed: Option<u64>,
+    precision: Precision,
     out: &mut W,
 ) -> Result<()> {
     // 1. Read + parse.
@@ -69,30 +94,86 @@ pub fn run_circuit<W: Write>(
         _ => None,
     };
 
-    // 5. Allocate backend + run circuit once.
-    let mut backend = match seed {
-        Some(s) => NaiveSvBackend::with_seed(s),
-        None => NaiveSvBackend::new(),
-    };
-    let state = run(&mut backend, &circuit).context("running circuit")?;
-
-    // 6. Print requested views.
+    // 5. Allocate backend + run circuit once + print views.  The two
+    //    precision backends have different associated `State` types, so
+    //    the run-and-view pipeline is factored into a generic helper
+    //    (`run_with_backend`) instantiated per concrete backend here.
     let seed_label = match seed {
         Some(s) => format!("seed={s}"),
         None => "seed=entropy".to_string(),
     };
+    match precision {
+        Precision::F64 => {
+            let backend = match seed {
+                Some(s) => NaiveSvBackend::with_seed(s),
+                None => NaiveSvBackend::new(),
+            };
+            run_with_backend(
+                backend,
+                &circuit,
+                effective_shots,
+                print_statevector,
+                &paulis,
+                n,
+                &seed_label,
+                out,
+            )
+        }
+        Precision::F32 => {
+            let backend = match seed {
+                Some(s) => Fp32SvBackend::with_seed(s),
+                None => Fp32SvBackend::new(),
+            };
+            run_with_backend(
+                backend,
+                &circuit,
+                effective_shots,
+                print_statevector,
+                &paulis,
+                n,
+                &seed_label,
+                out,
+            )
+        }
+    }
+}
+
+/// Run `circuit` on `backend` once, then emit the requested views
+/// (sampling / statevector / expectation).  Generic over the backend so
+/// both the f64 and f32 state-vector paths share one implementation; the
+/// only state-type-specific operation, the `--statevector` amplitude dump,
+/// is routed through the `AmpsF64` bridge.
+#[allow(clippy::too_many_arguments)]
+fn run_with_backend<B, W>(
+    mut backend: B,
+    circuit: &aleph_ir::Circuit,
+    effective_shots: Option<u32>,
+    print_statevector: bool,
+    paulis: &[(String, aleph_core::PauliString)],
+    n: u32,
+    seed_label: &str,
+    out: &mut W,
+) -> Result<()>
+where
+    B: Backend,
+    B::State: AmpsF64,
+    W: Write,
+{
+    let state = run(&mut backend, circuit).context("running circuit")?;
+
     if let Some(shots) = effective_shots {
         let samples = backend
             .sample(&state, shots)
             .context("sampling final state")?;
-        output::format_counts(out, &samples, shots, n, &seed_label)?;
+        output::format_counts(out, &samples, shots, n, seed_label)?;
     }
     if print_statevector {
-        output::format_statevector(out, state.amplitudes(), n)?;
+        let amps = state.amps_f64();
+        output::format_statevector(out, &amps, n)?;
     }
     if !paulis.is_empty() {
         writeln!(out, "expectation values:")?;
-        for (raw, ps) in &paulis {
+        for (raw, ps) in paulis {
             let v = backend
                 .expectation_value(&state, ps)
                 .with_context(|| format!("computing expectation value for {raw:?}"))?;
@@ -191,7 +272,17 @@ mod tests {
     fn default_view_is_shots_1024() {
         let (path, _dir) = temp_qasm(QASM_BELL);
         let mut out = Vec::new();
-        run_circuit(&path, None, false, false, &[], Some(0), &mut out).unwrap();
+        run_circuit(
+            &path,
+            None,
+            false,
+            false,
+            &[],
+            Some(0),
+            Precision::F64,
+            &mut out,
+        )
+        .unwrap();
         let s = String::from_utf8(out).unwrap();
         assert!(s.contains("counts (1024 shots, seed=0):"));
     }
@@ -201,8 +292,28 @@ mod tests {
         let (path, _dir) = temp_qasm(QASM_BELL);
         let mut a = Vec::new();
         let mut b = Vec::new();
-        run_circuit(&path, Some(256), false, false, &[], Some(42), &mut a).unwrap();
-        run_circuit(&path, Some(256), false, false, &[], Some(42), &mut b).unwrap();
+        run_circuit(
+            &path,
+            Some(256),
+            false,
+            false,
+            &[],
+            Some(42),
+            Precision::F64,
+            &mut a,
+        )
+        .unwrap();
+        run_circuit(
+            &path,
+            Some(256),
+            false,
+            false,
+            &[],
+            Some(42),
+            Precision::F64,
+            &mut b,
+        )
+        .unwrap();
         assert_eq!(a, b, "two seed=42 invocations diverged");
     }
 
@@ -212,7 +323,17 @@ mod tests {
         let qasm = "OPENQASM 3.0;\nqubit[11] q;\n";
         let (path, _dir) = temp_qasm(qasm);
         let mut out = Vec::new();
-        let err = run_circuit(&path, None, true, false, &[], Some(0), &mut out).unwrap_err();
+        let err = run_circuit(
+            &path,
+            None,
+            true,
+            false,
+            &[],
+            Some(0),
+            Precision::F64,
+            &mut out,
+        )
+        .unwrap_err();
         let msg = format!("{err}");
         assert!(msg.contains("2^11"), "msg = {msg}");
         assert!(msg.contains("--force-statevector"), "msg = {msg}");
@@ -223,7 +344,17 @@ mod tests {
         let qasm = "OPENQASM 3.0;\nqubit[11] q;\n";
         let (path, _dir) = temp_qasm(qasm);
         let mut out = Vec::new();
-        run_circuit(&path, None, true, true, &[], Some(0), &mut out).unwrap();
+        run_circuit(
+            &path,
+            None,
+            true,
+            true,
+            &[],
+            Some(0),
+            Precision::F64,
+            &mut out,
+        )
+        .unwrap();
         let s = String::from_utf8(out).unwrap();
         assert!(s.contains("statevector (11 qubits"));
     }
@@ -240,6 +371,7 @@ mod tests {
             false,
             &["ZZZ".to_string()],
             Some(0),
+            Precision::F64,
             &mut out,
         )
         .unwrap_err();
@@ -259,6 +391,7 @@ mod tests {
             false,
             &["ABC".to_string()],
             Some(0),
+            Precision::F64,
             &mut out,
         )
         .unwrap_err();
@@ -278,6 +411,7 @@ mod tests {
             false,
             &["ZZ".to_string()],
             Some(0),
+            Precision::F64,
             &mut out,
         )
         .unwrap();
@@ -310,6 +444,7 @@ mod tests {
             false,
             &[],
             Some(0),
+            Precision::F64,
             &mut out,
         )
         .unwrap_err();
