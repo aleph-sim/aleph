@@ -86,16 +86,21 @@ impl Backend for NaiveSvBackend {
             }
             seen.push(q);
         }
+        // UnitaryKq has no fixed-size GateMatrix (the enum stops at 8×8); the
+        // kernel reads `data` directly. Produced by FuseKq from unitary members.
+        // Intercept before matrix() so the `Unrepresentable` error never fires.
+        if let aleph_core::Gate::UnitaryKq { k, data } = &gate.gate {
+            crate::kernels::unitary_kq::apply_kq_aos(&mut state.amps, &gate.qubits, *k, data);
+            return Ok(());
+        }
         // Materialise the matrix; route GateError variants to the right BackendError.
-        // TODO(P2-07 Task 6): intercept UnitaryKq before matrix() and dispatch to apply_kq kernel.
         let matrix = gate.gate.matrix().map_err(|e| match e {
             GateError::SymbolicParam => BackendError::SymbolicParam,
             GateError::NonFiniteParam => BackendError::NonFiniteParam {
                 kind: gate.gate.name(),
             },
-            // UnitaryKq has no fixed-size GateMatrix; the kernel dispatch
-            // (Task 6) will intercept it before this point. Until then,
-            // surface as UnsupportedGate rather than a mysterious panic.
+            // UnitaryKq is intercepted above; any other future gate that
+            // returns Unrepresentable surfaces here as UnsupportedGate.
             GateError::Unrepresentable => BackendError::UnsupportedGate {
                 kind: gate.gate.name(),
             },
