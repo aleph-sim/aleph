@@ -121,7 +121,12 @@ pub fn apply_1q_diag_scalar_f32(
 /// matrix swaps rows 2 ↔ 3.
 ///
 /// Targets must be distinct; the caller (`apply_gate`) enforces this.
-pub(crate) fn apply_2q_dense_scalar_f32(
+///
+/// `pub` (like the 1q scalar references) so the `internal-bench`-gated
+/// integration test `tests/fp32_simd_scalar.rs` can call this forced
+/// scalar reference directly. Without that feature `kernels` is private,
+/// so the effective visibility is `pub(crate)`.
+pub fn apply_2q_dense_scalar_f32(
     amps: &mut [Complex<f32>],
     targets: [u32; 2],
     controls: &[u32],
@@ -318,12 +323,44 @@ pub(crate) fn apply_kq_scalar_f32(
 /// Top-level f32 2q dispatch. Phase B adds an AVX-512 dense arm; for now
 /// always the scalar dense kernel (correct for CNOT/CZ/SWAP/dense alike —
 /// the f64 specializations are non-fused-path optimizations out of scope).
-pub(crate) fn apply_2q_f32(
+// `pub` (like `apply_1q_f32`) so the `internal-bench`-gated integration
+// test can drive the dispatcher end-to-end; effective visibility is
+// `pub(crate)` without the feature (private `kernels` module).
+pub fn apply_2q_f32(
     amps: &mut [Complex<f32>],
     targets: [u32; 2],
     controls: &[u32],
     m: &[[Complex<f32>; 4]; 4],
 ) {
+    // Generic dense 4×4 — SIMD where the contract holds, scalar otherwise.
+    // Mirrors the f64 `aos::apply_2q` generic-dense AVX-512 arm (aos.rs
+    // lines 1597-1613) exactly, substituting LANES_F32 = 8 for the f64
+    // arm's LANES = 4: feature gate + `1 << t_lo ≥ LANES_F32` (low-target
+    // bit aligned so the inner SIMD walk has ≥ LANES_F32 contiguous pairs)
+    // + every control > t_hi (no control-bit toggling in the outer walk;
+    // renormalisation subtraction safe). The CNOT/CZ/SWAP permutation and
+    // diagonal-4x4 specializations the f64 arm routes first are OUT OF
+    // SCOPE here — the scalar fallback handles every other shape.
+    #[cfg(target_arch = "x86_64")]
+    {
+        const LANES_F32: usize = 8;
+        let t_lo = targets[0].min(targets[1]);
+        let t_hi = targets[0].max(targets[1]);
+        if std::is_x86_feature_detected!("avx512f")
+            && (1usize << t_lo) >= LANES_F32
+            && controls.iter().all(|&c| c > t_hi)
+        {
+            // SAFETY: feature gate, `1 << t_lo ≥ LANES_F32` (aligned block
+            // stride), every control > t_hi (no control-bit toggling +
+            // safe renorm), and the apply_gate-level distinct/in-range
+            // qubit invariants — exactly the f64 generic-dense arm's
+            // contract with LANES_F32 substituted for LANES.
+            unsafe {
+                apply_2q_dense_avx512_f32(amps, targets, controls, m);
+            }
+            return;
+        }
+    }
     apply_2q_dense_scalar_f32(amps, targets, controls, m);
 }
 
@@ -682,6 +719,183 @@ pub unsafe fn apply_1q_diag_avx512_f32(
         outer_count,
         len,
         |k| crate::kernels::expand_with_fixed(k, &fixed_above) << (target + 1),
+        outer_iter,
+    );
+}
+
+/// Packed-complex AVX-512 generic 2q dense kernel for f32 AoS. The inner
+/// walk steps by `LANES_F32 = 8` complex pairs along the low-target axis
+/// (requires `1 << t_lo >= LANES_F32`); the outer walk enumerates quartet
+/// base indices via [`expand_with_fixed`].
+///
+/// Single-precision mirror of `aos::apply_2q_avx512` (the f64 source) per
+/// the P2-08 f64→f32 substitution rules. The renormalised outer-walk
+/// index algebra (`expand_with_fixed`, the `<< (t_lo + 1)` shift, the
+/// `(t_hi - t_lo - 1, false)` renormalisation, control renorm
+/// `(c - t_lo - 1, true)`) is precision-independent and copied
+/// byte-for-byte from the f64 source; only the SIMD width (8 complex pairs
+/// per `__m512` vs 4 per `__m512d`), the intrinsic suffix (`_ps` vs `_pd`),
+/// and the (re,im) swap permute (`0xB1` vs `0x55`) differ.
+///
+/// **Math.** For each quartet `(z00, z01, z10, z11)`, compute
+/// `new_z_r = Σ_c m[r][c] * z_c`. Each `m[r][c] * z_c` is one
+/// `vfmaddsub(m_re_bcast, z_c, m_im_bcast × vpermilps<0xB1>(z_c))` — the
+/// same packed-complex idiom as `apply_1q_dense_avx512_f32`, replicated
+/// across four loaded subspaces.
+///
+/// **Outer-walk (bit-disjointness invariant).** The kernel computes each
+/// amplitude index as `i = block | offsets[k] | j`, so for the `|` to
+/// behave as `+` (the only way the SAFETY bound holds), the three pieces
+/// MUST occupy disjoint bit positions:
+///
+/// * `j` walks `[0, t_lo_bit)` in `LANES_F32` strides — bits `[0, t_lo)`.
+/// * `offsets[k] ∈ {0, t_lo_bit, t_hi_bit, t_lo_bit | t_hi_bit}` — bits
+///   exactly `{t_lo, t_hi}`.
+/// * `block` MUST therefore use only bits strictly above `t_lo`, with bit
+///   `t_hi` clear and every control bit set.
+///
+/// Achieved with the same renormalise-then-shift idiom as
+/// `apply_1q_dense_avx512_f32`, extended to two reserved positions:
+/// `expand_with_fixed` lays out `t_hi` and every control at *renormalised*
+/// positions (each minus `t_lo + 1`) in the "above t_lo" subspace, and a
+/// left-shift by `t_lo + 1` promotes the result to actual qubit positions.
+/// `Controls.len() = 0` collapses naturally — no separate uncontrolled
+/// branch needed.
+///
+/// [`expand_with_fixed`]: crate::kernels::expand_with_fixed
+///
+/// # Safety
+///
+/// Caller MUST ensure all of:
+/// * Host CPU supports AVX-512F.
+/// * `1 << min(targets) >= LANES_F32` (= 8) — inner SIMD walk has ≥
+///   `LANES_F32` contiguous pairs per sub-block.
+/// * Every external control's qubit index is strictly greater than
+///   `max(targets)`, so the outer-walk's bit-expansion never toggles a
+///   control bit and the renormalisation subtraction `c - t_lo - 1` never
+///   underflows.
+/// * Distinct targets/controls, all in qubit range.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f")]
+pub(crate) unsafe fn apply_2q_dense_avx512_f32(
+    amps: &mut [Complex<f32>],
+    targets: [u32; 2],
+    controls: &[u32],
+    m: &[[Complex<f32>; 4]; 4],
+) {
+    use core::arch::x86_64::*;
+
+    const LANES_F32: usize = 8; // 8 complex pairs per __m512 (16 lanes f32)
+
+    let t_lo = targets[0].min(targets[1]);
+    let t_hi = targets[0].max(targets[1]);
+    let t_lo_bit = 1usize << t_lo;
+    let t_hi_bit = 1usize << t_hi;
+    let t_mask = t_lo_bit | t_hi_bit;
+    let len = amps.len();
+
+    debug_assert!(
+        t_lo_bit >= LANES_F32,
+        "t_lo_bit < LANES_F32: dispatch contract violated"
+    );
+    debug_assert!(
+        controls.iter().all(|&c| c > t_hi),
+        "control at-or-below t_hi: dispatch contract violated"
+    );
+
+    // Index permutation: targets[0] is MSB of matrix index k, targets[1]
+    // is LSB. Identical to the f64 source (precision-independent).
+    let (offset_k1, offset_k2) = if targets[0] < targets[1] {
+        // targets[0]=t_lo, targets[1]=t_hi → k bit 1 (low) selects t_hi_bit
+        (t_hi_bit, t_lo_bit)
+    } else {
+        (t_lo_bit, t_hi_bit)
+    };
+    let offsets = [0usize, offset_k1, offset_k2, t_mask];
+
+    // Broadcast all 16 matrix cells.
+    let mut m_re = [_mm512_setzero_ps(); 16];
+    let mut m_im = [_mm512_setzero_ps(); 16];
+    for r in 0..4 {
+        for c in 0..4 {
+            m_re[r * 4 + c] = _mm512_set1_ps(m[r][c].re);
+            m_im[r * 4 + c] = _mm512_set1_ps(m[r][c].im);
+        }
+    }
+
+    let bp = BlockPtrF32(amps.as_mut_ptr() as *mut f32);
+
+    let outer_iter = |block: usize| {
+        let amps_ptr = bp.ptr();
+        let mut j = 0usize;
+        while j + LANES_F32 <= t_lo_bit {
+            // Load 4 sub-blocks, each LANES_F32 complex pairs. Base index
+            // for k=0 is `block | j` (no target bits set).
+            let mut z = [_mm512_setzero_ps(); 4];
+            let mut zs = [_mm512_setzero_ps(); 4];
+            for k in 0..4 {
+                let i_k = block | offsets[k] | j;
+                // SAFETY: bit-disjointness invariant (see doc-comment
+                // "Outer-walk" section): `block` ⊆ bits ≥ t_lo+1 (t_hi
+                // clear, every control set), `offsets[k]` ⊆ {t_lo, t_hi},
+                // `j` ⊆ [0, t_lo). The three are pairwise bit-disjoint, so
+                //   i_k = block + offsets[k] + j ≤ len - LANES_F32.
+                // The per-complex factor of 2 (2 f32 per complex) is
+                // identical to the f64 source's `i_k * 2`.
+                z[k] = _mm512_loadu_ps(amps_ptr.add(i_k * 2));
+                zs[k] = _mm512_permute_ps::<0xB1>(z[k]);
+            }
+
+            // Compute each output row: new_z[r] = Σ_c m[r][c] * z[c].
+            let mut new_z = [_mm512_setzero_ps(); 4];
+            for r in 0..4 {
+                let t0 = _mm512_mul_ps(m_im[r * 4], zs[0]);
+                let mut p = _mm512_fmaddsub_ps(m_re[r * 4], z[0], t0);
+                let t1 = _mm512_mul_ps(m_im[r * 4 + 1], zs[1]);
+                p = _mm512_add_ps(p, _mm512_fmaddsub_ps(m_re[r * 4 + 1], z[1], t1));
+                let t2 = _mm512_mul_ps(m_im[r * 4 + 2], zs[2]);
+                p = _mm512_add_ps(p, _mm512_fmaddsub_ps(m_re[r * 4 + 2], z[2], t2));
+                let t3 = _mm512_mul_ps(m_im[r * 4 + 3], zs[3]);
+                p = _mm512_add_ps(p, _mm512_fmaddsub_ps(m_re[r * 4 + 3], z[3], t3));
+                new_z[r] = p;
+            }
+
+            // Store back into the same 4 sub-blocks.
+            for k in 0..4 {
+                let i_k = block | offsets[k] | j;
+                // SAFETY: same bit-disjointness invariant as the load
+                // above ⇒ i_k + LANES_F32 ≤ len.
+                _mm512_storeu_ps(amps_ptr.add(i_k * 2), new_z[k]);
+            }
+
+            j += LANES_F32;
+        }
+        debug_assert_eq!(j, t_lo_bit);
+    };
+
+    // Outer-walk: reserve bits `[0, t_lo]` for the inner SIMD walk by
+    // renormalising every "fixed" position (t_hi and each external
+    // control) — subtract `t_lo + 1` — then left-shift `expand_with_fixed`'s
+    // result by `t_lo + 1`. Identical to the f64 source.
+    //
+    // Subtraction `t_hi - t_lo - 1` is safe (`t_hi > t_lo` by min/max of
+    // distinct targets). `c - t_lo - 1` is safe because the dispatch
+    // contract requires every control `c > t_hi > t_lo`.
+    let mut fixed_above: smallvec::SmallVec<[(u32, bool); 8]> = smallvec::SmallVec::new();
+    fixed_above.push((t_hi - t_lo - 1, false));
+    for &c in controls {
+        fixed_above.push((c - t_lo - 1, true));
+    }
+    fixed_above.sort_unstable_by_key(|&(pos, _)| pos);
+
+    let n_qubits = len.trailing_zeros();
+    let policy = tuning::resolve_policy(GateClass::TwoQDense, tuning::pos_class(t_hi, n_qubits));
+    let outer_count = 1usize << (n_qubits - t_lo - 2 - controls.len() as u32);
+    crate::kernels::par_blocks(
+        policy,
+        outer_count,
+        len,
+        |k| crate::kernels::expand_with_fixed(k, &fixed_above) << (t_lo + 1),
         outer_iter,
     );
 }

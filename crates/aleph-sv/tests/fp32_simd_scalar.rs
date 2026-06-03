@@ -16,7 +16,8 @@
 
 use aleph_core::Complex;
 use aleph_sv::kernels::aos_f32::{
-    apply_1q_dense_scalar_f32, apply_1q_diag_scalar_f32, apply_1q_f32,
+    apply_1q_dense_scalar_f32, apply_1q_diag_scalar_f32, apply_1q_f32, apply_2q_dense_scalar_f32,
+    apply_2q_f32,
 };
 
 /// Deterministic, non-trivial, well-spread complex pattern.
@@ -148,6 +149,111 @@ fn diag_1q_simd_matches_scalar() {
                         a_simd[i],
                         a_scalar[i]
                     );
+                }
+            }
+        }
+    }
+}
+
+/// A genuinely dense (all entries nonzero) real 4×4 unitary: H⊗H, every
+/// entry ±1/2. Exercises the full 4×4 matvec (every `m[r][c] * z_c` term)
+/// through the broadcast complex-multiply building block.
+fn dense_2q_m() -> [[Complex<f32>; 4]; 4] {
+    let h = 0.5f32; // (1/√2)^2
+    let s = |x: f32| Complex::new(x, 0.0);
+    [
+        [s(h), s(h), s(h), s(h)],
+        [s(h), s(-h), s(h), s(-h)],
+        [s(h), s(h), s(-h), s(-h)],
+        [s(h), s(-h), s(-h), s(h)],
+    ]
+}
+
+/// A dense 4×4 with nonzero imaginary parts in every entry, so the
+/// `m_im` broadcast / `vpermilps`-swap half of the complex-multiply is
+/// exercised too (H⊗H alone has zero imaginary parts). Not unitary — the
+/// SIMD≡scalar comparison does not require unitarity, only that both
+/// paths apply the same linear map.
+fn dense_2q_m_complex() -> [[Complex<f32>; 4]; 4] {
+    let mut m = [[Complex::new(0.0f32, 0.0); 4]; 4];
+    for (r, row) in m.iter_mut().enumerate() {
+        for (c, e) in row.iter_mut().enumerate() {
+            let rr = ((r * 4 + c) as f32 * 0.11 + 0.2).sin() * 0.5;
+            let ii = ((r * 4 + c) as f32 * 0.17 + 0.3).cos() * 0.5;
+            *e = Complex::new(rr, ii);
+        }
+    }
+    m
+}
+
+#[test]
+fn dense_2q_simd_matches_scalar() {
+    // LANES_F32 = 8 ⇒ log2(LANES_F32) = 3; the SIMD arm requires
+    // `1 << t_lo ≥ LANES_F32` (i.e. t_lo ≥ 3) AND every control > t_hi.
+    // Lower-target pairs route to scalar in BOTH paths — included
+    // deliberately so EPYC exercises the dispatcher boundary (this is
+    // where P1-07's low-bit-target SIGSEGV/underflow hid) and confirms no
+    // panic.
+    for m in [dense_2q_m(), dense_2q_m_complex()] {
+        for n in [4u32, 8, 12] {
+            // Target pairs spanning positions, INCLUDING at least one pair
+            // where a target ∈ {0, 1} (low-bit tier → scalar in both).
+            let mut target_cases: Vec<[u32; 2]> = vec![
+                [0, 1], // both low-bit (scalar path)
+                [0, n - 1],
+                [1, 2],
+            ];
+            // A high-aligned pair (both t_lo ≥ 3) that hits the SIMD arm on
+            // AVX-512 when n is large enough.
+            if n >= 8 {
+                target_cases.push([3, 5]);
+                target_cases.push([4, 6]);
+                // Reversed orientation (targets[0] > targets[1]) to cover
+                // the offset_k1/offset_k2 swap branch.
+                target_cases.push([6, 4]);
+            }
+
+            for targets in target_cases {
+                let t_lo = targets[0].min(targets[1]);
+                let t_hi = targets[0].max(targets[1]);
+                if t_lo == t_hi || t_hi >= n {
+                    continue; // distinct + in range
+                }
+
+                // Control configurations: none, and (when room exists) one
+                // external control strictly ABOVE t_hi — the SIMD contract.
+                let mut control_cases: Vec<Vec<u32>> = vec![vec![]];
+                if t_hi + 1 < n {
+                    control_cases.push(vec![n - 1]);
+                }
+
+                for ctrls in control_cases {
+                    let ctrls: Vec<u32> = ctrls
+                        .iter()
+                        .copied()
+                        .filter(|&c| c > t_hi && c < n && c != targets[0] && c != targets[1])
+                        .collect();
+
+                    let base = fill(n);
+                    let mut a_simd = base.clone();
+                    let mut a_scalar = base.clone();
+
+                    // Dispatcher → dense 2q SIMD arm on AVX-512 when the
+                    // contract holds, scalar elsewhere.
+                    apply_2q_f32(&mut a_simd, targets, &ctrls, &m);
+                    // Forced scalar reference.
+                    apply_2q_dense_scalar_f32(&mut a_scalar, targets, &ctrls, &m);
+
+                    for i in 0..a_simd.len() {
+                        assert!(
+                            (a_simd[i].re - a_scalar[i].re).abs() < 1e-5
+                                && (a_simd[i].im - a_scalar[i].im).abs() < 1e-5,
+                            "2q mismatch n={n} targets={targets:?} ctrls={ctrls:?} i={i}: \
+                             simd={:?} scalar={:?}",
+                            a_simd[i],
+                            a_scalar[i]
+                        );
+                    }
                 }
             }
         }
