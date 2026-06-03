@@ -48,6 +48,12 @@ fn emit_instruction(out: &mut String, inst: &Instruction) -> Result<(), EmitErro
             out.push(';');
             Ok(())
         }
+        // DiagonalPhase is a post-optimization IR node; the parser never
+        // produces it. Reject emission: a circuit containing this variant
+        // should be lowered to gates before serialisation.
+        Instruction::DiagonalPhase(_) => Err(EmitError::UnsupportedGate {
+            name: "DiagonalPhase",
+        }),
     }
 }
 

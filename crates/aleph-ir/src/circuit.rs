@@ -265,6 +265,10 @@ impl Circuit {
                 }
                 Ok(())
             }
+            // DiagonalPhase is a post-optimization instruction inserted by
+            // passes, not via the public builder API; skip qubit range
+            // validation (the pass is responsible for correct qubit indices).
+            Instruction::DiagonalPhase(_) => Ok(()),
         }
     }
 

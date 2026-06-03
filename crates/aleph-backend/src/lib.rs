@@ -169,6 +169,11 @@ pub fn run_with_outcomes<B: Backend>(
                 return Err(BackendError::UnsupportedInstruction { kind: "reset" });
             }
             aleph_ir::Instruction::Barrier(_) => {}
+            aleph_ir::Instruction::DiagonalPhase(_) => {
+                return Err(BackendError::UnsupportedInstruction {
+                    kind: "diagonal_phase",
+                });
+            }
         }
     }
     Ok((state, outcomes))

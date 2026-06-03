@@ -403,6 +403,22 @@ impl Pass for Fuse2q {
                     );
                     output.push((idx, inst.clone()));
                 }
+                // DiagonalPhase is an opaque fused diagonal operator. Treat it
+                // as a fence: flush any open blocks on all its qubits and
+                // re-emit verbatim without attempting to fuse through it.
+                Instruction::DiagonalPhase(_) => {
+                    for q in inst.used_qubits() {
+                        flush_qubit(
+                            q,
+                            &mut blocks,
+                            &mut open,
+                            input,
+                            &mut output,
+                            &mut transformations,
+                        );
+                    }
+                    output.push((idx, inst.clone()));
+                }
             }
         }
 

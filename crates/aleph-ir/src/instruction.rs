@@ -1,6 +1,7 @@
 //! `Instruction` — one step of a `Circuit`. Either applies a gate,
 //! measures, resets, or marks a barrier.
 
+use crate::diagonal_phase::DiagonalPhase;
 use aleph_core::GateInstance;
 use smallvec::SmallVec;
 
@@ -22,6 +23,10 @@ pub enum Instruction {
     /// Must cover at least one qubit; `Circuit::add_instruction` rejects
     /// `Barrier(empty)` with [`crate::CircuitError::EmptyBarrier`].
     Barrier(SmallVec<[u32; 8]>),
+    /// A fused multi-qubit diagonal operator produced by
+    /// `passes::FuseDiagonalRuns`. Never produced by the parser; only
+    /// exists post-optimization. Boxed to keep the enum small.
+    DiagonalPhase(Box<DiagonalPhase>),
 }
 
 impl Instruction {
@@ -37,6 +42,14 @@ impl Instruction {
             Instruction::Measure { qubit, .. } => out.push(*qubit),
             Instruction::Reset(q) => out.push(*q),
             Instruction::Barrier(qs) => out.extend(qs.iter().copied()),
+            Instruction::DiagonalPhase(dp) => {
+                let mask = dp.support_mask();
+                for q in 0..dp.n_qubits {
+                    if (mask >> q) & 1 == 1 {
+                        out.push(q);
+                    }
+                }
+            }
         }
         out
     }
@@ -105,5 +118,29 @@ mod tests {
                 .used_clbits()
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn used_qubits_diagonal_phase_unions_support() {
+        use crate::diagonal_phase::{DiagonalPhase, PhaseTerm};
+        use smallvec::smallvec as sv;
+        let dp = DiagonalPhase {
+            n_qubits: 5,
+            terms: vec![
+                PhaseTerm {
+                    conds: sv![0b00011],
+                    angle: 0.1,
+                }, // bits 0,1
+                PhaseTerm {
+                    conds: sv![0b10000, 0b00100],
+                    angle: 0.2,
+                }, // bits 4,2
+            ],
+        };
+        let inst = Instruction::DiagonalPhase(Box::new(dp));
+        let mut q = inst.used_qubits().to_vec();
+        q.sort();
+        assert_eq!(q, vec![0, 1, 2, 4]);
+        assert!(inst.used_clbits().is_empty());
     }
 }
