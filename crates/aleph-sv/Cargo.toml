@@ -34,6 +34,10 @@ criterion    = { workspace = true }
 name = "policy_invariance"
 required-features = ["internal-bench"]
 
+[[test]]
+name = "fp32_simd_scalar"
+required-features = ["internal-bench"]
+
 [[bench]]
 name = "naive_sv"
 harness = false

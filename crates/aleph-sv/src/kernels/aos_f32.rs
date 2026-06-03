@@ -10,6 +10,8 @@
 use aleph_core::Complex;
 
 use crate::kernels::tuning::{self, GateClass};
+#[cfg(target_arch = "x86_64")]
+use crate::kernels::BlockPtrF32;
 use crate::kernels::{control_mask, is_diagonal_2x2_f32, par_blocks, ComplexF32Ptr};
 
 /// Generic 2×2 application on an f32 AoS slice. Correct for any 2×2
@@ -21,7 +23,11 @@ use crate::kernels::{control_mask, is_diagonal_2x2_f32, par_blocks, ComplexF32Pt
 /// `Complex<f32>` substituted for `Complex<f64>` and `ComplexF32Ptr`
 /// substituted for `ComplexPtr`. Index algebra and SAFETY reasoning are
 /// identical.
-pub(crate) fn apply_1q_dense_scalar_f32(
+// `pub` (like `aos::apply_1q_avx512`) so the `internal-bench`-gated
+// integration test `tests/fp32_simd_scalar.rs` can call the forced scalar
+// reference directly. Without that feature `kernels` is private, so the
+// effective visibility is `pub(crate)`.
+pub fn apply_1q_dense_scalar_f32(
     amps: &mut [Complex<f32>],
     target: u32,
     controls: &[u32],
@@ -348,9 +354,191 @@ pub(crate) fn apply_diagonal_phase_scalar_f32(
     );
 }
 
-/// Top-level f32 1q dispatch: diagonal fast path, else generic dense.
-/// (Phase B adds AVX-512 arms guarded by `is_x86_feature_detected`.)
-pub(crate) fn apply_1q_f32(
+/// Packed-complex AVX-512 path for f32 AoS `apply_1q`. 8 complex pairs
+/// per `__m512` (16 f32 lanes), interleaved as `(re_0, im_0, re_1, im_1,
+/// …, re_7, im_7)`.
+///
+/// Single-precision mirror of `aos::apply_1q_avx512` (the f64 source) per
+/// the P2-08 f64→f32 substitution rules. The two structural differences
+/// from the f64 kernel are:
+///
+/// 1. **SIMD width.** A `__m512` holds 8 complex pairs (16 f32 lanes) vs
+///    the f64 `__m512d`'s 4 complex pairs (8 f64 lanes), so
+///    `LANES_F32 = 8`. The "2 scalars per complex" interleave factor is
+///    IDENTICAL; only how many complex per vector load changes (4 → 8).
+///    A `LANES_F32`-wide block is still 64 bytes = one cache line
+///    (8 complex × 8 bytes), exactly as the f64 kernel's 4-complex block.
+///
+/// 2. **The adjacent (re, im) swap.** The f64 kernel swaps each 64-bit
+///    complex's real/imag with `vpermilpd` imm `0x55`. For f32 each
+///    complex is two **32-bit** lanes, so the adjacent-pair swap is
+///    `vpermilps` imm `0xB1` (`0b10110001`), which maps lanes
+///    `[0,1,2,3] → [1,0,3,2]` within each 128-bit group — swapping each
+///    adjacent `(re, im)` pair. (Reusing `0x55` here would be wrong and
+///    silently corrupt results.)
+///
+/// **Math.** For a 2×2 unitary `U = [[u00, u01], [u10, u11]]` and the
+/// state pair `(z_0, z_1) = (state[i], state[i | t_bit])`, each output is
+/// `new_z_r = u[r][0] * z_0 + u[r][1] * z_1`. Each complex multiply
+/// `u_rk * z_k` is implemented as
+/// `vfmaddsub(u_rk_re_bcast, z_k, u_rk_im_bcast × swap(z_k))`, where
+/// `swap` swaps adjacent f32 (re, im) pairs via `vpermilps` imm `0xB1`.
+/// `fmaddsub` alternates SUB / ADD across even / odd lanes, producing
+/// `(re_out, im_out)` for each of the 8 packed complex.
+///
+/// # Safety
+///
+/// Caller MUST ensure all of:
+/// * Host CPU supports AVX-512F.
+/// * `1usize << target ≥ LANES_F32` so the inner block has at least
+///   `LANES_F32` contiguous pairs (no in-block tail; outer step is
+///   `2 * target_bit ≥ 2 * LANES_F32`, keeping `i1 + LANES_F32` inside
+///   the outer extent).
+/// * Every control's qubit index is strictly greater than `target`, so
+///   the inner SIMD walk's `block | j` for `j ∈ [0, target_bit)` doesn't
+///   toggle any control bit.
+/// * Standard apply_gate invariants: `target` and `controls` are distinct
+///   and in qubit range.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f")]
+// `pub` (like `aos::apply_1q_avx512`) so the `internal-bench`-gated
+// integration test can reach this; effectively `pub(crate)` without the
+// feature (the module is private).
+pub unsafe fn apply_1q_dense_avx512_f32(
+    amps: &mut [Complex<f32>],
+    target: u32,
+    controls: &[u32],
+    m: &[[Complex<f32>; 2]; 2],
+) {
+    use core::arch::x86_64::*;
+
+    const LANES_F32: usize = 8; // 8 complex pairs per __m512 (16 lanes f32)
+
+    let target_bit = 1usize << target;
+    let len = amps.len();
+    let n_qubits = len.trailing_zeros();
+
+    // Pin the # Safety contract as debug-only asserts (mirrors the f64
+    // source): a release-mode violation would silently no-op
+    // (target_bit < LANES_F32) or underflow outer_count (controls below
+    // target) — both catastrophic.
+    debug_assert!(
+        target_bit >= LANES_F32,
+        "target_bit < LANES_F32: dispatch contract violated"
+    );
+    debug_assert!(
+        controls.iter().all(|&c| c > target),
+        "control at-or-below target: dispatch contract violated"
+    );
+
+    // Broadcast U matrix entries — constant across all iterations.
+    let m00r = _mm512_set1_ps(m[0][0].re);
+    let m00i = _mm512_set1_ps(m[0][0].im);
+    let m01r = _mm512_set1_ps(m[0][1].re);
+    let m01i = _mm512_set1_ps(m[0][1].im);
+    let m10r = _mm512_set1_ps(m[1][0].re);
+    let m10i = _mm512_set1_ps(m[1][0].im);
+    let m11r = _mm512_set1_ps(m[1][1].re);
+    let m11i = _mm512_set1_ps(m[1][1].im);
+
+    let bp = BlockPtrF32(amps.as_mut_ptr() as *mut f32);
+
+    // One SIMD unit = the LANES_F32-wide amplitude pair
+    // (i0, i0+target_bit). Flattening the outer block walk with the inner
+    // j-walk (via `par_units`) keeps the parallel dimension at
+    // `len / (2*LANES_F32)` regardless of `target` (P2-01
+    // count-starvation fix).
+    let pair = |i0: usize| {
+        let amps_ptr = bp.ptr();
+        let i1 = i0 + target_bit;
+
+        // Each Complex<f32> is 8 bytes (re, im). `_mm512_loadu_ps` reads
+        // 16 consecutive f32 = 8 complex starting at `amps[i0]`. The
+        // per-complex factor of 2 (2 f32 per complex) is identical to the
+        // f64 source's `i0 * 2`; only the vector width (8 complex) differs.
+        // SAFETY: `i0 + LANES_F32 ≤ block + target_bit ≤ len` (outer block
+        // stride is `2 * target_bit`); `i1 + LANES_F32 ≤ block + 2*target_bit ≤ len`.
+        let z0 = _mm512_loadu_ps(amps_ptr.add(i0 * 2));
+        let z1 = _mm512_loadu_ps(amps_ptr.add(i1 * 2));
+
+        // vpermilps imm = 0xB1 = 0b10110001: within each 128-bit group,
+        // lanes [0,1,2,3] → [1,0,3,2], i.e. each adjacent (re, im) pair
+        // is swapped. After permute: (im_0, re_0, im_1, re_1, …).
+        let z0_swap = _mm512_permute_ps::<0xB1>(z0);
+        let z1_swap = _mm512_permute_ps::<0xB1>(z1);
+
+        // U_ij × z_k = vfmaddsub(U_ij_re, z_k, U_ij_im × z_k_swap).
+        // fmaddsub(a, b, c) = (a·b - c) on even lanes, (a·b + c) on odd.
+        // Even lanes (re_out): m_re·z_re - m_im·z_im ✓
+        // Odd lanes  (im_out): m_re·z_im + m_im·z_re ✓
+        let t00 = _mm512_mul_ps(m00i, z0_swap);
+        let prod00 = _mm512_fmaddsub_ps(m00r, z0, t00);
+        let t01 = _mm512_mul_ps(m01i, z1_swap);
+        let prod01 = _mm512_fmaddsub_ps(m01r, z1, t01);
+        let new_z0 = _mm512_add_ps(prod00, prod01);
+
+        let t10 = _mm512_mul_ps(m10i, z0_swap);
+        let prod10 = _mm512_fmaddsub_ps(m10r, z0, t10);
+        let t11 = _mm512_mul_ps(m11i, z1_swap);
+        let prod11 = _mm512_fmaddsub_ps(m11r, z1, t11);
+        let new_z1 = _mm512_add_ps(prod10, prod11);
+
+        _mm512_storeu_ps(amps_ptr.add(i0 * 2), new_z0);
+        _mm512_storeu_ps(amps_ptr.add(i1 * 2), new_z1);
+    };
+
+    // Caller guarantees `target_bit ≥ LANES_F32` (both powers of two), so
+    // `units_per_block ≥ 1` is a power of two.
+    let units_per_block = target_bit / LANES_F32;
+    let policy =
+        tuning::resolve_policy(GateClass::OneQGeneric, tuning::pos_class(target, n_qubits));
+
+    if controls.is_empty() {
+        let outer_step = target_bit << 1;
+        let outer_count = len / outer_step;
+        crate::kernels::par_units(
+            policy,
+            outer_count,
+            units_per_block,
+            LANES_F32,
+            len,
+            |bk| bk * outer_step,
+            pair,
+        );
+        return;
+    }
+
+    // Controlled SIMD path. Identical index algebra to the f64 source:
+    // renormalise control positions (subtract `target + 1`) so
+    // `expand_with_fixed` lays them out densely, then left-shift back.
+    let mut fixed_above: smallvec::SmallVec<[(u32, bool); 8]> = smallvec::SmallVec::new();
+    for &c in controls {
+        fixed_above.push((c - target - 1, true));
+    }
+    fixed_above.sort_unstable_by_key(|&(pos, _)| pos);
+
+    // Subtraction is safe: each control is distinct from target and
+    // < n_qubits, all controls > target, so
+    // `target + 1 + controls.len() ≤ n_qubits`.
+    let outer_count = 1usize << (n_qubits - target - 1 - controls.len() as u32);
+    crate::kernels::par_units(
+        policy,
+        outer_count,
+        units_per_block,
+        LANES_F32,
+        len,
+        |bk| crate::kernels::expand_with_fixed(bk, &fixed_above) << (target + 1),
+        pair,
+    );
+}
+
+/// Top-level f32 1q dispatch: diagonal fast path, then the AVX-512 dense
+/// arm (when supported and the dispatch contract holds), else the generic
+/// scalar dense kernel.
+///
+/// `pub` (like the scalar reference) so the `internal-bench`-gated
+/// integration test can drive the dispatcher.
+pub fn apply_1q_f32(
     amps: &mut [Complex<f32>],
     target: u32,
     controls: &[u32],
@@ -359,6 +547,25 @@ pub(crate) fn apply_1q_f32(
     if is_diagonal_2x2_f32(m) {
         apply_1q_diag_scalar_f32(amps, target, controls, m[0][0], m[1][1]);
         return;
+    }
+    #[cfg(target_arch = "x86_64")]
+    {
+        const LANES_F32: usize = 8;
+        if std::is_x86_feature_detected!("avx512f")
+            && (1usize << target) >= LANES_F32
+            && controls.iter().all(|&c| c > target)
+        {
+            // SAFETY: feature detection gates the call; the kernel's
+            // bounds + alignment invariants follow from
+            // `1usize << target ≥ LANES_F32` (LANES_F32-aligned block
+            // stride), `c > target` for every control (no control-bit
+            // toggling in the inner SIMD walk), and the apply_gate-level
+            // qubit-range + duplicate-qubit checks.
+            unsafe {
+                apply_1q_dense_avx512_f32(amps, target, controls, m);
+            }
+            return;
+        }
     }
     apply_1q_dense_scalar_f32(amps, target, controls, m);
 }
