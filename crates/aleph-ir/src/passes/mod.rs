@@ -4,12 +4,14 @@
 //! sequence of passes over a [`Circuit`], aggregating per-pass
 //! [`PassStats`]. The default pipeline ships
 //! [`cancel::CancelInversePairs`], [`dce::DeadCodeElim`],
-//! [`fuse_diagonal::FuseDiagonalRuns`], [`fuse_1q::Fuse1qRuns`], and
-//! [`fuse_2q::Fuse2q`] — in that pipeline order (cancellation precedes
-//! DCE so DCE can clean up gates newly exposed as dead by cancellation;
-//! diagonal fusion precedes `Fuse2q` so raw `cx`s are still absorbable;
-//! see [`PassPipeline::default_pipeline`]). Later tickets add more
-//! passes that plug in by being pushed onto the pipeline.
+//! [`fuse_diagonal::FuseDiagonalRuns`], [`fuse_1q::Fuse1qRuns`],
+//! [`fuse_2q::Fuse2q`], and [`fuse_kq::FuseKq`] — in that pipeline order
+//! (cancellation precedes DCE so DCE can clean up gates newly exposed as
+//! dead by cancellation; diagonal fusion precedes `Fuse2q` so raw `cx`s
+//! are still absorbable; `FuseKq` runs last, merging the dense 1q/2q
+//! blocks the earlier passes produced into ≥3q `UnitaryKq` blocks; see
+//! [`PassPipeline::default_pipeline`]). Later tickets add more passes
+//! that plug in by being pushed onto the pipeline.
 //!
 //! This module also exports [`commute::gates_commute`], a sound,
 //! conservative commutation predicate over `GateInstance` pairs that
@@ -79,7 +81,7 @@ impl PassPipeline {
     }
 
     /// Default pipeline. Currently
-    /// `[CancelInversePairs, DeadCodeElim, FuseDiagonalRuns, Fuse1qRuns, Fuse2q]`;
+    /// `[CancelInversePairs, DeadCodeElim, FuseDiagonalRuns, Fuse1qRuns, Fuse2q, FuseKq]`;
     /// later passes are appended here as they ship.
     ///
     /// Cancellation runs **before** dead-code elimination because
@@ -116,6 +118,17 @@ impl PassPipeline {
     /// `optimize()` reaches its fixpoint within two passes. (A future
     /// ticket may split runs at the last identity-permutation prefix,
     /// restoring strict one-pass idempotence.)
+    ///
+    /// [`FuseKq`] runs **last**, consuming the dense 1q/2q blocks the
+    /// earlier passes produced (`Unitary1q`/`Unitary2q`) into ≥3q
+    /// `UnitaryKq` blocks (≤ `max_qubits`, default 4) where the cost
+    /// model says it pays. An emitted
+    /// [`Gate::UnitaryKq`](aleph_core::Gate) is opaque to all earlier
+    /// passes — they have already run by the time it exists — and is a
+    /// hard fence for `FuseKq` itself, so re-running the pipeline over
+    /// its own output does not re-fuse it. The convergence caveat above
+    /// is unchanged: the pipeline remains convergent and deterministic
+    /// (fixpoint within two passes), not strictly one-pass idempotent.
     pub fn default_pipeline() -> Self {
         Self::new(vec![
             Box::new(CancelInversePairs),
@@ -123,6 +136,7 @@ impl PassPipeline {
             Box::new(FuseDiagonalRuns),
             Box::new(Fuse1qRuns),
             Box::new(Fuse2q),
+            Box::new(FuseKq::default()),
         ])
     }
 
@@ -253,6 +267,42 @@ mod tests {
             "second pipeline run must not change length"
         );
         assert_eq!(s2.transformations, 0, "second pipeline run is a no-op");
+    }
+
+    #[test]
+    fn default_pipeline_fuses_kq_block_and_converges() {
+        use smallvec::smallvec;
+        // A chain of 2q gates across qubits 0-1-2-3 fuses (after Fuse2q produces
+        // Unitary2q blocks) into a dense >=3q UnitaryKq via FuseKq.
+        let mut c = Circuit::new(4, 0);
+        // ry on each (non-diagonal, gives Fuse2q something to absorb with the cx)
+        for q in 0..4u32 {
+            c.add_gate(aleph_core::GateInstance::new(
+                aleph_core::Gate::Ry(0.5.into()),
+                smallvec![q],
+            ))
+            .unwrap();
+        }
+        c.cnot(0, 1).unwrap();
+        c.cnot(1, 2).unwrap();
+        c.cnot(2, 3).unwrap();
+        let mut a = c.clone();
+        PassPipeline::default_pipeline().run(&mut a).unwrap();
+        // At least one fused dense block (UnitaryKq) was produced.
+        assert!(
+            a.instructions().iter().any(|i| matches!(i, crate::Instruction::Gate(g) if matches!(g.gate, aleph_core::Gate::UnitaryKq{..}))),
+            "pipeline should produce a UnitaryKq"
+        );
+        // Convergence: optimize again reaches a fixpoint (a 2nd run is a no-op
+        // OR converges; mirror the existing convergence expectation).
+        let mut b = a.clone();
+        let s2 = PassPipeline::default_pipeline().run(&mut b).unwrap();
+        assert_eq!(
+            a.len(),
+            b.len(),
+            "2nd pipeline run must not change instruction count"
+        );
+        assert_eq!(s2.transformations, 0, "2nd pipeline run is a no-op");
     }
 
     #[test]
