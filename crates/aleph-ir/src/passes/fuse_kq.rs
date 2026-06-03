@@ -1,8 +1,11 @@
 //! `FuseKq` — greedy fusion of adjacent gates into dense k-qubit blocks.
 //! See docs/superpowers/specs/2026-06-03-p2-07-fuse-kq-design.md.
 
+use crate::passes::{Pass, PassError, PassStats};
+use crate::{Circuit, Instruction};
 use aleph_core::Complex;
 use aleph_core::{Gate, GateInstance, GateMatrix};
+use std::collections::BTreeSet;
 
 /// Embed a gate's matrix into the `k`-qubit block space spanned by sorted
 /// `block_qubits` (ascending). `gate_qubits` is the gate's own operand list
@@ -14,7 +17,6 @@ use aleph_core::{Gate, GateInstance, GateMatrix};
 /// The caller must ensure `gate.matrix()` succeeds — i.e. the gate has a
 /// concrete `GateMatrix` (arity ≤ 3, no symbolic parameters). `UnitaryKq`
 /// members must use `lift_dense` directly.
-#[allow(dead_code)] // Used by FuseKq block builder (Task 3).
 pub(crate) fn lift_to_block(
     gate: &Gate,
     gate_qubits: &[u32],
@@ -39,7 +41,6 @@ pub(crate) fn lift_to_block(
 /// position `p` (0 = LSB … k−1 = MSB) corresponds to `block_qubits[k-1-p]`.
 ///
 /// Returns a row-major `2^k × 2^k` matrix.
-#[allow(dead_code)] // Used by FuseKq block builder (Task 3).
 pub(crate) fn lift_dense(
     gd: &[Complex],
     gate_qubits: &[u32],
@@ -100,7 +101,6 @@ pub(crate) fn lift_dense(
 ///
 /// `UnitaryKq` members route through `lift_dense` directly; all other gate
 /// variants route through `lift_to_block` (which calls `gate.matrix()`).
-#[allow(dead_code)] // Used by FuseKq pass (Task 4).
 pub(crate) fn build_block_matrix(members: &[GateInstance], block_qubits: &[u32]) -> Vec<Complex> {
     let k = block_qubits.len();
     let dim = 1usize << k;
@@ -120,7 +120,6 @@ pub(crate) fn build_block_matrix(members: &[GateInstance], block_qubits: &[u32])
 }
 
 /// Row-major dense `n×n` matrix product `a · b`.
-#[allow(dead_code)] // Used by FuseKq pass (Task 4).
 fn matmul(a: &[Complex], b: &[Complex], n: usize) -> Vec<Complex> {
     let mut out = vec![Complex::new(0.0, 0.0); n * n];
     for i in 0..n {
@@ -135,6 +134,229 @@ fn matmul(a: &[Complex], b: &[Complex], n: usize) -> Vec<Complex> {
         }
     }
     out
+}
+
+/// Fuses adjacent gates spanning ≤ `max_qubits` into a dense `UnitaryKq`.
+///
+/// Runs after `Fuse1qRuns`/`Fuse2q`/`FuseDiagonalRuns`. The strategy is
+/// greedy and dependency-respecting: we walk the instruction stream in
+/// program order, maintaining a set of *open blocks*. Each block owns a
+/// set of qubits — for every qubit, the `owner` table points at the
+/// single open block that most recently wrote it. A fusable gate joins
+/// the union of the blocks owning its operands, provided the merged span
+/// stays ≤ `max_qubits`; otherwise those owner-blocks are closed and a
+/// fresh block opens for the gate.
+///
+/// Dependency correctness: because instructions are processed in order
+/// and a block owns each of its qubits until it is closed, any gate
+/// touching qubit `q` depends only on the block currently owning `q`.
+/// Merging the owner-blocks of a gate's operands therefore never reorders
+/// a gate past another gate on a shared qubit — the matrix product inside
+/// a block is rebuilt from members sorted by their original absolute
+/// instruction index.
+///
+/// Fences (anything that is not a fusable `Gate`: `Measure`, `Reset`,
+/// `Barrier`, `DiagonalPhase`, an existing `UnitaryKq`, or a gate
+/// carrying external `controls`) close every block they touch and are
+/// emitted verbatim.
+///
+/// Cost model on close: a block is materialised as a dense `UnitaryKq`
+/// only when its span ≥ 3 *and* it has ≥ 2 members; otherwise its members
+/// are re-emitted verbatim (preserving the specialised 1q/2q kernels).
+pub struct FuseKq {
+    /// Maximum block span. Clamped to `[2, 5]` (the `UnitaryKq` range).
+    pub max_qubits: usize,
+}
+
+impl Default for FuseKq {
+    fn default() -> Self {
+        Self { max_qubits: 4 } // tuned on EPYC in the perf task
+    }
+}
+
+/// An open fusion block. `members` keeps each gate paired with its
+/// absolute index in the original instruction stream so the matrix
+/// product (and verbatim re-emit) can be rebuilt in program order even
+/// after several blocks have merged.
+struct Block {
+    qubits: BTreeSet<u32>,
+    members: Vec<(usize, GateInstance)>,
+    first_idx: usize,
+}
+
+impl FuseKq {
+    /// Materialise a closed block into `out`, keyed by absolute index so a
+    /// final stable sort restores program order.
+    fn close_block(mut b: Block, out: &mut Vec<(usize, Instruction)>, transformations: &mut u64) {
+        // Members may arrive out of order after merges; sort by absolute idx.
+        b.members.sort_by_key(|(i, _)| *i);
+        let span = b.qubits.len();
+        if span >= 3 && b.members.len() >= 2 {
+            // Sorted ascending (BTreeSet); matches build_block_matrix's contract.
+            let q: Vec<u32> = b.qubits.iter().copied().collect();
+            let member_gates: Vec<GateInstance> = b.members.into_iter().map(|(_, g)| g).collect();
+            let data = build_block_matrix(&member_gates, &q);
+            let g = GateInstance::new(
+                Gate::UnitaryKq {
+                    k: span as u8,
+                    data: data.into_boxed_slice(),
+                },
+                smallvec::SmallVec::<[u32; 4]>::from_vec(q),
+            );
+            out.push((b.first_idx, Instruction::Gate(g)));
+            *transformations += 1;
+        } else {
+            for (idx, m) in b.members {
+                out.push((idx, Instruction::Gate(m)));
+            }
+        }
+    }
+}
+
+/// Close every open block touching any qubit in `qs`, emitting each.
+fn close_touching(
+    qs: &[u32],
+    blocks: &mut [Option<Block>],
+    owner: &mut [Option<usize>],
+    out: &mut Vec<(usize, Instruction)>,
+    transformations: &mut u64,
+) {
+    let mut to_close = BTreeSet::new();
+    for &q in qs {
+        if let Some(bi) = owner[q as usize] {
+            to_close.insert(bi);
+        }
+    }
+    for bi in to_close {
+        if let Some(b) = blocks[bi].take() {
+            for &q in &b.qubits {
+                owner[q as usize] = None;
+            }
+            FuseKq::close_block(b, out, transformations);
+        }
+    }
+}
+
+impl Pass for FuseKq {
+    fn name(&self) -> &'static str {
+        "FuseKq"
+    }
+
+    fn run(&self, circuit: &mut Circuit) -> Result<PassStats, PassError> {
+        let n = circuit.num_qubits() as usize;
+        let before = circuit.len();
+        let max_k = self.max_qubits.clamp(2, 5);
+        let input = circuit.instructions.clone();
+
+        let mut blocks: Vec<Option<Block>> = Vec::new();
+        let mut owner: Vec<Option<usize>> = vec![None; n];
+        let mut out: Vec<(usize, Instruction)> = Vec::new();
+        let mut transformations = 0u64;
+
+        for (idx, inst) in input.iter().enumerate() {
+            // Fusable = a plain Gate with NO external controls and not
+            // already a dense UnitaryKq (re-fusing those is pointless and
+            // they have no GateMatrix to lift via lift_to_block).
+            let fusable = matches!(inst, Instruction::Gate(g)
+                if g.controls.is_empty() && !matches!(g.gate, Gate::UnitaryKq { .. }));
+            if !fusable {
+                let qs: Vec<u32> = inst.used_qubits().to_vec();
+                close_touching(&qs, &mut blocks, &mut owner, &mut out, &mut transformations);
+                out.push((idx, inst.clone()));
+                continue;
+            }
+            let g = match inst {
+                Instruction::Gate(g) => g,
+                _ => unreachable!("fusable implies Instruction::Gate"),
+            };
+            let mut support: Vec<u32> = g.qubits.iter().copied().collect();
+            support.sort_unstable();
+
+            // Dependency blocks: those owning any support qubit.
+            let mut dep: BTreeSet<usize> = BTreeSet::new();
+            for &q in &support {
+                if let Some(bi) = owner[q as usize] {
+                    dep.insert(bi);
+                }
+            }
+            // Candidate merged span = support ∪ all dep block qubits.
+            let mut merged: BTreeSet<u32> = support.iter().copied().collect();
+            for &bi in &dep {
+                if let Some(b) = &blocks[bi] {
+                    merged.extend(b.qubits.iter().copied());
+                }
+            }
+
+            if merged.len() <= max_k {
+                // Merge dep blocks + this gate into one new block. Member
+                // ordering is recovered later from absolute indices, so we
+                // can concatenate dep members in any order here.
+                let mut members: Vec<(usize, GateInstance)> = Vec::new();
+                let mut first_idx = idx;
+                for &bi in &dep {
+                    if let Some(b) = blocks[bi].take() {
+                        first_idx = first_idx.min(b.first_idx);
+                        members.extend(b.members);
+                    }
+                }
+                members.push((idx, g.clone()));
+                let new_bi = blocks.len();
+                for &q in &merged {
+                    owner[q as usize] = Some(new_bi);
+                }
+                blocks.push(Some(Block {
+                    qubits: merged,
+                    members,
+                    first_idx,
+                }));
+            } else {
+                // Span would overflow: close the dep blocks, then open a
+                // fresh block for this gate alone.
+                let dep_qs: Vec<u32> = dep
+                    .iter()
+                    .filter_map(|&bi| blocks[bi].as_ref())
+                    .flat_map(|b| b.qubits.iter().copied())
+                    .collect();
+                close_touching(
+                    &dep_qs,
+                    &mut blocks,
+                    &mut owner,
+                    &mut out,
+                    &mut transformations,
+                );
+                let new_bi = blocks.len();
+                let qubits: BTreeSet<u32> = support.iter().copied().collect();
+                for &q in &qubits {
+                    owner[q as usize] = Some(new_bi);
+                }
+                blocks.push(Some(Block {
+                    qubits,
+                    members: vec![(idx, g.clone())],
+                    first_idx: idx,
+                }));
+            }
+        }
+
+        // Flush any blocks still open at end of stream.
+        for slot in blocks.iter_mut() {
+            if let Some(b) = slot.take() {
+                FuseKq::close_block(b, &mut out, &mut transformations);
+            }
+        }
+
+        // Restore program order. Keys are unique absolute indices except
+        // that a fused block is keyed at its first member's index, which is
+        // unique among the surviving entries, so the sort is well-defined.
+        out.sort_by_key(|(i, _)| *i);
+        let result: Vec<Instruction> = out.into_iter().map(|(_, i)| i).collect();
+        let after = result.len();
+        circuit.instructions = result;
+        Ok(PassStats {
+            gates_before: before,
+            gates_after: after,
+            transformations,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -354,5 +576,125 @@ mod build_tests {
         for i in 0..built.len() {
             assert!((built[i] - want[i]).norm() < 1e-12, "entry {i}");
         }
+    }
+}
+
+#[cfg(test)]
+mod pass_tests {
+    use super::*;
+    use crate::passes::Pass;
+    use crate::{Circuit, Instruction};
+    use aleph_core::Gate;
+    use smallvec::smallvec;
+
+    // A non-trivial 2-qubit dense gate (SWAP as Unitary2q) so block matrices
+    // have real off-diagonals.
+    fn swap2q() -> Gate {
+        let mut m = [[Complex::new(0.0, 0.0); 4]; 4];
+        m[0][0] = Complex::new(1.0, 0.0);
+        m[1][2] = Complex::new(1.0, 0.0);
+        m[2][1] = Complex::new(1.0, 0.0);
+        m[3][3] = Complex::new(1.0, 0.0);
+        Gate::Unitary2q(Box::new(m))
+    }
+    fn count_kq(c: &Circuit) -> usize {
+        c.instructions()
+            .iter()
+            .filter(|i| matches!(i, Instruction::Gate(g) if matches!(g.gate, Gate::UnitaryKq{..})))
+            .count()
+    }
+
+    #[test]
+    fn two_chained_2q_blocks_fuse_into_one_3q() {
+        let mut c = Circuit::new(3, 0);
+        c.add_gate(aleph_core::GateInstance::new(swap2q(), smallvec![0u32, 1]))
+            .unwrap();
+        c.add_gate(aleph_core::GateInstance::new(swap2q(), smallvec![1u32, 2]))
+            .unwrap();
+        let stats = FuseKq { max_qubits: 4 }.run(&mut c).unwrap();
+        assert_eq!(count_kq(&c), 1, "should fuse into one 3q block");
+        assert_eq!(c.len(), 1);
+        assert!(stats.transformations >= 1);
+        if let Instruction::Gate(g) = &c.instructions()[0] {
+            assert_eq!(g.qubits.as_slice(), &[0u32, 1, 2]);
+            assert!(matches!(g.gate, Gate::UnitaryKq { k: 3, .. }));
+        }
+    }
+
+    #[test]
+    fn lone_2q_block_is_not_fused() {
+        let mut c = Circuit::new(2, 0);
+        c.add_gate(aleph_core::GateInstance::new(swap2q(), smallvec![0u32, 1]))
+            .unwrap();
+        FuseKq { max_qubits: 4 }.run(&mut c).unwrap();
+        assert_eq!(count_kq(&c), 0);
+        assert_eq!(c.len(), 1);
+    }
+
+    #[test]
+    fn single_3q_gate_alone_is_not_fused() {
+        let mut c = Circuit::new(3, 0);
+        c.add_gate(aleph_core::GateInstance::new(
+            Gate::Toffoli,
+            smallvec![0u32, 1, 2],
+        ))
+        .unwrap();
+        FuseKq { max_qubits: 5 }.run(&mut c).unwrap();
+        assert_eq!(count_kq(&c), 0);
+        assert_eq!(c.len(), 1);
+    }
+
+    #[test]
+    fn exceeding_max_qubits_does_not_overfuse() {
+        let mut c = Circuit::new(4, 0);
+        c.add_gate(aleph_core::GateInstance::new(swap2q(), smallvec![0u32, 1]))
+            .unwrap();
+        c.add_gate(aleph_core::GateInstance::new(swap2q(), smallvec![1u32, 2]))
+            .unwrap();
+        c.add_gate(aleph_core::GateInstance::new(swap2q(), smallvec![2u32, 3]))
+            .unwrap();
+        FuseKq { max_qubits: 3 }.run(&mut c).unwrap();
+        for i in c.instructions() {
+            if let Instruction::Gate(g) = i {
+                if let Gate::UnitaryKq { k, .. } = g.gate {
+                    assert!(k <= 3, "k={k} exceeds max");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn barrier_is_a_fence() {
+        let mut c = Circuit::new(3, 0);
+        c.add_gate(aleph_core::GateInstance::new(swap2q(), smallvec![0u32, 1]))
+            .unwrap();
+        c.barrier([0u32, 1, 2]).unwrap();
+        c.add_gate(aleph_core::GateInstance::new(swap2q(), smallvec![1u32, 2]))
+            .unwrap();
+        FuseKq { max_qubits: 4 }.run(&mut c).unwrap();
+        assert_eq!(count_kq(&c), 0, "barrier separates the two 2q gates");
+        assert!(c
+            .instructions()
+            .iter()
+            .any(|i| matches!(i, Instruction::Barrier(_))));
+    }
+
+    #[test]
+    fn preserves_program_order_with_independent_blocks() {
+        // Two independent fused blocks on disjoint qubits interleaved with a
+        // gate must keep relative order. Build: 2q(0,1),2q(0,1) [→3q? no, span2]
+        // Instead: chain on {0,1,2} then chain on {3,4,5}; both fuse, order kept.
+        let mut c = Circuit::new(6, 0);
+        c.add_gate(aleph_core::GateInstance::new(swap2q(), smallvec![0u32, 1]))
+            .unwrap();
+        c.add_gate(aleph_core::GateInstance::new(swap2q(), smallvec![3u32, 4]))
+            .unwrap();
+        c.add_gate(aleph_core::GateInstance::new(swap2q(), smallvec![1u32, 2]))
+            .unwrap();
+        c.add_gate(aleph_core::GateInstance::new(swap2q(), smallvec![4u32, 5]))
+            .unwrap();
+        FuseKq { max_qubits: 3 }.run(&mut c).unwrap();
+        // Two 3q blocks {0,1,2} and {3,4,5}.
+        assert_eq!(count_kq(&c), 2);
     }
 }
