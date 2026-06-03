@@ -22,6 +22,11 @@ pub(crate) fn lift_to_block(
     gate_qubits: &[u32],
     block_qubits: &[u32],
 ) -> Vec<Complex> {
+    // The `fusable` predicate in `FuseKq::run` admits a gate into a block
+    // only when `g.gate.matrix().is_ok()`, so this `.expect` is unreachable
+    // for any gate that actually reaches `lift_to_block`. A non-finite /
+    // symbolic param gate fails the predicate and is emitted verbatim as a
+    // fence; `UnitaryKq` is excluded too and routes via `lift_dense`.
     let gd: Vec<Complex> = match gate
         .matrix()
         .expect("FuseKq lifts only concrete GateMatrix gates (no UnitaryKq, no symbolic/non-finite params); UnitaryKq routes via lift_dense")
@@ -155,6 +160,20 @@ fn matmul(a: &[Complex], b: &[Complex], n: usize) -> Vec<Complex> {
 /// a block is rebuilt from members sorted by their original absolute
 /// instruction index.
 ///
+/// Emission order: instructions are pushed into the output in *close
+/// order* — a block is emitted the moment it closes, and a fence is
+/// emitted only after closing every block it touches (so a touched block
+/// always precedes the fence that closed it). There is NO final global
+/// sort: a block occupies an index *range*, not a point, so keying it at
+/// its first member's index and globally sorting could float it before an
+/// intervening op that lies inside its range and shares a qubit. Close
+/// order is correct because anything emitted between a block's open and
+/// its close is either disjoint from the block (commutes — safe to
+/// reorder relative to the block) or touches a block qubit and therefore
+/// closed the block first (so it is emitted *after* the block). Members
+/// within a block are still sorted back into program order by absolute
+/// index before the order-sensitive matrix product / verbatim re-emit.
+///
 /// Fences (anything that is not a fusable `Gate`: `Measure`, `Reset`,
 /// `Barrier`, `DiagonalPhase`, an existing `UnitaryKq`, or a gate
 /// carrying external `controls`) close every block they touch and are
@@ -185,10 +204,13 @@ struct Block {
 }
 
 impl FuseKq {
-    /// Materialise a closed block into `out`, keyed by absolute index so a
-    /// final stable sort restores program order.
-    fn close_block(mut b: Block, out: &mut Vec<(usize, Instruction)>, transformations: &mut u64) {
-        // Members may arrive out of order after merges; sort by absolute idx.
+    /// Materialise a closed block, pushing its `Instruction`(s) directly into
+    /// `out` in program order. Called at the exact point the block closes, so
+    /// close-order emission keeps the output dependency-correct without any
+    /// global sort (see the type-level docs on `FuseKq`).
+    fn close_block(mut b: Block, out: &mut Vec<Instruction>, transformations: &mut u64) {
+        // Members may arrive out of order after merges; sort by absolute idx
+        // so the matrix product / verbatim re-emit runs in program order.
         b.members.sort_by_key(|(i, _)| *i);
         let span = b.qubits.len();
         if span >= 3 && b.members.len() >= 2 {
@@ -203,31 +225,37 @@ impl FuseKq {
                 },
                 smallvec::SmallVec::<[u32; 4]>::from_vec(q),
             );
-            out.push((b.first_idx, Instruction::Gate(g)));
+            out.push(Instruction::Gate(g));
             *transformations += 1;
         } else {
-            for (idx, m) in b.members {
-                out.push((idx, Instruction::Gate(m)));
+            for (_, m) in b.members {
+                out.push(Instruction::Gate(m));
             }
         }
     }
 }
 
-/// Close every open block touching any qubit in `qs`, emitting each.
+/// Close every open block touching any qubit in `qs`, emitting each into
+/// `out` immediately (close order). Blocks are closed in ascending
+/// `first_idx` order for a deterministic, program-order emission.
 fn close_touching(
     qs: &[u32],
     blocks: &mut [Option<Block>],
     owner: &mut [Option<usize>],
-    out: &mut Vec<(usize, Instruction)>,
+    out: &mut Vec<Instruction>,
     transformations: &mut u64,
 ) {
-    let mut to_close = BTreeSet::new();
+    let mut to_close: BTreeSet<usize> = BTreeSet::new();
     for &q in qs {
         if let Some(bi) = owner[q as usize] {
             to_close.insert(bi);
         }
     }
-    for bi in to_close {
+    // Order the to-close blocks by their first member's absolute index so
+    // disjoint closed blocks land in program order in `out`.
+    let mut ordered: Vec<usize> = to_close.into_iter().collect();
+    ordered.sort_by_key(|&bi| blocks[bi].as_ref().map(|b| b.first_idx).unwrap_or(bi));
+    for bi in ordered {
         if let Some(b) = blocks[bi].take() {
             for &q in &b.qubits {
                 owner[q as usize] = None;
@@ -250,19 +278,28 @@ impl Pass for FuseKq {
 
         let mut blocks: Vec<Option<Block>> = Vec::new();
         let mut owner: Vec<Option<usize>> = vec![None; n];
-        let mut out: Vec<(usize, Instruction)> = Vec::new();
+        let mut out: Vec<Instruction> = Vec::new();
         let mut transformations = 0u64;
 
         for (idx, inst) in input.iter().enumerate() {
-            // Fusable = a plain Gate with NO external controls and not
-            // already a dense UnitaryKq (re-fusing those is pointless and
-            // they have no GateMatrix to lift via lift_to_block).
+            // Fusable = a plain Gate with NO external controls, not already a
+            // dense UnitaryKq (re-fusing those is pointless), and one whose
+            // matrix is actually buildable. The `matrix().is_ok()` guard is
+            // load-bearing: `lift_to_block` calls `gate.matrix().expect(...)`,
+            // which Errs (e.g. `NonFiniteParam` for `Rz(NaN)`) on symbolic /
+            // non-finite params — admitting such a gate would panic on user
+            // input. A non-buildable gate fences and is emitted verbatim.
             let fusable = matches!(inst, Instruction::Gate(g)
-                if g.controls.is_empty() && !matches!(g.gate, Gate::UnitaryKq { .. }));
+                if g.controls.is_empty()
+                    && !matches!(g.gate, Gate::UnitaryKq { .. })
+                    && g.gate.matrix().is_ok());
             if !fusable {
+                // Fence: close every block it touches FIRST (so those blocks
+                // are emitted ahead of the fence, which depends on them), then
+                // emit the fence verbatim.
                 let qs: Vec<u32> = inst.used_qubits().to_vec();
                 close_touching(&qs, &mut blocks, &mut owner, &mut out, &mut transformations);
-                out.push((idx, inst.clone()));
+                out.push(inst.clone());
                 continue;
             }
             let g = match inst {
@@ -337,20 +374,23 @@ impl Pass for FuseKq {
             }
         }
 
-        // Flush any blocks still open at end of stream.
-        for slot in blocks.iter_mut() {
-            if let Some(b) = slot.take() {
+        // Flush any blocks still open at end of stream, in ascending
+        // first_idx order so they land in program order. All remaining
+        // open blocks act on disjoint qubit sets (a shared qubit would have
+        // merged or closed them), so any close order is dependency-safe;
+        // first_idx keeps the emission deterministic and program-ordered.
+        let mut remaining: Vec<usize> = (0..blocks.len())
+            .filter(|&bi| blocks[bi].is_some())
+            .collect();
+        remaining.sort_by_key(|&bi| blocks[bi].as_ref().map(|b| b.first_idx).unwrap_or(bi));
+        for bi in remaining {
+            if let Some(b) = blocks[bi].take() {
                 FuseKq::close_block(b, &mut out, &mut transformations);
             }
         }
 
-        // Restore program order. Keys are unique absolute indices except
-        // that a fused block is keyed at its first member's index, which is
-        // unique among the surviving entries, so the sort is well-defined.
-        out.sort_by_key(|(i, _)| *i);
-        let result: Vec<Instruction> = out.into_iter().map(|(_, i)| i).collect();
-        let after = result.len();
-        circuit.instructions = result;
+        let after = out.len();
+        circuit.instructions = out;
         Ok(PassStats {
             gates_before: before,
             gates_after: after,
@@ -696,5 +736,59 @@ mod pass_tests {
         FuseKq { max_qubits: 3 }.run(&mut c).unwrap();
         // Two 3q blocks {0,1,2} and {3,4,5}.
         assert_eq!(count_kq(&c), 2);
+    }
+
+    #[test]
+    fn fused_block_not_reordered_before_shared_qubit_op() {
+        // Reproducer for the first-idx-keying reorder bug.
+        let mut c = Circuit::new(4, 0);
+        c.add_gate(aleph_core::GateInstance::new(swap2q(), smallvec![2u32, 3]))
+            .unwrap(); // [0]
+        c.add_gate(aleph_core::GateInstance::new(
+            Gate::Rz(0.5.into()),
+            smallvec![1u32],
+        ))
+        .unwrap(); // [1]
+        c.barrier([1u32]).unwrap(); // [2]
+        c.add_gate(aleph_core::GateInstance::new(swap2q(), smallvec![1u32, 3]))
+            .unwrap(); // [3]
+        FuseKq { max_qubits: 4 }.run(&mut c).unwrap();
+        // Find positions of the Rz and any UnitaryKq; the fused block (which
+        // now acts on q1) must come AFTER the Rz on q1 in program order.
+        let insts = c.instructions();
+        let rz_pos = insts
+            .iter()
+            .position(|i| matches!(i, Instruction::Gate(g) if matches!(g.gate, Gate::Rz(_))))
+            .expect("Rz present");
+        let kq_pos = insts.iter().position(
+            |i| matches!(i, Instruction::Gate(g) if matches!(g.gate, Gate::UnitaryKq{..})),
+        );
+        if let Some(kq) = kq_pos {
+            assert!(
+                kq > rz_pos,
+                "fused block (acts on q1) must not precede the Rz on q1"
+            );
+        }
+    }
+
+    #[test]
+    fn non_finite_param_gate_does_not_panic_and_is_fenced() {
+        let mut c = Circuit::new(3, 0);
+        c.add_gate(aleph_core::GateInstance::new(swap2q(), smallvec![0u32, 1]))
+            .unwrap();
+        c.add_gate(aleph_core::GateInstance::new(
+            Gate::Rz(f64::NAN.into()),
+            smallvec![1u32],
+        ))
+        .unwrap();
+        c.add_gate(aleph_core::GateInstance::new(swap2q(), smallvec![1u32, 2]))
+            .unwrap();
+        // Must not panic. The NaN Rz fences, so the two swaps can't fuse across it.
+        let _ = FuseKq { max_qubits: 4 }.run(&mut c).unwrap();
+        // NaN gate preserved verbatim.
+        assert!(c
+            .instructions()
+            .iter()
+            .any(|i| matches!(i, Instruction::Gate(g) if matches!(g.gate, Gate::Rz(_)))));
     }
 }
