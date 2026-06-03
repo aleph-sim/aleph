@@ -385,3 +385,72 @@ RUSTFLAGS="-C target-cpu=native" \
   cargo bench -p aleph-benches --bench fuse_kq --features scaling-bench
 # the instruction-count reduction table prints to stderr at startup.
 ```
+
+-----
+
+## 10. P2-08 — optional FP32 (single-precision) state-vector mode (issue #108)
+
+A dedicated `Fp32SvBackend` (AoS, `AlignedBuf<Complex<f32>>` = 8 B/amp vs 16)
+alongside `NaiveSvBackend`. Scalar f32 kernels cover every gate; f32 AVX-512
+kernels (16 f32 lanes/zmm vs 8 f64) accelerate the fused hot-types the
+optimized pipeline emits — generic dense 1q, diagonal 1q, generic dense 2q,
+`UnitaryKq` (k ≤ 4), and `DiagonalPhase`. Opt-in via CLI `--precision f32`;
+**FP64 stays the default and the 1e-10 oracle reference, byte-for-byte
+unchanged**. The f32 backend is oracle-validated against the exact Aer
+fixtures at **1e-5** (30 fixtures) and SIMD≡scalar-validated on EPYC.
+
+### Wall-clock — fused `run`, EPYC 8124P (AVX-512, 16c/32t, all-core), idle-verified
+
+Both columns time the **fused** path (`circuit.optimize()` once, outside the
+timed loop; `sample_size = 10`, `target-cpu=native`). f32/f64 ratio is the
+single-precision speedup:
+
+| workload                    |       f64 |      f32 | speedup |
+|-----------------------------|----------:|---------:|--------:|
+| QFT n=22                    | 111.5 ms  |  86.0 ms | 1.30×   |
+| QFT n=25                    | 1.066 s   | 800.2 ms | 1.33×   |
+| random brick-wall n=22      | 516.1 ms  | 268.8 ms | **1.92×** |
+| random brick-wall n=25      | 3.724 s   | 2.447 s  | **1.52×** |
+
+### Reading the result — workload-dependent, and why
+
+The **~1.5–2× AC is met on dense workloads** (random brick-wall: 1.52× at n=25,
+1.92× at n=22) but **not on QFT** (1.33×). The split is structural, not a code
+defect:
+
+- **Fused QFT is `DiagonalPhase`-dominated** (P2-06 collapses the cphase ladder
+  into one diagonal per run). The f32 `DiagonalPhase` kernel halves the
+  amplitude byte traffic but computes the per-index rotation angle and its
+  `sin_cos` in **f64** — angle precision is deliberately preserved (only the
+  final `(cos, sin)` is narrowed to f32 before the amplitude multiply). That
+  transcendental work is **precision-independent**, so it is a fixed floor the
+  f32 mode cannot shave: only the bytes halve, not the compute. Result: 1.33×,
+  not 2×.
+- **Fused random brick-wall is dense-`Unitary1q`/`Unitary2q`-dominated.** Those
+  f32 AVX-512 kernels get **both** levers: half the byte traffic **and** 16
+  f32 lanes/zmm (vs 8 f64) of arithmetic. Hence the win lands in the AC band.
+  The n=22 figure (1.92×) exceeds n=25 (1.52×) because at n=22 the kernel is
+  less purely DRAM-bound, so the doubled SIMD compute width contributes more;
+  at n=25 the state (256 MiB f32 / 512 MiB f64) is deeply DRAM-bound and the
+  ratio trends toward the pure byte-traffic limit minus precision-independent
+  index overhead.
+
+This is consistent with the Phase-2 through-line (§4): these kernels are
+memory-bandwidth-bound, so halving bytes/amp is the dominant lever **except**
+where a precision-independent compute floor (here, `DiagonalPhase`'s `sin_cos`)
+intrudes. Accuracy held at the FP32 oracle tolerance (1e-5) on every fixture;
+the largest observed f32-vs-f64 amplitude deviation on the Tier-1 equivalence
+fixtures was **1.37e-7**, three orders under the 1e-5 bound.
+
+**Possible follow-up** (not in this ticket): a faster vectorized f32 `sin_cos`
+(or a small precomputed phase LUT) in the `DiagonalPhase` kernel would attack
+the QFT floor — at some accuracy cost that must stay within the 1e-5 oracle.
+
+### Reproduce
+
+```bash
+# idle-verified EPYC box; deliver via git bundle (not a GitHub push):
+RUSTFLAGS="-C target-cpu=native" \
+  cargo bench -p aleph-benches --bench qft_precision --features scaling-bench
+# emits qft_precision/{f64,f32}/{22,25} and random_precision/{f64,f32}/{22,25}.
+```
