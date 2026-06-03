@@ -124,11 +124,7 @@ impl Backend for SoaSvBackend {
         state: &mut Self::State,
         dp: &aleph_ir::DiagonalPhase,
     ) -> Result<(), BackendError> {
-        crate::kernels::diagonal_phase::apply_diagonal_phase_scalar_soa(
-            &mut state.re,
-            &mut state.im,
-            dp,
-        );
+        crate::kernels::diagonal_phase::apply_diagonal_phase_soa(&mut state.re, &mut state.im, dp);
         Ok(())
     }
 
