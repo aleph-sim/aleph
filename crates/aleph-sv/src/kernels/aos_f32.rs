@@ -243,6 +243,68 @@ pub(crate) fn apply_3q_generic_f32(
     );
 }
 
+/// Dense k-qubit matvec on an f32 AoS slice (scalar path).
+///
+/// Mirrors `unitary_kq::apply_kq_scalar_aos` with `Complex<f32>` substituted
+/// for `Complex<f64>` and `ComplexF32Ptr` substituted for `ComplexPtr`. The
+/// index algebra (`targets_offsets_fixed`, `expand_with_fixed`, `base | offsets[m]`),
+/// SAFETY reasoning, and `par_blocks(DEFAULT_POLICY, …)` call structure are
+/// identical to the f64 source. The `vec!`-per-block allocation in the inner
+/// closure is preserved intentionally (faithful mirror — no "optimization").
+///
+/// # Safety (parallel-write contract)
+/// `par_blocks` hands each task a distinct `counter` value.  Two distinct
+/// counters produce distinct `base` values that differ in at least one FREE
+/// bit position, so `base_a | offsets[m] ≠ base_b | offsets[n]` for any m, n
+/// — disjoint writes, no aliasing.
+pub(crate) fn apply_kq_scalar_f32(
+    amps: &mut [Complex<f32>],
+    qubits: &[u32],
+    k: u8,
+    data: &[Complex<f32>],
+) {
+    use crate::kernels::expand_with_fixed;
+    use crate::kernels::unitary_kq::targets_offsets_fixed;
+
+    let dim = 1usize << k;
+    let (offsets, fixed) = targets_offsets_fixed(qubits, k);
+    let len = amps.len();
+    let outer = len >> k; // 2^(n-k) outer blocks
+
+    let p = ComplexF32Ptr(amps.as_mut_ptr());
+
+    crate::kernels::par_blocks(
+        crate::kernels::tuning::DEFAULT_POLICY,
+        outer,
+        len,
+        |c| c,
+        move |counter| {
+            let base = expand_with_fixed(counter, &fixed);
+
+            // Read the block of 2^k amplitudes into a local buffer.
+            let mut inb = vec![Complex::<f32>::new(0.0, 0.0); dim];
+            for (m, inb_m) in inb.iter_mut().enumerate() {
+                // SAFETY: base|offsets[m] is within [0, len), distinct across
+                // m (coverage invariant from targets_offsets_fixed), and
+                // disjoint from other counters' blocks — no two parallel tasks
+                // share an index. The pointer lives for the duration of
+                // apply_kq_scalar_f32.
+                *inb_m = unsafe { *p.ptr().add(base | offsets[m]) };
+            }
+
+            // Matvec: out[r] = Σ_c data[r*dim + c] * in[c].
+            for r in 0..dim {
+                let mut acc = Complex::<f32>::new(0.0, 0.0);
+                for cc in 0..dim {
+                    acc += data[r * dim + cc] * inb[cc];
+                }
+                // SAFETY: same disjointness guarantee as the read above.
+                unsafe { *p.ptr().add(base | offsets[r]) = acc };
+            }
+        },
+    );
+}
+
 /// Top-level f32 2q dispatch. Phase B adds an AVX-512 dense arm; for now
 /// always the scalar dense kernel (correct for CNOT/CZ/SWAP/dense alike —
 /// the f64 specializations are non-fused-path optimizations out of scope).
@@ -338,6 +400,30 @@ mod tests {
         apply_3q_generic_f32(&mut amps, [2, 1, 0], &[], &t);
         assert!(amps[6].norm() < 1e-6);
         assert!((amps[7].re - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn kq_k2_swap_matrix() {
+        // 2-qubit SWAP as a 4x4 UnitaryKq on a 2-qubit state |01>.
+        //
+        // Convention check: with qubits=[0,1] the kernel sorts targets ascending
+        // (already [0,1]) and maps matrix index m to amp index via
+        //   offsets[m] = (bit p of m) << q[k-1-p]
+        // For k=2, q=[0,1]: offsets[0]=0, offsets[1]=1<<q[0]=1, offsets[2]=1<<q[1]=2,
+        // offsets[3]=3. So matrix index 1 (|01>) maps to amp[1] and index 2 (|10>)
+        // to amp[2]. SWAP swaps |01><->|10>, i.e. row 1 col 2 and row 2 col 1 are 1.
+        // Starting from amps=[0,1,0,0] (amp[1]=1 = |01>), the result is amps[2]=1.
+        let zero = c(0.0, 0.0);
+        let one = c(1.0, 0.0);
+        let mut amps = vec![zero, one, zero, zero]; // |01>
+                                                    // SWAP swaps indices 1<->2.
+        let data = vec![
+            one, zero, zero, zero, zero, zero, one, zero, zero, one, zero, zero, zero, zero, zero,
+            one,
+        ];
+        apply_kq_scalar_f32(&mut amps, &[0, 1], 2, &data);
+        assert!((amps[2].re - 1.0).abs() < 1e-6);
+        assert!(amps[1].norm() < 1e-6);
     }
 
     #[test]
