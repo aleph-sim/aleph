@@ -70,3 +70,8 @@ required-features = ["scaling-bench"]
 name = "tier1_scaling"
 harness = false
 required-features = ["scaling-bench"]
+
+[[bench]]
+name = "diagonal_fusion"
+harness = false
+required-features = ["scaling-bench"]
