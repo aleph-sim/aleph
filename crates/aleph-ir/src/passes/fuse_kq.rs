@@ -2,7 +2,7 @@
 //! See docs/superpowers/specs/2026-06-03-p2-07-fuse-kq-design.md.
 
 use aleph_core::Complex;
-use aleph_core::{Gate, GateMatrix};
+use aleph_core::{Gate, GateInstance, GateMatrix};
 
 /// Embed a gate's matrix into the `k`-qubit block space spanned by sorted
 /// `block_qubits` (ascending). `gate_qubits` is the gate's own operand list
@@ -90,6 +90,50 @@ pub(crate) fn lift_dense(
         }
     }
 
+    out
+}
+
+/// Compose `members` (circuit order) into one row-major `2^k × 2^k` dense
+/// matrix over the sorted `block_qubits`. Each member must act within
+/// `block_qubits`. Later gates LEFT-multiply (quantum convention):
+/// `acc := lift(member) · acc`, so `acc` starts as the identity.
+///
+/// `UnitaryKq` members route through `lift_dense` directly; all other gate
+/// variants route through `lift_to_block` (which calls `gate.matrix()`).
+#[allow(dead_code)] // Used by FuseKq pass (Task 4).
+pub(crate) fn build_block_matrix(members: &[GateInstance], block_qubits: &[u32]) -> Vec<Complex> {
+    let k = block_qubits.len();
+    let dim = 1usize << k;
+    // Start from the identity matrix.
+    let mut acc = vec![Complex::new(0.0, 0.0); dim * dim];
+    for i in 0..dim {
+        acc[i * dim + i] = Complex::new(1.0, 0.0);
+    }
+    for gi in members {
+        let lifted = match &gi.gate {
+            Gate::UnitaryKq { data, .. } => lift_dense(data, &gi.qubits[..], block_qubits),
+            _ => lift_to_block(&gi.gate, &gi.qubits[..], block_qubits),
+        };
+        acc = matmul(&lifted, &acc, dim); // acc := lifted · acc
+    }
+    acc
+}
+
+/// Row-major dense `n×n` matrix product `a · b`.
+#[allow(dead_code)] // Used by FuseKq pass (Task 4).
+fn matmul(a: &[Complex], b: &[Complex], n: usize) -> Vec<Complex> {
+    let mut out = vec![Complex::new(0.0, 0.0); n * n];
+    for i in 0..n {
+        for k in 0..n {
+            let aik = a[i * n + k];
+            if aik == Complex::new(0.0, 0.0) {
+                continue;
+            }
+            for j in 0..n {
+                out[i * n + j] += aik * b[k * n + j];
+            }
+        }
+    }
     out
 }
 
@@ -230,6 +274,85 @@ mod lift_tests {
                     "row={row} col={col}"
                 );
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod build_tests {
+    use super::*;
+    use aleph_core::{Gate, GateInstance};
+    use smallvec::smallvec;
+
+    #[test]
+    fn build_two_cnots_chain_equals_bruteforce() {
+        // Block Q=[0,1,2]; members in circuit order: CNOT(0,1) then CNOT(1,2).
+        let members = vec![
+            GateInstance::new(Gate::Cnot, smallvec![0u32, 1]),
+            GateInstance::new(Gate::Cnot, smallvec![1u32, 2]),
+        ];
+        let bq = [0u32, 1, 2];
+        let m = build_block_matrix(&members, &bq);
+        // Independent brute force: for each 3-qubit basis state (MSB-first:
+        // bit2=q0, bit1=q1, bit0=q2), apply CNOT(0,1) then CNOT(1,2).
+        let dim = 8;
+        for col in 0..dim {
+            let q0 = (col >> 2) & 1;
+            let q1 = (col >> 1) & 1;
+            let q2 = col & 1;
+            let nq1 = q1 ^ q0; // CNOT(0,1): target q1 ^= control q0
+            let nq2 = q2 ^ nq1; // CNOT(1,2): target q2 ^= control q1(new)
+            let row = (q0 << 2) | (nq1 << 1) | nq2;
+            for r in 0..dim {
+                let want = if r == row {
+                    Complex::new(1.0, 0.0)
+                } else {
+                    Complex::new(0.0, 0.0)
+                };
+                assert!((m[r * dim + col] - want).norm() < 1e-12, "col={col} r={r}");
+            }
+        }
+    }
+
+    #[test]
+    fn build_single_member_equals_lift() {
+        // One member → build == lift of that member.
+        let members = vec![GateInstance::new(Gate::Cnot, smallvec![2u32, 0])];
+        let bq = [0u32, 1, 2];
+        let built = build_block_matrix(&members, &bq);
+        let lifted = lift_to_block(&Gate::Cnot, &[2u32, 0], &bq);
+        for i in 0..built.len() {
+            assert!((built[i] - lifted[i]).norm() < 1e-12, "entry {i}");
+        }
+    }
+
+    #[test]
+    fn build_order_matters_left_multiply() {
+        // H(0) then S(0) on a 1-qubit-in-2q block should equal S·H (later
+        // gate left-multiplies). Use block Q=[0,1], members both on q0.
+        let members = vec![
+            GateInstance::new(Gate::H, smallvec![0u32]),
+            GateInstance::new(Gate::S, smallvec![0u32]),
+        ];
+        let bq = [0u32, 1];
+        let built = build_block_matrix(&members, &bq);
+        // expected on q0 (block bit 1 = MSB): M = lift(S)·lift(H)
+        let lh = lift_to_block(&Gate::H, &[0u32], &bq);
+        let ls = lift_to_block(&Gate::S, &[0u32], &bq);
+        // manual 4x4 product ls·lh
+        let dim = 4;
+        let mut want = vec![Complex::new(0.0, 0.0); dim * dim];
+        for i in 0..dim {
+            for j in 0..dim {
+                let mut acc = Complex::new(0.0, 0.0);
+                for k in 0..dim {
+                    acc += ls[i * dim + k] * lh[k * dim + j];
+                }
+                want[i * dim + j] = acc;
+            }
+        }
+        for i in 0..built.len() {
+            assert!((built[i] - want[i]).norm() < 1e-12, "entry {i}");
         }
     }
 }
