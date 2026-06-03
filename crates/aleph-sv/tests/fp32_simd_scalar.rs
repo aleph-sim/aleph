@@ -15,7 +15,9 @@
 //! `kernels` to `pub`, mirroring `policy_invariance`).
 
 use aleph_core::Complex;
-use aleph_sv::kernels::aos_f32::{apply_1q_dense_scalar_f32, apply_1q_f32};
+use aleph_sv::kernels::aos_f32::{
+    apply_1q_dense_scalar_f32, apply_1q_diag_scalar_f32, apply_1q_f32,
+};
 
 /// Deterministic, non-trivial, well-spread complex pattern.
 fn fill(n: u32) -> Vec<Complex<f32>> {
@@ -81,6 +83,67 @@ fn dense_1q_simd_matches_scalar() {
                         (a_simd[i].re - a_scalar[i].re).abs() < 1e-5
                             && (a_simd[i].im - a_scalar[i].im).abs() < 1e-5,
                         "mismatch n={n} target={target} ctrls={ctrls:?} i={i}: \
+                         simd={:?} scalar={:?}",
+                        a_simd[i],
+                        a_scalar[i]
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// Two non-trivial diagonal 2×2 matrices (off-diagonals exactly zero) so
+/// the dispatcher takes the diagonal fast path (and its AVX-512 arm on
+/// AVX-512 hardware). `d0` carries a non-unit modulus, `d1` is an S-gate
+/// phase (`e^{iπ/2} = i`) — together they exercise the broadcast complex
+/// scale (`fmaddsub` + `vpermilps` swap) on both the 0-side and 1-side.
+fn diag_m() -> [[Complex<f32>; 2]; 2] {
+    let zero = Complex::new(0.0f32, 0.0);
+    [
+        [Complex::new(0.6, -0.8), zero], // d0: |d0| = 1 but non-trivial re+im
+        [zero, Complex::new(0.0, 1.0)],  // d1: S gate (i)
+    ]
+}
+
+#[test]
+fn diag_1q_simd_matches_scalar() {
+    let m = diag_m();
+    // Off-diagonals must be exactly zero so the dispatcher routes to the
+    // diagonal path (not the dense arm).
+    debug_assert!(m[0][1].re == 0.0 && m[0][1].im == 0.0);
+    debug_assert!(m[1][0].re == 0.0 && m[1][0].im == 0.0);
+
+    for n in [4u32, 8, 12] {
+        for target in 0..n {
+            // None, and (when room exists) one external control strictly
+            // ABOVE the target — the SIMD contract requires control > target.
+            let mut control_cases: Vec<Vec<u32>> = vec![vec![]];
+            if target + 1 < n {
+                control_cases.push(vec![n - 1]);
+            }
+
+            for ctrls in control_cases {
+                let ctrls: Vec<u32> = ctrls
+                    .iter()
+                    .copied()
+                    .filter(|&c| c > target && c < n)
+                    .collect();
+
+                let base = fill(n);
+                let mut a_simd = base.clone();
+                let mut a_scalar = base.clone();
+
+                // Dispatcher → diagonal SIMD arm on AVX-512, scalar elsewhere.
+                apply_1q_f32(&mut a_simd, target, &ctrls, &m);
+                // Forced scalar reference.
+                apply_1q_diag_scalar_f32(&mut a_scalar, target, &ctrls, m[0][0], m[1][1]);
+
+                for i in 0..a_simd.len() {
+                    assert!(
+                        (a_simd[i].re - a_scalar[i].re).abs() < 1e-5
+                            && (a_simd[i].im - a_scalar[i].im).abs() < 1e-5,
+                        "diag mismatch n={n} target={target} ctrls={ctrls:?} i={i}: \
                          simd={:?} scalar={:?}",
                         a_simd[i],
                         a_scalar[i]

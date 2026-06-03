@@ -70,7 +70,11 @@ pub fn apply_1q_dense_scalar_f32(
 /// Diagonal 2×2 fast path: only the two diagonal entries matter, each
 /// amplitude scaled in place (no pairing). Mirrors
 /// `aos::apply_1q_diagonal_scalar`.
-pub(crate) fn apply_1q_diag_scalar_f32(
+// `pub` (like `apply_1q_dense_scalar_f32`) so the `internal-bench`-gated
+// integration test `tests/fp32_simd_scalar.rs` can call the forced scalar
+// reference directly. Without that feature `kernels` is private, so the
+// effective visibility is `pub(crate)`.
+pub fn apply_1q_diag_scalar_f32(
     amps: &mut [Complex<f32>],
     target: u32,
     controls: &[u32],
@@ -532,6 +536,156 @@ pub unsafe fn apply_1q_dense_avx512_f32(
     );
 }
 
+/// Packed-complex AVX-512 diagonal 1q kernel for f32 AoS. Each amplitude
+/// is scaled by a broadcast diagonal entry — `d0` for amplitudes whose
+/// `target` bit is clear, `d1` for those set — a per-amplitude complex
+/// scale with no pairing/permute between the two halves.
+///
+/// Single-precision mirror of `aos::apply_1q_diagonal_avx512` (the f64
+/// source) per the P2-08 f64→f32 substitution rules. The two structural
+/// differences from the f64 kernel are:
+///
+/// 1. **SIMD width.** A `__m512` holds 8 complex pairs (16 f32 lanes) vs
+///    the f64 `__m512d`'s 4 complex pairs (8 f64 lanes), so
+///    `LANES_F32 = 8`. The "2 scalars per complex" interleave factor
+///    (`i * 2`) is IDENTICAL; only how many complex per vector load
+///    changes (4 → 8).
+///
+/// 2. **The adjacent (re, im) swap.** The f64 kernel swaps each 64-bit
+///    complex's real/imag with `vpermilpd` imm `0x55`. For f32 each
+///    complex is two **32-bit** lanes, so the adjacent-pair swap is
+///    `vpermilps` imm `0xB1` (`0b10110001`), mapping lanes
+///    `[0,1,2,3] → [1,0,3,2]` within each 128-bit group — swapping each
+///    adjacent `(re, im)` pair. (Reusing `0x55` here would be wrong.)
+///
+/// **Math.** For a broadcast complex `d = (re, im)` and a packed state
+/// vector `z`, the scale `d × z` is
+/// `vfmaddsub(d_re_bcast, z, d_im_bcast × swap(z))`, where `swap` swaps
+/// adjacent f32 (re, im) pairs via `vpermilps` imm `0xB1`. `fmaddsub`
+/// alternates SUB / ADD across even / odd lanes, producing
+/// `(re_out, im_out)` for each of the 8 packed complex. The 0-side block
+/// is scaled by `d0`, the 1-side block by `d1`.
+///
+/// # Safety
+///
+/// Caller MUST ensure all of:
+/// * Host CPU supports AVX-512F.
+/// * `1usize << target ≥ LANES_F32` so the inner SIMD walk has at least
+///   `LANES_F32` contiguous pairs per sub-block.
+/// * Every control's qubit index is strictly greater than `target`, so
+///   the inner walk's `block | j` for `j ∈ [0, target_bit)` doesn't
+///   toggle any control bit.
+/// * Standard apply_gate invariants: `target` and `controls` are distinct
+///   and in qubit range.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f")]
+// `pub` (like `aos::apply_1q_diagonal_avx512`) so the `internal-bench`-gated
+// integration test can reach this; effectively `pub(crate)` without the
+// feature (the module is private).
+pub unsafe fn apply_1q_diag_avx512_f32(
+    amps: &mut [Complex<f32>],
+    target: u32,
+    controls: &[u32],
+    d0: Complex<f32>,
+    d1: Complex<f32>,
+) {
+    use core::arch::x86_64::*;
+
+    const LANES_F32: usize = 8; // 8 complex pairs per __m512 (16 lanes f32)
+
+    let target_bit = 1usize << target;
+    let len = amps.len();
+
+    // Pin the # Safety contract as debug-only asserts (mirrors the f64
+    // source): a release-mode violation would silently no-op
+    // (target_bit < LANES_F32) or underflow outer_count (controls below
+    // target).
+    debug_assert!(
+        target_bit >= LANES_F32,
+        "target_bit < LANES_F32: dispatch contract violated"
+    );
+    debug_assert!(
+        controls.iter().all(|&c| c > target),
+        "control at-or-below target: dispatch contract violated"
+    );
+
+    // Broadcast the two diagonal entries; constant across the walk.
+    let d0r = _mm512_set1_ps(d0.re);
+    let d0i = _mm512_set1_ps(d0.im);
+    let d1r = _mm512_set1_ps(d1.re);
+    let d1i = _mm512_set1_ps(d1.im);
+
+    let bp = BlockPtrF32(amps.as_mut_ptr() as *mut f32);
+
+    let outer_iter = |block: usize| {
+        let amps_ptr = bp.ptr();
+        // 0-side: amps[block .. block + target_bit] get * d0.
+        let mut j = 0usize;
+        while j + LANES_F32 <= target_bit {
+            let i0 = block | j;
+            // Each Complex<f32> is 8 bytes (re, im). `_mm512_loadu_ps`
+            // reads 16 consecutive f32 = 8 complex starting at amps[i0];
+            // the per-complex factor of 2 (`i0 * 2`) is identical to the
+            // f64 source — only the vector width (8 complex) differs.
+            // SAFETY: i0 + LANES_F32 ≤ block + target_bit ≤ len.
+            let z = _mm512_loadu_ps(amps_ptr.add(i0 * 2));
+            // vpermilps 0xB1: each adjacent (re, im) pair → (im, re).
+            let zs = _mm512_permute_ps::<0xB1>(z);
+            // t = d0_im * zs : per pair → (d0.im * im, d0.im * re, …).
+            let t = _mm512_mul_ps(d0i, zs);
+            // out = vfmaddsub(d0_re, z, t) :
+            //   even lane = d0.re*re - d0.im*im = (d0 * z).re  ✓
+            //   odd  lane = d0.re*im + d0.im*re = (d0 * z).im  ✓
+            let out = _mm512_fmaddsub_ps(d0r, z, t);
+            _mm512_storeu_ps(amps_ptr.add(i0 * 2), out);
+            j += LANES_F32;
+        }
+        debug_assert_eq!(j, target_bit);
+
+        // 1-side: amps[block + target_bit .. block + 2*target_bit] get * d1.
+        let mut j = 0usize;
+        while j + LANES_F32 <= target_bit {
+            let i1 = block | target_bit | j;
+            // SAFETY: i1 + LANES_F32 ≤ block + 2*target_bit ≤ len.
+            let z = _mm512_loadu_ps(amps_ptr.add(i1 * 2));
+            let zs = _mm512_permute_ps::<0xB1>(z);
+            let t = _mm512_mul_ps(d1i, zs);
+            let out = _mm512_fmaddsub_ps(d1r, z, t);
+            _mm512_storeu_ps(amps_ptr.add(i1 * 2), out);
+            j += LANES_F32;
+        }
+        debug_assert_eq!(j, target_bit);
+    };
+
+    let n_qubits = len.trailing_zeros();
+    let policy = tuning::resolve_policy(GateClass::OneQDiag, tuning::pos_class(target, n_qubits));
+
+    if controls.is_empty() {
+        let outer_step = target_bit << 1;
+        let count = len / outer_step;
+        crate::kernels::par_blocks(policy, count, len, |k| k * outer_step, outer_iter);
+        return;
+    }
+
+    // Controlled SIMD path. Identical index algebra to the f64 source:
+    // renormalise control positions (subtract `target + 1`) so
+    // `expand_with_fixed` lays them out densely, then left-shift back.
+    let mut fixed_above: smallvec::SmallVec<[(u32, bool); 8]> = smallvec::SmallVec::new();
+    for &c in controls {
+        fixed_above.push((c - target - 1, true));
+    }
+    fixed_above.sort_unstable_by_key(|&(pos, _)| pos);
+
+    let outer_count = 1usize << (n_qubits - target - 1 - controls.len() as u32);
+    crate::kernels::par_blocks(
+        policy,
+        outer_count,
+        len,
+        |k| crate::kernels::expand_with_fixed(k, &fixed_above) << (target + 1),
+        outer_iter,
+    );
+}
+
 /// Top-level f32 1q dispatch: diagonal fast path, then the AVX-512 dense
 /// arm (when supported and the dispatch contract holds), else the generic
 /// scalar dense kernel.
@@ -545,6 +699,23 @@ pub fn apply_1q_f32(
     m: &[[Complex<f32>; 2]; 2],
 ) {
     if is_diagonal_2x2_f32(m) {
+        #[cfg(target_arch = "x86_64")]
+        {
+            const LANES_F32: usize = 8;
+            if std::is_x86_feature_detected!("avx512f")
+                && (1usize << target) >= LANES_F32
+                && controls.iter().all(|&c| c > target)
+            {
+                // SAFETY: feature gate + target_bit ≥ LANES_F32 (aligned
+                // block stride) + every control > target (no control-bit
+                // toggling in the inner SIMD walk) + apply_gate-level
+                // qubit-range + distinct invariants.
+                unsafe {
+                    apply_1q_diag_avx512_f32(amps, target, controls, m[0][0], m[1][1]);
+                }
+                return;
+            }
+        }
         apply_1q_diag_scalar_f32(amps, target, controls, m[0][0], m[1][1]);
         return;
     }
