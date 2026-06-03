@@ -406,4 +406,179 @@ mod tests {
             );
         }
     }
+
+    // ------------------------------------------------------------------
+    // Pauli-Y slow-path tests (P2-08 coverage gap)
+    // ------------------------------------------------------------------
+
+    /// ⟨Y⟩ on |0⟩ is 0 — Y|0⟩ = i|1⟩, ⟨0|i|1⟩ = 0.
+    #[test]
+    fn expectation_y_on_zero_is_zero() {
+        let mut b = Fp32SvBackend::with_seed(0);
+        let s = b.allocate(1).unwrap();
+        let y = PauliString::new(1.0, vec![(0, Pauli::Y)]).unwrap();
+        let ev = b.expectation_value(&s, &y).unwrap();
+        assert!(ev.abs() < 1e-5, "expected 0, got {ev}");
+    }
+
+    /// H then S on |0⟩ prepares the +1 eigenstate of Y.
+    ///
+    /// H|0⟩ = |+⟩ = (|0⟩+|1⟩)/√2,  S|+⟩ = (|0⟩+i|1⟩)/√2 = |+y⟩.
+    /// By definition Y|+y⟩ = |+y⟩, so ⟨+y|Y|+y⟩ = +1.
+    #[test]
+    fn expectation_y_on_plus_y_eigenstate_is_plus_one() {
+        let mut b = Fp32SvBackend::with_seed(0);
+        let mut s = b.allocate(1).unwrap();
+        b.apply_gate(&mut s, &GateInstance::new(Gate::H, smallvec![0u32]))
+            .unwrap();
+        b.apply_gate(&mut s, &GateInstance::new(Gate::S, smallvec![0u32]))
+            .unwrap();
+        let y = PauliString::new(1.0, vec![(0, Pauli::Y)]).unwrap();
+        let ev = b.expectation_value(&s, &y).unwrap();
+        assert!(
+            (ev - 1.0).abs() < 1e-5,
+            "expected ⟨Y⟩ = +1 on |+y⟩, got {ev}"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // Mixed multi-qubit Pauli string slow-path test (P2-08 coverage gap)
+    // ------------------------------------------------------------------
+
+    /// ⟨Y⊗X⟩ on the 2-qubit Bell state, cross-checked against NaiveSvBackend.
+    ///
+    /// The Bell state (|00⟩+|11⟩)/√2 is prepared with H on q0 then CNOT.
+    /// The expected value of Y⊗X on this state is 0 (can be computed by
+    /// hand: ⟨ψ|Y₀⊗X₁|ψ⟩ = 0 because Y⊗X takes |00⟩→i|11⟩ and
+    /// |11⟩→-i|00⟩, so the cross terms cancel).  We assert both backends
+    /// agree to 1e-5 rather than hard-coding 0 so the test guards the f32
+    /// slow path against the f64 reference even if the analytic answer
+    /// were non-trivial.
+    #[test]
+    fn expectation_yx_mixed_f32_matches_f64_reference() {
+        use crate::NaiveSvBackend;
+
+        let pauli = PauliString::new(1.0, vec![(0, Pauli::Y), (1, Pauli::X)]).unwrap();
+
+        // Prepare Bell state on f32 backend.
+        let mut bf32 = Fp32SvBackend::with_seed(0);
+        let mut sf32 = bf32.allocate(2).unwrap();
+        bf32.apply_gate(&mut sf32, &GateInstance::new(Gate::H, smallvec![0u32]))
+            .unwrap();
+        bf32.apply_gate(
+            &mut sf32,
+            &GateInstance::new(Gate::Cnot, smallvec![0u32, 1u32]),
+        )
+        .unwrap();
+        let ev_f32 = bf32.expectation_value(&sf32, &pauli).unwrap();
+
+        // Prepare the same Bell state on the f64 reference backend.
+        let mut bf64 = NaiveSvBackend::with_seed(0);
+        let mut sf64 = bf64.allocate(2).unwrap();
+        bf64.apply_gate(&mut sf64, &GateInstance::new(Gate::H, smallvec![0u32]))
+            .unwrap();
+        bf64.apply_gate(
+            &mut sf64,
+            &GateInstance::new(Gate::Cnot, smallvec![0u32, 1u32]),
+        )
+        .unwrap();
+        let ev_f64 = bf64.expectation_value(&sf64, &pauli).unwrap();
+
+        assert!(
+            (ev_f32 - ev_f64).abs() < 1e-5,
+            "⟨Y⊗X⟩ f32={ev_f32} f64={ev_f64} differ by more than 1e-5"
+        );
+    }
+
+    /// ⟨X⊗Z⟩ on a product state |+⟩|1⟩ (H on q0, X on q1), cross-checked
+    /// against NaiveSvBackend.
+    ///
+    /// Hand-compute: ⟨+|X|+⟩ = +1 and ⟨1|Z|1⟩ = −1, so ⟨X⊗Z⟩ = +1·(−1) = −1.
+    /// The f64 cross-check independently validates the f32 slow path for a
+    /// product state where the analytic answer is also straightforward.
+    #[test]
+    fn expectation_xz_product_state_f32_matches_f64_reference() {
+        use crate::NaiveSvBackend;
+
+        let pauli = PauliString::new(1.0, vec![(0, Pauli::X), (1, Pauli::Z)]).unwrap();
+
+        // Prepare |+⟩|1⟩ on f32 backend.
+        let mut bf32 = Fp32SvBackend::with_seed(0);
+        let mut sf32 = bf32.allocate(2).unwrap();
+        bf32.apply_gate(&mut sf32, &GateInstance::new(Gate::H, smallvec![0u32]))
+            .unwrap();
+        bf32.apply_gate(&mut sf32, &GateInstance::new(Gate::X, smallvec![1u32]))
+            .unwrap();
+        let ev_f32 = bf32.expectation_value(&sf32, &pauli).unwrap();
+
+        // Prepare the same state on the f64 reference backend.
+        let mut bf64 = NaiveSvBackend::with_seed(0);
+        let mut sf64 = bf64.allocate(2).unwrap();
+        bf64.apply_gate(&mut sf64, &GateInstance::new(Gate::H, smallvec![0u32]))
+            .unwrap();
+        bf64.apply_gate(&mut sf64, &GateInstance::new(Gate::X, smallvec![1u32]))
+            .unwrap();
+        let ev_f64 = bf64.expectation_value(&sf64, &pauli).unwrap();
+
+        // Also assert the analytic value: ⟨X⟩_|+⟩ · ⟨Z⟩_|1⟩ = +1·(−1) = −1.
+        assert!(
+            (ev_f32 - ev_f64).abs() < 1e-5,
+            "⟨X⊗Z⟩ f32={ev_f32} f64={ev_f64} differ by more than 1e-5"
+        );
+        assert!(
+            (ev_f32 - (-1.0)).abs() < 1e-5,
+            "⟨X⊗Z⟩ expected −1.0, got {ev_f32}"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // Multi-qubit collapse consistency test (P2-08 coverage gap)
+    // ------------------------------------------------------------------
+
+    /// After measuring the Bell state (|00⟩+|11⟩)/√2, both qubits must
+    /// agree: if q0 collapses to outcome `b`, measuring q1 must also return `b`.
+    ///
+    /// With seed 42, q0 collapses deterministically (Bell state has p0=p1=0.5,
+    /// and the RNG outcome is fixed by the seed).  We then assert:
+    ///   1. The two non-collapsed amplitudes are ~0 (the other basis state).
+    ///   2. Measuring q1 on the already-collapsed state returns the same bit.
+    #[test]
+    fn bell_state_collapse_is_consistent() {
+        let mut b = Fp32SvBackend::with_seed(42);
+        let mut s = b.allocate(2).unwrap();
+        b.apply_gate(&mut s, &GateInstance::new(Gate::H, smallvec![0u32]))
+            .unwrap();
+        b.apply_gate(
+            &mut s,
+            &GateInstance::new(Gate::Cnot, smallvec![0u32, 1u32]),
+        )
+        .unwrap();
+
+        // Measure qubit 0 — outcome is fixed by seed.
+        let b0 = b.measure(&mut s, 0).unwrap();
+
+        // After collapse the state must be a single basis state |b0,b0⟩.
+        // The amplitudes are indexed with q0 as bit-0: index = b0 | (b0 << 1).
+        let expected_idx = (b0 as usize) | ((b0 as usize) << 1);
+        let a = s.amplitudes();
+        for (i, amp) in a.iter().enumerate() {
+            if i == expected_idx {
+                assert!(
+                    (amp.norm() - 1.0).abs() < 1e-5,
+                    "amplitude at collapsed index {i} should be ≈1, got {}",
+                    amp.norm()
+                );
+            } else {
+                assert!(
+                    amp.norm() < 1e-5,
+                    "amplitude at non-collapsed index {i} should be ≈0, got {}",
+                    amp.norm()
+                );
+            }
+        }
+
+        // Measuring q1 on the already-collapsed state must return the same bit.
+        let b1 = b.measure(&mut s, 1).unwrap();
+        assert_eq!(b0, b1, "Bell-state qubits must collapse to the same value");
+    }
 }
