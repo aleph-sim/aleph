@@ -22,7 +22,7 @@ pub(crate) fn lift_to_block(
 ) -> Vec<Complex> {
     let gd: Vec<Complex> = match gate
         .matrix()
-        .expect("FuseKq lifts only GateMatrix gates; UnitaryKq routes via lift_dense")
+        .expect("FuseKq lifts only concrete GateMatrix gates (no UnitaryKq, no symbolic/non-finite params); UnitaryKq routes via lift_dense")
     {
         GateMatrix::M2x2(m) => m.iter().flatten().copied().collect(),
         GateMatrix::M4x4(m) => m.iter().flatten().copied().collect(),
@@ -173,6 +173,63 @@ mod lift_tests {
         let want = brute_lift(&g, &gq, &bq);
         for i in 0..got.len() {
             assert!((got[i] - want[i]).norm() < 1e-12, "entry {i}");
+        }
+    }
+
+    #[test]
+    fn lift_cnot_msb_first_is_canonical_cnot() {
+        // CNOT, gate_qubits=[0,1] (control=0=MSB, target=1=LSB), block Q=[0,1].
+        // Canonical CNOT (q0=MSB): |10>->|11>, |11>->|10>.
+        let got = lift_to_block(&Gate::Cnot, &[0u32, 1], &[0u32, 1]);
+        let z = Complex::new(0.0, 0.0);
+        let o = Complex::new(1.0, 0.0);
+        let want: [Complex; 16] = [o, z, z, z, z, o, z, z, z, z, z, o, z, z, o, z];
+        for i in 0..16 {
+            assert!(
+                (got[i] - want[i]).norm() < 1e-12,
+                "entry {i}: got {:?} want {:?}",
+                got[i],
+                want[i]
+            );
+        }
+    }
+
+    #[test]
+    fn lift_cnot_reversed_operands_is_reversed_cnot() {
+        // CNOT, gate_qubits=[1,0] (control=q1=LSB, target=q0=MSB), block Q=[0,1].
+        // Flips q0(MSB) when q1(LSB)=1: |01>->|11>, |11>->|01>.
+        let got = lift_to_block(&Gate::Cnot, &[1u32, 0], &[0u32, 1]);
+        let z = Complex::new(0.0, 0.0);
+        let o = Complex::new(1.0, 0.0);
+        let want: [Complex; 16] = [o, z, z, z, z, z, z, o, z, z, o, z, z, o, z, z];
+        for i in 0..16 {
+            assert!(
+                (got[i] - want[i]).norm() < 1e-12,
+                "entry {i}: got {:?} want {:?}",
+                got[i],
+                want[i]
+            );
+        }
+    }
+
+    #[test]
+    fn lift_x_middle_qubit_flips_only_that_bit() {
+        // X on q5 in block Q=[2,5,7]: q2=bit2(MSB), q5=bit1, q7=bit0(LSB).
+        // Lifted 8x8 is the permutation row == col ^ 0b010 (flip bit 1 only).
+        let got = lift_to_block(&Gate::X, &[5u32], &[2u32, 5, 7]);
+        for col in 0..8usize {
+            let expect_row = col ^ 0b010;
+            for row in 0..8usize {
+                let want = if row == expect_row {
+                    Complex::new(1.0, 0.0)
+                } else {
+                    Complex::new(0.0, 0.0)
+                };
+                assert!(
+                    (got[row * 8 + col] - want).norm() < 1e-12,
+                    "row={row} col={col}"
+                );
+            }
         }
     }
 }
