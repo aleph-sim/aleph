@@ -230,6 +230,32 @@ mod tests {
     }
 
     #[test]
+    fn unitary_kq_emits_unsupported() {
+        // `UnitaryKq` is a post-optimization dense fused block with no
+        // OpenQASM surface syntax; emit must refuse it cleanly (not panic).
+        // It only ever exists after `FuseKq`, never round-tripped.
+        use aleph_core::{Complex, Gate, GateInstance};
+        use smallvec::smallvec;
+        // 3-qubit identity payload (k=3, len 64).
+        let mut data = vec![Complex::new(0.0, 0.0); 64];
+        for i in 0..8 {
+            data[i * 8 + i] = Complex::new(1.0, 0.0);
+        }
+        let g = Gate::UnitaryKq {
+            k: 3,
+            data: data.into_boxed_slice(),
+        };
+        let mut c = aleph_ir::Circuit::new(3, 0);
+        c.add_gate(GateInstance::new(g, smallvec![0u32, 1, 2]))
+            .unwrap();
+        let err = emit(&c).unwrap_err();
+        match err {
+            EmitError::UnsupportedGate { name } => assert_eq!(name, "UnitaryKq"),
+            other => panic!("expected UnsupportedGate(UnitaryKq), got {other:?}"),
+        }
+    }
+
+    #[test]
     fn round_trip_through_parse_emit_parse_preserves_instructions() {
         let src = "qubit[2] q; bit[2] c; h q[0]; cx q[0], q[1]; measure q[0] -> c[0]; measure q[1] -> c[1];";
         let c1 = parse(src).unwrap();
