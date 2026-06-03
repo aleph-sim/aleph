@@ -63,12 +63,15 @@ impl Pass for FuseDiagonalRuns {
     }
 }
 
-/// A run member is a diagonal gate or a bare `Cnot`. Everything else
-/// (measure, reset, barrier, non-diagonal gate, an existing
-/// `DiagonalPhase`) is a hard fence.
+/// A run member is a diagonal gate or a bare `Cnot` (no external controls).
+/// Everything else (measure, reset, barrier, non-diagonal gate, a
+/// controlled-Cnot, an existing `DiagonalPhase`) is a hard fence.
 fn is_run_member(inst: &Instruction) -> bool {
     match inst {
-        Instruction::Gate(g) => g.gate.is_diagonal() || matches!(g.gate, aleph_core::Gate::Cnot),
+        Instruction::Gate(g) => {
+            g.gate.is_diagonal()
+                || (matches!(g.gate, aleph_core::Gate::Cnot) && g.controls.is_empty())
+        }
         _ => false,
     }
 }
@@ -89,9 +92,18 @@ fn fuse_run(run: &[Instruction], n: u32) -> Option<DiagonalPhase> {
             _ => return None,
         };
         if matches!(g.gate, aleph_core::Gate::Cnot) {
-            perm.cx(g.qubits[0], g.qubits[1]);
-            support |= 1u64 << g.qubits[0];
-            support |= 1u64 << g.qubits[1];
+            // A Cnot with external controls is not a GF(2) transvection;
+            // bail so the run is re-emitted verbatim (defense-in-depth
+            // even though is_run_member already fences it).
+            if !g.controls.is_empty() {
+                return None;
+            }
+            let (Some(&c), Some(&t)) = (g.qubits.first(), g.qubits.get(1)) else {
+                return None;
+            };
+            perm.cx(c, t);
+            support |= 1u64 << c;
+            support |= 1u64 << t;
         } else {
             let mut t = diagonal_to_terms(g, &perm)?;
             diag_gate_count += 1;
@@ -423,6 +435,39 @@ mod pass_tests {
             .instructions()
             .iter()
             .all(|i| !matches!(i, Instruction::DiagonalPhase(_))));
+    }
+
+    #[test]
+    fn controlled_cnot_is_a_fence_not_a_transvection() {
+        // ccx-shaped Cnot (external control 2) must NOT be absorbed as a
+        // bare cx(0,1): doing so drops the control and corrupts fusion.
+        let cc = aleph_core::GateInstance::controlled(
+            aleph_core::Gate::Cnot,
+            smallvec![0u32, 1u32],
+            smallvec![2u32],
+        );
+        let mut c = Circuit::new(3, 0);
+        c.add_gate(aleph_core::GateInstance::new(
+            aleph_core::Gate::Phase(PI.into()),
+            smallvec![1u32],
+        ))
+        .unwrap();
+        c.add_gate(cc.clone()).unwrap();
+        c.add_gate(aleph_core::GateInstance::new(
+            aleph_core::Gate::Phase((PI / 2.0).into()),
+            smallvec![1u32],
+        ))
+        .unwrap();
+        c.add_gate(cc).unwrap();
+
+        FuseDiagonalRuns.run(&mut c).unwrap();
+        assert!(
+            c.instructions().iter().any(|i| matches!(
+                i, Instruction::Gate(g)
+                    if matches!(g.gate, aleph_core::Gate::Cnot) && !g.controls.is_empty()
+            )),
+            "controlled-Cnot must be re-emitted, not absorbed"
+        );
     }
 
     #[test]
