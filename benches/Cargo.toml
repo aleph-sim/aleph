@@ -80,3 +80,8 @@ required-features = ["scaling-bench"]
 name = "fuse_kq"
 harness = false
 required-features = ["scaling-bench"]
+
+[[bench]]
+name = "qft_precision"
+harness = false
+required-features = ["scaling-bench"]
