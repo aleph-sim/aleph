@@ -242,8 +242,9 @@ pub(crate) fn diagonal_to_terms(g: &GateInstance, perm: &Perm) -> Option<Vec<Pha
             t = (t - 1) & s;
         }
         // Negligibility uses the mod-2π reduced value, but the stored
-        // angle stays RAW so sums of raw angles round-trip exactly for
-        // the downstream 1e-12 oracle.
+        // angle stays RAW so sums of raw angles agree mod 2π with the
+        // unfused circuit for the downstream 1e-12 oracle (terms that are
+        // ≡0 mod 2π are intentionally dropped; e^{iφ} is 2π-periodic).
         let a = alpha.rem_euclid(two_pi);
         if a < PHASE_EPS || (two_pi - a) < PHASE_EPS {
             continue; // negligible mod 2π

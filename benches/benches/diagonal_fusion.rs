@@ -111,12 +111,16 @@ fn bench_diagonal_fusion(c: &mut Criterion) {
         let opt_without = optimized(&base, &without);
         let opt_with = optimized(&base, &with);
 
-        group.bench_with_input(BenchmarkId::new("builder_without", n), &opt_without, |b, c| {
-            b.iter(|| {
-                let mut be = NaiveSvBackend::new();
-                black_box(run(&mut be, black_box(c)).unwrap());
-            })
-        });
+        group.bench_with_input(
+            BenchmarkId::new("builder_without", n),
+            &opt_without,
+            |b, c| {
+                b.iter(|| {
+                    let mut be = NaiveSvBackend::new();
+                    black_box(run(&mut be, black_box(c)).unwrap());
+                })
+            },
+        );
         group.bench_with_input(BenchmarkId::new("builder_with", n), &opt_with, |b, c| {
             b.iter(|| {
                 let mut be = NaiveSvBackend::new();
@@ -129,12 +133,16 @@ fn bench_diagonal_fusion(c: &mut Criterion) {
     let base = fixture_qft();
     let opt_without = optimized(&base, &without);
     let opt_with = optimized(&base, &with);
-    group.bench_with_input(BenchmarkId::new("fixture_without", 25), &opt_without, |b, c| {
-        b.iter(|| {
-            let mut be = NaiveSvBackend::new();
-            black_box(run(&mut be, black_box(c)).unwrap());
-        })
-    });
+    group.bench_with_input(
+        BenchmarkId::new("fixture_without", 25),
+        &opt_without,
+        |b, c| {
+            b.iter(|| {
+                let mut be = NaiveSvBackend::new();
+                black_box(run(&mut be, black_box(c)).unwrap());
+            })
+        },
+    );
     group.bench_with_input(BenchmarkId::new("fixture_with", 25), &opt_with, |b, c| {
         b.iter(|| {
             let mut be = NaiveSvBackend::new();
