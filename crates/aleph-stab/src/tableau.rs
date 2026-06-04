@@ -22,6 +22,22 @@ pub struct Tableau {
     sign: Vec<bool>,
 }
 
+/// Aaronson-Gottesman §2 phase exponent: the power of `i` introduced when
+/// the single-qubit Pauli `(x1,z1)` is left-multiplied onto `(x2,z2)`.
+/// Returns a value in `{-1, 0, 1}`. Used by [`Tableau::rowsum`].
+// `rowsum` arrives in Task 2; suppress the interim dead-code lint.
+#[allow(dead_code)]
+fn g(x1: bool, z1: bool, x2: bool, z2: bool) -> i32 {
+    let x2 = x2 as i32;
+    let z2 = z2 as i32;
+    match (x1, z1) {
+        (false, false) => 0,
+        (true, false) => z2 * (2 * x2 - 1),
+        (false, true) => x2 * (1 - 2 * z2),
+        (true, true) => z2 - x2,
+    }
+}
+
 impl Tableau {
     /// Allocate the `|0…0⟩` stabilizer state on `n` qubits.
     ///
@@ -450,6 +466,29 @@ mod tests {
         // PauliString::new already sorts terms by qubit index, so direct
         // comparison is sufficient (both inputs were created via ::new).
         a.terms == b.terms
+    }
+
+    #[test]
+    fn g_phase_exponent_table() {
+        use super::g;
+        // (x1,z1)=(0,0) → always 0
+        for &(x2, z2) in &[(false, false), (true, false), (false, true), (true, true)] {
+            assert_eq!(g(false, false, x2, z2), 0);
+        }
+        // (x1,z1)=(1,0): z2*(2*x2-1)
+        assert_eq!(g(true, false, false, false), 0); // z2=0
+        assert_eq!(g(true, false, true, false), 0); // z2=0
+        assert_eq!(g(true, false, false, true), -1); // z2=1,x2=0 → 1*(−1)
+        assert_eq!(g(true, false, true, true), 1); // z2=1,x2=1 → 1*(1)
+                                                   // (x1,z1)=(0,1): x2*(1-2*z2)
+        assert_eq!(g(false, true, false, false), 0); // x2=0
+        assert_eq!(g(false, true, true, false), 1); // x2=1,z2=0 → 1*(1)
+        assert_eq!(g(false, true, true, true), -1); // x2=1,z2=1 → 1*(−1)
+                                                    // (x1,z1)=(1,1): z2 - x2
+        assert_eq!(g(true, true, false, false), 0);
+        assert_eq!(g(true, true, true, false), -1); // 0-1
+        assert_eq!(g(true, true, false, true), 1); // 1-0
+        assert_eq!(g(true, true, true, true), 0); // 1-1
     }
 
     #[test]
