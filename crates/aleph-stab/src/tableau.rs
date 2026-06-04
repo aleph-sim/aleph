@@ -291,6 +291,53 @@ impl Tableau {
         }
         acc
     }
+
+    /// AG §2 `rowsum`: set generator `row h ← (row i)·(row h)`, tracking
+    /// the sign. The phase accumulates as `2·r_h + 2·r_i + Σ_j g(...)`
+    /// reduced mod 4, which is always 0 or 2 (real `±1`) for a product of
+    /// two Pauli generators.
+    // `measure` (Task 3) calls all three helpers; suppress the interim lint.
+    #[allow(dead_code)]
+    fn rowsum(&mut self, h: usize, i: usize) {
+        let mut acc: i32 = 2 * self.sign[h] as i32 + 2 * self.sign[i] as i32;
+        for j in 0..self.n {
+            acc += g(
+                self.x.get(i, j),
+                self.z.get(i, j),
+                self.x.get(h, j),
+                self.z.get(h, j),
+            );
+        }
+        let m = acc.rem_euclid(4);
+        debug_assert!(m == 0 || m == 2, "rowsum phase {m} not in {{0, 2}}");
+        self.sign[h] = m == 2;
+        for j in 0..self.n {
+            let xh = self.x.get(h, j) ^ self.x.get(i, j);
+            let zh = self.z.get(h, j) ^ self.z.get(i, j);
+            self.x.set(h, j, xh);
+            self.z.set(h, j, zh);
+        }
+    }
+
+    /// Copy a full generator row (x bits, z bits, sign) from `src` to `dst`.
+    #[allow(dead_code)]
+    fn copy_row(&mut self, dst: usize, src: usize) {
+        for j in 0..self.n {
+            self.x.set(dst, j, self.x.get(src, j));
+            self.z.set(dst, j, self.z.get(src, j));
+        }
+        self.sign[dst] = self.sign[src];
+    }
+
+    /// Reset a row to the identity Pauli with `+` sign.
+    #[allow(dead_code)]
+    fn zero_row(&mut self, r: usize) {
+        for j in 0..self.n {
+            self.x.set(r, j, false);
+            self.z.set(r, j, false);
+        }
+        self.sign[r] = false;
+    }
 }
 
 #[cfg(test)]
@@ -489,6 +536,49 @@ mod tests {
         assert_eq!(g(true, true, true, false), -1); // 0-1
         assert_eq!(g(true, true, false, true), 1); // 1-0
         assert_eq!(g(true, true, true, true), 0); // 1-1
+    }
+
+    // rowsum(h,i) does x_h ^= x_i, z_h ^= z_i (XOR involution): applying
+    // it twice restores row h's bits. Sign tracking is exercised more
+    // thoroughly by the measurement + Stim oracle; here we pin the bit
+    // involution and that the sign stays in {false,true} (no panic on the
+    // mod-4 debug_assert) over a generic state.
+    //
+    // Rows must commute for rowsum to produce a real phase (m ∈ {0,2}):
+    // the CHP invariant guarantees destab_i ⊥ stab_i but commutes with
+    // stab_j (j ≠ i). We use row 0 (destab 0) and row 4 (stab 1), which
+    // commute.
+    #[test]
+    fn rowsum_bit_involution() {
+        let mut t = generic_state(); // 3-qubit entangled Clifford state
+                                     // snapshot row 0 (destab 0) bits; we rowsum with row 4 (stab 1)
+                                     // which commutes with destab 0 (j ≠ i in the CHP invariant).
+        let snap = |t: &Tableau, r: usize| -> Vec<(bool, bool)> {
+            (0..t.num_qubits())
+                .map(|j| (t.x(r, j), t.z(r, j)))
+                .collect()
+        };
+        let before = snap(&t, 0);
+        t.rowsum(0, 4);
+        t.rowsum(0, 4); // second application cancels the bit XORs
+        assert_eq!(snap(&t, 0), before, "rowsum bit XOR is not involutive");
+    }
+
+    // copy_row duplicates a full row; zero_row clears it.
+    #[test]
+    fn copy_and_zero_row() {
+        let mut t = generic_state();
+        t.copy_row(0, 4); // row 0 (destab) ← row 4 (stab 1)
+        for j in 0..t.num_qubits() {
+            assert_eq!(t.x(0, j), t.x(4, j));
+            assert_eq!(t.z(0, j), t.z(4, j));
+        }
+        assert_eq!(t.sign(0), t.sign(4));
+        t.zero_row(0);
+        for j in 0..t.num_qubits() {
+            assert!(!t.x(0, j) && !t.z(0, j));
+        }
+        assert!(!t.sign(0));
     }
 
     #[test]
