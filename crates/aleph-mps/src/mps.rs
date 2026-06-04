@@ -1,8 +1,9 @@
 //! Mixed-canonical MPS state: init, dense reconstruction, canonicalization,
 //! gate application, expectation, measurement, sampling, probabilities.
 
-use crate::tensor::Site;
+use crate::tensor::{thin_qr, Site};
 use aleph_core::Complex;
+use nalgebra::DMatrix;
 
 /// Mixed-canonical MPS. Sites left of `center` are left-canonical, sites right
 /// are right-canonical; the center site carries the norm.
@@ -46,6 +47,91 @@ impl MpsState {
                 *site.get_mut(l, 0, r) = u[0][0] * a0 + u[0][1] * a1;
                 *site.get_mut(l, 1, r) = u[1][0] * a0 + u[1][1] * a1;
             }
+        }
+    }
+
+    /// Multiply matrix `r` into site `i`'s LEFT bond:
+    /// A'[l',p,r2] = Σ_l r[l',l] · A[l,p,r2].
+    fn absorb_into_left(&mut self, i: usize, r: &DMatrix<Complex>) {
+        let site = &self.sites[i];
+        let new_left = r.nrows();
+        let mut out = Site::zeros(new_left, site.right);
+        // Explicit index arithmetic for clarity of the bond contraction.
+        #[allow(clippy::needless_range_loop)]
+        for lp in 0..new_left {
+            for p in 0..2 {
+                for r2 in 0..site.right {
+                    let mut acc = Complex::new(0.0, 0.0);
+                    for l in 0..site.left {
+                        acc += r[(lp, l)] * site.get(l, p, r2);
+                    }
+                    *out.get_mut(lp, p, r2) = acc;
+                }
+            }
+        }
+        self.sites[i] = out;
+    }
+
+    /// Multiply matrix `l` into site `i`'s RIGHT bond:
+    /// A'[l2,p,r'] = Σ_r A[l2,p,r] · l[r,r'].
+    fn absorb_into_right(&mut self, i: usize, l: &DMatrix<Complex>) {
+        let site = &self.sites[i];
+        let new_right = l.ncols();
+        let mut out = Site::zeros(site.left, new_right);
+        // Explicit index arithmetic for clarity of the bond contraction.
+        #[allow(clippy::needless_range_loop)]
+        for l2 in 0..site.left {
+            for p in 0..2 {
+                for rp in 0..new_right {
+                    let mut acc = Complex::new(0.0, 0.0);
+                    for r in 0..site.right {
+                        acc += site.get(l2, p, r) * l[(r, rp)];
+                    }
+                    *out.get_mut(l2, p, rp) = acc;
+                }
+            }
+        }
+        self.sites[i] = out;
+    }
+
+    /// Shift center right from `i` to `i+1` using thin QR on the grouped-left
+    /// matrix. Site `i` becomes left-canonical; the R factor is absorbed into
+    /// site `i+1`'s left bond.
+    fn move_center_right(&mut self) {
+        let i = self.center;
+        let m = self.sites[i].to_group_left(); // (left*2) × right
+        let (q, r) = thin_qr(&m); // q:(left*2)×k, r:k×right
+        let k = q.ncols();
+        let left = self.sites[i].left;
+        self.sites[i] = Site::from_group_left(&q, left, k);
+        self.absorb_into_left(i + 1, &r);
+        self.center += 1;
+    }
+
+    /// Shift center left from `i` to `i-1` using thin QR on the adjoint of the
+    /// grouped-right matrix (LQ decomposition). Site `i` becomes right-canonical;
+    /// the Rᴴ factor is absorbed into site `i-1`'s right bond.
+    fn move_center_left(&mut self) {
+        let i = self.center;
+        let m = self.sites[i].to_group_right(); // left × (2*right)
+        let mh = m.adjoint(); // (2*right) × left
+        let (q, r) = thin_qr(&mh); // q:(2*right)×k, r:k×left
+        let k = q.ncols();
+        let right = self.sites[i].right;
+        let site_mat = q.adjoint(); // k × (2*right) — right-canonical
+        self.sites[i] = Site::from_group_right(&site_mat, k, right);
+        let r_into = r.adjoint(); // left × k — absorbed into left neighbor's right bond
+        self.absorb_into_right(i - 1, &r_into);
+        self.center -= 1;
+    }
+
+    /// Move the orthogonality center to `target` by stepping one site at a time.
+    pub(crate) fn move_center_to(&mut self, target: usize) {
+        while self.center < target {
+            self.move_center_right();
+        }
+        while self.center > target {
+            self.move_center_left();
         }
     }
 
@@ -99,11 +185,68 @@ impl MpsState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tensor::Site;
     use aleph_core::{Gate, GateInstance};
     use smallvec::smallvec;
 
     fn norm_sq(v: &[Complex]) -> f64 {
         v.iter().map(|c| c.norm_sqr()).sum()
+    }
+
+    /// Left-canonical check: Σ_{l,p} conj(A[l,p,r1]) A[l,p,r2] == δ(r1,r2).
+    fn is_left_canonical(site: &Site) -> bool {
+        for r1 in 0..site.right {
+            for r2 in 0..site.right {
+                let mut acc = aleph_core::Complex::new(0.0, 0.0);
+                for l in 0..site.left {
+                    for p in 0..2 {
+                        acc += site.get(l, p, r1).conj() * site.get(l, p, r2);
+                    }
+                }
+                let expect = if r1 == r2 { 1.0 } else { 0.0 };
+                if (acc.re - expect).abs() > 1e-9 || acc.im.abs() > 1e-9 {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
+    #[test]
+    fn move_center_right_makes_left_canonical_and_preserves_state() {
+        let mut s = MpsState::new(3, 64);
+        let h = crate::gate::matrix_2x2(&GateInstance::new(Gate::H, smallvec![0u32])).unwrap();
+        s.apply_1q(0, &h);
+        s.apply_1q(1, &h);
+        let before = s.dense_statevector();
+        s.move_center_to(2);
+        assert_eq!(s.center, 2);
+        assert!(is_left_canonical(&s.sites[0]));
+        assert!(is_left_canonical(&s.sites[1]));
+        let after = s.dense_statevector();
+        for (a, b) in before.iter().zip(after.iter()) {
+            assert!(
+                (a - b).norm() < 1e-9,
+                "state changed under canonicalization"
+            );
+        }
+    }
+
+    #[test]
+    fn move_center_left_preserves_state() {
+        let mut s = MpsState::new(3, 64);
+        let h = crate::gate::matrix_2x2(&GateInstance::new(Gate::H, smallvec![0u32])).unwrap();
+        s.apply_1q(0, &h);
+        s.apply_1q(1, &h);
+        s.apply_1q(2, &h);
+        s.move_center_to(2);
+        let before = s.dense_statevector();
+        s.move_center_to(0);
+        assert_eq!(s.center, 0);
+        let after = s.dense_statevector();
+        for (a, b) in before.iter().zip(after.iter()) {
+            assert!((a - b).norm() < 1e-9, "state changed moving center left");
+        }
     }
 
     #[test]

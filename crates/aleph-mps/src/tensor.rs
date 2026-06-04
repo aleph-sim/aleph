@@ -105,6 +105,22 @@ impl Site {
     }
 }
 
+/// Thin QR decomposition: returns `(Q, R)` with `Q` of shape `rows × k` and
+/// `R` of shape `k × cols`, where `k = min(rows, cols)`.
+///
+/// Used to move the orthogonality center one site at a time without introducing
+/// truncation (no singular-value threshold applied here; that comes in SVD-based
+/// truncation in Task 5+).
+pub fn thin_qr(m: &DMatrix<Complex>) -> (DMatrix<Complex>, DMatrix<Complex>) {
+    let qr = m.clone().qr();
+    let q_full = qr.q(); // rows × rows unitary
+    let r_full = qr.r(); // rows × cols upper-triangular
+    let k = m.nrows().min(m.ncols());
+    let q = q_full.columns(0, k).into_owned(); // rows × k
+    let r = r_full.rows(0, k).into_owned(); // k × cols
+    (q, r)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
