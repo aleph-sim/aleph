@@ -354,8 +354,14 @@ impl Tableau {
                 // Random outcome: eliminate column `a`'s X from every other
                 // row, promote p to a destabilizer, install Z_a as the new
                 // stabilizer with a random sign.
+                //
+                // Skip row `p - n` (the destabilizer paired with stab_p):
+                // it anticommutes with stab_p, so their product has phase ±i
+                // (unrepresentable as ±Pauli in the sign bit), and
+                // `copy_row(p - n, p)` below overwrites it correctly anyway.
+                let paired_destab = p - self.n;
                 for i in 0..2 * self.n {
-                    if i != p && self.x.get(i, a) {
+                    if i != p && i != paired_destab && self.x.get(i, a) {
                         self.rowsum(i, p);
                     }
                 }
