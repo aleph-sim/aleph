@@ -6,6 +6,8 @@
 //! (`true` = leading `-`). Gates update all `2n` non-scratch rows in
 //! O(1) each → O(n) per gate. See AG (2004) §2.
 
+use aleph_core::{Pauli, PauliString};
+
 use crate::bits::BitGrid;
 
 /// A stabilizer state over `n` qubits in CHP tableau form.
@@ -46,7 +48,10 @@ impl Tableau {
         self.n
     }
 
-    // --- read accessors (used by tests + readout; later tasks make these non-dead) ---
+    // --- read accessors (used by tests + readout) ---
+    // `pub(crate)` so tests and dispatch can read raw tableau bits; P3-02
+    // will use these for measurement. `allow(dead_code)` because they're
+    // only referenced inside `#[cfg(test)]` until P3-02.
     #[allow(dead_code)]
     #[inline]
     pub(crate) fn x(&self, row: usize, col: usize) -> bool {
@@ -202,11 +207,53 @@ impl Tableau {
         self.sdg(b)?;
         self.sdg(a)
     }
+
+    /// Read a single row as a signed Pauli string. Identity terms are
+    /// omitted (sparse), matching `aleph_core::PauliString`.
+    fn row_to_pauli(&self, row: usize) -> PauliString {
+        let mut terms = Vec::new();
+        for c in 0..self.n {
+            let p = match (self.x.get(row, c), self.z.get(row, c)) {
+                (false, false) => continue, // I
+                (true, false) => Pauli::X,
+                (false, true) => Pauli::Z,
+                (true, true) => Pauli::Y,
+            };
+            terms.push((c as u32, p));
+        }
+        let coeff = if self.sign[row] { -1.0 } else { 1.0 };
+        // PauliString::new sorts/validates; terms here are already unique
+        // and ascending, so this cannot error.
+        PauliString::new(coeff, terms).unwrap_or_else(|_| PauliString::identity(coeff))
+    }
+
+    /// The `n` stabilizer generators (rows `n..2n`).
+    pub fn stabilizers(&self) -> Vec<PauliString> {
+        (self.n..2 * self.n).map(|r| self.row_to_pauli(r)).collect()
+    }
+
+    /// The `n` destabilizer generators (rows `0..n`).
+    pub fn destabilizers(&self) -> Vec<PauliString> {
+        (0..self.n).map(|r| self.row_to_pauli(r)).collect()
+    }
+
+    /// Symplectic inner product of rows `i` and `j`:
+    /// `⊕_a (x_{i,a}·z_{j,a} ⊕ z_{i,a}·x_{j,a})`. `true` ⇒ the two Pauli
+    /// strings anticommute.
+    pub fn rows_anticommute(&self, i: usize, j: usize) -> bool {
+        let mut acc = false;
+        for a in 0..self.n {
+            acc ^= (self.x.get(i, a) && self.z.get(j, a))
+                ^ (self.z.get(i, a) && self.x.get(j, a));
+        }
+        acc
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::Tableau;
+    use aleph_core::{Pauli, PauliString};
 
     #[test]
     fn identity_tableau_is_zero_state() {
@@ -353,5 +400,44 @@ mod tests {
         t.iswap(0, 2).unwrap();
         t.iswap_dg(0, 2).unwrap();
         assert_tableaux_eq(&t, &before);
+    }
+
+    #[test]
+    fn bell_readout_is_xx_and_zz() {
+        let mut t = Tableau::new(2);
+        t.h(0).unwrap();
+        t.cnot(0, 1).unwrap();
+        let stabs = t.stabilizers();
+        assert_eq!(stabs.len(), 2);
+        let xx = PauliString::new(1.0, vec![(0, Pauli::X), (1, Pauli::X)]).unwrap();
+        let zz = PauliString::new(1.0, vec![(0, Pauli::Z), (1, Pauli::Z)]).unwrap();
+        // order-independent membership
+        assert!(stabs.iter().any(|p| same_pauli(p, &xx)));
+        assert!(stabs.iter().any(|p| same_pauli(p, &zz)));
+    }
+
+    fn same_pauli(a: &PauliString, b: &PauliString) -> bool {
+        if (a.coefficient - b.coefficient).abs() > 1e-12 {
+            return false;
+        }
+        // PauliString::new already sorts terms by qubit index, so direct
+        // comparison is sufficient (both inputs were created via ::new).
+        a.terms == b.terms
+    }
+
+    #[test]
+    fn identity_state_symplectic() {
+        let t = Tableau::new(4);
+        let n = 4;
+        for i in 0..n {
+            // destab i anticommutes with stab i, commutes with others
+            assert!(t.rows_anticommute(i, n + i));
+            for j in 0..n {
+                if j != i {
+                    assert!(!t.rows_anticommute(i, n + j));
+                }
+                assert!(!t.rows_anticommute(n + i, n + j)); // stabs commute
+            }
+        }
     }
 }
