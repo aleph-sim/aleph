@@ -73,7 +73,9 @@ fn optimize_no_kq(mut c: aleph_ir::Circuit, with_tiling: bool) -> aleph_ir::Circ
     if with_tiling {
         passes.push(Box::new(aleph_ir::passes::TileBlock::default()));
     }
-    PassPipeline::new(passes).run(&mut c).expect("no-kq pipeline");
+    PassPipeline::new(passes)
+        .run(&mut c)
+        .expect("no-kq pipeline");
     c
 }
 
