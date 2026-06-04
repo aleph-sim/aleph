@@ -81,8 +81,14 @@ pub fn run_circuit<W: Write>(
         paulis.push((raw.clone(), ps));
     }
 
-    // 3. Statevector cap check.
-    if print_statevector && !force_statevector && n > STATEVECTOR_CAP_QUBITS {
+    // 3. Statevector cap check. Skipped for the stabilizer backend, which
+    //    has no dense state vector at all — `run_stabilizer` rejects
+    //    `--statevector` with a clearer, backend-specific message below.
+    if backend == BackendKind::Statevector
+        && print_statevector
+        && !force_statevector
+        && n > STATEVECTOR_CAP_QUBITS
+    {
         let dim = 1u64 << n;
         return Err(anyhow!(
             "state vector has 2^{n} = {dim} amplitudes; pass --force-statevector to print anyway"
