@@ -3,6 +3,7 @@
 
 use aleph_stab::Tableau;
 use proptest::prelude::*;
+use rand::SeedableRng;
 
 // A random gate op over the 11-gate Clifford set on `n` qubits, encoded
 // as (opcode, q0, q1). We apply via the tableau's public methods.
@@ -79,6 +80,40 @@ proptest! {
                     prop_assert!(!t.rows_anticommute(i, n + j));
                     prop_assert!(!t.rows_anticommute(n + i, n + j));
                     prop_assert!(!t.rows_anticommute(i, j));
+                }
+            }
+        }
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(200))]
+
+    /// Measurement leaves a well-formed tableau: after a random Clifford
+    /// circuit and one measurement, the destabilizer/stabilizer structure
+    /// is still symplectic.
+    #[test]
+    fn symplectic_invariant_preserved_after_measure(
+        ops in {
+            let n = 6;
+            proptest::collection::vec(op_strategy(n), 0..40)
+        },
+        target in 0usize..6,
+        seed in any::<u64>(),
+    ) {
+        let n = 6;
+        let mut t = Tableau::new(n);
+        for op in &ops {
+            apply(&mut t, op);
+        }
+        let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+        let _ = t.measure(target, &mut rng).unwrap();
+        for i in 0..n {
+            prop_assert!(t.rows_anticommute(i, n + i), "destab {i} ⊥ stab {i} broken after measure");
+            for j in 0..n {
+                if j != i {
+                    prop_assert!(!t.rows_anticommute(i, n + j));
+                    prop_assert!(!t.rows_anticommute(n + i, n + j));
                 }
             }
         }
