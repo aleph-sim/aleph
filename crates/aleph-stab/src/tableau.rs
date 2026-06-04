@@ -689,4 +689,37 @@ mod tests {
             "|+> measurement never produced both outcomes"
         );
     }
+
+    #[test]
+    fn measure_ghz_is_balanced_and_consistent() {
+        // GHZ_n = (|0…0> + |1…1>)/√2. Each trial: all qubits agree; over
+        // many trials q0 is ~50/50.
+        const N: usize = 5;
+        const TRIALS: u32 = 4000;
+        let mut ones = 0u32;
+        for seed in 0..TRIALS as u64 {
+            let mut rng = StdRng::seed_from_u64(seed);
+            let mut t = Tableau::new(N);
+            t.h(0).unwrap();
+            for i in 0..N - 1 {
+                t.cnot(i, i + 1).unwrap();
+            }
+            let b0 = t.measure(0, &mut rng).unwrap();
+            for q in 1..N {
+                assert_eq!(
+                    t.measure(q, &mut rng).unwrap(),
+                    b0,
+                    "GHZ qubit {q} disagreed"
+                );
+            }
+            if b0 {
+                ones += 1;
+            }
+        }
+        // Binomial(4000, 0.5): mean 2000, sd ≈ 31.6. ±5 sd ≈ ±158 → [1842,2158].
+        assert!(
+            (1842..=2158).contains(&ones),
+            "GHZ q0 balance out of range: {ones}/4000 ones"
+        );
+    }
 }
