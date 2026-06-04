@@ -458,8 +458,6 @@ impl Circuit {
     }
 
     /// Record the qubit permutation (called by `passes::RelabelQubits`).
-    // Not yet called: will be used in the P2-09 `RelabelQubits` pass (Task 8).
-    #[allow(dead_code)]
     pub(crate) fn set_qubit_permutation(&mut self, perm: Box<[u32]>) {
         self.qubit_permutation = Some(perm);
     }

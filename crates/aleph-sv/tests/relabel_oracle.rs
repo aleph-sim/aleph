@@ -24,9 +24,10 @@
 //!       physical one the pass rewrote it to.
 
 use aleph_backend::{run, run_with_outcomes, Backend};
+use aleph_core::Complex;
 use aleph_ir::passes::{Pass, RelabelQubits, TileBlock};
 use aleph_ir::Circuit;
-use aleph_sv::{CpuState, NaiveSvBackend};
+use aleph_sv::{CpuState, Fp32SvBackend, NaiveSvBackend, SoaSvBackend};
 
 // ---------------------------------------------------------------------------
 // Fixtures.
@@ -213,5 +214,110 @@ fn measure_qubit_reported_logical_after_relabel() {
     assert_eq!(
         logical_of[phys_rec.qubit as usize], high_q,
         "driver must report the LOGICAL measure qubit ({high_q}), not physical ({physical_q})"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// (D) Forced relabel + tile + un-permute on SoA and FP32 backends.
+//
+// Regression guard for the code-review finding: `RelabelQubits` is in
+// `default_pipeline`, so `run_optimized` calls `Backend::unpermute_state` when
+// a permutation is recorded. Before this fix, `SoaSvBackend` and `Fp32SvBackend`
+// inherited the default impl (errors with `UnsupportedInstruction`), so
+// `run_optimized` regressed on those backends whenever relabel fired. These
+// tests prove both now un-permute correctly and stay transparent vs the trusted
+// AoS f64 raw reference (SoA exact to 1e-12; FP32 to the 1e-4 f32 bound).
+// ---------------------------------------------------------------------------
+
+/// Compute the max elementwise error between two `Vec<Complex>`.
+fn max_err(a: &[Complex], b: &[Complex]) -> f64 {
+    assert_eq!(a.len(), b.len(), "len {} vs {}", a.len(), b.len());
+    a.iter()
+        .zip(b.iter())
+        .map(|(x, y)| (x - y).norm())
+        .fold(0.0f64, f64::max)
+}
+
+#[test]
+fn relabel_tile_unpermute_transparent_soa() {
+    const TILE_BITS: u8 = 3;
+    let mut saw_relabel = false;
+
+    for n in [6u32, 8, 10] {
+        let c = high_qubit_heavy(n);
+
+        // Trusted logical-order truth: raw AoS f64, no relabelling.
+        let reference = run(&mut NaiveSvBackend::with_seed(0), &c)
+            .unwrap()
+            .amplitudes()
+            .to_vec();
+
+        let mut opt = c.clone();
+        RelabelQubits::new(TILE_BITS).run(&mut opt).unwrap();
+        assert!(
+            opt.qubit_permutation().is_some(),
+            "relabel must fire for high-qubit-heavy n={n}"
+        );
+        saw_relabel = true;
+        TileBlock::new(TILE_BITS).run(&mut opt).unwrap();
+
+        let perm = opt.qubit_permutation().unwrap().to_vec();
+        let mut backend = SoaSvBackend::with_seed(0);
+        let mut state = run(&mut backend, &opt).unwrap();
+        backend.unpermute_state(&mut state, &perm).unwrap();
+
+        let got = state.to_aos();
+        let e = max_err(&reference, &got);
+        assert!(e < 1e-12, "SoA relabel+tile+unpermute n={n}: max err {e:e}");
+    }
+
+    assert!(
+        saw_relabel,
+        "relabel never fired — fixture failed to force it"
+    );
+}
+
+#[test]
+fn relabel_tile_unpermute_transparent_fp32() {
+    const TILE_BITS: u8 = 3;
+    // f32 tolerance (mirror fp32_equiv.rs); the un-permute gather is exact, so
+    // any error is purely the single-precision simulation drift.
+    const FP32_TOL: f64 = 1e-4;
+    let mut saw_relabel = false;
+
+    for n in [6u32, 8, 10] {
+        let c = high_qubit_heavy(n);
+
+        // Trusted logical-order truth: raw AoS f64, no relabelling.
+        let reference = run(&mut NaiveSvBackend::with_seed(0), &c)
+            .unwrap()
+            .amplitudes()
+            .to_vec();
+
+        let mut opt = c.clone();
+        RelabelQubits::new(TILE_BITS).run(&mut opt).unwrap();
+        assert!(
+            opt.qubit_permutation().is_some(),
+            "relabel must fire for high-qubit-heavy n={n}"
+        );
+        saw_relabel = true;
+        TileBlock::new(TILE_BITS).run(&mut opt).unwrap();
+
+        let perm = opt.qubit_permutation().unwrap().to_vec();
+        let mut backend = Fp32SvBackend::with_seed(0);
+        let mut state = run(&mut backend, &opt).unwrap();
+        backend.unpermute_state(&mut state, &perm).unwrap();
+
+        let got = state.to_aos_f64();
+        let e = max_err(&reference, &got);
+        assert!(
+            e < FP32_TOL,
+            "FP32 relabel+tile+unpermute n={n}: max err {e:e} >= {FP32_TOL:e}"
+        );
+    }
+
+    assert!(
+        saw_relabel,
+        "relabel never fired — fixture failed to force it"
     );
 }
