@@ -454,3 +454,88 @@ RUSTFLAGS="-C target-cpu=native" \
   cargo bench -p aleph-benches --bench qft_precision --features scaling-bench
 # emits qft_precision/{f64,f32}/{22,25} and random_precision/{f64,f32}/{22,25}.
 ```
+
+-----
+
+## 11. P2-09 — cache-blocked multi-gate application (issue #109)
+
+The last Phase-2 lever, and the only one that *avoids* the memory wall rather
+than working within it. Two parts:
+
+- **Tile-major executor.** A `TileBlock` IR pass (runs last) groups maximal runs
+  of consecutive gates whose targets are all `< tile_bits` into one
+  `Instruction::TiledBlock`; `NaiveSvBackend` applies it **tile-major** — rayon
+  over `2^tile_bits`-amplitude tiles (512 KiB at `tile_bits = 15`, fits the EPYC
+  1 MiB/core L2), each tile kept hot in L2 while every gate in the run is applied
+  before advancing. Turns *N* full-state DRAM passes into 1 for the run.
+  Bit-exact vs gate-major (no FP reorder); thread-count invariant.
+- **Qubit relabelling.** A `RelabelQubits` pass (runs first) maps high-traffic
+  qubits to low (cache-local) bit positions, recording `π[logical] = physical`;
+  `run_optimized` maps mid-circuit measure qubits through `π` and applies one
+  final gather so the returned state is logical-order. Transparent —
+  `Backend`/oracle/measure unchanged; every SV backend (Naive/SoA/FP32)
+  implements the `unpermute_state` hook. Conservative: only relabels when it
+  strictly increases tile-confinable gates, so correctness never depends on the
+  heuristic. Oracle equivalence preserved within **1e-12** (AC #3).
+
+### Wall-clock + `perf stat` — tiled vs non-tiled, EPYC 8124P (AVX-512, 16c/32t), idle-verified
+
+Both forms run the **same** pipeline; they differ only in whether `TileBlock`
+ran (and thus whether execution is tile-major). `low_qubit_heavy_circuit(n, 6,
+40)` = 40 layers of Rz/Rx + nearest-neighbour CNOTs confined to qubits 0..6.
+
+**Default pipeline (with `FuseKq`):**
+
+| workload            |    untiled |      tiled | wall  | cache-misses (untiled→tiled) |
+|---------------------|-----------:|-----------:|------:|------------------------------:|
+| low-qubit n=22      | 113.9 ms   | 112.0 ms   | 1.02× | 815.6 M → 781.7 M (−4.1 %)     |
+| low-qubit n=25      | 1.034 s    | 1.010 s    | 1.02× | 2.170 B → 2.048 B (−5.7 %)     |
+| random brick-wall n=25 (counter) | 3.722 s | 3.746 s | 0.99× | 4.606 B → 4.426 B |
+
+On the default pipeline the win is **modest (~2 % wall, ~5 % cache-miss)** — and
+the reason is a real, measured interaction: **`FuseKq` (default `max_qubits = 4`)
+already merges the low-qubit runs into ≥3q `UnitaryKq` blocks**, which the tile
+executor cannot group (`TileBlock` confines arity ≤ 2). Fusion has thus *already*
+collapsed most of the low-qubit memory-pass benefit into denser gates before
+`TileBlock` sees the run. The two optimizations are alternative strategies for
+the same gates.
+
+**Isolated (same circuit, pipeline without `FuseKq` — runs stay tileable 1q/2q):**
+
+| workload       |    untiled |     tiled | **wall** | **cache-misses** |
+|----------------|-----------:|----------:|---------:|-----------------:|
+| low-qubit n=22 | 109.4 ms   |  79.3 ms  | **1.38×** | 987 M → 302 M (**3.27× fewer**) |
+| low-qubit n=25 | 1.145 s    | 610.0 ms  | **1.88×** | 1.856 B → 317 M (**5.86× fewer**) |
+
+This is the mechanism working as designed: when fusion doesn't pre-consume the
+runs, tile-major scheduling cuts DRAM-level cache-misses **5.86×** at n=25 and
+gives a **1.88× wall-clock speedup** in the cache-resident regime. **AC #1
+(measurable L2/L3 cache-miss reduction) and AC #2 (cache-resident speedup) are
+both clearly met.** (L1-dcache load-misses rise slightly under tiling — repeated
+in-L2 tile sweeps touch L1 more — but the DRAM/LLC misses that bound bandwidth
+drop multi-fold, which is the win.) The random brick-wall counter-case shows no
+wall-clock win (gates span all qubits → nothing tile-confinable), confirming the
+benefit is regime-specific exactly as expected.
+
+### Finding: `FuseKq` ⊥ `TileBlock` — a follow-up
+
+The default pipeline runs `FuseKq` then `TileBlock`, and they compete: `FuseKq`
+turns a tileable 1q/2q run into a non-tileable ≥3q block. Whichever wins depends
+on the circuit (dense k-qubit fusion raises arithmetic intensity; tiling cuts
+DRAM passes). A regime-aware follow-up could (a) make the tile executor handle
+small `UnitaryKq` (arity ≤ tile_bits) so the two compose, or (b) choose per-run
+between fusing and tiling by a cost model. Filed as a Phase-2/3 follow-up; out of
+scope here (this ticket delivers the correct, transparent tile-major driver +
+relabelling and proves the mechanism).
+
+### Reproduce
+
+```bash
+# idle-verified EPYC box; deliver via git bundle (not a GitHub push):
+RUSTFLAGS="-C target-cpu=native" \
+  cargo bench -p aleph-benches --bench cache_blocking --features scaling-bench --no-run
+BIN=$(ls -t target/release/deps/cache_blocking-* | grep -v '\.d$' | head -1)
+perf stat -e cache-misses,L1-dcache-load-misses \
+  "$BIN" --bench --measurement-time 3 'cache_blocking/lowqubit_nokq_tiled/25$'
+# compare against .../lowqubit_nokq_untiled/25
+```
