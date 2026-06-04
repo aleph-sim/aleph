@@ -46,15 +46,18 @@ impl Tableau {
         self.n
     }
 
-    // --- read accessors (used by tests + readout) ---
+    // --- read accessors (used by tests + readout; later tasks make these non-dead) ---
+    #[allow(dead_code)]
     #[inline]
     pub(crate) fn x(&self, row: usize, col: usize) -> bool {
         self.x.get(row, col)
     }
+    #[allow(dead_code)]
     #[inline]
     pub(crate) fn z(&self, row: usize, col: usize) -> bool {
         self.z.get(row, col)
     }
+    #[allow(dead_code)]
     #[inline]
     pub(crate) fn sign(&self, row: usize) -> bool {
         self.sign[row]
@@ -122,6 +125,39 @@ impl Tableau {
         }
         Ok(())
     }
+
+    /// Pauli-X on `a`. Sign rule: `r ^= z_a` (X anticommutes with Z).
+    pub fn x_gate(&mut self, a: usize) -> Result<(), crate::StabError> {
+        self.check_qubit(a)?;
+        for i in 0..2 * self.n {
+            if self.z.get(i, a) {
+                self.sign[i] ^= true;
+            }
+        }
+        Ok(())
+    }
+
+    /// Pauli-Z on `a`. Sign rule: `r ^= x_a`.
+    pub fn z_gate(&mut self, a: usize) -> Result<(), crate::StabError> {
+        self.check_qubit(a)?;
+        for i in 0..2 * self.n {
+            if self.x.get(i, a) {
+                self.sign[i] ^= true;
+            }
+        }
+        Ok(())
+    }
+
+    /// Pauli-Y on `a`. Sign rule: `r ^= x_a ⊕ z_a`.
+    pub fn y_gate(&mut self, a: usize) -> Result<(), crate::StabError> {
+        self.check_qubit(a)?;
+        for i in 0..2 * self.n {
+            if self.x.get(i, a) ^ self.z.get(i, a) {
+                self.sign[i] ^= true;
+            }
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -157,18 +193,18 @@ mod tests {
         // canonical generators is awkward here; instead check the two
         // raw stabilizer rows are {XX:+, ZZ:+} in some order.
         let stabs: Vec<(bool, [bool; 2], [bool; 2])> = (2..4)
-            .map(|r| {
-                (
-                    t.sign(r),
-                    [t.x(r, 0), t.x(r, 1)],
-                    [t.z(r, 0), t.z(r, 1)],
-                )
-            })
+            .map(|r| (t.sign(r), [t.x(r, 0), t.x(r, 1)], [t.z(r, 0), t.z(r, 1)]))
             .collect();
         // XX row: x=[1,1], z=[0,0], sign=+
-        assert!(stabs.contains(&(false, [true, true], [false, false])), "missing +XX: {stabs:?}");
+        assert!(
+            stabs.contains(&(false, [true, true], [false, false])),
+            "missing +XX: {stabs:?}"
+        );
         // ZZ row: x=[0,0], z=[1,1], sign=+
-        assert!(stabs.contains(&(false, [false, false], [true, true])), "missing +ZZ: {stabs:?}");
+        assert!(
+            stabs.contains(&(false, [false, false], [true, true])),
+            "missing +ZZ: {stabs:?}"
+        );
     }
 
     #[test]
@@ -176,5 +212,65 @@ mod tests {
         let mut t = Tableau::new(2);
         assert!(t.h(2).is_err());
         assert!(t.cnot(0, 2).is_err());
+    }
+
+    // Apply gate `g` and its primitive decomposition to two fresh
+    // tableaux prepared identically, and assert the full tableaux match.
+    fn assert_tableaux_eq(a: &Tableau, b: &Tableau) {
+        assert_eq!(a.num_qubits(), b.num_qubits());
+        let n = a.num_qubits();
+        for r in 0..2 * n {
+            assert_eq!(a.sign(r), b.sign(r), "sign row {r}");
+            for c in 0..n {
+                assert_eq!(a.x(r, c), b.x(r, c), "x[{r}][{c}]");
+                assert_eq!(a.z(r, c), b.z(r, c), "z[{r}][{c}]");
+            }
+        }
+    }
+
+    // Prepare a generic (non-|0>) 3-qubit Clifford state to exercise
+    // sign rules on populated rows (P1-13 lesson: don't test on |0...0>).
+    fn generic_state() -> Tableau {
+        let mut t = Tableau::new(3);
+        t.h(0).unwrap();
+        t.s(0).unwrap();
+        t.cnot(0, 1).unwrap();
+        t.h(2).unwrap();
+        t.cnot(2, 1).unwrap();
+        t
+    }
+
+    #[test]
+    fn z_equals_ss() {
+        let mut direct = generic_state();
+        direct.z_gate(1).unwrap();
+        let mut decomp = generic_state();
+        decomp.s(1).unwrap();
+        decomp.s(1).unwrap();
+        assert_tableaux_eq(&direct, &decomp);
+    }
+
+    #[test]
+    fn x_equals_hssh() {
+        let mut direct = generic_state();
+        direct.x_gate(1).unwrap();
+        let mut decomp = generic_state();
+        decomp.h(1).unwrap();
+        decomp.s(1).unwrap();
+        decomp.s(1).unwrap();
+        decomp.h(1).unwrap();
+        assert_tableaux_eq(&direct, &decomp);
+    }
+
+    #[test]
+    fn y_equals_xz_up_to_phase() {
+        // Y = i·X·Z, and the i global phase is unobservable in the
+        // stabilizer group, so Y and X∘Z must produce identical tableaux.
+        let mut direct = generic_state();
+        direct.y_gate(1).unwrap();
+        let mut decomp = generic_state();
+        decomp.z_gate(1).unwrap();
+        decomp.x_gate(1).unwrap();
+        assert_tableaux_eq(&direct, &decomp);
     }
 }
