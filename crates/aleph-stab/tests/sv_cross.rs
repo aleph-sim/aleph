@@ -4,7 +4,7 @@
 //! correlations (RNG sequences differ between backends, so exact counts
 //! are not comparable).
 
-use aleph_backend::Backend;
+use aleph_backend::{run, Backend};
 use aleph_core::{Gate, GateInstance, Pauli, PauliString};
 use aleph_stab::StabilizerBackend;
 use aleph_sv::NaiveSvBackend;
@@ -116,7 +116,23 @@ fn sample_support_is_physical() {
         for s in &shots {
             let idx = *s as usize;
             let p = amps[idx].norm_sqr();
-            assert!(p > 1e-12, "circuit {k}: sampled |{s:0width$b}⟩ has prob {p}", width = N);
+            assert!(
+                p > 1e-12,
+                "circuit {k}: sampled |{s:0width$b}⟩ has prob {p}",
+                width = N
+            );
         }
     }
+}
+
+#[test]
+fn surface_code_cycle_runs_on_stabilizer() {
+    let src = std::fs::read_to_string(aleph_oracle::workspace_path(
+        "oracle/circuits/surface_code_cycle.qasm",
+    ))
+    .unwrap();
+    let circuit = aleph_parser::parse(&src).unwrap();
+    let mut be = StabilizerBackend::with_seed(0);
+    let state = run(&mut be, &circuit).unwrap();
+    assert_eq!(state.num_qubits(), 6);
 }

@@ -14,9 +14,11 @@ thiserror     = { workspace = true }
 rand          = { workspace = true }
 
 [dev-dependencies]
-aleph-sv   = { path = "../aleph-sv" }
-proptest   = { workspace = true }
-criterion  = { workspace = true }
+aleph-sv     = { path = "../aleph-sv" }
+aleph-parser = { path = "../aleph-parser" }
+aleph-oracle = { path = "../aleph-oracle" }
+proptest     = { workspace = true }
+criterion    = { workspace = true }
 
 [[bench]]
 name = "stab_clifford"
