@@ -243,8 +243,7 @@ impl Tableau {
     pub fn rows_anticommute(&self, i: usize, j: usize) -> bool {
         let mut acc = false;
         for a in 0..self.n {
-            acc ^= (self.x.get(i, a) && self.z.get(j, a))
-                ^ (self.z.get(i, a) && self.x.get(j, a));
+            acc ^= (self.x.get(i, a) && self.z.get(j, a)) ^ (self.z.get(i, a) && self.x.get(j, a));
         }
         acc
     }
