@@ -249,6 +249,11 @@ fn dispatch_tile_kernel(
             kind: g.gate.name(),
         },
     })?;
+    // Matrix shape ⇒ target count for a well-formed GateInstance: M2x2 ⇒
+    // 1 qubit, M4x4 ⇒ 2 qubits (arity is checked at construction). The
+    // `g.qubits[..]` indexing below relies on that invariant — the TileBlock
+    // pass additionally only emits arity ≤ 2 gates, so M8x8 is unreachable
+    // here (still surfaced as an error rather than a panic).
     match matrix {
         GateMatrix::M2x2(m) => {
             crate::kernels::aos::apply_1q_tile(tile, g.qubits[0], controls, &m);
