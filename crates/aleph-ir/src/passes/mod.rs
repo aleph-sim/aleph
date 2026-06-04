@@ -3,17 +3,20 @@
 //! Each pass implements [`Pass`]. A [`PassPipeline`] runs an ordered
 //! sequence of passes over a [`Circuit`], aggregating per-pass
 //! [`PassStats`]. The default pipeline ships
-//! [`cancel::CancelInversePairs`], [`dce::DeadCodeElim`],
-//! [`fuse_diagonal::FuseDiagonalRuns`], [`fuse_1q::Fuse1qRuns`],
-//! [`fuse_2q::Fuse2q`], [`fuse_kq::FuseKq`], and
+//! [`relabel::RelabelQubits`], [`cancel::CancelInversePairs`],
+//! [`dce::DeadCodeElim`], [`fuse_diagonal::FuseDiagonalRuns`],
+//! [`fuse_1q::Fuse1qRuns`], [`fuse_2q::Fuse2q`], [`fuse_kq::FuseKq`], and
 //! [`tile_block::TileBlock`] — in that pipeline order
-//! (cancellation precedes DCE so DCE can clean up gates newly exposed as
-//! dead by cancellation; diagonal fusion precedes `Fuse2q` so raw `cx`s
-//! are still absorbable; `FuseKq` runs before `TileBlock`, merging the
-//! dense 1q/2q blocks into ≥3q `UnitaryKq` blocks; `TileBlock` runs
-//! last, grouping the post-fusion low-target runs for the tile-major
-//! executor; see [`PassPipeline::default_pipeline`]). Later tickets add
-//! more passes that plug in by being pushed onto the pipeline.
+//! (`RelabelQubits` runs FIRST, permuting qubit indices so high-traffic
+//! qubits occupy low/cache-local bit positions and recording the
+//! permutation `π` on the circuit for the run driver to undo; cancellation
+//! precedes DCE so DCE can clean up gates newly exposed as dead by
+//! cancellation; diagonal fusion precedes `Fuse2q` so raw `cx`s are still
+//! absorbable; `FuseKq` runs before `TileBlock`, merging the dense 1q/2q
+//! blocks into ≥3q `UnitaryKq` blocks; `TileBlock` runs last, grouping the
+//! post-fusion low-target runs for the tile-major executor; see
+//! [`PassPipeline::default_pipeline`]). Later tickets add more passes that
+//! plug in by being pushed onto the pipeline.
 //!
 //! This module also exports [`commute::gates_commute`], a sound,
 //! conservative commutation predicate over `GateInstance` pairs that
@@ -30,6 +33,7 @@ pub mod fuse_1q;
 pub mod fuse_2q;
 pub mod fuse_diagonal;
 pub mod fuse_kq;
+pub mod relabel;
 pub mod tile_block;
 
 pub use cancel::CancelInversePairs;
@@ -39,6 +43,7 @@ pub use fuse_1q::Fuse1qRuns;
 pub use fuse_2q::Fuse2q;
 pub use fuse_diagonal::FuseDiagonalRuns;
 pub use fuse_kq::FuseKq;
+pub use relabel::RelabelQubits;
 pub use tile_block::TileBlock;
 
 /// Statistics emitted by a single pass.
@@ -85,8 +90,18 @@ impl PassPipeline {
     }
 
     /// Default pipeline. Currently
-    /// `[CancelInversePairs, DeadCodeElim, FuseDiagonalRuns, Fuse1qRuns, Fuse2q, FuseKq, TileBlock]`;
+    /// `[RelabelQubits, CancelInversePairs, DeadCodeElim, FuseDiagonalRuns, Fuse1qRuns, Fuse2q, FuseKq, TileBlock]`;
     /// later passes are appended here as they ship.
+    ///
+    /// [`RelabelQubits`] runs **first**, before any fusion. It permutes
+    /// qubit indices so the highest-traffic qubits land on low (cache-local)
+    /// bit positions, maximising how many gates `TileBlock` can later confine
+    /// to a tile, and records the permutation `π[logical] = physical` on the
+    /// circuit ([`Circuit::qubit_permutation`](crate::Circuit)). The run
+    /// driver un-permutes the final state back to logical order. The pass is
+    /// conservative — it only commits a non-identity permutation when doing so
+    /// strictly increases the tile-confinable gate count — so correctness
+    /// never hinges on the heuristic, only the achieved speedup.
     ///
     /// Cancellation runs **before** dead-code elimination because
     /// cancelling an inverse pair can expose newly-dead gates — e.g. a
@@ -145,6 +160,7 @@ impl PassPipeline {
     /// for `TileBlock` itself, so a second pipeline pass is a no-op.
     pub fn default_pipeline() -> Self {
         Self::new(vec![
+            Box::new(RelabelQubits::default()),
             Box::new(CancelInversePairs),
             Box::new(DeadCodeElim),
             Box::new(FuseDiagonalRuns),
