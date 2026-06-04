@@ -109,34 +109,37 @@ fn stim_program(circ: &[GateInstance]) -> String {
     s
 }
 
-/// Run the python helper; return Stim's canonical generators (one per
-/// line, "+XZ_Y" format). Our side must be canonicalized identically,
-/// so we ALSO send our generators and let Python canonicalize both with
-/// stim.PauliString / stim.Tableau.from_stabilizers.
+/// Run the python helper; return `(reference, ours)` canonical generator
+/// lists (one per line, "+XZ_Y" format). Both sides are routed through
+/// the SAME canonicalizer so the comparison depends only on the
+/// stabilizer *group*, not the generator choice.
 fn stim_canonical(circ: &[GateInstance], ours: &[String]) -> Option<(Vec<String>, Vec<String>)> {
+    // Pinned to the stim 1.16 API: `stim.Tableau.to_stabilizers(...)`
+    // (the older `Tableau.stabilizers` was removed). `from_stabilizers`
+    // takes an n-element list of independent commuting generators — which
+    // a well-formed tableau always supplies — so a malformed group on our
+    // side surfaces as a hard error here (a real test failure).
     let py = r#"
 import sys, stim
 data = sys.stdin.read().split("---\n")
 prog = data[0]
 ours = [l for l in data[1].splitlines() if l]
-# Reference from the circuit:
+# Reference: evolve the circuit, take its canonical stabilizers, then
+# re-canonicalize through a Tableau so both sides use one canonical form.
 sim = stim.TableauSimulator()
-for line in prog.splitlines():
-    if not line.strip():
-        continue
-    parts = line.split()
-    op = parts[0]
-    args = [int(x) for x in parts[1:]]
-    sim.do(stim.Circuit(line))
-ref = sim.canonical_stabilizers()
-ref_str = [str(p) for p in ref]
-# Canonicalize ours through stim so the comparison uses one canonical form:
+sim.do(stim.Circuit(prog))
+ref_ps = sim.canonical_stabilizers()
+ref_canon = stim.Tableau.from_stabilizers(
+    ref_ps, allow_redundant=False, allow_underconstrained=False
+).to_stabilizers(canonicalize=True)
+# Ours: parse our generators and canonicalize identically.
 ours_ps = [stim.PauliString(s) for s in ours]
-t = stim.Tableau.from_stabilizers(ours_ps, allow_redundant=False, allow_underconstrained=False)
-ours_canon = [str(p) for p in t.to_stabilizers(canonicalize=True)] if hasattr(t,'to_stabilizers') else ref_str
-print("\n".join(ref_str))
+ours_canon = stim.Tableau.from_stabilizers(
+    ours_ps, allow_redundant=False, allow_underconstrained=False
+).to_stabilizers(canonicalize=True)
+print("\n".join(str(p) for p in ref_canon))
 print("===")
-print("\n".join(str(p) for p in stim.Tableau.from_stabilizers(ours_ps).stabilizers(canonicalize=True)))
+print("\n".join(str(p) for p in ours_canon))
 "#;
     let mut input = stim_program(circ);
     input.push_str("---\n");
