@@ -25,8 +25,6 @@ pub struct Tableau {
 /// Aaronson-Gottesman §2 phase exponent: the power of `i` introduced when
 /// the single-qubit Pauli `(x1,z1)` is left-multiplied onto `(x2,z2)`.
 /// Returns a value in `{-1, 0, 1}`. Used by [`Tableau::rowsum`].
-// `rowsum` arrives in Task 2; suppress the interim dead-code lint.
-#[allow(dead_code)]
 fn g(x1: bool, z1: bool, x2: bool, z2: bool) -> i32 {
     let x2 = x2 as i32;
     let z2 = z2 as i32;
@@ -65,9 +63,9 @@ impl Tableau {
     }
 
     // --- read accessors (used by tests + readout) ---
-    // `pub(crate)` so tests and dispatch can read raw tableau bits; P3-02
-    // will use these for measurement. `allow(dead_code)` because they're
-    // only referenced inside `#[cfg(test)]` until P3-02.
+    // `pub(crate)` so tests and dispatch can read raw tableau bits.
+    // `allow(dead_code)`: only referenced in `#[cfg(test)]` until P3-03
+    // wires up a readout API in non-test code.
     #[allow(dead_code)]
     #[inline]
     pub(crate) fn x(&self, row: usize, col: usize) -> bool {
@@ -296,8 +294,6 @@ impl Tableau {
     /// the sign. The phase accumulates as `2·r_h + 2·r_i + Σ_j g(...)`
     /// reduced mod 4, which is always 0 or 2 (real `±1`) for a product of
     /// two Pauli generators.
-    // `measure` (Task 3) calls all three helpers; suppress the interim lint.
-    #[allow(dead_code)]
     fn rowsum(&mut self, h: usize, i: usize) {
         let mut acc: i32 = 2 * self.sign[h] as i32 + 2 * self.sign[i] as i32;
         for j in 0..self.n {
@@ -320,7 +316,6 @@ impl Tableau {
     }
 
     /// Copy a full generator row (x bits, z bits, sign) from `src` to `dst`.
-    #[allow(dead_code)]
     fn copy_row(&mut self, dst: usize, src: usize) {
         for j in 0..self.n {
             self.x.set(dst, j, self.x.get(src, j));
@@ -330,7 +325,6 @@ impl Tableau {
     }
 
     /// Reset a row to the identity Pauli with `+` sign.
-    #[allow(dead_code)]
     fn zero_row(&mut self, r: usize) {
         for j in 0..self.n {
             self.x.set(r, j, false);
@@ -338,12 +332,62 @@ impl Tableau {
         }
         self.sign[r] = false;
     }
+
+    /// Projective Z-basis measurement of qubit `a` with state collapse
+    /// (Aaronson-Gottesman §3). Returns the outcome bit (`true` = `|1>`).
+    ///
+    /// If `Z_a` anticommutes with some stabilizer the outcome is random
+    /// (drawn from `rng`) and the tableau collapses accordingly; otherwise
+    /// the outcome is determined by the current state. `rng` is consumed
+    /// only in the random case.
+    pub fn measure<R: rand::Rng>(
+        &mut self,
+        a: usize,
+        rng: &mut R,
+    ) -> Result<bool, crate::StabError> {
+        self.check_qubit(a)?;
+        // A stabilizer row anticommuting with Z_a (i.e. with an X/Y on a)
+        // ⇒ random outcome.
+        let p = (self.n..2 * self.n).find(|&row| self.x.get(row, a));
+        match p {
+            Some(p) => {
+                // Random outcome: eliminate column `a`'s X from every other
+                // row, promote p to a destabilizer, install Z_a as the new
+                // stabilizer with a random sign.
+                for i in 0..2 * self.n {
+                    if i != p && self.x.get(i, a) {
+                        self.rowsum(i, p);
+                    }
+                }
+                self.copy_row(p - self.n, p);
+                self.zero_row(p);
+                self.z.set(p, a, true);
+                let outcome = rng.gen::<bool>();
+                self.sign[p] = outcome;
+                Ok(outcome)
+            }
+            None => {
+                // Deterministic outcome: accumulate the relevant stabilizers
+                // into the scratch row; its resulting sign is the outcome.
+                let scratch = 2 * self.n;
+                self.zero_row(scratch);
+                for i in 0..self.n {
+                    if self.x.get(i, a) {
+                        self.rowsum(scratch, i + self.n);
+                    }
+                }
+                Ok(self.sign[scratch])
+            }
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::Tableau;
     use aleph_core::{Pauli, PauliString};
+    use rand::rngs::StdRng;
+    use rand::SeedableRng;
 
     #[test]
     fn identity_tableau_is_zero_state() {
@@ -595,5 +639,54 @@ mod tests {
                 assert!(!t.rows_anticommute(n + i, n + j)); // stabs commute
             }
         }
+    }
+
+    #[test]
+    fn measure_zero_state_is_deterministic_zero() {
+        let mut rng = StdRng::seed_from_u64(1);
+        let mut t = Tableau::new(3);
+        for a in 0..3 {
+            assert!(!t.measure(a, &mut rng).unwrap(), "|0> qubit {a}");
+        }
+        // Out-of-range rejected.
+        assert!(t.measure(3, &mut rng).is_err());
+    }
+
+    #[test]
+    fn measure_bell_forces_correlation() {
+        // |Φ+> = (|00>+|11>)/√2: measuring q0 is random; q1 must equal q0.
+        let mut rng = StdRng::seed_from_u64(7);
+        for _ in 0..32 {
+            let mut t = Tableau::new(2);
+            t.h(0).unwrap();
+            t.cnot(0, 1).unwrap();
+            let b0 = t.measure(0, &mut rng).unwrap();
+            let b1 = t.measure(1, &mut rng).unwrap();
+            assert_eq!(b0, b1, "Bell correlation broken");
+            // Re-measuring q0 after collapse returns the same value.
+            let b0_again = t.measure(0, &mut rng).unwrap();
+            assert_eq!(b0, b0_again, "post-collapse determinism broken");
+        }
+    }
+
+    #[test]
+    fn measure_plus_state_is_random() {
+        // H|0> = |+>: measuring in Z is random; over many seeds we should
+        // see both outcomes.
+        let mut saw_false = false;
+        let mut saw_true = false;
+        for seed in 0..64u64 {
+            let mut rng = StdRng::seed_from_u64(seed);
+            let mut t = Tableau::new(1);
+            t.h(0).unwrap();
+            match t.measure(0, &mut rng).unwrap() {
+                false => saw_false = true,
+                true => saw_true = true,
+            }
+        }
+        assert!(
+            saw_false && saw_true,
+            "|+> measurement never produced both outcomes"
+        );
     }
 }
