@@ -9,6 +9,10 @@
 #[allow(dead_code)] // used by later tasks (MpsState in Task 2+)
 mod tensor;
 
+#[allow(dead_code)] // methods are consumed by Task 9's backend; allow until then
+mod mps;
+pub use mps::MpsState;
+
 /// Errors raised by the MPS state operations, before mapping to the shared
 /// `aleph_backend::BackendError`.
 #[derive(Debug, thiserror::Error, PartialEq)]
