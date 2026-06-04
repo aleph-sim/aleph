@@ -47,6 +47,7 @@ dependencies = [
  "aleph-ir",
  "aleph-oracle",
  "aleph-parser",
+ "aleph-stab",
  "aleph-sv",
  "anyhow",
  "assert_cmd",
@@ -125,6 +126,8 @@ version = "0.0.0"
 dependencies = [
  "aleph-backend",
  "aleph-core",
+ "aleph-oracle",
+ "aleph-parser",
  "aleph-sv",
  "criterion",
  "proptest",
