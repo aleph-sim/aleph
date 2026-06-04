@@ -3829,8 +3829,7 @@ fn apply_3q_generic(
 /// avoid nested parallelism. `target` and every control bit are
 /// interpreted relative to the slice; the caller guarantees `target`
 /// indexes within the slice (`1 << target <= slice.len()`).
-// Called by the tiled-block executor (Task 4); not yet wired in.
-#[allow(dead_code)]
+// Called by the tiled-block executor (`NaiveSvBackend::apply_tiled_block`).
 pub(crate) fn apply_1q_tile(
     slice: &mut [Complex],
     target: u32,
@@ -3859,8 +3858,7 @@ pub(crate) fn apply_1q_tile(
 /// `t1_bit`/`t_mask`, same MSB-convention quartet, same read-all-4-before-
 /// write contract. `targets` and every control bit are interpreted relative
 /// to the slice; the caller guarantees both target bits index within the slice.
-// Called by the tiled-block executor (Task 4); not yet wired in.
-#[allow(dead_code)]
+// Called by the tiled-block executor (`NaiveSvBackend::apply_tiled_block`).
 pub(crate) fn apply_2q_tile(
     slice: &mut [Complex],
     targets: [u32; 2],
