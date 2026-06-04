@@ -62,6 +62,41 @@ pub fn qft_circuit(n: u32) -> Circuit {
     c
 }
 
+/// A low-qubit-heavy circuit: `depth` layers of single-qubit Rz+Rx
+/// rotations and nearest-neighbour CNOTs confined to the lowest `width`
+/// qubits, on an `n`-qubit register (the high qubits stay idle).
+///
+/// This is the regime the P2-09 tile-major executor targets: most gates
+/// are tile-confinable (`TileBlock` default `tile_bits = 15` ≥ `width`),
+/// so the tile executor collapses many DRAM passes into one.  Angles are
+/// deterministic (function of `(layer, q)`) so no rand dependency.
+///
+/// # Panics
+/// Panics if `width < 2` or `width > n`.
+#[must_use]
+pub fn low_qubit_heavy_circuit(n: u32, width: u32, depth: usize) -> Circuit {
+    assert!(width >= 2 && width <= n, "width must be in [2, n]");
+    let mut c = Circuit::new(n, 0);
+    for layer in 0..depth {
+        // 1q rotations on every active qubit — same angle idiom as
+        // random_brickwall_circuit so the builder stays consistent.
+        for q in 0..width {
+            let theta = ((layer as f64 + 1.0) * 0.123 + q as f64 * 0.071) % std::f64::consts::TAU;
+            let _ = c.rz(theta, q);
+            let _ = c.rx(theta * 1.13, q);
+        }
+        // Nearest-neighbour CNOT layer inside the active window.
+        // Even layers: (0,1),(2,3),…; odd layers: (1,2),(3,4),…
+        let offset = (layer & 1) as u32;
+        let mut q = offset;
+        while q + 1 < width {
+            let _ = c.cnot(q, q + 1);
+            q += 2;
+        }
+    }
+    c
+}
+
 /// Brick-wall random-circuit-shaped workload, `depth` layers of
 /// alternating-pair CNOTs interleaved with random 1q rotations.  Not
 /// a real Sycamore-style random circuit (no Haar-random SU(4)
@@ -92,4 +127,29 @@ pub fn random_brickwall_circuit(n: u32, depth: usize) -> Circuit {
         }
     }
     c
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aleph_ir::Instruction;
+
+    /// Sanity: the low-qubit-heavy circuit (width=6 < tile_bits=15)
+    /// must produce at least one `TiledBlock` after `optimize()`, so the
+    /// cache-blocking bench actually exercises the tile-major executor.
+    #[test]
+    fn low_qubit_heavy_optimize_produces_tiled_block() {
+        let mut c = low_qubit_heavy_circuit(12, 6, 10);
+        c.optimize().expect("optimize should not fail");
+        let has_tiled = c
+            .instructions()
+            .iter()
+            .any(|i| matches!(i, Instruction::TiledBlock(_)));
+        assert!(
+            has_tiled,
+            "optimize() on low_qubit_heavy_circuit(12,6,10) must produce \
+             at least one TiledBlock (width=6 < tile_bits=15 means all \
+             active-window gates are tile-confinable)"
+        );
+    }
 }

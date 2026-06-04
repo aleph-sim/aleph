@@ -85,3 +85,8 @@ required-features = ["scaling-bench"]
 name = "qft_precision"
 harness = false
 required-features = ["scaling-bench"]
+
+[[bench]]
+name = "cache_blocking"
+harness = false
+required-features = ["scaling-bench"]
