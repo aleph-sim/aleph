@@ -19,3 +19,4 @@ thiserror = { workspace = true }
 aleph-sv = { path = "../aleph-sv" }
 aleph-parser = { path = "../aleph-parser" }
 proptest = { workspace = true }
+smallvec = { workspace = true }

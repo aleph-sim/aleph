@@ -13,6 +13,9 @@ mod tensor;
 mod mps;
 pub use mps::MpsState;
 
+#[allow(dead_code)] // matrix_2x2 is pub(crate); later tasks call it
+mod gate;
+
 /// Errors raised by the MPS state operations, before mapping to the shared
 /// `aleph_backend::BackendError`.
 #[derive(Debug, thiserror::Error, PartialEq)]

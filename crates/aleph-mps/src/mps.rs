@@ -38,6 +38,20 @@ impl MpsState {
     /// Contract the whole chain into a dense `2^n` amplitude vector.
     /// TEST/SMALL-n ONLY (allocates 2^n). Amplitude index uses the ADR-0004
     /// convention: qubit `q` (== site `q`) occupies bit `q`.
+    /// Apply a 1q unitary to site `i` (qubit `i`). Preserves canonical form,
+    /// so neither the center nor any SVD is touched.
+    pub(crate) fn apply_1q(&mut self, i: usize, u: &[[Complex; 2]; 2]) {
+        let site = &mut self.sites[i];
+        for l in 0..site.left {
+            for r in 0..site.right {
+                let a0 = site.get(l, 0, r);
+                let a1 = site.get(l, 1, r);
+                *site.get_mut(l, 0, r) = u[0][0] * a0 + u[0][1] * a1;
+                *site.get_mut(l, 1, r) = u[1][0] * a0 + u[1][1] * a1;
+            }
+        }
+    }
+
     pub fn dense_statevector(&self) -> Vec<Complex> {
         let n = self.sites.len();
         // amps is laid out as [basis_prefix * left_dim + l]:
@@ -85,9 +99,34 @@ impl MpsState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aleph_core::{Gate, GateInstance};
+    use smallvec::smallvec;
 
     fn norm_sq(v: &[Complex]) -> f64 {
         v.iter().map(|c| c.norm_sqr()).sum()
+    }
+
+    #[test]
+    fn x_on_zero_is_one() {
+        let mut s = MpsState::new(1, 64);
+        let x = crate::gate::matrix_2x2(&GateInstance::new(Gate::X, smallvec![0u32])).unwrap();
+        s.apply_1q(0, &x);
+        let v = s.dense_statevector();
+        assert!(v[0].norm() < 1e-12);
+        assert!((v[1].re - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn h_on_zero_is_plus() {
+        let mut s = MpsState::new(2, 64);
+        let h = crate::gate::matrix_2x2(&GateInstance::new(Gate::H, smallvec![0u32])).unwrap();
+        s.apply_1q(0, &h);
+        let v = s.dense_statevector();
+        let inv = 1.0 / 2f64.sqrt();
+        assert!((v[0].re - inv).abs() < 1e-12); // |00>
+        assert!((v[1].re - inv).abs() < 1e-12); // |01> (q0=1)
+        assert!(v[2].norm() < 1e-12);
+        assert!(v[3].norm() < 1e-12);
     }
 
     #[test]
