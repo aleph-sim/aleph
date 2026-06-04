@@ -1,8 +1,9 @@
 //! Mixed-canonical MPS state: init, dense reconstruction, canonicalization,
 //! gate application, expectation, measurement, sampling, probabilities.
 
-use crate::tensor::{thin_qr, Site};
-use aleph_core::Complex;
+use crate::tensor::{thin_qr, truncated_svd, Site};
+use crate::MpsError;
+use aleph_core::{Complex, GateInstance};
 use nalgebra::DMatrix;
 
 /// Mixed-canonical MPS. Sites left of `center` are left-canonical, sites right
@@ -48,6 +49,136 @@ impl MpsState {
                 *site.get_mut(l, 1, r) = u[1][0] * a0 + u[1][1] * a1;
             }
         }
+    }
+
+    /// Apply a 2q unitary `u` (4×4 matrix) to nearest-neighbor qubits.
+    ///
+    /// The gate's qubit ordering follows the ADR-0004 / P0-06 MSB convention:
+    /// `g.qubits[0]` is the **most-significant** bit of the matrix row/column
+    /// index. This matches every other backend in the codebase.
+    ///
+    /// Only nearest-neighbor pairs (`|qa − qb| == 1`) are supported; the basic
+    /// MPS chain cannot apply long-range gates without SWAP networks (P3-06).
+    pub(crate) fn apply_2q(
+        &mut self,
+        g: &GateInstance,
+        u: &[[Complex; 4]; 4],
+    ) -> Result<(), MpsError> {
+        let qa = g.qubits[0];
+        let qb = g.qubits[1];
+        if qa.abs_diff(qb) != 1 {
+            return Err(MpsError::NonNearestNeighbor { a: qa, b: qb });
+        }
+
+        let i = qa.min(qb) as usize;
+        let j = i + 1;
+
+        // Move the orthogonality center to site i so that the two-site
+        // contraction preserves normalization after re-factorization.
+        self.move_center_to(i);
+
+        let li = self.sites[i].left;
+        let mi = self.sites[i].right; // shared bond between site i and j
+        let ri = self.sites[j].right;
+
+        // Build the two-site tensor Θ[l, a, b, r] = Σ_m sites[i][l,a,m] · sites[j][m,b,r]
+        // Flat index: ((l * 2 + a) * 2 + b) * ri + r
+        let theta_len = li * 2 * 2 * ri;
+        let mut theta = vec![Complex::new(0.0, 0.0); theta_len];
+
+        // Explicit loops — nested-tensor contractions are clearer than iterators here.
+        #[allow(clippy::needless_range_loop)]
+        for l in 0..li {
+            for a in 0..2usize {
+                for b in 0..2usize {
+                    for r in 0..ri {
+                        let mut acc = Complex::new(0.0, 0.0);
+                        for m in 0..mi {
+                            acc += self.sites[i].get(l, a, m) * self.sites[j].get(m, b, r);
+                        }
+                        theta[((l * 2 + a) * 2 + b) * ri + r] = acc;
+                    }
+                }
+            }
+        }
+
+        // Helper: given the physical indices of site i (phys_i) and site j (phys_j),
+        // return the 2q matrix row/column index following the MSB convention:
+        // g.qubits[0] is the MSB, g.qubits[1] is the LSB.
+        let out = |phys_i: usize, phys_j: usize| -> usize {
+            // Identify which physical index maps to qubits[0] (MSB) and qubits[1] (LSB).
+            let bit_q0 = if g.qubits[0] as usize == i {
+                phys_i
+            } else {
+                phys_j
+            };
+            let bit_q1 = if g.qubits[1] as usize == i {
+                phys_i
+            } else {
+                phys_j
+            };
+            // qubits[0] is MSB, qubits[1] is LSB (ADR-0004 / P0-06 convention).
+            (bit_q0 << 1) | bit_q1
+        };
+
+        // Apply the gate: Θ'[l,a',b',r] = Σ_{a,b} U[out(a',b')][out(a,b)] · Θ[l,a,b,r]
+        let mut theta2 = vec![Complex::new(0.0, 0.0); theta_len];
+
+        #[allow(clippy::needless_range_loop)]
+        for l in 0..li {
+            for ap in 0..2usize {
+                for bp in 0..2usize {
+                    let row = out(ap, bp);
+                    for a in 0..2usize {
+                        for b in 0..2usize {
+                            let col = out(a, b);
+                            let u_entry = u[row][col];
+                            if u_entry == Complex::new(0.0, 0.0) {
+                                continue;
+                            }
+                            for r in 0..ri {
+                                theta2[((l * 2 + ap) * 2 + bp) * ri + r] +=
+                                    u_entry * theta[((l * 2 + a) * 2 + b) * ri + r];
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Reshape Θ' to matrix M of shape (li*2) × (2*ri):
+        //   row = l*2 + a'  (group left bond and physical of site i)
+        //   col = b'*ri + r (group physical of site j and right bond)
+        // This matches from_group_left / from_group_right conventions.
+        let m = DMatrix::from_fn(li * 2, 2 * ri, |row, col| {
+            let l = row / 2;
+            let ap = row % 2;
+            let bp = col / ri;
+            let r = col % ri;
+            theta2[((l * 2 + ap) * 2 + bp) * ri + r]
+        });
+
+        // Truncated SVD: M = U · diag(s) · Vt, keeping at most max_bond components.
+        let (u_s, s_kept, vt_s, discarded) = truncated_svd(&m, self.max_bond);
+        self.trunc_error += discarded;
+        let chi = s_kept.len();
+
+        // New site i: left-canonical from the U factor, shape (li, chi).
+        self.sites[i] = Site::from_group_left(&u_s, li, chi);
+
+        // New site j: multiply singular values into Vt rows, shape (chi, ri) physical-grouped.
+        // sv[(row, col)] = s_kept[row] * vt_s[(row, col)]
+        let mut sv = vt_s;
+        for row in 0..chi {
+            for col in 0..sv.ncols() {
+                sv[(row, col)] *= s_kept[row];
+            }
+        }
+        // sv has shape chi × (2*ri) — matches from_group_right(left=chi, right=ri).
+        self.sites[j] = Site::from_group_right(&sv, chi, ri);
+        self.center = j;
+
+        Ok(())
     }
 
     /// Multiply matrix `r` into site `i`'s LEFT bond:
@@ -186,6 +317,7 @@ impl MpsState {
 mod tests {
     use super::*;
     use crate::tensor::Site;
+    use crate::MpsError;
     use aleph_core::{Gate, GateInstance};
     use smallvec::smallvec;
 
@@ -291,5 +423,44 @@ mod tests {
         assert_eq!(v.len(), 2);
         assert!((v[0].re - 1.0).abs() < 1e-12);
         assert!(v[1].norm() < 1e-12);
+    }
+
+    #[test]
+    fn bell_via_h_cnot() {
+        let mut s = MpsState::new(2, 64);
+        let h = crate::gate::matrix_2x2(&GateInstance::new(Gate::H, smallvec![0u32])).unwrap();
+        s.apply_1q(0, &h);
+        let g = GateInstance::new(Gate::Cnot, smallvec![0u32, 1u32]);
+        let cnot = crate::gate::matrix_4x4(&g).unwrap();
+        s.apply_2q(&g, &cnot).unwrap();
+        let v = s.dense_statevector();
+        let inv = 1.0 / 2f64.sqrt();
+        assert!((v[0].re - inv).abs() < 1e-10); // |00>
+        assert!(v[1].norm() < 1e-10);
+        assert!(v[2].norm() < 1e-10);
+        assert!((v[3].re - inv).abs() < 1e-10); // |11>
+        assert!(s.truncation_error() < 1e-12);
+    }
+
+    #[test]
+    fn rejects_non_adjacent() {
+        let mut s = MpsState::new(3, 64);
+        let g = GateInstance::new(Gate::Cnot, smallvec![0u32, 2u32]);
+        let cnot = crate::gate::matrix_4x4(&g).unwrap();
+        let err = s.apply_2q(&g, &cnot).unwrap_err();
+        assert!(matches!(err, MpsError::NonNearestNeighbor { a: 0, b: 2 }));
+    }
+
+    #[test]
+    fn cnot_reversed_qubit_order() {
+        // CNOT qubits [1,0]: control=q1, target=q0. Prep q1=|1>, then CNOT → |11>.
+        let mut s = MpsState::new(2, 64);
+        let x = crate::gate::matrix_2x2(&GateInstance::new(Gate::X, smallvec![1u32])).unwrap();
+        s.apply_1q(1, &x);
+        let g = GateInstance::new(Gate::Cnot, smallvec![1u32, 0u32]);
+        let cnot = crate::gate::matrix_4x4(&g).unwrap();
+        s.apply_2q(&g, &cnot).unwrap();
+        let v = s.dense_statevector();
+        assert!((v[3].re - 1.0).abs() < 1e-10); // |11> index 3
     }
 }

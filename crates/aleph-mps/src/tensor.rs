@@ -105,6 +105,37 @@ impl Site {
     }
 }
 
+/// SVD of `m` truncated to at most `max_bond` singular values, renormalized to
+/// preserve unit weight (input must come from a normalized state). Returns
+/// `(u_kept, s_kept, vt_kept, discarded_weight)` where:
+/// - `u_kept` has shape `rows × χ`
+/// - `s_kept` is the χ kept (renormalized) singular values
+/// - `vt_kept` has shape `χ × cols`
+/// - `discarded_weight` is the sum of squares of discarded singular values
+pub fn truncated_svd(
+    m: &DMatrix<Complex>,
+    max_bond: usize,
+) -> (DMatrix<Complex>, Vec<f64>, DMatrix<Complex>, f64) {
+    let svd = m.clone().svd(true, true);
+    // svd(true, true) always computes both U and V^T — the Options are never None.
+    let u = svd.u.expect("svd(true,true) always computes U");
+    let vt = svd.v_t.expect("svd(true,true) always computes V^T");
+    let s: Vec<f64> = svd.singular_values.iter().copied().collect();
+    let rank = s.len();
+    let chi = rank.min(max_bond.max(1));
+    let discarded: f64 = s[chi..].iter().map(|x| x * x).sum();
+    let kept_weight: f64 = s[..chi].iter().map(|x| x * x).sum();
+    let scale = if kept_weight > 0.0 {
+        (1.0 / kept_weight).sqrt()
+    } else {
+        1.0
+    };
+    let s_kept: Vec<f64> = s[..chi].iter().map(|x| x * scale).collect();
+    let u_kept = u.columns(0, chi).into_owned();
+    let vt_kept = vt.rows(0, chi).into_owned();
+    (u_kept, s_kept, vt_kept, discarded)
+}
+
 /// Thin QR decomposition: returns `(Q, R)` with `Q` of shape `rows × k` and
 /// `R` of shape `k × cols`, where `k = min(rows, cols)`.
 ///
