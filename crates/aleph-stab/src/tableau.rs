@@ -82,14 +82,22 @@ impl Tableau {
     /// Hadamard on qubit `a`. AG §2: `r ^= x_a·z_a`; swap `x_a, z_a`.
     pub fn h(&mut self, a: usize) -> Result<(), crate::StabError> {
         self.check_qubit(a)?;
+        // Hoist column word-offset and mask; both are loop-invariant.
+        let stride = self.x.row_stride();
+        let wa = a >> 6;
+        let ma = 1u64 << (a & 63);
         for i in 0..2 * self.n {
-            let xa = self.x.get(i, a);
-            let za = self.z.get(i, a);
-            if xa && za {
-                self.sign[i] ^= true;
-            }
-            self.x.set(i, a, za);
-            self.z.set(i, a, xa);
+            let base = i * stride;
+            let xw = self.x.word(base + wa);
+            let zw = self.z.word(base + wa);
+            let xa = (xw & ma) != 0;
+            let za = (zw & ma) != 0;
+            // Branchless sign update: sign ^= x_a & z_a.
+            self.sign[i] ^= xa & za;
+            // Swap x_a and z_a in-place: write the other grid's bit into each.
+            // Clear the bit then OR in the swapped value.
+            *self.x.word_mut(base + wa) = (xw & !ma) | (if za { ma } else { 0 });
+            *self.z.word_mut(base + wa) = (zw & !ma) | (if xa { ma } else { 0 });
         }
         Ok(())
     }
@@ -97,13 +105,18 @@ impl Tableau {
     /// Phase gate S on qubit `a`. AG §2: `r ^= x_a·z_a`; `z_a ^= x_a`.
     pub fn s(&mut self, a: usize) -> Result<(), crate::StabError> {
         self.check_qubit(a)?;
+        let stride = self.x.row_stride();
+        let wa = a >> 6;
+        let ma = 1u64 << (a & 63);
         for i in 0..2 * self.n {
-            if self.x.get(i, a) && self.z.get(i, a) {
-                self.sign[i] ^= true;
-            }
-            if self.x.get(i, a) {
-                self.z.toggle(i, a);
-            }
+            let base = i * stride;
+            let xa = (self.x.word(base + wa) & ma) != 0;
+            let za = (self.z.word(base + wa) & ma) != 0;
+            // sign ^= x_a & z_a  (branchless bool-and)
+            self.sign[i] ^= xa & za;
+            // z_a ^= x_a  (branchless: XOR mask when x_a is set)
+            // 0u64.wrapping_sub(xa as u64) is all-ones if xa, else 0.
+            *self.z.word_mut(base + wa) ^= ma & (0u64.wrapping_sub(xa as u64));
         }
         Ok(())
     }
@@ -113,20 +126,26 @@ impl Tableau {
     pub fn cnot(&mut self, a: usize, b: usize) -> Result<(), crate::StabError> {
         self.check_qubit(a)?;
         self.check_qubit(b)?;
+        // Hoist both column word-offsets and masks; both are loop-invariant.
+        let stride = self.x.row_stride();
+        let wa = a >> 6;
+        let ma = 1u64 << (a & 63);
+        let wb = b >> 6;
+        let mb = 1u64 << (b & 63);
         for i in 0..2 * self.n {
-            let xa = self.x.get(i, a);
-            let xb = self.x.get(i, b);
-            let za = self.z.get(i, a);
-            let zb = self.z.get(i, b);
-            if xa && zb && (xb ^ za ^ true) {
-                self.sign[i] ^= true;
-            }
-            if xa {
-                self.x.toggle(i, b);
-            }
-            if zb {
-                self.z.toggle(i, a);
-            }
+            let base = i * stride;
+            // Read all four bits from the ORIGINAL row before any mutation.
+            let xa = (self.x.word(base + wa) & ma) != 0;
+            let xb = (self.x.word(base + wb) & mb) != 0;
+            let za = (self.z.word(base + wa) & ma) != 0;
+            let zb = (self.z.word(base + wb) & mb) != 0;
+            // sign ^= x_a & z_b & (x_b ^ z_a ^ 1)  — fully branchless.
+            // (x_b ^ z_a ^ true) is !(x_b ^ z_a), i.e. x_b XNOR z_a.
+            self.sign[i] ^= xa & zb & !(xb ^ za);
+            // x_b ^= x_a  (branchless)
+            *self.x.word_mut(base + wb) ^= mb & (0u64.wrapping_sub(xa as u64));
+            // z_a ^= z_b  (branchless)
+            *self.z.word_mut(base + wa) ^= ma & (0u64.wrapping_sub(zb as u64));
         }
         Ok(())
     }
@@ -134,10 +153,12 @@ impl Tableau {
     /// Pauli-X on `a`. Sign rule: `r ^= z_a` (X anticommutes with Z).
     pub fn x_gate(&mut self, a: usize) -> Result<(), crate::StabError> {
         self.check_qubit(a)?;
+        let stride = self.z.row_stride();
+        let wa = a >> 6;
+        let ma = 1u64 << (a & 63);
         for i in 0..2 * self.n {
-            if self.z.get(i, a) {
-                self.sign[i] ^= true;
-            }
+            let za = (self.z.word(i * stride + wa) & ma) != 0;
+            self.sign[i] ^= za;
         }
         Ok(())
     }
@@ -145,10 +166,12 @@ impl Tableau {
     /// Pauli-Z on `a`. Sign rule: `r ^= x_a`.
     pub fn z_gate(&mut self, a: usize) -> Result<(), crate::StabError> {
         self.check_qubit(a)?;
+        let stride = self.x.row_stride();
+        let wa = a >> 6;
+        let ma = 1u64 << (a & 63);
         for i in 0..2 * self.n {
-            if self.x.get(i, a) {
-                self.sign[i] ^= true;
-            }
+            let xa = (self.x.word(i * stride + wa) & ma) != 0;
+            self.sign[i] ^= xa;
         }
         Ok(())
     }
@@ -156,10 +179,14 @@ impl Tableau {
     /// Pauli-Y on `a`. Sign rule: `r ^= x_a ⊕ z_a`.
     pub fn y_gate(&mut self, a: usize) -> Result<(), crate::StabError> {
         self.check_qubit(a)?;
+        let stride = self.x.row_stride();
+        let wa = a >> 6;
+        let ma = 1u64 << (a & 63);
         for i in 0..2 * self.n {
-            if self.x.get(i, a) ^ self.z.get(i, a) {
-                self.sign[i] ^= true;
-            }
+            let base = i * stride;
+            let xa = (self.x.word(base + wa) & ma) != 0;
+            let za = (self.z.word(base + wa) & ma) != 0;
+            self.sign[i] ^= xa ^ za;
         }
         Ok(())
     }

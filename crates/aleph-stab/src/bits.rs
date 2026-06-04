@@ -50,6 +50,28 @@ impl BitGrid {
         let (w, mask) = self.word_index(row, col);
         self.words[w] ^= mask;
     }
+
+    // --- word-level accessors for hoisted hot-loop indexing ---
+
+    /// Number of `u64` words per row.
+    #[inline]
+    pub(crate) fn row_stride(&self) -> usize {
+        self.stride
+    }
+
+    /// Read the word at a precomputed flat index `row * stride + word_col`.
+    /// Callers must ensure `idx < self.words.len()`.
+    #[inline]
+    pub(crate) fn word(&self, idx: usize) -> u64 {
+        self.words[idx]
+    }
+
+    /// Mutable reference to the word at a precomputed flat index.
+    /// Callers must ensure `idx < self.words.len()`.
+    #[inline]
+    pub(crate) fn word_mut(&mut self, idx: usize) -> &mut u64 {
+        &mut self.words[idx]
+    }
 }
 
 #[cfg(test)]
@@ -68,5 +90,21 @@ mod tests {
         assert!(g.get(1, 0));
         // independence: untouched cell stays false
         assert!(!g.get(0, 64));
+    }
+
+    #[test]
+    fn word_accessors_consistent_with_get_set() {
+        let mut g = BitGrid::zeros(4, 70); // stride = 2 words/row
+        g.set(1, 5, true);
+        g.set(1, 66, true); // second word of row 1
+        let stride = g.row_stride();
+        assert_eq!(stride, 2);
+        // Row 1 word 0: bit 5 set
+        assert_eq!(g.word(stride), 1u64 << 5);
+        // Row 1 word 1: bit (66-64)=2 set
+        assert_eq!(g.word(stride + 1), 1u64 << 2);
+        // Mutate via word_mut and confirm via get
+        *g.word_mut(2 * stride) |= 1u64 << 63;
+        assert!(g.get(2, 63));
     }
 }
