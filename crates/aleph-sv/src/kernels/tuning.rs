@@ -199,6 +199,16 @@ fn cpu_brand_string() -> Option<String> {
     None
 }
 
+/// log2 of the cache-tile size in amplitudes for the L2-resident tiled
+/// executor (P2-09). EPYC 8124P L2 = 1 MiB/core = 2^16 Complex<f64>; a
+/// 2^15-amp tile (512 KiB) leaves working-set headroom. Matches
+/// `aleph_ir::passes::tile_block::DEFAULT_TILE_BITS`; a future ticket may
+/// dispatch by CPU model here (cf. `ChunkPolicy`).
+#[allow(dead_code)] // forward hook — default_pipeline uses the aleph-ir const
+pub(crate) fn tile_bits() -> u8 {
+    15
+}
+
 /// Test-only policy override (thread-local), so a later invariance test
 /// can force several policies in one process without fighting the env
 /// `OnceLock`s.

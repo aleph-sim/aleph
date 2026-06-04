@@ -5,13 +5,15 @@
 //! [`PassStats`]. The default pipeline ships
 //! [`cancel::CancelInversePairs`], [`dce::DeadCodeElim`],
 //! [`fuse_diagonal::FuseDiagonalRuns`], [`fuse_1q::Fuse1qRuns`],
-//! [`fuse_2q::Fuse2q`], and [`fuse_kq::FuseKq`] — in that pipeline order
+//! [`fuse_2q::Fuse2q`], [`fuse_kq::FuseKq`], and
+//! [`tile_block::TileBlock`] — in that pipeline order
 //! (cancellation precedes DCE so DCE can clean up gates newly exposed as
 //! dead by cancellation; diagonal fusion precedes `Fuse2q` so raw `cx`s
-//! are still absorbable; `FuseKq` runs last, merging the dense 1q/2q
-//! blocks the earlier passes produced into ≥3q `UnitaryKq` blocks; see
-//! [`PassPipeline::default_pipeline`]). Later tickets add more passes
-//! that plug in by being pushed onto the pipeline.
+//! are still absorbable; `FuseKq` runs before `TileBlock`, merging the
+//! dense 1q/2q blocks into ≥3q `UnitaryKq` blocks; `TileBlock` runs
+//! last, grouping the post-fusion low-target runs for the tile-major
+//! executor; see [`PassPipeline::default_pipeline`]). Later tickets add
+//! more passes that plug in by being pushed onto the pipeline.
 //!
 //! This module also exports [`commute::gates_commute`], a sound,
 //! conservative commutation predicate over `GateInstance` pairs that
@@ -28,6 +30,7 @@ pub mod fuse_1q;
 pub mod fuse_2q;
 pub mod fuse_diagonal;
 pub mod fuse_kq;
+pub mod tile_block;
 
 pub use cancel::CancelInversePairs;
 pub use commute::gates_commute;
@@ -36,6 +39,7 @@ pub use fuse_1q::Fuse1qRuns;
 pub use fuse_2q::Fuse2q;
 pub use fuse_diagonal::FuseDiagonalRuns;
 pub use fuse_kq::FuseKq;
+pub use tile_block::TileBlock;
 
 /// Statistics emitted by a single pass.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -81,7 +85,7 @@ impl PassPipeline {
     }
 
     /// Default pipeline. Currently
-    /// `[CancelInversePairs, DeadCodeElim, FuseDiagonalRuns, Fuse1qRuns, Fuse2q, FuseKq]`;
+    /// `[CancelInversePairs, DeadCodeElim, FuseDiagonalRuns, Fuse1qRuns, Fuse2q, FuseKq, TileBlock]`;
     /// later passes are appended here as they ship.
     ///
     /// Cancellation runs **before** dead-code elimination because
@@ -119,7 +123,7 @@ impl PassPipeline {
     /// ticket may split runs at the last identity-permutation prefix,
     /// restoring strict one-pass idempotence.)
     ///
-    /// [`FuseKq`] runs **last**, consuming the dense 1q/2q blocks the
+    /// [`FuseKq`] runs **second-to-last**, consuming the dense 1q/2q blocks the
     /// earlier passes produced (`Unitary1q`/`Unitary2q`) into ≥3q
     /// `UnitaryKq` blocks (≤ `max_qubits`, default 4) where the cost
     /// model says it pays. An emitted
@@ -129,6 +133,16 @@ impl PassPipeline {
     /// its own output does not re-fuse it. The convergence caveat above
     /// is unchanged: the pipeline remains convergent and deterministic
     /// (fixpoint within two passes), not strictly one-pass idempotent.
+    ///
+    /// [`TileBlock`] runs **last**, grouping maximal runs of post-fusion
+    /// gates whose targets are all `< tile_bits` into
+    /// [`Instruction::TiledBlock`](crate::Instruction) so the backend can
+    /// apply them tile-major (one DRAM pass per run). At the small qubit
+    /// counts used by existing oracle tests (`n ≤ 20`), `tile_bits = 15`
+    /// means the entire state fits in a single tile; the executor's
+    /// degenerate single-tile path runs, which is bit-exact with the
+    /// unblocked path (validated in Task 4). `TiledBlock` is a hard fence
+    /// for `TileBlock` itself, so a second pipeline pass is a no-op.
     pub fn default_pipeline() -> Self {
         Self::new(vec![
             Box::new(CancelInversePairs),
@@ -137,6 +151,7 @@ impl PassPipeline {
             Box::new(Fuse1qRuns),
             Box::new(Fuse2q),
             Box::new(FuseKq::default()),
+            Box::new(TileBlock::default()),
         ])
     }
 
