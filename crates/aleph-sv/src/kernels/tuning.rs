@@ -199,7 +199,6 @@ fn cpu_brand_string() -> Option<String> {
     None
 }
 
-
 /// Test-only policy override (thread-local), so a later invariance test
 /// can force several policies in one process without fighting the env
 /// `OnceLock`s.

@@ -14,6 +14,7 @@ mod kernels;
 pub mod kernels;
 mod measure;
 mod measure_soa;
+mod perm;
 mod sampling;
 mod soa_backend;
 mod soa_state;
