@@ -8,8 +8,8 @@
 
 use aleph_backend::Backend;
 use aleph_core::{Gate, GateInstance, PauliString};
-use aleph_sv::NaiveSvBackend;
 use aleph_stab::{apply_gate, Tableau};
+use aleph_sv::NaiveSvBackend;
 
 const N: usize = 4;
 
@@ -39,11 +39,10 @@ fn assert_stabilized(gates_under_test: &[GateInstance]) {
     }
     // Every stabilizer generator must fix the SV state: <psi|P|psi> = sign.
     for gen in t.stabilizers() {
-        let sign = gen.coefficient; // ±1.0
-        // unsigned Pauli for expectation_value
-        let unsigned = PauliString::new(1.0, gen.terms.clone()).unwrap_or_else(|_| {
-            PauliString::identity(1.0)
-        });
+        // sign is ±1.0; unsigned Pauli stripped of coefficient for expectation_value
+        let sign = gen.coefficient;
+        let unsigned =
+            PauliString::new(1.0, gen.terms.clone()).unwrap_or_else(|_| PauliString::identity(1.0));
         let ev = be.expectation_value(&sv, &unsigned).unwrap();
         assert!(
             (ev - sign).abs() < 1e-10,
