@@ -20,6 +20,7 @@ aleph-ir      = { path = "../aleph-ir" }
 aleph-parser  = { path = "../aleph-parser" }
 aleph-backend = { path = "../aleph-backend" }
 aleph-sv      = { path = "../aleph-sv" }
+aleph-stab    = { path = "../aleph-stab" }
 clap          = { workspace = true }
 anyhow        = { workspace = true }
 thiserror     = { workspace = true }

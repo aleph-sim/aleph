@@ -4,6 +4,16 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 
+/// Simulation backend selector for `aleph run`.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, clap::ValueEnum, Default)]
+pub enum BackendKind {
+    /// Dense state vector (default). Exact; memory grows as 2^n.
+    #[default]
+    Statevector,
+    /// Stabilizer (Clifford-only). O(n²) memory; thousands of qubits.
+    Stabilizer,
+}
+
 /// Floating-point precision for the state-vector backend.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, clap::ValueEnum, Default)]
 pub enum Precision {
@@ -65,6 +75,11 @@ pub enum Cmd {
         /// large n, lower accuracy).
         #[arg(long, value_enum, default_value_t = Precision::F64)]
         precision: Precision,
+
+        /// Simulation backend: `statevector` (default) or `stabilizer`
+        /// (Clifford-only; rejects non-Clifford gates and --statevector).
+        #[arg(long, value_enum, default_value_t = BackendKind::Statevector)]
+        backend: BackendKind,
     },
 
     /// Run a QASM circuit once and print parse / execute / sample
