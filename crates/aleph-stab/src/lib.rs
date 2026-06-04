@@ -13,7 +13,6 @@ mod dispatch;
 mod error;
 mod tableau;
 
-// Re-exports added as items land (Tasks 2-10):
-// pub use dispatch::apply_gate;
+pub use dispatch::apply_gate;
 pub use error::StabError;
 pub use tableau::Tableau;
