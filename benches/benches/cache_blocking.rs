@@ -49,6 +49,34 @@ fn optimize_no_tiling(mut c: aleph_ir::Circuit) -> aleph_ir::Circuit {
     c
 }
 
+/// Isolation pipeline: fusion WITHOUT `FuseKq`, optionally with `TileBlock`.
+///
+/// `FuseKq` (default `max_qubits = 4`) merges runs of low-qubit 1q/2q gates
+/// into ≥3q `UnitaryKq` blocks, which the tile executor cannot group
+/// (`TileBlock::confinable` requires arity ≤ 2). On a low-qubit-heavy
+/// circuit that lets `FuseKq` consume most of the run before `TileBlock`
+/// sees it, masking the tile-major win. Dropping `FuseKq` keeps the run as
+/// tileable 1q/2q gates, isolating what cache-blocking delivers when the two
+/// memory-pass optimizations don't compete. (The two are alternative
+/// strategies for the same gates — a regime-aware pipeline would pick one;
+/// see the P2-09 follow-up note.)
+fn optimize_no_kq(mut c: aleph_ir::Circuit, with_tiling: bool) -> aleph_ir::Circuit {
+    let mut passes: Vec<Box<dyn aleph_ir::passes::Pass>> = vec![
+        Box::new(RelabelQubits::default()),
+        Box::new(CancelInversePairs),
+        Box::new(DeadCodeElim),
+        Box::new(FuseDiagonalRuns),
+        Box::new(Fuse1qRuns),
+        Box::new(Fuse2q),
+        // FuseKq intentionally omitted — keep runs tileable.
+    ];
+    if with_tiling {
+        passes.push(Box::new(aleph_ir::passes::TileBlock::default()));
+    }
+    PassPipeline::new(passes).run(&mut c).expect("no-kq pipeline");
+    c
+}
+
 fn bench_cache_blocking(c: &mut Criterion) {
     let mut group = c.benchmark_group("cache_blocking");
     // n=25 is 512 MiB; keep sample count low so runs finish in minutes.
@@ -76,6 +104,30 @@ fn bench_cache_blocking(c: &mut Criterion) {
             );
         });
         group.bench_with_input(BenchmarkId::new("lowqubit_untiled", n), &n, |b, _| {
+            b.iter_with_setup(
+                || NaiveSvBackend::with_seed(0),
+                |mut bk| black_box(run(&mut bk, &untiled).unwrap()),
+            );
+        });
+    }
+
+    // ── isolation: cache-blocking without FuseKq competition ──────────────
+    // FuseKq eats low-qubit runs into ≥3q UnitaryKq blocks the tile executor
+    // can't group, masking the win on the default pipeline. Here both forms
+    // drop FuseKq, so the runs stay tileable 1q/2q — this isolates the
+    // tile-major win when the two optimizations don't compete.
+    for &n in &[22u32, 25] {
+        let circuit = low_qubit_heavy_circuit(n, 6, 40);
+        let tiled = optimize_no_kq(circuit.clone(), true);
+        let untiled = optimize_no_kq(circuit.clone(), false);
+        group.throughput(Throughput::Elements(40u64 * (1u64 << n)));
+        group.bench_with_input(BenchmarkId::new("lowqubit_nokq_tiled", n), &n, |b, _| {
+            b.iter_with_setup(
+                || NaiveSvBackend::with_seed(0),
+                |mut bk| black_box(run(&mut bk, &tiled).unwrap()),
+            );
+        });
+        group.bench_with_input(BenchmarkId::new("lowqubit_nokq_untiled", n), &n, |b, _| {
             b.iter_with_setup(
                 || NaiveSvBackend::with_seed(0),
                 |mut bk| black_box(run(&mut bk, &untiled).unwrap()),
