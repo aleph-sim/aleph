@@ -35,9 +35,6 @@ impl MpsState {
         self.trunc_error
     }
 
-    /// Contract the whole chain into a dense `2^n` amplitude vector.
-    /// TEST/SMALL-n ONLY (allocates 2^n). Amplitude index uses the ADR-0004
-    /// convention: qubit `q` (== site `q`) occupies bit `q`.
     /// Apply a 1q unitary to site `i` (qubit `i`). Preserves canonical form,
     /// so neither the center nor any SVD is touched.
     pub(crate) fn apply_1q(&mut self, i: usize, u: &[[Complex; 2]; 2]) {
@@ -52,6 +49,9 @@ impl MpsState {
         }
     }
 
+    /// Contract the whole chain into a dense `2^n` amplitude vector.
+    /// TEST/SMALL-n ONLY (allocates 2^n). Amplitude index uses the ADR-0004
+    /// convention: qubit `q` (== site `q`) occupies bit `q`.
     pub fn dense_statevector(&self) -> Vec<Complex> {
         let n = self.sites.len();
         // amps is laid out as [basis_prefix * left_dim + l]:
