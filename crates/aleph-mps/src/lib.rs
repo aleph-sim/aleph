@@ -6,6 +6,8 @@
 //!
 //! See `docs/superpowers/specs/2026-06-05-p3-04-mps-basic-chain-design.md`.
 
+pub mod tensor;
+
 /// Errors raised by the MPS state operations, before mapping to the shared
 /// `aleph_backend::BackendError`.
 #[derive(Debug, thiserror::Error, PartialEq)]
