@@ -8,11 +8,13 @@
 //! Reference: Aaronson & Gottesman, "Improved Simulation of Stabilizer
 //! Circuits" (2004), <https://arxiv.org/abs/quant-ph/0406196>.
 
+mod backend;
 mod bits;
 mod dispatch;
 mod error;
 mod tableau;
 
+pub use backend::StabilizerBackend;
 pub use dispatch::apply_gate;
 pub use error::StabError;
 pub use tableau::Tableau;

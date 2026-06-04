@@ -8,9 +8,10 @@ use anyhow::{anyhow, Context, Result};
 
 use aleph_backend::{run, Backend};
 use aleph_core::Complex;
+use aleph_stab::StabilizerBackend;
 use aleph_sv::{Fp32SvBackend, NaiveSvBackend};
 
-use crate::cli::Precision;
+use crate::cli::{BackendKind, Precision};
 use crate::output;
 use crate::pauli::parse_pauli_arg;
 
@@ -55,6 +56,7 @@ pub fn run_circuit<W: Write>(
     expectations: &[String],
     seed: Option<u64>,
     precision: Precision,
+    backend: BackendKind,
     out: &mut W,
 ) -> Result<()> {
     // 1. Read + parse.
@@ -79,8 +81,14 @@ pub fn run_circuit<W: Write>(
         paulis.push((raw.clone(), ps));
     }
 
-    // 3. Statevector cap check.
-    if print_statevector && !force_statevector && n > STATEVECTOR_CAP_QUBITS {
+    // 3. Statevector cap check. Skipped for the stabilizer backend, which
+    //    has no dense state vector at all — `run_stabilizer` rejects
+    //    `--statevector` with a clearer, backend-specific message below.
+    if backend == BackendKind::Statevector
+        && print_statevector
+        && !force_statevector
+        && n > STATEVECTOR_CAP_QUBITS
+    {
         let dim = 1u64 << n;
         return Err(anyhow!(
             "state vector has 2^{n} = {dim} amplitudes; pass --force-statevector to print anyway"
@@ -102,6 +110,20 @@ pub fn run_circuit<W: Write>(
         Some(s) => format!("seed={s}"),
         None => "seed=entropy".to_string(),
     };
+
+    if backend == BackendKind::Stabilizer {
+        return run_stabilizer(
+            &circuit,
+            effective_shots,
+            print_statevector || force_statevector,
+            &paulis,
+            n,
+            seed,
+            &seed_label,
+            out,
+        );
+    }
+
     match precision {
         Precision::F64 => {
             let backend = match seed {
@@ -170,6 +192,49 @@ where
     if print_statevector {
         let amps = state.amps_f64();
         output::format_statevector(out, &amps, n)?;
+    }
+    if !paulis.is_empty() {
+        writeln!(out, "expectation values:")?;
+        for (raw, ps) in paulis {
+            let v = backend
+                .expectation_value(&state, ps)
+                .with_context(|| format!("computing expectation value for {raw:?}"))?;
+            output::format_expectation(out, raw, v)?;
+        }
+    }
+    Ok(())
+}
+
+/// Stabilizer-backend run path. Supports `--shots` and `--expectation`;
+/// rejects `--statevector` (a tableau has no dense amplitudes).
+#[allow(clippy::too_many_arguments)]
+fn run_stabilizer<W: Write>(
+    circuit: &aleph_ir::Circuit,
+    effective_shots: Option<u32>,
+    statevector_requested: bool,
+    paulis: &[(String, aleph_core::PauliString)],
+    n: u32,
+    seed: Option<u64>,
+    seed_label: &str,
+    out: &mut W,
+) -> Result<()> {
+    if statevector_requested {
+        return Err(anyhow!(
+            "the stabilizer backend has no dense state vector; drop --statevector \
+             (use --shots and/or --expectation instead)"
+        ));
+    }
+    let mut backend = match seed {
+        Some(s) => StabilizerBackend::with_seed(s),
+        None => StabilizerBackend::new(),
+    };
+    let state = run(&mut backend, circuit).context("running circuit (stabilizer)")?;
+
+    if let Some(shots) = effective_shots {
+        let samples = backend
+            .sample(&state, shots)
+            .context("sampling final state")?;
+        output::format_counts(out, &samples, shots, n, seed_label)?;
     }
     if !paulis.is_empty() {
         writeln!(out, "expectation values:")?;
@@ -280,6 +345,7 @@ mod tests {
             &[],
             Some(0),
             Precision::F64,
+            BackendKind::Statevector,
             &mut out,
         )
         .unwrap();
@@ -300,6 +366,7 @@ mod tests {
             &[],
             Some(42),
             Precision::F64,
+            BackendKind::Statevector,
             &mut a,
         )
         .unwrap();
@@ -311,6 +378,7 @@ mod tests {
             &[],
             Some(42),
             Precision::F64,
+            BackendKind::Statevector,
             &mut b,
         )
         .unwrap();
@@ -331,6 +399,7 @@ mod tests {
             &[],
             Some(0),
             Precision::F64,
+            BackendKind::Statevector,
             &mut out,
         )
         .unwrap_err();
@@ -352,6 +421,7 @@ mod tests {
             &[],
             Some(0),
             Precision::F64,
+            BackendKind::Statevector,
             &mut out,
         )
         .unwrap();
@@ -372,6 +442,7 @@ mod tests {
             &["ZZZ".to_string()],
             Some(0),
             Precision::F64,
+            BackendKind::Statevector,
             &mut out,
         )
         .unwrap_err();
@@ -392,6 +463,7 @@ mod tests {
             &["ABC".to_string()],
             Some(0),
             Precision::F64,
+            BackendKind::Statevector,
             &mut out,
         )
         .unwrap_err();
@@ -412,6 +484,7 @@ mod tests {
             &["ZZ".to_string()],
             Some(0),
             Precision::F64,
+            BackendKind::Statevector,
             &mut out,
         )
         .unwrap();
@@ -445,6 +518,7 @@ mod tests {
             &[],
             Some(0),
             Precision::F64,
+            BackendKind::Statevector,
             &mut out,
         )
         .unwrap_err();

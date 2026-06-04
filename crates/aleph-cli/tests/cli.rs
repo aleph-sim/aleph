@@ -17,6 +17,10 @@ fn ghz3_path() -> std::path::PathBuf {
     aleph_oracle::workspace_path("oracle/circuits/ghz_3.qasm")
 }
 
+fn surface_code_path() -> std::path::PathBuf {
+    aleph_oracle::workspace_path("oracle/circuits/surface_code_cycle.qasm")
+}
+
 /// Unique temp-file path; avoids collision when tests run in
 /// parallel by using a process-local atomic counter.
 fn unique_tmp(name: &str) -> std::path::PathBuf {
@@ -293,4 +297,39 @@ fn version_flag() {
         .assert()
         .success()
         .stdout(contains("aleph 0.0.0"));
+}
+
+#[test]
+fn stabilizer_backend_runs_surface_code() {
+    aleph()
+        .args(["run"])
+        .arg(surface_code_path())
+        .args(["--backend", "stabilizer", "--shots", "1024", "--seed", "0"])
+        .assert()
+        .success()
+        .stdout(contains("counts (1024 shots, seed=0):"));
+}
+
+#[test]
+fn stabilizer_backend_rejects_non_clifford() {
+    // qft_5 contains non-Clifford rz gates.
+    let qft = aleph_oracle::workspace_path("oracle/circuits/qft_5.qasm");
+    aleph()
+        .args(["run"])
+        .arg(qft)
+        .args(["--backend", "stabilizer", "--shots", "16"])
+        .assert()
+        .failure()
+        .stderr(contains("not supported"));
+}
+
+#[test]
+fn stabilizer_backend_rejects_statevector() {
+    aleph()
+        .args(["run"])
+        .arg(surface_code_path())
+        .args(["--backend", "stabilizer", "--statevector"])
+        .assert()
+        .failure()
+        .stderr(contains("no dense state vector"));
 }
