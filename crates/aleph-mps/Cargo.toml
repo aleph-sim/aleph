@@ -8,3 +8,14 @@ repository.workspace = true
 authors.workspace = true
 
 [dependencies]
+aleph-core = { path = "../aleph-core" }
+aleph-backend = { path = "../aleph-backend" }
+aleph-ir = { path = "../aleph-ir" }
+nalgebra = { workspace = true }
+rand = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+aleph-sv = { path = "../aleph-sv" }
+aleph-parser = { path = "../aleph-parser" }
+proptest = { workspace = true }
