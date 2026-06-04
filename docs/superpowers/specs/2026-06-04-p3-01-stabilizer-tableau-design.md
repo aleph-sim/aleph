@@ -42,16 +42,20 @@ crates/aleph-stab/
     ├── lib.rs          # re-exports Tableau, StabError, apply_gate
     ├── bits.rs         # dependency-free packed-bit row helper
     ├── tableau.rs      # Tableau core + native Clifford ops + readout
-    ├── dispatch.rs     # IR Gate → tableau ops; non-Clifford rejection
+    ├── dispatch.rs     # Gate → tableau ops; non-Clifford rejection
     └── error.rs        # thiserror StabError
 ```
+
+`Gate`, `GateInstance`, `Pauli`, and `PauliString` all live in
+`aleph-core`, so the only new crate dependency is `aleph-core`
+(`aleph-ir` is **not** needed in P3-01 — no `Instruction`/`Backend`).
 
 **Dependency policy:** no `bitvec` crate. The bit operations we need
 (get/set/toggle/swap a single column bit within a packed row) are a few
 lines over `Vec<u64>`; a custom helper keeps the hot loop under our
-control and adds no dependency (CLAUDE.md golden rule). New crate deps
-are limited to `aleph-core` (for `Gate`) and `aleph-ir` (for
-`GateInstance`), both already in-workspace.
+control and adds no dependency (CLAUDE.md golden rule). The only new
+crate dependency is `aleph-core` (for `Gate`, `GateInstance`, `Pauli`,
+`PauliString`), already in-workspace.
 
 ---
 
@@ -135,21 +139,23 @@ pub fn apply_gate(t: &mut Tableau, inst: &GateInstance) -> Result<(), StabError>
 
 ## 5. Stabilizer readout API
 
-```rust
-/// One stabilizer/destabilizer generator as a signed Pauli string.
-pub struct PauliString { pub sign: bool /* true = - */, pub paulis: Vec<Pauli> }
-pub enum Pauli { I, X, Y, Z }
+Reuse the existing `aleph_core::{Pauli, PauliString}` types — no new
+Pauli type in aleph-stab. `PauliString { coefficient: f64, terms:
+Vec<(u32, Pauli)> }` is sparse (identity terms omitted); the generator's
+sign maps to `coefficient = +1.0 | -1.0`.
 
+```rust
 impl Tableau {
-    /// The n stabilizer generators (rows n..2n).
+    /// The n stabilizer generators (rows n..2n) as signed Pauli strings.
     pub fn stabilizers(&self) -> Vec<PauliString>;
     /// The n destabilizer generators (rows 0..n) — for invariant tests.
     pub fn destabilizers(&self) -> Vec<PauliString>;
 }
 ```
 
-`(x,z)` → Pauli mapping: `(0,0)=I, (1,0)=X, (0,1)=Z, (1,1)=Y`. This is
-the comparison surface for the Stim oracle and Bell/GHZ unit assertions.
+`(x,z)` → Pauli mapping: `(0,0)=I` (omitted from `terms`), `(1,0)=X`,
+`(0,1)=Z`, `(1,1)=Y`; `r=1` ⇒ `coefficient = -1.0`. This is the
+comparison surface for the Stim oracle and Bell/GHZ unit assertions.
 
 Plus invariant helpers for property tests:
 
@@ -172,9 +178,11 @@ Per CLAUDE.md "Testing Requirements" — unit + property + oracle + bench.
 - GHZ-3 `H(0); CNOT(0,1); CNOT(1,2)` ⇒ `{+XXX, +ZZI, +IZZ}` (canonical).
 - Each composed gate (`Sdg, Cz, Swap, Iswap, IswapDg`) verified against
   `NaiveSvBackend`: prepare a random small (n≤5) Clifford circuit, apply
-  the gate under test in both backends, then assert the SV state is
-  fixed by every tableau stabilizer generator — `g|ψ⟩ = |ψ⟩` to 1e-12,
-  computed by applying the generator's Pauli string to the SV amplitudes.
+  the gate under test in both backends, then assert every tableau
+  stabilizer generator fixes the SV state. Computed via
+  `Backend::expectation_value(ψ, P)`: a generator with sign `s` and
+  unsigned Pauli `P` fixes `|ψ⟩` iff `⟨ψ|P|ψ⟩ = s` (±1.0 to 1e-12). No
+  manual amplitude manipulation needed.
 - `apply_gate` rejects `T`, `Rz(θ)`, `Toffoli`, … with `NonClifford`.
 
 ### 6.2 Property tests (`proptest`, alongside unit)
