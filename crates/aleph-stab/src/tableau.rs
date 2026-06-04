@@ -158,6 +158,27 @@ impl Tableau {
         }
         Ok(())
     }
+
+    /// S† on `a`. `S† = S³` (since `S⁴ = I`).
+    pub fn sdg(&mut self, a: usize) -> Result<(), crate::StabError> {
+        self.s(a)?;
+        self.s(a)?;
+        self.s(a)
+    }
+
+    /// Controlled-Z on `(a,b)`. `CZ = H_b · CNOT_{a,b} · H_b`. Symmetric.
+    pub fn cz(&mut self, a: usize, b: usize) -> Result<(), crate::StabError> {
+        self.h(b)?;
+        self.cnot(a, b)?;
+        self.h(b)
+    }
+
+    /// SWAP `(a,b)`. `SWAP = CNOT_{a,b} · CNOT_{b,a} · CNOT_{a,b}`.
+    pub fn swap(&mut self, a: usize, b: usize) -> Result<(), crate::StabError> {
+        self.cnot(a, b)?;
+        self.cnot(b, a)?;
+        self.cnot(a, b)
+    }
 }
 
 #[cfg(test)]
@@ -272,5 +293,33 @@ mod tests {
         decomp.z_gate(1).unwrap();
         decomp.x_gate(1).unwrap();
         assert_tableaux_eq(&direct, &decomp);
+    }
+
+    #[test]
+    fn sdg_inverts_s() {
+        // S then Sdg must restore the original tableau.
+        let before = generic_state();
+        let mut t = before.clone();
+        t.s(1).unwrap();
+        t.sdg(1).unwrap();
+        assert_tableaux_eq(&t, &before);
+    }
+
+    #[test]
+    fn cz_is_symmetric_and_hch() {
+        let mut a = generic_state();
+        a.cz(0, 2).unwrap();
+        let mut b = generic_state();
+        b.cz(2, 0).unwrap(); // CZ symmetric
+        assert_tableaux_eq(&a, &b);
+    }
+
+    #[test]
+    fn swap_twice_is_identity() {
+        let before = generic_state();
+        let mut t = before.clone();
+        t.swap(0, 2).unwrap();
+        t.swap(0, 2).unwrap();
+        assert_tableaux_eq(&t, &before);
     }
 }
