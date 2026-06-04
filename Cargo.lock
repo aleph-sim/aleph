@@ -122,6 +122,14 @@ version = "0.0.0"
 [[package]]
 name = "aleph-stab"
 version = "0.0.0"
+dependencies = [
+ "aleph-backend",
+ "aleph-core",
+ "aleph-sv",
+ "criterion",
+ "proptest",
+ "thiserror",
+]
 
 [[package]]
 name = "aleph-sv"

@@ -8,3 +8,15 @@ repository.workspace = true
 authors.workspace = true
 
 [dependencies]
+aleph-core = { path = "../aleph-core" }
+thiserror  = { workspace = true }
+
+[dev-dependencies]
+aleph-sv   = { path = "../aleph-sv" }
+aleph-backend = { path = "../aleph-backend" }
+proptest   = { workspace = true }
+criterion  = { workspace = true }
+
+[[bench]]
+name = "stab_clifford"
+harness = false
