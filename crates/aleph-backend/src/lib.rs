@@ -187,6 +187,13 @@ pub fn run_with_outcomes<B: Backend>(
             aleph_ir::Instruction::DiagonalPhase(dp) => {
                 backend.apply_diagonal_phase(&mut state, dp)?;
             }
+            aleph_ir::Instruction::TiledBlock(tb) => {
+                // P2-09 Task 3 replaces this with apply_tiled_block dispatch.
+                // Replaying the gates is semantically correct meanwhile.
+                for g in &tb.gates {
+                    backend.apply_gate(&mut state, g)?;
+                }
+            }
         }
     }
     Ok((state, outcomes))

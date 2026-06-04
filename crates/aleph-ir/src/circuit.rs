@@ -270,6 +270,14 @@ impl Circuit {
             // passes, not via the public builder API; skip qubit range
             // validation (the pass is responsible for correct qubit indices).
             Instruction::DiagonalPhase(_) => Ok(()),
+            // TiledBlock is pass-inserted; validate every touched qubit is in
+            // range (cheap, and guards against a buggy pass producing it).
+            Instruction::TiledBlock(tb) => {
+                for q in tb.used_qubits() {
+                    self.check_qubit(q)?;
+                }
+                Ok(())
+            }
         }
     }
 
