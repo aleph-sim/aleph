@@ -6,7 +6,8 @@
 //!
 //! See `docs/superpowers/specs/2026-06-05-p3-04-mps-basic-chain-design.md`.
 
-pub mod tensor;
+#[allow(dead_code)] // used by later tasks (MpsState in Task 2+)
+mod tensor;
 
 /// Errors raised by the MPS state operations, before mapping to the shared
 /// `aleph_backend::BackendError`.
