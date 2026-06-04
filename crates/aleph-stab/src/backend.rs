@@ -103,13 +103,32 @@ impl Backend for StabilizerBackend {
 
     fn expectation_value(
         &mut self,
-        _state: &Self::State,
-        _pauli: &PauliString,
+        state: &Self::State,
+        pauli: &PauliString,
     ) -> Result<f64, BackendError> {
-        // Implemented in Task 2.
-        Err(BackendError::UnsupportedInstruction {
-            kind: "expectation_value",
-        })
+        let n = state.num_qubits();
+        let mut x_p = vec![false; n];
+        let mut z_p = vec![false; n];
+        for (q, p) in &pauli.terms {
+            let qi = *q as usize;
+            if qi >= n {
+                return Err(BackendError::QubitOutOfRange {
+                    qubit: *q,
+                    num_qubits: n as u32,
+                });
+            }
+            match p {
+                aleph_core::Pauli::I => {}
+                aleph_core::Pauli::X => x_p[qi] = true,
+                aleph_core::Pauli::Z => z_p[qi] = true,
+                aleph_core::Pauli::Y => {
+                    x_p[qi] = true;
+                    z_p[qi] = true;
+                }
+            }
+        }
+        let s = state.pauli_eigenvalue(&x_p, &z_p);
+        Ok(pauli.coefficient * s as f64)
     }
 
     fn probabilities(
@@ -179,6 +198,42 @@ mod tests {
             BackendError::TooManyQubits {
                 requested: 65,
                 limit: 64
+            }
+        ));
+    }
+
+    #[test]
+    fn expectation_value_bell() {
+        use aleph_core::{Pauli, PauliString};
+        let mut be = StabilizerBackend::with_seed(0);
+        let mut t = be.allocate(2).unwrap();
+        be.apply_gate(&mut t, &GateInstance::new(Gate::H, vec![0u32]))
+            .unwrap();
+        be.apply_gate(&mut t, &GateInstance::new(Gate::Cnot, vec![0u32, 1u32]))
+            .unwrap();
+        let zz = PauliString::new(1.0, vec![(0, Pauli::Z), (1, Pauli::Z)]).unwrap();
+        let xx = PauliString::new(1.0, vec![(0, Pauli::X), (1, Pauli::X)]).unwrap();
+        let zi = PauliString::new(1.0, vec![(0, Pauli::Z)]).unwrap();
+        assert!((be.expectation_value(&t, &zz).unwrap() - 1.0).abs() < 1e-12);
+        assert!((be.expectation_value(&t, &xx).unwrap() - 1.0).abs() < 1e-12);
+        assert!(be.expectation_value(&t, &zi).unwrap().abs() < 1e-12);
+        // coefficient is honoured.
+        let half_zz = PauliString::new(0.5, vec![(0, Pauli::Z), (1, Pauli::Z)]).unwrap();
+        assert!((be.expectation_value(&t, &half_zz).unwrap() - 0.5).abs() < 1e-12);
+    }
+
+    #[test]
+    fn expectation_value_qubit_out_of_range() {
+        use aleph_core::{Pauli, PauliString};
+        let mut be = StabilizerBackend::with_seed(0);
+        let t = be.allocate(2).unwrap();
+        let p = PauliString::new(1.0, vec![(5, Pauli::Z)]).unwrap();
+        let err = be.expectation_value(&t, &p).unwrap_err();
+        assert!(matches!(
+            err,
+            BackendError::QubitOutOfRange {
+                qubit: 5,
+                num_qubits: 2
             }
         ));
     }

@@ -386,6 +386,52 @@ impl Tableau {
             }
         }
     }
+    /// `⟨ψ|P|ψ⟩` for the unsigned Pauli `P` given by `(x_p, z_p)` per
+    /// qubit (`x` bit = X-component, `z` bit = Z-component; both set = Y).
+    /// Returns `+1`/`-1` if `P` (up to sign) is in the stabilizer group,
+    /// `0` if `P` anticommutes with some stabilizer generator.
+    ///
+    /// `x_p` and `z_p` must each have length `self.num_qubits()`.
+    pub(crate) fn pauli_eigenvalue(&self, x_p: &[bool], z_p: &[bool]) -> i8 {
+        debug_assert_eq!(x_p.len(), self.n);
+        debug_assert_eq!(z_p.len(), self.n);
+        // Symplectic product of P with row `r`: odd ⇒ anticommute.
+        let anti_with = |t: &Tableau, r: usize| -> bool {
+            let mut acc = false;
+            for j in 0..t.n {
+                acc ^= (x_p[j] & t.z.get(r, j)) ^ (z_p[j] & t.x.get(r, j));
+            }
+            acc
+        };
+        // 1. Anticommutes with any stabilizer generator ⇒ expectation 0.
+        for k in self.n..2 * self.n {
+            if anti_with(self, k) {
+                return 0;
+            }
+        }
+        // 2. P commutes with all stabilizers ⇒ (pure stabilizer state,
+        //    maximal abelian group) P ∈ ⟨generators⟩ up to sign. The
+        //    stabilizers whose product equals P are those whose paired
+        //    destabilizer anticommutes with P; accumulate them into a
+        //    scratch row (on a clone) and read the resulting sign.
+        let mut t = self.clone();
+        let scratch = 2 * t.n;
+        t.zero_row(scratch);
+        for k in 0..t.n {
+            if anti_with(&t, k) {
+                t.rowsum(scratch, k + t.n);
+            }
+        }
+        debug_assert!(
+            (0..t.n).all(|j| t.x.get(scratch, j) == x_p[j] && t.z.get(scratch, j) == z_p[j]),
+            "accumulated stabilizer product does not equal P"
+        );
+        if t.sign[scratch] {
+            -1
+        } else {
+            1
+        }
+    }
 }
 
 #[cfg(test)]
@@ -694,6 +740,29 @@ mod tests {
             saw_false && saw_true,
             "|+> measurement never produced both outcomes"
         );
+    }
+
+    #[test]
+    fn pauli_eigenvalue_bell() {
+        // Bell |Φ+>: stabilized by +XX and +ZZ; anticommutes with Z⊗I.
+        let mut t = Tableau::new(2);
+        t.h(0).unwrap();
+        t.cnot(0, 1).unwrap();
+        assert_eq!(t.pauli_eigenvalue(&[true, true], &[false, false]), 1); // XX
+        assert_eq!(t.pauli_eigenvalue(&[false, false], &[true, true]), 1); // ZZ
+        assert_eq!(t.pauli_eigenvalue(&[false, false], &[true, false]), 0); // ZI anticommutes
+                                                                            // Prepare |Φ-> = Z_0 |Φ+>: stabilized by -XX and +ZZ.
+                                                                            // ZZ eigenvalue is unchanged (+1); XX flips to -1.
+        t.z_gate(0).unwrap();
+        assert_eq!(t.pauli_eigenvalue(&[false, false], &[true, true]), 1); // ZZ still +1
+        assert_eq!(t.pauli_eigenvalue(&[true, true], &[false, false]), -1); // XX now -1
+    }
+
+    #[test]
+    fn pauli_eigenvalue_zero_state() {
+        let t = Tableau::new(1);
+        assert_eq!(t.pauli_eigenvalue(&[false], &[true]), 1); // Z on |0> = +1
+        assert_eq!(t.pauli_eigenvalue(&[true], &[false]), 0); // X on |0> = 0
     }
 
     #[test]
