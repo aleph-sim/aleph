@@ -141,6 +141,16 @@ impl Backend for NaiveSvBackend {
         Ok(())
     }
 
+    fn unpermute_state(
+        &mut self,
+        state: &mut Self::State,
+        perm: &[u32],
+    ) -> Result<(), BackendError> {
+        // Single gather: physical-order amplitudes → logical order.
+        state.amps = crate::perm::bit_permute_state(&state.amps, perm);
+        Ok(())
+    }
+
     fn apply_tiled_block(
         &mut self,
         state: &mut Self::State,

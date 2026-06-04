@@ -14,8 +14,7 @@ use aleph_core::{AlignedBuf, Complex};
 /// Reorder `phys` (physical-bit order) into logical order per `perm`.
 /// `perm.len() == num_qubits` and `perm` is a permutation of
 /// `0..num_qubits`. `phys.len() == 2^num_qubits`.
-// Not yet called at the call site: will be used by the P2-09 driver (Task 9).
-#[allow(dead_code)]
+// Called by `NaiveSvBackend::unpermute_state` (the P2-09 driver tail).
 pub(crate) fn bit_permute_state(phys: &[Complex], perm: &[u32]) -> AlignedBuf<Complex> {
     let n = perm.len();
     debug_assert_eq!(phys.len(), 1usize << n, "state length must be 2^num_qubits");

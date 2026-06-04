@@ -129,6 +129,22 @@ pub trait Backend {
         }
         Ok(())
     }
+
+    /// Reorder a physical-bit-order state into logical order per `perm`
+    /// (`perm[logical] = physical`), undoing a `RelabelQubits` permutation.
+    /// Called by `run_optimized_with_outcomes` exactly once, only when the
+    /// optimized circuit carries a permutation. Default errors so a backend
+    /// that can't un-permute never silently returns a physically-ordered
+    /// (wrong) state; state-vector backends override it.
+    fn unpermute_state(
+        &mut self,
+        _state: &mut Self::State,
+        _perm: &[u32],
+    ) -> Result<(), BackendError> {
+        Err(BackendError::UnsupportedInstruction {
+            kind: "unpermute_state",
+        })
+    }
 }
 
 /// Run `circuit` on `backend`, returning the final backend state.
@@ -242,13 +258,47 @@ pub fn run_optimized<B: Backend>(
 /// and cancellation drop earlier gates). Compare on `(qubit, clbit, outcome)`,
 /// not on the absolute `instruction_index`, when relating outcomes back to the
 /// pre-optimization circuit.
+///
+/// **Relabelling transparency:** the default pipeline's `RelabelQubits` pass may
+/// permute qubit indices for cache locality (`perm[logical] = physical`), in
+/// which case the optimized circuit carries a permutation
+/// ([`Circuit::qubit_permutation`]), the simulated state ends in *physical*-bit
+/// order, and `Measure` outcomes are recorded against *physical* qubits. This
+/// driver makes that invisible: it maps each outcome's `qubit` back to its
+/// logical index and applies a single final gather via
+/// [`Backend::unpermute_state`] so the returned state is logical-order — exactly
+/// as if no relabelling had occurred. A backend that doesn't override
+/// `unpermute_state` surfaces [`BackendError::UnsupportedInstruction`] rather
+/// than silently returning a physically-ordered (wrong) state.
 pub fn run_optimized_with_outcomes<B: Backend>(
     backend: &mut B,
     circuit: &Circuit,
 ) -> Result<(B::State, Vec<MeasurementRecord>), BackendError> {
     let mut optimized = circuit.clone();
     optimized.optimize()?; // PassError -> BackendError via #[from]
-    run_with_outcomes(backend, &optimized)
+    let perm = optimized.qubit_permutation().map(|p| p.to_vec());
+    let (mut state, mut outcomes) = run_with_outcomes(backend, &optimized)?;
+    if let Some(perm) = perm {
+        // RelabelQubits rewrote Measure qubits to physical; report them logical.
+        // logical_of[physical] = logical.
+        let logical_of = invert_perm(&perm);
+        for rec in &mut outcomes {
+            rec.qubit = logical_of[rec.qubit as usize];
+        }
+        // Single final gather: physical-order state → logical order.
+        backend.unpermute_state(&mut state, &perm)?;
+    }
+    Ok((state, outcomes))
+}
+
+/// `inv[perm[l]] = l` — invert a qubit permutation (`perm[logical] =
+/// physical` ⟹ `inv[physical] = logical`).
+fn invert_perm(perm: &[u32]) -> Vec<u32> {
+    let mut inv = vec![0u32; perm.len()];
+    for (logical, &physical) in perm.iter().enumerate() {
+        inv[physical as usize] = logical as u32;
+    }
+    inv
 }
 
 #[cfg(test)]
