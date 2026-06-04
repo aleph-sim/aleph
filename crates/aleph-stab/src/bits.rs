@@ -12,6 +12,7 @@ pub(crate) struct BitGrid {
     cols: usize,
 }
 
+#[allow(dead_code)] // methods used in later tasks (tableau gate implementations)
 impl BitGrid {
     pub(crate) fn zeros(rows: usize, cols: usize) -> Self {
         let stride = cols.div_ceil(64);
