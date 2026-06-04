@@ -71,7 +71,7 @@ pub(crate) fn apply_kq_soa(
 // so offset for matrix index m:
 //   offsets[m] = Σ_{p: bit p of m set} (1 << Q[k-1-p])
 // ---------------------------------------------------------------------------
-fn targets_offsets_fixed(qubits: &[u32], k: u8) -> (Vec<usize>, Vec<(u32, bool)>) {
+pub(crate) fn targets_offsets_fixed(qubits: &[u32], k: u8) -> (Vec<usize>, Vec<(u32, bool)>) {
     let k = k as usize;
     let mut q = qubits.to_vec();
     q.sort_unstable();

@@ -16,7 +16,7 @@ pub use fixture::{
     load_fixture, load_qasm, workspace_path, Fixture, StateVectorFixture, SCHEMA_VERSION,
 };
 pub use harness::{
-    run_distribution_oracle, run_state_oracle, DISTRIBUTION_FLOOR, DISTRIBUTION_SHOTS,
-    STATE_TOLERANCE,
+    run_distribution_oracle, run_state_oracle, run_state_oracle_with_tol, DISTRIBUTION_FLOOR,
+    DISTRIBUTION_SHOTS, FP32_STATE_TOLERANCE, STATE_TOLERANCE,
 };
 pub use state::HasAmplitudes;

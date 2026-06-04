@@ -163,7 +163,10 @@ const LANES: usize = 8;
 /// (`_mm512_popcnt_epi64` is VPOPCNTDQ).
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx512f,avx512vpopcntdq")]
-unsafe fn phases_at_block(dp: &DiagonalPhase, base: usize) -> std::arch::x86_64::__m512d {
+pub(crate) unsafe fn phases_at_block(
+    dp: &DiagonalPhase,
+    base: usize,
+) -> std::arch::x86_64::__m512d {
     use std::arch::x86_64::*;
 
     // Lane k holds index (base + k). `_mm512_set_epi64` takes args
@@ -204,7 +207,7 @@ unsafe fn phases_at_block(dp: &DiagonalPhase, base: usize) -> std::arch::x86_64:
 /// Caller MUST ensure the host supports `avx512f`.
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx512f")]
-unsafe fn sincos_block(
+pub(crate) unsafe fn sincos_block(
     phi: std::arch::x86_64::__m512d,
 ) -> (std::arch::x86_64::__m512d, std::arch::x86_64::__m512d) {
     use std::arch::x86_64::*;

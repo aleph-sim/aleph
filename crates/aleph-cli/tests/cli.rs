@@ -209,6 +209,74 @@ fn statevector_force_bypasses_cap() {
 }
 
 #[test]
+fn precision_f32_ghz_statevector() {
+    // f32 GHZ-3: |000⟩ and |111⟩ carry 1/√2 ≈ 0.7071, |a|² ≈ 0.5.
+    // Single precision (~1e-6) easily resolves this to the 6-digit
+    // |a|² formatting, so the populated states still show 0.500000.
+    aleph()
+        .args(["run"])
+        .arg(ghz3_path())
+        .args(["--statevector", "--precision", "f32"])
+        .assert()
+        .success()
+        .stdout(contains("statevector (3 qubits, 8 amplitudes):"))
+        .stdout(contains("|000⟩"))
+        .stdout(contains("|111⟩"))
+        .stdout(contains("|a|² = 0.500000"));
+}
+
+#[test]
+fn precision_f32_ghz_counts_are_all_or_nothing() {
+    // GHZ samples only ever collapse to |000⟩ or |111⟩; the f32 path
+    // must preserve that — no intermediate basis states.
+    let out = aleph()
+        .args(["run"])
+        .arg(ghz3_path())
+        .args(["--shots", "256", "--seed", "0", "--precision", "f32"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let s = String::from_utf8(out).unwrap();
+    assert!(s.contains("counts (256 shots, seed=0):"));
+    // Only the two GHZ basis states may appear.
+    for forbidden in ["|001⟩", "|010⟩", "|011⟩", "|100⟩", "|101⟩", "|110⟩"] {
+        assert!(
+            !s.contains(forbidden),
+            "unexpected basis state {forbidden}: {s}"
+        );
+    }
+}
+
+#[test]
+fn precision_default_equals_explicit_f64() {
+    // The default (no --precision) must be byte-identical to --precision f64.
+    let default_out = aleph()
+        .args(["run"])
+        .arg(bell_path())
+        .args(["--statevector"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let f64_out = aleph()
+        .args(["run"])
+        .arg(bell_path())
+        .args(["--statevector", "--precision", "f64"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    assert_eq!(
+        default_out, f64_out,
+        "default precision diverged from explicit f64"
+    );
+}
+
+#[test]
 fn help_lists_subcommands() {
     aleph()
         .arg("--help")

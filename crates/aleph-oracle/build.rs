@@ -148,6 +148,22 @@ mod {stem} {{
         let mut backend = aleph_sv::SoaSvBackend::with_seed(0);
         aleph_oracle::run_distribution_oracle(&mut backend, &fx, &qasm).expect("oracle");
     }}
+
+    // FP32 oracle (BACKLOG §P2-08): compare the single-precision backend
+    // against the EXACT (FP64) Qiskit-Aer fixture at 1e-5. Stronger than
+    // "vs Aer single-precision" and needs no new fixtures.
+    #[test]
+    fn fp32_state() {{
+        let fx = aleph_oracle::load_fixture(&aleph_oracle::workspace_path({json:?}))
+            .expect("load fixture");
+        let qasm = aleph_oracle::load_qasm(&aleph_oracle::workspace_path({qasm:?}))
+            .expect("load qasm");
+        let mut backend = aleph_sv::Fp32SvBackend::with_seed(0);
+        aleph_oracle::run_state_oracle_with_tol(
+            &mut backend, &fx, &qasm, aleph_oracle::FP32_STATE_TOLERANCE,
+        )
+        .expect("fp32 oracle");
+    }}
 }}
 "#
         )

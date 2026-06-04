@@ -23,6 +23,11 @@ pub(crate) mod aos;
 pub mod aos;
 
 #[cfg(not(feature = "internal-bench"))]
+pub(crate) mod aos_f32;
+#[cfg(feature = "internal-bench")]
+pub mod aos_f32;
+
+#[cfg(not(feature = "internal-bench"))]
 pub(crate) mod soa;
 #[cfg(feature = "internal-bench")]
 pub mod soa;
@@ -97,6 +102,46 @@ impl ComplexPtr {
 // SAFETY: as BlockPtr — guarded per-index writes never alias across tasks.
 unsafe impl Send for ComplexPtr {}
 unsafe impl Sync for ComplexPtr {}
+
+/// `*mut Complex<f32>` analogue of [`ComplexPtr`] for the single-precision
+/// scalar f32 kernels (P2-08). Same disjointness contract: each parallel
+/// task writes a distinct set of amplitudes, so concurrent use is sound.
+/// Read the pointer back through [`ComplexF32Ptr::ptr`] (not `.0`) so the
+/// enclosing closure captures the whole `Copy` wrapper — which is `Sync` —
+/// rather than the bare `!Sync` field (Rust 2021 disjoint capture; see
+/// [`BlockPtr::ptr`]).
+#[allow(dead_code)]
+#[derive(Clone, Copy)]
+pub(crate) struct ComplexF32Ptr(pub(crate) *mut aleph_core::Complex<f32>);
+
+#[allow(dead_code)]
+impl ComplexF32Ptr {
+    #[inline(always)]
+    pub(crate) fn ptr(&self) -> *mut aleph_core::Complex<f32> {
+        self.0
+    }
+}
+// SAFETY: as ComplexPtr — guarded per-index writes never alias across tasks.
+unsafe impl Send for ComplexF32Ptr {}
+unsafe impl Sync for ComplexF32Ptr {}
+
+/// `*mut f32` analogue of [`BlockPtr`] for the AVX-512 f32 kernels, which
+/// view the buffer as paired-`f32` (interleaved re/im) rather than whole
+/// `Complex<f32>`. Same disjointness contract as [`BlockPtr`].
+#[allow(dead_code)]
+#[derive(Clone, Copy)]
+pub(crate) struct BlockPtrF32(pub(crate) *mut f32);
+
+#[allow(dead_code)]
+impl BlockPtrF32 {
+    #[inline(always)]
+    pub(crate) fn ptr(&self) -> *mut f32 {
+        self.0
+    }
+}
+// SAFETY: see BlockPtr — concurrent use only touches disjoint regions.
+unsafe impl Send for BlockPtrF32 {}
+unsafe impl Sync for BlockPtrF32 {}
 
 /// Run `body(block_of(k))` for every `k` in `0..count`.
 ///
@@ -271,6 +316,27 @@ pub(crate) fn is_diagonal_2x2(m: &[[aleph_core::Complex; 2]; 2]) -> bool {
             return false;
         }
         if entry.norm_sqr() >= DIAGONAL_EPS_SQ {
+            return false;
+        }
+    }
+    true
+}
+
+/// f32 analogue of [`is_diagonal_2x2`] (P2-08). `EPS_SQ = 1e-14` ⇒
+/// `|m_off| < 1e-7`, just above f32 machine epsilon (~1.19e-7), so a
+/// literal-`0.0` off-diagonal detects as diagonal while a genuine
+/// off-diagonal of magnitude ≥ eps falls through. ADR 0006: explicit
+/// `is_finite` reject precedes the magnitude test (a NaN off-diagonal must
+/// reach the generic kernel, not be silently classified diagonal).
+#[inline]
+pub(crate) fn is_diagonal_2x2_f32(m: &[[aleph_core::Complex<f32>; 2]; 2]) -> bool {
+    const EPS_SQ: f32 = 1e-14;
+    let off = [&m[0][1], &m[1][0]];
+    for entry in off {
+        if !entry.re.is_finite() || !entry.im.is_finite() {
+            return false;
+        }
+        if entry.norm_sqr() >= EPS_SQ {
             return false;
         }
     }

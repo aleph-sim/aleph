@@ -4,6 +4,16 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 
+/// Floating-point precision for the state-vector backend.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, clap::ValueEnum, Default)]
+pub enum Precision {
+    /// Double precision (default). Oracle-reference accuracy (~1e-10).
+    #[default]
+    F64,
+    /// Single precision. ~2× less memory traffic at large n; ~1e-6 accuracy.
+    F32,
+}
+
 /// `aleph` — quantum circuit simulator command-line tool.
 #[derive(Debug, Parser)]
 #[command(name = "aleph", version, about, long_about = None)]
@@ -50,6 +60,11 @@ pub enum Cmd {
         /// versions.
         #[arg(long)]
         seed: Option<u64>,
+
+        /// State-vector precision: `f64` (default) or `f32` (faster at
+        /// large n, lower accuracy).
+        #[arg(long, value_enum, default_value_t = Precision::F64)]
+        precision: Precision,
     },
 
     /// Run a QASM circuit once and print parse / execute / sample

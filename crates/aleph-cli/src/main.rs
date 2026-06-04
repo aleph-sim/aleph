@@ -21,6 +21,7 @@ fn main() -> Result<()> {
             force_statevector,
             expectation,
             seed,
+            precision,
         } => run_circuit(
             &qasm,
             shots,
@@ -28,6 +29,7 @@ fn main() -> Result<()> {
             force_statevector,
             &expectation,
             seed,
+            precision,
             &mut out,
         )?,
         Cmd::Bench { qasm, seed } => bench_circuit(&qasm, seed, &mut out)?,
