@@ -12,7 +12,6 @@ pub(crate) struct BitGrid {
     cols: usize,
 }
 
-#[allow(dead_code)] // methods used in later tasks (tableau gate implementations)
 impl BitGrid {
     pub(crate) fn zeros(rows: usize, cols: usize) -> Self {
         let stride = cols.div_ceil(64);
@@ -45,12 +44,6 @@ impl BitGrid {
         }
     }
 
-    #[inline]
-    pub(crate) fn toggle(&mut self, row: usize, col: usize) {
-        let (w, mask) = self.word_index(row, col);
-        self.words[w] ^= mask;
-    }
-
     // --- word-level accessors for hoisted hot-loop indexing ---
 
     /// Number of `u64` words per row.
@@ -79,14 +72,14 @@ mod tests {
     use super::BitGrid;
 
     #[test]
-    fn set_get_toggle_roundtrip() {
+    fn set_get_roundtrip() {
         let mut g = BitGrid::zeros(3, 130); // 3 rows, 130 cols (3 words/row)
         assert!(!g.get(2, 129));
         g.set(2, 129, true);
         assert!(g.get(2, 129));
-        g.toggle(2, 129); // -> false
+        g.set(2, 129, false); // clear
         assert!(!g.get(2, 129));
-        g.toggle(1, 0); // -> true
+        g.set(1, 0, true);
         assert!(g.get(1, 0));
         // independence: untouched cell stays false
         assert!(!g.get(0, 64));

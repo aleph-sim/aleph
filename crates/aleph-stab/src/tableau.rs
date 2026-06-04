@@ -94,10 +94,11 @@ impl Tableau {
             let za = (zw & ma) != 0;
             // Branchless sign update: sign ^= x_a & z_a.
             self.sign[i] ^= xa & za;
-            // Swap x_a and z_a in-place: write the other grid's bit into each.
-            // Clear the bit then OR in the swapped value.
-            *self.x.word_mut(base + wa) = (xw & !ma) | (if za { ma } else { 0 });
-            *self.z.word_mut(base + wa) = (zw & !ma) | (if xa { ma } else { 0 });
+            // Swap x_a and z_a in-place: write the other grid's bit into
+            // each. Clear the bit then OR in the swapped value (branchless:
+            // `ma & (0 - bit)` is `ma` when bit=1, else 0).
+            *self.x.word_mut(base + wa) = (xw & !ma) | (ma & 0u64.wrapping_sub(za as u64));
+            *self.z.word_mut(base + wa) = (zw & !ma) | (ma & 0u64.wrapping_sub(xa as u64));
         }
         Ok(())
     }
