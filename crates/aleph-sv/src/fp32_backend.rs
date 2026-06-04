@@ -166,6 +166,16 @@ impl Backend for Fp32SvBackend {
         Ok(())
     }
 
+    fn unpermute_state(
+        &mut self,
+        state: &mut Self::State,
+        perm: &[u32],
+    ) -> Result<(), BackendError> {
+        // Single gather: physical-order amplitudes → logical order.
+        state.amps = crate::perm::bit_permute_state_f32(&state.amps, perm);
+        Ok(())
+    }
+
     fn measure(&mut self, state: &mut Self::State, qubit: u32) -> Result<bool, BackendError> {
         crate::fp32_measure::measure_impl_f32(&mut self.rng, state, qubit)
     }

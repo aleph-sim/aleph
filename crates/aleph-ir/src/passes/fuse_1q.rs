@@ -153,6 +153,15 @@ impl Pass for Fuse1qRuns {
                     }
                     output.push(inst.clone());
                 }
+                // TiledBlock is pass-internal and runs after this pass, so it
+                // is never seen at runtime; treat it as an opaque fence like
+                // DiagonalPhase so the match compiles and stays correct.
+                Instruction::TiledBlock(_) => {
+                    for q in inst.used_qubits() {
+                        flush(q, &mut pending, input, &mut output, &mut transformations);
+                    }
+                    output.push(inst.clone());
+                }
             }
         }
 

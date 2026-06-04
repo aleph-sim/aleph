@@ -54,6 +54,10 @@ fn emit_instruction(out: &mut String, inst: &Instruction) -> Result<(), EmitErro
         Instruction::DiagonalPhase(_) => Err(EmitError::UnsupportedGate {
             name: "DiagonalPhase",
         }),
+        // TiledBlock is a post-optimization IR node; the parser never
+        // produces it and it has no OpenQASM surface form. Reject emission,
+        // mirroring DiagonalPhase.
+        Instruction::TiledBlock(_) => Err(EmitError::UnsupportedGate { name: "TiledBlock" }),
     }
 }
 

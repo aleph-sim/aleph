@@ -27,6 +27,10 @@ pub enum Instruction {
     /// `passes::FuseDiagonalRuns`. Never produced by the parser; only
     /// exists post-optimization. Boxed to keep the enum small.
     DiagonalPhase(Box<DiagonalPhase>),
+    /// A cache-tile-confinable run of gates, produced by
+    /// `passes::TileBlock`. Never produced by the parser; only exists
+    /// post-optimization. Boxed to keep the enum small.
+    TiledBlock(Box<crate::tiled_block::TiledBlock>),
 }
 
 impl Instruction {
@@ -50,6 +54,8 @@ impl Instruction {
                     }
                 }
             }
+            // Union of every gate's targets and controls in the block.
+            Instruction::TiledBlock(tb) => out.extend(tb.used_qubits().iter().copied()),
         }
         out
     }

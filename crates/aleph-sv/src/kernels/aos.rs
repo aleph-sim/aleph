@@ -3815,6 +3815,87 @@ fn apply_3q_generic(
     );
 }
 
+// ── Cache-tile sequential helpers ─────────────────────────────────────────────
+//
+// These are the inner kernels for the tiled-block executor (Task 4).  The outer
+// loop there is rayon-parallel over cache tiles; within a tile every gate is
+// applied SEQUENTIALLY so we must not call `par_blocks` here.  The index
+// algebra is identical to the whole-state scalar kernels; we only drop the
+// `par_blocks` wrapper and operate on a caller-supplied sub-slice.
+
+/// Sequential 1q application to a contiguous amplitude slice (one cache
+/// tile). No `par_blocks` — the caller (`apply_tiled_block`) is already
+/// rayon-parallel over tiles, so the inner walk must stay sequential to
+/// avoid nested parallelism. `target` and every control bit are
+/// interpreted relative to the slice; the caller guarantees `target`
+/// indexes within the slice (`1 << target <= slice.len()`).
+// Called by the tiled-block executor (`NaiveSvBackend::apply_tiled_block`).
+pub(crate) fn apply_1q_tile(
+    slice: &mut [Complex],
+    target: u32,
+    controls: &[u32],
+    m: &[[Complex; 2]; 2],
+) {
+    let t_bit = 1usize << target;
+    let ctrl_mask = super::control_mask(controls);
+    let len = slice.len();
+    let mut i = 0;
+    while i < len {
+        if i & t_bit == 0 && (i & ctrl_mask) == ctrl_mask {
+            let j = i | t_bit;
+            let a = slice[i];
+            let b = slice[j];
+            slice[i] = m[0][0] * a + m[0][1] * b;
+            slice[j] = m[1][0] * a + m[1][1] * b;
+        }
+        i += 1;
+    }
+}
+
+/// Sequential 2q dense application to a contiguous amplitude slice (one cache
+/// tile). No `par_blocks` — the caller is already rayon-parallel over tiles.
+/// Index algebra mirrors `apply_2q_dense_scalar` exactly: same `t0_bit`/
+/// `t1_bit`/`t_mask`, same MSB-convention quartet, same read-all-4-before-
+/// write contract. `targets` and every control bit are interpreted relative
+/// to the slice; the caller guarantees both target bits index within the slice.
+// Called by the tiled-block executor (`NaiveSvBackend::apply_tiled_block`).
+pub(crate) fn apply_2q_tile(
+    slice: &mut [Complex],
+    targets: [u32; 2],
+    controls: &[u32],
+    m: &[[Complex; 4]; 4],
+) {
+    let t0_bit = 1usize << targets[0];
+    let t1_bit = 1usize << targets[1];
+    let t_mask = t0_bit | t1_bit;
+    let ctrl_mask = super::control_mask(controls);
+    let len = slice.len();
+    let mut i = 0;
+    while i < len {
+        if (i & t_mask) == 0 && (i & ctrl_mask) == ctrl_mask {
+            // MSB convention: matrix index k bit 1 → targets[0], bit 0 → targets[1].
+            // So idx[k] sets t0_bit iff (k & 2) != 0, t1_bit iff (k & 1) != 0.
+            let idx = [
+                i,          // k = 00
+                i | t1_bit, // k = 01
+                i | t0_bit, // k = 10
+                i | t_mask, // k = 11
+            ];
+            // Read all 4 amplitudes before writing to avoid aliasing with the
+            // write side — required even in the sequential case for correctness.
+            let v0 = slice[idx[0]];
+            let v1 = slice[idx[1]];
+            let v2 = slice[idx[2]];
+            let v3 = slice[idx[3]];
+            slice[idx[0]] = m[0][0] * v0 + m[0][1] * v1 + m[0][2] * v2 + m[0][3] * v3;
+            slice[idx[1]] = m[1][0] * v0 + m[1][1] * v1 + m[1][2] * v2 + m[1][3] * v3;
+            slice[idx[2]] = m[2][0] * v0 + m[2][1] * v1 + m[2][2] * v2 + m[2][3] * v3;
+            slice[idx[3]] = m[3][0] * v0 + m[3][1] * v1 + m[3][2] * v2 + m[3][3] * v3;
+        }
+        i += 1;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -6173,6 +6254,66 @@ mod tests {
                     "re diverged: dispatch={} direct={}", d.re, g.re);
                 proptest::prop_assert!((d.im - g.im).abs() < 1e-12,
                     "im diverged: dispatch={} direct={}", d.im, g.im);
+            }
+        }
+    }
+
+    // ── Tile-helper equality tests ──────────────────────────────────────────
+
+    #[test]
+    fn tile_1q_matches_whole_state_kernel() {
+        let n = 6u32;
+        let base: Vec<Complex> = (0..(1usize << n))
+            .map(|k| Complex::new(k as f64 * 0.01, (k as f64 * 0.013).cos()))
+            .collect();
+        let h = std::f64::consts::FRAC_1_SQRT_2;
+        let m = [
+            [Complex::new(h, 0.0), Complex::new(h, 0.0)],
+            [Complex::new(h, 0.0), Complex::new(-h, 0.0)],
+        ];
+        for target in 0..n {
+            let mut a = base.clone();
+            let mut b = base.clone();
+            apply_1q(&mut a, target, &[], &m);
+            apply_1q_tile(&mut b, target, &[], &m);
+            for (x, y) in a.iter().zip(b.iter()) {
+                assert!((x - y).norm() < 1e-12, "target={target}");
+            }
+        }
+    }
+
+    #[test]
+    fn tile_2q_matches_whole_state_kernel() {
+        let n = 6u32;
+        let base: Vec<Complex> = (0..(1usize << n))
+            .map(|k| Complex::new((k as f64 * 0.007).sin(), k as f64 * 0.011))
+            .collect();
+        // A dense, non-trivial 4x4 (need not be unitary for an equality test).
+        let c = |re: f64, im: f64| Complex::new(re, im);
+        let m = [
+            [c(0.1, 0.0), c(0.2, 0.1), c(0.0, 0.3), c(0.4, 0.0)],
+            [c(0.2, 0.0), c(0.1, 0.2), c(0.3, 0.0), c(0.0, 0.1)],
+            [c(0.0, 0.2), c(0.3, 0.0), c(0.1, 0.1), c(0.2, 0.0)],
+            [c(0.4, 0.1), c(0.0, 0.0), c(0.2, 0.2), c(0.1, 0.0)],
+        ];
+        for t0 in 0..n {
+            for t1 in 0..n {
+                if t0 == t1 {
+                    continue;
+                }
+                for controls in [vec![], vec![(t0.max(t1) + 1) % n]] {
+                    let ctrls: Vec<u32> = controls
+                        .into_iter()
+                        .filter(|&cq| cq != t0 && cq != t1 && cq < n)
+                        .collect();
+                    let mut a = base.clone();
+                    let mut b = base.clone();
+                    apply_2q(&mut a, [t0, t1], &ctrls, &m);
+                    apply_2q_tile(&mut b, [t0, t1], &ctrls, &m);
+                    for (x, y) in a.iter().zip(b.iter()) {
+                        assert!((x - y).norm() < 1e-12, "t0={t0} t1={t1} ctrls={ctrls:?}");
+                    }
+                }
             }
         }
     }

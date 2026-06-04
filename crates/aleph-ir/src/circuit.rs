@@ -41,6 +41,12 @@ pub struct Circuit {
     pub(crate) num_clbits: u32,
     pub(crate) instructions: Vec<Instruction>,
     metadata: CircuitMetadata,
+    /// Qubit permutation applied by `passes::RelabelQubits` (`π[logical] =
+    /// physical` bit position). `None` = identity (no relabelling). Set by
+    /// the pass; consumed by the run driver to un-permute results. Carried
+    /// through `clone()` (derive) and preserved by every pass that rebuilds
+    /// `instructions`.
+    pub(crate) qubit_permutation: Option<Box<[u32]>>,
 }
 
 /// Optional metadata attached to a `Circuit` — kept tiny on purpose.
@@ -75,6 +81,7 @@ impl Circuit {
             num_clbits,
             instructions: Vec::new(),
             metadata: CircuitMetadata::default(),
+            qubit_permutation: None,
         }
     }
 
@@ -100,6 +107,7 @@ impl Circuit {
             num_clbits,
             instructions: Vec::new(),
             metadata: CircuitMetadata::default(),
+            qubit_permutation: None,
         })
     }
 
@@ -270,6 +278,14 @@ impl Circuit {
             // passes, not via the public builder API; skip qubit range
             // validation (the pass is responsible for correct qubit indices).
             Instruction::DiagonalPhase(_) => Ok(()),
+            // TiledBlock is pass-inserted; validate every touched qubit is in
+            // range (cheap, and guards against a buggy pass producing it).
+            Instruction::TiledBlock(tb) => {
+                for q in tb.used_qubits() {
+                    self.check_qubit(q)?;
+                }
+                Ok(())
+            }
         }
     }
 
@@ -432,6 +448,18 @@ impl Circuit {
     /// instructions. See `crate::layers` for the algorithm.
     pub fn layers(&self) -> Vec<Vec<usize>> {
         crate::layers::extract_layers(self)
+    }
+
+    /// The qubit permutation applied by `RelabelQubits` (`π[logical] =
+    /// physical` bit). `None` = identity. Set by the pass; consumed by the
+    /// run driver to un-permute results.
+    pub fn qubit_permutation(&self) -> Option<&[u32]> {
+        self.qubit_permutation.as_deref()
+    }
+
+    /// Record the qubit permutation (called by `passes::RelabelQubits`).
+    pub(crate) fn set_qubit_permutation(&mut self, perm: Box<[u32]>) {
+        self.qubit_permutation = Some(perm);
     }
 }
 
@@ -1039,5 +1067,26 @@ mod tests {
         let _ = c.optimize().unwrap();
         // Re-running yields the same Vec.
         assert_eq!(c.instructions().len(), snapshot.len());
+    }
+
+    #[test]
+    fn qubit_permutation_none_on_new() {
+        // Fresh circuits have no permutation (identity).
+        assert!(Circuit::new(4, 0).qubit_permutation().is_none());
+        assert!(Circuit::try_new(4, 0)
+            .unwrap()
+            .qubit_permutation()
+            .is_none());
+    }
+
+    #[test]
+    fn set_qubit_permutation_and_clone_carries_it() {
+        let mut c = Circuit::new(3, 0);
+        assert!(c.qubit_permutation().is_none());
+        c.set_qubit_permutation(vec![2u32, 0, 1].into_boxed_slice());
+        assert_eq!(c.qubit_permutation(), Some([2u32, 0, 1].as_slice()));
+        // clone() must carry the permutation.
+        let c2 = c.clone();
+        assert_eq!(c2.qubit_permutation(), Some([2u32, 0, 1].as_slice()));
     }
 }

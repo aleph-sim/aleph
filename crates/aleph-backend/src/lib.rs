@@ -111,6 +111,40 @@ pub trait Backend {
             kind: "diagonal_phase",
         })
     }
+
+    /// Apply a cache-tile-confinable run (`Instruction::TiledBlock`).
+    ///
+    /// Default implementation replays each gate via `apply_gate` in order
+    /// — semantically identical to executing the gates individually, just
+    /// without the tile-major cache benefit. State-vector backends with a
+    /// tiled fast path override this; others (SoA, FP32, MPS) inherit the
+    /// correct replay.
+    fn apply_tiled_block(
+        &mut self,
+        state: &mut Self::State,
+        block: &aleph_ir::TiledBlock,
+    ) -> Result<(), BackendError> {
+        for gate in &block.gates {
+            self.apply_gate(state, gate)?;
+        }
+        Ok(())
+    }
+
+    /// Reorder a physical-bit-order state into logical order per `perm`
+    /// (`perm[logical] = physical`), undoing a `RelabelQubits` permutation.
+    /// Called by `run_optimized_with_outcomes` exactly once, only when the
+    /// optimized circuit carries a permutation. Default errors so a backend
+    /// that can't un-permute never silently returns a physically-ordered
+    /// (wrong) state; state-vector backends override it.
+    fn unpermute_state(
+        &mut self,
+        _state: &mut Self::State,
+        _perm: &[u32],
+    ) -> Result<(), BackendError> {
+        Err(BackendError::UnsupportedInstruction {
+            kind: "unpermute_state",
+        })
+    }
 }
 
 /// Run `circuit` on `backend`, returning the final backend state.
@@ -187,6 +221,9 @@ pub fn run_with_outcomes<B: Backend>(
             aleph_ir::Instruction::DiagonalPhase(dp) => {
                 backend.apply_diagonal_phase(&mut state, dp)?;
             }
+            aleph_ir::Instruction::TiledBlock(tb) => {
+                backend.apply_tiled_block(&mut state, tb)?;
+            }
         }
     }
     Ok((state, outcomes))
@@ -221,13 +258,47 @@ pub fn run_optimized<B: Backend>(
 /// and cancellation drop earlier gates). Compare on `(qubit, clbit, outcome)`,
 /// not on the absolute `instruction_index`, when relating outcomes back to the
 /// pre-optimization circuit.
+///
+/// **Relabelling transparency:** the default pipeline's `RelabelQubits` pass may
+/// permute qubit indices for cache locality (`perm[logical] = physical`), in
+/// which case the optimized circuit carries a permutation
+/// ([`Circuit::qubit_permutation`]), the simulated state ends in *physical*-bit
+/// order, and `Measure` outcomes are recorded against *physical* qubits. This
+/// driver makes that invisible: it maps each outcome's `qubit` back to its
+/// logical index and applies a single final gather via
+/// [`Backend::unpermute_state`] so the returned state is logical-order — exactly
+/// as if no relabelling had occurred. A backend that doesn't override
+/// `unpermute_state` surfaces [`BackendError::UnsupportedInstruction`] rather
+/// than silently returning a physically-ordered (wrong) state.
 pub fn run_optimized_with_outcomes<B: Backend>(
     backend: &mut B,
     circuit: &Circuit,
 ) -> Result<(B::State, Vec<MeasurementRecord>), BackendError> {
     let mut optimized = circuit.clone();
     optimized.optimize()?; // PassError -> BackendError via #[from]
-    run_with_outcomes(backend, &optimized)
+    let perm = optimized.qubit_permutation().map(|p| p.to_vec());
+    let (mut state, mut outcomes) = run_with_outcomes(backend, &optimized)?;
+    if let Some(perm) = perm {
+        // RelabelQubits rewrote Measure qubits to physical; report them logical.
+        // logical_of[physical] = logical.
+        let logical_of = invert_perm(&perm);
+        for rec in &mut outcomes {
+            rec.qubit = logical_of[rec.qubit as usize];
+        }
+        // Single final gather: physical-order state → logical order.
+        backend.unpermute_state(&mut state, &perm)?;
+    }
+    Ok((state, outcomes))
+}
+
+/// `inv[perm[l]] = l` — invert a qubit permutation (`perm[logical] =
+/// physical` ⟹ `inv[physical] = logical`).
+fn invert_perm(perm: &[u32]) -> Vec<u32> {
+    let mut inv = vec![0u32; perm.len()];
+    for (logical, &physical) in perm.iter().enumerate() {
+        inv[physical as usize] = logical as u32;
+    }
+    inv
 }
 
 #[cfg(test)]
@@ -291,6 +362,95 @@ mod tests {
         ) -> Result<Vec<f64>, BackendError> {
             Ok(vec![0.0; 1 << qubits.len()])
         }
+    }
+
+    /// The default `apply_tiled_block` must call `apply_gate` for each gate
+    /// in the block, in order.
+    ///
+    /// Uses a recording variant of `StubBackend` that logs `apply_gate` calls
+    /// (by gate kind name). Two gates H/CNOT wrapped in a `TiledBlock` must
+    /// produce exactly the same two recorded calls as running them individually.
+    ///
+    /// We use the recording approach rather than `NaiveSvBackend` because
+    /// `aleph-sv` re-exports `Backend` from its own copy of `aleph-backend`,
+    /// causing a trait-version mismatch when `aleph-backend` is being compiled
+    /// as the crate under test.
+    #[test]
+    fn default_apply_tiled_block_replays_gates_in_order() {
+        use aleph_core::{Gate, GateInstance};
+        use aleph_ir::TiledBlock;
+        use smallvec::smallvec;
+        use std::cell::RefCell;
+        use std::rc::Rc;
+
+        // A backend that records the name of each gate passed to apply_gate.
+        struct RecordingBackend {
+            log: Rc<RefCell<Vec<&'static str>>>,
+        }
+
+        impl Backend for RecordingBackend {
+            type State = ();
+
+            fn allocate(&mut self, _n: u32) -> Result<(), BackendError> {
+                Ok(())
+            }
+
+            fn apply_gate(
+                &mut self,
+                _state: &mut (),
+                gate: &GateInstance,
+            ) -> Result<(), BackendError> {
+                self.log.borrow_mut().push(gate.gate.name());
+                Ok(())
+            }
+
+            fn measure(&mut self, _state: &mut (), _qubit: u32) -> Result<bool, BackendError> {
+                Ok(false)
+            }
+
+            fn sample(&mut self, _state: &(), _shots: u32) -> Result<Vec<u64>, BackendError> {
+                Ok(vec![])
+            }
+
+            fn expectation_value(
+                &mut self,
+                _state: &(),
+                _pauli: &aleph_core::PauliString,
+            ) -> Result<f64, BackendError> {
+                Ok(0.0)
+            }
+
+            fn probabilities(
+                &mut self,
+                _state: &(),
+                qubits: &[u32],
+            ) -> Result<Vec<f64>, BackendError> {
+                Ok(vec![0.0; 1 << qubits.len()])
+            }
+        }
+
+        let h = GateInstance::new(Gate::H, smallvec![0u32]);
+        let cnot = GateInstance::new(Gate::Cnot, smallvec![0u32, 1u32]);
+
+        let tb = TiledBlock {
+            gates: vec![h.clone(), cnot.clone()],
+            tile_bits: 3,
+        };
+
+        let log = Rc::new(RefCell::new(Vec::new()));
+        let mut backend = RecordingBackend {
+            log: Rc::clone(&log),
+        };
+        let mut state = ();
+        backend
+            .apply_tiled_block(&mut state, &tb)
+            .expect("apply_tiled_block must succeed");
+
+        assert_eq!(
+            *log.borrow(),
+            vec![h.gate.name(), cnot.gate.name()],
+            "default replay must call apply_gate for each gate in order"
+        );
     }
 
     /// `run` on a circuit containing a `DiagonalPhase` instruction must

@@ -146,6 +146,17 @@ impl Backend for SoaSvBackend {
         Ok(())
     }
 
+    fn unpermute_state(
+        &mut self,
+        state: &mut Self::State,
+        perm: &[u32],
+    ) -> Result<(), BackendError> {
+        // Single gather per plane: physical-order → logical order.
+        state.re = crate::perm::bit_permute_plane(&state.re, perm);
+        state.im = crate::perm::bit_permute_plane(&state.im, perm);
+        Ok(())
+    }
+
     fn measure(&mut self, state: &mut Self::State, qubit: u32) -> Result<bool, BackendError> {
         crate::measure_soa::measure_impl_soa(&mut self.rng, state, qubit)
     }

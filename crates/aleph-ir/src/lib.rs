@@ -16,6 +16,9 @@ pub use instruction::Instruction;
 pub mod diagonal_phase;
 pub use diagonal_phase::{DiagonalPhase, PhaseTerm};
 
+mod tiled_block;
+pub use tiled_block::TiledBlock;
+
 #[cfg(any(test, feature = "bench-fixtures"))]
 pub mod bench_fixtures;
 pub mod passes;

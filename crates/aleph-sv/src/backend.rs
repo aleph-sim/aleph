@@ -141,6 +141,53 @@ impl Backend for NaiveSvBackend {
         Ok(())
     }
 
+    fn unpermute_state(
+        &mut self,
+        state: &mut Self::State,
+        perm: &[u32],
+    ) -> Result<(), BackendError> {
+        // Single gather: physical-order amplitudes → logical order.
+        state.amps = crate::perm::bit_permute_state(&state.amps, perm);
+        Ok(())
+    }
+
+    fn apply_tiled_block(
+        &mut self,
+        state: &mut Self::State,
+        block: &aleph_ir::TiledBlock,
+    ) -> Result<(), BackendError> {
+        use rayon::prelude::*;
+        let t = block.tile_bits as usize;
+        let n = state.num_qubits as usize;
+        // Degenerate: a tile spans the whole state (or more) → one tile,
+        // sequential, equivalent to gate-major. No control is ≥ t (all
+        // qubits < n ≤ t), so no per-tile masking needed.
+        if t >= n {
+            for g in &block.gates {
+                dispatch_tile_kernel(&mut state.amps, g, &g.controls)?;
+            }
+            return Ok(());
+        }
+        let tile_len = 1usize << t;
+        // Each chunk is one 2^t-aligned tile. par_chunks_mut hands each rayon
+        // task an exclusive, disjoint sub-slice — no aliasing, no cross-tile
+        // dependency (every gate target < t pairs within the tile), so the
+        // result is bit-identical regardless of thread count.
+        let results: Result<(), BackendError> = state
+            .amps
+            .par_chunks_mut(tile_len)
+            .enumerate()
+            .try_for_each(|(tile_idx, tile)| {
+                // High (≥ t) bits common to every amplitude in this tile.
+                let tile_base = tile_idx << t;
+                for g in &block.gates {
+                    apply_gate_to_tile(tile, g, t, tile_base)?;
+                }
+                Ok(())
+            });
+        results
+    }
+
     fn measure(&mut self, state: &mut Self::State, qubit: u32) -> Result<bool, BackendError> {
         crate::measure::measure_impl(&mut self.rng, state, qubit)
     }
@@ -163,6 +210,72 @@ impl Backend for NaiveSvBackend {
         qubits: &[u32],
     ) -> Result<Vec<f64>, BackendError> {
         crate::measure::probabilities_impl(state, qubits)
+    }
+}
+
+/// Apply one gate to a single tile sub-slice. `tile_base` holds the high
+/// (≥ t) bits shared by all amplitudes in this tile. A control on a bit
+/// `≥ t` is constant across the tile: if it is 0 the gate does not fire
+/// here; controls `< t` are passed to the kernel (tile-relative).
+fn apply_gate_to_tile(
+    tile: &mut [Complex],
+    g: &GateInstance,
+    t: usize,
+    tile_base: usize,
+) -> Result<(), BackendError> {
+    for &c in &g.controls {
+        if (c as usize) >= t {
+            // tile_base's bit c: (tile_idx << t) already has the absolute
+            // high bits, so test bit c directly.
+            if (tile_base >> c) & 1 == 0 {
+                return Ok(()); // control unsatisfied for this tile → skip
+            }
+        }
+    }
+    let low_controls: smallvec::SmallVec<[u32; 2]> = g
+        .controls
+        .iter()
+        .copied()
+        .filter(|&c| (c as usize) < t)
+        .collect();
+    dispatch_tile_kernel(tile, g, &low_controls)
+}
+
+/// Materialise a gate's matrix and route by arity to the sequential tile
+/// kernels. The `TileBlock` pass (P2-09 Task 5) only groups gates with a
+/// representable matrix of arity ≤ 2, so M8x8 is unreachable here; we still
+/// surface it as an error rather than panic.
+fn dispatch_tile_kernel(
+    tile: &mut [Complex],
+    g: &GateInstance,
+    controls: &[u32],
+) -> Result<(), BackendError> {
+    let matrix = g.gate.matrix().map_err(|e| match e {
+        GateError::SymbolicParam => BackendError::SymbolicParam,
+        GateError::NonFiniteParam => BackendError::NonFiniteParam {
+            kind: g.gate.name(),
+        },
+        GateError::Unrepresentable => BackendError::UnsupportedGate {
+            kind: g.gate.name(),
+        },
+    })?;
+    // Matrix shape ⇒ target count for a well-formed GateInstance: M2x2 ⇒
+    // 1 qubit, M4x4 ⇒ 2 qubits (arity is checked at construction). The
+    // `g.qubits[..]` indexing below relies on that invariant — the TileBlock
+    // pass additionally only emits arity ≤ 2 gates, so M8x8 is unreachable
+    // here (still surfaced as an error rather than a panic).
+    match matrix {
+        GateMatrix::M2x2(m) => {
+            crate::kernels::aos::apply_1q_tile(tile, g.qubits[0], controls, &m);
+            Ok(())
+        }
+        GateMatrix::M4x4(m) => {
+            crate::kernels::aos::apply_2q_tile(tile, [g.qubits[0], g.qubits[1]], controls, &m);
+            Ok(())
+        }
+        GateMatrix::M8x8(_) => Err(BackendError::UnsupportedGate {
+            kind: g.gate.name(),
+        }),
     }
 }
 
@@ -260,6 +373,87 @@ mod tests {
         for (a, b) in s1.amplitudes().iter().zip(s2.amplitudes().iter()) {
             assert!((a - b).norm() < 1e-12);
         }
+    }
+
+    #[test]
+    fn tiled_block_equals_gatewise() {
+        use aleph_core::Gate;
+        use smallvec::smallvec;
+        let n = 6u32;
+        // gates on low targets (< tile_bits), one with a high control.
+        let gates = vec![
+            GateInstance::new(Gate::H, smallvec![0u32]),
+            GateInstance::new(Gate::Cnot, smallvec![0u32, 1u32]), // targets 0,1
+            GateInstance::controlled(Gate::X, smallvec![2u32], smallvec![5u32]), // control q5 ≥ tile_bits
+            // a 2q gate (targets 2,0) with an external control < tile_bits.
+            GateInstance::controlled(Gate::Cz, smallvec![2u32, 0u32], smallvec![1u32]),
+            GateInstance::new(Gate::H, smallvec![1u32]),
+        ];
+        for tile_bits in [3u32, 4, 6, 7] {
+            // < n, ==n, > n
+            // gate-major reference
+            let mut bg = NaiveSvBackend::with_seed(0);
+            let mut sg = bg.allocate(n).unwrap();
+            // put it in a non-trivial state first so controls matter:
+            bg.apply_gate(&mut sg, &GateInstance::new(Gate::H, smallvec![5u32]))
+                .unwrap();
+            for g in &gates {
+                bg.apply_gate(&mut sg, g).unwrap();
+            }
+            // tiled
+            let mut bt = NaiveSvBackend::with_seed(0);
+            let mut st = bt.allocate(n).unwrap();
+            bt.apply_gate(&mut st, &GateInstance::new(Gate::H, smallvec![5u32]))
+                .unwrap();
+            let block = aleph_ir::TiledBlock {
+                gates: gates.clone(),
+                tile_bits: tile_bits as u8,
+            };
+            bt.apply_tiled_block(&mut st, &block).unwrap();
+            assert_eq!(sg.amplitudes(), st.amplitudes(), "tile_bits={tile_bits}");
+        }
+    }
+
+    #[test]
+    fn tiled_block_thread_invariant() {
+        use aleph_core::Gate;
+        use smallvec::smallvec;
+        let n = 8u32;
+        let gates = vec![
+            GateInstance::new(Gate::H, smallvec![0u32]),
+            GateInstance::new(Gate::Cnot, smallvec![0u32, 1u32]),
+            GateInstance::controlled(Gate::X, smallvec![2u32], smallvec![7u32]),
+            GateInstance::new(Gate::H, smallvec![2u32]),
+        ];
+        let tile_bits = 4u8;
+
+        let run = || {
+            let mut b = NaiveSvBackend::with_seed(0);
+            let mut s = b.allocate(n).unwrap();
+            b.apply_gate(&mut s, &GateInstance::new(Gate::H, smallvec![7u32]))
+                .unwrap();
+            let block = aleph_ir::TiledBlock {
+                gates: gates.clone(),
+                tile_bits,
+            };
+            b.apply_tiled_block(&mut s, &block).unwrap();
+            s.amplitudes().to_vec()
+        };
+
+        // Determinism: identical inputs → identical outputs across two runs.
+        let default_pool = run();
+        let default_pool_again = run();
+        assert_eq!(default_pool, default_pool_again, "non-deterministic output");
+
+        // Single-threaded pool must match the default (multi-thread) pool
+        // bit-for-bit — par_chunks_mut gives disjoint tiles, so thread count
+        // cannot change the per-amplitude op order.
+        let single = rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .unwrap()
+            .install(run);
+        assert_eq!(default_pool, single, "thread count changed amplitudes");
     }
 
     #[test]

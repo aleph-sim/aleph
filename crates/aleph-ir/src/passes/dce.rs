@@ -77,6 +77,15 @@ impl Pass for DeadCodeElim {
                     }
                     kept_rev.push(inst.clone());
                 }
+                // TiledBlock is a pass-fused run of gates; treat it
+                // conservatively like a Barrier/DiagonalPhase: mark all its
+                // qubits live and keep it unconditionally.
+                Instruction::TiledBlock(_) => {
+                    for q in inst.used_qubits() {
+                        live.insert(q);
+                    }
+                    kept_rev.push(inst.clone());
+                }
             }
         }
 
