@@ -48,7 +48,7 @@ nearest-neighbor VQE/QAOA where the state vector cannot fit.
 | Non-adjacent 2q | **reject**; QAOA AC via nearest-neighbor topology | Keeps P3-04 inside "basic 1D chain"; SWAP networks are P3-06. |
 | Canonical form | **mixed-canonical + orthogonality center** | Standard DMRG (Schollwöck 2011, the P3-05 reference); SVD truncation is locally optimal; avoids Vidal Γ-Λ division-by-small-Schmidt instability. |
 | `measure` / `sample` | `measure` = marginal+collapse; `sample` = **perfect sampling (Ferris–Vidal 2012)** | `sample` takes `&State` (immutable) and avoids per-shot clones; `measure` (collapse) still required by the trait. |
-| `probabilities` | **Unsupported** (defer) | Joint marginals are exponential in subset size; AC doesn't require it; sampling covers the QAOA AC. Mirrors the stabilizer backend precedent. |
+| `probabilities` | **Implemented** — exact joint marginal over the requested subset via a doubled transfer-matrix sweep, with a subset-size cap | User-requested. Exact for any contiguous or non-contiguous subset; bounded by capping the subset size (output is 2^k). |
 
 ## Architecture
 
@@ -135,8 +135,24 @@ boundaries — this avoids column-major reshape confusion.
 | `measure(q) -> bool` | Move center to q; single-site reduced ρ from the center contraction; `p(0)=ρ₀₀`, `p(1)=ρ₁₁`; sample with rng; project site q onto \|outcome⟩ and renormalize by `1/√p`. Both probs ≈ 0 → `DegenerateMeasurement`. |
 | `sample(shots)` | **Perfect sampling**: clone once, canonicalize to right-canonical (center = 0), then for each shot sweep left→right with a left-boundary vector computing conditional probs (right environment is identity by right-canonicality) — no per-shot collapse/clone. Pack `1u64 << q` (matches SV/stabilizer); n ≤ 64 else `TooManyQubits`. |
 | `expectation_value(P)` | Copy ψ′, apply each 1q Pauli to the relevant site's physical index, overlap ⟨ψ\|ψ′⟩ via a transfer-matrix sweep, multiply by the PauliString sign, return the real part (Hermitian ⇒ real). Closes the machine-precision AC. |
-| `probabilities` | `UnsupportedInstruction` (deferred). |
+| `probabilities(qubits)` | Exact joint marginal over `qubits` (length 2^k). Validation mirrors the SV backend: empty subset → `[1.0]`, duplicate → `DuplicateQubit`, out-of-range → `QubitOutOfRange`. Output index bit `pos` corresponds to `qubits[pos]` (slice order, LSB-first) — identical contract to `aleph-sv`. Subset size capped (`MAX_PROB_QUBITS`, e.g. 20); larger → `TooManyQubits`. |
 | `apply_diagonal_phase` / `apply_tiled_block` | Inherit trait defaults (MPS only sees raw, unoptimized circuits). |
+
+**`probabilities` algorithm (doubled transfer-matrix sweep).** The state must
+be normalized (it is, after truncation renormalization). The joint marginal
+over subset S is the diagonal of ρ_S = Tr_{∉S}|ψ⟩⟨ψ|. Sweep sites left→right
+maintaining a map from partial bit-pattern → boundary matrix E (χ_bra × χ_ket),
+starting from the 1×1 scalar `[1]`:
+
+- Site i ∉ S: contract over the physical index for every current env —
+  `E' = Σ_p A[i]_pᴴ · E · A[i]_p`.
+- Site i ∈ S: split each env into two — for p ∈ {0,1},
+  `E_{pattern·p} = A[i]_pᴴ · E_pattern · A[i]_p` (appends one output bit).
+
+At the end every env is 1×1; its scalar is the probability of that pattern.
+Patterns are mapped to output indices using each S-site's position in the
+`qubits` slice (slice order, not site order). Cost O(2^k · n · χ³); the cap
+keeps it bounded.
 
 ### Error type
 
@@ -182,6 +198,11 @@ Per `docs/testing.md` and CLAUDE.md:
 6. **Sampling:** perfect-sampling distribution agrees with measure-all and with
    SV probabilities for small n (total-variation distance within 1e-5 at
    100k shots).
+7. **`probabilities`:** exact joint marginals match `NaiveSvBackend::probabilities`
+   to 1e-10 for small n across single-qubit, contiguous, and non-contiguous
+   subsets; empty subset → `[1.0]`; full subset sums to 1; the perfect-sampling
+   empirical distribution converges to `probabilities` (cross-check); validation
+   errors (duplicate, out-of-range, oversized subset) match the SV contract.
 
 ## Performance
 
@@ -205,7 +226,7 @@ The implementation plan (writing-plans) will break this into roughly:
 5. Dense-statevector reconstruction helper (test support).
 6. `expectation_value` (overlap sweep).
 7. `measure` (marginal + collapse).
-8. `sample` (perfect sampling).
+8. `sample` (perfect sampling) + `probabilities` (doubled transfer-matrix sweep).
 9. `MpsBackend` impl `Backend` + `MpsError → BackendError`.
 10. CLI `--backend mps` + `--max-bond` + `run_mps`.
 11. Oracle tests + proptests.
