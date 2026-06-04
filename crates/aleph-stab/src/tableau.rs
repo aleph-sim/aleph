@@ -179,6 +179,29 @@ impl Tableau {
         self.cnot(b, a)?;
         self.cnot(a, b)
     }
+
+    /// iSWAP `(a,b)`: `|01⟩ ↔ i|10⟩`. Clifford.
+    /// Decomposition: `S_a S_b H_a CNOT_{a,b} CNOT_{b,a} H_b`.
+    /// Correctness pinned by the SV-equivalence test (P3-01 §6.1).
+    pub fn iswap(&mut self, a: usize, b: usize) -> Result<(), crate::StabError> {
+        self.s(a)?;
+        self.s(b)?;
+        self.h(a)?;
+        self.cnot(a, b)?;
+        self.cnot(b, a)?;
+        self.h(b)
+    }
+
+    /// iSWAP† `(a,b)`: reverse circuit of `iswap` with each primitive
+    /// inverted (`H†=H`, `CNOT†=CNOT`, `S†=Sdg`).
+    pub fn iswap_dg(&mut self, a: usize, b: usize) -> Result<(), crate::StabError> {
+        self.h(b)?;
+        self.cnot(b, a)?;
+        self.cnot(a, b)?;
+        self.h(a)?;
+        self.sdg(b)?;
+        self.sdg(a)
+    }
 }
 
 #[cfg(test)]
@@ -320,6 +343,15 @@ mod tests {
         let mut t = before.clone();
         t.swap(0, 2).unwrap();
         t.swap(0, 2).unwrap();
+        assert_tableaux_eq(&t, &before);
+    }
+
+    #[test]
+    fn iswap_then_iswapdg_is_identity() {
+        let before = generic_state();
+        let mut t = before.clone();
+        t.iswap(0, 2).unwrap();
+        t.iswap_dg(0, 2).unwrap();
         assert_tableaux_eq(&t, &before);
     }
 }
