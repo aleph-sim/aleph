@@ -333,3 +333,54 @@ fn stabilizer_backend_rejects_statevector() {
         .failure()
         .stderr(contains("no dense state vector"));
 }
+
+#[test]
+fn mps_backend_runs_bell() {
+    aleph()
+        .args(["run"])
+        .arg(bell_path())
+        .args(["--backend", "mps", "--shots", "1024", "--seed", "0"])
+        .assert()
+        .success()
+        .stdout(contains("counts (1024 shots, seed=0):"))
+        .stdout(contains("|00⟩"))
+        .stdout(contains("|11⟩"));
+}
+
+#[test]
+fn mps_backend_expectation_zz_on_bell() {
+    aleph()
+        .args(["run"])
+        .arg(bell_path())
+        .args(["--backend", "mps", "--expectation", "ZZ", "--seed", "0"])
+        .assert()
+        .success()
+        .stdout(contains("expectation values:"))
+        // ⟨ZZ⟩ = +1 on |Φ+⟩, but the MPS path accumulates ~1e-16 SVD/QR
+        // rounding (prints +0.999…), so this CLI test only confirms the
+        // expectation path is wired; the exact value is pinned in the
+        // unit/oracle tests.
+        .stdout(contains("ZZ"));
+}
+
+#[test]
+fn mps_backend_max_bond_runs_ghz() {
+    aleph()
+        .args(["run"])
+        .arg(ghz3_path())
+        .args(["--backend", "mps", "--max-bond", "8", "--shots", "64", "--seed", "0"])
+        .assert()
+        .success()
+        .stdout(contains("counts (64 shots, seed=0):"));
+}
+
+#[test]
+fn mps_backend_rejects_statevector() {
+    aleph()
+        .args(["run"])
+        .arg(bell_path())
+        .args(["--backend", "mps", "--statevector"])
+        .assert()
+        .failure()
+        .stderr(contains("no dense state vector"));
+}
