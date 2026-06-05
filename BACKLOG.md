@@ -1771,7 +1771,7 @@ Users shouldnâ€™t need to know which backend to use. Heuristic: Clifford-only â†
 
 ### [P3-08] Stabilizer bit-slicing (O(n/64) tableau)
 
-**Labels:** `area:backend`, `type:perf`, `priority:medium`
+**Labels:** `area:backend`, `type:optimization`, `priority:medium`
 **Milestone:** Phase 3 (deferred)
 **Estimate:** M
 **Depends on:** P3-02
@@ -1803,7 +1803,7 @@ P3-01 deliberately shipped the naive O(n) row-major hot loop (hoisted word-offse
 
 ### [P3-09] MPS multithreading + lazy SWAP permutation tracking
 
-**Labels:** `area:backend`, `type:perf`, `priority:medium`
+**Labels:** `area:backend`, `type:optimization`, `priority:medium`
 **Milestone:** Phase 3 (deferred)
 **Estimate:** L
 **Depends on:** P3-06
