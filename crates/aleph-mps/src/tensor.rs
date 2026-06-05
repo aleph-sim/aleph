@@ -108,31 +108,74 @@ impl Site {
 /// SVD of `m` truncated to at most `max_bond` singular values, renormalized to
 /// preserve unit weight (input must come from a normalized state). Returns
 /// `(u_kept, s_kept, vt_kept, discarded_weight)` where:
-/// - `u_kept` has shape `rows × χ`
-/// - `s_kept` is the χ kept (renormalized) singular values
-/// - `vt_kept` has shape `χ × cols`
+/// - `u_kept` has shape `rows × χ` with orthonormal columns (left isometry)
+/// - `s_kept` is the χ kept (renormalized) singular values, descending
+/// - `vt_kept` has shape `χ × cols` with orthonormal rows
 /// - `discarded_weight` is the sum of squares of discarded singular values
+///
+/// # Why not `nalgebra`'s SVD
+///
+/// `nalgebra`'s complex `svd()` is unreliable for rank-deficient matrices: it
+/// returns orthonormal but *incorrect* singular vectors, so `U·Σ·Vᴴ` no longer
+/// reconstructs `M` (verified: `recompose()` errs by ~1e-1 on a rank-1 complex
+/// 4×4 — see the P3-04 debugging notes). Two-site MPS blocks are routinely
+/// rank-deficient (e.g. after a CNOT collapses Schmidt rank), so we instead
+/// diagonalise the Hermitian Gram matrix `G = Mᴴ M` with `SymmetricEigen`
+/// (robust for complex Hermitian inputs): its eigenpairs give `σ² = λ` and the
+/// right singular vectors `V`, from which `U = M·V·Σ⁻¹`. Numerically-zero
+/// singular values are dropped, yielding proper isometries and exact
+/// reconstruction.
 pub fn truncated_svd(
     m: &DMatrix<Complex>,
     max_bond: usize,
 ) -> (DMatrix<Complex>, Vec<f64>, DMatrix<Complex>, f64) {
-    let svd = m.clone().svd(true, true);
-    // svd(true, true) always computes both U and V^T — the Options are never None.
-    let u = svd.u.expect("svd(true,true) always computes U");
-    let vt = svd.v_t.expect("svd(true,true) always computes V^T");
-    let s: Vec<f64> = svd.singular_values.iter().copied().collect();
-    let rank = s.len();
-    let chi = rank.min(max_bond.max(1));
-    let discarded: f64 = s[chi..].iter().map(|x| x * x).sum();
-    let kept_weight: f64 = s[..chi].iter().map(|x| x * x).sum();
+    let rows = m.nrows();
+    let cols = m.ncols();
+
+    // Right Gram matrix G = Mᴴ M (cols × cols), Hermitian positive-semidefinite.
+    let g = m.adjoint() * m;
+    let eig = nalgebra::linalg::SymmetricEigen::new(g);
+
+    // (singular value, eigenvector column index), sorted descending.
+    let mut pairs: Vec<(f64, usize)> = (0..cols)
+        .map(|k| (eig.eigenvalues[k].max(0.0).sqrt(), k))
+        .collect();
+    pairs.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+
+    // Drop singular values that are numerically zero relative to the largest
+    // (these correspond to null directions; their "singular vectors" are
+    // arbitrary and `M·v = 0`). Keep at most `max_bond`, at least one.
+    let s_max = pairs.first().map(|p| p.0).unwrap_or(0.0);
+    let eps = 1e-12 * s_max.max(f64::MIN_POSITIVE);
+    let significant = pairs.iter().filter(|p| p.0 > eps).count().max(1);
+    let chi = significant.min(max_bond.max(1));
+
+    let discarded: f64 = pairs[chi..].iter().map(|p| p.0 * p.0).sum();
+    let kept_weight: f64 = pairs[..chi].iter().map(|p| p.0 * p.0).sum();
     let scale = if kept_weight > 0.0 {
         (1.0 / kept_weight).sqrt()
     } else {
         1.0
     };
-    let s_kept: Vec<f64> = s[..chi].iter().map(|x| x * scale).collect();
-    let u_kept = u.columns(0, chi).into_owned();
-    let vt_kept = vt.rows(0, chi).into_owned();
+
+    let mut u_kept = DMatrix::<Complex>::zeros(rows, chi);
+    let mut vt_kept = DMatrix::<Complex>::zeros(chi, cols);
+    let mut s_kept = vec![0.0_f64; chi];
+    for (new_k, &(sigma, eig_k)) in pairs[..chi].iter().enumerate() {
+        let vk = eig.eigenvectors.column(eig_k);
+        // vt row = vᴴ
+        for c in 0..cols {
+            vt_kept[(new_k, c)] = vk[c].conj();
+        }
+        // u column = M·v / σ (a unit, mutually-orthonormal vector for σ > 0;
+        // left as zero for a numerically-zero σ, which carries no weight).
+        let mvk = m * vk;
+        let inv = if sigma > eps { 1.0 / sigma } else { 0.0 };
+        for r in 0..rows {
+            u_kept[(r, new_k)] = mvk[r] * Complex::new(inv, 0.0);
+        }
+        s_kept[new_k] = sigma * scale;
+    }
     (u_kept, s_kept, vt_kept, discarded)
 }
 
