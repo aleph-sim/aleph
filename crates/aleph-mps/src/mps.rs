@@ -7,6 +7,9 @@ use aleph_core::{Complex, GateInstance, PauliString};
 use nalgebra::DMatrix;
 use rand::Rng;
 
+/// Largest subset size `probabilities` will materialize (output is 2^k).
+pub(crate) const MAX_PROB_QUBITS: usize = 20;
+
 /// Mixed-canonical MPS. Sites left of `center` are left-canonical, sites right
 /// are right-canonical; the center site carries the norm.
 #[derive(Debug, Clone)]
@@ -384,6 +387,153 @@ impl MpsState {
         amps
     }
 
+    /// Perfect sampling (Ferris–Vidal 2012). Does not mutate `self`.
+    /// Each shot packs qubit `q` into bit `q`.
+    ///
+    /// Canonicalize a working clone to right-canonical (center=0) so the right
+    /// environment is the identity at every site during the left→right sweep.
+    pub(crate) fn sample<R: Rng>(&self, shots: u32, rng: &mut R) -> Vec<u64> {
+        let n = self.sites.len();
+        // Right-canonical clone (center = 0): right environment is identity at
+        // every site during the left→right sweep.
+        let mut work = self.clone();
+        work.move_center_to(0);
+        let mut out = Vec::with_capacity(shots as usize);
+        for _ in 0..shots {
+            let mut bnd = vec![Complex::new(1.0, 0.0)]; // left bond of site 0 is 1
+            let mut bits = 0u64;
+            // Explicit range loops — multi-index tensor contraction has no cleaner iterator form.
+            #[allow(clippy::needless_range_loop)]
+            for i in 0..n {
+                let site = &work.sites[i];
+                let mut w = [
+                    vec![Complex::new(0.0, 0.0); site.right],
+                    vec![Complex::new(0.0, 0.0); site.right],
+                ];
+                for b in 0..2 {
+                    for r in 0..site.right {
+                        let mut acc = Complex::new(0.0, 0.0);
+                        for l in 0..site.left {
+                            acc += bnd[l] * site.get(l, b, r);
+                        }
+                        w[b][r] = acc;
+                    }
+                }
+                let p0: f64 = w[0].iter().map(|c| c.norm_sqr()).sum();
+                let p1: f64 = w[1].iter().map(|c| c.norm_sqr()).sum();
+                let total = p0 + p1;
+                // outcome=true (|1⟩) with probability p1/total
+                let outcome = rng.gen::<f64>() * total >= p0;
+                let b = if outcome { 1usize } else { 0usize };
+                if outcome {
+                    bits |= 1u64 << i;
+                }
+                let pk = if outcome { p1 } else { p0 };
+                let scale = if pk > 0.0 { (1.0 / pk).sqrt() } else { 0.0 };
+                bnd = w[b].iter().map(|c| *c * Complex::new(scale, 0.0)).collect();
+            }
+            out.push(bits);
+        }
+        out
+    }
+
+    /// Exact joint marginal over `qubits` (length 2^k). Matches the SV backend
+    /// contract: empty → [1.0]; output bit `pos` corresponds to `qubits[pos]`.
+    ///
+    /// Uses a doubled transfer-matrix sweep: each environment tracks both a bra
+    /// and a ket copy of the MPS tensor, accumulating `bra_bond × ket_bond`
+    /// matrices. At sites in `qubits` the environment branches into two (p=0 and
+    /// p=1); at all other sites it contracts over both physical indices.
+    pub(crate) fn probabilities(&self, qubits: &[u32]) -> Result<Vec<f64>, MpsError> {
+        let n = self.sites.len();
+        if qubits.is_empty() {
+            return Ok(vec![1.0]);
+        }
+        if qubits.len() > MAX_PROB_QUBITS {
+            return Err(MpsError::UnsupportedGate {
+                kind: "probabilities(subset too large)",
+            });
+        }
+        // Map site index → output bit position (None if site not in subset).
+        let mut out_bit_for_site: Vec<Option<usize>> = vec![None; n];
+        for (pos, &q) in qubits.iter().enumerate() {
+            if (q as usize) >= n {
+                return Err(MpsError::QubitOutOfRange {
+                    qubit: q,
+                    num_qubits: n as u32,
+                });
+            }
+            out_bit_for_site[q as usize] = Some(pos);
+        }
+
+        // contract_p: advance the transfer matrix for physical index `p`.
+        // E_new[rb, rk] = Σ_{lb,lk,p} conj(A[lb,p,rb]) · E[lb,lk] · A[lk,p,rk]
+        // (for a single p here; caller sums over p for non-measured sites).
+        let contract_p = |site: &Site, e: &DMatrix<Complex>, p: usize| -> DMatrix<Complex> {
+            // tmp[lb, rk] = Σ_lk E[lb,lk] · A[lk,p,rk]
+            let mut tmp = DMatrix::<Complex>::zeros(site.left, site.right);
+            // Explicit index loops — multi-index transfer contraction is clearest
+            // expressed this way; no meaningful iterator abstraction available.
+            #[allow(clippy::needless_range_loop)]
+            for lb in 0..site.left {
+                for rk in 0..site.right {
+                    let mut acc = Complex::new(0.0, 0.0);
+                    for lk in 0..site.left {
+                        acc += e[(lb, lk)] * site.get(lk, p, rk);
+                    }
+                    tmp[(lb, rk)] = acc;
+                }
+            }
+            // e_new[rb, rk] = Σ_lb conj(A[lb,p,rb]) · tmp[lb,rk]
+            let mut e_new = DMatrix::<Complex>::zeros(site.right, site.right);
+            #[allow(clippy::needless_range_loop)]
+            for rb in 0..site.right {
+                for rk in 0..site.right {
+                    let mut acc = Complex::new(0.0, 0.0);
+                    for lb in 0..site.left {
+                        acc += site.get(lb, p, rb).conj() * tmp[(lb, rk)];
+                    }
+                    e_new[(rb, rk)] += acc;
+                }
+            }
+            e_new
+        };
+
+        // envs: list of (output_index_so_far, transfer_matrix).
+        // Starts as a single 1×1 identity environment.
+        let mut envs: Vec<(usize, DMatrix<Complex>)> =
+            vec![(0usize, DMatrix::from_element(1, 1, Complex::new(1.0, 0.0)))];
+
+        for (i, out_bit) in out_bit_for_site.iter().enumerate() {
+            let site = &self.sites[i];
+            match out_bit {
+                None => {
+                    // Traced-out site: contract over both physical indices.
+                    for (_, e) in envs.iter_mut() {
+                        *e = &contract_p(site, e, 0) + &contract_p(site, e, 1);
+                    }
+                }
+                Some(pos) => {
+                    // Measured site: branch into p=0 (bit=0) and p=1 (bit=1<<pos).
+                    let mut next = Vec::with_capacity(envs.len() * 2);
+                    for (idx, e) in &envs {
+                        next.push((*idx, contract_p(site, e, 0)));
+                        next.push((*idx | (1 << pos), contract_p(site, e, 1)));
+                    }
+                    envs = next;
+                }
+            }
+        }
+
+        let dim = 1usize << qubits.len();
+        let mut out = vec![0.0; dim];
+        for (idx, e) in envs {
+            debug_assert_eq!((e.nrows(), e.ncols()), (1, 1));
+            out[idx] = e[(0, 0)].re;
+        }
+        Ok(out)
+    }
+
     /// Measure qubit `q` in the Z basis, collapsing the state. Returns the bit.
     ///
     /// Moves the orthogonality center to `q` so that the environment is trivial
@@ -650,5 +800,74 @@ mod tests {
         let b2 = s.measure(2, &mut rng).unwrap();
         assert_eq!(b0, b1);
         assert_eq!(b1, b2);
+    }
+
+    fn ghz(n: usize) -> MpsState {
+        let mut s = MpsState::new(n, 64);
+        let h = crate::gate::matrix_2x2(&GateInstance::new(Gate::H, smallvec![0u32])).unwrap();
+        s.apply_1q(0, &h);
+        for i in 0..(n as u32 - 1) {
+            let g = GateInstance::new(Gate::Cnot, smallvec![i, i + 1]);
+            let cnot = crate::gate::matrix_4x4(&g).unwrap();
+            s.apply_2q(&g, &cnot).unwrap();
+        }
+        s
+    }
+
+    #[test]
+    fn sample_ghz_all_equal() {
+        let s = ghz(4);
+        let mut rng = StdRng::seed_from_u64(3);
+        let shots = s.sample(500, &mut rng);
+        for sh in shots {
+            assert!(sh == 0b0000 || sh == 0b1111, "bad GHZ shot {sh:04b}");
+        }
+    }
+
+    #[test]
+    fn probabilities_plus_state() {
+        let mut s = MpsState::new(2, 64);
+        let h = crate::gate::matrix_2x2(&GateInstance::new(Gate::H, smallvec![0u32])).unwrap();
+        s.apply_1q(0, &h);
+        let p = s.probabilities(&[0]).unwrap();
+        assert!((p[0] - 0.5).abs() < 1e-10);
+        assert!((p[1] - 0.5).abs() < 1e-10);
+    }
+
+    #[test]
+    fn probabilities_bell_joint() {
+        let s = ghz(2);
+        let p = s.probabilities(&[0, 1]).unwrap();
+        assert!((p[0b00] - 0.5).abs() < 1e-10);
+        assert!(p[0b01].abs() < 1e-10);
+        assert!(p[0b10].abs() < 1e-10);
+        assert!((p[0b11] - 0.5).abs() < 1e-10);
+    }
+
+    #[test]
+    fn probabilities_empty_subset_is_one() {
+        let s = ghz(2);
+        assert_eq!(s.probabilities(&[]).unwrap(), vec![1.0]);
+    }
+
+    #[test]
+    fn sample_matches_probabilities() {
+        // GHZ-3 sampling distribution must match probabilities over all 3 qubits.
+        let s = ghz(3);
+        let mut rng = StdRng::seed_from_u64(11);
+        let shots = s.sample(20000, &mut rng);
+        let mut counts = [0u32; 8];
+        for sh in &shots {
+            counts[*sh as usize] += 1;
+        }
+        let probs = s.probabilities(&[0, 1, 2]).unwrap();
+        for idx in 0..8 {
+            let emp = counts[idx] as f64 / 20000.0;
+            assert!(
+                (emp - probs[idx]).abs() < 0.02,
+                "idx {idx}: emp {emp} vs {}",
+                probs[idx]
+            );
+        }
     }
 }
