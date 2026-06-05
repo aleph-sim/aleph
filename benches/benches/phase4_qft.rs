@@ -19,9 +19,12 @@ use std::path::PathBuf;
 
 /// QFT sizes always benched (small enough for any host / CI bench job).
 const SMALL_N: &[u32] = &[10, 15, 20, 25];
-/// Large sizes gated behind `scaling-bench` (≥4 GiB state vector).
+/// Large size gated behind `scaling-bench` (16 GiB state vector). Only n=30 has
+/// a committed corpus (the P4-01 AC ceiling); at 10 criterion samples it is
+/// slow, so the report's n=30 number is taken from `oneshot` instead — this
+/// bench path stays runnable for spot checks.
 #[cfg(feature = "scaling-bench")]
-const LARGE_N: &[u32] = &[28, 30];
+const LARGE_N: &[u32] = &[30];
 
 fn corpus_path(n: u32) -> PathBuf {
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
