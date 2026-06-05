@@ -13,6 +13,10 @@ pub(crate) const MAX_NAIVE_QUBITS: u32 = 28;
 /// Naive single-threaded CPU state-vector backend.
 pub struct NaiveSvBackend {
     pub(crate) rng: StdRng,
+    /// Per-instance max qubit count for `allocate`. Defaults to
+    /// [`MAX_NAIVE_QUBITS`]; raised only for large-memory benchmarks on hosts
+    /// that can hold the state vector (e.g. n=30 ⇒ 16 GiB on the EPYC box).
+    qubit_cap: u32,
 }
 
 impl NaiveSvBackend {
@@ -20,6 +24,7 @@ impl NaiveSvBackend {
     pub fn new() -> Self {
         Self {
             rng: StdRng::from_entropy(),
+            qubit_cap: MAX_NAIVE_QUBITS,
         }
     }
 
@@ -28,7 +33,15 @@ impl NaiveSvBackend {
     pub fn with_seed(seed: u64) -> Self {
         Self {
             rng: StdRng::seed_from_u64(seed),
+            qubit_cap: MAX_NAIVE_QUBITS,
         }
+    }
+
+    /// Override the qubit cap (default [`MAX_NAIVE_QUBITS`] = 28). Use only on a
+    /// host with enough RAM for `2^cap * 16` bytes — n=30 ⇒ 16 GiB.
+    pub fn with_qubit_cap(mut self, cap: u32) -> Self {
+        self.qubit_cap = cap;
+        self
     }
 }
 
@@ -42,10 +55,10 @@ impl Backend for NaiveSvBackend {
     type State = CpuState;
 
     fn allocate(&mut self, num_qubits: u32) -> Result<Self::State, BackendError> {
-        if num_qubits > MAX_NAIVE_QUBITS {
+        if num_qubits > self.qubit_cap {
             return Err(BackendError::TooManyQubits {
                 requested: num_qubits,
-                limit: MAX_NAIVE_QUBITS,
+                limit: self.qubit_cap,
             });
         }
         let dim = 1usize << num_qubits;
@@ -306,6 +319,29 @@ mod tests {
                 limit: MAX_NAIVE_QUBITS,
             }
         );
+    }
+
+    #[test]
+    fn default_cap_still_rejects_above_28() {
+        let mut b = NaiveSvBackend::new();
+        let err = b.allocate(MAX_NAIVE_QUBITS + 1).unwrap_err();
+        assert!(matches!(err, BackendError::TooManyQubits { .. }));
+    }
+
+    #[test]
+    fn raised_cap_allows_more_qubits() {
+        // Don't actually allocate 2^30 in a unit test; use a small raised cap and a
+        // small n to prove the cap field gates allocate(), not memory.
+        let mut b = NaiveSvBackend::new().with_qubit_cap(4);
+        assert!(b.allocate(4).is_ok());
+        let err = b.allocate(5).unwrap_err();
+        assert!(matches!(
+            err,
+            BackendError::TooManyQubits {
+                requested: 5,
+                limit: 4
+            }
+        ));
     }
 
     #[test]

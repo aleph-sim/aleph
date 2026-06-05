@@ -1893,9 +1893,9 @@ QFT is the canonical “many controlled phases” test. Exercises diagonal-gate 
 
 **Acceptance Criteria**
 
-- [ ] QFT runs to 30 qubits on state vector
-- [ ] Results match Qiskit
-- [ ] Benchmark report row
+- [x] QFT runs to 30 qubits on state vector
+- [x] Results match Qiskit
+- [x] Benchmark report row
 
 **Testing Requirements**
 
