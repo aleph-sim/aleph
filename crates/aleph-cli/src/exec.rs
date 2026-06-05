@@ -8,7 +8,7 @@ use anyhow::{anyhow, Context, Result};
 
 use aleph_backend::{run, Backend};
 use aleph_core::Complex;
-use aleph_mps::MpsBackend;
+use aleph_mps::{MpsBackend, TruncationPolicy};
 use aleph_stab::StabilizerBackend;
 use aleph_sv::{Fp32SvBackend, NaiveSvBackend};
 
@@ -59,6 +59,7 @@ pub fn run_circuit<W: Write>(
     precision: Precision,
     backend: BackendKind,
     max_bond: usize,
+    max_error: Option<f64>,
     out: &mut W,
 ) -> Result<()> {
     // 1. Read + parse.
@@ -81,6 +82,15 @@ pub fn run_circuit<W: Write>(
             }
         }
         paulis.push((raw.clone(), ps));
+    }
+
+    // 3a. Validate --max-error if provided.
+    if let Some(e) = max_error {
+        if !e.is_finite() || e <= 0.0 {
+            return Err(anyhow!(
+                "--max-error must be a positive finite number, got {e}"
+            ));
+        }
     }
 
     // 3. Statevector cap check. Skipped for the stabilizer backend, which
@@ -135,6 +145,7 @@ pub fn run_circuit<W: Write>(
             n,
             seed,
             max_bond,
+            max_error,
             &seed_label,
             out,
         );
@@ -275,6 +286,7 @@ fn run_mps<W: Write>(
     n: u32,
     seed: Option<u64>,
     max_bond: usize,
+    max_error: Option<f64>,
     seed_label: &str,
     out: &mut W,
 ) -> Result<()> {
@@ -284,11 +296,15 @@ fn run_mps<W: Write>(
              (use --shots and/or --expectation instead)"
         ));
     }
+    let policy = match max_error {
+        Some(epsilon) => TruncationPolicy::ErrorBounded { epsilon, max_bond },
+        None => TruncationPolicy::FixedBond(max_bond),
+    };
     let mut backend = match seed {
         Some(s) => MpsBackend::with_seed(s),
         None => MpsBackend::new(),
     }
-    .with_max_bond(max_bond);
+    .with_truncation(policy);
     let state = run(&mut backend, circuit).context("running circuit (mps)")?;
 
     if let Some(shots) = effective_shots {
@@ -306,6 +322,12 @@ fn run_mps<W: Write>(
             output::format_expectation(out, raw, v)?;
         }
     }
+    writeln!(
+        out,
+        "truncation error: {:.3e}; max bond χ: {}",
+        state.truncation_error(),
+        state.max_bond_reached()
+    )?;
     Ok(())
 }
 
@@ -408,6 +430,7 @@ mod tests {
             Precision::F64,
             BackendKind::Statevector,
             128,
+            None,
             &mut out,
         )
         .unwrap();
@@ -430,6 +453,7 @@ mod tests {
             Precision::F64,
             BackendKind::Statevector,
             128,
+            None,
             &mut a,
         )
         .unwrap();
@@ -443,6 +467,7 @@ mod tests {
             Precision::F64,
             BackendKind::Statevector,
             128,
+            None,
             &mut b,
         )
         .unwrap();
@@ -465,6 +490,7 @@ mod tests {
             Precision::F64,
             BackendKind::Statevector,
             128,
+            None,
             &mut out,
         )
         .unwrap_err();
@@ -488,6 +514,7 @@ mod tests {
             Precision::F64,
             BackendKind::Statevector,
             128,
+            None,
             &mut out,
         )
         .unwrap();
@@ -510,6 +537,7 @@ mod tests {
             Precision::F64,
             BackendKind::Statevector,
             128,
+            None,
             &mut out,
         )
         .unwrap_err();
@@ -532,6 +560,7 @@ mod tests {
             Precision::F64,
             BackendKind::Statevector,
             128,
+            None,
             &mut out,
         )
         .unwrap_err();
@@ -554,6 +583,7 @@ mod tests {
             Precision::F64,
             BackendKind::Statevector,
             128,
+            None,
             &mut out,
         )
         .unwrap();
@@ -589,6 +619,7 @@ mod tests {
             Precision::F64,
             BackendKind::Statevector,
             128,
+            None,
             &mut out,
         )
         .unwrap_err();

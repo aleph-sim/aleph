@@ -87,6 +87,12 @@ pub enum Cmd {
         /// MPS max bond dimension χ (only used by `--backend mps`).
         #[arg(long, default_value_t = 128)]
         max_bond: usize,
+
+        /// MPS error-bounded truncation: keep the discarded weight per bond
+        /// below ε (only `--backend mps`; overrides fixed-χ, with `--max-bond`
+        /// as a safety cap).
+        #[arg(long)]
+        max_error: Option<f64>,
     },
 
     /// Run a QASM circuit once and print parse / execute / sample

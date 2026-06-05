@@ -393,3 +393,46 @@ fn mps_backend_rejects_statevector() {
         .failure()
         .stderr(contains("no dense state vector"));
 }
+
+#[test]
+fn mps_backend_reports_truncation() {
+    aleph()
+        .args(["run"])
+        .arg(ghz3_path())
+        .args(["--backend", "mps", "--shots", "64", "--seed", "0"])
+        .assert()
+        .success()
+        .stdout(contains("truncation error:"))
+        .stdout(contains("max bond"));
+}
+
+#[test]
+fn mps_backend_max_error_runs() {
+    aleph()
+        .args(["run"])
+        .arg(ghz3_path())
+        .args([
+            "--backend",
+            "mps",
+            "--max-error",
+            "1e-8",
+            "--shots",
+            "64",
+            "--seed",
+            "0",
+        ])
+        .assert()
+        .success()
+        .stdout(contains("truncation error:"));
+}
+
+#[test]
+fn mps_backend_rejects_nonpositive_max_error() {
+    aleph()
+        .args(["run"])
+        .arg(ghz3_path())
+        .args(["--backend", "mps", "--max-error", "0"])
+        .assert()
+        .failure()
+        .stderr(contains("--max-error must be a positive"));
+}
