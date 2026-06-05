@@ -39,6 +39,12 @@
 //! // Sample bitstrings.
 //! let shots = backend.sample(&state, 1000).unwrap();
 //! ```
+//!
+//! 2q gates between non-adjacent qubits are handled by a nearest-neighbor SWAP
+//! network (always-swap-back): the targets are brought together, the gate is
+//! applied, and the SWAPs are undone, so `site = qubit` always holds. A lazy
+//! permutation-tracking strategy that would avoid the swap-back is a future
+//! optimization.
 
 mod mps;
 mod tensor;
