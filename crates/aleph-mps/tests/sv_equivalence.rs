@@ -256,7 +256,11 @@ fn error_bounded_deviation_within_budget() {
         .map(|(x, y)| (x - y).norm_sqr())
         .sum::<f64>()
         .sqrt();
-    // First-order: ‖Δψ‖ ≲ √(Σ discarded). Allow 4× slack for accumulation.
+    // Per-truncation 2-norm error is √discardedᵢ; by Cauchy–Schwarz the total
+    // satisfies ‖Δψ‖ ≤ √(K · Σ discardedᵢ) over K truncations. This circuit has
+    // K = 3 layers × 5 CNOTs = 15 ≤ 16, so the 4× factor is a sound bound. If
+    // you enlarge the circuit (K > 16) raise the factor to √K accordingly —
+    // do NOT just bump it to make a real regression pass.
     assert!(
         l2 <= 4.0 * err.sqrt() + 1e-9,
         "L2 {l2} vs √err {}",

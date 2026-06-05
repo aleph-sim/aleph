@@ -171,12 +171,10 @@ pub fn truncated_svd(
         TruncationPolicy::FixedBond(max_bond) => significant.min(max_bond.max(1)),
         TruncationPolicy::ErrorBounded { epsilon, max_bond } => {
             let cap = significant.min(max_bond.max(1));
-            // Smallest keep ∈ [1, cap] with discarded tail Σ_{j≥keep} σ_j² ≤ ε.
-            // `keep` is used both as an index into `suffix_sq` and as the returned
-            // count — the index and the value are coupled, so a range loop is the
-            // clearest expression here.
-            #[allow(clippy::needless_range_loop)]
             let mut chosen = cap;
+            // Smallest keep ∈ [1, cap] with discarded tail Σ_{j≥keep} σ_j² ≤ ε.
+            // `keep` is both the `suffix_sq` index and the returned count, so a
+            // range loop is the clearest expression here.
             #[allow(clippy::needless_range_loop)]
             for keep in 1..=cap {
                 if suffix_sq[keep] <= epsilon {
