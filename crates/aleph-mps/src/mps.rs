@@ -3,7 +3,7 @@
 
 use crate::tensor::{thin_qr, truncated_svd, Site, TruncationPolicy};
 use crate::MpsError;
-use aleph_core::{Complex, GateInstance, PauliString};
+use aleph_core::{Complex, Gate, GateInstance, PauliString};
 use nalgebra::DMatrix;
 use rand::Rng;
 
@@ -67,14 +67,12 @@ impl MpsState {
         }
     }
 
-    /// Apply a 2q unitary `u` (4×4 matrix) to nearest-neighbor qubits.
-    ///
-    /// The gate's qubit ordering follows the ADR-0004 / P0-06 MSB convention:
-    /// `g.qubits[0]` is the **most-significant** bit of the matrix row/column
-    /// index. This matches every other backend in the codebase.
-    ///
-    /// Only nearest-neighbor pairs (`|qa − qb| == 1`) are supported; the basic
-    /// MPS chain cannot apply long-range gates without SWAP networks (P3-06).
+    /// Apply a 2q gate (4×4 matrix `u`) on the qubits named by `g`
+    /// (`g.qubits[0]`=MSB, ADR-0004). Adjacent pairs apply directly; non-adjacent
+    /// pairs are brought together by a nearest-neighbor SWAP network, the gate is
+    /// applied, then the SWAPs are undone (always-swap-back), so site = qubit is
+    /// preserved. `MpsError::NonNearestNeighbor` is retained as a defensive
+    /// invariant guard but is no longer reached on the normal 2q path.
     pub(crate) fn apply_2q(
         &mut self,
         g: &GateInstance,
@@ -82,11 +80,37 @@ impl MpsState {
     ) -> Result<(), MpsError> {
         let qa = g.qubits[0];
         let qb = g.qubits[1];
-        if qa.abs_diff(qb) != 1 {
-            return Err(MpsError::NonNearestNeighbor { a: qa, b: qb });
+        if qa.abs_diff(qb) == 1 {
+            return self.apply_2q_adjacent(qa, qb, u);
         }
+        let lo = qa.min(qb);
+        let hi = qa.max(qb);
+        // Forward ladder: move the qubit at site `hi` down to site `lo+1`.
+        for k in (lo as usize + 1..=hi as usize - 1).rev() {
+            self.swap_adjacent(k)?;
+        }
+        // qubit `lo` is at site `lo`, qubit `hi` is now at site `lo+1`.
+        // Apply on the adjacent pair preserving original control/target order.
+        let (s0, s1) = if qa < qb { (lo, lo + 1) } else { (lo + 1, lo) };
+        self.apply_2q_adjacent(s0, s1, u)?;
+        // Reverse ladder: undo the SWAPs, restoring site = qubit.
+        for k in lo as usize + 1..=hi as usize - 1 {
+            self.swap_adjacent(k)?;
+        }
+        Ok(())
+    }
 
-        let i = qa.min(qb) as usize;
+    /// Apply a 2q unitary `u` to the nearest-neighbor pair `(q0, q1)`.
+    ///
+    /// Caller must ensure `q0.abs_diff(q1) == 1`. The MSB convention (ADR-0004)
+    /// is preserved: `q0` maps to the most-significant bit of the matrix index.
+    fn apply_2q_adjacent(
+        &mut self,
+        q0: u32,
+        q1: u32,
+        u: &[[Complex; 4]; 4],
+    ) -> Result<(), MpsError> {
+        let i = q0.min(q1) as usize;
         let j = i + 1;
 
         // Move the orthogonality center to site i so that the two-site
@@ -120,20 +144,11 @@ impl MpsState {
 
         // Helper: given the physical indices of site i (phys_i) and site j (phys_j),
         // return the 2q matrix row/column index following the MSB convention:
-        // g.qubits[0] is the MSB, g.qubits[1] is the LSB.
+        // q0 is the MSB, q1 is the LSB (ADR-0004 / P0-06 convention).
         let out = |phys_i: usize, phys_j: usize| -> usize {
-            // Identify which physical index maps to qubits[0] (MSB) and qubits[1] (LSB).
-            let bit_q0 = if g.qubits[0] as usize == i {
-                phys_i
-            } else {
-                phys_j
-            };
-            let bit_q1 = if g.qubits[1] as usize == i {
-                phys_i
-            } else {
-                phys_j
-            };
-            // qubits[0] is MSB, qubits[1] is LSB (ADR-0004 / P0-06 convention).
+            // Identify which physical index maps to q0 (MSB) and q1 (LSB).
+            let bit_q0 = if q0 as usize == i { phys_i } else { phys_j };
+            let bit_q1 = if q1 as usize == i { phys_i } else { phys_j };
             (bit_q0 << 1) | bit_q1
         };
 
@@ -196,6 +211,13 @@ impl MpsState {
         self.center = j;
 
         Ok(())
+    }
+
+    /// Swap the qubit states on adjacent sites `(k, k+1)` via a SWAP gate.
+    fn swap_adjacent(&mut self, k: usize) -> Result<(), MpsError> {
+        let g = GateInstance::new(Gate::Swap, vec![k as u32, (k + 1) as u32]);
+        let u = crate::gate::matrix_4x4(&g)?;
+        self.apply_2q_adjacent(k as u32, (k + 1) as u32, &u)
     }
 
     /// Multiply matrix `r` into site `i`'s LEFT bond:
@@ -733,12 +755,38 @@ mod tests {
     }
 
     #[test]
-    fn rejects_non_adjacent() {
-        let mut s = MpsState::new(3, 64);
-        let g = GateInstance::new(Gate::Cnot, smallvec![0u32, 2u32]);
-        let cnot = crate::gate::matrix_4x4(&g).unwrap();
-        let err = s.apply_2q(&g, &cnot).unwrap_err();
-        assert!(matches!(err, MpsError::NonNearestNeighbor { a: 0, b: 2 }));
+    fn ghz_via_nonadjacent_cnots() {
+        // |0000>; H(0); CNOT(0,2); CNOT(0,3) → (|0000> + |1101>)/√2 (q0=q2=q3).
+        let mut s = MpsState::new(4, 64);
+        let h = crate::gate::matrix_2x2(&GateInstance::new(Gate::H, smallvec![0u32])).unwrap();
+        s.apply_1q(0, &h);
+        for tgt in [2u32, 3u32] {
+            let gi = GateInstance::new(Gate::Cnot, smallvec![0u32, tgt]);
+            let cnot = crate::gate::matrix_4x4(&gi).unwrap();
+            s.apply_2q(&gi, &cnot).unwrap();
+        }
+        let v = s.dense_statevector();
+        let inv = 1.0 / 2f64.sqrt();
+        assert!((v[0].re - inv).abs() < 1e-10, "|0000>");
+        assert!((v[0b1101].re - inv).abs() < 1e-10, "|1101>");
+        for (k, amp) in v.iter().enumerate() {
+            if k != 0 && k != 0b1101 {
+                assert!(amp.norm() < 1e-10, "idx {k}");
+            }
+        }
+    }
+
+    #[test]
+    fn swap_via_nonadjacent() {
+        // X(0); SWAP(0,3) → q3=1, q0=0 → |1000> (bit3) = index 8.
+        let mut s = MpsState::new(4, 64);
+        let x = crate::gate::matrix_2x2(&GateInstance::new(Gate::X, smallvec![0u32])).unwrap();
+        s.apply_1q(0, &x);
+        let gi = GateInstance::new(Gate::Swap, smallvec![0u32, 3u32]);
+        let sw = crate::gate::matrix_4x4(&gi).unwrap();
+        s.apply_2q(&gi, &sw).unwrap();
+        let v = s.dense_statevector();
+        assert!((v[0b1000].re - 1.0).abs() < 1e-10, "expected |1000> (q3=1)");
     }
 
     #[test]

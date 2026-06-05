@@ -311,6 +311,26 @@ fn regression_svd_norm_loss_seq() {
     }
 }
 
+#[test]
+fn nonadjacent_matches_sv() {
+    // Asymmetric control/target + various distances; χ large = exact.
+    let n = 5u32;
+    let mut c = aleph_ir::Circuit::new(n, 0);
+    for q in 0..n {
+        c.add_gate(g(Gate::H, &[q])).unwrap();
+    }
+    c.add_gate(g(Gate::Cnot, &[0, 3])).unwrap(); // distance 3
+    c.add_gate(g(Gate::Cnot, &[4, 1])).unwrap(); // reversed, distance 3
+    c.add_gate(g(Gate::Cz, &[0, 4])).unwrap(); // distance 4 (symmetric)
+    c.add_gate(g(Gate::Cnot, &[2, 0])).unwrap(); // reversed, distance 2
+    let a = mps_dense(&c, 64);
+    let b = sv_dense(&c);
+    assert_eq!(a.len(), b.len());
+    for (x, y) in a.iter().zip(b.iter()) {
+        assert!((x - y).norm() < 1e-10);
+    }
+}
+
 use proptest::prelude::*;
 
 proptest! {
@@ -366,5 +386,26 @@ proptest! {
         let (a, _) = mps_dense_policy(&c, TruncationPolicy::ErrorBounded { epsilon: 0.0, max_bond: 64 });
         let b = sv_dense(&c);
         for (x, y) in a.iter().zip(b.iter()) { prop_assert!((x - y).norm() < 1e-9); }
+    }
+
+    #[test]
+    fn random_long_range_matches_sv(seq in prop::collection::vec((0u8..5, 0u8..5, 0u8..5), 0..20)) {
+        let n = 5u32;
+        let mut c = aleph_ir::Circuit::new(n, 0);
+        for (op, x, y) in seq {
+            let a = (x as u32) % n;
+            match op {
+                0 => { c.add_gate(g(Gate::H, &[a])).unwrap(); }
+                1 => { c.add_gate(g(Gate::S, &[a])).unwrap(); }
+                _ => {
+                    let b = (y as u32) % n;
+                    if a != b { c.add_gate(g(Gate::Cnot, &[a, b])).unwrap(); }
+                }
+            }
+        }
+        if c.is_empty() { return Ok(()); }
+        let am = mps_dense(&c, 64);
+        let bm = sv_dense(&c);
+        for (x, y) in am.iter().zip(bm.iter()) { prop_assert!((x - y).norm() < 1e-9); }
     }
 }
