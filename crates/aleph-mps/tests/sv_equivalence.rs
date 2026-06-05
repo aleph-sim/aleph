@@ -139,7 +139,11 @@ fn vqe_h2_matches_sv_machine_precision() {
     let mut ti = 0usize;
     for _layer in 0..2 {
         for q in 0..n {
-            c.add_gate(g(Gate::Ry(Param::Concrete(thetas[ti % thetas.len()])), &[q])).unwrap();
+            c.add_gate(g(
+                Gate::Ry(Param::Concrete(thetas[ti % thetas.len()])),
+                &[q],
+            ))
+            .unwrap();
             ti += 1;
         }
         for q in 0..n - 1 {
@@ -165,7 +169,8 @@ fn qaoa50_nn_ring_runs_reasonably() {
         // Cost layer: nearest-neighbor ZZ via CNOT–RZ–CNOT on (q, q+1).
         for q in 0..n - 1 {
             c.add_gate(g(Gate::Cnot, &[q, q + 1])).unwrap();
-            c.add_gate(g(Gate::Rz(Param::Concrete(0.7)), &[q + 1])).unwrap();
+            c.add_gate(g(Gate::Rz(Param::Concrete(0.7)), &[q + 1]))
+                .unwrap();
             c.add_gate(g(Gate::Cnot, &[q, q + 1])).unwrap();
         }
         // Mixer: RX on every qubit.
@@ -176,7 +181,11 @@ fn qaoa50_nn_ring_runs_reasonably() {
     let mut be = MpsBackend::with_seed(1).with_max_bond(64);
     let st = run(&mut be, &c).unwrap();
     // "Reasonable": bounded truncation, non-degenerate sampling.
-    assert!(st.truncation_error() < 1e-1, "trunc_error {}", st.truncation_error());
+    assert!(
+        st.truncation_error() < 1e-1,
+        "trunc_error {}",
+        st.truncation_error()
+    );
     let shots = be.sample(&st, 1000).unwrap();
     let distinct: std::collections::HashSet<u64> = shots.iter().copied().collect();
     assert!(distinct.len() > 1, "sampling produced a single bitstring");

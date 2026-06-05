@@ -18,7 +18,8 @@ fn qaoa_circuit(n: u32) -> aleph_ir::Circuit {
     for _ in 0..3 {
         for q in 0..n - 1 {
             c.add_gate(g(Gate::Cnot, &[q, q + 1])).unwrap();
-            c.add_gate(g(Gate::Rz(Param::Concrete(0.7)), &[q + 1])).unwrap();
+            c.add_gate(g(Gate::Rz(Param::Concrete(0.7)), &[q + 1]))
+                .unwrap();
             c.add_gate(g(Gate::Cnot, &[q, q + 1])).unwrap();
         }
         for q in 0..n {

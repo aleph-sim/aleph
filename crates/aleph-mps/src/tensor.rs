@@ -255,7 +255,10 @@ mod tests {
         // Generic complex 4×4: U·diag(s)·Vt must reconstruct M (renorm scale=1
         // only if ‖M‖=1; here ‖M‖≠1, so compare to scale·M via re-deriving).
         let m = DMatrix::from_fn(4, 4, |i, j| {
-            Complex::new((i as f64 - j as f64) * 0.3 + 1.0, (i * 2 + j) as f64 * 0.17 - 0.5)
+            Complex::new(
+                (i as f64 - j as f64) * 0.3 + 1.0,
+                (i * 2 + j) as f64 * 0.17 - 0.5,
+            )
         });
         let fro: f64 = m.iter().map(|c| c.norm_sqr()).sum::<f64>().sqrt();
         let (u, s, vt, _disc) = truncated_svd(&m, 64);
@@ -291,7 +294,12 @@ mod tests {
         ];
         let m = DMatrix::from_fn(4, 4, |i, j| a[i] * b[j].conj());
         let (u, s, vt, _disc) = truncated_svd(&m, 64);
-        assert_eq!(s.len(), 1, "rank-1 block must collapse to χ=1, got χ={}", s.len());
+        assert_eq!(
+            s.len(),
+            1,
+            "rank-1 block must collapse to χ=1, got χ={}",
+            s.len()
+        );
         // And it must still reconstruct (1/‖M‖)·M.
         let fro: f64 = m.iter().map(|c| c.norm_sqr()).sum::<f64>().sqrt();
         let mut maxd = 0.0_f64;

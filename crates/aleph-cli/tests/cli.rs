@@ -368,7 +368,16 @@ fn mps_backend_max_bond_runs_ghz() {
     aleph()
         .args(["run"])
         .arg(ghz3_path())
-        .args(["--backend", "mps", "--max-bond", "8", "--shots", "64", "--seed", "0"])
+        .args([
+            "--backend",
+            "mps",
+            "--max-bond",
+            "8",
+            "--shots",
+            "64",
+            "--seed",
+            "0",
+        ])
         .assert()
         .success()
         .stdout(contains("counts (64 shots, seed=0):"));
