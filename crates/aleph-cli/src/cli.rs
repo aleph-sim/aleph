@@ -6,14 +6,54 @@ use clap::{Parser, Subcommand};
 
 /// Simulation backend selector for `aleph run`.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, clap::ValueEnum, Default)]
-pub enum BackendKind {
-    /// Dense state vector (default). Exact; memory grows as 2^n.
+pub enum BackendChoice {
+    /// Pick automatically from circuit structure (default). Clifford →
+    /// stabilizer; large nearest-neighbor + shallow → MPS; else state vector.
     #[default]
+    Auto,
+    /// Dense state vector. Exact; memory grows as 2^n.
     Statevector,
     /// Stabilizer (Clifford-only). O(n²) memory; thousands of qubits.
     Stabilizer,
     /// MPS tensor network (bounded entanglement). χ via --max-bond.
     Mps,
+}
+
+impl BackendChoice {
+    /// Resolve a user choice into a concrete [`aleph_backend::BackendKind`].
+    ///
+    /// `Auto` runs the [`aleph_backend::select_explained`] heuristic; an auto
+    /// pick of `Stabilizer` is downgraded to `Statevector` when
+    /// `wants_amplitudes` is set (`--statevector`/`--force-statevector`),
+    /// because the stabilizer backend has no dense state vector. Explicit
+    /// choices are returned verbatim (manual override). Diagnostic notes go to
+    /// stderr so stdout stays pipeable.
+    pub fn resolve(
+        self,
+        circuit: &aleph_ir::Circuit,
+        wants_amplitudes: bool,
+    ) -> aleph_backend::BackendKind {
+        use aleph_backend::BackendKind as Bk;
+        match self {
+            BackendChoice::Statevector => Bk::Statevector,
+            BackendChoice::Stabilizer => Bk::Stabilizer,
+            BackendChoice::Mps => Bk::Mps,
+            BackendChoice::Auto => {
+                let sel = aleph_backend::select_explained(circuit);
+                if sel.kind == Bk::Stabilizer && wants_amplitudes {
+                    eprintln!(
+                        "auto-selected backend: state vector \
+                         (downgraded from stabilizer: --statevector needs amplitudes \
+                         the stabilizer backend cannot provide)"
+                    );
+                    Bk::Statevector
+                } else {
+                    eprintln!("auto-selected backend: {} ({})", sel.kind, sel.reason);
+                    sel.kind
+                }
+            }
+        }
+    }
 }
 
 /// Floating-point precision for the state-vector backend.
@@ -78,11 +118,12 @@ pub enum Cmd {
         #[arg(long, value_enum, default_value_t = Precision::F64)]
         precision: Precision,
 
-        /// Simulation backend: `statevector` (default), `stabilizer`
-        /// (Clifford-only; rejects non-Clifford gates and --statevector),
-        /// or `mps` (tensor network; bounded entanglement, rejects --statevector).
-        #[arg(long, value_enum, default_value_t = BackendKind::Statevector)]
-        backend: BackendKind,
+        /// Simulation backend: `auto` (default — picks from circuit
+        /// structure), `statevector`, `stabilizer` (Clifford-only; rejects
+        /// non-Clifford gates and --statevector), or `mps` (tensor network;
+        /// bounded entanglement, rejects --statevector).
+        #[arg(long, value_enum, default_value_t = BackendChoice::Auto)]
+        backend: BackendChoice,
 
         /// MPS max bond dimension χ (only used by `--backend mps`).
         #[arg(long, default_value_t = 128)]
@@ -107,4 +148,52 @@ pub enum Cmd {
         #[arg(long)]
         seed: Option<u64>,
     },
+}
+
+#[cfg(test)]
+mod backend_choice_tests {
+    use super::*;
+    use aleph_backend::BackendKind;
+    use aleph_core::{Gate, GateInstance};
+    use aleph_ir::Circuit;
+
+    fn clifford() -> Circuit {
+        let mut c = Circuit::new(2, 0);
+        c.add_gate(GateInstance::new(Gate::H, vec![0u32])).unwrap();
+        c.add_gate(GateInstance::new(Gate::Cnot, vec![0u32, 1u32]))
+            .unwrap();
+        c
+    }
+
+    #[test]
+    fn explicit_choice_overrides_without_analysis() {
+        let c = clifford();
+        assert_eq!(BackendChoice::Mps.resolve(&c, false), BackendKind::Mps);
+        assert_eq!(
+            BackendChoice::Statevector.resolve(&c, false),
+            BackendKind::Statevector
+        );
+    }
+
+    #[test]
+    fn auto_picks_stabilizer_for_clifford() {
+        assert_eq!(
+            BackendChoice::Auto.resolve(&clifford(), false),
+            BackendKind::Stabilizer
+        );
+    }
+
+    #[test]
+    fn auto_downgrades_to_sv_when_amplitudes_requested() {
+        // Clifford would be stabilizer, but --statevector needs amplitudes.
+        assert_eq!(
+            BackendChoice::Auto.resolve(&clifford(), true),
+            BackendKind::Statevector
+        );
+    }
+
+    #[test]
+    fn default_choice_is_auto() {
+        assert_eq!(BackendChoice::default(), BackendChoice::Auto);
+    }
 }

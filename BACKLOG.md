@@ -1755,9 +1755,9 @@ Users shouldnâ€™t need to know which backend to use. Heuristic: Clifford-only â†
 
 **Acceptance Criteria**
 
-- [ ] Heuristic implemented as `select_backend(circuit) -> BackendKind`
-- [ ] Manual override available
-- [ ] Test corpus selects expected backend in each category
+- [x] Heuristic implemented as `select_backend(circuit) -> BackendKind`
+- [x] Manual override available
+- [x] Test corpus selects expected backend in each category
 
 **Testing Requirements**
 
