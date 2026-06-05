@@ -1832,6 +1832,40 @@ P3-04/05 shipped a single-threaded MPS (faer SVD, no parallelism). P3-06 added n
 
 -----
 
+### [P3-10] MPS 100+ qubit shallow-circuit demo (close the Phase-3 exit metric)
+
+**Labels:** `area:backend`, `area:bench`, `type:test`, `priority:medium`
+**Milestone:** Phase 3 (deferred)
+**Estimate:** S
+**Depends on:** P3-04, P3-05
+
+**Status:** Deferred validation. **Natural to fold into Phase 4 benchmarking** — run it as one of the Phase-4 benches rather than as standalone work.
+
+**Description**
+Demonstrate the MPS backend running a **100+ qubit shallow, low-entanglement circuit** within a sane time/bond budget, with the result validated against a tractable reference. This closes the ROADMAP Phase-3 exit metric — *"MPS handles 100+ qubit shallow circuits"* — with an actual measured number instead of on faith (P3-04/05 were only validated at ~50 qubits).
+
+**Context**
+ROADMAP §7 Phase-3 exit: *"Stabilizer backend handles 1000+ qubit Clifford circuits; MPS handles 100+ qubit shallow circuits."* The stabilizer half is demonstrated (1000q×depth100 ≈ 0.48 s). The MPS half is architecturally supported (cap 1024 qubits) but our shipped tests topped out around 50 qubits, so the ≥100-qubit claim is currently unverified.
+
+**Technical Details**
+
+- Pick a shallow nearest-neighbor circuit at `n ≥ 100` (e.g. a few layers of NN brickwork / shallow QAOA) where the entanglement stays low so a modest χ suffices.
+- Run it on the MPS backend at bounded χ; assert it completes under an explicit wall-time / memory budget and that `max_bond_reached()` / truncation error stay sane.
+- Full state-vector reference is intractable at `n ≥ 100`, so validate **local observables** (single-/two-qubit expectations) against an analytic or lightweight reference, or check a known invariant of the chosen circuit.
+- Record the number in a short perf note (or the Phase-4 report).
+
+**Acceptance Criteria**
+
+- [ ] MPS backend runs a `≥ 100`-qubit shallow circuit to completion within a stated time/memory budget.
+- [ ] Result validated against a tractable reference (local observables / known answer), not just "it ran".
+- [ ] Number recorded so the Phase-3 MPS exit metric is closed with evidence.
+
+**References**
+
+- ROADMAP §7 Phase-3 exit metric. P3-04/P3-05 design notes.
+
+-----
+
 # Phase 4 — Algorithm Benchmarks & v0.1 Release
 
 Goal: comprehensive benchmarks against published baselines; first public release.
