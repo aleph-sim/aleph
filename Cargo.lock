@@ -93,6 +93,7 @@ dependencies = [
  "nalgebra",
  "proptest",
  "rand 0.8.6",
+ "smallvec",
  "thiserror",
 ]
 
