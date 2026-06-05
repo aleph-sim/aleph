@@ -74,24 +74,42 @@ measurements, the **inverse-QFT round-trip** correctness test, and the
 
 ## Components (one responsibility each)
 
-### 1. Reference corpus generator — `scripts/qiskit-baseline/gen_circuits.py`
+### 1. Reference corpus generation — extend the existing `run.py` export path
 
-- A committed Python generator that emits the canonical QFT circuit via Qiskit
-  synthesis (decomposed to the project basis: `h, p/rz, cx, …`) into
-  `scripts/qiskit-baseline/circuits/qft_n{N}.qasm` for N ∈ {10,15,20,25,30}.
-- This **is** the "reference implementation" named in the ticket: one
-  textbook-correct generator, so aleph and Aer execute byte-identical gate lists.
-- n=15/20/25 already exist; the generator regenerates them and the build asserts
-  the regenerated file is byte-identical to the committed one (catches drift). If
-  they differ, the committed files are updated in this PR with a noted reason.
-- Idempotent and deterministic (no RNG): re-running produces identical QASM.
+The corpus generator **already exists** inside `scripts/qiskit-baseline/run.py`:
+`build_qft(n)` uses Qiskit `QFT(num_qubits=n, do_swaps=False)`, and
+`transpile_and_export` transpiles to the project basis and writes committed
+QASM3 to `circuits/`. That export path **is** the ticket's "reference
+implementation" — no separate `gen_circuits.py` is needed.
 
-### 2. aleph-side measurement — extend `benches/benches/qft_scaling.rs`
+Changes:
+- **Per-family sizes.** Today `N_QUBITS_LIST = [15, 20, 22, 25]` is global across
+  all families (`all_workloads()`). Replace it with a per-family size map so QFT
+  uses **{10, 15, 20, 25, 30}** without disturbing ghz/grover/random (changing
+  the global list would regenerate every family and make Grover/random at n=30
+  intractable). Existing families keep their current sizes.
+- The generator stays deterministic (no RNG for QFT); re-running produces
+  identical QASM. A test regenerates and asserts byte-identity with the committed
+  files (drift guard). If a regenerated QFT file differs from the committed one,
+  the committed file is updated in this PR with a noted reason (expected: n=15/20/25
+  already came from this same path, so they should match; only n=10/30 are new).
+- n=22 may be retained or dropped for QFT; AC needs {10,15,20,25,30}. Keep n=22
+  only if cheap; not required.
 
-- Add n=10 and n=30 to the swept sizes (currently up to 25), reading the corpus
-  QASM and running `run_optimized` on `NaiveSvBackend` (the canonical path).
-- n=30 is gated behind the existing scaling-bench feature so default
-  `cargo bench --workspace` / CI never allocate 16 GiB; it is run explicitly on
+### 2. aleph-side measurement — corpus-QASM bench (not the builder)
+
+- **Use the committed corpus QASM, not the `qft_circuit` builder.** Today
+  `qft_scaling.rs` benches `aleph_benches::qft_circuit(n)` (a Rust builder), which
+  is a *different* gate list from the exported fixture (a known divergence — see
+  the P2-05 "builder QFT ≠ fixture QFT" note). For the framework's
+  single-source-of-truth principle, the aleph QFT measurement must parse and run
+  the **same** `scripts/qiskit-baseline/circuits/qft_n{N}.qasm` that Aer runs —
+  mirroring `tier1_scaling.rs`'s `fixture_path` approach. Add a QFT corpus bench
+  (extend `qft_scaling.rs` or add a small `phase4_qft.rs`) that sweeps
+  n ∈ {10,15,20,25,30}, parses the corpus QASM, and runs `run_optimized` on
+  `NaiveSvBackend`.
+- n≥28 is gated behind the existing `scaling-bench` feature so default
+  `cargo bench --workspace` / CI never allocate ≥4 GiB; n=28/30 run explicitly on
   EPYC.
 - A thin extractor `scripts/bench-report/extract_criterion.py` reads criterion's
   `target/criterion/<group>/<id>/new/estimates.json` (median in ns + the
@@ -99,10 +117,13 @@ measurements, the **inverse-QFT round-trip** correctness test, and the
   unified schema (below). The committed JSON is the reproducible snapshot
   (mirrors the phase-1/2 practice of committing `docs/perf/data/*`).
 
-### 3. Aer-side measurement — extend `scripts/qiskit-baseline/run.py`
+### 3. Aer-side measurement — same `run.py` pass (already produces timings)
 
-- Add n=10 and n=30 to the QFT workload size list. Schema is already v2; no
-  breaking change. n=30 runs on EPYC.
+- The per-family size change in Component 1 automatically extends QFT's Aer
+  timings to n=10/30 (run.py exports the circuit **and** times Aer in one pass,
+  writing `results-qiskit.json`, schema v2 — no breaking change). n=30 runs on
+  EPYC. (Components 1 and 3 are one code change to `run.py`, listed separately
+  only because they feed different downstream consumers.)
 
 ### 4. Unified results schema + report generator (NEW, reusable)
 
@@ -119,12 +140,21 @@ measurements, the **inverse-QFT round-trip** correctness test, and the
   - For P4-02..07: a new family appears automatically once its corpus +
     measurements land in the two input JSONs — no generator changes needed.
 
-### 5. n=30 cap-lift
+### 5. n=30 cap-lift — configurable cap on `NaiveSvBackend`
 
-- Confirm the bench/`run_optimized` path does not hard-reject n>28 (only the CLI
-  `--statevector` *print* cap and the soft memory warning apply). If any hard
-  cap blocks n=30 on the bench path, relax it to a soft warning (consistent with
-  the existing SV soft-cap behavior). No change to the default CLI run behavior.
+- **The cap is a HARD reject, not a warning.** `NaiveSvBackend::allocate`
+  returns `BackendError::TooManyQubits` for `num_qubits > MAX_NAIVE_QUBITS`
+  (=28, `backend.rs:45`). So n=30 cannot run as-is.
+- **Make the cap configurable, default preserved.** Add a per-instance qubit cap
+  to `NaiveSvBackend` (field defaulting to `MAX_NAIVE_QUBITS` = 28) with a
+  builder/setter `with_qubit_cap(u32)` (name TBD to match crate style, e.g.
+  `with_max_qubits`). `allocate` checks the instance cap. Default behavior is
+  **unchanged** (a laptop still gets a clean `TooManyQubits` at n=29, no silent
+  16 GiB allocation); the n=30 EPYC bench/`oneshot` explicitly opts in via
+  `with_qubit_cap(30)` (or 32). The user authorized this in brainstorming
+  ("lift cap, measure on EPYC").
+- This is the minimal change that satisfies the AC without weakening the default
+  guardrail for ordinary users. The CLI default run path is untouched.
 
 ## Correctness
 
