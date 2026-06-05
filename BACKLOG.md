@@ -1769,6 +1769,69 @@ Users shouldn’t need to know which backend to use. Heuristic: Clifford-only �
 
 -----
 
+### [P3-08] Stabilizer bit-slicing (O(n/64) tableau)
+
+**Labels:** `area:backend`, `type:perf`, `priority:medium`
+**Milestone:** Phase 3 (deferred)
+**Estimate:** M
+**Depends on:** P3-02
+
+**Status:** Deferred follow-up. **Schedule at the end of Phase 4 (or later)** — after the Phase-4 benchmarks identify where the stabilizer backend actually hurts. Per the golden rule, do not optimize blindly; measure first.
+
+**Description**
+Replace the current naive O(n)-per-gate row-major tableau update with Stim-style bit-sliced columns so gate application and `rowsum` become O(n/64) using packed-`u64` word operations (and optionally SIMD). This is the single biggest lever to close the speed gap with Stim.
+
+**Context**
+P3-01 deliberately shipped the naive O(n) row-major hot loop (hoisted word-offset/mask + branchless updates got it to ~0.48 s for 1000q×depth100 on EPYC, under the 1 s exit bar). Bit-slicing was explicitly deferred because it complicates the P3-02 `rowsum` sign-tracking. We are correct vs the Stim oracle but several× slower than Stim on large/deep Clifford circuits.
+
+**Technical Details**
+
+- Store the x/z tableaux as bit-packed columns (or rows) of `u64`; apply H/S/CNOT and Pauli sign rules with word-wise XOR/AND across `ceil(n/64)` words.
+- Re-derive the AG `rowsum` (phase exponent `g` + sign bit) under the packed layout — this is the tricky part; keep the existing scalar implementation as an oracle to diff against.
+- Keep the `BitGrid` accessor API; add SIMD (AVX-512 `vp*q`) only after the scalar bit-sliced version is proven.
+
+**Acceptance Criteria**
+
+- [ ] Bit-sliced tableau passes the existing Stim oracle + symplectic-invariant proptests bit-for-bit vs the scalar implementation.
+- [ ] Measured speedup on a large/deep Clifford bench (criterion before/after), reported honestly.
+
+**References**
+
+- Stim (quantumlib/Stim) bit-sliced tableau; Aaronson–Gottesman §3.
+
+-----
+
+### [P3-09] MPS multithreading + lazy SWAP permutation tracking
+
+**Labels:** `area:backend`, `type:perf`, `priority:medium`
+**Milestone:** Phase 3 (deferred)
+**Estimate:** L
+**Depends on:** P3-06
+
+**Status:** Deferred follow-up. **Schedule at the end of Phase 4 (or later)** — after benchmarks show MPS hot spots. Measure first.
+
+**Description**
+Two MPS performance follow-ups: (1) multithread the per-bond SVD / tensor contractions (currently single-threaded faer); (2) replace the always-swap-back non-adjacent-2q strategy with **lazy permutation tracking** so a long-range gate does not pay the double cost of forward + reverse SWAP ladders on every application.
+
+**Context**
+P3-04/05 shipped a single-threaded MPS (faer SVD, no parallelism). P3-06 added non-adjacent 2q gates via an always-swap-back SWAP network: each long-range gate runs a forward ladder, applies the gate, then runs the reverse ladder — `2·(distance−1)` NN SWAPs per gate, and the lazy strategy was explicitly documented as deferred.
+
+**Technical Details**
+
+- Track a current site↔qubit permutation in `MpsState`; route reads (measure/sample/expectation/probabilities/dense) through it instead of forcing `site == qubit`. Only swap when genuinely needed; amortize across consecutive long-range gates.
+- Parallelize the bond SVD / canonical-form sweeps (rayon over independent bonds where the orthogonality-center discipline allows), being careful not to break the truncation-error accounting.
+
+**Acceptance Criteria**
+
+- [ ] Lazy-permutation path matches the always-swap-back result vs `NaiveSvBackend` to 1e-10 (the P3-06 oracle), with fewer applied SWAPs on a long-range benchmark.
+- [ ] Multithreaded SVD shows a measured speedup on a wide-bond bench, with the truncation-error oracle (ε=0 ⇒ exact) still passing.
+
+**References**
+
+- P3-06 design/notes (always-swap-back; lazy strategy deferred). Schollwöck MPS review for canonical-form parallelism.
+
+-----
+
 # Phase 4 — Algorithm Benchmarks & v0.1 Release
 
 Goal: comprehensive benchmarks against published baselines; first public release.
