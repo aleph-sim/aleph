@@ -6,15 +6,14 @@
 //!
 //! See `docs/superpowers/specs/2026-06-05-p3-04-mps-basic-chain-design.md`.
 
-#[allow(dead_code)] // used by later tasks (MpsState in Task 2+)
-mod tensor;
-
-#[allow(dead_code)] // methods are consumed by Task 9's backend; allow until then
 mod mps;
+mod tensor;
 pub use mps::MpsState;
 
-#[allow(dead_code)] // matrix_2x2 is pub(crate); later tasks call it
 mod gate;
+
+mod backend;
+pub use backend::MpsBackend;
 
 /// Errors raised by the MPS state operations, before mapping to the shared
 /// `aleph_backend::BackendError`.
