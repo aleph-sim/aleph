@@ -211,16 +211,19 @@ mod tests {
     }
 
     #[test]
-    fn rejects_non_adjacent() {
+    fn nonadjacent_cnot_runs() {
         let mut be = MpsBackend::with_seed(0);
         let mut s = be.allocate(3).unwrap();
-        let err = be
-            .apply_gate(
-                &mut s,
-                &GateInstance::new(Gate::Cnot, smallvec![0u32, 2u32]),
-            )
-            .unwrap_err();
-        assert!(matches!(err, BackendError::InvalidState { .. }));
+        be.apply_gate(&mut s, &GateInstance::new(Gate::H, smallvec![0u32]))
+            .unwrap();
+        be.apply_gate(
+            &mut s,
+            &GateInstance::new(Gate::Cnot, smallvec![0u32, 2u32]),
+        )
+        .unwrap();
+        for sh in be.sample(&s, 100).unwrap() {
+            assert!(sh == 0b000 || sh == 0b101);
+        }
     }
 
     #[test]
