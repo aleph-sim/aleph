@@ -1,0 +1,4 @@
+{"schema_version": 1, "workloads": {
+  "qft_n10": {"n": 10, "family": "qft", "aleph_ms_median": 1.0, "aleph_rsd": 0.01},
+  "qft_n25": {"n": 25, "family": "qft", "aleph_ms_median": 500.0, "aleph_rsd": 0.005}
+}}

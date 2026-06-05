@@ -1,0 +1,2 @@
+{"date": "2026-06-05", "host": "EPYC 8124P (test)", "toolchain": "rust 1.95",
+ "qiskit": "1.2.4 / Aer 0.15.1", "notes": "golden fixture"}
