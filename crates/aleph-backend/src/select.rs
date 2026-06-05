@@ -50,13 +50,17 @@ pub struct CircuitFeatures {
     pub depth: usize,
     /// Number of layers containing at least one two-qubit gate.
     pub twoq_depth: usize,
-    /// Every `Gate` instruction is Clifford (`Measure`/`Barrier` allowed).
+    /// Every `Gate` instruction is Clifford with no external control
+    /// (`Measure`/`Barrier` allowed). A controlled-Clifford (e.g. controlled-H)
+    /// is not Clifford, and the stabilizer backend rejects external controls,
+    /// so any `g.controls` clears this flag.
     pub all_clifford: bool,
     /// Every two-qubit gate acts on adjacent qubits (`|q0 - q1| == 1`).
     /// (vacuously true when there is no two-qubit gate; gates of other arity do not affect this flag)
     pub all_twoq_nearest_neighbor: bool,
-    /// No gate acts on 3+ qubits; the MPS backend supports only 1q and nearest-neighbor 2q gates,
-    /// so a Toffoli/CCZ disqualifies MPS.
+    /// No gate exceeds the MPS backend's 1q/2q kernels: nothing acts on 3+
+    /// qubits and nothing carries an external control. A Toffoli/CCZ or any
+    /// controlled gate disqualifies MPS.
     pub all_gates_at_most_2q: bool,
 }
 
@@ -75,13 +79,20 @@ pub fn analyze(c: &Circuit) -> CircuitFeatures {
     for inst in insts {
         match inst {
             Instruction::Gate(g) => {
-                if !g.gate.is_clifford() {
+                // `is_clifford()` describes the BASE gate only: a controlled-
+                // Clifford (e.g. controlled-H) is not Clifford, and the
+                // stabilizer backend rejects any gate with external controls.
+                // So an external control disqualifies the stabilizer route.
+                if !g.gate.is_clifford() || !g.controls.is_empty() {
                     all_clifford = false;
                 }
                 if g.qubits.len() == 2 && g.qubits[0].abs_diff(g.qubits[1]) != 1 {
                     all_twoq_nearest_neighbor = false;
                 }
-                if g.qubits.len() > 2 {
+                // The MPS backend addresses gates by target arity through its
+                // 1q/2q kernels; a 3q+ gate or any external control spans more
+                // qubits than those kernels handle, so route such gates to SV.
+                if g.qubits.len() > 2 || !g.controls.is_empty() {
                     all_gates_at_most_2q = false;
                 }
             }
@@ -323,6 +334,37 @@ mod tests {
             "Toffoli must clear all_gates_at_most_2q"
         );
         assert!(!f.all_clifford, "Toffoli is not Clifford");
+    }
+
+    // A controlled-Clifford (controlled-H) has a Clifford BASE gate but is not
+    // itself Clifford, and the stabilizer/MPS backends reject external controls.
+    // `analyze` must clear both `all_clifford` and `all_gates_at_most_2q` so a
+    // library caller that builds such a gate is routed to the state vector.
+    #[test]
+    fn analyze_controlled_clifford_is_not_clifford_nor_mps() {
+        let mut c = Circuit::new(2, 0);
+        c.add_gate(GateInstance::controlled(Gate::H, vec![1u32], vec![0u32]))
+            .unwrap();
+        let f = analyze(&c);
+        assert!(!f.all_clifford, "controlled-H is not Clifford");
+        assert!(
+            !f.all_gates_at_most_2q,
+            "an external control disqualifies the MPS kernels"
+        );
+    }
+
+    // Regression: a large circuit of only controlled-Clifford gates must NOT
+    // route to stabilizer or MPS (both reject external controls) — it falls
+    // through to the state vector.
+    #[test]
+    fn rule_large_controlled_clifford_avoids_stabilizer_and_mps() {
+        let mut c = Circuit::new(30, 0);
+        // Nearest-neighbor controlled-H ladder: Clifford base, NN, but controlled.
+        for q in 0u32..29 {
+            c.add_gate(GateInstance::controlled(Gate::H, vec![q + 1], vec![q]))
+                .unwrap();
+        }
+        assert_eq!(select_backend(&c), BackendKind::Statevector);
     }
 
     // FIX 6: boundary — n == SV_EXACT_CAP must still pick Statevector (<=, not <).

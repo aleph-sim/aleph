@@ -68,16 +68,20 @@ scans, no `Result`, no panic. Worst case they fall through to `Statevector`.
 Single pass over `circuit.instructions()`, plus `circuit.layers()` for depth:
 
 - `num_qubits` = `circuit.num_qubits()`.
-- `all_clifford` = every `Instruction::Gate(g)` has `g.gate.is_clifford()`.
-  `Measure` and `Barrier` are allowed (stabilizer supports measurement).
+- `all_clifford` = every `Instruction::Gate(g)` has `g.gate.is_clifford()` **and
+  no external control** (`g.controls` empty). `is_clifford()` describes the base
+  gate only; a controlled-Clifford (e.g. controlled-H) is not Clifford and the
+  stabilizer backend rejects any external control, so `g.controls` clears the
+  flag. `Measure` and `Barrier` are allowed (stabilizer supports measurement).
   Any `DiagonalPhase` / `TiledBlock` instruction (SV-only optimization
   artifacts; not expected pre-optimization) ⇒ `all_clifford = false`.
 - `all_twoq_nearest_neighbor` = for every gate acting on exactly two qubits,
   `|q0 - q1| == 1`. Gates of arity ≠ 2 do not affect this flag.
-- `all_gates_at_most_2q` = no `Gate` acts on 3+ qubits. The MPS backend supports
-  only 1q and (nearest-neighbor) 2q gates, so a 3q+ gate (Toffoli/CCZ/…)
-  disqualifies MPS — without this guard a large non-Clifford circuit whose only
-  multi-qubit gate is a Toffoli would route to MPS and fail at runtime.
+- `all_gates_at_most_2q` = no `Gate` exceeds the MPS backend's 1q/2q kernels:
+  nothing acts on 3+ qubits and nothing carries an external control. A 3q+ gate
+  (Toffoli/CCZ/…) or any controlled gate disqualifies MPS — without this guard a
+  large non-Clifford circuit whose only multi-qubit gate is a Toffoli (or a
+  controlled-Clifford) would route to MPS and fail at runtime.
 - `twoq_depth` = number of layers (from `circuit.layers()`) that contain at
   least one two-qubit gate. (`depth` = total layer count, kept for diagnostics.)
 
