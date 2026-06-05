@@ -3,7 +3,7 @@
 
 use aleph_backend::{run, Backend};
 use aleph_core::{Complex, Gate, GateInstance, Param, Pauli, PauliString};
-use aleph_mps::{MpsBackend, MpsState};
+use aleph_mps::{MpsBackend, MpsState, TruncationPolicy};
 use aleph_sv::NaiveSvBackend;
 
 fn g(gate: Gate, qubits: &[u32]) -> GateInstance {
@@ -191,6 +191,83 @@ fn qaoa50_nn_ring_runs_reasonably() {
     assert!(distinct.len() > 1, "sampling produced a single bitstring");
 }
 
+fn mps_dense_policy(circuit: &aleph_ir::Circuit, policy: TruncationPolicy) -> (Vec<Complex>, f64) {
+    let mut be = MpsBackend::with_seed(0).with_truncation(policy);
+    let st: MpsState = run(&mut be, circuit).unwrap();
+    (st.dense_statevector(), st.truncation_error())
+}
+
+#[test]
+fn error_bounded_eps0_is_exact() {
+    let n = 5u32;
+    let mut c = aleph_ir::Circuit::new(n, 0);
+    for q in 0..n {
+        c.add_gate(g(Gate::H, &[q])).unwrap();
+    }
+    for q in 0..n - 1 {
+        c.add_gate(g(Gate::Cnot, &[q, q + 1])).unwrap();
+    }
+    for q in 0..n {
+        c.add_gate(g(Gate::Rz(Param::Concrete(0.2 + q as f64 * 0.1)), &[q]))
+            .unwrap();
+    }
+    let (a, err) = mps_dense_policy(
+        &c,
+        TruncationPolicy::ErrorBounded {
+            epsilon: 0.0,
+            max_bond: 64,
+        },
+    );
+    let b = sv_dense(&c);
+    for (x, y) in a.iter().zip(b.iter()) {
+        assert!((x - y).norm() < 1e-10);
+    }
+    assert!(err < 1e-12, "ε=0 should discard nothing, got {err}");
+}
+
+#[test]
+fn error_bounded_deviation_within_budget() {
+    let n = 6u32;
+    let mut c = aleph_ir::Circuit::new(n, 0);
+    for q in 0..n {
+        c.add_gate(g(Gate::H, &[q])).unwrap();
+    }
+    for layer in 0..3 {
+        for q in 0..n - 1 {
+            c.add_gate(g(Gate::Cnot, &[q, q + 1])).unwrap();
+            c.add_gate(g(
+                Gate::Rz(Param::Concrete(0.3 + layer as f64 * 0.1)),
+                &[q + 1],
+            ))
+            .unwrap();
+        }
+    }
+    let (a, err) = mps_dense_policy(
+        &c,
+        TruncationPolicy::ErrorBounded {
+            epsilon: 1e-4,
+            max_bond: 64,
+        },
+    );
+    let b = sv_dense(&c);
+    let l2: f64 = a
+        .iter()
+        .zip(b.iter())
+        .map(|(x, y)| (x - y).norm_sqr())
+        .sum::<f64>()
+        .sqrt();
+    // Per-truncation 2-norm error is √discardedᵢ; by Cauchy–Schwarz the total
+    // satisfies ‖Δψ‖ ≤ √(K · Σ discardedᵢ) over K truncations. This circuit has
+    // K = 3 layers × 5 CNOTs = 15 ≤ 16, so the 4× factor is a sound bound. If
+    // you enlarge the circuit (K > 16) raise the factor to √K accordingly —
+    // do NOT just bump it to make a real regression pass.
+    assert!(
+        l2 <= 4.0 * err.sqrt() + 1e-9,
+        "L2 {l2} vs √err {}",
+        err.sqrt()
+    );
+}
+
 use proptest::prelude::*;
 
 proptest! {
@@ -225,5 +302,26 @@ proptest! {
             norm += x.norm_sqr();
         }
         prop_assert!((norm - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn error_bounded_eps0_matches_sv_random(seq in prop::collection::vec(0u8..6, 0..24)) {
+        let n = 4u32;
+        let mut c = aleph_ir::Circuit::new(n, 0);
+        let mut q = 0u32;
+        for op in seq {
+            q = (q + 1) % n;
+            match op {
+                0 => { c.add_gate(g(Gate::H, &[q])).unwrap(); }
+                1 => { c.add_gate(g(Gate::X, &[q])).unwrap(); }
+                2 => { c.add_gate(g(Gate::S, &[q])).unwrap(); }
+                3 => { c.add_gate(g(Gate::Y, &[q])).unwrap(); }
+                _ => { let lo = q.min(n - 2); c.add_gate(g(Gate::Cnot, &[lo, lo + 1])).unwrap(); }
+            }
+        }
+        if c.is_empty() { return Ok(()); }
+        let (a, _) = mps_dense_policy(&c, TruncationPolicy::ErrorBounded { epsilon: 0.0, max_bond: 64 });
+        let b = sv_dense(&c);
+        for (x, y) in a.iter().zip(b.iter()) { prop_assert!((x - y).norm() < 1e-9); }
     }
 }

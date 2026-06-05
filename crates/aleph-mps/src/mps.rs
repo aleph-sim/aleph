@@ -1,7 +1,7 @@
 //! Mixed-canonical MPS state: init, dense reconstruction, canonicalization,
 //! gate application, expectation, measurement, sampling, probabilities.
 
-use crate::tensor::{thin_qr, truncated_svd, Site};
+use crate::tensor::{thin_qr, truncated_svd, Site, TruncationPolicy};
 use crate::MpsError;
 use aleph_core::{Complex, GateInstance, PauliString};
 use nalgebra::DMatrix;
@@ -16,19 +16,26 @@ pub(crate) const MAX_PROB_QUBITS: usize = 20;
 pub struct MpsState {
     pub(crate) sites: Vec<Site>,
     pub(crate) center: usize,
-    pub(crate) max_bond: usize,
+    pub(crate) policy: TruncationPolicy,
     pub(crate) trunc_error: f64,
+    pub(crate) max_bond_seen: usize,
 }
 
 impl MpsState {
-    /// Allocate |0…0⟩ on `n` qubits with bond cap `max_bond`.
+    /// Allocate |0…0⟩ on `n` qubits with a fixed bond cap `max_bond`.
     pub fn new(n: usize, max_bond: usize) -> Self {
+        Self::with_policy(n, TruncationPolicy::FixedBond(max_bond.max(1)))
+    }
+
+    /// Allocate |0…0⟩ on `n` qubits with an explicit truncation policy.
+    pub fn with_policy(n: usize, policy: TruncationPolicy) -> Self {
         let sites = (0..n).map(|_| Site::ket0()).collect();
         MpsState {
             sites,
             center: 0,
-            max_bond: max_bond.max(1),
+            policy,
             trunc_error: 0.0,
+            max_bond_seen: 1,
         }
     }
 
@@ -39,6 +46,11 @@ impl MpsState {
     /// Accumulated discarded Schmidt weight from all SVD truncations so far.
     pub fn truncation_error(&self) -> f64 {
         self.trunc_error
+    }
+
+    /// The largest bond dimension reached by any 2q truncation so far.
+    pub fn max_bond_reached(&self) -> usize {
+        self.max_bond_seen
     }
 
     /// Apply a 1q unitary to site `i` (qubit `i`). Preserves canonical form,
@@ -162,10 +174,11 @@ impl MpsState {
             theta2[((l * 2 + ap) * 2 + bp) * ri + r]
         });
 
-        // Truncated SVD: M = U · diag(s) · Vt, keeping at most max_bond components.
-        let (u_s, s_kept, vt_s, discarded) = truncated_svd(&m, self.max_bond);
+        // Truncated SVD: M = U · diag(s) · Vt, truncated according to the state's policy.
+        let (u_s, s_kept, vt_s, discarded) = truncated_svd(&m, &self.policy);
         self.trunc_error += discarded;
         let chi = s_kept.len();
+        self.max_bond_seen = self.max_bond_seen.max(chi);
 
         // New site i: left-canonical from the U factor, shape (li, chi).
         self.sites[i] = Site::from_group_left(&u_s, li, chi);
@@ -869,5 +882,40 @@ mod tests {
                 probs[idx]
             );
         }
+    }
+
+    #[test]
+    fn max_bond_reached_tracks_growth() {
+        let mut s = MpsState::new(4, 64);
+        let h = crate::gate::matrix_2x2(&GateInstance::new(Gate::H, smallvec![0u32])).unwrap();
+        s.apply_1q(0, &h);
+        for i in 0..3u32 {
+            let g = GateInstance::new(Gate::Cnot, smallvec![i, i + 1]);
+            let cnot = crate::gate::matrix_4x4(&g).unwrap();
+            s.apply_2q(&g, &cnot).unwrap();
+        }
+        assert!(s.max_bond_reached() >= 2, "got {}", s.max_bond_reached());
+    }
+
+    #[test]
+    fn error_bounded_policy_respects_bound() {
+        use crate::tensor::TruncationPolicy;
+        let mut s = MpsState::with_policy(
+            4,
+            TruncationPolicy::ErrorBounded {
+                epsilon: 0.3,
+                max_bond: 64,
+            },
+        );
+        let h = crate::gate::matrix_2x2(&GateInstance::new(Gate::H, smallvec![0u32])).unwrap();
+        s.apply_1q(0, &h);
+        for i in 0..3u32 {
+            let g = GateInstance::new(Gate::Cnot, smallvec![i, i + 1]);
+            let cnot = crate::gate::matrix_4x4(&g).unwrap();
+            s.apply_2q(&g, &cnot).unwrap();
+        }
+        // GHZ Schmidt values are 1/√2 each (squared 0.5); dropping any discards
+        // 0.5 > 0.3, so nothing is dropped → error stays ~0, bond stays 2.
+        assert!(s.truncation_error() <= 0.3 + 1e-12);
     }
 }

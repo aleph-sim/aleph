@@ -6,12 +6,12 @@ use rand::rngs::StdRng;
 use rand::SeedableRng;
 
 use crate::mps::MAX_PROB_QUBITS;
-use crate::{MpsError, MpsState};
+use crate::{MpsError, MpsState, TruncationPolicy};
 
-/// MPS backend with a configurable max bond dimension χ.
+/// MPS backend with a configurable truncation policy.
 pub struct MpsBackend {
     rng: StdRng,
-    max_bond: usize,
+    policy: TruncationPolicy,
 }
 
 /// Maximum qubit count `allocate` accepts. MPS memory scales as O(n·χ²), so
@@ -26,7 +26,7 @@ impl MpsBackend {
     pub fn new() -> Self {
         Self {
             rng: StdRng::from_entropy(),
-            max_bond: DEFAULT_MAX_BOND,
+            policy: TruncationPolicy::FixedBond(DEFAULT_MAX_BOND),
         }
     }
 
@@ -34,13 +34,19 @@ impl MpsBackend {
     pub fn with_seed(seed: u64) -> Self {
         Self {
             rng: StdRng::seed_from_u64(seed),
-            max_bond: DEFAULT_MAX_BOND,
+            policy: TruncationPolicy::FixedBond(DEFAULT_MAX_BOND),
         }
     }
 
-    /// Override the maximum bond dimension χ (clamped to at least 1).
+    /// Fixed bond-dimension truncation (sugar for `with_truncation(FixedBond(χ))`).
     pub fn with_max_bond(mut self, chi: usize) -> Self {
-        self.max_bond = chi.max(1);
+        self.policy = TruncationPolicy::FixedBond(chi.max(1));
+        self
+    }
+
+    /// Set an explicit truncation policy (fixed-χ or error-bounded).
+    pub fn with_truncation(mut self, policy: TruncationPolicy) -> Self {
+        self.policy = policy;
         self
     }
 }
@@ -78,7 +84,7 @@ impl Backend for MpsBackend {
                 limit: MAX_QUBITS,
             });
         }
-        Ok(MpsState::new(num_qubits as usize, self.max_bond))
+        Ok(MpsState::with_policy(num_qubits as usize, self.policy))
     }
 
     fn apply_gate(
@@ -222,5 +228,35 @@ mod tests {
             be.probabilities(&s, &[0, 0]),
             Err(BackendError::DuplicateQubit { qubit: 0 })
         ));
+    }
+
+    #[test]
+    fn with_truncation_error_bounded_runs() {
+        use crate::TruncationPolicy;
+        let mut be = MpsBackend::with_seed(0).with_truncation(TruncationPolicy::ErrorBounded {
+            epsilon: 1e-8,
+            max_bond: 32,
+        });
+        let mut s = be.allocate(3).unwrap();
+        be.apply_gate(&mut s, &GateInstance::new(Gate::H, smallvec![0u32]))
+            .unwrap();
+        be.apply_gate(
+            &mut s,
+            &GateInstance::new(Gate::Cnot, smallvec![0u32, 1u32]),
+        )
+        .unwrap();
+        be.apply_gate(
+            &mut s,
+            &GateInstance::new(Gate::Cnot, smallvec![1u32, 2u32]),
+        )
+        .unwrap();
+        for sh in be.sample(&s, 100).unwrap() {
+            assert!(sh == 0b000 || sh == 0b111);
+        }
+    }
+
+    #[test]
+    fn with_max_bond_is_fixed_bond_sugar() {
+        let _ = MpsBackend::with_seed(0).with_max_bond(16);
     }
 }
