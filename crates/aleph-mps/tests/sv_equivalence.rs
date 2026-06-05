@@ -268,10 +268,53 @@ fn error_bounded_deviation_within_budget() {
     );
 }
 
+/// Regression: this exact nearest-neighbor circuit drove the MPS state norm to
+/// 0.5 under the old nalgebra-based truncated SVD (orthonormal-but-wrong
+/// vectors on a degenerate complex two-site block). faer fixes it. Deterministic
+/// guard so the bug cannot silently return.
+#[test]
+fn regression_svd_norm_loss_seq() {
+    let seq = [0u8, 1, 2, 2, 1, 4, 3, 1, 1, 1, 2, 4, 4, 4, 0, 4, 4];
+    let n = 4u32;
+    let mut c = aleph_ir::Circuit::new(n, 0);
+    let mut q = 0u32;
+    for op in seq {
+        q = (q + 1) % n;
+        match op {
+            0 => {
+                c.add_gate(g(Gate::H, &[q])).unwrap();
+            }
+            1 => {
+                c.add_gate(g(Gate::X, &[q])).unwrap();
+            }
+            2 => {
+                c.add_gate(g(Gate::S, &[q])).unwrap();
+            }
+            3 => {
+                c.add_gate(g(Gate::Y, &[q])).unwrap();
+            }
+            _ => {
+                let lo = q.min(n - 2);
+                c.add_gate(g(Gate::Cnot, &[lo, lo + 1])).unwrap();
+            }
+        }
+    }
+    let a = mps_dense(&c, 64);
+    let b = sv_dense(&c);
+    let norm: f64 = a.iter().map(|z| z.norm_sqr()).sum();
+    assert!(
+        (norm - 1.0).abs() < 1e-9,
+        "MPS norm^2 = {norm} (was 0.5 with the bug)"
+    );
+    for (x, y) in a.iter().zip(b.iter()) {
+        assert!((x - y).norm() < 1e-10, "MPS dense diverged from SV");
+    }
+}
+
 use proptest::prelude::*;
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(64))]
+    #![proptest_config(ProptestConfig::with_cases(256))]
 
     /// Random nearest-neighbor 1q+2q circuit on 4 qubits, χ=64 (no truncation):
     /// MPS dense must equal SV dense to 1e-9, norm ≈ 1.

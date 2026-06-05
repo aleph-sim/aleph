@@ -1,5 +1,6 @@
 //! Rank-3 MPS site tensor `(left, 2, right)` and its reshape ↔ nalgebra views.
 
+use crate::MpsError;
 use aleph_core::Complex;
 use nalgebra::DMatrix;
 
@@ -115,57 +116,55 @@ pub enum TruncationPolicy {
     ErrorBounded { epsilon: f64, max_bond: usize },
 }
 
-/// SVD of `m` truncated according to `policy` (fixed-χ or error-bounded), renormalized to
-/// preserve unit weight (input must come from a normalized state). Returns
-/// `(u_kept, s_kept, vt_kept, discarded_weight)` where:
+/// SVD of `m` truncated according to `policy` (fixed-χ or error-bounded),
+/// renormalized to preserve unit weight (input must come from a normalized
+/// state). Returns `(u_kept, s_kept, vt_kept, discarded_weight)` where:
 /// - `u_kept` has shape `rows × χ` with orthonormal columns (left isometry)
 /// - `s_kept` is the χ kept (renormalized) singular values, descending
 /// - `vt_kept` has shape `χ × cols` with orthonormal rows
 /// - `discarded_weight` is the sum of squares of discarded singular values
 ///
-/// # Why not `nalgebra`'s SVD
+/// # Why `faer`
 ///
-/// `nalgebra`'s complex `svd()` is unreliable for rank-deficient matrices: it
-/// returns orthonormal but *incorrect* singular vectors, so `U·Σ·Vᴴ` no longer
-/// reconstructs `M` (verified: `recompose()` errs by ~1e-1 on a rank-1 complex
-/// 4×4 — see the P3-04 debugging notes). Two-site MPS blocks are routinely
-/// rank-deficient (e.g. after a CNOT collapses Schmidt rank), so we instead
-/// diagonalise the Hermitian Gram matrix `G = Mᴴ M` with `SymmetricEigen`
-/// (robust for complex Hermitian inputs): its eigenpairs give `σ² = λ` and the
-/// right singular vectors `V`, from which `U = M·V·Σ⁻¹`. Numerically-zero
-/// singular values are dropped, yielding proper isometries and exact
-/// reconstruction.
+/// `nalgebra`'s complex `svd()` AND its Hermitian `SymmetricEigen` both return
+/// orthonormal but *incorrect* vectors for certain complex matrices (degenerate
+/// two-site MPS blocks), so neither reconstructs `M` — a single `CNOT` could
+/// silently drop half the state norm (root-caused via the SWAP-network oracle
+/// proptest). We use `faer`'s `thin_svd`, which is reliable for complex inputs
+/// (verified to reconstruct the offending blocks to ~1e-16).
+/// `(u_kept, s_kept, vt_kept, discarded_weight)` returned by [`truncated_svd`].
+pub type TruncatedSvd = (DMatrix<Complex>, Vec<f64>, DMatrix<Complex>, f64);
+
 pub fn truncated_svd(
     m: &DMatrix<Complex>,
     policy: &TruncationPolicy,
-) -> (DMatrix<Complex>, Vec<f64>, DMatrix<Complex>, f64) {
+) -> Result<TruncatedSvd, MpsError> {
     let rows = m.nrows();
     let cols = m.ncols();
 
-    // Right Gram matrix G = Mᴴ M (cols × cols), Hermitian positive-semidefinite.
-    let g = m.adjoint() * m;
-    let eig = nalgebra::linalg::SymmetricEigen::new(g);
+    // Reliable complex SVD via faer (singular values nonnegative, nonincreasing).
+    let fm = faer::Mat::<faer::c64>::from_fn(rows, cols, |i, j| {
+        let z = m[(i, j)];
+        faer::c64::new(z.re, z.im)
+    });
+    let svd = fm.thin_svd().map_err(|_| MpsError::SvdFailed)?;
+    let fu = svd.U();
+    let fv = svd.V();
+    let fs = svd.S();
+    let k = fs.column_vector().nrows(); // = min(rows, cols)
+    let sigmas: Vec<f64> = (0..k).map(|t| fs[t].re).collect();
 
-    // (singular value, eigenvector column index), sorted descending.
-    let mut pairs: Vec<(f64, usize)> = (0..cols)
-        .map(|k| (eig.eigenvalues[k].max(0.0).sqrt(), k))
-        .collect();
-    pairs.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
-
-    // Drop singular values that are numerically zero relative to the largest.
-    // The Gram matrix `MᴴM` SQUARES the condition number, so the resolvable
-    // floor for a singular value is ~√(machine-ε)·σ_max ≈ 1e-8·σ_max — null
-    // directions surface as spurious σ at that level. A floor of `1e-7·σ_max`
-    // prunes them (keeping true Schmidt values, which are far larger) so a
-    // rank-r block collapses to bond r instead of inflating toward `max_bond`
-    // with noise. (A finer error-bounded threshold is P3-05.)
-    let s_max = pairs.first().map(|p| p.0).unwrap_or(0.0);
+    // Drop singular values numerically zero relative to the largest (null
+    // directions). faer's spectrum is accurate, so this only prunes genuine
+    // zeros and avoids inflating the bond with noise.
+    let s_max = sigmas.first().copied().unwrap_or(0.0);
     let eps = 1e-7 * s_max.max(f64::MIN_POSITIVE);
-    let significant = pairs.iter().filter(|p| p.0 > eps).count().max(1);
-    // Suffix sums of σ²: suffix_sq[k] = Σ_{j≥k} σ_j² (non-increasing in k).
-    let mut suffix_sq = vec![0.0_f64; pairs.len() + 1];
-    for k in (0..pairs.len()).rev() {
-        suffix_sq[k] = suffix_sq[k + 1] + pairs[k].0 * pairs[k].0;
+    let significant = sigmas.iter().filter(|&&s| s > eps).count().max(1);
+
+    // Suffix sums of σ²: suffix_sq[t] = Σ_{j≥t} σ_j² (non-increasing in t).
+    let mut suffix_sq = vec![0.0_f64; k + 1];
+    for t in (0..k).rev() {
+        suffix_sq[t] = suffix_sq[t + 1] + sigmas[t] * sigmas[t];
     }
     let chi = match *policy {
         TruncationPolicy::FixedBond(max_bond) => significant.min(max_bond.max(1)),
@@ -173,8 +172,6 @@ pub fn truncated_svd(
             let cap = significant.min(max_bond.max(1));
             let mut chosen = cap;
             // Smallest keep ∈ [1, cap] with discarded tail Σ_{j≥keep} σ_j² ≤ ε.
-            // `keep` is both the `suffix_sq` index and the returned count, so a
-            // range loop is the clearest expression here.
             #[allow(clippy::needless_range_loop)]
             for keep in 1..=cap {
                 if suffix_sq[keep] <= epsilon {
@@ -186,7 +183,7 @@ pub fn truncated_svd(
         }
     };
     let discarded: f64 = suffix_sq[chi];
-    let kept_weight: f64 = pairs[..chi].iter().map(|p| p.0 * p.0).sum();
+    let kept_weight: f64 = suffix_sq[0] - suffix_sq[chi];
     let scale = if kept_weight > 0.0 {
         (1.0 / kept_weight).sqrt()
     } else {
@@ -196,22 +193,19 @@ pub fn truncated_svd(
     let mut u_kept = DMatrix::<Complex>::zeros(rows, chi);
     let mut vt_kept = DMatrix::<Complex>::zeros(chi, cols);
     let mut s_kept = vec![0.0_f64; chi];
-    for (new_k, &(sigma, eig_k)) in pairs[..chi].iter().enumerate() {
-        let vk = eig.eigenvectors.column(eig_k);
-        // vt row = vᴴ
-        for c in 0..cols {
-            vt_kept[(new_k, c)] = vk[c].conj();
-        }
-        // u column = M·v / σ (a unit, mutually-orthonormal vector for σ > 0;
-        // left as zero for a numerically-zero σ, which carries no weight).
-        let mvk = m * vk;
-        let inv = if sigma > eps { 1.0 / sigma } else { 0.0 };
+    for t in 0..chi {
         for r in 0..rows {
-            u_kept[(r, new_k)] = mvk[r] * Complex::new(inv, 0.0);
+            let z = fu[(r, t)];
+            u_kept[(r, t)] = Complex::new(z.re, z.im);
         }
-        s_kept[new_k] = sigma * scale;
+        // vt row = (t-th right singular vector)ᴴ = conjugate of V's column t.
+        for c in 0..cols {
+            let z = fv[(c, t)];
+            vt_kept[(t, c)] = Complex::new(z.re, -z.im);
+        }
+        s_kept[t] = sigmas[t] * scale;
     }
-    (u_kept, s_kept, vt_kept, discarded)
+    Ok((u_kept, s_kept, vt_kept, discarded))
 }
 
 /// Thin QR decomposition: returns `(Q, R)` with `Q` of shape `rows × k` and
@@ -292,7 +286,7 @@ mod tests {
             )
         });
         let fro: f64 = m.iter().map(|c| c.norm_sqr()).sum::<f64>().sqrt();
-        let (u, s, vt, _disc) = truncated_svd(&m, &TruncationPolicy::FixedBond(64));
+        let (u, s, vt, _disc) = truncated_svd(&m, &TruncationPolicy::FixedBond(64)).unwrap();
         // reconstruction = U·diag(s)·Vt = (1/fro)·M  (renormalized to unit weight)
         let mut maxd = 0.0_f64;
         for r in 0..4 {
@@ -324,7 +318,7 @@ mod tests {
             Complex::new(0.1, 0.1),
         ];
         let m = DMatrix::from_fn(4, 4, |i, j| a[i] * b[j].conj());
-        let (u, s, vt, _disc) = truncated_svd(&m, &TruncationPolicy::FixedBond(64));
+        let (u, s, vt, _disc) = truncated_svd(&m, &TruncationPolicy::FixedBond(64)).unwrap();
         assert_eq!(
             s.len(),
             1,
@@ -363,7 +357,8 @@ mod tests {
                 epsilon: 1e-3,
                 max_bond: 64,
             },
-        );
+        )
+        .unwrap();
         assert_eq!(s.len(), 2, "expected χ=2");
         assert!(disc <= 1e-3 + 1e-15, "discarded {disc} exceeds ε");
     }
@@ -377,7 +372,8 @@ mod tests {
                 epsilon: 0.0,
                 max_bond: 64,
             },
-        );
+        )
+        .unwrap();
         assert_eq!(s.len(), 4, "ε=0 must keep full rank");
         assert!(disc < 1e-12);
     }
@@ -391,14 +387,15 @@ mod tests {
                 epsilon: 10.0,
                 max_bond: 1,
             },
-        );
+        )
+        .unwrap();
         assert_eq!(s.len(), 1);
     }
 
     #[test]
     fn fixed_bond_matches_legacy() {
         let m = diag_sigma();
-        let (_, s, _, _) = truncated_svd(&m, &TruncationPolicy::FixedBond(2));
+        let (_, s, _, _) = truncated_svd(&m, &TruncationPolicy::FixedBond(2)).unwrap();
         assert_eq!(s.len(), 2);
     }
 }
