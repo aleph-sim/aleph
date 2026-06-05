@@ -50,11 +50,14 @@ pub struct CircuitFeatures {
     pub twoq_depth: usize,               // layers containing >= 1 two-qubit gate
     pub all_clifford: bool,              // every Gate is_clifford(); Measure/Barrier ok
     pub all_twoq_nearest_neighbor: bool, // every 2q gate has |q0 - q1| == 1
+    pub all_gates_at_most_2q: bool,      // no gate acts on 3+ qubits (MPS can't)
 }
 
+pub struct Selection { pub kind: BackendKind, pub reason: &'static str }
 pub fn analyze(c: &Circuit) -> CircuitFeatures;
-pub fn select_from(f: &CircuitFeatures) -> BackendKind;  // pure; trivially unit-testable
-pub fn select_backend(c: &Circuit) -> BackendKind;       // AC-exact signature; analyze + select_from
+pub fn select_from(f: &CircuitFeatures) -> Selection;    // pure; trivially unit-testable
+pub fn select_explained(c: &Circuit) -> Selection;       // kind + human-readable reason
+pub fn select_backend(c: &Circuit) -> BackendKind;       // AC-exact signature; = select_explained(c).kind
 ```
 
 `select_backend`/`analyze`/`select_from` are **pure and total** — read-only
@@ -71,6 +74,10 @@ Single pass over `circuit.instructions()`, plus `circuit.layers()` for depth:
   artifacts; not expected pre-optimization) ⇒ `all_clifford = false`.
 - `all_twoq_nearest_neighbor` = for every gate acting on exactly two qubits,
   `|q0 - q1| == 1`. Gates of arity ≠ 2 do not affect this flag.
+- `all_gates_at_most_2q` = no `Gate` acts on 3+ qubits. The MPS backend supports
+  only 1q and (nearest-neighbor) 2q gates, so a 3q+ gate (Toffoli/CCZ/…)
+  disqualifies MPS — without this guard a large non-Clifford circuit whose only
+  multi-qubit gate is a Toffoli would route to MPS and fail at runtime.
 - `twoq_depth` = number of layers (from `circuit.layers()`) that contain at
   least one two-qubit gate. (`depth` = total layer count, kept for diagnostics.)
 
@@ -85,8 +92,9 @@ Single pass over `circuit.instructions()`, plus `circuit.layers()` for depth:
 1. `all_clifford` → **Stabilizer** (O(n²) memory; thousands of qubits).
 2. `num_qubits <= SV_EXACT_CAP` (= 28) → **Statevector** (exact and fits — never
    risk MPS approximation when an exact backend works and is fast).
-3. `all_twoq_nearest_neighbor && twoq_depth <= MPS_DEPTH_THRESHOLD` → **Mps**
-   (the only place bounded-χ approximation is used, and only because SV can't fit).
+3. `all_twoq_nearest_neighbor && all_gates_at_most_2q && twoq_depth <= MPS_DEPTH_THRESHOLD`
+   → **Mps** (the only place bounded-χ approximation is used, and only because SV
+   can't fit; the 3q+ guard keeps gates the MPS backend can't apply out of it).
 4. else → **Statevector** (too large; the CLI warns and proceeds).
 
 Named constants (documented in code):
