@@ -93,7 +93,7 @@ pub fn run_circuit<W: Write>(
         }
     }
 
-    // 2b. Resolve the backend (runs the auto heuristic for `--backend auto`).
+    // 3b. Resolve the backend (runs the auto heuristic for `--backend auto`).
     //     The requested output view gates an auto stabilizer pick: a
     //     state-vector view needs amplitudes the stabilizer backend lacks.
     let wants_amplitudes = print_statevector || force_statevector;

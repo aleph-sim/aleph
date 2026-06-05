@@ -233,10 +233,22 @@ fn precision_f32_ghz_statevector() {
 fn precision_f32_ghz_counts_are_all_or_nothing() {
     // GHZ samples only ever collapse to |000⟩ or |111⟩; the f32 path
     // must preserve that — no intermediate basis states.
+    // Explicit --backend statevector is required: without it, `auto` would
+    // route this all-Clifford circuit to the stabilizer backend, which
+    // ignores --precision f32 and wouldn't exercise the f32 SV path.
     let out = aleph()
         .args(["run"])
         .arg(ghz3_path())
-        .args(["--shots", "256", "--seed", "0", "--precision", "f32"])
+        .args([
+            "--backend",
+            "statevector",
+            "--shots",
+            "256",
+            "--seed",
+            "0",
+            "--precision",
+            "f32",
+        ])
         .assert()
         .success()
         .get_output()
