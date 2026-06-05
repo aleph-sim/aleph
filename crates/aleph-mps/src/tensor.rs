@@ -142,11 +142,15 @@ pub fn truncated_svd(
         .collect();
     pairs.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
 
-    // Drop singular values that are numerically zero relative to the largest
-    // (these correspond to null directions; their "singular vectors" are
-    // arbitrary and `M·v = 0`). Keep at most `max_bond`, at least one.
+    // Drop singular values that are numerically zero relative to the largest.
+    // The Gram matrix `MᴴM` SQUARES the condition number, so the resolvable
+    // floor for a singular value is ~√(machine-ε)·σ_max ≈ 1e-8·σ_max — null
+    // directions surface as spurious σ at that level. A floor of `1e-7·σ_max`
+    // prunes them (keeping true Schmidt values, which are far larger) so a
+    // rank-r block collapses to bond r instead of inflating toward `max_bond`
+    // with noise. (A finer error-bounded threshold is P3-05.)
     let s_max = pairs.first().map(|p| p.0).unwrap_or(0.0);
-    let eps = 1e-12 * s_max.max(f64::MIN_POSITIVE);
+    let eps = 1e-7 * s_max.max(f64::MIN_POSITIVE);
     let significant = pairs.iter().filter(|p| p.0 > eps).count().max(1);
     let chi = significant.min(max_bond.max(1));
 
@@ -244,5 +248,59 @@ mod tests {
         assert_eq!(m.ncols(), 6);
         let back = Site::from_group_right(&m, 2, 3);
         assert_eq!(back, s);
+    }
+
+    #[test]
+    fn truncated_svd_reconstructs_complex_full_rank() {
+        // Generic complex 4×4: U·diag(s)·Vt must reconstruct M (renorm scale=1
+        // only if ‖M‖=1; here ‖M‖≠1, so compare to scale·M via re-deriving).
+        let m = DMatrix::from_fn(4, 4, |i, j| {
+            Complex::new((i as f64 - j as f64) * 0.3 + 1.0, (i * 2 + j) as f64 * 0.17 - 0.5)
+        });
+        let fro: f64 = m.iter().map(|c| c.norm_sqr()).sum::<f64>().sqrt();
+        let (u, s, vt, _disc) = truncated_svd(&m, 64);
+        // reconstruction = U·diag(s)·Vt = (1/fro)·M  (renormalized to unit weight)
+        let mut maxd = 0.0_f64;
+        for r in 0..4 {
+            for col in 0..4 {
+                let mut acc = Complex::new(0.0, 0.0);
+                for k in 0..s.len() {
+                    acc += u[(r, k)] * Complex::new(s[k], 0.0) * vt[(k, col)];
+                }
+                maxd = maxd.max((acc - m[(r, col)] / Complex::new(fro, 0.0)).norm());
+            }
+        }
+        assert!(maxd < 1e-10, "complex SVD reconstruction err {maxd:e}");
+    }
+
+    #[test]
+    fn truncated_svd_rank1_complex_collapses_to_chi1() {
+        // Rank-1 complex matrix (outer product a·bᴴ) must yield χ=1, not an
+        // inflated bond padded with Gram-noise singular values.
+        let a = [
+            Complex::new(0.5, 0.3),
+            Complex::new(-0.2, 0.7),
+            Complex::new(0.1, -0.4),
+            Complex::new(0.6, 0.0),
+        ];
+        let b = [
+            Complex::new(0.4, -0.1),
+            Complex::new(0.2, 0.5),
+            Complex::new(-0.3, 0.2),
+            Complex::new(0.1, 0.1),
+        ];
+        let m = DMatrix::from_fn(4, 4, |i, j| a[i] * b[j].conj());
+        let (u, s, vt, _disc) = truncated_svd(&m, 64);
+        assert_eq!(s.len(), 1, "rank-1 block must collapse to χ=1, got χ={}", s.len());
+        // And it must still reconstruct (1/‖M‖)·M.
+        let fro: f64 = m.iter().map(|c| c.norm_sqr()).sum::<f64>().sqrt();
+        let mut maxd = 0.0_f64;
+        for r in 0..4 {
+            for col in 0..4 {
+                let acc = u[(r, 0)] * Complex::new(s[0], 0.0) * vt[(0, col)];
+                maxd = maxd.max((acc - m[(r, col)] / Complex::new(fro, 0.0)).norm());
+            }
+        }
+        assert!(maxd < 1e-10, "rank-1 reconstruction err {maxd:e}");
     }
 }
