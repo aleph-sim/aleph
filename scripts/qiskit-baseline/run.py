@@ -26,7 +26,18 @@ from qiskit_aer import AerSimulator
 # Grover-10 transpiles to ~192k gates (well over the spec's 100k threshold).
 # Per design doc section 8, drop to 5 iters; the kernel mix is identical, the
 # wall-clock just halves.  Documented choice; not a defect.
-N_QUBITS_LIST = [15, 20, 22, 25]
+# Per-family qubit sizes. QFT extends to the P4-01 matrix {10,15,20,25,30}
+# (n=30 is the AC ceiling, measured on the EPYC box); other families keep the
+# Stage-0 sizes. A global list would regenerate every family and make
+# Grover/random at n=30 intractable.
+FAMILY_SIZES = {
+    "ghz": [15, 20, 22, 25],
+    "qft": [10, 15, 20, 25, 30],
+    "grover": [15, 20, 22, 25],
+    "random_brickwall": [15, 20, 22, 25],
+}
+# Union for the results header (sorted, de-duplicated).
+N_QUBITS_LIST = sorted({n for sizes in FAMILY_SIZES.values() for n in sizes})
 GROVER_ITERS = 5
 RANDOM_DEPTH = 20
 BASIS_GATES = ["h", "x", "z", "rz", "rx", "ry", "cx", "cz", "ccx", "p"]
@@ -117,7 +128,7 @@ def all_workloads() -> list[tuple[str, str, int]]:
     return [
         (workload_name(fam, n), fam, n)
         for fam in FAMILY_BUILDERS
-        for n in N_QUBITS_LIST
+        for n in FAMILY_SIZES[fam]
     ]
 
 
@@ -125,9 +136,11 @@ def timing_runs_for(n: int) -> int:
     """Fewer timed Aer runs at large n (each is minutes). Disclosed in the report."""
     if n <= 20:
         return 10
-    if n == 22:
+    if n <= 22:
         return 5
-    return 3  # n == 25
+    if n <= 25:
+        return 3
+    return 2  # n >= 28: a single Aer statevector run is many minutes
 
 
 def transpile_and_export(qc: QuantumCircuit, name: str) -> QuantumCircuit:
