@@ -3,7 +3,7 @@
 
 use crate::tensor::{thin_qr, truncated_svd, Site};
 use crate::MpsError;
-use aleph_core::{Complex, GateInstance};
+use aleph_core::{Complex, GateInstance, PauliString};
 use nalgebra::DMatrix;
 
 /// Mixed-canonical MPS. Sites left of `center` are left-canonical, sites right
@@ -256,6 +256,77 @@ impl MpsState {
         self.center -= 1;
     }
 
+    /// ⟨self|other⟩ via a left-to-right transfer sweep. Both MPS must have the
+    /// same qubit count and physical dim 2.
+    fn overlap(&self, other: &MpsState) -> Complex {
+        // E: bra_bond × ket_bond, start as the 1×1 identity [1].
+        let mut e = DMatrix::<Complex>::from_element(1, 1, Complex::new(1.0, 0.0));
+        for i in 0..self.sites.len() {
+            let bra = &self.sites[i];
+            let ket = &other.sites[i];
+            // E_new[rb, rk] = Σ_p Σ_{lb,lk} conj(bra[lb,p,rb]) · E[lb,lk] · ket[lk,p,rk]
+            let mut e_new = DMatrix::<Complex>::zeros(bra.right, ket.right);
+            for p in 0..2 {
+                // tmp[lb, rk] = Σ_lk E[lb,lk] · ket[lk,p,rk]
+                let mut tmp = DMatrix::<Complex>::zeros(bra.left, ket.right);
+                // Explicit index loops — multi-index transfer contraction is clearest
+                // expressed this way; no meaningful iterator abstraction available.
+                #[allow(clippy::needless_range_loop)]
+                for lb in 0..bra.left {
+                    for rk in 0..ket.right {
+                        let mut acc = Complex::new(0.0, 0.0);
+                        for lk in 0..ket.left {
+                            acc += e[(lb, lk)] * ket.get(lk, p, rk);
+                        }
+                        tmp[(lb, rk)] = acc;
+                    }
+                }
+                // E_new[rb, rk] += Σ_lb conj(bra[lb,p,rb]) · tmp[lb,rk]
+                #[allow(clippy::needless_range_loop)]
+                for rb in 0..bra.right {
+                    for rk in 0..ket.right {
+                        let mut acc = Complex::new(0.0, 0.0);
+                        for lb in 0..bra.left {
+                            acc += bra.get(lb, p, rb).conj() * tmp[(lb, rk)];
+                        }
+                        e_new[(rb, rk)] += acc;
+                    }
+                }
+            }
+            e = e_new;
+        }
+        e[(0, 0)]
+    }
+
+    /// ⟨ψ|P|ψ⟩ for a Pauli string. Returns `coefficient · Re⟨ψ|Pψ⟩`.
+    ///
+    /// The expectation value of a Hermitian observable is real; the imaginary
+    /// part is discarded (it vanishes exactly for a normalised state and an
+    /// exact Pauli string, and is O(truncation_error) for a compressed MPS).
+    pub(crate) fn expectation(&self, p: &PauliString) -> Result<f64, MpsError> {
+        let n = self.sites.len() as u32;
+        // Validate qubit indices before cloning.
+        for (q, _) in &p.terms {
+            if *q >= n {
+                return Err(MpsError::QubitOutOfRange {
+                    qubit: *q,
+                    num_qubits: n,
+                });
+            }
+        }
+        let mut pp = self.clone();
+        for (q, pauli) in &p.terms {
+            // Pauli::I has been stripped by PauliString::new; guard anyway.
+            if let aleph_core::Pauli::I = pauli {
+                continue;
+            }
+            let m = (*pauli).matrix();
+            pp.apply_1q(*q as usize, &m);
+        }
+        let ov = self.overlap(&pp);
+        Ok(p.coefficient * ov.re)
+    }
+
     /// Move the orthogonality center to `target` by stepping one site at a time.
     pub(crate) fn move_center_to(&mut self, target: usize) {
         while self.center < target {
@@ -462,5 +533,40 @@ mod tests {
         s.apply_2q(&g, &cnot).unwrap();
         let v = s.dense_statevector();
         assert!((v[3].re - 1.0).abs() < 1e-10); // |11> index 3
+    }
+
+    fn bell_state(max_bond: usize) -> MpsState {
+        let mut s = MpsState::new(2, max_bond);
+        let h = crate::gate::matrix_2x2(&GateInstance::new(Gate::H, smallvec![0u32])).unwrap();
+        s.apply_1q(0, &h);
+        let g = GateInstance::new(Gate::Cnot, smallvec![0u32, 1u32]);
+        let cnot = crate::gate::matrix_4x4(&g).unwrap();
+        s.apply_2q(&g, &cnot).unwrap();
+        s
+    }
+
+    #[test]
+    fn expectation_bell() {
+        use aleph_core::{Pauli, PauliString};
+        let s = bell_state(64);
+        let zz = PauliString::new(1.0, vec![(0, Pauli::Z), (1, Pauli::Z)]).unwrap();
+        let xx = PauliString::new(1.0, vec![(0, Pauli::X), (1, Pauli::X)]).unwrap();
+        let zi = PauliString::new(1.0, vec![(0, Pauli::Z)]).unwrap();
+        assert!((s.expectation(&zz).unwrap() - 1.0).abs() < 1e-10);
+        assert!((s.expectation(&xx).unwrap() - 1.0).abs() < 1e-10);
+        assert!(s.expectation(&zi).unwrap().abs() < 1e-10);
+        let half = PauliString::new(0.5, vec![(0, Pauli::Z), (1, Pauli::Z)]).unwrap();
+        assert!((s.expectation(&half).unwrap() - 0.5).abs() < 1e-10);
+    }
+
+    #[test]
+    fn expectation_oor() {
+        use aleph_core::{Pauli, PauliString};
+        let s = bell_state(64);
+        let p = PauliString::new(1.0, vec![(5, Pauli::Z)]).unwrap();
+        assert!(matches!(
+            s.expectation(&p),
+            Err(MpsError::QubitOutOfRange { qubit: 5, .. })
+        ));
     }
 }
