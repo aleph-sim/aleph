@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "workloads": {
+    "qft_n10": {
+      "n": 10,
+      "family": "qft",
+      "aleph_ms_median": 0.19854605336257308,
+      "aleph_rsd": 0.00047130803364918737
+    },
+    "qft_n15": {
+      "n": 15,
+      "family": "qft",
+      "aleph_ms_median": 6.390679876190476,
+      "aleph_rsd": 0.0011494752658704227
+    },
+    "qft_n20": {
+      "n": 20,
+      "family": "qft",
+      "aleph_ms_median": 320.03200675,
+      "aleph_rsd": 0.0011005806844833668
+    },
+    "qft_n25": {
+      "n": 25,
+      "family": "qft",
+      "aleph_ms_median": 14234.070161,
+      "aleph_rsd": 0.0004361229755684809
+    },
+    "qft_n30": {
+      "n": 30,
+      "family": "qft",
+      "aleph_ms_median": 563167.2075,
+      "aleph_rsd": 0.0
+    }
+  }
+}
