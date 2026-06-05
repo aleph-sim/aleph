@@ -53,7 +53,11 @@ pub struct CircuitFeatures {
     /// Every `Gate` instruction is Clifford (`Measure`/`Barrier` allowed).
     pub all_clifford: bool,
     /// Every two-qubit gate acts on adjacent qubits (`|q0 - q1| == 1`).
+    /// (vacuously true when there is no two-qubit gate; gates of other arity do not affect this flag)
     pub all_twoq_nearest_neighbor: bool,
+    /// No gate acts on 3+ qubits; the MPS backend supports only 1q and nearest-neighbor 2q gates,
+    /// so a Toffoli/CCZ disqualifies MPS.
+    pub all_gates_at_most_2q: bool,
 }
 
 /// Scan `c` once and extract the [`CircuitFeatures`] the heuristic needs.
@@ -67,6 +71,7 @@ pub fn analyze(c: &Circuit) -> CircuitFeatures {
 
     let mut all_clifford = true;
     let mut all_twoq_nearest_neighbor = true;
+    let mut all_gates_at_most_2q = true;
     for inst in insts {
         match inst {
             Instruction::Gate(g) => {
@@ -75,6 +80,9 @@ pub fn analyze(c: &Circuit) -> CircuitFeatures {
                 }
                 if g.qubits.len() == 2 && g.qubits[0].abs_diff(g.qubits[1]) != 1 {
                     all_twoq_nearest_neighbor = false;
+                }
+                if g.qubits.len() > 2 {
+                    all_gates_at_most_2q = false;
                 }
             }
             // Stabilizer supports measurement; barriers are no-ops. Reset is
@@ -88,6 +96,7 @@ pub fn analyze(c: &Circuit) -> CircuitFeatures {
         }
     }
 
+    // Second pass: reuse the canonical layer scheduler rather than re-deriving it.
     let layers = c.layers();
     let depth = layers.len();
     let twoq_depth = layers
@@ -105,6 +114,7 @@ pub fn analyze(c: &Circuit) -> CircuitFeatures {
         twoq_depth,
         all_clifford,
         all_twoq_nearest_neighbor,
+        all_gates_at_most_2q,
     }
 }
 
@@ -128,13 +138,14 @@ pub fn select_from(f: &CircuitFeatures) -> Selection {
     if f.num_qubits <= SV_EXACT_CAP {
         return Selection {
             kind: BackendKind::Statevector,
-            reason: "exact and fits (n <= 28)",
+            reason: "exact and fits in memory",
         };
     }
-    if f.all_twoq_nearest_neighbor && f.twoq_depth <= MPS_DEPTH_THRESHOLD {
+    if f.all_twoq_nearest_neighbor && f.all_gates_at_most_2q && f.twoq_depth <= MPS_DEPTH_THRESHOLD
+    {
         return Selection {
             kind: BackendKind::Mps,
-            reason: "nearest-neighbor and shallow; too large for exact (n > 28)",
+            reason: "nearest-neighbor and shallow; too large for exact simulation",
         };
     }
     Selection {
@@ -239,10 +250,11 @@ mod tests {
     ) -> CircuitFeatures {
         CircuitFeatures {
             num_qubits,
-            depth: twoq_depth,
+            depth: twoq_depth + 3,
             twoq_depth,
             all_clifford,
             all_twoq_nearest_neighbor,
+            all_gates_at_most_2q: true,
         }
     }
 
@@ -281,6 +293,61 @@ mod tests {
     fn select_backend_matches_select_from() {
         let c = bell();
         assert_eq!(select_backend(&c), select_from(&analyze(&c)).kind);
+        assert_eq!(select_backend(&c), BackendKind::Stabilizer);
+    }
+
+    // FIX 1 regression: a circuit whose only multi-qubit gate is Toffoli must NOT
+    // route to MPS (MPS rejects 3q gates at runtime).
+    #[test]
+    fn rule_large_3q_gate_avoids_mps() {
+        let f = CircuitFeatures {
+            num_qubits: 30,
+            depth: 5,
+            twoq_depth: 0,
+            all_clifford: false,
+            all_twoq_nearest_neighbor: true,
+            all_gates_at_most_2q: false,
+        };
+        assert_eq!(select_from(&f).kind, BackendKind::Statevector);
+    }
+
+    // FIX 1: analyze must set all_gates_at_most_2q=false when a Toffoli is present.
+    #[test]
+    fn analyze_toffoli_sets_not_at_most_2q() {
+        let mut c = Circuit::new(4, 0);
+        c.add_gate(GateInstance::new(Gate::Toffoli, vec![0u32, 1u32, 2u32]))
+            .unwrap();
+        let f = analyze(&c);
+        assert!(
+            !f.all_gates_at_most_2q,
+            "Toffoli must clear all_gates_at_most_2q"
+        );
+        assert!(!f.all_clifford, "Toffoli is not Clifford");
+    }
+
+    // FIX 6: boundary — n == SV_EXACT_CAP must still pick Statevector (<=, not <).
+    #[test]
+    fn rule_boundary_n_equals_cap_picks_statevector() {
+        let s = select_from(&feats(SV_EXACT_CAP, 10, false, true));
+        assert_eq!(s.kind, BackendKind::Statevector);
+    }
+
+    // FIX 6: boundary — twoq_depth == MPS_DEPTH_THRESHOLD must still pick Mps (<=, not <).
+    #[test]
+    fn rule_boundary_twoq_depth_equals_threshold_picks_mps() {
+        let s = select_from(&feats(30, MPS_DEPTH_THRESHOLD, false, true));
+        assert_eq!(s.kind, BackendKind::Mps);
+    }
+
+    // FIX 6: empty circuit is vacuously Clifford, NN, and all-at-most-2q.
+    #[test]
+    fn analyze_empty_circuit_is_vacuously_clifford() {
+        let c = Circuit::new(3, 0);
+        let f = analyze(&c);
+        assert!(f.all_clifford);
+        assert_eq!(f.twoq_depth, 0);
+        assert!(f.all_twoq_nearest_neighbor);
+        assert!(f.all_gates_at_most_2q);
         assert_eq!(select_backend(&c), BackendKind::Stabilizer);
     }
 }
