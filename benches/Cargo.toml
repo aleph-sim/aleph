@@ -90,3 +90,7 @@ required-features = ["scaling-bench"]
 name = "cache_blocking"
 harness = false
 required-features = ["scaling-bench"]
+
+[[bench]]
+name = "phase4_qft"
+harness = false
