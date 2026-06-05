@@ -50,7 +50,6 @@ pub struct CircuitFeatures {
     pub twoq_depth: usize,               // layers containing >= 1 two-qubit gate
     pub all_clifford: bool,              // every Gate is_clifford(); Measure/Barrier ok
     pub all_twoq_nearest_neighbor: bool, // every 2q gate has |q0 - q1| == 1
-    pub has_reset: bool,                 // gates stabilizer eligibility (see below)
 }
 
 pub fn analyze(c: &Circuit) -> CircuitFeatures;
@@ -68,23 +67,22 @@ Single pass over `circuit.instructions()`, plus `circuit.layers()` for depth:
 - `num_qubits` = `circuit.num_qubits()`.
 - `all_clifford` = every `Instruction::Gate(g)` has `g.gate.is_clifford()`.
   `Measure` and `Barrier` are allowed (stabilizer supports measurement).
-  `Reset` is tracked separately via `has_reset` (see eligibility below).
   Any `DiagonalPhase` / `TiledBlock` instruction (SV-only optimization
   artifacts; not expected pre-optimization) ⇒ `all_clifford = false`.
 - `all_twoq_nearest_neighbor` = for every gate acting on exactly two qubits,
   `|q0 - q1| == 1`. Gates of arity ≠ 2 do not affect this flag.
 - `twoq_depth` = number of layers (from `circuit.layers()`) that contain at
   least one two-qubit gate. (`depth` = total layer count, kept for diagnostics.)
-- `has_reset` = any `Instruction::Reset`.
 
-> **Plan note:** confirm whether the stabilizer backend's `run` path supports
-> `Instruction::Reset`. If it does, `has_reset` need not exclude stabilizer and
-> the rule can drop the `&& !has_reset` guard. If it does not (or is unverified),
-> the conservative `&& !has_reset` guard stays. Verify during implementation.
+> **`Reset` is not a selection input.** Verified during planning: the shared
+> `run` driver (`aleph-backend/src/lib.rs`) rejects `Instruction::Reset` with
+> `UnsupportedInstruction { kind: "reset" }` for **every** backend. A circuit
+> containing a reset therefore fails on whichever backend it lands on, so reset
+> presence cannot change the *viable* choice — it is deliberately not a feature.
 
 ### Decision rule (`select_from`, ordered)
 
-1. `all_clifford && !has_reset` → **Stabilizer** (O(n²) memory; thousands of qubits).
+1. `all_clifford` → **Stabilizer** (O(n²) memory; thousands of qubits).
 2. `num_qubits <= SV_EXACT_CAP` (= 28) → **Statevector** (exact and fits — never
    risk MPS approximation when an exact backend works and is fast).
 3. `all_twoq_nearest_neighbor && twoq_depth <= MPS_DEPTH_THRESHOLD` → **Mps**
@@ -133,9 +131,8 @@ Named constants (documented in code):
 ## Testing
 
 - **Unit (`select_from`)** — one test per rule arm, building `CircuitFeatures`
-  directly: Clifford→Stabilizer; Clifford+reset→Statevector; small dense→
-  Statevector; large NN-shallow→Mps; large dense→Statevector; large NN-but-deep
-  →Statevector.
+  directly: Clifford→Stabilizer; small dense→Statevector; large NN-shallow→Mps;
+  large dense→Statevector; large NN-but-deep→Statevector.
 - **Integration (`analyze` + `select_backend`)** — build real circuits with the
   `Circuit` builder and assert the chosen kind (AC "test corpus per category"):
   - all-Clifford GHZ → Stabilizer.
