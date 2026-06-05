@@ -12,7 +12,7 @@ use aleph_mps::{MpsBackend, TruncationPolicy};
 use aleph_stab::StabilizerBackend;
 use aleph_sv::{Fp32SvBackend, NaiveSvBackend};
 
-use crate::cli::{BackendKind, Precision};
+use crate::cli::{BackendChoice, Precision};
 use crate::output;
 use crate::pauli::parse_pauli_arg;
 
@@ -57,7 +57,7 @@ pub fn run_circuit<W: Write>(
     expectations: &[String],
     seed: Option<u64>,
     precision: Precision,
-    backend: BackendKind,
+    backend: BackendChoice,
     max_bond: usize,
     max_error: Option<f64>,
     out: &mut W,
@@ -93,10 +93,27 @@ pub fn run_circuit<W: Write>(
         }
     }
 
+    // 2b. Resolve the backend (runs the auto heuristic for `--backend auto`).
+    //     The requested output view gates an auto stabilizer pick: a
+    //     state-vector view needs amplitudes the stabilizer backend lacks.
+    let wants_amplitudes = print_statevector || force_statevector;
+    let resolved = backend.resolve(&circuit, wants_amplitudes);
+
+    // Too-large soft warning: an exact dense run past the soft cap may exhaust
+    // memory. We warn and proceed (the user stayed in control by not narrowing
+    // the backend); this mirrors the SV soft-cap-warns-not-refuses convention.
+    if resolved == aleph_backend::BackendKind::Statevector && n > aleph_backend::SV_EXACT_CAP {
+        eprintln!(
+            "warning: n={n} exceeds the {}-qubit state-vector soft cap; \
+             this run may exhaust memory (override with a different --backend)",
+            aleph_backend::SV_EXACT_CAP
+        );
+    }
+
     // 3. Statevector cap check. Skipped for the stabilizer backend, which
     //    has no dense state vector at all — `run_stabilizer` rejects
     //    `--statevector` with a clearer, backend-specific message below.
-    if backend == BackendKind::Statevector
+    if resolved == aleph_backend::BackendKind::Statevector
         && print_statevector
         && !force_statevector
         && n > STATEVECTOR_CAP_QUBITS
@@ -123,7 +140,7 @@ pub fn run_circuit<W: Write>(
         None => "seed=entropy".to_string(),
     };
 
-    if backend == BackendKind::Stabilizer {
+    if resolved == aleph_backend::BackendKind::Stabilizer {
         return run_stabilizer(
             &circuit,
             effective_shots,
@@ -136,7 +153,7 @@ pub fn run_circuit<W: Write>(
         );
     }
 
-    if backend == BackendKind::Mps {
+    if resolved == aleph_backend::BackendKind::Mps {
         return run_mps(
             &circuit,
             effective_shots,
@@ -428,7 +445,7 @@ mod tests {
             &[],
             Some(0),
             Precision::F64,
-            BackendKind::Statevector,
+            BackendChoice::Statevector,
             128,
             None,
             &mut out,
@@ -451,7 +468,7 @@ mod tests {
             &[],
             Some(42),
             Precision::F64,
-            BackendKind::Statevector,
+            BackendChoice::Statevector,
             128,
             None,
             &mut a,
@@ -465,7 +482,7 @@ mod tests {
             &[],
             Some(42),
             Precision::F64,
-            BackendKind::Statevector,
+            BackendChoice::Statevector,
             128,
             None,
             &mut b,
@@ -488,7 +505,7 @@ mod tests {
             &[],
             Some(0),
             Precision::F64,
-            BackendKind::Statevector,
+            BackendChoice::Statevector,
             128,
             None,
             &mut out,
@@ -512,7 +529,7 @@ mod tests {
             &[],
             Some(0),
             Precision::F64,
-            BackendKind::Statevector,
+            BackendChoice::Statevector,
             128,
             None,
             &mut out,
@@ -535,7 +552,7 @@ mod tests {
             &["ZZZ".to_string()],
             Some(0),
             Precision::F64,
-            BackendKind::Statevector,
+            BackendChoice::Statevector,
             128,
             None,
             &mut out,
@@ -558,7 +575,7 @@ mod tests {
             &["ABC".to_string()],
             Some(0),
             Precision::F64,
-            BackendKind::Statevector,
+            BackendChoice::Statevector,
             128,
             None,
             &mut out,
@@ -581,7 +598,7 @@ mod tests {
             &["ZZ".to_string()],
             Some(0),
             Precision::F64,
-            BackendKind::Statevector,
+            BackendChoice::Statevector,
             128,
             None,
             &mut out,
@@ -617,7 +634,7 @@ mod tests {
             &[],
             Some(0),
             Precision::F64,
-            BackendKind::Statevector,
+            BackendChoice::Statevector,
             128,
             None,
             &mut out,
