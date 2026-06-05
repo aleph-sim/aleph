@@ -448,3 +448,60 @@ fn mps_backend_rejects_nonpositive_max_error() {
         .failure()
         .stderr(contains("--max-error must be a positive"));
 }
+
+// --- P3-07 automatic backend selection ---
+
+/// `--backend auto` on an all-Clifford circuit (Bell) routes to the stabilizer
+/// backend and announces it on stderr; stdout still carries the default
+/// sampling counts (which the stabilizer backend supports).
+#[test]
+fn auto_selects_stabilizer_for_clifford() {
+    aleph()
+        .args(["run"])
+        .arg(bell_path())
+        .args(["--backend", "auto", "--shots", "32", "--seed", "0"])
+        .assert()
+        .success()
+        .stderr(contains("auto-selected backend: stabilizer"));
+}
+
+/// `auto` is the DEFAULT: running with no `--backend` flag at all still routes
+/// the Clifford Bell circuit to the stabilizer backend.
+#[test]
+fn auto_is_the_default_backend() {
+    aleph()
+        .args(["run"])
+        .arg(bell_path())
+        .args(["--shots", "32", "--seed", "0"])
+        .assert()
+        .success()
+        .stderr(contains("auto-selected backend: stabilizer"));
+}
+
+/// `--backend auto --statevector` on a Clifford circuit downgrades to the state
+/// vector (the stabilizer backend has no dense amplitudes) and says so on
+/// stderr, while still printing the state vector on stdout.
+#[test]
+fn auto_downgrades_to_sv_for_statevector_view() {
+    aleph()
+        .args(["run"])
+        .arg(bell_path())
+        .args(["--backend", "auto", "--statevector"])
+        .assert()
+        .success()
+        .stderr(contains("downgraded from stabilizer"));
+}
+
+/// An explicit `--backend statevector` bypasses the heuristic entirely — no
+/// auto-selection line is printed.
+#[test]
+fn explicit_backend_has_no_auto_line() {
+    use predicates::prelude::PredicateBooleanExt;
+    aleph()
+        .args(["run"])
+        .arg(bell_path())
+        .args(["--backend", "statevector", "--shots", "32", "--seed", "0"])
+        .assert()
+        .success()
+        .stderr(contains("auto-selected").not());
+}
