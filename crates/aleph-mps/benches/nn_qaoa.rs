@@ -3,7 +3,7 @@
 
 use aleph_backend::run;
 use aleph_core::{Gate, GateInstance, Param};
-use aleph_mps::MpsBackend;
+use aleph_mps::{MpsBackend, TruncationPolicy};
 use criterion::{criterion_group, criterion_main, Criterion};
 
 fn g(gate: Gate, qubits: &[u32]) -> GateInstance {
@@ -43,5 +43,26 @@ fn bench(cr: &mut Criterion) {
     grp.finish();
 }
 
-criterion_group!(benches, bench);
+fn bench_policies(cr: &mut Criterion) {
+    let mut grp = cr.benchmark_group("nn_qaoa_n20_policy");
+    let c = qaoa_circuit(20);
+    grp.bench_function("fixed_chi64", |b| {
+        b.iter(|| {
+            let mut be = MpsBackend::with_seed(0).with_max_bond(64);
+            run(&mut be, &c).unwrap()
+        })
+    });
+    grp.bench_function("error_1e-8", |b| {
+        b.iter(|| {
+            let mut be = MpsBackend::with_seed(0).with_truncation(TruncationPolicy::ErrorBounded {
+                epsilon: 1e-8,
+                max_bond: 64,
+            });
+            run(&mut be, &c).unwrap()
+        })
+    });
+    grp.finish();
+}
+
+criterion_group!(benches, bench, bench_policies);
 criterion_main!(benches);

@@ -6,6 +6,12 @@
 //!
 //! See `docs/superpowers/specs/2026-06-05-p3-04-mps-basic-chain-design.md`.
 //!
+//! Truncation is configurable via [`TruncationPolicy`]: a fixed bond dimension
+//! or an error-bounded mode that keeps the discarded weight per bond below `ε`.
+//! Because truncation goes through a Hermitian Gram-matrix eigendecomposition,
+//! the smallest reliably-controllable discarded weight is ~1e-14 (a finer
+//! threshold would need a higher-precision SVD).
+//!
 //! # Usage
 //!
 //! ```no_run
