@@ -12,6 +12,8 @@ pub enum BackendKind {
     Statevector,
     /// Stabilizer (Clifford-only). O(n²) memory; thousands of qubits.
     Stabilizer,
+    /// MPS tensor network (bounded entanglement). χ via --max-bond.
+    Mps,
 }
 
 /// Floating-point precision for the state-vector backend.
@@ -76,10 +78,15 @@ pub enum Cmd {
         #[arg(long, value_enum, default_value_t = Precision::F64)]
         precision: Precision,
 
-        /// Simulation backend: `statevector` (default) or `stabilizer`
-        /// (Clifford-only; rejects non-Clifford gates and --statevector).
+        /// Simulation backend: `statevector` (default), `stabilizer`
+        /// (Clifford-only; rejects non-Clifford gates and --statevector),
+        /// or `mps` (tensor network; bounded entanglement, rejects --statevector).
         #[arg(long, value_enum, default_value_t = BackendKind::Statevector)]
         backend: BackendKind,
+
+        /// MPS max bond dimension χ (only used by `--backend mps`).
+        #[arg(long, default_value_t = 128)]
+        max_bond: usize,
     },
 
     /// Run a QASM circuit once and print parse / execute / sample

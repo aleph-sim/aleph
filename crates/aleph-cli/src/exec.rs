@@ -8,6 +8,7 @@ use anyhow::{anyhow, Context, Result};
 
 use aleph_backend::{run, Backend};
 use aleph_core::Complex;
+use aleph_mps::MpsBackend;
 use aleph_stab::StabilizerBackend;
 use aleph_sv::{Fp32SvBackend, NaiveSvBackend};
 
@@ -57,6 +58,7 @@ pub fn run_circuit<W: Write>(
     seed: Option<u64>,
     precision: Precision,
     backend: BackendKind,
+    max_bond: usize,
     out: &mut W,
 ) -> Result<()> {
     // 1. Read + parse.
@@ -119,6 +121,20 @@ pub fn run_circuit<W: Write>(
             &paulis,
             n,
             seed,
+            &seed_label,
+            out,
+        );
+    }
+
+    if backend == BackendKind::Mps {
+        return run_mps(
+            &circuit,
+            effective_shots,
+            print_statevector || force_statevector,
+            &paulis,
+            n,
+            seed,
+            max_bond,
             &seed_label,
             out,
         );
@@ -248,6 +264,51 @@ fn run_stabilizer<W: Write>(
     Ok(())
 }
 
+/// MPS-backend run path. Supports `--shots` and `--expectation`; rejects
+/// `--statevector` (an MPS exposes no dense amplitude vector).
+#[allow(clippy::too_many_arguments)]
+fn run_mps<W: Write>(
+    circuit: &aleph_ir::Circuit,
+    effective_shots: Option<u32>,
+    statevector_requested: bool,
+    paulis: &[(String, aleph_core::PauliString)],
+    n: u32,
+    seed: Option<u64>,
+    max_bond: usize,
+    seed_label: &str,
+    out: &mut W,
+) -> Result<()> {
+    if statevector_requested {
+        return Err(anyhow!(
+            "the MPS backend has no dense state vector; drop --statevector \
+             (use --shots and/or --expectation instead)"
+        ));
+    }
+    let mut backend = match seed {
+        Some(s) => MpsBackend::with_seed(s),
+        None => MpsBackend::new(),
+    }
+    .with_max_bond(max_bond);
+    let state = run(&mut backend, circuit).context("running circuit (mps)")?;
+
+    if let Some(shots) = effective_shots {
+        let samples = backend
+            .sample(&state, shots)
+            .context("sampling final state")?;
+        output::format_counts(out, &samples, shots, n, seed_label)?;
+    }
+    if !paulis.is_empty() {
+        writeln!(out, "expectation values:")?;
+        for (raw, ps) in paulis {
+            let v = backend
+                .expectation_value(&state, ps)
+                .with_context(|| format!("computing expectation value for {raw:?}"))?;
+            output::format_expectation(out, raw, v)?;
+        }
+    }
+    Ok(())
+}
+
 /// Run a circuit once and report parse / execute / sample(1024)
 /// wall-times.  No statistics; criterion is the source of truth for
 /// regression-tracking perf numbers.
@@ -346,6 +407,7 @@ mod tests {
             Some(0),
             Precision::F64,
             BackendKind::Statevector,
+            128,
             &mut out,
         )
         .unwrap();
@@ -367,6 +429,7 @@ mod tests {
             Some(42),
             Precision::F64,
             BackendKind::Statevector,
+            128,
             &mut a,
         )
         .unwrap();
@@ -379,6 +442,7 @@ mod tests {
             Some(42),
             Precision::F64,
             BackendKind::Statevector,
+            128,
             &mut b,
         )
         .unwrap();
@@ -400,6 +464,7 @@ mod tests {
             Some(0),
             Precision::F64,
             BackendKind::Statevector,
+            128,
             &mut out,
         )
         .unwrap_err();
@@ -422,6 +487,7 @@ mod tests {
             Some(0),
             Precision::F64,
             BackendKind::Statevector,
+            128,
             &mut out,
         )
         .unwrap();
@@ -443,6 +509,7 @@ mod tests {
             Some(0),
             Precision::F64,
             BackendKind::Statevector,
+            128,
             &mut out,
         )
         .unwrap_err();
@@ -464,6 +531,7 @@ mod tests {
             Some(0),
             Precision::F64,
             BackendKind::Statevector,
+            128,
             &mut out,
         )
         .unwrap_err();
@@ -485,6 +553,7 @@ mod tests {
             Some(0),
             Precision::F64,
             BackendKind::Statevector,
+            128,
             &mut out,
         )
         .unwrap();
@@ -519,6 +588,7 @@ mod tests {
             Some(0),
             Precision::F64,
             BackendKind::Statevector,
+            128,
             &mut out,
         )
         .unwrap_err();
