@@ -175,7 +175,7 @@ impl MpsState {
         });
 
         // Truncated SVD: M = U · diag(s) · Vt, truncated according to the state's policy.
-        let (u_s, s_kept, vt_s, discarded) = truncated_svd(&m, &self.policy);
+        let (u_s, s_kept, vt_s, discarded) = truncated_svd(&m, &self.policy)?;
         self.trunc_error += discarded;
         let chi = s_kept.len();
         self.max_bond_seen = self.max_bond_seen.max(chi);

@@ -71,6 +71,9 @@ fn map_mps_err(e: MpsError) -> BackendError {
         MpsError::DegenerateMeasurement { qubit, probability } => {
             BackendError::DegenerateMeasurement { qubit, probability }
         }
+        MpsError::SvdFailed => BackendError::InvalidState {
+            reason: "SVD failed to converge during 2q-gate truncation",
+        },
     }
 }
 

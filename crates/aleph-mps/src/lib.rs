@@ -8,9 +8,9 @@
 //!
 //! Truncation is configurable via [`TruncationPolicy`]: a fixed bond dimension
 //! or an error-bounded mode that keeps the discarded weight per bond below `ε`.
-//! Because truncation goes through a Hermitian Gram-matrix eigendecomposition,
-//! the smallest reliably-controllable discarded weight is ~1e-14 (a finer
-//! threshold would need a higher-precision SVD).
+//! The truncating SVD uses `faer` (`nalgebra`'s complex SVD and Hermitian
+//! eigensolver both return orthonormal-but-incorrect vectors on some complex
+//! matrices, which silently corrupted entangled two-site blocks).
 //!
 //! # Usage
 //!
@@ -71,6 +71,9 @@ pub enum MpsError {
 
     #[error("measurement of qubit {qubit} on a degenerate branch (p = {probability:e})")]
     DegenerateMeasurement { qubit: u32, probability: f64 },
+
+    #[error("SVD failed to converge during 2q-gate truncation")]
+    SvdFailed,
 }
 
 #[cfg(test)]
