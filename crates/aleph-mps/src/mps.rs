@@ -5,6 +5,7 @@ use crate::tensor::{thin_qr, truncated_svd, Site};
 use crate::MpsError;
 use aleph_core::{Complex, GateInstance, PauliString};
 use nalgebra::DMatrix;
+use rand::Rng;
 
 /// Mixed-canonical MPS. Sites left of `center` are left-canonical, sites right
 /// are right-canonical; the center site carries the norm.
@@ -382,6 +383,59 @@ impl MpsState {
         let _ = n; // used only for the initial capacity reasoning; length is 2^n
         amps
     }
+
+    /// Measure qubit `q` in the Z basis, collapsing the state. Returns the bit.
+    ///
+    /// Moves the orthogonality center to `q` so that the environment is trivial
+    /// and p(b) = Σ_{l,r} |A[l,b,r]|² is the exact single-qubit marginal.
+    /// After the measurement, the center stays at `q`.
+    pub(crate) fn measure<R: Rng>(&mut self, q: usize, rng: &mut R) -> Result<bool, MpsError> {
+        let n = self.sites.len();
+        if q >= n {
+            return Err(MpsError::QubitOutOfRange {
+                qubit: q as u32,
+                num_qubits: n as u32,
+            });
+        }
+        self.move_center_to(q);
+        let site = &self.sites[q];
+        let mut p0 = 0.0f64;
+        let mut p1 = 0.0f64;
+        // Explicit range loops — multi-index tensor access has no cleaner iterator form.
+        #[allow(clippy::needless_range_loop)]
+        for l in 0..site.left {
+            for r in 0..site.right {
+                p0 += site.get(l, 0, r).norm_sqr();
+                p1 += site.get(l, 1, r).norm_sqr();
+            }
+        }
+        let total = p0 + p1;
+        if total <= 0.0 {
+            return Err(MpsError::DegenerateMeasurement {
+                qubit: q as u32,
+                probability: total,
+            });
+        }
+        let p0n = p0 / total;
+        // Sample: outcome=true (|1⟩) with probability p1/total.
+        let outcome = rng.gen::<f64>() >= p0n;
+        let keep = if outcome { 1usize } else { 0usize };
+        let pk = if outcome { p1 } else { p0 };
+        // Rescale so the post-collapse MPS remains unit-norm.
+        let scale = (total / pk).sqrt();
+        let site = &mut self.sites[q];
+        let drop = 1 - keep;
+        // Explicit range loops — multi-index tensor mutation has no cleaner iterator form.
+        #[allow(clippy::needless_range_loop)]
+        for l in 0..site.left {
+            for r in 0..site.right {
+                *site.get_mut(l, drop, r) = Complex::new(0.0, 0.0);
+                let v = site.get(l, keep, r);
+                *site.get_mut(l, keep, r) = v * Complex::new(scale, 0.0);
+            }
+        }
+        Ok(outcome)
+    }
 }
 
 #[cfg(test)]
@@ -390,6 +444,8 @@ mod tests {
     use crate::tensor::Site;
     use crate::MpsError;
     use aleph_core::{Gate, GateInstance};
+    use rand::rngs::StdRng;
+    use rand::SeedableRng;
     use smallvec::smallvec;
 
     fn norm_sq(v: &[Complex]) -> f64 {
@@ -568,5 +624,31 @@ mod tests {
             s.expectation(&p),
             Err(MpsError::QubitOutOfRange { qubit: 5, .. })
         ));
+    }
+
+    #[test]
+    fn measure_zero_is_zero() {
+        let mut s = MpsState::new(1, 64);
+        let mut rng = StdRng::seed_from_u64(1);
+        assert!(!s.measure(0, &mut rng).unwrap());
+    }
+
+    #[test]
+    fn measure_ghz_correlated() {
+        // GHZ-3: H(0), CNOT(0,1), CNOT(1,2). Measuring all qubits → all equal.
+        let mut s = MpsState::new(3, 64);
+        let h = crate::gate::matrix_2x2(&GateInstance::new(Gate::H, smallvec![0u32])).unwrap();
+        s.apply_1q(0, &h);
+        for i in 0..2u32 {
+            let g = GateInstance::new(Gate::Cnot, smallvec![i, i + 1]);
+            let cnot = crate::gate::matrix_4x4(&g).unwrap();
+            s.apply_2q(&g, &cnot).unwrap();
+        }
+        let mut rng = StdRng::seed_from_u64(7);
+        let b0 = s.measure(0, &mut rng).unwrap();
+        let b1 = s.measure(1, &mut rng).unwrap();
+        let b2 = s.measure(2, &mut rng).unwrap();
+        assert_eq!(b0, b1);
+        assert_eq!(b1, b2);
     }
 }
