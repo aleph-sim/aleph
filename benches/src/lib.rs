@@ -62,6 +62,49 @@ pub fn qft_circuit(n: u32) -> Circuit {
     c
 }
 
+/// Inverse QFT on `n` qubits: `qft_circuit(n)`'s instructions in reverse order,
+/// each gate replaced by its inverse (`H→H`, `Phase(θ)→Phase(−θ)`), preserving
+/// the control/target qubits. `qft_circuit(n)` followed by `qft_inverse_circuit(n)`
+/// is the identity.
+#[must_use]
+pub fn qft_inverse_circuit(n: u32) -> aleph_ir::Circuit {
+    let fwd = qft_circuit(n);
+    let mut inv = aleph_ir::Circuit::new(n, 0);
+    for inst in fwd.instructions().iter().rev() {
+        match inst {
+            aleph_ir::Instruction::Gate(g) => {
+                let mut g2 = g.clone(); // preserves qubits AND controls
+                g2.gate = g.gate.inverse();
+                inv.add_instruction(aleph_ir::Instruction::Gate(g2))
+                    .unwrap();
+            }
+            other => {
+                inv.add_instruction(other.clone()).unwrap();
+            }
+        }
+    }
+    inv
+}
+
+/// A small non-trivial state prep: H on every qubit, then a phase rotation on
+/// each, producing a generic (non-basis) state for round-trip testing.
+#[cfg(test)]
+fn generic_prep_circuit(n: u32) -> aleph_ir::Circuit {
+    use aleph_core::Param;
+    let mut c = aleph_ir::Circuit::new(n, 0);
+    for q in 0..n {
+        c.add_gate(GateInstance::new(Gate::H, vec![q])).unwrap();
+    }
+    for q in 0..n {
+        c.add_gate(GateInstance::new(
+            Gate::Rz(Param::Concrete(0.1 * (q as f64 + 1.0))),
+            vec![q],
+        ))
+        .unwrap();
+    }
+    c
+}
+
 /// A low-qubit-heavy circuit: `depth` layers of single-qubit Rz+Rx
 /// rotations and nearest-neighbour CNOTs confined to the lowest `width`
 /// qubits, on an `n`-qubit register (the high qubits stay idle).
@@ -127,6 +170,62 @@ pub fn random_brickwall_circuit(n: u32, depth: usize) -> Circuit {
         }
     }
     c
+}
+
+#[cfg(test)]
+mod qft_roundtrip_tests {
+    use super::*;
+    use aleph_backend::run;
+    use aleph_core::Complex;
+    use aleph_sv::NaiveSvBackend;
+
+    /// Apply `circuit` to a freshly allocated |0…0⟩ and return amplitudes.
+    fn run_amps(circuit: &aleph_ir::Circuit) -> Vec<Complex> {
+        let mut b = NaiveSvBackend::with_seed(7);
+        let state = run(&mut b, circuit).expect("run");
+        // `HasAmplitudes`/state amplitudes accessor — match the crate's API.
+        state.amplitudes().to_vec()
+    }
+
+    #[test]
+    fn qft_then_inverse_is_identity_on_zero_state() {
+        let n = 6;
+        let mut c = qft_circuit(n);
+        // Append the inverse so the combined circuit should be the identity.
+        for inst in qft_inverse_circuit(n).instructions() {
+            c.add_instruction(inst.clone()).unwrap();
+        }
+        let amps = run_amps(&c);
+        assert!((amps[0].re - 1.0).abs() < 1e-10, "amp[0] should be 1");
+        assert!(amps[0].im.abs() < 1e-10);
+        for (k, a) in amps.iter().enumerate().skip(1) {
+            assert!(a.norm() < 1e-10, "amp[{k}] should be ~0");
+        }
+    }
+
+    #[test]
+    fn qft_then_inverse_is_identity_on_generic_state() {
+        // Per the P1-13 lesson, a |0…0⟩-only check misses bugs. Prep a generic
+        // state with a layer of H + T-like rotations, snapshot it, then apply
+        // QFT∘QFT⁻¹ and assert the state is unchanged.
+        let n = 5;
+        let prep = generic_prep_circuit(n); // defined below
+        let before = run_amps(&prep);
+
+        let mut c = prep.clone();
+        for inst in qft_circuit(n).instructions() {
+            c.add_instruction(inst.clone()).unwrap();
+        }
+        for inst in qft_inverse_circuit(n).instructions() {
+            c.add_instruction(inst.clone()).unwrap();
+        }
+        let after = run_amps(&c);
+
+        assert_eq!(before.len(), after.len());
+        for (k, (x, y)) in before.iter().zip(after.iter()).enumerate() {
+            assert!((x - y).norm() < 1e-10, "amp[{k}] changed: {x:?} vs {y:?}");
+        }
+    }
 }
 
 #[cfg(test)]
