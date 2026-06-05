@@ -37,6 +37,7 @@
 mod mps;
 mod tensor;
 pub use mps::MpsState;
+pub use tensor::TruncationPolicy;
 
 mod gate;
 

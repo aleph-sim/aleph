@@ -105,7 +105,17 @@ impl Site {
     }
 }
 
-/// SVD of `m` truncated to at most `max_bond` singular values, renormalized to
+/// How `truncated_svd` chooses how many singular values to keep.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TruncationPolicy {
+    /// Keep at most `χ` singular values (the largest).
+    FixedBond(usize),
+    /// Keep the fewest singular values whose discarded squared weight is `≤ ε`,
+    /// never exceeding `max_bond`.
+    ErrorBounded { epsilon: f64, max_bond: usize },
+}
+
+/// SVD of `m` truncated according to `policy` (fixed-χ or error-bounded), renormalized to
 /// preserve unit weight (input must come from a normalized state). Returns
 /// `(u_kept, s_kept, vt_kept, discarded_weight)` where:
 /// - `u_kept` has shape `rows × χ` with orthonormal columns (left isometry)
@@ -127,7 +137,7 @@ impl Site {
 /// reconstruction.
 pub fn truncated_svd(
     m: &DMatrix<Complex>,
-    max_bond: usize,
+    policy: &TruncationPolicy,
 ) -> (DMatrix<Complex>, Vec<f64>, DMatrix<Complex>, f64) {
     let rows = m.nrows();
     let cols = m.ncols();
@@ -152,9 +162,32 @@ pub fn truncated_svd(
     let s_max = pairs.first().map(|p| p.0).unwrap_or(0.0);
     let eps = 1e-7 * s_max.max(f64::MIN_POSITIVE);
     let significant = pairs.iter().filter(|p| p.0 > eps).count().max(1);
-    let chi = significant.min(max_bond.max(1));
-
-    let discarded: f64 = pairs[chi..].iter().map(|p| p.0 * p.0).sum();
+    // Suffix sums of σ²: suffix_sq[k] = Σ_{j≥k} σ_j² (non-increasing in k).
+    let mut suffix_sq = vec![0.0_f64; pairs.len() + 1];
+    for k in (0..pairs.len()).rev() {
+        suffix_sq[k] = suffix_sq[k + 1] + pairs[k].0 * pairs[k].0;
+    }
+    let chi = match *policy {
+        TruncationPolicy::FixedBond(max_bond) => significant.min(max_bond.max(1)),
+        TruncationPolicy::ErrorBounded { epsilon, max_bond } => {
+            let cap = significant.min(max_bond.max(1));
+            // Smallest keep ∈ [1, cap] with discarded tail Σ_{j≥keep} σ_j² ≤ ε.
+            // `keep` is used both as an index into `suffix_sq` and as the returned
+            // count — the index and the value are coupled, so a range loop is the
+            // clearest expression here.
+            #[allow(clippy::needless_range_loop)]
+            let mut chosen = cap;
+            #[allow(clippy::needless_range_loop)]
+            for keep in 1..=cap {
+                if suffix_sq[keep] <= epsilon {
+                    chosen = keep;
+                    break;
+                }
+            }
+            chosen
+        }
+    };
+    let discarded: f64 = suffix_sq[chi];
     let kept_weight: f64 = pairs[..chi].iter().map(|p| p.0 * p.0).sum();
     let scale = if kept_weight > 0.0 {
         (1.0 / kept_weight).sqrt()
@@ -261,7 +294,7 @@ mod tests {
             )
         });
         let fro: f64 = m.iter().map(|c| c.norm_sqr()).sum::<f64>().sqrt();
-        let (u, s, vt, _disc) = truncated_svd(&m, 64);
+        let (u, s, vt, _disc) = truncated_svd(&m, &TruncationPolicy::FixedBond(64));
         // reconstruction = U·diag(s)·Vt = (1/fro)·M  (renormalized to unit weight)
         let mut maxd = 0.0_f64;
         for r in 0..4 {
@@ -293,7 +326,7 @@ mod tests {
             Complex::new(0.1, 0.1),
         ];
         let m = DMatrix::from_fn(4, 4, |i, j| a[i] * b[j].conj());
-        let (u, s, vt, _disc) = truncated_svd(&m, 64);
+        let (u, s, vt, _disc) = truncated_svd(&m, &TruncationPolicy::FixedBond(64));
         assert_eq!(
             s.len(),
             1,
@@ -310,5 +343,64 @@ mod tests {
             }
         }
         assert!(maxd < 1e-10, "rank-1 reconstruction err {maxd:e}");
+    }
+
+    fn diag_sigma() -> DMatrix<Complex> {
+        let s = [1.0, 0.1, 0.01, 0.001];
+        DMatrix::from_fn(4, 4, |i, j| {
+            if i == j {
+                Complex::new(s[i], 0.0)
+            } else {
+                Complex::new(0.0, 0.0)
+            }
+        })
+    }
+
+    #[test]
+    fn error_bounded_keeps_minimal_chi() {
+        let m = diag_sigma();
+        let (_, s, _, disc) = truncated_svd(
+            &m,
+            &TruncationPolicy::ErrorBounded {
+                epsilon: 1e-3,
+                max_bond: 64,
+            },
+        );
+        assert_eq!(s.len(), 2, "expected χ=2");
+        assert!(disc <= 1e-3 + 1e-15, "discarded {disc} exceeds ε");
+    }
+
+    #[test]
+    fn error_bounded_tiny_eps_keeps_all() {
+        let m = diag_sigma();
+        let (_, s, _, disc) = truncated_svd(
+            &m,
+            &TruncationPolicy::ErrorBounded {
+                epsilon: 0.0,
+                max_bond: 64,
+            },
+        );
+        assert_eq!(s.len(), 4, "ε=0 must keep full rank");
+        assert!(disc < 1e-12);
+    }
+
+    #[test]
+    fn error_bounded_cap_overrides_eps() {
+        let m = diag_sigma();
+        let (_, s, _, _) = truncated_svd(
+            &m,
+            &TruncationPolicy::ErrorBounded {
+                epsilon: 10.0,
+                max_bond: 1,
+            },
+        );
+        assert_eq!(s.len(), 1);
+    }
+
+    #[test]
+    fn fixed_bond_matches_legacy() {
+        let m = diag_sigma();
+        let (_, s, _, _) = truncated_svd(&m, &TruncationPolicy::FixedBond(2));
+        assert_eq!(s.len(), 2);
     }
 }

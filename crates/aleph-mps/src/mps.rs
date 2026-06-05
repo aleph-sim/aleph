@@ -163,7 +163,10 @@ impl MpsState {
         });
 
         // Truncated SVD: M = U · diag(s) · Vt, keeping at most max_bond components.
-        let (u_s, s_kept, vt_s, discarded) = truncated_svd(&m, self.max_bond);
+        let (u_s, s_kept, vt_s, discarded) = truncated_svd(
+            &m,
+            &crate::tensor::TruncationPolicy::FixedBond(self.max_bond),
+        );
         self.trunc_error += discarded;
         let chi = s_kept.len();
 
