@@ -5,6 +5,34 @@
 //! are P3-06, error-bounded truncation is P3-05.
 //!
 //! See `docs/superpowers/specs/2026-06-05-p3-04-mps-basic-chain-design.md`.
+//!
+//! # Usage
+//!
+//! ```no_run
+//! use aleph_backend::{run, Backend};
+//! use aleph_core::{Gate, GateInstance, Param};
+//! use aleph_ir::Circuit;
+//! use aleph_mps::MpsBackend;
+//!
+//! // Build a circuit.
+//! let mut c = Circuit::new(4, 0);
+//! c.add_gate(GateInstance::new(Gate::H, vec![0])).unwrap();
+//! c.add_gate(GateInstance::new(Gate::Cnot, vec![0, 1])).unwrap();
+//! c.add_gate(GateInstance::new(Gate::Ry(Param::Concrete(0.5)), vec![2])).unwrap();
+//!
+//! // Run with bond dimension χ = 64 (exact for low-entanglement states).
+//! let mut backend = MpsBackend::with_seed(0).with_max_bond(64);
+//! let state = run(&mut backend, &c).unwrap();
+//!
+//! // Reconstruct the full statevector (only feasible for small n).
+//! let amps = state.dense_statevector();
+//!
+//! // Check accumulated truncation error.
+//! let err = state.truncation_error();
+//!
+//! // Sample bitstrings.
+//! let shots = backend.sample(&state, 1000).unwrap();
+//! ```
 
 mod mps;
 mod tensor;

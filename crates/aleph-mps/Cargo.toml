@@ -20,3 +20,8 @@ aleph-sv = { path = "../aleph-sv" }
 aleph-parser = { path = "../aleph-parser" }
 proptest = { workspace = true }
 smallvec = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name = "nn_qaoa"
+harness = false

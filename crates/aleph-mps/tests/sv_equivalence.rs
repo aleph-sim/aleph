@@ -130,6 +130,58 @@ fn small_chi_weak_entanglement_near_exact() {
     assert!(err.sqrt() < 1e-6, "L2 error {} too large", err.sqrt());
 }
 
+#[test]
+fn vqe_h2_matches_sv_machine_precision() {
+    // 4-qubit hardware-efficient ansatz: Ry layers + nearest-neighbor CNOT ladder.
+    let n = 4u32;
+    let mut c = aleph_ir::Circuit::new(n, 0);
+    let thetas = [0.31, 0.59, 0.27, 0.18, 0.44, 0.62, 0.11, 0.53];
+    let mut ti = 0usize;
+    for _layer in 0..2 {
+        for q in 0..n {
+            c.add_gate(g(Gate::Ry(Param::Concrete(thetas[ti % thetas.len()])), &[q])).unwrap();
+            ti += 1;
+        }
+        for q in 0..n - 1 {
+            c.add_gate(g(Gate::Cnot, &[q, q + 1])).unwrap();
+        }
+    }
+    let a = mps_dense(&c, 64);
+    let b = sv_dense(&c);
+    for (x, y) in a.iter().zip(b.iter()) {
+        assert!((x - y).norm() < 1e-10, "VQE-H2 MPS vs SV mismatch");
+    }
+}
+
+#[test]
+#[ignore = "50-qubit MPS run; minutes-scale, runs on CI nightly"]
+fn qaoa50_nn_ring_runs_reasonably() {
+    let n = 50u32;
+    let mut c = aleph_ir::Circuit::new(n, 0);
+    for q in 0..n {
+        c.add_gate(g(Gate::H, &[q])).unwrap();
+    }
+    for _p in 0..3 {
+        // Cost layer: nearest-neighbor ZZ via CNOT–RZ–CNOT on (q, q+1).
+        for q in 0..n - 1 {
+            c.add_gate(g(Gate::Cnot, &[q, q + 1])).unwrap();
+            c.add_gate(g(Gate::Rz(Param::Concrete(0.7)), &[q + 1])).unwrap();
+            c.add_gate(g(Gate::Cnot, &[q, q + 1])).unwrap();
+        }
+        // Mixer: RX on every qubit.
+        for q in 0..n {
+            c.add_gate(g(Gate::Rx(Param::Concrete(0.5)), &[q])).unwrap();
+        }
+    }
+    let mut be = MpsBackend::with_seed(1).with_max_bond(64);
+    let st = run(&mut be, &c).unwrap();
+    // "Reasonable": bounded truncation, non-degenerate sampling.
+    assert!(st.truncation_error() < 1e-1, "trunc_error {}", st.truncation_error());
+    let shots = be.sample(&st, 1000).unwrap();
+    let distinct: std::collections::HashSet<u64> = shots.iter().copied().collect();
+    assert!(distinct.len() > 1, "sampling produced a single bitstring");
+}
+
 use proptest::prelude::*;
 
 proptest! {

@@ -91,6 +91,7 @@ dependencies = [
  "aleph-ir",
  "aleph-parser",
  "aleph-sv",
+ "criterion",
  "nalgebra",
  "proptest",
  "rand 0.8.6",
