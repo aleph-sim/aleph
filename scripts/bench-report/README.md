@@ -133,6 +133,55 @@ python3 scripts/bench-report/report.py \
     --out   docs/perf/phase4.md
 ```
 
+## Adding QPE (P4-03) — worked example
+
+QPE appends to the existing QFT+Grover JSONs exactly like Grover, but with **no
+`oneshot` split**: all four sizes (n ≤ 25) are criterion-measurable single-thread
+and the corpus is fully committed (nothing gitignored). Run from an idle EPYC box,
+single-thread both sides.
+
+```
+# (a) Aer: time the qpe keys -> results-qiskit.json (qpe rows only).
+cd scripts/qiskit-baseline
+taskset -c 0 .venv/bin/python run.py \
+    --workloads qpe_n10,qpe_n15,qpe_n20,qpe_n25
+cd ../..
+
+# (b) aleph: criterion for all four sizes (no oneshot).
+RUSTFLAGS="-C target-cpu=native" RAYON_NUM_THREADS=1 \
+  cargo bench -p aleph-benches --bench phase4_qpe -- --sample-size 10
+
+# (c) extract aleph qpe medians to a temp file
+python3 scripts/bench-report/extract_criterion.py \
+    --criterion-root target/criterion --group phase4_qpe --family qpe \
+    --out /tmp/phase4-aleph-qpe.json
+
+# (d) merge qpe into the existing phase4 JSONs (preserves QFT+Grover rows):
+python3 - <<'PY'
+import json
+from pathlib import Path
+base = Path("docs/perf/data")
+aleph = json.loads((base / "phase4-aleph.json").read_text())
+aleph["workloads"].update(
+    json.loads(Path("/tmp/phase4-aleph-qpe.json").read_text())["workloads"])
+(base / "phase4-aleph.json").write_text(json.dumps(aleph, indent=2) + "\n")
+aer = json.loads((base / "phase4-aer.json").read_text())
+fresh = json.loads(Path("scripts/qiskit-baseline/results-qiskit.json").read_text())
+aer["workloads"].update(
+    {k: v for k, v in fresh["workloads"].items() if v["family"] == "qpe"})
+(base / "phase4-aer.json").write_text(json.dumps(aer, indent=2))
+print("merged qpe rows:",
+      sorted(k for k in aleph["workloads"] if k.startswith("qpe")))
+PY
+
+# (e) re-render the report (QPE section appears automatically, sorted after QFT)
+python3 scripts/bench-report/report.py \
+    --aleph docs/perf/data/phase4-aleph.json \
+    --aer   docs/perf/data/phase4-aer.json \
+    --meta  docs/perf/data/phase4-meta.json \
+    --out   docs/perf/phase4.md
+```
+
 The whole EPYC run is driven by `scripts/bench-report` plus the qiskit-baseline
 harness; tests (`test_extract.py`, `test_report.py`) run with system `python3`
 (stdlib `unittest`, no pytest dependency).
