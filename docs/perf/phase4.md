@@ -7,7 +7,7 @@
 **Toolchain:** rustc 1.95.0 (59807616e 2026-04-14), RUSTFLAGS=-C target-cpu=native, RAYON_NUM_THREADS=1 (single-thread)  
 **Qiskit:** 1.2.4 / Aer 0.15.1, max_parallel_threads=1 (single-thread, taskset -c 0)
 
-_Single-thread both sides (fair vs Stage-0 baseline). aleph via run_optimized (gate fusion + AVX-512); n<=25 criterion (10 samples), n=30 single-shot oneshot (median of 2; 16 GiB state vector). aleph is also multi-threaded-capable (see Phase 2) — this table is single-thread for parity. Grover (P4-02) appended: optimal iterations round(pi/4*sqrt(2^n)) at n={4,8,12,16}; n<=12 criterion (10 samples), n=16 aleph via oneshot (single shot) and Aer median of 2 (cost-budgeted). Grover measured on the same EPYC host with rustc 1.95.0 (59807616e 2026-04-14). QPE (P4-03) appended: single-qubit U=P(2*pi*phi) with all-ones eigenphase phi=(2^m-1)/2^m, m=n-1 counting qubits, n={10,15,20,25}; all sizes via criterion (10 samples), same EPYC host / single-thread / rustc 1.95.0 (59807616e 2026-04-14)._
+_Single-thread both sides (fair vs Stage-0 baseline). aleph via run_optimized (gate fusion + AVX-512); n<=25 criterion (10 samples), n=30 single-shot oneshot (median of 2; 16 GiB state vector). aleph is also multi-threaded-capable (see Phase 2) — this table is single-thread for parity. Grover (P4-02) appended: optimal iterations round(pi/4*sqrt(2^n)) at n={4,8,12,16}; n<=12 criterion (10 samples), n=16 aleph via oneshot (single shot) and Aer median of 2 (cost-budgeted). Grover measured on the same EPYC host with rustc 1.95.0 (59807616e 2026-04-14). QPE (P4-03) appended: single-qubit U=P(2*pi*phi) with all-ones eigenphase phi=(2^m-1)/2^m, m=n-1 counting qubits, n={10,15,20,25}; all sizes via criterion (10 samples), same EPYC host / single-thread / rustc 1.95.0 (59807616e 2026-04-14). VQE (P4-04): time per energy evaluation ⟨H⟩ of the Ry+CNOT hardware-efficient ansatz (depth 4), n=4 real H₂/STO-3G/Jordan-Wigner (15 terms, converges to FCI −1.137270 Ha within chemical accuracy via rotosolve), n=6/8 deterministic model Hamiltonians (51/92 terms). aleph via the new aleph-py pyo3 binding (release), Qiskit via Aer save_expectation_value (statevector, single-thread); energies agree to ~1e-16. NOTE: at these small n the per-eval cost is OVERHEAD-BOUND — the state is tiny (≤256 amplitudes) so the ratio reflects aleph's lean pyo3→Rust per-call path vs Qiskit-Aer's Python-orchestrated per-call overhead (the dominant cost of the small-molecule VQE inner loop, per VQE.md), not raw kernel throughput. The 'gates' column shows the Pauli-term count._
 
 ## Grover
 
@@ -36,4 +36,12 @@ _Single-thread both sides (fair vs Stage-0 baseline). aleph via run_optimized (g
 | `qpe_n15` | 15 | 575 | 9.57 | 23.76 | 0.40× | 0.13% | 1.17% |
 | `qpe_n20` | 20 | 1016 | 522.37 | 636.05 | 0.82× | 1.22% | 0.59% |
 | `qpe_n25` | 25 | 1585 | 21874.31 | 30529.31 | 0.72× | 0.10% | 0.09% |
+
+## VQE
+
+| workload | n | gates | aleph (ms) | Aer (ms) | aleph / Aer | aleph RSD | Aer RSD |
+|----------|--:|------:|-----------:|---------:|------------:|----------:|--------:|
+| `vqe_n4` | 4 | 15 | 0.01 | 1.47 | 0.01× | 35.46% | 8.32% |
+| `vqe_n6` | 6 | 51 | 0.03 | 2.67 | 0.01× | 5.65% | 3.20% |
+| `vqe_n8` | 8 | 92 | 0.18 | 4.02 | 0.04× | 2.02% | 1.84% |
 

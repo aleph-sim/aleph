@@ -307,6 +307,22 @@ fn invert_perm(perm: &[u32]) -> Vec<u32> {
     inv
 }
 
+/// Energy of a state under a Pauli-sum observable: `Σ_i ⟨ψ|c_i P_i|ψ⟩`.
+///
+/// Thin loop over [`Backend::expectation_value`] (each [`aleph_core::PauliString`]
+/// carries its coefficient). This is the VQE energy primitive.
+pub fn expectation_pauli_sum<B: Backend>(
+    backend: &mut B,
+    state: &B::State,
+    hamiltonian: &aleph_core::PauliSum,
+) -> Result<f64, BackendError> {
+    let mut energy = 0.0;
+    for term in &hamiltonian.terms {
+        energy += backend.expectation_value(state, term)?;
+    }
+    Ok(energy)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

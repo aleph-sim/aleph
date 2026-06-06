@@ -12,4 +12,14 @@ authors.workspace = true
 # `rlib` kept so the crate is still consumable from other workspace members.
 crate-type = ["cdylib", "rlib"]
 
+[features]
+# Enables the PyO3 extension module. OFF by default so `cargo build --workspace`
+# never needs a Python interpreter; `maturin develop --features python` turns it on.
+python = ["dep:pyo3"]
+
 [dependencies]
+aleph-core    = { path = "../aleph-core" }
+aleph-ir      = { path = "../aleph-ir" }
+aleph-backend = { path = "../aleph-backend" }
+aleph-sv      = { path = "../aleph-sv" }
+pyo3 = { version = "0.22", features = ["extension-module", "abi3-py312"], optional = true }

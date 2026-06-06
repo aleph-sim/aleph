@@ -40,7 +40,7 @@ pub mod gate;
 pub use gate::{Gate, GateError, GateInstance, GateMatrix, Param, SymbolId};
 
 pub mod pauli;
-pub use pauli::{Pauli, PauliError, PauliString};
+pub use pauli::{Pauli, PauliError, PauliString, PauliSum, PauliSumError};
 
 /// Project-wide tolerance for amplitude comparisons in FP64.
 ///
