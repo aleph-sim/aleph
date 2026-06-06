@@ -30,6 +30,30 @@
       "family": "qft",
       "aleph_ms_median": 563167.2075,
       "aleph_rsd": 0.0
+    },
+    "grover_n12": {
+      "n": 12,
+      "family": "grover",
+      "aleph_ms_median": 1044.822141,
+      "aleph_rsd": 0.004592128938315205
+    },
+    "grover_n4": {
+      "n": 4,
+      "family": "grover",
+      "aleph_ms_median": 0.21278602455007822,
+      "aleph_rsd": 0.0035587455099882637
+    },
+    "grover_n8": {
+      "n": 8,
+      "family": "grover",
+      "aleph_ms_median": 15.214021979166668,
+      "aleph_rsd": 0.007796223957391904
+    },
+    "grover_n16": {
+      "n": 16,
+      "family": "grover",
+      "aleph_ms_median": 111646.008,
+      "aleph_rsd": 0.0
     }
   }
 }

@@ -7,7 +7,16 @@
 **Toolchain:** rustc 1.95.0 (59807616e 2026-04-14), RUSTFLAGS=-C target-cpu=native, RAYON_NUM_THREADS=1 (single-thread)  
 **Qiskit:** 1.2.4 / Aer 0.15.1, max_parallel_threads=1 (single-thread, taskset -c 0)
 
-_Single-thread both sides (fair vs Stage-0 baseline). aleph via run_optimized (gate fusion + AVX-512); n<=25 criterion (10 samples), n=30 single-shot oneshot (median of 2; 16 GiB state vector). aleph is also multi-threaded-capable (see Phase 2) — this table is single-thread for parity._
+_Single-thread both sides (fair vs Stage-0 baseline). aleph via run_optimized (gate fusion + AVX-512); n<=25 criterion (10 samples), n=30 single-shot oneshot (median of 2; 16 GiB state vector). aleph is also multi-threaded-capable (see Phase 2) — this table is single-thread for parity. Grover (P4-02) appended: optimal iterations round(pi/4*sqrt(2^n)) at n={4,8,12,16}; n<=12 criterion (10 samples), n=16 aleph via oneshot (single shot) and Aer median of 2 (cost-budgeted). Grover measured on the same EPYC host with rustc 1.95.0 (59807616e 2026-04-14)._
+
+## Grover
+
+| workload | n | gates | aleph (ms) | Aer (ms) | aleph / Aer | aleph RSD | Aer RSD |
+|----------|--:|------:|-----------:|---------:|------------:|----------:|--------:|
+| `grover_n4` | 4 | 268 | 0.21 | 3.74 | 0.06× | 0.36% | 1.98% |
+| `grover_n8` | 8 | 17974 | 15.21 | 326.17 | 0.05× | 0.78% | 0.36% |
+| `grover_n12` | 12 | 264312 | 1044.82 | 7674.64 | 0.14× | 0.46% | 0.37% |
+| `grover_n16` | 16 | 2258854 | 111646.01 | 208892.59 | 0.53× | 0.00% | 0.04% |
 
 ## QFT
 

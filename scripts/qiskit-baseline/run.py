@@ -33,12 +33,29 @@ from qiskit_aer import AerSimulator
 FAMILY_SIZES = {
     "ghz": [15, 20, 22, 25],
     "qft": [10, 15, 20, 25, 30],
-    "grover": [15, 20, 22, 25],
+    # P4-02: optimal-iteration Grover at small n (tiny cache-resident state,
+    # tractable even at 2.26M gates for n=16). The legacy grover_n{15..25}_iters5
+    # fixtures stay on disk (frozen Phase-1/2 bench artifacts) but are no longer
+    # regenerated here.
+    "grover": [4, 8, 12, 16],
     "random_brickwall": [15, 20, 22, 25],
 }
 # Union for the results header (sorted, de-duplicated).
 N_QUBITS_LIST = sorted({n for sizes in FAMILY_SIZES.values() for n in sizes})
+# Legacy iteration count for the frozen grover_n{15..25}_iters5 fixtures only.
+# The active P4-02 matrix uses grover_optimal_iters(n) instead (see below).
 GROVER_ITERS = 5
+
+
+def grover_optimal_iters(n: int) -> int:
+    """Optimal Grover iteration count for a single marked state.
+
+    The success probability peaks at ~round(pi/4 * sqrt(2^n)) Grover operators
+    (Nielsen & Chuang sec. 6.1). n in {4,8,12,16} -> {3, 13, 50, 201}.
+    """
+    return max(1, round(math.pi / 4 * math.sqrt(2**n)))
+
+
 RANDOM_DEPTH = 20
 BASIS_GATES = ["h", "x", "z", "rz", "rx", "ry", "cx", "cz", "ccx", "p"]
 
@@ -110,37 +127,58 @@ def build_ghz(n: int) -> QuantumCircuit:
 FAMILY_BUILDERS = {
     "ghz": lambda n: build_ghz(n),
     "qft": lambda n: build_qft(n),
-    "grover": lambda n: build_grover(n, GROVER_ITERS),
+    "grover": lambda n: build_grover(n, grover_optimal_iters(n)),
     "random_brickwall": lambda n: build_random_brickwall(n, RANDOM_DEPTH),
 }
 
 
-def workload_name(family: str, n: int) -> str:
+def corpus_stem(family: str, n: int) -> str:
+    """QASM filename stem and QuantumCircuit name. Grover/Random embed their
+    iteration/depth count so the on-disk corpus is self-describing
+    (e.g. grover_n16_iters201.qasm)."""
     if family == "grover":
-        return f"grover_n{n}_iters{GROVER_ITERS}"
+        return f"grover_n{n}_iters{grover_optimal_iters(n)}"
     if family == "random_brickwall":
         return f"random_brickwall_n{n}_d{RANDOM_DEPTH}"
     return f"{family}_n{n}"
 
 
-def all_workloads() -> list[tuple[str, str, int]]:
-    """(name, family, n) for the full matrix, families in stable order."""
+def workload_key(family: str, n: int) -> str:
+    """Join key into the unified results JSON. MUST equal extract_criterion.py's
+    `{family}_n{n}` so report.py lines up the aleph (criterion) and Aer rows.
+    The grover *file* carries the iter count; the *key* does not — the criterion
+    BenchmarkId parameter is just n. (Random keeps its legacy depth-suffixed key;
+    it is not a Phase-4 criterion consumer.)"""
+    if family == "random_brickwall":
+        return f"random_brickwall_n{n}_d{RANDOM_DEPTH}"
+    return f"{family}_n{n}"
+
+
+def all_workloads() -> list[tuple[str, str, str, int]]:
+    """(key, stem, family, n) for the full matrix, families in stable order."""
     return [
-        (workload_name(fam, n), fam, n)
+        (workload_key(fam, n), corpus_stem(fam, n), fam, n)
         for fam in FAMILY_BUILDERS
         for n in FAMILY_SIZES[fam]
     ]
 
 
-def timing_runs_for(n: int) -> int:
-    """Fewer timed Aer runs at large n (each is minutes). Disclosed in the report."""
-    if n <= 20:
-        return 10
-    if n <= 22:
-        return 5
-    if n <= 25:
+def timing_runs_for(n: int, gate_count: int) -> int:
+    """Fewer timed Aer runs for costlier circuits. A single Aer statevector pass
+    costs ~ gate_count * 2^n (each gate sweeps the 2^n-amplitude state), so the
+    budget keys on that product rather than n alone — Grover-16 is only 16 qubits
+    but 2.26M gates. Verified: QFT-25 (5.1e10)->3, QFT-30 (2.4e12)->1,
+    Grover-16 (1.5e11)->2. Disclosed in the report."""
+    cost = gate_count * (2**n)
+    if cost > 1e12:
+        return 1
+    if cost > 1e11:
+        return 2
+    if cost > 1e10:
         return 3
-    return 2  # n >= 28: a single Aer statevector run is many minutes
+    if cost > 1e9:
+        return 5
+    return 10
 
 
 def transpile_and_export(qc: QuantumCircuit, name: str) -> QuantumCircuit:
@@ -199,7 +237,7 @@ def main() -> None:
     CIRCUITS_DIR.mkdir(parents=True, exist_ok=True)
     matrix = all_workloads()
     selected = (
-        set(args.workloads.split(",")) if args.workloads else {name for name, _, _ in matrix}
+        set(args.workloads.split(",")) if args.workloads else {key for key, _, _, _ in matrix}
     )
 
     results: dict = {
@@ -210,23 +248,23 @@ def main() -> None:
         "basis_gates": BASIS_GATES,
         "workloads": {},
     }
-    for name, family, n in matrix:
-        print(f"[build] {name} ...", flush=True)
+    for key, stem, family, n in matrix:
+        print(f"[build] {stem} ...", flush=True)
         qc = FAMILY_BUILDERS[family](n)
-        tqc = transpile_and_export(qc, name)
+        tqc = transpile_and_export(qc, stem)
         gate_count = len(tqc.data)
-        print(f"[build] {name}: {gate_count} gates after transpile", flush=True)
-        if args.gen_only or name not in selected:
+        print(f"[build] {stem}: {gate_count} gates after transpile", flush=True)
+        if args.gen_only or key not in selected:
             continue
-        runs = timing_runs_for(n)
-        print(f"[time]  {name} (Aer, {runs} runs) ...", flush=True)
+        runs = timing_runs_for(n, gate_count)
+        print(f"[time]  {key} (Aer, {runs} runs) ...", flush=True)
         timing = time_aer(tqc, runs)
         print(
-            f"[time]  {name}: median={timing['median_s']*1000:.2f} ms "
+            f"[time]  {key}: median={timing['median_s']*1000:.2f} ms "
             f"stdev={timing['stdev_s']*1000:.2f} ms",
             flush=True,
         )
-        results["workloads"][name] = {
+        results["workloads"][key] = {
             "n": n,
             "family": family,
             "timing_runs": runs,
