@@ -54,6 +54,30 @@
       "family": "grover",
       "aleph_ms_median": 111646.008,
       "aleph_rsd": 0.0
+    },
+    "qpe_n10": {
+      "n": 10,
+      "family": "qpe",
+      "aleph_ms_median": 0.31778014410936284,
+      "aleph_rsd": 0.0010762726310209851
+    },
+    "qpe_n15": {
+      "n": 15,
+      "family": "qpe",
+      "aleph_ms_median": 9.570435309999999,
+      "aleph_rsd": 0.0012643914412760698
+    },
+    "qpe_n20": {
+      "n": 20,
+      "family": "qpe",
+      "aleph_ms_median": 522.369548,
+      "aleph_rsd": 0.012248189282842818
+    },
+    "qpe_n25": {
+      "n": 25,
+      "family": "qpe",
+      "aleph_ms_median": 21874.313753,
+      "aleph_rsd": 0.001010052025049076
     }
   }
 }

@@ -7,7 +7,7 @@
 **Toolchain:** rustc 1.95.0 (59807616e 2026-04-14), RUSTFLAGS=-C target-cpu=native, RAYON_NUM_THREADS=1 (single-thread)  
 **Qiskit:** 1.2.4 / Aer 0.15.1, max_parallel_threads=1 (single-thread, taskset -c 0)
 
-_Single-thread both sides (fair vs Stage-0 baseline). aleph via run_optimized (gate fusion + AVX-512); n<=25 criterion (10 samples), n=30 single-shot oneshot (median of 2; 16 GiB state vector). aleph is also multi-threaded-capable (see Phase 2) — this table is single-thread for parity. Grover (P4-02) appended: optimal iterations round(pi/4*sqrt(2^n)) at n={4,8,12,16}; n<=12 criterion (10 samples), n=16 aleph via oneshot (single shot) and Aer median of 2 (cost-budgeted). Grover measured on the same EPYC host with rustc 1.95.0 (59807616e 2026-04-14)._
+_Single-thread both sides (fair vs Stage-0 baseline). aleph via run_optimized (gate fusion + AVX-512); n<=25 criterion (10 samples), n=30 single-shot oneshot (median of 2; 16 GiB state vector). aleph is also multi-threaded-capable (see Phase 2) — this table is single-thread for parity. Grover (P4-02) appended: optimal iterations round(pi/4*sqrt(2^n)) at n={4,8,12,16}; n<=12 criterion (10 samples), n=16 aleph via oneshot (single shot) and Aer median of 2 (cost-budgeted). Grover measured on the same EPYC host with rustc 1.95.0 (59807616e 2026-04-14). QPE (P4-03) appended: single-qubit U=P(2*pi*phi) with all-ones eigenphase phi=(2^m-1)/2^m, m=n-1 counting qubits, n={10,15,20,25}; all sizes via criterion (10 samples), same EPYC host / single-thread / rustc 1.95.0 (59807616e 2026-04-14)._
 
 ## Grover
 
@@ -27,4 +27,13 @@ _Single-thread both sides (fair vs Stage-0 baseline). aleph via run_optimized (g
 | `qft_n20` | 20 | 970 | 320.03 | 460.73 | 0.69× | 0.11% | 0.46% |
 | `qft_n25` | 25 | 1525 | 14234.07 | 22893.45 | 0.62× | 0.04% | 0.02% |
 | `qft_n30` | 30 | 2205 | 563167.21 | 1119673.60 | 0.50× | 0.00% | 0.04% |
+
+## QPE
+
+| workload | n | gates | aleph (ms) | Aer (ms) | aleph / Aer | aleph RSD | Aer RSD |
+|----------|--:|------:|-----------:|---------:|------------:|----------:|--------:|
+| `qpe_n10` | 10 | 256 | 0.32 | 4.56 | 0.07× | 0.11% | 1.24% |
+| `qpe_n15` | 15 | 575 | 9.57 | 23.76 | 0.40× | 0.13% | 1.17% |
+| `qpe_n20` | 20 | 1016 | 522.37 | 636.05 | 0.82× | 1.22% | 0.59% |
+| `qpe_n25` | 25 | 1585 | 21874.31 | 30529.31 | 0.72× | 0.10% | 0.09% |
 

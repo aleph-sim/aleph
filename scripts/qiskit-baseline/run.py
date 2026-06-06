@@ -33,6 +33,7 @@ from qiskit_aer import AerSimulator
 FAMILY_SIZES = {
     "ghz": [15, 20, 22, 25],
     "qft": [10, 15, 20, 25, 30],
+    "qpe": [10, 15, 20, 25],
     # P4-02: optimal-iteration Grover at small n (tiny cache-resident state,
     # tractable even at 2.26M gates for n=16). The legacy grover_n{15..25}_iters5
     # fixtures stay on disk (frozen Phase-1/2 bench artifacts) but are no longer
@@ -124,9 +125,39 @@ def build_ghz(n: int) -> QuantumCircuit:
     return qc
 
 
+def build_qpe(n: int) -> QuantumCircuit:
+    """Quantum phase estimation of U = P(2*pi*phi) on a single target qubit.
+
+    Counting register = qubits [0, m); target = qubit m, where m = n - 1. The
+    eigenphase phi = (2^m - 1)/2^m has all m fractional bits set, so it is
+    exactly representable in the counting register: QPE returns it exactly and
+    the final state is the all-ones basis state |1...1> (counting register all
+    1, target stays |1>) = amplitude index 2^n - 1 in ANY qubit ordering and
+    inverse-QFT swap convention (all-ones is bit-reversal-invariant) -> a
+    layout-free accuracy oracle (asserted by the QPE accuracy test added
+    later in this P4-03 change set, benches/tests/qpe_accuracy.rs).
+    Nielsen & Chuang sec. 5.2.
+    """
+    m = n - 1
+    phi = (2**m - 1) / 2**m
+    qc = QuantumCircuit(n, name=f"qpe_n{n}")
+    counting = list(range(m))
+    target = m
+    qc.x(target)  # prepare eigenstate |1> of P(2*pi*phi)
+    qc.h(counting)
+    for j in counting:
+        # controlled-U^{2^j} on counting qubit j: phase e^{2*pi*i*phi*2^j}
+        # kicks back onto |1> of qubit j.
+        qc.cp(2 * math.pi * phi * (2**j), j, target)
+    # Inverse QFT on the counting register recovers the estimate.
+    qc.compose(QFT(num_qubits=m, do_swaps=True, inverse=True), qubits=counting, inplace=True)
+    return qc
+
+
 FAMILY_BUILDERS = {
     "ghz": lambda n: build_ghz(n),
     "qft": lambda n: build_qft(n),
+    "qpe": lambda n: build_qpe(n),
     "grover": lambda n: build_grover(n, grover_optimal_iters(n)),
     "random_brickwall": lambda n: build_random_brickwall(n, RANDOM_DEPTH),
 }

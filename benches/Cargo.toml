@@ -98,3 +98,7 @@ harness = false
 [[bench]]
 name = "phase4_grover"
 harness = false
+
+[[bench]]
+name = "phase4_qpe"
+harness = false
