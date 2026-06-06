@@ -19,6 +19,8 @@ pub use diagonal_phase::{DiagonalPhase, PhaseTerm};
 mod tiled_block;
 pub use tiled_block::TiledBlock;
 
+pub mod ansatz;
 #[cfg(any(test, feature = "bench-fixtures"))]
 pub mod bench_fixtures;
 pub mod passes;
+pub use ansatz::{build_hea, AnsatzError};
