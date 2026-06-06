@@ -1,0 +1,6 @@
+# P4-02: the optimal-iteration Grover n=16 corpus is ~34 MB (2.26M gates) and is
+# consumed only by the nightly #[ignore]d convergence test and the EPYC
+# scaling-bench / oneshot measurement — never default CI. It is deterministic
+# from run.py (`run.py --gen-only`), so it is generated on demand on those paths
+# rather than committed. n=4/8/12 are small and committed normally.
+grover_n16_iters*.qasm
