@@ -78,6 +78,24 @@
       "family": "qpe",
       "aleph_ms_median": 21874.313753,
       "aleph_rsd": 0.001010052025049076
+    },
+    "vqe_n4": {
+      "n": 4,
+      "family": "vqe",
+      "aleph_ms_median": 0.008422881364822388,
+      "aleph_rsd": 0.35455477661468865
+    },
+    "vqe_n6": {
+      "n": 6,
+      "family": "vqe",
+      "aleph_ms_median": 0.032979995012283325,
+      "aleph_rsd": 0.05648407922913293
+    },
+    "vqe_n8": {
+      "n": 8,
+      "family": "vqe",
+      "aleph_ms_median": 0.17761904746294022,
+      "aleph_rsd": 0.020184816533745955
     }
   }
 }

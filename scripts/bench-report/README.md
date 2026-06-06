@@ -182,6 +182,37 @@ python3 scripts/bench-report/report.py \
     --out   docs/perf/phase4.md
 ```
 
+## Adding VQE (P4-04) — worked example
+
+VQE is **Python-driven** (not criterion): the energy-evaluation benchmark runs
+through the `aleph-py` pyo3 binding, timed in the same process as Qiskit Aer for
+a fair single-thread comparison. The Hamiltonians (`scripts/vqe/hamiltonians/`)
+are committed; the H₂ 4q one converges to FCI via rotosolve.
+
+```
+# (a) build aleph-py into the venv (uv venv -> use maturin build + uv pip install;
+#     a plain `maturin develop` needs pip, which uv venvs lack):
+cd crates/aleph-py
+PYO3_PYTHON=../../scripts/qiskit-baseline/.venv/bin/python \
+  ../../scripts/qiskit-baseline/.venv/bin/maturin build --release --features python --out /tmp/wheels
+uv pip install --python ../../scripts/qiskit-baseline/.venv/bin/python --reinstall /tmp/wheels/*.whl
+cd ../..
+
+# (b) sanity: H₂ converges to FCI; then time aleph vs Qiskit Aer, single-thread
+RAYON_NUM_THREADS=1 scripts/qiskit-baseline/.venv/bin/python scripts/vqe/vqe.py --converge
+RAYON_NUM_THREADS=1 taskset -c 0 scripts/qiskit-baseline/.venv/bin/python \
+  scripts/vqe/vqe.py --bench --out results-vqe.json
+
+# (c) merge the vqe rows into the phase4 JSONs (aleph_ms_median + qiskit_aer.median_s;
+#     'gates' column carries the Pauli-term count), then re-render report.py.
+```
+
+The VQE per-eval numbers at small n are **overhead-bound** (tiny state vectors),
+so the ratio reflects aleph's lean binding vs Qiskit-Aer's Python-orchestrated
+per-call overhead — see the meta `notes`. Convergence to FCI is the rigorous
+correctness result and is also gated in Rust CI
+(`benches/tests/vqe_h2_convergence.rs`).
+
 The whole EPYC run is driven by `scripts/bench-report` plus the qiskit-baseline
 harness; tests (`test_extract.py`, `test_report.py`) run with system `python3`
 (stdlib `unittest`, no pytest dependency).

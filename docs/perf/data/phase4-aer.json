@@ -281,6 +281,42 @@
         "mean_s": 30.531010346331943,
         "stdev_s": 0.026784514220626644
       }
+    },
+    "vqe_n4": {
+      "n": 4,
+      "family": "vqe",
+      "timing_runs": 0,
+      "gate_count_post_transpile": 15,
+      "qiskit_aer": {
+        "samples_s": [],
+        "median_s": 0.001470025978051126,
+        "mean_s": 0.001470025978051126,
+        "stdev_s": 0.00012232782304357677
+      }
+    },
+    "vqe_n6": {
+      "n": 6,
+      "family": "vqe",
+      "timing_runs": 0,
+      "gate_count_post_transpile": 51,
+      "qiskit_aer": {
+        "samples_s": [],
+        "median_s": 0.002665766514837742,
+        "mean_s": 0.002665766514837742,
+        "stdev_s": 8.519768904374722e-05
+      }
+    },
+    "vqe_n8": {
+      "n": 8,
+      "family": "vqe",
+      "timing_runs": 0,
+      "gate_count_post_transpile": 92,
+      "qiskit_aer": {
+        "samples_s": [],
+        "median_s": 0.004016841994598508,
+        "mean_s": 0.004016841994598508,
+        "stdev_s": 7.407485799672644e-05
+      }
     }
   }
 }
