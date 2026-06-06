@@ -76,6 +76,98 @@ pub enum PauliError {
     NonFiniteCoefficient,
 }
 
+/// A weighted sum of Pauli strings, `H = Σ_i c_i · P_i`.
+///
+/// Used as the observable for VQE energy evaluation
+/// (`aleph_backend::expectation_pauli_sum`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct PauliSum {
+    pub terms: Vec<PauliString>,
+}
+
+/// Error parsing the [`PauliSum`] text format.
+#[derive(Debug, thiserror::Error, PartialEq)]
+pub enum PauliSumError {
+    #[error("line {line}: expected '<coeff> <pauli>', got {got:?}")]
+    BadLine { line: usize, got: String },
+    #[error("line {line}: coefficient {got:?} is not a finite float")]
+    BadCoefficient { line: usize, got: String },
+    #[error("line {line}: pauli string has {got} chars, expected {expected}")]
+    WrongLength {
+        line: usize,
+        got: usize,
+        expected: usize,
+    },
+    #[error("line {line}: {got:?} is not one of I,X,Y,Z")]
+    BadPauliChar { line: usize, got: char },
+    #[error("line {line}: {source}")]
+    Pauli {
+        line: usize,
+        #[source]
+        source: PauliError,
+    },
+}
+
+impl PauliSum {
+    /// Parse the text format: one term per line, `<coeff> <pauli>`, where
+    /// `<pauli>` is an `n_qubits`-char string over `{I,X,Y,Z}` (char `i` is the
+    /// Pauli on qubit `i`). Blank lines and lines starting with `#` are ignored.
+    pub fn parse(src: &str, n_qubits: u32) -> Result<Self, PauliSumError> {
+        let mut terms = Vec::new();
+        for (idx, raw) in src.lines().enumerate() {
+            let line = raw.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let mut it = line.split_whitespace();
+            let coeff_s = it.next().ok_or_else(|| PauliSumError::BadLine {
+                line: idx,
+                got: raw.to_string(),
+            })?;
+            let pauli_s = it.next().ok_or_else(|| PauliSumError::BadLine {
+                line: idx,
+                got: raw.to_string(),
+            })?;
+            let coeff: f64 = coeff_s.parse().map_err(|_| PauliSumError::BadCoefficient {
+                line: idx,
+                got: coeff_s.to_string(),
+            })?;
+            if pauli_s.chars().count() != n_qubits as usize {
+                return Err(PauliSumError::WrongLength {
+                    line: idx,
+                    got: pauli_s.chars().count(),
+                    expected: n_qubits as usize,
+                });
+            }
+            let mut factors = Vec::new();
+            for (q, ch) in pauli_s.chars().enumerate() {
+                let p = match ch {
+                    'I' => Pauli::I,
+                    'X' => Pauli::X,
+                    'Y' => Pauli::Y,
+                    'Z' => Pauli::Z,
+                    other => {
+                        return Err(PauliSumError::BadPauliChar {
+                            line: idx,
+                            got: other,
+                        })
+                    }
+                };
+                if p != Pauli::I {
+                    factors.push((q as u32, p));
+                }
+            }
+            terms.push(
+                PauliString::new(coeff, factors).map_err(|e| PauliSumError::Pauli {
+                    line: idx,
+                    source: e,
+                })?,
+            );
+        }
+        Ok(Self { terms })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -126,5 +218,40 @@ mod tests {
         let p = PauliString::identity(0.5);
         assert!(p.terms.is_empty());
         assert_eq!(p.coefficient, 0.5);
+    }
+
+    #[test]
+    fn pauli_sum_parses_terms_comments_and_blanks() {
+        let src = "# H = 0.5 Z0 + 0.25 X0X1\n\n0.5 ZI\n0.25 XX\n";
+        let h = PauliSum::parse(src, 2).expect("parse");
+        assert_eq!(h.terms.len(), 2);
+        assert_eq!(h.terms[0].coefficient, 0.5);
+        assert_eq!(h.terms[0].terms, vec![(0, Pauli::Z)]); // trailing I dropped
+        assert_eq!(h.terms[1].coefficient, 0.25);
+        assert_eq!(h.terms[1].terms, vec![(0, Pauli::X), (1, Pauli::X)]);
+    }
+
+    #[test]
+    fn pauli_sum_identity_term_has_no_factors() {
+        let h = PauliSum::parse("-1.5 II\n", 2).expect("parse");
+        assert_eq!(h.terms.len(), 1);
+        assert!(h.terms[0].terms.is_empty());
+        assert_eq!(h.terms[0].coefficient, -1.5);
+    }
+
+    #[test]
+    fn pauli_sum_rejects_wrong_length_and_bad_char() {
+        assert!(matches!(
+            PauliSum::parse("0.5 ZIZ\n", 2),
+            Err(PauliSumError::WrongLength { .. })
+        ));
+        assert!(matches!(
+            PauliSum::parse("0.5 ZQ\n", 2),
+            Err(PauliSumError::BadPauliChar { .. })
+        ));
+        assert!(matches!(
+            PauliSum::parse("notanum ZI\n", 2),
+            Err(PauliSumError::BadCoefficient { .. })
+        ));
     }
 }
