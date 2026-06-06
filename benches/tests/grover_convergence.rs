@@ -4,6 +4,11 @@
 //! outcome (we amplified the *right* state, not merely *some* state). Reads the
 //! committed corpus QASM — the single source of truth shared with Aer — and runs
 //! the verbatim `run` path on NaiveSvBackend.
+//!
+//! CI runs n=4 and n=8 (sub-second). n=12 (264k gates, ~28s debug) and n=16
+//! (2.26M gates) are `#[ignore]`d and exercised on the nightly ignored-tests
+//! schedule — per CLAUDE.md, oracle tests over ~30s belong on nightly, and a
+//! debug `cargo test` of n=12 brushes that limit on slower CI hardware.
 
 use aleph_backend::run;
 use aleph_sv::NaiveSvBackend;
@@ -70,7 +75,11 @@ fn grover_n8_converges() {
     assert_converges(8);
 }
 
+/// n=12 (264k gates) runs ~28s in a debug build — brushing the CLAUDE.md 30s
+/// limit on slower CI hardware — so it joins n=16 on the nightly ignored-tests
+/// schedule. n=4 and n=8 keep convergence covered in fast default CI.
 #[test]
+#[ignore = "n=12: 264k gates ~28s debug, run on the nightly ignored-tests schedule"]
 fn grover_n12_converges() {
     assert_converges(12);
 }
