@@ -58,6 +58,28 @@ class TestKeysAndStems(unittest.TestCase):
     def test_family_sizes(self):
         self.assertEqual(run.FAMILY_SIZES["grover"], [4, 8, 12, 16])
 
+    def test_qpe_key_and_stem_align(self):
+        self.assertEqual(run.workload_key("qpe", 20), "qpe_n20")
+        self.assertEqual(run.corpus_stem("qpe", 20), "qpe_n20")
+
+    def test_qpe_family_sizes(self):
+        self.assertEqual(run.FAMILY_SIZES["qpe"], [10, 15, 20, 25])
+
+
+@unittest.skipUnless(HAVE_RUN, "Qiskit not installed")
+class TestBuildQpe(unittest.TestCase):
+    def test_all_ones_recovery(self):
+        # phi = (2^m - 1)/2^m is exactly representable, so QPE collapses to the
+        # all-ones state |1...1> = index 2^n - 1 (counting all 1, target |1>).
+        from qiskit.quantum_info import Statevector
+        for n in (4, 6):
+            probs = Statevector(run.build_qpe(n)).probabilities()
+            self.assertEqual(int(probs.argmax()), 2**n - 1)
+            self.assertGreater(probs[2**n - 1], 0.999)
+
+    def test_num_qubits(self):
+        self.assertEqual(run.build_qpe(10).num_qubits, 10)
+
 
 if __name__ == "__main__":
     unittest.main()
