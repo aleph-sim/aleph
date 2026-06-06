@@ -54,10 +54,26 @@ def converge():
     return 0 if ok else 1
 
 
+_AER_SIM = None
+
+
+def _aer_sim():
+    global _AER_SIM
+    if _AER_SIM is None:
+        from qiskit_aer import AerSimulator
+        _AER_SIM = AerSimulator(
+            method="statevector",
+            max_parallel_threads=1,
+            max_parallel_experiments=1,
+        )
+    return _AER_SIM
+
+
 def qiskit_energy(n, terms, thetas):
-    """Same HEA built in Qiskit; <H> via statevector, single-thread."""
+    """<H> of the same Ry+CNOT HEA via Qiskit Aer (statevector, single-thread)."""
     from qiskit import QuantumCircuit
-    from qiskit.quantum_info import SparsePauliOp, Statevector
+    from qiskit.quantum_info import SparsePauliOp
+    import qiskit_aer.library  # registers save_expectation_value on QuantumCircuit  # noqa: F401
     qc = QuantumCircuit(n)
     idx = 0
     for _layer in range(DEPTH):
@@ -67,11 +83,12 @@ def qiskit_energy(n, terms, thetas):
             qc.cx(q, q + 1)
     for q in range(n):
         qc.ry(thetas[idx], q); idx += 1
-    # Our pauli string char i = qubit i; Qiskit SparsePauliOp labels are
+    # Our pauli string char i = qubit i; Aer/SparsePauliOp labels are
     # little-endian (leftmost char = highest qubit), so reverse each label.
     op = SparsePauliOp.from_list([(p[::-1], c) for c, p in terms])
-    sv = Statevector(qc)
-    return float(sv.expectation_value(op).real)
+    qc.save_expectation_value(op, list(range(n)))
+    result = _aer_sim().run(qc).result()
+    return float(result.data(0)["expectation_value"].real)
 
 
 def time_median(fn, runs):
