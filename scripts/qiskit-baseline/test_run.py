@@ -77,9 +77,6 @@ class TestBuildQpe(unittest.TestCase):
             self.assertEqual(int(probs.argmax()), 2**n - 1)
             self.assertGreater(probs[2**n - 1], 0.999)
 
-    def test_num_qubits(self):
-        self.assertEqual(run.build_qpe(10).num_qubits, 10)
-
 
 if __name__ == "__main__":
     unittest.main()

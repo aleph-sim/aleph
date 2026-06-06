@@ -10,7 +10,8 @@
 //! single-thread) is #[ignore]d for the nightly ignored-tests schedule, per
 //! CLAUDE.md's 30s rule.
 
-use aleph_backend::run;
+use aleph_backend::{run, run_optimized};
+use aleph_core::Complex;
 use aleph_sv::NaiveSvBackend;
 use std::path::PathBuf;
 
@@ -22,21 +23,14 @@ fn corpus_path(n: u32) -> PathBuf {
         .join(format!("scripts/qiskit-baseline/circuits/qpe_n{n}.qasm"))
 }
 
-fn assert_recovers_phase(n: u32) {
-    let path = corpus_path(n);
-    let src =
-        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
-    let circuit = aleph_parser::parse(&src).unwrap_or_else(|e| panic!("parse qpe_n{n}: {e:?}"));
-    let mut backend = NaiveSvBackend::with_seed(0);
-    let state = run(&mut backend, &circuit).expect("simulate qpe");
-    let amps = state.amplitudes();
-
-    // All-ones basis state: every counting qubit reads 1, target stays |1>.
+/// Assert the simulated state collapsed to the all-ones basis state |1...1>
+/// (index 2^n - 1): it carries ~all the probability AND is the argmax.
+fn assert_all_ones(amps: &[Complex], n: u32, path: &str) {
     let marked = (1usize << n) - 1;
     let p_marked = amps[marked].norm_sqr();
     assert!(
         p_marked > 0.999,
-        "qpe_n{n}: all-ones probability {p_marked:.6} is not > 0.999"
+        "qpe_n{n} [{path}]: all-ones probability {p_marked:.6} is not > 0.999"
     );
 
     let (argmax, _) = amps
@@ -46,8 +40,28 @@ fn assert_recovers_phase(n: u32) {
         .expect("non-empty state");
     assert_eq!(
         argmax, marked,
-        "qpe_n{n}: most-probable index {argmax}, expected {marked}"
+        "qpe_n{n} [{path}]: most-probable index {argmax}, expected {marked}"
     );
+}
+
+fn assert_recovers_phase(n: u32) {
+    let path = corpus_path(n);
+    let src =
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let circuit = aleph_parser::parse(&src).unwrap_or_else(|e| panic!("parse qpe_n{n}: {e:?}"));
+
+    // Verbatim path (the oracle the corpus is built against).
+    let mut raw = NaiveSvBackend::with_seed(0);
+    let state = run(&mut raw, &circuit).expect("simulate qpe (run)");
+    assert_all_ones(state.amplitudes(), n, "run");
+
+    // Optimized path — the one the phase4_qpe bench actually times. The QPE
+    // `cp` ladder + inverse QFT is exactly what the fusion/diagonal passes
+    // rewrite, so we must confirm they preserve the exact eigenphase recovery;
+    // otherwise the bench could be timing a silently-wrong computation.
+    let mut opt = NaiveSvBackend::with_seed(0);
+    let state = run_optimized(&mut opt, &circuit).expect("simulate qpe (run_optimized)");
+    assert_all_ones(state.amplitudes(), n, "run_optimized");
 }
 
 #[test]

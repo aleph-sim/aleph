@@ -145,9 +145,10 @@ def build_qpe(n: int) -> QuantumCircuit:
     target = m
     qc.x(target)  # prepare eigenstate |1> of P(2*pi*phi)
     qc.h(counting)
-    for j, ctrl in enumerate(counting):
-        # controlled-U^{2^j}: phase e^{2*pi*i*phi*2^j} kicks back onto |1> of ctrl.
-        qc.cp(2 * math.pi * phi * (2**j), ctrl, target)
+    for j in counting:
+        # controlled-U^{2^j} on counting qubit j: phase e^{2*pi*i*phi*2^j}
+        # kicks back onto |1> of qubit j.
+        qc.cp(2 * math.pi * phi * (2**j), j, target)
     # Inverse QFT on the counting register recovers the estimate.
     qc.compose(QFT(num_qubits=m, do_swaps=True, inverse=True), qubits=counting, inplace=True)
     return qc
