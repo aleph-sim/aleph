@@ -1,5 +1,5 @@
 """VQE driver tests. The aleph-py-dependent tests skip when the `aleph` module
-is not built (run `maturin develop --features python` in crates/aleph-py first)."""
+is not built (run `maturin build --release --features python` in crates/aleph-py first)."""
 import sys
 import unittest
 from pathlib import Path

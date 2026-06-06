@@ -285,7 +285,7 @@
     "vqe_n4": {
       "n": 4,
       "family": "vqe",
-      "timing_runs": 0,
+      "timing_runs": 50,
       "gate_count_post_transpile": 15,
       "qiskit_aer": {
         "samples_s": [],
@@ -297,7 +297,7 @@
     "vqe_n6": {
       "n": 6,
       "family": "vqe",
-      "timing_runs": 0,
+      "timing_runs": 50,
       "gate_count_post_transpile": 51,
       "qiskit_aer": {
         "samples_s": [],
@@ -309,7 +309,7 @@
     "vqe_n8": {
       "n": 8,
       "family": "vqe",
-      "timing_runs": 0,
+      "timing_runs": 20,
       "gate_count_post_transpile": 92,
       "qiskit_aer": {
         "samples_s": [],

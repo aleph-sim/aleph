@@ -1,6 +1,6 @@
 """VQE-H2 driver: convergence demo + aleph-vs-Qiskit energy-eval benchmark.
 
-Requires aleph-py built into the active venv (`maturin develop --features python`
+Requires aleph-py built into the active venv (`maturin build --release --features python`
 from crates/aleph-py) and qiskit/qiskit-aer for --bench. Single-thread both sides.
 
 Usage:
@@ -36,7 +36,7 @@ def load_terms(n):
 
 def aleph_energy_fn(n, ham_obj):
     import aleph
-    return lambda thetas: aleph.hea_energy(n, DEPTH, list(thetas), ham_obj)
+    return lambda thetas: aleph.hea_energy(n, DEPTH, thetas, ham_obj)
 
 
 def converge():
@@ -116,6 +116,7 @@ def bench(out_path):
         q_med, q_sd = time_median(q_fn, runs)
         results["workloads"][f"vqe_n{n}"] = {
             "n": n, "family": "vqe", "n_terms": len(terms),
+            "timing_runs": runs,
             "aleph_ms_median": a_med * 1e3, "aleph_rsd": (a_sd / a_med if a_med else 0.0),
             "qiskit_ms_median": q_med * 1e3, "qiskit_rsd": (q_sd / q_med if q_med else 0.0),
         }

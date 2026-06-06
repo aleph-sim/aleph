@@ -191,7 +191,8 @@ are committed; the H₂ 4q one converges to FCI via rotosolve.
 
 ```
 # (a) build aleph-py into the venv (uv venv -> use maturin build + uv pip install;
-#     a plain `maturin develop` needs pip, which uv venvs lack):
+#     we use maturin build + uv pip install to get a release wheel (preferred for
+#     benchmarking; a debug maturin develop build is ~10x slower)):
 cd crates/aleph-py
 PYO3_PYTHON=../../scripts/qiskit-baseline/.venv/bin/python \
   ../../scripts/qiskit-baseline/.venv/bin/maturin build --release --features python --out /tmp/wheels
@@ -203,8 +204,34 @@ RAYON_NUM_THREADS=1 scripts/qiskit-baseline/.venv/bin/python scripts/vqe/vqe.py 
 RAYON_NUM_THREADS=1 taskset -c 0 scripts/qiskit-baseline/.venv/bin/python \
   scripts/vqe/vqe.py --bench --out results-vqe.json
 
-# (c) merge the vqe rows into the phase4 JSONs (aleph_ms_median + qiskit_aer.median_s;
-#     'gates' column carries the Pauli-term count), then re-render report.py.
+# (c) merge the vqe rows into the phase4 JSONs (results-vqe.json has
+#     aleph_ms_median + qiskit_ms_median per workload; 'gates' column carries
+#     the Pauli-term count), then re-render.
+python3 - <<'PY'
+import json
+from pathlib import Path
+base = Path("docs/perf/data")
+res = json.loads(Path("results-vqe.json").read_text())["workloads"]
+aleph = json.loads((base / "phase4-aleph.json").read_text())
+aer = json.loads((base / "phase4-aer.json").read_text())
+for k, v in res.items():
+    aleph["workloads"][k] = {"n": v["n"], "family": "vqe",
+        "aleph_ms_median": v["aleph_ms_median"], "aleph_rsd": v["aleph_rsd"]}
+    aer["workloads"][k] = {"n": v["n"], "family": "vqe",
+        "timing_runs": v.get("timing_runs", 0),
+        "gate_count_post_transpile": v["n_terms"],
+        "qiskit_aer": {"samples_s": [],
+            "median_s": v["qiskit_ms_median"] / 1e3,
+            "mean_s": v["qiskit_ms_median"] / 1e3,
+            "stdev_s": v["qiskit_rsd"] * v["qiskit_ms_median"] / 1e3}}
+(base / "phase4-aleph.json").write_text(json.dumps(aleph, indent=2) + "\n")
+(base / "phase4-aer.json").write_text(json.dumps(aer, indent=2))
+print("merged:", sorted(k for k in aleph["workloads"] if k.startswith("vqe")))
+PY
+
+python3 scripts/bench-report/report.py \
+    --aleph docs/perf/data/phase4-aleph.json --aer docs/perf/data/phase4-aer.json \
+    --meta docs/perf/data/phase4-meta.json --out docs/perf/phase4.md
 ```
 
 The VQE per-eval numbers at small n are **overhead-bound** (tiny state vectors),

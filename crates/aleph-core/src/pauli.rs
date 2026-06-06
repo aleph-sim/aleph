@@ -115,26 +115,33 @@ impl PauliSum {
     pub fn parse(src: &str, n_qubits: u32) -> Result<Self, PauliSumError> {
         let mut terms = Vec::new();
         for (idx, raw) in src.lines().enumerate() {
-            let line = raw.trim();
-            if line.is_empty() || line.starts_with('#') {
+            let line = idx + 1;
+            let trimmed = raw.trim();
+            if trimmed.is_empty() || trimmed.starts_with('#') {
                 continue;
             }
-            let mut it = line.split_whitespace();
+            let mut it = trimmed.split_whitespace();
             let coeff_s = it.next().ok_or_else(|| PauliSumError::BadLine {
-                line: idx,
+                line,
                 got: raw.to_string(),
             })?;
             let pauli_s = it.next().ok_or_else(|| PauliSumError::BadLine {
-                line: idx,
+                line,
                 got: raw.to_string(),
             })?;
+            if it.next().is_some() {
+                return Err(PauliSumError::BadLine {
+                    line,
+                    got: raw.to_string(),
+                });
+            }
             let coeff: f64 = coeff_s.parse().map_err(|_| PauliSumError::BadCoefficient {
-                line: idx,
+                line,
                 got: coeff_s.to_string(),
             })?;
             if pauli_s.chars().count() != n_qubits as usize {
                 return Err(PauliSumError::WrongLength {
-                    line: idx,
+                    line,
                     got: pauli_s.chars().count(),
                     expected: n_qubits as usize,
                 });
@@ -146,22 +153,15 @@ impl PauliSum {
                     'X' => Pauli::X,
                     'Y' => Pauli::Y,
                     'Z' => Pauli::Z,
-                    other => {
-                        return Err(PauliSumError::BadPauliChar {
-                            line: idx,
-                            got: other,
-                        })
-                    }
+                    other => return Err(PauliSumError::BadPauliChar { line, got: other }),
                 };
                 if p != Pauli::I {
                     factors.push((q as u32, p));
                 }
             }
             terms.push(
-                PauliString::new(coeff, factors).map_err(|e| PauliSumError::Pauli {
-                    line: idx,
-                    source: e,
-                })?,
+                PauliString::new(coeff, factors)
+                    .map_err(|e| PauliSumError::Pauli { line, source: e })?,
             );
         }
         Ok(Self { terms })
@@ -253,5 +253,22 @@ mod tests {
             PauliSum::parse("notanum ZI\n", 2),
             Err(PauliSumError::BadCoefficient { .. })
         ));
+    }
+
+    #[test]
+    fn pauli_sum_rejects_trailing_tokens() {
+        assert!(matches!(
+            PauliSum::parse("0.5 ZI extra\n", 2),
+            Err(PauliSumError::BadLine { .. })
+        ));
+    }
+
+    #[test]
+    fn pauli_sum_error_line_is_one_based() {
+        // line 1 is a comment, line 2 is malformed -> error should say line 2.
+        match PauliSum::parse("# header\n0.5 ZQ\n", 2) {
+            Err(PauliSumError::BadPauliChar { line, .. }) => assert_eq!(line, 2),
+            other => panic!("expected BadPauliChar on line 2, got {other:?}"),
+        }
     }
 }
