@@ -12,6 +12,13 @@ try:
 except Exception:
     HAVE_ALEPH = False
 
+try:
+    import qiskit  # noqa: F401
+    import qiskit_aer  # noqa: F401
+    HAVE_AER = True
+except Exception:
+    HAVE_AER = False
+
 
 class TestGraphs(unittest.TestCase):
     def test_edge_counts_three_regular(self):
@@ -41,6 +48,25 @@ class TestRatio(unittest.TestCase):
         sv = aleph.qaoa_energy(6, edges, g, b, "sv")
         mps = aleph.qaoa_energy(6, edges, g, b, "mps")
         self.assertAlmostEqual(sv, mps, places=6)
+
+
+@unittest.skipUnless(HAVE_ALEPH and HAVE_AER, "aleph-py or qiskit-aer not built")
+class TestAerOracle(unittest.TestCase):
+    """Cross-language oracle: aleph SV must match Qiskit Aer for the same QAOA
+    circuit (observed ~1e-15 agreement). This is the strongest correctness check
+    in the feature; gate it in CI rather than leaving it to the --bench path."""
+
+    def test_sv_aer_agree(self):
+        edges, _ = qaoa.load_graph(6)
+        cases = [
+            ([0.4, 0.3, 0.5], [0.2, 0.6, 0.1]),  # asymmetric, p=3
+            ([0.7], [0.3]),                       # p=1
+        ]
+        for g, b in cases:
+            with self.subTest(g=g, b=b):
+                sv = aleph.qaoa_energy(6, edges, g, b, "sv")
+                aer = qaoa.qiskit_cut_energy(6, edges, g, b)
+                self.assertAlmostEqual(sv, aer, places=9)
 
 
 if __name__ == "__main__":

@@ -23,7 +23,7 @@ fn graph_path(name: &str) -> PathBuf {
 fn load_edges(n: u32) -> Vec<(u32, u32)> {
     let txt = std::fs::read_to_string(graph_path(&format!("qaoa_n{n}.edges"))).unwrap();
     txt.lines()
-        .filter(|l| !l.trim().is_empty() && !l.starts_with('#'))
+        .filter(|l| !l.trim().is_empty() && !l.trim_start().starts_with('#'))
         .map(|l| {
             let mut it = l.split_whitespace();
             (
