@@ -7,6 +7,9 @@
 //!
 //! Distinct from the `bench_fixtures::vqe_hea` fixture (which uses a 5-rotation
 //! Ry·Rz·Ry·Rz·Ry per-qubit block tuned for fusion-pass tests).
+//!
+//! Also provides the QAOA Max-Cut ansatz (`build_qaoa`) and the corresponding
+//! Max-Cut cost Hamiltonian (`maxcut_pauli_sum`).
 
 use crate::{Circuit, CircuitError};
 use aleph_core::{Pauli, PauliString, PauliSum};
@@ -171,5 +174,13 @@ mod tests {
         let zz = h.terms.iter().find(|t| t.terms.len() == 2).unwrap();
         assert_eq!(zz.coefficient, -0.5);
         assert_eq!(zz.terms, vec![(0, Pauli::Z), (1, Pauli::Z)]);
+    }
+
+    #[test]
+    fn maxcut_edge_out_of_range() {
+        assert!(matches!(
+            maxcut_pauli_sum(2, &[(0, 2)]),
+            Err(AnsatzError::EdgeOutOfRange { i: 0, j: 2, n: 2 })
+        ));
     }
 }
