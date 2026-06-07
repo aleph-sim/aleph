@@ -73,12 +73,26 @@ def ratios():
     return out, ok
 
 
+_AER_SIM = None
+
+
+def _aer_sim():
+    global _AER_SIM
+    if _AER_SIM is None:
+        from qiskit_aer import AerSimulator
+        _AER_SIM = AerSimulator(
+            method="statevector",
+            max_parallel_threads=1,
+            max_parallel_experiments=1,
+        )
+    return _AER_SIM
+
+
 def qiskit_cut_energy(n, edges, gammas, betas):
     """Same QAOA circuit in Qiskit; <H_C> via Aer save_expectation_value."""
     from qiskit import QuantumCircuit
     from qiskit.quantum_info import SparsePauliOp
     import qiskit_aer.library  # noqa: F401  (registers save_expectation_value)
-    from qiskit_aer import AerSimulator
     qc = QuantumCircuit(n)
     qc.h(range(n))
     for g, b in zip(gammas, betas):
@@ -94,9 +108,7 @@ def qiskit_cut_energy(n, edges, gammas, betas):
         terms.append(("".join(reversed(lbl)), -0.5))
     op = SparsePauliOp.from_list(terms)
     qc.save_expectation_value(op, list(range(n)))
-    sim = AerSimulator(method="statevector", max_parallel_threads=1,
-                       max_parallel_experiments=1)
-    return float(sim.run(qc).result().data(0)["expectation_value"].real)
+    return float(_aer_sim().run(qc).result().data(0)["expectation_value"].real)
 
 
 def time_median(fn, runs):
@@ -113,7 +125,7 @@ def bench(out_path, base=None):
     for n in SIZES:
         edges, maxcut = load_graph(n)
         for p in PS:
-            g = [0.4] * p; b = [0.3] * p  # fixed angles; timing is angle-independent
+            g = [0.4] * p; b = [0.3] * p  # fixed angles; gate counts are angle-independent (MPS bond stays small here)
             f_sv = lambda: aleph.qaoa_energy(n, edges, g, b, "sv")
             f_mps = lambda: aleph.qaoa_energy(n, edges, g, b, "mps")
             f_aer = lambda: qiskit_cut_energy(n, edges, g, b)
