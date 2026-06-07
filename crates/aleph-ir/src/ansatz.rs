@@ -9,14 +9,21 @@
 //! Ry·Rz·Ry·Rz·Ry per-qubit block tuned for fusion-pass tests).
 
 use crate::{Circuit, CircuitError};
+use aleph_core::{Pauli, PauliString, PauliSum};
 
 /// Error building a HEA circuit.
 #[derive(Debug, thiserror::Error, PartialEq)]
 pub enum AnsatzError {
     #[error("expected {expected} params (n_qubits*(depth+1)), got {got}")]
     ParamCount { expected: usize, got: usize },
+    #[error("gammas has {gammas} angles but betas has {betas} (must match = QAOA depth p)")]
+    LayerMismatch { gammas: usize, betas: usize },
+    #[error("edge ({i},{j}) out of range for {n} qubits")]
+    EdgeOutOfRange { i: u32, j: u32, n: u32 },
     #[error(transparent)]
     Circuit(#[from] CircuitError),
+    #[error(transparent)]
+    Pauli(#[from] aleph_core::PauliError),
 }
 
 /// Build the Ry + linear-CNOT hardware-efficient ansatz.
@@ -52,6 +59,60 @@ pub fn build_hea(n_qubits: u32, depth: u32, params: &[f64]) -> Result<Circuit, A
     Ok(c)
 }
 
+/// Build the QAOA Max-Cut ansatz for a graph.
+///
+/// `H` on every qubit, then `p = gammas.len()` layers, each a cost layer
+/// (`RZZ(2γ_l)` per edge, decomposed `CNOT·Rz·CNOT`) followed by a mixer
+/// (`Rx(2β_l)` on every qubit). `gammas.len()` must equal `betas.len()`.
+/// `edges` endpoints must be `< n_qubits`. Farhi-Goldstone-Gutmann 2014.
+pub fn build_qaoa(
+    n_qubits: u32,
+    edges: &[(u32, u32)],
+    gammas: &[f64],
+    betas: &[f64],
+) -> Result<Circuit, AnsatzError> {
+    if gammas.len() != betas.len() {
+        return Err(AnsatzError::LayerMismatch {
+            gammas: gammas.len(),
+            betas: betas.len(),
+        });
+    }
+    let mut c = Circuit::new(n_qubits, 0);
+    for q in 0..n_qubits {
+        c.h(q)?;
+    }
+    for (&gamma, &beta) in gammas.iter().zip(betas.iter()) {
+        for &(i, j) in edges {
+            c.cnot(i, j)?;
+            c.rz(2.0 * gamma, j)?;
+            c.cnot(i, j)?;
+        }
+        for q in 0..n_qubits {
+            c.rx(2.0 * beta, q)?;
+        }
+    }
+    Ok(c)
+}
+
+/// Max-Cut cost Hamiltonian `H_C = Σ_{(i,j)∈E} ½(I − Z_iZ_j)`.
+///
+/// `⟨ψ|H_C|ψ⟩` is the expected number of cut edges; its maximum over basis
+/// states is the max-cut. Returned as a [`PauliSum`]: one identity term `½·|E|`
+/// plus one `−½ Z_iZ_j` per edge.
+pub fn maxcut_pauli_sum(n_qubits: u32, edges: &[(u32, u32)]) -> Result<PauliSum, AnsatzError> {
+    let mut terms = Vec::with_capacity(edges.len() + 1);
+    terms.push(PauliString::identity(0.5 * edges.len() as f64));
+    for &(i, j) in edges {
+        if i >= n_qubits || j >= n_qubits {
+            return Err(AnsatzError::EdgeOutOfRange { i, j, n: n_qubits });
+        }
+        let ps = PauliString::new(-0.5, vec![(i, Pauli::Z), (j, Pauli::Z)])
+            .map_err(AnsatzError::Pauli)?;
+        terms.push(ps);
+    }
+    Ok(PauliSum { terms })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -77,5 +138,38 @@ mod tests {
             .instructions()
             .iter()
             .all(|i| matches!(i, Instruction::Gate(_))));
+    }
+
+    #[test]
+    fn qaoa_layer_mismatch() {
+        assert!(matches!(
+            build_qaoa(3, &[(0, 1)], &[0.1, 0.2], &[0.3]),
+            Err(AnsatzError::LayerMismatch {
+                gammas: 2,
+                betas: 1
+            })
+        ));
+    }
+
+    #[test]
+    fn qaoa_shape_p1_triangle() {
+        // n=3, edges (0,1),(1,2),(0,2), p=1:
+        // H*3 + per edge [CNOT, Rz, CNOT]=3*3=9 + Rx*3 = 3+9+3 = 15 instructions.
+        let c = build_qaoa(3, &[(0, 1), (1, 2), (0, 2)], &[0.5], &[0.4]).unwrap();
+        assert_eq!(c.instructions().len(), 15);
+    }
+
+    #[test]
+    fn maxcut_hamiltonian_structure() {
+        // 2 nodes, 1 edge: H_C = 0.5*I - 0.5*Z0Z1.
+        let h = maxcut_pauli_sum(2, &[(0, 1)]).unwrap();
+        assert_eq!(h.terms.len(), 2);
+        // identity term coeff 0.5*|E| = 0.5
+        let id = h.terms.iter().find(|t| t.terms.is_empty()).unwrap();
+        assert_eq!(id.coefficient, 0.5);
+        // ZZ term coeff -0.5
+        let zz = h.terms.iter().find(|t| t.terms.len() == 2).unwrap();
+        assert_eq!(zz.coefficient, -0.5);
+        assert_eq!(zz.terms, vec![(0, Pauli::Z), (1, Pauli::Z)]);
     }
 }

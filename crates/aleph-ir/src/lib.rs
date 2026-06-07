@@ -23,4 +23,4 @@ pub mod ansatz;
 #[cfg(any(test, feature = "bench-fixtures"))]
 pub mod bench_fixtures;
 pub mod passes;
-pub use ansatz::{build_hea, AnsatzError};
+pub use ansatz::{build_hea, build_qaoa, maxcut_pauli_sum, AnsatzError};
