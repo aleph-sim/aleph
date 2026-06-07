@@ -1,8 +1,8 @@
-//! `aleph-py`: minimal PyO3 bindings for VQE (P4-04).
+//! `aleph-py`: minimal PyO3 bindings for algorithm benchmarks.
 //!
-//! Exposes a `PauliSum` observable loader and a single `hea_energy` energy
-//! evaluation, behind the `python` feature so the default workspace build needs
-//! no Python interpreter.
+//! Exposes a `PauliSum` observable loader and energy-evaluation functions for
+//! VQE (`hea_energy`) and QAOA Max-Cut (`qaoa_energy`), behind the `python`
+//! feature so the default workspace build needs no Python interpreter.
 
 #[cfg(feature = "python")]
 // pyo3 0.22's proc-macro expansion emits trivial PyErr->PyErr `.into()` calls
