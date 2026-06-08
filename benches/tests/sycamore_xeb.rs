@@ -11,7 +11,16 @@
 //!  3. Linear XEB in a sanity band around 1 (noiseless Porter–Thomas), and
 //!     well above 0 (the uniform/depolarized value) — the AC's "XEB ≈ 1".
 //!
-//! n=20 runs in fast CI; n=24 (256 MiB) is #[ignore]d to the nightly schedule.
+//! n=16 runs in fast CI (well under the CLAUDE.md 30s budget — both `run` and
+//! `run_optimized` over a 64 Ki-amplitude state take ~seconds). n=20 (16 MiB,
+//! ~35s both-paths) and n=24 (256 MiB) are #[ignore]d to the nightly schedule.
+//!
+//! `sycamore_n16_d20.qasm` is a frozen test fixture: it is built by the same
+//! `run.py build_sycamore` path as the benchmark corpus (n=20/24/28/30) but is
+//! intentionally NOT in `FAMILY_SIZES`, so `--gen-only` leaves it untouched —
+//! the same convention as the legacy frozen `grover_n{15..25}_iters5` fixtures.
+//! The test checks simulator correctness, not corpus-vs-algorithm identity, so
+//! it stays valid even if `build_sycamore` later changes.
 
 use aleph_backend::{run, run_optimized};
 use aleph_benches::linear_xeb;
@@ -75,13 +84,23 @@ fn check(n: u32) {
     );
 }
 
+/// Fast-CI gate: n=16 (64 Ki amplitudes) runs both paths in a few seconds,
+/// well under the CLAUDE.md 30s budget, while still exercising the full
+/// √X/√Y/√W-run + CZ-brick-wall structure the fusion passes rewrite.
 #[test]
+fn sycamore_n16_is_correct_and_porter_thomas() {
+    check(16);
+}
+
+/// n=20 (16 MiB) runs both paths in ~35s — over the CLAUDE.md 30s fast-CI
+/// budget — so it joins the nightly ignored-tests schedule alongside n=24.
+#[test]
+#[ignore = "n=20: ~35s both-paths; nightly ignored-tests schedule"]
 fn sycamore_n20_is_correct_and_porter_thomas() {
     check(20);
 }
 
-/// n=24 allocates a 256 MiB state vector; over the CLAUDE.md fast-CI budget, so
-/// it joins the nightly ignored-tests schedule. n=20 keeps coverage in fast CI.
+/// n=24 allocates a 256 MiB state vector; nightly ignored-tests schedule.
 #[test]
 #[ignore = "n=24: 256 MiB state; nightly ignored-tests schedule"]
 fn sycamore_n24_is_correct_and_porter_thomas() {
