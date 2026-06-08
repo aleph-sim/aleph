@@ -1,0 +1,5 @@
+{
+  "date": "2026-06-07",
+  "host": "AMD EPYC 8124P (16c/32t, Zen 4c), 123 GiB, Ubuntu 26.04 LTS",
+  "toolchain": "rustc 1.95.0, RAYON_NUM_THREADS=1 taskset -c 0 (single-thread); aleph-py release wheel; qiskit 1.2.4 / Aer 0.15.1 max_parallel_threads=1; scipy 1.17 COBYLA (best of 16 restarts)"
+}
