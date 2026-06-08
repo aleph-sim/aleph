@@ -4,10 +4,11 @@
 //! timing path matches the `qiskit_baseline` bench. Not a criterion benchmark —
 //! the point is a clean process whose Maximum RSS reflects one state-vector
 //! simulation, and which prints the wall time of the `run_optimized` call
-//! (excluding parse) as `elapsed_ms <ms>` on stdout. This is the practical way
-//! to measure n≥28 where 10-sample criterion is prohibitively slow; the qubit
-//! cap is raised to 32 so the large QFT corpus (n=30 ⇒ 16 GiB) can run on a
-//! big-memory host. Usage:
+//! (excluding parse) as `elapsed_ms <ms>` on stdout, followed by
+//! `xeb <value>` — the noiseless linear XEB (`2^n·Σp²−1`) of the final state.
+//! This is the practical way to measure n≥28 where 10-sample criterion is
+//! prohibitively slow; the qubit cap is raised to 32 so the large QFT corpus
+//! (n=30 ⇒ 16 GiB) can run on a big-memory host. Usage:
 //!   /usr/bin/time -v ./oneshot scripts/qiskit-baseline/circuits/qft_n30.qasm
 
 use aleph_backend::run_optimized;
@@ -27,7 +28,10 @@ fn main() {
     let start = Instant::now();
     let state = run_optimized(&mut backend, &circuit).expect("simulation failed");
     let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
+    let amps = state.amplitudes();
+    let xeb = aleph_benches::linear_xeb(amps);
     // Touch the result so the optimiser can't elide the work.
-    black_box(state.amplitudes().len());
+    black_box(amps.len());
     println!("elapsed_ms {elapsed_ms:.3}");
+    println!("xeb {xeb:.6}");
 }
