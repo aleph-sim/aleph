@@ -15,6 +15,7 @@ FAMILY_TITLES = {
     "vqe": "VQE",
     "qaoa": "QAOA",
     "surface_code": "Surface code",
+    "sycamore": "Sycamore random",
 }
 
 
@@ -42,7 +43,7 @@ def _rows(aleph: dict, aer: dict):
     return rows
 
 
-def render(aleph: dict, aer: dict, meta: dict) -> str:
+def render(aleph: dict, aer: dict, meta: dict, xeb=None) -> str:
     rows = _rows(aleph, aer)
     out = []
     out.append("# Phase 4 — algorithm benchmarks vs Qiskit Aer\n")
@@ -66,6 +67,16 @@ def render(aleph: dict, aer: dict, meta: dict) -> str:
                 f"{r['aleph_rsd']*100:.2f}% | {r['aer_rsd']*100:.2f}% |"
             )
         out.append("")
+        xw = (xeb or {}).get("workloads", {})
+        xrows = [r for r in frows if r["name"] in xw]
+        if xrows:
+            out.append("### Linear XEB (noiseless)\n")
+            out.append("| workload | n | aleph XEB | Aer XEB |")
+            out.append("|----------|--:|----------:|--------:|")
+            for r in xrows:
+                x = xw[r["name"]]
+                out.append(f"| `{r['name']}` | {r['n']} | {x['aleph_xeb']:.4f} | {x['aer_xeb']:.4f} |")
+            out.append("")
     return "\n".join(out) + "\n"
 
 
@@ -75,11 +86,13 @@ def main() -> None:
     ap.add_argument("--aer", required=True, type=Path)
     ap.add_argument("--meta", required=True, type=Path)
     ap.add_argument("--out", required=True, type=Path)
+    ap.add_argument("--xeb", type=Path, default=None)
     args = ap.parse_args()
     aleph = json.loads(args.aleph.read_text())
     aer = json.loads(args.aer.read_text())
     meta = json.loads(args.meta.read_text())
-    args.out.write_text(render(aleph, aer, meta))
+    xeb = json.loads(args.xeb.read_text()) if args.xeb else None
+    args.out.write_text(render(aleph, aer, meta, xeb))
     print(f"[report] -> {args.out}")
 
 

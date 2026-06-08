@@ -2,5 +2,7 @@
   "qft_n10": {"n": 10, "family": "qft", "gate_count_post_transpile": 55,
               "qiskit_aer": {"median_s": 0.0008, "stdev_s": 0.00001}},
   "qft_n25": {"n": 25, "family": "qft", "gate_count_post_transpile": 350,
-              "qiskit_aer": {"median_s": 0.46, "stdev_s": 0.001}}
+              "qiskit_aer": {"median_s": 0.46, "stdev_s": 0.001}},
+  "sycamore_n20": {"n": 20, "family": "sycamore", "gate_count_post_transpile": 2190,
+              "qiskit_aer": {"median_s": 0.05, "stdev_s": 0.001}}
 }}
