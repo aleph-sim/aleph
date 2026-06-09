@@ -107,6 +107,8 @@ pub(crate) fn cnot_dispatch(
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx512f")]
 unsafe fn h_avx512(xa: &mut [u64], za: &mut [u64], sign: &mut [u64]) {
+    debug_assert_eq!(xa.len(), za.len());
+    debug_assert_eq!(xa.len(), sign.len());
     use core::arch::x86_64::*;
     let len = xa.len();
     let chunks = len / 8;
@@ -134,6 +136,8 @@ unsafe fn h_avx512(xa: &mut [u64], za: &mut [u64], sign: &mut [u64]) {
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx512f")]
 unsafe fn s_avx512(xa: &[u64], za: &mut [u64], sign: &mut [u64]) {
+    debug_assert_eq!(xa.len(), za.len());
+    debug_assert_eq!(xa.len(), sign.len());
     use core::arch::x86_64::*;
     let len = xa.len();
     let chunks = len / 8;
@@ -163,6 +167,10 @@ unsafe fn s_avx512(xa: &[u64], za: &mut [u64], sign: &mut [u64]) {
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx512f")]
 unsafe fn cnot_avx512(xa: &[u64], xb: &mut [u64], za: &mut [u64], zb: &[u64], sign: &mut [u64]) {
+    debug_assert_eq!(xa.len(), xb.len());
+    debug_assert_eq!(xa.len(), za.len());
+    debug_assert_eq!(xa.len(), zb.len());
+    debug_assert_eq!(xa.len(), sign.len());
     use core::arch::x86_64::*;
     let len = xa.len();
     let chunks = len / 8;
