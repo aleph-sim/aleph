@@ -25,6 +25,7 @@ aleph-core    = { path = "../crates/aleph-core" }
 aleph-ir      = { path = "../crates/aleph-ir" }
 aleph-backend = { path = "../crates/aleph-backend" }
 aleph-sv      = { path = "../crates/aleph-sv" }
+aleph-stab    = { path = "../crates/aleph-stab" }
 aleph-parser  = { path = "../crates/aleph-parser" }
 smallvec      = { workspace = true }
 
@@ -34,6 +35,7 @@ path = "src/bin/oneshot.rs"
 
 [dev-dependencies]
 criterion = { workspace = true }
+rand          = { workspace = true }
 
 # Disable the default test/bench harness so criterion can take over.
 # See https://bheisler.github.io/criterion.rs/book/getting_started.html

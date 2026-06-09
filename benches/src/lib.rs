@@ -386,11 +386,34 @@ impl SurfaceCode {
     pub fn ancilla_order(&self) -> Vec<u32> {
         self.ancillas.iter().map(|a| a.index).collect()
     }
+
+    /// One syndrome-extraction cycle as gates (no measurements). X-ancillas:
+    /// `H a; CX a d…; H a`. Z-ancillas: `CX d… a`. Caller measures ancillas
+    /// in `ancilla_order()` afterwards.
+    #[must_use]
+    pub fn cycle_gates(&self) -> Vec<GateInstance> {
+        let mut g = Vec::new();
+        for a in self.ancillas.iter().filter(|a| a.is_x) {
+            g.push(GateInstance::new(Gate::H, vec![a.index]));
+            for &d in &a.data_neighbours {
+                g.push(GateInstance::new(Gate::Cnot, vec![a.index, d]));
+            }
+            g.push(GateInstance::new(Gate::H, vec![a.index]));
+        }
+        for a in self.ancillas.iter().filter(|a| !a.is_x) {
+            for &d in &a.data_neighbours {
+                g.push(GateInstance::new(Gate::Cnot, vec![d, a.index]));
+            }
+        }
+        g
+    }
 }
 
 #[cfg(test)]
 mod surface_tests {
     use super::*;
+    use aleph_backend::Backend;
+    use aleph_stab::StabilizerBackend;
 
     // Symplectic anticommutation of two supports given as (data-set, is_x):
     // two Paulis anticommute iff the X-support of one overlaps the Z-support
@@ -474,6 +497,42 @@ mod surface_tests {
                 anticommute_xz(&sc.logical_x, &sc.logical_z),
                 "d={d}: logicals must anticommute"
             );
+        }
+    }
+
+    /// Run one cycle from data |0…0⟩ and return the measured outcome for each
+    /// ancilla, in `ancilla_order()`.
+    fn run_cycle(sc: &SurfaceCode, seed: u64, pre: &[GateInstance]) -> Vec<bool> {
+        let mut be = StabilizerBackend::with_seed(seed);
+        let mut t = be.allocate(sc.num_qubits as u32).unwrap();
+        for g in pre {
+            be.apply_gate(&mut t, g).unwrap();
+        }
+        for g in sc.cycle_gates() {
+            be.apply_gate(&mut t, &g).unwrap();
+        }
+        sc.ancilla_order()
+            .iter()
+            .map(|&a| be.measure(&mut t, a).unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn z_syndrome_is_zero_from_ground_state() {
+        // From |0…0⟩, every Z-stabilizer is +1 ⇒ its ancilla measures 0,
+        // for any seed. (X-ancillas are random and not asserted here.)
+        for d in [3usize, 5] {
+            let sc = SurfaceCode::new(d);
+            let order = sc.ancilla_order();
+            for seed in [0u64, 1, 7, 42] {
+                let out = run_cycle(&sc, seed, &[]);
+                for (k, &anc) in order.iter().enumerate() {
+                    let is_z = !sc.ancillas.iter().find(|a| a.index == anc).unwrap().is_x;
+                    if is_z {
+                        assert!(!out[k], "d={d} seed={seed}: Z-ancilla {anc} fired from |0>");
+                    }
+                }
+            }
         }
     }
 
