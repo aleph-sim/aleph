@@ -392,20 +392,20 @@ impl SurfaceCode {
     /// in `ancilla_order()` afterwards.
     #[must_use]
     pub fn cycle_gates(&self) -> Vec<GateInstance> {
-        let mut g = Vec::new();
+        let mut gates = Vec::new();
         for a in self.ancillas.iter().filter(|a| a.is_x) {
-            g.push(GateInstance::new(Gate::H, vec![a.index]));
+            gates.push(GateInstance::new(Gate::H, vec![a.index]));
             for &d in &a.data_neighbours {
-                g.push(GateInstance::new(Gate::Cnot, vec![a.index, d]));
+                gates.push(GateInstance::new(Gate::Cnot, vec![a.index, d]));
             }
-            g.push(GateInstance::new(Gate::H, vec![a.index]));
+            gates.push(GateInstance::new(Gate::H, vec![a.index]));
         }
         for a in self.ancillas.iter().filter(|a| !a.is_x) {
             for &d in &a.data_neighbours {
-                g.push(GateInstance::new(Gate::Cnot, vec![d, a.index]));
+                gates.push(GateInstance::new(Gate::Cnot, vec![d, a.index]));
             }
         }
-        g
+        gates
     }
 }
 
