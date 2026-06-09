@@ -8,18 +8,32 @@
 
 use aleph_core::{Pauli, PauliString};
 
-use crate::bits::BitGrid;
+use crate::bits::{BitGrid, BitVec};
+
+/// Physical layout of the `x`/`z` grids. Gates need ColMajor (a column is a
+/// contiguous word-span); `rowsum`/`measure` need RowMajor (a generator row is
+/// contiguous, per P3-08). `sign` is orientation-invariant (the generator-row
+/// axis is preserved by the transpose).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Orientation {
+    RowMajor,
+    ColMajor,
+}
 
 /// A stabilizer state over `n` qubits in CHP tableau form.
 #[derive(Clone)]
 pub struct Tableau {
     n: usize,
-    /// x-bits: `2n+1` rows × `n` cols.
+    /// x-bits. Dims depend on `orientation`: RowMajor `(2n+1) × n`,
+    /// ColMajor `n × (2n+1)`.
     x: BitGrid,
-    /// z-bits: `2n+1` rows × `n` cols.
+    /// z-bits. Dims depend on `orientation`: RowMajor `(2n+1) × n`,
+    /// ColMajor `n × (2n+1)`.
     z: BitGrid,
     /// sign bit per row (`true` = `-`); length `2n+1`.
-    sign: Vec<bool>,
+    sign: BitVec,
+    /// Current physical layout of `x`/`z`.
+    orientation: Orientation,
 }
 
 /// Aaronson-Gottesman §2 phase exponent: the power of `i` introduced when
@@ -53,7 +67,8 @@ impl Tableau {
             n,
             x,
             z,
-            sign: vec![false; rows],
+            sign: BitVec::zeros(rows),
+            orientation: Orientation::RowMajor,
         }
     }
 
@@ -70,17 +85,17 @@ impl Tableau {
     #[allow(dead_code)]
     #[inline]
     pub(crate) fn x(&self, row: usize, col: usize) -> bool {
-        self.x.get(row, col)
+        self.get_x(row, col)
     }
     #[allow(dead_code)]
     #[inline]
     pub(crate) fn z(&self, row: usize, col: usize) -> bool {
-        self.z.get(row, col)
+        self.get_z(row, col)
     }
     #[allow(dead_code)]
     #[inline]
     pub(crate) fn sign(&self, row: usize) -> bool {
-        self.sign[row]
+        self.sign.get(row)
     }
 
     #[inline]
@@ -94,9 +109,47 @@ impl Tableau {
         Ok(())
     }
 
+    /// Logical x-bit of generator `row`, qubit `col`, regardless of orientation.
+    #[inline]
+    fn get_x(&self, row: usize, col: usize) -> bool {
+        match self.orientation {
+            Orientation::RowMajor => self.x.get(row, col),
+            Orientation::ColMajor => self.x.get(col, row),
+        }
+    }
+    /// Logical z-bit of generator `row`, qubit `col`, regardless of orientation.
+    #[inline]
+    fn get_z(&self, row: usize, col: usize) -> bool {
+        match self.orientation {
+            Orientation::RowMajor => self.z.get(row, col),
+            Orientation::ColMajor => self.z.get(col, row),
+        }
+    }
+
+    /// Ensure RowMajor (generator rows contiguous) for `rowsum`/`measure`/readout.
+    fn ensure_row_major(&mut self) {
+        if self.orientation == Orientation::ColMajor {
+            self.x = self.x.transpose();
+            self.z = self.z.transpose();
+            self.orientation = Orientation::RowMajor;
+        }
+    }
+    /// Ensure ColMajor (qubit columns contiguous) for word-parallel gates.
+    // Only the orientation round-trip test sets ColMajor in Task 2; the gate
+    // kernels that flip to ColMajor land in P3-11 Task 3. Allow until then.
+    #[allow(dead_code)]
+    fn ensure_col_major(&mut self) {
+        if self.orientation == Orientation::RowMajor {
+            self.x = self.x.transpose();
+            self.z = self.z.transpose();
+            self.orientation = Orientation::ColMajor;
+        }
+    }
+
     /// Hadamard on qubit `a`. AG §2: `r ^= x_a·z_a`; swap `x_a, z_a`.
     pub fn h(&mut self, a: usize) -> Result<(), crate::StabError> {
         self.check_qubit(a)?;
+        self.ensure_row_major();
         // Hoist column word-offset and mask; both are loop-invariant.
         let stride = self.x.row_stride();
         let wa = a >> 6;
@@ -108,7 +161,8 @@ impl Tableau {
             let xa = (xw & ma) != 0;
             let za = (zw & ma) != 0;
             // Branchless sign update: sign ^= x_a & z_a.
-            self.sign[i] ^= xa & za;
+            let v = self.sign.get(i) ^ (xa & za);
+            self.sign.set(i, v);
             // Swap x_a and z_a in-place: write the other grid's bit into
             // each. Clear the bit then OR in the swapped value (branchless:
             // `ma & (0 - bit)` is `ma` when bit=1, else 0).
@@ -121,6 +175,7 @@ impl Tableau {
     /// Phase gate S on qubit `a`. AG §2: `r ^= x_a·z_a`; `z_a ^= x_a`.
     pub fn s(&mut self, a: usize) -> Result<(), crate::StabError> {
         self.check_qubit(a)?;
+        self.ensure_row_major();
         let stride = self.x.row_stride();
         let wa = a >> 6;
         let ma = 1u64 << (a & 63);
@@ -129,7 +184,8 @@ impl Tableau {
             let xa = (self.x.word(base + wa) & ma) != 0;
             let za = (self.z.word(base + wa) & ma) != 0;
             // sign ^= x_a & z_a  (branchless bool-and)
-            self.sign[i] ^= xa & za;
+            let v = self.sign.get(i) ^ (xa & za);
+            self.sign.set(i, v);
             // z_a ^= x_a  (branchless: XOR mask when x_a is set)
             // 0u64.wrapping_sub(xa as u64) is all-ones if xa, else 0.
             *self.z.word_mut(base + wa) ^= ma & (0u64.wrapping_sub(xa as u64));
@@ -142,6 +198,7 @@ impl Tableau {
     pub fn cnot(&mut self, a: usize, b: usize) -> Result<(), crate::StabError> {
         self.check_qubit(a)?;
         self.check_qubit(b)?;
+        self.ensure_row_major();
         // Hoist both column word-offsets and masks; both are loop-invariant.
         let stride = self.x.row_stride();
         let wa = a >> 6;
@@ -157,7 +214,8 @@ impl Tableau {
             let zb = (self.z.word(base + wb) & mb) != 0;
             // sign ^= x_a & z_b & (x_b ^ z_a ^ 1)  — fully branchless.
             // (x_b ^ z_a ^ true) is !(x_b ^ z_a), i.e. x_b XNOR z_a.
-            self.sign[i] ^= xa & zb & !(xb ^ za);
+            let v = self.sign.get(i) ^ (xa & zb & !(xb ^ za));
+            self.sign.set(i, v);
             // x_b ^= x_a  (branchless)
             *self.x.word_mut(base + wb) ^= mb & (0u64.wrapping_sub(xa as u64));
             // z_a ^= z_b  (branchless)
@@ -169,12 +227,14 @@ impl Tableau {
     /// Pauli-X on `a`. Sign rule: `r ^= z_a` (X anticommutes with Z).
     pub fn x_gate(&mut self, a: usize) -> Result<(), crate::StabError> {
         self.check_qubit(a)?;
+        self.ensure_row_major();
         let stride = self.z.row_stride();
         let wa = a >> 6;
         let ma = 1u64 << (a & 63);
         for i in 0..2 * self.n {
             let za = (self.z.word(i * stride + wa) & ma) != 0;
-            self.sign[i] ^= za;
+            let v = self.sign.get(i) ^ za;
+            self.sign.set(i, v);
         }
         Ok(())
     }
@@ -182,12 +242,14 @@ impl Tableau {
     /// Pauli-Z on `a`. Sign rule: `r ^= x_a`.
     pub fn z_gate(&mut self, a: usize) -> Result<(), crate::StabError> {
         self.check_qubit(a)?;
+        self.ensure_row_major();
         let stride = self.x.row_stride();
         let wa = a >> 6;
         let ma = 1u64 << (a & 63);
         for i in 0..2 * self.n {
             let xa = (self.x.word(i * stride + wa) & ma) != 0;
-            self.sign[i] ^= xa;
+            let v = self.sign.get(i) ^ xa;
+            self.sign.set(i, v);
         }
         Ok(())
     }
@@ -195,6 +257,7 @@ impl Tableau {
     /// Pauli-Y on `a`. Sign rule: `r ^= x_a ⊕ z_a`.
     pub fn y_gate(&mut self, a: usize) -> Result<(), crate::StabError> {
         self.check_qubit(a)?;
+        self.ensure_row_major();
         let stride = self.x.row_stride();
         let wa = a >> 6;
         let ma = 1u64 << (a & 63);
@@ -202,7 +265,8 @@ impl Tableau {
             let base = i * stride;
             let xa = (self.x.word(base + wa) & ma) != 0;
             let za = (self.z.word(base + wa) & ma) != 0;
-            self.sign[i] ^= xa ^ za;
+            let v = self.sign.get(i) ^ (xa ^ za);
+            self.sign.set(i, v);
         }
         Ok(())
     }
@@ -256,7 +320,7 @@ impl Tableau {
     fn row_to_pauli(&self, row: usize) -> PauliString {
         let mut terms = Vec::new();
         for c in 0..self.n {
-            let p = match (self.x.get(row, c), self.z.get(row, c)) {
+            let p = match (self.get_x(row, c), self.get_z(row, c)) {
                 (false, false) => continue, // I
                 (true, false) => Pauli::X,
                 (false, true) => Pauli::Z,
@@ -264,7 +328,7 @@ impl Tableau {
             };
             terms.push((c as u32, p));
         }
-        let coeff = if self.sign[row] { -1.0 } else { 1.0 };
+        let coeff = if self.sign.get(row) { -1.0 } else { 1.0 };
         // PauliString::new sorts/validates; terms here are already unique
         // and ascending, so this cannot error.
         PauliString::new(coeff, terms).unwrap_or_else(|_| PauliString::identity(coeff))
@@ -286,7 +350,7 @@ impl Tableau {
     pub fn rows_anticommute(&self, i: usize, j: usize) -> bool {
         let mut acc = false;
         for a in 0..self.n {
-            acc ^= (self.x.get(i, a) && self.z.get(j, a)) ^ (self.z.get(i, a) && self.x.get(j, a));
+            acc ^= (self.get_x(i, a) && self.get_z(j, a)) ^ (self.get_z(i, a) && self.get_x(j, a));
         }
         acc
     }
@@ -294,19 +358,19 @@ impl Tableau {
     /// Left-multiply stabilizer/destabilizer row `i` onto row `h`, tracking the
     /// sign. Dispatches to the word-parallel kernel.
     fn rowsum(&mut self, h: usize, i: usize) {
-        let base = 2 * self.sign[h] as i64 + 2 * self.sign[i] as i64;
+        let base = 2 * self.sign.get(h) as i64 + 2 * self.sign.get(i) as i64;
         let (xh, xi) = self.x.row_pair_mut(h, i);
         let (zh, zi) = self.z.row_pair_mut(h, i);
         let phase = crate::rowsum::rowsum_dispatch(xh, xi, zh, zi);
         let m = (base + phase).rem_euclid(4);
         debug_assert!(m == 0 || m == 2, "rowsum phase {m} not in {{0, 2}}");
-        self.sign[h] = m == 2;
+        self.sign.set(h, m == 2);
     }
 
     /// Pre-P3-08 per-bit reference, kept for the equivalence test in this file.
     #[cfg(test)]
     fn rowsum_scalar(&mut self, h: usize, i: usize) {
-        let mut acc: i32 = 2 * self.sign[h] as i32 + 2 * self.sign[i] as i32;
+        let mut acc: i32 = 2 * self.sign.get(h) as i32 + 2 * self.sign.get(i) as i32;
         for j in 0..self.n {
             acc += g(
                 self.x.get(i, j),
@@ -317,7 +381,7 @@ impl Tableau {
         }
         let m = acc.rem_euclid(4);
         debug_assert!(m == 0 || m == 2, "rowsum phase {m} not in {{0, 2}}");
-        self.sign[h] = m == 2;
+        self.sign.set(h, m == 2);
         for j in 0..self.n {
             let xh = self.x.get(h, j) ^ self.x.get(i, j);
             let zh = self.z.get(h, j) ^ self.z.get(i, j);
@@ -332,7 +396,8 @@ impl Tableau {
             self.x.set(dst, j, self.x.get(src, j));
             self.z.set(dst, j, self.z.get(src, j));
         }
-        self.sign[dst] = self.sign[src];
+        let s = self.sign.get(src);
+        self.sign.set(dst, s);
     }
 
     /// Reset a row to the identity Pauli with `+` sign.
@@ -341,7 +406,7 @@ impl Tableau {
             self.x.set(r, j, false);
             self.z.set(r, j, false);
         }
-        self.sign[r] = false;
+        self.sign.set(r, false);
     }
 
     /// Projective Z-basis measurement of qubit `a` with state collapse
@@ -357,6 +422,7 @@ impl Tableau {
         rng: &mut R,
     ) -> Result<bool, crate::StabError> {
         self.check_qubit(a)?;
+        self.ensure_row_major();
         // A stabilizer row anticommuting with Z_a (i.e. with an X/Y on a)
         // ⇒ random outcome.
         let p = (self.n..2 * self.n).find(|&row| self.x.get(row, a));
@@ -380,7 +446,7 @@ impl Tableau {
                 self.zero_row(p);
                 self.z.set(p, a, true);
                 let outcome = rng.gen::<bool>();
-                self.sign[p] = outcome;
+                self.sign.set(p, outcome);
                 Ok(outcome)
             }
             None => {
@@ -393,7 +459,7 @@ impl Tableau {
                         self.rowsum(scratch, i + self.n);
                     }
                 }
-                Ok(self.sign[scratch])
+                Ok(self.sign.get(scratch))
             }
         }
     }
@@ -410,7 +476,7 @@ impl Tableau {
         let anti_with = |t: &Tableau, r: usize| -> bool {
             let mut acc = false;
             for j in 0..t.n {
-                acc ^= (x_p[j] & t.z.get(r, j)) ^ (z_p[j] & t.x.get(r, j));
+                acc ^= (x_p[j] & t.get_z(r, j)) ^ (z_p[j] & t.get_x(r, j));
             }
             acc
         };
@@ -426,6 +492,7 @@ impl Tableau {
         //    destabilizer anticommutes with P; accumulate them into a
         //    scratch row (on a clone) and read the resulting sign.
         let mut t = self.clone();
+        t.ensure_row_major();
         let scratch = 2 * t.n;
         t.zero_row(scratch);
         for k in 0..t.n {
@@ -434,10 +501,10 @@ impl Tableau {
             }
         }
         debug_assert!(
-            (0..t.n).all(|j| t.x.get(scratch, j) == x_p[j] && t.z.get(scratch, j) == z_p[j]),
+            (0..t.n).all(|j| t.get_x(scratch, j) == x_p[j] && t.get_z(scratch, j) == z_p[j]),
             "accumulated stabilizer product does not equal P"
         );
-        if t.sign[scratch] {
+        if t.sign.get(scratch) {
             -1
         } else {
             1
@@ -852,6 +919,43 @@ mod tests {
         let t = Tableau::new(1);
         assert_eq!(t.pauli_eigenvalue(&[false], &[true]), 1); // Z on |0> = +1
         assert_eq!(t.pauli_eigenvalue(&[true], &[false]), 0); // X on |0> = 0
+    }
+
+    #[test]
+    fn orientation_flip_preserves_logical_bits() {
+        // Build a generic state (row-major), force a col-major flip and back,
+        // and confirm every logical (x,z,sign) bit is unchanged.
+        let t = generic_state();
+        let snap: Vec<(bool, bool)> = (0..2 * t.num_qubits())
+            .flat_map(|r| (0..t.num_qubits()).map(move |c| (r, c)))
+            .map(|(r, c)| (t.x(r, c), t.z(r, c)))
+            .collect();
+        let signs: Vec<bool> = (0..2 * t.num_qubits() + 1).map(|r| t.sign(r)).collect();
+
+        let mut t2 = t.clone();
+        t2.ensure_col_major();
+        // reads are orientation-agnostic: identical logical bits in col-major
+        let snap2: Vec<(bool, bool)> = (0..2 * t2.num_qubits())
+            .flat_map(|r| (0..t2.num_qubits()).map(move |c| (r, c)))
+            .map(|(r, c)| (t2.x(r, c), t2.z(r, c)))
+            .collect();
+        assert_eq!(snap, snap2, "col-major reads diverged");
+        t2.ensure_row_major();
+        for (r, &want) in signs.iter().enumerate() {
+            assert_eq!(t2.sign(r), want, "sign row {r} after flip-back");
+        }
+        for (i, &(r, c)) in (0..2 * t2.num_qubits())
+            .flat_map(|r| (0..t2.num_qubits()).map(move |c| (r, c)))
+            .collect::<Vec<_>>()
+            .iter()
+            .enumerate()
+        {
+            assert_eq!(
+                (t2.x(r, c), t2.z(r, c)),
+                snap[i],
+                "bit ({r},{c}) after flip-back"
+            );
+        }
     }
 
     #[test]
