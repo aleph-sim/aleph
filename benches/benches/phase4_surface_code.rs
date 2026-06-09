@@ -27,6 +27,7 @@ const DISTANCES: &[usize] = &[3, 5, 7, 9, 11];
 
 fn bench_surface(c: &mut Criterion) {
     let mut group = c.benchmark_group("surface_code");
+    group.sample_size(10);
     for &d in DISTANCES {
         let sc = SurfaceCode::new(d);
         let gates = sc.cycle_gates();
