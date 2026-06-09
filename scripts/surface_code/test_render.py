@@ -1,9 +1,12 @@
 """Golden test for render_report.render (stdlib unittest)."""
 import json
+import sys
 import unittest
 from pathlib import Path
 
-import render_report
+sys.path.insert(0, str(Path(__file__).parent))
+
+import render_report  # noqa: E402
 
 HERE = Path(__file__).parent
 TD = HERE / "testdata"
