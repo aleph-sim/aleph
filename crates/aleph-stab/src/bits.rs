@@ -88,6 +88,32 @@ impl BitGrid {
         &mut self.words[r * s..(r + 1) * s]
     }
 
+    /// Number of rows in the grid (`words.len() / stride`). `stride ≥ 1` always.
+    // Consumed by P3-11 Task 2+; allow until then.
+    #[allow(dead_code)]
+    #[inline]
+    pub(crate) fn rows(&self) -> usize {
+        self.words.len() / self.stride
+    }
+
+    /// Bit-transpose: returns a `cols × rows` grid with output bit `(c, r)` =
+    /// `self` bit `(r, c)`. Scalar reference implementation — a blocked kernel
+    /// replaces the body in P3-11 Task 5, validated against this via a diff test.
+    // Consumed by P3-11 Task 2+; allow until then.
+    #[allow(dead_code)]
+    pub(crate) fn transpose(&self) -> BitGrid {
+        let rows = self.rows();
+        let mut out = BitGrid::zeros(self.cols, rows);
+        for r in 0..rows {
+            for c in 0..self.cols {
+                if self.get(r, c) {
+                    out.set(c, r, true);
+                }
+            }
+        }
+        out
+    }
+
     /// Mutable words of row `dst` and shared words of row `src`, borrowed
     /// simultaneously. Requires `dst != src` (rows live in one backing `Vec`,
     /// split via `split_at_mut`).
@@ -109,9 +135,62 @@ impl BitGrid {
     }
 }
 
+/// Packed bit-vector of `len` bits in `ceil(len/64)` u64 words. Unused high
+/// bits in the final word are always zero (`set` only touches valid indices),
+/// so word-parallel `&`/`^` consumers need no tail masking.
+// Consumed by P3-11 Task 2+; allow until then.
+#[allow(dead_code)]
+#[derive(Clone)]
+pub(crate) struct BitVec {
+    words: Vec<u64>,
+    len: usize,
+}
+
+#[allow(dead_code)]
+impl BitVec {
+    /// Allocate a zero-initialised bit-vector of `len` bits.
+    pub(crate) fn zeros(len: usize) -> Self {
+        BitVec {
+            words: vec![0u64; len.div_ceil(64).max(1)],
+            len,
+        }
+    }
+
+    /// Return `true` if bit `i` is set.
+    #[inline]
+    pub(crate) fn get(&self, i: usize) -> bool {
+        debug_assert!(i < self.len, "bit {i} out of range {}", self.len);
+        self.words[i >> 6] & (1u64 << (i & 63)) != 0
+    }
+
+    /// Set or clear bit `i`.
+    #[inline]
+    pub(crate) fn set(&mut self, i: usize, val: bool) {
+        debug_assert!(i < self.len, "bit {i} out of range {}", self.len);
+        let (w, m) = (i >> 6, 1u64 << (i & 63));
+        if val {
+            self.words[w] |= m;
+        } else {
+            self.words[w] &= !m;
+        }
+    }
+
+    /// Shared slice of backing words for word-parallel operations.
+    #[inline]
+    pub(crate) fn words(&self) -> &[u64] {
+        &self.words
+    }
+
+    /// Mutable slice of backing words for word-parallel operations.
+    #[inline]
+    pub(crate) fn words_mut(&mut self) -> &mut [u64] {
+        &mut self.words
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::BitGrid;
+    use super::{BitGrid, BitVec};
 
     #[test]
     fn set_get_roundtrip() {
@@ -175,5 +254,73 @@ mod tests {
             w[0] |= 1u64 << 5;
         }
         assert!(g.get(0, 5));
+    }
+
+    #[test]
+    fn bitvec_set_get_and_words() {
+        let mut v = BitVec::zeros(130); // 3 words
+        assert_eq!(v.words().len(), 3);
+        assert!(!v.get(129));
+        v.set(129, true);
+        assert!(v.get(129));
+        v.set(129, false);
+        assert!(!v.get(129));
+        v.set(0, true);
+        v.set(64, true);
+        assert_eq!(v.words()[0], 1u64);
+        assert_eq!(v.words()[1], 1u64);
+        // word-level mutation visible through get
+        v.words_mut()[2] ^= 1u64 << 1;
+        assert!(v.get(129));
+    }
+
+    #[test]
+    fn grid_rows_accessor() {
+        let g = BitGrid::zeros(5, 70); // 5 rows, stride 2
+        assert_eq!(g.rows(), 5);
+        assert_eq!(BitGrid::zeros(1, 1).rows(), 1);
+    }
+
+    #[test]
+    fn transpose_roundtrip_and_values() {
+        // Deterministic fill, transpose, check (c,r)==(r,c), and T∘T == id.
+        let mut rng = 0x9E3779B97F4A7C15u64;
+        let mut next = || {
+            rng ^= rng << 13;
+            rng ^= rng >> 7;
+            rng ^= rng << 17;
+            rng
+        };
+        for &(rows, cols) in &[
+            (1usize, 1usize),
+            (3, 5),
+            (7, 64),
+            (65, 9),
+            (128, 130),
+            (483, 241),
+        ] {
+            let mut g = BitGrid::zeros(rows, cols);
+            for r in 0..rows {
+                for c in 0..cols {
+                    if next() & 1 == 1 {
+                        g.set(r, c, true);
+                    }
+                }
+            }
+            let t = g.transpose();
+            assert_eq!(t.rows(), cols, "transpose row count ({rows}x{cols})");
+            for r in 0..rows {
+                for c in 0..cols {
+                    assert_eq!(t.get(c, r), g.get(r, c), "({r},{c}) {rows}x{cols}");
+                }
+            }
+            // round trip
+            let tt = t.transpose();
+            for r in 0..rows {
+                for c in 0..cols {
+                    assert_eq!(tt.get(r, c), g.get(r, c), "roundtrip ({r},{c})");
+                }
+            }
+        }
     }
 }
