@@ -92,6 +92,7 @@ print("\n".join(str(p) for p in oursc))
         .arg(py)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
         .spawn()
         .ok()
         .and_then(|mut child| {
@@ -100,7 +101,10 @@ print("\n".join(str(p) for p in oursc))
             child.wait_with_output().ok()
         })?;
     if !out.status.success() {
-        return None;
+        panic!(
+            "stim helper exited with failure for d={d}:\n--- stderr ---\n{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
     }
     let text = String::from_utf8_lossy(&out.stdout);
     let mut it = text.split("===");
@@ -128,7 +132,7 @@ fn surface_cycle_matches_stim() {
         let order = sc.ancilla_order();
         let (refs, oursc) = match stim_canonical(d, &order, &outcomes, &ours) {
             Some(v) => v,
-            None => panic!("stim helper failed at d={d} (is `stim` installed in python3?)"),
+            None => panic!("could not run python3 for d={d} (is python3 on PATH?)"),
         };
         let mut a = refs.clone();
         let mut b = oursc.clone();
