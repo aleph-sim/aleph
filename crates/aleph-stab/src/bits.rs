@@ -156,6 +156,12 @@ impl BitVec {
         }
     }
 
+    /// Number of valid bits (the semantic length, not the padded word count).
+    #[inline]
+    pub(crate) fn len(&self) -> usize {
+        self.len
+    }
+
     /// Return `true` if bit `i` is set.
     #[inline]
     pub(crate) fn get(&self, i: usize) -> bool {
@@ -272,6 +278,11 @@ mod tests {
         // word-level mutation visible through get
         v.words_mut()[2] ^= 1u64 << 1;
         assert!(v.get(129));
+        // ...and must not disturb the other words.
+        assert_eq!(v.words()[0], 1u64);
+        assert_eq!(v.words()[1], 1u64);
+        // len() reports the semantic bit count, not the padded word count.
+        assert_eq!(v.len(), 130);
     }
 
     #[test]
