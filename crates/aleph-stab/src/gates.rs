@@ -5,6 +5,12 @@
 //! the same `2n+1` generator-row axis. Each kernel updates the whole column
 //! word-parallel. Unused high bits in the final word are zero (BitGrid/BitVec
 //! guarantee), so no tail masking is needed. See Aaronson–Gottesman (2004) §2.
+//!
+//! Scratch-row note: the span covers all `2n+1` rows, so these kernels also
+//! update the scratch row `2n` — unlike the pre-P3-11 row-major path, which
+//! looped `0..2n`. This is harmless: every scratch-row consumer (`measure`'s
+//! deterministic branch, `pauli_eigenvalue`) calls `zero_row(2n)` before
+//! reading it, so a gate-dirtied scratch row is always overwritten first.
 
 /// H(a): `sign ^= x_a & z_a`; swap `x_a, z_a`.
 pub(crate) fn h_words(xa: &mut [u64], za: &mut [u64], sign: &mut [u64]) {

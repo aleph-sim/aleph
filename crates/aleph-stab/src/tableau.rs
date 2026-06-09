@@ -1183,6 +1183,12 @@ mod tests {
                     }
                 }
             }
+            // Compare only the 2n generator rows, NOT the scratch row 2n: the
+            // ColMajor word kernels update the whole 2n+1-bit column span (so
+            // they dirty the scratch row), whereas the `*_scalar` refs loop
+            // 0..2n. This divergence is harmless because every scratch-row
+            // consumer (`measure`, `pauli_eigenvalue`) calls `zero_row(2n)`
+            // before reading it — see the scratch-row note in `gates.rs`.
             for r in 0..2 * n {
                 assert_eq!(a.sign(r), b.sign(r), "sign[{r}] n={n}");
                 for c in 0..n {
