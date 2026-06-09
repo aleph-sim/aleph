@@ -33,6 +33,7 @@ dependencies = [
  "aleph-core",
  "aleph-ir",
  "aleph-parser",
+ "aleph-stab",
  "aleph-sv",
  "criterion",
  "smallvec",
