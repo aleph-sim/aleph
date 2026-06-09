@@ -67,7 +67,9 @@ impl BitGrid {
     }
 
     /// The `stride` words of row `r` (contiguous).
-    #[allow(dead_code)] // used by the AVX-512 rowsum kernel (wired in a later P3-08 commit)
+    // Part of the row word-slice accessor API (exercised by tests); the rowsum
+    // hot path uses row_pair_mut. Kept for completeness / future column ops.
+    #[allow(dead_code)]
     #[inline]
     pub(crate) fn row_words(&self, r: usize) -> &[u64] {
         let s = self.stride;
@@ -76,7 +78,9 @@ impl BitGrid {
     }
 
     /// Mutable contiguous words of row `r`.
-    #[allow(dead_code)] // used by the AVX-512 rowsum kernel (wired in a later P3-08 commit)
+    // Part of the row word-slice accessor API (exercised by tests); the rowsum
+    // hot path uses row_pair_mut. Kept for completeness / future column ops.
+    #[allow(dead_code)]
     #[inline]
     pub(crate) fn row_words_mut(&mut self, r: usize) -> &mut [u64] {
         let s = self.stride;

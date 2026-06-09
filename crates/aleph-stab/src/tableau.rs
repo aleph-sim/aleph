@@ -711,7 +711,7 @@ mod tests {
                     }
                 }
             }
-            let rows = 2 * n;
+            let rows = 2 * n + 1;
             let mut tested = 0usize;
             for attempt in 0..2000 {
                 let h = rng.below(rows);

@@ -7,27 +7,25 @@
 //! high bits in the last word are always zero, so no tail masking is needed.
 //! (`BitGrid` guarantees this; these kernels never mask.)
 
-/// Scalar word-parallel kernel. Reads the original bits of both rows to
-/// compute the phase, then XORs row `i` into row `h` in place. Returns the
-/// phase exponent contribution (Σ g, may be negative).
+/// Scalar word-parallel kernel. In a single fused pass, computes each word's
+/// phase contribution and XORs row `i` into row `h` in place. Returns the
+/// total phase exponent contribution (Σ g, may be negative).
 pub(crate) fn rowsum_words(xh: &mut [u64], xi: &[u64], zh: &mut [u64], zi: &[u64]) -> i64 {
     debug_assert_eq!(xh.len(), xi.len());
     debug_assert_eq!(zh.len(), zi.len());
     debug_assert_eq!(xh.len(), zh.len());
+    // One fused pass: each word's phase contribution is independent and row i
+    // (xi/zi) is read-only, so the phase can be computed from the original
+    // xh/zh word and the XOR applied in the same iteration. Matches the
+    // per-chunk structure of rowsum_avx512.
     let mut acc: i64 = 0;
-    // Phase pass: must read the original bits of both rows before any
-    // mutation. A merged single pass would corrupt the phase for bits
-    // already overwritten by the XOR.
     for w in 0..xh.len() {
         let (xiw, ziw, xhw, zhw) = (xi[w], zi[w], xh[w], zh[w]);
         let plus = (xiw & !ziw & zhw & xhw) | (!xiw & ziw & xhw & !zhw) | (xiw & ziw & zhw & !xhw);
         let minus = (xiw & !ziw & zhw & !xhw) | (!xiw & ziw & xhw & zhw) | (xiw & ziw & xhw & !zhw);
         acc += plus.count_ones() as i64 - minus.count_ones() as i64;
-    }
-    // XOR pass (write row h).
-    for w in 0..xh.len() {
-        xh[w] ^= xi[w];
-        zh[w] ^= zi[w];
+        xh[w] ^= xiw;
+        zh[w] ^= ziw;
     }
     acc
 }
