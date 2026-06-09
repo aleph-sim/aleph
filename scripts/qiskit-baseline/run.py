@@ -19,6 +19,7 @@ import statistics
 import time
 from pathlib import Path
 
+import numpy as np
 from qiskit import QuantumCircuit, qasm3, transpile
 from qiskit.circuit.library import QFT, GroverOperator
 from qiskit_aer import AerSimulator
@@ -40,6 +41,7 @@ FAMILY_SIZES = {
     # regenerated here.
     "grover": [4, 8, 12, 16],
     "random_brickwall": [15, 20, 22, 25],
+    "sycamore": [20, 24, 28, 30],
 }
 # Union for the results header (sorted, de-duplicated).
 N_QUBITS_LIST = sorted({n for sizes in FAMILY_SIZES.values() for n in sizes})
@@ -59,6 +61,69 @@ def grover_optimal_iters(n: int) -> int:
 
 RANDOM_DEPTH = 20
 BASIS_GATES = ["h", "x", "z", "rz", "rx", "ry", "cx", "cz", "ccx", "p"]
+
+SYCAMORE_DEPTH = 20
+SYCAMORE_SEED = 0x5121A6E0  # fixed seed -> byte-reproducible corpus
+
+# R(theta, phi) = exp(-i*theta/2*(cos phi*X + sin phi*Y)). The Sycamore
+# single-qubit set is sqrt(X)=R(pi/2,0), sqrt(Y)=R(pi/2,pi/2),
+# sqrt(W)=R(pi/2,pi/4) with W=(X+Y)/sqrt(2) (Arute et al., Nature 574, 2019).
+_SYC_GATES = [
+    (math.pi / 2, 0.0),
+    (math.pi / 2, math.pi / 2),
+    (math.pi / 2, math.pi / 4),
+]
+
+
+def _splitmix64(x: int) -> int:
+    x = (x + 0x9E3779B97F4A7C15) & 0xFFFFFFFFFFFFFFFF
+    z = ((x ^ (x >> 30)) * 0xBF58476D1CE4E5B9) & 0xFFFFFFFFFFFFFFFF
+    z = ((z ^ (z >> 27)) * 0x94D049BB133111EB) & 0xFFFFFFFFFFFFFFFF
+    return z ^ (z >> 31)
+
+
+def _syc_gate_index(seed: int, layer: int, q: int, prev: "int | None") -> int:
+    """Deterministic single-qubit gate choice in {0,1,2} for (layer, q),
+    honoring Google's rule that a qubit's gate differs from its previous cycle.
+    Pure splitmix64 (no numpy RNG / Python hash) so the corpus is byte-stable
+    across machines and Python versions."""
+    h = _splitmix64(seed ^ _splitmix64((layer << 32) | q))
+    if prev is None:
+        return h % 3
+    others = [g for g in (0, 1, 2) if g != prev]
+    return others[h % 2]
+
+
+def build_sycamore(n: int, depth: int, seed: int) -> QuantumCircuit:
+    """Sycamore-style random circuit: alternating single-qubit {sqrt X, sqrt Y,
+    sqrt W} layers and a CZ brick-wall (1-D simplification of the 2-D coupler
+    grid). Worst case for state-vector simulation (maximum entanglement)."""
+    qc = QuantumCircuit(n, name=f"sycamore_n{n}_d{depth}")
+    prev = [None] * n
+    for layer in range(depth):
+        for q in range(n):
+            gi = _syc_gate_index(seed, layer, q, prev[q])
+            theta, phi = _SYC_GATES[gi]
+            qc.r(theta, phi, q)
+            prev[q] = gi
+        q = layer & 1
+        while q + 1 < n:
+            qc.cz(q, q + 1)
+            q += 2
+    return qc
+
+
+def aer_xeb(tqc: QuantumCircuit) -> float:
+    """Exact noiseless linear XEB = 2^n*sum_x p(x)^2 - 1 of the final state
+    (collision-probability form). ~1 for a Porter-Thomas circuit, 0 for the
+    uniform distribution. Computed from Aer's exact statevector."""
+    sim = AerSimulator(method="statevector", max_parallel_threads=1)
+    t = tqc.copy()
+    t.save_statevector()
+    sv = np.asarray(sim.run(t).result().get_statevector())
+    p = np.abs(sv) ** 2
+    return float(len(p) * np.sum(p**2) - 1.0)
+
 
 CIRCUITS_DIR = Path(__file__).parent / "circuits"
 RESULTS_PATH = Path(__file__).parent / "results-qiskit.json"
@@ -160,6 +225,7 @@ FAMILY_BUILDERS = {
     "qpe": lambda n: build_qpe(n),
     "grover": lambda n: build_grover(n, grover_optimal_iters(n)),
     "random_brickwall": lambda n: build_random_brickwall(n, RANDOM_DEPTH),
+    "sycamore": lambda n: build_sycamore(n, SYCAMORE_DEPTH, SYCAMORE_SEED),
 }
 
 
@@ -171,6 +237,8 @@ def corpus_stem(family: str, n: int) -> str:
         return f"grover_n{n}_iters{grover_optimal_iters(n)}"
     if family == "random_brickwall":
         return f"random_brickwall_n{n}_d{RANDOM_DEPTH}"
+    if family == "sycamore":
+        return f"sycamore_n{n}_d{SYCAMORE_DEPTH}"
     return f"{family}_n{n}"
 
 
@@ -302,6 +370,8 @@ def main() -> None:
             "gate_count_post_transpile": gate_count,
             "qiskit_aer": timing,
         }
+        if family == "sycamore":
+            results["workloads"][key]["aer_xeb"] = aer_xeb(tqc)
     RESULTS_PATH.write_text(json.dumps(results, indent=2))
     print(f"[done] results -> {RESULTS_PATH}")
 

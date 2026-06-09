@@ -10,9 +10,32 @@
 //! tracks history). The link is intentionally not a `cargo doc`
 //! intra-doc link because the file lives outside the crate.
 
-use aleph_core::{Gate, GateInstance};
+use aleph_core::{Complex, Gate, GateInstance};
 use aleph_ir::Circuit;
 use smallvec::smallvec;
+
+/// Linear cross-entropy benchmarking (XEB) value of a final state vector,
+/// in the exact noiseless (collision-probability) form
+/// `XEB = 2^n · Σ_x p(x)² − 1`, where `p(x) = |amp_x|²`.
+///
+/// For a Porter–Thomas (well-scrambled) circuit this is ≈ 1; for the uniform
+/// distribution it is 0. Equivalent to the experimental
+/// `2^n·⟨p(x_i)⟩ − 1` when the samples `x_i` are drawn from the ideal
+/// distribution itself (the noiseless case). See Arute et al., Nature 574 (2019).
+///
+/// # Panics
+/// Panics if `amps` is empty or its length is not a power of two.
+#[must_use]
+pub fn linear_xeb(amps: &[Complex]) -> f64 {
+    let dim = amps.len();
+    // `is_power_of_two()` already rejects 0, so this also guarantees `dim > 0`.
+    assert!(
+        dim.is_power_of_two(),
+        "state length must be a non-zero power of two"
+    );
+    let sum_p_sq: f64 = amps.iter().map(|a| a.norm_sqr().powi(2)).sum();
+    dim as f64 * sum_p_sq - 1.0
+}
 
 /// Bell pair on 2 qubits: `H q[0]; CX q[0], q[1]` → `(|00⟩ + |11⟩)/√2`.
 #[must_use]
@@ -250,5 +273,26 @@ mod tests {
              at least one TiledBlock (width=6 < tile_bits=15 means all \
              active-window gates are tile-confinable)"
         );
+    }
+
+    #[test]
+    fn linear_xeb_uniform_is_zero() {
+        // Uniform distribution: every p(x) = 1/D, so 2^n * sum(1/D^2) - 1
+        // = D * (D * 1/D^2) - 1 = 0. (A fully depolarized / unscrambled output.)
+        let n = 4u32;
+        let dim = 1usize << n;
+        let amp = Complex::new((1.0 / dim as f64).sqrt(), 0.0);
+        let amps = vec![amp; dim];
+        assert!(linear_xeb(&amps).abs() < 1e-12);
+    }
+
+    #[test]
+    fn linear_xeb_peaked_is_dim_minus_one() {
+        // A single basis state carries all probability: XEB = D*1 - 1 = D - 1.
+        let n = 4u32;
+        let dim = 1usize << n;
+        let mut amps = vec![Complex::new(0.0, 0.0); dim];
+        amps[0] = Complex::new(1.0, 0.0);
+        assert!((linear_xeb(&amps) - (dim as f64 - 1.0)).abs() < 1e-12);
     }
 }

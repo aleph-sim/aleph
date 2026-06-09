@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "workloads": {
+    "sycamore_n20": {
+      "aleph_xeb": 1.01949,
+      "aer_xeb": 1.0194901913606316
+    },
+    "sycamore_n24": {
+      "aleph_xeb": 1.024468,
+      "aer_xeb": 1.0244682077965859
+    },
+    "sycamore_n28": {
+      "aleph_xeb": 1.03789,
+      "aer_xeb": 1.0378901244722898
+    },
+    "sycamore_n30": {
+      "aleph_xeb": 1.035549,
+      "aer_xeb": 1.0355488049442054
+    }
+  }
+}

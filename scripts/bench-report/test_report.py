@@ -10,7 +10,8 @@ class TestReport(unittest.TestCase):
             out = Path(td) / "phase4.md"
             subprocess.run([sys.executable, str(HERE / "report.py"),
                 "--aleph", str(TD / "aleph.json"), "--aer", str(TD / "aer.json"),
-                "--meta", str(TD / "meta.json"), "--out", str(out)], check=True)
+                "--meta", str(TD / "meta.json"), "--xeb", str(TD / "xeb.json"),
+                "--out", str(out)], check=True)
             self.assertEqual(out.read_text(), (TD / "phase4.golden.md").read_text())
 
 if __name__ == "__main__":
