@@ -111,3 +111,7 @@ harness = false
 [[bench]]
 name = "phase4_sycamore"
 harness = false
+
+[[bench]]
+name = "phase4_surface_code"
+harness = false
