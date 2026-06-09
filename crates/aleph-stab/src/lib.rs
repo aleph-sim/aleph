@@ -12,6 +12,7 @@ mod backend;
 mod bits;
 mod dispatch;
 mod error;
+mod rowsum;
 mod tableau;
 
 pub use backend::StabilizerBackend;

@@ -24,7 +24,8 @@ pub struct Tableau {
 
 /// Aaronson-Gottesman §2 phase exponent: the power of `i` introduced when
 /// the single-qubit Pauli `(x1,z1)` is left-multiplied onto `(x2,z2)`.
-/// Returns a value in `{-1, 0, 1}`. Used by [`Tableau::rowsum`].
+/// Returns a value in `{-1, 0, 1}`. Used by [`Tableau::rowsum_scalar`] (test-only).
+#[cfg(test)]
 fn g(x1: bool, z1: bool, x2: bool, z2: bool) -> i32 {
     let x2 = x2 as i32;
     let z2 = z2 as i32;
@@ -290,11 +291,21 @@ impl Tableau {
         acc
     }
 
-    /// AG §2 `rowsum`: set generator `row h ← (row i)·(row h)`, tracking
-    /// the sign. The phase accumulates as `2·r_h + 2·r_i + Σ_j g(...)`
-    /// reduced mod 4, which is always 0 or 2 (real `±1`) for a product of
-    /// two Pauli generators.
+    /// Left-multiply stabilizer/destabilizer row `i` onto row `h`, tracking the
+    /// sign. Dispatches to the word-parallel kernel.
     fn rowsum(&mut self, h: usize, i: usize) {
+        let base = 2 * self.sign[h] as i64 + 2 * self.sign[i] as i64;
+        let (xh, xi) = self.x.row_pair_mut(h, i);
+        let (zh, zi) = self.z.row_pair_mut(h, i);
+        let phase = crate::rowsum::rowsum_dispatch(xh, xi, zh, zi);
+        let m = (base + phase).rem_euclid(4);
+        debug_assert!(m == 0 || m == 2, "rowsum phase {m} not in {{0, 2}}");
+        self.sign[h] = m == 2;
+    }
+
+    /// Pre-P3-08 per-bit reference, kept for the equivalence test in this file.
+    #[cfg(test)]
+    fn rowsum_scalar(&mut self, h: usize, i: usize) {
         let mut acc: i32 = 2 * self.sign[h] as i32 + 2 * self.sign[i] as i32;
         for j in 0..self.n {
             acc += g(
@@ -658,6 +669,84 @@ mod tests {
         t.rowsum(0, 4);
         t.rowsum(0, 4); // second application cancels the bit XORs
         assert_eq!(snap(&t, 0), before, "rowsum bit XOR is not involutive");
+    }
+
+    #[test]
+    fn rowsum_matches_scalar_reference() {
+        // Drive both implementations from identical entangled states and assert
+        // the full tableau (x, z, sign) agrees after the same rowsum.
+        // rowsum is only called on commuting row pairs (CHP invariant), so we
+        // skip anticommuting pairs to stay in the valid domain.
+        struct Rng(u64);
+        impl Rng {
+            fn below(&mut self, n: usize) -> usize {
+                let mut x = self.0;
+                x ^= x << 13;
+                x ^= x >> 7;
+                x ^= x << 17;
+                self.0 = x;
+                (x as usize) % n
+            }
+        }
+        // n=1 has only two rows (destab_0=X, stab_0=Z) which always anticommute,
+        // so there are no valid rowsum pairs to test. Start from n=2.
+        for n in [2usize, 3, 7, 8, 9, 65] {
+            let mut rng = Rng(0xD1B54A32D192ED03 ^ n as u64);
+            // Build a shared random Clifford state.
+            let mut base = Tableau::new(n);
+            for _ in 0..(6 * n + 10) {
+                match rng.below(3) {
+                    0 => {
+                        let _ = base.h(rng.below(n));
+                    }
+                    1 => {
+                        let _ = base.s(rng.below(n));
+                    }
+                    _ => {
+                        let a = rng.below(n);
+                        let b = (a + 1 + rng.below(n.max(2) - 1)) % n.max(1);
+                        if n > 1 && a != b {
+                            let _ = base.cnot(a, b);
+                        }
+                    }
+                }
+            }
+            let rows = 2 * n + 1;
+            let mut tested = 0usize;
+            for attempt in 0..2000 {
+                let h = rng.below(rows);
+                let mut i = rng.below(rows);
+                if i == h {
+                    i = (i + 1) % rows;
+                }
+                // rowsum is only valid on commuting row pairs (phase ∈ {0, 2}).
+                // Skip anticommuting pairs (they arise in the CHP algorithm
+                // only transiently; callers always guarantee commutativity).
+                if base.rows_anticommute(h, i) {
+                    let _ = attempt; // silence unused warning
+                    continue;
+                }
+                let mut a = base.clone();
+                let mut b = base.clone();
+                a.rowsum(h, i);
+                b.rowsum_scalar(h, i);
+                for r in 0..rows {
+                    for c in 0..n {
+                        assert_eq!(a.x(r, c), b.x(r, c), "x[{r},{c}] n={n}");
+                        assert_eq!(a.z(r, c), b.z(r, c), "z[{r},{c}] n={n}");
+                    }
+                    assert_eq!(a.sign(r), b.sign(r), "sign[{r}] n={n}");
+                }
+                tested += 1;
+                if tested >= 200 {
+                    break;
+                }
+            }
+            assert!(
+                tested >= 10,
+                "too few commuting pairs found for n={n}: {tested}"
+            );
+        }
     }
 
     // copy_row duplicates a full row; zero_row clears it.
