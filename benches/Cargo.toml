@@ -33,6 +33,10 @@ smallvec      = { workspace = true }
 name = "oneshot"
 path = "src/bin/oneshot.rs"
 
+[[bin]]
+name = "surface_dump"
+path = "src/bin/surface_dump.rs"
+
 [dev-dependencies]
 criterion = { workspace = true }
 

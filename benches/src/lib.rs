@@ -409,6 +409,35 @@ impl SurfaceCode {
     }
 }
 
+/// The cycle's gates as a Stim program (H/CX only, no measurements). Targets
+/// match [`SurfaceCode::cycle_gates`]. Used by the postselect oracle.
+#[must_use]
+pub fn cycle_stim_gates(d: usize) -> String {
+    let sc = SurfaceCode::new(d);
+    let mut s = String::new();
+    for g in sc.cycle_gates() {
+        let q = &g.qubits;
+        match g.gate {
+            Gate::H => s.push_str(&format!("H {}\n", q[0])),
+            Gate::Cnot => s.push_str(&format!("CX {} {}\n", q[0], q[1])),
+            _ => unreachable!("cycle uses only H and CX"),
+        }
+    }
+    s
+}
+
+/// Full Stim program for one cycle: gates followed by a single `M` over all
+/// ancillas in [`SurfaceCode::ancilla_order`]. Used to time Stim and as
+/// committed corpus.
+#[must_use]
+pub fn surface_code_stim_program(d: usize) -> String {
+    let sc = SurfaceCode::new(d);
+    let mut s = cycle_stim_gates(d);
+    let targets: Vec<String> = sc.ancilla_order().iter().map(|a| a.to_string()).collect();
+    s.push_str(&format!("M {}\n", targets.join(" ")));
+    s
+}
+
 #[cfg(test)]
 mod surface_tests {
     use super::*;
@@ -533,6 +562,22 @@ mod surface_tests {
                     }
                 }
             }
+        }
+    }
+
+    #[test]
+    fn stim_program_has_one_m_per_ancilla() {
+        for d in [3usize, 5] {
+            let sc = SurfaceCode::new(d);
+            let prog = surface_code_stim_program(d);
+            let m_targets: usize = prog
+                .lines()
+                .filter(|l| l.starts_with("M "))
+                .map(|l| l.split_whitespace().count() - 1)
+                .sum();
+            assert_eq!(m_targets, sc.ancillas.len(), "d={d}: M target count");
+            // Gate-only form has no M lines.
+            assert!(!cycle_stim_gates(d).lines().any(|l| l.starts_with("M ")));
         }
     }
 
