@@ -1866,6 +1866,43 @@ ROADMAP §7 Phase-3 exit: *"Stabilizer backend handles 1000+ qubit Clifford circ
 
 -----
 
+### [P3-11] Stabilizer word-parallel gate kernels (H/S/CNOT) — close the gate-bound gap
+
+**Labels:** `area:backend`, `type:optimization`, `priority:medium`
+**Milestone:** Phase 3 (deferred)
+**Estimate:** L
+**Depends on:** P3-08
+
+**Status:** Deferred follow-up, **created from P3-08's profiling** (PR #134). The original P3-08 scope said "gate application *and* `rowsum` become O(n/64)"; P3-08 deliberately narrowed to `rowsum` (it was the measured hot path) and **explicitly scoped gates out**. The profile after P3-08 flipped the bottleneck — this ticket picks up the gate half. Schedule when stabilizer gate throughput matters (e.g. deeper QEC / large Clifford circuits); not urgent for v0.1.
+
+**Description**
+Word-parallelize (and where it pays, SIMD) the Clifford **gate** kernels (`H`, `S`, `CNOT`, and the Pauli sign updates) in the stabilizer tableau, so a gate stops touching the tableau one bit at a time per row.
+
+**Context**
+After P3-08 word-parallelized `rowsum`, a `perf record` of the surface-code d=11 cycle attributes time as **`Tableau::cnot` 70.9% + `Tableau::h` 15.3% ≈ 86%**, with `measure`/`rowsum` down to ~5–11% (see `docs/perf/surface_code.md` P3-08 addendum). So the measurement path is no longer the bottleneck; the gate kernels are. P3-08 got surface-d11 from **12.52× → 7.66× vs Stim** (1.63× cycle speedup); the remaining gap is almost entirely gates. This is the natural next lever toward the P3-08 design's unmet hard target (surface-d11 ≤ 2× Stim).
+
+**Technical Details**
+
+- Each Clifford gate touches **column `a`** (and `b` for `CNOT`) across all `2n+1` rows: it reads/modifies the single bit at word `a>>6`, mask `1<<(a&63)`, in every row. Under the current **row-major** `BitGrid` that is a **strided, single-bit, branchy `get`/`set` per row** — the opposite access pattern from `rowsum` (which wants contiguous row XOR, which is exactly why row-major is right *for `rowsum`*).
+- The core tension: **`rowsum` wants row-major; gates want column-major.** Options to evaluate (likely an ADR):
+  1. **Stay row-major, de-scalarize:** hoist the word/mask out of the row loop and apply each gate's per-row update with branchless word arithmetic across the 2n rows (extends the P3-01 hoisting). Cheapest; bounded upside since it's still one row per step.
+  2. **Dual / transposed layout:** keep a column-major shadow (or transpose on demand) so a gate's target column is a contiguous `u64` span → word-parallel/SIMD **across rows**. Then `rowsum` either uses the row-major copy or pays a strided cost — measure the sync/transpose overhead. This is essentially Stim's bit-sliced approach.
+  3. **SIMD across rows** once the column is contiguous (option 2), mirroring the P3-08 AVX-512 + `rowsum_dispatch` pattern.
+- Preserve the existing scalar gate kernels as a `#[cfg(test)]` reference and **bit-exact diff** against them; the Stim oracles (d=3..11) remain the independent end-to-end gate. Do not weaken the correctness gate to chase the perf number (P3-08 precedent).
+
+**Acceptance Criteria**
+
+- [ ] Word-parallel (and/or SIMD) `H`/`S`/`CNOT` kernels, bit-for-bit identical to the preserved scalar kernels (proptest) with all Stim oracles green at d=3..11.
+- [ ] Measured surface-code cycle speedup (criterion before/after), reported honestly; restate the aleph/Stim d=11 ratio. **Stretch:** approach the P3-08 design's ≤ 2× Stim target now that both `rowsum` and gates are word-level.
+- [ ] If a layout change lands (option 2/3), an ADR documenting the row-major vs column-major vs dual trade-off for the stabilizer tableau.
+
+**References**
+
+- P3-08 design + perf addendum (`docs/perf/surface_code.md`); PR #134.
+- Stim (quantumlib/Stim) bit-sliced tableau; Aaronson–Gottesman §2–3.
+
+-----
+
 # Phase 4 — Algorithm Benchmarks & v0.1 Release
 
 Goal: comprehensive benchmarks against published baselines; first public release.
