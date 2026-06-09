@@ -357,7 +357,13 @@ impl Tableau {
 
     /// Left-multiply stabilizer/destabilizer row `i` onto row `h`, tracking the
     /// sign. Dispatches to the word-parallel kernel.
+    ///
+    /// Precondition: RowMajor — `row_pair_mut` needs contiguous generator rows.
     fn rowsum(&mut self, h: usize, i: usize) {
+        debug_assert!(
+            self.orientation == Orientation::RowMajor,
+            "rowsum needs RowMajor"
+        );
         let base = 2 * self.sign.get(h) as i64 + 2 * self.sign.get(i) as i64;
         let (xh, xi) = self.x.row_pair_mut(h, i);
         let (zh, zi) = self.z.row_pair_mut(h, i);
@@ -370,6 +376,10 @@ impl Tableau {
     /// Pre-P3-08 per-bit reference, kept for the equivalence test in this file.
     #[cfg(test)]
     fn rowsum_scalar(&mut self, h: usize, i: usize) {
+        debug_assert!(
+            self.orientation == Orientation::RowMajor,
+            "rowsum_scalar needs RowMajor"
+        );
         let mut acc: i32 = 2 * self.sign.get(h) as i32 + 2 * self.sign.get(i) as i32;
         for j in 0..self.n {
             acc += g(
@@ -391,7 +401,13 @@ impl Tableau {
     }
 
     /// Copy a full generator row (x bits, z bits, sign) from `src` to `dst`.
+    ///
+    /// Precondition: RowMajor (direct `(row, col)` grid access).
     fn copy_row(&mut self, dst: usize, src: usize) {
+        debug_assert!(
+            self.orientation == Orientation::RowMajor,
+            "copy_row needs RowMajor"
+        );
         for j in 0..self.n {
             self.x.set(dst, j, self.x.get(src, j));
             self.z.set(dst, j, self.z.get(src, j));
@@ -401,7 +417,13 @@ impl Tableau {
     }
 
     /// Reset a row to the identity Pauli with `+` sign.
+    ///
+    /// Precondition: RowMajor (direct `(row, col)` grid access).
     fn zero_row(&mut self, r: usize) {
+        debug_assert!(
+            self.orientation == Orientation::RowMajor,
+            "zero_row needs RowMajor"
+        );
         for j in 0..self.n {
             self.x.set(r, j, false);
             self.z.set(r, j, false);
