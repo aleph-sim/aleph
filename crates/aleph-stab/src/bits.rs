@@ -99,12 +99,47 @@ impl BitGrid {
         self.words.len() / self.stride
     }
 
-    /// Bit-transpose: returns a `cols × rows` grid with output bit `(c, r)` =
-    /// `self` bit `(r, c)`. Scalar reference implementation — a blocked kernel
-    /// replaces the body in P3-11 Task 5, validated against this via a diff test.
+    /// Blocked bit-transpose: `rows × cols` → `cols × rows` (out bit `(c, r)` =
+    /// `self` bit `(r, c)`). Processes 64×64 bit blocks via [`transpose64`];
+    /// edge blocks are zero-padded (BitGrid guarantees out-of-range high bits
+    /// are zero). Bit-exact with the scalar reference (proved by
+    /// `blocked_transpose_matches_scalar`). Replaces the prior O(rows·cols)
+    /// get/set form — this is the orientation-bridge hot path.
     // Consumed by P3-11 Task 2+; allow until then.
     #[allow(dead_code)]
     pub(crate) fn transpose(&self) -> BitGrid {
+        let rows = self.rows();
+        let cols = self.cols;
+        let mut out = BitGrid::zeros(cols, rows);
+        let src_stride = self.stride; // words per source row
+        let dst_stride = out.stride; // words per dest row (= ceil(rows/64))
+        let row_blocks = rows.div_ceil(64);
+        let col_blocks = cols.div_ceil(64);
+        for rb in 0..row_blocks {
+            let r0 = rb * 64;
+            let rmax = (r0 + 64).min(rows);
+            for cb in 0..col_blocks {
+                let c0 = cb * 64;
+                let cmax = (c0 + 64).min(cols);
+                // Load block: tmp[k] = source row (r0+k), bits [c0, c0+64).
+                let mut tmp = [0u64; 64];
+                for (k, slot) in tmp.iter_mut().enumerate().take(rmax - r0) {
+                    *slot = self.words[(r0 + k) * src_stride + cb];
+                }
+                transpose64(&mut tmp);
+                // Store: out row (c0+k) word at block rb = tmp[k].
+                for (k, &val) in tmp.iter().enumerate().take(cmax - c0) {
+                    out.words[(c0 + k) * dst_stride + rb] = val;
+                }
+            }
+        }
+        out
+    }
+
+    /// Scalar bit-transpose reference; the blocked `transpose` is diffed
+    /// against this. `#[cfg(test)]` — used only by the diff test.
+    #[cfg(test)]
+    pub(crate) fn transpose_scalar(&self) -> BitGrid {
         let rows = self.rows();
         let mut out = BitGrid::zeros(self.cols, rows);
         for r in 0..rows {
@@ -135,6 +170,32 @@ impl BitGrid {
             let (lo, hi) = self.words.split_at_mut(dst * s);
             (&mut hi[..s], &lo[src * s..(src + 1) * s])
         }
+    }
+}
+
+/// Transpose a 64×64 bit-matrix held as 64 rows of `u64` (bit `c` of `a[r]`
+/// is element `(r,c)`), in place. Recursive delta-swap transpose, Warren,
+/// *Hacker's Delight* 2nd ed. §7-3: for each block size `j = 32,16,…,1`,
+/// swap the off-diagonal `j × j` sub-blocks of every aligned `2j × 2j` block.
+/// `m` is the j-periodic low-half mask (low `j` bits set, next `j` clear, …).
+#[inline]
+fn transpose64(a: &mut [u64; 64]) {
+    let mut j = 32usize;
+    let mut m: u64 = 0x0000_0000_FFFF_FFFF;
+    while j != 0 {
+        // Process each aligned 2j×2j block once: rows where bit `j` of the
+        // index is clear pair with the row `j` above.
+        let mut k = 0usize;
+        while k < 64 {
+            if k & j == 0 {
+                let t = ((a[k] >> j) ^ a[k + j]) & m;
+                a[k + j] ^= t;
+                a[k] ^= t << j;
+            }
+            k += 1;
+        }
+        j >>= 1;
+        m ^= m << j;
     }
 }
 
@@ -333,6 +394,49 @@ mod tests {
             for r in 0..rows {
                 for c in 0..cols {
                     assert_eq!(tt.get(r, c), g.get(r, c), "roundtrip ({r},{c})");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn blocked_transpose_matches_scalar() {
+        let mut rng = 0xD1B54A32D192ED03u64;
+        let mut next = || {
+            rng ^= rng << 13;
+            rng ^= rng >> 7;
+            rng ^= rng << 17;
+            rng
+        };
+        for &(rows, cols) in &[
+            (1usize, 1usize),
+            (3, 5),
+            (64, 64),
+            (65, 64),
+            (64, 65),
+            (130, 70),
+            (483, 241), // surface d=11
+            (200, 200),
+        ] {
+            let mut g = super::BitGrid::zeros(rows, cols);
+            for r in 0..rows {
+                for c in 0..cols {
+                    if next() & 1 == 1 {
+                        g.set(r, c, true);
+                    }
+                }
+            }
+            let a = g.transpose();
+            let b = g.transpose_scalar();
+            assert_eq!(a.rows(), b.rows(), "rows {rows}x{cols}");
+            // exhaustive bit compare over original coordinates
+            for r in 0..rows {
+                for c in 0..cols {
+                    assert_eq!(
+                        a.get(c, r),
+                        b.get(c, r),
+                        "blocked!=scalar ({r},{c}) {rows}x{cols}"
+                    );
                 }
             }
         }
