@@ -54,15 +54,33 @@ pub(crate) fn y_sign_words(xa: &[u64], za: &[u64], sign: &mut [u64]) {
     }
 }
 
-/// Dispatch wrappers (AVX-512 lands in Task 4; for now they just call scalar).
+/// Dispatch to the AVX-512 kernel when the CPU supports it, else scalar words.
 #[inline]
 pub(crate) fn h_dispatch(xa: &mut [u64], za: &mut [u64], sign: &mut [u64]) {
+    #[cfg(target_arch = "x86_64")]
+    {
+        if std::is_x86_feature_detected!("avx512f") {
+            // SAFETY: avx512f verified present; all slices equal length; the
+            // kernel uses unaligned loads/stores within bounds and a scalar
+            // tail for the `len % 8` remainder.
+            return unsafe { h_avx512(xa, za, sign) };
+        }
+    }
     h_words(xa, za, sign);
 }
+
 #[inline]
 pub(crate) fn s_dispatch(xa: &[u64], za: &mut [u64], sign: &mut [u64]) {
+    #[cfg(target_arch = "x86_64")]
+    {
+        if std::is_x86_feature_detected!("avx512f") {
+            // SAFETY: see `h_dispatch`.
+            return unsafe { s_avx512(xa, za, sign) };
+        }
+    }
     s_words(xa, za, sign);
 }
+
 #[inline]
 pub(crate) fn cnot_dispatch(
     xa: &[u64],
@@ -71,7 +89,111 @@ pub(crate) fn cnot_dispatch(
     zb: &[u64],
     sign: &mut [u64],
 ) {
+    #[cfg(target_arch = "x86_64")]
+    {
+        if std::is_x86_feature_detected!("avx512f") {
+            // SAFETY: see `h_dispatch`.
+            return unsafe { cnot_avx512(xa, xb, za, zb, sign) };
+        }
+    }
     cnot_words(xa, xb, za, zb, sign);
+}
+
+/// AVX-512 form of [`h_words`]: 8×`u64` (512 bits) per step, scalar tail.
+///
+/// # Safety
+/// Caller must ensure `avx512f` is available (checked by [`h_dispatch`]).
+/// All three slices must have equal length.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f")]
+unsafe fn h_avx512(xa: &mut [u64], za: &mut [u64], sign: &mut [u64]) {
+    use core::arch::x86_64::*;
+    let len = xa.len();
+    let chunks = len / 8;
+    for c in 0..chunks {
+        let off = c * 8;
+        let xw = _mm512_loadu_si512(xa.as_ptr().add(off) as *const __m512i);
+        let zw = _mm512_loadu_si512(za.as_ptr().add(off) as *const __m512i);
+        let sw = _mm512_loadu_si512(sign.as_ptr().add(off) as *const __m512i);
+        let ns = _mm512_xor_si512(sw, _mm512_and_si512(xw, zw));
+        _mm512_storeu_si512(sign.as_mut_ptr().add(off) as *mut __m512i, ns);
+        // swap x and z
+        _mm512_storeu_si512(xa.as_mut_ptr().add(off) as *mut __m512i, zw);
+        _mm512_storeu_si512(za.as_mut_ptr().add(off) as *mut __m512i, xw);
+    }
+    for w in (chunks * 8)..len {
+        sign[w] ^= xa[w] & za[w];
+        core::mem::swap(&mut xa[w], &mut za[w]);
+    }
+}
+
+/// AVX-512 form of [`s_words`].
+///
+/// # Safety
+/// See [`h_avx512`].
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f")]
+unsafe fn s_avx512(xa: &[u64], za: &mut [u64], sign: &mut [u64]) {
+    use core::arch::x86_64::*;
+    let len = xa.len();
+    let chunks = len / 8;
+    for c in 0..chunks {
+        let off = c * 8;
+        let xw = _mm512_loadu_si512(xa.as_ptr().add(off) as *const __m512i);
+        let zw = _mm512_loadu_si512(za.as_ptr().add(off) as *const __m512i);
+        let sw = _mm512_loadu_si512(sign.as_ptr().add(off) as *const __m512i);
+        let ns = _mm512_xor_si512(sw, _mm512_and_si512(xw, zw));
+        _mm512_storeu_si512(sign.as_mut_ptr().add(off) as *mut __m512i, ns);
+        _mm512_storeu_si512(
+            za.as_mut_ptr().add(off) as *mut __m512i,
+            _mm512_xor_si512(zw, xw),
+        );
+    }
+    for w in (chunks * 8)..len {
+        sign[w] ^= xa[w] & za[w];
+        za[w] ^= xa[w];
+    }
+}
+
+/// AVX-512 form of [`cnot_words`]. Reads `x_b`/`z_a` for the sign before
+/// overwriting them (all four operands are loaded up front each step).
+///
+/// # Safety
+/// See [`h_avx512`]. All five slices must have equal length.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f")]
+unsafe fn cnot_avx512(xa: &[u64], xb: &mut [u64], za: &mut [u64], zb: &[u64], sign: &mut [u64]) {
+    use core::arch::x86_64::*;
+    let len = xa.len();
+    let chunks = len / 8;
+    let ones = _mm512_set1_epi64(-1);
+    for c in 0..chunks {
+        let off = c * 8;
+        let xaw = _mm512_loadu_si512(xa.as_ptr().add(off) as *const __m512i);
+        let xbw = _mm512_loadu_si512(xb.as_ptr().add(off) as *const __m512i);
+        let zaw = _mm512_loadu_si512(za.as_ptr().add(off) as *const __m512i);
+        let zbw = _mm512_loadu_si512(zb.as_ptr().add(off) as *const __m512i);
+        let sw = _mm512_loadu_si512(sign.as_ptr().add(off) as *const __m512i);
+        // ~(x_b ^ z_a)
+        let nxnz = _mm512_andnot_si512(_mm512_xor_si512(xbw, zaw), ones);
+        // x_a & z_b & ~(x_b ^ z_a)
+        let term = _mm512_and_si512(_mm512_and_si512(xaw, zbw), nxnz);
+        let ns = _mm512_xor_si512(sw, term);
+        _mm512_storeu_si512(sign.as_mut_ptr().add(off) as *mut __m512i, ns);
+        _mm512_storeu_si512(
+            xb.as_mut_ptr().add(off) as *mut __m512i,
+            _mm512_xor_si512(xbw, xaw),
+        );
+        _mm512_storeu_si512(
+            za.as_mut_ptr().add(off) as *mut __m512i,
+            _mm512_xor_si512(zaw, zbw),
+        );
+    }
+    for w in (chunks * 8)..len {
+        sign[w] ^= xa[w] & zb[w] & !(xb[w] ^ za[w]);
+        xb[w] ^= xa[w];
+        za[w] ^= zb[w];
+    }
 }
 
 #[cfg(test)]
@@ -168,6 +290,47 @@ mod tests {
             assert_eq!(xb, xbr, "cnot xb w={w}");
             assert_eq!(za, zar, "cnot za w={w}");
             assert_eq!(sg, sr, "cnot sign w={w}");
+        }
+    }
+
+    #[test]
+    fn avx512_gates_match_scalar_when_available() {
+        #[cfg(target_arch = "x86_64")]
+        {
+            if !std::is_x86_feature_detected!("avx512f") {
+                return; // skip on non-AVX512 hosts (local aarch64, GH macos, Ryzen)
+            }
+            let mut rng = Rng(0x0F1E2D3C4B5A6978);
+            for w in [1usize, 2, 7, 8, 9, 16, 17] {
+                for _ in 0..500 {
+                    let xa: Vec<u64> = (0..w).map(|_| rng.next()).collect();
+                    let za: Vec<u64> = (0..w).map(|_| rng.next()).collect();
+                    let zb: Vec<u64> = (0..w).map(|_| rng.next()).collect();
+                    let xb: Vec<u64> = (0..w).map(|_| rng.next()).collect();
+                    let sg: Vec<u64> = (0..w).map(|_| rng.next()).collect();
+
+                    // H
+                    let (mut xa1, mut za1, mut s1) = (xa.clone(), za.clone(), sg.clone());
+                    let (mut xa2, mut za2, mut s2) = (xa.clone(), za.clone(), sg.clone());
+                    unsafe { h_avx512(&mut xa1, &mut za1, &mut s1) };
+                    h_words(&mut xa2, &mut za2, &mut s2);
+                    assert_eq!((&xa1, &za1, &s1), (&xa2, &za2, &s2), "H w={w}");
+
+                    // S
+                    let (mut za1, mut s1) = (za.clone(), sg.clone());
+                    let (mut za2, mut s2) = (za.clone(), sg.clone());
+                    unsafe { s_avx512(&xa, &mut za1, &mut s1) };
+                    s_words(&xa, &mut za2, &mut s2);
+                    assert_eq!((&za1, &s1), (&za2, &s2), "S w={w}");
+
+                    // CNOT
+                    let (mut xb1, mut za1, mut s1) = (xb.clone(), za.clone(), sg.clone());
+                    let (mut xb2, mut za2, mut s2) = (xb.clone(), za.clone(), sg.clone());
+                    unsafe { cnot_avx512(&xa, &mut xb1, &mut za1, &zb, &mut s1) };
+                    cnot_words(&xa, &mut xb2, &mut za2, &zb, &mut s2);
+                    assert_eq!((&xb1, &za1, &s1), (&xb2, &za2, &s2), "CNOT w={w}");
+                }
+            }
         }
     }
 }
