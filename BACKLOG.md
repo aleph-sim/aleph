@@ -1792,8 +1792,8 @@ P3-01 deliberately shipped the naive O(n) row-major hot loop (hoisted word-offse
 
 **Acceptance Criteria**
 
-- [ ] Bit-sliced tableau passes the existing Stim oracle + symplectic-invariant proptests bit-for-bit vs the scalar implementation.
-- [ ] Measured speedup on a large/deep Clifford bench (criterion before/after), reported honestly.
+- [x] Bit-sliced tableau passes the existing Stim oracle + symplectic-invariant proptests bit-for-bit vs the scalar implementation. _(word-parallel + AVX-512 `rowsum`; bit-exact vs preserved scalar `rowsum` and Stim oracles green d=3..11.)_
+- [x] Measured speedup on a large/deep Clifford bench (criterion before/after), reported honestly. _(surface-d11 1.375→0.842 ms = 1.63×, 12.52×→7.66× vs Stim; the design's ≤2× target was not met — cycle is now gate-bound, see `docs/perf/surface_code.md`.)_
 
 **References**
 
