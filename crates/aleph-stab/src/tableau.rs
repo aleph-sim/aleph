@@ -297,7 +297,7 @@ impl Tableau {
         let base = 2 * self.sign[h] as i64 + 2 * self.sign[i] as i64;
         let (xh, xi) = self.x.row_pair_mut(h, i);
         let (zh, zi) = self.z.row_pair_mut(h, i);
-        let phase = crate::rowsum::rowsum_words(xh, xi, zh, zi);
+        let phase = crate::rowsum::rowsum_dispatch(xh, xi, zh, zi);
         let m = (base + phase).rem_euclid(4);
         debug_assert!(m == 0 || m == 2, "rowsum phase {m} not in {{0, 2}}");
         self.sign[h] = m == 2;
