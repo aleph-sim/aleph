@@ -135,9 +135,6 @@ impl Tableau {
         }
     }
     /// Ensure ColMajor (qubit columns contiguous) for word-parallel gates.
-    // Only the orientation round-trip test sets ColMajor in Task 2; the gate
-    // kernels that flip to ColMajor land in P3-11 Task 3. Allow until then.
-    #[allow(dead_code)]
     fn ensure_col_major(&mut self) {
         if self.orientation == Orientation::RowMajor {
             self.x = self.x.transpose();
@@ -147,7 +144,25 @@ impl Tableau {
     }
 
     /// Hadamard on qubit `a`. AG §2: `r ^= x_a·z_a`; swap `x_a, z_a`.
+    ///
+    /// ColMajor word-parallel: qubit column `a` is a contiguous word-span
+    /// (`row_words(a)`); the kernel updates the whole column + matching sign
+    /// words in one pass. `x`, `z`, `sign` are three distinct fields, so the
+    /// three simultaneous borrows are allowed.
     pub fn h(&mut self, a: usize) -> Result<(), crate::StabError> {
+        self.check_qubit(a)?;
+        self.ensure_col_major();
+        let xa = self.x.row_words_mut(a);
+        let za = self.z.row_words_mut(a);
+        let sign = self.sign.words_mut();
+        crate::gates::h_dispatch(xa, za, sign);
+        Ok(())
+    }
+
+    /// Pre-ColMajor row-major reference for [`Tableau::h`], kept as the
+    /// equivalence oracle for the word-parallel kernel (test-only).
+    #[cfg(test)]
+    fn h_scalar(&mut self, a: usize) -> Result<(), crate::StabError> {
         self.check_qubit(a)?;
         self.ensure_row_major();
         // Hoist column word-offset and mask; both are loop-invariant.
@@ -173,7 +188,20 @@ impl Tableau {
     }
 
     /// Phase gate S on qubit `a`. AG §2: `r ^= x_a·z_a`; `z_a ^= x_a`.
+    /// ColMajor word-parallel: `x_a` shared, `z_a` mutable, `sign` mutable.
     pub fn s(&mut self, a: usize) -> Result<(), crate::StabError> {
+        self.check_qubit(a)?;
+        self.ensure_col_major();
+        let xa = self.x.row_words(a);
+        let za = self.z.row_words_mut(a);
+        let sign = self.sign.words_mut();
+        crate::gates::s_dispatch(xa, za, sign);
+        Ok(())
+    }
+
+    /// Pre-ColMajor row-major reference for [`Tableau::s`] (test-only oracle).
+    #[cfg(test)]
+    fn s_scalar(&mut self, a: usize) -> Result<(), crate::StabError> {
         self.check_qubit(a)?;
         self.ensure_row_major();
         let stride = self.x.row_stride();
@@ -195,7 +223,28 @@ impl Tableau {
 
     /// CNOT control `a`, target `b`. AG §2:
     /// `r ^= x_a·z_b·(x_b ⊕ z_a ⊕ 1)`; `x_b ^= x_a`; `z_a ^= z_b`.
+    ///
+    /// ColMajor word-parallel. Needs two distinct columns from each grid via
+    /// `row_pair_mut`, which requires `a != b` — so `a == b` is rejected
+    /// (otherwise `row_pair_mut` would panic).
     pub fn cnot(&mut self, a: usize, b: usize) -> Result<(), crate::StabError> {
+        self.check_qubit(a)?;
+        self.check_qubit(b)?;
+        if a == b {
+            return Err(crate::StabError::DuplicateQubit { qubit: a as u32 });
+        }
+        self.ensure_col_major();
+        // x grid: row b mutable (x_b), row a shared (x_a).
+        let (xb, xa) = self.x.row_pair_mut(b, a);
+        // z grid: row a mutable (z_a), row b shared (z_b).
+        let (za, zb) = self.z.row_pair_mut(a, b);
+        crate::gates::cnot_dispatch(xa, xb, za, zb, self.sign.words_mut());
+        Ok(())
+    }
+
+    /// Pre-ColMajor row-major reference for [`Tableau::cnot`] (test-only oracle).
+    #[cfg(test)]
+    fn cnot_scalar(&mut self, a: usize, b: usize) -> Result<(), crate::StabError> {
         self.check_qubit(a)?;
         self.check_qubit(b)?;
         self.ensure_row_major();
@@ -225,7 +274,17 @@ impl Tableau {
     }
 
     /// Pauli-X on `a`. Sign rule: `r ^= z_a` (X anticommutes with Z).
+    /// ColMajor word-parallel: `sign ^= z`-column.
     pub fn x_gate(&mut self, a: usize) -> Result<(), crate::StabError> {
+        self.check_qubit(a)?;
+        self.ensure_col_major();
+        crate::gates::sign_xor_words(self.z.row_words(a), self.sign.words_mut());
+        Ok(())
+    }
+
+    /// Pre-ColMajor row-major reference for [`Tableau::x_gate`] (test-only oracle).
+    #[cfg(test)]
+    fn x_gate_scalar(&mut self, a: usize) -> Result<(), crate::StabError> {
         self.check_qubit(a)?;
         self.ensure_row_major();
         let stride = self.z.row_stride();
@@ -240,7 +299,17 @@ impl Tableau {
     }
 
     /// Pauli-Z on `a`. Sign rule: `r ^= x_a`.
+    /// ColMajor word-parallel: `sign ^= x`-column.
     pub fn z_gate(&mut self, a: usize) -> Result<(), crate::StabError> {
+        self.check_qubit(a)?;
+        self.ensure_col_major();
+        crate::gates::sign_xor_words(self.x.row_words(a), self.sign.words_mut());
+        Ok(())
+    }
+
+    /// Pre-ColMajor row-major reference for [`Tableau::z_gate`] (test-only oracle).
+    #[cfg(test)]
+    fn z_gate_scalar(&mut self, a: usize) -> Result<(), crate::StabError> {
         self.check_qubit(a)?;
         self.ensure_row_major();
         let stride = self.x.row_stride();
@@ -255,7 +324,19 @@ impl Tableau {
     }
 
     /// Pauli-Y on `a`. Sign rule: `r ^= x_a ⊕ z_a`.
+    /// ColMajor word-parallel: `sign ^= x`-column `^` `z`-column.
     pub fn y_gate(&mut self, a: usize) -> Result<(), crate::StabError> {
+        self.check_qubit(a)?;
+        self.ensure_col_major();
+        let xa = self.x.row_words(a);
+        let za = self.z.row_words(a);
+        crate::gates::y_sign_words(xa, za, self.sign.words_mut());
+        Ok(())
+    }
+
+    /// Pre-ColMajor row-major reference for [`Tableau::y_gate`] (test-only oracle).
+    #[cfg(test)]
+    fn y_gate_scalar(&mut self, a: usize) -> Result<(), crate::StabError> {
         self.check_qubit(a)?;
         self.ensure_row_major();
         let stride = self.x.row_stride();
@@ -279,7 +360,15 @@ impl Tableau {
     }
 
     /// Controlled-Z on `(a,b)`. `CZ = H_b · CNOT_{a,b} · H_b`. Symmetric.
+    ///
+    /// Rejects `a == b` up front so the gate never mutates then fails
+    /// mid-decomposition (the inner `cnot` would reject `a == b` anyway).
     pub fn cz(&mut self, a: usize, b: usize) -> Result<(), crate::StabError> {
+        self.check_qubit(a)?;
+        self.check_qubit(b)?;
+        if a == b {
+            return Err(crate::StabError::DuplicateQubit { qubit: a as u32 });
+        }
         self.h(b)?;
         self.cnot(a, b)?;
         self.h(b)
@@ -287,6 +376,11 @@ impl Tableau {
 
     /// SWAP `(a,b)`. `SWAP = CNOT_{a,b} · CNOT_{b,a} · CNOT_{a,b}`.
     pub fn swap(&mut self, a: usize, b: usize) -> Result<(), crate::StabError> {
+        self.check_qubit(a)?;
+        self.check_qubit(b)?;
+        if a == b {
+            return Err(crate::StabError::DuplicateQubit { qubit: a as u32 });
+        }
         self.cnot(a, b)?;
         self.cnot(b, a)?;
         self.cnot(a, b)
@@ -296,6 +390,11 @@ impl Tableau {
     /// Decomposition: `S_a S_b H_a CNOT_{a,b} CNOT_{b,a} H_b`.
     /// Correctness pinned by the SV-equivalence test (P3-01 §6.1).
     pub fn iswap(&mut self, a: usize, b: usize) -> Result<(), crate::StabError> {
+        self.check_qubit(a)?;
+        self.check_qubit(b)?;
+        if a == b {
+            return Err(crate::StabError::DuplicateQubit { qubit: a as u32 });
+        }
         self.s(a)?;
         self.s(b)?;
         self.h(a)?;
@@ -307,6 +406,11 @@ impl Tableau {
     /// iSWAP† `(a,b)`: reverse circuit of `iswap` with each primitive
     /// inverted (`H†=H`, `CNOT†=CNOT`, `S†=Sdg`).
     pub fn iswap_dg(&mut self, a: usize, b: usize) -> Result<(), crate::StabError> {
+        self.check_qubit(a)?;
+        self.check_qubit(b)?;
+        if a == b {
+            return Err(crate::StabError::DuplicateQubit { qubit: a as u32 });
+        }
         self.h(b)?;
         self.cnot(b, a)?;
         self.cnot(a, b)?;
@@ -747,8 +851,12 @@ mod tests {
     #[test]
     fn rowsum_bit_involution() {
         let mut t = generic_state(); // 3-qubit entangled Clifford state
-                                     // snapshot row 0 (destab 0) bits; we rowsum with row 4 (stab 1)
-                                     // which commutes with destab 0 (j ≠ i in the CHP invariant).
+                                     // Gates now leave the tableau ColMajor (P3-11); `rowsum` is a
+                                     // RowMajor-only internal helper (its real callers — `measure` — flip
+                                     // first), so flip here before poking it directly.
+        t.ensure_row_major();
+        // snapshot row 0 (destab 0) bits; we rowsum with row 4 (stab 1)
+        // which commutes with destab 0 (j ≠ i in the CHP invariant).
         let snap = |t: &Tableau, r: usize| -> Vec<(bool, bool)> {
             (0..t.num_qubits())
                 .map(|j| (t.x(r, j), t.z(r, j)))
@@ -800,6 +908,9 @@ mod tests {
                     }
                 }
             }
+            // Gates now leave `base` ColMajor (P3-11); `rowsum`/`rowsum_scalar`
+            // are RowMajor-only, so flip before cloning + poking them directly.
+            base.ensure_row_major();
             let rows = 2 * n + 1;
             let mut tested = 0usize;
             for attempt in 0..2000 {
@@ -842,6 +953,9 @@ mod tests {
     #[test]
     fn copy_and_zero_row() {
         let mut t = generic_state();
+        // `copy_row`/`zero_row` are RowMajor-only internal helpers; gates now
+        // leave the tableau ColMajor (P3-11), so flip before poking them.
+        t.ensure_row_major();
         t.copy_row(0, 4); // row 0 (destab) ← row 4 (stab 1)
         for j in 0..t.num_qubits() {
             assert_eq!(t.x(0, j), t.x(4, j));
@@ -1011,5 +1125,84 @@ mod tests {
             (1842..=2158).contains(&ones),
             "GHZ q0 balance out of range: {ones}/4000 ones"
         );
+    }
+
+    #[test]
+    fn colmajor_gates_match_scalar_reference() {
+        // Drive identical random Clifford circuits through the public ColMajor
+        // kernels and the preserved row-major *_scalar references; assert the
+        // full logical tableau (x, z, sign) agrees. a != b enforced for 2q gates.
+        struct Rng(u64);
+        impl Rng {
+            fn below(&mut self, n: usize) -> usize {
+                let mut x = self.0;
+                x ^= x << 13;
+                x ^= x >> 7;
+                x ^= x << 17;
+                self.0 = x;
+                (x as usize) % n
+            }
+        }
+        for n in [1usize, 2, 3, 8, 9, 64, 65, 130] {
+            let mut rng = Rng(0x1234_5678_9ABC_DEF0 ^ (n as u64).wrapping_mul(0x9E37));
+            let mut a = Tableau::new(n);
+            let mut b = Tableau::new(n);
+            for _ in 0..(20 * n + 50) {
+                let pick = rng.below(7);
+                let q = rng.below(n);
+                match pick {
+                    0 => {
+                        a.h(q).unwrap();
+                        b.h_scalar(q).unwrap();
+                    }
+                    1 => {
+                        a.s(q).unwrap();
+                        b.s_scalar(q).unwrap();
+                    }
+                    2 => {
+                        a.x_gate(q).unwrap();
+                        b.x_gate_scalar(q).unwrap();
+                    }
+                    3 => {
+                        a.y_gate(q).unwrap();
+                        b.y_gate_scalar(q).unwrap();
+                    }
+                    4 => {
+                        a.z_gate(q).unwrap();
+                        b.z_gate_scalar(q).unwrap();
+                    }
+                    _ => {
+                        if n >= 2 {
+                            let mut q2 = rng.below(n);
+                            if q2 == q {
+                                q2 = (q2 + 1) % n;
+                            }
+                            a.cnot(q, q2).unwrap();
+                            b.cnot_scalar(q, q2).unwrap();
+                        }
+                    }
+                }
+            }
+            for r in 0..2 * n {
+                assert_eq!(a.sign(r), b.sign(r), "sign[{r}] n={n}");
+                for c in 0..n {
+                    assert_eq!(a.x(r, c), b.x(r, c), "x[{r},{c}] n={n}");
+                    assert_eq!(a.z(r, c), b.z(r, c), "z[{r},{c}] n={n}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn cnot_duplicate_qubit_rejected() {
+        let mut t = Tableau::new(2);
+        assert!(matches!(
+            t.cnot(1, 1),
+            Err(crate::StabError::DuplicateQubit { qubit: 1 })
+        ));
+        assert!(matches!(
+            t.swap(0, 0),
+            Err(crate::StabError::DuplicateQubit { qubit: 0 })
+        ));
     }
 }

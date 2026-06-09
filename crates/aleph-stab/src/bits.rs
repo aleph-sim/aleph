@@ -47,6 +47,9 @@ impl BitGrid {
     // --- word-level accessors for hoisted hot-loop indexing ---
 
     /// Number of `u64` words per row.
+    // Now used only by the `#[cfg(test)]` `*_scalar` row-major gate references
+    // in `tableau.rs` (the ColMajor public gates use the row-slice accessors).
+    #[allow(dead_code)]
     #[inline]
     pub(crate) fn row_stride(&self) -> usize {
         self.stride
@@ -54,6 +57,8 @@ impl BitGrid {
 
     /// Read the word at a precomputed flat index `row * stride + word_col`.
     /// Callers must ensure `idx < self.words.len()`.
+    // Test-only since P3-11 (see `row_stride`).
+    #[allow(dead_code)]
     #[inline]
     pub(crate) fn word(&self, idx: usize) -> u64 {
         self.words[idx]
@@ -61,15 +66,16 @@ impl BitGrid {
 
     /// Mutable reference to the word at a precomputed flat index.
     /// Callers must ensure `idx < self.words.len()`.
+    // Test-only since P3-11 (see `row_stride`).
+    #[allow(dead_code)]
     #[inline]
     pub(crate) fn word_mut(&mut self, idx: usize) -> &mut u64 {
         &mut self.words[idx]
     }
 
-    /// The `stride` words of row `r` (contiguous).
-    // Part of the row word-slice accessor API (exercised by tests); the rowsum
-    // hot path uses row_pair_mut. Kept for completeness / future column ops.
-    #[allow(dead_code)]
+    /// The `stride` words of row `r` (contiguous). In ColMajor orientation row
+    /// `r` is qubit column `r`'s full word-span — the P3-11 gate kernels read
+    /// it directly.
     #[inline]
     pub(crate) fn row_words(&self, r: usize) -> &[u64] {
         let s = self.stride;
@@ -77,10 +83,7 @@ impl BitGrid {
         &self.words[r * s..(r + 1) * s]
     }
 
-    /// Mutable contiguous words of row `r`.
-    // Part of the row word-slice accessor API (exercised by tests); the rowsum
-    // hot path uses row_pair_mut. Kept for completeness / future column ops.
-    #[allow(dead_code)]
+    /// Mutable contiguous words of row `r` (ColMajor qubit column for gates).
     #[inline]
     pub(crate) fn row_words_mut(&mut self, r: usize) -> &mut [u64] {
         let s = self.stride;
