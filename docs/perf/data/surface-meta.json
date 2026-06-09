@@ -1,0 +1,5 @@
+{
+  "date": "2026-06-09",
+  "host": "AMD EPYC 8124P 16-Core Processor (single-thread, RAYON_NUM_THREADS=1)",
+  "toolchain": "rustc 1.95.0 (59807616e 2026-04-14), RUSTFLAGS=-C target-cpu=native; Stim 1.16.0 TableauSimulator (median of 50 runs)"
+}

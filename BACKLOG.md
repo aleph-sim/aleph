@@ -2101,13 +2101,13 @@ Showcases the stabilizer backend. QEC is *the* killer app for stabilizer simulat
 
 **Acceptance Criteria**
 
-- [ ] Cycles run to d = 11 (≈ 240 physical qubits)
-- [ ] Match Stim output
-- [ ] Benchmark report row
+- [x] Cycles run to d = 11 (≈ 240 physical qubits)
+- [x] Match Stim output
+- [x] Benchmark report row
 
 **Testing Requirements**
 
-- Logical X / Z operator detection works as expected.
+- [x] Logical X / Z operator detection works as expected.
 
 **References**
 

@@ -25,12 +25,17 @@ aleph-core    = { path = "../crates/aleph-core" }
 aleph-ir      = { path = "../crates/aleph-ir" }
 aleph-backend = { path = "../crates/aleph-backend" }
 aleph-sv      = { path = "../crates/aleph-sv" }
+aleph-stab    = { path = "../crates/aleph-stab" }
 aleph-parser  = { path = "../crates/aleph-parser" }
 smallvec      = { workspace = true }
 
 [[bin]]
 name = "oneshot"
 path = "src/bin/oneshot.rs"
+
+[[bin]]
+name = "surface_dump"
+path = "src/bin/surface_dump.rs"
 
 [dev-dependencies]
 criterion = { workspace = true }
@@ -105,4 +110,8 @@ harness = false
 
 [[bench]]
 name = "phase4_sycamore"
+harness = false
+
+[[bench]]
+name = "phase4_surface_code"
 harness = false

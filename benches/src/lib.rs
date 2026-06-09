@@ -296,3 +296,300 @@ mod tests {
         assert!((linear_xeb(&amps) - (dim as f64 - 1.0)).abs() < 1e-12);
     }
 }
+
+/// Rotated surface code (Fowler et al. 2012; rotated variant per Tomita &
+/// Svore 2014). Distance `d` (odd ≥ 3): `d²` data qubits + `d²−1` ancillas
+/// (`2d²−1` total). See docs/superpowers/specs/2026-06-09-p4-07-surface-code-design.md.
+#[derive(Clone, Debug)]
+pub struct Ancilla {
+    pub index: u32,
+    pub is_x: bool,
+    pub data_neighbours: Vec<u32>,
+}
+
+#[derive(Clone, Debug)]
+pub struct SurfaceCode {
+    pub distance: usize,
+    pub num_qubits: usize,
+    pub data: Vec<u32>,
+    pub ancillas: Vec<Ancilla>,
+    pub logical_x: Vec<u32>,
+    pub logical_z: Vec<u32>,
+}
+
+impl SurfaceCode {
+    /// Build the rotated surface code of distance `d` (odd, ≥ 3).
+    ///
+    /// # Panics
+    /// Panics if `d < 3` or `d` is even.
+    #[must_use]
+    pub fn new(distance: usize) -> Self {
+        let d = distance;
+        assert!(
+            d >= 3 && d % 2 == 1,
+            "distance must be odd and >= 3, got {d}"
+        );
+        let di = d as i32;
+        let didx = |r: i32, c: i32| -> u32 { (r as u32) * d as u32 + c as u32 };
+
+        let data: Vec<u32> = (0..(d * d) as u32).collect();
+        let mut ancillas: Vec<Ancilla> = Vec::with_capacity(d * d - 1);
+        let mut next = (d * d) as u32;
+
+        // Candidate plaquette centres (r,c), r,c ∈ {-1,…,d-1}; owns the in-grid
+        // members of {(r,c),(r,c+1),(r+1,c),(r+1,c+1)}. Type X iff (r+c) even.
+        for r in -1..di {
+            for c in -1..di {
+                let mut nbrs: Vec<u32> = Vec::with_capacity(4);
+                for (rr, cc) in [(r, c), (r, c + 1), (r + 1, c), (r + 1, c + 1)] {
+                    if (0..di).contains(&rr) && (0..di).contains(&cc) {
+                        nbrs.push(didx(rr, cc));
+                    }
+                }
+                let is_x = (r + c).rem_euclid(2) == 0;
+                let keep = match nbrs.len() {
+                    4 => true,
+                    2 => {
+                        let horizontal_edge = r == -1 || r == di - 1;
+                        let vertical_edge = c == -1 || c == di - 1;
+                        (horizontal_edge && is_x) || (vertical_edge && !is_x)
+                    }
+                    _ => false, // corners (1 neighbour) dropped
+                };
+                if keep {
+                    ancillas.push(Ancilla {
+                        index: next,
+                        is_x,
+                        data_neighbours: nbrs,
+                    });
+                    next += 1;
+                }
+            }
+        }
+
+        // Logical X = data column 0 (top↔bottom); logical Z = data row 0 (left↔right).
+        let logical_x: Vec<u32> = (0..d as u32).map(|r| r * d as u32).collect();
+        let logical_z: Vec<u32> = (0..d as u32).collect();
+
+        Self {
+            distance: d,
+            num_qubits: 2 * d * d - 1,
+            data,
+            ancillas,
+            logical_x,
+            logical_z,
+        }
+    }
+
+    /// Ancilla measurement order (construction order; matches the Stim program).
+    #[must_use]
+    pub fn ancilla_order(&self) -> Vec<u32> {
+        self.ancillas.iter().map(|a| a.index).collect()
+    }
+
+    /// One syndrome-extraction cycle as gates (no measurements). X-ancillas:
+    /// `H a; CX a d…; H a`. Z-ancillas: `CX d… a`. Caller measures ancillas
+    /// in `ancilla_order()` afterwards.
+    #[must_use]
+    pub fn cycle_gates(&self) -> Vec<GateInstance> {
+        let mut gates = Vec::new();
+        for a in self.ancillas.iter().filter(|a| a.is_x) {
+            gates.push(GateInstance::new(Gate::H, vec![a.index]));
+            for &d in &a.data_neighbours {
+                gates.push(GateInstance::new(Gate::Cnot, vec![a.index, d]));
+            }
+            gates.push(GateInstance::new(Gate::H, vec![a.index]));
+        }
+        for a in self.ancillas.iter().filter(|a| !a.is_x) {
+            for &d in &a.data_neighbours {
+                gates.push(GateInstance::new(Gate::Cnot, vec![d, a.index]));
+            }
+        }
+        gates
+    }
+}
+
+/// The cycle's gates as a Stim program (H/CX only, no measurements). Targets
+/// match [`SurfaceCode::cycle_gates`]. Used by the postselect oracle.
+#[must_use]
+pub fn cycle_stim_gates(d: usize) -> String {
+    let sc = SurfaceCode::new(d);
+    let mut s = String::new();
+    for g in sc.cycle_gates() {
+        let q = &g.qubits;
+        match g.gate {
+            Gate::H => s.push_str(&format!("H {}\n", q[0])),
+            Gate::Cnot => s.push_str(&format!("CX {} {}\n", q[0], q[1])),
+            _ => unreachable!("cycle uses only H and CX"),
+        }
+    }
+    s
+}
+
+/// Full Stim program for one cycle: gates followed by a single `M` over all
+/// ancillas in [`SurfaceCode::ancilla_order`]. Used to time Stim and as
+/// committed corpus.
+#[must_use]
+pub fn surface_code_stim_program(d: usize) -> String {
+    let sc = SurfaceCode::new(d);
+    let mut s = cycle_stim_gates(d);
+    let targets: Vec<String> = sc.ancilla_order().iter().map(|a| a.to_string()).collect();
+    s.push_str(&format!("M {}\n", targets.join(" ")));
+    s
+}
+
+#[cfg(test)]
+mod surface_tests {
+    use super::*;
+    use aleph_backend::Backend;
+    use aleph_stab::StabilizerBackend;
+
+    // Symplectic anticommutation of two supports given as (data-set, is_x):
+    // two Paulis anticommute iff the X-support of one overlaps the Z-support
+    // of the other in an odd total count. For an all-X op P and all-Z op Q on
+    // data sets A, B: they anticommute iff |A ∩ B| is odd.
+    fn anticommute_xz(x_support: &[u32], z_support: &[u32]) -> bool {
+        let zset: std::collections::HashSet<u32> = z_support.iter().copied().collect();
+        x_support.iter().filter(|q| zset.contains(q)).count() % 2 == 1
+    }
+
+    #[test]
+    fn counts_are_correct() {
+        for d in [3usize, 5, 7, 9, 11] {
+            let sc = SurfaceCode::new(d);
+            assert_eq!(sc.data.len(), d * d, "d={d} data count");
+            assert_eq!(sc.ancillas.len(), d * d - 1, "d={d} ancilla count");
+            assert_eq!(sc.num_qubits, 2 * d * d - 1, "d={d} total");
+            let xs = sc.ancillas.iter().filter(|a| a.is_x).count();
+            let zs = sc.ancillas.iter().filter(|a| !a.is_x).count();
+            assert_eq!(xs, (d * d - 1) / 2, "d={d} X-ancilla count");
+            assert_eq!(zs, (d * d - 1) / 2, "d={d} Z-ancilla count");
+            // Every ancilla weight is 2 or 4; indices are unique and contiguous.
+            for a in &sc.ancillas {
+                assert!(
+                    a.data_neighbours.len() == 2 || a.data_neighbours.len() == 4,
+                    "d={d} ancilla {} weight {}",
+                    a.index,
+                    a.data_neighbours.len()
+                );
+            }
+            let mut idx: Vec<u32> = sc.ancillas.iter().map(|a| a.index).collect();
+            idx.sort_unstable();
+            let expect: Vec<u32> = ((d * d) as u32..(2 * d * d - 1) as u32).collect();
+            assert_eq!(idx, expect, "d={d} ancilla indices contiguous after data");
+        }
+    }
+
+    #[test]
+    fn all_stabilizers_commute() {
+        // X-ancilla (all-X) vs Z-ancilla (all-Z) must share an even number of
+        // data qubits. Same-type pairs always commute.
+        for d in [3usize, 5, 7, 9, 11] {
+            let sc = SurfaceCode::new(d);
+            for ax in sc.ancillas.iter().filter(|a| a.is_x) {
+                for az in sc.ancillas.iter().filter(|a| !a.is_x) {
+                    assert!(
+                        !anticommute_xz(&ax.data_neighbours, &az.data_neighbours),
+                        "d={d}: X-anc {} and Z-anc {} anticommute",
+                        ax.index,
+                        az.index
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn logicals_commute_with_stabilizers_and_anticommute_each_other() {
+        for d in [3usize, 5, 7, 9, 11] {
+            let sc = SurfaceCode::new(d);
+            assert_eq!(sc.logical_x.len(), d, "d={d} logical X weight");
+            assert_eq!(sc.logical_z.len(), d, "d={d} logical Z weight");
+            // logical_x (all-X) commutes with every Z-stabilizer.
+            for az in sc.ancillas.iter().filter(|a| !a.is_x) {
+                assert!(
+                    !anticommute_xz(&sc.logical_x, &az.data_neighbours),
+                    "d={d}: logical_x anticommutes with Z-anc {}",
+                    az.index
+                );
+            }
+            // logical_z (all-Z) commutes with every X-stabilizer.
+            for ax in sc.ancillas.iter().filter(|a| a.is_x) {
+                assert!(
+                    !anticommute_xz(&ax.data_neighbours, &sc.logical_z),
+                    "d={d}: logical_z anticommutes with X-anc {}",
+                    ax.index
+                );
+            }
+            // The two logicals anticommute (overlap on exactly one data qubit).
+            assert!(
+                anticommute_xz(&sc.logical_x, &sc.logical_z),
+                "d={d}: logicals must anticommute"
+            );
+        }
+    }
+
+    /// Run one cycle from data |0…0⟩ and return the measured outcome for each
+    /// ancilla, in `ancilla_order()`.
+    fn run_cycle(sc: &SurfaceCode, seed: u64, pre: &[GateInstance]) -> Vec<bool> {
+        let mut be = StabilizerBackend::with_seed(seed);
+        let mut t = be.allocate(sc.num_qubits as u32).unwrap();
+        for g in pre {
+            be.apply_gate(&mut t, g).unwrap();
+        }
+        for g in sc.cycle_gates() {
+            be.apply_gate(&mut t, &g).unwrap();
+        }
+        sc.ancilla_order()
+            .iter()
+            .map(|&a| be.measure(&mut t, a).unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn z_syndrome_is_zero_from_ground_state() {
+        // From |0…0⟩, every Z-stabilizer is +1 ⇒ its ancilla measures 0,
+        // for any seed. (X-ancillas are random and not asserted here.)
+        for d in [3usize, 5] {
+            let sc = SurfaceCode::new(d);
+            let order = sc.ancilla_order();
+            for seed in [0u64, 1, 7, 42] {
+                let out = run_cycle(&sc, seed, &[]);
+                for (k, &anc) in order.iter().enumerate() {
+                    let is_z = !sc.ancillas.iter().find(|a| a.index == anc).unwrap().is_x;
+                    if is_z {
+                        assert!(!out[k], "d={d} seed={seed}: Z-ancilla {anc} fired from |0>");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn stim_program_has_one_m_per_ancilla() {
+        for d in [3usize, 5] {
+            let sc = SurfaceCode::new(d);
+            let prog = surface_code_stim_program(d);
+            let m_targets: usize = prog
+                .lines()
+                .filter(|l| l.starts_with("M "))
+                .map(|l| l.split_whitespace().count() - 1)
+                .sum();
+            assert_eq!(m_targets, sc.ancillas.len(), "d={d}: M target count");
+            // Gate-only form has no M lines.
+            assert!(!cycle_stim_gates(d).lines().any(|l| l.starts_with("M ")));
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "distance must be odd")]
+    fn rejects_even_distance() {
+        let _ = SurfaceCode::new(4);
+    }
+
+    #[test]
+    #[should_panic(expected = "distance must be odd")]
+    fn rejects_too_small_distance() {
+        let _ = SurfaceCode::new(1);
+    }
+}
