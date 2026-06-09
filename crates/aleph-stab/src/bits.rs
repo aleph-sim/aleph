@@ -67,8 +67,7 @@ impl BitGrid {
     }
 
     /// The `stride` words of row `r` (contiguous).
-    // used by the word-parallel rowsum kernel (wired in a later P3-08 commit)
-    #[allow(dead_code)]
+    #[allow(dead_code)] // used by the AVX-512 rowsum kernel (wired in a later P3-08 commit)
     #[inline]
     pub(crate) fn row_words(&self, r: usize) -> &[u64] {
         let s = self.stride;
@@ -77,8 +76,7 @@ impl BitGrid {
     }
 
     /// Mutable contiguous words of row `r`.
-    // used by the word-parallel rowsum kernel (wired in a later P3-08 commit)
-    #[allow(dead_code)]
+    #[allow(dead_code)] // used by the AVX-512 rowsum kernel (wired in a later P3-08 commit)
     #[inline]
     pub(crate) fn row_words_mut(&mut self, r: usize) -> &mut [u64] {
         let s = self.stride;
@@ -89,8 +87,6 @@ impl BitGrid {
     /// Mutable words of row `dst` and shared words of row `src`, borrowed
     /// simultaneously. Requires `dst != src` (rows live in one backing `Vec`,
     /// split via `split_at_mut`).
-    // used by the word-parallel rowsum kernel (wired in a later P3-08 commit)
-    #[allow(dead_code)]
     #[inline]
     pub(crate) fn row_pair_mut(&mut self, dst: usize, src: usize) -> (&mut [u64], &[u64]) {
         debug_assert_ne!(dst, src, "row_pair_mut needs distinct rows");

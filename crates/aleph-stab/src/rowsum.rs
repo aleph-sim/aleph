@@ -10,8 +10,6 @@
 /// Scalar word-parallel kernel. Reads the original bits of both rows to
 /// compute the phase, then XORs row `i` into row `h` in place. Returns the
 /// phase exponent contribution (Σ g, may be negative).
-// wired into Tableau::rowsum in a later P3-08 commit
-#[allow(dead_code)]
 pub(crate) fn rowsum_words(xh: &mut [u64], xi: &[u64], zh: &mut [u64], zi: &[u64]) -> i64 {
     debug_assert_eq!(xh.len(), xi.len());
     debug_assert_eq!(zh.len(), zi.len());
