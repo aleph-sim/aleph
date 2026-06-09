@@ -5,7 +5,9 @@
     15,
     20,
     22,
+    24,
     25,
+    28,
     30
   ],
   "grover_iters": 5,
@@ -316,6 +318,69 @@
         "median_s": 0.004016841994598508,
         "mean_s": 0.004016841994598508,
         "stdev_s": 7.407485799672644e-05
+      }
+    },
+    "sycamore_n20": {
+      "n": 20,
+      "family": "sycamore",
+      "timing_runs": 5,
+      "gate_count_post_transpile": 2190,
+      "qiskit_aer": {
+        "samples_s": [
+          1.157117212191224,
+          1.1571990761440247,
+          1.1574141918681562,
+          1.1577159480657429,
+          1.158018376911059
+        ],
+        "median_s": 1.1574141918681562,
+        "mean_s": 1.1574929610360414,
+        "stdev_s": 0.0003740137574615816
+      }
+    },
+    "sycamore_n24": {
+      "n": 24,
+      "family": "sycamore",
+      "timing_runs": 3,
+      "gate_count_post_transpile": 2630,
+      "qiskit_aer": {
+        "samples_s": [
+          22.15550020080991,
+          22.17939080297947,
+          22.1661703560967
+        ],
+        "median_s": 22.1661703560967,
+        "mean_s": 22.16702045329536,
+        "stdev_s": 0.011967966282598084
+      }
+    },
+    "sycamore_n28": {
+      "n": 28,
+      "family": "sycamore",
+      "timing_runs": 2,
+      "gate_count_post_transpile": 3070,
+      "qiskit_aer": {
+        "samples_s": [
+          596.204951612046,
+          592.4320211529266
+        ],
+        "median_s": 594.3184863824863,
+        "mean_s": 594.3184863824863,
+        "stdev_s": 2.6678647125885875
+      }
+    },
+    "sycamore_n30": {
+      "n": 30,
+      "family": "sycamore",
+      "timing_runs": 1,
+      "gate_count_post_transpile": 3290,
+      "qiskit_aer": {
+        "samples_s": [
+          3070.4836493870243
+        ],
+        "median_s": 3070.4836493870243,
+        "mean_s": 3070.4836493870243,
+        "stdev_s": 0.0
       }
     }
   }

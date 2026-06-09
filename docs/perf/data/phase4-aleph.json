@@ -96,6 +96,30 @@
       "family": "vqe",
       "aleph_ms_median": 0.17761904746294022,
       "aleph_rsd": 0.020184816533745955
+    },
+    "sycamore_n20": {
+      "n": 20,
+      "family": "sycamore",
+      "aleph_ms_median": 6028.8913535,
+      "aleph_rsd": 0.000702685770503171
+    },
+    "sycamore_n24": {
+      "n": 24,
+      "family": "sycamore",
+      "aleph_ms_median": 116594.647497,
+      "aleph_rsd": 0.0002850404744370989
+    },
+    "sycamore_n28": {
+      "n": 28,
+      "family": "sycamore",
+      "aleph_ms_median": 2201155.627,
+      "aleph_rsd": 0.0
+    },
+    "sycamore_n30": {
+      "n": 30,
+      "family": "sycamore",
+      "aleph_ms_median": 9467331.9,
+      "aleph_rsd": 0.0
     }
   }
 }
