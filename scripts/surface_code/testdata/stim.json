@@ -1,0 +1,1 @@
+{"workloads": {"3": {"d": 3, "qubits": 17, "median_s": 0.000002}, "5": {"d": 5, "qubits": 49, "median_s": 0.000006}, "7": {"d": 7, "qubits": 97, "median_s": 0.000013}, "9": {"d": 9, "qubits": 161, "median_s": 0.000028}, "11": {"d": 11, "qubits": 241, "median_s": 0.000055}}}
