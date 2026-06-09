@@ -478,8 +478,14 @@ mod surface_tests {
     }
 
     #[test]
-    #[should_panic]
+    #[should_panic(expected = "distance must be odd")]
     fn rejects_even_distance() {
         let _ = SurfaceCode::new(4);
+    }
+
+    #[test]
+    #[should_panic(expected = "distance must be odd")]
+    fn rejects_too_small_distance() {
+        let _ = SurfaceCode::new(1);
     }
 }
