@@ -2196,6 +2196,152 @@ First public milestone. After this, the project has a footprint.
 
 -----
 
+### [P4-09] PyPI publication for aleph-sim
+
+**Labels:** `area:python`, `area:infra`, `type:feature`, `priority:high`
+**Milestone:** Phase 4
+**Estimate:** S
+**Depends on:** P4-08
+
+**Description**
+Publish the `aleph-sim` wheels to PyPI so `pip install aleph-sim` works without downloading from a GitHub release.
+
+**Context**
+Deferred by owner decision during P4-08: v0.1 shipped wheels attached to the GitHub release only. The release pipeline (`release.yml`) already builds portable artifacts (manylinux_2_28 x86_64 + macOS arm64, abi3-py312); publication is the only missing step.
+
+**Technical Details**
+
+- PyPI **trusted publishing** (OIDC) from GitHub Actions — no long-lived API token. Configure the publisher on PyPI for this repo + `release.yml`, then add a `publish` job (`pypi` environment, `permissions: id-token: write`) using `pypa/gh-action-pypi-publish`, gated on the release job.
+- Dry-run against TestPyPI first; verify `pip install -i https://test.pypi.org/simple/ aleph-sim` in a clean venv.
+- Decide trigger discipline: publish on tag push together with the draft release, or only after the owner publishes the GitHub release (e.g. `release: types: [published]` workflow trigger — safer, keeps the manual verification gate).
+- Verify the package name `aleph-sim` is still free at execution time; register on first upload.
+
+**Acceptance Criteria**
+
+- [ ] `pip install aleph-sim` works in a clean venv (Linux x86_64 + macOS arm64, Python ≥ 3.12)
+- [ ] Publication is automated in `release.yml` (no manual twine step)
+- [ ] README/crate-README install instructions updated to prefer PyPI
+
+**Testing Requirements**
+
+- TestPyPI dry-run before the real upload; clean-venv install + `scripts/python/test_aleph.py` suite against the PyPI-installed package.
+
+**References**
+
+- <https://docs.pypi.org/trusted-publishers/>
+- <https://github.com/pypa/gh-action-pypi-publish>
+
+-----
+
+### [P4-10] CI job for the Python binding tests
+
+**Labels:** `area:python`, `area:infra`, `type:infra`, `priority:high`
+**Milestone:** Phase 4
+**Estimate:** S
+**Depends on:** P4-08
+
+**Description**
+Add a CI job that builds the wheel with maturin and runs `scripts/python/test_aleph.py`, so the Python bindings are gated per-PR instead of only at release time.
+
+**Context**
+P4-08 shipped the binding test suite (14 tests) as a manual release gate because `ci.yml` had no maturin step. Binding regressions (e.g. a gate-method signature change, an error-mapping break) currently surface only when someone builds a wheel by hand. The suite runs in <1 s; the cost is the maturin build (~2-4 min warm).
+
+**Technical Details**
+
+- New `test-python` job in `ci.yml`: GitHub-hosted `ubuntu-latest` (do NOT add load to the self-hosted runner), `actions/setup-python` 3.12, `maturin build --release --features python` (or `maturin develop` into a venv), then `python -m unittest discover -s scripts/python -v`.
+- Make it a **gating** check like the Rust test jobs; same trusted-PR guard as the other jobs.
+- Reuse `Swatinem/rust-cache` so the Rust dep tree is warm; expect ~3-5 min cold.
+- Keep the suite import-guard (`skipUnless`) so local runs without the module still skip gracefully.
+
+**Acceptance Criteria**
+
+- [ ] PRs that break a Python binding fail CI
+- [ ] Job runs on GitHub-hosted runners only
+- [ ] Wall-clock ≤ ~6 min warm cache
+
+**Testing Requirements**
+
+- Deliberately break a binding on a scratch branch and confirm the job goes red; revert.
+
+**References**
+
+- `scripts/python/test_aleph.py` (P4-08), `.github/workflows/release.yml` smoke-test step (same recipe).
+
+-----
+
+### [P4-11] numpy-backed `statevector()` return
+
+**Labels:** `area:python`, `type:feature`, `priority:medium`
+**Milestone:** Phase 4
+**Estimate:** M
+**Depends on:** P4-08
+
+**Description**
+Return the state vector to Python as a numpy `complex128` array instead of a list of `PyComplex` objects.
+
+**Context**
+P4-08's `RunResult.statevector()` materializes one Python complex object per amplitude — 2^n heap objects (~56 B each). At n=25 that is ~1.9 GiB of Python objects for a 512 MiB state; at the n=28 cap it OOMs. The docstring warns about it; the fix is the standard approach in Qiskit/QuEST bindings: hand numpy a contiguous buffer.
+
+**Technical Details**
+
+- Add `numpy` crate (rust-numpy, matches pyo3 0.22) behind the existing `python` feature; return `Bound<'py, PyArray1<Complex64>>`.
+- `aleph_core::Complex` is `num_complex::Complex<f64>` and `CpuState::amplitudes()` is a contiguous `&[Complex]` — `PyArray1::from_slice` (copy) is the simple correct first step; a zero-copy view into the stored `CpuState` is possible but must pin the buffer's lifetime to the `RunResult` object (rust-numpy `unsafe` borrow APIs) — copy first, optimize later if profiling demands.
+- `numpy` becomes a runtime dependency of the wheel — add to `pyproject.toml` `dependencies`.
+- Keep `.counts()` unchanged.
+
+**Acceptance Criteria**
+
+- [ ] `statevector()` returns `numpy.ndarray` dtype `complex128`, shape `(2**n,)`
+- [ ] n=25 statevector retrieval allocates O(state) memory, not O(state × 56 B objects)
+- [ ] Existing Python tests updated and green; amplitude values identical to v0.1 behavior
+
+**Testing Requirements**
+
+- Bell + H amplitude assertions via numpy; a memory smoke at n≥20 (RSS delta sanity, not a hard gate).
+
+**References**
+
+- <https://github.com/PyO3/rust-numpy>
+
+-----
+
+### [P4-12] Unify backend vocabulary across CLI and Python (+ auto-select in Python)
+
+**Labels:** `area:python`, `area:cli`, `type:refactor`, `priority:medium`
+**Milestone:** Phase 4
+**Estimate:** M
+**Depends on:** P4-08
+
+**Description**
+One backend-name vocabulary for both user surfaces, parsed in one place, and expose the CLI's `auto` backend selection to Python.
+
+**Context**
+P4-08 shipped a fork: the CLI accepts `--backend statevector|stabilizer|mps|auto` (default `auto`), the Python API accepts `backend="sv"|"mps"|"stab"` (default `"sv"`, no auto). `aleph_backend::BackendKind` + `select_explained()` (P3-07) already exist as the shared seam; the Python binding string-matches its own names instead. Users translating README CLI examples to Python hit `ValueError: unknown backend "statevector"`, and Python users never get Clifford→stabilizer auto-routing. Adding a 4th backend (FP32 exists; GPU in Phase 5) currently means editing two match sites with no compiler aid.
+
+**Technical Details**
+
+- Single parse function in `aleph-backend` (e.g. `BackendKind::from_user_str`) accepting canonical names AND the established aliases (`sv`/`statevector`, `stab`/`stabilizer`), used by both `aleph-cli` (clap `value_parser`) and `aleph-py`.
+- Python `run(..., backend="auto")` routes through `select_explained()` like the CLI; consider making `auto` the Python default in v0.2 (breaking-change note in the changelog — v0.1 defaulted to `"sv"`).
+- Error message lists the canonical names + aliases, same text on both surfaces.
+- Document the alias table once (README Backends section).
+
+**Acceptance Criteria**
+
+- [ ] Every name the CLI accepts works in Python and vice versa
+- [ ] `backend="auto"` works in Python (Clifford circuit → stabilizer, etc., with `select_explained` reasoning)
+- [ ] One parse site; adding a backend variant is a compile-error-guided change
+- [ ] CLI behavior unchanged (existing names keep working)
+
+**Testing Requirements**
+
+- Cross-surface parity test (table-driven: name → resolved BackendKind, both surfaces); Python auto-select test on a Clifford circuit; CLI integration tests stay green.
+
+**References**
+
+- `crates/aleph-backend/src/select.rs` (P3-07 `select_explained`), `crates/aleph-cli/src/cli.rs` `BackendChoice`.
+
+-----
+
 # Phase 5 — GPU Backend
 
 Goal: GPU state vector backend within 1.5× of cuQuantum standalone.
