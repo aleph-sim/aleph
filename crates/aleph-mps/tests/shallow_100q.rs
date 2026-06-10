@@ -181,7 +181,12 @@ fn mps_128q_shallow_demo() {
     let mut be = MpsBackend::with_seed(0).with_max_bond(CHI);
     let st = run(&mut be, &c).unwrap();
     let elapsed = t0.elapsed();
-    eprintln!("mps_128q_shallow_demo: n={N} layers={LAYERS} chi={CHI} run took {elapsed:?}");
+    eprintln!(
+        "mps_128q_shallow_demo: n={N} layers={LAYERS} chi={CHI} run took {elapsed:?} \
+         (truncation_error={} max_bond_reached={})",
+        st.truncation_error(),
+        st.max_bond_reached()
+    );
 
     assert!(
         elapsed < std::time::Duration::from_secs(ceiling_secs),
