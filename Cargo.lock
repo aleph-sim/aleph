@@ -13,7 +13,7 @@ dependencies = [
 
 [[package]]
 name = "aleph-backend"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "aleph-core",
  "aleph-ir",
@@ -27,7 +27,7 @@ dependencies = [
 
 [[package]]
 name = "aleph-benches"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "aleph-backend",
  "aleph-core",
@@ -41,7 +41,7 @@ dependencies = [
 
 [[package]]
 name = "aleph-cli"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "aleph-backend",
  "aleph-core",
@@ -61,7 +61,7 @@ dependencies = [
 
 [[package]]
 name = "aleph-core"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "criterion",
  "num-complex",
@@ -73,7 +73,7 @@ dependencies = [
 
 [[package]]
 name = "aleph-ir"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "aleph-core",
  "aleph-test",
@@ -85,7 +85,7 @@ dependencies = [
 
 [[package]]
 name = "aleph-mps"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "aleph-backend",
  "aleph-core",
@@ -103,7 +103,7 @@ dependencies = [
 
 [[package]]
 name = "aleph-oracle"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "aleph-backend",
  "aleph-core",
@@ -120,7 +120,7 @@ dependencies = [
 
 [[package]]
 name = "aleph-parser"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "aleph-core",
  "aleph-ir",
@@ -134,19 +134,22 @@ dependencies = [
 
 [[package]]
 name = "aleph-py"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "aleph-backend",
  "aleph-core",
  "aleph-ir",
  "aleph-mps",
+ "aleph-parser",
+ "aleph-stab",
  "aleph-sv",
  "pyo3",
+ "smallvec",
 ]
 
 [[package]]
 name = "aleph-stab"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "aleph-backend",
  "aleph-core",
@@ -161,7 +164,7 @@ dependencies = [
 
 [[package]]
 name = "aleph-sv"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "aleph-backend",
  "aleph-core",
@@ -177,7 +180,7 @@ dependencies = [
 
 [[package]]
 name = "aleph-test"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "aleph-core",
  "aleph-ir",

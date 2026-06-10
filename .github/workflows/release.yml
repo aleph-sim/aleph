@@ -1,0 +1,93 @@
+name: Release
+
+# Build CLI binaries + Python wheels on tag push and attach them to a
+# DRAFT GitHub release (owner publishes manually after clean-env
+# verification). workflow_dispatch allows artifact smoke-tests from a
+# branch — the release job is tag-gated and is skipped on dispatch.
+#
+# GitHub-hosted runners ONLY: the self-hosted runner is reserved for
+# CI/bench (see ci.yml / bench.yml).
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: macos-latest
+            target: aarch64-apple-darwin
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Check tag matches crate version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          CRATE_VERSION=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          [ "v${CRATE_VERSION}" = "${GITHUB_REF_NAME}" ] || { echo "tag ${GITHUB_REF_NAME} != crate v${CRATE_VERSION}"; exit 1; }
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build CLI
+        run: cargo build --release -p aleph-cli
+      - name: Package CLI
+        run: |
+          # Branch names can contain '/' (workflow_dispatch smoke runs) —
+          # sanitize for the tar filename.
+          REF_SLUG="${GITHUB_REF_NAME//\//-}"
+          tar -czf "aleph-${REF_SLUG}-${{ matrix.target }}.tar.gz" \
+            -C target/release aleph
+      - name: Build wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          # rust-toolchain pinned to stable: the manylinux container's
+          # bundled Rust can lag behind workspace rust-version (1.89).
+          rust-toolchain: stable
+          args: --release --features python -m crates/aleph-py/Cargo.toml --out dist
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Smoke-test wheel
+        run: |
+          python -m pip install dist/*.whl
+          python -c "import aleph; c = aleph.Circuit(2); c.h(0); c.cx(0, 1); r = aleph.run(c, shots=100, seed=0); assert set(r.counts()) == {'00', '11'}, r.counts(); print('wheel ok:', r.counts())"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: artifacts-${{ matrix.target }}
+          path: |
+            aleph-*.tar.gz
+            dist/*.whl
+          if-no-files-found: error
+
+  release:
+    name: draft release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          generate_release_notes: true
+          files: |
+            artifacts/**/*.tar.gz
+            artifacts/**/*.whl

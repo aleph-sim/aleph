@@ -2,13 +2,13 @@
 
 [![CI](https://github.com/ruslan-splynx/aleph/actions/workflows/ci.yml/badge.svg)](https://github.com/ruslan-splynx/aleph/actions/workflows/ci.yml)
 
-A high-performance quantum circuit simulator written in Rust. Designed for correctness first, with pluggable backends (state vector, MPS, stabilizer), CUDA acceleration, and a path to distributed multi-GPU execution.
+A high-performance quantum circuit simulator written in Rust. Designed for correctness first, with pluggable backends (state vector, MPS, stabilizer), Python bindings, and a path to CUDA acceleration and distributed multi-GPU execution.
 
-> Status: **Phase 0 — Foundation**. Working end-to-end pipeline (parser → IR → naive backend → measurement) is the current milestone. See [`ROADMAP.md`](ROADMAP.md) for phases and [`BACKLOG.md`](BACKLOG.md) for issues.
+> Status: **v0.1** — Phases 0–4 complete: optimized single/multi-threaded CPU state vector, MPS and stabilizer backends, Python bindings, benchmarked against Qiskit Aer and Stim ([docs/perf/v0.1.md](docs/perf/v0.1.md)). Next: Phase 5 (GPU). See [ROADMAP.md](ROADMAP.md) for phases and [BACKLOG.md](BACKLOG.md) for issues.
 
 ## Quick start
 
-Requires Rust **1.85+** (edition 2021).
+Requires Rust **1.89+** (edition 2021).
 
 ```bash
 # Build everything
@@ -31,7 +31,52 @@ For release builds with native CPU optimizations:
 RUSTFLAGS="-C target-cpu=native" cargo build --release --workspace
 ```
 
-### Using the `aleph` binary
+## Python quickstart
+
+Install the wheel for your platform from the
+[v0.1.0 release](https://github.com/ruslan-splynx/aleph/releases/tag/v0.1.0)
+(PyPI publication is planned; the package name is `aleph-sim`, the module
+is `aleph`):
+
+```bash
+pip install <wheel-url-or-path>
+```
+
+```python
+import aleph
+
+c = aleph.Circuit(2)
+c.h(0)
+c.cx(0, 1)
+
+result = aleph.run(c, shots=1024, seed=0)
+print(result.counts())        # {'00': ~512, '11': ~512}
+print(result.statevector())   # 4 amplitudes
+
+# Or load OpenQASM 3.0 (from_qasm_file(path) also exists), and pick a
+# backend: "sv" (default), "mps", "stab"
+qasm = """OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+h q[0];
+cx q[0], q[1];
+"""
+print(aleph.run(aleph.Circuit.from_qasm(qasm), backend="mps", seed=0).counts())
+```
+
+## Backends
+
+| backend | representation | capacity | exactness | use it for |
+|---------|----------------|----------|-----------|------------|
+| `sv` | dense 2ⁿ complex amplitudes | ≤ 28 qubits (default cap) | exact (FP64) | any circuit that fits in memory — the general-purpose workhorse |
+| `mps` | matrix product state (bond dim χ) | 100+ qubits (1024 hard cap) for shallow/local circuits | exact while χ is not binding; controlled truncation otherwise | low-entanglement circuits: shallow brickwork, nearest-neighbour dynamics |
+| `stab` | CHP tableau, O(n²) bits | hundreds of qubits (65,536 hard cap) | exact | Clifford-only circuits: error-correction cycles, stabilizer states |
+
+## Performance
+
+On structured algorithms (GHZ, QFT, Grover, QPE, VQE, QAOA), aleph's state-vector backend beats single-thread Qiskit Aer at every measured size. Honest caveats: structure-less random circuits (Sycamore-style) are 3–5× slower than Aer, and Stim wins on surface codes at scale (1.64× at d=11). Full numbers: [docs/perf/v0.1.md](docs/perf/v0.1.md).
+
+## Using the `aleph` binary
 
 After `cargo build --release --workspace`, the `aleph` binary lives at
 `target/release/aleph`.  Four basic invocations:
@@ -66,12 +111,8 @@ GPU (Phase 5+):
 cargo build --workspace --features cuda
 ```
 
-Python bindings (planned, Phase 4):
-
-`crates/aleph-py` is a placeholder crate today.  `maturin develop`
-builds successfully but the resulting module exports nothing useful
-yet — Python-facing APIs land in Phase 4 alongside the v0.1 release
-(see `ROADMAP.md` § Phase 4 and `BACKLOG.md` § P4-08).
+Building the Python bindings from source (instead of installing a
+release wheel): `cd crates/aleph-py && maturin develop --release`.
 
 ## Workspace layout
 

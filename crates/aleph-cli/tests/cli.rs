@@ -308,7 +308,9 @@ fn version_flag() {
         .arg("--version")
         .assert()
         .success()
-        .stdout(contains("aleph 0.0.0"));
+        // Tracks the workspace version automatically (integration tests are
+        // compiled with the parent package's CARGO_PKG_VERSION).
+        .stdout(contains(concat!("aleph ", env!("CARGO_PKG_VERSION"))));
 }
 
 #[test]
