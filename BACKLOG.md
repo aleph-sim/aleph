@@ -1856,9 +1856,11 @@ ROADMAP §7 Phase-3 exit: *"Stabilizer backend handles 1000+ qubit Clifford circ
 
 **Acceptance Criteria**
 
-- [ ] MPS backend runs a `≥ 100`-qubit shallow circuit to completion within a stated time/memory budget.
-- [ ] Result validated against a tractable reference (local observables / known answer), not just "it ran".
-- [ ] Number recorded so the Phase-3 MPS exit metric is closed with evidence.
+- [x] MPS backend runs a `≥ 100`-qubit shallow circuit to completion within a stated time/memory budget.
+- [x] Result validated against a tractable reference (local observables / known answer), not just "it ran".
+- [x] Number recorded so the Phase-3 MPS exit metric is closed with evidence.
+
+**Result (2026-06-10):** n=128 / depth-6 / χ=64 non-Clifford brickwork runs exactly (max bond 8, truncation 1.07e-13) in **10.3 ms** on EPYC; ⟨Z⟩/⟨ZZ⟩ validated to 1e-10 vs an exact light-cone SV reference. CI guard `mps_128q_shallow_demo`. See `docs/perf/mps_100q.md`.
 
 **References**
 
