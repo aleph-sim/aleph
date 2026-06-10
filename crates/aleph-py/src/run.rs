@@ -25,7 +25,9 @@ use std::collections::BTreeMap;
 #[pyclass(name = "RunResult")]
 pub(crate) struct RunResult {
     counts: BTreeMap<String, u64>,
-    amps: Option<Vec<aleph_core::Complex>>,
+    // Store the full CpuState rather than a copied Vec<Complex> to avoid a
+    // 2^n × 16-byte allocation (up to 4 GiB at the n=28 cap).
+    amps: Option<aleph_sv::CpuState>,
 }
 
 #[pymethods]
@@ -39,7 +41,8 @@ impl RunResult {
     /// Final state vector (list of complex), SV backend only.
     fn statevector<'py>(&self, py: Python<'py>) -> PyResult<Vec<Bound<'py, PyComplex>>> {
         match &self.amps {
-            Some(amps) => Ok(amps
+            Some(state) => Ok(state
+                .amplitudes()
                 .iter()
                 .map(|c| PyComplex::from_doubles_bound(py, c.re, c.im))
                 .collect()),
@@ -65,6 +68,10 @@ fn err<E: std::fmt::Display>(what: &str, e: E) -> PyErr {
 
 /// Run `circuit` once on the chosen backend and sample `shots` shots from
 /// the final state. `seed=None` uses OS entropy.
+///
+/// `Measure` instructions collapse the state once during execution; the
+/// `shots` samples re-sample that single final state — they do NOT re-run
+/// the circuit per shot (unlike Qiskit's per-shot execution model).
 #[pyfunction]
 #[pyo3(name = "run", signature = (circuit, *, shots = 1024, backend = "sv", seed = None))]
 pub(crate) fn run_circuit(
@@ -82,18 +89,20 @@ pub(crate) fn run_circuit(
                 None => NaiveSvBackend::new(),
             };
             let state = run_optimized(&mut be, c).map_err(|e| err("run sv", e))?;
+            // Sample before moving state into RunResult (sample takes &state).
             let samples = be.sample(&state, shots).map_err(|e| err("sample", e))?;
             Ok(RunResult {
                 counts: counts_map(&samples, n),
-                amps: Some(state.amplitudes().to_vec()),
+                amps: Some(state),
             })
         }
         "mps" => {
+            // MpsBackend already defaults to FixedBond(DEFAULT_MAX_BOND=128);
+            // explicit .with_max_bond(128) is a drift hazard — omitted.
             let mut be = match seed {
                 Some(s) => MpsBackend::with_seed(s),
                 None => MpsBackend::new(),
-            }
-            .with_max_bond(128);
+            };
             let state = run(&mut be, c).map_err(|e| err("run mps", e))?;
             let samples = be.sample(&state, shots).map_err(|e| err("sample", e))?;
             Ok(RunResult {
