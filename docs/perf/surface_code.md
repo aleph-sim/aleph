@@ -63,7 +63,10 @@ column **word-parallel** (scalar `u64` + AVX-512 `avx512f`, runtime-dispatched);
 `rowsum`/`measure` keep the row-major P3-08 path; a blocked 64×64 bit-transpose
 bridges the two on orientation change (~2 transposes/cycle for a batched cycle).
 `sign` is orientation-invariant (packed bit-vector), updated word-parallel inside
-the gate kernels. Before/after on the same idle EPYC box, single-thread:
+the gate kernels. Before/after on the same idle EPYC box, single-thread (the
+"before" column is a fresh same-session re-measurement of pre-P3-11 `main`, so its
+aleph/Stim ratios differ by ≲1% from the P3-08 addendum's "after" column above —
+run-to-run variance, not a regression):
 
 | d | aleph before (ms) | aleph after (ms) | cycle speedup | aleph/Stim before → after |
 |--:|------------------:|-----------------:|--------------:|--------------------------:|

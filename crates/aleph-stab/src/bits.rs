@@ -92,8 +92,6 @@ impl BitGrid {
     }
 
     /// Number of rows in the grid (`words.len() / stride`). `stride ≥ 1` always.
-    // Consumed by P3-11 Task 2+; allow until then.
-    #[allow(dead_code)]
     #[inline]
     pub(crate) fn rows(&self) -> usize {
         self.words.len() / self.stride
@@ -105,8 +103,6 @@ impl BitGrid {
     /// are zero). Bit-exact with the scalar reference (proved by
     /// `blocked_transpose_matches_scalar`). Replaces the prior O(rows·cols)
     /// get/set form — this is the orientation-bridge hot path.
-    // Consumed by P3-11 Task 2+; allow until then.
-    #[allow(dead_code)]
     pub(crate) fn transpose(&self) -> BitGrid {
         let rows = self.rows();
         let cols = self.cols;
