@@ -23,4 +23,7 @@ aleph-ir      = { path = "../aleph-ir" }
 aleph-backend = { path = "../aleph-backend" }
 aleph-sv      = { path = "../aleph-sv" }
 aleph-mps     = { path = "../aleph-mps" }
+aleph-parser  = { path = "../aleph-parser" }
+aleph-stab    = { path = "../aleph-stab" }
+smallvec      = { workspace = true }
 pyo3 = { version = "0.22", features = ["extension-module", "abi3-py312"], optional = true }

@@ -6,6 +6,9 @@
 //! interpreter.
 
 #[cfg(feature = "python")]
+mod circuit;
+
+#[cfg(feature = "python")]
 mod energy;
 
 #[cfg(feature = "python")]
@@ -14,6 +17,7 @@ mod module {
 
     #[pymodule]
     fn aleph(m: &Bound<'_, PyModule>) -> PyResult<()> {
+        m.add_class::<crate::circuit::PyCircuit>()?;
         m.add_class::<crate::energy::PauliSum>()?;
         m.add_function(wrap_pyfunction!(crate::energy::hea_energy, m)?)?;
         m.add_function(wrap_pyfunction!(crate::energy::qaoa_energy, m)?)?;

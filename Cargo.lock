@@ -140,8 +140,11 @@ dependencies = [
  "aleph-core",
  "aleph-ir",
  "aleph-mps",
+ "aleph-parser",
+ "aleph-stab",
  "aleph-sv",
  "pyo3",
+ "smallvec",
 ]
 
 [[package]]
