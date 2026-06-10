@@ -21,7 +21,9 @@ fn g(gate: Gate, qubits: &[u32]) -> GateInstance {
 /// Deterministic non-Clifford NN brickwork: H wall, then `layers` brick
 /// layers alternating even/odd bonds. Each brick = CNOT·Rz(θ_q)·CNOT (a ZZ
 /// interaction), followed by an Rx mixer wall. Any chain cut is crossed by
-/// at most one brick per layer, so the Schmidt rank is ≤ 2^layers.
+/// at most one brick per layer, so the Schmidt rank is ≤ 2^layers; since the
+/// parity alternates, a given cut is crossed only every other layer, giving
+/// the tighter ≤ 2^⌈layers/2⌉ (measured: max bond 8 at layers=6).
 fn brickwork(n: u32, layers: u32) -> Circuit {
     let mut c = Circuit::new(n, 0);
     for q in 0..n {
