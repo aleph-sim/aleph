@@ -162,3 +162,64 @@ fn cone_extractor_matches_full_sv() {
         "no observable had a cone smaller than the full circuit; test is vacuous"
     );
 }
+
+/// ROADMAP §7 Phase-3 exit metric: "MPS handles 100+ qubit shallow circuits".
+/// n=128, depth 6, χ=64 (exact: Schmidt rank ≤ 2^6). Local observables are
+/// validated against the exact light-cone SV reference to 1e-10.
+#[test]
+fn mps_128q_shallow_demo() {
+    const N: u32 = 128;
+    const LAYERS: u32 = 6;
+    const CHI: usize = 64;
+    // Generous ceiling: catches an accidental complexity regression
+    // (e.g. exponential blowup), not normal variance. Debug builds run
+    // faer SVDs unoptimized, so they get a wider budget.
+    let ceiling_secs: u64 = if cfg!(debug_assertions) { 900 } else { 120 };
+
+    let c = brickwork(N, LAYERS);
+    let t0 = std::time::Instant::now();
+    let mut be = MpsBackend::with_seed(0).with_max_bond(CHI);
+    let st = run(&mut be, &c).unwrap();
+    let elapsed = t0.elapsed();
+    eprintln!("mps_128q_shallow_demo: n={N} layers={LAYERS} chi={CHI} run took {elapsed:?}");
+
+    assert!(
+        elapsed < std::time::Duration::from_secs(ceiling_secs),
+        "n=128 shallow run exceeded {ceiling_secs}s budget: {elapsed:?}"
+    );
+    assert!(
+        st.truncation_error() < 1e-12,
+        "expected exact run (rank ≤ 2^6 = χ), truncation_error = {}",
+        st.truncation_error()
+    );
+    assert!(
+        st.max_bond_reached() <= CHI,
+        "max_bond_reached {} exceeds χ {CHI}",
+        st.max_bond_reached()
+    );
+
+    // Edges + middle of the chain.
+    for i in [0u32, 1, 63, 64, 127] {
+        let terms = vec![(i, Pauli::Z)];
+        let e_mps = be
+            .expectation_value(&st, &PauliString::new(1.0, terms.clone()).unwrap())
+            .unwrap();
+        let e_ref = cone_expectation(&c, &terms);
+        assert!(
+            (e_mps - e_ref).abs() < 1e-10,
+            "<Z_{i}> mismatch: mps {e_mps} vs cone-SV {e_ref}"
+        );
+    }
+    for i in [0u32, 63, 126] {
+        let terms = vec![(i, Pauli::Z), (i + 1, Pauli::Z)];
+        let e_mps = be
+            .expectation_value(&st, &PauliString::new(1.0, terms.clone()).unwrap())
+            .unwrap();
+        let e_ref = cone_expectation(&c, &terms);
+        assert!(
+            (e_mps - e_ref).abs() < 1e-10,
+            "<Z_{i} Z_{}> mismatch: mps {e_mps} vs cone-SV {e_ref}",
+            i + 1
+        );
+    }
+}
