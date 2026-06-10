@@ -7,11 +7,12 @@
 //! state-vector backend. The cone extractor itself is validated against full
 //! SV at n=20 below.
 
-use aleph_backend::run;
-use aleph_core::{Gate, GateInstance, Param};
-use aleph_ir::Circuit;
+use aleph_backend::{run, Backend};
+use aleph_core::{Gate, GateInstance, Param, Pauli, PauliString};
+use aleph_ir::{Circuit, Instruction};
 use aleph_mps::MpsBackend;
 use aleph_sv::NaiveSvBackend;
+use std::collections::{BTreeMap, BTreeSet};
 
 fn g(gate: Gate, qubits: &[u32]) -> GateInstance {
     GateInstance::new(gate, qubits.to_vec())
@@ -67,5 +68,97 @@ fn brickwork_small_n_matches_sv_dense() {
         ms.truncation_error() < 1e-12,
         "expected exact run, truncation_error = {}",
         ms.truncation_error()
+    );
+}
+
+/// Backward light-cone slice of a gate-only circuit for an observable
+/// supported on `support`. Walk instructions in reverse: keep a gate iff it
+/// touches the current cone, growing the cone with the kept gate's qubits.
+/// Kept qubits are remapped to a compact 0..k range (BTreeSet order keeps
+/// the mapping deterministic and order-preserving).
+fn light_cone_subcircuit(circuit: &Circuit, support: &[u32]) -> (Circuit, BTreeMap<u32, u32>) {
+    let mut cone: BTreeSet<u32> = support.iter().copied().collect();
+    let mut kept: Vec<GateInstance> = Vec::new();
+    for inst in circuit.instructions().iter().rev() {
+        let gate = match inst {
+            Instruction::Gate(gi) => gi,
+            other => panic!("cone extractor handles gate-only circuits, got {other:?}"),
+        };
+        let touches: Vec<u32> = gate
+            .qubits
+            .iter()
+            .chain(gate.controls.iter())
+            .copied()
+            .collect();
+        if touches.iter().any(|q| cone.contains(q)) {
+            cone.extend(touches.iter().copied());
+            kept.push(gate.clone());
+        }
+    }
+    kept.reverse();
+    let map: BTreeMap<u32, u32> = cone
+        .iter()
+        .enumerate()
+        .map(|(new, &old)| (old, u32::try_from(new).unwrap()))
+        .collect();
+    let mut sub = Circuit::new(u32::try_from(cone.len()).unwrap(), 0);
+    for mut gate in kept {
+        for q in gate.qubits.iter_mut() {
+            *q = map[q];
+        }
+        for q in gate.controls.iter_mut() {
+            *q = map[q];
+        }
+        sub.add_gate(gate).unwrap();
+    }
+    (sub, map)
+}
+
+/// Exact ⟨terms⟩ on `circuit`'s output state, computed on the light-cone
+/// subcircuit with the state-vector backend.
+fn cone_expectation(circuit: &Circuit, terms: &[(u32, Pauli)]) -> f64 {
+    let support: Vec<u32> = terms.iter().map(|&(q, _)| q).collect();
+    let (sub, map) = light_cone_subcircuit(circuit, &support);
+    let remapped: Vec<(u32, Pauli)> = terms.iter().map(|&(q, p)| (map[&q], p)).collect();
+    let ps = PauliString::new(1.0, remapped).unwrap();
+    let mut sv = NaiveSvBackend::with_seed(0);
+    let st = run(&mut sv, &sub).unwrap();
+    sv.expectation_value(&st, &ps).unwrap()
+}
+
+/// "Who validates the validator": at n=20 the full circuit is SV-tractable,
+/// so every cone-based expectation must equal the full-SV expectation to
+/// 1e-12. n=20 > 14 = max cone width for depth 6, so mid-chain observables
+/// genuinely exercise cone truncation (asserted below).
+#[test]
+fn cone_extractor_matches_full_sv() {
+    let n = 20u32;
+    let c = brickwork(n, 6);
+    let mut sv = NaiveSvBackend::with_seed(0);
+    let full = run(&mut sv, &c).unwrap();
+
+    let mut observables: Vec<Vec<(u32, Pauli)>> = (0..n).map(|q| vec![(q, Pauli::Z)]).collect();
+    for q in 0..n - 1 {
+        observables.push(vec![(q, Pauli::Z), (q + 1, Pauli::Z)]);
+    }
+
+    let mut saw_truncated_cone = false;
+    for terms in observables {
+        let ps = PauliString::new(1.0, terms.clone()).unwrap();
+        let e_full = sv.expectation_value(&full, &ps).unwrap();
+        let e_cone = cone_expectation(&c, &terms);
+        assert!(
+            (e_full - e_cone).abs() < 1e-12,
+            "cone mismatch for {terms:?}: full {e_full} vs cone {e_cone}"
+        );
+        let (sub, _) =
+            light_cone_subcircuit(&c, &terms.iter().map(|&(q, _)| q).collect::<Vec<_>>());
+        if sub.num_qubits() < n {
+            saw_truncated_cone = true;
+        }
+    }
+    assert!(
+        saw_truncated_cone,
+        "no observable had a cone smaller than the full circuit; test is vacuous"
     );
 }
