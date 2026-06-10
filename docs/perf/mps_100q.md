@@ -41,7 +41,8 @@ subcircuit (≤ 14 qubits at depth 6) to 1e-10. The cone extractor is itself
 validated against full SV at n=20 (39 observables, 1e-12), and the brickwork
 builder against full SV dense amplitudes at n=12 (1e-10). All three tests in
 `crates/aleph-mps/tests/shallow_100q.rs`; the whole suite runs in well under
-a second in release, so it gates every CI run (no `#[ignore]`).
+a second in release (~16 s in the debug profile CI uses — comfortably inside
+the 30 s `#[ignore]` threshold), so it gates every CI run (no `#[ignore]`).
 
 ## Conclusion
 

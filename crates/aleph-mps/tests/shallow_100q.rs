@@ -20,10 +20,11 @@ fn g(gate: Gate, qubits: &[u32]) -> GateInstance {
 
 /// Deterministic non-Clifford NN brickwork: H wall, then `layers` brick
 /// layers alternating even/odd bonds. Each brick = CNOT·Rz(θ_q)·CNOT (a ZZ
-/// interaction), followed by an Rx mixer wall. Any chain cut is crossed by
-/// at most one brick per layer, so the Schmidt rank is ≤ 2^layers; since the
-/// parity alternates, a given cut is crossed only every other layer, giving
-/// the tighter ≤ 2^⌈layers/2⌉ (measured: max bond 8 at layers=6).
+/// interaction, operator Schmidt rank 2), followed by an Rx mixer wall. Any
+/// chain cut is crossed by at most one rank-2 brick per layer, so the Schmidt
+/// rank is ≤ 2^layers; since the parity alternates, a given cut is crossed
+/// only every other layer, giving the tighter ≤ 2^⌈layers/2⌉ (measured: max
+/// bond 8 at layers=6).
 fn brickwork(n: u32, layers: u32) -> Circuit {
     let mut c = Circuit::new(n, 0);
     for q in 0..n {
@@ -199,9 +200,12 @@ fn mps_128q_shallow_demo() {
         "expected exact run (rank ≤ 2^6 = χ), truncation_error = {}",
         st.truncation_error()
     );
+    // Tighter than χ: parity alternation crosses any cut only every other
+    // layer, so a builder change breaking that argument fails here.
+    let bond_bound = 1usize << LAYERS.div_ceil(2);
     assert!(
-        st.max_bond_reached() <= CHI,
-        "max_bond_reached {} exceeds χ {CHI}",
+        st.max_bond_reached() <= bond_bound,
+        "max_bond_reached {} exceeds structural bound {bond_bound}",
         st.max_bond_reached()
     );
 
