@@ -12,6 +12,7 @@ mod backend;
 mod bits;
 mod dispatch;
 mod error;
+mod gates;
 mod rowsum;
 mod tableau;
 

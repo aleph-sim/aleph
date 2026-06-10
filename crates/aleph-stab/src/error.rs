@@ -12,4 +12,9 @@ pub enum StabError {
     /// A gate referenced a qubit index ≥ the tableau's qubit count.
     #[error("qubit {qubit} out of range (tableau has {num_qubits} qubits)")]
     QubitOutOfRange { qubit: u32, num_qubits: u32 },
+
+    /// A 2-qubit gate referenced the same qubit for both operands (e.g.
+    /// `CNOT(a, a)`); the column-major kernels require two distinct columns.
+    #[error("2-qubit gate referenced qubit {qubit} twice")]
+    DuplicateQubit { qubit: u32 },
 }
