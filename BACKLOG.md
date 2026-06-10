@@ -1892,9 +1892,9 @@ After P3-08 word-parallelized `rowsum`, a `perf record` of the surface-code d=11
 
 **Acceptance Criteria**
 
-- [ ] Word-parallel (and/or SIMD) `H`/`S`/`CNOT` kernels, bit-for-bit identical to the preserved scalar kernels (proptest) with all Stim oracles green at d=3..11.
-- [ ] Measured surface-code cycle speedup (criterion before/after), reported honestly; restate the aleph/Stim d=11 ratio. **Stretch:** approach the P3-08 design's ≤ 2× Stim target now that both `rowsum` and gates are word-level.
-- [ ] If a layout change lands (option 2/3), an ADR documenting the row-major vs column-major vs dual trade-off for the stabilizer tableau.
+- [x] Word-parallel (and/or SIMD) `H`/`S`/`CNOT` kernels, bit-for-bit identical to the preserved scalar kernels (proptest) with all Stim oracles green at d=3..11.
+- [x] Measured surface-code cycle speedup (criterion before/after), reported honestly; restate the aleph/Stim d=11 ratio. **Stretch MET:** d=11 = 4.69× cycle speedup, aleph/Stim **7.66× → 1.64×** (≤ 2× target reached; d=3/5 now faster than Stim). See `docs/perf/surface_code.md` P3-11 addendum.
+- [x] If a layout change lands (option 2/3), an ADR documenting the row-major vs column-major vs dual trade-off for the stabilizer tableau. → ADR 0013 (lazy dual-orientation tableau).
 
 **References**
 
