@@ -12,6 +12,9 @@ mod circuit;
 mod energy;
 
 #[cfg(feature = "python")]
+mod run;
+
+#[cfg(feature = "python")]
 mod module {
     use pyo3::prelude::*;
 
@@ -21,6 +24,8 @@ mod module {
         m.add_class::<crate::energy::PauliSum>()?;
         m.add_function(wrap_pyfunction!(crate::energy::hea_energy, m)?)?;
         m.add_function(wrap_pyfunction!(crate::energy::qaoa_energy, m)?)?;
+        m.add_class::<crate::run::RunResult>()?;
+        m.add_function(wrap_pyfunction!(crate::run::run_circuit, m)?)?;
         Ok(())
     }
 }
