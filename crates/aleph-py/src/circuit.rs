@@ -200,6 +200,9 @@ impl PyCircuit {
     /// Controlled-phase: `Phase(θ)` on `target` with one external control —
     /// the `qft_circuit` construction (benches/src/lib.rs), since the
     /// parser/IR have no first-class `cp` gate.
+    ///
+    /// Not supported on the `mps` backend in v0.1 (external-control form);
+    /// use the `sv` backend for circuits with `cp`.
     fn cp(&mut self, theta: f64, control: u32, target: u32) -> PyResult<()> {
         check_distinct(&[control, target])?;
         self.inner
@@ -231,10 +234,6 @@ impl PyCircuit {
     /// Measure `qubit` into classical bit `clbit` (projective, collapses the state).
     fn measure(&mut self, qubit: u32, clbit: u32) -> PyResult<()> {
         self.inner.measure(qubit, clbit).map_err(err).map(drop)
-    }
-    /// Reset `qubit` to |0⟩.
-    fn reset(&mut self, qubit: u32) -> PyResult<()> {
-        self.inner.reset(qubit).map_err(err).map(drop)
     }
     /// Optimization barrier covering `qubits` (no optimization pass may cross it).
     fn barrier(&mut self, qubits: Vec<u32>) -> PyResult<()> {

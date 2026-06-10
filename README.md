@@ -53,9 +53,15 @@ result = aleph.run(c, shots=1024, seed=0)
 print(result.counts())        # {'00': ~512, '11': ~512}
 print(result.statevector())   # 4 amplitudes
 
-# Or load OpenQASM 3.0, and pick a backend: "sv" (default), "mps", "stab"
-c2 = aleph.Circuit.from_qasm_file("oracle/circuits/bell_phi_plus.qasm")
-print(aleph.run(c2, backend="mps", seed=0).counts())
+# Or load OpenQASM 3.0 (from_qasm_file(path) also exists), and pick a
+# backend: "sv" (default), "mps", "stab"
+qasm = """OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+h q[0];
+cx q[0], q[1];
+"""
+print(aleph.run(aleph.Circuit.from_qasm(qasm), backend="mps", seed=0).counts())
 ```
 
 ## Backends

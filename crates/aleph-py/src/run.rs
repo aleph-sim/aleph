@@ -32,13 +32,17 @@ pub(crate) struct RunResult {
 
 #[pymethods]
 impl RunResult {
-    /// Histogram of sampled bitstrings. Qubit 0 is the LEFTMOST character
-    /// (aleph's MSB qubit-ordering convention, ADR 0004).
+    /// Histogram of sampled bitstrings. Qubit 0 is the RIGHTMOST character
+    /// (qubit 0 is the LSB of the amplitude index — ADR 0004; the leftmost
+    /// character is qubit n-1), matching the CLI's |q_{n-1}…q_0⟩ output.
     fn counts(&self) -> BTreeMap<String, u64> {
         self.counts.clone()
     }
 
     /// Final state vector (list of complex), SV backend only.
+    ///
+    /// Materializes one Python complex per amplitude (2^n objects) — at
+    /// n ≳ 24 this costs GiB-scale memory; intended for small circuits.
     fn statevector<'py>(&self, py: Python<'py>) -> PyResult<Vec<Bound<'py, PyComplex>>> {
         match &self.amps {
             Some(state) => Ok(state
@@ -55,11 +59,15 @@ impl RunResult {
 
 fn counts_map(samples: &[u64], num_qubits: u32) -> BTreeMap<String, u64> {
     let width = num_qubits as usize;
-    let mut hist = BTreeMap::new();
+    // Aggregate on the raw u64 outcome first; format only unique outcomes
+    // (shots can vastly outnumber distinct bitstrings).
+    let mut raw: BTreeMap<u64, u64> = BTreeMap::new();
     for s in samples {
-        *hist.entry(format!("{s:0width$b}")).or_insert(0) += 1;
+        *raw.entry(*s).or_insert(0) += 1;
     }
-    hist
+    raw.into_iter()
+        .map(|(s, count)| (format!("{s:0width$b}"), count))
+        .collect()
 }
 
 fn err<E: std::fmt::Display>(what: &str, e: E) -> PyErr {
@@ -75,6 +83,7 @@ fn err<E: std::fmt::Display>(what: &str, e: E) -> PyErr {
 #[pyfunction]
 #[pyo3(name = "run", signature = (circuit, *, shots = 1024, backend = "sv", seed = None))]
 pub(crate) fn run_circuit(
+    py: Python<'_>,
     circuit: &PyCircuit,
     shots: u32,
     backend: &str,
@@ -82,45 +91,52 @@ pub(crate) fn run_circuit(
 ) -> PyResult<RunResult> {
     let c = &circuit.inner;
     let n = c.num_qubits();
+    // Each arm releases the GIL for execute+sample (minutes at n ≥ 25):
+    // other Python threads — and Ctrl-C delivery — stay live during the run.
     match backend {
         "sv" => {
-            let mut be = match seed {
-                Some(s) => NaiveSvBackend::with_seed(s),
-                None => NaiveSvBackend::new(),
-            };
-            let state = run_optimized(&mut be, c).map_err(|e| err("run sv", e))?;
-            // Sample before moving state into RunResult (sample takes &state).
-            let samples = be.sample(&state, shots).map_err(|e| err("sample", e))?;
+            let (counts, amps) = py.allow_threads(
+                || -> PyResult<(BTreeMap<String, u64>, aleph_sv::CpuState)> {
+                    let mut be = match seed {
+                        Some(s) => NaiveSvBackend::with_seed(s),
+                        None => NaiveSvBackend::new(),
+                    };
+                    let state = run_optimized(&mut be, c).map_err(|e| err("run sv", e))?;
+                    // Sample before moving state into RunResult (sample takes &state).
+                    let samples = be.sample(&state, shots).map_err(|e| err("sample", e))?;
+                    Ok((counts_map(&samples, n), state))
+                },
+            )?;
             Ok(RunResult {
-                counts: counts_map(&samples, n),
-                amps: Some(state),
+                counts,
+                amps: Some(amps),
             })
         }
         "mps" => {
             // MpsBackend already defaults to FixedBond(DEFAULT_MAX_BOND=128);
             // explicit .with_max_bond(128) is a drift hazard — omitted.
-            let mut be = match seed {
-                Some(s) => MpsBackend::with_seed(s),
-                None => MpsBackend::new(),
-            };
-            let state = run(&mut be, c).map_err(|e| err("run mps", e))?;
-            let samples = be.sample(&state, shots).map_err(|e| err("sample", e))?;
-            Ok(RunResult {
-                counts: counts_map(&samples, n),
-                amps: None,
-            })
+            let counts = py.allow_threads(|| -> PyResult<BTreeMap<String, u64>> {
+                let mut be = match seed {
+                    Some(s) => MpsBackend::with_seed(s),
+                    None => MpsBackend::new(),
+                };
+                let state = run(&mut be, c).map_err(|e| err("run mps", e))?;
+                let samples = be.sample(&state, shots).map_err(|e| err("sample", e))?;
+                Ok(counts_map(&samples, n))
+            })?;
+            Ok(RunResult { counts, amps: None })
         }
         "stab" => {
-            let mut be = match seed {
-                Some(s) => StabilizerBackend::with_seed(s),
-                None => StabilizerBackend::new(),
-            };
-            let state = run(&mut be, c).map_err(|e| err("run stab", e))?;
-            let samples = be.sample(&state, shots).map_err(|e| err("sample", e))?;
-            Ok(RunResult {
-                counts: counts_map(&samples, n),
-                amps: None,
-            })
+            let counts = py.allow_threads(|| -> PyResult<BTreeMap<String, u64>> {
+                let mut be = match seed {
+                    Some(s) => StabilizerBackend::with_seed(s),
+                    None => StabilizerBackend::new(),
+                };
+                let state = run(&mut be, c).map_err(|e| err("run stab", e))?;
+                let samples = be.sample(&state, shots).map_err(|e| err("sample", e))?;
+                Ok(counts_map(&samples, n))
+            })?;
+            Ok(RunResult { counts, amps: None })
         }
         other => Err(PyValueError::new_err(format!(
             "unknown backend {other:?} (expected \"sv\", \"mps\", or \"stab\")"
