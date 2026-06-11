@@ -2,7 +2,7 @@
 //! gate application with lazy SWAP permutation routing (P3-09), expectation,
 //! measurement, sampling, probabilities.
 
-use crate::tensor::{thin_qr, truncated_svd, Site, TruncationPolicy};
+use crate::tensor::{truncated_svd, Site, TruncationPolicy};
 use crate::MpsError;
 use aleph_core::{Complex, Gate, GateInstance, PauliString};
 use faer::linalg::matmul::matmul;
@@ -225,78 +225,59 @@ impl MpsState {
         Ok(())
     }
 
-    /// Multiply matrix `r` into site `i`'s LEFT bond:
-    /// A'[l',p,r2] = Σ_l r[l',l] · A[l,p,r2].
-    fn absorb_into_left(&mut self, i: usize, r: &DMatrix<Complex>) {
-        let site = &self.sites[i];
-        let new_left = r.nrows();
-        let mut out = Site::zeros(new_left, site.right);
-        // Explicit index arithmetic for clarity of the bond contraction.
-        #[allow(clippy::needless_range_loop)]
-        for lp in 0..new_left {
-            for p in 0..2 {
-                for r2 in 0..site.right {
-                    let mut acc = Complex::new(0.0, 0.0);
-                    for l in 0..site.left {
-                        acc += r[(lp, l)] * site.get(l, p, r2);
-                    }
-                    *out.get_mut(lp, p, r2) = acc;
-                }
-            }
-        }
-        self.sites[i] = out;
-    }
-
-    /// Multiply matrix `l` into site `i`'s RIGHT bond:
-    /// A'[l2,p,r'] = Σ_r A[l2,p,r] · l[r,r'].
-    fn absorb_into_right(&mut self, i: usize, l: &DMatrix<Complex>) {
-        let site = &self.sites[i];
-        let new_right = l.ncols();
-        let mut out = Site::zeros(site.left, new_right);
-        // Explicit index arithmetic for clarity of the bond contraction.
-        #[allow(clippy::needless_range_loop)]
-        for l2 in 0..site.left {
-            for p in 0..2 {
-                for rp in 0..new_right {
-                    let mut acc = Complex::new(0.0, 0.0);
-                    for r in 0..site.right {
-                        acc += site.get(l2, p, r) * l[(r, rp)];
-                    }
-                    *out.get_mut(l2, p, rp) = acc;
-                }
-            }
-        }
-        self.sites[i] = out;
-    }
-
     /// Shift center right from `i` to `i+1` using thin QR on the grouped-left
-    /// matrix. Site `i` becomes left-canonical; the R factor is absorbed into
-    /// site `i+1`'s left bond.
+    /// view. Site `i` becomes left-canonical; the R factor is absorbed into
+    /// site `i+1`'s left bond via a parallel gemm.
     fn move_center_right(&mut self) {
         let i = self.center;
-        let m = self.sites[i].to_group_left(); // (left*2) × right
-        let (q, r) = thin_qr(&m); // q:(left*2)×k, r:k×right
-        let k = q.ncols();
         let left = self.sites[i].left;
-        self.sites[i] = Site::from_group_left(&q, left, k);
-        self.absorb_into_left(i + 1, &r);
+        let qr = self.sites[i].group_left_view().qr();
+        let q = qr.compute_thin_Q(); // (left·2) × k
+        let r = qr.thin_R(); // k × right
+        let k = q.ncols();
+        let next_right = self.sites[i + 1].right;
+        // A'[l',p,r2] = Σ_l R[l',l] · A[l,p,r2]  ==  R · group_right(A).
+        let mut absorbed = faer::Mat::<Complex>::zeros(k, 2 * next_right);
+        matmul(
+            absorbed.as_mut(),
+            Accum::Replace,
+            r,
+            self.sites[i + 1].group_right_view(),
+            Complex::new(1.0, 0.0),
+            faer::get_global_parallelism(),
+        );
+        self.sites[i + 1] = Site::from_group_right_faer(absorbed.as_ref(), k, next_right);
+        self.sites[i] = Site::from_group_left_faer(q.as_ref(), left, k);
         self.center += 1;
     }
 
     /// Shift center left from `i` to `i-1` using thin QR on the adjoint of the
-    /// grouped-right matrix (LQ decomposition). Site `i` becomes right-canonical;
-    /// the Rᴴ factor is absorbed into site `i-1`'s right bond.
+    /// grouped-right view (LQ decomposition). Site `i` becomes right-canonical;
+    /// the Rᴴ factor is absorbed into site `i-1`'s right bond via a gemm.
     fn move_center_left(&mut self) {
         let i = self.center;
-        let m = self.sites[i].to_group_right(); // left × (2*right)
-        let mh = m.adjoint(); // (2*right) × left
-        let (q, r) = thin_qr(&mh); // q:(2*right)×k, r:k×left
-        let k = q.ncols();
         let right = self.sites[i].right;
-        let site_mat = q.adjoint(); // k × (2*right) — right-canonical
-        self.sites[i] = Site::from_group_right(&site_mat, k, right);
-        let r_into = r.adjoint(); // left × k — absorbed into left neighbor's right bond
-        self.absorb_into_right(i - 1, &r_into);
+        let qr = self.sites[i].group_right_view().adjoint().qr();
+        let q = qr.compute_thin_Q(); // (2·right) × k
+        let r = qr.thin_R(); // k × left
+        let k = q.ncols();
+        let prev_left = self.sites[i - 1].left;
+        // A'[l2,p,r'] = Σ_r A[l2,p,r] · Rᴴ[r,r']  ==  group_left(A) · Rᴴ.
+        let mut absorbed = faer::Mat::<Complex>::zeros(prev_left * 2, k);
+        matmul(
+            absorbed.as_mut(),
+            Accum::Replace,
+            self.sites[i - 1].group_left_view(),
+            r.adjoint(),
+            Complex::new(1.0, 0.0),
+            faer::get_global_parallelism(),
+        );
+        self.sites[i - 1] = Site::from_group_left_faer(absorbed.as_ref(), prev_left, k);
+        // `.adjoint()` yields a lazily-conjugated view (`ComplexConj` element
+        // type); materialize it to the canonical complex type for the
+        // grouped-right reshape. k × (2·right) — a small bond-sized copy.
+        let qh = q.adjoint().to_owned();
+        self.sites[i] = Site::from_group_right_faer(qh.as_ref(), k, right);
         self.center -= 1;
     }
 
