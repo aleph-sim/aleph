@@ -40,6 +40,13 @@ fn bench_parity(c: &mut Criterion) {
     for &(stem, chi) in WORKLOADS {
         let circuit = load(stem);
         group.bench_function(stem, |b| {
+            // Untimed setup mirrors the Aer side: AerSimulator construction sits
+            // outside its timed loop and every sim.run() starts a fresh simulation.
+            // Folding construction into b.iter (the sibling benches' pattern) would
+            // bias the parity ratio toward Aer. Note the residual asymmetry the
+            // other way: Aer's timed region includes per-run circuit assembly and
+            // the save_matrix_product_state serialization (see the timing caveat
+            // in scripts/mps-baseline/run.py and docs/perf/parity.md).
             b.iter_with_setup(
                 || MpsBackend::with_seed(0).with_max_bond(chi),
                 |mut backend| {
