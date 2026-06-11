@@ -83,45 +83,38 @@ impl MpsState {
     }
 
     /// Apply a 2q gate (4×4 matrix `u`) on the qubits named by `g`
-    /// (`g.qubits[0]`=MSB, ADR-0004). Adjacent pairs apply directly; non-adjacent
-    /// pairs are brought together by a nearest-neighbor SWAP network, the gate is
-    /// applied, then the SWAPs are undone (always-swap-back), so site = qubit is
-    /// preserved. `MpsError::NonNearestNeighbor` is retained as a defensive
-    /// invariant guard but is no longer reached on the normal 2q path.
+    /// (`g.qubits[0]`=MSB, ADR-0004). The qubits' current sites come from the
+    /// lazy permutation: non-adjacent sites are brought together by moving the
+    /// qubit at the higher site down with nearest-neighbor SWAPs, and the
+    /// permutation is left in place afterwards — no swap-back (P3-09). Reads
+    /// route through the permutation, so `site == qubit` is no longer an
+    /// invariant. `MpsError::NonNearestNeighbor` is retained as a defensive
+    /// variant but is no longer reached on the normal 2q path.
     pub(crate) fn apply_2q(
         &mut self,
         g: &GateInstance,
         u: &[[Complex; 4]; 4],
     ) -> Result<(), MpsError> {
-        let qa = g.qubits[0];
-        let qb = g.qubits[1];
-        if qa.abs_diff(qb) == 1 {
-            return self.apply_2q_adjacent(qa as usize, qb as usize, u);
+        let qa = g.qubits[0] as usize;
+        let qb = g.qubits[1] as usize;
+        let sa = self.site_of_qubit[qa];
+        let sb = self.site_of_qubit[qb];
+        if sa.abs_diff(sb) != 1 {
+            // Ladder: walk the occupant of the higher site down to lo+1.
+            let lo = sa.min(sb);
+            let hi = sa.max(sb);
+            for k in (lo + 1..hi).rev() {
+                self.swap_adjacent(k)?;
+            }
         }
-        let lo = qa.min(qb);
-        let hi = qa.max(qb);
-        // Forward ladder: move the qubit at site `hi` down to site `lo+1`.
-        for k in (lo as usize + 1..=hi as usize - 1).rev() {
-            self.swap_adjacent(k)?;
-        }
-        // qubit `lo` is at site `lo`, qubit `hi` is now at site `lo+1`.
-        // Apply on the adjacent pair preserving original control/target order.
-        let (s0, s1) = if qa < qb {
-            (lo as usize, lo as usize + 1)
-        } else {
-            (lo as usize + 1, lo as usize)
-        };
-        self.apply_2q_adjacent(s0, s1, u)?;
-        // Reverse ladder: undo the SWAPs, restoring site = qubit.
-        for k in lo as usize + 1..=hi as usize - 1 {
-            self.swap_adjacent(k)?;
-        }
-        Ok(())
+        // Re-resolve sites: the ladder moved one of the qubits.
+        self.apply_2q_adjacent(self.site_of_qubit[qa], self.site_of_qubit[qb], u)
     }
 
     /// Apply a 2q unitary `u` to the adjacent sites `(s_msb, s_lsb)`, where
-    /// `s_msb` currently holds the gate's first qubit (`g.qubits[0]`, the
-    /// matrix MSB per ADR-0004) and `s_lsb` the second.
+    /// `s_msb` is the site whose physical index forms the most-significant bit
+    /// of the 4×4 matrix row/column index (ADR-0004) and `s_lsb` the
+    /// least-significant.
     ///
     /// Caller must ensure `s_msb.abs_diff(s_lsb) == 1`.
     fn apply_2q_adjacent(
@@ -130,6 +123,7 @@ impl MpsState {
         s_lsb: usize,
         u: &[[Complex; 4]; 4],
     ) -> Result<(), MpsError> {
+        debug_assert_eq!(s_msb.abs_diff(s_lsb), 1);
         let i = s_msb.min(s_lsb);
         let j = i + 1;
 
@@ -1008,6 +1002,21 @@ mod tests {
         assert_eq!(s.qubit_of_site, vec![0, 1, 2]);
         assert_eq!(s.swaps_applied(), 2);
         assert_eq!(s.site_of_qubit, vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn lazy_swap_counts_amortize() {
+        // CNOT(0,4) on n=5: the ladder is 3 SWAPs (always-swap-back paid 6).
+        let mut s = MpsState::new(5, 64);
+        let h = crate::gate::matrix_2x2(&GateInstance::new(Gate::H, smallvec![0u32])).unwrap();
+        s.apply_1q(0, &h);
+        let gi = GateInstance::new(Gate::Cnot, smallvec![0u32, 4u32]);
+        let u = crate::gate::matrix_4x4(&gi).unwrap();
+        s.apply_2q(&gi, &u).unwrap();
+        assert_eq!(s.swaps_applied(), 3);
+        // Qubit 4 stayed next to qubit 0 → repeating the gate costs 0 SWAPs.
+        s.apply_2q(&gi, &u).unwrap();
+        assert_eq!(s.swaps_applied(), 3);
     }
 
     #[test]
