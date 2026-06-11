@@ -104,6 +104,54 @@ impl Site {
         }
         s
     }
+
+    /// Zero-copy faer view of the grouped-left matrix `(left·2) × right`
+    /// (row `l·2+p`, col `r`) — identical to the row-major layout of `data`.
+    // Dead-code until the faer hot-path tasks (gemm theta-build, QR center moves) land.
+    #[allow(dead_code)]
+    pub fn group_left_view(&self) -> faer::MatRef<'_, Complex> {
+        faer::MatRef::from_row_major_slice(&self.data, self.left * 2, self.right)
+    }
+
+    /// Zero-copy faer view of the grouped-right matrix `left × (2·right)`
+    /// (row `l`, col `p·right + r`) — the same bytes, regrouped.
+    // Dead-code until the faer hot-path tasks (gemm theta-build, QR center moves) land.
+    #[allow(dead_code)]
+    pub fn group_right_view(&self) -> faer::MatRef<'_, Complex> {
+        faer::MatRef::from_row_major_slice(&self.data, self.left, 2 * self.right)
+    }
+
+    /// Build a `Site` from a faer `(left·2) × right` grouped-left matrix.
+    // Dead-code until the faer hot-path tasks (gemm theta-build, QR center moves) land.
+    #[allow(dead_code)]
+    pub fn from_group_left_faer(m: faer::MatRef<'_, Complex>, left: usize, right: usize) -> Site {
+        let mut s = Site::zeros(left, right);
+        // Allow explicit index arithmetic — clearer than iterator gymnastics
+        // for the (row → (l, p)) split.
+        #[allow(clippy::needless_range_loop)]
+        for row in 0..left * 2 {
+            for r in 0..right {
+                s.data[row * right + r] = m[(row, r)];
+            }
+        }
+        s
+    }
+
+    /// Build a `Site` from a faer `χ × (2·right)` grouped-right matrix.
+    // Dead-code until the faer hot-path tasks (gemm theta-build, QR center moves) land.
+    #[allow(dead_code)]
+    pub fn from_group_right_faer(m: faer::MatRef<'_, Complex>, left: usize, right: usize) -> Site {
+        let mut s = Site::zeros(left, right);
+        // Allow explicit index arithmetic — clearer than iterator gymnastics
+        // for the (col → (p, r)) split.
+        #[allow(clippy::needless_range_loop)]
+        for l in 0..left {
+            for col in 0..2 * right {
+                s.data[l * 2 * right + col] = m[(l, col)];
+            }
+        }
+        s
+    }
 }
 
 /// How `truncated_svd` chooses how many singular values to keep.
@@ -397,5 +445,47 @@ mod tests {
         let m = diag_sigma();
         let (_, s, _, _) = truncated_svd(&m, &TruncationPolicy::FixedBond(2)).unwrap();
         assert_eq!(s.len(), 2);
+    }
+
+    #[test]
+    fn faer_views_match_element_access() {
+        let mut s = Site::zeros(2, 3);
+        for l in 0..2 {
+            for p in 0..2 {
+                for r in 0..3 {
+                    *s.get_mut(l, p, r) = Complex::new((l * 100 + p * 10 + r) as f64, 0.5);
+                }
+            }
+        }
+        let gl = s.group_left_view(); // (left*2) x right
+        assert_eq!((gl.nrows(), gl.ncols()), (4, 3));
+        for l in 0..2 {
+            for p in 0..2 {
+                for r in 0..3 {
+                    assert_eq!(gl[(l * 2 + p, r)], s.get(l, p, r));
+                }
+            }
+        }
+        let gr = s.group_right_view(); // left x (2*right)
+        assert_eq!((gr.nrows(), gr.ncols()), (2, 6));
+        for l in 0..2 {
+            for p in 0..2 {
+                for r in 0..3 {
+                    assert_eq!(gr[(l, p * 3 + r)], s.get(l, p, r));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn faer_from_group_roundtrip() {
+        let mut s = Site::zeros(2, 3);
+        for (k, v) in s.data.iter_mut().enumerate() {
+            *v = Complex::new(k as f64, -(k as f64));
+        }
+        let back_l = Site::from_group_left_faer(s.group_left_view(), 2, 3);
+        assert_eq!(back_l, s);
+        let back_r = Site::from_group_right_faer(s.group_right_view(), 2, 3);
+        assert_eq!(back_r, s);
     }
 }
