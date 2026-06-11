@@ -18,6 +18,13 @@ Aer config: matrix_product_state_max_bond_dimension=χ,
 matrix_product_state_truncation_threshold=1e-16 (bond cap binding, matching
 aleph's FixedBond), max_parallel_threads=1 (aleph-mps default is sequential —
 default-vs-default).
+
+Timing caveat: Aer needs a save_matrix_product_state() instruction to compute
+anything, so the timed region includes serializing the MPS tensors into the
+result — a cost the aleph side (criterion bench timing run() only) does not
+pay. Negligible at wide_bond_n26 scale; disclosed in docs/perf/parity.md, and
+if a small-n cell lands near the 1.2× bar, the save's isolated cost must be
+measured before calling the verdict.
 """
 
 import argparse
