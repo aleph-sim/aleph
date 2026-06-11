@@ -253,7 +253,8 @@ impl MpsState {
 
     /// Shift center left from `i` to `i-1` using thin QR on the adjoint of the
     /// grouped-right view (LQ decomposition). Site `i` becomes right-canonical;
-    /// the Rᴴ factor is absorbed into site `i-1`'s right bond via a gemm.
+    /// the Rᴴ factor is absorbed into site `i-1`'s right bond via a parallel
+    /// gemm.
     fn move_center_left(&mut self) {
         let i = self.center;
         let right = self.sites[i].right;
@@ -273,6 +274,8 @@ impl MpsState {
             faer::get_global_parallelism(),
         );
         self.sites[i - 1] = Site::from_group_left_faer(absorbed.as_ref(), prev_left, k);
+        // M = group_right(A) = Rᴴ·Qᴴ; Qᴴ has orthonormal rows — the
+        // right-canonical site.
         // `.adjoint()` yields a lazily-conjugated view (`ComplexConj` element
         // type); materialize it to the canonical complex type for the
         // grouped-right reshape. k × (2·right) — a small bond-sized copy.
