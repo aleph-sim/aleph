@@ -1127,4 +1127,34 @@ mod tests {
         // 0.5 > 0.3, so nothing is dropped → error stays ~0, bond stays 2.
         assert!(s.truncation_error() <= 0.3 + 1e-12);
     }
+
+    proptest::proptest! {
+        /// After any random long-range circuit the two maps stay mutually inverse.
+        #[test]
+        fn permutation_maps_stay_inverse(seq in proptest::collection::vec((0u8..5, 0u8..5, 0u8..5), 0..20)) {
+            let n = 5u32;
+            let mut s = MpsState::new(n as usize, 64);
+            let h = crate::gate::matrix_2x2(&GateInstance::new(Gate::H, smallvec![0u32])).unwrap();
+            for (op, x, y) in seq {
+                let a = (x as u32) % n;
+                match op {
+                    0 | 1 => s.apply_1q(a as usize, &h),
+                    _ => {
+                        let b = (y as u32) % n;
+                        if a != b {
+                            let gi = GateInstance::new(Gate::Cnot, smallvec![a, b]);
+                            let u = crate::gate::matrix_4x4(&gi).unwrap();
+                            s.apply_2q(&gi, &u).unwrap();
+                        }
+                    }
+                }
+            }
+            for q in 0..n as usize {
+                proptest::prop_assert_eq!(s.qubit_of_site[s.site_of_qubit[q]] as usize, q);
+            }
+            for site in 0..n as usize {
+                proptest::prop_assert_eq!(s.site_of_qubit[s.qubit_of_site[site] as usize], site);
+            }
+        }
+    }
 }

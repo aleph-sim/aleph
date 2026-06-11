@@ -331,6 +331,90 @@ fn nonadjacent_matches_sv() {
     }
 }
 
+#[test]
+fn lazy_perm_reads_match_sv() {
+    // Long-range gates leave a non-identity permutation; every read API
+    // must still report in logical-qubit order (P3-09).
+    let n = 5u32;
+    let mut c = aleph_ir::Circuit::new(n, 0);
+    for q in 0..n {
+        c.add_gate(g(Gate::H, &[q])).unwrap();
+    }
+    c.add_gate(g(Gate::Cnot, &[0, 4])).unwrap(); // distance 4
+    c.add_gate(g(Gate::Rz(Param::Concrete(0.4)), &[2])).unwrap();
+    c.add_gate(g(Gate::Cnot, &[3, 1])).unwrap(); // reversed, distance 2
+    c.add_gate(g(Gate::Cz, &[4, 2])).unwrap(); // distance 2 after permutation drift
+
+    let a = mps_dense(&c, 64);
+    let b = sv_dense(&c);
+    for (x, y) in a.iter().zip(b.iter()) {
+        assert!((x - y).norm() < 1e-10, "dense mismatch under permutation");
+    }
+
+    let mut mps = MpsBackend::with_seed(0).with_max_bond(64);
+    let ms = run(&mut mps, &c).unwrap();
+    assert!(
+        ms.swaps_applied() > 0,
+        "circuit must exercise the lazy router"
+    );
+    let mut sv = NaiveSvBackend::with_seed(0);
+    let svs = run(&mut sv, &c).unwrap();
+
+    for subset in [vec![0u32], vec![4, 0], vec![1, 3, 2]] {
+        let pm = mps.probabilities(&ms, &subset).unwrap();
+        let ps = sv.probabilities(&svs, &subset).unwrap();
+        for (x, y) in pm.iter().zip(ps.iter()) {
+            assert!(
+                (x - y).abs() < 1e-10,
+                "probabilities mismatch under permutation"
+            );
+        }
+    }
+    for terms in [
+        vec![(0u32, Pauli::Z), (4, Pauli::Z)],
+        vec![(2, Pauli::X)],
+        vec![(1, Pauli::Z), (3, Pauli::Z)],
+    ] {
+        let p = PauliString::new(1.0, terms).unwrap();
+        let em = mps.expectation_value(&ms, &p).unwrap();
+        let es = sv.expectation_value(&svs, &p).unwrap();
+        assert!(
+            (em - es).abs() < 1e-10,
+            "expectation mismatch: {em} vs {es}"
+        );
+    }
+}
+
+#[test]
+fn lazy_perm_sample_matches_probabilities() {
+    // Sampling under a non-identity permutation: empirical distribution over
+    // all qubits must match the exact marginals.
+    let n = 4u32;
+    let mut c = aleph_ir::Circuit::new(n, 0);
+    for q in 0..n {
+        c.add_gate(g(Gate::H, &[q])).unwrap();
+    }
+    c.add_gate(g(Gate::Cnot, &[0, 3])).unwrap();
+    c.add_gate(g(Gate::Cnot, &[2, 0])).unwrap();
+    let mut be = MpsBackend::with_seed(7).with_max_bond(64);
+    let st = run(&mut be, &c).unwrap();
+    assert!(st.swaps_applied() > 0);
+    let shots = be.sample(&st, 20000).unwrap();
+    let mut counts = [0u32; 16];
+    for sh in &shots {
+        counts[*sh as usize] += 1;
+    }
+    let probs = be.probabilities(&st, &[0, 1, 2, 3]).unwrap();
+    for idx in 0..16 {
+        let emp = counts[idx] as f64 / 20000.0;
+        assert!(
+            (emp - probs[idx]).abs() < 0.02,
+            "idx {idx}: {emp} vs {}",
+            probs[idx]
+        );
+    }
+}
+
 use proptest::prelude::*;
 
 proptest! {
