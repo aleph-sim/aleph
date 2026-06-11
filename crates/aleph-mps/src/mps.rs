@@ -5,6 +5,8 @@
 use crate::tensor::{thin_qr, truncated_svd, Site, TruncationPolicy};
 use crate::MpsError;
 use aleph_core::{Complex, Gate, GateInstance, PauliString};
+use faer::linalg::matmul::matmul;
+use faer::Accum;
 use nalgebra::DMatrix;
 use rand::Rng;
 
@@ -138,29 +140,19 @@ impl MpsState {
         self.move_center_to(i);
 
         let li = self.sites[i].left;
-        let mi = self.sites[i].right; // shared bond between site i and j
         let ri = self.sites[j].right;
 
-        // Build the two-site tensor Θ[l, a, b, r] = Σ_m sites[i][l,a,m] · sites[j][m,b,r]
-        // Flat index: ((l * 2 + a) * 2 + b) * ri + r
-        let theta_len = li * 2 * 2 * ri;
-        let mut theta = vec![Complex::new(0.0, 0.0); theta_len];
-
-        // Explicit loops — nested-tensor contractions are clearer than iterators here.
-        #[allow(clippy::needless_range_loop)]
-        for l in 0..li {
-            for a in 0..2usize {
-                for b in 0..2usize {
-                    for r in 0..ri {
-                        let mut acc = Complex::new(0.0, 0.0);
-                        for m in 0..mi {
-                            acc += self.sites[i].get(l, a, m) * self.sites[j].get(m, b, r);
-                        }
-                        theta[((l * 2 + a) * 2 + b) * ri + r] = acc;
-                    }
-                }
-            }
-        }
+        // Θ as a (li·2) × (2·ri) matrix (row l·2+a, col b·ri+r): exactly the
+        // grouped-left × grouped-right product — one parallel gemm (P3-09).
+        let mut theta = faer::Mat::<Complex>::zeros(li * 2, 2 * ri);
+        matmul(
+            theta.as_mut(),
+            Accum::Replace,
+            self.sites[i].group_left_view(),
+            self.sites[j].group_right_view(),
+            Complex::new(1.0, 0.0),
+            faer::get_global_parallelism(),
+        );
 
         // Helper: given the physical indices of site i (phys_i) and site j (phys_j),
         // return the 2q matrix row/column index following the MSB convention:
@@ -172,24 +164,22 @@ impl MpsState {
             (bit_msb << 1) | bit_lsb
         };
 
-        // Apply the gate: Θ'[l,a',b',r] = Σ_{a,b} U[out(a',b')][out(a,b)] · Θ[l,a,b,r]
-        let mut theta2 = vec![Complex::new(0.0, 0.0); theta_len];
-
-        #[allow(clippy::needless_range_loop)]
-        for l in 0..li {
-            for ap in 0..2usize {
-                for bp in 0..2usize {
-                    let row = out(ap, bp);
-                    for a in 0..2usize {
-                        for b in 0..2usize {
-                            let col = out(a, b);
-                            let u_entry = u[row][col];
-                            if u_entry == Complex::new(0.0, 0.0) {
-                                continue;
-                            }
+        // Θ' = U·Θ over the joint physical index — O(16·li·ri), a factor χ
+        // cheaper than the gemm above, so plain loops are fine here.
+        let mut theta2 = faer::Mat::<Complex>::zeros(li * 2, 2 * ri);
+        for ap in 0..2usize {
+            for bp in 0..2usize {
+                let row_u = out(ap, bp);
+                for a in 0..2usize {
+                    for b in 0..2usize {
+                        let u_entry = u[row_u][out(a, b)];
+                        if u_entry == Complex::new(0.0, 0.0) {
+                            continue;
+                        }
+                        for l in 0..li {
                             for r in 0..ri {
-                                theta2[((l * 2 + ap) * 2 + bp) * ri + r] +=
-                                    u_entry * theta[((l * 2 + a) * 2 + b) * ri + r];
+                                theta2[(l * 2 + ap, bp * ri + r)] +=
+                                    u_entry * theta[(l * 2 + a, b * ri + r)];
                             }
                         }
                     }
@@ -197,37 +187,23 @@ impl MpsState {
             }
         }
 
-        // Reshape Θ' to matrix M of shape (li*2) × (2*ri):
-        //   row = l*2 + a'  (group left bond and physical of site i)
-        //   col = b'*ri + r (group physical of site j and right bond)
-        // This matches from_group_left / from_group_right conventions.
-        let m = DMatrix::from_fn(li * 2, 2 * ri, |row, col| {
-            let l = row / 2;
-            let ap = row % 2;
-            let bp = col / ri;
-            let r = col % ri;
-            theta2[((l * 2 + ap) * 2 + bp) * ri + r]
-        });
-
-        // Truncated SVD: M = U · diag(s) · Vt, truncated according to the state's policy.
-        let (u_s, s_kept, vt_s, discarded) = truncated_svd(&m, &self.policy)?;
+        // Truncated SVD of Θ' (already in (li·2) × (2·ri) grouped form).
+        let (u_s, s_kept, vt_s, discarded) = truncated_svd(theta2.as_ref(), &self.policy)?;
         self.trunc_error += discarded;
         let chi = s_kept.len();
         self.max_bond_seen = self.max_bond_seen.max(chi);
 
         // New site i: left-canonical from the U factor, shape (li, chi).
-        self.sites[i] = Site::from_group_left(&u_s, li, chi);
+        self.sites[i] = Site::from_group_left_faer(u_s.as_ref(), li, chi);
 
-        // New site j: multiply singular values into Vt rows, shape (chi, ri) physical-grouped.
-        // sv[(row, col)] = s_kept[row] * vt_s[(row, col)]
+        // New site j: singular values folded into Vᴴ rows, shape (chi, ri).
         let mut sv = vt_s;
-        for row in 0..chi {
-            for col in 0..sv.ncols() {
-                sv[(row, col)] *= s_kept[row];
+        for t in 0..chi {
+            for c in 0..2 * ri {
+                sv[(t, c)] *= Complex::new(s_kept[t], 0.0);
             }
         }
-        // sv has shape chi × (2*ri) — matches from_group_right(left=chi, right=ri).
-        self.sites[j] = Site::from_group_right(&sv, chi, ri);
+        self.sites[j] = Site::from_group_right_faer(sv.as_ref(), chi, ri);
         self.center = j;
 
         Ok(())
