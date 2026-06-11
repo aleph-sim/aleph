@@ -31,3 +31,7 @@ harness = false
 [[bench]]
 name = "long_range"
 harness = false
+
+[[bench]]
+name = "wide_bond"
+harness = false
