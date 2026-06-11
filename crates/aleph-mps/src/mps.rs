@@ -96,7 +96,7 @@ impl MpsState {
         let qa = g.qubits[0];
         let qb = g.qubits[1];
         if qa.abs_diff(qb) == 1 {
-            return self.apply_2q_adjacent(qa, qb, u);
+            return self.apply_2q_adjacent(qa as usize, qb as usize, u);
         }
         let lo = qa.min(qb);
         let hi = qa.max(qb);
@@ -106,7 +106,11 @@ impl MpsState {
         }
         // qubit `lo` is at site `lo`, qubit `hi` is now at site `lo+1`.
         // Apply on the adjacent pair preserving original control/target order.
-        let (s0, s1) = if qa < qb { (lo, lo + 1) } else { (lo + 1, lo) };
+        let (s0, s1) = if qa < qb {
+            (lo as usize, lo as usize + 1)
+        } else {
+            (lo as usize + 1, lo as usize)
+        };
         self.apply_2q_adjacent(s0, s1, u)?;
         // Reverse ladder: undo the SWAPs, restoring site = qubit.
         for k in lo as usize + 1..=hi as usize - 1 {
@@ -115,17 +119,18 @@ impl MpsState {
         Ok(())
     }
 
-    /// Apply a 2q unitary `u` to the nearest-neighbor pair `(q0, q1)`.
+    /// Apply a 2q unitary `u` to the adjacent sites `(s_msb, s_lsb)`, where
+    /// `s_msb` currently holds the gate's first qubit (`g.qubits[0]`, the
+    /// matrix MSB per ADR-0004) and `s_lsb` the second.
     ///
-    /// Caller must ensure `q0.abs_diff(q1) == 1`. The MSB convention (ADR-0004)
-    /// is preserved: `q0` maps to the most-significant bit of the matrix index.
+    /// Caller must ensure `s_msb.abs_diff(s_lsb) == 1`.
     fn apply_2q_adjacent(
         &mut self,
-        q0: u32,
-        q1: u32,
+        s_msb: usize,
+        s_lsb: usize,
         u: &[[Complex; 4]; 4],
     ) -> Result<(), MpsError> {
-        let i = q0.min(q1) as usize;
+        let i = s_msb.min(s_lsb);
         let j = i + 1;
 
         // Move the orthogonality center to site i so that the two-site
@@ -159,12 +164,12 @@ impl MpsState {
 
         // Helper: given the physical indices of site i (phys_i) and site j (phys_j),
         // return the 2q matrix row/column index following the MSB convention:
-        // q0 is the MSB, q1 is the LSB (ADR-0004 / P0-06 convention).
+        // s_msb is the MSB, s_lsb is the LSB (ADR-0004 / P0-06 convention).
         let out = |phys_i: usize, phys_j: usize| -> usize {
-            // Identify which physical index maps to q0 (MSB) and q1 (LSB).
-            let bit_q0 = if q0 as usize == i { phys_i } else { phys_j };
-            let bit_q1 = if q1 as usize == i { phys_i } else { phys_j };
-            (bit_q0 << 1) | bit_q1
+            // Identify which physical index maps to s_msb (MSB) and s_lsb (LSB).
+            let bit_msb = if s_msb == i { phys_i } else { phys_j };
+            let bit_lsb = if s_lsb == i { phys_i } else { phys_j };
+            (bit_msb << 1) | bit_lsb
         };
 
         // Apply the gate: Θ'[l,a',b',r] = Σ_{a,b} U[out(a',b')][out(a,b)] · Θ[l,a,b,r]
@@ -233,7 +238,7 @@ impl MpsState {
     fn swap_adjacent(&mut self, k: usize) -> Result<(), MpsError> {
         let g = GateInstance::new(Gate::Swap, vec![k as u32, (k + 1) as u32]);
         let u = crate::gate::matrix_4x4(&g)?;
-        self.apply_2q_adjacent(k as u32, (k + 1) as u32, &u)?;
+        self.apply_2q_adjacent(k, k + 1, &u)?;
         let qa = self.qubit_of_site[k];
         let qb = self.qubit_of_site[k + 1];
         self.qubit_of_site[k] = qb;
