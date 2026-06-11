@@ -450,7 +450,8 @@ impl MpsState {
         // raw_amps[raw_idx] has bit s = physical index of site s.
         // The logical index has bit qubit_of_site[s] = same physical index of site s.
         // When the permutation is identity (qubit_of_site[s] == s for all s),
-        // this loop is a no-op copy.
+        // the loop below would be an element-wise copy; we skip it and return
+        // `amps` directly.
         if self
             .qubit_of_site
             .iter()
@@ -625,9 +626,10 @@ impl MpsState {
 
     /// Measure qubit `q` in the Z basis, collapsing the state. Returns the bit.
     ///
-    /// Moves the orthogonality center to `q` so that the environment is trivial
-    /// and p(b) = Σ_{l,r} |A[l,b,r]|² is the exact single-qubit marginal.
-    /// After the measurement, the center stays at `q`.
+    /// Moves the orthogonality center to the site holding `q` (`site_of_qubit[q]`)
+    /// so that the environment is trivial and p(b) = Σ_{l,r} |A[l,b,r]|² is the
+    /// exact single-qubit marginal.  After the measurement, the center stays at
+    /// that site.
     pub(crate) fn measure<R: Rng>(&mut self, q: usize, rng: &mut R) -> Result<bool, MpsError> {
         let n = self.sites.len();
         if q >= n {
@@ -1031,6 +1033,50 @@ mod tests {
         // measure(0) must read site 1's data: re-flip then measure.
         s.apply_1q(0, &x);
         assert!(s.measure(0, &mut rng).unwrap(), "measure not routed");
+    }
+
+    #[test]
+    fn reads_route_through_three_cycle_permutation() {
+        // A 3-cycle makes qubit_of_site != site_of_qubit, so a map-direction
+        // mix-up in any read path fails here (a transposition cannot catch it).
+        let mut s = MpsState::new(3, 64);
+        let x = crate::gate::matrix_2x2(&GateInstance::new(Gate::X, smallvec![0u32])).unwrap();
+        s.apply_1q(0, &x);
+        s.swap_adjacent(0).unwrap();
+        s.swap_adjacent(1).unwrap();
+        assert_eq!(s.qubit_of_site, vec![1, 2, 0]);
+        assert_eq!(s.site_of_qubit, vec![2, 0, 1]);
+        // Qubit 0 is |1>; logical index 0b001.
+        let v = s.dense_statevector();
+        assert!(
+            (v[0b001] - Complex::new(1.0, 0.0)).norm() < 1e-10,
+            "dense not routed"
+        );
+        let p = s.probabilities(&[0]).unwrap();
+        assert!((p[1] - 1.0).abs() < 1e-10, "probabilities(0) not routed");
+        let p01 = s.probabilities(&[1, 0]).unwrap();
+        // Output bit 0 ↔ qubit 1 (=0), bit 1 ↔ qubit 0 (=1) → index 0b10.
+        assert!(
+            (p01[0b10] - 1.0).abs() < 1e-10,
+            "probabilities subset ordering not routed"
+        );
+        let mut rng = StdRng::seed_from_u64(1);
+        assert_eq!(
+            s.sample(3, &mut rng),
+            vec![0b001, 0b001, 0b001],
+            "sample not routed"
+        );
+        // apply_1q routes to site 2; X returns qubit 0 to |0>.
+        s.apply_1q(0, &x);
+        let v = s.dense_statevector();
+        assert!(
+            (v[0] - Complex::new(1.0, 0.0)).norm() < 1e-10,
+            "apply_1q not routed"
+        );
+        // measure(0) must read the site holding qubit 0 (site 2): flip back first.
+        s.apply_1q(0, &x);
+        assert!(s.measure(0, &mut rng).unwrap(), "measure not routed");
+        assert!(!s.measure(1, &mut rng).unwrap(), "measure(1) not routed");
     }
 
     #[test]
