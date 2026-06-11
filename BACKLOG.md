@@ -2503,6 +2503,138 @@ P4-08 shipped a fork: the CLI accepts `--backend statevector|stabilizer|mps|auto
 
 -----
 
+# Phase 4.5 — CPU Parity
+
+Close (or honestly explain) wall-clock gaps vs mainstream simulators on CPU
+before GPU work starts. Exit: every competitive-matrix cell ≤ 1.2× its
+reference, or a documented structural exception with profiling evidence.
+Design: `docs/superpowers/specs/2026-06-11-phase-4.5-cpu-parity-design.md`.
+
+**Adopted tickets:** P3-12 (#148), P3-13 (#149), P3-14 (#150) are part of this
+phase (the MPS levers). They keep their IDs and issue numbers; only their
+milestone moves to "Phase 4.5 — CPU Parity". Order: P4.5-01 → (P4.5-02 ∥
+P3-12..14) → P4.5-06 → P4.5-07.
+
+### [P4.5-01] Competitive benchmark matrix vs Aer (MT statevector + MPS)
+
+**Labels:** `area:bench`, `type:infra`, `priority:high`
+**Milestone:** Phase 4.5
+**Estimate:** M
+**Depends on:** —
+
+**Description** — Measure where aleph actually stands against the references
+multi-threaded, before any tuning. Two new rows: (1) aleph SV 16 threads vs
+Aer statevector 16 OMP threads, default settings both sides, Tier-1 fixtures
+@ n=25; (2) aleph-mps (sequential default) vs Aer `matrix_product_state` on
+three MPS workloads consumed byte-identically from the same QASM fixtures.
+The stabilizer row is imported from `docs/perf/surface_code.md` (1.64× @ d=11)
+without re-measurement.
+
+**Context** — Phase 1 proved aleph ahead of Aer single-thread; Phase 2 only
+measured self-scaling. The MT and MPS cells have never been measured, and the
+phase's tuning scope (P4.5-06) is defined by this matrix, not guessed.
+
+**Technical Details** — Extend `scripts/qiskit-baseline/run.py` with
+`--threads N`, `--from-qasm`, and `--out` (existing fixtures are the source of
+truth, including the legacy `grover_n25_iters5.qasm`). aleph MT side =
+existing `tier1_scaling_fused` criterion group, `RAYON_NUM_THREADS=16`. New
+`scripts/mps-baseline/run.py` builds brickwork-n128-d6, long-range-n12, and
+wide-bond-n26 circuits, exports QASM3 fixtures, times Aer MPS with matched
+bond caps; new `crates/aleph-mps/benches/parity.rs` times aleph on the same
+fixtures. χ chosen so brickwork (χ=64 ≫ max bond 8) and long-range
+(χ=64 = exact at n=12) truncate on neither side — equal fidelity by
+construction; wide-bond reports both sides' truncation metrics with a caveat.
+All measurements on the idle-verified EPYC box.
+
+**Acceptance Criteria**
+- [ ] `docs/perf/parity.md` exists with the full matrix, per-cell ratio, and a ≤ 1.2× verdict per cell.
+- [ ] Both sides of every cell consumed byte-identical circuits (QASM fixtures), same box, same session; versions and configs pinned in the report.
+- [ ] Gap list section explicitly scopes P4.5-06 (or states "no MT gaps").
+- [ ] Iteration-capped grover reported as such; Aer default fusion disclosed.
+
+**Testing Requirements** — harness smoke runs at small n locally;
+`cargo bench -p aleph-mps --bench parity -- --test` passes in CI; fixture
+QASM files parse via aleph-parser (bench panics on parse failure).
+
+**References** — spec § 3; `docs/perf/phase1.md`, `docs/perf/phase2.md`.
+
+### [P4.5-02] Stabilizer: word-parallel transpose + zero_row/copy_row
+
+**Labels:** `area:backend-stab`, `type:optimization`, `priority:high`
+**Milestone:** Phase 4.5
+**Estimate:** M
+**Depends on:** —
+
+**Description** — Attack the two levers deferred from P3-11: the
+orientation-transpose (~30% of the surface-d11 cycle) and `zero_row`/
+`copy_row` (~33%), both still scalar in the dual-orientation tableau.
+
+**Context** — The stabilizer cell is the one *known* parity gap: 1.64× Stim
+@ d=11 (`docs/perf/surface_code.md`). These two hot spots are the identified
+remainder after the P3-11 word-parallel gate work.
+
+**Technical Details** — Word-parallel (u64 / AVX-512) implementations of the
+transpose between X/Z bit-plane orientations and of row clear/copy in the
+tableau, mirroring the P3-11 approach (ADR 0013). Bit-exact vs scalar;
+Stim oracles d=3..11 unchanged.
+
+**Acceptance Criteria**
+- [ ] surface-d11 cycle time improves; target ≤ 1.2× Stim, else documented structural verdict with profile evidence per spec § 5.
+- [ ] Bit-exact scalar↔SIMD equivalence tests; Stim oracle d=3..11 green.
+- [ ] Before/after criterion numbers (EPYC) in the PR.
+
+**Testing Requirements** — existing stim_oracle suites; new unit tests for
+transpose/zero_row/copy_row word-parallel paths on irregular n (not multiples
+of 64).
+
+**References** — `docs/perf/surface_code.md` P3-11 addendum; ADR 0013.
+
+### [P4.5-06] Close the MT gaps surfaced by the parity matrix
+
+**Labels:** `area:backend-sv`, `type:optimization`, `priority:high`
+**Milestone:** Phase 4.5
+**Estimate:** M
+**Depends on:** P4.5-01
+
+**Description** — Deliberate placeholder: scope is the gap list from
+`docs/perf/parity.md` (P4.5-01), not guessed in advance. Re-spec this entry
+once the matrix lands; if the matrix shows no cell > 1.2×, close as no-op
+with a comment linking the report.
+
+**Context** — Spec § 4. The escalation ladder (profile → algorithm → layout →
+SIMD → threads) and the one-PR-cycle-per-lever timebox from spec § 5 apply.
+
+**Acceptance Criteria**
+- [ ] Every SV-MT/MPS cell > 1.2× in parity.md either brought ≤ 1.2× or closed with a documented structural verdict.
+
+**Testing Requirements** — standard (unit + property + oracle + before/after
+criterion numbers per change).
+
+**References** — spec § 4–5; `docs/perf/parity.md`.
+
+### [P4.5-07] Final parity report, verdicts, and v0.2 gate
+
+**Labels:** `area:docs`, `type:docs`, `priority:high`
+**Milestone:** Phase 4.5
+**Estimate:** S
+**Depends on:** P4.5-02, P4.5-06
+
+**Description** — Re-measure changed cells, finalize `docs/perf/parity.md`
+with a verdict per cell (≤ 1.2× or structural exception + deferred ticket),
+update ROADMAP § 7 (phase met/not-met) and CLAUDE.md project status, then tag
+v0.2 and execute PyPI publication (P4-09, #142).
+
+**Acceptance Criteria**
+- [ ] parity.md final: every cell has a verdict; exceptions carry profiling evidence and a deferred ticket.
+- [ ] ROADMAP § 7 + CLAUDE.md updated; v0.2 tagged; P4-09 unblocked/executed.
+
+**Testing Requirements** — measurement protocol only (idle-verified EPYC);
+no code changes expected.
+
+**References** — spec § 2; P4-09 (#142).
+
+-----
+
 # Phase 5 — GPU Backend
 
 Goal: GPU state vector backend within 1.5× of cuQuantum standalone.
