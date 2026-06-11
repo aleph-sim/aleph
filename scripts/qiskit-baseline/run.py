@@ -6,7 +6,10 @@ exports QASM3 (committed under circuits/), and times
 AerSimulator(method='statevector') under single-thread pinning.
 
 Flags: `--gen-only` regenerates circuits without timing; `--workloads a,b`
-times only the named subset (default: full matrix).
+times only the named subset (default: full matrix); `--threads N` sets Aer
+max_parallel_threads (default 1 = historical single-thread pin); `--from-qasm`
+skips generation and times given QASM3 files verbatim; `--out` sets output
+JSON path (default results-qiskit.json); `--min-runs` lower-bounds timed runs.
 
 Specs: docs/superpowers/specs/2026-05-26-stage0-qiskit-baseline-design.md
        docs/superpowers/specs/2026-05-30-p1-14-phase1-perf-report-design.md
@@ -126,7 +129,6 @@ def aer_xeb(tqc: QuantumCircuit) -> float:
 
 
 CIRCUITS_DIR = Path(__file__).parent / "circuits"
-RESULTS_PATH = Path(__file__).parent / "results-qiskit.json"
 
 
 def build_qft(n: int) -> QuantumCircuit:
@@ -290,12 +292,15 @@ def transpile_and_export(qc: QuantumCircuit, name: str) -> QuantumCircuit:
     return tqc
 
 
-def time_aer(tqc: QuantumCircuit, runs: int) -> dict:
-    """Run `tqc` through AerSimulator(method='statevector') `runs` times under
-    single-thread pinning. Returns dict with median, mean, stdev (seconds)."""
+def time_aer(tqc: QuantumCircuit, runs: int, threads: int = 1) -> dict:
+    """Run `tqc` through AerSimulator(method='statevector') `runs` times.
+    threads=1 reproduces the historical single-thread pin; threads>1 hands
+    Aer that many OMP threads (its default gate fusion stays ON either way —
+    we compare default-vs-default and disclose it in the report).
+    Returns dict with median, mean, stdev (seconds)."""
     sim = AerSimulator(
         method="statevector",
-        max_parallel_threads=1,
+        max_parallel_threads=threads,
         max_parallel_experiments=1,
     )
     # Aer needs a save-statevector to actually compute the state.
@@ -331,7 +336,57 @@ def main() -> None:
         default="",
         help="Comma-separated workload names to time (default: full matrix).",
     )
+    parser.add_argument(
+        "--threads",
+        type=int,
+        default=1,
+        help="Aer max_parallel_threads (default 1 = historical pin).",
+    )
+    parser.add_argument(
+        "--from-qasm",
+        nargs="+",
+        default=None,
+        metavar="QASM",
+        help="Skip circuit generation; time these QASM3 files verbatim "
+             "(workload key = file stem). Requires qiskit.qasm3.",
+    )
+    parser.add_argument(
+        "--out",
+        type=str,
+        default="results-qiskit.json",
+        help="Output JSON path.",
+    )
+    parser.add_argument(
+        "--min-runs",
+        type=int,
+        default=0,
+        help="Lower bound on timed runs per workload (MT runs are cheaper; "
+             "the cost-based budget assumes single-thread).",
+    )
     args = parser.parse_args()
+
+    # --from-qasm: skip generation entirely; time given QASM3 files verbatim.
+    if args.from_qasm:
+        from qiskit import qasm3 as _qasm3
+        results: dict = {"schema_version": 2, "aer_threads": args.threads, "workloads": {}}
+        for path_str in args.from_qasm:
+            p = Path(path_str)
+            qc = _qasm3.loads(p.read_text())
+            gate_count = sum(qc.count_ops().values())
+            runs = max(timing_runs_for(qc.num_qubits, gate_count), args.min_runs)
+            print(
+                f"timing {p.stem}: n={qc.num_qubits} gates={gate_count} "
+                f"runs={runs} threads={args.threads}",
+                flush=True,
+            )
+            results["workloads"][p.stem] = {
+                "n": qc.num_qubits,
+                "gate_count_post_transpile": gate_count,
+                "qiskit_aer": time_aer(qc, runs, threads=args.threads),
+            }
+        Path(args.out).write_text(json.dumps(results, indent=2))
+        print(f"wrote {args.out}")
+        return
 
     CIRCUITS_DIR.mkdir(parents=True, exist_ok=True)
     matrix = all_workloads()
@@ -339,8 +394,9 @@ def main() -> None:
         set(args.workloads.split(",")) if args.workloads else {key for key, _, _, _ in matrix}
     )
 
-    results: dict = {
+    results = {
         "schema_version": 2,
+        "aer_threads": args.threads,
         "n_qubits_list": N_QUBITS_LIST,
         "grover_iters": GROVER_ITERS,
         "random_depth": RANDOM_DEPTH,
@@ -355,9 +411,9 @@ def main() -> None:
         print(f"[build] {stem}: {gate_count} gates after transpile", flush=True)
         if args.gen_only or key not in selected:
             continue
-        runs = timing_runs_for(n, gate_count)
+        runs = max(timing_runs_for(n, gate_count), args.min_runs)
         print(f"[time]  {key} (Aer, {runs} runs) ...", flush=True)
-        timing = time_aer(tqc, runs)
+        timing = time_aer(tqc, runs, threads=args.threads)
         print(
             f"[time]  {key}: median={timing['median_s']*1000:.2f} ms "
             f"stdev={timing['stdev_s']*1000:.2f} ms",
@@ -372,8 +428,9 @@ def main() -> None:
         }
         if family == "sycamore":
             results["workloads"][key]["aer_xeb"] = aer_xeb(tqc)
-    RESULTS_PATH.write_text(json.dumps(results, indent=2))
-    print(f"[done] results -> {RESULTS_PATH}")
+    out_path = Path(args.out)
+    out_path.write_text(json.dumps(results, indent=2))
+    print(f"[done] results -> {out_path}")
 
 
 if __name__ == "__main__":
