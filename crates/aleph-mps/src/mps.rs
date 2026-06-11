@@ -95,8 +95,10 @@ impl MpsState {
     /// qubit at the higher site down with nearest-neighbor SWAPs, and the
     /// permutation is left in place afterwards — no swap-back (P3-09). Reads
     /// route through the permutation, so `site == qubit` is no longer an
-    /// invariant. `MpsError::NonNearestNeighbor` is never constructed; it is
-    /// retained so the `BackendError` mapping and the public enum stay stable.
+    /// invariant. A violated routing invariant (e.g. duplicate qubits reaching
+    /// the 2q path in a release build) surfaces as
+    /// `MpsError::NonNearestNeighbor` from [`Self::apply_2q_adjacent`] instead
+    /// of silently corrupting the state.
     pub(crate) fn apply_2q(
         &mut self,
         g: &GateInstance,
@@ -124,14 +126,23 @@ impl MpsState {
     /// of the 4×4 matrix row/column index (ADR-0004) and `s_lsb` the
     /// least-significant.
     ///
-    /// Caller must ensure `s_msb.abs_diff(s_lsb) == 1`.
+    /// Caller must ensure `s_msb.abs_diff(s_lsb) == 1`; a violation is a
+    /// router-invariant bug and is rejected in ALL build profiles (a
+    /// `debug_assert` alone would let release builds silently apply a
+    /// non-unitary contraction — verified empirically with a duplicate-qubit
+    /// CNOT, whose corrupted state even re-normalizes to 1).
     fn apply_2q_adjacent(
         &mut self,
         s_msb: usize,
         s_lsb: usize,
         u: &[[Complex; 4]; 4],
     ) -> Result<(), MpsError> {
-        debug_assert_eq!(s_msb.abs_diff(s_lsb), 1);
+        if s_msb.abs_diff(s_lsb) != 1 {
+            return Err(MpsError::NonNearestNeighbor {
+                a: s_msb as u32,
+                b: s_lsb as u32,
+            });
+        }
         let i = s_msb.min(s_lsb);
         let j = i + 1;
 
@@ -968,6 +979,21 @@ mod tests {
         assert_eq!(s.qubit_of_site, vec![0, 1, 2]);
         assert_eq!(s.swaps_applied(), 2);
         assert_eq!(s.site_of_qubit, vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn duplicate_qubit_2q_errors_in_all_profiles() {
+        // The router-invariant guard must be a real error, not a debug_assert:
+        // in release a duplicate-qubit gate previously produced a non-unitary
+        // contraction that re-normalized to 1 — strictly silent corruption.
+        let mut s = MpsState::new(2, 64);
+        let mut gi = GateInstance::new(Gate::Cnot, smallvec![0u32, 1u32]);
+        gi.qubits[1] = 0;
+        let u = crate::gate::matrix_4x4(&gi).unwrap();
+        let err = s.apply_2q(&gi, &u).unwrap_err();
+        assert!(matches!(err, MpsError::NonNearestNeighbor { .. }));
+        let v = s.dense_statevector();
+        assert!((v[0].re - 1.0).abs() < 1e-12, "state must be untouched");
     }
 
     #[test]

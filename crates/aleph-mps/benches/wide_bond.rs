@@ -7,12 +7,15 @@
 //!   n=24, χ=256: saturates at L2=20 layers (max_bond_reached=256)
 //!   n=24/χ=256 single-run wall time: ~4.2s (well within criterion sample_size(10) budget)
 //!
-//! Thread sweep (requires the `parallel` feature):
+//! This bench has `required-features = ["parallel"]`, so `cargo bench
+//! --workspace` SKIPS it silently (deliberate: it exists for the thread sweep
+//! and would otherwise tax every push-to-main Bench run on the shared EPYC
+//! runner). Run it explicitly:
 //! `RAYON_NUM_THREADS=1|2|4|8|16 cargo bench -p aleph-mps --features parallel --bench wide_bond`
-//! Default (no feature) runs sequential faer — the production configuration.
+//! The t=1 row doubles as the sequential (production-default) reference.
 //!
 //! The chi=512 cell (where parallelism starts to win; ~47 s/iter sequential
-//! on EPYC) is gated behind `WIDE_BOND_CHI512=1` to keep CI bench runs fast.
+//! on EPYC) is additionally gated behind `WIDE_BOND_CHI512=1`.
 
 use aleph_backend::run;
 use aleph_core::{Gate, GateInstance, Param};

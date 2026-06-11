@@ -118,6 +118,15 @@ impl Backend for MpsBackend {
                         });
                     }
                 }
+                // GateInstance::new checks distinctness only in debug builds
+                // (and `qubits` is a pub field); without this release-mode
+                // guard a duplicate-qubit 2q gate reaches the permutation
+                // router with sa == sb and corrupts the state silently.
+                if gate.qubits[0] == gate.qubits[1] {
+                    return Err(BackendError::DuplicateQubit {
+                        qubit: gate.qubits[0],
+                    });
+                }
                 state.apply_2q(gate, &m).map_err(map_mps_err)
             }
             _ => Err(BackendError::UnsupportedGate {
@@ -195,6 +204,22 @@ mod tests {
         for sh in be.sample(&s, 200).unwrap() {
             assert!(sh == 0b00 || sh == 0b11);
         }
+    }
+
+    #[test]
+    fn rejects_duplicate_qubit_2q_gate() {
+        // GateInstance::new panics on duplicates only in debug builds, so
+        // build the duplicate through the pub `qubits` field — the exact
+        // bypass a release-mode caller could hit.
+        let mut be = MpsBackend::with_seed(0);
+        let mut s = be.allocate(2).unwrap();
+        let mut g = GateInstance::new(Gate::Cnot, smallvec![0u32, 1u32]);
+        g.qubits[1] = 0;
+        let err = be.apply_gate(&mut s, &g).unwrap_err();
+        assert!(matches!(err, BackendError::DuplicateQubit { qubit: 0 }));
+        // State untouched: still |00>.
+        let v = s.dense_statevector();
+        assert!((v[0].re - 1.0).abs() < 1e-12);
     }
 
     #[test]

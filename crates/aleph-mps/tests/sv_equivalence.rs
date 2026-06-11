@@ -529,12 +529,19 @@ fn results_invariant_across_parallelism() {
     }
     c.add_gate(g(Gate::Cnot, &[0, 9])).unwrap(); // exercise the lazy router too
 
-    let prev = faer::get_global_parallelism();
+    // RAII restore: a panic inside either run must not leak the toggled
+    // global to the rest of the test binary.
+    struct ParGuard(faer::Par);
+    impl Drop for ParGuard {
+        fn drop(&mut self) {
+            faer::set_global_parallelism(self.0);
+        }
+    }
+    let _guard = ParGuard(faer::get_global_parallelism());
     faer::set_global_parallelism(faer::Par::Seq);
     let a = mps_dense(&c, 128);
     faer::set_global_parallelism(faer::Par::rayon(0));
     let b = mps_dense(&c, 128);
-    faer::set_global_parallelism(prev);
     for (x, y) in a.iter().zip(b.iter()) {
         assert!((x - y).norm() < 1e-10, "parallelism changed the state");
     }

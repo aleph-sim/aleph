@@ -29,7 +29,6 @@ aleph-parser = { path = "../aleph-parser" }
 proptest = { workspace = true }
 smallvec = { workspace = true }
 criterion = { workspace = true }
-faer = { version = "0.24.0", default-features = false, features = ["linalg", "std"] }
 
 [[bench]]
 name = "nn_qaoa"
@@ -39,6 +38,12 @@ harness = false
 name = "long_range"
 harness = false
 
+# NOTE: `required-features` makes `cargo bench --workspace` skip this bench
+# silently (the P1-09 lesson) — deliberate here: its purpose is the parallel
+# thread sweep, and the always-on cells would otherwise add minutes of
+# saturating CPU to every push-to-main Bench run on the shared EPYC runner.
+# Run it explicitly: cargo bench -p aleph-mps --features parallel --bench wide_bond
 [[bench]]
 name = "wide_bond"
 harness = false
+required-features = ["parallel"]
