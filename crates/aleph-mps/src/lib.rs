@@ -45,7 +45,7 @@
 //! (P3-09): the qubits are brought together with nearest-neighbor SWAPs and
 //! the resulting site↔qubit permutation is tracked rather than undone —
 //! `(d-1)` SWAPs per long-range gate instead of `2(d-1)`, amortizing to zero
-//! for repeated gates on nearby qubits. All reads (measure, sample,
+//! for repeated gates on the same pair. All reads (measure, sample,
 //! probabilities, expectation, dense reconstruction) route through the
 //! permutation, so results are always reported in logical-qubit order.
 

@@ -1,7 +1,7 @@
 //! Wall-clock cost of a single non-adjacent 2q gate as a function of qubit
 //! distance. Since P3-09 the lazy permutation router applies `(distance-1)`
-//! nearest-neighbor SWAPs (no swap-back); compare against the `main`
-//! baseline to see the always-swap-back → lazy improvement.
+//! nearest-neighbor SWAPs (no swap-back); compare against the pre-P3-09
+//! always-swap-back baseline to see the improvement.
 
 use aleph_backend::run;
 use aleph_core::{Gate, GateInstance};
