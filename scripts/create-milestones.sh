@@ -35,6 +35,8 @@ create_milestone "Phase 3 — Alternative Backends" \
   "Stabilizer + MPS backends working; automatic backend selection."
 create_milestone "Phase 4 — Algorithm Benchmarks & v0.1 Release" \
   "Comprehensive benchmarks; first public release."
+create_milestone "Phase 4.5 — CPU Parity" \
+  "Every competitive-matrix cell (Aer MT statevector, Aer MPS, Stim) within 1.2× of the reference, or a documented structural exception. Gates v0.2 + PyPI."
 create_milestone "Phase 5 — GPU Backend" \
   "GPU state vector backend within 1.5× of cuQuantum standalone."
 create_milestone "Phase 6 — Multi-GPU & Distributed" \

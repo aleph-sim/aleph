@@ -16,8 +16,8 @@ trap 'rm -rf "$TMPDIR"' EXIT
 # Split BACKLOG.md by '### [Pn-nn]' headings into per-issue files.
 # Each output file: $TMPDIR/issue-<ID>.md
 awk -v outdir="$TMPDIR" '
-  /^### \[P[0-9]+-[0-9]+\]/ {
-    match($0, /\[P[0-9]+-[0-9]+\]/);
+  /^### \[P[0-9]+(\.[0-9]+)?-[0-9]+\]/ {
+    match($0, /\[P[0-9]+(\.[0-9]+)?-[0-9]+\]/);
     id = substr($0, RSTART+1, RLENGTH-2);
     out = outdir "/issue-" id ".md";
     capture = 1;
@@ -38,6 +38,7 @@ phase_milestone() {
     2) echo "Phase 2 — Multi-Thread CPU" ;;
     3) echo "Phase 3 — Alternative Backends" ;;
     4) echo "Phase 4 — Algorithm Benchmarks & v0.1 Release" ;;
+    4.5) echo "Phase 4.5 — CPU Parity" ;;
     5) echo "Phase 5 — GPU Backend" ;;
     6) echo "Phase 6 — Multi-GPU & Distributed" ;;
     *) echo "" ;;
@@ -53,7 +54,7 @@ for f in "$TMPDIR"/issue-*.md; do
   # "### [P0-01] Foo" -> "[P0-01] Foo". Use quoted pattern so bash parses
   # the operator as `#` + literal `### `, not `##` + `## `.
   title="${title_line#"### "}"
-  id=$(printf '%s' "$title" | grep -oE 'P[0-9]+-[0-9]+' | head -1)
+  id=$(printf '%s' "$title" | grep -oE 'P[0-9]+(\.[0-9]+)?-[0-9]+' | head -1)
 
   if printf '%s\n' "$existing_titles" | grep -qF "[$id]"; then
     echo "skip   [$id] (already exists)"
@@ -68,7 +69,7 @@ for f in "$TMPDIR"/issue-*.md; do
   fi
 
   phase_num=$(grep -m 1 '^\*\*Milestone:\*\*' "$f" \
-    | grep -oE 'Phase [0-9]+' | head -1 | awk '{print $2}' || true)
+    | grep -oE 'Phase [0-9]+(\.[0-9]+)?' | head -1 | awk '{print $2}' || true)
   milestone=$(phase_milestone "$phase_num")
   if [ -z "$milestone" ]; then
     echo "WARN   [$id] could not resolve milestone (phase='$phase_num')" >&2
