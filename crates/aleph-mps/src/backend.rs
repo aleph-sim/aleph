@@ -66,7 +66,7 @@ fn map_mps_err(e: MpsError) -> BackendError {
         MpsError::ExternalControls { kind } => BackendError::UnsupportedGate { kind },
         MpsError::NonFiniteParam { kind } => BackendError::NonFiniteParam { kind },
         MpsError::NonNearestNeighbor { .. } => BackendError::InvalidState {
-            reason: "non-adjacent 2q gate requires a SWAP network (see P3-06)",
+            reason: "2q gate applied to non-adjacent sites (lazy SWAP router invariant violated)",
         },
         MpsError::DegenerateMeasurement { qubit, probability } => {
             BackendError::DegenerateMeasurement { qubit, probability }

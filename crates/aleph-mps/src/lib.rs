@@ -2,7 +2,8 @@
 //!
 //! Mixed-canonical MPS with fixed bond-dimension χ truncation. Handles 1q
 //! gates and nearest-neighbor 2q gates; non-adjacent 2q gates (SWAP networks)
-//! are P3-06, error-bounded truncation is P3-05.
+//! are P3-06, error-bounded truncation is P3-05, lazy permutation routing
+//! is P3-09.
 //!
 //! See `docs/superpowers/specs/2026-06-05-p3-04-mps-basic-chain-design.md`.
 //!
