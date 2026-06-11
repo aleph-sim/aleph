@@ -19,6 +19,12 @@ pub struct MpsState {
     pub(crate) policy: TruncationPolicy,
     pub(crate) trunc_error: f64,
     pub(crate) max_bond_seen: usize,
+    /// qubit_of_site[s] = the logical qubit currently stored at site s (P3-09).
+    pub(crate) qubit_of_site: Vec<u32>,
+    /// site_of_qubit[q] = the site currently holding logical qubit q (P3-09).
+    pub(crate) site_of_qubit: Vec<usize>,
+    /// Physical nearest-neighbor SWAPs applied so far (lazy-router evidence).
+    pub(crate) swaps_applied: u64,
 }
 
 impl MpsState {
@@ -36,6 +42,9 @@ impl MpsState {
             policy,
             trunc_error: 0.0,
             max_bond_seen: 1,
+            qubit_of_site: (0..n as u32).collect(),
+            site_of_qubit: (0..n).collect(),
+            swaps_applied: 0,
         }
     }
 
@@ -51,6 +60,12 @@ impl MpsState {
     /// The largest bond dimension reached by any 2q truncation so far.
     pub fn max_bond_reached(&self) -> usize {
         self.max_bond_seen
+    }
+
+    /// Number of physical nearest-neighbor SWAP gates applied by the lazy
+    /// permutation router so far (P3-09).
+    pub fn swaps_applied(&self) -> u64 {
+        self.swaps_applied
     }
 
     /// Apply a 1q unitary to site `i` (qubit `i`). Preserves canonical form,
@@ -213,11 +228,20 @@ impl MpsState {
         Ok(())
     }
 
-    /// Swap the qubit states on adjacent sites `(k, k+1)` via a SWAP gate.
+    /// Swap the qubit states on adjacent sites `(k, k+1)` via a SWAP gate and
+    /// update the site↔qubit permutation accordingly.
     fn swap_adjacent(&mut self, k: usize) -> Result<(), MpsError> {
         let g = GateInstance::new(Gate::Swap, vec![k as u32, (k + 1) as u32]);
         let u = crate::gate::matrix_4x4(&g)?;
-        self.apply_2q_adjacent(k as u32, (k + 1) as u32, &u)
+        self.apply_2q_adjacent(k as u32, (k + 1) as u32, &u)?;
+        let qa = self.qubit_of_site[k];
+        let qb = self.qubit_of_site[k + 1];
+        self.qubit_of_site[k] = qb;
+        self.qubit_of_site[k + 1] = qa;
+        self.site_of_qubit[qb as usize] = k;
+        self.site_of_qubit[qa as usize] = k + 1;
+        self.swaps_applied += 1;
+        Ok(())
     }
 
     /// Multiply matrix `r` into site `i`'s LEFT bond:
@@ -930,6 +954,21 @@ mod tests {
                 probs[idx]
             );
         }
+    }
+
+    #[test]
+    fn swap_adjacent_updates_permutation_maps() {
+        let mut s = MpsState::new(3, 64);
+        assert_eq!(s.qubit_of_site, vec![0, 1, 2]);
+        assert_eq!(s.site_of_qubit, vec![0, 1, 2]);
+        assert_eq!(s.swaps_applied(), 0);
+        s.swap_adjacent(1).unwrap();
+        assert_eq!(s.qubit_of_site, vec![0, 2, 1]);
+        assert_eq!(s.site_of_qubit, vec![0, 2, 1]);
+        assert_eq!(s.swaps_applied(), 1);
+        s.swap_adjacent(1).unwrap();
+        assert_eq!(s.qubit_of_site, vec![0, 1, 2]);
+        assert_eq!(s.swaps_applied(), 2);
     }
 
     #[test]
