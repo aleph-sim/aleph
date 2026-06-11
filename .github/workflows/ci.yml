@@ -78,6 +78,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --workspace
       - run: cargo test --workspace
+      # The `parallel` feature (faer/rayon) is off by default and would
+      # otherwise never be compiled or tested by CI (P1-09 silent-skip class);
+      # this also runs the cfg-gated thread-invariance oracle.
+      - run: cargo test -p aleph-mps --features parallel
 
   test-macos:
     name: test macos ${{ matrix.toolchain }}

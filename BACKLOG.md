@@ -1823,8 +1823,8 @@ P3-04/05 shipped a single-threaded MPS (faer SVD, no parallelism). P3-06 added n
 
 **Acceptance Criteria**
 
-- [ ] Lazy-permutation path matches the always-swap-back result vs `NaiveSvBackend` to 1e-10 (the P3-06 oracle), with fewer applied SWAPs on a long-range benchmark.
-- [ ] Multithreaded SVD shows a measured speedup on a wide-bond bench, with the truncation-error oracle (ε=0 ⇒ exact) still passing.
+- [x] Lazy-permutation path matches the always-swap-back result vs `NaiveSvBackend` to 1e-10 (the P3-06 oracle), with fewer applied SWAPs on a long-range benchmark. *(d−1 vs 2(d−1) SWAPs by counter; EPYC wall-clock −9/−17/−22 % at dist 4/8/11; see `docs/perf/mps_parallel.md`.)*
+- [x] Multithreaded SVD shows a measured speedup on a wide-bond bench, with the truncation-error oracle (ε=0 ⇒ exact) still passing. *(1.57× @16T at χ=512 on EPYC; parallelism is a measured pessimization at χ≤256 → shipped opt-in via the `parallel` cargo feature, default off. ε=0 and Par-invariance oracles pass.)*
 
 **References**
 

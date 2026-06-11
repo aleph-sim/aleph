@@ -1,8 +1,7 @@
 //! Wall-clock cost of a single non-adjacent 2q gate as a function of qubit
-//! distance — documents the O(distance) SWAP-network overhead of the
-//! always-swap-back strategy (2·(distance−1) nearest-neighbor SWAPs per
-//! non-local gate). The lazy (permutation-tracking) strategy is deferred
-//! (see the P3-06 design); this curve reflects always-swap-back.
+//! distance. Since P3-09 the lazy permutation router applies `(distance-1)`
+//! nearest-neighbor SWAPs (no swap-back); compare against the pre-P3-09
+//! always-swap-back baseline to see the improvement.
 
 use aleph_backend::run;
 use aleph_core::{Gate, GateInstance};

@@ -331,6 +331,90 @@ fn nonadjacent_matches_sv() {
     }
 }
 
+#[test]
+fn lazy_perm_reads_match_sv() {
+    // Long-range gates leave a non-identity permutation; every read API
+    // must still report in logical-qubit order (P3-09).
+    let n = 5u32;
+    let mut c = aleph_ir::Circuit::new(n, 0);
+    for q in 0..n {
+        c.add_gate(g(Gate::H, &[q])).unwrap();
+    }
+    c.add_gate(g(Gate::Cnot, &[0, 4])).unwrap(); // distance 4
+    c.add_gate(g(Gate::Rz(Param::Concrete(0.4)), &[2])).unwrap();
+    c.add_gate(g(Gate::Cnot, &[3, 1])).unwrap(); // reversed, distance 2
+    c.add_gate(g(Gate::Cz, &[4, 2])).unwrap(); // distance 2 after permutation drift
+
+    let a = mps_dense(&c, 64);
+    let b = sv_dense(&c);
+    for (x, y) in a.iter().zip(b.iter()) {
+        assert!((x - y).norm() < 1e-10, "dense mismatch under permutation");
+    }
+
+    let mut mps = MpsBackend::with_seed(0).with_max_bond(64);
+    let ms = run(&mut mps, &c).unwrap();
+    assert!(
+        ms.swaps_applied() > 0,
+        "circuit must exercise the lazy router"
+    );
+    let mut sv = NaiveSvBackend::with_seed(0);
+    let svs = run(&mut sv, &c).unwrap();
+
+    for subset in [vec![0u32], vec![4, 0], vec![1, 3, 2]] {
+        let pm = mps.probabilities(&ms, &subset).unwrap();
+        let ps = sv.probabilities(&svs, &subset).unwrap();
+        for (x, y) in pm.iter().zip(ps.iter()) {
+            assert!(
+                (x - y).abs() < 1e-10,
+                "probabilities mismatch under permutation"
+            );
+        }
+    }
+    for terms in [
+        vec![(0u32, Pauli::Z), (4, Pauli::Z)],
+        vec![(2, Pauli::X)],
+        vec![(1, Pauli::Z), (3, Pauli::Z)],
+    ] {
+        let p = PauliString::new(1.0, terms).unwrap();
+        let em = mps.expectation_value(&ms, &p).unwrap();
+        let es = sv.expectation_value(&svs, &p).unwrap();
+        assert!(
+            (em - es).abs() < 1e-10,
+            "expectation mismatch: {em} vs {es}"
+        );
+    }
+}
+
+#[test]
+fn lazy_perm_sample_matches_probabilities() {
+    // Sampling under a non-identity permutation: empirical distribution over
+    // all qubits must match the exact marginals.
+    let n = 4u32;
+    let mut c = aleph_ir::Circuit::new(n, 0);
+    for q in 0..n {
+        c.add_gate(g(Gate::H, &[q])).unwrap();
+    }
+    c.add_gate(g(Gate::Cnot, &[0, 3])).unwrap();
+    c.add_gate(g(Gate::Cnot, &[2, 0])).unwrap();
+    let mut be = MpsBackend::with_seed(7).with_max_bond(64);
+    let st = run(&mut be, &c).unwrap();
+    assert!(st.swaps_applied() > 0);
+    let shots = be.sample(&st, 20000).unwrap();
+    let mut counts = [0u32; 16];
+    for sh in &shots {
+        counts[*sh as usize] += 1;
+    }
+    let probs = be.probabilities(&st, &[0, 1, 2, 3]).unwrap();
+    for idx in 0..16 {
+        let emp = counts[idx] as f64 / 20000.0;
+        assert!(
+            (emp - probs[idx]).abs() < 0.02,
+            "idx {idx}: {emp} vs {}",
+            probs[idx]
+        );
+    }
+}
+
 use proptest::prelude::*;
 
 proptest! {
@@ -407,5 +491,58 @@ proptest! {
         let am = mps_dense(&c, 64);
         let bm = sv_dense(&c);
         for (x, y) in am.iter().zip(bm.iter()) { prop_assert!((x - y).norm() < 1e-9); }
+    }
+}
+
+// Needs faer's rayon backend: run via cargo test -p aleph-mps --features parallel
+#[cfg(feature = "parallel")]
+#[test]
+fn results_invariant_across_parallelism() {
+    // Same circuit under sequential and rayon-parallel faer must agree to
+    // 1e-10 (not bit-exact: parallel SVD may round differently).
+    //
+    // Isolation note: other tests in this binary run concurrently and also use
+    // faer, but they only assert tolerances (1e-9/1e-10), which hold under
+    // either Par::Seq or Par::rayon — so the global toggle cannot make them
+    // flaky.
+    // n=10 with 10 brickwall layers grows the central bond to chi = 16
+    // (measured; only every second layer crosses the middle cut), so the
+    // parallel branch sees real multi-column SVD/gemm work, not near-scalar
+    // blocks.
+    let n = 10u32;
+    let mut c = aleph_ir::Circuit::new(n, 0);
+    for q in 0..n {
+        c.add_gate(g(Gate::H, &[q])).unwrap();
+    }
+    for layer in 0..10u32 {
+        let start = layer % 2;
+        let mut q = start;
+        while q + 1 < n {
+            c.add_gate(g(
+                Gate::Ry(Param::Concrete(0.3 + (q + layer * n) as f64 * 0.11)),
+                &[q],
+            ))
+            .unwrap();
+            c.add_gate(g(Gate::Cnot, &[q, q + 1])).unwrap();
+            q += 2;
+        }
+    }
+    c.add_gate(g(Gate::Cnot, &[0, 9])).unwrap(); // exercise the lazy router too
+
+    // RAII restore: a panic inside either run must not leak the toggled
+    // global to the rest of the test binary.
+    struct ParGuard(faer::Par);
+    impl Drop for ParGuard {
+        fn drop(&mut self) {
+            faer::set_global_parallelism(self.0);
+        }
+    }
+    let _guard = ParGuard(faer::get_global_parallelism());
+    faer::set_global_parallelism(faer::Par::Seq);
+    let a = mps_dense(&c, 128);
+    faer::set_global_parallelism(faer::Par::rayon(0));
+    let b = mps_dense(&c, 128);
+    for (x, y) in a.iter().zip(b.iter()) {
+        assert!((x - y).norm() < 1e-10, "parallelism changed the state");
     }
 }

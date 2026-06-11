@@ -1,8 +1,7 @@
-//! Rank-3 MPS site tensor `(left, 2, right)` and its reshape ↔ nalgebra views.
+//! Rank-3 MPS site tensor `(left, 2, right)` and its faer matrix views.
 
 use crate::MpsError;
 use aleph_core::Complex;
-use nalgebra::DMatrix;
 
 /// A single MPS site tensor of shape `(left, 2, right)`.
 /// Row-major flat storage: `data[(l*2 + p)*right + r]`.
@@ -49,57 +48,41 @@ impl Site {
         &mut self.data[i]
     }
 
-    /// Reshape to a `(left*2) × right` matrix, grouping the left bond and
-    /// physical index into rows — the form needed to move the orthogonality
-    /// center rightward via QR/SVD.
-    pub fn to_group_left(&self) -> DMatrix<Complex> {
-        DMatrix::from_fn(self.left * 2, self.right, |row, r| {
-            let l = row / 2;
-            let p = row % 2;
-            self.get(l, p, r)
-        })
+    /// Zero-copy faer view of the grouped-left matrix `(left·2) × right`
+    /// (row `l·2+p`, col `r`) — identical to the row-major layout of `data`.
+    pub fn group_left_view(&self) -> faer::MatRef<'_, Complex> {
+        faer::MatRef::from_row_major_slice(&self.data, self.left * 2, self.right)
     }
 
-    /// Reconstruct a `Site` from a `(left*2) × right` matrix produced by
-    /// [`to_group_left`].
-    pub fn from_group_left(m: &DMatrix<Complex>, left: usize, right: usize) -> Site {
+    /// Zero-copy faer view of the grouped-right matrix `left × (2·right)`
+    /// (row `l`, col `p·right + r`) — the same bytes, regrouped.
+    pub fn group_right_view(&self) -> faer::MatRef<'_, Complex> {
+        faer::MatRef::from_row_major_slice(&self.data, self.left, 2 * self.right)
+    }
+
+    /// Build a `Site` from a faer `(left·2) × right` grouped-left matrix.
+    pub fn from_group_left_faer(m: faer::MatRef<'_, Complex>, left: usize, right: usize) -> Site {
         let mut s = Site::zeros(left, right);
         // Allow explicit index arithmetic — clearer than iterator gymnastics
         // for the (row → (l, p)) split.
         #[allow(clippy::needless_range_loop)]
         for row in 0..left * 2 {
             for r in 0..right {
-                let l = row / 2;
-                let p = row % 2;
-                *s.get_mut(l, p, r) = m[(row, r)];
+                s.data[row * right + r] = m[(row, r)];
             }
         }
         s
     }
 
-    /// Reshape to a `left × (2*right)` matrix, grouping the physical index and
-    /// right bond into columns — the form needed to move the orthogonality
-    /// center leftward via QR/SVD.
-    pub fn to_group_right(&self) -> DMatrix<Complex> {
-        DMatrix::from_fn(self.left, 2 * self.right, |l, col| {
-            let p = col / self.right;
-            let r = col % self.right;
-            self.get(l, p, r)
-        })
-    }
-
-    /// Reconstruct a `Site` from a `left × (2*right)` matrix produced by
-    /// [`to_group_right`].
-    pub fn from_group_right(m: &DMatrix<Complex>, left: usize, right: usize) -> Site {
+    /// Build a `Site` from a faer `χ × (2·right)` grouped-right matrix.
+    pub fn from_group_right_faer(m: faer::MatRef<'_, Complex>, left: usize, right: usize) -> Site {
         let mut s = Site::zeros(left, right);
         // Allow explicit index arithmetic — clearer than iterator gymnastics
         // for the (col → (p, r)) split.
         #[allow(clippy::needless_range_loop)]
         for l in 0..left {
             for col in 0..2 * right {
-                let p = col / right;
-                let r = col % right;
-                *s.get_mut(l, p, r) = m[(l, col)];
+                s.data[l * 2 * right + col] = m[(l, col)];
             }
         }
         s
@@ -115,6 +98,9 @@ pub enum TruncationPolicy {
     /// never exceeding `max_bond`.
     ErrorBounded { epsilon: f64, max_bond: usize },
 }
+
+/// `(u_kept, s_kept, vt_kept, discarded_weight)` returned by [`truncated_svd`].
+pub type TruncatedSvd = (faer::Mat<Complex>, Vec<f64>, faer::Mat<Complex>, f64);
 
 /// SVD of `m` truncated according to `policy` (fixed-χ or error-bounded),
 /// renormalized to preserve unit weight (input must come from a normalized
@@ -132,22 +118,15 @@ pub enum TruncationPolicy {
 /// silently drop half the state norm (root-caused via the SWAP-network oracle
 /// proptest). We use `faer`'s `thin_svd`, which is reliable for complex inputs
 /// (verified to reconstruct the offending blocks to ~1e-16).
-/// `(u_kept, s_kept, vt_kept, discarded_weight)` returned by [`truncated_svd`].
-pub type TruncatedSvd = (DMatrix<Complex>, Vec<f64>, DMatrix<Complex>, f64);
-
 pub fn truncated_svd(
-    m: &DMatrix<Complex>,
+    m: faer::MatRef<'_, Complex>,
     policy: &TruncationPolicy,
 ) -> Result<TruncatedSvd, MpsError> {
     let rows = m.nrows();
     let cols = m.ncols();
 
     // Reliable complex SVD via faer (singular values nonnegative, nonincreasing).
-    let fm = faer::Mat::<faer::c64>::from_fn(rows, cols, |i, j| {
-        let z = m[(i, j)];
-        faer::c64::new(z.re, z.im)
-    });
-    let svd = fm.thin_svd().map_err(|_| MpsError::SvdFailed)?;
+    let svd = m.thin_svd().map_err(|_| MpsError::SvdFailed)?;
     let fu = svd.U();
     let fv = svd.V();
     let fs = svd.S();
@@ -190,38 +169,11 @@ pub fn truncated_svd(
         1.0
     };
 
-    let mut u_kept = DMatrix::<Complex>::zeros(rows, chi);
-    let mut vt_kept = DMatrix::<Complex>::zeros(chi, cols);
-    let mut s_kept = vec![0.0_f64; chi];
-    for t in 0..chi {
-        for r in 0..rows {
-            let z = fu[(r, t)];
-            u_kept[(r, t)] = Complex::new(z.re, z.im);
-        }
-        // vt row = (t-th right singular vector)ᴴ = conjugate of V's column t.
-        for c in 0..cols {
-            let z = fv[(c, t)];
-            vt_kept[(t, c)] = Complex::new(z.re, -z.im);
-        }
-        s_kept[t] = sigmas[t] * scale;
-    }
+    let u_kept = faer::Mat::from_fn(rows, chi, |r, t| fu[(r, t)]);
+    // vt row t = (t-th right singular vector)ᴴ = conjugate of V's column t.
+    let vt_kept = faer::Mat::from_fn(chi, cols, |t, c| fv[(c, t)].conj());
+    let s_kept: Vec<f64> = (0..chi).map(|t| sigmas[t] * scale).collect();
     Ok((u_kept, s_kept, vt_kept, discarded))
-}
-
-/// Thin QR decomposition: returns `(Q, R)` with `Q` of shape `rows × k` and
-/// `R` of shape `k × cols`, where `k = min(rows, cols)`.
-///
-/// Used to move the orthogonality center one site at a time without introducing
-/// truncation (no singular-value threshold applied here; that comes in SVD-based
-/// truncation in Task 5+).
-pub fn thin_qr(m: &DMatrix<Complex>) -> (DMatrix<Complex>, DMatrix<Complex>) {
-    let qr = m.clone().qr();
-    let q_full = qr.q(); // rows × rows unitary
-    let r_full = qr.r(); // rows × cols upper-triangular
-    let k = m.nrows().min(m.ncols());
-    let q = q_full.columns(0, k).into_owned(); // rows × k
-    let r = r_full.rows(0, k).into_owned(); // k × cols
-    (q, r)
 }
 
 #[cfg(test)]
@@ -242,51 +194,18 @@ mod tests {
     }
 
     #[test]
-    fn group_left_roundtrip() {
-        let mut s = Site::zeros(2, 3);
-        for l in 0..2 {
-            for p in 0..2 {
-                for r in 0..3 {
-                    *s.get_mut(l, p, r) = c((l * 100 + p * 10 + r) as f64);
-                }
-            }
-        }
-        let m = s.to_group_left(); // (left*2) rows × right cols
-        assert_eq!(m.nrows(), 4);
-        assert_eq!(m.ncols(), 3);
-        let back = Site::from_group_left(&m, 2, 3);
-        assert_eq!(back, s);
-    }
-
-    #[test]
-    fn group_right_roundtrip() {
-        let mut s = Site::zeros(2, 3);
-        for l in 0..2 {
-            for p in 0..2 {
-                for r in 0..3 {
-                    *s.get_mut(l, p, r) = c((l * 100 + p * 10 + r) as f64);
-                }
-            }
-        }
-        let m = s.to_group_right(); // left rows × (2*right) cols
-        assert_eq!(m.nrows(), 2);
-        assert_eq!(m.ncols(), 6);
-        let back = Site::from_group_right(&m, 2, 3);
-        assert_eq!(back, s);
-    }
-
-    #[test]
     fn truncated_svd_reconstructs_complex_full_rank() {
         // Generic complex 4×4: U·diag(s)·Vt must reconstruct M (renorm scale=1
         // only if ‖M‖=1; here ‖M‖≠1, so compare to scale·M via re-deriving).
-        let m = DMatrix::from_fn(4, 4, |i, j| {
+        let m = faer::Mat::from_fn(4, 4, |i, j| {
             Complex::new(
                 (i as f64 - j as f64) * 0.3 + 1.0,
                 (i * 2 + j) as f64 * 0.17 - 0.5,
             )
         });
-        let fro: f64 = m.iter().map(|c| c.norm_sqr()).sum::<f64>().sqrt();
-        let (u, s, vt, _disc) = truncated_svd(&m, &TruncationPolicy::FixedBond(64)).unwrap();
+        let fro: f64 = m.as_ref().norm_l2();
+        let (u, s, vt, _disc) =
+            truncated_svd(m.as_ref(), &TruncationPolicy::FixedBond(64)).unwrap();
         // reconstruction = U·diag(s)·Vt = (1/fro)·M  (renormalized to unit weight)
         let mut maxd = 0.0_f64;
         for r in 0..4 {
@@ -317,8 +236,9 @@ mod tests {
             Complex::new(-0.3, 0.2),
             Complex::new(0.1, 0.1),
         ];
-        let m = DMatrix::from_fn(4, 4, |i, j| a[i] * b[j].conj());
-        let (u, s, vt, _disc) = truncated_svd(&m, &TruncationPolicy::FixedBond(64)).unwrap();
+        let m = faer::Mat::from_fn(4, 4, |i, j| a[i] * b[j].conj());
+        let (u, s, vt, _disc) =
+            truncated_svd(m.as_ref(), &TruncationPolicy::FixedBond(64)).unwrap();
         assert_eq!(
             s.len(),
             1,
@@ -326,7 +246,7 @@ mod tests {
             s.len()
         );
         // And it must still reconstruct (1/‖M‖)·M.
-        let fro: f64 = m.iter().map(|c| c.norm_sqr()).sum::<f64>().sqrt();
+        let fro: f64 = m.as_ref().norm_l2();
         let mut maxd = 0.0_f64;
         for r in 0..4 {
             for col in 0..4 {
@@ -337,9 +257,9 @@ mod tests {
         assert!(maxd < 1e-10, "rank-1 reconstruction err {maxd:e}");
     }
 
-    fn diag_sigma() -> DMatrix<Complex> {
+    fn diag_sigma() -> faer::Mat<Complex> {
         let s = [1.0, 0.1, 0.01, 0.001];
-        DMatrix::from_fn(4, 4, |i, j| {
+        faer::Mat::from_fn(4, 4, |i, j| {
             if i == j {
                 Complex::new(s[i], 0.0)
             } else {
@@ -352,7 +272,7 @@ mod tests {
     fn error_bounded_keeps_minimal_chi() {
         let m = diag_sigma();
         let (_, s, _, disc) = truncated_svd(
-            &m,
+            m.as_ref(),
             &TruncationPolicy::ErrorBounded {
                 epsilon: 1e-3,
                 max_bond: 64,
@@ -367,7 +287,7 @@ mod tests {
     fn error_bounded_tiny_eps_keeps_all() {
         let m = diag_sigma();
         let (_, s, _, disc) = truncated_svd(
-            &m,
+            m.as_ref(),
             &TruncationPolicy::ErrorBounded {
                 epsilon: 0.0,
                 max_bond: 64,
@@ -382,7 +302,7 @@ mod tests {
     fn error_bounded_cap_overrides_eps() {
         let m = diag_sigma();
         let (_, s, _, _) = truncated_svd(
-            &m,
+            m.as_ref(),
             &TruncationPolicy::ErrorBounded {
                 epsilon: 10.0,
                 max_bond: 1,
@@ -395,7 +315,49 @@ mod tests {
     #[test]
     fn fixed_bond_matches_legacy() {
         let m = diag_sigma();
-        let (_, s, _, _) = truncated_svd(&m, &TruncationPolicy::FixedBond(2)).unwrap();
+        let (_, s, _, _) = truncated_svd(m.as_ref(), &TruncationPolicy::FixedBond(2)).unwrap();
         assert_eq!(s.len(), 2);
+    }
+
+    #[test]
+    fn faer_views_match_element_access() {
+        let mut s = Site::zeros(2, 3);
+        for l in 0..2 {
+            for p in 0..2 {
+                for r in 0..3 {
+                    *s.get_mut(l, p, r) = Complex::new((l * 100 + p * 10 + r) as f64, 0.5);
+                }
+            }
+        }
+        let gl = s.group_left_view(); // (left*2) x right
+        assert_eq!((gl.nrows(), gl.ncols()), (4, 3));
+        for l in 0..2 {
+            for p in 0..2 {
+                for r in 0..3 {
+                    assert_eq!(gl[(l * 2 + p, r)], s.get(l, p, r));
+                }
+            }
+        }
+        let gr = s.group_right_view(); // left x (2*right)
+        assert_eq!((gr.nrows(), gr.ncols()), (2, 6));
+        for l in 0..2 {
+            for p in 0..2 {
+                for r in 0..3 {
+                    assert_eq!(gr[(l, p * 3 + r)], s.get(l, p, r));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn faer_from_group_roundtrip() {
+        let mut s = Site::zeros(2, 3);
+        for (k, v) in s.data.iter_mut().enumerate() {
+            *v = Complex::new(k as f64, -(k as f64));
+        }
+        let back_l = Site::from_group_left_faer(s.group_left_view(), 2, 3);
+        assert_eq!(back_l, s);
+        let back_r = Site::from_group_right_faer(s.group_right_view(), 2, 3);
+        assert_eq!(back_r, s);
     }
 }

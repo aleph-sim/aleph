@@ -2,7 +2,8 @@
 //!
 //! Mixed-canonical MPS with fixed bond-dimension χ truncation. Handles 1q
 //! gates and nearest-neighbor 2q gates; non-adjacent 2q gates (SWAP networks)
-//! are P3-06, error-bounded truncation is P3-05.
+//! are P3-06, error-bounded truncation is P3-05, lazy permutation routing
+//! is P3-09.
 //!
 //! See `docs/superpowers/specs/2026-06-05-p3-04-mps-basic-chain-design.md`.
 //!
@@ -40,11 +41,22 @@
 //! let shots = backend.sample(&state, 1000).unwrap();
 //! ```
 //!
-//! 2q gates between non-adjacent qubits are handled by a nearest-neighbor SWAP
-//! network (always-swap-back): the targets are brought together, the gate is
-//! applied, and the SWAPs are undone, so `site = qubit` always holds. A lazy
-//! permutation-tracking strategy that would avoid the swap-back is a future
-//! optimization.
+//! 2q gates between non-adjacent qubits are handled by a lazy SWAP network
+//! (P3-09): the qubits are brought together with nearest-neighbor SWAPs and
+//! the resulting site↔qubit permutation is tracked rather than undone —
+//! `(d-1)` SWAPs per long-range gate instead of `2(d-1)`, amortizing to zero
+//! for repeated gates on the same pair. All reads (measure, sample,
+//! probabilities, expectation, dense reconstruction) route through the
+//! permutation, so results are always reported in logical-qubit order.
+//!
+//! # Parallelism
+//!
+//! The `parallel` cargo feature enables faer's rayon-parallel kernels for the
+//! 2q hot path (theta gemm, truncated SVD, QR center moves). It is OFF by
+//! default: measured on a 16-core EPYC, the rayon pool is a large
+//! pessimization at typical bond dimensions (chi <= 256) and only wins at
+//! wide bonds (1.54x at chi = 512). Enable it for wide-bond workloads and
+//! control the pool with `RAYON_NUM_THREADS`.
 
 mod mps;
 mod tensor;
@@ -66,7 +78,7 @@ pub enum MpsError {
     #[error("gate `{kind}` is not supported by the MPS backend")]
     UnsupportedGate { kind: &'static str },
 
-    #[error("2q gate on non-adjacent qubits {a} and {b}; the basic MPS chain only supports nearest-neighbor 2q gates (SWAP networks are P3-06)")]
+    #[error("2q gate on non-adjacent sites {a} and {b}; internal invariant violated (the lazy SWAP router should have made them adjacent)")]
     NonNearestNeighbor { a: u32, b: u32 },
 
     #[error("gate `{kind}` carries external controls, which the MPS backend does not support")]

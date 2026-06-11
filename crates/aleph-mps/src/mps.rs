@@ -1,9 +1,12 @@
 //! Mixed-canonical MPS state: init, dense reconstruction, canonicalization,
-//! gate application, expectation, measurement, sampling, probabilities.
+//! gate application with lazy SWAP permutation routing (P3-09), expectation,
+//! measurement, sampling, probabilities.
 
-use crate::tensor::{thin_qr, truncated_svd, Site, TruncationPolicy};
+use crate::tensor::{truncated_svd, Site, TruncationPolicy};
 use crate::MpsError;
 use aleph_core::{Complex, Gate, GateInstance, PauliString};
+use faer::linalg::matmul::matmul;
+use faer::Accum;
 use nalgebra::DMatrix;
 use rand::Rng;
 
@@ -12,6 +15,10 @@ pub(crate) const MAX_PROB_QUBITS: usize = 20;
 
 /// Mixed-canonical MPS. Sites left of `center` are left-canonical, sites right
 /// are right-canonical; the center site carries the norm.
+///
+/// Sites hold logical qubits per the `qubit_of_site`/`site_of_qubit`
+/// permutation (lazy SWAP routing, P3-09); `site == qubit` only until the
+/// first long-range 2q gate.
 #[derive(Debug, Clone)]
 pub struct MpsState {
     pub(crate) sites: Vec<Site>,
@@ -19,6 +26,12 @@ pub struct MpsState {
     pub(crate) policy: TruncationPolicy,
     pub(crate) trunc_error: f64,
     pub(crate) max_bond_seen: usize,
+    /// qubit_of_site[s] = the logical qubit currently stored at site s (P3-09).
+    pub(crate) qubit_of_site: Vec<u32>,
+    /// site_of_qubit[q] = the site currently holding logical qubit q (P3-09).
+    pub(crate) site_of_qubit: Vec<usize>,
+    /// Physical nearest-neighbor SWAPs applied so far (lazy-router evidence).
+    pub(crate) swaps_applied: u64,
 }
 
 impl MpsState {
@@ -36,6 +49,9 @@ impl MpsState {
             policy,
             trunc_error: 0.0,
             max_bond_seen: 1,
+            qubit_of_site: (0..n as u32).collect(),
+            site_of_qubit: (0..n).collect(),
+            swaps_applied: 0,
         }
     }
 
@@ -53,10 +69,16 @@ impl MpsState {
         self.max_bond_seen
     }
 
-    /// Apply a 1q unitary to site `i` (qubit `i`). Preserves canonical form,
-    /// so neither the center nor any SVD is touched.
-    pub(crate) fn apply_1q(&mut self, i: usize, u: &[[Complex; 2]; 2]) {
-        let site = &mut self.sites[i];
+    /// Number of physical nearest-neighbor SWAP gates applied by the lazy
+    /// permutation router so far (P3-09).
+    pub fn swaps_applied(&self) -> u64 {
+        self.swaps_applied
+    }
+
+    /// Apply a 1q unitary to logical qubit `q` (routed to its current site).
+    /// Preserves canonical form, so neither the center nor any SVD is touched.
+    pub(crate) fn apply_1q(&mut self, q: usize, u: &[[Complex; 2]; 2]) {
+        let site = &mut self.sites[self.site_of_qubit[q]];
         for l in 0..site.left {
             for r in 0..site.right {
                 let a0 = site.get(l, 0, r);
@@ -68,49 +90,60 @@ impl MpsState {
     }
 
     /// Apply a 2q gate (4×4 matrix `u`) on the qubits named by `g`
-    /// (`g.qubits[0]`=MSB, ADR-0004). Adjacent pairs apply directly; non-adjacent
-    /// pairs are brought together by a nearest-neighbor SWAP network, the gate is
-    /// applied, then the SWAPs are undone (always-swap-back), so site = qubit is
-    /// preserved. `MpsError::NonNearestNeighbor` is retained as a defensive
-    /// invariant guard but is no longer reached on the normal 2q path.
+    /// (`g.qubits[0]`=MSB, ADR-0004). The qubits' current sites come from the
+    /// lazy permutation: non-adjacent sites are brought together by moving the
+    /// qubit at the higher site down with nearest-neighbor SWAPs, and the
+    /// permutation is left in place afterwards — no swap-back (P3-09). Reads
+    /// route through the permutation, so `site == qubit` is no longer an
+    /// invariant. A violated routing invariant (e.g. duplicate qubits reaching
+    /// the 2q path in a release build) surfaces as
+    /// `MpsError::NonNearestNeighbor` from [`Self::apply_2q_adjacent`] instead
+    /// of silently corrupting the state.
     pub(crate) fn apply_2q(
         &mut self,
         g: &GateInstance,
         u: &[[Complex; 4]; 4],
     ) -> Result<(), MpsError> {
-        let qa = g.qubits[0];
-        let qb = g.qubits[1];
-        if qa.abs_diff(qb) == 1 {
-            return self.apply_2q_adjacent(qa, qb, u);
+        let qa = g.qubits[0] as usize;
+        let qb = g.qubits[1] as usize;
+        let sa = self.site_of_qubit[qa];
+        let sb = self.site_of_qubit[qb];
+        if sa.abs_diff(sb) != 1 {
+            // Ladder: walk the occupant of the higher site down to lo+1.
+            // Site `lo` is untouched, so the pair ends adjacent.
+            let lo = sa.min(sb);
+            let hi = sa.max(sb);
+            for k in (lo + 1..hi).rev() {
+                self.swap_adjacent(k)?;
+            }
         }
-        let lo = qa.min(qb);
-        let hi = qa.max(qb);
-        // Forward ladder: move the qubit at site `hi` down to site `lo+1`.
-        for k in (lo as usize + 1..=hi as usize - 1).rev() {
-            self.swap_adjacent(k)?;
-        }
-        // qubit `lo` is at site `lo`, qubit `hi` is now at site `lo+1`.
-        // Apply on the adjacent pair preserving original control/target order.
-        let (s0, s1) = if qa < qb { (lo, lo + 1) } else { (lo + 1, lo) };
-        self.apply_2q_adjacent(s0, s1, u)?;
-        // Reverse ladder: undo the SWAPs, restoring site = qubit.
-        for k in lo as usize + 1..=hi as usize - 1 {
-            self.swap_adjacent(k)?;
-        }
-        Ok(())
+        // Re-resolve sites: the ladder moved one of the qubits.
+        self.apply_2q_adjacent(self.site_of_qubit[qa], self.site_of_qubit[qb], u)
     }
 
-    /// Apply a 2q unitary `u` to the nearest-neighbor pair `(q0, q1)`.
+    /// Apply a 2q unitary `u` to the adjacent sites `(s_msb, s_lsb)`, where
+    /// `s_msb` is the site whose physical index forms the most-significant bit
+    /// of the 4×4 matrix row/column index (ADR-0004) and `s_lsb` the
+    /// least-significant.
     ///
-    /// Caller must ensure `q0.abs_diff(q1) == 1`. The MSB convention (ADR-0004)
-    /// is preserved: `q0` maps to the most-significant bit of the matrix index.
+    /// Caller must ensure `s_msb.abs_diff(s_lsb) == 1`; a violation is a
+    /// router-invariant bug and is rejected in ALL build profiles (a
+    /// `debug_assert` alone would let release builds silently apply a
+    /// non-unitary contraction — verified empirically with a duplicate-qubit
+    /// CNOT, whose corrupted state even re-normalizes to 1).
     fn apply_2q_adjacent(
         &mut self,
-        q0: u32,
-        q1: u32,
+        s_msb: usize,
+        s_lsb: usize,
         u: &[[Complex; 4]; 4],
     ) -> Result<(), MpsError> {
-        let i = q0.min(q1) as usize;
+        if s_msb.abs_diff(s_lsb) != 1 {
+            return Err(MpsError::NonNearestNeighbor {
+                a: s_msb as u32,
+                b: s_lsb as u32,
+            });
+        }
+        let i = s_msb.min(s_lsb);
         let j = i + 1;
 
         // Move the orthogonality center to site i so that the two-site
@@ -118,58 +151,46 @@ impl MpsState {
         self.move_center_to(i);
 
         let li = self.sites[i].left;
-        let mi = self.sites[i].right; // shared bond between site i and j
         let ri = self.sites[j].right;
 
-        // Build the two-site tensor Θ[l, a, b, r] = Σ_m sites[i][l,a,m] · sites[j][m,b,r]
-        // Flat index: ((l * 2 + a) * 2 + b) * ri + r
-        let theta_len = li * 2 * 2 * ri;
-        let mut theta = vec![Complex::new(0.0, 0.0); theta_len];
-
-        // Explicit loops — nested-tensor contractions are clearer than iterators here.
-        #[allow(clippy::needless_range_loop)]
-        for l in 0..li {
-            for a in 0..2usize {
-                for b in 0..2usize {
-                    for r in 0..ri {
-                        let mut acc = Complex::new(0.0, 0.0);
-                        for m in 0..mi {
-                            acc += self.sites[i].get(l, a, m) * self.sites[j].get(m, b, r);
-                        }
-                        theta[((l * 2 + a) * 2 + b) * ri + r] = acc;
-                    }
-                }
-            }
-        }
+        // Θ as a (li·2) × (2·ri) matrix (row l·2+a, col b·ri+r): exactly the
+        // grouped-left × grouped-right product — one parallel gemm (P3-09).
+        let mut theta = faer::Mat::<Complex>::zeros(li * 2, 2 * ri);
+        matmul(
+            theta.as_mut(),
+            Accum::Replace,
+            self.sites[i].group_left_view(),
+            self.sites[j].group_right_view(),
+            Complex::new(1.0, 0.0),
+            faer::get_global_parallelism(),
+        );
 
         // Helper: given the physical indices of site i (phys_i) and site j (phys_j),
         // return the 2q matrix row/column index following the MSB convention:
-        // q0 is the MSB, q1 is the LSB (ADR-0004 / P0-06 convention).
+        // s_msb is the MSB, s_lsb is the LSB (ADR-0004 / P0-06 convention).
         let out = |phys_i: usize, phys_j: usize| -> usize {
-            // Identify which physical index maps to q0 (MSB) and q1 (LSB).
-            let bit_q0 = if q0 as usize == i { phys_i } else { phys_j };
-            let bit_q1 = if q1 as usize == i { phys_i } else { phys_j };
-            (bit_q0 << 1) | bit_q1
+            // Identify which physical index maps to s_msb (MSB) and s_lsb (LSB).
+            let bit_msb = if s_msb == i { phys_i } else { phys_j };
+            let bit_lsb = if s_lsb == i { phys_i } else { phys_j };
+            (bit_msb << 1) | bit_lsb
         };
 
-        // Apply the gate: Θ'[l,a',b',r] = Σ_{a,b} U[out(a',b')][out(a,b)] · Θ[l,a,b,r]
-        let mut theta2 = vec![Complex::new(0.0, 0.0); theta_len];
-
-        #[allow(clippy::needless_range_loop)]
-        for l in 0..li {
-            for ap in 0..2usize {
-                for bp in 0..2usize {
-                    let row = out(ap, bp);
-                    for a in 0..2usize {
-                        for b in 0..2usize {
-                            let col = out(a, b);
-                            let u_entry = u[row][col];
-                            if u_entry == Complex::new(0.0, 0.0) {
-                                continue;
-                            }
-                            for r in 0..ri {
-                                theta2[((l * 2 + ap) * 2 + bp) * ri + r] +=
-                                    u_entry * theta[((l * 2 + a) * 2 + b) * ri + r];
+        // Θ' = U·Θ over the joint physical index — O(16·li·ri), a factor χ
+        // cheaper than the gemm above, so plain loops are fine here.
+        let mut theta2 = faer::Mat::<Complex>::zeros(li * 2, 2 * ri);
+        for ap in 0..2usize {
+            for bp in 0..2usize {
+                let row_u = out(ap, bp);
+                for a in 0..2usize {
+                    for b in 0..2usize {
+                        let u_entry = u[row_u][out(a, b)];
+                        if u_entry == Complex::new(0.0, 0.0) {
+                            continue;
+                        }
+                        for r in 0..ri {
+                            for l in 0..li {
+                                theta2[(l * 2 + ap, bp * ri + r)] +=
+                                    u_entry * theta[(l * 2 + a, b * ri + r)];
                             }
                         }
                     }
@@ -177,121 +198,100 @@ impl MpsState {
             }
         }
 
-        // Reshape Θ' to matrix M of shape (li*2) × (2*ri):
-        //   row = l*2 + a'  (group left bond and physical of site i)
-        //   col = b'*ri + r (group physical of site j and right bond)
-        // This matches from_group_left / from_group_right conventions.
-        let m = DMatrix::from_fn(li * 2, 2 * ri, |row, col| {
-            let l = row / 2;
-            let ap = row % 2;
-            let bp = col / ri;
-            let r = col % ri;
-            theta2[((l * 2 + ap) * 2 + bp) * ri + r]
-        });
-
-        // Truncated SVD: M = U · diag(s) · Vt, truncated according to the state's policy.
-        let (u_s, s_kept, vt_s, discarded) = truncated_svd(&m, &self.policy)?;
+        // Truncated SVD of Θ' (already in (li·2) × (2·ri) grouped form).
+        let (u_s, s_kept, vt_s, discarded) = truncated_svd(theta2.as_ref(), &self.policy)?;
         self.trunc_error += discarded;
         let chi = s_kept.len();
         self.max_bond_seen = self.max_bond_seen.max(chi);
 
         // New site i: left-canonical from the U factor, shape (li, chi).
-        self.sites[i] = Site::from_group_left(&u_s, li, chi);
+        self.sites[i] = Site::from_group_left_faer(u_s.as_ref(), li, chi);
 
-        // New site j: multiply singular values into Vt rows, shape (chi, ri) physical-grouped.
-        // sv[(row, col)] = s_kept[row] * vt_s[(row, col)]
+        // New site j: singular values folded into Vᴴ rows, shape (chi, ri).
         let mut sv = vt_s;
-        for row in 0..chi {
-            for col in 0..sv.ncols() {
-                sv[(row, col)] *= s_kept[row];
+        for c in 0..2 * ri {
+            for t in 0..chi {
+                sv[(t, c)] *= Complex::new(s_kept[t], 0.0);
             }
         }
-        // sv has shape chi × (2*ri) — matches from_group_right(left=chi, right=ri).
-        self.sites[j] = Site::from_group_right(&sv, chi, ri);
+        self.sites[j] = Site::from_group_right_faer(sv.as_ref(), chi, ri);
         self.center = j;
 
         Ok(())
     }
 
-    /// Swap the qubit states on adjacent sites `(k, k+1)` via a SWAP gate.
+    /// Swap the qubit states on adjacent sites `(k, k+1)` via a SWAP gate and
+    /// update the site↔qubit permutation accordingly.
     fn swap_adjacent(&mut self, k: usize) -> Result<(), MpsError> {
         let g = GateInstance::new(Gate::Swap, vec![k as u32, (k + 1) as u32]);
         let u = crate::gate::matrix_4x4(&g)?;
-        self.apply_2q_adjacent(k as u32, (k + 1) as u32, &u)
-    }
-
-    /// Multiply matrix `r` into site `i`'s LEFT bond:
-    /// A'[l',p,r2] = Σ_l r[l',l] · A[l,p,r2].
-    fn absorb_into_left(&mut self, i: usize, r: &DMatrix<Complex>) {
-        let site = &self.sites[i];
-        let new_left = r.nrows();
-        let mut out = Site::zeros(new_left, site.right);
-        // Explicit index arithmetic for clarity of the bond contraction.
-        #[allow(clippy::needless_range_loop)]
-        for lp in 0..new_left {
-            for p in 0..2 {
-                for r2 in 0..site.right {
-                    let mut acc = Complex::new(0.0, 0.0);
-                    for l in 0..site.left {
-                        acc += r[(lp, l)] * site.get(l, p, r2);
-                    }
-                    *out.get_mut(lp, p, r2) = acc;
-                }
-            }
-        }
-        self.sites[i] = out;
-    }
-
-    /// Multiply matrix `l` into site `i`'s RIGHT bond:
-    /// A'[l2,p,r'] = Σ_r A[l2,p,r] · l[r,r'].
-    fn absorb_into_right(&mut self, i: usize, l: &DMatrix<Complex>) {
-        let site = &self.sites[i];
-        let new_right = l.ncols();
-        let mut out = Site::zeros(site.left, new_right);
-        // Explicit index arithmetic for clarity of the bond contraction.
-        #[allow(clippy::needless_range_loop)]
-        for l2 in 0..site.left {
-            for p in 0..2 {
-                for rp in 0..new_right {
-                    let mut acc = Complex::new(0.0, 0.0);
-                    for r in 0..site.right {
-                        acc += site.get(l2, p, r) * l[(r, rp)];
-                    }
-                    *out.get_mut(l2, p, rp) = acc;
-                }
-            }
-        }
-        self.sites[i] = out;
+        self.apply_2q_adjacent(k, k + 1, &u)?;
+        let qa = self.qubit_of_site[k];
+        let qb = self.qubit_of_site[k + 1];
+        self.qubit_of_site[k] = qb;
+        self.qubit_of_site[k + 1] = qa;
+        self.site_of_qubit[qb as usize] = k;
+        self.site_of_qubit[qa as usize] = k + 1;
+        self.swaps_applied += 1;
+        Ok(())
     }
 
     /// Shift center right from `i` to `i+1` using thin QR on the grouped-left
-    /// matrix. Site `i` becomes left-canonical; the R factor is absorbed into
-    /// site `i+1`'s left bond.
+    /// view. Site `i` becomes left-canonical; the R factor is absorbed into
+    /// site `i+1`'s left bond via a parallel gemm.
     fn move_center_right(&mut self) {
         let i = self.center;
-        let m = self.sites[i].to_group_left(); // (left*2) × right
-        let (q, r) = thin_qr(&m); // q:(left*2)×k, r:k×right
-        let k = q.ncols();
         let left = self.sites[i].left;
-        self.sites[i] = Site::from_group_left(&q, left, k);
-        self.absorb_into_left(i + 1, &r);
+        let qr = self.sites[i].group_left_view().qr();
+        let q = qr.compute_thin_Q(); // (left·2) × k
+        let r = qr.thin_R(); // k × right
+        let k = q.ncols();
+        let next_right = self.sites[i + 1].right;
+        // A'[l',p,r2] = Σ_l R[l',l] · A[l,p,r2]  ==  R · group_right(A).
+        let mut absorbed = faer::Mat::<Complex>::zeros(k, 2 * next_right);
+        matmul(
+            absorbed.as_mut(),
+            Accum::Replace,
+            r,
+            self.sites[i + 1].group_right_view(),
+            Complex::new(1.0, 0.0),
+            faer::get_global_parallelism(),
+        );
+        self.sites[i + 1] = Site::from_group_right_faer(absorbed.as_ref(), k, next_right);
+        self.sites[i] = Site::from_group_left_faer(q.as_ref(), left, k);
         self.center += 1;
     }
 
     /// Shift center left from `i` to `i-1` using thin QR on the adjoint of the
-    /// grouped-right matrix (LQ decomposition). Site `i` becomes right-canonical;
-    /// the Rᴴ factor is absorbed into site `i-1`'s right bond.
+    /// grouped-right view (LQ decomposition). Site `i` becomes right-canonical;
+    /// the Rᴴ factor is absorbed into site `i-1`'s right bond via a parallel
+    /// gemm.
     fn move_center_left(&mut self) {
         let i = self.center;
-        let m = self.sites[i].to_group_right(); // left × (2*right)
-        let mh = m.adjoint(); // (2*right) × left
-        let (q, r) = thin_qr(&mh); // q:(2*right)×k, r:k×left
-        let k = q.ncols();
         let right = self.sites[i].right;
-        let site_mat = q.adjoint(); // k × (2*right) — right-canonical
-        self.sites[i] = Site::from_group_right(&site_mat, k, right);
-        let r_into = r.adjoint(); // left × k — absorbed into left neighbor's right bond
-        self.absorb_into_right(i - 1, &r_into);
+        let qr = self.sites[i].group_right_view().adjoint().qr();
+        let q = qr.compute_thin_Q(); // (2·right) × k
+        let r = qr.thin_R(); // k × left
+        let k = q.ncols();
+        let prev_left = self.sites[i - 1].left;
+        // A'[l2,p,r'] = Σ_r A[l2,p,r] · Rᴴ[r,r']  ==  group_left(A) · Rᴴ.
+        let mut absorbed = faer::Mat::<Complex>::zeros(prev_left * 2, k);
+        matmul(
+            absorbed.as_mut(),
+            Accum::Replace,
+            self.sites[i - 1].group_left_view(),
+            r.adjoint(),
+            Complex::new(1.0, 0.0),
+            faer::get_global_parallelism(),
+        );
+        self.sites[i - 1] = Site::from_group_left_faer(absorbed.as_ref(), prev_left, k);
+        // M = group_right(A) = Rᴴ·Qᴴ; Qᴴ has orthonormal rows — the
+        // right-canonical site.
+        // `.adjoint()` yields a lazily-conjugated view (`ComplexConj` element
+        // type); materialize it to the canonical complex type for the
+        // grouped-right reshape. k × (2·right) — a small bond-sized copy.
+        let qh = q.adjoint().to_owned();
+        self.sites[i] = Site::from_group_right_faer(qh.as_ref(), k, right);
         self.center -= 1;
     }
 
@@ -378,22 +378,26 @@ impl MpsState {
 
     /// Contract the whole chain into a dense `2^n` amplitude vector.
     /// TEST/SMALL-n ONLY (allocates 2^n). Amplitude index uses the ADR-0004
-    /// convention: qubit `q` (== site `q`) occupies bit `q`.
+    /// convention: site `s` contributes the bit of the logical qubit it
+    /// currently holds (`qubit_of_site[s]`).
     pub fn dense_statevector(&self) -> Vec<Complex> {
         let n = self.sites.len();
-        // amps is laid out as [basis_prefix * left_dim + l]:
-        //   basis_prefix is the partial basis index accumulated so far (bits 0..q-1),
-        //   l is the left-bond index of the current site.
+        // Phase 1: contract in site order, producing raw_amps indexed by site bits
+        // (bit s = physical index of site s). The incremental layout only works when
+        // the bits are introduced in order 0, 1, 2, …, so we always contract with
+        // site-index bits here.
         //
-        // We start with a single virtual "left bond = 1" amplitude of value 1.
+        // amps is laid out as [basis_prefix * left_dim + l]:
+        //   basis_prefix is the partial basis index accumulated so far (bits 0..s-1),
+        //   l is the left-bond index of the current site.
         let mut amps: Vec<Complex> = vec![Complex::new(1.0, 0.0)]; // left bond of site 0 = 1
         let mut left_dim = 1usize;
 
-        for (q, site) in self.sites.iter().enumerate() {
+        for (s, site) in self.sites.iter().enumerate() {
             debug_assert_eq!(site.left, left_dim);
             let prefix_count = amps.len() / left_dim;
             // next is laid out as [new_prefix * site.right + r],
-            // where new_prefix = old_prefix | (p << q).
+            // where new_prefix = old_prefix | (p << s)  (site-index bit s).
             let mut next = vec![Complex::new(0.0, 0.0); prefix_count * 2 * site.right];
 
             // Allow explicit index arithmetic — the multi-index contraction is
@@ -401,8 +405,8 @@ impl MpsState {
             #[allow(clippy::needless_range_loop)]
             for prefix in 0..prefix_count {
                 for p in 0..2usize {
-                    // Bit q of the basis index is the physical index p of site q.
-                    let new_prefix = prefix | (p << q);
+                    // Bit s of the raw index is the physical index p of site s.
+                    let new_prefix = prefix | (p << s);
                     for r in 0..site.right {
                         let mut acc = Complex::new(0.0, 0.0);
                         for l in 0..left_dim {
@@ -417,9 +421,36 @@ impl MpsState {
         }
 
         debug_assert_eq!(left_dim, 1, "right bond of the last site must be 1");
-        // At this point amps[i] == amplitude of basis state i (all n bits set).
-        let _ = n; // used only for the initial capacity reasoning; length is 2^n
-        amps
+
+        // Phase 2: permute raw_amps (site-order bits) into logical-qubit order.
+        // raw_amps[raw_idx] has bit s = physical index of site s.
+        // The logical index has bit qubit_of_site[s] = same physical index of site s.
+        // When the permutation is identity (qubit_of_site[s] == s for all s),
+        // the loop below would be an element-wise copy; we skip it and return
+        // `amps` directly.
+        if self
+            .qubit_of_site
+            .iter()
+            .enumerate()
+            .all(|(s, &q)| q as usize == s)
+        {
+            // Identity permutation: raw layout already matches logical layout.
+            return amps;
+        }
+        let dim = 1usize << n;
+        let mut out = vec![Complex::new(0.0, 0.0); dim];
+        // Explicit index loop — the permuted bit-shuffling has no cleaner iterator form.
+        #[allow(clippy::needless_range_loop)]
+        for raw_idx in 0..dim {
+            // Build the logical index by mapping each site's bit to the qubit it holds.
+            let mut logical_idx = 0usize;
+            for s in 0..n {
+                let bit = (raw_idx >> s) & 1;
+                logical_idx |= bit << self.qubit_of_site[s] as usize;
+            }
+            out[logical_idx] = amps[raw_idx];
+        }
+        out
     }
 
     /// Perfect sampling (Ferris–Vidal 2012). Does not mutate `self`.
@@ -461,7 +492,7 @@ impl MpsState {
                 let outcome = rng.gen::<f64>() * total >= p0;
                 let b = if outcome { 1usize } else { 0usize };
                 if outcome {
-                    bits |= 1u64 << i;
+                    bits |= 1u64 << work.qubit_of_site[i];
                 }
                 let pk = if outcome { p1 } else { p0 };
                 let scale = if pk > 0.0 { (1.0 / pk).sqrt() } else { 0.0 };
@@ -498,7 +529,7 @@ impl MpsState {
                     num_qubits: n as u32,
                 });
             }
-            out_bit_for_site[q as usize] = Some(pos);
+            out_bit_for_site[self.site_of_qubit[q as usize]] = Some(pos);
         }
 
         // contract_p: advance the transfer matrix for physical index `p`.
@@ -571,9 +602,10 @@ impl MpsState {
 
     /// Measure qubit `q` in the Z basis, collapsing the state. Returns the bit.
     ///
-    /// Moves the orthogonality center to `q` so that the environment is trivial
-    /// and p(b) = Σ_{l,r} |A[l,b,r]|² is the exact single-qubit marginal.
-    /// After the measurement, the center stays at `q`.
+    /// Moves the orthogonality center to the site holding `q` (`site_of_qubit[q]`)
+    /// so that the environment is trivial and p(b) = Σ_{l,r} |A[l,b,r]|² is the
+    /// exact single-qubit marginal.  After the measurement, the center stays at
+    /// that site.
     pub(crate) fn measure<R: Rng>(&mut self, q: usize, rng: &mut R) -> Result<bool, MpsError> {
         let n = self.sites.len();
         if q >= n {
@@ -582,8 +614,9 @@ impl MpsState {
                 num_qubits: n as u32,
             });
         }
-        self.move_center_to(q);
-        let site = &self.sites[q];
+        let s = self.site_of_qubit[q];
+        self.move_center_to(s);
+        let site = &self.sites[s];
         let mut p0 = 0.0f64;
         let mut p1 = 0.0f64;
         // Explicit range loops — multi-index tensor access has no cleaner iterator form.
@@ -608,7 +641,7 @@ impl MpsState {
         let pk = if outcome { p1 } else { p0 };
         // Rescale so the post-collapse MPS remains unit-norm.
         let scale = (total / pk).sqrt();
-        let site = &mut self.sites[q];
+        let site = &mut self.sites[s];
         let drop = 1 - keep;
         // Explicit range loops — multi-index tensor mutation has no cleaner iterator form.
         #[allow(clippy::needless_range_loop)]
@@ -933,6 +966,127 @@ mod tests {
     }
 
     #[test]
+    fn swap_adjacent_updates_permutation_maps() {
+        let mut s = MpsState::new(3, 64);
+        assert_eq!(s.qubit_of_site, vec![0, 1, 2]);
+        assert_eq!(s.site_of_qubit, vec![0, 1, 2]);
+        assert_eq!(s.swaps_applied(), 0);
+        s.swap_adjacent(1).unwrap();
+        assert_eq!(s.qubit_of_site, vec![0, 2, 1]);
+        assert_eq!(s.site_of_qubit, vec![0, 2, 1]);
+        assert_eq!(s.swaps_applied(), 1);
+        s.swap_adjacent(1).unwrap();
+        assert_eq!(s.qubit_of_site, vec![0, 1, 2]);
+        assert_eq!(s.swaps_applied(), 2);
+        assert_eq!(s.site_of_qubit, vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn duplicate_qubit_2q_errors_in_all_profiles() {
+        // The router-invariant guard must be a real error, not a debug_assert:
+        // in release a duplicate-qubit gate previously produced a non-unitary
+        // contraction that re-normalized to 1 — strictly silent corruption.
+        let mut s = MpsState::new(2, 64);
+        let mut gi = GateInstance::new(Gate::Cnot, smallvec![0u32, 1u32]);
+        gi.qubits[1] = 0;
+        let u = crate::gate::matrix_4x4(&gi).unwrap();
+        let err = s.apply_2q(&gi, &u).unwrap_err();
+        assert!(matches!(err, MpsError::NonNearestNeighbor { .. }));
+        let v = s.dense_statevector();
+        assert!((v[0].re - 1.0).abs() < 1e-12, "state must be untouched");
+    }
+
+    #[test]
+    fn lazy_swap_counts_amortize() {
+        // CNOT(0,4) on n=5: the ladder is 3 SWAPs (always-swap-back paid 6).
+        let mut s = MpsState::new(5, 64);
+        let h = crate::gate::matrix_2x2(&GateInstance::new(Gate::H, smallvec![0u32])).unwrap();
+        s.apply_1q(0, &h); // non-trivial state so the SWAPs move real amplitude
+        let gi = GateInstance::new(Gate::Cnot, smallvec![0u32, 4u32]);
+        let u = crate::gate::matrix_4x4(&gi).unwrap();
+        s.apply_2q(&gi, &u).unwrap();
+        assert_eq!(s.swaps_applied(), 3);
+        assert_eq!(s.site_of_qubit[4], 1);
+        // Qubit 4 stayed next to qubit 0 → repeating the gate costs 0 SWAPs.
+        s.apply_2q(&gi, &u).unwrap();
+        assert_eq!(s.swaps_applied(), 3);
+    }
+
+    #[test]
+    fn reads_route_through_permutation() {
+        // X(0), then a raw physical swap of sites 0,1: qubit 0 (|1>) now lives
+        // at site 1. Every read must still report in logical-qubit order.
+        let mut s = MpsState::new(2, 64);
+        let x = crate::gate::matrix_2x2(&GateInstance::new(Gate::X, smallvec![0u32])).unwrap();
+        s.apply_1q(0, &x);
+        s.swap_adjacent(0).unwrap();
+        // dense: qubit 0 occupies bit 0 → index 0b01.
+        let v = s.dense_statevector();
+        assert!((v[0b01].re - 1.0).abs() < 1e-10, "dense not routed");
+        // probabilities over qubit 0: [0, 1].
+        let p = s.probabilities(&[0]).unwrap();
+        assert!((p[1] - 1.0).abs() < 1e-10, "probabilities not routed");
+        // sample: qubit 0 packs into bit 0.
+        let mut rng = StdRng::seed_from_u64(1);
+        assert_eq!(
+            s.sample(3, &mut rng),
+            vec![0b01, 0b01, 0b01],
+            "sample not routed"
+        );
+        // apply_1q routes: a second X on qubit 0 returns it to |0>.
+        s.apply_1q(0, &x);
+        let v = s.dense_statevector();
+        assert!((v[0b00].re - 1.0).abs() < 1e-10, "apply_1q not routed");
+        // measure(0) must read site 1's data: re-flip then measure.
+        s.apply_1q(0, &x);
+        assert!(s.measure(0, &mut rng).unwrap(), "measure not routed");
+    }
+
+    #[test]
+    fn reads_route_through_three_cycle_permutation() {
+        // A 3-cycle makes qubit_of_site != site_of_qubit, so a map-direction
+        // mix-up in any read path fails here (a transposition cannot catch it).
+        let mut s = MpsState::new(3, 64);
+        let x = crate::gate::matrix_2x2(&GateInstance::new(Gate::X, smallvec![0u32])).unwrap();
+        s.apply_1q(0, &x);
+        s.swap_adjacent(0).unwrap();
+        s.swap_adjacent(1).unwrap();
+        assert_eq!(s.qubit_of_site, vec![1, 2, 0]);
+        assert_eq!(s.site_of_qubit, vec![2, 0, 1]);
+        // Qubit 0 is |1>; logical index 0b001.
+        let v = s.dense_statevector();
+        assert!(
+            (v[0b001] - Complex::new(1.0, 0.0)).norm() < 1e-10,
+            "dense not routed"
+        );
+        let p = s.probabilities(&[0]).unwrap();
+        assert!((p[1] - 1.0).abs() < 1e-10, "probabilities(0) not routed");
+        let p01 = s.probabilities(&[1, 0]).unwrap();
+        // Output bit 0 ↔ qubit 1 (=0), bit 1 ↔ qubit 0 (=1) → index 0b10.
+        assert!(
+            (p01[0b10] - 1.0).abs() < 1e-10,
+            "probabilities subset ordering not routed"
+        );
+        let mut rng = StdRng::seed_from_u64(1);
+        assert_eq!(
+            s.sample(3, &mut rng),
+            vec![0b001, 0b001, 0b001],
+            "sample not routed"
+        );
+        // apply_1q routes to site 2; X returns qubit 0 to |0>.
+        s.apply_1q(0, &x);
+        let v = s.dense_statevector();
+        assert!(
+            (v[0] - Complex::new(1.0, 0.0)).norm() < 1e-10,
+            "apply_1q not routed"
+        );
+        // measure(0) must read the site holding qubit 0 (site 2): flip back first.
+        s.apply_1q(0, &x);
+        assert!(s.measure(0, &mut rng).unwrap(), "measure not routed");
+        assert!(!s.measure(1, &mut rng).unwrap(), "measure(1) not routed");
+    }
+
+    #[test]
     fn max_bond_reached_tracks_growth() {
         let mut s = MpsState::new(4, 64);
         let h = crate::gate::matrix_2x2(&GateInstance::new(Gate::H, smallvec![0u32])).unwrap();
@@ -965,5 +1119,35 @@ mod tests {
         // GHZ Schmidt values are 1/√2 each (squared 0.5); dropping any discards
         // 0.5 > 0.3, so nothing is dropped → error stays ~0, bond stays 2.
         assert!(s.truncation_error() <= 0.3 + 1e-12);
+    }
+
+    proptest::proptest! {
+        /// After any random long-range circuit the two maps stay mutually inverse.
+        #[test]
+        fn permutation_maps_stay_inverse(seq in proptest::collection::vec((0u8..5, 0u8..5, 0u8..5), 0..20)) {
+            let n = 5u32;
+            let mut s = MpsState::new(n as usize, 64);
+            let h = crate::gate::matrix_2x2(&GateInstance::new(Gate::H, smallvec![0u32])).unwrap();
+            for (op, x, y) in seq {
+                let a = (x as u32) % n;
+                match op {
+                    0 | 1 => s.apply_1q(a as usize, &h),
+                    _ => {
+                        let b = (y as u32) % n;
+                        if a != b {
+                            let gi = GateInstance::new(Gate::Cnot, smallvec![a, b]);
+                            let u = crate::gate::matrix_4x4(&gi).unwrap();
+                            s.apply_2q(&gi, &u).unwrap();
+                        }
+                    }
+                }
+            }
+            for q in 0..n as usize {
+                proptest::prop_assert_eq!(s.qubit_of_site[s.site_of_qubit[q]] as usize, q);
+            }
+            for site in 0..n as usize {
+                proptest::prop_assert_eq!(s.site_of_qubit[s.qubit_of_site[site] as usize], site);
+            }
+        }
     }
 }
