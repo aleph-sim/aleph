@@ -1,4 +1,4 @@
-//! Rank-3 MPS site tensor `(left, 2, right)` and its reshape ↔ nalgebra views.
+//! Rank-3 MPS site tensor `(left, 2, right)` and its nalgebra/faer matrix views.
 
 use crate::MpsError;
 use aleph_core::Complex;
@@ -156,6 +156,9 @@ pub enum TruncationPolicy {
     ErrorBounded { epsilon: f64, max_bond: usize },
 }
 
+/// `(u_kept, s_kept, vt_kept, discarded_weight)` returned by [`truncated_svd`].
+pub type TruncatedSvd = (faer::Mat<Complex>, Vec<f64>, faer::Mat<Complex>, f64);
+
 /// SVD of `m` truncated according to `policy` (fixed-χ or error-bounded),
 /// renormalized to preserve unit weight (input must come from a normalized
 /// state). Returns `(u_kept, s_kept, vt_kept, discarded_weight)` where:
@@ -172,9 +175,6 @@ pub enum TruncationPolicy {
 /// silently drop half the state norm (root-caused via the SWAP-network oracle
 /// proptest). We use `faer`'s `thin_svd`, which is reliable for complex inputs
 /// (verified to reconstruct the offending blocks to ~1e-16).
-/// `(u_kept, s_kept, vt_kept, discarded_weight)` returned by [`truncated_svd`].
-pub type TruncatedSvd = (faer::Mat<Complex>, Vec<f64>, faer::Mat<Complex>, f64);
-
 pub fn truncated_svd(
     m: faer::MatRef<'_, Complex>,
     policy: &TruncationPolicy,
@@ -310,11 +310,7 @@ mod tests {
                 (i * 2 + j) as f64 * 0.17 - 0.5,
             )
         });
-        let fro: f64 = (0..4)
-            .flat_map(|i| (0..4).map(move |j| (i, j)))
-            .map(|(i, j)| m[(i, j)].norm_sqr())
-            .sum::<f64>()
-            .sqrt();
+        let fro: f64 = m.as_ref().norm_l2();
         let (u, s, vt, _disc) =
             truncated_svd(m.as_ref(), &TruncationPolicy::FixedBond(64)).unwrap();
         // reconstruction = U·diag(s)·Vt = (1/fro)·M  (renormalized to unit weight)
@@ -357,11 +353,7 @@ mod tests {
             s.len()
         );
         // And it must still reconstruct (1/‖M‖)·M.
-        let fro: f64 = (0..4)
-            .flat_map(|i| (0..4).map(move |j| (i, j)))
-            .map(|(i, j)| m[(i, j)].norm_sqr())
-            .sum::<f64>()
-            .sqrt();
+        let fro: f64 = m.as_ref().norm_l2();
         let mut maxd = 0.0_f64;
         for r in 0..4 {
             for col in 0..4 {

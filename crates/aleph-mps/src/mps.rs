@@ -176,8 +176,8 @@ impl MpsState {
                         if u_entry == Complex::new(0.0, 0.0) {
                             continue;
                         }
-                        for l in 0..li {
-                            for r in 0..ri {
+                        for r in 0..ri {
+                            for l in 0..li {
                                 theta2[(l * 2 + ap, bp * ri + r)] +=
                                     u_entry * theta[(l * 2 + a, b * ri + r)];
                             }
@@ -198,8 +198,8 @@ impl MpsState {
 
         // New site j: singular values folded into Vᴴ rows, shape (chi, ri).
         let mut sv = vt_s;
-        for t in 0..chi {
-            for c in 0..2 * ri {
+        for c in 0..2 * ri {
+            for t in 0..chi {
                 sv[(t, c)] *= Complex::new(s_kept[t], 0.0);
             }
         }
