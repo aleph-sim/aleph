@@ -493,3 +493,40 @@ proptest! {
         for (x, y) in am.iter().zip(bm.iter()) { prop_assert!((x - y).norm() < 1e-9); }
     }
 }
+
+#[test]
+fn results_invariant_across_parallelism() {
+    // Same circuit under sequential and rayon-parallel faer must agree to
+    // 1e-10 (not bit-exact: parallel SVD may round differently).
+    //
+    // Isolation note: other tests in this binary run concurrently and also use
+    // faer, but they only assert tolerances (1e-9/1e-10), which hold under
+    // either Par::Seq or Par::rayon — so the global toggle cannot make them
+    // flaky.
+    let n = 8u32;
+    let mut c = aleph_ir::Circuit::new(n, 0);
+    for q in 0..n {
+        c.add_gate(g(Gate::H, &[q])).unwrap();
+    }
+    for layer in 0..4u32 {
+        let start = layer % 2;
+        let mut q = start;
+        while q + 1 < n {
+            c.add_gate(g(Gate::Ry(Param::Concrete(0.3 + q as f64 * 0.11)), &[q]))
+                .unwrap();
+            c.add_gate(g(Gate::Cnot, &[q, q + 1])).unwrap();
+            q += 2;
+        }
+    }
+    c.add_gate(g(Gate::Cnot, &[0, 7])).unwrap(); // exercise the lazy router too
+
+    let prev = faer::get_global_parallelism();
+    faer::set_global_parallelism(faer::Par::Seq);
+    let a = mps_dense(&c, 128);
+    faer::set_global_parallelism(faer::Par::rayon(0));
+    let b = mps_dense(&c, 128);
+    faer::set_global_parallelism(prev);
+    for (x, y) in a.iter().zip(b.iter()) {
+        assert!((x - y).norm() < 1e-10, "parallelism changed the state");
+    }
+}
