@@ -503,22 +503,29 @@ fn results_invariant_across_parallelism() {
     // faer, but they only assert tolerances (1e-9/1e-10), which hold under
     // either Par::Seq or Par::rayon — so the global toggle cannot make them
     // flaky.
-    let n = 8u32;
+    // n=10 with 10 brickwall layers grows the central bond to chi = 16
+    // (measured; only every second layer crosses the middle cut), so the
+    // parallel branch sees real multi-column SVD/gemm work, not near-scalar
+    // blocks.
+    let n = 10u32;
     let mut c = aleph_ir::Circuit::new(n, 0);
     for q in 0..n {
         c.add_gate(g(Gate::H, &[q])).unwrap();
     }
-    for layer in 0..4u32 {
+    for layer in 0..10u32 {
         let start = layer % 2;
         let mut q = start;
         while q + 1 < n {
-            c.add_gate(g(Gate::Ry(Param::Concrete(0.3 + q as f64 * 0.11)), &[q]))
-                .unwrap();
+            c.add_gate(g(
+                Gate::Ry(Param::Concrete(0.3 + (q + layer * n) as f64 * 0.11)),
+                &[q],
+            ))
+            .unwrap();
             c.add_gate(g(Gate::Cnot, &[q, q + 1])).unwrap();
             q += 2;
         }
     }
-    c.add_gate(g(Gate::Cnot, &[0, 7])).unwrap(); // exercise the lazy router too
+    c.add_gate(g(Gate::Cnot, &[0, 9])).unwrap(); // exercise the lazy router too
 
     let prev = faer::get_global_parallelism();
     faer::set_global_parallelism(faer::Par::Seq);
