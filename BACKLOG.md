@@ -1905,6 +1905,167 @@ After P3-08 word-parallelized `rowsum`, a `perf record` of the surface-code d=11
 
 -----
 
+### [P3-12] MPS: Gate::Swap as an O(1) permutation relabel
+
+**Labels:** `area:backend`, `type:optimization`, `priority:medium`
+**Milestone:** Phase 3 (deferred)
+**Estimate:** S
+**Depends on:** P3-09
+
+**Description**
+Route explicit `Gate::Swap` through the P3-09 lazy-permutation maps as a pure relabel (swap two entries in `site_of_qubit`/`qubit_of_site`) instead of the current physical path (SWAP ladder + theta gemm + truncated SVD per gate).
+
+**Context**
+P3-09 `/code-review` finding: the lazy router makes a logical SWAP expressible as a constant-time map update with exactly zero tensor work, zero bond growth, and zero truncation error — but a user-level `swap a, b` still pays `(d−1)+1` truncated SVDs and accrues avoidable `trunc_error`. Inverts the PR's own amortization story: `CNOT(0,4)` is lazily routed while `Swap(0,4)` physically drags tensors. SWAP-dense circuits (routing-aware compiler output) are the motivating workload.
+
+**Technical Details**
+
+- Fast path at the top of `MpsState::apply_2q` (or in `MpsBackend::apply_gate` dispatch before `matrix_4x4`): `if matches!(g.gate, Gate::Swap) { relabel; return Ok(()); }`. Composes with the router: subsequent gates route through the updated permutation.
+- Decide whether `swaps_applied` counts relabels (recommendation: no — it counts *physical* SWAPs; add a separate `relabels` stat if needed).
+
+**Acceptance Criteria**
+
+- [ ] Explicit-SWAP circuits match `NaiveSvBackend` to 1e-10 (extend the SV oracle with SWAP-dense cases, including SWAP→CNOT interleavings and reads after relabel).
+- [ ] A SWAP-dense benchmark shows the relabel path applying zero physical SWAPs (`swaps_applied` unchanged) with measured wall-clock win.
+- [ ] `trunc_error` for an explicit-SWAP circuit at saturated χ is bit-identical to the SWAP-free relabeled equivalent.
+
+**Testing Requirements**
+
+- Oracle equivalence incl. controlled gates after relabel (MSB convention through the permutation); proptest with random SWAP injection.
+
+**References**
+
+- P3-09 design spec + `docs/perf/mps_parallel.md`; /code-review finding #4 (PR #146).
+
+-----
+
+### [P3-13] MPS: size-thresholded per-call parallelism (replace the process-global Par control plane)
+
+**Labels:** `area:backend`, `type:optimization`, `priority:medium`
+**Milestone:** Phase 3 (deferred)
+**Estimate:** M
+**Depends on:** P3-09
+
+**Description**
+Choose faer parallelism per operation from the measured χ-crossover instead of faer's process-global default: small ops run `Par::Seq`, wide-bond ops use the rayon pool. Removes the feature-unification trap where any crate enabling `faer/rayon` silently flips every `MpsBackend` user in the process onto the χ≤256 pessimization.
+
+**Context**
+P3-09 measured the crossover (EPYC 16c): rayon pool is a 1.5×–19× pessimization at χ≤256 and a 1.57× win at χ=512 (@16T). The current control plane is the `parallel` cargo feature + faer's global (`GLOBAL_PARALLELISM` defaults to `Rayon(0)` once the feature is compiled in anywhere in the graph). The three matmul sites in `mps.rs` already pass `get_global_parallelism()` explicitly — substituting a size-thresholded helper there is trivial; SVD/QR go through high-level `thin_svd()`/`qr()` which read the global, so they need faer's lower-level APIs (explicit `Par` + `MemStack`) or an upstream knob.
+
+**Technical Details**
+
+- `fn par_for(rows, cols) -> Par`: `Par::Seq` below a threshold calibrated from `docs/perf/mps_parallel.md` (crossover between 512×1024 and 1024×2048 operands), global otherwise.
+- Matmul sites: direct substitution. SVD/QR: evaluate `faer::linalg::svd::*`/`qr::*` with explicit `Par` — weigh verbosity against the win; measure before committing (the SVD is the dominant cost).
+- Re-evaluate whether the `parallel` cargo feature can then default ON safely (small ops no longer regress), simplifying the user story.
+- Also fixes the thread-invariance test's global-toggle isolation (compare Seq vs rayon as plain arguments).
+
+**Acceptance Criteria**
+
+- [ ] With parallelism compiled in and 16 threads, `nn_qaoa` (χ=64) and `wide_bond` χ=128/256 are within noise of the sequential build (no pessimization), and χ=512 retains ≥ the P3-09 1.57× speedup.
+- [ ] ε=0 and Par-invariance oracles pass.
+
+**Testing Requirements**
+
+- EPYC thread sweep across χ=64/128/256/512; criterion baselines vs the P3-09 numbers in `docs/perf/mps_parallel.md`.
+
+**References**
+
+- `docs/perf/mps_parallel.md` (crossover data); /code-review findings #3 and #5 (PR #146); faer 0.24 `set_global_parallelism` docs.
+
+-----
+
+### [P3-14] MPS: hot-path scratch arena (kill the per-gate allocation churn)
+
+**Labels:** `area:backend`, `type:optimization`, `priority:low`
+**Milestone:** Phase 3 (deferred)
+**Estimate:** M
+**Depends on:** P3-09
+
+**Description**
+Reuse workspace buffers across gates in `apply_2q_adjacent`/`move_center_*` instead of allocating ~8–12 fresh heap buffers per 2q gate (theta, theta2, SVD workspace, `u_kept`/`vt_kept`, Q/R/absorbed/qh, two `Site`s per op).
+
+**Context**
+P3-09 honest note: the `long_range` dist1 microcircuit cell regressed +11.9 % — at χ≤32 allocator round-trips and faer workspace setup dominate the math. The copy chain also includes avoidable full-matrix copies (`svd.U()` → `u_kept` → `Site`, twice per gate) and three `Mat::zeros` memsets immediately overwritten by `Accum::Replace` gemms, plus the `q.adjoint().to_owned()` materialization in `move_center_left`.
+
+**Technical Details**
+
+- Persistent scratch in `MpsState` (faer `MemBuffer`/`MemStack` + two `Mat`s sized to the max bond, grown monotonically), threaded into the hot path.
+- Return `MatRef` subviews from `truncated_svd` (or write directly into `Site` buffers), folding the `s·Vᴴ` scaling and V-conjugation into the single write.
+- Make `from_group_right_faer` generic over conjugated views (or write the site with explicit transpose+conj indexing) to drop the `to_owned()`.
+- Measure first: profile the dist1 cell to confirm the allocator attribution before restructuring (CLAUDE.md hierarchy).
+
+**Acceptance Criteria**
+
+- [ ] `long_range` dist1 within ±5 % of the pre-P3-09 baseline on EPYC; no regression on any other `long_range`/`nn_qaoa`/`wide_bond` cell.
+- [ ] Full oracle suite unchanged (1e-10).
+
+**Testing Requirements**
+
+- criterion before/after on EPYC; `cargo flamegraph`/`perf` evidence for the allocation attribution.
+
+**References**
+
+- `docs/perf/mps_parallel.md` honest notes; /code-review finding #7 (PR #146).
+
+-----
+
+### [P3-15] Hoist the bit-permutation helper into aleph-core (dedupe aleph-sv ↔ aleph-mps)
+
+**Labels:** `area:core`, `type:refactor`, `priority:low`
+**Milestone:** Phase 3 (deferred)
+**Estimate:** S
+**Depends on:** P3-09, P2-09
+
+**Description**
+The workspace now has two independent copies of the physical→logical bit-permutation index arithmetic: `aleph-sv/src/perm.rs` (`bit_permute_buf`, P2-09 `unpermute_state`) and the P3-09 scatter pass in `MpsState::dense_statevector`. Hoist one tested helper into `aleph-core` and use it from both.
+
+**Context**
+P3-09 /code-review reuse finding: the MPS copy is scatter-based with the inverse map, so a reviewer cannot see by inspection that the two agree; any bit-order convention fix (cf. the ADR-0004 bit-order doc issue noted at v0.1 release) must be applied twice. `aleph-sv`'s helper is `pub(crate)` and carries asymmetric-permutation unit tests that MPS would inherit for free.
+
+**Technical Details**
+
+- New `aleph-core` module (or extend `statevector` conversions, where AoS/SoA conversion utilities already live per CLAUDE.md) with the gather-form helper + its tests; keep the in-place cycle-following variant in scope only if the MPS 2×2^n peak-memory note (test-only path) is judged worth fixing in the same move.
+
+**Acceptance Criteria**
+
+- [ ] One shared helper; both call sites migrated; aleph-sv perm tests moved/extended to cover the MPS usage (asymmetric 3-cycle case included).
+- [ ] No behavior change (oracle suites of both crates green).
+
+**References**
+
+- `crates/aleph-sv/src/perm.rs`; `MpsState::dense_statevector` phase-2; /code-review finding #8 (PR #146).
+
+-----
+
+### [P3-16] Shared bench/test fixtures: brickwall builder + distribution-closeness helper
+
+**Labels:** `area:bench`, `type:refactor`, `priority:low`
+**Milestone:** Phase 3 (deferred)
+**Estimate:** S
+**Depends on:** P3-09
+
+**Description**
+Deduplicate the circuit fixtures multiplied across the workspace: ≥6 private brickwall builders (incl. two added by P3-09 in `wide_bond.rs` and the thread-invariance test), the 4× copy-pasted `g()` GateInstance helper inside aleph-mps alone, and the ad-hoc ±0.02 empirical-distribution check that re-implements aleph-oracle's calibrated 5σ `assert_distribution_close`.
+
+**Context**
+P3-09 /code-review reuse finding: the `wide_bond` χ-saturation constants (L1=16, L2=20) are calibrated against its local builder with no shared test — editing the builder silently invalidates the saturation claim. `aleph-benches` (benches/src/lib.rs) already hosts `random_brickwall_circuit` and the other Tier-1 builders; aleph-oracle's distribution helper is private.
+
+**Technical Details**
+
+- Parameterize `aleph_benches::random_brickwall_circuit` (gate choice / angle schedule) or add a `brickwall_ry_cnot_rz` variant; make aleph-benches a dev-dependency of aleph-mps; replace both P3-09 builders and assert `max_bond_reached` saturation in a cheap test so the calibration is pinned.
+- Expose `assert_distribution_close` (pub testing module or aleph-test) and use it in `lazy_perm_sample_matches_probabilities`.
+
+**Acceptance Criteria**
+
+- [ ] One brickwall definition serves wide_bond + thread-invariance (+ existing duplicates where the swap is mechanical); saturation pinned by a test, not a comment.
+- [ ] MPS sampling test uses the calibrated distribution helper.
+
+**References**
+
+- `benches/src/lib.rs`; `crates/aleph-oracle/src/harness.rs` (`assert_distribution_close`); /code-review findings #10 (PR #146).
+
+-----
+
 # Phase 4 — Algorithm Benchmarks & v0.1 Release
 
 Goal: comprehensive benchmarks against published baselines; first public release.
