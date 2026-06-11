@@ -14,7 +14,7 @@ aleph-ir = { path = "../aleph-ir" }
 nalgebra = { workspace = true }
 rand = { workspace = true }
 thiserror = { workspace = true }
-faer = { version = "0.24.0", default-features = false, features = ["linalg", "std"] }
+faer = { version = "0.24.0", default-features = false, features = ["linalg", "std", "rayon"] }
 
 [dev-dependencies]
 aleph-sv = { path = "../aleph-sv" }
