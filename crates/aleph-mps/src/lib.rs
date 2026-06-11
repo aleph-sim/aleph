@@ -40,11 +40,13 @@
 //! let shots = backend.sample(&state, 1000).unwrap();
 //! ```
 //!
-//! 2q gates between non-adjacent qubits are handled by a nearest-neighbor SWAP
-//! network (always-swap-back): the targets are brought together, the gate is
-//! applied, and the SWAPs are undone, so `site = qubit` always holds. A lazy
-//! permutation-tracking strategy that would avoid the swap-back is a future
-//! optimization.
+//! 2q gates between non-adjacent qubits are handled by a lazy SWAP network
+//! (P3-09): the qubits are brought together with nearest-neighbor SWAPs and
+//! the resulting site↔qubit permutation is tracked rather than undone —
+//! `(d-1)` SWAPs per long-range gate instead of `2(d-1)`, amortizing to zero
+//! for repeated gates on nearby qubits. All reads (measure, sample,
+//! probabilities, expectation, dense reconstruction) route through the
+//! permutation, so results are always reported in logical-qubit order.
 
 mod mps;
 mod tensor;
@@ -66,7 +68,7 @@ pub enum MpsError {
     #[error("gate `{kind}` is not supported by the MPS backend")]
     UnsupportedGate { kind: &'static str },
 
-    #[error("2q gate on non-adjacent qubits {a} and {b}; the basic MPS chain only supports nearest-neighbor 2q gates (SWAP networks are P3-06)")]
+    #[error("2q gate on non-adjacent sites {a} and {b}; internal invariant violated (the lazy SWAP router should have made them adjacent)")]
     NonNearestNeighbor { a: u32, b: u32 },
 
     #[error("gate `{kind}` carries external controls, which the MPS backend does not support")]

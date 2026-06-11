@@ -1,5 +1,6 @@
 //! Mixed-canonical MPS state: init, dense reconstruction, canonicalization,
-//! gate application, expectation, measurement, sampling, probabilities.
+//! gate application with lazy SWAP permutation routing (P3-09), expectation,
+//! measurement, sampling, probabilities.
 
 use crate::tensor::{thin_qr, truncated_svd, Site, TruncationPolicy};
 use crate::MpsError;
@@ -12,6 +13,10 @@ pub(crate) const MAX_PROB_QUBITS: usize = 20;
 
 /// Mixed-canonical MPS. Sites left of `center` are left-canonical, sites right
 /// are right-canonical; the center site carries the norm.
+///
+/// Sites hold logical qubits per the `qubit_of_site`/`site_of_qubit`
+/// permutation (lazy SWAP routing, P3-09); `site == qubit` only until the
+/// first long-range 2q gate.
 #[derive(Debug, Clone)]
 pub struct MpsState {
     pub(crate) sites: Vec<Site>,
@@ -88,8 +93,8 @@ impl MpsState {
     /// qubit at the higher site down with nearest-neighbor SWAPs, and the
     /// permutation is left in place afterwards — no swap-back (P3-09). Reads
     /// route through the permutation, so `site == qubit` is no longer an
-    /// invariant. `MpsError::NonNearestNeighbor` is retained as a defensive
-    /// variant but is no longer reached on the normal 2q path.
+    /// invariant. `MpsError::NonNearestNeighbor` is never constructed; it is
+    /// retained so the `BackendError` mapping and the public enum stay stable.
     pub(crate) fn apply_2q(
         &mut self,
         g: &GateInstance,
@@ -101,6 +106,7 @@ impl MpsState {
         let sb = self.site_of_qubit[qb];
         if sa.abs_diff(sb) != 1 {
             // Ladder: walk the occupant of the higher site down to lo+1.
+            // Site `lo` is untouched, so the pair ends adjacent.
             let lo = sa.min(sb);
             let hi = sa.max(sb);
             for k in (lo + 1..hi).rev() {
@@ -1009,11 +1015,12 @@ mod tests {
         // CNOT(0,4) on n=5: the ladder is 3 SWAPs (always-swap-back paid 6).
         let mut s = MpsState::new(5, 64);
         let h = crate::gate::matrix_2x2(&GateInstance::new(Gate::H, smallvec![0u32])).unwrap();
-        s.apply_1q(0, &h);
+        s.apply_1q(0, &h); // non-trivial state so the SWAPs move real amplitude
         let gi = GateInstance::new(Gate::Cnot, smallvec![0u32, 4u32]);
         let u = crate::gate::matrix_4x4(&gi).unwrap();
         s.apply_2q(&gi, &u).unwrap();
         assert_eq!(s.swaps_applied(), 3);
+        assert_eq!(s.site_of_qubit[4], 1);
         // Qubit 4 stayed next to qubit 0 → repeating the gate costs 0 SWAPs.
         s.apply_2q(&gi, &u).unwrap();
         assert_eq!(s.swaps_applied(), 3);
