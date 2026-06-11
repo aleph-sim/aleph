@@ -47,3 +47,7 @@ harness = false
 name = "wide_bond"
 harness = false
 required-features = ["parallel"]
+
+[[bench]]
+name = "parity"
+harness = false
