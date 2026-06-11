@@ -14,7 +14,14 @@ aleph-ir = { path = "../aleph-ir" }
 nalgebra = { workspace = true }
 rand = { workspace = true }
 thiserror = { workspace = true }
-faer = { version = "0.24.0", default-features = false, features = ["linalg", "std", "rayon"] }
+faer = { version = "0.24.0", default-features = false, features = ["linalg", "std"] }
+
+[features]
+# faer's rayon-parallel kernels. Off by default: parallelism only wins at
+# large bond dimensions (chi >= ~512 measured on EPYC 16c; 1.54x at chi=512),
+# and is a large pessimization at typical chi <= 256. Enable for
+# wide-bond workloads and control threads via RAYON_NUM_THREADS.
+parallel = ["faer/rayon"]
 
 [dev-dependencies]
 aleph-sv = { path = "../aleph-sv" }
@@ -22,7 +29,7 @@ aleph-parser = { path = "../aleph-parser" }
 proptest = { workspace = true }
 smallvec = { workspace = true }
 criterion = { workspace = true }
-faer = { version = "0.24.0", default-features = false, features = ["linalg", "std", "rayon"] }
+faer = { version = "0.24.0", default-features = false, features = ["linalg", "std"] }
 
 [[bench]]
 name = "nn_qaoa"

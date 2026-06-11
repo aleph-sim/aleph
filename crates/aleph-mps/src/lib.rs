@@ -48,6 +48,15 @@
 //! for repeated gates on the same pair. All reads (measure, sample,
 //! probabilities, expectation, dense reconstruction) route through the
 //! permutation, so results are always reported in logical-qubit order.
+//!
+//! # Parallelism
+//!
+//! The `parallel` cargo feature enables faer's rayon-parallel kernels for the
+//! 2q hot path (theta gemm, truncated SVD, QR center moves). It is OFF by
+//! default: measured on a 16-core EPYC, the rayon pool is a large
+//! pessimization at typical bond dimensions (chi <= 256) and only wins at
+//! wide bonds (1.54x at chi = 512). Enable it for wide-bond workloads and
+//! control the pool with `RAYON_NUM_THREADS`.
 
 mod mps;
 mod tensor;

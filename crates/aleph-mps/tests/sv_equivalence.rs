@@ -494,6 +494,8 @@ proptest! {
     }
 }
 
+// Needs faer's rayon backend: run via cargo test -p aleph-mps --features parallel
+#[cfg(feature = "parallel")]
 #[test]
 fn results_invariant_across_parallelism() {
     // Same circuit under sequential and rayon-parallel faer must agree to

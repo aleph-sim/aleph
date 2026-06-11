@@ -7,8 +7,12 @@
 //!   n=24, χ=256: saturates at L2=20 layers (max_bond_reached=256)
 //!   n=24/χ=256 single-run wall time: ~4.2s (well within criterion sample_size(10) budget)
 //!
-//! Thread sweep: `RAYON_NUM_THREADS=1|2|4|8|16 cargo bench -p aleph-mps --bench wide_bond`
-//! (faer shares the global rayon pool).
+//! Thread sweep (requires the `parallel` feature):
+//! `RAYON_NUM_THREADS=1|2|4|8|16 cargo bench -p aleph-mps --features parallel --bench wide_bond`
+//! Default (no feature) runs sequential faer — the production configuration.
+//!
+//! The chi=512 cell (where parallelism starts to win; ~47 s/iter sequential
+//! on EPYC) is gated behind `WIDE_BOND_CHI512=1` to keep CI bench runs fast.
 
 use aleph_backend::run;
 use aleph_core::{Gate, GateInstance, Param};
@@ -57,6 +61,15 @@ fn bench(cr: &mut Criterion) {
         grp.bench_function(format!("n{n}_chi{chi}_d{layers}"), |b| {
             b.iter(|| {
                 let mut be = MpsBackend::with_seed(0).with_max_bond(chi);
+                run(&mut be, &c).unwrap()
+            })
+        });
+    }
+    if std::env::var_os("WIDE_BOND_CHI512").is_some() {
+        let c = brickwall(26, 24);
+        grp.bench_function("n26_chi512_d24", |b| {
+            b.iter(|| {
+                let mut be = MpsBackend::with_seed(0).with_max_bond(512);
                 run(&mut be, &c).unwrap()
             })
         });
