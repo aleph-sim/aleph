@@ -110,7 +110,7 @@ Each backend implements a common `Backend` trait. The frontend, IR, parser, and 
 |2    |Multi-threaded CPU                    |2 weeks             |Near-linear scaling on 16+ cores                                                 |
 |3    |Alternative backends (Stabilizer, MPS)|4–6 weeks           |Stabilizer + MPS backends working, auto-selection heuristic                      |
 |4    |Algorithm benchmarks + first release  |1–2 weeks           |Public benchmark report, v0.1 release                                            |
-|4.5  |CPU parity vs Aer/Stim                |2–4 weeks           |Every parity-matrix cell ≤ 1.2× its reference; docs/perf/parity.md|
+|4.5  |CPU parity vs Aer/Stim                |2–4 weeks           |Every parity-matrix cell ≤ 1.2× its reference; docs/perf/parity.md               |
 |5    |GPU backend (single-GPU)              |2–3 months          |cuQuantum integration + custom CUDA where it adds value                          |
 |6    |Multi-GPU and distributed             |2–3 months          |NCCL intra-node + MPI inter-node                                                 |
 

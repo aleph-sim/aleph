@@ -1908,7 +1908,7 @@ After P3-08 word-parallelized `rowsum`, a `perf record` of the surface-code d=11
 ### [P3-12] MPS: Gate::Swap as an O(1) permutation relabel
 
 **Labels:** `area:backend`, `type:optimization`, `priority:medium`
-**Milestone:** Phase 3 (deferred)
+**Milestone:** Phase 4.5 (adopted from Phase 3)
 **Estimate:** S
 **Depends on:** P3-09
 
@@ -1942,7 +1942,7 @@ P3-09 `/code-review` finding: the lazy router makes a logical SWAP expressible a
 ### [P3-13] MPS: size-thresholded per-call parallelism (replace the process-global Par control plane)
 
 **Labels:** `area:backend`, `type:optimization`, `priority:medium`
-**Milestone:** Phase 3 (deferred)
+**Milestone:** Phase 4.5 (adopted from Phase 3)
 **Estimate:** M
 **Depends on:** P3-09
 
@@ -1977,7 +1977,7 @@ P3-09 measured the crossover (EPYC 16c): rayon pool is a 1.5×–19× pessimizat
 ### [P3-14] MPS: hot-path scratch arena (kill the per-gate allocation churn)
 
 **Labels:** `area:backend`, `type:optimization`, `priority:low`
-**Milestone:** Phase 3 (deferred)
+**Milestone:** Phase 4.5 (adopted from Phase 3)
 **Estimate:** M
 **Depends on:** P3-09
 
@@ -2610,7 +2610,7 @@ SIMD → threads) and the one-PR-cycle-per-lever timebox from spec § 5 apply.
 **Testing Requirements** — standard (unit + property + oracle + before/after
 criterion numbers per change).
 
-**References** — spec § 4–5; `docs/perf/parity.md`.
+**References** — spec § 4–5; `docs/perf/parity.md` (deliverable of P4.5-01).
 
 ### [P4.5-07] Final parity report, verdicts, and v0.2 gate
 
