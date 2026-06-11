@@ -68,10 +68,10 @@ impl MpsState {
         self.swaps_applied
     }
 
-    /// Apply a 1q unitary to site `i` (qubit `i`). Preserves canonical form,
-    /// so neither the center nor any SVD is touched.
-    pub(crate) fn apply_1q(&mut self, i: usize, u: &[[Complex; 2]; 2]) {
-        let site = &mut self.sites[i];
+    /// Apply a 1q unitary to logical qubit `q` (routed to its current site).
+    /// Preserves canonical form, so neither the center nor any SVD is touched.
+    pub(crate) fn apply_1q(&mut self, q: usize, u: &[[Complex; 2]; 2]) {
+        let site = &mut self.sites[self.site_of_qubit[q]];
         for l in 0..site.left {
             for r in 0..site.right {
                 let a0 = site.get(l, 0, r);
@@ -402,22 +402,26 @@ impl MpsState {
 
     /// Contract the whole chain into a dense `2^n` amplitude vector.
     /// TEST/SMALL-n ONLY (allocates 2^n). Amplitude index uses the ADR-0004
-    /// convention: qubit `q` (== site `q`) occupies bit `q`.
+    /// convention: site `s` contributes the bit of the logical qubit it
+    /// currently holds (`qubit_of_site[s]`).
     pub fn dense_statevector(&self) -> Vec<Complex> {
         let n = self.sites.len();
-        // amps is laid out as [basis_prefix * left_dim + l]:
-        //   basis_prefix is the partial basis index accumulated so far (bits 0..q-1),
-        //   l is the left-bond index of the current site.
+        // Phase 1: contract in site order, producing raw_amps indexed by site bits
+        // (bit s = physical index of site s). The incremental layout only works when
+        // the bits are introduced in order 0, 1, 2, …, so we always contract with
+        // site-index bits here.
         //
-        // We start with a single virtual "left bond = 1" amplitude of value 1.
+        // amps is laid out as [basis_prefix * left_dim + l]:
+        //   basis_prefix is the partial basis index accumulated so far (bits 0..s-1),
+        //   l is the left-bond index of the current site.
         let mut amps: Vec<Complex> = vec![Complex::new(1.0, 0.0)]; // left bond of site 0 = 1
         let mut left_dim = 1usize;
 
-        for (q, site) in self.sites.iter().enumerate() {
+        for (s, site) in self.sites.iter().enumerate() {
             debug_assert_eq!(site.left, left_dim);
             let prefix_count = amps.len() / left_dim;
             // next is laid out as [new_prefix * site.right + r],
-            // where new_prefix = old_prefix | (p << q).
+            // where new_prefix = old_prefix | (p << s)  (site-index bit s).
             let mut next = vec![Complex::new(0.0, 0.0); prefix_count * 2 * site.right];
 
             // Allow explicit index arithmetic — the multi-index contraction is
@@ -425,8 +429,8 @@ impl MpsState {
             #[allow(clippy::needless_range_loop)]
             for prefix in 0..prefix_count {
                 for p in 0..2usize {
-                    // Bit q of the basis index is the physical index p of site q.
-                    let new_prefix = prefix | (p << q);
+                    // Bit s of the raw index is the physical index p of site s.
+                    let new_prefix = prefix | (p << s);
                     for r in 0..site.right {
                         let mut acc = Complex::new(0.0, 0.0);
                         for l in 0..left_dim {
@@ -441,9 +445,35 @@ impl MpsState {
         }
 
         debug_assert_eq!(left_dim, 1, "right bond of the last site must be 1");
-        // At this point amps[i] == amplitude of basis state i (all n bits set).
-        let _ = n; // used only for the initial capacity reasoning; length is 2^n
-        amps
+
+        // Phase 2: permute raw_amps (site-order bits) into logical-qubit order.
+        // raw_amps[raw_idx] has bit s = physical index of site s.
+        // The logical index has bit qubit_of_site[s] = same physical index of site s.
+        // When the permutation is identity (qubit_of_site[s] == s for all s),
+        // this loop is a no-op copy.
+        if self
+            .qubit_of_site
+            .iter()
+            .enumerate()
+            .all(|(s, &q)| q as usize == s)
+        {
+            // Identity permutation: raw layout already matches logical layout.
+            return amps;
+        }
+        let dim = 1usize << n;
+        let mut out = vec![Complex::new(0.0, 0.0); dim];
+        // Explicit index loop — the permuted bit-shuffling has no cleaner iterator form.
+        #[allow(clippy::needless_range_loop)]
+        for raw_idx in 0..dim {
+            // Build the logical index by mapping each site's bit to the qubit it holds.
+            let mut logical_idx = 0usize;
+            for s in 0..n {
+                let bit = (raw_idx >> s) & 1;
+                logical_idx |= bit << self.qubit_of_site[s] as usize;
+            }
+            out[logical_idx] = amps[raw_idx];
+        }
+        out
     }
 
     /// Perfect sampling (Ferris–Vidal 2012). Does not mutate `self`.
@@ -485,7 +515,7 @@ impl MpsState {
                 let outcome = rng.gen::<f64>() * total >= p0;
                 let b = if outcome { 1usize } else { 0usize };
                 if outcome {
-                    bits |= 1u64 << i;
+                    bits |= 1u64 << work.qubit_of_site[i];
                 }
                 let pk = if outcome { p1 } else { p0 };
                 let scale = if pk > 0.0 { (1.0 / pk).sqrt() } else { 0.0 };
@@ -522,7 +552,7 @@ impl MpsState {
                     num_qubits: n as u32,
                 });
             }
-            out_bit_for_site[q as usize] = Some(pos);
+            out_bit_for_site[self.site_of_qubit[q as usize]] = Some(pos);
         }
 
         // contract_p: advance the transfer matrix for physical index `p`.
@@ -606,8 +636,9 @@ impl MpsState {
                 num_qubits: n as u32,
             });
         }
-        self.move_center_to(q);
-        let site = &self.sites[q];
+        let s = self.site_of_qubit[q];
+        self.move_center_to(s);
+        let site = &self.sites[s];
         let mut p0 = 0.0f64;
         let mut p1 = 0.0f64;
         // Explicit range loops — multi-index tensor access has no cleaner iterator form.
@@ -632,7 +663,7 @@ impl MpsState {
         let pk = if outcome { p1 } else { p0 };
         // Rescale so the post-collapse MPS remains unit-norm.
         let scale = (total / pk).sqrt();
-        let site = &mut self.sites[q];
+        let site = &mut self.sites[s];
         let drop = 1 - keep;
         // Explicit range loops — multi-index tensor mutation has no cleaner iterator form.
         #[allow(clippy::needless_range_loop)]
@@ -969,6 +1000,37 @@ mod tests {
         s.swap_adjacent(1).unwrap();
         assert_eq!(s.qubit_of_site, vec![0, 1, 2]);
         assert_eq!(s.swaps_applied(), 2);
+        assert_eq!(s.site_of_qubit, vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn reads_route_through_permutation() {
+        // X(0), then a raw physical swap of sites 0,1: qubit 0 (|1>) now lives
+        // at site 1. Every read must still report in logical-qubit order.
+        let mut s = MpsState::new(2, 64);
+        let x = crate::gate::matrix_2x2(&GateInstance::new(Gate::X, smallvec![0u32])).unwrap();
+        s.apply_1q(0, &x);
+        s.swap_adjacent(0).unwrap();
+        // dense: qubit 0 occupies bit 0 → index 0b01.
+        let v = s.dense_statevector();
+        assert!((v[0b01].re - 1.0).abs() < 1e-10, "dense not routed");
+        // probabilities over qubit 0: [0, 1].
+        let p = s.probabilities(&[0]).unwrap();
+        assert!((p[1] - 1.0).abs() < 1e-10, "probabilities not routed");
+        // sample: qubit 0 packs into bit 0.
+        let mut rng = StdRng::seed_from_u64(1);
+        assert_eq!(
+            s.sample(3, &mut rng),
+            vec![0b01, 0b01, 0b01],
+            "sample not routed"
+        );
+        // apply_1q routes: a second X on qubit 0 returns it to |0>.
+        s.apply_1q(0, &x);
+        let v = s.dense_statevector();
+        assert!((v[0b00].re - 1.0).abs() < 1e-10, "apply_1q not routed");
+        // measure(0) must read site 1's data: re-flip then measure.
+        s.apply_1q(0, &x);
+        assert!(s.measure(0, &mut rng).unwrap(), "measure not routed");
     }
 
     #[test]
