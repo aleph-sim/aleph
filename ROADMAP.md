@@ -110,6 +110,7 @@ Each backend implements a common `Backend` trait. The frontend, IR, parser, and 
 |2    |Multi-threaded CPU                    |2 weeks             |Near-linear scaling on 16+ cores                                                 |
 |3    |Alternative backends (Stabilizer, MPS)|4–6 weeks           |Stabilizer + MPS backends working, auto-selection heuristic                      |
 |4    |Algorithm benchmarks + first release  |1–2 weeks           |Public benchmark report, v0.1 release                                            |
+|4.5  |CPU parity vs Aer/Stim                |2–4 weeks           |Every parity-matrix cell ≤ 1.2× its reference; docs/perf/parity.md               |
 |5    |GPU backend (single-GPU)              |2–3 months          |cuQuantum integration + custom CUDA where it adds value                          |
 |6    |Multi-GPU and distributed             |2–3 months          |NCCL intra-node + MPI inter-node                                                 |
 
@@ -153,6 +154,7 @@ The simulator is evaluated on these algorithms across all phases:
 - Phase 2: ≥12× speedup on 16 cores vs. single-thread.
 - Phase 3: Stabilizer backend handles 1000+ qubit Clifford circuits; MPS handles 100+ qubit shallow circuits.
 - Phase 4: Published benchmark report, GitHub release v0.1.
+- Phase 4.5: every competitive-matrix cell ≤ 1.2× its reference (Aer MT statevector, Aer MPS, Stim), or a documented structural exception with profiling evidence; published in docs/perf/parity.md. v0.2 + PyPI (P4-09) gate on this.
 - Phase 5: GPU backend within 1.5× of cuQuantum standalone.
 - Phase 6: Distributed run on 4+ nodes with reasonable scaling efficiency.
 
