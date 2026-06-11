@@ -367,15 +367,16 @@ def main() -> None:
 
     # --from-qasm: skip generation entirely; time given QASM3 files verbatim.
     if args.from_qasm:
-        from qiskit import qasm3 as _qasm3
         results: dict = {"schema_version": 2, "aer_threads": args.threads, "workloads": {}}
         for path_str in args.from_qasm:
             p = Path(path_str)
-            qc = _qasm3.loads(p.read_text())
-            gate_count = sum(qc.count_ops().values())
+            if not p.is_file():
+                parser.error(f"--from-qasm: no such file: {p}")
+            qc = qasm3.loads(p.read_text())
+            gate_count = len(qc.data)  # same metric as the generation path
             runs = max(timing_runs_for(qc.num_qubits, gate_count), args.min_runs)
             print(
-                f"timing {p.stem}: n={qc.num_qubits} gates={gate_count} "
+                f"[time] {p.stem}: n={qc.num_qubits} gates={gate_count} "
                 f"runs={runs} threads={args.threads}",
                 flush=True,
             )
