@@ -2379,7 +2379,7 @@ Deferred by owner decision during P4-08: v0.1 shipped wheels attached to the Git
 
 **Acceptance Criteria**
 
-- [ ] `pip install aleph-sim` works in a clean venv (Linux x86_64 + macOS arm64, Python ≥ 3.12)
+- [x] `pip install aleph-sim` works in a clean venv (Linux x86_64 + macOS arm64, Python ≥ 3.12)
 - [x] Publication is automated in `release.yml` (no manual twine step)
 - [x] README/crate-README install instructions updated to prefer PyPI
 
