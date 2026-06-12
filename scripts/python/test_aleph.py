@@ -28,6 +28,15 @@ BELL_FIXTURE = os.path.join(
 
 
 @unittest.skipUnless(HAVE_ALEPH, "aleph extension module not installed")
+class TestVersion(unittest.TestCase):
+    def test_version_attribute_and_function_agree(self):
+        # Both come from CARGO_PKG_VERSION — the same source maturin uses
+        # for the wheel version.
+        self.assertRegex(aleph.__version__, r"^\d+\.\d+\.\d+$")
+        self.assertEqual(aleph.version(), aleph.__version__)
+
+
+@unittest.skipUnless(HAVE_ALEPH, "aleph extension module not installed")
 class TestCircuitBuilder(unittest.TestCase):
     def test_bell_counts(self):
         c = aleph.Circuit(2)
