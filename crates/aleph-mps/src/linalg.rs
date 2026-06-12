@@ -167,7 +167,7 @@ mod tests {
     /// replication of an identical deterministic code path.)
     #[test]
     fn thin_svd_par_matches_high_level_bit_exact() {
-        for (m, n) in [(8usize, 5usize), (5, 8), (6, 6)] {
+        for (m, n) in [(8usize, 5usize), (5, 8), (6, 6), (1, 2), (2, 1), (1, 1)] {
             let a = test_matrix(m, n);
             let hl = a.thin_svd().unwrap();
             let (u, s, v) = thin_svd_par(a.as_ref(), faer::get_global_parallelism()).unwrap();
@@ -207,7 +207,7 @@ mod tests {
     /// size×size householder basis.
     #[test]
     fn thin_qr_par_matches_high_level_bit_exact() {
-        for (m, n) in [(8usize, 5usize), (5, 8), (6, 6)] {
+        for (m, n) in [(8usize, 5usize), (5, 8), (6, 6), (1, 2), (2, 1), (1, 1)] {
             let a = test_matrix(m, n);
             let hl = a.qr();
             let hq = hl.compute_thin_Q();
@@ -240,12 +240,13 @@ mod tests {
     fn helpers_reconstruct_under_seq_and_rayon() {
         let (m, n) = (48usize, 32usize);
         let a = test_matrix(m, n);
+        let size = Ord::min(m, n);
         for par in [Par::Seq, Par::rayon(0)] {
             let (u, s, v) = thin_svd_par(a.as_ref(), par).unwrap();
             for i in 0..m {
                 for j in 0..n {
                     let mut acc = Complex::new(0.0, 0.0);
-                    for k in 0..n {
+                    for k in 0..size {
                         acc += u[(i, k)] * s.as_ref()[k] * v[(j, k)].conj();
                     }
                     assert!(
@@ -258,7 +259,7 @@ mod tests {
             for i in 0..m {
                 for j in 0..n {
                     let mut acc = Complex::new(0.0, 0.0);
-                    for k in 0..n {
+                    for k in 0..size {
                         acc += q[(i, k)] * r[(k, j)];
                     }
                     assert!(
@@ -277,6 +278,9 @@ mod tests {
 
     #[test]
     fn par_for_above_threshold_follows_global() {
+        // Only discriminates under `--features parallel`: without it the global
+        // is always Par::Seq, so both arms of par_for return Seq and the
+        // assertion is vacuously true (still a useful smoke test).
         assert_eq!(par_for(2048, 2048), faer::get_global_parallelism());
     }
 }
