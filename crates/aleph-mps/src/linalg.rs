@@ -20,12 +20,14 @@ use faer::linalg::svd::{svd, svd_scratch, ComputeSvdVectors};
 use faer::{Conj, Mat, MatRef, Par};
 
 /// Minimum operand element count (`rows · cols`) for the rayon pool to pay
-/// off. Calibrated from the P3-09 EPYC sweep (docs/perf/mps_parallel.md):
-/// χ=256 ops (up to 512×1024 = 524 288 elements) are a rayon pessimization,
-/// while χ=512 ops (1024×2048 = 2 097 152) win 1.57× @16T. 2^20 is the
-/// geometric midpoint of that interval; the P3-13 EPYC sweep validates both
-/// sides.
-const PAR_MIN_ELEMS: usize = 1 << 20;
+/// off. Calibrated on EPYC 16c: χ=256 ops (largest 512×512 = 262 144
+/// elements) are a measured rayon pessimization and must stay sequential,
+/// while at χ=512 the win requires parallelizing not just the saturated
+/// theta/SVD (1024×1024) but also the thin-QR (1024×512) and absorption
+/// gemm (512×1024) operands at exactly 2^19 = 524 288 elements — the first
+/// P3-13 sweep with a 2^20 threshold starved them and retained only 1.23×
+/// of P3-09's 1.57× @16T (docs/perf/mps_parallel.md).
+const PAR_MIN_ELEMS: usize = 1 << 19;
 
 /// Whether a `rows × cols` operand is large enough to amortize fork-join
 /// overhead (feature-independent threshold arithmetic, unit-tested directly).
@@ -188,10 +190,11 @@ mod tests {
     #[test]
     fn threshold_boundaries() {
         // Largest χ=256 operand (the measured pessimization) stays sequential.
-        assert!(!wants_parallel(512, 1024));
+        assert!(!wants_parallel(512, 512));
         // Saturating, not panicking.
         assert!(!wants_parallel(0, usize::MAX));
-        // 1024×1024 (= PAR_MIN_ELEMS exactly) and up may parallelize.
+        // χ=512 QR/absorb operands (= PAR_MIN_ELEMS exactly) and up may parallelize.
+        assert!(wants_parallel(1024, 512));
         assert!(wants_parallel(1024, 1024));
         assert!(wants_parallel(1024, 2048));
         assert!(wants_parallel(usize::MAX, usize::MAX));
