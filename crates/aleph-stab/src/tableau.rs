@@ -505,17 +505,21 @@ impl Tableau {
     }
 
     /// Copy a full generator row (x bits, z bits, sign) from `src` to `dst`.
+    /// Word-parallel via `row_pair_mut` (a RowMajor generator row is `stride`
+    /// contiguous words; the per-bit loop was ~13.5% of the surface-d11
+    /// cycle, ADR 0013 profile). `src`'s padding bits are zero, so the word
+    /// copy preserves the BitGrid padding invariant.
     ///
-    /// Precondition: RowMajor (direct `(row, col)` grid access).
+    /// Precondition: RowMajor; `dst != src` (enforced by `row_pair_mut`).
     fn copy_row(&mut self, dst: usize, src: usize) {
         debug_assert!(
             self.orientation == Orientation::RowMajor,
             "copy_row needs RowMajor"
         );
-        for j in 0..self.n {
-            self.x.set(dst, j, self.x.get(src, j));
-            self.z.set(dst, j, self.z.get(src, j));
-        }
+        let (xd, xs) = self.x.row_pair_mut(dst, src);
+        xd.copy_from_slice(xs);
+        let (zd, zs) = self.z.row_pair_mut(dst, src);
+        zd.copy_from_slice(zs);
         let s = self.sign.get(src);
         self.sign.set(dst, s);
     }
@@ -535,6 +539,21 @@ impl Tableau {
         self.x.row_words_mut(r).fill(0);
         self.z.row_words_mut(r).fill(0);
         self.sign.set(r, false);
+    }
+
+    /// Pre-P4.5-02 per-bit reference, kept for the equivalence test in this file.
+    #[cfg(test)]
+    fn copy_row_scalar(&mut self, dst: usize, src: usize) {
+        debug_assert!(
+            self.orientation == Orientation::RowMajor,
+            "copy_row_scalar needs RowMajor"
+        );
+        for j in 0..self.n {
+            self.x.set(dst, j, self.x.get(src, j));
+            self.z.set(dst, j, self.z.get(src, j));
+        }
+        let s = self.sign.get(src);
+        self.sign.set(dst, s);
     }
 
     /// Pre-P4.5-02 per-bit reference, kept for the equivalence test in this file.
@@ -708,6 +727,21 @@ mod tests {
                 a.zero_row(r);
                 b.zero_row_scalar(r);
                 assert_tableaus_bit_identical(&a, &b, &format!("zero_row n={n} r={r}"));
+            }
+        }
+    }
+
+    #[test]
+    fn copy_row_matches_scalar_reference() {
+        // Covers dst<src, dst>src, adjacent rows, and the scratch row 2n.
+        for &n in &[3usize, 70, 130, 241] {
+            let t0 = random_row_major_tableau(n, 0xC0FE + n as u64);
+            for &(dst, src) in &[(0usize, 2 * n), (n / 2, n / 2 + 1), (2 * n, 0), (n, n - 1)] {
+                let mut a = t0.clone();
+                let mut b = t0.clone();
+                a.copy_row(dst, src);
+                b.copy_row_scalar(dst, src);
+                assert_tableaus_bit_identical(&a, &b, &format!("copy_row n={n} {dst}<-{src}"));
             }
         }
     }
