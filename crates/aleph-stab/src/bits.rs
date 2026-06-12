@@ -106,7 +106,12 @@ impl BitGrid {
     /// prior O(rows·cols) get/set form — this is the orientation-bridge hot
     /// path.
     pub(crate) fn transpose(&self) -> BitGrid {
+        #[cfg(target_arch = "x86_64")]
         let kernel = transpose64_kernel();
+        // Function item, not a fn pointer: keeps the scalar kernel statically
+        // dispatched (inlinable) where AVX-512 cannot exist.
+        #[cfg(not(target_arch = "x86_64"))]
+        let kernel = transpose64;
         let rows = self.rows();
         let cols = self.cols;
         let mut out = BitGrid::zeros(cols, rows);
@@ -198,17 +203,20 @@ fn transpose64(a: &mut [u64; 64]) {
     }
 }
 
-/// Pick the 64×64 block kernel once per transpose: AVX-512 when available
-/// (`is_x86_feature_detected!` caches the cpuid result), scalar delta-swap
-/// otherwise and on non-x86.
+/// Pick the 64×64 block kernel once per transpose call: AVX-512 when the CPU
+/// has it (`is_x86_feature_detected!` caches the cpuid result), scalar
+/// delta-swap otherwise. Returns a fn pointer — unlike the per-call branches
+/// in `rowsum_dispatch`/`gates::*_dispatch`, which run once per public call —
+/// because the block kernel runs once per 64×64 block, many times per
+/// transpose, so the feature check is hoisted out of the block loop.
+/// x86_64-only: other arches bind [`transpose64`] directly (function item,
+/// statically dispatched and inlinable).
+#[cfg(target_arch = "x86_64")]
 fn transpose64_kernel() -> fn(&mut [u64; 64]) {
-    #[cfg(target_arch = "x86_64")]
-    {
-        if std::is_x86_feature_detected!("avx512f") {
-            // SAFETY: avx512f verified present immediately above. The
-            // non-capturing closure coerces to `fn`.
-            return |a| unsafe { transpose64_avx512(a) };
-        }
+    if std::is_x86_feature_detected!("avx512f") {
+        // SAFETY: avx512f verified present immediately above. The
+        // non-capturing closure coerces to `fn`.
+        return |a| unsafe { transpose64_avx512(a) };
     }
     transpose64
 }
