@@ -23,7 +23,11 @@ box in the same session, strictly sequentially (nothing else ran between rows).
   untimed setup); Aer = `AerSimulator(method='statevector', max_parallel_threads=16)`,
   `sim.run()` timed, transpile outside, **default gate fusion ON** —
   default-vs-default on both sides (aleph's default pipeline vs Aer's default
-  config), disclosed per spec § 6. Fixtures: `scripts/qiskit-baseline/circuits/`.
+  config), disclosed per spec § 6. Directional note: aleph's one-time
+  `optimize()` cost is excluded from its timed region while Aer pays its
+  fusion inside `sim.run()` — an asymmetry in aleph's favor, negligible at
+  these gate counts (microseconds vs hundreds-of-ms cells) and unable to flip
+  any verdict. Fixtures: `scripts/qiskit-baseline/circuits/`.
 - **MPS row:** aleph = `mps_parity` criterion bench, sequential default build
   (no `parallel` feature); Aer = `matrix_product_state` method,
   `max_bond_dimension` matched per family, `truncation_threshold=1e-16`,
@@ -133,7 +137,7 @@ mps_parity/wide_bond_n26_d12      11429.5 ms
 Commands (run on the box, in order, nothing in parallel):
 
 ```bash
-# row 1a (Aer SV, 16 threads)
+# row 1a (Aer SV, 16 threads) — from scripts/qiskit-baseline/
 python run.py --threads 16 --min-runs 5 --out results-qiskit-t16.json \
   --from-qasm circuits/ghz_n25.qasm circuits/qft_n25.qasm \
               circuits/grover_n25_iters5.qasm circuits/random_brickwall_n25_d20.qasm
