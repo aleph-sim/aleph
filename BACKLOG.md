@@ -46,6 +46,8 @@ Each issue follows the same template:
 - Phase 2 — Multi-Thread CPU
 - Phase 3 — Alternative Backends
 - Phase 4 — Algorithm Benchmarks & v0.1 Release
+- Phase 4.5 — CPU Parity
+- Phase 4.6 — CPU Depth
 - Phase 5 — GPU Backend
 - Phase 6 — Multi-GPU & Distributed
 
@@ -2632,6 +2634,184 @@ v0.2 and execute PyPI publication (P4-09, #142).
 no code changes expected.
 
 **References** — spec § 2; P4-09 (#142).
+
+-----
+
+# Phase 4.6 — CPU Depth
+
+Goal: spend the pre-GPU window on (a) **QEC throughput** — the two
+profile-driven stabilizer levers left visible after P4.5-02 — and (b) the
+largest product gap vs Aer: **noise models**. Phase 5 (GPU) stays blocked on
+permanent CUDA hardware (owner decision 2026-06-12: no GPU box yet, and the
+measure-first culture does not survive rented-by-the-hour dev loops).
+
+**Adopted tickets:** P3-12 (#148), P3-13 (#149), P3-14 (#150) — the MPS
+levers — and P4-10 (#143), P4-11 (#144), P4-12 (#145) — Python/CLI polish —
+keep their IDs and issue numbers; only their milestone moves to
+"Phase 4.6 — CPU Depth". Order: **A** (adopted: P3-13 → P3-14 → P3-12, with
+P4-10..12 interleaved as breathers) → **B** (P4.6-01 → P4.6-02) → **C**
+(P4.6-03 → P4.6-04 → P4.6-05).
+
+### [P4.6-01] Stabilizer: word-parallel `measure` column scans
+
+**Labels:** `area:backend-stab`, `type:optimization`, `priority:high`
+**Milestone:** Phase 4.6
+**Estimate:** M
+**Depends on:** —
+
+**Description** — After P4.5-02 the surface-d11 cycle profile is
+measure-dominated: `Tableau::measure` is 57.8% self time, and the cost is its
+per-bit strided column reads under RowMajor (`x.get(row, a)`): the
+random-branch `find` over stabilizer rows, the elimination loop over all `2n`
+rows, and the deterministic-branch destabilizer scan.
+
+**Context** — The same per-bit-vs-word disease P4.5-02 cured in
+`zero_row`/`copy_row`, except here the access is a *column* under RowMajor, so
+no contiguous read exists (ADR 0013's layout tension, now on the measurement
+side).
+
+**Technical Details** — Profile first (`perf annotate` on `measure`), then
+pick the cheapest lever. Candidate options, in rising complexity: (1) hoist
+the column word-offset/mask out of the row loops and walk `words[row*stride +
+(a>>6)]` directly (the P3-01 gate-hoisting trick — verify what rustc already
+emits before assuming a win); (2) AVX-512 strided gather of 8 rows' column
+words per step + mask test; (3) an incrementally maintained per-qubit
+"x-column" bit-vector (invalidation on every rowsum/copy/zero — likely too
+much bookkeeping; reject unless (1)/(2) stall). Mirror the P4.5-02 testing
+pattern for any new word-parallel helper.
+
+**Acceptance Criteria**
+- [ ] surface-d11 cycle time improves and `measure`'s self share drops materially (out of the top profile slot; soft goal: d=11 ≤ 0.65× Stim) — else a documented structural verdict with profile evidence.
+- [ ] Stim oracles d=3..11 green; new unit tests for any new helper on irregular n (not multiples of 64).
+- [ ] Before/after criterion numbers (EPYC) in the PR.
+
+**Testing Requirements** — existing stim_oracle suites; equivalence +
+mutation-test pattern from P4.5-02 for new helpers.
+
+**References** — `docs/perf/surface_code.md` P4.5-02 addendum (profile);
+ADR 0013.
+
+### [P4.6-02] Stabilizer: batched-shot sampling (Pauli-frame simulator)
+
+**Labels:** `area:backend-stab`, `type:feature`, `priority:high`
+**Milestone:** Phase 4.6
+**Estimate:** L
+**Depends on:** —
+
+**Description** — Multi-shot sampling currently re-runs the full CHP
+simulation once per shot. Implement frame-based sampling à la Stim: one CHP
+reference run records the measurement structure; M shots are then M Pauli
+frames propagated word-parallel (bit-packed across shots — 64 shots per u64
+word, 512 per zmm), each flipping recorded reference outcomes where its frame
+anticommutes with the measurement.
+
+**Context** — For QEC users multi-shot throughput is the headline number, and
+Stim's frame simulator beats per-shot tableau simulation by orders of
+magnitude. No amount of single-shot kernel work can reach this; it is the
+highest-leverage CPU feature left in the stabilizer backend.
+
+**Technical Details** — New sampler in `aleph-stab` (e.g. `FrameSampler`):
+reference run via the existing `Tableau`, capturing per-measurement reference
+outcomes + which measurements were random; frame state = X/Z bit-planes over
+qubits × shot-words; Clifford gates act on frames by conjugation (H swaps
+x/z frame bits, S/CNOT per the same tables as the tableau kernels — all
+word-parallel over shots); a measurement flips the reference outcome wherever
+the frame has an X component on the measured qubit, and randomizes the frame's
+Z there (Z-basis collapse). Pauli-noise hooks come nearly for free in frame
+simulators — leave the seam visible for P4.6-04 but do NOT build noise here.
+Wire into the backend sampling path only for Clifford+measure circuits above a
+shot threshold (selection via the existing dispatch). Read, don't copy:
+Gidney, "Stim: a fast stabilizer circuit simulator", Quantum 5, 497 (2021),
+§ 4; quantumlib/Stim `FrameSimulator`.
+
+**Acceptance Criteria**
+- [ ] Sampling M=1024 shots of the surface-d11 cycle is ≥ 10× faster than 1024 sequential single-shot runs (EPYC, criterion numbers in the PR).
+- [ ] Distribution oracle: frame-sampled counts match per-shot CHP sampling within the 1e-5 / 100k-shot tolerance (`docs/testing.md`), plus a Stim cross-check on the surface-code fixtures.
+- [ ] Deterministic seeding: same seed → same shot table; non-Clifford circuits are cleanly rejected (fall back to per-shot path).
+
+**Testing Requirements** — distribution-closeness helper (soft dependency on
+P3-16 — inline a local copy if P3-16 hasn't landed); proptest invariants
+(frame propagation matches gate conjugation on random Clifford circuits).
+
+**References** — Gidney 2021 § 4 (frame simulation); `docs/testing.md`
+distribution tolerances; P3-16 (#152).
+
+### [P4.6-03] Noise models: design spec + ADR
+
+**Labels:** `area:core`, `type:docs`, `priority:high`
+**Milestone:** Phase 4.6
+**Estimate:** M
+**Depends on:** —
+
+**Description** — Decide and write down how aleph represents noise *before*
+any implementation. The spec must answer: (1) **simulation strategy** —
+stochastic Kraus trajectories on the SV backend (sample one Kraus branch per
+channel application; O(2^n) memory, cost scales with shots) vs a
+density-matrix backend (exact, O(4^n), ~14-qubit ceiling) vs both eventually
+(Aer ships both; expected recommendation: trajectories first, DM later only
+if demanded); (2) **noise IR** — channel set v1 (depolarizing 1q/2q,
+amplitude damping, phase damping, bit/phase-flip, measurement/readout error)
+and the attachment model: an Aer-style `NoiseModel` object mapping gate
+kinds/qubit sets → channels, applied at execution time — NOT per-gate IR
+pollution (golden rule 4: the IR stays backend-agnostic and noise-free);
+(3) **API surface** — Python `aleph.run(c, noise=...)` + CLI; (4) **oracle
+strategy** — vs Aer under a byte-identical NoiseModel at 100k shots / 1e-5;
+(5) **frame-sampler integration** — what Pauli channels look like in
+P4.6-02's sampler (frame simulators absorb Pauli noise nearly for free).
+
+**Acceptance Criteria**
+- [ ] Spec in `docs/superpowers/specs/` answers (1)–(5) with explicit trade-offs; ADR accepted under `docs/decisions/`.
+- [ ] P4.6-04 and P4.6-05 re-specced in BACKLOG from the spec (amend + re-sync issues).
+
+**Testing Requirements** — none (design doc); the oracle protocol it defines
+becomes P4.6-04's testing section.
+
+**References** — Aer noise model docs/implementation (read, don't copy);
+Nielsen & Chuang § 8 (quantum operations); `docs/testing.md`.
+
+### [P4.6-04] Noise models: implementation per spec
+
+**Labels:** `area:backend-sv`, `type:feature`, `priority:high`
+**Milestone:** Phase 4.6
+**Estimate:** L
+**Depends on:** P4.6-03
+
+**Description** — Deliberate placeholder: scope is fixed by the P4.6-03 spec,
+not guessed in advance. Expected shape: trajectory-based Kraus channel
+application in the SV path + readout error at sampling, channel set v1,
+`NoiseModel` plumbing through `aleph-backend`.
+
+**Acceptance Criteria**
+- [ ] Channel set v1 (depolarizing 1q/2q, amplitude/phase damping, bit/phase-flip, readout error) works end-to-end on the SV backend.
+- [ ] Oracle vs Aer under an identical NoiseModel: 1e-5 at 100k shots on the agreed fixture set.
+- [ ] Deterministic seeding; noiseless path performance unchanged (criterion guard).
+
+**Testing Requirements** — per the P4.6-03 spec; distribution oracles +
+property tests (CPTP sanity: probabilities sum to 1 across Kraus branches).
+
+**References** — P4.6-03 spec + ADR (once landed).
+
+### [P4.6-05] Noise models: Python/CLI surface + docs
+
+**Labels:** `area:python`, `type:feature`, `priority:medium`
+**Milestone:** Phase 4.6
+**Estimate:** M
+**Depends on:** P4.6-04
+
+**Description** — Deliberate placeholder, re-specced by P4.6-03. Expected
+shape: `NoiseModel` construction API in Python (`aleph.NoiseModel()` builder +
+`aleph.run(c, noise=nm)`), CLI flag(s) for simple presets, README/docs
+examples, release-notes entry for the next release.
+
+**Acceptance Criteria**
+- [ ] Python API per spec with tests in `scripts/python/test_aleph.py`; CLI exposure for at least a depolarizing preset.
+- [ ] README + crate-README examples; docs updated.
+
+**Testing Requirements** — python behaviour tests against a locally built
+wheel; CLI assert_cmd tests.
+
+**References** — P4.6-03 spec; P4-12 (#145) backend-vocabulary work (keep the
+two API surfaces consistent).
 
 -----
 

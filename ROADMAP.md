@@ -111,6 +111,7 @@ Each backend implements a common `Backend` trait. The frontend, IR, parser, and 
 |3    |Alternative backends (Stabilizer, MPS)|4–6 weeks           |Stabilizer + MPS backends working, auto-selection heuristic                      |
 |4    |Algorithm benchmarks + first release  |1–2 weeks           |Public benchmark report, v0.1 release                                            |
 |4.5  |CPU parity vs Aer/Stim                |2–4 weeks           |Every parity-matrix cell ≤ 1.2× its reference; docs/perf/parity.md               |
+|4.6  |CPU depth: QEC throughput + noise     |3–5 weeks           |Pauli-frame multi-shot sampler; noise models v1 (Kraus channels, oracle vs Aer)  |
 |5    |GPU backend (single-GPU)              |2–3 months          |cuQuantum integration + custom CUDA where it adds value                          |
 |6    |Multi-GPU and distributed             |2–3 months          |NCCL intra-node + MPI inter-node                                                 |
 
@@ -155,6 +156,7 @@ The simulator is evaluated on these algorithms across all phases:
 - Phase 3: Stabilizer backend handles 1000+ qubit Clifford circuits; MPS handles 100+ qubit shallow circuits.
 - Phase 4: Published benchmark report, GitHub release v0.1.
 - Phase 4.5 ✅ **met**: every competitive-matrix cell ≤ 1.2× its reference (Aer MT statevector, Aer MPS, Stim) — 10/10 cells pass with no structural exceptions (worst: ghz_n25 1.03×; stabilizer closed at 0.79× Stim by P4.5-02); published in `docs/perf/parity.md`. v0.2 + PyPI (P4-09) unblocked.
+- Phase 4.6: (a) surface-d11 multi-shot sampling ≥ 10× the per-shot loop at M=1024 (Pauli-frame sampler); (b) `measure` column-scan cost addressed (off the top of the d=11 profile, or a documented structural verdict); (c) noise models v1 — depolarizing/damping/flip/readout channels on the SV backend with an oracle vs Aer under an identical NoiseModel (1e-5 at 100k shots).
 - Phase 5: GPU backend within 1.5× of cuQuantum standalone.
 - Phase 6: Distributed run on 4+ nodes with reasonable scaling efficiency.
 
