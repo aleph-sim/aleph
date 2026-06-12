@@ -5,7 +5,12 @@
 //! at χ ≤ 256 (docs/perf/mps_parallel.md). These wrappers take `Par` per call
 //! so each operation chooses from its own operand size instead.
 
-use faer::Par;
+use crate::MpsError;
+use aleph_core::Complex;
+use faer::diag::Diag;
+use faer::dyn_stack::{MemBuffer, MemStack};
+use faer::linalg::svd::{svd, svd_scratch, ComputeSvdVectors};
+use faer::{Mat, MatRef, Par};
 
 /// Minimum operand element count (`rows · cols`) for the rayon pool to pay
 /// off. Calibrated from the P3-09 EPYC sweep (docs/perf/mps_parallel.md):
@@ -36,9 +41,87 @@ pub(crate) fn par_for(rows: usize, cols: usize) -> Par {
     }
 }
 
+/// `(U, S, V)` factors of a thin SVD (named to satisfy clippy's
+/// type-complexity lint without obscuring the tuple shape).
+pub(crate) type ThinSvd = (Mat<Complex>, Diag<Complex>, Mat<Complex>);
+
+/// Thin SVD with an explicit `Par`: `A = U · diag(S) · Vᴴ` with
+/// `U: m × size`, `V: n × size`, `size = min(m, n)`. Mirrors
+/// `faer::linalg::solvers::Svd::new_thin` — which hard-reads the global
+/// parallelism (faer-0.24.0 solvers.rs:1344) — for the canonical c64 element
+/// type (no conjugation pass needed: `aleph_core::Complex == faer::c64`).
+// Call sites are rewired in a later P3-13 task; until then only tests use it.
+#[allow(dead_code)]
+pub(crate) fn thin_svd_par(a: MatRef<'_, Complex>, par: Par) -> Result<ThinSvd, MpsError> {
+    let (m, n) = a.shape();
+    let size = Ord::min(m, n);
+    let mut u = Mat::<Complex>::zeros(m, size);
+    let mut v = Mat::<Complex>::zeros(n, size);
+    let mut s = Diag::<Complex>::zeros(size);
+    svd(
+        a,
+        s.as_mut(),
+        Some(u.as_mut()),
+        Some(v.as_mut()),
+        par,
+        MemStack::new(&mut MemBuffer::new(svd_scratch::<Complex>(
+            m,
+            n,
+            ComputeSvdVectors::Thin,
+            ComputeSvdVectors::Thin,
+            par,
+            Default::default(),
+        ))),
+        Default::default(),
+    )
+    .map_err(|_| MpsError::SvdFailed)?;
+    Ok((u, s, v))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Deterministic full-rank-ish complex test matrix.
+    fn test_matrix(m: usize, n: usize) -> Mat<Complex> {
+        Mat::from_fn(m, n, |i, j| {
+            Complex::new(
+                ((i * 7 + j * 3) % 11) as f64 * 0.37 - 1.1,
+                ((i * 5 + j) % 7) as f64 * 0.23 - 0.6,
+            )
+        })
+    }
+
+    /// The replica must be BIT-EXACT vs faer's high-level thin_svd when given
+    /// the same Par the high-level call reads from the global — any divergence
+    /// means the low-level invocation differs (wrong compute mode, params, or
+    /// conj handling), which a tolerance test could mask. (The crate's "no
+    /// float equality" rule targets tolerance-requiring math; this verifies
+    /// replication of an identical deterministic code path.)
+    #[test]
+    fn thin_svd_par_matches_high_level_bit_exact() {
+        for (m, n) in [(8usize, 5usize), (5, 8), (6, 6)] {
+            let a = test_matrix(m, n);
+            let hl = a.thin_svd().unwrap();
+            let (u, s, v) = thin_svd_par(a.as_ref(), faer::get_global_parallelism()).unwrap();
+            let size = Ord::min(m, n);
+            assert_eq!(u.shape(), (m, size));
+            assert_eq!(v.shape(), (n, size));
+            for t in 0..size {
+                assert_eq!(s.as_ref()[t], hl.S()[t], "S[{t}] ({m}x{n})");
+            }
+            for r in 0..m {
+                for c in 0..size {
+                    assert_eq!(u[(r, c)], hl.U()[(r, c)], "U[({r},{c})] ({m}x{n})");
+                }
+            }
+            for r in 0..n {
+                for c in 0..size {
+                    assert_eq!(v[(r, c)], hl.V()[(r, c)], "V[({r},{c})] ({m}x{n})");
+                }
+            }
+        }
+    }
 
     #[test]
     fn threshold_boundaries() {
