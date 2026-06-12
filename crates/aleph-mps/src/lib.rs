@@ -64,6 +64,7 @@ pub use mps::MpsState;
 pub use tensor::TruncationPolicy;
 
 mod gate;
+mod linalg;
 
 mod backend;
 pub use backend::MpsBackend;
