@@ -27,7 +27,7 @@ edition = "2021"
 # CLAUDE.md tracks the same floor; bump both together if SIMD or
 # another dep pushes it again.
 rust-version = "1.89"
-version = "0.1.0"
+version = "0.2.0"
 license = "MIT"
 repository = "https://github.com/ruslan-splynx/aleph"
 authors = ["aleph contributors"]

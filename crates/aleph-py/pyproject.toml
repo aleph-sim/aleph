@@ -19,7 +19,7 @@ classifiers = [
 
 [project.urls]
 Repository = "https://github.com/ruslan-splynx/aleph"
-Benchmarks = "https://github.com/ruslan-splynx/aleph/blob/main/docs/perf/v0.1.md"
+Benchmarks = "https://github.com/ruslan-splynx/aleph/blob/main/docs/perf/parity.md"
 
 [tool.maturin]
 features = ["python"]
