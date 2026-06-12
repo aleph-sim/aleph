@@ -9,8 +9,15 @@ use crate::MpsError;
 use aleph_core::Complex;
 use faer::diag::Diag;
 use faer::dyn_stack::{MemBuffer, MemStack};
+use faer::linalg::householder::{
+    apply_block_householder_sequence_on_the_left_in_place_scratch,
+    apply_block_householder_sequence_on_the_left_in_place_with_conj,
+};
+use faer::linalg::qr::no_pivoting::factor::{
+    qr_in_place, qr_in_place_scratch, recommended_block_size,
+};
 use faer::linalg::svd::{svd, svd_scratch, ComputeSvdVectors};
-use faer::{Mat, MatRef, Par};
+use faer::{Conj, Mat, MatRef, Par};
 
 /// Minimum operand element count (`rows · cols`) for the rayon pool to pay
 /// off. Calibrated from the P3-09 EPYC sweep (docs/perf/mps_parallel.md):
@@ -78,6 +85,66 @@ pub(crate) fn thin_svd_par(a: MatRef<'_, Complex>, par: Par) -> Result<ThinSvd, 
     Ok((u, s, v))
 }
 
+/// Thin QR with an explicit `Par`: returns `(thin_Q, thin_R)` with
+/// `thin_Q: m × size` (orthonormal columns), `thin_R: size × n` upper
+/// trapezoidal, `size = min(m, n)`. Mirrors `faer::linalg::solvers::Qr::new`
+/// plus `compute_thin_Q()`/`thin_R()` — which hard-read the global parallelism
+/// (faer-0.24.0 solvers.rs:1115,1196). Takes the input by value: it doubles
+/// as the in-place factorization workspace (the high-level path makes the
+/// same `to_owned()` copy internally).
+// Call sites are rewired in a later P3-13 task; until then only tests use it.
+#[allow(dead_code)]
+pub(crate) fn thin_qr_par(mut qr: Mat<Complex>, par: Par) -> (Mat<Complex>, Mat<Complex>) {
+    let (m, n) = qr.shape();
+    let size = Ord::min(m, n);
+    let block_size = recommended_block_size::<Complex>(m, n);
+    let mut q_coeff = Mat::<Complex>::zeros(block_size, size);
+    let _ = qr_in_place(
+        qr.as_mut(),
+        q_coeff.as_mut(),
+        par,
+        MemStack::new(&mut MemBuffer::new(qr_in_place_scratch::<Complex>(
+            m,
+            n,
+            block_size,
+            par,
+            Default::default(),
+        ))),
+        Default::default(),
+    );
+    // After qr_in_place: R sits in the upper trapezoid, householder vectors
+    // strictly below the diagonal (faer qr/no_pivoting/factor.rs docs).
+    let mut thin_r = Mat::<Complex>::zeros(size, n);
+    for i in 0..size {
+        for j in i..n {
+            thin_r[(i, j)] = qr[(i, j)];
+        }
+    }
+    // Householder basis = unit-diagonal lower trapezoid of the first `size`
+    // columns — exactly faer's split_LU L factor (solvers.rs:955).
+    let mut basis = Mat::<Complex>::zeros(m, size);
+    for j in 0..size {
+        basis[(j, j)] = Complex::new(1.0, 0.0);
+        for i in (j + 1)..m {
+            basis[(i, j)] = qr[(i, j)];
+        }
+    }
+    let mut thin_q = Mat::<Complex>::identity(m, size);
+    apply_block_householder_sequence_on_the_left_in_place_with_conj(
+        basis.as_ref(),
+        q_coeff.as_ref(),
+        Conj::No,
+        thin_q.as_mut(),
+        par,
+        MemStack::new(&mut MemBuffer::new(
+            apply_block_householder_sequence_on_the_left_in_place_scratch::<Complex>(
+                m, block_size, size,
+            ),
+        )),
+    );
+    (thin_q, thin_r)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -133,6 +200,74 @@ mod tests {
         assert!(wants_parallel(1024, 1024));
         assert!(wants_parallel(1024, 2048));
         assert!(wants_parallel(usize::MAX, usize::MAX));
+    }
+
+    /// Same bit-exactness rationale as the SVD test. Covers m>n, m<n, m=n —
+    /// the m<n case exercises the trapezoidal (not triangular) R and the
+    /// size×size householder basis.
+    #[test]
+    fn thin_qr_par_matches_high_level_bit_exact() {
+        for (m, n) in [(8usize, 5usize), (5, 8), (6, 6)] {
+            let a = test_matrix(m, n);
+            let hl = a.qr();
+            let hq = hl.compute_thin_Q();
+            let hr = hl.thin_R();
+            let (q, r) = thin_qr_par(a.to_owned(), faer::get_global_parallelism());
+            let size = Ord::min(m, n);
+            assert_eq!(q.shape(), (m, size));
+            assert_eq!(r.shape(), (size, n));
+            assert_eq!(q.shape(), hq.shape());
+            assert_eq!((r.nrows(), r.ncols()), (hr.nrows(), hr.ncols()));
+            for i in 0..m {
+                for j in 0..size {
+                    assert_eq!(q[(i, j)], hq[(i, j)], "Q[({i},{j})] ({m}x{n})");
+                }
+            }
+            for i in 0..size {
+                for j in 0..n {
+                    assert_eq!(r[(i, j)], hr[(i, j)], "R[({i},{j})] ({m}x{n})");
+                }
+            }
+        }
+    }
+
+    /// Both helpers must produce a valid factorization under either Par —
+    /// reconstructions (which are unique, unlike the factors' phases/signs)
+    /// must match the input to 1e-12. Run via:
+    /// cargo test -p aleph-mps --features parallel
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn helpers_reconstruct_under_seq_and_rayon() {
+        let (m, n) = (48usize, 32usize);
+        let a = test_matrix(m, n);
+        for par in [Par::Seq, Par::rayon(0)] {
+            let (u, s, v) = thin_svd_par(a.as_ref(), par).unwrap();
+            for i in 0..m {
+                for j in 0..n {
+                    let mut acc = Complex::new(0.0, 0.0);
+                    for k in 0..n {
+                        acc += u[(i, k)] * s.as_ref()[k] * v[(j, k)].conj();
+                    }
+                    assert!(
+                        (acc - a[(i, j)]).norm() < 1e-12,
+                        "SVD reconstruction ({i},{j}) under {par:?}"
+                    );
+                }
+            }
+            let (q, r) = thin_qr_par(a.to_owned(), par);
+            for i in 0..m {
+                for j in 0..n {
+                    let mut acc = Complex::new(0.0, 0.0);
+                    for k in 0..n {
+                        acc += q[(i, k)] * r[(k, j)];
+                    }
+                    assert!(
+                        (acc - a[(i, j)]).norm() < 1e-12,
+                        "QR reconstruction ({i},{j}) under {par:?}"
+                    );
+                }
+            }
+        }
     }
 
     #[test]
