@@ -83,6 +83,10 @@ impl MpsState {
 
     /// Per-operation parallelism for a `rows × cols` faer operand: the
     /// size-threshold policy, unless a test override pins it.
+    ///
+    /// gemm call sites key the threshold on the OUTPUT m×n (ignoring the
+    /// contraction dim k), consistent with how the P3-09 sweep counted operand
+    /// elements — a future re-tune on gemm cost m·n·k should revisit this.
     fn choose_par(&self, rows: usize, cols: usize) -> faer::Par {
         self.par_override
             .unwrap_or_else(|| crate::linalg::par_for(rows, cols))
@@ -1168,6 +1172,60 @@ mod tests {
             for site in 0..n as usize {
                 proptest::prop_assert_eq!(s.site_of_qubit[s.qubit_of_site[site] as usize], site);
             }
+        }
+    }
+
+    /// Same circuit under sequential and rayon-parallel faer must agree to
+    /// 1e-10 (not bit-exact: parallel kernels may round differently).
+    ///
+    /// Replaces the former tests/sv_equivalence.rs global-toggle test
+    /// (P3-09): `par_override` forces EVERY op down the chosen path
+    /// regardless of the size threshold — Seq vs rayon as plain arguments,
+    /// no process-global mutation, no cross-test isolation hazard (P3-13).
+    ///
+    /// n=10 with 10 brickwall layers grows the central bond to χ = 16
+    /// (measured; only every second layer crosses the middle cut), so the
+    /// rayon branch sees real multi-column SVD/QR/gemm work.
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn state_invariant_seq_vs_rayon() {
+        use aleph_core::Param;
+        let run = |par: faer::Par| -> Vec<Complex> {
+            let n = 10usize;
+            let mut s = MpsState::new(n, 128);
+            s.par_override = Some(par);
+            let h_of = |q: u32| {
+                crate::gate::matrix_2x2(&GateInstance::new(Gate::H, smallvec![q])).unwrap()
+            };
+            for q in 0..n as u32 {
+                s.apply_1q(q as usize, &h_of(q));
+            }
+            for layer in 0..10u32 {
+                let mut q = layer % 2;
+                while (q as usize) + 1 < n {
+                    let ry = crate::gate::matrix_2x2(&GateInstance::new(
+                        Gate::Ry(Param::Concrete(0.3 + (q + layer * n as u32) as f64 * 0.11)),
+                        smallvec![q],
+                    ))
+                    .unwrap();
+                    s.apply_1q(q as usize, &ry);
+                    let gi = GateInstance::new(Gate::Cnot, smallvec![q, q + 1]);
+                    let u = crate::gate::matrix_4x4(&gi).unwrap();
+                    s.apply_2q(&gi, &u).unwrap();
+                    q += 2;
+                }
+            }
+            // Exercise the lazy router too.
+            let gi = GateInstance::new(Gate::Cnot, smallvec![0u32, 9u32]);
+            let u = crate::gate::matrix_4x4(&gi).unwrap();
+            s.apply_2q(&gi, &u).unwrap();
+            s.dense_statevector()
+        };
+        let a = run(faer::Par::Seq);
+        let b = run(faer::Par::rayon(0));
+        assert_eq!(a.len(), b.len());
+        for (x, y) in a.iter().zip(b.iter()) {
+            assert!((x - y).norm() < 1e-10, "parallelism changed the state");
         }
     }
 }

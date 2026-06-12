@@ -107,7 +107,8 @@ pub(crate) fn thin_qr_par(mut qr: Mat<Complex>, par: Par) -> (Mat<Complex>, Mat<
         Default::default(),
     );
     // After qr_in_place: R sits in the upper trapezoid, householder vectors
-    // strictly below the diagonal (faer qr/no_pivoting/factor.rs docs).
+    // strictly below the diagonal (faer qr/no_pivoting/factor.rs docs)
+    // (return value unused — q_coeff carries the block T factors).
     let mut thin_r = Mat::<Complex>::zeros(size, n);
     for i in 0..size {
         for j in i..n {
