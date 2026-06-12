@@ -1963,8 +1963,8 @@ P3-09 measured the crossover (EPYC 16c): rayon pool is a 1.5×–19× pessimizat
 
 **Acceptance Criteria**
 
-- [ ] With parallelism compiled in and 16 threads, `nn_qaoa` (χ=64) and `wide_bond` χ=128/256 are within noise of the sequential build (no pessimization), and χ=512 retains ≥ the P3-09 1.57× speedup.
-- [ ] ε=0 and Par-invariance oracles pass.
+- [ ] With parallelism compiled in and 16 threads, `nn_qaoa` (χ=64) and `wide_bond` χ=128/256 are within noise of the sequential build (no pessimization), and χ=512 retains ≥ the P3-09 1.57× speedup. — *χ≤256 cells: met; χ=512: 1.52× of the 1.57× retained (structural single-threshold ceiling; see docs/perf/mps_parallel.md § P3-13)*
+- [x] ε=0 and Par-invariance oracles pass.
 
 **Testing Requirements**
 
