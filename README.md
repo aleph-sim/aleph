@@ -33,14 +33,16 @@ RUSTFLAGS="-C target-cpu=native" cargo build --release --workspace
 
 ## Python quickstart
 
-Install the wheel for your platform from the
-[v0.1.0 release](https://github.com/ruslan-splynx/aleph/releases/tag/v0.1.0)
-(PyPI publication is planned; the package name is `aleph-sim`, the module
-is `aleph`):
+Install from PyPI (the package is `aleph-sim`, the module is `aleph`;
+wheels: Linux x86_64 manylinux_2_28 + macOS arm64, Python ≥ 3.12):
 
 ```bash
-pip install <wheel-url-or-path>
+pip install aleph-sim
 ```
+
+Wheels are also attached to each
+[GitHub release](https://github.com/ruslan-splynx/aleph/releases) if you
+prefer a pinned direct download.
 
 ```python
 import aleph
