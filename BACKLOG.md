@@ -2380,8 +2380,8 @@ Deferred by owner decision during P4-08: v0.1 shipped wheels attached to the Git
 **Acceptance Criteria**
 
 - [ ] `pip install aleph-sim` works in a clean venv (Linux x86_64 + macOS arm64, Python ≥ 3.12)
-- [ ] Publication is automated in `release.yml` (no manual twine step)
-- [ ] README/crate-README install instructions updated to prefer PyPI
+- [x] Publication is automated in `release.yml` (no manual twine step)
+- [x] README/crate-README install instructions updated to prefer PyPI
 
 **Testing Requirements**
 
@@ -2547,10 +2547,10 @@ construction; wide-bond reports both sides' truncation metrics with a caveat.
 All measurements on the idle-verified EPYC box.
 
 **Acceptance Criteria**
-- [ ] `docs/perf/parity.md` exists with the full matrix, per-cell ratio, and a ≤ 1.2× verdict per cell.
-- [ ] Both sides of every cell consumed byte-identical circuits (QASM fixtures), same box, same session; versions and configs pinned in the report.
-- [ ] Gap list section explicitly scopes P4.5-06 (or states "no MT gaps").
-- [ ] Iteration-capped grover reported as such; Aer default fusion disclosed.
+- [x] `docs/perf/parity.md` exists with the full matrix, per-cell ratio, and a ≤ 1.2× verdict per cell.
+- [x] Both sides of every cell consumed byte-identical circuits (QASM fixtures), same box, same session; versions and configs pinned in the report.
+- [x] Gap list section explicitly scopes P4.5-06 (or states "no MT gaps").
+- [x] Iteration-capped grover reported as such; Aer default fusion disclosed.
 
 **Testing Requirements** — harness smoke runs at small n locally;
 `cargo bench -p aleph-mps --bench parity -- --test` passes in CI; fixture
@@ -2579,9 +2579,9 @@ tableau, mirroring the P3-11 approach (ADR 0013). Bit-exact vs scalar;
 Stim oracles d=3..11 unchanged.
 
 **Acceptance Criteria**
-- [ ] surface-d11 cycle time improves; target ≤ 1.2× Stim, else documented structural verdict with profile evidence per spec § 5.
-- [ ] Bit-exact scalar↔SIMD equivalence tests; Stim oracle d=3..11 green.
-- [ ] Before/after criterion numbers (EPYC) in the PR.
+- [x] surface-d11 cycle time improves; target ≤ 1.2× Stim, else documented structural verdict with profile evidence per spec § 5.
+- [x] Bit-exact scalar↔SIMD equivalence tests; Stim oracle d=3..11 green.
+- [x] Before/after criterion numbers (EPYC) in the PR.
 
 **Testing Requirements** — existing stim_oracle suites; new unit tests for
 transpose/zero_row/copy_row word-parallel paths on irregular n (not multiples
@@ -2605,7 +2605,7 @@ with a comment linking the report.
 SIMD → threads) and the one-PR-cycle-per-lever timebox from spec § 5 apply.
 
 **Acceptance Criteria**
-- [ ] Every SV-MT/MPS cell > 1.2× in parity.md either brought ≤ 1.2× or closed with a documented structural verdict.
+- [x] Every SV-MT/MPS cell > 1.2× in parity.md either brought ≤ 1.2× or closed with a documented structural verdict.
 
 **Testing Requirements** — standard (unit + property + oracle + before/after
 criterion numbers per change).
@@ -2625,8 +2625,8 @@ update ROADMAP § 7 (phase met/not-met) and CLAUDE.md project status, then tag
 v0.2 and execute PyPI publication (P4-09, #142).
 
 **Acceptance Criteria**
-- [ ] parity.md final: every cell has a verdict; exceptions carry profiling evidence and a deferred ticket.
-- [ ] ROADMAP § 7 + CLAUDE.md updated; v0.2 tagged; P4-09 unblocked/executed.
+- [x] parity.md final: every cell has a verdict; exceptions carry profiling evidence and a deferred ticket.
+- [x] ROADMAP § 7 + CLAUDE.md updated; v0.2 tagged; P4-09 unblocked/executed.
 
 **Testing Requirements** — measurement protocol only (idle-verified EPYC);
 no code changes expected.

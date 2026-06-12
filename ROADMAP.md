@@ -154,7 +154,7 @@ The simulator is evaluated on these algorithms across all phases:
 - Phase 2: ≥12× speedup on 16 cores vs. single-thread.
 - Phase 3: Stabilizer backend handles 1000+ qubit Clifford circuits; MPS handles 100+ qubit shallow circuits.
 - Phase 4: Published benchmark report, GitHub release v0.1.
-- Phase 4.5: every competitive-matrix cell ≤ 1.2× its reference (Aer MT statevector, Aer MPS, Stim), or a documented structural exception with profiling evidence; published in docs/perf/parity.md. v0.2 + PyPI (P4-09) gate on this.
+- Phase 4.5 ✅ **met**: every competitive-matrix cell ≤ 1.2× its reference (Aer MT statevector, Aer MPS, Stim) — 10/10 cells pass with no structural exceptions (worst: ghz_n25 1.03×; stabilizer closed at 0.79× Stim by P4.5-02); published in `docs/perf/parity.md`. v0.2 + PyPI (P4-09) unblocked.
 - Phase 5: GPU backend within 1.5× of cuQuantum standalone.
 - Phase 6: Distributed run on 4+ nodes with reasonable scaling efficiency.
 

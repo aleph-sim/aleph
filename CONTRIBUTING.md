@@ -9,7 +9,7 @@ Thank you for your interest in contributing. This guide covers everything you ne
 **Prerequisites:** Rust ≥ 1.89 (edition 2021). Install via [rustup](https://rustup.rs/).
 
 ```bash
-git clone https://github.com/ruslan-splynx/aleph.git
+git clone https://github.com/aleph-sim/aleph.git
 cd aleph
 cargo build --workspace
 cargo test --workspace
@@ -126,4 +126,4 @@ Correctness first, speed second. A faster simulator that gives wrong answers is 
 
 - [`BACKLOG.md`](BACKLOG.md) — detailed specifications for every open issue.
 - [`ROADMAP.md`](ROADMAP.md) — strategic direction and phase definitions.
-- [Open GitHub Issues](https://github.com/ruslan-splynx/aleph/issues) — pick something tagged `good first issue` or comment on an issue you want to tackle so we can avoid duplicate work.
+- [Open GitHub Issues](https://github.com/aleph-sim/aleph/issues) — pick something tagged `good first issue` or comment on an issue you want to tackle so we can avoid duplicate work.

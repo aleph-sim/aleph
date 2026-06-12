@@ -1,4 +1,9 @@
-# Phase 4.5 competitive parity matrix (P4.5-01 baseline)
+# Phase 4.5 competitive parity matrix (final — P4.5-07)
+
+> Rows 1–2 are the P4.5-01 baseline session (2026-06-11/12); row 3 was
+> re-measured 2026-06-12 after P4.5-02 closed the stabilizer gap. **Every
+> cell is ≤ 1.2× its reference — the Phase 4.5 exit bar is met** (ROADMAP
+> § 7); v0.2 + PyPI publication are unblocked.
 
 **Date:** 2026-06-11/12 (single session, 19:53–03:03 UTC+1).
 **Box:** AMD EPYC 8124P (16c/32t, AVX-512), self-hosted runner host, idle-verified
@@ -8,8 +13,8 @@ measurement window per `gh run list`; last Bench run finished 19:16, session
 started 19:53).
 **Toolchain:** rustc 1.95.0 (59807616e 2026-04-14), `RUSTFLAGS=-C target-cpu=native`;
 Python 3.12.13 (uv venv), qiskit 1.2.4, qiskit-aer 0.15.1 (same pins as the
-Stage-0/P1-14 baseline); Stim row imported from `docs/perf/surface_code.md`
-(Stim 1.16.0), not re-measured.
+Stage-0/P1-14 baseline); Stim row measured same-box 2026-06-12 (Stim 1.16.0,
+P4.5-02 session, criterion vs `stim_timing.py` medians of 50).
 **Bar:** every cell ≤ 1.2× its reference, or a documented structural exception
 (spec § 2: `docs/superpowers/specs/2026-06-11-phase-4.5-cpu-parity-design.md`).
 
@@ -79,26 +84,29 @@ saturates the χ=256 cap on both sides and truncation semantics differ between
 implementations; at 0.16× the caveat cannot flip the verdict, but the cell is
 a *throughput* comparison at equal bond cap, not a proven-equal-fidelity one.
 
-## Row 3 — stabilizer (imported from `docs/perf/surface_code.md`)
+## Row 3 — stabilizer (single-thread both sides, re-measured after P4.5-02)
 
 | workload | qubits | aleph (ms/cycle) | Stim (ms/cycle) | aleph/Stim | verdict (≤ 1.2×) |
 |---|---|---|---|---|---|
-| surface-code d=11 syndrome cycle | 241 | — | — | **1.64×** | ❌ GAP |
+| surface-code d=11 syndrome cycle | 241 | 0.088 | 0.111 | **0.79×** | ✅ PASS |
 
-Measured by P3-11 (single-thread both sides, Stim `TableauSimulator`); see
-`surface_code.md` for the full d=3..11 table. Known levers, deferred from
-P3-11: orientation-transpose (~30% of the d=11 cycle) and `zero_row`/`copy_row`
-(~33%), both still scalar.
+The P4.5-01 baseline imported the P3-11 number (**1.64× — the matrix's one
+gap**). P4.5-02 (#159, `0aa656f`) closed it: word-parallel `zero_row`/
+`copy_row` (the two row helpers were per-bit loops over contiguous words,
+~33% of the cycle) plus an AVX-512 in-register 64×64 transpose kernel
+(~30%) took the d=11 cycle from 180.96 µs to 88.21 µs (2.05×). Re-measured
+2026-06-12, same box, same-session Stim 1.16.0 (median of 50): **aleph is
+now faster than Stim at every distance** (d=3: 0.22×, d=5: 0.48×, d=7:
+0.86×, d=9: 0.81×, d=11: 0.79×). Full table and the post-change profile in
+`docs/perf/surface_code.md` (P4.5-02 addendum).
 
 ## Gap list (scopes P4.5-06)
 
-**No SV-MT or MPS gaps.** Every cell in rows 1–2 is at or below 1.03×, most
-well below 1.0×. **P4.5-06 closes as a no-op** (per its acceptance criteria:
+**No gaps remain.** Every cell in rows 1–3 is at or below 1.03×, most well
+below 1.0×. **P4.5-06 closed as a no-op** (per its acceptance criteria:
 "if the matrix shows no cell > 1.2×, close as no-op with a comment linking
-the report").
-
-The only gap in the matrix is the **stabilizer row (1.64× Stim @ d=11)**,
-already scoped as **P4.5-02** (#155) with identified levers.
+the report"); the one gap the baseline matrix had — the stabilizer row at
+1.64× — was closed by **P4.5-02** (#155/#159), see row 3.
 
 ## Raw data
 
@@ -150,12 +158,14 @@ python run.py --runs 10 --out results-aer-mps.json     # scripts/mps-baseline
 RUSTFLAGS="-C target-cpu=native" cargo bench -p aleph-mps --bench parity
 ```
 
-## Verdict summary
+## Verdict summary (final)
 
 | row | cells | result |
 |---|---|---|
 | SV multi-thread vs Aer | 4 | **4/4 ≤ 1.2×** (3 of 4 faster than Aer) |
 | MPS vs Aer | 5 | **5/5 ≤ 1.2×** (all ≥ 4× faster than Aer) |
-| Stabilizer vs Stim | 1 | **gap: 1.64×** → P4.5-02 (#155) |
+| Stabilizer vs Stim | 1 | **1/1 ≤ 1.2×** (0.79×, faster than Stim — P4.5-02) |
 
-Phase 4.5 exit therefore hinges entirely on **P4.5-02**. P4.5-06 is a no-op.
+**10/10 cells pass; no structural exceptions needed. Phase 4.5 exit met**
+(ROADMAP § 7). P4.5-06 closed as a no-op; P4.5-02 closed the stabilizer gap;
+this report (P4.5-07) finalizes the verdicts and gates v0.2 + PyPI (P4-09).

@@ -1,10 +1,10 @@
 # aleph
 
-[![CI](https://github.com/ruslan-splynx/aleph/actions/workflows/ci.yml/badge.svg)](https://github.com/ruslan-splynx/aleph/actions/workflows/ci.yml)
+[![CI](https://github.com/aleph-sim/aleph/actions/workflows/ci.yml/badge.svg)](https://github.com/aleph-sim/aleph/actions/workflows/ci.yml)
 
 A high-performance quantum circuit simulator written in Rust. Designed for correctness first, with pluggable backends (state vector, MPS, stabilizer), Python bindings, and a path to CUDA acceleration and distributed multi-GPU execution.
 
-> Status: **v0.1** — Phases 0–4 complete: optimized single/multi-threaded CPU state vector, MPS and stabilizer backends, Python bindings, benchmarked against Qiskit Aer and Stim ([docs/perf/v0.1.md](docs/perf/v0.1.md)). Next: Phase 5 (GPU). See [ROADMAP.md](ROADMAP.md) for phases and [BACKLOG.md](BACKLOG.md) for issues.
+> Status: **v0.2** — Phases 0–4.5 complete: optimized single/multi-threaded CPU state vector, MPS and stabilizer backends, Python bindings on PyPI, and **CPU parity vs the references** — every parity-matrix cell ≤ 1.2× Qiskit Aer (MT statevector + MPS) / Stim, most cells faster ([docs/perf/parity.md](docs/perf/parity.md)). Next: Phase 5 (GPU). See [ROADMAP.md](ROADMAP.md) for phases and [BACKLOG.md](BACKLOG.md) for issues.
 
 ## Quick start
 
@@ -33,14 +33,16 @@ RUSTFLAGS="-C target-cpu=native" cargo build --release --workspace
 
 ## Python quickstart
 
-Install the wheel for your platform from the
-[v0.1.0 release](https://github.com/ruslan-splynx/aleph/releases/tag/v0.1.0)
-(PyPI publication is planned; the package name is `aleph-sim`, the module
-is `aleph`):
+Install from PyPI (the package is `aleph-sim`, the module is `aleph`;
+wheels: Linux x86_64 manylinux_2_28 + macOS arm64, Python ≥ 3.12):
 
 ```bash
-pip install <wheel-url-or-path>
+pip install aleph-sim
 ```
+
+Wheels are also attached to each
+[GitHub release](https://github.com/aleph-sim/aleph/releases) if you
+prefer a pinned direct download.
 
 ```python
 import aleph
@@ -74,7 +76,7 @@ print(aleph.run(aleph.Circuit.from_qasm(qasm), backend="mps", seed=0).counts())
 
 ## Performance
 
-On structured algorithms (GHZ, QFT, Grover, QPE, VQE, QAOA), aleph's state-vector backend beats single-thread Qiskit Aer at every measured size. Honest caveats: structure-less random circuits (Sycamore-style) are 3–5× slower than Aer, and Stim wins on surface codes at scale (1.64× at d=11). Full numbers: [docs/perf/v0.1.md](docs/perf/v0.1.md).
+v0.2 closes the CPU-parity matrix: at 16 threads with default settings on both sides, aleph's state-vector backend beats Qiskit Aer on QFT (0.81×), Grover (0.60×) and random brickwall (0.59×) at n=25 (GHZ is an allocation-bound tie at 1.03×); aleph-mps is 4.4–14× faster than Aer MPS on every measured workload; and the stabilizer backend now beats Stim on surface-code cycles at every measured distance (0.79× at d=11, after being 1.64× behind in v0.1). Honest caveats: the Grover cell is the iteration-capped fixture, distances beyond d=11 are unmeasured, and the v0.1 single-thread report ([docs/perf/v0.1.md](docs/perf/v0.1.md)) showed raw unfused random circuits 3–5× behind Aer — fusion in the default pipeline is what closes that gap. Full matrix + protocol: [docs/perf/parity.md](docs/perf/parity.md).
 
 ## Using the `aleph` binary
 

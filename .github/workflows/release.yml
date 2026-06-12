@@ -5,6 +5,12 @@ name: Release
 # verification). workflow_dispatch allows artifact smoke-tests from a
 # branch — the release job is tag-gated and is skipped on dispatch.
 #
+# PyPI publication (P4-09): trusted publishing (OIDC), no long-lived
+# token. Dry-run: dispatch with publish_testpypi=true builds wheels from
+# the current ref and uploads them to TestPyPI. Real publication runs
+# only when the owner PUBLISHES the GitHub release (release: published)
+# — the draft stage keeps the manual verification gate.
+#
 # GitHub-hosted runners ONLY: the self-hosted runner is reserved for
 # CI/bench (see ci.yml / bench.yml).
 
@@ -12,6 +18,13 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      publish_testpypi:
+        description: "Upload the built wheels to TestPyPI (dry-run for PyPI publication)"
+        type: boolean
+        default: false
+  release:
+    types: [published]
 
 permissions:
   contents: write
@@ -19,6 +32,9 @@ permissions:
 jobs:
   build:
     name: build ${{ matrix.target }}
+    # Skipped on release-published: wheels were already built and attached
+    # at tag time; publish-pypi downloads them from the release itself.
+    if: github.event_name != 'release'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     strategy:
@@ -92,7 +108,7 @@ jobs:
   release:
     name: draft release
     needs: build
-    if: startsWith(github.ref, 'refs/tags/')
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -107,3 +123,52 @@ jobs:
           files: |
             artifacts/**/*.tar.gz
             artifacts/**/*.whl
+
+  publish-testpypi:
+    name: publish to TestPyPI (dry-run)
+    needs: build
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_testpypi
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: testpypi
+    permissions:
+      id-token: write # OIDC trusted publishing
+      contents: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Collect wheels
+        # The build artifact keeps the dist/ subdir; flatten only wheels
+        # (the CLI tar.gz must not reach the PyPI upload).
+        run: |
+          mkdir -p dist
+          find artifacts -name '*.whl' -exec cp {} dist/ \;
+          ls -l dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          packages-dir: dist
+
+  publish-pypi:
+    name: publish to PyPI
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: pypi
+    permissions:
+      id-token: write # OIDC trusted publishing
+      contents: read
+    steps:
+      - name: Download wheels from the published release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p dist
+          gh release download "${{ github.event.release.tag_name }}" \
+            --repo "$GITHUB_REPOSITORY" --pattern '*.whl' --dir dist
+          ls -l dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
