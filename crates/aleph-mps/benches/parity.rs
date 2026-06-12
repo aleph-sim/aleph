@@ -1,6 +1,8 @@
 //! P4.5-01 parity bench: aleph-mps on the byte-identical QASM fixtures that
 //! `scripts/mps-baseline/run.py` times through Aer matrix_product_state.
-//! Sequential default build (no `parallel` feature) — default-vs-default.
+//! Default-vs-default: since P3-13 the default build compiles rayon in, but
+//! the parity workloads stay sequential via the size threshold — their largest
+//! operand (512×512 at χ=256) is below `linalg::PAR_MIN_ELEMS`.
 //! χ per family matches the harness's CHI table; brickwork and long_range are
 //! exact at their χ (no truncation on either side, fidelity equal by
 //! construction); wide_bond saturates the cap (truncation caveat in

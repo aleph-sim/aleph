@@ -25,7 +25,10 @@ default = ["parallel"]
 # control plane) and only wide-bond operands (> 2^18 elements, chi ~ 512)
 # enter the rayon pool (1.52x @16T on EPYC at chi=512). Thread count:
 # RAYON_NUM_THREADS. Disable with default-features = false for a rayon-free
-# build.
+# build. Unification caveat for external users: enabling this feature compiles
+# faer/rayon into the whole build graph, so OTHER crates' direct high-level
+# faer calls will see a rayon global default — only aleph-mps's own calls are
+# size-thresholded.
 parallel = ["faer/rayon"]
 
 [dev-dependencies]

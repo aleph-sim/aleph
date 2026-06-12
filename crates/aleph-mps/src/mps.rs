@@ -35,7 +35,9 @@ pub struct MpsState {
     /// Test-only override forcing every faer op down one `Par` regardless of
     /// the size threshold — lets the Par-invariance oracle compare `Seq` vs
     /// `rayon` as plain arguments instead of toggling faer's process global
-    /// (P3-13).
+    /// (P3-13). cfg(test)-gated so production code cannot bypass the
+    /// size-threshold policy.
+    #[cfg(test)]
     pub(crate) par_override: Option<faer::Par>,
 }
 
@@ -57,6 +59,7 @@ impl MpsState {
             qubit_of_site: (0..n as u32).collect(),
             site_of_qubit: (0..n).collect(),
             swaps_applied: 0,
+            #[cfg(test)]
             par_override: None,
         }
     }
@@ -88,8 +91,11 @@ impl MpsState {
     /// contraction dim k), consistent with how the P3-09 sweep counted operand
     /// elements — a future re-tune on gemm cost m·n·k should revisit this.
     fn choose_par(&self, rows: usize, cols: usize) -> faer::Par {
-        self.par_override
-            .unwrap_or_else(|| crate::linalg::par_for(rows, cols))
+        #[cfg(test)]
+        if let Some(par) = self.par_override {
+            return par;
+        }
+        crate::linalg::par_for(rows, cols)
     }
 
     /// Apply a 1q unitary to logical qubit `q` (routed to its current site).

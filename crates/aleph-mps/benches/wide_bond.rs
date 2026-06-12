@@ -63,7 +63,7 @@ fn bench(cr: &mut Criterion) {
     // runner. Opt in explicitly:
     // WIDE_BOND=1 [WIDE_BOND_CHI512=1] RAYON_NUM_THREADS=N \
     //   cargo bench -p aleph-mps --bench wide_bond
-    if std::env::var_os("WIDE_BOND").is_none() {
+    if std::env::var("WIDE_BOND").as_deref() != Ok("1") {
         eprintln!("wide_bond: skipped (set WIDE_BOND=1 to run the sweep)");
         return;
     }
@@ -78,7 +78,7 @@ fn bench(cr: &mut Criterion) {
             })
         });
     }
-    if std::env::var_os("WIDE_BOND_CHI512").is_some() {
+    if std::env::var("WIDE_BOND_CHI512").as_deref() == Ok("1") {
         let c = brickwall(26, 24);
         grp.bench_function("n26_chi512_d24", |b| {
             b.iter(|| {

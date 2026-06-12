@@ -2050,7 +2050,7 @@ P3-09 /code-review reuse finding: the MPS copy is scatter-based with the inverse
 Deduplicate the circuit fixtures multiplied across the workspace: ≥6 private brickwall builders (incl. two added by P3-09 in `wide_bond.rs` and the thread-invariance test), the 4× copy-pasted `g()` GateInstance helper inside aleph-mps alone, and the ad-hoc ±0.02 empirical-distribution check that re-implements aleph-oracle's calibrated 5σ `assert_distribution_close`.
 
 **Context**
-P3-09 /code-review reuse finding: the `wide_bond` χ-saturation constants (L1=16, L2=20) are calibrated against its local builder with no shared test — editing the builder silently invalidates the saturation claim. `aleph-benches` (benches/src/lib.rs) already hosts `random_brickwall_circuit` and the other Tier-1 builders; aleph-oracle's distribution helper is private.
+P3-09 /code-review reuse finding: the `wide_bond` χ-saturation constants (L1=16, L2=20) are calibrated against its local builder with no shared test — editing the builder silently invalidates the saturation claim. `aleph-benches` (benches/src/lib.rs) already hosts `random_brickwall_circuit` and the other Tier-1 builders; aleph-oracle's distribution helper is private. Note: P3-13 moved the thread-invariance brickwall into `mps.rs::state_invariant_seq_vs_rayon` as a hand-rolled `MpsState` gate loop (to use the test-only `par_override` seam), so the unification pass must restructure that test, not just swap a builder call.
 
 **Technical Details**
 

@@ -48,7 +48,9 @@ wins growing with distance.
 The 2q hot path (theta gemm, truncated SVD, thin-QR center moves, bond absorption) runs
 on faer; the `parallel` cargo feature enables faer's rayon backend.
 
-`wide_bond` brickwall, `--features parallel`, `RAYON_NUM_THREADS` sweep:
+`wide_bond` brickwall, `--features parallel`, `RAYON_NUM_THREADS` sweep
+\[editor's note: since P3-13 the bench is runtime-gated — prefix the command
+with `WIDE_BOND=1` (and `WIDE_BOND_CHI512=1` for the χ=512 cell) to reproduce\]:
 
 | threads | EPYC n20 χ128 | EPYC n24 χ256 | EPYC n26 χ512 | Ryzen n20 χ128 | Ryzen n24 χ256 |
 |---|---|---|---|---|---|
@@ -178,3 +180,12 @@ rewrite itself. P3-14 (scratch arena) is the ticket aimed at this class.
   ~1–5 % smaller `long_range` microcell times) use
   `aleph-mps = { ..., default-features = false }`; CI keeps that configuration
   compiling and green.
+
+### Re-tuning `PAR_MIN_ELEMS`
+
+Edit the const in `crates/aleph-mps/src/linalg.rs`, then re-measure the win cell with
+`WIDE_BOND=1 WIDE_BOND_CHI512=1 RAYON_NUM_THREADS=16 cargo bench -p aleph-mps --bench
+wide_bond` AND re-run the guard cells — `nn_qaoa` against a `--no-default-features`
+`--save-baseline`, plus the `wide_bond` χ=128/χ=256 cells against their t=1 rows — to
+confirm the new threshold introduces no small-cell pessimization. Note the crossover
+above was measured at 16T on EPYC only; it is thread-count- and machine-dependent.

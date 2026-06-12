@@ -32,6 +32,14 @@ print(result.counts())        # {'00': ~512, '11': ~512}
 print(result.statevector())   # 4 amplitudes
 ```
 
+## Threads
+
+Since v0.3 (P3-13) the wheels link rayon: wide-bond MPS operations use a
+thread pool sized to the visible CPUs (small-bond operations always run
+sequentially via a size threshold). Set `RAYON_NUM_THREADS` to bound the pool,
+e.g. in cgroup-limited containers where the visible CPU count overstates the
+quota.
+
 ## Links
 
 - Repository: <https://github.com/aleph-sim/aleph>

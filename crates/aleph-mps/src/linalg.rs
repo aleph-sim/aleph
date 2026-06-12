@@ -4,6 +4,11 @@
 //! caller in the build graph (feature unification) — a 1.5×–19× pessimization
 //! at χ ≤ 256 (docs/perf/mps_parallel.md). These wrappers take `Par` per call
 //! so each operation chooses from its own operand size instead.
+//!
+//! The replicas are pinned bit-exact against faer's high-level path by the
+//! tests below — re-verify on any faer version bump (Cargo.lock pins 0.24.0).
+//! They should be deleted in favor of the upstream API if faer grows per-call
+//! `Par` on its high-level solvers.
 
 use crate::MpsError;
 use aleph_core::Complex;
@@ -41,6 +46,9 @@ pub(crate) fn wants_parallel(rows: usize, cols: usize) -> bool {
 /// (rayon when the `parallel` feature is compiled in) above the threshold,
 /// `Par::Seq` below it. Without the feature the global is always `Par::Seq`,
 /// so this degrades to a no-op.
+// The one sanctioned production read of faer's global: par_for IS the policy
+// the crate-level clippy.toml disallowed-methods fence funnels everything into.
+#[allow(clippy::disallowed_methods)]
 pub(crate) fn par_for(rows: usize, cols: usize) -> Par {
     if wants_parallel(rows, cols) {
         faer::get_global_parallelism()
@@ -112,24 +120,29 @@ pub(crate) fn thin_qr_par(mut qr: Mat<Complex>, par: Par) -> (Mat<Complex>, Mat<
     // After qr_in_place: R sits in the upper trapezoid, householder vectors
     // strictly below the diagonal (faer qr/no_pivoting/factor.rs docs)
     // (return value unused — q_coeff carries the block T factors).
+    // Extraction walks j-outer/i-inner: faer Mat storage is column-major, so
+    // the inner loop stays within one source column instead of striding by m.
     let mut thin_r = Mat::<Complex>::zeros(size, n);
-    for i in 0..size {
-        for j in i..n {
+    for j in 0..n {
+        for i in 0..Ord::min(j + 1, size) {
             thin_r[(i, j)] = qr[(i, j)];
         }
     }
-    // Householder basis = unit-diagonal lower trapezoid of the first `size`
-    // columns — exactly faer's split_LU L factor (solvers.rs:955).
-    let mut basis = Mat::<Complex>::zeros(m, size);
+    // R is extracted, so `qr` is dead storage: reuse it in place as the
+    // householder basis — zero the strict upper triangle of the first `size`
+    // columns and set a unit diagonal, exactly faer's split_LU L-factor
+    // convention (solvers.rs:955) — no extra m×size allocation. The apply
+    // kernel treats the diagonal as implicitly unit; we match faer's stored
+    // convention defensively.
     for j in 0..size {
-        basis[(j, j)] = Complex::new(1.0, 0.0);
-        for i in (j + 1)..m {
-            basis[(i, j)] = qr[(i, j)];
+        for i in 0..j {
+            qr[(i, j)] = Complex::new(0.0, 0.0);
         }
+        qr[(j, j)] = Complex::new(1.0, 0.0);
     }
     let mut thin_q = Mat::<Complex>::identity(m, size);
     apply_block_householder_sequence_on_the_left_in_place_with_conj(
-        basis.as_ref(),
+        qr.as_ref().subcols(0, size),
         q_coeff.as_ref(),
         Conj::No,
         thin_q.as_mut(),
@@ -143,6 +156,9 @@ pub(crate) fn thin_qr_par(mut qr: Mat<Complex>, par: Par) -> (Mat<Complex>, Mat<
     (thin_q, thin_r)
 }
 
+// Tests intentionally read the global / call the high-level solvers: they pin
+// the replicas bit-exact against faer's own path under the same Par.
+#[allow(clippy::disallowed_methods)]
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -165,7 +181,18 @@ mod tests {
     /// replication of an identical deterministic code path.)
     #[test]
     fn thin_svd_par_matches_high_level_bit_exact() {
-        for (m, n) in [(8usize, 5usize), (5, 8), (6, 6), (1, 2), (2, 1), (1, 1)] {
+        // (160, 128) / (128, 160) push past the blocked-householder cutoff so
+        // the production-sized (large-bond) code paths are compared too.
+        for (m, n) in [
+            (8usize, 5usize),
+            (5, 8),
+            (6, 6),
+            (1, 2),
+            (2, 1),
+            (1, 1),
+            (160, 128),
+            (128, 160),
+        ] {
             let a = test_matrix(m, n);
             let hl = a.thin_svd().unwrap();
             let (u, s, v) = thin_svd_par(a.as_ref(), faer::get_global_parallelism()).unwrap();
@@ -208,7 +235,18 @@ mod tests {
     /// size×size householder basis.
     #[test]
     fn thin_qr_par_matches_high_level_bit_exact() {
-        for (m, n) in [(8usize, 5usize), (5, 8), (6, 6), (1, 2), (2, 1), (1, 1)] {
+        // (160, 128) / (128, 160) push past the blocked-householder cutoff so
+        // the production-sized (large-bond) code paths are compared too.
+        for (m, n) in [
+            (8usize, 5usize),
+            (5, 8),
+            (6, 6),
+            (1, 2),
+            (2, 1),
+            (1, 1),
+            (160, 128),
+            (128, 160),
+        ] {
             let a = test_matrix(m, n);
             let hl = a.qr();
             let hq = hl.compute_thin_Q();
