@@ -38,8 +38,6 @@ pub(crate) fn wants_parallel(rows: usize, cols: usize) -> bool {
 /// (rayon when the `parallel` feature is compiled in) above the threshold,
 /// `Par::Seq` below it. Without the feature the global is always `Par::Seq`,
 /// so this degrades to a no-op.
-// Call sites are rewired in a later P3-13 task; until then only tests use it.
-#[allow(dead_code)]
 pub(crate) fn par_for(rows: usize, cols: usize) -> Par {
     if wants_parallel(rows, cols) {
         faer::get_global_parallelism()
@@ -57,8 +55,6 @@ pub(crate) type ThinSvd = (Mat<Complex>, Diag<Complex>, Mat<Complex>);
 /// `faer::linalg::solvers::Svd::new_thin` — which hard-reads the global
 /// parallelism (faer-0.24.0 solvers.rs:1344) — for the canonical c64 element
 /// type (no conjugation pass needed: `aleph_core::Complex == faer::c64`).
-// Call sites are rewired in a later P3-13 task; until then only tests use it.
-#[allow(dead_code)]
 pub(crate) fn thin_svd_par(a: MatRef<'_, Complex>, par: Par) -> Result<ThinSvd, MpsError> {
     let (m, n) = a.shape();
     let size = Ord::min(m, n);
@@ -92,8 +88,6 @@ pub(crate) fn thin_svd_par(a: MatRef<'_, Complex>, par: Par) -> Result<ThinSvd, 
 /// (faer-0.24.0 solvers.rs:1115,1196). Takes the input by value: it doubles
 /// as the in-place factorization workspace (the high-level path makes the
 /// same `to_owned()` copy internally).
-// Call sites are rewired in a later P3-13 task; until then only tests use it.
-#[allow(dead_code)]
 pub(crate) fn thin_qr_par(mut qr: Mat<Complex>, par: Par) -> (Mat<Complex>, Mat<Complex>) {
     let (m, n) = qr.shape();
     let size = Ord::min(m, n);
