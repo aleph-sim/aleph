@@ -20,14 +20,15 @@ use faer::linalg::svd::{svd, svd_scratch, ComputeSvdVectors};
 use faer::{Conj, Mat, MatRef, Par};
 
 /// Minimum operand element count (`rows · cols`) for the rayon pool to pay
-/// off. Calibrated on EPYC 16c: χ=256 ops (largest 512×512 = 262 144
-/// elements) are a measured rayon pessimization and must stay sequential,
-/// while at χ=512 the win requires parallelizing not just the saturated
-/// theta/SVD (1024×1024) but also the thin-QR (1024×512) and absorption
-/// gemm (512×1024) operands at exactly 2^19 = 524 288 elements — the first
-/// P3-13 sweep with a 2^20 threshold starved them and retained only 1.23×
-/// of P3-09's 1.57× @16T (docs/perf/mps_parallel.md).
-const PAR_MIN_ELEMS: usize = 1 << 19;
+/// off: strictly above the largest measured-pessimization operand. EPYC 16c
+/// calibration (docs/perf/mps_parallel.md): every op in the χ=256 cell
+/// (largest 512×512 = 2^18 elements) is a measured rayon pessimization and
+/// must stay sequential, while the χ=512 win needs the full family above
+/// it — saturated theta/SVD (1024×1024), thin-QR/absorption (1024×512,
+/// 512×1024), AND the bond-ramp band in (2^18, 2^19) (e.g. 768×512): the
+/// 2^20 threshold retained only 1.23× and 2^19 only 1.48× of P3-09's
+/// all-parallel 1.57× @16T.
+const PAR_MIN_ELEMS: usize = (1 << 18) + 1;
 
 /// Whether a `rows × cols` operand is large enough to amortize fork-join
 /// overhead (feature-independent threshold arithmetic, unit-tested directly).
@@ -193,7 +194,9 @@ mod tests {
         assert!(!wants_parallel(512, 512));
         // Saturating, not panicking.
         assert!(!wants_parallel(0, usize::MAX));
-        // χ=512 QR/absorb operands (= PAR_MIN_ELEMS exactly) and up may parallelize.
+        // Strictly above the χ=256 family — the bond-ramp band parallelizes.
+        assert!(wants_parallel(513, 512));
+        // χ=512 QR/absorb operands and up may parallelize.
         assert!(wants_parallel(1024, 512));
         assert!(wants_parallel(1024, 1024));
         assert!(wants_parallel(1024, 2048));
