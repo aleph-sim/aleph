@@ -98,12 +98,15 @@ impl BitGrid {
     }
 
     /// Blocked bit-transpose: `rows × cols` → `cols × rows` (out bit `(c, r)` =
-    /// `self` bit `(r, c)`). Processes 64×64 bit blocks via [`transpose64`];
-    /// edge blocks are zero-padded (BitGrid guarantees out-of-range high bits
-    /// are zero). Bit-exact with the scalar reference (proved by
-    /// `blocked_transpose_matches_scalar`). Replaces the prior O(rows·cols)
-    /// get/set form — this is the orientation-bridge hot path.
+    /// `self` bit `(r, c)`). Processes 64×64 bit blocks via a per-call-
+    /// dispatched kernel ([`transpose64`] scalar, or [`transpose64_avx512`]
+    /// when the CPU has AVX-512); edge blocks are zero-padded (BitGrid
+    /// guarantees out-of-range high bits are zero). Bit-exact with the scalar
+    /// reference (proved by `blocked_transpose_matches_scalar`). Replaces the
+    /// prior O(rows·cols) get/set form — this is the orientation-bridge hot
+    /// path.
     pub(crate) fn transpose(&self) -> BitGrid {
+        let kernel = transpose64_kernel();
         let rows = self.rows();
         let cols = self.cols;
         let mut out = BitGrid::zeros(cols, rows);
@@ -122,7 +125,7 @@ impl BitGrid {
                 for (k, slot) in tmp.iter_mut().enumerate().take(rmax - r0) {
                     *slot = self.words[(r0 + k) * src_stride + cb];
                 }
-                transpose64(&mut tmp);
+                kernel(&mut tmp);
                 // Store: out row (c0+k) word at block rb = tmp[k].
                 for (k, &val) in tmp.iter().enumerate().take(cmax - c0) {
                     out.words[(c0 + k) * dst_stride + rb] = val;
@@ -192,6 +195,101 @@ fn transpose64(a: &mut [u64; 64]) {
         }
         j >>= 1;
         m ^= m << j;
+    }
+}
+
+/// Pick the 64×64 block kernel once per transpose: AVX-512 when available
+/// (`is_x86_feature_detected!` caches the cpuid result), scalar delta-swap
+/// otherwise and on non-x86.
+fn transpose64_kernel() -> fn(&mut [u64; 64]) {
+    #[cfg(target_arch = "x86_64")]
+    {
+        if std::is_x86_feature_detected!("avx512f") {
+            // SAFETY: avx512f verified present immediately above. The
+            // non-capturing closure coerces to `fn`.
+            return |a| unsafe { transpose64_avx512(a) };
+        }
+    }
+    transpose64
+}
+
+/// AVX-512 64×64 bit-transpose. The whole block (64 u64 = 8 zmm) is held in
+/// registers and the delta-swap network of [`transpose64`] (Warren, Hacker's
+/// Delight 2nd ed. §7-3) runs vectorized:
+/// - j = 32/16/8: rows `k` and `k+j` sit at the same lane of vectors `k/8`
+///   and `k/8 + j/8` — vector-pair delta-swap, no shuffles.
+/// - j = 4/2/1: the partner row is `lane ^ j` within one vector — a lane
+///   permute materializes partners; mask-blends select each pair's low row
+///   `u` and high row `d` so one delta-swap expression updates all lanes
+///   (low lanes get `t << j`, high lanes get `t`, exactly the scalar loop).
+///
+/// Shift counts go through `s{r,l}lv` with a `set1` vector so the levels stay
+/// table-driven (the immediate-shift intrinsics need const generics).
+/// Bit-exact with [`transpose64`]
+/// (`transpose64_avx512_matches_scalar_when_available`).
+///
+/// # Safety
+/// Caller must ensure `avx512f` is available (checked by
+/// [`transpose64_kernel`]).
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f")]
+unsafe fn transpose64_avx512(a: &mut [u64; 64]) {
+    use core::arch::x86_64::*;
+    let p = a.as_mut_ptr();
+    let mut v = [_mm512_setzero_si512(); 8];
+    for (i, slot) in v.iter_mut().enumerate() {
+        *slot = _mm512_loadu_si512(p.add(8 * i) as *const __m512i);
+    }
+    // Cross-vector levels: pair distance d = j/8 vectors.
+    for &(j, m, d) in &[
+        (32u64, 0x0000_0000_FFFF_FFFFu64, 4usize),
+        (16, 0x0000_FFFF_0000_FFFF, 2),
+        (8, 0x00FF_00FF_00FF_00FF, 1),
+    ] {
+        let cnt = _mm512_set1_epi64(j as i64);
+        let mask = _mm512_set1_epi64(m as i64);
+        let mut k = 0usize;
+        while k < 8 {
+            if k & d == 0 {
+                let lo = v[k];
+                let hi = v[k + d];
+                let t = _mm512_and_si512(_mm512_xor_si512(_mm512_srlv_epi64(lo, cnt), hi), mask);
+                v[k + d] = _mm512_xor_si512(hi, t);
+                v[k] = _mm512_xor_si512(lo, _mm512_sllv_epi64(t, cnt));
+            }
+            k += 1;
+        }
+    }
+    // Within-vector levels: partner = lane ^ j; `hm` marks each pair's high
+    // lane.
+    for &(j, m, hm, idx) in &[
+        (
+            4u64,
+            0x0F0F_0F0F_0F0F_0F0Fu64,
+            0b1111_0000u8,
+            [4i64, 5, 6, 7, 0, 1, 2, 3],
+        ),
+        (2, 0x3333_3333_3333_3333, 0b1100_1100, [2, 3, 0, 1, 6, 7, 4, 5]),
+        (1, 0x5555_5555_5555_5555, 0b1010_1010, [1, 0, 3, 2, 5, 4, 7, 6]),
+    ] {
+        let cnt = _mm512_set1_epi64(j as i64);
+        let mask = _mm512_set1_epi64(m as i64);
+        let perm = _mm512_setr_epi64(
+            idx[0], idx[1], idx[2], idx[3], idx[4], idx[5], idx[6], idx[7],
+        );
+        for vec in v.iter_mut() {
+            let w = _mm512_permutexvar_epi64(perm, *vec);
+            let u = _mm512_mask_blend_epi64(hm, *vec, w); // pair's low row
+            let d = _mm512_mask_blend_epi64(hm, w, *vec); // pair's high row
+            let t = _mm512_and_si512(_mm512_xor_si512(_mm512_srlv_epi64(u, cnt), d), mask);
+            *vec = _mm512_xor_si512(
+                *vec,
+                _mm512_mask_blend_epi64(hm, _mm512_sllv_epi64(t, cnt), t),
+            );
+        }
+    }
+    for (i, vec) in v.iter().enumerate() {
+        _mm512_storeu_si512(p.add(8 * i) as *mut __m512i, *vec);
     }
 }
 
@@ -391,6 +489,39 @@ mod tests {
                 for c in 0..cols {
                     assert_eq!(tt.get(r, c), g.get(r, c), "roundtrip ({r},{c})");
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn transpose64_avx512_matches_scalar_when_available() {
+        #[cfg(target_arch = "x86_64")]
+        {
+            if !std::is_x86_feature_detected!("avx512f") {
+                eprintln!("skipping transpose64_avx512 test: avx512f unavailable");
+                return;
+            }
+            let mut rng = 0xABCD_EF01_2345_6789u64;
+            let mut next = || {
+                rng ^= rng << 13;
+                rng ^= rng >> 7;
+                rng ^= rng << 17;
+                rng
+            };
+            for case in 0..64 {
+                let mut a = [0u64; 64];
+                match case {
+                    0 => {}                  // all-zero
+                    1 => a = [u64::MAX; 64], // all-one
+                    2 => a[63] = 1u64 << 63, // lone corner bit
+                    3 => a[0] = 1,           // other corner
+                    _ => a.iter_mut().for_each(|w| *w = next()),
+                }
+                let mut want = a;
+                super::transpose64(&mut want);
+                let mut got = a;
+                unsafe { super::transpose64_avx512(&mut got) };
+                assert_eq!(got, want, "case {case}");
             }
         }
     }
