@@ -17,10 +17,15 @@ thiserror = { workspace = true }
 faer = { version = "0.24.0", default-features = false, features = ["linalg", "std"] }
 
 [features]
-# faer's rayon-parallel kernels. Off by default: parallelism only wins at
-# large bond dimensions (chi >= ~512 measured on EPYC 16c; 1.54x at chi=512),
-# and is a large pessimization at typical chi <= 256. Enable for
-# wide-bond workloads and control threads via RAYON_NUM_THREADS.
+default = ["parallel"]
+# faer's rayon-parallel kernels. Safe ON by default since P3-13: every faer
+# call chooses Par per-operation from the measured size threshold
+# (src/linalg.rs PAR_MIN_ELEMS), so small-bond ops always run sequentially
+# (chi <= 256 was a 1.5x-19x pessimization under the old process-global
+# control plane) and only wide-bond operands (> 2^18 elements, chi ~ 512)
+# enter the rayon pool (1.52x @16T on EPYC at chi=512). Thread count:
+# RAYON_NUM_THREADS. Disable with default-features = false for a rayon-free
+# build.
 parallel = ["faer/rayon"]
 
 [dev-dependencies]
@@ -38,11 +43,11 @@ harness = false
 name = "long_range"
 harness = false
 
-# NOTE: `required-features` makes `cargo bench --workspace` skip this bench
-# silently (the P1-09 lesson) — deliberate here: its purpose is the parallel
-# thread sweep, and the always-on cells would otherwise add minutes of
-# saturating CPU to every push-to-main Bench run on the shared EPYC runner.
-# Run it explicitly: cargo bench -p aleph-mps --features parallel --bench wide_bond
+# NOTE: `parallel` is a default feature since P3-13, so required-features no
+# longer skips this bench in `cargo bench --workspace`. A runtime env guard
+# (WIDE_BOND=1) inside the bench keeps the sweep cells out of push-to-main
+# Bench runs on the shared EPYC runner; WIDE_BOND_CHI512=1 additionally
+# enables the ~47 s/iter chi=512 cell.
 [[bench]]
 name = "wide_bond"
 harness = false
