@@ -1,6 +1,6 @@
 # aleph
 
-[![CI](https://github.com/ruslan-splynx/aleph/actions/workflows/ci.yml/badge.svg)](https://github.com/ruslan-splynx/aleph/actions/workflows/ci.yml)
+[![CI](https://github.com/aleph-sim/aleph/actions/workflows/ci.yml/badge.svg)](https://github.com/aleph-sim/aleph/actions/workflows/ci.yml)
 
 A high-performance quantum circuit simulator written in Rust. Designed for correctness first, with pluggable backends (state vector, MPS, stabilizer), Python bindings, and a path to CUDA acceleration and distributed multi-GPU execution.
 
@@ -41,7 +41,7 @@ pip install aleph-sim
 ```
 
 Wheels are also attached to each
-[GitHub release](https://github.com/ruslan-splynx/aleph/releases) if you
+[GitHub release](https://github.com/aleph-sim/aleph/releases) if you
 prefer a pinned direct download.
 
 ```python

@@ -29,7 +29,7 @@ edition = "2021"
 rust-version = "1.89"
 version = "0.2.0"
 license = "MIT"
-repository = "https://github.com/ruslan-splynx/aleph"
+repository = "https://github.com/aleph-sim/aleph"
 authors = ["aleph contributors"]
 
 [workspace.dependencies]

@@ -5,7 +5,7 @@ pluggable backends: full state-vector (SIMD + multi-threaded), MPS (matrix
 product state), and stabilizer (tableau). It is benchmarked against Qiskit Aer
 (state vector + MPS) and Stim (stabilizer) — every parity-matrix cell is at or
 below 1.2× its reference, most well below 1× (aleph faster); see the
-[parity report](https://github.com/ruslan-splynx/aleph/blob/main/docs/perf/parity.md).
+[parity report](https://github.com/aleph-sim/aleph/blob/main/docs/perf/parity.md).
 
 ## Install
 
@@ -16,7 +16,7 @@ pip install aleph-sim
 The package is named `aleph-sim` (the name `aleph` is taken on PyPI); the
 Python module is still `import aleph`. Wheels: Linux x86_64 (manylinux_2_28)
 and macOS arm64, Python ≥ 3.12 (abi3). They are also attached to each
-[GitHub release](https://github.com/ruslan-splynx/aleph/releases).
+[GitHub release](https://github.com/aleph-sim/aleph/releases).
 
 ## Quickstart
 
@@ -34,5 +34,5 @@ print(result.statevector())   # 4 amplitudes
 
 ## Links
 
-- Repository: <https://github.com/ruslan-splynx/aleph>
-- Benchmarks: <https://github.com/ruslan-splynx/aleph/blob/main/docs/perf/v0.1.md>
+- Repository: <https://github.com/aleph-sim/aleph>
+- Benchmarks: <https://github.com/aleph-sim/aleph/blob/main/docs/perf/parity.md>

@@ -8,7 +8,7 @@ authoritative.  The authoritative baseline for Phase-1 perf claims is
 the [self-hosted Linux x86_64 runner] (`aleph-bench-server`), tracked
 continuously on [bencher.dev] via `.github/workflows/bench.yml`.
 
-[self-hosted Linux x86_64 runner]: https://github.com/ruslan-splynx/aleph/actions/workflows/bench.yml
+[self-hosted Linux x86_64 runner]: https://github.com/aleph-sim/aleph/actions/workflows/bench.yml
 [bencher.dev]: https://bencher.dev
 
 ## What Phase 0 shipped
