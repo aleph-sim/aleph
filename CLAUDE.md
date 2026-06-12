@@ -15,7 +15,7 @@ Read these three files before doing substantial work:
 - `BACKLOG.md` — detailed issue specifications (source of truth for all issues).
 - `CREATE ISSUES.md` — how the GitHub backlog is synced from `BACKLOG.md`.
 
-The project has completed **Phase 0** (foundation) and **Phase 1** (single-threaded CPU optimization) — both ROADMAP § 7 exit metrics are met (`docs/perf/phase0.md`, `docs/perf/phase1.md`). Phase 1 closed with all Tier-1 algorithms within 2× of Qiskit Aer single-thread at 25 qubits. **Phase 2** (multi-threaded CPU) is next. See `ROADMAP.md` § 5 for phase definitions.
+The project has completed **Phases 0–4 and 4.5**. Phase 4 shipped the v0.1 public release (CLI + Python wheels). Phase 4.5 (CPU parity) closed with **every competitive-matrix cell ≤ 1.2× its reference** — aleph beats Aer multi-thread statevector on 3/4 Tier-1 workloads at n=25, beats Aer MPS 4.4–14× on all five MPS cells, and beats Stim on the surface-code cycle at every distance (`docs/perf/parity.md`). Current release: **v0.2** (PyPI: `aleph-sim`). **Phase 5** (GPU backend) is next. See `ROADMAP.md` § 5 for phase definitions and § 7 for per-phase exit metrics.
 
 -----
 
