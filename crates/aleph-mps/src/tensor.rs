@@ -87,6 +87,78 @@ impl Site {
         }
         s
     }
+
+    /// Overwrite this site in place as a left-canonical tensor of shape
+    /// `(left, 2, right)` whose grouped-left matrix `(left·2) × right` is `m`.
+    /// Reuses the existing `data` allocation (resized), avoiding a fresh `Site`.
+    /// `m` must be at least `(left·2) × right`; only that top-left block is read.
+    // NOTE: `Site` is currently an internal type (not re-exported from lib.rs).
+    // These three fillers will be called by the scratch-arena hot path in a later
+    // P3-14 task; the allow below is intentional until that wiring lands.
+    #[allow(dead_code)]
+    pub fn fill_left_from(&mut self, m: faer::MatRef<'_, Complex>, left: usize, right: usize) {
+        self.left = left;
+        self.right = right;
+        self.data.clear();
+        self.data.resize(left * 2 * right, Complex::new(0.0, 0.0));
+        #[allow(clippy::needless_range_loop)]
+        for row in 0..left * 2 {
+            for r in 0..right {
+                self.data[row * right + r] = m[(row, r)];
+            }
+        }
+    }
+
+    /// Overwrite this site in place from a `left × (2·right)` grouped-right
+    /// matrix `m` (row `l`, col `p·right + r`) — the in-place equivalent of
+    /// `from_group_right_faer`. Reuses the existing `data` allocation.
+    #[allow(dead_code)]
+    pub fn fill_from_grouped_right(
+        &mut self,
+        m: faer::MatRef<'_, Complex>,
+        left: usize,
+        right: usize,
+    ) {
+        self.left = left;
+        self.right = right;
+        self.data.clear();
+        self.data.resize(left * 2 * right, Complex::new(0.0, 0.0));
+        #[allow(clippy::needless_range_loop)]
+        for l in 0..left {
+            for col in 0..2 * right {
+                self.data[l * 2 * right + col] = m[(l, col)];
+            }
+        }
+    }
+
+    /// Overwrite this site in place as a right-canonical tensor of shape
+    /// `(left, 2, right)` whose grouped-right matrix `left × (2·right)` is the
+    /// scaled conjugate `conj(v[(col, l)]) · sv[l]` — i.e. the singular-value
+    /// folding `s·Vᴴ` for the V factor (or the bare conjugate when `sv` is all
+    /// ones, e.g. a right-canonical Qᴴ). `v` is read as `cols × left` (its row
+    /// = grouped-right column index `col`, its col = bond index `l`). `sv` has
+    /// length `left`. Reuses the existing `data` allocation.
+    #[allow(dead_code)]
+    pub fn fill_right_from_scaled_conj(
+        &mut self,
+        v: faer::MatRef<'_, Complex>,
+        sv: &[f64],
+        left: usize,
+        right: usize,
+    ) {
+        self.left = left;
+        self.right = right;
+        self.data.clear();
+        self.data.resize(left * 2 * right, Complex::new(0.0, 0.0));
+        #[allow(clippy::needless_range_loop)]
+        for l in 0..left {
+            let s = Complex::new(sv[l], 0.0);
+            for col in 0..2 * right {
+                // grouped-right entry (l, col) = conj(V[col, l]) · s
+                self.data[l * 2 * right + col] = v[(col, l)].conj() * s;
+            }
+        }
+    }
 }
 
 /// How `truncated_svd` chooses how many singular values to keep.
@@ -433,5 +505,43 @@ mod tests {
         let (chi, _, scale) = svd_truncation_plan(&s, &TruncationPolicy::FixedBond(64));
         assert_eq!(chi, 1);
         assert!((scale - 1.0).abs() < 1e-9, "unit-weight input → scale≈1");
+    }
+
+    #[test]
+    fn fill_left_matches_from_group_left() {
+        let m = faer::Mat::from_fn(4, 3, |i, j| Complex::new(i as f64 + 1.0, j as f64 - 0.5));
+        let reference = Site::from_group_left_faer(m.as_ref(), 2, 3);
+        let mut s = Site::ket0(); // wrong shape on purpose; filler must resize
+        s.fill_left_from(m.as_ref(), 2, 3);
+        assert_eq!(s, reference);
+    }
+
+    #[test]
+    fn fill_from_grouped_right_matches_builder() {
+        let m = faer::Mat::from_fn(2, 6, |i, j| Complex::new(i as f64 - 0.5, j as f64 + 0.25));
+        let reference = Site::from_group_right_faer(m.as_ref(), 2, 3);
+        let mut s = Site::ket0();
+        s.fill_from_grouped_right(m.as_ref(), 2, 3);
+        assert_eq!(s, reference);
+    }
+
+    #[test]
+    fn fill_right_scaled_conj_matches_manual() {
+        // V is (cols=2·right) × (left); here left=2, right=3 → V is 6×2.
+        let left = 2usize;
+        let right = 3usize;
+        let v = faer::Mat::from_fn(2 * right, left, |i, j| {
+            Complex::new(i as f64 * 0.1 + 1.0, j as f64 * 0.2 - 0.3)
+        });
+        let sv = [2.0_f64, 0.5];
+        let mut s = Site::ket0();
+        s.fill_right_from_scaled_conj(v.as_ref(), &sv, left, right);
+        assert_eq!((s.left, s.right), (left, right));
+        for l in 0..left {
+            for col in 0..2 * right {
+                let expected = v[(col, l)].conj() * Complex::new(sv[l], 0.0);
+                assert_eq!(s.data[l * 2 * right + col], expected);
+            }
+        }
     }
 }
