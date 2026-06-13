@@ -39,6 +39,7 @@ path = "src/bin/surface_dump.rs"
 
 [dev-dependencies]
 criterion = { workspace = true }
+rand = { workspace = true }
 
 # Disable the default test/bench harness so criterion can take over.
 # See https://bheisler.github.io/criterion.rs/book/getting_started.html
@@ -110,6 +111,10 @@ harness = false
 
 [[bench]]
 name = "phase4_sycamore"
+harness = false
+
+[[bench]]
+name = "frame_sampler"
 harness = false
 
 [[bench]]

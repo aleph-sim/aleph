@@ -755,23 +755,25 @@ impl Tableau {
     }
 
     /// Batched Z-basis sampling of `qubits` (measured in the given order) over
-    /// `shots` shots: `out[shot]` has bit `i` set iff that shot measured
-    /// `qubits[i]` as 1. 64 shots run per pass on a shared x/z clone; the same
-    /// `rng` stream yields the same shot table (deterministic).
+    /// `shots` shots, returned as **column-major frame words**: entry
+    /// `out[i * nwords + w]` is a 64-shot word whose bit `s` is the outcome of
+    /// shot `w*64 + s` for `qubits[i]`, where `nwords = ceil(shots / 64)`. This
+    /// is the natural batched layout (one word = 64 shots) and imposes no limit
+    /// on `qubits.len()` — used directly by multi-shot QEC sampling (≫ 64
+    /// measurements). Bits `s ≥ shots - w*64` of the final word are unused.
     ///
-    /// Caller guarantees `qubits.len() ≤ 64` and every `qubits[i] < num_qubits()`.
-    /// Out-of-range qubits panic via the underlying grid access; callers above a
-    /// trust boundary (e.g. `Backend::sample`) validate first.
-    pub fn sample_qubits_batched<R: rand::Rng>(
+    /// 64 shots run per pass on a shared x/z clone; the same `rng` stream yields
+    /// the same frame table (deterministic). Every `qubits[i] < num_qubits()`
+    /// (caller-guaranteed; out-of-range panics via the grid access).
+    pub fn sample_frames<R: rand::Rng>(
         &self,
         qubits: &[usize],
         shots: u32,
         rng: &mut R,
     ) -> Vec<u64> {
-        let mut out = vec![0u64; shots as usize];
-        let mut done = 0usize;
-        while done < shots as usize {
-            let batch = (shots as usize - done).min(64);
+        let nwords = (shots as usize).div_ceil(64);
+        let mut out = vec![0u64; qubits.len() * nwords];
+        for w in 0..nwords {
             // Shared x/z for this 64-shot pass; final signs broadcast to words.
             let mut t = self.clone();
             t.ensure_row_major();
@@ -781,17 +783,30 @@ impl Tableau {
                 *sw = if t.sign.get(r) { u64::MAX } else { 0 };
             }
             for (i, &a) in qubits.iter().enumerate() {
-                let mut word = t.measure_word(&mut sign_w, a, rng);
-                // Scatter outcome bit `i` for each shot in this batch.
-                while word != 0 {
-                    let s = word.trailing_zeros() as usize;
-                    if s < batch {
-                        out[done + s] |= 1u64 << i;
-                    }
-                    word &= word - 1;
-                }
+                out[i * nwords + w] = t.measure_word(&mut sign_w, a, rng);
             }
-            done += batch;
+        }
+        out
+    }
+
+    /// Per-shot packed sampling of `qubits` (`len ≤ 64`): `out[shot]` has bit `i`
+    /// set iff that shot measured `qubits[i]` as 1. A transpose of
+    /// [`Self::sample_frames`]; used by `Backend::sample` (qubits = `0..n`).
+    pub fn sample_qubits_batched<R: rand::Rng>(
+        &self,
+        qubits: &[usize],
+        shots: u32,
+        rng: &mut R,
+    ) -> Vec<u64> {
+        debug_assert!(qubits.len() <= 64, "per-shot packing needs ≤ 64 qubits");
+        let nwords = (shots as usize).div_ceil(64);
+        let frames = self.sample_frames(qubits, shots, rng);
+        let mut out = vec![0u64; shots as usize];
+        for (i, _) in qubits.iter().enumerate() {
+            for (shot, packed) in out.iter_mut().enumerate() {
+                let (w, s) = (shot / 64, shot % 64);
+                *packed |= ((frames[i * nwords + w] >> s) & 1) << i;
+            }
         }
         out
     }
