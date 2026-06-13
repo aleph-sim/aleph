@@ -256,3 +256,44 @@ levers if it ever matters: (a) size the pooled gemm/SVD inputs to the exact
 per-gate operand (trading some pooling for contiguity), or (b) pool the
 remaining O(χ) scalar allocations (`s_diag`/`sigmas`/`s_kept`/`ones`) — left out
 of v1 as dwarfed by the O(χ²) work the arena already pools.
+
+## P3-12 — `Gate::Swap` as an O(1) permutation relabel
+
+A user-level `Gate::Swap(a, b)` is now discharged at the top of
+`MpsState::apply_2q` as a pure relabel of the P3-09 lazy permutation: exchange
+`site_of_qubit[a]` ↔ `site_of_qubit[b]` (and the inverse `qubit_of_site`), touch
+no tensor. Zero gemm, zero truncated SVD, zero bond growth, zero `trunc_error`.
+The physical router (`swap_adjacent`, used to bring long-range pairs together)
+is unchanged and still increments `swaps_applied`; relabels are counted
+separately in the new `relabels()` stat so the "no physical SWAPs from the swaps
+themselves" claim is directly observable.
+
+This inverts the pre-P3-12 cost asymmetry the P3-09 review flagged: `CNOT(0,4)`
+was lazily routed while `Swap(0,4)` physically dragged tensors through
+`(d−1)+1` truncated SVDs. SWAP-dense circuits (routing-aware compiler output)
+were the motivating workload.
+
+### Wall-clock (self-contained A/B, `benches/swap_dense.rs`)
+
+The bench realizes one logically identical permutation (register reversal over
+an entangled n=14 register, χ=32) two ways: as `Gate::Swap`s (relabel path) vs
+as the 3-CNOT decomposition of each SWAP (what a user who cannot relabel pays,
+each CNOT running a truncated SVD).
+
+| path | local M-series (aarch64) |
+| --- | --- |
+| `relabel` | 8.0 µs |
+| `cnot_decomposed` | 62.7 µs |
+
+≈7.8× — and the gap widens with χ (the decomposed path's per-SWAP cost is
+O(χ³) SVD work, the relabel path is O(1) regardless). The win is structural and
+platform-independent, so it was not separately re-measured on EPYC.
+
+### Correctness
+
+`sv_equivalence.rs`: `swap_dense_matches_sv` (SWAP↔CNOT interleavings + reads
+after relabel, 1e-10 vs `NaiveSvBackend`), `random_swap_injection_matches_sv`
+(proptest, random SWAP injection), and `swap_relabel_adds_no_truncation_error`
+(AC#3 — `to_bits()`-identical `trunc_error` and bit-identical final state for
+`SWAP·∏Gτ·SWAP` vs `∏G` at a saturated χ=2). Plus unit tests on the map updates
+in `mps.rs`.

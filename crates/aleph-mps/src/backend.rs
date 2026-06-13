@@ -1,7 +1,7 @@
 //! `MpsBackend`: the `aleph_backend::Backend` impl over `MpsState`.
 
 use aleph_backend::{Backend, BackendError};
-use aleph_core::{GateInstance, PauliString};
+use aleph_core::{Gate, GateInstance, PauliString};
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 
@@ -109,7 +109,6 @@ impl Backend for MpsBackend {
                 Ok(())
             }
             2 => {
-                let m = crate::gate::matrix_4x4(gate).map_err(map_mps_err)?;
                 for &q in &gate.qubits {
                     if q as usize >= state.num_qubits() {
                         return Err(BackendError::QubitOutOfRange {
@@ -127,6 +126,17 @@ impl Backend for MpsBackend {
                         qubit: gate.qubits[0],
                     });
                 }
+                // P3-12: a user-level SWAP is a pure relabel of the lazy
+                // permutation — no tensor work, no bond growth, no truncation.
+                // Intercept here so the 4×4 matrix is never even built (the
+                // relabel ignores it). Distinct from the router's physical
+                // `swap_adjacent`, which moves tensor content to *preserve* the
+                // logical state; here the labels swapping *is* the swap.
+                if matches!(gate.gate, Gate::Swap) {
+                    state.relabel_swap(gate.qubits[0] as usize, gate.qubits[1] as usize);
+                    return Ok(());
+                }
+                let m = crate::gate::matrix_4x4(gate).map_err(map_mps_err)?;
                 state.apply_2q(gate, &m).map_err(map_mps_err)
             }
             _ => Err(BackendError::UnsupportedGate {

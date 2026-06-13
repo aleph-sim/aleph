@@ -59,3 +59,7 @@ required-features = ["parallel"]
 [[bench]]
 name = "parity"
 harness = false
+
+[[bench]]
+name = "swap_dense"
+harness = false
