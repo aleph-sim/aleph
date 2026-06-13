@@ -18,43 +18,16 @@
 //! on EPYC) is additionally gated behind `WIDE_BOND_CHI512=1`.
 
 use aleph_backend::run;
-use aleph_core::{Gate, GateInstance, Param};
+use aleph_benches::brickwall_ry_cnot_rz as brickwall;
 use aleph_mps::MpsBackend;
 use criterion::{criterion_group, criterion_main, Criterion};
 
-/// Layers needed for n=20, χ=128 central bond to hit the cap.
+/// Layers needed for n=20, χ=128 central bond to hit the cap. The shared
+/// builder's saturation property is pinned by aleph-mps
+/// `brickwall_saturates_bond_cap`.
 const L1: u32 = 16;
 /// Layers needed for n=24, χ=256 central bond to hit the cap.
 const L2: u32 = 20;
-
-fn g(gate: Gate, qubits: &[u32]) -> GateInstance {
-    GateInstance::new(gate, qubits.to_vec())
-}
-
-/// Brickwall of parameterized 2q blocks. Only alternating layers cross a
-/// given bond cut, so the central bond reaches the χ cap after roughly
-/// 2·log2(χ) layers; the remaining layers run at full bond dimension.
-fn brickwall(n: u32, layers: u32) -> aleph_ir::Circuit {
-    let mut c = aleph_ir::Circuit::new(n, 0);
-    let mut t = 0.1f64;
-    for q in 0..n {
-        c.add_gate(g(Gate::H, &[q])).unwrap();
-    }
-    for layer in 0..layers {
-        let mut q = layer % 2;
-        while q + 1 < n {
-            c.add_gate(g(Gate::Ry(Param::Concrete(t)), &[q])).unwrap();
-            c.add_gate(g(Gate::Ry(Param::Concrete(t * 1.3 + 0.2)), &[q + 1]))
-                .unwrap();
-            c.add_gate(g(Gate::Cnot, &[q, q + 1])).unwrap();
-            c.add_gate(g(Gate::Rz(Param::Concrete(t * 0.7 + 0.1)), &[q + 1]))
-                .unwrap();
-            t += 0.37;
-            q += 2;
-        }
-    }
-    c
-}
 
 fn bench(cr: &mut Criterion) {
     // Runtime gate: `parallel` is a default feature since P3-13, so this

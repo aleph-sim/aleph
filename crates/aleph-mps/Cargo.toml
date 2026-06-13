@@ -34,6 +34,8 @@ parallel = ["faer/rayon"]
 [dev-dependencies]
 aleph-sv = { path = "../aleph-sv" }
 aleph-parser = { path = "../aleph-parser" }
+aleph-oracle = { path = "../aleph-oracle" }
+aleph-benches = { path = "../../benches" }
 proptest = { workspace = true }
 smallvec = { workspace = true }
 criterion = { workspace = true }

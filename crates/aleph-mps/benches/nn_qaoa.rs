@@ -2,13 +2,10 @@
 //! No ratio gate — P3-04 has no perf AC; this records the scaling curve.
 
 use aleph_backend::run;
-use aleph_core::{Gate, GateInstance, Param};
+use aleph_benches::g;
+use aleph_core::{Gate, Param};
 use aleph_mps::{MpsBackend, TruncationPolicy};
 use criterion::{criterion_group, criterion_main, Criterion};
-
-fn g(gate: Gate, qubits: &[u32]) -> GateInstance {
-    GateInstance::new(gate, qubits.to_vec())
-}
 
 fn qaoa_circuit(n: u32) -> aleph_ir::Circuit {
     let mut c = aleph_ir::Circuit::new(n, 0);

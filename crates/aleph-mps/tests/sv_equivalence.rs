@@ -2,13 +2,10 @@
 //! MPS dense reconstruction must match the SV amplitude vector (ADR-0004).
 
 use aleph_backend::{run, Backend};
-use aleph_core::{Complex, Gate, GateInstance, Param, Pauli, PauliString};
+use aleph_benches::g;
+use aleph_core::{Complex, Gate, Param, Pauli, PauliString};
 use aleph_mps::{MpsBackend, MpsState, TruncationPolicy};
 use aleph_sv::NaiveSvBackend;
-
-fn g(gate: Gate, qubits: &[u32]) -> GateInstance {
-    GateInstance::new(gate, qubits.to_vec())
-}
 
 fn mps_dense(circuit: &aleph_ir::Circuit, chi: usize) -> Vec<Complex> {
     let mut be = MpsBackend::with_seed(0).with_max_bond(chi);
@@ -515,19 +512,13 @@ fn lazy_perm_sample_matches_probabilities() {
     let st = run(&mut be, &c).unwrap();
     assert!(st.swaps_applied() > 0);
     let shots = be.sample(&st, 20000).unwrap();
-    let mut counts = [0u32; 16];
+    let mut counts = vec![0u64; 16];
     for sh in &shots {
         counts[*sh as usize] += 1;
     }
     let probs = be.probabilities(&st, &[0, 1, 2, 3]).unwrap();
-    for idx in 0..16 {
-        let emp = counts[idx] as f64 / 20000.0;
-        assert!(
-            (emp - probs[idx]).abs() < 0.02,
-            "idx {idx}: {emp} vs {}",
-            probs[idx]
-        );
-    }
+    // Calibrated 5σ band instead of an ad-hoc ±0.02 (P3-16).
+    aleph_oracle::assert_distribution_close("lazy_perm_sample", 4, &counts, &probs, 20000);
 }
 
 use proptest::prelude::*;

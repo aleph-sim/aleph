@@ -10,13 +10,10 @@
 //! tensors through every gate.
 
 use aleph_backend::run;
-use aleph_core::{Gate, GateInstance};
+use aleph_benches::g;
+use aleph_core::Gate;
 use aleph_mps::{MpsBackend, MpsState};
 use criterion::{criterion_group, criterion_main, Criterion};
-
-fn g(gate: Gate, qubits: &[u32]) -> GateInstance {
-    GateInstance::new(gate, qubits.to_vec())
-}
 
 /// (a, b) pairs of a SWAP network: a register reversal via long-range swaps,
 /// the routing-aware-compiler-output workload the ticket targets.

@@ -195,6 +195,45 @@ pub fn random_brickwall_circuit(n: u32, depth: usize) -> Circuit {
     c
 }
 
+/// Bond-saturating brickwall of parameterized 2q blocks: an `H` layer, then
+/// `layers` brick layers each applying `Ry(q); Ry(q+1); CNOT(q,q+1); Rz(q+1)`
+/// to alternating nearest-neighbor pairs. Only alternating layers cross a given
+/// bond cut, so an MPS central bond reaches a χ cap after ≈ 2·log2(χ) layers
+/// and the rest run at full bond — the workload `aleph-mps`'s `wide_bond` bench
+/// (χ-saturation) and `state_invariant_seq_vs_rayon` test both rely on (P3-16).
+///
+/// Angles are deterministic (a running `t`), so the circuit is reproducible and
+/// the bond-growth calibration is stable; `brickwall_saturates_wide_bond_l1` in
+/// aleph-mps pins it.
+#[must_use]
+pub fn brickwall_ry_cnot_rz(n: u32, layers: u32) -> Circuit {
+    let mut c = Circuit::new(n, 0);
+    let mut t = 0.1f64;
+    for q in 0..n {
+        let _ = c.h(q);
+    }
+    for layer in 0..layers {
+        let mut q = layer % 2;
+        while q + 1 < n {
+            let _ = c.ry(t, q);
+            let _ = c.ry(t * 1.3 + 0.2, q + 1);
+            let _ = c.cnot(q, q + 1);
+            let _ = c.rz(t * 0.7 + 0.1, q + 1);
+            t += 0.37;
+            q += 2;
+        }
+    }
+    c
+}
+
+/// Build a [`GateInstance`] from a gate and its qubit list. Shared by the
+/// per-backend bench/test fixtures that each used to copy-paste this 1-liner
+/// (P3-16).
+#[must_use]
+pub fn g(gate: Gate, qubits: &[u32]) -> GateInstance {
+    GateInstance::new(gate, qubits.to_vec())
+}
+
 #[cfg(test)]
 mod qft_roundtrip_tests {
     use super::*;

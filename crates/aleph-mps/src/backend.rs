@@ -12,6 +12,12 @@ use crate::{MpsError, MpsState, TruncationPolicy};
 pub struct MpsBackend {
     rng: StdRng,
     policy: TruncationPolicy,
+    /// Test-only: forces every faer op in allocated states down one `Par`,
+    /// threaded into the state by `allocate`. Lets the thread-invariance test
+    /// drive a shared-builder `Circuit` through `run` while still pinning the
+    /// parallelism path (P3-13 seam, P3-16 plumbing).
+    #[cfg(test)]
+    par_override: Option<faer::Par>,
 }
 
 /// Maximum qubit count `allocate` accepts. MPS memory scales as O(n·χ²), so
@@ -27,6 +33,8 @@ impl MpsBackend {
         Self {
             rng: StdRng::from_entropy(),
             policy: TruncationPolicy::FixedBond(DEFAULT_MAX_BOND),
+            #[cfg(test)]
+            par_override: None,
         }
     }
 
@@ -35,7 +43,18 @@ impl MpsBackend {
         Self {
             rng: StdRng::seed_from_u64(seed),
             policy: TruncationPolicy::FixedBond(DEFAULT_MAX_BOND),
+            #[cfg(test)]
+            par_override: None,
         }
+    }
+
+    /// Test-only: pin the faer parallelism path for every state this backend
+    /// allocates. Used by `state_invariant_seq_vs_rayon` to compare `Seq` vs
+    /// `rayon` over a shared-builder circuit run through [`run`].
+    #[cfg(test)]
+    pub(crate) fn with_par_override(mut self, par: faer::Par) -> Self {
+        self.par_override = Some(par);
+        self
     }
 
     /// Fixed bond-dimension truncation (sugar for `with_truncation(FixedBond(χ))`).
@@ -87,7 +106,13 @@ impl Backend for MpsBackend {
                 limit: MAX_QUBITS,
             });
         }
-        Ok(MpsState::with_policy(num_qubits as usize, self.policy))
+        #[allow(unused_mut)]
+        let mut state = MpsState::with_policy(num_qubits as usize, self.policy);
+        #[cfg(test)]
+        {
+            state.par_override = self.par_override;
+        }
+        Ok(state)
     }
 
     fn apply_gate(

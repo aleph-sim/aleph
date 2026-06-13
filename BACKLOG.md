@@ -2059,8 +2059,8 @@ P3-09 /code-review reuse finding: the `wide_bond` χ-saturation constants (L1=16
 
 **Acceptance Criteria**
 
-- [ ] One brickwall definition serves wide_bond + thread-invariance (+ existing duplicates where the swap is mechanical); saturation pinned by a test, not a comment.
-- [ ] MPS sampling test uses the calibrated distribution helper.
+- [x] One brickwall definition serves wide_bond + thread-invariance (+ existing duplicates where the swap is mechanical); saturation pinned by a test, not a comment. — *`aleph_benches::brickwall_ry_cnot_rz` drives both `wide_bond.rs` and the restructured `state_invariant_seq_vs_rayon` (via a `#[cfg(test)] MpsBackend::with_par_override` seam so the test runs a `Circuit` through `run`); `brickwall_saturates_bond_cap` pins the builder's cap-saturation property (cheap n=10/χ=16 cell). Shared `aleph_benches::g` replaces the copy-pasted `GateInstance` helper across all aleph-mps benches + tests.*
+- [x] MPS sampling test uses the calibrated distribution helper. — *`assert_distribution_close` made `pub` in aleph-oracle; `lazy_perm_sample_matches_probabilities` and the `sample_matches_probabilities` unit test now use the 5σ band instead of ad-hoc ±0.02.*
 
 **References**
 

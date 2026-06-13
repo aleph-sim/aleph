@@ -1213,19 +1213,13 @@ mod tests {
         let s = ghz(3);
         let mut rng = StdRng::seed_from_u64(11);
         let shots = s.sample(20000, &mut rng);
-        let mut counts = [0u32; 8];
+        let mut counts = vec![0u64; 8];
         for sh in &shots {
             counts[*sh as usize] += 1;
         }
         let probs = s.probabilities(&[0, 1, 2]).unwrap();
-        for idx in 0..8 {
-            let emp = counts[idx] as f64 / 20000.0;
-            assert!(
-                (emp - probs[idx]).abs() < 0.02,
-                "idx {idx}: emp {emp} vs {}",
-                probs[idx]
-            );
-        }
+        // Calibrated 5σ band instead of an ad-hoc ±0.02 (P3-16).
+        aleph_oracle::assert_distribution_close("ghz3_sample", 3, &counts, &probs, 20000);
     }
 
     #[test]
@@ -1457,49 +1451,55 @@ mod tests {
     /// regardless of the size threshold — Seq vs rayon as plain arguments,
     /// no process-global mutation, no cross-test isolation hazard (P3-13).
     ///
-    /// n=10 with 10 brickwall layers grows the central bond to χ = 16
-    /// (measured; only every second layer crosses the middle cut), so the
-    /// rayon branch sees real multi-column SVD/QR/gemm work.
+    /// n=10 with 10 brickwall layers grows the central bond well past 1 (only
+    /// every second layer crosses the middle cut), so the rayon branch sees
+    /// real multi-column SVD/QR/gemm work. The shared `brickwall_ry_cnot_rz`
+    /// builder (P3-16) defines the circuit; a trailing long-range CNOT also
+    /// exercises the lazy router under both `Par` paths.
     #[cfg(feature = "parallel")]
     #[test]
     fn state_invariant_seq_vs_rayon() {
-        use aleph_core::Param;
-        let run = |par: faer::Par| -> Vec<Complex> {
-            let n = 10usize;
-            let mut s = MpsState::new(n, 128);
-            s.par_override = Some(par);
-            let h_of = |q: u32| {
-                crate::gate::matrix_2x2(&GateInstance::new(Gate::H, smallvec![q])).unwrap()
-            };
-            for q in 0..n as u32 {
-                s.apply_1q(q as usize, &h_of(q));
-            }
-            for layer in 0..10u32 {
-                let mut q = layer % 2;
-                while (q as usize) + 1 < n {
-                    let ry = crate::gate::matrix_2x2(&GateInstance::new(
-                        Gate::Ry(Param::Concrete(0.3 + (q + layer * n as u32) as f64 * 0.11)),
-                        smallvec![q],
-                    ))
-                    .unwrap();
-                    s.apply_1q(q as usize, &ry);
-                    let gi = GateInstance::new(Gate::Cnot, smallvec![q, q + 1]);
-                    let u = crate::gate::matrix_4x4(&gi).unwrap();
-                    s.apply_2q(&gi, &u).unwrap();
-                    q += 2;
-                }
-            }
-            // Exercise the lazy router too.
-            let gi = GateInstance::new(Gate::Cnot, smallvec![0u32, 9u32]);
-            let u = crate::gate::matrix_4x4(&gi).unwrap();
-            s.apply_2q(&gi, &u).unwrap();
-            s.dense_statevector()
+        let n = 10u32;
+        let mut circuit = aleph_benches::brickwall_ry_cnot_rz(n, 10);
+        // Long-range gate → drives the lazy permutation router as well.
+        circuit
+            .add_gate(GateInstance::new(Gate::Cnot, smallvec![0u32, n - 1]))
+            .unwrap();
+        let run_with = |par: faer::Par| -> Vec<Complex> {
+            let mut be = crate::MpsBackend::with_seed(0)
+                .with_max_bond(128)
+                .with_par_override(par);
+            let st: MpsState = aleph_backend::run(&mut be, &circuit).unwrap();
+            st.dense_statevector()
         };
-        let a = run(faer::Par::Seq);
-        let b = run(faer::Par::rayon(0));
+        let a = run_with(faer::Par::Seq);
+        let b = run_with(faer::Par::rayon(0));
         assert_eq!(a.len(), b.len());
         for (x, y) in a.iter().zip(b.iter()) {
             assert!((x - y).norm() < 1e-10, "parallelism changed the state");
         }
+    }
+
+    /// Pins the saturation property the `wide_bond` bench relies on: the shared
+    /// `brickwall_ry_cnot_rz` builder entangles enough to drive an MPS central
+    /// bond up to its χ cap. Uses a small fast cell (n=10, χ=16; the
+    /// unconstrained centre rank would be 2^5=32, so hitting 16 proves the cap
+    /// bound, not the geometry) so it runs on every `cargo test`. A builder edit
+    /// that grossly under-entangles — far fewer brick layers or CNOTs per layer
+    /// (e.g. 6 layers reaches only bond 8) — drops below 16 and fails here
+    /// instead of silently invalidating the bench's wide-bond premise. (Removing
+    /// a single rotation still saturates 16, so this guards the shape, not every
+    /// angle.) The exact L1=16@χ128 / L2=20@χ256 layer counts are the bench's
+    /// own cells.
+    #[test]
+    fn brickwall_saturates_bond_cap() {
+        let c = aleph_benches::brickwall_ry_cnot_rz(10, 12);
+        let mut be = crate::MpsBackend::with_seed(0).with_max_bond(16);
+        let st: MpsState = aleph_backend::run(&mut be, &c).unwrap();
+        assert_eq!(
+            st.max_bond_reached(),
+            16,
+            "shared brickwall no longer saturates the χ cap"
+        );
     }
 }
