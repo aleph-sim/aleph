@@ -223,16 +223,6 @@ impl MpsState {
     ) -> Result<(), MpsError> {
         let qa = g.qubits[0] as usize;
         let qb = g.qubits[1] as usize;
-        // P3-12: a user-level SWAP is a pure relabel of the lazy permutation —
-        // exchange which sites hold qa and qb, leaving every tensor (and so the
-        // bond dimensions and `trunc_error`) untouched. Subsequent gates route
-        // through the updated map. Distinct from the router's physical
-        // `swap_adjacent`, which moves tensor content to keep the logical state
-        // invariant; here the relabel *is* the logical swap.
-        if matches!(g.gate, Gate::Swap) {
-            self.relabel_swap(qa, qb);
-            return Ok(());
-        }
         let sa = self.site_of_qubit[qa];
         let sb = self.site_of_qubit[qb];
         if sa.abs_diff(sb) != 1 {
@@ -372,6 +362,20 @@ impl MpsState {
         Ok(())
     }
 
+    /// Exchange which logical qubits occupy sites `s0` and `s1`, keeping the
+    /// `qubit_of_site`/`site_of_qubit` bijection consistent (the single place
+    /// that maintains the inverse-map invariant). Touches only the maps, never
+    /// tensors — both the physical router and the P3-12 relabel layer it onto
+    /// their own tensor/bookkeeping work.
+    fn exchange_site_labels(&mut self, s0: usize, s1: usize) {
+        let q0 = self.qubit_of_site[s0];
+        let q1 = self.qubit_of_site[s1];
+        self.qubit_of_site[s0] = q1;
+        self.qubit_of_site[s1] = q0;
+        self.site_of_qubit[q0 as usize] = s1;
+        self.site_of_qubit[q1 as usize] = s0;
+    }
+
     /// Discharge a user-level `Gate::Swap(qa, qb)` as an O(1) relabel of the
     /// lazy permutation (P3-12): exchange the sites that hold logical qubits
     /// `qa` and `qb`. No tensor is touched, so there is no bond growth and no
@@ -381,13 +385,8 @@ impl MpsState {
     /// Contrast [`Self::swap_adjacent`], which physically swaps adjacent tensor
     /// content (gemm + truncated SVD) to *preserve* the logical state during
     /// routing. Here no tensor moves, so the labels swapping *is* the SWAP.
-    fn relabel_swap(&mut self, qa: usize, qb: usize) {
-        let sa = self.site_of_qubit[qa];
-        let sb = self.site_of_qubit[qb];
-        self.site_of_qubit[qa] = sb;
-        self.site_of_qubit[qb] = sa;
-        self.qubit_of_site[sa] = qb as u32;
-        self.qubit_of_site[sb] = qa as u32;
+    pub(crate) fn relabel_swap(&mut self, qa: usize, qb: usize) {
+        self.exchange_site_labels(self.site_of_qubit[qa], self.site_of_qubit[qb]);
         self.relabels += 1;
     }
 
@@ -397,12 +396,7 @@ impl MpsState {
         let g = GateInstance::new(Gate::Swap, vec![k as u32, (k + 1) as u32]);
         let u = crate::gate::matrix_4x4(&g)?;
         self.apply_2q_adjacent(k, k + 1, &u)?;
-        let qa = self.qubit_of_site[k];
-        let qb = self.qubit_of_site[k + 1];
-        self.qubit_of_site[k] = qb;
-        self.qubit_of_site[k + 1] = qa;
-        self.site_of_qubit[qb as usize] = k;
-        self.site_of_qubit[qa as usize] = k + 1;
+        self.exchange_site_labels(k, k + 1);
         self.swaps_applied += 1;
         Ok(())
     }
@@ -1295,9 +1289,7 @@ mod tests {
         // physical SWAPs (no ladder, no SVD), one relabel counted, and the
         // permutation maps reflect the exchange.
         let mut s = MpsState::new(5, 64);
-        let gi = GateInstance::new(Gate::Swap, smallvec![0u32, 4u32]);
-        let u = crate::gate::matrix_4x4(&gi).unwrap();
-        s.apply_2q(&gi, &u).unwrap();
+        s.relabel_swap(0, 4);
         assert_eq!(s.swaps_applied(), 0, "relabel must apply no physical SWAPs");
         assert_eq!(s.relabels(), 1);
         // qubit 0 now lives where qubit 4 was and vice versa.
@@ -1317,11 +1309,9 @@ mod tests {
     fn user_swap_relabel_is_self_inverse() {
         // Two SWAPs on the same pair restore the identity permutation.
         let mut s = MpsState::new(3, 64);
-        let gi = GateInstance::new(Gate::Swap, smallvec![0u32, 2u32]);
-        let u = crate::gate::matrix_4x4(&gi).unwrap();
-        s.apply_2q(&gi, &u).unwrap();
+        s.relabel_swap(0, 2);
         assert_eq!(s.site_of_qubit, vec![2, 1, 0]);
-        s.apply_2q(&gi, &u).unwrap();
+        s.relabel_swap(0, 2);
         assert_eq!(s.site_of_qubit, vec![0, 1, 2]);
         assert_eq!(s.qubit_of_site, vec![0, 1, 2]);
         assert_eq!(s.relabels(), 2);
