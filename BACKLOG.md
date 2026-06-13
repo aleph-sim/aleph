@@ -1927,9 +1927,9 @@ P3-09 `/code-review` finding: the lazy router makes a logical SWAP expressible a
 
 **Acceptance Criteria**
 
-- [ ] Explicit-SWAP circuits match `NaiveSvBackend` to 1e-10 (extend the SV oracle with SWAP-dense cases, including SWAP→CNOT interleavings and reads after relabel).
-- [ ] A SWAP-dense benchmark shows the relabel path applying zero physical SWAPs (`swaps_applied` unchanged) with measured wall-clock win.
-- [ ] `trunc_error` for an explicit-SWAP circuit at saturated χ is bit-identical to the SWAP-free relabeled equivalent.
+- [x] Explicit-SWAP circuits match `NaiveSvBackend` to 1e-10 (extend the SV oracle with SWAP-dense cases, including SWAP→CNOT interleavings and reads after relabel). — *`swap_dense_matches_sv` + `random_swap_injection_matches_sv` proptest in `sv_equivalence.rs`.*
+- [x] A SWAP-dense benchmark shows the relabel path applying zero physical SWAPs (`swaps_applied` unchanged) with measured wall-clock win. — *`benches/swap_dense.rs`: relabel vs CNOT-decomposed of the same permutation; the SWAP gates discharge as relabels (`relabels`++, no physical SWAP from them). Local M-series n=14/χ=32: **8.0 µs vs 62.7 µs (≈7.8×)**.*
+- [x] `trunc_error` for an explicit-SWAP circuit at saturated χ is bit-identical to the SWAP-free relabeled equivalent. — *`swap_relabel_adds_no_truncation_error`: `to_bits()`-identical `trunc_error` and bit-identical final state for SWAP·∏Gτ·SWAP vs ∏G at χ=2.*
 
 **Testing Requirements**
 

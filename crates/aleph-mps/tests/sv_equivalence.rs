@@ -386,6 +386,121 @@ fn lazy_perm_reads_match_sv() {
 }
 
 #[test]
+fn swap_dense_matches_sv() {
+    // P3-12: explicit user SWAPs (relabeled, never physical) interleaved with
+    // CNOTs. χ large = exact; the dense vector must match SV through every
+    // relabel, including a read after the final relabel.
+    let n = 5u32;
+    let mut c = aleph_ir::Circuit::new(n, 0);
+    for q in 0..n {
+        c.add_gate(g(Gate::H, &[q])).unwrap();
+    }
+    c.add_gate(g(Gate::Cnot, &[0, 1])).unwrap();
+    c.add_gate(g(Gate::Swap, &[0, 4])).unwrap(); // long-range relabel
+    c.add_gate(g(Gate::Cnot, &[0, 1])).unwrap(); // qubit 0 now routed elsewhere
+    c.add_gate(g(Gate::Swap, &[2, 3])).unwrap(); // adjacent relabel
+    c.add_gate(g(Gate::Cnot, &[3, 4])).unwrap();
+    c.add_gate(g(Gate::Rz(Param::Concrete(0.37)), &[0]))
+        .unwrap();
+    c.add_gate(g(Gate::Swap, &[1, 4])).unwrap();
+    c.add_gate(g(Gate::Cz, &[0, 2])).unwrap();
+
+    let a = mps_dense(&c, 64);
+    let b = sv_dense(&c);
+    assert_eq!(a.len(), b.len());
+    for (x, y) in a.iter().zip(b.iter()) {
+        assert!((x - y).norm() < 1e-10, "SWAP-dense dense mismatch");
+    }
+
+    // The three user SWAPs are discharged as relabels. (Physical router SWAPs
+    // may still occur from the long-range CNOTs that follow — that is the lazy
+    // router doing its job, not the SWAP gates going physical.)
+    let mut be = MpsBackend::with_seed(0).with_max_bond(64);
+    let st: MpsState = run(&mut be, &c).unwrap();
+    assert_eq!(st.relabels(), 3, "each user SWAP must be one relabel");
+}
+
+#[test]
+fn swap_relabel_adds_no_truncation_error() {
+    // AC#3: at a saturated χ, a circuit whose SWAP is discharged as a relabel
+    // has BIT-IDENTICAL trunc_error and final state to the SWAP-free logically
+    // equivalent. Construction: conjugating a circuit by SWAP(1,3) and applying
+    // the (1 3) transposition to every interior gate's qubit args yields the
+    // same logical unitary (SWAP·∏Gτ·SWAP = ∏G). The relabel only renames
+    // sites, so every truncated SVD sees bit-identical operands.
+    let n = 6u32;
+    let chi = 2usize; // saturated: forces truncation
+    let tau = |q: u32| -> u32 {
+        match q {
+            1 => 3,
+            3 => 1,
+            other => other,
+        }
+    };
+
+    // Interior (logical) circuit, exercising long-range routing under truncation.
+    let interior: &[(Gate, Vec<u32>)] = &[
+        (Gate::H, vec![0]),
+        (Gate::H, vec![1]),
+        (Gate::H, vec![2]),
+        (Gate::H, vec![3]),
+        (Gate::H, vec![4]),
+        (Gate::H, vec![5]),
+        (Gate::Cnot, vec![0, 1]),
+        (Gate::Cnot, vec![1, 2]),
+        (Gate::Cnot, vec![2, 3]),
+        (Gate::Cnot, vec![3, 4]),
+        (Gate::Cnot, vec![4, 5]),
+        (Gate::Cnot, vec![0, 5]), // long range
+        (Gate::Rz(Param::Concrete(0.41)), vec![2]),
+        (Gate::Cnot, vec![1, 4]),
+    ];
+
+    // Baseline: interior circuit as written.
+    let mut base = aleph_ir::Circuit::new(n, 0);
+    for (gate, qs) in interior {
+        base.add_gate(g(gate.clone(), qs)).unwrap();
+    }
+
+    // Conjugated: SWAP(1,3); interior with τ applied to every qubit arg; SWAP(1,3).
+    let mut conj = aleph_ir::Circuit::new(n, 0);
+    conj.add_gate(g(Gate::Swap, &[1, 3])).unwrap();
+    for (gate, qs) in interior {
+        let mapped: Vec<u32> = qs.iter().map(|&q| tau(q)).collect();
+        conj.add_gate(g(gate.clone(), &mapped)).unwrap();
+    }
+    conj.add_gate(g(Gate::Swap, &[1, 3])).unwrap();
+
+    let policy = TruncationPolicy::FixedBond(chi);
+    let mut be_base = MpsBackend::with_seed(0).with_truncation(policy);
+    let sb: MpsState = run(&mut be_base, &base).unwrap();
+    let mut be_conj = MpsBackend::with_seed(0).with_truncation(policy);
+    let sc: MpsState = run(&mut be_conj, &conj).unwrap();
+
+    // Truncation error is bit-identical (the relabel does no SVD).
+    assert_eq!(
+        sb.truncation_error().to_bits(),
+        sc.truncation_error().to_bits(),
+        "SWAP must not perturb trunc_error: {} vs {}",
+        sb.truncation_error(),
+        sc.truncation_error()
+    );
+    // The two SWAPs were relabels, not physical router SWAPs.
+    assert_eq!(sc.relabels(), 2);
+    assert_eq!(
+        sc.swaps_applied(),
+        sb.swaps_applied(),
+        "routing must be identical between the two circuits"
+    );
+    // Logically identical → bit-identical final state.
+    let db = sb.dense_statevector();
+    let dc = sc.dense_statevector();
+    for (x, y) in db.iter().zip(dc.iter()) {
+        assert!((x - y).norm() < 1e-15, "conjugated SWAP circuit diverged");
+    }
+}
+
+#[test]
 fn lazy_perm_sample_matches_probabilities() {
     // Sampling under a non-identity permutation: empirical distribution over
     // all qubits must match the exact marginals.
@@ -470,6 +585,34 @@ proptest! {
         let (a, _) = mps_dense_policy(&c, TruncationPolicy::ErrorBounded { epsilon: 0.0, max_bond: 64 });
         let b = sv_dense(&c);
         for (x, y) in a.iter().zip(b.iter()) { prop_assert!((x - y).norm() < 1e-9); }
+    }
+
+    /// Random circuit with SWAP injection (op 5/6): SWAPs are discharged as
+    /// relabels, yet the dense vector must still equal SV to 1e-9 (P3-12).
+    #[test]
+    fn random_swap_injection_matches_sv(seq in prop::collection::vec((0u8..7, 0u8..5, 0u8..5), 0..30)) {
+        let n = 5u32;
+        let mut c = aleph_ir::Circuit::new(n, 0);
+        for (op, x, y) in seq {
+            let a = (x as u32) % n;
+            match op {
+                0 => { c.add_gate(g(Gate::H, &[a])).unwrap(); }
+                1 => { c.add_gate(g(Gate::S, &[a])).unwrap(); }
+                2 => { c.add_gate(g(Gate::X, &[a])).unwrap(); }
+                3 | 4 => {
+                    let b = (y as u32) % n;
+                    if a != b { c.add_gate(g(Gate::Cnot, &[a, b])).unwrap(); }
+                }
+                _ => {
+                    let b = (y as u32) % n;
+                    if a != b { c.add_gate(g(Gate::Swap, &[a, b])).unwrap(); }
+                }
+            }
+        }
+        if c.is_empty() { return Ok(()); }
+        let am = mps_dense(&c, 64);
+        let bm = sv_dense(&c);
+        for (x, y) in am.iter().zip(bm.iter()) { prop_assert!((x - y).norm() < 1e-9); }
     }
 
     #[test]

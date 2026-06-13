@@ -35,6 +35,10 @@ pub struct MpsState {
     pub(crate) site_of_qubit: Vec<usize>,
     /// Physical nearest-neighbor SWAPs applied so far (lazy-router evidence).
     pub(crate) swaps_applied: u64,
+    /// User-level `Gate::Swap`s discharged as O(1) permutation relabels (P3-12),
+    /// touching no tensors. Counted separately from `swaps_applied`, which stays
+    /// reserved for *physical* router SWAPs (gemm + truncated SVD).
+    pub(crate) relabels: u64,
     /// Reusable hot-path workspace (P3-14). Not part of the logical state; see
     /// `Scratch`'s clone-as-empty.
     scratch: Scratch,
@@ -140,6 +144,7 @@ impl MpsState {
             qubit_of_site: (0..n as u32).collect(),
             site_of_qubit: (0..n).collect(),
             swaps_applied: 0,
+            relabels: 0,
             scratch: Scratch::default(),
             #[cfg(test)]
             par_override: None,
@@ -164,6 +169,13 @@ impl MpsState {
     /// permutation router so far (P3-09).
     pub fn swaps_applied(&self) -> u64 {
         self.swaps_applied
+    }
+
+    /// Number of user-level `Gate::Swap`s discharged as O(1) permutation
+    /// relabels — pure map updates with zero tensor work, bond growth, or
+    /// truncation error (P3-12).
+    pub fn relabels(&self) -> u64 {
+        self.relabels
     }
 
     /// Per-operation parallelism for a `rows × cols` faer operand: the
@@ -211,6 +223,16 @@ impl MpsState {
     ) -> Result<(), MpsError> {
         let qa = g.qubits[0] as usize;
         let qb = g.qubits[1] as usize;
+        // P3-12: a user-level SWAP is a pure relabel of the lazy permutation —
+        // exchange which sites hold qa and qb, leaving every tensor (and so the
+        // bond dimensions and `trunc_error`) untouched. Subsequent gates route
+        // through the updated map. Distinct from the router's physical
+        // `swap_adjacent`, which moves tensor content to keep the logical state
+        // invariant; here the relabel *is* the logical swap.
+        if matches!(g.gate, Gate::Swap) {
+            self.relabel_swap(qa, qb);
+            return Ok(());
+        }
         let sa = self.site_of_qubit[qa];
         let sb = self.site_of_qubit[qb];
         if sa.abs_diff(sb) != 1 {
@@ -348,6 +370,25 @@ impl MpsState {
         self.center = j;
 
         Ok(())
+    }
+
+    /// Discharge a user-level `Gate::Swap(qa, qb)` as an O(1) relabel of the
+    /// lazy permutation (P3-12): exchange the sites that hold logical qubits
+    /// `qa` and `qb`. No tensor is touched, so there is no bond growth and no
+    /// truncation error. `qa == qb` is a no-op (rejected upstream in the backend
+    /// dispatch, but handled harmlessly here for direct callers).
+    ///
+    /// Contrast [`Self::swap_adjacent`], which physically swaps adjacent tensor
+    /// content (gemm + truncated SVD) to *preserve* the logical state during
+    /// routing. Here no tensor moves, so the labels swapping *is* the SWAP.
+    fn relabel_swap(&mut self, qa: usize, qb: usize) {
+        let sa = self.site_of_qubit[qa];
+        let sb = self.site_of_qubit[qb];
+        self.site_of_qubit[qa] = sb;
+        self.site_of_qubit[qb] = sa;
+        self.qubit_of_site[sa] = qb as u32;
+        self.qubit_of_site[sb] = qa as u32;
+        self.relabels += 1;
     }
 
     /// Swap the qubit states on adjacent sites `(k, k+1)` via a SWAP gate and
@@ -1246,6 +1287,45 @@ mod tests {
         // Qubit 4 stayed next to qubit 0 → repeating the gate costs 0 SWAPs.
         s.apply_2q(&gi, &u).unwrap();
         assert_eq!(s.swaps_applied(), 3);
+    }
+
+    #[test]
+    fn user_swap_relabels_without_physical_swap() {
+        // P3-12: a user-level Gate::Swap(0,4) on n=5 is a pure relabel — zero
+        // physical SWAPs (no ladder, no SVD), one relabel counted, and the
+        // permutation maps reflect the exchange.
+        let mut s = MpsState::new(5, 64);
+        let gi = GateInstance::new(Gate::Swap, smallvec![0u32, 4u32]);
+        let u = crate::gate::matrix_4x4(&gi).unwrap();
+        s.apply_2q(&gi, &u).unwrap();
+        assert_eq!(s.swaps_applied(), 0, "relabel must apply no physical SWAPs");
+        assert_eq!(s.relabels(), 1);
+        // qubit 0 now lives where qubit 4 was and vice versa.
+        assert_eq!(s.site_of_qubit[0], 4);
+        assert_eq!(s.site_of_qubit[4], 0);
+        assert_eq!(s.qubit_of_site[0], 4);
+        assert_eq!(s.qubit_of_site[4], 0);
+        assert_eq!(s.trunc_error, 0.0, "relabel adds no truncation error");
+        assert_eq!(s.max_bond_seen, 1, "relabel grows no bond");
+        // Permutation stays a valid bijection.
+        let mut seen: Vec<u32> = s.qubit_of_site.clone();
+        seen.sort_unstable();
+        assert_eq!(seen, vec![0, 1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn user_swap_relabel_is_self_inverse() {
+        // Two SWAPs on the same pair restore the identity permutation.
+        let mut s = MpsState::new(3, 64);
+        let gi = GateInstance::new(Gate::Swap, smallvec![0u32, 2u32]);
+        let u = crate::gate::matrix_4x4(&gi).unwrap();
+        s.apply_2q(&gi, &u).unwrap();
+        assert_eq!(s.site_of_qubit, vec![2, 1, 0]);
+        s.apply_2q(&gi, &u).unwrap();
+        assert_eq!(s.site_of_qubit, vec![0, 1, 2]);
+        assert_eq!(s.qubit_of_site, vec![0, 1, 2]);
+        assert_eq!(s.relabels(), 2);
+        assert_eq!(s.swaps_applied(), 0);
     }
 
     #[test]
