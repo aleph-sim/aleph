@@ -4,6 +4,7 @@ use aleph_core::{Complex, Pauli};
 use rand::{rngs::StdRng, Rng};
 
 use super::error::{KrausChannel, PauliChannel, QuantumError};
+use crate::measure::DEGENERATE_BRANCH_THRESHOLD;
 
 /// Apply one channel to `amps` by quantum-jump. `qubits` maps the channel's
 /// local qubit indices to global qubit indices. Pauli channels take the
@@ -49,8 +50,64 @@ fn apply_pauli_channel(amps: &mut [Complex], c: &PauliChannel, qubits: &[u32], r
     }
 }
 
-fn apply_kraus_1q(_amps: &mut [Complex], _c: &KrausChannel, _q: u32, _rng: &mut StdRng) {
-    unimplemented!("general Kraus path — Task 4")
+/// General 1q quantum-jump. For Kraus set {Kᵢ} on qubit `q`:
+///   1. pᵢ = ‖Kᵢ|ψ〉‖² (Σpᵢ = 1 by CPTP);
+///   2. sample branch i with probability pᵢ;
+///   3. apply Kᵢ to |ψ〉 and renormalize by 1/√pᵢ.
+///
+/// Works pairwise over the (qubit `q` = 0, qubit `q` = 1) amplitude pairs.
+fn apply_kraus_1q(amps: &mut [Complex], c: &KrausChannel, q: u32, rng: &mut StdRng) {
+    let qbit = 1usize << q;
+    // Step 1: branch probabilities. For each pair (a0, a1) and each Kraus op,
+    // the local image is (K[0][0]a0 + K[0][1]a1, K[1][0]a0 + K[1][1]a1).
+    let mut probs = vec![0.0_f64; c.kraus.len()];
+    // Paired index access: amps[i] is qubit-q=0, amps[i|qbit] is qubit-q=1.
+    // A plain iterator cannot express this pairwise pattern.
+    #[allow(clippy::needless_range_loop)]
+    for i in 0..amps.len() {
+        if i & qbit != 0 {
+            continue; // visit each pair once, from its qbit-clear index
+        }
+        let a0 = amps[i];
+        let a1 = amps[i | qbit];
+        for (ki, k) in c.kraus.iter().enumerate() {
+            let o0 = k[0][0] * a0 + k[0][1] * a1;
+            let o1 = k[1][0] * a0 + k[1][1] * a1;
+            probs[ki] += o0.norm_sqr() + o1.norm_sqr();
+        }
+    }
+    // Step 2: sample a branch (last branch absorbs FP residue).
+    let r = rng.gen::<f64>();
+    let mut acc = 0.0;
+    let mut chosen = c.kraus.len() - 1;
+    for (ki, p) in probs.iter().enumerate() {
+        acc += *p;
+        if r < acc {
+            chosen = ki;
+            break;
+        }
+    }
+    // Step 3: apply the chosen Kraus op and renormalize by 1/√p_chosen.
+    let pc = probs[chosen];
+    if pc < DEGENERATE_BRANCH_THRESHOLD {
+        // Degenerate branch (sampled only via FP residue): nothing meaningful
+        // to project onto. Leave the state as-is — it is still the normalized
+        // pre-channel state — rather than scaling by ~1e150 (mirrors measure.rs).
+        return;
+    }
+    let inv = 1.0 / pc.sqrt();
+    let k = &c.kraus[chosen];
+    // Same pairwise (amps[i], amps[i|qbit]) access as Step 1 — needs the index.
+    #[allow(clippy::needless_range_loop)]
+    for i in 0..amps.len() {
+        if i & qbit != 0 {
+            continue;
+        }
+        let a0 = amps[i];
+        let a1 = amps[i | qbit];
+        amps[i] = (k[0][0] * a0 + k[0][1] * a1) * inv;
+        amps[i | qbit] = (k[1][0] * a0 + k[1][1] * a1) * inv;
+    }
 }
 
 /// Deterministic per-shot seed: a splitmix64 mix of `(seed, shot)` so shot
@@ -91,7 +148,9 @@ mod tests {
 #[cfg(test)]
 mod apply_tests {
     use super::*;
-    use crate::noise::error::{depolarizing_error, pauli_error};
+    use crate::noise::error::{
+        amplitude_damping_error, depolarizing_error, pauli_error, phase_damping_error,
+    };
     use aleph_core::{AlignedBuf, Complex};
     use rand::{rngs::StdRng, SeedableRng};
 
@@ -134,5 +193,63 @@ mod apply_tests {
         apply_channel(&mut amps, 2, &err, &[0, 1], &mut rng);
         let norm: f64 = amps.iter().map(|a| a.norm_sqr()).sum();
         assert!((norm - 1.0).abs() < 1e-12, "norm {norm}");
+    }
+
+    /// Amplitude damping with γ=1 sends |1⟩ → |0⟩ deterministically (the only
+    /// branch with nonzero probability is K₁).
+    #[test]
+    fn amplitude_damping_gamma1_resets_excited_state() {
+        let mut amps = AlignedBuf::from_slice(&[Complex::new(0.0, 0.0), Complex::new(1.0, 0.0)]);
+        let err = amplitude_damping_error(1.0);
+        let mut rng = StdRng::seed_from_u64(1);
+        apply_channel(&mut amps, 1, &err, &[0], &mut rng);
+        assert!(
+            (amps[0].norm() - 1.0).abs() < 1e-12,
+            "|0⟩ amp {}",
+            amps[0].norm()
+        );
+        assert!(amps[1].norm() < 1e-12);
+    }
+
+    /// Quantum-jump must preserve normalization: after applying a general
+    /// channel and renormalizing, ‖state‖ = 1 for any seed and any γ.
+    #[test]
+    fn general_channel_preserves_norm() {
+        for (seed, gamma) in [(0u64, 0.2), (1, 0.5), (2, 0.8), (3, 0.99)] {
+            let mut amps =
+                AlignedBuf::from_slice(&[Complex::new(0.6, 0.0), Complex::new(0.0, 0.8)]);
+            let err = amplitude_damping_error(gamma);
+            let mut rng = StdRng::seed_from_u64(seed);
+            apply_channel(&mut amps, 1, &err, &[0], &mut rng);
+            let n: f64 = amps.iter().map(|a| a.norm_sqr()).sum();
+            assert!((n - 1.0).abs() < 1e-10, "seed {seed} γ {gamma}: norm {n}");
+        }
+    }
+
+    #[test]
+    fn phase_damping_preserves_norm() {
+        let mut amps = AlignedBuf::from_slice(&[Complex::new(0.5, 0.5), Complex::new(0.5, -0.5)]);
+        let err = phase_damping_error(0.6);
+        let mut rng = StdRng::seed_from_u64(7);
+        apply_channel(&mut amps, 1, &err, &[0], &mut rng);
+        let n: f64 = amps.iter().map(|a| a.norm_sqr()).sum();
+        assert!((n - 1.0).abs() < 1e-10, "norm {n}");
+    }
+
+    /// Amplitude damping acts as identity (up to the K₀ scale that is 1 on the
+    /// |0⟩ component) when the state is exactly |0⟩: only K₀ has nonzero
+    /// probability and K₀|0⟩ = |0⟩. The state must remain |0⟩, not permute.
+    #[test]
+    fn amplitude_damping_fixes_ground_state() {
+        let mut amps = AlignedBuf::from_slice(&[Complex::new(1.0, 0.0), Complex::new(0.0, 0.0)]);
+        let err = amplitude_damping_error(0.5);
+        let mut rng = StdRng::seed_from_u64(3);
+        apply_channel(&mut amps, 1, &err, &[0], &mut rng);
+        assert!(
+            (amps[0] - Complex::new(1.0, 0.0)).norm() < 1e-12,
+            "amp0 {:?}",
+            amps[0]
+        );
+        assert!(amps[1].norm() < 1e-12, "amp1 {:?}", amps[1]);
     }
 }

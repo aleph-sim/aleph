@@ -9,7 +9,7 @@ use crate::state::CpuState;
 /// Threshold under which we refuse to collapse the state — collapsing
 /// on a branch of probability `< 1e-300` would scale amplitudes by
 /// `≈ 1e150` and destroy any meaningful state.
-const DEGENERATE_BRANCH_THRESHOLD: f64 = 1e-300;
+pub(crate) const DEGENERATE_BRANCH_THRESHOLD: f64 = 1e-300;
 
 /// Walk every amplitude once: reject empty/non-finite/non-normalised
 /// states. Returns the per-amp `norm_sqr` vector so callers don't pay
