@@ -88,18 +88,12 @@ impl Backend for StabilizerBackend {
                 limit: 64,
             });
         }
-        let mut out = Vec::with_capacity(shots as usize);
-        for _ in 0..shots {
-            let mut t = state.clone();
-            let mut bits = 0u64;
-            for q in 0..n {
-                if t.measure(q, &mut self.rng).map_err(map_stab_err)? {
-                    bits |= 1u64 << q;
-                }
-            }
-            out.push(bits);
-        }
-        Ok(out)
+        // Batched Pauli-frame sampling (P4.6-02): all shots share one x/z
+        // tableau (collapse structure is sign-independent), so 64 shots run per
+        // pass with the expensive x/z rowsum work done once. `out[shot]` bit q =
+        // qubit q, matching the per-shot path's `1 << q` convention.
+        let qubits: Vec<usize> = (0..n).collect();
+        Ok(state.sample_qubits_batched(&qubits, shots, &mut self.rng))
     }
 
     fn expectation_value(

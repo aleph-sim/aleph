@@ -671,6 +671,158 @@ impl Tableau {
             1
         }
     }
+
+    // --- P4.6-02 batched-shot (Pauli-frame) sampling --------------------------
+    //
+    // Every shot of one `sample` call shares ONE x/z tableau: whether a qubit
+    // measures random or deterministic depends only on the stabilizer
+    // *structure* (x/z), never on the measured *signs*, so the collapse is
+    // identical across shots. Only the signs differ (the random coins). We
+    // therefore promote the per-row sign to a 64-bit word (64 shots) and do the
+    // O(n²) x/z rowsum work once per 64-shot batch — this is exactly the
+    // per-shot CHP measurement algorithm with `sign → word`, hence the
+    // distribution is provably the per-shot one (oracle-tested). The Pauli-noise
+    // hook for P4.6-04 is a future X/sign injection at `measure_word`; left
+    // visible, not built.
+
+    /// `rowsum` for the batched sampler: XOR row `i` into row `h` on the shared
+    /// x/z grids (identical to scalar [`Self::rowsum`]), combining the 64-shot
+    /// sign WORDS with the shared structural phase bit broadcast across lanes.
+    fn rowsum_sign(&mut self, sign_w: &mut [u64], h: usize, i: usize) {
+        let (xh, xi) = self.x.row_pair_mut(h, i);
+        let (zh, zi) = self.z.row_pair_mut(h, i);
+        let phase = crate::rowsum::rowsum_dispatch(xh, xi, zh, zi);
+        // phase is even; (2·s_h + 2·s_i + phase) mod 4 ∈ {0,2}. The structural
+        // flip bit is (phase/2) mod 2 = (phase mod 4 == 2), shared by all shots,
+        // so it broadcasts to every lane.
+        let flip = if phase.rem_euclid(4) == 2 {
+            u64::MAX
+        } else {
+            0
+        };
+        sign_w[h] ^= sign_w[i] ^ flip;
+    }
+
+    /// `zero_row` for the batched sampler (x/z cleared as scalar; sign word 0).
+    fn zero_row_sign(&mut self, sign_w: &mut [u64], r: usize) {
+        self.x.row_words_mut(r).fill(0);
+        self.z.row_words_mut(r).fill(0);
+        sign_w[r] = 0;
+    }
+
+    /// `copy_row` for the batched sampler (x/z copied as scalar; sign word copied).
+    fn copy_row_sign(&mut self, sign_w: &mut [u64], dst: usize, src: usize) {
+        let (xd, xs) = self.x.row_pair_mut(dst, src);
+        xd.copy_from_slice(xs);
+        let (zd, zs) = self.z.row_pair_mut(dst, src);
+        zd.copy_from_slice(zs);
+        sign_w[dst] = sign_w[src];
+    }
+
+    /// One batched Z-measurement of qubit `a` (mirrors [`Self::measure`] with
+    /// `sign_w` as the per-row 64-shot sign and a fresh `u64` coin for the
+    /// random branch). Returns the 64-shot outcome word (bit `s` = shot `s`).
+    /// `self` must be RowMajor and `a < n` (caller-guaranteed).
+    fn measure_word<R: rand::Rng>(&mut self, sign_w: &mut [u64], a: usize, rng: &mut R) -> u64 {
+        let n = self.n;
+        let p = (n..2 * n).find(|&row| self.x.get(row, a));
+        match p {
+            Some(p) => {
+                let paired_destab = p - n;
+                for i in 0..2 * n {
+                    if i != p && i != paired_destab && self.x.get(i, a) {
+                        self.rowsum_sign(sign_w, i, p);
+                    }
+                }
+                self.copy_row_sign(sign_w, paired_destab, p);
+                self.zero_row_sign(sign_w, p);
+                self.z.set(p, a, true);
+                let coin = rng.gen::<u64>(); // 64 independent shot outcomes
+                sign_w[p] = coin;
+                coin
+            }
+            None => {
+                let scratch = 2 * n;
+                self.zero_row_sign(sign_w, scratch);
+                for i in 0..n {
+                    if self.x.get(i, a) {
+                        self.rowsum_sign(sign_w, scratch, i + n);
+                    }
+                }
+                sign_w[scratch]
+            }
+        }
+    }
+
+    /// Batched Z-basis sampling of `qubits` (measured in the given order) over
+    /// `shots` shots, returned as **column-major frame words**: entry
+    /// `out[i * nwords + w]` is a 64-shot word whose bit `s` is the outcome of
+    /// shot `w*64 + s` for `qubits[i]`, where `nwords = ceil(shots / 64)`. This
+    /// is the natural batched layout (one word = 64 shots) and imposes no limit
+    /// on `qubits.len()` — used directly by multi-shot QEC sampling (≫ 64
+    /// measurements). Bits `s ≥ shots - w*64` of the final word are unused.
+    ///
+    /// 64 shots run per pass on a shared x/z clone; the same `rng` stream yields
+    /// the same frame table (deterministic). Every `qubits[i] < num_qubits()`
+    /// (caller-guaranteed; out-of-range panics via the grid access).
+    pub fn sample_frames<R: rand::Rng>(
+        &self,
+        qubits: &[usize],
+        shots: u32,
+        rng: &mut R,
+    ) -> Vec<u64> {
+        let nwords = (shots as usize).div_ceil(64);
+        let mut out = vec![0u64; qubits.len() * nwords];
+        let mut sign_w = vec![0u64; 2 * self.n + 1];
+        for w in 0..nwords {
+            // Shared x/z for this 64-shot pass (the clone is unavoidable —
+            // measure_word mutates x/z); final signs broadcast to words.
+            let mut t = self.clone();
+            t.ensure_row_major();
+            for (r, sw) in sign_w.iter_mut().enumerate() {
+                *sw = if t.sign.get(r) { u64::MAX } else { 0 };
+            }
+            for (i, &a) in qubits.iter().enumerate() {
+                out[i * nwords + w] = t.measure_word(&mut sign_w, a, rng);
+            }
+        }
+        out
+    }
+
+    /// Per-shot packed sampling of `qubits` (`len ≤ 64`): `out[shot]` has bit `i`
+    /// set iff that shot measured `qubits[i]` as 1. A transpose of
+    /// [`Self::sample_frames`]; used by `Backend::sample` (qubits = `0..n`).
+    pub fn sample_qubits_batched<R: rand::Rng>(
+        &self,
+        qubits: &[usize],
+        shots: u32,
+        rng: &mut R,
+    ) -> Vec<u64> {
+        // Hard guard (not debug-only): `1 << i` for i ≥ 64 would silently
+        // collide bit i with bit i%64 in release. This is a pub API.
+        assert!(
+            qubits.len() <= 64,
+            "sample_qubits_batched packs one shot per u64; use sample_frames for > 64 qubits"
+        );
+        let nwords = (shots as usize).div_ceil(64);
+        let frames = self.sample_frames(qubits, shots, rng);
+        let mut out = vec![0u64; shots as usize];
+        // Read each 64-shot frame word once; scatter its set bits to the shots.
+        for (i, _) in qubits.iter().enumerate() {
+            for w in 0..nwords {
+                let mut word = frames[i * nwords + w];
+                let base = w * 64;
+                while word != 0 {
+                    let s = word.trailing_zeros() as usize;
+                    if base + s < shots as usize {
+                        out[base + s] |= 1u64 << i;
+                    }
+                    word &= word - 1;
+                }
+            }
+        }
+        out
+    }
 }
 
 #[cfg(test)]

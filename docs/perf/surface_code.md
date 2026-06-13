@@ -147,3 +147,42 @@ padding bits, irregular n ∈ {3, 70, 130, 241}, mutation-tested); the AVX-512
 transpose kernel is bit-exact vs `transpose64` (64 cases incl. corner bits,
 exercised on EPYC); all Stim oracles green at d=3..11 on EPYC
 (`surface_code_stim_oracle`, `stim_oracle`, `stim_measure_oracle`).
+
+### P4.6-02: batched Pauli-frame sampler
+
+Multi-shot `Backend::sample` previously re-ran the full CHP measurement once per
+shot. P4.6-02 batches it: every shot of one `sample` call shares ONE x/z tableau
+— whether a qubit measures random or deterministic depends only on the
+stabilizer *structure* (x/z), never on the measured *signs* — so the O(n²) x/z
+rowsum work runs once per 64-shot batch and per-shot variation lives entirely in
+64-bit **sign words**. The sign-word update is the scalar one with the structural
+flip bit `(phase mod 4 == 2)` broadcast across all 64 lanes; this is the per-shot
+algorithm with `sign → word`, so the distribution is provably unchanged.
+
+`Tableau::sample_frames(qubits, shots, rng)` returns column-major frame words
+(64 shots/word, no qubit-count limit); `sample_qubits_batched` is the ≤64-qubit
+per-shot transpose used by `Backend::sample`.
+
+**AC-1 — surface-d11 cycle, 1024 shots, 120 ancillas (criterion):**
+
+| path | EPYC (idle, AVX-512) | local M-series (aarch64 scalar) |
+| --- | --- | --- |
+| sequential (per-shot clone + measure) | 98.74 ms | 65.70 ms |
+| batched (`sample_frames`) | 1.52 ms | 1.07 ms |
+| **speedup** | **65×** | 61× |
+
+Far past the ≥10× target on both. The win is the 64×-per-batch amortization of
+the shared x/z rowsum work — structural and platform-independent (EPYC's AVX-512
+`rowsum_dispatch` accelerates both paths equally, so the ratio holds across
+arches).
+
+**Correctness (AC-2/AC-3):** a stabilizer state's Z-basis distribution is
+*exactly uniform* over its support, so `crates/aleph-stab/tests/frame_sampler.rs`
+checks the batched sampler against that exact reference (5σ band) over GHZ/Bell,
+a mixed 5-qubit Clifford, a subset measurement, a partial final batch, and a
+16-case random-Clifford proptest; same seed → identical frame table. The frame
+path is thus proven equal to the per-shot/tableau path, which the Stim oracles
+(`surface_code_stim_oracle`, `stim_measure_oracle`) already validate against Stim
+— so frame ≡ Stim transitively. Non-Clifford circuits never reach `sample`: the
+backend rejects them at `apply_gate`. Pauli-noise (P4.6-04) will hook an
+X/sign-frame injection at `measure_word`; the seam is left visible, not built.

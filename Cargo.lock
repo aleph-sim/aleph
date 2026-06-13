@@ -36,6 +36,7 @@ dependencies = [
  "aleph-stab",
  "aleph-sv",
  "criterion",
+ "rand 0.8.6",
  "smallvec",
 ]
 
