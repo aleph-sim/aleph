@@ -1,5 +1,6 @@
 //! Rank-3 MPS site tensor `(left, 2, right)` and its faer matrix views.
 
+#[cfg(test)]
 use crate::MpsError;
 use aleph_core::Complex;
 
@@ -61,6 +62,7 @@ impl Site {
     }
 
     /// Build a `Site` from a faer `(left·2) × right` grouped-left matrix.
+    #[cfg(test)]
     pub fn from_group_left_faer(m: faer::MatRef<'_, Complex>, left: usize, right: usize) -> Site {
         let mut s = Site::zeros(left, right);
         // Allow explicit index arithmetic — clearer than iterator gymnastics
@@ -75,6 +77,7 @@ impl Site {
     }
 
     /// Build a `Site` from a faer `χ × (2·right)` grouped-right matrix.
+    #[cfg(test)]
     pub fn from_group_right_faer(m: faer::MatRef<'_, Complex>, left: usize, right: usize) -> Site {
         let mut s = Site::zeros(left, right);
         // Allow explicit index arithmetic — clearer than iterator gymnastics
@@ -86,6 +89,72 @@ impl Site {
             }
         }
         s
+    }
+
+    /// Overwrite this site in place as a left-canonical tensor of shape
+    /// `(left, 2, right)` whose grouped-left matrix `(left·2) × right` is `m`.
+    /// Reuses the existing `data` allocation (resized), avoiding a fresh `Site`.
+    /// `m` must be at least `(left·2) × right`; only that top-left block is read.
+    pub fn fill_left_from(&mut self, m: faer::MatRef<'_, Complex>, left: usize, right: usize) {
+        self.left = left;
+        self.right = right;
+        self.data.clear();
+        self.data.resize(left * 2 * right, Complex::new(0.0, 0.0));
+        #[allow(clippy::needless_range_loop)]
+        for row in 0..left * 2 {
+            for r in 0..right {
+                self.data[row * right + r] = m[(row, r)];
+            }
+        }
+    }
+
+    /// Overwrite this site in place from a `left × (2·right)` grouped-right
+    /// matrix `m` (row `l`, col `p·right + r`) — the in-place equivalent of
+    /// `from_group_right_faer`. Reuses the existing `data` allocation.
+    pub fn fill_from_grouped_right(
+        &mut self,
+        m: faer::MatRef<'_, Complex>,
+        left: usize,
+        right: usize,
+    ) {
+        self.left = left;
+        self.right = right;
+        self.data.clear();
+        self.data.resize(left * 2 * right, Complex::new(0.0, 0.0));
+        #[allow(clippy::needless_range_loop)]
+        for l in 0..left {
+            for col in 0..2 * right {
+                self.data[l * 2 * right + col] = m[(l, col)];
+            }
+        }
+    }
+
+    /// Overwrite this site in place as a right-canonical tensor of shape
+    /// `(left, 2, right)` whose grouped-right matrix `left × (2·right)` is the
+    /// scaled conjugate `conj(v[(col, l)]) · sv[l]` — i.e. the singular-value
+    /// folding `s·Vᴴ` for the V factor (or the bare conjugate when `sv` is all
+    /// ones, e.g. a right-canonical Qᴴ). `v` is read as `cols × left` (its row
+    /// = grouped-right column index `col`, its col = bond index `l`). `sv` has
+    /// length `left`. Reuses the existing `data` allocation.
+    pub fn fill_right_from_scaled_conj(
+        &mut self,
+        v: faer::MatRef<'_, Complex>,
+        sv: &[f64],
+        left: usize,
+        right: usize,
+    ) {
+        self.left = left;
+        self.right = right;
+        self.data.clear();
+        self.data.resize(left * 2 * right, Complex::new(0.0, 0.0));
+        #[allow(clippy::needless_range_loop)]
+        for l in 0..left {
+            let s = Complex::new(sv[l], 0.0);
+            for col in 0..2 * right {
+                // grouped-right entry (l, col) = conj(V[col, l]) · s
+                self.data[l * 2 * right + col] = v[(col, l)].conj() * s;
+            }
+        }
     }
 }
 
@@ -100,7 +169,55 @@ pub enum TruncationPolicy {
 }
 
 /// `(u_kept, s_kept, vt_kept, discarded_weight)` returned by [`truncated_svd`].
+// P3-14: production hot paths now use `svd_into` + `svd_truncation_plan`; the
+// allocating `truncated_svd` is retained only for its oracle tests.
+#[cfg(test)]
 pub type TruncatedSvd = (faer::Mat<Complex>, Vec<f64>, faer::Mat<Complex>, f64);
+
+/// Pure χ-selection + renormalization for a truncated SVD given the (descending,
+/// nonnegative) singular values `sigmas`. Returns `(chi, discarded, scale)`:
+/// - `chi` ∈ [1, len] singular values to keep,
+/// - `discarded` = Σ_{j≥chi} σ_j² (the dropped Schmidt weight),
+/// - `scale` = renormalization factor for the kept σ so the state stays unit
+///   weight (input must come from a normalized state).
+///
+/// Null directions numerically zero relative to σ_max (1e-7·σ_max) are pruned
+/// before applying the policy, so the bond is never inflated with Gram noise.
+pub(crate) fn svd_truncation_plan(sigmas: &[f64], policy: &TruncationPolicy) -> (usize, f64, f64) {
+    let k = sigmas.len();
+    let s_max = sigmas.first().copied().unwrap_or(0.0);
+    let eps = 1e-7 * s_max.max(f64::MIN_POSITIVE);
+    let significant = sigmas.iter().filter(|&&s| s > eps).count().max(1);
+
+    // Suffix sums of σ²: suffix_sq[t] = Σ_{j≥t} σ_j².
+    let mut suffix_sq = vec![0.0_f64; k + 1];
+    for t in (0..k).rev() {
+        suffix_sq[t] = suffix_sq[t + 1] + sigmas[t] * sigmas[t];
+    }
+    let chi = match *policy {
+        TruncationPolicy::FixedBond(max_bond) => significant.min(max_bond.max(1)),
+        TruncationPolicy::ErrorBounded { epsilon, max_bond } => {
+            let cap = significant.min(max_bond.max(1));
+            let mut chosen = cap;
+            #[allow(clippy::needless_range_loop)]
+            for keep in 1..=cap {
+                if suffix_sq[keep] <= epsilon {
+                    chosen = keep;
+                    break;
+                }
+            }
+            chosen
+        }
+    };
+    let discarded = suffix_sq[chi];
+    let kept_weight = suffix_sq[0] - suffix_sq[chi];
+    let scale = if kept_weight > 0.0 {
+        (1.0 / kept_weight).sqrt()
+    } else {
+        1.0
+    };
+    (chi, discarded, scale)
+}
 
 /// SVD of `m` truncated according to `policy` (fixed-χ or error-bounded),
 /// renormalized to preserve unit weight (input must come from a normalized
@@ -121,6 +238,7 @@ pub type TruncatedSvd = (faer::Mat<Complex>, Vec<f64>, faer::Mat<Complex>, f64);
 /// silently drop half the state norm (root-caused via the SWAP-network oracle
 /// proptest). We use `faer`'s `thin_svd`, which is reliable for complex inputs
 /// (verified to reconstruct the offending blocks to ~1e-16).
+#[cfg(test)]
 pub fn truncated_svd(
     m: faer::MatRef<'_, Complex>,
     policy: &TruncationPolicy,
@@ -135,41 +253,7 @@ pub fn truncated_svd(
     let k = fs.column_vector().nrows(); // = min(rows, cols)
     let sigmas: Vec<f64> = (0..k).map(|t| fs[t].re).collect();
 
-    // Drop singular values numerically zero relative to the largest (null
-    // directions). faer's spectrum is accurate, so this only prunes genuine
-    // zeros and avoids inflating the bond with noise.
-    let s_max = sigmas.first().copied().unwrap_or(0.0);
-    let eps = 1e-7 * s_max.max(f64::MIN_POSITIVE);
-    let significant = sigmas.iter().filter(|&&s| s > eps).count().max(1);
-
-    // Suffix sums of σ²: suffix_sq[t] = Σ_{j≥t} σ_j² (non-increasing in t).
-    let mut suffix_sq = vec![0.0_f64; k + 1];
-    for t in (0..k).rev() {
-        suffix_sq[t] = suffix_sq[t + 1] + sigmas[t] * sigmas[t];
-    }
-    let chi = match *policy {
-        TruncationPolicy::FixedBond(max_bond) => significant.min(max_bond.max(1)),
-        TruncationPolicy::ErrorBounded { epsilon, max_bond } => {
-            let cap = significant.min(max_bond.max(1));
-            let mut chosen = cap;
-            // Smallest keep ∈ [1, cap] with discarded tail Σ_{j≥keep} σ_j² ≤ ε.
-            #[allow(clippy::needless_range_loop)]
-            for keep in 1..=cap {
-                if suffix_sq[keep] <= epsilon {
-                    chosen = keep;
-                    break;
-                }
-            }
-            chosen
-        }
-    };
-    let discarded: f64 = suffix_sq[chi];
-    let kept_weight: f64 = suffix_sq[0] - suffix_sq[chi];
-    let scale = if kept_weight > 0.0 {
-        (1.0 / kept_weight).sqrt()
-    } else {
-        1.0
-    };
+    let (chi, discarded, scale) = svd_truncation_plan(&sigmas, policy);
 
     let u_kept = faer::Mat::from_fn(rows, chi, |r, t| fu[(r, t)]);
     // vt row t = (t-th right singular vector)ᴴ = conjugate of V's column t.
@@ -365,5 +449,100 @@ mod tests {
         assert_eq!(back_l, s);
         let back_r = Site::from_group_right_faer(s.group_right_view(), 2, 3);
         assert_eq!(back_r, s);
+    }
+
+    #[test]
+    fn plan_fixed_bond_caps_chi() {
+        let s = vec![1.0, 0.1, 0.01, 0.001];
+        let (chi, _, _) = svd_truncation_plan(&s, &TruncationPolicy::FixedBond(2));
+        assert_eq!(chi, 2);
+    }
+
+    #[test]
+    fn plan_error_bounded_keeps_minimal_chi() {
+        let s = vec![1.0, 0.1, 0.01, 0.001];
+        let (chi, disc, _) = svd_truncation_plan(
+            &s,
+            &TruncationPolicy::ErrorBounded {
+                epsilon: 1e-3,
+                max_bond: 64,
+            },
+        );
+        assert_eq!(chi, 2);
+        assert!(disc <= 1e-3 + 1e-15);
+    }
+
+    #[test]
+    fn plan_tiny_eps_keeps_all() {
+        let s = vec![1.0, 0.1, 0.01, 0.001];
+        let (chi, disc, _) = svd_truncation_plan(
+            &s,
+            &TruncationPolicy::ErrorBounded {
+                epsilon: 0.0,
+                max_bond: 64,
+            },
+        );
+        assert_eq!(chi, 4);
+        assert!(disc < 1e-12);
+    }
+
+    #[test]
+    fn plan_cap_overrides_eps() {
+        let s = vec![1.0, 0.1, 0.01, 0.001];
+        let (chi, _, _) = svd_truncation_plan(
+            &s,
+            &TruncationPolicy::ErrorBounded {
+                epsilon: 10.0,
+                max_bond: 1,
+            },
+        );
+        assert_eq!(chi, 1);
+    }
+
+    #[test]
+    fn plan_prunes_null_directions() {
+        // A rank-1 spectrum padded with numerical zeros must collapse to χ=1.
+        let s = vec![1.0, 1e-15, 1e-16, 0.0];
+        let (chi, _, scale) = svd_truncation_plan(&s, &TruncationPolicy::FixedBond(64));
+        assert_eq!(chi, 1);
+        assert!((scale - 1.0).abs() < 1e-9, "unit-weight input → scale≈1");
+    }
+
+    #[test]
+    fn fill_left_matches_from_group_left() {
+        let m = faer::Mat::from_fn(4, 3, |i, j| Complex::new(i as f64 + 1.0, j as f64 - 0.5));
+        let reference = Site::from_group_left_faer(m.as_ref(), 2, 3);
+        let mut s = Site::ket0(); // wrong shape on purpose; filler must resize
+        s.fill_left_from(m.as_ref(), 2, 3);
+        assert_eq!(s, reference);
+    }
+
+    #[test]
+    fn fill_from_grouped_right_matches_builder() {
+        let m = faer::Mat::from_fn(2, 6, |i, j| Complex::new(i as f64 - 0.5, j as f64 + 0.25));
+        let reference = Site::from_group_right_faer(m.as_ref(), 2, 3);
+        let mut s = Site::ket0();
+        s.fill_from_grouped_right(m.as_ref(), 2, 3);
+        assert_eq!(s, reference);
+    }
+
+    #[test]
+    fn fill_right_scaled_conj_matches_manual() {
+        // V is (cols=2·right) × (left); here left=2, right=3 → V is 6×2.
+        let left = 2usize;
+        let right = 3usize;
+        let v = faer::Mat::from_fn(2 * right, left, |i, j| {
+            Complex::new(i as f64 * 0.1 + 1.0, j as f64 * 0.2 - 0.3)
+        });
+        let sv = [2.0_f64, 0.5];
+        let mut s = Site::ket0();
+        s.fill_right_from_scaled_conj(v.as_ref(), &sv, left, right);
+        assert_eq!((s.left, s.right), (left, right));
+        for l in 0..left {
+            for col in 0..2 * right {
+                let expected = v[(col, l)].conj() * Complex::new(sv[l], 0.0);
+                assert_eq!(s.data[l * 2 * right + col], expected);
+            }
+        }
     }
 }

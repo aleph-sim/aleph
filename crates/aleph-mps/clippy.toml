@@ -15,8 +15,8 @@ disallowed-types = [
 # 1.5x-19x small-chi rayon pessimization documented in docs/perf/mps_parallel.md.
 disallowed-methods = [
     { path = "faer::get_global_parallelism", reason = "use linalg::par_for (size-thresholded per-op Par)" },
-    { path = "faer::linalg::solvers::Svd::new_thin", reason = "reads the rayon global internally; use linalg::thin_svd_par" },
-    { path = "faer::linalg::solvers::Qr::new", reason = "reads the rayon global internally; use linalg::thin_qr_par" },
-    { path = "faer::mat::generic::Mat::thin_svd", reason = "reads the rayon global internally; use linalg::thin_svd_par" },
-    { path = "faer::mat::generic::Mat::qr", reason = "reads the rayon global internally; use linalg::thin_qr_par" },
+    { path = "faer::linalg::solvers::Svd::new_thin", reason = "reads the rayon global internally; use linalg::svd_into" },
+    { path = "faer::linalg::solvers::Qr::new", reason = "reads the rayon global internally; use linalg::qr_into" },
+    { path = "faer::mat::generic::Mat::thin_svd", reason = "reads the rayon global internally; use linalg::svd_into" },
+    { path = "faer::mat::generic::Mat::qr", reason = "reads the rayon global internally; use linalg::qr_into" },
 ]

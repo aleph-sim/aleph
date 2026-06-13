@@ -12,8 +12,10 @@
 
 use crate::MpsError;
 use aleph_core::Complex;
+#[cfg(test)]
 use faer::diag::Diag;
-use faer::dyn_stack::{MemBuffer, MemStack};
+use faer::diag::DiagMut;
+use faer::dyn_stack::{MemBuffer, MemStack, StackReq};
 use faer::linalg::householder::{
     apply_block_householder_sequence_on_the_left_in_place_scratch,
     apply_block_householder_sequence_on_the_left_in_place_with_conj,
@@ -22,7 +24,9 @@ use faer::linalg::qr::no_pivoting::factor::{
     qr_in_place, qr_in_place_scratch, recommended_block_size,
 };
 use faer::linalg::svd::{svd, svd_scratch, ComputeSvdVectors};
-use faer::{Conj, Mat, MatRef, Par};
+#[cfg(test)]
+use faer::Mat;
+use faer::{Conj, MatMut, MatRef, Par};
 
 /// Minimum operand element count (`rows · cols`) for the rayon pool to pay
 /// off: strictly above the largest measured-pessimization operand. EPYC 16c
@@ -59,37 +63,138 @@ pub(crate) fn par_for(rows: usize, cols: usize) -> Par {
 
 /// `(U, S, V)` factors of a thin SVD (named to satisfy clippy's
 /// type-complexity lint without obscuring the tuple shape).
+#[cfg(test)]
 pub(crate) type ThinSvd = (Mat<Complex>, Diag<Complex>, Mat<Complex>);
 
+/// Grow `mem` so a subsequent `MemStack::new(mem)` can satisfy `req`.
+/// Effectively monotonic: only rebuilds when the current buffer cannot hold
+/// the request, so it never shrinks below a size it already serves.
+pub(crate) fn ensure_mem(mem: &mut MemBuffer, req: StackReq) {
+    if !MemStack::new(mem).can_hold(req) {
+        *mem = MemBuffer::new(req);
+    }
+}
+
+/// Thin SVD writing factors into caller-provided buffers, using `mem` as scratch
+/// (grown as needed). `u_out` must be `m × size`, `v_out` `n × size`, `s_out`
+/// `size`, with `size = min(m, n)` — typically `submatrix_mut` views of larger
+/// pooled `Mat`s (the arena, P3-14). No allocation in steady state.
+pub(crate) fn svd_into(
+    a: MatRef<'_, Complex>,
+    par: Par,
+    u_out: MatMut<'_, Complex>,
+    v_out: MatMut<'_, Complex>,
+    s_out: DiagMut<'_, Complex>,
+    mem: &mut MemBuffer,
+) -> Result<(), MpsError> {
+    let (m, n) = a.shape();
+    let req = svd_scratch::<Complex>(
+        m,
+        n,
+        ComputeSvdVectors::Thin,
+        ComputeSvdVectors::Thin,
+        par,
+        Default::default(),
+    );
+    ensure_mem(mem, req);
+    svd(
+        a,
+        s_out,
+        Some(u_out),
+        Some(v_out),
+        par,
+        MemStack::new(mem),
+        Default::default(),
+    )
+    .map_err(|_| MpsError::SvdFailed)
+}
+
 /// Thin SVD with an explicit `Par`: `A = U · diag(S) · Vᴴ` with
-/// `U: m × size`, `V: n × size`, `size = min(m, n)`. Mirrors
+/// `U: m × size`, `V: n × size`, `size = min(m, n)`. Delegates to
+/// `svd_into` (allocating wrapper; bit-exact). Mirrors
 /// `faer::linalg::solvers::Svd::new_thin` — which hard-reads the global
 /// parallelism (faer-0.24.0 solvers.rs:1344) — for the canonical c64 element
 /// type (no conjugation pass needed: `aleph_core::Complex == faer::c64`).
+#[cfg(test)]
 pub(crate) fn thin_svd_par(a: MatRef<'_, Complex>, par: Par) -> Result<ThinSvd, MpsError> {
     let (m, n) = a.shape();
     let size = Ord::min(m, n);
     let mut u = Mat::<Complex>::zeros(m, size);
     let mut v = Mat::<Complex>::zeros(n, size);
     let mut s = Diag::<Complex>::zeros(size);
-    svd(
-        a,
-        s.as_mut(),
-        Some(u.as_mut()),
-        Some(v.as_mut()),
-        par,
-        MemStack::new(&mut MemBuffer::new(svd_scratch::<Complex>(
-            m,
-            n,
-            ComputeSvdVectors::Thin,
-            ComputeSvdVectors::Thin,
-            par,
-            Default::default(),
-        ))),
-        Default::default(),
-    )
-    .map_err(|_| MpsError::SvdFailed)?;
+    let mut mem = MemBuffer::new(StackReq::new::<Complex>(0));
+    svd_into(a, par, u.as_mut(), v.as_mut(), s.as_mut(), &mut mem)?;
     Ok((u, s, v))
+}
+
+/// Thin QR writing `Q` (m × size) into `thin_q` and `R` (size × n) into
+/// `thin_r`, factoring in place over `qr_in` (caller copies the source matrix
+/// into it first). `q_coeff` is the householder block-T scratch sized
+/// `block_size × size` where `block_size = recommended_block_size(m, n)`. `mem`
+/// is grown as needed. Mirrors `thin_qr_par` with zero allocation in steady
+/// state (P3-14). `size = min(m, n)`.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn qr_into(
+    mut qr_in: MatMut<'_, Complex>,
+    par: Par,
+    mut q_coeff: MatMut<'_, Complex>,
+    mut thin_q: MatMut<'_, Complex>,
+    mut thin_r: MatMut<'_, Complex>,
+    mem: &mut MemBuffer,
+) {
+    let (m, n) = qr_in.shape();
+    let size = Ord::min(m, n);
+    let block_size = recommended_block_size::<Complex>(m, n);
+    ensure_mem(
+        mem,
+        qr_in_place_scratch::<Complex>(m, n, block_size, par, Default::default()),
+    );
+    let _ = qr_in_place(
+        qr_in.as_mut(),
+        q_coeff.as_mut(),
+        par,
+        MemStack::new(mem),
+        Default::default(),
+    );
+    // R: upper trapezoid of the factored qr_in. Column-major source → j-outer.
+    for j in 0..n {
+        for i in 0..Ord::min(j + 1, size) {
+            thin_r[(i, j)] = qr_in[(i, j)];
+        }
+    }
+    // Reuse qr_in's first `size` columns as the householder basis (faer
+    // split_LU convention: strict-upper zeroed, unit diagonal). No extra alloc.
+    for j in 0..size {
+        for i in 0..j {
+            qr_in[(i, j)] = Complex::new(0.0, 0.0);
+        }
+        qr_in[(j, j)] = Complex::new(1.0, 0.0);
+    }
+    // thin_q := identity, then apply the householder sequence.
+    thin_q.fill(Complex::new(0.0, 0.0));
+    for d in 0..size {
+        thin_q[(d, d)] = Complex::new(1.0, 0.0);
+    }
+    ensure_mem(
+        mem,
+        apply_block_householder_sequence_on_the_left_in_place_scratch::<Complex>(
+            m, block_size, size,
+        ),
+    );
+    apply_block_householder_sequence_on_the_left_in_place_with_conj(
+        qr_in.as_ref().subcols(0, size),
+        q_coeff.as_ref(),
+        Conj::No,
+        thin_q.as_mut(),
+        par,
+        MemStack::new(mem),
+    );
+}
+
+/// Block size faer uses for the m×n householder QR — lets callers (P3-14 arena)
+/// size the `q_coeff` scratch identically to `qr_into`.
+pub(crate) fn recommended_block_size_complex(m: usize, n: usize) -> usize {
+    recommended_block_size::<Complex>(m, n)
 }
 
 /// Thin QR with an explicit `Par`: returns `(thin_Q, thin_R)` with
@@ -98,60 +203,25 @@ pub(crate) fn thin_svd_par(a: MatRef<'_, Complex>, par: Par) -> Result<ThinSvd, 
 /// plus `compute_thin_Q()`/`thin_R()` — which hard-read the global parallelism
 /// (faer-0.24.0 solvers.rs:1115,1196). Takes the input by value: it doubles
 /// as the in-place factorization workspace (the high-level path makes the
-/// same `to_owned()` copy internally).
-pub(crate) fn thin_qr_par(mut qr: Mat<Complex>, par: Par) -> (Mat<Complex>, Mat<Complex>) {
+/// same `to_owned()` copy internally). Delegates to `qr_into` (allocating
+/// wrapper; bit-exact).
+#[cfg(test)]
+pub(crate) fn thin_qr_par(qr: Mat<Complex>, par: Par) -> (Mat<Complex>, Mat<Complex>) {
     let (m, n) = qr.shape();
     let size = Ord::min(m, n);
     let block_size = recommended_block_size::<Complex>(m, n);
+    let mut qr_in = qr; // consumed as the in-place workspace
     let mut q_coeff = Mat::<Complex>::zeros(block_size, size);
-    let _ = qr_in_place(
-        qr.as_mut(),
-        q_coeff.as_mut(),
-        par,
-        MemStack::new(&mut MemBuffer::new(qr_in_place_scratch::<Complex>(
-            m,
-            n,
-            block_size,
-            par,
-            Default::default(),
-        ))),
-        Default::default(),
-    );
-    // After qr_in_place: R sits in the upper trapezoid, householder vectors
-    // strictly below the diagonal (faer qr/no_pivoting/factor.rs docs)
-    // (return value unused — q_coeff carries the block T factors).
-    // Extraction walks j-outer/i-inner: faer Mat storage is column-major, so
-    // the inner loop stays within one source column instead of striding by m.
+    let mut thin_q = Mat::<Complex>::zeros(m, size);
     let mut thin_r = Mat::<Complex>::zeros(size, n);
-    for j in 0..n {
-        for i in 0..Ord::min(j + 1, size) {
-            thin_r[(i, j)] = qr[(i, j)];
-        }
-    }
-    // R is extracted, so `qr` is dead storage: reuse it in place as the
-    // householder basis — zero the strict upper triangle of the first `size`
-    // columns and set a unit diagonal, exactly faer's split_LU L-factor
-    // convention (solvers.rs:955) — no extra m×size allocation. The apply
-    // kernel treats the diagonal as implicitly unit; we match faer's stored
-    // convention defensively.
-    for j in 0..size {
-        for i in 0..j {
-            qr[(i, j)] = Complex::new(0.0, 0.0);
-        }
-        qr[(j, j)] = Complex::new(1.0, 0.0);
-    }
-    let mut thin_q = Mat::<Complex>::identity(m, size);
-    apply_block_householder_sequence_on_the_left_in_place_with_conj(
-        qr.as_ref().subcols(0, size),
-        q_coeff.as_ref(),
-        Conj::No,
-        thin_q.as_mut(),
+    let mut mem = MemBuffer::new(StackReq::new::<Complex>(0));
+    qr_into(
+        qr_in.as_mut(),
         par,
-        MemStack::new(&mut MemBuffer::new(
-            apply_block_householder_sequence_on_the_left_in_place_scratch::<Complex>(
-                m, block_size, size,
-            ),
-        )),
+        q_coeff.as_mut(),
+        thin_q.as_mut(),
+        thin_r.as_mut(),
+        &mut mem,
     );
     (thin_q, thin_r)
 }
@@ -321,5 +391,41 @@ mod tests {
         // is always Par::Seq, so both arms of par_for return Seq and the
         // assertion is vacuously true (still a useful smoke test).
         assert_eq!(par_for(2048, 2048), faer::get_global_parallelism());
+    }
+
+    #[test]
+    fn svd_into_pooled_matches_high_level_bit_exact() {
+        for (m, n) in [(8usize, 5usize), (5, 8), (6, 6), (160, 128)] {
+            let size = Ord::min(m, n);
+            let a = test_matrix(m, n);
+            let hl = a.thin_svd().unwrap();
+            // Oversized pooled backing + strided sub-views.
+            let mut u = Mat::<Complex>::zeros(m + 3, size + 3);
+            let mut v = Mat::<Complex>::zeros(n + 3, size + 3);
+            let mut s = Diag::<Complex>::zeros(size);
+            let mut mem = MemBuffer::new(StackReq::new::<Complex>(0));
+            svd_into(
+                a.as_ref(),
+                faer::get_global_parallelism(),
+                u.as_mut().submatrix_mut(0, 0, m, size),
+                v.as_mut().submatrix_mut(0, 0, n, size),
+                s.as_mut(),
+                &mut mem,
+            )
+            .unwrap();
+            for t in 0..size {
+                assert_eq!(s.as_ref()[t], hl.S()[t], "S[{t}] ({m}x{n})");
+            }
+            for r in 0..m {
+                for c in 0..size {
+                    assert_eq!(u[(r, c)], hl.U()[(r, c)], "U[({r},{c})] ({m}x{n})");
+                }
+            }
+            for r in 0..n {
+                for c in 0..size {
+                    assert_eq!(v[(r, c)], hl.V()[(r, c)], "V[({r},{c})] ({m}x{n})");
+                }
+            }
+        }
     }
 }

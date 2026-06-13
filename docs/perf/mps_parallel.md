@@ -195,3 +195,64 @@ wide_bond` AND re-run the guard cells — `nn_qaoa` against a `--no-default-feat
 `--save-baseline`, plus the `wide_bond` χ=128/χ=256 cells against their t=1 rows — to
 confirm the new threshold introduces no small-cell pessimization. Note the crossover
 above was measured at 16T on EPYC only; it is thread-count- and machine-dependent.
+
+## P3-14 — hot-path scratch arena
+
+Per-2q-gate allocations before P3-14: `theta` + `theta2` (each `Mat::zeros`
+memset then overwritten), a fresh SVD `u`/`v`/`s` + `MemBuffer` every call, the
+`u_kept`/`vt_kept` factor copies, and two fresh `Site` `Vec`s; center moves added
+`to_owned()` workspace copies, per-call QR `MemBuffer`s, and a `qh =
+q.adjoint().to_owned()` copy. P3-14 pools all of these on `MpsState` (faer `Mat`s
++ one `MemBuffer`, grown monotonically, addressed via `submatrix` views) and
+writes the two new `Site`s directly (one indexed pass each, folding the V
+conjugation + singular-value scaling into the write), dropping the `qh`
+materialization entirely. `svd_into`/`qr_into` are the pooled-buffer primitives;
+the χ-selection math lives in the pure `svd_truncation_plan`.
+
+Peak scratch memory rises vs the alloc-per-gate code (≈100–150 MB at χ=512, small
+vs the state); unifying time-disjoint buffers (e.g. `absorbed`↔`theta`) is a
+documented follow-up.
+
+### EPYC before/after (criterion, current-main baseline)
+
+Box: EPYC 8124P, `target-cpu=native` (AVX-512), default features (`parallel`
+on). baseline = `main` @ `92721f4`, branch = P3-14 @ `febd3e8`. The
+`long_range`/`nn_qaoa` cells are from one A/B pass; the `wide_bond` cells are a
+back-to-back **warm** A/B re-measure (a first sequential pass had measured the
+baseline colder, inflating the apparent regression — the warm numbers below are
+the honest ones, and the χ128/χ256 deltas reproduced across both passes).
+
+| cell | main | P3-14 | Δ |
+|------|------|-------|---|
+| long_range dist1 (n12 χ32) | 22.04 µs | 18.72 µs | **−15.1%** |
+| long_range dist4 | 32.94 µs | 23.59 µs | −28.4% |
+| long_range dist8 | 41.89 µs | 29.74 µs | −29.0% |
+| long_range dist11 | 50.83 µs | 34.22 µs | −32.7% |
+| nn_qaoa χ64 n10 | 322.6 µs | 301.4 µs | −6.6% |
+| nn_qaoa χ64 n20 | 800.4 µs | 752.1 µs | −6.0% |
+| nn_qaoa χ64 n30 | 1.284 ms | 1.198 ms | −6.7% |
+| nn_qaoa n20 fixed_χ64 | 802.2 µs | 756.0 µs | −5.8% |
+| nn_qaoa n20 error_1e-8 | 745.0 µs | 679.1 µs | −8.8% |
+| wide_bond n20 χ128 d16 | 312.2 ms | 316.6 ms | +1.4% |
+| wide_bond n24 χ256 d20 | 3.823 s | 3.838 s | +0.4% (within noise) |
+| wide_bond n26 χ512 d24 | 29.90 s | 27.90 s | −6.7% |
+
+**Verdict (improve-vs-main bar): MET.** dist1 improves 15.1 % — recovering and
+exceeding the +11.9 % P3-09 dist1 regression the ticket cited — and every
+`long_range` cell (more center moves → more eliminated alloc churn) improves
+15–33 %. `nn_qaoa` improves 6–9 %. At large bond, the χ512 cell improves 6.7 %
+(the eliminated O(χ²) `u_kept`/`vt_kept` factor copies dominate there).
+
+The lone exception is `wide_bond` χ128 at **+1.4 %** (χ256 is within noise). This
+reproduced across both the cold and warm passes, so it is a real, small
+regression, not measurement drift. Root cause: the pooled buffers grow to the
+*maximum* operand size seen, so chain-edge gates (sub-maximal bond) run their
+gemm/SVD on a **strided `submatrix` view** of the larger backing `Mat` rather
+than a contiguous matrix — a minor cache/vectorization cost. At χ128 the
+per-gate FLOPs do not dominate enough to hide it; at χ512 the copy-elimination
+win swamps it. The net across the matrix is a clear win (10/12 cells faster,
+1 noise, 1 +1.4 %), so this is accepted as a documented trade. Two follow-up
+levers if it ever matters: (a) size the pooled gemm/SVD inputs to the exact
+per-gate operand (trading some pooling for contiguity), or (b) pool the
+remaining O(χ) scalar allocations (`s_diag`/`sigmas`/`s_kept`/`ones`) — left out
+of v1 as dwarfed by the O(χ²) work the arena already pools.
