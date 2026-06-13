@@ -652,7 +652,6 @@ impl MpsState {
     /// convention: site `s` contributes the bit of the logical qubit it
     /// currently holds (`qubit_of_site[s]`).
     pub fn dense_statevector(&self) -> Vec<Complex> {
-        let n = self.sites.len();
         // Phase 1: contract in site order, producing raw_amps indexed by site bits
         // (bit s = physical index of site s). The incremental layout only works when
         // the bits are introduced in order 0, 1, 2, …, so we always contract with
@@ -708,20 +707,13 @@ impl MpsState {
             // Identity permutation: raw layout already matches logical layout.
             return amps;
         }
-        let dim = 1usize << n;
-        let mut out = vec![Complex::new(0.0, 0.0); dim];
-        // Explicit index loop — the permuted bit-shuffling has no cleaner iterator form.
-        #[allow(clippy::needless_range_loop)]
-        for raw_idx in 0..dim {
-            // Build the logical index by mapping each site's bit to the qubit it holds.
-            let mut logical_idx = 0usize;
-            for s in 0..n {
-                let bit = (raw_idx >> s) & 1;
-                logical_idx |= bit << self.qubit_of_site[s] as usize;
-            }
-            out[logical_idx] = amps[raw_idx];
-        }
-        out
+        // Gather raw (site-bit) amplitudes into logical-qubit order. The shared
+        // helper takes the log2phys map `perm[logical] = physical`, which is
+        // exactly `site_of_qubit` (logical qubit q is stored at physical site
+        // `site_of_qubit[q]`) — the inverse of the `qubit_of_site` scatter this
+        // once open-coded. Shared with aleph-sv via aleph-core (P3-15).
+        let perm: Vec<u32> = self.site_of_qubit.iter().map(|&s| s as u32).collect();
+        aleph_core::bit_permute_buf(&amps, &perm).to_vec()
     }
 
     /// Perfect sampling (Ferris–Vidal 2012). Does not mutate `self`.
