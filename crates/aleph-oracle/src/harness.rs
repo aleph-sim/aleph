@@ -223,7 +223,15 @@ where
     Ok(())
 }
 
-fn assert_distribution_close(
+/// Assert an empirical sample distribution matches an exact one within a
+/// calibrated 5σ Bernoulli band (+ a small absolute floor for near-zero
+/// probabilities). `empirical[i]` is the shot count for basis state `i`,
+/// `exact[i]` its target probability; `shots` is the total drawn. Panics with
+/// a structured, basis-labeled message on the first cell outside the band.
+///
+/// Shared so backends compare sampling against any exact distribution (not just
+/// a Qiskit fixture) instead of re-rolling an ad-hoc ±ε check (P3-16).
+pub fn assert_distribution_close(
     name: &str,
     num_qubits: u32,
     empirical: &[u64],

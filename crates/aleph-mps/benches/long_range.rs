@@ -4,13 +4,10 @@
 //! always-swap-back baseline to see the improvement.
 
 use aleph_backend::run;
-use aleph_core::{Gate, GateInstance};
+use aleph_benches::g;
+use aleph_core::Gate;
 use aleph_mps::MpsBackend;
 use criterion::{criterion_group, criterion_main, Criterion};
-
-fn g(gate: Gate, qubits: &[u32]) -> GateInstance {
-    GateInstance::new(gate, qubits.to_vec())
-}
 
 /// n-qubit circuit: H layer + NN entangling ladder, then a single CNOT(0, dist)
 /// whose SWAP-network cost is being measured.

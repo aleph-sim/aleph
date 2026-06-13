@@ -8,15 +8,12 @@
 //! SV at n=20 below.
 
 use aleph_backend::{run, Backend};
+use aleph_benches::g;
 use aleph_core::{Gate, GateInstance, Param, Pauli, PauliString};
 use aleph_ir::{Circuit, Instruction};
 use aleph_mps::MpsBackend;
 use aleph_sv::NaiveSvBackend;
 use std::collections::{BTreeMap, BTreeSet};
-
-fn g(gate: Gate, qubits: &[u32]) -> GateInstance {
-    GateInstance::new(gate, qubits.to_vec())
-}
 
 /// Deterministic non-Clifford NN brickwork: H wall, then `layers` brick
 /// layers alternating even/odd bonds. Each brick = CNOT·Rz(θ_q)·CNOT (a ZZ
