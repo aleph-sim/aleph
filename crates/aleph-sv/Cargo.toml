@@ -23,6 +23,7 @@ aleph-backend = { path = "../aleph-backend" }
 rand          = { workspace = true }
 smallvec      = { workspace = true }
 rayon         = { workspace = true }
+thiserror     = { workspace = true }
 
 [dev-dependencies]
 aleph-parser = { path = "../aleph-parser" }
