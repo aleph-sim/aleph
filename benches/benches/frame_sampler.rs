@@ -2,9 +2,10 @@
 //! of the surface-d11 syndrome cycle (120 ancillas, 1024 shots).
 //!
 //! Both start from the same post-cycle stabilizer state (gates applied once);
-//! `sequential` clones + measures the ancillas once per shot (the pre-P4.6-02
-//! `Backend::sample` path), `batched` runs `sample_frames` (64 shots/pass, x/z
-//! rowsum work shared). Target: batched ≥ 10× faster.
+//! `sequential` clones + measures the ancillas once per shot (the per-shot CHP
+//! `Tableau::measure` loop the pre-P4.6-02 `Backend::sample` was built on),
+//! `batched` runs `sample_frames` (64 shots/pass, x/z rowsum work shared).
+//! Target: batched ≥ 10× faster.
 
 use aleph_backend::Backend;
 use aleph_benches::SurfaceCode;

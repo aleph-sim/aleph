@@ -773,12 +773,12 @@ impl Tableau {
     ) -> Vec<u64> {
         let nwords = (shots as usize).div_ceil(64);
         let mut out = vec![0u64; qubits.len() * nwords];
+        let mut sign_w = vec![0u64; 2 * self.n + 1];
         for w in 0..nwords {
-            // Shared x/z for this 64-shot pass; final signs broadcast to words.
+            // Shared x/z for this 64-shot pass (the clone is unavoidable —
+            // measure_word mutates x/z); final signs broadcast to words.
             let mut t = self.clone();
             t.ensure_row_major();
-            let rows = 2 * t.n + 1;
-            let mut sign_w = vec![0u64; rows];
             for (r, sw) in sign_w.iter_mut().enumerate() {
                 *sw = if t.sign.get(r) { u64::MAX } else { 0 };
             }
@@ -798,14 +798,27 @@ impl Tableau {
         shots: u32,
         rng: &mut R,
     ) -> Vec<u64> {
-        debug_assert!(qubits.len() <= 64, "per-shot packing needs ≤ 64 qubits");
+        // Hard guard (not debug-only): `1 << i` for i ≥ 64 would silently
+        // collide bit i with bit i%64 in release. This is a pub API.
+        assert!(
+            qubits.len() <= 64,
+            "sample_qubits_batched packs one shot per u64; use sample_frames for > 64 qubits"
+        );
         let nwords = (shots as usize).div_ceil(64);
         let frames = self.sample_frames(qubits, shots, rng);
         let mut out = vec![0u64; shots as usize];
+        // Read each 64-shot frame word once; scatter its set bits to the shots.
         for (i, _) in qubits.iter().enumerate() {
-            for (shot, packed) in out.iter_mut().enumerate() {
-                let (w, s) = (shot / 64, shot % 64);
-                *packed |= ((frames[i * nwords + w] >> s) & 1) << i;
+            for w in 0..nwords {
+                let mut word = frames[i * nwords + w];
+                let base = w * 64;
+                while word != 0 {
+                    let s = word.trailing_zeros() as usize;
+                    if base + s < shots as usize {
+                        out[base + s] |= 1u64 << i;
+                    }
+                    word &= word - 1;
+                }
             }
         }
         out
