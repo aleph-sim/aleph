@@ -5,8 +5,10 @@
 use crate::tensor::{truncated_svd, Site, TruncationPolicy};
 use crate::MpsError;
 use aleph_core::{Complex, Gate, GateInstance, PauliString};
+use faer::dyn_stack::{MemBuffer, StackReq};
 use faer::linalg::matmul::matmul;
 use faer::Accum;
+use faer::Mat;
 use nalgebra::DMatrix;
 use rand::Rng;
 
@@ -32,6 +34,11 @@ pub struct MpsState {
     pub(crate) site_of_qubit: Vec<usize>,
     /// Physical nearest-neighbor SWAPs applied so far (lazy-router evidence).
     pub(crate) swaps_applied: u64,
+    /// Reusable hot-path workspace (P3-14). Not part of the logical state; see
+    /// `Scratch`'s clone-as-empty.
+    #[allow(dead_code)]
+    // P3-14: consumed by apply_2q_adjacent / move_center_* in the next tasks
+    scratch: Scratch,
     /// Test-only override forcing every faer op down one `Par` regardless of
     /// the size threshold — lets the Par-invariance oracle compare `Seq` vs
     /// `rayon` as plain arguments instead of toggling faer's process global
@@ -39,6 +46,83 @@ pub struct MpsState {
     /// size-threshold policy.
     #[cfg(test)]
     pub(crate) par_override: Option<faer::Par>,
+}
+
+/// Reusable per-state workspace for the 2q hot path (P3-14). Each `Mat` grows
+/// monotonically to the largest operand seen; ops take `submatrix_mut` views at
+/// their exact shape. `mem` is the faer scratch shared sequentially across the
+/// SVD/QR ops within one gate.
+///
+/// NOTE: peak scratch memory rises vs the alloc-per-gate code (≈100–150 MB at
+/// χ=512); buffers used at disjoint times (absorbed↔theta) could be unified —
+/// documented follow-up, not done in v1 for clarity.
+#[allow(dead_code)] // P3-14: consumed by apply_2q_adjacent / move_center_* in the next tasks
+struct Scratch {
+    theta: Mat<Complex>,
+    theta2: Mat<Complex>,
+    svd_u: Mat<Complex>,
+    svd_v: Mat<Complex>,
+    qr_in: Mat<Complex>,
+    q_coeff: Mat<Complex>,
+    thin_q: Mat<Complex>,
+    thin_r: Mat<Complex>,
+    absorbed: Mat<Complex>,
+    mem: MemBuffer,
+}
+
+impl Default for Scratch {
+    fn default() -> Self {
+        Scratch {
+            theta: Mat::new(),
+            theta2: Mat::new(),
+            svd_u: Mat::new(),
+            svd_v: Mat::new(),
+            qr_in: Mat::new(),
+            q_coeff: Mat::new(),
+            thin_q: Mat::new(),
+            thin_r: Mat::new(),
+            absorbed: Mat::new(),
+            mem: MemBuffer::new(StackReq::new::<Complex>(0)),
+        }
+    }
+}
+
+// Cloning a state must NOT copy transient workspace: scratch holds no semantic
+// state (always written before read, regrown on demand), so a clone starts
+// empty. This keeps `#[derive(Clone)]` on MpsState cheap and correct for the
+// expectation()/sampling clone paths.
+impl Clone for Scratch {
+    fn clone(&self) -> Self {
+        Scratch::default()
+    }
+}
+
+impl std::fmt::Debug for Scratch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Scratch")
+            .field("theta", &self.theta.shape())
+            .field("theta2", &self.theta2.shape())
+            .finish_non_exhaustive()
+    }
+}
+
+#[allow(dead_code)] // P3-14: consumed by apply_2q_adjacent / move_center_* in the next tasks
+impl Scratch {
+    /// Ensure `buf` is at least `rows × cols`, regrowing monotonically (keeps the
+    /// larger of each dim so it never shrinks below a size it already serves).
+    fn grow(buf: &mut Mat<Complex>, rows: usize, cols: usize) {
+        if buf.nrows() < rows || buf.ncols() < cols {
+            let nr = buf.nrows().max(rows);
+            let nc = buf.ncols().max(cols);
+            *buf = Mat::zeros(nr, nc);
+        }
+    }
+
+    /// Grow `buf` to cover `rows × cols` and return that top-left submatrix view.
+    fn view_mut(buf: &mut Mat<Complex>, rows: usize, cols: usize) -> faer::MatMut<'_, Complex> {
+        Self::grow(buf, rows, cols);
+        buf.as_mut().submatrix_mut(0, 0, rows, cols)
+    }
 }
 
 impl MpsState {
@@ -59,6 +143,7 @@ impl MpsState {
             qubit_of_site: (0..n as u32).collect(),
             site_of_qubit: (0..n).collect(),
             swaps_applied: 0,
+            scratch: Scratch::default(),
             #[cfg(test)]
             par_override: None,
         }
