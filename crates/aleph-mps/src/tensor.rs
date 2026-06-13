@@ -102,6 +102,51 @@ pub enum TruncationPolicy {
 /// `(u_kept, s_kept, vt_kept, discarded_weight)` returned by [`truncated_svd`].
 pub type TruncatedSvd = (faer::Mat<Complex>, Vec<f64>, faer::Mat<Complex>, f64);
 
+/// Pure χ-selection + renormalization for a truncated SVD given the (descending,
+/// nonnegative) singular values `sigmas`. Returns `(chi, discarded, scale)`:
+/// - `chi` ∈ [1, len] singular values to keep,
+/// - `discarded` = Σ_{j≥chi} σ_j² (the dropped Schmidt weight),
+/// - `scale` = renormalization factor for the kept σ so the state stays unit
+///   weight (input must come from a normalized state).
+///
+/// Null directions numerically zero relative to σ_max (1e-7·σ_max) are pruned
+/// before applying the policy, so the bond is never inflated with Gram noise.
+pub(crate) fn svd_truncation_plan(sigmas: &[f64], policy: &TruncationPolicy) -> (usize, f64, f64) {
+    let k = sigmas.len();
+    let s_max = sigmas.first().copied().unwrap_or(0.0);
+    let eps = 1e-7 * s_max.max(f64::MIN_POSITIVE);
+    let significant = sigmas.iter().filter(|&&s| s > eps).count().max(1);
+
+    // Suffix sums of σ²: suffix_sq[t] = Σ_{j≥t} σ_j².
+    let mut suffix_sq = vec![0.0_f64; k + 1];
+    for t in (0..k).rev() {
+        suffix_sq[t] = suffix_sq[t + 1] + sigmas[t] * sigmas[t];
+    }
+    let chi = match *policy {
+        TruncationPolicy::FixedBond(max_bond) => significant.min(max_bond.max(1)),
+        TruncationPolicy::ErrorBounded { epsilon, max_bond } => {
+            let cap = significant.min(max_bond.max(1));
+            let mut chosen = cap;
+            #[allow(clippy::needless_range_loop)]
+            for keep in 1..=cap {
+                if suffix_sq[keep] <= epsilon {
+                    chosen = keep;
+                    break;
+                }
+            }
+            chosen
+        }
+    };
+    let discarded = suffix_sq[chi];
+    let kept_weight = suffix_sq[0] - suffix_sq[chi];
+    let scale = if kept_weight > 0.0 {
+        (1.0 / kept_weight).sqrt()
+    } else {
+        1.0
+    };
+    (chi, discarded, scale)
+}
+
 /// SVD of `m` truncated according to `policy` (fixed-χ or error-bounded),
 /// renormalized to preserve unit weight (input must come from a normalized
 /// state). Returns `(u_kept, s_kept, vt_kept, discarded_weight)` where:
@@ -135,41 +180,7 @@ pub fn truncated_svd(
     let k = fs.column_vector().nrows(); // = min(rows, cols)
     let sigmas: Vec<f64> = (0..k).map(|t| fs[t].re).collect();
 
-    // Drop singular values numerically zero relative to the largest (null
-    // directions). faer's spectrum is accurate, so this only prunes genuine
-    // zeros and avoids inflating the bond with noise.
-    let s_max = sigmas.first().copied().unwrap_or(0.0);
-    let eps = 1e-7 * s_max.max(f64::MIN_POSITIVE);
-    let significant = sigmas.iter().filter(|&&s| s > eps).count().max(1);
-
-    // Suffix sums of σ²: suffix_sq[t] = Σ_{j≥t} σ_j² (non-increasing in t).
-    let mut suffix_sq = vec![0.0_f64; k + 1];
-    for t in (0..k).rev() {
-        suffix_sq[t] = suffix_sq[t + 1] + sigmas[t] * sigmas[t];
-    }
-    let chi = match *policy {
-        TruncationPolicy::FixedBond(max_bond) => significant.min(max_bond.max(1)),
-        TruncationPolicy::ErrorBounded { epsilon, max_bond } => {
-            let cap = significant.min(max_bond.max(1));
-            let mut chosen = cap;
-            // Smallest keep ∈ [1, cap] with discarded tail Σ_{j≥keep} σ_j² ≤ ε.
-            #[allow(clippy::needless_range_loop)]
-            for keep in 1..=cap {
-                if suffix_sq[keep] <= epsilon {
-                    chosen = keep;
-                    break;
-                }
-            }
-            chosen
-        }
-    };
-    let discarded: f64 = suffix_sq[chi];
-    let kept_weight: f64 = suffix_sq[0] - suffix_sq[chi];
-    let scale = if kept_weight > 0.0 {
-        (1.0 / kept_weight).sqrt()
-    } else {
-        1.0
-    };
+    let (chi, discarded, scale) = svd_truncation_plan(&sigmas, policy);
 
     let u_kept = faer::Mat::from_fn(rows, chi, |r, t| fu[(r, t)]);
     // vt row t = (t-th right singular vector)ᴴ = conjugate of V's column t.
@@ -365,5 +376,62 @@ mod tests {
         assert_eq!(back_l, s);
         let back_r = Site::from_group_right_faer(s.group_right_view(), 2, 3);
         assert_eq!(back_r, s);
+    }
+
+    #[test]
+    fn plan_fixed_bond_caps_chi() {
+        let s = vec![1.0, 0.1, 0.01, 0.001];
+        let (chi, _, _) = svd_truncation_plan(&s, &TruncationPolicy::FixedBond(2));
+        assert_eq!(chi, 2);
+    }
+
+    #[test]
+    fn plan_error_bounded_keeps_minimal_chi() {
+        let s = vec![1.0, 0.1, 0.01, 0.001];
+        let (chi, disc, _) = svd_truncation_plan(
+            &s,
+            &TruncationPolicy::ErrorBounded {
+                epsilon: 1e-3,
+                max_bond: 64,
+            },
+        );
+        assert_eq!(chi, 2);
+        assert!(disc <= 1e-3 + 1e-15);
+    }
+
+    #[test]
+    fn plan_tiny_eps_keeps_all() {
+        let s = vec![1.0, 0.1, 0.01, 0.001];
+        let (chi, disc, _) = svd_truncation_plan(
+            &s,
+            &TruncationPolicy::ErrorBounded {
+                epsilon: 0.0,
+                max_bond: 64,
+            },
+        );
+        assert_eq!(chi, 4);
+        assert!(disc < 1e-12);
+    }
+
+    #[test]
+    fn plan_cap_overrides_eps() {
+        let s = vec![1.0, 0.1, 0.01, 0.001];
+        let (chi, _, _) = svd_truncation_plan(
+            &s,
+            &TruncationPolicy::ErrorBounded {
+                epsilon: 10.0,
+                max_bond: 1,
+            },
+        );
+        assert_eq!(chi, 1);
+    }
+
+    #[test]
+    fn plan_prunes_null_directions() {
+        // A rank-1 spectrum padded with numerical zeros must collapse to χ=1.
+        let s = vec![1.0, 1e-15, 1e-16, 0.0];
+        let (chi, _, scale) = svd_truncation_plan(&s, &TruncationPolicy::FixedBond(64));
+        assert_eq!(chi, 1);
+        assert!((scale - 1.0).abs() < 1e-9, "unit-weight input → scale≈1");
     }
 }
