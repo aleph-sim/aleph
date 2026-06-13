@@ -121,66 +121,94 @@ pub(crate) fn thin_svd_par(a: MatRef<'_, Complex>, par: Par) -> Result<ThinSvd, 
     Ok((u, s, v))
 }
 
+/// Thin QR writing `Q` (m × size) into `thin_q` and `R` (size × n) into
+/// `thin_r`, factoring in place over `qr_in` (caller copies the source matrix
+/// into it first). `q_coeff` is the householder block-T scratch sized
+/// `block_size × size` where `block_size = recommended_block_size(m, n)`. `mem`
+/// is grown as needed. Mirrors `thin_qr_par` with zero allocation in steady
+/// state (P3-14). `size = min(m, n)`.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn qr_into(
+    mut qr_in: MatMut<'_, Complex>,
+    par: Par,
+    mut q_coeff: MatMut<'_, Complex>,
+    mut thin_q: MatMut<'_, Complex>,
+    mut thin_r: MatMut<'_, Complex>,
+    mem: &mut MemBuffer,
+) {
+    let (m, n) = qr_in.shape();
+    let size = Ord::min(m, n);
+    let block_size = recommended_block_size::<Complex>(m, n);
+    ensure_mem(
+        mem,
+        qr_in_place_scratch::<Complex>(m, n, block_size, par, Default::default()),
+    );
+    let _ = qr_in_place(
+        qr_in.as_mut(),
+        q_coeff.as_mut(),
+        par,
+        MemStack::new(mem),
+        Default::default(),
+    );
+    // R: upper trapezoid of the factored qr_in. Column-major source → j-outer.
+    for j in 0..n {
+        for i in 0..Ord::min(j + 1, size) {
+            thin_r[(i, j)] = qr_in[(i, j)];
+        }
+    }
+    // Reuse qr_in's first `size` columns as the householder basis (faer
+    // split_LU convention: strict-upper zeroed, unit diagonal). No extra alloc.
+    for j in 0..size {
+        for i in 0..j {
+            qr_in[(i, j)] = Complex::new(0.0, 0.0);
+        }
+        qr_in[(j, j)] = Complex::new(1.0, 0.0);
+    }
+    // thin_q := identity, then apply the householder sequence.
+    thin_q.fill(Complex::new(0.0, 0.0));
+    for d in 0..size {
+        thin_q[(d, d)] = Complex::new(1.0, 0.0);
+    }
+    ensure_mem(
+        mem,
+        apply_block_householder_sequence_on_the_left_in_place_scratch::<Complex>(
+            m, block_size, size,
+        ),
+    );
+    apply_block_householder_sequence_on_the_left_in_place_with_conj(
+        qr_in.as_ref().subcols(0, size),
+        q_coeff.as_ref(),
+        Conj::No,
+        thin_q.as_mut(),
+        par,
+        MemStack::new(mem),
+    );
+}
+
 /// Thin QR with an explicit `Par`: returns `(thin_Q, thin_R)` with
 /// `thin_Q: m × size` (orthonormal columns), `thin_R: size × n` upper
 /// trapezoidal, `size = min(m, n)`. Mirrors `faer::linalg::solvers::Qr::new`
 /// plus `compute_thin_Q()`/`thin_R()` — which hard-read the global parallelism
 /// (faer-0.24.0 solvers.rs:1115,1196). Takes the input by value: it doubles
 /// as the in-place factorization workspace (the high-level path makes the
-/// same `to_owned()` copy internally).
-pub(crate) fn thin_qr_par(mut qr: Mat<Complex>, par: Par) -> (Mat<Complex>, Mat<Complex>) {
+/// same `to_owned()` copy internally). Delegates to `qr_into` (allocating
+/// wrapper; bit-exact).
+pub(crate) fn thin_qr_par(qr: Mat<Complex>, par: Par) -> (Mat<Complex>, Mat<Complex>) {
     let (m, n) = qr.shape();
     let size = Ord::min(m, n);
     let block_size = recommended_block_size::<Complex>(m, n);
+    let mut qr_in = qr; // consumed as the in-place workspace
     let mut q_coeff = Mat::<Complex>::zeros(block_size, size);
-    let _ = qr_in_place(
-        qr.as_mut(),
-        q_coeff.as_mut(),
-        par,
-        MemStack::new(&mut MemBuffer::new(qr_in_place_scratch::<Complex>(
-            m,
-            n,
-            block_size,
-            par,
-            Default::default(),
-        ))),
-        Default::default(),
-    );
-    // After qr_in_place: R sits in the upper trapezoid, householder vectors
-    // strictly below the diagonal (faer qr/no_pivoting/factor.rs docs)
-    // (return value unused — q_coeff carries the block T factors).
-    // Extraction walks j-outer/i-inner: faer Mat storage is column-major, so
-    // the inner loop stays within one source column instead of striding by m.
+    let mut thin_q = Mat::<Complex>::zeros(m, size);
     let mut thin_r = Mat::<Complex>::zeros(size, n);
-    for j in 0..n {
-        for i in 0..Ord::min(j + 1, size) {
-            thin_r[(i, j)] = qr[(i, j)];
-        }
-    }
-    // R is extracted, so `qr` is dead storage: reuse it in place as the
-    // householder basis — zero the strict upper triangle of the first `size`
-    // columns and set a unit diagonal, exactly faer's split_LU L-factor
-    // convention (solvers.rs:955) — no extra m×size allocation. The apply
-    // kernel treats the diagonal as implicitly unit; we match faer's stored
-    // convention defensively.
-    for j in 0..size {
-        for i in 0..j {
-            qr[(i, j)] = Complex::new(0.0, 0.0);
-        }
-        qr[(j, j)] = Complex::new(1.0, 0.0);
-    }
-    let mut thin_q = Mat::<Complex>::identity(m, size);
-    apply_block_householder_sequence_on_the_left_in_place_with_conj(
-        qr.as_ref().subcols(0, size),
-        q_coeff.as_ref(),
-        Conj::No,
-        thin_q.as_mut(),
+    let mut mem = MemBuffer::new(StackReq::new::<Complex>(0));
+    qr_into(
+        qr_in.as_mut(),
         par,
-        MemStack::new(&mut MemBuffer::new(
-            apply_block_householder_sequence_on_the_left_in_place_scratch::<Complex>(
-                m, block_size, size,
-            ),
-        )),
+        q_coeff.as_mut(),
+        thin_q.as_mut(),
+        thin_r.as_mut(),
+        &mut mem,
     );
     (thin_q, thin_r)
 }
