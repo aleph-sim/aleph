@@ -389,15 +389,11 @@ impl MpsState {
         Scratch::grow(&mut self.scratch.thin_r, size, n);
         Scratch::grow(&mut self.scratch.absorbed, k, 2 * next_right);
 
-        // Copy grouped-left view into the pooled QR workspace.
+        // Copy grouped-left view into the pooled QR workspace (vectorized faer
+        // copy; shapes match m×n).
         {
             let mut qr_in = self.scratch.qr_in.as_mut().submatrix_mut(0, 0, m, n);
-            let src = self.sites[i].group_left_view();
-            for c in 0..n {
-                for r in 0..m {
-                    qr_in[(r, c)] = src[(r, c)];
-                }
-            }
+            qr_in.copy_from(self.sites[i].group_left_view());
         }
         // QR into pooled buffers (5 disjoint &mut fields via destructure).
         {
@@ -476,15 +472,11 @@ impl MpsState {
         Scratch::grow(&mut self.scratch.absorbed, prev_left * 2, k);
 
         // qr_in := adjoint(group_right(site[i])): entry (r, c) = conj(gr[c, r]).
-        // gr is group_right_view = left × (2·right) = n × m.
+        // gr is group_right_view = left × (2·right) = n × m; .adjoint() is the
+        // m×n conjugate-transpose view, conjugation folded into copy_from.
         {
             let mut qr_in = self.scratch.qr_in.as_mut().submatrix_mut(0, 0, m, n);
-            let gr = self.sites[i].group_right_view();
-            for c in 0..n {
-                for r in 0..m {
-                    qr_in[(r, c)] = gr[(c, r)].conj();
-                }
-            }
+            qr_in.copy_from(self.sites[i].group_right_view().adjoint());
         }
         {
             let Scratch {
