@@ -31,6 +31,8 @@ aleph-oracle = { path = "../aleph-oracle" }
 aleph-test   = { path = "../aleph-test" }
 proptest     = { workspace = true }
 criterion    = { workspace = true }
+serde        = { workspace = true, features = ["derive"] }
+serde_json   = { workspace = true }
 
 [[test]]
 name = "policy_invariance"
