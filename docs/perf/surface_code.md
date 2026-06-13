@@ -163,18 +163,18 @@ algorithm with `sign → word`, so the distribution is provably unchanged.
 (64 shots/word, no qubit-count limit); `sample_qubits_batched` is the ≤64-qubit
 per-shot transpose used by `Backend::sample`.
 
-**AC-1 — surface-d11 cycle, 1024 shots, 120 ancillas (local M-series, aarch64
-scalar):**
+**AC-1 — surface-d11 cycle, 1024 shots, 120 ancillas (criterion):**
 
-| path | time |
-| --- | --- |
-| sequential (per-shot clone + measure) | 65.70 ms |
-| batched (`sample_frames`) | 1.07 ms |
+| path | EPYC (idle, AVX-512) | local M-series (aarch64 scalar) |
+| --- | --- | --- |
+| sequential (per-shot clone + measure) | 98.74 ms | 65.70 ms |
+| batched (`sample_frames`) | 1.52 ms | 1.07 ms |
+| **speedup** | **65×** | 61× |
 
-**≈61×** — far past the ≥10× target. The win is the 64×-per-batch amortization
-of the shared x/z rowsum work, structural and platform-independent (EPYC's
-AVX-512 `rowsum_dispatch` accelerates both paths equally). *[EPYC confirmation
-pending an idle box.]*
+Far past the ≥10× target on both. The win is the 64×-per-batch amortization of
+the shared x/z rowsum work — structural and platform-independent (EPYC's AVX-512
+`rowsum_dispatch` accelerates both paths equally, so the ratio holds across
+arches).
 
 **Correctness (AC-2/AC-3):** a stabilizer state's Z-basis distribution is
 *exactly uniform* over its support, so `crates/aleph-stab/tests/frame_sampler.rs`

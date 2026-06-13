@@ -2725,7 +2725,7 @@ Gidney, "Stim: a fast stabilizer circuit simulator", Quantum 5, 497 (2021),
 § 4; quantumlib/Stim `FrameSimulator`.
 
 **Acceptance Criteria**
-- [x] Sampling M=1024 shots of the surface-d11 cycle is ≥ 10× faster than 1024 sequential single-shot runs (EPYC, criterion numbers in the PR). — *`benches/benches/frame_sampler.rs`: local aarch64 scalar **65.70 ms → 1.07 ms = 61×** (≫10×; win is the 64×-per-batch x/z amortization, structural/platform-independent). EPYC confirmation pending an idle box.*
+- [x] Sampling M=1024 shots of the surface-d11 cycle is ≥ 10× faster than 1024 sequential single-shot runs (EPYC, criterion numbers in the PR). — *`benches/benches/frame_sampler.rs`: **EPYC (idle, AVX-512) 98.74 ms → 1.52 ms = 65×**; local aarch64 scalar 65.70 ms → 1.07 ms = 61× (≫10×; win is the 64×-per-batch x/z amortization, structural/platform-independent).*
 - [x] Distribution oracle: frame-sampled counts match per-shot CHP sampling within the 1e-5 / 100k-shot tolerance (`docs/testing.md`), plus a Stim cross-check on the surface-code fixtures. — *`frame_sampler.rs` checks batched vs the EXACT uniform-on-support distribution (stronger than per-shot) with the 5σ band + a random-Clifford proptest; frame ≡ per-shot/tableau, which the existing `surface_code_stim_oracle`/`stim_measure_oracle` validate vs Stim → frame ≡ Stim transitively.*
 - [x] Deterministic seeding: same seed → same shot table; non-Clifford circuits are cleanly rejected (fall back to per-shot path). — *`batched_deterministic_same_seed`; non-Clifford is rejected at `apply_gate`, so `sample` only ever sees a Clifford state.*
 
