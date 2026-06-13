@@ -7,12 +7,12 @@
 //!   n=24, χ=256: saturates at L2=20 layers (max_bond_reached=256)
 //!   n=24/χ=256 single-run wall time: ~4.2s (well within criterion sample_size(10) budget)
 //!
-//! This bench has `required-features = ["parallel"]`, so `cargo bench
-//! --workspace` SKIPS it silently (deliberate: it exists for the thread sweep
-//! and would otherwise tax every push-to-main Bench run on the shared EPYC
-//! runner). Run it explicitly:
-//! `RAYON_NUM_THREADS=1|2|4|8|16 cargo bench -p aleph-mps --features parallel --bench wide_bond`
-//! The t=1 row doubles as the sequential (production-default) reference.
+//! Since P3-13 the `parallel` feature is a default, so this bench compiles
+//! everywhere (including `cargo bench --workspace`). A runtime env guard
+//! (`WIDE_BOND=1`) keeps its saturating sweep cells out of routine
+//! push-to-main Bench runs on the shared EPYC runner. Run it explicitly:
+//! `WIDE_BOND=1 RAYON_NUM_THREADS=1|2|4|8|16 cargo bench -p aleph-mps --bench wide_bond`
+//! The t=1 row doubles as the sequential reference.
 //!
 //! The chi=512 cell (where parallelism starts to win; ~47 s/iter sequential
 //! on EPYC) is additionally gated behind `WIDE_BOND_CHI512=1`.
@@ -57,6 +57,16 @@ fn brickwall(n: u32, layers: u32) -> aleph_ir::Circuit {
 }
 
 fn bench(cr: &mut Criterion) {
+    // Runtime gate: `parallel` is a default feature since P3-13, so this
+    // bench now compiles under `cargo bench --workspace` — but its sweep
+    // cells would tax every push-to-main Bench run on the shared EPYC
+    // runner. Opt in explicitly:
+    // WIDE_BOND=1 [WIDE_BOND_CHI512=1] RAYON_NUM_THREADS=N \
+    //   cargo bench -p aleph-mps --bench wide_bond
+    if std::env::var("WIDE_BOND").as_deref() != Ok("1") {
+        eprintln!("wide_bond: skipped (set WIDE_BOND=1 to run the sweep)");
+        return;
+    }
     let mut grp = cr.benchmark_group("wide_bond_brickwall");
     grp.sample_size(10);
     for (n, chi, layers) in [(20u32, 128usize, L1), (24, 256, L2)] {
@@ -68,7 +78,7 @@ fn bench(cr: &mut Criterion) {
             })
         });
     }
-    if std::env::var_os("WIDE_BOND_CHI512").is_some() {
+    if std::env::var("WIDE_BOND_CHI512").as_deref() == Ok("1") {
         let c = brickwall(26, 24);
         grp.bench_function("n26_chi512_d24", |b| {
             b.iter(|| {

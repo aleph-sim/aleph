@@ -110,6 +110,9 @@ pub type TruncatedSvd = (faer::Mat<Complex>, Vec<f64>, faer::Mat<Complex>, f64);
 /// - `vt_kept` has shape `χ × cols` with orthonormal rows
 /// - `discarded_weight` is the sum of squares of discarded singular values
 ///
+/// The SVD runs under the caller-chosen `par` (P3-13 size-thresholded
+/// parallelism).
+///
 /// # Why `faer`
 ///
 /// `nalgebra`'s complex `svd()` AND its Hermitian `SymmetricEigen` both return
@@ -121,15 +124,14 @@ pub type TruncatedSvd = (faer::Mat<Complex>, Vec<f64>, faer::Mat<Complex>, f64);
 pub fn truncated_svd(
     m: faer::MatRef<'_, Complex>,
     policy: &TruncationPolicy,
+    par: faer::Par,
 ) -> Result<TruncatedSvd, MpsError> {
     let rows = m.nrows();
     let cols = m.ncols();
 
     // Reliable complex SVD via faer (singular values nonnegative, nonincreasing).
-    let svd = m.thin_svd().map_err(|_| MpsError::SvdFailed)?;
-    let fu = svd.U();
-    let fv = svd.V();
-    let fs = svd.S();
+    let (fu, fs, fv) = crate::linalg::thin_svd_par(m, par)?;
+    let fs = fs.as_ref();
     let k = fs.column_vector().nrows(); // = min(rows, cols)
     let sigmas: Vec<f64> = (0..k).map(|t| fs[t].re).collect();
 
@@ -205,7 +207,7 @@ mod tests {
         });
         let fro: f64 = m.as_ref().norm_l2();
         let (u, s, vt, _disc) =
-            truncated_svd(m.as_ref(), &TruncationPolicy::FixedBond(64)).unwrap();
+            truncated_svd(m.as_ref(), &TruncationPolicy::FixedBond(64), faer::Par::Seq).unwrap();
         // reconstruction = U·diag(s)·Vt = (1/fro)·M  (renormalized to unit weight)
         let mut maxd = 0.0_f64;
         for r in 0..4 {
@@ -238,7 +240,7 @@ mod tests {
         ];
         let m = faer::Mat::from_fn(4, 4, |i, j| a[i] * b[j].conj());
         let (u, s, vt, _disc) =
-            truncated_svd(m.as_ref(), &TruncationPolicy::FixedBond(64)).unwrap();
+            truncated_svd(m.as_ref(), &TruncationPolicy::FixedBond(64), faer::Par::Seq).unwrap();
         assert_eq!(
             s.len(),
             1,
@@ -277,6 +279,7 @@ mod tests {
                 epsilon: 1e-3,
                 max_bond: 64,
             },
+            faer::Par::Seq,
         )
         .unwrap();
         assert_eq!(s.len(), 2, "expected χ=2");
@@ -292,6 +295,7 @@ mod tests {
                 epsilon: 0.0,
                 max_bond: 64,
             },
+            faer::Par::Seq,
         )
         .unwrap();
         assert_eq!(s.len(), 4, "ε=0 must keep full rank");
@@ -307,6 +311,7 @@ mod tests {
                 epsilon: 10.0,
                 max_bond: 1,
             },
+            faer::Par::Seq,
         )
         .unwrap();
         assert_eq!(s.len(), 1);
@@ -315,7 +320,8 @@ mod tests {
     #[test]
     fn fixed_bond_matches_legacy() {
         let m = diag_sigma();
-        let (_, s, _, _) = truncated_svd(m.as_ref(), &TruncationPolicy::FixedBond(2)).unwrap();
+        let (_, s, _, _) =
+            truncated_svd(m.as_ref(), &TruncationPolicy::FixedBond(2), faer::Par::Seq).unwrap();
         assert_eq!(s.len(), 2);
     }
 

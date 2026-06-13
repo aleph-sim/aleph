@@ -51,12 +51,16 @@
 //!
 //! # Parallelism
 //!
-//! The `parallel` cargo feature enables faer's rayon-parallel kernels for the
-//! 2q hot path (theta gemm, truncated SVD, QR center moves). It is OFF by
-//! default: measured on a 16-core EPYC, the rayon pool is a large
-//! pessimization at typical bond dimensions (chi <= 256) and only wins at
-//! wide bonds (1.54x at chi = 512). Enable it for wide-bond workloads and
-//! control the pool with `RAYON_NUM_THREADS`.
+//! The `parallel` cargo feature (default ON since P3-13) enables faer's
+//! rayon-parallel kernels for the 2q hot path (theta gemm, truncated SVD, QR
+//! center moves). Parallelism is chosen per operation from a size threshold
+//! (`linalg::par_for`): the threshold never dispatches small-bond ops to the
+//! pool, and only wide-bond operands (> 2^18 elements, χ ≈ 512) enter rayon
+//! (1.52× @16T on EPYC at χ=512). The residual cost of merely compiling
+//! rayon in is a measured ≤ ~5% build-flavor effect on microsecond-scale
+//! circuits (docs/perf/mps_parallel.md § P3-13); `default-features = false`
+//! recovers the rayon-free build exactly. Control thread count via
+//! `RAYON_NUM_THREADS`.
 
 mod mps;
 mod tensor;
@@ -64,6 +68,7 @@ pub use mps::MpsState;
 pub use tensor::TruncationPolicy;
 
 mod gate;
+mod linalg;
 
 mod backend;
 pub use backend::MpsBackend;

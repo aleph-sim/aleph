@@ -32,6 +32,13 @@ pub struct MpsState {
     pub(crate) site_of_qubit: Vec<usize>,
     /// Physical nearest-neighbor SWAPs applied so far (lazy-router evidence).
     pub(crate) swaps_applied: u64,
+    /// Test-only override forcing every faer op down one `Par` regardless of
+    /// the size threshold — lets the Par-invariance oracle compare `Seq` vs
+    /// `rayon` as plain arguments instead of toggling faer's process global
+    /// (P3-13). cfg(test)-gated so production code cannot bypass the
+    /// size-threshold policy.
+    #[cfg(test)]
+    pub(crate) par_override: Option<faer::Par>,
 }
 
 impl MpsState {
@@ -52,6 +59,8 @@ impl MpsState {
             qubit_of_site: (0..n as u32).collect(),
             site_of_qubit: (0..n).collect(),
             swaps_applied: 0,
+            #[cfg(test)]
+            par_override: None,
         }
     }
 
@@ -73,6 +82,20 @@ impl MpsState {
     /// permutation router so far (P3-09).
     pub fn swaps_applied(&self) -> u64 {
         self.swaps_applied
+    }
+
+    /// Per-operation parallelism for a `rows × cols` faer operand: the
+    /// size-threshold policy, unless a test override pins it.
+    ///
+    /// gemm call sites key the threshold on the OUTPUT m×n (ignoring the
+    /// contraction dim k), consistent with how the P3-09 sweep counted operand
+    /// elements — a future re-tune on gemm cost m·n·k should revisit this.
+    fn choose_par(&self, rows: usize, cols: usize) -> faer::Par {
+        #[cfg(test)]
+        if let Some(par) = self.par_override {
+            return par;
+        }
+        crate::linalg::par_for(rows, cols)
     }
 
     /// Apply a 1q unitary to logical qubit `q` (routed to its current site).
@@ -152,6 +175,7 @@ impl MpsState {
 
         let li = self.sites[i].left;
         let ri = self.sites[j].right;
+        let par = self.choose_par(li * 2, 2 * ri);
 
         // Θ as a (li·2) × (2·ri) matrix (row l·2+a, col b·ri+r): exactly the
         // grouped-left × grouped-right product — one parallel gemm (P3-09).
@@ -162,7 +186,7 @@ impl MpsState {
             self.sites[i].group_left_view(),
             self.sites[j].group_right_view(),
             Complex::new(1.0, 0.0),
-            faer::get_global_parallelism(),
+            par,
         );
 
         // Helper: given the physical indices of site i (phys_i) and site j (phys_j),
@@ -199,7 +223,7 @@ impl MpsState {
         }
 
         // Truncated SVD of Θ' (already in (li·2) × (2·ri) grouped form).
-        let (u_s, s_kept, vt_s, discarded) = truncated_svd(theta2.as_ref(), &self.policy)?;
+        let (u_s, s_kept, vt_s, discarded) = truncated_svd(theta2.as_ref(), &self.policy, par)?;
         self.trunc_error += discarded;
         let chi = s_kept.len();
         self.max_bond_seen = self.max_bond_seen.max(chi);
@@ -238,13 +262,15 @@ impl MpsState {
 
     /// Shift center right from `i` to `i+1` using thin QR on the grouped-left
     /// view. Site `i` becomes left-canonical; the R factor is absorbed into
-    /// site `i+1`'s left bond via a parallel gemm.
+    /// site `i+1`'s left bond via a size-thresholded gemm.
     fn move_center_right(&mut self) {
         let i = self.center;
         let left = self.sites[i].left;
-        let qr = self.sites[i].group_left_view().qr();
-        let q = qr.compute_thin_Q(); // (left·2) × k
-        let r = qr.thin_R(); // k × right
+        let right = self.sites[i].right;
+        let (q, r) = crate::linalg::thin_qr_par(
+            self.sites[i].group_left_view().to_owned(),
+            self.choose_par(left * 2, right),
+        );
         let k = q.ncols();
         let next_right = self.sites[i + 1].right;
         // A'[l',p,r2] = Σ_l R[l',l] · A[l,p,r2]  ==  R · group_right(A).
@@ -252,10 +278,10 @@ impl MpsState {
         matmul(
             absorbed.as_mut(),
             Accum::Replace,
-            r,
+            r.as_ref(),
             self.sites[i + 1].group_right_view(),
             Complex::new(1.0, 0.0),
-            faer::get_global_parallelism(),
+            self.choose_par(k, 2 * next_right),
         );
         self.sites[i + 1] = Site::from_group_right_faer(absorbed.as_ref(), k, next_right);
         self.sites[i] = Site::from_group_left_faer(q.as_ref(), left, k);
@@ -264,14 +290,18 @@ impl MpsState {
 
     /// Shift center left from `i` to `i-1` using thin QR on the adjoint of the
     /// grouped-right view (LQ decomposition). Site `i` becomes right-canonical;
-    /// the Rᴴ factor is absorbed into site `i-1`'s right bond via a parallel
-    /// gemm.
+    /// the Rᴴ factor is absorbed into site `i-1`'s right bond via a
+    /// size-thresholded gemm.
     fn move_center_left(&mut self) {
         let i = self.center;
         let right = self.sites[i].right;
-        let qr = self.sites[i].group_right_view().adjoint().qr();
-        let q = qr.compute_thin_Q(); // (2·right) × k
-        let r = qr.thin_R(); // k × left
+        let left = self.sites[i].left;
+        // LQ via thin QR of the adjoint; `.to_owned()` materializes the
+        // lazily-conjugated view (same copy the high-level Qr::new made).
+        let (q, r) = crate::linalg::thin_qr_par(
+            self.sites[i].group_right_view().adjoint().to_owned(),
+            self.choose_par(2 * right, left),
+        );
         let k = q.ncols();
         let prev_left = self.sites[i - 1].left;
         // A'[l2,p,r'] = Σ_r A[l2,p,r] · Rᴴ[r,r']  ==  group_left(A) · Rᴴ.
@@ -282,7 +312,7 @@ impl MpsState {
             self.sites[i - 1].group_left_view(),
             r.adjoint(),
             Complex::new(1.0, 0.0),
-            faer::get_global_parallelism(),
+            self.choose_par(prev_left * 2, k),
         );
         self.sites[i - 1] = Site::from_group_left_faer(absorbed.as_ref(), prev_left, k);
         // M = group_right(A) = Rᴴ·Qᴴ; Qᴴ has orthonormal rows — the
@@ -1148,6 +1178,60 @@ mod tests {
             for site in 0..n as usize {
                 proptest::prop_assert_eq!(s.site_of_qubit[s.qubit_of_site[site] as usize], site);
             }
+        }
+    }
+
+    /// Same circuit under sequential and rayon-parallel faer must agree to
+    /// 1e-10 (not bit-exact: parallel kernels may round differently).
+    ///
+    /// Replaces the former tests/sv_equivalence.rs global-toggle test
+    /// (P3-09): `par_override` forces EVERY op down the chosen path
+    /// regardless of the size threshold — Seq vs rayon as plain arguments,
+    /// no process-global mutation, no cross-test isolation hazard (P3-13).
+    ///
+    /// n=10 with 10 brickwall layers grows the central bond to χ = 16
+    /// (measured; only every second layer crosses the middle cut), so the
+    /// rayon branch sees real multi-column SVD/QR/gemm work.
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn state_invariant_seq_vs_rayon() {
+        use aleph_core::Param;
+        let run = |par: faer::Par| -> Vec<Complex> {
+            let n = 10usize;
+            let mut s = MpsState::new(n, 128);
+            s.par_override = Some(par);
+            let h_of = |q: u32| {
+                crate::gate::matrix_2x2(&GateInstance::new(Gate::H, smallvec![q])).unwrap()
+            };
+            for q in 0..n as u32 {
+                s.apply_1q(q as usize, &h_of(q));
+            }
+            for layer in 0..10u32 {
+                let mut q = layer % 2;
+                while (q as usize) + 1 < n {
+                    let ry = crate::gate::matrix_2x2(&GateInstance::new(
+                        Gate::Ry(Param::Concrete(0.3 + (q + layer * n as u32) as f64 * 0.11)),
+                        smallvec![q],
+                    ))
+                    .unwrap();
+                    s.apply_1q(q as usize, &ry);
+                    let gi = GateInstance::new(Gate::Cnot, smallvec![q, q + 1]);
+                    let u = crate::gate::matrix_4x4(&gi).unwrap();
+                    s.apply_2q(&gi, &u).unwrap();
+                    q += 2;
+                }
+            }
+            // Exercise the lazy router too.
+            let gi = GateInstance::new(Gate::Cnot, smallvec![0u32, 9u32]);
+            let u = crate::gate::matrix_4x4(&gi).unwrap();
+            s.apply_2q(&gi, &u).unwrap();
+            s.dense_statevector()
+        };
+        let a = run(faer::Par::Seq);
+        let b = run(faer::Par::rayon(0));
+        assert_eq!(a.len(), b.len());
+        for (x, y) in a.iter().zip(b.iter()) {
+            assert!((x - y).norm() < 1e-10, "parallelism changed the state");
         }
     }
 }

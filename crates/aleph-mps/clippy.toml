@@ -1,0 +1,22 @@
+# NOTE: this file SHADOWS the workspace-root clippy.toml for aleph-mps —
+# clippy uses the nearest config file walking up from the crate manifest and
+# does NOT merge them — so the workspace settings are replicated below.
+# Keep `msrv` and `disallowed-types` in sync with /clippy.toml.
+msrv = "1.89"
+
+# Enforce ADR 0001 (replicated from the workspace root clippy.toml).
+disallowed-types = [
+    { path = "num_complex::Complex", reason = "use `aleph_core::Complex` (see docs/decisions/0001-complex-type.md)" },
+]
+
+# P3-13: all faer parallelism in this crate must flow through linalg::par_for
+# (size-thresholded per-op Par). Calling the global directly — or faer's
+# high-level solvers, which read it internally — silently reintroduces the
+# 1.5x-19x small-chi rayon pessimization documented in docs/perf/mps_parallel.md.
+disallowed-methods = [
+    { path = "faer::get_global_parallelism", reason = "use linalg::par_for (size-thresholded per-op Par)" },
+    { path = "faer::linalg::solvers::Svd::new_thin", reason = "reads the rayon global internally; use linalg::thin_svd_par" },
+    { path = "faer::linalg::solvers::Qr::new", reason = "reads the rayon global internally; use linalg::thin_qr_par" },
+    { path = "faer::mat::generic::Mat::thin_svd", reason = "reads the rayon global internally; use linalg::thin_svd_par" },
+    { path = "faer::mat::generic::Mat::qr", reason = "reads the rayon global internally; use linalg::thin_qr_par" },
+]
