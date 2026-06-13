@@ -12,8 +12,8 @@
 
 use crate::MpsError;
 use aleph_core::Complex;
-use faer::diag::Diag;
-use faer::dyn_stack::{MemBuffer, MemStack};
+use faer::diag::{Diag, DiagMut};
+use faer::dyn_stack::{MemBuffer, MemStack, StackReq};
 use faer::linalg::householder::{
     apply_block_householder_sequence_on_the_left_in_place_scratch,
     apply_block_householder_sequence_on_the_left_in_place_with_conj,
@@ -22,7 +22,7 @@ use faer::linalg::qr::no_pivoting::factor::{
     qr_in_place, qr_in_place_scratch, recommended_block_size,
 };
 use faer::linalg::svd::{svd, svd_scratch, ComputeSvdVectors};
-use faer::{Conj, Mat, MatRef, Par};
+use faer::{Conj, Mat, MatMut, MatRef, Par};
 
 /// Minimum operand element count (`rows · cols`) for the rayon pool to pay
 /// off: strictly above the largest measured-pessimization operand. EPYC 16c
@@ -61,8 +61,52 @@ pub(crate) fn par_for(rows: usize, cols: usize) -> Par {
 /// type-complexity lint without obscuring the tuple shape).
 pub(crate) type ThinSvd = (Mat<Complex>, Diag<Complex>, Mat<Complex>);
 
+/// Grow `mem` so a subsequent `MemStack::new(mem)` can satisfy `req`.
+/// Effectively monotonic: only rebuilds when the current buffer cannot hold
+/// the request, so it never shrinks below a size it already serves.
+pub(crate) fn ensure_mem(mem: &mut MemBuffer, req: StackReq) {
+    if !MemStack::new(mem).can_hold(req) {
+        *mem = MemBuffer::new(req);
+    }
+}
+
+/// Thin SVD writing factors into caller-provided buffers, using `mem` as scratch
+/// (grown as needed). `u_out` must be `m × size`, `v_out` `n × size`, `s_out`
+/// `size`, with `size = min(m, n)` — typically `submatrix_mut` views of larger
+/// pooled `Mat`s (the arena, P3-14). No allocation in steady state.
+pub(crate) fn svd_into(
+    a: MatRef<'_, Complex>,
+    par: Par,
+    u_out: MatMut<'_, Complex>,
+    v_out: MatMut<'_, Complex>,
+    s_out: DiagMut<'_, Complex>,
+    mem: &mut MemBuffer,
+) -> Result<(), MpsError> {
+    let (m, n) = a.shape();
+    let req = svd_scratch::<Complex>(
+        m,
+        n,
+        ComputeSvdVectors::Thin,
+        ComputeSvdVectors::Thin,
+        par,
+        Default::default(),
+    );
+    ensure_mem(mem, req);
+    svd(
+        a,
+        s_out,
+        Some(u_out),
+        Some(v_out),
+        par,
+        MemStack::new(mem),
+        Default::default(),
+    )
+    .map_err(|_| MpsError::SvdFailed)
+}
+
 /// Thin SVD with an explicit `Par`: `A = U · diag(S) · Vᴴ` with
-/// `U: m × size`, `V: n × size`, `size = min(m, n)`. Mirrors
+/// `U: m × size`, `V: n × size`, `size = min(m, n)`. Delegates to
+/// `svd_into` (allocating wrapper; bit-exact). Mirrors
 /// `faer::linalg::solvers::Svd::new_thin` — which hard-reads the global
 /// parallelism (faer-0.24.0 solvers.rs:1344) — for the canonical c64 element
 /// type (no conjugation pass needed: `aleph_core::Complex == faer::c64`).
@@ -72,23 +116,8 @@ pub(crate) fn thin_svd_par(a: MatRef<'_, Complex>, par: Par) -> Result<ThinSvd, 
     let mut u = Mat::<Complex>::zeros(m, size);
     let mut v = Mat::<Complex>::zeros(n, size);
     let mut s = Diag::<Complex>::zeros(size);
-    svd(
-        a,
-        s.as_mut(),
-        Some(u.as_mut()),
-        Some(v.as_mut()),
-        par,
-        MemStack::new(&mut MemBuffer::new(svd_scratch::<Complex>(
-            m,
-            n,
-            ComputeSvdVectors::Thin,
-            ComputeSvdVectors::Thin,
-            par,
-            Default::default(),
-        ))),
-        Default::default(),
-    )
-    .map_err(|_| MpsError::SvdFailed)?;
+    let mut mem = MemBuffer::new(StackReq::new::<Complex>(0));
+    svd_into(a, par, u.as_mut(), v.as_mut(), s.as_mut(), &mut mem)?;
     Ok((u, s, v))
 }
 
@@ -321,5 +350,41 @@ mod tests {
         // is always Par::Seq, so both arms of par_for return Seq and the
         // assertion is vacuously true (still a useful smoke test).
         assert_eq!(par_for(2048, 2048), faer::get_global_parallelism());
+    }
+
+    #[test]
+    fn svd_into_pooled_matches_high_level_bit_exact() {
+        for (m, n) in [(8usize, 5usize), (5, 8), (6, 6), (160, 128)] {
+            let size = Ord::min(m, n);
+            let a = test_matrix(m, n);
+            let hl = a.thin_svd().unwrap();
+            // Oversized pooled backing + strided sub-views.
+            let mut u = Mat::<Complex>::zeros(m + 3, size + 3);
+            let mut v = Mat::<Complex>::zeros(n + 3, size + 3);
+            let mut s = Diag::<Complex>::zeros(size);
+            let mut mem = MemBuffer::new(StackReq::new::<Complex>(0));
+            svd_into(
+                a.as_ref(),
+                faer::get_global_parallelism(),
+                u.as_mut().submatrix_mut(0, 0, m, size),
+                v.as_mut().submatrix_mut(0, 0, n, size),
+                s.as_mut(),
+                &mut mem,
+            )
+            .unwrap();
+            for t in 0..size {
+                assert_eq!(s.as_ref()[t], hl.S()[t], "S[{t}] ({m}x{n})");
+            }
+            for r in 0..m {
+                for c in 0..size {
+                    assert_eq!(u[(r, c)], hl.U()[(r, c)], "U[({r},{c})] ({m}x{n})");
+                }
+            }
+            for r in 0..n {
+                for c in 0..size {
+                    assert_eq!(v[(r, c)], hl.V()[(r, c)], "V[({r},{c})] ({m}x{n})");
+                }
+            }
+        }
     }
 }
