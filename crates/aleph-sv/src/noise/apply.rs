@@ -3,7 +3,9 @@
 use aleph_core::{Complex, Pauli};
 use rand::{rngs::StdRng, Rng};
 
-use super::error::{KrausChannel, PauliChannel, QuantumError};
+use std::collections::HashMap;
+
+use super::error::{KrausChannel, PauliChannel, QuantumError, ReadoutError};
 use crate::measure::DEGENERATE_BRANCH_THRESHOLD;
 
 /// Apply one channel to `amps` by quantum-jump. `qubits` maps the channel's
@@ -110,6 +112,33 @@ fn apply_kraus_1q(amps: &mut [Complex], c: &KrausChannel, q: u32, rng: &mut StdR
     }
 }
 
+/// Apply per-qubit readout error to a sampled basis-state index. For each
+/// measured qubit with a `ReadoutError`, the recorded outcome bit is the true
+/// bit `t` flipped to `1-t` with probability `m[t][1-t]`. Qubits without an
+/// entry are read out perfectly.
+// used by run_noisy in Task 7
+#[allow(dead_code)]
+pub(super) fn apply_readout(
+    index: u64,
+    num_qubits: u32,
+    readout: &HashMap<u32, ReadoutError>,
+    rng: &mut StdRng,
+) -> u64 {
+    if readout.is_empty() {
+        return index;
+    }
+    let mut out = index;
+    for q in 0..num_qubits {
+        let Some(ro) = readout.get(&q) else { continue };
+        let bit = ((index >> q) & 1) as usize; // true value t
+        let p_flip = ro.m[bit][1 - bit]; // P(measure 1-t | true t)
+        if rng.gen::<f64>() < p_flip {
+            out ^= 1u64 << q; // record the flipped bit
+        }
+    }
+    out
+}
+
 /// Deterministic per-shot seed: a splitmix64 mix of `(seed, shot)` so shot
 /// outcomes are reproducible regardless of rayon scheduling (spec §1).
 ///
@@ -149,7 +178,7 @@ mod tests {
 mod apply_tests {
     use super::*;
     use crate::noise::error::{
-        amplitude_damping_error, depolarizing_error, pauli_error, phase_damping_error,
+        amplitude_damping_error, depolarizing_error, pauli_error, phase_damping_error, ReadoutError,
     };
     use aleph_core::{AlignedBuf, Complex};
     use rand::{rngs::StdRng, SeedableRng};
@@ -251,5 +280,27 @@ mod apply_tests {
             amps[0]
         );
         assert!(amps[1].norm() < 1e-12, "amp1 {:?}", amps[1]);
+    }
+
+    /// Readout error with P(1|0)=1 and P(0|1)=1 flips every measured bit.
+    #[test]
+    fn readout_flips_all_bits_when_certain() {
+        let ro = ReadoutError::new([[0.0, 1.0], [1.0, 0.0]]);
+        let map: std::collections::HashMap<u32, ReadoutError> =
+            [(0u32, ro), (1u32, ro)].into_iter().collect();
+        let mut rng = StdRng::seed_from_u64(0);
+        // basis state |01⟩ = index 0b01 = 1 over 2 qubits → both bits flip → |10⟩ = 2
+        let out = apply_readout(1, 2, &map, &mut rng);
+        assert_eq!(out, 0b10);
+    }
+
+    /// Identity readout (perfect measurement) is the identity on the index.
+    #[test]
+    fn readout_identity_is_noop() {
+        let ro = ReadoutError::new([[1.0, 0.0], [0.0, 1.0]]);
+        let map: std::collections::HashMap<u32, ReadoutError> =
+            [(0u32, ro), (1u32, ro), (2u32, ro)].into_iter().collect();
+        let mut rng = StdRng::seed_from_u64(123);
+        assert_eq!(apply_readout(0b101, 3, &map, &mut rng), 0b101);
     }
 }

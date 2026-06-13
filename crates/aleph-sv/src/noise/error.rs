@@ -51,6 +51,21 @@ pub struct ReadoutError {
     pub m: [[f64; 2]; 2],
 }
 
+impl ReadoutError {
+    /// `m[t][o]` = P(measured `o` | true `t`). Each row must sum to ~1.
+    pub fn new(m: [[f64; 2]; 2]) -> Self {
+        debug_assert!(
+            (m[0][0] + m[0][1] - 1.0).abs() < 1e-9,
+            "readout row 0 must sum to 1"
+        );
+        debug_assert!(
+            (m[1][0] + m[1][1] - 1.0).abs() < 1e-9,
+            "readout row 1 must sum to 1"
+        );
+        Self { m }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Aer-compatible constructors
 // ---------------------------------------------------------------------------
