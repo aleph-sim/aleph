@@ -188,6 +188,12 @@ pub(crate) fn qr_into(
     );
 }
 
+/// Block size faer uses for the m×n householder QR — lets callers (P3-14 arena)
+/// size the `q_coeff` scratch identically to `qr_into`.
+pub(crate) fn recommended_block_size_complex(m: usize, n: usize) -> usize {
+    recommended_block_size::<Complex>(m, n)
+}
+
 /// Thin QR with an explicit `Par`: returns `(thin_Q, thin_R)` with
 /// `thin_Q: m × size` (orthonormal columns), `thin_R: size × n` upper
 /// trapezoidal, `size = min(m, n)`. Mirrors `faer::linalg::solvers::Qr::new`
@@ -196,6 +202,8 @@ pub(crate) fn qr_into(
 /// as the in-place factorization workspace (the high-level path makes the
 /// same `to_owned()` copy internally). Delegates to `qr_into` (allocating
 /// wrapper; bit-exact).
+// P3-14: now test-only; cleanup in Task 9
+#[allow(dead_code)]
 pub(crate) fn thin_qr_par(qr: Mat<Complex>, par: Par) -> (Mat<Complex>, Mat<Complex>) {
     let (m, n) = qr.shape();
     let size = Ord::min(m, n);

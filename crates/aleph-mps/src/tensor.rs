@@ -61,6 +61,8 @@ impl Site {
     }
 
     /// Build a `Site` from a faer `(left·2) × right` grouped-left matrix.
+    // P3-14: now test-only; cleanup in Task 9
+    #[allow(dead_code)]
     pub fn from_group_left_faer(m: faer::MatRef<'_, Complex>, left: usize, right: usize) -> Site {
         let mut s = Site::zeros(left, right);
         // Allow explicit index arithmetic — clearer than iterator gymnastics
@@ -75,6 +77,8 @@ impl Site {
     }
 
     /// Build a `Site` from a faer `χ × (2·right)` grouped-right matrix.
+    // P3-14: now test-only; cleanup in Task 9
+    #[allow(dead_code)]
     pub fn from_group_right_faer(m: faer::MatRef<'_, Complex>, left: usize, right: usize) -> Site {
         let mut s = Site::zeros(left, right);
         // Allow explicit index arithmetic — clearer than iterator gymnastics

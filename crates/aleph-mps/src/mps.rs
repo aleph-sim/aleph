@@ -377,24 +377,81 @@ impl MpsState {
         let i = self.center;
         let left = self.sites[i].left;
         let right = self.sites[i].right;
-        let (q, r) = crate::linalg::thin_qr_par(
-            self.sites[i].group_left_view().to_owned(),
-            self.choose_par(left * 2, right),
-        );
-        let k = q.ncols();
+        let m = left * 2;
+        let n = right;
+        let size = m.min(n);
+        let k = size;
         let next_right = self.sites[i + 1].right;
-        // A'[l',p,r2] = Σ_l R[l',l] · A[l,p,r2]  ==  R · group_right(A).
-        let mut absorbed = faer::Mat::<Complex>::zeros(k, 2 * next_right);
-        matmul(
-            absorbed.as_mut(),
-            Accum::Replace,
-            r.as_ref(),
-            self.sites[i + 1].group_right_view(),
-            Complex::new(1.0, 0.0),
-            self.choose_par(k, 2 * next_right),
-        );
-        self.sites[i + 1] = Site::from_group_right_faer(absorbed.as_ref(), k, next_right);
-        self.sites[i] = Site::from_group_left_faer(q.as_ref(), left, k);
+        let block_size = crate::linalg::recommended_block_size_complex(m, n);
+        // choose_par values hoisted before any &mut self.scratch borrow.
+        let par_qr = self.choose_par(m, n);
+        let par_absorb = self.choose_par(k, 2 * next_right);
+
+        Scratch::grow(&mut self.scratch.qr_in, m, n);
+        Scratch::grow(&mut self.scratch.q_coeff, block_size, size);
+        Scratch::grow(&mut self.scratch.thin_q, m, size);
+        Scratch::grow(&mut self.scratch.thin_r, size, n);
+        Scratch::grow(&mut self.scratch.absorbed, k, 2 * next_right);
+
+        // Copy grouped-left view into the pooled QR workspace.
+        {
+            let mut qr_in = self.scratch.qr_in.as_mut().submatrix_mut(0, 0, m, n);
+            let src = self.sites[i].group_left_view();
+            for c in 0..n {
+                for r in 0..m {
+                    qr_in[(r, c)] = src[(r, c)];
+                }
+            }
+        }
+        // QR into pooled buffers (5 disjoint &mut fields via destructure).
+        {
+            let Scratch {
+                qr_in,
+                q_coeff,
+                thin_q,
+                thin_r,
+                mem,
+                ..
+            } = &mut self.scratch;
+            crate::linalg::qr_into(
+                qr_in.as_mut().submatrix_mut(0, 0, m, n),
+                par_qr,
+                q_coeff.as_mut().submatrix_mut(0, 0, block_size, size),
+                thin_q.as_mut().submatrix_mut(0, 0, m, size),
+                thin_r.as_mut().submatrix_mut(0, 0, size, n),
+                mem,
+            );
+        }
+        // absorbed = R · group_right(site[i+1])  (k × 2·next_right).
+        {
+            let r_view = self.scratch.thin_r.as_ref().submatrix(0, 0, k, n);
+            let mut absorbed =
+                self.scratch
+                    .absorbed
+                    .as_mut()
+                    .submatrix_mut(0, 0, k, 2 * next_right);
+            matmul(
+                absorbed.as_mut(),
+                Accum::Replace,
+                r_view,
+                self.sites[i + 1].group_right_view(),
+                Complex::new(1.0, 0.0),
+                par_absorb,
+            );
+        }
+        // Site i+1 ← right-canonical from absorbed; site i ← left-canonical from Q.
+        {
+            let absorbed = self
+                .scratch
+                .absorbed
+                .as_ref()
+                .submatrix(0, 0, k, 2 * next_right);
+            self.sites[i + 1].fill_from_grouped_right(absorbed, k, next_right);
+        }
+        {
+            let q_view = self.scratch.thin_q.as_ref().submatrix(0, 0, m, k);
+            self.sites[i].fill_left_from(q_view, left, k);
+        }
         self.center += 1;
     }
 
@@ -406,32 +463,83 @@ impl MpsState {
         let i = self.center;
         let right = self.sites[i].right;
         let left = self.sites[i].left;
-        // LQ via thin QR of the adjoint; `.to_owned()` materializes the
-        // lazily-conjugated view (same copy the high-level Qr::new made).
-        let (q, r) = crate::linalg::thin_qr_par(
-            self.sites[i].group_right_view().adjoint().to_owned(),
-            self.choose_par(2 * right, left),
-        );
-        let k = q.ncols();
+        // LQ via QR of the adjoint of the grouped-right view: (2·right) × left.
+        let m = 2 * right;
+        let n = left;
+        let size = m.min(n);
+        let k = size;
         let prev_left = self.sites[i - 1].left;
-        // A'[l2,p,r'] = Σ_r A[l2,p,r] · Rᴴ[r,r']  ==  group_left(A) · Rᴴ.
-        let mut absorbed = faer::Mat::<Complex>::zeros(prev_left * 2, k);
-        matmul(
-            absorbed.as_mut(),
-            Accum::Replace,
-            self.sites[i - 1].group_left_view(),
-            r.adjoint(),
-            Complex::new(1.0, 0.0),
-            self.choose_par(prev_left * 2, k),
-        );
-        self.sites[i - 1] = Site::from_group_left_faer(absorbed.as_ref(), prev_left, k);
-        // M = group_right(A) = Rᴴ·Qᴴ; Qᴴ has orthonormal rows — the
-        // right-canonical site.
-        // `.adjoint()` yields a lazily-conjugated view (`ComplexConj` element
-        // type); materialize it to the canonical complex type for the
-        // grouped-right reshape. k × (2·right) — a small bond-sized copy.
-        let qh = q.adjoint().to_owned();
-        self.sites[i] = Site::from_group_right_faer(qh.as_ref(), k, right);
+        let block_size = crate::linalg::recommended_block_size_complex(m, n);
+        let par_qr = self.choose_par(m, n);
+        let par_absorb = self.choose_par(prev_left * 2, k);
+
+        Scratch::grow(&mut self.scratch.qr_in, m, n);
+        Scratch::grow(&mut self.scratch.q_coeff, block_size, size);
+        Scratch::grow(&mut self.scratch.thin_q, m, size);
+        Scratch::grow(&mut self.scratch.thin_r, size, n);
+        Scratch::grow(&mut self.scratch.absorbed, prev_left * 2, k);
+
+        // qr_in := adjoint(group_right(site[i])): entry (r, c) = conj(gr[c, r]).
+        // gr is group_right_view = left × (2·right) = n × m.
+        {
+            let mut qr_in = self.scratch.qr_in.as_mut().submatrix_mut(0, 0, m, n);
+            let gr = self.sites[i].group_right_view();
+            for c in 0..n {
+                for r in 0..m {
+                    qr_in[(r, c)] = gr[(c, r)].conj();
+                }
+            }
+        }
+        {
+            let Scratch {
+                qr_in,
+                q_coeff,
+                thin_q,
+                thin_r,
+                mem,
+                ..
+            } = &mut self.scratch;
+            crate::linalg::qr_into(
+                qr_in.as_mut().submatrix_mut(0, 0, m, n),
+                par_qr,
+                q_coeff.as_mut().submatrix_mut(0, 0, block_size, size),
+                thin_q.as_mut().submatrix_mut(0, 0, m, size),
+                thin_r.as_mut().submatrix_mut(0, 0, size, n),
+                mem,
+            );
+        }
+        // absorbed = group_left(site[i-1]) · Rᴴ   (prev_left·2 × k).
+        {
+            let r_view = self.scratch.thin_r.as_ref().submatrix(0, 0, k, n);
+            let mut absorbed = self
+                .scratch
+                .absorbed
+                .as_mut()
+                .submatrix_mut(0, 0, prev_left * 2, k);
+            matmul(
+                absorbed.as_mut(),
+                Accum::Replace,
+                self.sites[i - 1].group_left_view(),
+                r_view.adjoint(),
+                Complex::new(1.0, 0.0),
+                par_absorb,
+            );
+        }
+        {
+            let absorbed = self
+                .scratch
+                .absorbed
+                .as_ref()
+                .submatrix(0, 0, prev_left * 2, k);
+            self.sites[i - 1].fill_left_from(absorbed, prev_left, k);
+        }
+        // Site i ← right-canonical Qᴴ: grouped-right (t,col) = conj(Q[col,t]).
+        // fill_right_from_scaled_conj with sv = all-ones reads exactly that.
+        {
+            let q_view = self.scratch.thin_q.as_ref().submatrix(0, 0, m, k);
+            let ones = vec![1.0_f64; k];
+            self.sites[i].fill_right_from_scaled_conj(q_view, &ones, k, right);
+        }
         self.center -= 1;
     }
 
