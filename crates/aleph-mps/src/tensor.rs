@@ -1,5 +1,6 @@
 //! Rank-3 MPS site tensor `(left, 2, right)` and its faer matrix views.
 
+#[cfg(test)]
 use crate::MpsError;
 use aleph_core::Complex;
 
@@ -61,8 +62,7 @@ impl Site {
     }
 
     /// Build a `Site` from a faer `(left·2) × right` grouped-left matrix.
-    // P3-14: now test-only; cleanup in Task 9
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn from_group_left_faer(m: faer::MatRef<'_, Complex>, left: usize, right: usize) -> Site {
         let mut s = Site::zeros(left, right);
         // Allow explicit index arithmetic — clearer than iterator gymnastics
@@ -77,8 +77,7 @@ impl Site {
     }
 
     /// Build a `Site` from a faer `χ × (2·right)` grouped-right matrix.
-    // P3-14: now test-only; cleanup in Task 9
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn from_group_right_faer(m: faer::MatRef<'_, Complex>, left: usize, right: usize) -> Site {
         let mut s = Site::zeros(left, right);
         // Allow explicit index arithmetic — clearer than iterator gymnastics
@@ -96,10 +95,6 @@ impl Site {
     /// `(left, 2, right)` whose grouped-left matrix `(left·2) × right` is `m`.
     /// Reuses the existing `data` allocation (resized), avoiding a fresh `Site`.
     /// `m` must be at least `(left·2) × right`; only that top-left block is read.
-    // NOTE: `Site` is currently an internal type (not re-exported from lib.rs).
-    // These three fillers will be called by the scratch-arena hot path in a later
-    // P3-14 task; the allow below is intentional until that wiring lands.
-    #[allow(dead_code)]
     pub fn fill_left_from(&mut self, m: faer::MatRef<'_, Complex>, left: usize, right: usize) {
         self.left = left;
         self.right = right;
@@ -116,7 +111,6 @@ impl Site {
     /// Overwrite this site in place from a `left × (2·right)` grouped-right
     /// matrix `m` (row `l`, col `p·right + r`) — the in-place equivalent of
     /// `from_group_right_faer`. Reuses the existing `data` allocation.
-    #[allow(dead_code)]
     pub fn fill_from_grouped_right(
         &mut self,
         m: faer::MatRef<'_, Complex>,
@@ -142,7 +136,6 @@ impl Site {
     /// ones, e.g. a right-canonical Qᴴ). `v` is read as `cols × left` (its row
     /// = grouped-right column index `col`, its col = bond index `l`). `sv` has
     /// length `left`. Reuses the existing `data` allocation.
-    #[allow(dead_code)]
     pub fn fill_right_from_scaled_conj(
         &mut self,
         v: faer::MatRef<'_, Complex>,
@@ -178,7 +171,7 @@ pub enum TruncationPolicy {
 /// `(u_kept, s_kept, vt_kept, discarded_weight)` returned by [`truncated_svd`].
 // P3-14: production hot paths now use `svd_into` + `svd_truncation_plan`; the
 // allocating `truncated_svd` is retained only for its oracle tests.
-#[allow(dead_code)]
+#[cfg(test)]
 pub type TruncatedSvd = (faer::Mat<Complex>, Vec<f64>, faer::Mat<Complex>, f64);
 
 /// Pure χ-selection + renormalization for a truncated SVD given the (descending,
@@ -245,7 +238,7 @@ pub(crate) fn svd_truncation_plan(sigmas: &[f64], policy: &TruncationPolicy) -> 
 /// silently drop half the state norm (root-caused via the SWAP-network oracle
 /// proptest). We use `faer`'s `thin_svd`, which is reliable for complex inputs
 /// (verified to reconstruct the offending blocks to ~1e-16).
-#[allow(dead_code)] // P3-14: superseded by svd_into + svd_truncation_plan; tests only.
+#[cfg(test)]
 pub fn truncated_svd(
     m: faer::MatRef<'_, Complex>,
     policy: &TruncationPolicy,

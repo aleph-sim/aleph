@@ -37,8 +37,6 @@ pub struct MpsState {
     pub(crate) swaps_applied: u64,
     /// Reusable hot-path workspace (P3-14). Not part of the logical state; see
     /// `Scratch`'s clone-as-empty.
-    #[allow(dead_code)]
-    // P3-14: consumed by apply_2q_adjacent / move_center_* in the next tasks
     scratch: Scratch,
     /// Test-only override forcing every faer op down one `Par` regardless of
     /// the size threshold — lets the Par-invariance oracle compare `Seq` vs
@@ -57,7 +55,6 @@ pub struct MpsState {
 /// NOTE: peak scratch memory rises vs the alloc-per-gate code (≈100–150 MB at
 /// χ=512); buffers used at disjoint times (absorbed↔theta) could be unified —
 /// documented follow-up, not done in v1 for clarity.
-#[allow(dead_code)] // P3-14: consumed by apply_2q_adjacent / move_center_* in the next tasks
 struct Scratch {
     theta: Mat<Complex>,
     theta2: Mat<Complex>,
@@ -107,7 +104,6 @@ impl std::fmt::Debug for Scratch {
     }
 }
 
-#[allow(dead_code)] // P3-14: consumed by apply_2q_adjacent / move_center_* in the next tasks
 impl Scratch {
     /// Ensure `buf` is at least `rows × cols`, regrowing monotonically (keeps the
     /// larger of each dim so it never shrinks below a size it already serves).

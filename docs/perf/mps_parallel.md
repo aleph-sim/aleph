@@ -195,3 +195,37 @@ wide_bond` AND re-run the guard cells — `nn_qaoa` against a `--no-default-feat
 `--save-baseline`, plus the `wide_bond` χ=128/χ=256 cells against their t=1 rows — to
 confirm the new threshold introduces no small-cell pessimization. Note the crossover
 above was measured at 16T on EPYC only; it is thread-count- and machine-dependent.
+
+## P3-14 — hot-path scratch arena
+
+Per-2q-gate allocations before P3-14: `theta` + `theta2` (each `Mat::zeros`
+memset then overwritten), a fresh SVD `u`/`v`/`s` + `MemBuffer` every call, the
+`u_kept`/`vt_kept` factor copies, and two fresh `Site` `Vec`s; center moves added
+`to_owned()` workspace copies, per-call QR `MemBuffer`s, and a `qh =
+q.adjoint().to_owned()` copy. P3-14 pools all of these on `MpsState` (faer `Mat`s
++ one `MemBuffer`, grown monotonically, addressed via `submatrix` views) and
+writes the two new `Site`s directly (one indexed pass each, folding the V
+conjugation + singular-value scaling into the write), dropping the `qh`
+materialization entirely. `svd_into`/`qr_into` are the pooled-buffer primitives;
+the χ-selection math lives in the pure `svd_truncation_plan`.
+
+Peak scratch memory rises vs the alloc-per-gate code (≈100–150 MB at χ=512, small
+vs the state); unifying time-disjoint buffers (e.g. `absorbed`↔`theta`) is a
+documented follow-up.
+
+### EPYC before/after (criterion, current-main baseline)
+
+Measurement pending (improve-vs-main bar): dist1 must improve, no regression on
+any other `long_range`/`nn_qaoa`/`wide_bond` cell.
+
+| cell | main | P3-14 | Δ |
+|------|------|-------|---|
+| long_range dist1 | _TBD_ | _TBD_ | _TBD_ |
+| long_range dist4 | _TBD_ | _TBD_ | _TBD_ |
+| long_range dist8 | _TBD_ | _TBD_ | _TBD_ |
+| long_range dist11 | _TBD_ | _TBD_ | _TBD_ |
+| nn_qaoa | _TBD_ | _TBD_ | _TBD_ |
+| wide_bond χ64 | _TBD_ | _TBD_ | _TBD_ |
+| wide_bond χ128 | _TBD_ | _TBD_ | _TBD_ |
+| wide_bond χ256 | _TBD_ | _TBD_ | _TBD_ |
+| wide_bond χ512 | _TBD_ | _TBD_ | _TBD_ |

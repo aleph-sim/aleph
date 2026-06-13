@@ -12,7 +12,9 @@
 
 use crate::MpsError;
 use aleph_core::Complex;
-use faer::diag::{Diag, DiagMut};
+#[cfg(test)]
+use faer::diag::Diag;
+use faer::diag::DiagMut;
 use faer::dyn_stack::{MemBuffer, MemStack, StackReq};
 use faer::linalg::householder::{
     apply_block_householder_sequence_on_the_left_in_place_scratch,
@@ -22,7 +24,9 @@ use faer::linalg::qr::no_pivoting::factor::{
     qr_in_place, qr_in_place_scratch, recommended_block_size,
 };
 use faer::linalg::svd::{svd, svd_scratch, ComputeSvdVectors};
-use faer::{Conj, Mat, MatMut, MatRef, Par};
+#[cfg(test)]
+use faer::Mat;
+use faer::{Conj, MatMut, MatRef, Par};
 
 /// Minimum operand element count (`rows · cols`) for the rayon pool to pay
 /// off: strictly above the largest measured-pessimization operand. EPYC 16c
@@ -59,8 +63,7 @@ pub(crate) fn par_for(rows: usize, cols: usize) -> Par {
 
 /// `(U, S, V)` factors of a thin SVD (named to satisfy clippy's
 /// type-complexity lint without obscuring the tuple shape).
-// P3-14: only `truncated_svd` (now tests-only) consumes this allocating wrapper.
-#[allow(dead_code)]
+#[cfg(test)]
 pub(crate) type ThinSvd = (Mat<Complex>, Diag<Complex>, Mat<Complex>);
 
 /// Grow `mem` so a subsequent `MemStack::new(mem)` can satisfy `req`.
@@ -112,7 +115,7 @@ pub(crate) fn svd_into(
 /// `faer::linalg::solvers::Svd::new_thin` — which hard-reads the global
 /// parallelism (faer-0.24.0 solvers.rs:1344) — for the canonical c64 element
 /// type (no conjugation pass needed: `aleph_core::Complex == faer::c64`).
-#[allow(dead_code)] // P3-14: only the tests-only `truncated_svd` calls this now.
+#[cfg(test)]
 pub(crate) fn thin_svd_par(a: MatRef<'_, Complex>, par: Par) -> Result<ThinSvd, MpsError> {
     let (m, n) = a.shape();
     let size = Ord::min(m, n);
@@ -202,8 +205,7 @@ pub(crate) fn recommended_block_size_complex(m: usize, n: usize) -> usize {
 /// as the in-place factorization workspace (the high-level path makes the
 /// same `to_owned()` copy internally). Delegates to `qr_into` (allocating
 /// wrapper; bit-exact).
-// P3-14: now test-only; cleanup in Task 9
-#[allow(dead_code)]
+#[cfg(test)]
 pub(crate) fn thin_qr_par(qr: Mat<Complex>, par: Par) -> (Mat<Complex>, Mat<Complex>) {
     let (m, n) = qr.shape();
     let size = Ord::min(m, n);
