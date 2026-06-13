@@ -2030,8 +2030,8 @@ P3-09 /code-review reuse finding: the MPS copy is scatter-based with the inverse
 
 **Acceptance Criteria**
 
-- [ ] One shared helper; both call sites migrated; aleph-sv perm tests moved/extended to cover the MPS usage (asymmetric 3-cycle case included).
-- [ ] No behavior change (oracle suites of both crates green).
+- [x] One shared helper; both call sites migrated; aleph-sv perm tests moved/extended to cover the MPS usage (asymmetric 3-cycle case included). — *`aleph_core::bit_permute_buf` (+ tests incl. `asymmetric_three_cycle_matches_scatter` proving gather(perm=`site_of_qubit`) ≡ MPS's `qubit_of_site` scatter); aleph-sv `perm.rs` reduced to typed wrappers; MPS `dense_statevector` phase-2 calls the helper.*
+- [x] No behavior change (oracle suites of both crates green). — *aleph-sv + aleph-mps full suites unchanged.*
 
 **References**
 

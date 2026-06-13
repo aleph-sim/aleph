@@ -42,6 +42,9 @@ pub use gate::{Gate, GateError, GateInstance, GateMatrix, Param, SymbolId};
 pub mod pauli;
 pub use pauli::{Pauli, PauliError, PauliString, PauliSum, PauliSumError};
 
+pub mod perm;
+pub use perm::bit_permute_buf;
+
 /// Project-wide tolerance for amplitude comparisons in FP64.
 ///
 /// CLAUDE.md § Testing Requirements pins this at `1e-10`. Use this
