@@ -113,6 +113,7 @@ Each backend implements a common `Backend` trait. The frontend, IR, parser, and 
 |4.5  |CPU parity vs Aer/Stim                |2–4 weeks           |Every parity-matrix cell ≤ 1.2× its reference; docs/perf/parity.md               |
 |4.6  |CPU depth: QEC throughput + noise     |3–5 weeks           |Pauli-frame multi-shot sampler; noise models v1 (Kraus channels, oracle vs Aer)  |
 |5    |GPU backend (single-GPU)              |2–3 months          |cuQuantum integration + custom CUDA where it adds value                          |
+|5.5  |Apple/Metal GPU (FP32, on-hand HW)    |3–5 weeks           |Metal FP32 statevector ≥2× same-Mac CPU; MPS-on-Metal started; first-mover on Metal|
 |6    |Multi-GPU and distributed             |2–3 months          |NCCL intra-node + MPI inter-node                                                 |
 
 Estimates are aggressive solo full-time. Realistic part-time: roughly double.
@@ -158,6 +159,7 @@ The simulator is evaluated on these algorithms across all phases:
 - Phase 4.5 ✅ **met**: every competitive-matrix cell ≤ 1.2× its reference (Aer MT statevector, Aer MPS, Stim) — 10/10 cells pass with no structural exceptions (worst: ghz_n25 1.03×; stabilizer closed at 0.79× Stim by P4.5-02); published in `docs/perf/parity.md`. v0.2 + PyPI (P4-09) unblocked.
 - Phase 4.6: (a) surface-d11 multi-shot sampling ≥ 10× the per-shot loop at M=1024 (Pauli-frame sampler); (b) `measure` column-scan cost addressed (off the top of the d=11 profile, or a documented structural verdict); (c) noise models v1 — depolarizing/damping/flip/readout channels on the SV backend with an oracle vs Aer under an identical NoiseModel (1e-5 at 100k shots).
 - Phase 5: GPU backend within 1.5× of cuQuantum standalone.
+- Phase 5.5: Metal FP32 statevector backend ≥ 2× the same-Mac CPU statevector on ≥2 Tier-1 workloads at n≈28 (M4-base Mac Mini), FP32 oracle 1e-5 vs Aer; MPS-on-Metal scaffold runs nearest-neighbor circuits correctly (1e-5). FP32-only (Apple GPUs have no double); honest-ceiling clause if statevector is bandwidth-capped.
 - Phase 6: Distributed run on 4+ nodes with reasonable scaling efficiency.
 
 **Project-level**:

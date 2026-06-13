@@ -49,6 +49,7 @@ Each issue follows the same template:
 - Phase 4.5 — CPU Parity
 - Phase 4.6 — CPU Depth
 - Phase 5 — GPU Backend
+- Phase 5.5 — Apple/Metal GPU
 - Phase 6 — Multi-GPU & Distributed
 
 -----
@@ -3095,6 +3096,280 @@ Phase exit criterion.
 **References**
 
 - Phase 1, 2 reports for template.
+
+-----
+
+# Phase 5.5 — Apple/Metal GPU
+
+Goal: a first-mover **Metal (Apple Silicon GPU)** backend, built on hardware the
+project has on-hand (dev Mac + an M4-base Mac Mini, 24 GB unified) while the CUDA
+Phase 5 stays blocked on NVIDIA hardware. **FP32 only** — Apple GPUs have no
+`double` in Metal, so the oracle regime is 1e-5 (the P2-08 FP32-CPU regime), never
+FP64 1e-10. There is no established Metal QC-simulator reference, so the honest
+experiment is a same-box comparison: aleph's own CPU path vs the Metal path on
+identical hardware. This is a **side-track**, distinct from the distributed Phase 6.
+
+**Order:** queued **after the CPU phases** (Phase 4.6 + the deferred Phase-3
+follow-ups). Do not start until the CPU track is done. Design spec:
+`docs/superpowers/specs/2026-06-13-phase5.5-metal-gpu-design.md`.
+
+**Hard build isolation:** the new `aleph-metal` crate compiles only under
+`cfg(target_os = "macos")` + a non-default `metal` cargo feature, so the default
+build and all Linux/EPYC CI are untouched; a macOS CI leg builds `--features metal`.
+
+-----
+
+### [P5.5-01] Metal foundation: device/buffer/pipeline + build & CI plumbing
+
+**Labels:** `area:backend-gpu`, `area:infra`, `type:infra`, `priority:high`
+**Milestone:** Phase 5.5
+**Estimate:** M
+**Depends on:** P4.6 track complete
+
+**Description**
+Stand up the `aleph-metal` crate skeleton and prove an end-to-end Metal compute
+dispatch before any physics.
+
+**Context**
+De-risk the toolchain first (the P3-14/P1-03 spike pattern). Everything else
+builds on a working device + buffer + kernel-dispatch path.
+
+**Technical Details**
+
+- New crate `aleph-metal`; depend on the `metal` crate (gfx-rs/`metal-rs`).
+- Gate the whole crate behind `cfg(target_os = "macos")` + a non-default `metal`
+  cargo feature so default/Linux builds never compile it.
+- `MetalContext` (device, command queue, `.metallib` load); `DeviceBuffer<T>` over
+  `MTLBuffer` on unified memory (zero-copy host slice views).
+- `build.rs` precompiles `.metal` → `.metallib` via `xcrun metal/metallib`
+  (runtime source-compile fallback).
+- Add a macOS CI leg building `--features metal`.
+- One trivial smoke kernel (e.g. vector scale) dispatched + verified host-side.
+
+**Acceptance Criteria**
+
+- [ ] `cargo build -p aleph-metal --features metal` succeeds on macOS; default
+      workspace build + Linux CI unchanged (crate absent).
+- [ ] Smoke kernel runs on the GPU and returns correct results host-side.
+- [ ] macOS CI leg green.
+
+**Testing Requirements**
+
+- Host↔device round-trip + smoke-kernel correctness test (run on macOS; `#[ignore]`
+  if the CI runner has no usable GPU, run locally on the M4 Mini).
+
+**References**
+
+- `docs/superpowers/specs/2026-06-13-phase5.5-metal-gpu-design.md`
+- <https://github.com/gfx-rs/metal-rs>
+
+-----
+
+### [P5.5-02] FP32 statevector core + 1q kernels
+
+**Labels:** `area:backend-gpu`, `area:backend-sv`, `type:feature`, `priority:high`
+**Milestone:** Phase 5.5
+**Estimate:** M
+**Depends on:** P5.5-01
+
+**Description**
+`MetalSvBackend` implementing `Backend` with a device-resident FP32 statevector,
+generic 1q gate kernel, IR-gate dispatch, and amplitude/probability readout.
+
+**Context**
+Minimal working SV path. Establishes the FP32 boundary (FP64 IR → FP32 upload) and
+the new `AmpsF32` readout seam.
+
+**Technical Details**
+
+- State = FP32 statevector in a `DeviceBuffer` (interleaved `f32×2` complex).
+- Allocate |0…0⟩ on device; generic 1q kernel over 2^(n-1) pairs.
+- Convert gate matrices FP64→FP32 at upload.
+- Add an `AmpsF32` accessor to the backend seam (mirror `AmpsF64`/`HasAmplitudes`).
+- `probabilities()` from the device buffer.
+
+**Acceptance Criteria**
+
+- [ ] 1q circuits run on GPU; amplitudes/probabilities readable via `AmpsF32`.
+- [ ] FP32 oracle vs `NaiveSvBackend` for 1q circuits within 1e-5.
+
+**Testing Requirements**
+
+- Unit: H/X/Y/Z/S/T/Rz on basis states vs textbook (1e-5).
+- Oracle vs `NaiveSvBackend` (1e-5).
+
+**References**
+
+- ADR 0004 (qubit ordering); `crates/aleph-sv` for the CPU reference.
+
+-----
+
+### [P5.5-03] 2q / diagonal / multi-controlled FP32 kernels
+
+**Labels:** `area:backend-gpu`, `area:backend-sv`, `type:feature`, `priority:high`
+**Milestone:** Phase 5.5
+**Estimate:** M
+**Depends on:** P5.5-02
+
+**Description**
+CNOT/CZ/SWAP/generic-2q, diagonal-phase, and Toffoli/CCZ/MCX FP32 kernels so the
+full Tier-1 suite runs on the GPU.
+
+**Technical Details**
+
+- 2q kernel (generic 4×4) + specialized CNOT/CZ/SWAP; diagonal-phase kernel;
+  3q/MCX kernels following the CPU dispatch conventions.
+- Centralized gate dispatch on `&GateInstance` (no hardcoded qubit counts).
+
+**Acceptance Criteria**
+
+- [ ] GHZ, QFT, Grover, random circuits all run on `MetalSvBackend`.
+- [ ] FP32 oracle vs Qiskit Aer (statevector) within 1e-5 on Tier-1.
+
+**Testing Requirements**
+
+- Oracle vs Aer (1e-5); property tests (normalization, unitarity) at FP32 tol.
+
+**References**
+
+- `crates/aleph-sv` 2q/diagonal/Toffoli kernels for the math reference.
+
+-----
+
+### [P5.5-04] Fused-block (`UnitaryKq`) GPU kernel
+
+**Labels:** `area:backend-gpu`, `area:backend-sv`, `type:optimization`, `priority:high`
+**Milestone:** Phase 5.5
+**Estimate:** M
+**Depends on:** P5.5-03
+
+**Description**
+Apply a fused k-qubit dense block (`Gate::UnitaryKq`, produced by the existing IR
+fusion passes) as a single GPU kernel — fewer state passes, more arithmetic per
+byte.
+
+**Context**
+Statevector is memory-bandwidth bound; fusion raises arithmetic intensity. This is
+the lever most likely to clear the ≥2× exit bar on a bandwidth-limited Apple GPU.
+
+**Technical Details**
+
+- Reuse `Fuse1q/Fuse2q/FuseKq` passes; dispatch `UnitaryKq` to one Metal kernel
+  (threadgroup-tiled gather/scatter over the 2^k sub-amplitudes).
+- Measure arithmetic-intensity vs unfused on the GPU.
+
+**Acceptance Criteria**
+
+- [ ] Fused-block kernel matches the unfused result within 1e-5.
+- [ ] Criterion shows the fused path faster than unfused on ≥1 Tier-1 workload.
+
+**Testing Requirements**
+
+- Equivalence (fused vs unfused) 1e-5; before/after criterion on the M4 base.
+
+**References**
+
+- P2-07 (`FuseKq`) for the fusion pass + CPU kernel reference.
+
+-----
+
+### [P5.5-05] FP32 oracle harness + Tier-1 benchmark + ≥2× gate
+
+**Labels:** `area:backend-gpu`, `area:bench`, `type:test`, `priority:high`
+**Milestone:** Phase 5.5
+**Estimate:** M
+**Depends on:** P5.5-04
+
+**Description**
+A reusable FP32 (1e-5) oracle vs Aer-on-Mac and a criterion benchmark comparing
+`MetalSvBackend` against aleph's same-Mac CPU statevector on Tier-1 at n≈28 on the
+M4-base Mac Mini — the statevector exit measurement.
+
+**Technical Details**
+
+- FP32 oracle helper (compare FP32 amps to the FP64 reference at 1e-5).
+- Criterion group: Metal SV vs same-Mac CPU SV, Tier-1, n up to ~28.
+- Report on the M4 base; honest-ceiling note if bandwidth-bound.
+
+**Acceptance Criteria**
+
+- [ ] FP32 oracle vs Aer green on Tier-1 (1e-5).
+- [ ] `MetalSvBackend` ≥ 2× the same-Mac CPU statevector on ≥2 Tier-1 workloads at
+      n≈28 (M4 base) — or a documented structural-ceiling verdict if bandwidth-capped.
+
+**Testing Requirements**
+
+- Oracle + criterion on the M4 base (perf never gated in CI).
+
+**References**
+
+- `docs/perf/` phase-report template; `benches/` Tier-1 builders.
+
+-----
+
+### [P5.5-06] MPS-on-Metal scaffold (start)
+
+**Labels:** `area:backend-gpu`, `area:backend-mps`, `type:feature`, `priority:medium`
+**Milestone:** Phase 5.5
+**Estimate:** L
+**Depends on:** P5.5-03
+
+**Description**
+Begin a Metal MPS backend: device-resident FP32 site tensors, GPU kernels for the
+2-site contraction (Θ) and gate-apply (Θ'), nearest-neighbor 2q.
+
+**Context**
+Metal Performance Shaders has matmul but **no SVD**, so the truncation step can't
+run on-GPU yet. "Start" = a working but not-yet-optimized MPS GPU path.
+
+**Technical Details**
+
+- `MetalMpsBackend` skeleton; site tensors in `DeviceBuffer`.
+- GPU kernels for Θ contraction + U·Θ gate apply (FP32).
+- **SVD-gap decision:** run the truncated SVD on CPU (faer) via the unified-memory
+  round-trip initially; document the sync cost. GPU-SVD (Jacobi) deferred to a
+  follow-up ticket.
+- Nearest-neighbor 2q only (lazy-SWAP routing reuse optional).
+
+**Acceptance Criteria**
+
+- [ ] NN circuits run on `MetalMpsBackend`; dense statevector matches the CPU MPS
+      backend within 1e-5.
+- [ ] CPU-SVD round-trip cost documented (profile note).
+
+**Testing Requirements**
+
+- Oracle vs `MpsBackend` / `NaiveSvBackend` (1e-5) on NN circuits.
+
+**References**
+
+- `crates/aleph-mps` for the MPS math reference; P3-04..06.
+
+-----
+
+### [P5.5-07] Phase 5.5 perf report + exit gate
+
+**Labels:** `area:backend-gpu`, `area:docs`, `area:bench`, `type:docs`, `priority:medium`
+**Milestone:** Phase 5.5
+**Estimate:** S
+**Depends on:** P5.5-05, P5.5-06
+
+**Description**
+Consolidated M4-base report (SV ≥2× verdict, MPS-start status, FP32 ceiling
+characterization), ROADMAP §7 Phase-5.5 exit metric, and the phase status flip.
+
+**Acceptance Criteria**
+
+- [ ] `docs/perf/metal.md` with the Metal-vs-same-Mac-CPU numbers + honest verdict.
+- [ ] ROADMAP §7 Phase-5.5 metric marked met / honest-miss with evidence.
+
+**Testing Requirements**
+
+- N/A (report); numbers reproduced from P5.5-05/06.
+
+**References**
+
+- `docs/perf/parity.md`, `docs/perf/phase2.md` for report style.
 
 -----
 
