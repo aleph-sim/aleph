@@ -180,6 +180,12 @@ rewrite itself. P3-14 (scratch arena) is the ticket aimed at this class.
   ~1–5 % smaller `long_range` microcell times) use
   `aleph-mps = { ..., default-features = false }`; CI keeps that configuration
   compiling and green.
+- **Post-review-fix validation (`34c447f`):** after the in-place-QR-basis review fix
+  the cells were re-measured on the idle EPYC — χ=512 @16T 30.75 s (no change vs
+  sweep 3, p = 0.83; 1.52× stands), χ=128 321.92 ms (+0.17 %), χ=256 3.848 s
+  (+0.42 %, within the ±0.5 % run-to-run band), `nn_qaoa` within noise of sequential.
+  The QR fix removes one m×size allocation + copy per center move; the χ=512 cell is
+  SVD-dominated, so the win is structural rather than visible at this granularity.
 
 ### Re-tuning `PAR_MIN_ELEMS`
 
