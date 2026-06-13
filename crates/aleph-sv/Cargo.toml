@@ -27,6 +27,7 @@ thiserror     = { workspace = true }
 
 [dev-dependencies]
 aleph-parser = { path = "../aleph-parser" }
+aleph-oracle = { path = "../aleph-oracle" }
 aleph-test   = { path = "../aleph-test" }
 proptest     = { workspace = true }
 criterion    = { workspace = true }

@@ -77,8 +77,6 @@ impl NoiseModel {
 
     /// Full readout-error map; the driver calls `.is_empty()` to skip the
     /// per-qubit loop in the common no-readout case, and indexes it per qubit.
-    // used by run_noisy in Task 7
-    #[allow(dead_code)]
     pub(crate) fn readout_map(&self) -> &HashMap<u32, ReadoutError> {
         &self.readout
     }

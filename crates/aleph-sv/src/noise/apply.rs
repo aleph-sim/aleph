@@ -13,8 +13,6 @@ use crate::measure::DEGENERATE_BRANCH_THRESHOLD;
 /// state-independent fast path (sample a Pauli, apply via unitary kernels, no
 /// renormalization); general Kraus channels compute `pᵢ=‖Kᵢ|ψ〉‖²`, sample,
 /// apply, and renormalize. Spec §3.
-// used by run_noisy in Task 7
-#[allow(dead_code)]
 pub(super) fn apply_channel(
     amps: &mut [Complex],
     _num_qubits: u32,
@@ -116,8 +114,6 @@ fn apply_kraus_1q(amps: &mut [Complex], c: &KrausChannel, q: u32, rng: &mut StdR
 /// measured qubit with a `ReadoutError`, the recorded outcome bit is the true
 /// bit `t` flipped to `1-t` with probability `m[t][1-t]`. Qubits without an
 /// entry are read out perfectly.
-// used by run_noisy in Task 7
-#[allow(dead_code)]
 pub(super) fn apply_readout(
     index: u64,
     num_qubits: u32,
@@ -146,8 +142,6 @@ pub(super) fn apply_readout(
 /// Plain `seed + shot` leaves strong linear correlation between adjacent shots
 /// that can skew Monte-Carlo estimators. The splitmix64 finalizer provides full
 /// 64-bit avalanche with no correlation at a cost of ~4 instructions per shot.
-// used by run_noisy in Task 7
-#[allow(dead_code)]
 pub(super) fn shot_seed(seed: u64, shot: u64) -> u64 {
     // splitmix64 finalizer applied to (seed·INC + shot + INC).
     // Adjacent shots differ by 1 pre-finalize; the three multiply-xorshift
