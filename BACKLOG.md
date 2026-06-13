@@ -2776,20 +2776,26 @@ Nielsen & Chuang § 8 (quantum operations); `docs/testing.md`.
 **Estimate:** L
 **Depends on:** P4.6-03
 
-**Description** — Deliberate placeholder: scope is fixed by the P4.6-03 spec,
-not guessed in advance. Expected shape: trajectory-based Kraus channel
-application in the SV path + readout error at sampling, channel set v1,
-`NoiseModel` plumbing through `aleph-backend`.
+**Description** — Build `aleph_sv::noise` per the P4.6-03 spec: `NoiseModel` /
+`QuantumError` / `ReadoutError` config types + v1 channel constructors;
+`apply_channel` (general quantum-jump — pᵢ=‖Kᵢ|ψ〉‖², sample, apply, renormalize
+— with a Pauli fast-path that skips the norm for depolarizing/flip channels);
+`run_noisy(circuit, &NoiseModel, shots, seed) -> Counts` (rayon over shots,
+per-shot RNG = hash(seed, shot)); per-qubit readout error at terminal sampling.
+The driver works directly on `CpuState`; the IR, `Backend` trait, and noiseless
+`run()` are untouched (noise is a separate entry point). v1 is SV-only; terminal
+measurement only (mid-circuit measure/reset under noise = v1.1).
 
 **Acceptance Criteria**
-- [ ] Channel set v1 (depolarizing 1q/2q, amplitude/phase damping, bit/phase-flip, readout error) works end-to-end on the SV backend.
-- [ ] Oracle vs Aer under an identical NoiseModel: 1e-5 at 100k shots on the agreed fixture set.
-- [ ] Deterministic seeding; noiseless path performance unchanged (criterion guard).
+- [ ] Channel set v1 (depolarizing 1q/2q, amplitude/phase damping, bit/phase-flip, readout error) works end-to-end via `run_noisy` on the SV backend.
+- [ ] Oracle vs Aer under a byte-identical NoiseModel: 1e-5 at 100k shots on the spec's fixture set (depol on H/CX, amp+phase damping after H, asymmetric readout, depol+readout GHZ-3), compared via `aleph_oracle::assert_distribution_close`.
+- [ ] CPTP property tests: each channel's Σpᵢ=1 (1e-12) and ‖state‖=1 post-`apply_channel`; deterministic seeding (same seed → identical counts); empty NoiseModel reproduces the noiseless distribution; noiseless `run()` criterion benchmark unchanged.
 
-**Testing Requirements** — per the P4.6-03 spec; distribution oracles +
-property tests (CPTP sanity: probabilities sum to 1 across Kraus branches).
+**Testing Requirements** — per the P4.6-03 spec § "Oracle protocol"; distribution
+oracles vs Aer + the CPTP/trace/determinism property tests above.
 
-**References** — P4.6-03 spec + ADR (once landed).
+**References** — `docs/superpowers/specs/2026-06-13-p46-03-noise-models-design.md`;
+ADR `docs/decisions/0014-noise-trajectories.md`.
 
 ### [P4.6-05] Noise models: Python/CLI surface + docs
 
@@ -2798,14 +2804,20 @@ property tests (CPTP sanity: probabilities sum to 1 across Kraus branches).
 **Estimate:** M
 **Depends on:** P4.6-04
 
-**Description** — Deliberate placeholder, re-specced by P4.6-03. Expected
-shape: `NoiseModel` construction API in Python (`aleph.NoiseModel()` builder +
-`aleph.run(c, noise=nm)`), CLI flag(s) for simple presets, README/docs
-examples, release-notes entry for the next release.
+**Description** — Aer-compatible noise API per the P4.6-03 spec § 4. Python
+(pyo3): `aleph.NoiseModel()` with `add_quantum_error(err, gates, qubits)`,
+`add_all_qubit_quantum_error(err, gates)`, `add_readout_error(probs, qubits)`;
+error factories mirroring Aer names — `depolarizing_error(p, num_qubits)`,
+`amplitude_damping_error(gamma)`, `phase_damping_error(lam)`,
+`pauli_error([...])`; `aleph.run(circuit, shots, noise=nm, seed=...)` dispatching
+to `run_noisy` (no `noise=` → existing noiseless path). CLI: `--noise
+<preset>:<p>` for the single-parameter presets (depolarizing, readout); full
+`NoiseModel` construction stays in Python. README/crate-README examples +
+release-notes entry.
 
 **Acceptance Criteria**
-- [ ] Python API per spec with tests in `scripts/python/test_aleph.py`; CLI exposure for at least a depolarizing preset.
-- [ ] README + crate-README examples; docs updated.
+- [ ] Python `NoiseModel` + error factories (Aer names) + `aleph.run(..., noise=)` per spec, with tests in `scripts/python/test_aleph.py`; CLI exposure for at least a depolarizing preset.
+- [ ] README + crate-README examples; docs updated; release-notes entry.
 
 **Testing Requirements** — python behaviour tests against a locally built
 wheel; CLI assert_cmd tests.
