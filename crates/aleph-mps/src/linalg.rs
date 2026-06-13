@@ -59,6 +59,8 @@ pub(crate) fn par_for(rows: usize, cols: usize) -> Par {
 
 /// `(U, S, V)` factors of a thin SVD (named to satisfy clippy's
 /// type-complexity lint without obscuring the tuple shape).
+// P3-14: only `truncated_svd` (now tests-only) consumes this allocating wrapper.
+#[allow(dead_code)]
 pub(crate) type ThinSvd = (Mat<Complex>, Diag<Complex>, Mat<Complex>);
 
 /// Grow `mem` so a subsequent `MemStack::new(mem)` can satisfy `req`.
@@ -110,6 +112,7 @@ pub(crate) fn svd_into(
 /// `faer::linalg::solvers::Svd::new_thin` — which hard-reads the global
 /// parallelism (faer-0.24.0 solvers.rs:1344) — for the canonical c64 element
 /// type (no conjugation pass needed: `aleph_core::Complex == faer::c64`).
+#[allow(dead_code)] // P3-14: only the tests-only `truncated_svd` calls this now.
 pub(crate) fn thin_svd_par(a: MatRef<'_, Complex>, par: Par) -> Result<ThinSvd, MpsError> {
     let (m, n) = a.shape();
     let size = Ord::min(m, n);

@@ -2,9 +2,10 @@
 //! gate application with lazy SWAP permutation routing (P3-09), expectation,
 //! measurement, sampling, probabilities.
 
-use crate::tensor::{truncated_svd, Site, TruncationPolicy};
+use crate::tensor::{Site, TruncationPolicy};
 use crate::MpsError;
 use aleph_core::{Complex, Gate, GateInstance, PauliString};
+use faer::diag::Diag;
 use faer::dyn_stack::{MemBuffer, StackReq};
 use faer::linalg::matmul::matmul;
 use faer::Accum;
@@ -261,45 +262,53 @@ impl MpsState {
         let li = self.sites[i].left;
         let ri = self.sites[j].right;
         let par = self.choose_par(li * 2, 2 * ri);
+        let rows = li * 2;
+        let cols = 2 * ri;
+        let size = rows.min(cols);
 
-        // Θ as a (li·2) × (2·ri) matrix (row l·2+a, col b·ri+r): exactly the
-        // grouped-left × grouped-right product — one parallel gemm (P3-09).
-        let mut theta = faer::Mat::<Complex>::zeros(li * 2, 2 * ri);
-        matmul(
-            theta.as_mut(),
-            Accum::Replace,
-            self.sites[i].group_left_view(),
-            self.sites[j].group_right_view(),
-            Complex::new(1.0, 0.0),
-            par,
-        );
+        // Θ as a (li·2) × (2·ri) matrix: grouped-left × grouped-right, one gemm
+        // into the pooled buffer. No memset — Accum::Replace overwrites all
+        // entries (the pooled buffer may hold stale data outside the submatrix,
+        // but only the rows×cols submatrix is read downstream).
+        {
+            let theta = Scratch::view_mut(&mut self.scratch.theta, rows, cols);
+            matmul(
+                theta,
+                Accum::Replace,
+                self.sites[i].group_left_view(),
+                self.sites[j].group_right_view(),
+                Complex::new(1.0, 0.0),
+                par,
+            );
+        }
 
-        // Helper: given the physical indices of site i (phys_i) and site j (phys_j),
-        // return the 2q matrix row/column index following the MSB convention:
-        // s_msb is the MSB, s_lsb is the LSB (ADR-0004 / P0-06 convention).
+        // Helper: physical indices → 2q matrix row/col index (s_msb=MSB).
         let out = |phys_i: usize, phys_j: usize| -> usize {
-            // Identify which physical index maps to s_msb (MSB) and s_lsb (LSB).
             let bit_msb = if s_msb == i { phys_i } else { phys_j };
             let bit_lsb = if s_lsb == i { phys_i } else { phys_j };
             (bit_msb << 1) | bit_lsb
         };
 
-        // Θ' = U·Θ over the joint physical index — O(16·li·ri), a factor χ
-        // cheaper than the gemm above, so plain loops are fine here.
-        let mut theta2 = faer::Mat::<Complex>::zeros(li * 2, 2 * ri);
-        for ap in 0..2usize {
-            for bp in 0..2usize {
-                let row_u = out(ap, bp);
-                for a in 0..2usize {
-                    for b in 0..2usize {
-                        let u_entry = u[row_u][out(a, b)];
-                        if u_entry == Complex::new(0.0, 0.0) {
-                            continue;
-                        }
-                        for r in 0..ri {
-                            for l in 0..li {
-                                theta2[(l * 2 + ap, bp * ri + r)] +=
-                                    u_entry * theta[(l * 2 + a, b * ri + r)];
+        // Θ' = U·Θ. theta2 is += accumulated → zero it first. theta and theta2
+        // are distinct Scratch fields (disjoint borrows).
+        {
+            let mut theta2 = Scratch::view_mut(&mut self.scratch.theta2, rows, cols);
+            theta2.fill(Complex::new(0.0, 0.0));
+            let theta = self.scratch.theta.as_ref().submatrix(0, 0, rows, cols);
+            for ap in 0..2usize {
+                for bp in 0..2usize {
+                    let row_u = out(ap, bp);
+                    for a in 0..2usize {
+                        for b in 0..2usize {
+                            let u_entry = u[row_u][out(a, b)];
+                            if u_entry == Complex::new(0.0, 0.0) {
+                                continue;
+                            }
+                            for r in 0..ri {
+                                for l in 0..li {
+                                    theta2[(l * 2 + ap, bp * ri + r)] +=
+                                        u_entry * theta[(l * 2 + a, b * ri + r)];
+                                }
                             }
                         }
                     }
@@ -307,23 +316,39 @@ impl MpsState {
             }
         }
 
-        // Truncated SVD of Θ' (already in (li·2) × (2·ri) grouped form).
-        let (u_s, s_kept, vt_s, discarded) = truncated_svd(theta2.as_ref(), &self.policy, par)?;
-        self.trunc_error += discarded;
-        let chi = s_kept.len();
-        self.max_bond_seen = self.max_bond_seen.max(chi);
-
-        // New site i: left-canonical from the U factor, shape (li, chi).
-        self.sites[i] = Site::from_group_left_faer(u_s.as_ref(), li, chi);
-
-        // New site j: singular values folded into Vᴴ rows, shape (chi, ri).
-        let mut sv = vt_s;
-        for c in 0..2 * ri {
-            for t in 0..chi {
-                sv[(t, c)] *= Complex::new(s_kept[t], 0.0);
-            }
+        // Truncated SVD of Θ' into pooled u/v/s buffers.
+        let mut s_diag = Diag::<Complex>::zeros(size);
+        {
+            let theta2 = self.scratch.theta2.as_ref().submatrix(0, 0, rows, cols);
+            let u_out = Scratch::view_mut(&mut self.scratch.svd_u, rows, size);
+            let v_out = Scratch::view_mut(&mut self.scratch.svd_v, cols, size);
+            crate::linalg::svd_into(
+                theta2,
+                par,
+                u_out,
+                v_out,
+                s_diag.as_mut(),
+                &mut self.scratch.mem,
+            )?;
         }
-        self.sites[j] = Site::from_group_right_faer(sv.as_ref(), chi, ri);
+        let sigmas: Vec<f64> = (0..size).map(|t| s_diag.as_ref()[t].re).collect();
+        let (chi, discarded, scale) = crate::tensor::svd_truncation_plan(&sigmas, &self.policy);
+        self.trunc_error += discarded;
+        self.max_bond_seen = self.max_bond_seen.max(chi);
+        let s_kept: Vec<f64> = (0..chi).map(|t| sigmas[t] * scale).collect();
+
+        // Site i ← left-canonical from U[:, 0..chi]  (grouped-left li·2 × chi).
+        {
+            let u_view = self.scratch.svd_u.as_ref().submatrix(0, 0, rows, chi);
+            self.sites[i].fill_left_from(u_view, li, chi);
+        }
+        // Site j ← right-canonical s·Vᴴ. svd_v is (cols × size); read its first
+        // chi columns. fill_right_from_scaled_conj reads V[col, t] and folds
+        // conj + s_kept[t] into the grouped-right layout (chi × ri).
+        {
+            let v_view = self.scratch.svd_v.as_ref().submatrix(0, 0, cols, chi);
+            self.sites[j].fill_right_from_scaled_conj(v_view, &s_kept, chi, ri);
+        }
         self.center = j;
 
         Ok(())

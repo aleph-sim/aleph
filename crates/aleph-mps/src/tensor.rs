@@ -172,6 +172,9 @@ pub enum TruncationPolicy {
 }
 
 /// `(u_kept, s_kept, vt_kept, discarded_weight)` returned by [`truncated_svd`].
+// P3-14: production hot paths now use `svd_into` + `svd_truncation_plan`; the
+// allocating `truncated_svd` is retained only for its oracle tests.
+#[allow(dead_code)]
 pub type TruncatedSvd = (faer::Mat<Complex>, Vec<f64>, faer::Mat<Complex>, f64);
 
 /// Pure χ-selection + renormalization for a truncated SVD given the (descending,
@@ -238,6 +241,7 @@ pub(crate) fn svd_truncation_plan(sigmas: &[f64], policy: &TruncationPolicy) -> 
 /// silently drop half the state norm (root-caused via the SWAP-network oracle
 /// proptest). We use `faer`'s `thin_svd`, which is reliable for complex inputs
 /// (verified to reconstruct the offending blocks to ~1e-16).
+#[allow(dead_code)] // P3-14: superseded by svd_into + svd_truncation_plan; tests only.
 pub fn truncated_svd(
     m: faer::MatRef<'_, Complex>,
     policy: &TruncationPolicy,
