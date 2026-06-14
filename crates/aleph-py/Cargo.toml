@@ -27,6 +27,7 @@ aleph-parser  = { path = "../aleph-parser" }
 aleph-stab    = { path = "../aleph-stab" }
 smallvec      = { workspace = true }
 pyo3 = { version = "0.22", features = ["extension-module", "abi3-py312"], optional = true }
-# Only used by the noise run path (run.rs) to draw a u64 seed when the caller
-# passes seed=None; pulled in only with the `python` feature.
+# Needed by the run(noise=, seed=None) path (run.rs) to draw a u64 seed from
+# OS entropy; declared here so the follow-up wiring has no Cargo.toml churn.
+# Pulled in only with the `python` feature.
 rand = { workspace = true, optional = true }

@@ -20,8 +20,8 @@ use pyo3::types::PyAny;
 /// names (notably `"id"`/`"i"`: aleph has no idle gate).
 fn aer_to_aleph(name: &str) -> Option<&'static str> {
     // Lowercasing makes this accept both the Aer mnemonic ("cx") and the
-    // lowercased aleph name ("Cnot" -> "cnot"); every aleph 1q/2q/3q gate
-    // name lowercases onto a key below.
+    // lowercased aleph name ("Cnot" -> "cnot"). Gates not reachable via Aer
+    // (IswapDg, Unitary*) are intentionally absent and fall through to None.
     Some(match name.to_ascii_lowercase().as_str() {
         "h" => "H",
         "x" => "X",
@@ -51,7 +51,7 @@ fn aer_to_aleph(name: &str) -> Option<&'static str> {
 
 /// Supported names, for error messages.
 const SUPPORTED_GATES: &str =
-    "h,x,y,z,s,sdg,t,tdg,rx,ry,rz,p,u3,cx,cz,swap,iswap,crx,cry,crz,ccx,ccz";
+    "h,x,y,z,s,sdg,t,tdg,rx,ry,rz,p/phase,u/u3,cx/cnot,cz,swap,iswap,crx,cry,crz,ccx/toffoli,ccz";
 
 /// Translate a list of Aer mnemonics to aleph internal names, erroring on the
 /// first unknown one.
@@ -153,7 +153,7 @@ pub(crate) fn phase_damping_error(lam: f64) -> PyResult<PyQuantumError> {
 pub(crate) fn bit_flip_error(p: f64) -> PyResult<PyQuantumError> {
     if !(0.0..=1.0).contains(&p) {
         return Err(PyValueError::new_err(format!(
-            "flip p must be in [0,1], got {p}"
+            "bit_flip p must be in [0,1], got {p}"
         )));
     }
     Ok(PyQuantumError {
@@ -166,7 +166,7 @@ pub(crate) fn bit_flip_error(p: f64) -> PyResult<PyQuantumError> {
 pub(crate) fn phase_flip_error(p: f64) -> PyResult<PyQuantumError> {
     if !(0.0..=1.0).contains(&p) {
         return Err(PyValueError::new_err(format!(
-            "flip p must be in [0,1], got {p}"
+            "phase_flip p must be in [0,1], got {p}"
         )));
     }
     Ok(PyQuantumError {
@@ -199,6 +199,11 @@ pub(crate) fn pauli_error(terms: Vec<(String, f64)>) -> PyResult<PyQuantumError>
     }
     if total <= 0.0 {
         return Err(PyValueError::new_err("pauli_error weights must sum to > 0"));
+    }
+    if !total.is_finite() {
+        return Err(PyValueError::new_err(
+            "pauli_error weights overflow to non-finite; use normalized values",
+        ));
     }
     let refs: Vec<(&str, f64)> = terms.iter().map(|(s, p)| (s.as_str(), *p)).collect();
     Ok(PyQuantumError {
