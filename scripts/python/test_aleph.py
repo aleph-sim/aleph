@@ -148,3 +148,77 @@ class TestCircuitBuilder(unittest.TestCase):
         self.assertEqual(c.num_gates, 2)
         self.assertEqual(c.num_qubits, 2)
         self.assertEqual(c.num_clbits, 2)
+
+
+@unittest.skipUnless(HAVE_ALEPH, "aleph extension module not installed")
+class TestNoise(unittest.TestCase):
+    def _bell(self):
+        c = aleph.Circuit(2)
+        c.h(0)
+        c.cx(0, 1)
+        return c
+
+    def test_empty_model_matches_noiseless(self):
+        # An empty NoiseModel must reproduce the noiseless distribution
+        # (same seed). run() with noise= is per-shot Monte-Carlo, but with
+        # no channels every trajectory equals the clean run.
+        nm = aleph.NoiseModel()
+        noisy = aleph.run(self._bell(), shots=4096, noise=nm, seed=11).counts()
+        self.assertEqual(set(noisy), {"00", "11"})
+        self.assertEqual(sum(noisy.values()), 4096)
+
+    def test_depolarizing_on_x_spreads_distribution(self):
+        # Strong depolarizing on X injects errors; a circuit that is otherwise
+        # |0> on qubit 0 (two X gates = net identity) picks up "1" outcomes.
+        c = aleph.Circuit(1)
+        c.x(0)
+        c.x(0)  # net identity -> noiseless is all "0"
+        nm = aleph.NoiseModel()
+        nm.add_all_qubit_quantum_error(aleph.depolarizing_error(0.5, 1), ["x"])
+        counts = aleph.run(c, shots=8000, noise=nm, seed=3).counts()
+        self.assertIn("1", counts)
+        self.assertGreater(counts.get("1", 0), 200)
+
+    def test_readout_error_flips_outcomes(self):
+        # A near-certain |00> state with heavy readout error produces "1"s.
+        c = aleph.Circuit(2)  # noiseless -> all "00"
+        nm = aleph.NoiseModel()
+        nm.add_readout_error([[0.7, 0.3], [0.3, 0.7]], 0)
+        counts = aleph.run(c, shots=8000, noise=nm, seed=5).counts()
+        flipped = sum(v for k, v in counts.items() if k.endswith("1"))
+        self.assertGreater(flipped, 1500)  # ~0.3 of 8000, generous slack
+
+    def test_bad_params_raise(self):
+        with self.assertRaises(ValueError):
+            aleph.depolarizing_error(1.5, 1)
+        with self.assertRaises(ValueError):
+            aleph.depolarizing_error(0.1, 3)
+        with self.assertRaises(ValueError):
+            aleph.amplitude_damping_error(-0.1)
+        with self.assertRaises(ValueError):
+            aleph.pauli_error([])
+
+    def test_unknown_gate_name_raises(self):
+        # aleph has no idle "id" gate; attaching to it is an explicit error.
+        nm = aleph.NoiseModel()
+        with self.assertRaises(ValueError):
+            nm.add_all_qubit_quantum_error(aleph.depolarizing_error(0.01, 1), ["id"])
+
+    def test_aer_mnemonic_maps_to_internal_name(self):
+        # "cx" must reach the engine as "Cnot": attach 2q depol to cx and run
+        # a Bell circuit without error.
+        nm = aleph.NoiseModel()
+        nm.add_all_qubit_quantum_error(aleph.depolarizing_error(0.02, 2), ["cx"])
+        counts = aleph.run(self._bell(), shots=2048, noise=nm, seed=9).counts()
+        self.assertEqual(sum(counts.values()), 2048)
+
+    def test_noise_rejects_non_sv_backend(self):
+        nm = aleph.NoiseModel()
+        with self.assertRaises(ValueError):
+            aleph.run(self._bell(), shots=64, backend="mps", noise=nm, seed=1)
+
+    def test_noisy_result_has_no_statevector(self):
+        nm = aleph.NoiseModel()
+        res = aleph.run(self._bell(), shots=64, noise=nm, seed=1)
+        with self.assertRaises(ValueError):
+            res.statevector()
