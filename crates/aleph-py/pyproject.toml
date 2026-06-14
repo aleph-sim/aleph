@@ -16,6 +16,10 @@ classifiers = [
     "Programming Language :: Rust",
     "Topic :: Scientific/Engineering :: Physics",
 ]
+# `RunResult.statevector()` returns a numpy complex128 array (P4-11), so numpy
+# is a runtime dependency of the wheel. >=1.23 is the floor rust-numpy 0.22
+# builds against.
+dependencies = ["numpy>=1.23"]
 
 [project.urls]
 Repository = "https://github.com/aleph-sim/aleph"

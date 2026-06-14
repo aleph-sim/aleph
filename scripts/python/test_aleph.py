@@ -1,13 +1,15 @@
 """Behaviour tests for the aleph Python bindings (P4-08).
 
-Not in CI (no maturin step there). Release gate — run from the repo root
-after installing the wheel:
+Gated per-PR by the `test-python` CI job (P4-10). Also runnable from the
+repo root after installing the wheel:
 
     python -m unittest discover -s scripts/python -v
 """
 import math
 import os
 import unittest
+
+import numpy as np
 
 try:
     import aleph
@@ -63,10 +65,23 @@ class TestCircuitBuilder(unittest.TestCase):
         c = aleph.Circuit(1)
         c.h(0)
         amps = aleph.run(c, shots=1, seed=0).statevector()
-        self.assertEqual(len(amps), 2)
-        for a in amps:
-            self.assertAlmostEqual(a.real, 1 / math.sqrt(2), places=10)
-            self.assertAlmostEqual(a.imag, 0.0, places=10)
+        # P4-11: a numpy complex128 array, not a list of Python complex.
+        self.assertIsInstance(amps, np.ndarray)
+        self.assertEqual(amps.dtype, np.complex128)
+        self.assertEqual(amps.shape, (2,))
+        np.testing.assert_allclose(amps, [1 / math.sqrt(2), 1 / math.sqrt(2)], atol=1e-10)
+
+    def test_statevector_bell_amplitudes(self):
+        # |Φ+⟩ = (|00⟩ + |11⟩)/√2 — shape (4,), amps 0 and 3 are 1/√2.
+        c = aleph.Circuit(2)
+        c.h(0)
+        c.cx(0, 1)
+        amps = aleph.run(c, shots=1, seed=0).statevector()
+        self.assertEqual(amps.shape, (2**2,))
+        self.assertEqual(amps.dtype, np.complex128)
+        np.testing.assert_allclose(
+            amps, [1 / math.sqrt(2), 0.0, 0.0, 1 / math.sqrt(2)], atol=1e-10
+        )
 
     def test_ghz_backends_agree(self):
         outcome_sets = {}

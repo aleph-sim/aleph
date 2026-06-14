@@ -15,7 +15,7 @@ crate-type = ["cdylib", "rlib"]
 [features]
 # Enables the PyO3 extension module. OFF by default so `cargo build --workspace`
 # never needs a Python interpreter; `maturin develop --features python` turns it on.
-python = ["dep:pyo3", "dep:rand"]
+python = ["dep:pyo3", "dep:numpy", "dep:rand"]
 
 [dependencies]
 aleph-core    = { path = "../aleph-core" }
@@ -27,6 +27,10 @@ aleph-parser  = { path = "../aleph-parser" }
 aleph-stab    = { path = "../aleph-stab" }
 smallvec      = { workspace = true }
 pyo3 = { version = "0.22", features = ["extension-module", "abi3-py312"], optional = true }
+# Returns the state vector to Python as a contiguous numpy complex128 array
+# (P4-11), avoiding 2^n boxed PyComplex objects. Version tracks the pyo3 0.22
+# line — rust-numpy 0.22 is the matching release.
+numpy = { version = "0.22", optional = true }
 # Needed by the run(noise=, seed=None) path (run.rs) to draw a u64 seed from
 # OS entropy; declared here so the follow-up wiring has no Cargo.toml churn.
 # Pulled in only with the `python` feature.
