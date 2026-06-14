@@ -1,0 +1,24 @@
+[package]
+name = "aleph-metal"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Metal GPU foundation for the aleph quantum circuit simulator (macOS only)."
+
+[features]
+default = []
+# Enables the real Metal backend. Off by default so `cargo build --workspace`
+# stays an empty-crate compile on Linux and on default macOS.
+metal = ["dep:metal", "dep:bytemuck", "dep:thiserror"]
+
+[dependencies]
+thiserror = { workspace = true, optional = true }
+
+# `metal` is macOS-only: target-cfg the dep so it is never resolved on Linux,
+# even transitively, regardless of feature selection.
+[target.'cfg(target_os = "macos")'.dependencies]
+metal    = { version = "0.33", optional = true }
+bytemuck = { workspace = true, optional = true }
