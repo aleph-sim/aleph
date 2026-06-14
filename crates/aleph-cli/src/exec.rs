@@ -76,9 +76,15 @@ pub fn run_circuit<W: Write>(
     // backend dispatch.
     if !noise.is_empty() {
         if matches!(backend, BackendChoice::Stabilizer | BackendChoice::Mps) {
+            // Report the kebab-case value the user actually typed, not the
+            // Debug variant name. The guard admits only Stabilizer | Mps.
+            let requested = match backend {
+                BackendChoice::Mps => "mps",
+                _ => "stabilizer",
+            };
             return Err(anyhow!(
                 "--noise is only supported on the state-vector backend; \
-                 remove --backend {backend:?}"
+                 remove --backend {requested}"
             ));
         }
         if print_statevector || force_statevector || !expectations.is_empty() {

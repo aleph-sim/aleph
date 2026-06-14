@@ -573,7 +573,19 @@ fn noise_rejects_stabilizer_backend() {
         .args(["--backend", "stabilizer", "--noise", "depol:0.01"])
         .assert()
         .failure()
-        .stderr(contains("only supported on the state-vector backend"));
+        // Message echoes the kebab-case value the user typed, not Debug.
+        .stderr(contains("remove --backend stabilizer"));
+}
+
+#[test]
+fn noise_rejects_mps_backend() {
+    aleph()
+        .args(["run"])
+        .arg(bell_path())
+        .args(["--backend", "mps", "--noise", "depol:0.01"])
+        .assert()
+        .failure()
+        .stderr(contains("remove --backend mps"));
 }
 
 #[test]
