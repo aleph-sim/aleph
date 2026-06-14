@@ -172,13 +172,17 @@ dependencies = [
  "aleph-backend",
  "aleph-core",
  "aleph-ir",
+ "aleph-oracle",
  "aleph-parser",
  "aleph-test",
  "criterion",
  "proptest",
  "rand 0.8.6",
  "rayon",
+ "serde",
+ "serde_json",
  "smallvec",
+ "thiserror",
 ]
 
 [[package]]

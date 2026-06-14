@@ -23,12 +23,16 @@ aleph-backend = { path = "../aleph-backend" }
 rand          = { workspace = true }
 smallvec      = { workspace = true }
 rayon         = { workspace = true }
+thiserror     = { workspace = true }
 
 [dev-dependencies]
 aleph-parser = { path = "../aleph-parser" }
+aleph-oracle = { path = "../aleph-oracle" }
 aleph-test   = { path = "../aleph-test" }
 proptest     = { workspace = true }
 criterion    = { workspace = true }
+serde        = { workspace = true, features = ["derive"] }
+serde_json   = { workspace = true }
 
 [[test]]
 name = "policy_invariance"

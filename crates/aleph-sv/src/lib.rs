@@ -4,6 +4,8 @@
 //! every other backend or future optimization is compared against. See
 //! `docs/superpowers/specs/2026-05-24-p0-09-backend-naive-sv-design.md`.
 
+pub mod noise;
+
 mod backend;
 mod fp32_backend;
 mod fp32_measure;

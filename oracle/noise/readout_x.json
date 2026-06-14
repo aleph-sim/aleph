@@ -1,0 +1,8 @@
+{
+  "name": "readout_x",
+  "num_qubits": 1,
+  "exact_probs": [
+    0.05,
+    0.95
+  ]
+}
