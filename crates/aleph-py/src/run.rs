@@ -11,6 +11,7 @@
 #![allow(clippy::useless_conversion)]
 
 use crate::circuit::PyCircuit;
+use crate::noise::PyNoiseModel;
 use aleph_backend::{run, run_optimized, Backend};
 use aleph_mps::MpsBackend;
 use aleph_stab::StabilizerBackend;
@@ -70,6 +71,17 @@ fn counts_map(samples: &[u64], num_qubits: u32) -> BTreeMap<String, u64> {
         .collect()
 }
 
+/// Format a dense `run_noisy` histogram (index = basis state, qubit 0 = LSB)
+/// into the same bitstring→count dict as `counts_map`, skipping zero bins.
+fn hist_to_counts(hist: &[u64], num_qubits: u32) -> BTreeMap<String, u64> {
+    let width = num_qubits as usize;
+    hist.iter()
+        .enumerate()
+        .filter(|(_, &c)| c > 0)
+        .map(|(i, &c)| (format!("{i:0width$b}"), c))
+        .collect()
+}
+
 fn err<E: std::fmt::Display>(what: &str, e: E) -> PyErr {
     PyValueError::new_err(format!("{what}: {e}"))
 }
@@ -81,16 +93,37 @@ fn err<E: std::fmt::Display>(what: &str, e: E) -> PyErr {
 /// `shots` samples re-sample that single final state — they do NOT re-run
 /// the circuit per shot (unlike Qiskit's per-shot execution model).
 #[pyfunction]
-#[pyo3(name = "run", signature = (circuit, *, shots = 1024, backend = "sv", seed = None))]
+#[pyo3(name = "run", signature = (circuit, *, shots = 1024, backend = "sv", seed = None, noise = None))]
 pub(crate) fn run_circuit(
     py: Python<'_>,
     circuit: &PyCircuit,
     shots: u32,
     backend: &str,
     seed: Option<u64>,
+    noise: Option<&PyNoiseModel>,
 ) -> PyResult<RunResult> {
     let c = &circuit.inner;
     let n = c.num_qubits();
+
+    // Noisy path: Monte-Carlo trajectories via run_noisy on the UN-optimized
+    // circuit (the optimizer emits TiledBlock/UnitaryKq that run_noisy rejects).
+    // SV-only; unlike the noiseless path, each shot is an independent trajectory.
+    if let Some(nm) = noise {
+        if backend != "sv" {
+            return Err(PyValueError::new_err(format!(
+                "noise is only supported on the \"sv\" backend, got {backend:?}"
+            )));
+        }
+        let model = &nm.inner;
+        let seed = seed.unwrap_or_else(rand::random::<u64>);
+        let counts = py.allow_threads(|| -> PyResult<BTreeMap<String, u64>> {
+            let hist = aleph_sv::noise::run_noisy(c, model, shots, seed)
+                .map_err(|e| err("run noisy", e))?;
+            Ok(hist_to_counts(&hist, n))
+        })?;
+        return Ok(RunResult { counts, amps: None });
+    }
+
     // Each arm releases the GIL for execute+sample (minutes at n ≥ 25):
     // other Python threads — and Ctrl-C delivery — stay live during the run.
     match backend {
