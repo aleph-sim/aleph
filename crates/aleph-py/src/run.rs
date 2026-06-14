@@ -16,9 +16,9 @@ use aleph_backend::{run, run_optimized, Backend};
 use aleph_mps::MpsBackend;
 use aleph_stab::StabilizerBackend;
 use aleph_sv::NaiveSvBackend;
+use numpy::{Complex64, PyArray1};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::PyComplex;
 use std::collections::BTreeMap;
 
 /// Result of `run()`: a shot histogram and, on the SV backend, the final
@@ -40,17 +40,17 @@ impl RunResult {
         self.counts.clone()
     }
 
-    /// Final state vector (list of complex), SV backend only.
+    /// Final state vector as a numpy `complex128` array of shape `(2**n,)`,
+    /// SV backend only.
     ///
-    /// Materializes one Python complex per amplitude (2^n objects) — at
-    /// n ≳ 24 this costs GiB-scale memory; intended for small circuits.
-    fn statevector<'py>(&self, py: Python<'py>) -> PyResult<Vec<Bound<'py, PyComplex>>> {
+    /// One contiguous O(state) buffer (a copy of the backend's amplitude
+    /// slice) rather than 2^n boxed Python complex objects — at n=25 the old
+    /// list cost ~1.9 GiB of objects for a 512 MiB state. `aleph_core::Complex`
+    /// is `num_complex::Complex<f64>` (== `numpy::Complex64`) stored
+    /// contiguously, so `from_slice` is a single memcpy.
+    fn statevector<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray1<Complex64>>> {
         match &self.amps {
-            Some(state) => Ok(state
-                .amplitudes()
-                .iter()
-                .map(|c| PyComplex::from_doubles_bound(py, c.re, c.im))
-                .collect()),
+            Some(state) => Ok(PyArray1::from_slice_bound(py, state.amplitudes())),
             None => Err(PyValueError::new_err(
                 "statevector is only available on the \"sv\" backend",
             )),
