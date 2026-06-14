@@ -84,7 +84,7 @@ pub fn run_circuit<W: Write>(
         if print_statevector || force_statevector || !expectations.is_empty() {
             return Err(anyhow!(
                 "--noise is shots-only in v1; it cannot be combined with \
-                 --statevector or --expectation"
+                 --statevector, --force-statevector, or --expectation"
             ));
         }
         let model = build_noise_model(noise, &circuit, n)?;
