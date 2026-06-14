@@ -25,6 +25,7 @@ fn main() -> Result<()> {
             backend,
             max_bond,
             max_error,
+            noise,
         } => run_circuit(
             &qasm,
             shots,
@@ -36,6 +37,7 @@ fn main() -> Result<()> {
             backend,
             max_bond,
             max_error,
+            &noise,
             &mut out,
         )?,
         Cmd::Bench { qasm, seed } => bench_circuit(&qasm, seed, &mut out)?,

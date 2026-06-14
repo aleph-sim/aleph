@@ -134,6 +134,15 @@ pub enum Cmd {
         /// as a safety cap).
         #[arg(long)]
         max_error: Option<f64>,
+
+        /// Apply a built-in noise preset, repeatable. Format `<preset>:<p>`
+        /// with `p` in [0,1]. Presets: `depol:<p>` (depolarizing on every 1q
+        /// and 2q gate in the circuit) and `readout:<p>` (symmetric readout
+        /// flip on every qubit). Forces the state-vector backend; cannot be
+        /// combined with --statevector or --expectation. Full NoiseModel
+        /// construction is available in the Python API.
+        #[arg(long)]
+        noise: Vec<String>,
     },
 
     /// Run a QASM circuit once and print parse / execute / sample

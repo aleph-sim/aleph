@@ -107,6 +107,36 @@ leftmost character.  `IXZI` means X on q1, Z on q2.  Optional
 See `aleph --help` (and `aleph run --help` / `aleph bench --help`)
 for the full flag list.
 
+### Noise simulation
+
+Aer-compatible noise via a `NoiseModel` (Python) or a one-parameter CLI preset.
+
+```python
+import aleph
+
+c = aleph.Circuit(2)
+c.h(0); c.cx(0, 1)
+
+nm = aleph.NoiseModel()
+nm.add_all_qubit_quantum_error(aleph.depolarizing_error(0.01, 1), ["h"])
+nm.add_quantum_error(aleph.depolarizing_error(0.02, 2), ["cx"], [0, 1])
+nm.add_readout_error([[0.98, 0.02], [0.03, 0.97]], 0)
+
+print(aleph.run(c, shots=100_000, noise=nm, seed=7).counts())
+```
+
+Error factories mirror Qiskit Aer names: `depolarizing_error(p, num_qubits)`,
+`amplitude_damping_error(gamma)`, `phase_damping_error(lam)`,
+`pauli_error([("X", 0.1), ("I", 0.9)])`, plus `bit_flip_error` / `phase_flip_error`.
+Noise runs on the state-vector backend as per-shot Monte-Carlo trajectories.
+
+CLI presets — depolarizing on every gate, symmetric readout flip on every qubit
+(repeatable; forces the state-vector backend, shots-only):
+
+```bash
+aleph run circuit.qasm --shots 4096 --noise depol:0.01 --noise readout:0.02
+```
+
 GPU (Phase 5+):
 
 ```bash

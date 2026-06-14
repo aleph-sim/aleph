@@ -507,3 +507,94 @@ fn explicit_backend_has_no_auto_line() {
         .success()
         .stderr(contains("auto-selected").not());
 }
+
+// --- P4.6-05 --noise flag ---
+
+#[test]
+fn noise_depol_runs_and_prints_counts() {
+    aleph()
+        .args(["run"])
+        .arg(bell_path())
+        .args(["--shots", "512", "--seed", "0", "--noise", "depol:0.05"])
+        .assert()
+        .success()
+        .stdout(contains("counts (512 shots, seed=0):"));
+}
+
+#[test]
+fn noise_readout_runs() {
+    aleph()
+        .args(["run"])
+        .arg(ghz3_path())
+        .args(["--shots", "256", "--seed", "1", "--noise", "readout:0.1"])
+        .assert()
+        .success()
+        .stdout(contains("counts (256 shots, seed=1):"));
+}
+
+#[test]
+fn noise_bad_value_fails() {
+    aleph()
+        .args(["run"])
+        .arg(bell_path())
+        .args(["--noise", "depol:x"])
+        .assert()
+        .failure()
+        .stderr(contains("is not a number"));
+}
+
+#[test]
+fn noise_out_of_range_fails() {
+    aleph()
+        .args(["run"])
+        .arg(bell_path())
+        .args(["--noise", "depol:2.0"])
+        .assert()
+        .failure()
+        .stderr(contains("p must be in [0,1]"));
+}
+
+#[test]
+fn noise_unknown_preset_fails() {
+    aleph()
+        .args(["run"])
+        .arg(bell_path())
+        .args(["--noise", "bogus:0.1"])
+        .assert()
+        .failure()
+        .stderr(contains("unknown --noise preset"));
+}
+
+#[test]
+fn noise_rejects_stabilizer_backend() {
+    aleph()
+        .args(["run"])
+        .arg(bell_path())
+        .args(["--backend", "stabilizer", "--noise", "depol:0.01"])
+        .assert()
+        .failure()
+        // Message echoes the kebab-case value the user typed, not Debug.
+        .stderr(contains("remove --backend stabilizer"));
+}
+
+#[test]
+fn noise_rejects_mps_backend() {
+    aleph()
+        .args(["run"])
+        .arg(bell_path())
+        .args(["--backend", "mps", "--noise", "depol:0.01"])
+        .assert()
+        .failure()
+        .stderr(contains("remove --backend mps"));
+}
+
+#[test]
+fn noise_rejects_statevector_view() {
+    aleph()
+        .args(["run"])
+        .arg(bell_path())
+        .args(["--noise", "depol:0.01", "--statevector"])
+        .assert()
+        .failure()
+        .stderr(contains("shots-only"));
+}

@@ -38,6 +38,33 @@ pub fn format_counts<W: Write>(
     Ok(())
 }
 
+/// Like [`format_counts`] but for a dense histogram (index = basis state,
+/// qubit 0 = LSB) as returned by `aleph_sv::noise::run_noisy`. Skips empty
+/// bins; identical line format to `format_counts`.
+pub fn format_counts_hist<W: Write>(
+    out: &mut W,
+    hist: &[u64],
+    total: u32,
+    num_qubits: u32,
+    seed_label: &str,
+) -> io::Result<()> {
+    let width = num_qubits as usize;
+    writeln!(out, "counts ({total} shots, {seed_label}):")?;
+    let total_f = total as f64;
+    for (idx, count) in hist.iter().enumerate() {
+        if *count == 0 {
+            continue;
+        }
+        let prob = *count as f64 / total_f;
+        writeln!(
+            out,
+            "  |{idx:0width$b}⟩  {count}  ({prob:.4})",
+            width = width
+        )?;
+    }
+    Ok(())
+}
+
 /// Print every amplitude one per line with `{:+.16e}` precision.
 /// Caller has already verified `num_qubits <= 10` (or that the user
 /// passed --force-statevector).

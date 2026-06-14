@@ -25,6 +25,7 @@ aleph-mps     = { path = "../aleph-mps" }
 clap          = { workspace = true }
 anyhow        = { workspace = true }
 thiserror     = { workspace = true }
+rand          = { workspace = true }
 
 [dev-dependencies]
 aleph-oracle = { path = "../aleph-oracle" }

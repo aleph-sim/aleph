@@ -15,6 +15,9 @@ mod energy;
 mod run;
 
 #[cfg(feature = "python")]
+mod noise;
+
+#[cfg(feature = "python")]
 mod module {
     use pyo3::prelude::*;
 
@@ -36,6 +39,14 @@ mod module {
         m.add_function(wrap_pyfunction!(crate::energy::qaoa_energy, m)?)?;
         m.add_class::<crate::run::RunResult>()?;
         m.add_function(wrap_pyfunction!(crate::run::run_circuit, m)?)?;
+        m.add_class::<crate::noise::PyNoiseModel>()?;
+        m.add_class::<crate::noise::PyQuantumError>()?;
+        m.add_function(wrap_pyfunction!(crate::noise::depolarizing_error, m)?)?;
+        m.add_function(wrap_pyfunction!(crate::noise::amplitude_damping_error, m)?)?;
+        m.add_function(wrap_pyfunction!(crate::noise::phase_damping_error, m)?)?;
+        m.add_function(wrap_pyfunction!(crate::noise::bit_flip_error, m)?)?;
+        m.add_function(wrap_pyfunction!(crate::noise::phase_flip_error, m)?)?;
+        m.add_function(wrap_pyfunction!(crate::noise::pauli_error, m)?)?;
         Ok(())
     }
 }
