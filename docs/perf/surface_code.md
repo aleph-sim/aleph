@@ -186,3 +186,49 @@ path is thus proven equal to the per-shot/tableau path, which the Stim oracles
 — so frame ≡ Stim transitively. Non-Clifford circuits never reach `sample`: the
 backend rejects them at `apply_gate`. Pauli-noise (P4.6-04) will hook an
 X/sign-frame injection at `measure_word`; the seam is left visible, not built.
+
+### P4.6-01: `measure` column scans — structural verdict (no cheap win)
+
+P4.6-01 set out to cut `Tableau::measure`'s strided column reads (57.8% self at
+d=11; perf-annotate showed the hot `testq (%r14,%rdi,8)` column load plus a
+per-row `imulq` for `row*stride` and a bounds-checked branch). Two levers were
+prototyped and **both regressed the EPYC cycle** (idle box, `target-cpu=native`,
+criterion vs the same-session `main` baseline d=11 = 84.8 µs):
+
+| lever | d=11 | d=9 | d=7 |
+| --- | --- | --- | --- |
+| **(1) column-extraction snapshot** — pack column `a` into a bitvector once, then bit-test it in find/eliminate/deterministic | **+39.7%** | +32.9% | +33.8% |
+| **(2) index strength-reduction** — keep the fused single-pass scans but walk the column word index by `idx += stride` (drop the `row*stride` multiply) | **+1.9%** | +0.5% | +2.9% |
+
+Why each backfired:
+
+- **(1)** does the *same* 2n strided loads as the inline scans but adds a packing
+  pass and a second bit-test pass, and it loses the random branch's early-exit
+  `find` (it always materialises the full column). The strided loads it hoists
+  out were already overlapping the `rowsum` collapse work in the fused loop, so
+  pulling them into a dependency-free prologue serialised latency that the
+  out-of-order engine had been hiding. The regression grows with d (longer
+  column) — the opposite of a win.
+- **(2)** replaced the per-row `row*stride` multiply (computed from the
+  *independent* loop counter, so addresses for several iterations compute in
+  parallel — `imul` is fully pipelined on Zen 4) with a loop-carried
+  `idx += stride` accumulator, which **serialises address generation** and
+  throttles load-level parallelism. The `imulq` the profile flagged was not
+  overhead; it was what enabled the strided loads to pipeline. LLVM's codegen
+  was already the better choice.
+
+AVX-512 strided gather (`vpgatherqq`) was rejected without building: it is
+microcoded on Zen 4 (EPYC 8124P) at roughly scalar-load throughput, so it cannot
+beat the already-pipelined scalar strided loads.
+
+**Verdict:** `measure`'s column scan is memory-latency-bound, and the loads
+already overlap the collapse `rowsum` work — there is no cheap algorithmic or
+codegen lever, and with every surface cell already ahead of Stim (≤ 0.79× at
+d=11, P4.5-02) there is no parity pressure to chase it with a riskier rewrite.
+The two remaining structural levers are out of this ticket's scope: the
+orientation `BitGrid::transpose` (≈15–17% self, one flip per cycle — an
+ADR 0013 dual-orientation question, not a column scan), and the P4.6-02 frame
+sampler (already shipped, 65× multi-shot) which sidesteps per-shot `measure`
+entirely for the QEC throughput case that actually matters. Both prototype
+branches passed the existing unit + Stim oracle suites before being reverted;
+no code ships from P4.6-01.

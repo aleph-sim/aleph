@@ -2681,9 +2681,9 @@ much bookkeeping; reject unless (1)/(2) stall). Mirror the P4.5-02 testing
 pattern for any new word-parallel helper.
 
 **Acceptance Criteria**
-- [ ] surface-d11 cycle time improves and `measure`'s self share drops materially (out of the top profile slot; soft goal: d=11 ≤ 0.65× Stim) — else a documented structural verdict with profile evidence.
-- [ ] Stim oracles d=3..11 green; new unit tests for any new helper on irregular n (not multiples of 64).
-- [ ] Before/after criterion numbers (EPYC) in the PR.
+- [x] surface-d11 cycle time improves and `measure`'s self share drops materially (out of the top profile slot; soft goal: d=11 ≤ 0.65× Stim) — else a documented structural verdict with profile evidence. — *Structural verdict: both candidate levers regress on EPYC (extraction +39.7%, index strength-reduction +1.9% at d=11); the strided loads already overlap rowsum work and the `imul` enabled load pipelining. `docs/perf/surface_code.md` P4.6-01 addendum.*
+- [x] Stim oracles d=3..11 green; new unit tests for any new helper on irregular n (not multiples of 64). — *No helper ships (both prototypes reverted); both passed the unit + Stim suites before revert.*
+- [x] Before/after criterion numbers (EPYC) in the PR. — *Regression table in the perf addendum + PR body.*
 
 **Testing Requirements** — existing stim_oracle suites; equivalence +
 mutation-test pattern from P4.5-02 for new helpers.
