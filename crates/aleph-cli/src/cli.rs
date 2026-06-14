@@ -2,55 +2,39 @@
 
 use std::path::PathBuf;
 
+use aleph_backend::{BackendKind, BackendRequest};
 use clap::{Parser, Subcommand};
 
-/// Simulation backend selector for `aleph run`.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, clap::ValueEnum, Default)]
-pub enum BackendChoice {
-    /// Pick automatically from circuit structure (default). Clifford →
-    /// stabilizer; large nearest-neighbor + shallow → MPS; else state vector.
-    #[default]
-    Auto,
-    /// Dense state vector. Exact; memory grows as 2^n.
-    Statevector,
-    /// Stabilizer (Clifford-only). O(n²) memory; thousands of qubits.
-    Stabilizer,
-    /// MPS tensor network (bounded entanglement). χ via --max-bond.
-    Mps,
-}
-
-impl BackendChoice {
-    /// Resolve a user choice into a concrete [`aleph_backend::BackendKind`].
-    ///
-    /// `Auto` runs the [`aleph_backend::select_explained`] heuristic; an auto
-    /// pick of `Stabilizer` is downgraded to `Statevector` when
-    /// `wants_amplitudes` is set (`--statevector`/`--force-statevector`),
-    /// because the stabilizer backend has no dense state vector. Explicit
-    /// choices are returned verbatim (manual override). Diagnostic notes go to
-    /// stderr so stdout stays pipeable.
-    pub fn resolve(
-        self,
-        circuit: &aleph_ir::Circuit,
-        wants_amplitudes: bool,
-    ) -> aleph_backend::BackendKind {
-        use aleph_backend::BackendKind as Bk;
-        match self {
-            BackendChoice::Statevector => Bk::Statevector,
-            BackendChoice::Stabilizer => Bk::Stabilizer,
-            BackendChoice::Mps => Bk::Mps,
-            BackendChoice::Auto => {
-                let sel = aleph_backend::select_explained(circuit);
-                if sel.kind == Bk::Stabilizer && wants_amplitudes {
-                    eprintln!(
-                        "auto-selected backend: state vector \
-                         (downgraded from stabilizer: --statevector needs amplitudes \
-                         the stabilizer backend cannot provide)"
-                    );
-                    Bk::Statevector
-                } else {
-                    eprintln!("auto-selected backend: {} ({})", sel.kind, sel.reason);
-                    sel.kind
-                }
+/// Resolve a parsed [`BackendRequest`] into a concrete [`BackendKind`].
+///
+/// `Auto` runs the [`aleph_backend::select_explained`] heuristic; an auto pick
+/// of `Stabilizer` is downgraded to `Statevector` when `wants_amplitudes` is set
+/// (`--statevector`/`--force-statevector`), because the stabilizer backend has
+/// no dense state vector. A `Fixed` choice is returned verbatim (manual
+/// override). Diagnostic notes go to stderr so stdout stays pipeable.
+///
+/// Parsing the backend name (canonical + `sv`/`stab` aliases) lives once in
+/// [`BackendRequest::from_user_str`], shared with the Python binding (P4-12); this
+/// function is only the CLI-side resolution + diagnostics.
+pub fn resolve_backend(
+    request: BackendRequest,
+    circuit: &aleph_ir::Circuit,
+    wants_amplitudes: bool,
+) -> BackendKind {
+    match request {
+        BackendRequest::Fixed(kind) => kind,
+        BackendRequest::Auto => {
+            let sel = aleph_backend::select_explained(circuit);
+            if sel.kind == BackendKind::Stabilizer && wants_amplitudes {
+                eprintln!(
+                    "auto-selected backend: state vector \
+                     (downgraded from stabilizer: --statevector needs amplitudes \
+                     the stabilizer backend cannot provide)"
+                );
+                BackendKind::Statevector
+            } else {
+                eprintln!("auto-selected backend: {} ({})", sel.kind, sel.reason);
+                sel.kind
             }
         }
     }
@@ -119,11 +103,12 @@ pub enum Cmd {
         precision: Precision,
 
         /// Simulation backend: `auto` (default — picks from circuit
-        /// structure), `statevector`, `stabilizer` (Clifford-only; rejects
-        /// non-Clifford gates and --statevector), or `mps` (tensor network;
-        /// bounded entanglement, rejects --statevector).
-        #[arg(long, value_enum, default_value_t = BackendChoice::Auto)]
-        backend: BackendChoice,
+        /// structure), `statevector` (alias `sv`), `stabilizer` (alias
+        /// `stab`; Clifford-only, rejects non-Clifford gates and
+        /// --statevector), or `mps` (tensor network; bounded entanglement,
+        /// rejects --statevector). Same names as the Python `backend=` arg.
+        #[arg(long, default_value = BackendRequest::AUTO, value_parser = BackendRequest::from_user_str)]
+        backend: BackendRequest,
 
         /// MPS max bond dimension χ (only used by `--backend mps`).
         #[arg(long, default_value_t = 128)]
@@ -177,9 +162,12 @@ mod backend_choice_tests {
     #[test]
     fn explicit_choice_overrides_without_analysis() {
         let c = clifford();
-        assert_eq!(BackendChoice::Mps.resolve(&c, false), BackendKind::Mps);
         assert_eq!(
-            BackendChoice::Statevector.resolve(&c, false),
+            resolve_backend(BackendRequest::Fixed(BackendKind::Mps), &c, false),
+            BackendKind::Mps
+        );
+        assert_eq!(
+            resolve_backend(BackendRequest::Fixed(BackendKind::Statevector), &c, false),
             BackendKind::Statevector
         );
     }
@@ -187,7 +175,7 @@ mod backend_choice_tests {
     #[test]
     fn auto_picks_stabilizer_for_clifford() {
         assert_eq!(
-            BackendChoice::Auto.resolve(&clifford(), false),
+            resolve_backend(BackendRequest::Auto, &clifford(), false),
             BackendKind::Stabilizer
         );
     }
@@ -196,13 +184,39 @@ mod backend_choice_tests {
     fn auto_downgrades_to_sv_when_amplitudes_requested() {
         // Clifford would be stabilizer, but --statevector needs amplitudes.
         assert_eq!(
-            BackendChoice::Auto.resolve(&clifford(), true),
+            resolve_backend(BackendRequest::Auto, &clifford(), true),
             BackendKind::Statevector
         );
     }
 
+    // The `--backend` default string parses to Auto (parity with the Python
+    // default and the former clap ValueEnum default).
     #[test]
-    fn default_choice_is_auto() {
-        assert_eq!(BackendChoice::default(), BackendChoice::Auto);
+    fn default_backend_string_parses_to_auto() {
+        assert_eq!(
+            BackendRequest::from_user_str(BackendRequest::AUTO),
+            Ok(BackendRequest::Auto)
+        );
+    }
+
+    // The CLI now accepts the same aliases as Python (`sv`, `stab`).
+    #[test]
+    fn cli_accepts_python_aliases() {
+        assert_eq!(
+            resolve_backend(
+                BackendRequest::from_user_str("sv").unwrap(),
+                &clifford(),
+                false
+            ),
+            BackendKind::Statevector
+        );
+        assert_eq!(
+            resolve_backend(
+                BackendRequest::from_user_str("stab").unwrap(),
+                &clifford(),
+                false
+            ),
+            BackendKind::Stabilizer
+        );
     }
 }
