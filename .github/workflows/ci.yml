@@ -148,4 +148,4 @@ jobs:
       - name: Test aleph-metal (metal feature)
         run: cargo test -p aleph-metal --features metal
       - name: Clippy aleph-metal (metal feature)
-        run: cargo clippy -p aleph-metal --features metal -- -D warnings
+        run: cargo clippy -p aleph-metal --features metal --all-targets -- -D warnings
