@@ -298,3 +298,49 @@ mod apply_tests {
         assert_eq!(apply_readout(0b101, 3, &map, &mut rng), 0b101);
     }
 }
+
+#[cfg(test)]
+mod prop_tests {
+    // Import `apply_channel` explicitly rather than `use super::*`: the parent
+    // `apply` module glob-imports `rand::Rng`, which would collide with the
+    // proptest prelude's `Rng` under `ambiguous_glob_imported_traits` (mirrors
+    // how `measure.rs`'s test module sidesteps the same trait clash).
+    use super::apply_channel;
+    use crate::noise::error::{amplitude_damping_error, depolarizing_error, phase_damping_error};
+    use aleph_core::{AlignedBuf, Complex};
+    use proptest::prelude::*;
+    use rand::{rngs::StdRng, SeedableRng};
+
+    /// A normalized random 1q state from two complex amplitudes.
+    fn norm_state(a: Complex, b: Complex) -> AlignedBuf<Complex> {
+        let n = (a.norm_sqr() + b.norm_sqr()).sqrt().max(1e-300);
+        AlignedBuf::from_slice(&[a / Complex::new(n, 0.0), b / Complex::new(n, 0.0)])
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig { cases: 256, ..ProptestConfig::default() })]
+
+        /// Any v1 channel preserves ‖state‖ = 1 after quantum-jump + renorm,
+        /// for any input state, any channel parameter, and any RNG seed.
+        #[test]
+        fn apply_channel_preserves_norm(
+            ar in -1.0_f64..1.0, ai in -1.0_f64..1.0,
+            br in -1.0_f64..1.0, bi in -1.0_f64..1.0,
+            param in 0.0_f64..1.0,
+            seed in any::<u64>(),
+            which in 0u8..3,
+        ) {
+            prop_assume!(ar.abs() + ai.abs() + br.abs() + bi.abs() > 1e-6);
+            let mut amps = norm_state(Complex::new(ar, ai), Complex::new(br, bi));
+            let err = match which {
+                0 => amplitude_damping_error(param),
+                1 => phase_damping_error(param),
+                _ => depolarizing_error(param, 1),
+            };
+            let mut rng = StdRng::seed_from_u64(seed);
+            apply_channel(&mut amps, 1, &err, &[0], &mut rng);
+            let n: f64 = amps.iter().map(|a| a.norm_sqr()).sum();
+            prop_assert!((n - 1.0).abs() < 1e-9, "which={which} param={param} norm={n}");
+        }
+    }
+}

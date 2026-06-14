@@ -3,6 +3,19 @@
 //! Noise is a runtime [`NoiseModel`] config, never IR (ADR 0014). The
 //! noiseless `run()` path and the `Backend` trait are untouched; this is a
 //! separate `run_noisy` entry point operating on `CpuState`.
+//!
+//! # Example
+//! ```no_run
+//! use aleph_sv::noise::{depolarizing_error, run_noisy, NoiseModel};
+//! # let circuit = aleph_parser::parse(
+//! #     "OPENQASM 3.0; include \"stdgates.inc\"; qubit[1] q; h q[0];").unwrap();
+//! let mut nm = NoiseModel::new();
+//! // Attach by aleph's internal Gate::name() — "H", not the QASM "h".
+//! // (The P4.6-05 Python API maps Aer mnemonics like "h"/"cx" to these.)
+//! nm.add_all_qubit_quantum_error(depolarizing_error(0.01, 1), &["H"]);
+//! let counts = run_noisy(&circuit, &nm, 100_000, 7).unwrap();
+//! # assert_eq!(counts.len(), 2);
+//! ```
 
 mod apply;
 mod error;
