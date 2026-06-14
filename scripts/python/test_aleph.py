@@ -64,7 +64,9 @@ class TestCircuitBuilder(unittest.TestCase):
     def test_statevector_h(self):
         c = aleph.Circuit(1)
         c.h(0)
-        amps = aleph.run(c, shots=1, seed=0).statevector()
+        # backend="sv" is explicit: H is Clifford, so the new "auto" default
+        # (P4-12) would route to stabilizer, which has no dense statevector.
+        amps = aleph.run(c, shots=1, seed=0, backend="sv").statevector()
         # P4-11: a numpy complex128 array, not a list of Python complex.
         self.assertIsInstance(amps, np.ndarray)
         self.assertEqual(amps.dtype, np.complex128)
@@ -76,7 +78,7 @@ class TestCircuitBuilder(unittest.TestCase):
         c = aleph.Circuit(2)
         c.h(0)
         c.cx(0, 1)
-        amps = aleph.run(c, shots=1, seed=0).statevector()
+        amps = aleph.run(c, shots=1, seed=0, backend="sv").statevector()
         self.assertEqual(amps.shape, (2**2,))
         self.assertEqual(amps.dtype, np.complex128)
         np.testing.assert_allclose(
@@ -107,6 +109,37 @@ class TestCircuitBuilder(unittest.TestCase):
         c = aleph.Circuit(1)
         with self.assertRaises(ValueError):
             aleph.run(c, backend="gpu")
+
+    def test_backend_aliases_match_cli_vocabulary(self):
+        # P4-12: every name the CLI accepts now works in Python. Canonical
+        # name and its alias must resolve to the same backend.
+        def go(backend):
+            c = aleph.Circuit(2)
+            c.h(0)
+            c.cx(0, 1)
+            return set(aleph.run(c, shots=512, seed=2, backend=backend).counts())
+        bell = {"00", "11"}
+        for name in ("sv", "statevector", "stab", "stabilizer", "mps", "auto"):
+            self.assertEqual(go(name), bell, f"backend={name!r}")
+
+    def test_auto_routes_clifford_to_stabilizer(self):
+        # P4-12: auto picks stabilizer for an all-Clifford circuit, so the
+        # dense statevector is unavailable (same routing the CLI uses).
+        c = aleph.Circuit(2)
+        c.h(0)
+        c.cx(0, 1)
+        r = aleph.run(c, shots=256, seed=0, backend="auto")
+        self.assertEqual(set(r.counts()), {"00", "11"})
+        with self.assertRaises(ValueError):
+            r.statevector()
+
+    def test_auto_is_the_default(self):
+        # No backend= → "auto" → Clifford routes to stabilizer (no statevector).
+        c = aleph.Circuit(2)
+        c.h(0)
+        c.cx(0, 1)
+        with self.assertRaises(ValueError):
+            aleph.run(c, shots=8, seed=0).statevector()
 
     def test_statevector_unavailable_on_mps(self):
         c = aleph.Circuit(2)
@@ -150,7 +183,7 @@ class TestCircuitBuilder(unittest.TestCase):
         c.h(0)
         c.h(1)
         c.cp(math.pi, 0, 1)
-        amps = aleph.run(c, shots=1, seed=0).statevector()
+        amps = aleph.run(c, shots=1, seed=0, backend="sv").statevector()
         self.assertAlmostEqual(amps[0].real, 0.5, places=10)
         self.assertAlmostEqual(amps[3].real, -0.5, places=10)
 

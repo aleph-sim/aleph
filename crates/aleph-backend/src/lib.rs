@@ -6,8 +6,8 @@
 
 pub mod select;
 pub use select::{
-    analyze, select_backend, select_explained, select_from, BackendKind, CircuitFeatures,
-    Selection, MPS_DEPTH_THRESHOLD, SV_EXACT_CAP,
+    analyze, select_backend, select_explained, select_from, BackendKind, BackendRequest,
+    CircuitFeatures, Selection, MPS_DEPTH_THRESHOLD, SV_EXACT_CAP,
 };
 
 /// Errors common to every backend.
