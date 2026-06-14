@@ -15,7 +15,7 @@ crate-type = ["cdylib", "rlib"]
 [features]
 # Enables the PyO3 extension module. OFF by default so `cargo build --workspace`
 # never needs a Python interpreter; `maturin develop --features python` turns it on.
-python = ["dep:pyo3"]
+python = ["dep:pyo3", "dep:rand"]
 
 [dependencies]
 aleph-core    = { path = "../aleph-core" }
@@ -27,3 +27,6 @@ aleph-parser  = { path = "../aleph-parser" }
 aleph-stab    = { path = "../aleph-stab" }
 smallvec      = { workspace = true }
 pyo3 = { version = "0.22", features = ["extension-module", "abi3-py312"], optional = true }
+# Only used by the noise run path (run.rs) to draw a u64 seed when the caller
+# passes seed=None; pulled in only with the `python` feature.
+rand = { workspace = true, optional = true }
