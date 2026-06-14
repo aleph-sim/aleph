@@ -86,6 +86,38 @@ jobs:
       - name: test aleph-mps without default features
         run: cargo test -p aleph-mps --no-default-features
 
+  test-python:
+    name: test python
+    # Trusted-PR guard mirrors the Rust jobs (see header). The job itself runs
+    # on a GitHub-hosted runner — it must NOT add load to the self-hosted box.
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+      # Warm the Rust dep tree so the maturin build is the only cold cost.
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install maturin
+      # `features = ["python"]` comes from `[tool.maturin]` in pyproject.toml.
+      # build + pip-install (not `maturin develop`, which needs an active
+      # virtualenv that setup-python does not provide) mirrors release.yml.
+      - name: Build the wheel
+        run: maturin build --release -m crates/aleph-py/Cargo.toml --out dist
+      - name: Install the wheel
+        run: pip install dist/*.whl
+      # The suite import-guards on `aleph`, so a build/install failure surfaces
+      # here as a hard error rather than silently-skipped tests.
+      - name: Run binding tests
+        run: python -m unittest discover -s scripts/python -v
+
   test-macos:
     name: test macos ${{ matrix.toolchain }}
     runs-on: macos-latest
