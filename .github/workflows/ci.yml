@@ -139,3 +139,13 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --workspace
       - run: cargo test --workspace
+      # P5.5-01: the aleph-metal crate is empty without this feature, so the
+      # workspace steps above only prove the empty-crate compile. These build
+      # and exercise the real Metal path. The smoke test skips gracefully when
+      # the runner exposes no Metal device, so the leg stays green either way.
+      - name: Build aleph-metal (metal feature)
+        run: cargo build -p aleph-metal --features metal
+      - name: Test aleph-metal (metal feature)
+        run: cargo test -p aleph-metal --features metal
+      - name: Clippy aleph-metal (metal feature)
+        run: cargo clippy -p aleph-metal --features metal -- -D warnings
