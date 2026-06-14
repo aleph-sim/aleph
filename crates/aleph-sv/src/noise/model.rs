@@ -89,22 +89,26 @@ mod tests {
 
     #[test]
     fn all_qubit_and_specific_concatenate_in_order() {
+        // Keys are aleph's internal `Gate::name()` strings ("H", "Cnot", …),
+        // NOT the Aer/QASM mnemonics ("h", "cx") — `run_noisy` looks errors up
+        // by `gi.gate.name()`, so a lowercase key here would silently never
+        // match a real circuit (the bug this test now guards against).
         let mut nm = NoiseModel::new();
-        nm.add_all_qubit_quantum_error(depolarizing_error(0.01, 1), &["h"]);
-        nm.add_quantum_error(depolarizing_error(0.02, 1), &["h"], &[0]);
+        nm.add_all_qubit_quantum_error(depolarizing_error(0.01, 1), &["H"]);
+        nm.add_quantum_error(depolarizing_error(0.02, 1), &["H"], &[0]);
         // all-qubit list first, then qubit-specific, per Aer order.
-        let errs = nm.errors_for("h", &[0]);
+        let errs = nm.errors_for("H", &[0]);
         assert_eq!(errs.len(), 2);
         // On a qubit with no specific attachment, only the all-qubit error fires.
-        assert_eq!(nm.errors_for("h", &[1]).len(), 1);
+        assert_eq!(nm.errors_for("H", &[1]).len(), 1);
         // A gate with no attachment yields nothing.
-        assert_eq!(nm.errors_for("x", &[0]).len(), 0);
+        assert_eq!(nm.errors_for("X", &[0]).len(), 0);
         // add_quantum_error fans out across multiple gate names...
-        nm.add_quantum_error(depolarizing_error(0.03, 2), &["cx", "cz"], &[0, 1]);
-        assert_eq!(nm.errors_for("cx", &[0, 1]).len(), 1);
-        assert_eq!(nm.errors_for("cz", &[0, 1]).len(), 1);
+        nm.add_quantum_error(depolarizing_error(0.03, 2), &["Cnot", "Cz"], &[0, 1]);
+        assert_eq!(nm.errors_for("Cnot", &[0, 1]).len(), 1);
+        assert_eq!(nm.errors_for("Cz", &[0, 1]).len(), 1);
         // ...and the qubit-tuple key is order-sensitive ([0,1] != [1,0]).
-        assert_eq!(nm.errors_for("cx", &[1, 0]).len(), 0);
+        assert_eq!(nm.errors_for("Cnot", &[1, 0]).len(), 0);
     }
 
     #[test]
