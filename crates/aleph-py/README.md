@@ -40,6 +40,24 @@ sequentially via a size threshold). Set `RAYON_NUM_THREADS` to bound the pool,
 e.g. in cgroup-limited containers where the visible CPU count overstates the
 quota.
 
+## Noise
+
+```python
+import aleph
+
+c = aleph.Circuit(2)
+c.h(0); c.cx(0, 1)
+
+nm = aleph.NoiseModel()
+nm.add_all_qubit_quantum_error(aleph.depolarizing_error(0.01, 1), ["h"])
+nm.add_quantum_error(aleph.depolarizing_error(0.02, 2), ["cx"], [0, 1])
+nm.add_readout_error([[0.98, 0.02], [0.03, 0.97]], 0)
+
+print(aleph.run(c, shots=100_000, noise=nm, seed=7).counts())
+```
+
+Error factories mirror Qiskit Aer names (`depolarizing_error`, `amplitude_damping_error`, `phase_damping_error`, `pauli_error`, `bit_flip_error`, `phase_flip_error`). Noise runs on the state-vector backend as per-shot Monte-Carlo trajectories. Attach errors by Aer gate mnemonic (`"h"`, `"cx"`); unknown names raise `ValueError`.
+
 ## Links
 
 - Repository: <https://github.com/aleph-sim/aleph>

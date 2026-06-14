@@ -2816,8 +2816,8 @@ to `run_noisy` (no `noise=` → existing noiseless path). CLI: `--noise
 release-notes entry.
 
 **Acceptance Criteria**
-- [ ] Python `NoiseModel` + error factories (Aer names) + `aleph.run(..., noise=)` per spec, with tests in `scripts/python/test_aleph.py`; CLI exposure for at least a depolarizing preset.
-- [ ] README + crate-README examples; docs updated; release-notes entry.
+- [x] Python `NoiseModel` + error factories (Aer names) + `aleph.run(..., noise=)` per spec, with tests in `scripts/python/test_aleph.py`; CLI exposure for at least a depolarizing preset.
+- [x] README + crate-README examples; docs updated; release-notes entry.
 
 **Testing Requirements** — python behaviour tests against a locally built
 wheel; CLI assert_cmd tests.
