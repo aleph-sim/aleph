@@ -15,14 +15,17 @@ use crate::measure::DEGENERATE_BRANCH_THRESHOLD;
 /// apply, and renormalize. Spec §3.
 pub(super) fn apply_channel(
     amps: &mut [Complex],
-    _num_qubits: u32,
+    _num_qubits: u32, // reserved for multi-qubit general Kraus channels (v1.1)
     err: &QuantumError,
     qubits: &[u32],
     rng: &mut StdRng,
 ) {
     match err {
         QuantumError::Pauli(c) => apply_pauli_channel(amps, c, qubits, rng),
-        QuantumError::Kraus(c) => apply_kraus_1q(amps, c, qubits[0], rng),
+        QuantumError::Kraus(c) => {
+            debug_assert_eq!(qubits.len(), 1, "v1 Kraus channels are single-qubit");
+            apply_kraus_1q(amps, c, qubits[0], rng)
+        }
     }
 }
 
