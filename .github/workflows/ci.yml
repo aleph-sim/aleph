@@ -136,6 +136,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.toolchain }}
+          # The metal-feature clippy step below is the first clippy run in this
+          # job. The runner's preinstalled stable ships clippy, but the
+          # action-installed beta toolchain does not — declare it so both rows
+          # have cargo-clippy.
+          components: clippy
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --workspace
       - run: cargo test --workspace
