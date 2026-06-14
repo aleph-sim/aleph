@@ -57,6 +57,7 @@ dependencies = [
  "clap",
  "predicates",
  "proptest",
+ "rand 0.8.6",
  "thiserror",
 ]
 
@@ -147,6 +148,7 @@ dependencies = [
  "aleph-stab",
  "aleph-sv",
  "pyo3",
+ "rand 0.8.6",
  "smallvec",
 ]
 
