@@ -60,6 +60,7 @@ pub fn run_circuit<W: Write>(
     backend: BackendChoice,
     max_bond: usize,
     max_error: Option<f64>,
+    noise: &[String],
     out: &mut W,
 ) -> Result<()> {
     // 1. Read + parse.
@@ -68,6 +69,36 @@ pub fn run_circuit<W: Write>(
     let circuit =
         aleph_parser::parse(&source).with_context(|| format!("parsing {}", qasm_path.display()))?;
     let n = circuit.num_qubits();
+
+    // Noise preset path: build a NoiseModel from --noise presets and run the
+    // Monte-Carlo trajectory engine. SV-only, shots-only (no statevector /
+    // expectation view under a mixed state). Returns before the normal
+    // backend dispatch.
+    if !noise.is_empty() {
+        if matches!(backend, BackendChoice::Stabilizer | BackendChoice::Mps) {
+            return Err(anyhow!(
+                "--noise is only supported on the state-vector backend; \
+                 remove --backend {backend:?}"
+            ));
+        }
+        if print_statevector || force_statevector || !expectations.is_empty() {
+            return Err(anyhow!(
+                "--noise is shots-only in v1; it cannot be combined with \
+                 --statevector or --expectation"
+            ));
+        }
+        let model = build_noise_model(noise, &circuit, n)?;
+        let shots = shots_opt.unwrap_or(DEFAULT_SHOTS);
+        let run_seed = seed.unwrap_or_else(rand::random::<u64>);
+        let seed_label = match seed {
+            Some(s) => format!("seed={s}"),
+            None => "seed=entropy".to_string(),
+        };
+        let hist = aleph_sv::noise::run_noisy(&circuit, &model, shots, run_seed)
+            .context("running noisy circuit")?;
+        output::format_counts_hist(out, &hist, shots, n, &seed_label)?;
+        return Ok(());
+    }
 
     // 2. Parse + range-check every --expectation BEFORE running.
     let mut paulis: Vec<(String, aleph_core::PauliString)> = Vec::with_capacity(expectations.len());
@@ -389,6 +420,63 @@ pub fn bench_circuit<W: Write>(qasm_path: &Path, seed: Option<u64>, out: &mut W)
     Ok(())
 }
 
+/// Build a `NoiseModel` from `--noise <preset>:<p>` strings. `depol:<p>`
+/// attaches depolarizing error to every distinct 1q and 2q gate name present
+/// in `circuit`; `readout:<p>` attaches a symmetric readout flip to every
+/// qubit. 3q+ gates get no preset noise (depolarizing_error supports 1q/2q).
+fn build_noise_model(
+    presets: &[String],
+    circuit: &aleph_ir::Circuit,
+    n: u32,
+) -> Result<aleph_sv::noise::NoiseModel> {
+    use aleph_sv::noise::{depolarizing_error, NoiseModel, ReadoutError};
+
+    let mut nm = NoiseModel::new();
+    for raw in presets {
+        let (kind, val) = raw
+            .split_once(':')
+            .ok_or_else(|| anyhow!("--noise expects <preset>:<p>, got {raw:?}"))?;
+        let p: f64 = val
+            .parse()
+            .map_err(|_| anyhow!("--noise {raw:?}: {val:?} is not a number"))?;
+        if !p.is_finite() || !(0.0..=1.0).contains(&p) {
+            return Err(anyhow!("--noise {raw:?}: p must be in [0,1], got {p}"));
+        }
+        match kind {
+            "depol" => {
+                // Distinct gate name -> arity for the 1q/2q gates present.
+                // Gate::name() is &'static, so this borrows nothing from the
+                // circuit.
+                let mut seen: std::collections::BTreeMap<&'static str, u8> =
+                    std::collections::BTreeMap::new();
+                for inst in circuit.instructions() {
+                    if let aleph_ir::Instruction::Gate(gi) = inst {
+                        let arity = gi.qubits.len();
+                        if arity == 1 || arity == 2 {
+                            seen.insert(gi.gate.name(), arity as u8);
+                        }
+                    }
+                }
+                for (name, arity) in seen {
+                    nm.add_all_qubit_quantum_error(depolarizing_error(p, arity), &[name]);
+                }
+            }
+            "readout" => {
+                let re = ReadoutError::new([[1.0 - p, p], [p, 1.0 - p]]);
+                for q in 0..n {
+                    nm.add_readout_error(re, q);
+                }
+            }
+            other => {
+                return Err(anyhow!(
+                    "unknown --noise preset {other:?} (expected depol or readout)"
+                ))
+            }
+        }
+    }
+    Ok(nm)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -448,6 +536,7 @@ mod tests {
             BackendChoice::Statevector,
             128,
             None,
+            &[],
             &mut out,
         )
         .unwrap();
@@ -471,6 +560,7 @@ mod tests {
             BackendChoice::Statevector,
             128,
             None,
+            &[],
             &mut a,
         )
         .unwrap();
@@ -485,6 +575,7 @@ mod tests {
             BackendChoice::Statevector,
             128,
             None,
+            &[],
             &mut b,
         )
         .unwrap();
@@ -508,6 +599,7 @@ mod tests {
             BackendChoice::Statevector,
             128,
             None,
+            &[],
             &mut out,
         )
         .unwrap_err();
@@ -532,6 +624,7 @@ mod tests {
             BackendChoice::Statevector,
             128,
             None,
+            &[],
             &mut out,
         )
         .unwrap();
@@ -555,6 +648,7 @@ mod tests {
             BackendChoice::Statevector,
             128,
             None,
+            &[],
             &mut out,
         )
         .unwrap_err();
@@ -578,6 +672,7 @@ mod tests {
             BackendChoice::Statevector,
             128,
             None,
+            &[],
             &mut out,
         )
         .unwrap_err();
@@ -601,6 +696,7 @@ mod tests {
             BackendChoice::Statevector,
             128,
             None,
+            &[],
             &mut out,
         )
         .unwrap();
@@ -637,6 +733,7 @@ mod tests {
             BackendChoice::Statevector,
             128,
             None,
+            &[],
             &mut out,
         )
         .unwrap_err();
