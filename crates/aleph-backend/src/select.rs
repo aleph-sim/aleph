@@ -41,6 +41,90 @@ impl std::fmt::Display for BackendKind {
     }
 }
 
+impl BackendKind {
+    /// Every kind, in display order. Drives the user-facing parser and its
+    /// error message off the single [`BackendKind::aliases`] source. A new
+    /// variant is *caught at compile time* by the exhaustive match in
+    /// `aliases`, not here; the `every_kind_round_trips` test fails if a
+    /// variant is added without extending this list too.
+    pub const ALL: [BackendKind; 3] = [
+        BackendKind::Statevector,
+        BackendKind::Stabilizer,
+        BackendKind::Mps,
+    ];
+
+    /// User-facing names that resolve to this kind: the canonical name first,
+    /// then the established aliases (`sv`, `stab`).
+    ///
+    /// This exhaustive match is the **single place** backend names are wired —
+    /// adding a [`BackendKind`] variant is a compile error here, which is how
+    /// "adding a backend is a compile-error-guided change" (P4-12) is enforced.
+    pub fn aliases(self) -> &'static [&'static str] {
+        match self {
+            BackendKind::Statevector => &["statevector", "sv"],
+            BackendKind::Stabilizer => &["stabilizer", "stab"],
+            BackendKind::Mps => &["mps"],
+        }
+    }
+
+    /// Canonical (preferred) user-facing name — the first of [`Self::aliases`].
+    pub fn canonical_name(self) -> &'static str {
+        self.aliases()[0]
+    }
+}
+
+/// A user's backend choice parsed from a string, shared by the CLI and the
+/// Python binding so both surfaces accept exactly one vocabulary.
+///
+/// `Auto` defers to [`select_explained`]; `Fixed` is an explicit override.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum BackendRequest {
+    /// Pick automatically from circuit structure (the [`select_explained`]
+    /// heuristic).
+    Auto,
+    /// An explicit, user-pinned backend.
+    Fixed(BackendKind),
+}
+
+impl BackendRequest {
+    /// The literal that selects the auto heuristic.
+    pub const AUTO: &'static str = "auto";
+
+    /// Parse one user-facing backend token: `auto`, any canonical name, or any
+    /// alias (`sv`, `stab`, …). The **single parse site** used by both
+    /// `aleph-cli` (a clap `value_parser`) and `aleph-py`, so a name accepted
+    /// on one surface is accepted on the other.
+    ///
+    /// `Err` carries a ready-to-print message listing the whole vocabulary.
+    pub fn from_user_str(s: &str) -> Result<Self, String> {
+        if s == Self::AUTO {
+            return Ok(BackendRequest::Auto);
+        }
+        for kind in BackendKind::ALL {
+            if kind.aliases().contains(&s) {
+                return Ok(BackendRequest::Fixed(kind));
+            }
+        }
+        Err(unknown_backend_message(s))
+    }
+}
+
+/// "unknown backend "x"; expected one of: auto, statevector (sv), …" — built
+/// from [`BackendKind::ALL`]/[`BackendKind::aliases`] so it never drifts from
+/// what the parser actually accepts.
+fn unknown_backend_message(got: &str) -> String {
+    use std::fmt::Write as _;
+    let mut names = String::from(BackendRequest::AUTO);
+    for kind in BackendKind::ALL {
+        let aliases = kind.aliases();
+        let _ = write!(names, ", {}", aliases[0]);
+        if aliases.len() > 1 {
+            let _ = write!(names, " ({})", aliases[1..].join(", "));
+        }
+    }
+    format!("unknown backend {got:?}; expected one of: {names}")
+}
+
 /// Read-only structural features of a circuit, computed in a single scan.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CircuitFeatures {
@@ -379,6 +463,68 @@ mod tests {
     fn rule_boundary_twoq_depth_equals_threshold_picks_mps() {
         let s = select_from(&feats(30, MPS_DEPTH_THRESHOLD, false, true));
         assert_eq!(s.kind, BackendKind::Mps);
+    }
+
+    // --- P4-12: shared user-facing backend vocabulary ---
+
+    #[test]
+    fn auto_parses_to_auto() {
+        assert_eq!(
+            BackendRequest::from_user_str("auto"),
+            Ok(BackendRequest::Auto)
+        );
+    }
+
+    // Every kind must round-trip through every one of its aliases. Also guards
+    // BackendKind::ALL: a variant missing from ALL is unreachable here and the
+    // canonical-name assertion below fails.
+    #[test]
+    fn every_kind_round_trips_through_all_its_aliases() {
+        for kind in BackendKind::ALL {
+            for &alias in kind.aliases() {
+                assert_eq!(
+                    BackendRequest::from_user_str(alias),
+                    Ok(BackendRequest::Fixed(kind)),
+                    "alias {alias:?} must resolve to {kind:?}"
+                );
+            }
+            // canonical_name is itself a valid alias.
+            assert!(kind.aliases().contains(&kind.canonical_name()));
+        }
+    }
+
+    #[test]
+    fn established_aliases_resolve() {
+        use BackendKind::*;
+        assert_eq!(
+            BackendRequest::from_user_str("sv"),
+            Ok(BackendRequest::Fixed(Statevector))
+        );
+        assert_eq!(
+            BackendRequest::from_user_str("statevector"),
+            Ok(BackendRequest::Fixed(Statevector))
+        );
+        assert_eq!(
+            BackendRequest::from_user_str("stab"),
+            Ok(BackendRequest::Fixed(Stabilizer))
+        );
+        assert_eq!(
+            BackendRequest::from_user_str("stabilizer"),
+            Ok(BackendRequest::Fixed(Stabilizer))
+        );
+        assert_eq!(
+            BackendRequest::from_user_str("mps"),
+            Ok(BackendRequest::Fixed(Mps))
+        );
+    }
+
+    #[test]
+    fn unknown_backend_lists_the_whole_vocabulary() {
+        let e = BackendRequest::from_user_str("gpu").unwrap_err();
+        assert!(e.contains("\"gpu\""), "echoes the bad token: {e}");
+        for token in ["auto", "statevector", "sv", "stabilizer", "stab", "mps"] {
+            assert!(e.contains(token), "message must list {token:?}: {e}");
+        }
     }
 
     // FIX 6: empty circuit is vacuously Clifford, NN, and all-at-most-2q.

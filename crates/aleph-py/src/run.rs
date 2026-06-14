@@ -12,7 +12,7 @@
 
 use crate::circuit::PyCircuit;
 use crate::noise::PyNoiseModel;
-use aleph_backend::{run, run_optimized, Backend};
+use aleph_backend::{run, run_optimized, select_explained, Backend, BackendKind, BackendRequest};
 use aleph_mps::MpsBackend;
 use aleph_stab::StabilizerBackend;
 use aleph_sv::NaiveSvBackend;
@@ -89,11 +89,20 @@ fn err<E: std::fmt::Display>(what: &str, e: E) -> PyErr {
 /// Run `circuit` once on the chosen backend and sample `shots` shots from
 /// the final state. `seed=None` uses OS entropy.
 ///
+/// `backend` accepts the same names as the CLI's `--backend` (P4-12):
+/// `"auto"` (default — pick from circuit structure: Clifford → stabilizer,
+/// large nearest-neighbor + shallow → MPS, else state vector), `"statevector"`
+/// (alias `"sv"`), `"stabilizer"` (alias `"stab"`), or `"mps"`.
+///
+/// **Breaking change vs v0.2:** the default was `"sv"`; it is now `"auto"`, so a
+/// Clifford circuit routes to the stabilizer backend by default and
+/// `RunResult.statevector()` raises unless you pass `backend="sv"`.
+///
 /// `Measure` instructions collapse the state once during execution; the
 /// `shots` samples re-sample that single final state — they do NOT re-run
 /// the circuit per shot (unlike Qiskit's per-shot execution model).
 #[pyfunction]
-#[pyo3(name = "run", signature = (circuit, *, shots = 1024, backend = "sv", seed = None, noise = None))]
+#[pyo3(name = "run", signature = (circuit, *, shots = 1024, backend = "auto", seed = None, noise = None))]
 pub(crate) fn run_circuit(
     py: Python<'_>,
     circuit: &PyCircuit,
@@ -105,11 +114,20 @@ pub(crate) fn run_circuit(
     let c = &circuit.inner;
     let n = c.num_qubits();
 
+    // One shared parse site with the CLI: canonical names + `sv`/`stab` aliases.
+    let request = BackendRequest::from_user_str(backend).map_err(PyValueError::new_err)?;
+
     // Noisy path: Monte-Carlo trajectories via run_noisy on the UN-optimized
     // circuit (the optimizer emits TiledBlock/UnitaryKq that run_noisy rejects).
     // SV-only; unlike the noiseless path, each shot is an independent trajectory.
+    // Mirrors the CLI: noise runs on SV, so `auto` and explicit `sv` are
+    // accepted while an explicit `stab`/`mps` is rejected.
     if let Some(nm) = noise {
-        if backend != "sv" {
+        let sv_ok = matches!(
+            request,
+            BackendRequest::Auto | BackendRequest::Fixed(BackendKind::Statevector)
+        );
+        if !sv_ok {
             return Err(PyValueError::new_err(format!(
                 "noise is only supported on the \"sv\" backend, got {backend:?}"
             )));
@@ -124,10 +142,16 @@ pub(crate) fn run_circuit(
         return Ok(RunResult { counts, amps: None });
     }
 
+    // Resolve `auto` through the same structural heuristic the CLI uses.
+    let kind = match request {
+        BackendRequest::Auto => select_explained(c).kind,
+        BackendRequest::Fixed(k) => k,
+    };
+
     // Each arm releases the GIL for execute+sample (minutes at n ≥ 25):
     // other Python threads — and Ctrl-C delivery — stay live during the run.
-    match backend {
-        "sv" => {
+    match kind {
+        BackendKind::Statevector => {
             let (counts, amps) = py.allow_threads(
                 || -> PyResult<(BTreeMap<String, u64>, aleph_sv::CpuState)> {
                     let mut be = match seed {
@@ -145,7 +169,7 @@ pub(crate) fn run_circuit(
                 amps: Some(amps),
             })
         }
-        "mps" => {
+        BackendKind::Mps => {
             // MpsBackend already defaults to FixedBond(DEFAULT_MAX_BOND=128);
             // explicit .with_max_bond(128) is a drift hazard — omitted.
             let counts = py.allow_threads(|| -> PyResult<BTreeMap<String, u64>> {
@@ -159,7 +183,7 @@ pub(crate) fn run_circuit(
             })?;
             Ok(RunResult { counts, amps: None })
         }
-        "stab" => {
+        BackendKind::Stabilizer => {
             let counts = py.allow_threads(|| -> PyResult<BTreeMap<String, u64>> {
                 let mut be = match seed {
                     Some(s) => StabilizerBackend::with_seed(s),
@@ -171,8 +195,5 @@ pub(crate) fn run_circuit(
             })?;
             Ok(RunResult { counts, amps: None })
         }
-        other => Err(PyValueError::new_err(format!(
-            "unknown backend {other:?} (expected \"sv\", \"mps\", or \"stab\")"
-        ))),
     }
 }

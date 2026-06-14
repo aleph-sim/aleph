@@ -51,12 +51,17 @@ c = aleph.Circuit(2)
 c.h(0)
 c.cx(0, 1)
 
-result = aleph.run(c, shots=1024, seed=0)
+result = aleph.run(c, shots=1024, seed=0)   # backend="auto" → stabilizer (Clifford)
 print(result.counts())        # {'00': ~512, '11': ~512}
-print(result.statevector())   # 4 amplitudes
 
-# Or load OpenQASM 3.0 (from_qasm_file(path) also exists), and pick a
-# backend: "sv" (default), "mps", "stab"
+# statevector() needs the dense backend; "auto" sends this Clifford circuit to
+# the stabilizer, which has no amplitudes — ask for "sv" explicitly:
+sv = aleph.run(c, shots=1, seed=0, backend="sv").statevector()
+print(sv)                     # numpy complex128 array, 4 amplitudes
+
+# Or load OpenQASM 3.0 (from_qasm_file(path) also exists). backend= accepts the
+# same names as the CLI: "auto" (default), "statevector"/"sv",
+# "stabilizer"/"stab", "mps".
 qasm = """OPENQASM 3.0;
 include "stdgates.inc";
 qubit[2] q;
@@ -73,6 +78,8 @@ print(aleph.run(aleph.Circuit.from_qasm(qasm), backend="mps", seed=0).counts())
 | `sv` | dense 2ⁿ complex amplitudes | ≤ 28 qubits (default cap) | exact (FP64) | any circuit that fits in memory — the general-purpose workhorse |
 | `mps` | matrix product state (bond dim χ) | 100+ qubits (1024 hard cap) for shallow/local circuits | exact while χ is not binding; controlled truncation otherwise | low-entanglement circuits: shallow brickwork, nearest-neighbour dynamics |
 | `stab` | CHP tableau, O(n²) bits | hundreds of qubits (65,536 hard cap) | exact | Clifford-only circuits: error-correction cycles, stabilizer states |
+
+Backend names are one shared vocabulary across the CLI (`--backend`) and Python (`backend=`): **`auto`** (default — picks from circuit structure: Clifford → stabilizer, large nearest-neighbour + shallow → MPS, else state vector), **`statevector`** (alias `sv`), **`stabilizer`** (alias `stab`), **`mps`**. Under `auto`, a Clifford circuit routes to the stabilizer backend, which has no dense state vector — pass `backend="sv"` (or `--backend sv`) when you need `statevector()`.
 
 ## Performance
 

@@ -6,13 +6,13 @@ use std::time::Instant;
 
 use anyhow::{anyhow, Context, Result};
 
-use aleph_backend::{run, Backend};
+use aleph_backend::{run, Backend, BackendKind, BackendRequest};
 use aleph_core::Complex;
 use aleph_mps::{MpsBackend, TruncationPolicy};
 use aleph_stab::StabilizerBackend;
 use aleph_sv::{Fp32SvBackend, NaiveSvBackend};
 
-use crate::cli::{BackendChoice, Precision};
+use crate::cli::{resolve_backend, Precision};
 use crate::output;
 use crate::pauli::parse_pauli_arg;
 
@@ -57,7 +57,7 @@ pub fn run_circuit<W: Write>(
     expectations: &[String],
     seed: Option<u64>,
     precision: Precision,
-    backend: BackendChoice,
+    backend: BackendRequest,
     max_bond: usize,
     max_error: Option<f64>,
     noise: &[String],
@@ -75,11 +75,14 @@ pub fn run_circuit<W: Write>(
     // expectation view under a mixed state). Returns before the normal
     // backend dispatch.
     if !noise.is_empty() {
-        if matches!(backend, BackendChoice::Stabilizer | BackendChoice::Mps) {
-            // Report the kebab-case value the user actually typed, not the
-            // Debug variant name. The guard admits only Stabilizer | Mps.
+        if matches!(
+            backend,
+            BackendRequest::Fixed(BackendKind::Stabilizer | BackendKind::Mps)
+        ) {
+            // Report the canonical name of the backend the user pinned, not the
+            // Debug variant name. The guard admits only Fixed(Stabilizer | Mps).
             let requested = match backend {
-                BackendChoice::Mps => "mps",
+                BackendRequest::Fixed(BackendKind::Mps) => "mps",
                 _ => "stabilizer",
             };
             return Err(anyhow!(
@@ -134,7 +137,7 @@ pub fn run_circuit<W: Write>(
     //     The requested output view gates an auto stabilizer pick: a
     //     state-vector view needs amplitudes the stabilizer backend lacks.
     let wants_amplitudes = print_statevector || force_statevector;
-    let resolved = backend.resolve(&circuit, wants_amplitudes);
+    let resolved = resolve_backend(backend, &circuit, wants_amplitudes);
 
     // Too-large soft warning: an exact dense run past the soft cap may exhaust
     // memory. We warn and proceed (the user stayed in control by not narrowing
@@ -539,7 +542,7 @@ mod tests {
             &[],
             Some(0),
             Precision::F64,
-            BackendChoice::Statevector,
+            BackendRequest::Fixed(BackendKind::Statevector),
             128,
             None,
             &[],
@@ -563,7 +566,7 @@ mod tests {
             &[],
             Some(42),
             Precision::F64,
-            BackendChoice::Statevector,
+            BackendRequest::Fixed(BackendKind::Statevector),
             128,
             None,
             &[],
@@ -578,7 +581,7 @@ mod tests {
             &[],
             Some(42),
             Precision::F64,
-            BackendChoice::Statevector,
+            BackendRequest::Fixed(BackendKind::Statevector),
             128,
             None,
             &[],
@@ -602,7 +605,7 @@ mod tests {
             &[],
             Some(0),
             Precision::F64,
-            BackendChoice::Statevector,
+            BackendRequest::Fixed(BackendKind::Statevector),
             128,
             None,
             &[],
@@ -627,7 +630,7 @@ mod tests {
             &[],
             Some(0),
             Precision::F64,
-            BackendChoice::Statevector,
+            BackendRequest::Fixed(BackendKind::Statevector),
             128,
             None,
             &[],
@@ -651,7 +654,7 @@ mod tests {
             &["ZZZ".to_string()],
             Some(0),
             Precision::F64,
-            BackendChoice::Statevector,
+            BackendRequest::Fixed(BackendKind::Statevector),
             128,
             None,
             &[],
@@ -675,7 +678,7 @@ mod tests {
             &["ABC".to_string()],
             Some(0),
             Precision::F64,
-            BackendChoice::Statevector,
+            BackendRequest::Fixed(BackendKind::Statevector),
             128,
             None,
             &[],
@@ -699,7 +702,7 @@ mod tests {
             &["ZZ".to_string()],
             Some(0),
             Precision::F64,
-            BackendChoice::Statevector,
+            BackendRequest::Fixed(BackendKind::Statevector),
             128,
             None,
             &[],
@@ -736,7 +739,7 @@ mod tests {
             &[],
             Some(0),
             Precision::F64,
-            BackendChoice::Statevector,
+            BackendRequest::Fixed(BackendKind::Statevector),
             128,
             None,
             &[],
