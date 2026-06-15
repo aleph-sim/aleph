@@ -251,9 +251,21 @@ impl Backend for MetalSvBackend {
             }
             seen.push(q);
         }
-        // Fixed-size GateMatrix gates (M2x2/M4x4/M8x8) below. UnitaryKq has no
-        // GateMatrix form, so today it falls through to matrix() → Unrepresentable
-        // → UnsupportedGate; a later task adds a direct dispatch path before here.
+        // UnitaryKq carries a raw 2^k x 2^k matrix and has no GateMatrix form;
+        // dispatch it directly (mirrors the CPU FP32 backend). 2 <= k <= 5, and
+        // 4^k = data.len(); k=5 fills the full 1024-entry scratch. Entries beyond
+        // 4^k stay stale-but-unread (the kernel only reads mat[0..4^k]).
+        if let aleph_core::Gate::UnitaryKq { k: _, data } = &gate.gate {
+            let meta = Self::kq_meta(&gate.qubits, &gate.controls);
+            let scratch = self.mat_scratch.as_mut_slice();
+            for (dst, src) in scratch.iter_mut().zip(data.iter()) {
+                *dst = narrow(*src);
+            }
+            self.dispatch_kq(state, &meta);
+            return Ok(());
+        }
+        // Fixed-size GateMatrix gates (M2x2/M4x4/M8x8) below. (UnitaryKq was
+        // handled just above.)
         let matrix = gate.gate.matrix().map_err(|e| match e {
             GateError::SymbolicParam => BackendError::SymbolicParam,
             GateError::NonFiniteParam => BackendError::NonFiniteParam {
@@ -634,5 +646,86 @@ mod tests {
         b.apply_gate(&mut s, &gate(Gate::H, &[0])).unwrap();
         let x = PauliString::new(1.0, vec![(0, Pauli::X)]).unwrap();
         assert!((b.expectation_value(&s, &x).unwrap() - 1.0).abs() < 1e-5);
+    }
+
+    /// Toffoli(0,1,2) on |110> -> |111>.
+    #[test]
+    fn toffoli_flips_when_both_controls_set() {
+        let Some(mut b) = backend_or_skip() else {
+            return;
+        };
+        let mut s = b.allocate(3).unwrap();
+        b.apply_gate(&mut s, &gate(Gate::X, &[0])).unwrap();
+        b.apply_gate(&mut s, &gate(Gate::X, &[1])).unwrap(); // |110>
+        b.apply_gate(&mut s, &gate(Gate::Toffoli, &[0, 1, 2]))
+            .unwrap();
+        let a = s.amplitudes_f32();
+        assert!((a[7].re - 1.0).abs() < 1e-6, "amps = {a:?}"); // |111> = 7
+    }
+
+    /// CCZ on |111> applies -1.
+    #[test]
+    fn ccz_phases_all_ones() {
+        let Some(mut b) = backend_or_skip() else {
+            return;
+        };
+        let mut s = b.allocate(3).unwrap();
+        for q in 0..3 {
+            b.apply_gate(&mut s, &gate(Gate::X, &[q])).unwrap();
+        }
+        b.apply_gate(&mut s, &gate(Gate::Ccz, &[0, 1, 2])).unwrap();
+        let a = s.amplitudes_f32();
+        assert!(
+            (a[7].re + 1.0).abs() < 1e-6 && a[7].im.abs() < 1e-6,
+            "amps = {a:?}"
+        );
+    }
+
+    /// A 2-control MCX (X with two controls) via the shipped 1q ctrl_mask path:
+    /// |110> with X on q2 controlled by q0,q1 -> |111>. Confirms MC still works.
+    #[test]
+    fn mcx_two_controls_via_1q_path() {
+        let Some(mut b) = backend_or_skip() else {
+            return;
+        };
+        let mut s = b.allocate(3).unwrap();
+        b.apply_gate(&mut s, &gate(Gate::X, &[0])).unwrap();
+        b.apply_gate(&mut s, &gate(Gate::X, &[1])).unwrap(); // |110>
+        let mcx = GateInstance::controlled(Gate::X, vec![2u32], vec![0u32, 1u32]);
+        b.apply_gate(&mut s, &mcx).unwrap();
+        let a = s.amplitudes_f32();
+        assert!((a[7].re - 1.0).abs() < 1e-6, "amps = {a:?}");
+    }
+
+    /// A dense UnitaryKq (k=2) equal to SWAP. State after X(0) is index 1
+    /// (qubit 0 = bit 0); SWAP(0,1) moves it to index 2 (qubit 1 = bit 1).
+    #[test]
+    fn unitary_kq_k2_swap() {
+        use aleph_core::Complex as C;
+        let Some(mut b) = backend_or_skip() else {
+            return;
+        };
+        let mut s = b.allocate(2).unwrap();
+        b.apply_gate(&mut s, &gate(Gate::X, &[0])).unwrap(); // index 1
+                                                             // Row-major 4x4 SWAP: swaps basis 01 <-> 10.
+        let z = C::new(0.0, 0.0);
+        let o = C::new(1.0, 0.0);
+        let data: Vec<C> = vec![
+            o, z, z, z, //
+            z, z, o, z, //
+            z, o, z, z, //
+            z, z, z, o, //
+        ];
+        let g = gate(
+            Gate::UnitaryKq {
+                k: 2,
+                data: data.into_boxed_slice(),
+            },
+            &[0, 1],
+        );
+        b.apply_gate(&mut s, &g).unwrap();
+        let a = s.amplitudes_f32();
+        assert!((a[2].re - 1.0).abs() < 1e-6, "amps = {a:?}"); // index 2
+        assert!(a[0].norm() < 1e-6 && a[1].norm() < 1e-6 && a[3].norm() < 1e-6);
     }
 }
