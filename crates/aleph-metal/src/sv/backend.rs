@@ -8,7 +8,7 @@ use metal::{ComputePipelineState, MTLSize};
 use rand::{rngs::StdRng, SeedableRng};
 use std::ffi::c_void;
 
-use super::kernel::{Gate1q, SV_1Q_ENTRY, SV_1Q_SRC};
+use super::kernel::{Gate1q, GateKqMeta, SV_1Q_ENTRY, SV_1Q_SRC, SV_KQ_ENTRY, SV_KQ_SRC};
 use super::state::MetalSvState;
 use crate::{DeviceBuffer, Error, MetalContext};
 
@@ -21,6 +21,9 @@ pub struct MetalSvBackend {
     ctx: MetalContext,
     // Used by the apply_gate dispatch (Task 5).
     pipeline_1q: ComputePipelineState,
+    pipeline_kq: ComputePipelineState,
+    // Reused row-major f32 matrix scratch, sized to the k=5 max (32x32 = 1024).
+    mat_scratch: DeviceBuffer<Complex<f32>>,
     // Used by the host-side readout / measure / sample in Task 6.
     rng: StdRng,
 }
@@ -47,9 +50,16 @@ impl MetalSvBackend {
         let pipeline_1q = ctx
             .make_compute_pipeline(SV_1Q_SRC, SV_1Q_ENTRY)
             .map_err(map_metal_err)?;
+        let pipeline_kq = ctx
+            .make_compute_pipeline(SV_KQ_SRC, SV_KQ_ENTRY)
+            .map_err(map_metal_err)?;
+        let mat_scratch =
+            DeviceBuffer::from_slice(&ctx, &vec![Complex::<f32>::new(0.0, 0.0); 1024]);
         Ok(Self {
             ctx,
             pipeline_1q,
+            pipeline_kq,
+            mat_scratch,
             rng,
         })
     }
@@ -79,6 +89,55 @@ impl MetalSvBackend {
         cmd.commit();
         cmd.wait_until_completed();
     }
+
+    /// Encode + run one generic dense-kq dispatch over `2^(n-k)` groups. The
+    /// caller must have already written the row-major matrix into `mat_scratch`.
+    fn dispatch_kq(&self, state: &MetalSvState, meta: &GateKqMeta) {
+        let groups = 1u64 << (state.num_qubits - meta.k); // num_qubits >= k
+        let cmd = self.ctx.queue().new_command_buffer();
+        let encoder = cmd.new_compute_command_encoder();
+        encoder.set_compute_pipeline_state(&self.pipeline_kq);
+        encoder.set_buffer(0, Some(state.amps.metal_buffer()), 0);
+        encoder.set_buffer(1, Some(self.mat_scratch.metal_buffer()), 0);
+        encoder.set_bytes(
+            2,
+            std::mem::size_of::<GateKqMeta>() as u64,
+            meta as *const GateKqMeta as *const c_void,
+        );
+        let tg = self
+            .pipeline_kq
+            .max_total_threads_per_threadgroup()
+            .min(groups);
+        encoder.dispatch_threads(MTLSize::new(groups, 1, 1), MTLSize::new(tg, 1, 1));
+        encoder.end_encoding();
+        cmd.commit();
+        cmd.wait_until_completed();
+    }
+
+    /// Build the [`GateKqMeta`] for a dense gate on `targets` (logical/MSB order,
+    /// `targets[0]` is the matrix-index MSB) with external `controls`. `targets`
+    /// has at most 5 entries (k ≤ 5).
+    fn kq_meta(targets: &[u32], controls: &[u32]) -> GateKqMeta {
+        let k = targets.len();
+        let mut sorted = [0u32; 5];
+        let mut tbit = [0u32; 5];
+        for (j, &q) in targets.iter().enumerate() {
+            tbit[j] = 1u32 << q; // logical/MSB order for matrix-index bits
+        }
+        // sorted[] = ascending target positions for the kernel's zero-bit
+        // insertion. Plain `[u32; 5]` copy+sort — no extra dependency.
+        let mut s = [0u32; 5];
+        s[..k].copy_from_slice(targets);
+        s[..k].sort_unstable();
+        sorted[..k].copy_from_slice(&s[..k]);
+        let ctrl_mask = controls.iter().fold(0u32, |acc, &c| acc | (1u32 << c));
+        GateKqMeta {
+            k: k as u32,
+            sorted,
+            tbit,
+            ctrl_mask,
+        }
+    }
 }
 
 /// Narrow an f64 gate-matrix entry to f32. Matrices are materialised in f64
@@ -86,6 +145,36 @@ impl MetalSvBackend {
 #[inline]
 fn narrow(z: Complex<f64>) -> Complex<f32> {
     Complex::<f32>::new(z.re as f32, z.im as f32)
+}
+
+/// Max deviation of `M†M` from the identity for an N×N matrix. NaN-disciplined
+/// (ADR 0006): any NaN entry returns NaN rather than being swallowed by
+/// `dev > max_dev` (NaN comparisons are always false). Covers the 2×2/4×4/8×8
+/// `GateMatrix` arms uniformly.
+#[allow(clippy::needless_range_loop)]
+fn unitarity_deviation_square<const N: usize>(m: &[[Complex<f64>; N]; N]) -> f64 {
+    let mut max_dev = 0.0_f64;
+    for r in 0..N {
+        for c in 0..N {
+            let mut acc = Complex::<f64>::new(0.0, 0.0);
+            for k in 0..N {
+                acc += m[k][r].conj() * m[k][c];
+            }
+            let target = if r == c {
+                Complex::<f64>::new(1.0, 0.0)
+            } else {
+                Complex::<f64>::new(0.0, 0.0)
+            };
+            let dev = (acc - target).norm();
+            if dev.is_nan() {
+                return f64::NAN;
+            }
+            if dev > max_dev {
+                max_dev = dev;
+            }
+        }
+    }
+    max_dev
 }
 
 /// Max deviation of `M†M` from the identity for a 2×2 — local reimplementation
@@ -96,34 +185,7 @@ fn narrow(z: Complex<f64>) -> Complex<f32> {
 /// rely on `if dev > max_dev` to propagate it, because NaN comparisons always
 /// return false and `max_dev` would silently stay 0.
 fn unitarity_deviation_2x2(m: &[[Complex<f64>; 2]; 2]) -> f64 {
-    // (M†M)[r][c] = Σ_k conj(M[k][r]) * M[k][c]; compare to δ_rc.
-    let mut max_dev = 0.0_f64;
-    #[allow(clippy::needless_range_loop)]
-    for r in 0..2 {
-        for c in 0..2 {
-            let mut acc = Complex::<f64>::new(0.0, 0.0);
-            for k in 0..2 {
-                acc += m[k][r].conj() * m[k][c];
-            }
-            let target = if r == c {
-                Complex::<f64>::new(1.0, 0.0)
-            } else {
-                Complex::<f64>::new(0.0, 0.0)
-            };
-            let dev = (acc - target).norm();
-            // NaN discipline (ADR 0006): NaN comparisons are always false,
-            // so `if dev > max_dev` would let a NaN-bearing matrix keep
-            // max_dev at 0.0 and silently pass the unitarity guard. Reject
-            // explicitly. Mirrors aleph_sv::validation::unitarity_deviation.
-            if dev.is_nan() {
-                return f64::NAN;
-            }
-            if dev > max_dev {
-                max_dev = dev;
-            }
-        }
-    }
-    max_dev
+    unitarity_deviation_square(m)
 }
 
 /// Map a foundation `Error` into the shared `BackendError`. Device/compile
@@ -189,13 +251,8 @@ impl Backend for MetalSvBackend {
             }
             seen.push(q);
         }
-        // This ticket: 1q gates only. `UnitaryKq` has no fixed GateMatrix;
-        // intercept it (and any non-1q arity) as unsupported before matrix().
-        if matches!(gate.gate, aleph_core::Gate::UnitaryKq { .. }) || expected != 1 {
-            return Err(BackendError::UnsupportedGate {
-                kind: gate.gate.name(),
-            });
-        }
+        // UnitaryKq is intercepted before this point in a later task (it has no
+        // GateMatrix form). Here we handle the fixed-size GateMatrix gates.
         let matrix = gate.gate.matrix().map_err(|e| match e {
             GateError::SymbolicParam => BackendError::SymbolicParam,
             GateError::NonFiniteParam => BackendError::NonFiniteParam {
@@ -205,36 +262,64 @@ impl Backend for MetalSvBackend {
                 kind: gate.gate.name(),
             },
         })?;
-        let m = match matrix {
-            GateMatrix::M2x2(m) => m,
-            // 4x4 / 8x8 are 2q/3q gates — not this ticket.
-            _ => {
-                return Err(BackendError::UnsupportedGate {
-                    kind: gate.gate.name(),
-                })
+        match matrix {
+            GateMatrix::M2x2(m) => {
+                let deviation = unitarity_deviation_2x2(&m);
+                if !deviation.is_finite() || deviation > AMPLITUDE_TOL {
+                    return Err(BackendError::NonUnitaryMatrix { deviation });
+                }
+                let target = gate.qubits[0];
+                let ctrl_mask = gate.controls.iter().fold(0u32, |acc, &c| acc | (1u32 << c));
+                let g = Gate1q {
+                    m: [
+                        narrow(m[0][0]),
+                        narrow(m[0][1]),
+                        narrow(m[1][0]),
+                        narrow(m[1][1]),
+                    ],
+                    target,
+                    t_bit: 1u32 << target,
+                    ctrl_mask,
+                    _pad: 0,
+                };
+                self.dispatch_1q(state, &g);
             }
-        };
-        // Unitarity check on the f64 matrix (defense-in-depth, mirrors the CPU
-        // FP32 backend) before narrowing.
-        let deviation = unitarity_deviation_2x2(&m);
-        if !deviation.is_finite() || deviation > AMPLITUDE_TOL {
-            return Err(BackendError::NonUnitaryMatrix { deviation });
+            GateMatrix::M4x4(m) => {
+                // Defense-in-depth unitarity guard (catches a non-unitary or
+                // NaN Unitary2q) before narrowing — mirrors the CPU FP32 path.
+                let deviation = unitarity_deviation_square(&m);
+                if !deviation.is_finite() || deviation > AMPLITUDE_TOL {
+                    return Err(BackendError::NonUnitaryMatrix { deviation });
+                }
+                let meta = Self::kq_meta(&[gate.qubits[0], gate.qubits[1]], &gate.controls);
+                let scratch = self.mat_scratch.as_mut_slice();
+                #[allow(clippy::needless_range_loop)]
+                for r in 0..4 {
+                    for c in 0..4 {
+                        scratch[r * 4 + c] = narrow(m[r][c]);
+                    }
+                }
+                self.dispatch_kq(state, &meta);
+            }
+            GateMatrix::M8x8(m) => {
+                let deviation = unitarity_deviation_square(&m);
+                if !deviation.is_finite() || deviation > AMPLITUDE_TOL {
+                    return Err(BackendError::NonUnitaryMatrix { deviation });
+                }
+                let meta = Self::kq_meta(
+                    &[gate.qubits[0], gate.qubits[1], gate.qubits[2]],
+                    &gate.controls,
+                );
+                let scratch = self.mat_scratch.as_mut_slice();
+                #[allow(clippy::needless_range_loop)]
+                for r in 0..8 {
+                    for c in 0..8 {
+                        scratch[r * 8 + c] = narrow(m[r][c]);
+                    }
+                }
+                self.dispatch_kq(state, &meta);
+            }
         }
-        let target = gate.qubits[0];
-        let ctrl_mask = gate.controls.iter().fold(0u32, |acc, &c| acc | (1u32 << c));
-        let g = Gate1q {
-            m: [
-                narrow(m[0][0]),
-                narrow(m[0][1]),
-                narrow(m[1][0]),
-                narrow(m[1][1]),
-            ],
-            target,
-            t_bit: 1u32 << target,
-            ctrl_mask,
-            _pad: 0,
-        };
-        self.dispatch_1q(state, &g);
         Ok(())
     }
 
@@ -352,16 +437,72 @@ mod tests {
         assert!(a[0].norm() < 1e-6 && a[1].norm() < 1e-6 && a[3].norm() < 1e-6);
     }
 
+    /// |10> --CNOT(0,1)--> |11>. qubits = [control, target] = [0,1].
     #[test]
-    fn two_qubit_gate_is_unsupported() {
+    fn cnot_flips_target_when_control_set() {
         let Some(mut b) = backend_or_skip() else {
             return;
         };
         let mut s = b.allocate(2).unwrap();
-        let err = b
-            .apply_gate(&mut s, &gate(Gate::Cnot, &[0, 1]))
-            .unwrap_err();
-        assert_eq!(err, BackendError::UnsupportedGate { kind: "Cnot" });
+        b.apply_gate(&mut s, &gate(Gate::X, &[0])).unwrap(); // |10>
+        b.apply_gate(&mut s, &gate(Gate::Cnot, &[0, 1])).unwrap();
+        let a = s.amplitudes_f32();
+        // |11> = index 0b11 = 3.
+        assert!((a[3].re - 1.0).abs() < 1e-6, "amps = {a:?}");
+        assert!(a[0].norm() < 1e-6 && a[1].norm() < 1e-6 && a[2].norm() < 1e-6);
+    }
+
+    /// CZ on |11> flips the sign; on |10> leaves it.
+    #[test]
+    fn cz_phases_eleven() {
+        let Some(mut b) = backend_or_skip() else {
+            return;
+        };
+        let mut s = b.allocate(2).unwrap();
+        b.apply_gate(&mut s, &gate(Gate::X, &[0])).unwrap();
+        b.apply_gate(&mut s, &gate(Gate::X, &[1])).unwrap(); // |11>
+        b.apply_gate(&mut s, &gate(Gate::Cz, &[0, 1])).unwrap();
+        let a = s.amplitudes_f32();
+        assert!((a[3].re + 1.0).abs() < 1e-6, "amps = {a:?}"); // -1
+    }
+
+    /// SWAP(0,1) on |q0=1,q1=0> -> |q0=0,q1=1>.
+    ///
+    /// Qubit `q` maps to bit `q` of the state index. X on qubit 0 sets bit 0,
+    /// giving index 1 (|q1 q0⟩ = |01⟩). After SWAP(0,1), qubit 0=0 and
+    /// qubit 1=1, so index = 0b10 = 2. This matches the CPU kq kernel's SWAP
+    /// behavior (see `apply_kq_swap_matches_manual` in aleph-sv).
+    #[test]
+    fn swap_exchanges_basis() {
+        let Some(mut b) = backend_or_skip() else {
+            return;
+        };
+        let mut s = b.allocate(2).unwrap();
+        b.apply_gate(&mut s, &gate(Gate::X, &[0])).unwrap(); // bit 0 set → index 1
+        b.apply_gate(&mut s, &gate(Gate::Swap, &[0, 1])).unwrap();
+        let a = s.amplitudes_f32();
+        // After SWAP: qubit 0=0, qubit 1=1 → index 2.
+        assert!((a[2].re - 1.0).abs() < 1e-6, "amps = {a:?}");
+        assert!(a[0].norm() < 1e-6 && a[1].norm() < 1e-6 && a[3].norm() < 1e-6);
+    }
+
+    /// Pure-helper test (no Metal device): `kq_meta` must sort the insertion
+    /// positions ascending while keeping `tbit` in logical/MSB order, and OR the
+    /// control mask. Runs even on a device-less macOS box so the index logic is
+    /// covered without a GPU.
+    #[test]
+    fn kq_meta_sorts_positions_keeps_logical_tbit() {
+        // targets [2, 0]: q[0]=2 is the matrix MSB. Controls [3].
+        let m = MetalSvBackend::kq_meta(&[2, 0], &[3]);
+        assert_eq!(m.k, 2);
+        assert_eq!(m.tbit[0], 1 << 2); // logical order: targets[0] first
+        assert_eq!(m.tbit[1], 1 << 0);
+        assert_eq!(m.sorted[0], 0); // ascending for zero-bit insertion
+        assert_eq!(m.sorted[1], 2);
+        assert_eq!(m.ctrl_mask, 1 << 3);
+        // Unused slots (j >= k) stay zero.
+        assert_eq!(m.tbit[2], 0);
+        assert_eq!(m.sorted[2], 0);
     }
 
     #[test]

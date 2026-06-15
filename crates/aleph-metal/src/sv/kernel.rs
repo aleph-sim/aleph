@@ -32,13 +32,10 @@ pub(crate) struct Gate1q {
 // aligned copy — the host struct's own alignment never reaches the kernel.
 const _: () = assert!(core::mem::size_of::<Gate1q>() == 48);
 
-/// MSL source for the generic dense k-qubit kernel. Wired into `apply_gate`
-/// in the next task; `#[allow(dead_code)]` until then.
-#[allow(dead_code)]
+/// MSL source for the generic dense k-qubit kernel.
 pub(crate) const SV_KQ_SRC: &str = include_str!("../shaders/sv_kq.metal");
 
 /// Entry-point name inside `SV_KQ_SRC`.
-#[allow(dead_code)]
 pub(crate) const SV_KQ_ENTRY: &str = "apply_kq";
 
 /// Per-gate uniform for [`SV_KQ_SRC`]. **Layout MUST match the MSL `GateKqMeta`
