@@ -31,8 +31,8 @@ pub struct MetalSvBackend {
 impl MetalSvBackend {
     /// Construct with an entropy-seeded RNG.
     ///
-    /// Acquires the system-default Metal device and compiles+caches the 1q
-    /// pipeline once. Returns [`BackendError::InvalidState`] when no device is
+    /// Acquires the system-default Metal device and compiles+caches the gate
+    /// pipelines once. Returns [`BackendError::InvalidState`] when no device is
     /// present (headless CI) or a shader/pipeline build fails — unlike the
     /// infallible CPU `new`, GPU acquisition can fail, so this returns `Result`.
     pub fn new() -> Result<Self, BackendError> {
@@ -251,8 +251,9 @@ impl Backend for MetalSvBackend {
             }
             seen.push(q);
         }
-        // UnitaryKq is intercepted before this point in a later task (it has no
-        // GateMatrix form). Here we handle the fixed-size GateMatrix gates.
+        // Fixed-size GateMatrix gates (M2x2/M4x4/M8x8) below. UnitaryKq has no
+        // GateMatrix form, so today it falls through to matrix() → Unrepresentable
+        // → UnsupportedGate; a later task adds a direct dispatch path before here.
         let matrix = gate.gate.matrix().map_err(|e| match e {
             GateError::SymbolicParam => BackendError::SymbolicParam,
             GateError::NonFiniteParam => BackendError::NonFiniteParam {
@@ -463,7 +464,12 @@ mod tests {
         b.apply_gate(&mut s, &gate(Gate::X, &[1])).unwrap(); // |11>
         b.apply_gate(&mut s, &gate(Gate::Cz, &[0, 1])).unwrap();
         let a = s.amplitudes_f32();
-        assert!((a[3].re + 1.0).abs() < 1e-6, "amps = {a:?}"); // -1
+        // CZ|11> = -|11>: amplitude is purely real -1 (check im too so a phase
+        // bug like (-0.9 + 0.4i) fails clearly, not just on the real part).
+        assert!(
+            (a[3].re + 1.0).abs() < 1e-6 && a[3].im.abs() < 1e-6,
+            "amps = {a:?}"
+        );
     }
 
     /// SWAP(0,1) on |q0=1,q1=0> -> |q0=0,q1=1>.
