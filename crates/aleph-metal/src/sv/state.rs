@@ -8,11 +8,20 @@ use crate::DeviceBuffer;
 
 /// State vector held by [`crate::MetalSvBackend`]. Unified-memory shared
 /// storage: host views are zero-copy windows onto the same bytes the GPU sees.
-// Backend consumer arrives in Task 4; allow dead_code until then.
-#[allow(dead_code)]
 pub struct MetalSvState {
     pub(crate) num_qubits: u32,
     pub(crate) amps: DeviceBuffer<Complex<f32>>,
+}
+
+impl core::fmt::Debug for MetalSvState {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        // `DeviceBuffer` wraps a `metal::Buffer` which is not `Debug`; show the
+        // qubit count and amplitude length as a compact summary instead.
+        f.debug_struct("MetalSvState")
+            .field("num_qubits", &self.num_qubits)
+            .field("amps_len", &self.amps.len())
+            .finish_non_exhaustive()
+    }
 }
 
 impl MetalSvState {

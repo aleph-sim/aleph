@@ -2,8 +2,10 @@
 //! generic single-qubit GPU kernel, host-side readout.
 
 mod amps;
+mod backend;
 mod kernel;
 mod state;
 
 pub use amps::AmpsF32;
+pub use backend::MetalSvBackend;
 pub use state::MetalSvState;

@@ -4,13 +4,9 @@
 use aleph_core::Complex;
 
 /// MSL source for the 1q kernel; compiled at runtime by `MetalSvBackend::new`.
-// Used by the backend in later tasks; allow here to silence dead_code until
-// the consumer is added.
-#[allow(dead_code)]
 pub(crate) const SV_1Q_SRC: &str = include_str!("../shaders/sv_1q.metal");
 
 /// Entry-point name inside `SV_1Q_SRC`.
-#[allow(dead_code)]
 pub(crate) const SV_1Q_ENTRY: &str = "apply_1q";
 
 /// Per-gate uniform block. **Layout MUST match the MSL `Gate1q` struct**:
