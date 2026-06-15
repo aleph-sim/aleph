@@ -12,13 +12,42 @@ description = "Metal GPU foundation for the aleph quantum circuit simulator (mac
 default = []
 # Enables the real Metal backend. Off by default so `cargo build --workspace`
 # stays an empty-crate compile on Linux and on default macOS.
-metal = ["dep:metal", "dep:bytemuck", "dep:thiserror"]
+metal = [
+    "dep:metal",
+    "dep:bytemuck",
+    "dep:thiserror",
+    "dep:aleph-backend",
+    "dep:aleph-core",
+    "dep:aleph-ir",
+    "dep:aleph-oracle",
+    "dep:rand",
+    "dep:num-complex",
+]
 
 [dependencies]
 thiserror = { workspace = true, optional = true }
+# Backend trait + IR + Complex live in pure-Rust workspace crates; optional so
+# they are only compiled when the `metal` feature is on (always macOS-only).
+aleph-backend = { path = "../aleph-backend", optional = true }
+aleph-core    = { path = "../aleph-core", optional = true }
+aleph-ir      = { path = "../aleph-ir", optional = true }
+# `aleph-oracle` provides the `HasAmplitudes` trait the Metal state implements.
+# Normal (optional) dep — NOT dev-only — because the impl is a real public
+# capability used by the integration oracle test, and an external-trait impl
+# must live in this crate (orphan rule). Workspace-internal + feature-gated to
+# macOS+metal, so it never weighs on Linux/default builds.
+aleph-oracle  = { path = "../aleph-oracle", optional = true }
+rand          = { workspace = true, optional = true }
+# `bytemuck` feature makes `Complex<f32>: Pod`, so `DeviceBuffer<Complex<f32>>`
+# works directly and the kernel sees a `device float2*`.
+num-complex   = { workspace = true, optional = true, features = ["bytemuck"] }
 
 # `metal` is macOS-only: target-cfg the dep so it is never resolved on Linux,
 # even transitively, regardless of feature selection.
 [target.'cfg(target_os = "macos")'.dependencies]
 metal    = { version = "0.33", optional = true }
-bytemuck = { workspace = true, optional = true }
+bytemuck = { workspace = true, optional = true, features = ["derive"] }
+
+[dev-dependencies]
+# `NaiveSvBackend` is the f64 reference for the FP32 oracle test.
+aleph-sv = { path = "../aleph-sv" }
