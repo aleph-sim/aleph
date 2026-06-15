@@ -78,7 +78,10 @@ pub(crate) fn probabilities(
     let mut seen: Vec<u32> = Vec::new();
     for &q in qubits {
         if q >= n {
-            return Err(BackendError::QubitOutOfRange { qubit: q, num_qubits: n });
+            return Err(BackendError::QubitOutOfRange {
+                qubit: q,
+                num_qubits: n,
+            });
         }
         if seen.contains(&q) {
             return Err(BackendError::DuplicateQubit { qubit: q });
@@ -135,7 +138,10 @@ pub(crate) fn measure(
 ) -> Result<bool, BackendError> {
     let n = state.num_qubits;
     if qubit >= n {
-        return Err(BackendError::QubitOutOfRange { qubit, num_qubits: n });
+        return Err(BackendError::QubitOutOfRange {
+            qubit,
+            num_qubits: n,
+        });
     }
     let probs = validate(state)?;
     let q_bit = 1usize << qubit;
@@ -196,7 +202,10 @@ pub(crate) fn expectation_value(
     let mut seen: Vec<u32> = Vec::new();
     for (q, _) in &pauli.terms {
         if *q >= n {
-            return Err(BackendError::QubitOutOfRange { qubit: *q, num_qubits: n });
+            return Err(BackendError::QubitOutOfRange {
+                qubit: *q,
+                num_qubits: n,
+            });
         }
         if seen.contains(q) {
             return Err(BackendError::DuplicateQubit { qubit: *q });
@@ -245,7 +254,8 @@ pub(crate) fn expectation_value(
                     }
                 }
             }
-            Pauli::X => {
+            Pauli::X =>
+            {
                 #[allow(clippy::needless_range_loop)]
                 for i in 0..tmp.len() {
                     if i & qbit == 0 {

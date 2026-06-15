@@ -223,7 +223,12 @@ impl Backend for MetalSvBackend {
         let target = gate.qubits[0];
         let ctrl_mask = gate.controls.iter().fold(0u32, |acc, &c| acc | (1u32 << c));
         let g = Gate1q {
-            m: [narrow(m[0][0]), narrow(m[0][1]), narrow(m[1][0]), narrow(m[1][1])],
+            m: [
+                narrow(m[0][0]),
+                narrow(m[0][1]),
+                narrow(m[1][0]),
+                narrow(m[1][1]),
+            ],
             target,
             t_bit: 1u32 << target,
             ctrl_mask,
@@ -353,7 +358,9 @@ mod tests {
             return;
         };
         let mut s = b.allocate(2).unwrap();
-        let err = b.apply_gate(&mut s, &gate(Gate::Cnot, &[0, 1])).unwrap_err();
+        let err = b
+            .apply_gate(&mut s, &gate(Gate::Cnot, &[0, 1]))
+            .unwrap_err();
         assert_eq!(err, BackendError::UnsupportedGate { kind: "Cnot" });
     }
 
@@ -389,10 +396,7 @@ mod tests {
                 Complex::<f64>::new(f64::NAN, 0.0),
                 Complex::<f64>::new(0.0, 0.0),
             ],
-            [
-                Complex::<f64>::new(0.0, 0.0),
-                Complex::<f64>::new(1.0, 0.0),
-            ],
+            [Complex::<f64>::new(0.0, 0.0), Complex::<f64>::new(1.0, 0.0)],
         ];
         assert!(super::unitarity_deviation_2x2(&m).is_nan());
     }
@@ -416,10 +420,7 @@ mod tests {
                 Complex::<f64>::new(f64::NAN, 0.0),
                 Complex::<f64>::new(0.0, 0.0),
             ],
-            [
-                Complex::<f64>::new(0.0, 0.0),
-                Complex::<f64>::new(1.0, 0.0),
-            ],
+            [Complex::<f64>::new(0.0, 0.0), Complex::<f64>::new(1.0, 0.0)],
         ]);
         let g = gate(Gate::Unitary1q(nan_matrix), &[0]);
         let err = b.apply_gate(&mut s, &g).unwrap_err();
@@ -431,7 +432,9 @@ mod tests {
 
     #[test]
     fn probabilities_plus_state_uniform() {
-        let Some(mut b) = backend_or_skip() else { return; };
+        let Some(mut b) = backend_or_skip() else {
+            return;
+        };
         let mut s = b.allocate(1).unwrap();
         b.apply_gate(&mut s, &gate(Gate::H, &[0])).unwrap();
         let p = b.probabilities(&s, &[0]).unwrap();
@@ -440,7 +443,9 @@ mod tests {
 
     #[test]
     fn sample_collapsed_state_is_deterministic() {
-        let Some(mut b) = backend_or_skip() else { return; };
+        let Some(mut b) = backend_or_skip() else {
+            return;
+        };
         let mut s = b.allocate(1).unwrap();
         b.apply_gate(&mut s, &gate(Gate::X, &[0])).unwrap();
         let shots = b.sample(&s, 256).unwrap();
@@ -449,7 +454,9 @@ mod tests {
 
     #[test]
     fn measure_plus_state_collapses_to_basis() {
-        let Some(mut b) = backend_or_skip() else { return; };
+        let Some(mut b) = backend_or_skip() else {
+            return;
+        };
         let mut s = b.allocate(1).unwrap();
         b.apply_gate(&mut s, &gate(Gate::H, &[0])).unwrap();
         let outcome = b.measure(&mut s, 0).unwrap();
@@ -463,7 +470,9 @@ mod tests {
 
     #[test]
     fn expectation_z_on_zero_is_plus_one() {
-        let Some(mut b) = backend_or_skip() else { return; };
+        let Some(mut b) = backend_or_skip() else {
+            return;
+        };
         let s = b.allocate(1).unwrap();
         let z = PauliString::new(1.0, vec![(0, Pauli::Z)]).unwrap();
         assert!((b.expectation_value(&s, &z).unwrap() - 1.0).abs() < 1e-6);
@@ -471,7 +480,9 @@ mod tests {
 
     #[test]
     fn expectation_x_on_plus_is_plus_one() {
-        let Some(mut b) = backend_or_skip() else { return; };
+        let Some(mut b) = backend_or_skip() else {
+            return;
+        };
         let mut s = b.allocate(1).unwrap();
         b.apply_gate(&mut s, &gate(Gate::H, &[0])).unwrap();
         let x = PauliString::new(1.0, vec![(0, Pauli::X)]).unwrap();
