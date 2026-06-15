@@ -64,6 +64,8 @@ impl MetalSvBackend {
         let encoder = cmd.new_compute_command_encoder();
         encoder.set_compute_pipeline_state(&self.pipeline_1q);
         encoder.set_buffer(0, Some(state.amps.metal_buffer()), 0);
+        // Metal copies the uniform block synchronously before set_bytes returns,
+        // so the stack-local `g` need not outlive this call.
         encoder.set_bytes(
             1,
             std::mem::size_of::<Gate1q>() as u64,
@@ -90,6 +92,10 @@ fn narrow(z: Complex<f64>) -> Complex<f32> {
 /// Max deviation of `M†M` from the identity for a 2×2 — local reimplementation
 /// of `aleph-sv`'s `validation::unitarity_deviation` (which is `pub(crate)`),
 /// restricted to the 2×2 case this backend handles.
+///
+/// NaN discipline (ADR 0006): if any entry is NaN, returns NaN — it does NOT
+/// rely on `if dev > max_dev` to propagate it, because NaN comparisons always
+/// return false and `max_dev` would silently stay 0.
 fn unitarity_deviation_2x2(m: &[[Complex<f64>; 2]; 2]) -> f64 {
     // (M†M)[r][c] = Σ_k conj(M[k][r]) * M[k][c]; compare to δ_rc.
     let mut max_dev = 0.0_f64;
@@ -106,6 +112,13 @@ fn unitarity_deviation_2x2(m: &[[Complex<f64>; 2]; 2]) -> f64 {
                 Complex::<f64>::new(0.0, 0.0)
             };
             let dev = (acc - target).norm();
+            // NaN discipline (ADR 0006): NaN comparisons are always false,
+            // so `if dev > max_dev` would let a NaN-bearing matrix keep
+            // max_dev at 0.0 and silently pass the unitarity guard. Reject
+            // explicitly. Mirrors aleph_sv::validation::unitarity_deviation.
+            if dev.is_nan() {
+                return f64::NAN;
+            }
             if dev > max_dev {
                 max_dev = dev;
             }
@@ -366,6 +379,62 @@ mod tests {
                 qubit: 3,
                 num_qubits: 1
             }
+        );
+    }
+
+    /// (a) Direct unit test of the pure helper — no Metal device required.
+    ///
+    /// Without Fix 1 (`dev.is_nan()` early-return), this test would fail:
+    /// `NaN > max_dev` is always false, so `max_dev` would remain `0.0` and
+    /// `is_nan()` would return false. The test therefore directly proves the bug
+    /// was present and the fix closes it.
+    #[test]
+    fn unitarity_deviation_nan_entry_returns_nan() {
+        // A NaN entry must propagate to NaN, not be swallowed by `dev > max_dev`
+        // (ADR 0006). Without the is_nan guard this returns 0.0 and the matrix
+        // would wrongly pass the unitarity check.
+        let m = [
+            [
+                Complex::<f64>::new(f64::NAN, 0.0),
+                Complex::<f64>::new(0.0, 0.0),
+            ],
+            [
+                Complex::<f64>::new(0.0, 0.0),
+                Complex::<f64>::new(1.0, 0.0),
+            ],
+        ];
+        assert!(super::unitarity_deviation_2x2(&m).is_nan());
+    }
+
+    /// (b) Integration test: `apply_gate` must reject a `Gate::Unitary1q` whose
+    /// matrix contains a NaN entry as `BackendError::NonUnitaryMatrix`.
+    ///
+    /// `Gate::Unitary1q` stores the raw matrix without a finiteness check, and
+    /// `Gate::matrix()` copies it out verbatim, so the NaN flows all the way to
+    /// `unitarity_deviation_2x2` in `apply_gate`. The explicit `!deviation.is_finite()`
+    /// guard in `apply_gate` (which fires when `unitarity_deviation_2x2` returns NaN)
+    /// should catch it and return `Err(BackendError::NonUnitaryMatrix { .. })`.
+    #[test]
+    fn nan_matrix_is_rejected_as_non_unitary() {
+        let Some(mut b) = backend_or_skip() else {
+            return;
+        };
+        let mut s = b.allocate(1).unwrap();
+        let nan_matrix = Box::new([
+            [
+                Complex::<f64>::new(f64::NAN, 0.0),
+                Complex::<f64>::new(0.0, 0.0),
+            ],
+            [
+                Complex::<f64>::new(0.0, 0.0),
+                Complex::<f64>::new(1.0, 0.0),
+            ],
+        ]);
+        let g = gate(Gate::Unitary1q(nan_matrix), &[0]);
+        let err = b.apply_gate(&mut s, &g).unwrap_err();
+        assert!(
+            matches!(err, BackendError::NonUnitaryMatrix { .. }),
+            "got {err:?}"
         );
     }
 }
