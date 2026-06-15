@@ -3,7 +3,7 @@ using namespace metal;
 
 // Uniform for a generic dense k-qubit gate. Field order/offsets MUST match the
 // Rust `GateKqMeta` struct (see sv/kernel.rs). All-uint => 48 bytes, no padding.
-//   k         : number of target qubits (2..5; 1 also valid but 1q uses apply_1q)
+//   k         : number of target qubits (2..=5; 1 also valid but 1q uses apply_1q)
 //   sorted[j] : target bit positions ASCENDING, for zero-bit insertion
 //   tbit[j]   : 1u<<q[j] in LOGICAL/MSB order (q[0] is the matrix-index MSB)
 //   ctrl_mask : external-control mask (0 when none)
@@ -26,6 +26,12 @@ kernel void apply_kq(device float2*       amps [[buffer(0)]],
                      constant GateKqMeta&  g    [[buffer(2)]],
                      uint tid                   [[thread_position_in_grid]]) {
     uint k = g.k;
+    // Self-enforce the host contract (k <= 5) so the fixed 32-entry thread-local
+    // arrays below can never overflow: MSL does not bounds-check stack arrays, so
+    // a stray k >= 6 (dim >= 64) would be silent UB. Never taken in correct use.
+    if (k > 5u) {
+        return;
+    }
     uint dim = 1u << k;
 
     // Reconstruct the base index (all target bits clear) by inserting k zero
