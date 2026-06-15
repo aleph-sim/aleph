@@ -255,6 +255,7 @@ impl Backend for MetalSvBackend {
         // dispatch it directly (mirrors the CPU FP32 backend). 2 <= k <= 5, and
         // 4^k = data.len(); k=5 fills the full 1024-entry scratch. Entries beyond
         // 4^k stay stale-but-unread (the kernel only reads mat[0..4^k]).
+        // `k` ignored here — kq_meta re-derives it from gate.qubits.len().
         if let aleph_core::Gate::UnitaryKq { k: _, data } = &gate.gate {
             let meta = Self::kq_meta(&gate.qubits, &gate.controls);
             let scratch = self.mat_scratch.as_mut_slice();
@@ -682,7 +683,9 @@ mod tests {
     }
 
     /// A 2-control MCX (X with two controls) via the shipped 1q ctrl_mask path:
-    /// |110> with X on q2 controlled by q0,q1 -> |111>. Confirms MC still works.
+    /// |110> with X on q2 controlled by q0,q1 -> |111>. This exercises the 1q
+    /// path (NOT the UnitaryKq path added here) — a regression guard that the new
+    /// dispatch code left multi-controlled 1q gates working.
     #[test]
     fn mcx_two_controls_via_1q_path() {
         let Some(mut b) = backend_or_skip() else {
