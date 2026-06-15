@@ -46,7 +46,7 @@ num-complex   = { workspace = true, optional = true, features = ["bytemuck"] }
 # even transitively, regardless of feature selection.
 [target.'cfg(target_os = "macos")'.dependencies]
 metal    = { version = "0.33", optional = true }
-bytemuck = { workspace = true, optional = true }
+bytemuck = { workspace = true, optional = true, features = ["derive"] }
 
 [dev-dependencies]
 # `NaiveSvBackend` is the f64 reference for the FP32 oracle test.

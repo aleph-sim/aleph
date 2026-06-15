@@ -11,6 +11,8 @@
 mod buffer;
 #[cfg(all(target_os = "macos", feature = "metal"))]
 mod context;
+#[cfg(all(target_os = "macos", feature = "metal"))]
+mod sv;
 
 #[cfg(all(target_os = "macos", feature = "metal"))]
 pub use buffer::DeviceBuffer;
