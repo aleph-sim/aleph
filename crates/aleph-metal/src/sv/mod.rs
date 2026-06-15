@@ -4,6 +4,7 @@
 mod amps;
 mod backend;
 mod kernel;
+mod readout;
 mod state;
 
 pub use amps::AmpsF32;

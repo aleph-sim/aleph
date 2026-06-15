@@ -22,7 +22,6 @@ pub struct MetalSvBackend {
     // Used by the apply_gate dispatch (Task 5).
     pipeline_1q: ComputePipelineState,
     // Used by the host-side readout / measure / sample in Task 6.
-    #[allow(dead_code)]
     rng: StdRng,
 }
 
@@ -234,43 +233,35 @@ impl Backend for MetalSvBackend {
         Ok(())
     }
 
-    fn measure(&mut self, _state: &mut Self::State, _qubit: u32) -> Result<bool, BackendError> {
-        // Filled in Task 6.
-        Err(BackendError::UnsupportedInstruction { kind: "measure" })
+    fn measure(&mut self, state: &mut Self::State, qubit: u32) -> Result<bool, BackendError> {
+        super::readout::measure(&mut self.rng, state, qubit)
     }
 
-    fn sample(&mut self, _state: &Self::State, _shots: u32) -> Result<Vec<u64>, BackendError> {
-        // Filled in Task 6.
-        Err(BackendError::UnsupportedInstruction { kind: "sample" })
+    fn sample(&mut self, state: &Self::State, shots: u32) -> Result<Vec<u64>, BackendError> {
+        super::readout::sample(&mut self.rng, state, shots)
     }
 
     fn expectation_value(
         &mut self,
-        _state: &Self::State,
-        _pauli: &PauliString,
+        state: &Self::State,
+        pauli: &PauliString,
     ) -> Result<f64, BackendError> {
-        // Filled in Task 6.
-        Err(BackendError::UnsupportedInstruction {
-            kind: "expectation_value",
-        })
+        super::readout::expectation_value(state, pauli)
     }
 
     fn probabilities(
         &mut self,
-        _state: &Self::State,
-        _qubits: &[u32],
+        state: &Self::State,
+        qubits: &[u32],
     ) -> Result<Vec<f64>, BackendError> {
-        // Filled in Task 6.
-        Err(BackendError::UnsupportedInstruction {
-            kind: "probabilities",
-        })
+        super::readout::probabilities(state, qubits)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aleph_core::Gate;
+    use aleph_core::{Gate, Pauli};
 
     /// Construct a backend or skip (headless CI has no device).
     fn backend_or_skip() -> Option<MetalSvBackend> {
@@ -436,5 +427,54 @@ mod tests {
             matches!(err, BackendError::NonUnitaryMatrix { .. }),
             "got {err:?}"
         );
+    }
+
+    #[test]
+    fn probabilities_plus_state_uniform() {
+        let Some(mut b) = backend_or_skip() else { return; };
+        let mut s = b.allocate(1).unwrap();
+        b.apply_gate(&mut s, &gate(Gate::H, &[0])).unwrap();
+        let p = b.probabilities(&s, &[0]).unwrap();
+        assert!((p[0] - 0.5).abs() < 1e-5 && (p[1] - 0.5).abs() < 1e-5);
+    }
+
+    #[test]
+    fn sample_collapsed_state_is_deterministic() {
+        let Some(mut b) = backend_or_skip() else { return; };
+        let mut s = b.allocate(1).unwrap();
+        b.apply_gate(&mut s, &gate(Gate::X, &[0])).unwrap();
+        let shots = b.sample(&s, 256).unwrap();
+        assert!(shots.iter().all(|&v| v == 1));
+    }
+
+    #[test]
+    fn measure_plus_state_collapses_to_basis() {
+        let Some(mut b) = backend_or_skip() else { return; };
+        let mut s = b.allocate(1).unwrap();
+        b.apply_gate(&mut s, &gate(Gate::H, &[0])).unwrap();
+        let outcome = b.measure(&mut s, 0).unwrap();
+        let a = s.amplitudes_f32();
+        if outcome {
+            assert!((a[1].norm() - 1.0).abs() < 1e-5 && a[0].norm() < 1e-5);
+        } else {
+            assert!((a[0].norm() - 1.0).abs() < 1e-5 && a[1].norm() < 1e-5);
+        }
+    }
+
+    #[test]
+    fn expectation_z_on_zero_is_plus_one() {
+        let Some(mut b) = backend_or_skip() else { return; };
+        let s = b.allocate(1).unwrap();
+        let z = PauliString::new(1.0, vec![(0, Pauli::Z)]).unwrap();
+        assert!((b.expectation_value(&s, &z).unwrap() - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn expectation_x_on_plus_is_plus_one() {
+        let Some(mut b) = backend_or_skip() else { return; };
+        let mut s = b.allocate(1).unwrap();
+        b.apply_gate(&mut s, &gate(Gate::H, &[0])).unwrap();
+        let x = PauliString::new(1.0, vec![(0, Pauli::X)]).unwrap();
+        assert!((b.expectation_value(&s, &x).unwrap() - 1.0).abs() < 1e-5);
     }
 }
