@@ -345,6 +345,20 @@ impl Backend for MetalSvBackend {
         Ok(())
     }
 
+    fn unpermute_state(
+        &mut self,
+        state: &mut Self::State,
+        perm: &[u32],
+    ) -> Result<(), BackendError> {
+        // Host-side single gather: physical-order amplitudes -> logical order.
+        // The state is unified memory and every prior dispatch waited, so the
+        // slice is current. `bit_permute_buf` is the shared SV/MPS helper, so the
+        // gather matches what the run_optimized driver expects after RelabelQubits.
+        let gathered = aleph_core::bit_permute_buf(state.amps.as_slice(), perm);
+        state.amps = DeviceBuffer::from_slice(&self.ctx, &gathered);
+        Ok(())
+    }
+
     fn apply_diagonal_phase(
         &mut self,
         state: &mut Self::State,
@@ -810,6 +824,23 @@ mod tests {
         b.apply_gate(&mut s, &mcx).unwrap();
         let a = s.amplitudes_f32();
         assert!((a[7].re - 1.0).abs() < 1e-6, "amps = {a:?}");
+    }
+
+    /// unpermute_state applies a single bit-permutation gather. perm[logical] =
+    /// physical, so perm=[1,0] maps logical qubit 0 -> physical qubit 1. A
+    /// physical state with qubit 1 set (X on qubit 1 -> physical index 2) gathers
+    /// to the logical state with qubit 0 set -> logical index 1.
+    #[test]
+    fn unpermute_swaps_bit_order() {
+        let Some(mut b) = backend_or_skip() else {
+            return;
+        };
+        let mut s = b.allocate(2).unwrap();
+        b.apply_gate(&mut s, &gate(Gate::X, &[1])).unwrap(); // physical index 2
+        b.unpermute_state(&mut s, &[1, 0]).unwrap();
+        let a = s.amplitudes_f32();
+        assert!((a[1].re - 1.0).abs() < 1e-6, "amps = {a:?}"); // logical index 1
+        assert!(a[0].norm() < 1e-6 && a[2].norm() < 1e-6 && a[3].norm() < 1e-6);
     }
 
     /// A dense UnitaryKq (k=2) equal to SWAP. State after X(0) is index 1
