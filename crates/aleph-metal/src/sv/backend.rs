@@ -840,7 +840,10 @@ mod tests {
         b.unpermute_state(&mut s, &[1, 0]).unwrap();
         let a = s.amplitudes_f32();
         assert!((a[1].re - 1.0).abs() < 1e-6, "amps = {a:?}"); // logical index 1
-        assert!(a[0].norm() < 1e-6 && a[2].norm() < 1e-6 && a[3].norm() < 1e-6);
+        assert!(
+            a[0].norm() < 1e-6 && a[2].norm() < 1e-6 && a[3].norm() < 1e-6,
+            "amps = {a:?}"
+        );
     }
 
     /// A dense UnitaryKq (k=2) equal to SWAP. State after X(0) is index 1
