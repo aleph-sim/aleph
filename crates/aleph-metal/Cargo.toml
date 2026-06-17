@@ -52,3 +52,8 @@ bytemuck = { workspace = true, optional = true, features = ["derive"] }
 # `NaiveSvBackend` is the f64 reference for the FP32 oracle test.
 aleph-sv = { path = "../aleph-sv" }
 proptest = { workspace = true }
+# Tier-1 circuit builders (ghz/qft/random brickwall) reused by the
+# fused-vs-unfused tests and the sv_fused bench, plus the OpenQASM parser for
+# the Grover fixture (no in-Rust Grover builder exists).
+aleph-benches = { path = "../../benches" }
+aleph-parser  = { path = "../aleph-parser" }

@@ -919,4 +919,73 @@ mod tests {
         assert!((a[2].re - 1.0).abs() < 1e-6, "amps = {a:?}"); // index 2
         assert!(a[0].norm() < 1e-6 && a[1].norm() < 1e-6 && a[3].norm() < 1e-6);
     }
+
+    /// Assert two FP32 amplitude buffers agree elementwise within `tol`.
+    fn assert_amps_close(fused: &[Complex<f32>], unfused: &[Complex<f32>], tol: f32) {
+        assert_eq!(fused.len(), unfused.len(), "length mismatch");
+        for (i, (f, u)) in fused.iter().zip(unfused.iter()).enumerate() {
+            assert!(
+                (*f - *u).norm() < tol,
+                "amp[{i}] fused={f:?} unfused={u:?} (tol {tol})"
+            );
+        }
+    }
+
+    /// AC #1: the fused path (run_optimized -> apply_kq dense blocks) must match
+    /// the unfused path (run, gate-by-gate) within 1e-5 on the GPU. GHZ.
+    #[test]
+    fn fused_matches_unfused_ghz() {
+        let Some(mut b) = backend_or_skip() else {
+            return;
+        };
+        let c = aleph_benches::ghz_circuit(8);
+        let unfused = b.run(&c).unwrap().amplitudes_f32().to_vec();
+        let fused = b.run_optimized(&c).unwrap().amplitudes_f32().to_vec();
+        assert_amps_close(&fused, &unfused, 1e-5);
+    }
+
+    /// AC #1: QFT — the canonical fusion beneficiary (H + cphase ladder).
+    #[test]
+    fn fused_matches_unfused_qft() {
+        let Some(mut b) = backend_or_skip() else {
+            return;
+        };
+        let c = aleph_benches::qft_circuit(8);
+        let unfused = b.run(&c).unwrap().amplitudes_f32().to_vec();
+        let fused = b.run_optimized(&c).unwrap().amplitudes_f32().to_vec();
+        assert_amps_close(&fused, &unfused, 1e-5);
+    }
+
+    /// AC #1: random brickwall — dense 2q gates fuse into UnitaryKq blocks.
+    /// The builder is deterministic (angles from cos, no RNG), so both runs see
+    /// the same circuit.
+    #[test]
+    fn fused_matches_unfused_random() {
+        let Some(mut b) = backend_or_skip() else {
+            return;
+        };
+        let c = aleph_benches::random_brickwall_circuit(8, 8);
+        let unfused = b.run(&c).unwrap().amplitudes_f32().to_vec();
+        let fused = b.run_optimized(&c).unwrap().amplitudes_f32().to_vec();
+        assert_amps_close(&fused, &unfused, 1e-5);
+    }
+
+    /// AC #1: Grover — parsed from the measurement-free n=4 baseline fixture
+    /// (grover_n4_iters3.qasm has zero `measure` ops, so amplitude comparison is
+    /// well-defined). Path anchored to CARGO_MANIFEST_DIR so it is independent of
+    /// the test's working directory.
+    #[test]
+    fn fused_matches_unfused_grover() {
+        let Some(mut b) = backend_or_skip() else {
+            return;
+        };
+        let src = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../scripts/qiskit-baseline/circuits/grover_n4_iters3.qasm"
+        ));
+        let c = aleph_parser::parse(src).expect("parse grover_n4");
+        let unfused = b.run(&c).unwrap().amplitudes_f32().to_vec();
+        let fused = b.run_optimized(&c).unwrap().amplitudes_f32().to_vec();
+        assert_amps_close(&fused, &unfused, 1e-5);
+    }
 }
