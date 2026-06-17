@@ -51,3 +51,4 @@ bytemuck = { workspace = true, optional = true, features = ["derive"] }
 [dev-dependencies]
 # `NaiveSvBackend` is the f64 reference for the FP32 oracle test.
 aleph-sv = { path = "../aleph-sv" }
+proptest = { workspace = true }
