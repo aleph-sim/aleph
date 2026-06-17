@@ -27,9 +27,10 @@ const GROVER_N15: &str = concat!(
 );
 
 /// Benchmark `unfused` (run) vs `fused` (run_optimized) for one built circuit.
-/// The backend is rebuilt per iteration so the one-time pipeline compile and
-/// the zero-state allocation stay out of the steady-state timing, matching the
-/// CPU benches' `with_seed` setup idiom.
+/// The backend is built inside `iter_with_setup`'s setup closure, so the Metal
+/// pipeline compile and the zero-state allocation run untimed before each
+/// timed sample (excluded from the measured `run`/`run_optimized` call),
+/// matching the CPU benches' `with_seed` setup idiom.
 fn bench_pair(
     group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
     id: u32,
