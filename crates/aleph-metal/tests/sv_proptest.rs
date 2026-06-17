@@ -71,6 +71,8 @@ fn random_mixed_circuit(rng: &mut StdRng, n: u32, gates: usize) -> Circuit {
                 )))
                 .unwrap();
             }
+            // Reached for rng value 8 and as the fallback when arm 7's `n >= 3`
+            // Toffoli guard fails (n == 2): substitute a 1q H.
             _ => {
                 c.add_instruction(Instruction::Gate(GateInstance::new(
                     Gate::H,
