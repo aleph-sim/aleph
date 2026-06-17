@@ -4,7 +4,7 @@
 
 #![cfg(all(target_os = "macos", feature = "metal"))]
 
-use aleph_backend::run;
+use aleph_backend::{run, run_optimized};
 use aleph_core::{Gate, GateInstance, Param};
 use aleph_ir::{Circuit, Instruction};
 use aleph_metal::MetalSvBackend;
@@ -232,7 +232,7 @@ fn run_optimized_oracle(name: &str, circuit: &Circuit) {
     // state, so the two must agree within f32 tol. This compares against the true
     // f64 statevector (the AC reference) and proves the GPU optimized path is
     // correctness-preserving in one shot.
-    let gpu_state = aleph_backend::run_optimized(&mut gpu, circuit).expect("gpu run_optimized");
+    let gpu_state = run_optimized(&mut gpu, circuit).expect("gpu run_optimized");
     let cpu_state = run(&mut cpu, circuit).expect("cpu run");
     assert_close(
         name,
