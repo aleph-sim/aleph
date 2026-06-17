@@ -8,7 +8,10 @@ use metal::{ComputePipelineState, MTLSize};
 use rand::{rngs::StdRng, SeedableRng};
 use std::ffi::c_void;
 
-use super::kernel::{Gate1q, GateKqMeta, SV_1Q_ENTRY, SV_1Q_SRC, SV_KQ_ENTRY, SV_KQ_SRC};
+use super::kernel::{
+    DiagMeta, DiagTermDesc, Gate1q, GateKqMeta, SV_1Q_ENTRY, SV_1Q_SRC, SV_DIAG_ENTRY, SV_DIAG_SRC,
+    SV_KQ_ENTRY, SV_KQ_SRC,
+};
 use super::state::MetalSvState;
 use crate::{DeviceBuffer, Error, MetalContext};
 
@@ -22,6 +25,7 @@ pub struct MetalSvBackend {
     // Used by the apply_gate dispatch (Task 5).
     pipeline_1q: ComputePipelineState,
     pipeline_kq: ComputePipelineState,
+    pipeline_diag: ComputePipelineState,
     // Reused row-major f32 matrix scratch, sized to the k=5 max (32x32 = 1024).
     mat_scratch: DeviceBuffer<Complex<f32>>,
     // Used by the host-side readout / measure / sample in Task 6.
@@ -53,12 +57,16 @@ impl MetalSvBackend {
         let pipeline_kq = ctx
             .make_compute_pipeline(SV_KQ_SRC, SV_KQ_ENTRY)
             .map_err(map_metal_err)?;
+        let pipeline_diag = ctx
+            .make_compute_pipeline(SV_DIAG_SRC, SV_DIAG_ENTRY)
+            .map_err(map_metal_err)?;
         let mat_scratch =
             DeviceBuffer::from_slice(&ctx, &vec![Complex::<f32>::new(0.0, 0.0); 1024]);
         Ok(Self {
             ctx,
             pipeline_1q,
             pipeline_kq,
+            pipeline_diag,
             mat_scratch,
             rng,
         })
@@ -334,6 +342,65 @@ impl Backend for MetalSvBackend {
                 self.dispatch_kq(state, &meta);
             }
         }
+        Ok(())
+    }
+
+    fn apply_diagonal_phase(
+        &mut self,
+        state: &mut Self::State,
+        dp: &aleph_ir::DiagonalPhase,
+    ) -> Result<(), BackendError> {
+        // Empty operator: nothing to do.
+        if dp.terms.is_empty() {
+            return Ok(());
+        }
+        // Masks must fit u32; the 28-qubit cap guarantees it, but assert the
+        // invariant the kernel relies on rather than silently truncating.
+        debug_assert!(
+            dp.n_qubits <= MAX_METAL_QUBITS,
+            "DiagonalPhase n_qubits {} exceeds Metal cap {}",
+            dp.n_qubits,
+            MAX_METAL_QUBITS
+        );
+        let mut cond_masks: Vec<u32> = Vec::new();
+        let mut descs: Vec<DiagTermDesc> = Vec::with_capacity(dp.terms.len());
+        for term in &dp.terms {
+            let cond_offset = cond_masks.len() as u32;
+            for &m in &term.conds {
+                cond_masks.push(m as u32);
+            }
+            descs.push(DiagTermDesc {
+                cond_offset,
+                n_conds: term.conds.len() as u32,
+                angle: term.angle as f32,
+                _pad: 0,
+            });
+        }
+        let cm_buf = DeviceBuffer::from_slice(&self.ctx, &cond_masks);
+        let desc_buf = DeviceBuffer::from_slice(&self.ctx, &descs);
+        let meta = DiagMeta {
+            n_terms: descs.len() as u32,
+        };
+        let n_amps = 1u64 << state.num_qubits;
+        let cmd = self.ctx.queue().new_command_buffer();
+        let encoder = cmd.new_compute_command_encoder();
+        encoder.set_compute_pipeline_state(&self.pipeline_diag);
+        encoder.set_buffer(0, Some(state.amps.metal_buffer()), 0);
+        encoder.set_buffer(1, Some(cm_buf.metal_buffer()), 0);
+        encoder.set_buffer(2, Some(desc_buf.metal_buffer()), 0);
+        encoder.set_bytes(
+            3,
+            std::mem::size_of::<DiagMeta>() as u64,
+            &meta as *const DiagMeta as *const c_void,
+        );
+        let tg = self
+            .pipeline_diag
+            .max_total_threads_per_threadgroup()
+            .min(n_amps);
+        encoder.dispatch_threads(MTLSize::new(n_amps, 1, 1), MTLSize::new(tg, 1, 1));
+        encoder.end_encoding();
+        cmd.commit();
+        cmd.wait_until_completed();
         Ok(())
     }
 
@@ -662,6 +729,49 @@ mod tests {
             .unwrap();
         let a = s.amplitudes_f32();
         assert!((a[7].re - 1.0).abs() < 1e-6, "amps = {a:?}"); // |111> = 7
+    }
+
+    /// apply_diagonal_phase on a known DiagonalPhase must rotate each amplitude
+    /// by exp(i * phase_at(x)). Build a uniform |++> and compare to the f64
+    /// reference computed via DiagonalPhase::phase_at.
+    #[test]
+    fn diagonal_phase_matches_phase_at() {
+        use aleph_ir::diagonal_phase::{DiagonalPhase, PhaseTerm};
+        let Some(mut b) = backend_or_skip() else {
+            return;
+        };
+        let mut s = b.allocate(2).unwrap();
+        b.apply_gate(&mut s, &gate(Gate::H, &[0])).unwrap();
+        b.apply_gate(&mut s, &gate(Gate::H, &[1])).unwrap(); // |++>, all amps 0.5
+
+        // Term 1: fires when bit0 parity odd -> angle 0.7.
+        // Term 2: fires when bits {0,1} BOTH parity-odd -> angle -0.4.
+        let dp = DiagonalPhase {
+            n_qubits: 2,
+            terms: vec![
+                PhaseTerm {
+                    conds: vec![0b01u64].into(),
+                    angle: 0.7,
+                },
+                PhaseTerm {
+                    conds: vec![0b01u64, 0b10u64].into(),
+                    angle: -0.4,
+                },
+            ],
+        };
+        b.apply_diagonal_phase(&mut s, &dp).unwrap();
+
+        let a = s.amplitudes_f32();
+        for x in 0u64..4 {
+            let phi = dp.phase_at(x);
+            let expect = aleph_core::Complex::<f64>::new(0.5 * phi.cos(), 0.5 * phi.sin());
+            let got =
+                aleph_core::Complex::<f64>::new(a[x as usize].re as f64, a[x as usize].im as f64);
+            assert!(
+                (got - expect).norm() < 1e-5,
+                "x={x} got {got:?} expect {expect:?}"
+            );
+        }
     }
 
     /// CCZ on |111> applies -1.
