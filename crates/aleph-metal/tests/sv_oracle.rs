@@ -82,3 +82,127 @@ fn fp32_1q_oracle_matches_naive_sv() {
         }
     }
 }
+
+// ---- Tier-1 fixtures (mirror crates/aleph-sv/tests/fp32_equiv.rs) ----
+
+fn ghz(n: u32) -> Circuit {
+    let mut c = Circuit::new(n, 0);
+    c.h(0).unwrap();
+    for q in 1..n {
+        c.cnot(0, q).unwrap();
+    }
+    c
+}
+
+fn qft(n: u32) -> Circuit {
+    let mut c = Circuit::new(n, 0);
+    for j in 0..n {
+        c.h(j).unwrap();
+        for (offset, k) in ((j + 1)..n).enumerate() {
+            let theta = std::f64::consts::PI / (1u64 << (offset + 1)) as f64;
+            c.add_gate(GateInstance::controlled(
+                Gate::Phase(Param::Concrete(theta)),
+                vec![k],
+                vec![j],
+            ))
+            .unwrap();
+        }
+    }
+    c
+}
+
+/// Representative diagonal/3q phase-marking block (matches fp32_equiv::mcz).
+fn mcz(c: &mut Circuit, n: u32) {
+    match n {
+        1 => {
+            c.z(0).unwrap();
+        }
+        2 => {
+            c.cz(0, 1).unwrap();
+        }
+        _ => {
+            let t = n - 1;
+            c.h(t).unwrap();
+            c.ccx(0, 1, t).unwrap();
+            c.h(t).unwrap();
+            for q in 2..(n - 1) {
+                c.cz(q, t).unwrap();
+            }
+        }
+    }
+}
+
+fn grover_iter(n: u32) -> Circuit {
+    let mut c = Circuit::new(n, 0);
+    for q in 0..n {
+        c.h(q).unwrap();
+    }
+    mcz(&mut c, n);
+    for q in 0..n {
+        c.h(q).unwrap();
+    }
+    for q in 0..n {
+        c.x(q).unwrap();
+    }
+    mcz(&mut c, n);
+    for q in 0..n {
+        c.x(q).unwrap();
+    }
+    for q in 0..n {
+        c.h(q).unwrap();
+    }
+    c
+}
+
+fn random_brickwall(rng: &mut StdRng, n: u32, depth: u32) -> Circuit {
+    let mut c = Circuit::new(n, 0);
+    for _ in 0..depth {
+        for q in 0..n {
+            let theta = rng.gen_range(-std::f64::consts::PI..std::f64::consts::PI);
+            match rng.gen_range(0..3u32) {
+                0 => c.rx(theta, q).unwrap(),
+                1 => c.ry(theta, q).unwrap(),
+                _ => c.rz(theta, q).unwrap(),
+            };
+        }
+        let mut q = 0;
+        while q + 1 < n {
+            if rng.gen_bool(0.5) {
+                c.cnot(q, q + 1).unwrap();
+            } else {
+                c.cz(q, q + 1).unwrap();
+            }
+            q += 2;
+        }
+    }
+    c
+}
+
+fn run_oracle(name: &str, circuit: &Circuit) {
+    let mut gpu = match MetalSvBackend::with_seed(0) {
+        Ok(b) => b,
+        Err(_) => {
+            eprintln!("skipping {name}: no Metal device");
+            return;
+        }
+    };
+    let mut cpu = NaiveSvBackend::with_seed(0);
+    let gpu_state = run(&mut gpu, circuit).expect("gpu run");
+    let cpu_state = run(&mut cpu, circuit).expect("cpu run");
+    assert_close(
+        name,
+        &HasAmplitudes::amplitudes(&gpu_state),
+        &HasAmplitudes::amplitudes(&cpu_state),
+    );
+}
+
+#[test]
+fn tier1_raw_oracle_matches_naive_sv() {
+    let mut rng = StdRng::seed_from_u64(0x7173);
+    for n in 2..=10u32 {
+        run_oracle(&format!("ghz n={n}"), &ghz(n));
+        run_oracle(&format!("qft n={n}"), &qft(n));
+        run_oracle(&format!("grover n={n}"), &grover_iter(n));
+        run_oracle(&format!("random n={n}"), &random_brickwall(&mut rng, n, 6));
+    }
+}
