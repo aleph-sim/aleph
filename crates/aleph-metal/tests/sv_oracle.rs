@@ -214,3 +214,43 @@ fn tier1_raw_oracle_matches_naive_sv() {
         run_oracle(&format!("random n={n}"), &random_brickwall(&mut rng, n, 6));
     }
 }
+
+fn run_optimized_oracle(name: &str, circuit: &Circuit) {
+    let mut gpu = match MetalSvBackend::with_seed(0) {
+        Ok(b) => b,
+        Err(_) => {
+            eprintln!("skipping {name}: no Metal device");
+            return;
+        }
+    };
+    let mut cpu = NaiveSvBackend::with_seed(0);
+    // GPU runs the OPTIMIZED path: the default pipeline emits RelabelQubits,
+    // fusion (-> Unitary1q/2q, UnitaryKq), FuseDiagonalRuns (-> DiagonalPhase),
+    // and TileBlock — exercising apply_kq (UnitaryKq), apply_diagonal_phase, and
+    // unpermute_state. The CPU reference runs the RAW circuit on the f64 backend:
+    // optimization is unitary-preserving and run_optimized returns logical-order
+    // state, so the two must agree within f32 tol. This compares against the true
+    // f64 statevector (the AC reference) and proves the GPU optimized path is
+    // correctness-preserving in one shot.
+    let gpu_state = aleph_backend::run_optimized(&mut gpu, circuit).expect("gpu run_optimized");
+    let cpu_state = run(&mut cpu, circuit).expect("cpu run");
+    assert_close(
+        name,
+        &HasAmplitudes::amplitudes(&gpu_state),
+        &HasAmplitudes::amplitudes(&cpu_state),
+    );
+}
+
+#[test]
+fn tier1_optimized_oracle_matches_naive_sv() {
+    let mut rng = StdRng::seed_from_u64(0x0571);
+    for n in 2..=10u32 {
+        run_optimized_oracle(&format!("ghz-opt n={n}"), &ghz(n));
+        run_optimized_oracle(&format!("qft-opt n={n}"), &qft(n));
+        run_optimized_oracle(&format!("grover-opt n={n}"), &grover_iter(n));
+        run_optimized_oracle(
+            &format!("random-opt n={n}"),
+            &random_brickwall(&mut rng, n, 6),
+        );
+    }
+}
