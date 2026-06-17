@@ -4,6 +4,7 @@
 
 use aleph_backend::{Backend, BackendError};
 use aleph_core::{Complex, GateError, GateInstance, GateMatrix, PauliString, AMPLITUDE_TOL};
+use aleph_ir::Circuit;
 use metal::{ComputePipelineState, MTLSize};
 use rand::{rngs::StdRng, SeedableRng};
 use std::ffi::c_void;
@@ -47,6 +48,23 @@ impl MetalSvBackend {
     /// reproducible across processes and machines for a given seed.
     pub fn with_seed(seed: u64) -> Result<Self, BackendError> {
         Self::build(StdRng::seed_from_u64(seed))
+    }
+
+    /// Execute `circuit` gate-by-gate (unfused) on the GPU, returning the
+    /// device-resident final state. Thin wrapper over [`aleph_backend::run`];
+    /// the verbatim reference path with no IR optimization.
+    pub fn run(&mut self, circuit: &Circuit) -> Result<MetalSvState, BackendError> {
+        aleph_backend::run(self, circuit)
+    }
+
+    /// Optimize `circuit` with the default IR pipeline (cancellation, DCE,
+    /// 1q/2q/kq fusion) and execute it on the GPU. The fused dense blocks ride
+    /// the `apply_kq` kernel, cutting the number of GPU dispatches; any qubit
+    /// permutation the pipeline introduces is settled via `unpermute_state`, so
+    /// the returned state is in logical qubit order and directly comparable to
+    /// [`run`](Self::run). Thin wrapper over [`aleph_backend::run_optimized`].
+    pub fn run_optimized(&mut self, circuit: &Circuit) -> Result<MetalSvState, BackendError> {
+        aleph_backend::run_optimized(self, circuit)
     }
 
     fn build(rng: StdRng) -> Result<Self, BackendError> {
@@ -824,6 +842,30 @@ mod tests {
         b.apply_gate(&mut s, &mcx).unwrap();
         let a = s.amplitudes_f32();
         assert!((a[7].re - 1.0).abs() < 1e-6, "amps = {a:?}");
+    }
+
+    /// `run` executes a circuit gate-by-gate and yields the expected state.
+    /// GHZ(3): H(0), CNOT(0,1), CNOT(1,2) -> (|000> + |111>)/sqrt(2),
+    /// i.e. amps[0] = amps[7] = 1/sqrt(2), all others ~0.
+    #[test]
+    fn run_executes_ghz_circuit() {
+        let Some(mut b) = backend_or_skip() else {
+            return;
+        };
+        let mut c = Circuit::new(3, 0);
+        c.h(0).unwrap();
+        c.cnot(0, 1).unwrap();
+        c.cnot(1, 2).unwrap();
+        let s = b.run(&c).unwrap();
+        let a = s.amplitudes_f32();
+        let inv_sqrt2 = 1.0f32 / 2.0f32.sqrt();
+        assert!((a[0].re - inv_sqrt2).abs() < 1e-6, "amps = {a:?}");
+        assert!((a[7].re - inv_sqrt2).abs() < 1e-6, "amps = {a:?}");
+        for (i, z) in a.iter().enumerate() {
+            if i != 0 && i != 7 {
+                assert!(z.norm() < 1e-6, "amps[{i}] = {z:?}");
+            }
+        }
     }
 
     /// unpermute_state applies a single bit-permutation gather. perm[logical] =
