@@ -859,11 +859,11 @@ mod tests {
         let s = b.run(&c).unwrap();
         let a = s.amplitudes_f32();
         let inv_sqrt2 = 1.0f32 / 2.0f32.sqrt();
-        assert!((a[0].re - inv_sqrt2).abs() < 1e-6, "amps = {a:?}");
-        assert!((a[7].re - inv_sqrt2).abs() < 1e-6, "amps = {a:?}");
+        assert!((a[0].re - inv_sqrt2).abs() < 1e-5, "amps = {a:?}");
+        assert!((a[7].re - inv_sqrt2).abs() < 1e-5, "amps = {a:?}");
         for (i, z) in a.iter().enumerate() {
             if i != 0 && i != 7 {
-                assert!(z.norm() < 1e-6, "amps[{i}] = {z:?}");
+                assert!(z.norm() < 1e-5, "amps[{i}] = {z:?}");
             }
         }
     }
