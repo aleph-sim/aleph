@@ -83,7 +83,8 @@ fn fp32_1q_oracle_matches_naive_sv() {
     }
 }
 
-// ---- Tier-1 fixtures (mirror crates/aleph-sv/tests/fp32_equiv.rs) ----
+// ---- Tier-1 fixtures (parallel to crates/aleph-sv/tests/fp32_equiv.rs; the
+// exact gate decompositions differ but the workload class is the same) ----
 
 fn ghz(n: u32) -> Circuit {
     let mut c = Circuit::new(n, 0);
@@ -99,6 +100,8 @@ fn qft(n: u32) -> Circuit {
     for j in 0..n {
         c.h(j).unwrap();
         for (offset, k) in ((j + 1)..n).enumerate() {
+            // theta = π / 2^(k−j): the QFT controlled-phase angle for column j,
+            // target k (offset = k − j − 1, so offset + 1 = k − j).
             let theta = std::f64::consts::PI / (1u64 << (offset + 1)) as f64;
             c.add_gate(GateInstance::controlled(
                 Gate::Phase(Param::Concrete(theta)),
@@ -112,6 +115,9 @@ fn qft(n: u32) -> Circuit {
 }
 
 /// Representative diagonal/3q phase-marking block (matches fp32_equiv::mcz).
+/// NOT a true multi-controlled Z — it's a representative diagonal+3q workload
+/// (CZ / CCX-sandwiched-Z), and equivalence is checked against the f64 backend,
+/// so the exact unitary need not be the textbook MCZ.
 fn mcz(c: &mut Circuit, n: u32) {
     match n {
         1 => {
@@ -178,6 +184,8 @@ fn random_brickwall(rng: &mut StdRng, n: u32, depth: u32) -> Circuit {
     c
 }
 
+// Fresh backend per circuit (3 shader compiles each) keeps cases independent;
+// Metal's pipeline-object cache amortizes the JIT cost across calls.
 fn run_oracle(name: &str, circuit: &Circuit) {
     let mut gpu = match MetalSvBackend::with_seed(0) {
         Ok(b) => b,
