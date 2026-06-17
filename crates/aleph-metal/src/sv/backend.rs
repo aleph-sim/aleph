@@ -372,10 +372,12 @@ impl Backend for MetalSvBackend {
             descs.push(DiagTermDesc {
                 cond_offset,
                 n_conds: term.conds.len() as u32,
-                angle: term.angle as f32,
+                angle: term.angle as f32, // f64→f32; within 1e-5 for Tier-1 angles
                 _pad: 0,
             });
         }
+        // cm_buf/desc_buf must stay alive until wait_until_completed() below —
+        // the GPU reads them after commit(). They are dropped at method exit.
         let cm_buf = DeviceBuffer::from_slice(&self.ctx, &cond_masks);
         let desc_buf = DeviceBuffer::from_slice(&self.ctx, &descs);
         let meta = DiagMeta {

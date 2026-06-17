@@ -80,6 +80,8 @@ pub(crate) struct DiagMeta {
     pub n_terms: u32,
 }
 
+const _: () = assert!(core::mem::size_of::<DiagMeta>() == 4);
+
 #[cfg(test)]
 mod tests {
     use super::*;
