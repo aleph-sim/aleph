@@ -32,6 +32,56 @@ pub(crate) struct Gate1q {
 // aligned copy — the host struct's own alignment never reaches the kernel.
 const _: () = assert!(core::mem::size_of::<Gate1q>() == 48);
 
+/// MSL source for the generic dense k-qubit kernel.
+pub(crate) const SV_KQ_SRC: &str = include_str!("../shaders/sv_kq.metal");
+
+/// Entry-point name inside `SV_KQ_SRC`.
+pub(crate) const SV_KQ_ENTRY: &str = "apply_kq";
+
+/// Per-gate uniform for [`SV_KQ_SRC`]. **Layout MUST match the MSL `GateKqMeta`
+/// struct** (all `uint`, 48 bytes, no padding). `sorted` = target bit positions
+/// ascending (zero-bit insertion); `tbit` = `1 << q[j]` in logical/MSB order
+/// (matrix-index bit assignment); slots `j >= k` are zero and never read.
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub(crate) struct GateKqMeta {
+    pub k: u32,
+    pub sorted: [u32; 5],
+    pub tbit: [u32; 5],
+    pub ctrl_mask: u32,
+}
+
+// 1 + 5 + 5 + 1 = 12 u32 = 48 bytes, all 4-byte-aligned (matches MSL).
+const _: () = assert!(core::mem::size_of::<GateKqMeta>() == 48);
+
+/// MSL source for the diagonal-phase kernel.
+pub(crate) const SV_DIAG_SRC: &str = include_str!("../shaders/sv_diag.metal");
+
+/// Entry-point name inside [`SV_DIAG_SRC`].
+pub(crate) const SV_DIAG_ENTRY: &str = "apply_diagonal_phase";
+
+/// Per-term descriptor for [`SV_DIAG_SRC`]. **Layout MUST match the MSL
+/// `DiagTermDesc` struct** (16 bytes, no padding).
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub(crate) struct DiagTermDesc {
+    pub cond_offset: u32,
+    pub n_conds: u32,
+    pub angle: f32,
+    pub _pad: u32,
+}
+
+const _: () = assert!(core::mem::size_of::<DiagTermDesc>() == 16);
+
+/// Scalar uniform for [`SV_DIAG_SRC`]: the term count.
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub(crate) struct DiagMeta {
+    pub n_terms: u32,
+}
+
+const _: () = assert!(core::mem::size_of::<DiagMeta>() == 4);
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -51,5 +101,34 @@ mod tests {
         };
         let pipeline = ctx.make_compute_pipeline(SV_1Q_SRC, SV_1Q_ENTRY);
         assert!(pipeline.is_ok(), "apply_1q must compile: {pipeline:?}");
+    }
+
+    #[test]
+    fn sv_kq_kernel_compiles_into_a_pipeline() {
+        let ctx = match MetalContext::new() {
+            Ok(c) => c,
+            Err(_) => {
+                eprintln!("skipping kernel compile test: no Metal device");
+                return;
+            }
+        };
+        let pipeline = ctx.make_compute_pipeline(SV_KQ_SRC, SV_KQ_ENTRY);
+        assert!(pipeline.is_ok(), "apply_kq must compile: {pipeline:?}");
+    }
+
+    #[test]
+    fn sv_diag_kernel_compiles_into_a_pipeline() {
+        let ctx = match MetalContext::new() {
+            Ok(c) => c,
+            Err(_) => {
+                eprintln!("skipping kernel compile test: no Metal device");
+                return;
+            }
+        };
+        let pipeline = ctx.make_compute_pipeline(SV_DIAG_SRC, SV_DIAG_ENTRY);
+        assert!(
+            pipeline.is_ok(),
+            "apply_diagonal_phase must compile: {pipeline:?}"
+        );
     }
 }
