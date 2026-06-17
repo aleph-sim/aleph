@@ -97,6 +97,7 @@ dependencies = [
  "aleph-parser",
  "aleph-sv",
  "bytemuck",
+ "criterion",
  "metal",
  "num-complex",
  "proptest",
