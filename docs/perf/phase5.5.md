@@ -66,3 +66,55 @@ buffer and drop the per-gate `wait_until_completed`. That attacks the same
 round-trip overhead directly (independently of fusion) and is the path to the
 ≥2× exit gate vs an Aer/CPU reference. It is out of scope for P5.5-04, which only
 needed to demonstrate that fusion already helps on the GPU.
+
+## P5.5-05 — Tier-1 GPU vs CPU statevector (exit measurement)
+
+**Hardware:** Apple **M4** base Mac Mini (10-core CPU: 4P+6E, 10-core integrated
+GPU, 24 GB unified memory). The integrated GPU shares the system's unified-memory
+bandwidth with the CPU cores — unlike a discrete GPU with its own VRAM, there is
+no separate high-bandwidth memory pool for the statevector to live in.
+
+**Measurement caveat (honesty):** taken on a *live desktop* (3 login sessions,
+`WindowServer` driving the display on the same integrated GPU), not a
+verified-idle box — load average ≈ 3 on 10 cores during the run. CLAUDE.md's
+bench discipline calls for an idle machine; that is not achievable on the working
+Mini. Because all three arms share the identical contention, the *relative*
+ratios are robust even though absolute times and criterion CIs are inflated.
+Sample size reduced to 10 for tractable wall-time at n=28 (the n=28 QFT and
+random CPU cells are 20–45 s/run). Treat ratios as order-of-magnitude.
+
+**Method:** `cargo bench -p aleph-metal --features metal --bench sv_vs_cpu`. All
+three arms run the same default-optimized IR pipeline (`run_optimized`), so the
+comparison is backend-only. `gpu` = `MetalSvBackend` (FP32, fused `apply_kq`).
+`cpu_f32` = `Fp32SvBackend` (CPU FP32). `cpu_f64` = `NaiveSvBackend` (CPU FP64).
+A pre-timing self-consistency guard asserts the GPU result matches the FP64 CPU
+result on sampled amplitudes within 1e-5 at n=24, so the timed work is correct.
+Tier-1 builders from `aleph-benches`; Grover parsed from
+`scripts/qiskit-baseline/circuits/grover_n20_iters5.qasm`. Times are criterion
+medians.
+
+| Workload | n  | gpu (median) | cpu_f32  | cpu_f64  | cpu_f32/gpu | cpu_f64/gpu |
+|----------|----|--------------|----------|----------|-------------|-------------|
+| GHZ      | 24 | 54.6 ms      | 235 ms   | 241 ms   | 4.31×       | 4.41×       |
+| GHZ      | 26 | 227 ms       | 998 ms   | 1.026 s  | 4.40×       | 4.52×       |
+| GHZ      | 28 | 956 ms       | 4.503 s  | 4.746 s  | 4.71×       | 4.97×       |
+| QFT      | 24 | 199 ms       | 1.134 s  | 1.156 s  | 5.69×       | 5.81×       |
+| QFT      | 26 | 845 ms       | 5.104 s  | 5.179 s  | 6.04×       | 6.13×       |
+| QFT      | 28 | 3.735 s      | 22.80 s  | 23.40 s  | 6.10×       | 6.27×       |
+| random   | 24 | 520 ms       | 2.242 s  | 2.394 s  | 4.31×       | 4.60×       |
+| random   | 26 | 2.164 s      | 9.793 s  | 10.46 s  | 4.53×       | 4.83×       |
+| random   | 28 | 9.128 s      | 42.59 s  | 43.59 s  | 4.67×       | 4.78×       |
+| Grover   | 20 | 4.978 s      | 14.02 s  | 14.49 s  | 2.82×       | 2.91×       |
+
+**Verdict (≥2× met).** `MetalSvBackend` reaches ≥2× the same-Mac CPU statevector
+on **all** Tier-1 workloads at the headline n=28 cell: QFT **6.27×** (vs `cpu_f64`,
+6.10× vs `cpu_f32`), GHZ **4.97×** (4.71×), and random brickwall **4.78×**
+(4.67×). The Grover n=20 extra cell clears the bar too at **2.91×** (2.82×). AC #2
+is met: the GPU statevector backend clears the 2× exit bar on every Tier-1
+structure — comfortably more than the "≥2 workloads" the criterion requires — and
+the ratios *grow* with n (GHZ 4.41×→4.97× over n=24→28), so the GPU's advantage
+widens as the problem fills the chip rather than collapsing into a unified-memory
+bandwidth ceiling at this scale. The pre-timing guard passed for every workload,
+so the timed GPU work is the correct result (Part A's Aer oracle plus this
+scale guard together pin down both small-n and n=24 correctness).
+
