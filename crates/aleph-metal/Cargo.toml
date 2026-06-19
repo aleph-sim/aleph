@@ -22,6 +22,7 @@ metal = [
     "dep:aleph-oracle",
     "dep:rand",
     "dep:num-complex",
+    "dep:faer",
 ]
 
 [dependencies]
@@ -41,6 +42,11 @@ rand          = { workspace = true, optional = true }
 # `bytemuck` feature makes `Complex<f32>: Pod`, so `DeviceBuffer<Complex<f32>>`
 # works directly and the kernel sees a `device float2*`.
 num-complex   = { workspace = true, optional = true, features = ["bytemuck"] }
+# Host-side truncated SVD for the MPS-on-Metal backend (P5.5-06). The GPU has no
+# SVD, so each NN 2q gate factorizes the 2-site block on the CPU via faer (the
+# same library the CPU MPS uses); `aleph_core::Complex == faer::c64`, so no
+# element-type conversion is needed. Optional → only compiled under `metal`.
+faer = { version = "0.24.0", default-features = false, features = ["linalg", "std"], optional = true }
 
 # `metal` is macOS-only: target-cfg the dep so it is never resolved on Linux,
 # even transitively, regardless of feature selection.
@@ -51,6 +57,9 @@ bytemuck = { workspace = true, optional = true, features = ["derive"] }
 [dev-dependencies]
 # `NaiveSvBackend` is the f64 reference for the FP32 oracle test.
 aleph-sv = { path = "../aleph-sv" }
+# `MpsBackend` is the CPU MPS reference the MetalMpsBackend oracle compares to
+# (P5.5-06 AC: dense statevector matches CPU MPS within 1e-5).
+aleph-mps = { path = "../aleph-mps" }
 proptest = { workspace = true }
 # Tier-1 circuit builders (ghz/qft/random brickwall) reused by the
 # fused-vs-unfused tests and the sv_fused bench, plus the OpenQASM parser for
