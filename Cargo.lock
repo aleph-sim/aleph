@@ -90,11 +90,14 @@ name = "aleph-metal"
 version = "0.2.0"
 dependencies = [
  "aleph-backend",
+ "aleph-benches",
  "aleph-core",
  "aleph-ir",
  "aleph-oracle",
+ "aleph-parser",
  "aleph-sv",
  "bytemuck",
+ "criterion",
  "metal",
  "num-complex",
  "proptest",

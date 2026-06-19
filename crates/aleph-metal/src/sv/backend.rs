@@ -4,6 +4,7 @@
 
 use aleph_backend::{Backend, BackendError};
 use aleph_core::{Complex, GateError, GateInstance, GateMatrix, PauliString, AMPLITUDE_TOL};
+use aleph_ir::Circuit;
 use metal::{ComputePipelineState, MTLSize};
 use rand::{rngs::StdRng, SeedableRng};
 use std::ffi::c_void;
@@ -47,6 +48,23 @@ impl MetalSvBackend {
     /// reproducible across processes and machines for a given seed.
     pub fn with_seed(seed: u64) -> Result<Self, BackendError> {
         Self::build(StdRng::seed_from_u64(seed))
+    }
+
+    /// Execute `circuit` gate-by-gate (unfused) on the GPU, returning the
+    /// device-resident final state. Thin wrapper over [`aleph_backend::run`];
+    /// the verbatim reference path with no IR optimization.
+    pub fn run(&mut self, circuit: &Circuit) -> Result<MetalSvState, BackendError> {
+        aleph_backend::run(self, circuit)
+    }
+
+    /// Optimize `circuit` with the default IR pipeline (cancellation, DCE,
+    /// 1q/2q/kq fusion) and execute it on the GPU. The fused dense blocks ride
+    /// the `apply_kq` kernel, cutting the number of GPU dispatches; any qubit
+    /// permutation the pipeline introduces is settled via `unpermute_state`, so
+    /// the returned state is in logical qubit order and directly comparable to
+    /// [`run`](Self::run). Thin wrapper over [`aleph_backend::run_optimized`].
+    pub fn run_optimized(&mut self, circuit: &Circuit) -> Result<MetalSvState, BackendError> {
+        aleph_backend::run_optimized(self, circuit)
     }
 
     fn build(rng: StdRng) -> Result<Self, BackendError> {
@@ -826,6 +844,30 @@ mod tests {
         assert!((a[7].re - 1.0).abs() < 1e-6, "amps = {a:?}");
     }
 
+    /// `run` executes a circuit gate-by-gate and yields the expected state.
+    /// GHZ(3): H(0), CNOT(0,1), CNOT(1,2) -> (|000> + |111>)/sqrt(2),
+    /// i.e. amps[0] = amps[7] = 1/sqrt(2), all others ~0.
+    #[test]
+    fn run_executes_ghz_circuit() {
+        let Some(mut b) = backend_or_skip() else {
+            return;
+        };
+        let mut c = Circuit::new(3, 0);
+        c.h(0).unwrap();
+        c.cnot(0, 1).unwrap();
+        c.cnot(1, 2).unwrap();
+        let s = b.run(&c).unwrap();
+        let a = s.amplitudes_f32();
+        let inv_sqrt2 = 1.0f32 / 2.0f32.sqrt();
+        assert!((a[0].re - inv_sqrt2).abs() < 1e-5, "amps = {a:?}");
+        assert!((a[7].re - inv_sqrt2).abs() < 1e-5, "amps = {a:?}");
+        for (i, z) in a.iter().enumerate() {
+            if i != 0 && i != 7 {
+                assert!(z.norm() < 1e-5, "amps[{i}] = {z:?}");
+            }
+        }
+    }
+
     /// unpermute_state applies a single bit-permutation gather. perm[logical] =
     /// physical, so perm=[1,0] maps logical qubit 0 -> physical qubit 1. A
     /// physical state with qubit 1 set (X on qubit 1 -> physical index 2) gathers
@@ -876,5 +918,74 @@ mod tests {
         let a = s.amplitudes_f32();
         assert!((a[2].re - 1.0).abs() < 1e-6, "amps = {a:?}"); // index 2
         assert!(a[0].norm() < 1e-6 && a[1].norm() < 1e-6 && a[3].norm() < 1e-6);
+    }
+
+    /// Assert two FP32 amplitude buffers agree elementwise within `tol`.
+    fn assert_amps_close(fused: &[Complex<f32>], unfused: &[Complex<f32>], tol: f32) {
+        assert_eq!(fused.len(), unfused.len(), "length mismatch");
+        for (i, (f, u)) in fused.iter().zip(unfused.iter()).enumerate() {
+            assert!(
+                (*f - *u).norm() < tol,
+                "amp[{i}] fused={f:?} unfused={u:?} (tol {tol})"
+            );
+        }
+    }
+
+    /// AC #1: the fused path (run_optimized -> apply_kq dense blocks) must match
+    /// the unfused path (run, gate-by-gate) within 1e-5 on the GPU. GHZ.
+    #[test]
+    fn fused_matches_unfused_ghz() {
+        let Some(mut b) = backend_or_skip() else {
+            return;
+        };
+        let c = aleph_benches::ghz_circuit(8);
+        let unfused = b.run(&c).unwrap().amplitudes_f32().to_vec();
+        let fused = b.run_optimized(&c).unwrap().amplitudes_f32().to_vec();
+        assert_amps_close(&fused, &unfused, 1e-5);
+    }
+
+    /// AC #1: QFT — the canonical fusion beneficiary (H + cphase ladder).
+    #[test]
+    fn fused_matches_unfused_qft() {
+        let Some(mut b) = backend_or_skip() else {
+            return;
+        };
+        let c = aleph_benches::qft_circuit(8);
+        let unfused = b.run(&c).unwrap().amplitudes_f32().to_vec();
+        let fused = b.run_optimized(&c).unwrap().amplitudes_f32().to_vec();
+        assert_amps_close(&fused, &unfused, 1e-5);
+    }
+
+    /// AC #1: random brickwall — dense 2q gates fuse into UnitaryKq blocks.
+    /// The builder is deterministic (angles from cos, no RNG), so both runs see
+    /// the same circuit.
+    #[test]
+    fn fused_matches_unfused_random() {
+        let Some(mut b) = backend_or_skip() else {
+            return;
+        };
+        let c = aleph_benches::random_brickwall_circuit(8, 8);
+        let unfused = b.run(&c).unwrap().amplitudes_f32().to_vec();
+        let fused = b.run_optimized(&c).unwrap().amplitudes_f32().to_vec();
+        assert_amps_close(&fused, &unfused, 1e-5);
+    }
+
+    /// AC #1: Grover — parsed from the measurement-free n=4 baseline fixture
+    /// (grover_n4_iters3.qasm has zero `measure` ops, so amplitude comparison is
+    /// well-defined). Path anchored to CARGO_MANIFEST_DIR so it is independent of
+    /// the test's working directory.
+    #[test]
+    fn fused_matches_unfused_grover() {
+        let Some(mut b) = backend_or_skip() else {
+            return;
+        };
+        let src = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../scripts/qiskit-baseline/circuits/grover_n4_iters3.qasm"
+        ));
+        let c = aleph_parser::parse(src).expect("parse grover_n4");
+        let unfused = b.run(&c).unwrap().amplitudes_f32().to_vec();
+        let fused = b.run_optimized(&c).unwrap().amplitudes_f32().to_vec();
+        assert_amps_close(&fused, &unfused, 1e-5);
     }
 }
