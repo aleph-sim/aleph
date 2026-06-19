@@ -66,3 +66,11 @@ criterion = { workspace = true }
 name = "sv_fused"
 harness = false
 required-features = ["metal"]
+
+# Tier-1 GPU-vs-CPU exit bench (P5.5-05). macOS+Metal only — same gating as
+# sv_fused. Run explicitly on the M4 Mac Mini:
+#   cargo bench -p aleph-metal --features metal --bench sv_vs_cpu
+[[bench]]
+name = "sv_vs_cpu"
+harness = false
+required-features = ["metal"]
