@@ -29,6 +29,14 @@ pub(crate) const MAX_MPS_QUBITS: u32 = 28;
 /// test circuits never truncate (so the oracle compare is exact-to-fp32).
 const DEFAULT_MAX_BOND: usize = 128;
 
+/// Relative Schmidt weight (`Σ_{j≥χ} σ_j² / Σ σ_j²`) above which a two-site split
+/// is treated as a real truncation and refused. This naive (non-canonical)
+/// scaffold has no orthogonality centre to absorb the renormalization, so any
+/// non-negligible drop would silently corrupt the state (P5.6-02). The floor sits
+/// far above the null-direction pruning residue (≈1e-14, see `svd::truncation_plan`)
+/// and far below the loss from dropping any genuine singular value.
+const MPS_TRUNC_TOL: f64 = 1e-10;
+
 /// Opt-in single-precision Metal GPU MPS backend (scaffold).
 pub struct MetalMpsBackend {
     ctx: MetalContext,
@@ -42,6 +50,10 @@ pub struct MetalMpsBackend {
     /// split, summed over every NN 2q gate. Drives the AC #2 round-trip-cost doc.
     gpu_ns: u128,
     svd_ns: u128,
+    /// Cumulative relative Schmidt weight discarded across every two-site split
+    /// (P5.6-02). Stays ≈0 on the exact-only path; a split above `MPS_TRUNC_TOL`
+    /// is refused, but its weight is still recorded here for diagnostics.
+    trunc_error: f64,
 }
 
 impl MetalMpsBackend {
@@ -98,6 +110,7 @@ impl MetalMpsBackend {
             max_bond,
             gpu_ns: 0,
             svd_ns: 0,
+            trunc_error: 0.0,
         })
     }
 
@@ -112,6 +125,20 @@ impl MetalMpsBackend {
     pub fn reset_timing(&mut self) {
         self.gpu_ns = 0;
         self.svd_ns = 0;
+    }
+
+    /// Cumulative relative Schmidt weight discarded by two-site splits so far
+    /// (`Σ_{j≥χ} σ_j² / Σ σ_j²`, summed over NN 2q gates). ≈0 on the exact path;
+    /// non-zero only if a split approached/crossed the truncation tolerance.
+    /// Surfaced so callers can inspect compression loss rather than have it
+    /// silently dropped (P5.6-02).
+    pub fn trunc_error(&self) -> f64 {
+        self.trunc_error
+    }
+
+    /// Reset the cumulative truncation-weight accumulator.
+    pub fn reset_trunc_error(&mut self) {
+        self.trunc_error = 0.0;
     }
 
     /// Dispatch one kernel over `threads` and block until the GPU finishes so the
@@ -280,8 +307,20 @@ impl MetalMpsBackend {
         // tensors are uploaded into fresh buffers. The slice is current:
         // dispatch_apply2q waited.
         let svd_start = std::time::Instant::now();
-        let (chi, site_i_data, site_j_data, _discarded) =
+        let (chi, site_i_data, site_j_data, trunc) =
             svd_split(theta.as_slice(), rows, cols, self.max_bond)?;
+        // Record the dropped weight first, then refuse if it's a real truncation:
+        // this naive scaffold has no orthogonality centre to renormalize against,
+        // so applying a truncated split would silently corrupt the state. Refusing
+        // before mutating `state.sites` leaves the pre-gate MPS intact (P5.6-02).
+        self.trunc_error += trunc;
+        if trunc > MPS_TRUNC_TOL {
+            self.svd_ns += svd_start.elapsed().as_nanos();
+            return Err(BackendError::MpsTruncationUnsupported {
+                max_bond: self.max_bond,
+                trunc_error: trunc,
+            });
+        }
         state.sites[i] = SiteTensor::from_host(&self.ctx, li, chi, &site_i_data);
         state.sites[j] = SiteTensor::from_host(&self.ctx, chi, ri, &site_j_data);
         self.svd_ns += svd_start.elapsed().as_nanos();

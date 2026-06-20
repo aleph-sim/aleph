@@ -60,6 +60,9 @@ pub enum BackendError {
     #[error("backend state is invalid: {reason}")]
     InvalidState { reason: &'static str },
 
+    #[error("MPS backend cannot truncate (bond cap {max_bond}); applying this gate would drop Schmidt weight {trunc_error:e}. Raise max_bond or use a statevector backend")]
+    MpsTruncationUnsupported { max_bond: usize, trunc_error: f64 },
+
     #[error("optimization pipeline failed: {0}")]
     Optimization(#[from] PassError),
 }

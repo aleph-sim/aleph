@@ -29,9 +29,15 @@ fn narrow(z: Complex) -> Complex<f32> {
 /// so Θ′ has unit Frobenius norm and `scale = 1/√(kept weight)` corrects only the
 /// truncation loss. This naive (non-canonical) MPS keeps each block's own norm,
 /// so the kept singular values must be the *exact* σ (`s_kept[t] = σ_t`) — any
-/// global rescale would corrupt a block whose norm is not 1. With the bond cap
-/// above the test circuits' entanglement nothing is dropped, so the
-/// factorization is exact.
+/// global rescale would corrupt a block whose norm is not 1.
+///
+/// The consequence: this scaffold is correct **only when nothing is truncated**.
+/// When the bond cap forces dropping a real singular value there is no orthogonality
+/// centre to absorb `scale`, so the amplitudes would silently drift. The backend
+/// therefore treats a non-negligible `discarded` as an error (P5.6-02): the caller
+/// converts the relative weight `svd_split` reports into a refusal. `discarded`
+/// here is the absolute dropped Schmidt weight Σ_{j≥chi} σ_j²; `svd_split`
+/// normalizes it by the total Frobenius weight before returning it.
 fn truncation_plan(sigmas: &[f64], max_bond: usize) -> (usize, f64) {
     let s_max = sigmas.first().copied().unwrap_or(0.0);
     let eps = 1e-7 * s_max.max(f64::MIN_POSITIVE);
@@ -41,9 +47,13 @@ fn truncation_plan(sigmas: &[f64], max_bond: usize) -> (usize, f64) {
     (chi, discarded)
 }
 
-/// Factor result: `(chi, site_i_data, site_j_data, discarded)`.
+/// Factor result: `(chi, site_i_data, site_j_data, trunc_rel)`.
 /// - `site_i_data` is row-major `(li, 2, chi)`: `U[:, :chi]` (left isometry).
 /// - `site_j_data` is row-major `(chi, 2, ri)`: `diag(σ_kept)·Vᴴ` (S absorbed right).
+/// - `trunc_rel` is the **relative** truncation weight `Σ_{j≥chi} σ_j² / Σ_j σ_j²`
+///   — the fraction of squared Schmidt weight discarded by the bond cap. `0` (to
+///   null-direction rounding) means the split is exact; a non-negligible value
+///   means this naive scaffold would corrupt the state (see `truncation_plan`).
 pub(crate) type SplitResult = (usize, Vec<Complex<f32>>, Vec<Complex<f32>>, f64);
 
 /// Truncated SVD of Θ′ (row-major, `rows × cols`, f32) → the two new site tensors.
@@ -88,6 +98,11 @@ pub(crate) fn svd_split(
 
     let sigmas: Vec<f64> = (0..size).map(|t| s.as_ref()[t].re).collect();
     let (chi, discarded) = truncation_plan(&sigmas, max_bond);
+    // Normalize the dropped weight by the block's own Frobenius weight so the
+    // backend can compare it against a precision tolerance regardless of the
+    // (non-unit) block norm. `total == 0` only for an all-zero block ⇒ no loss.
+    let total: f64 = sigmas.iter().map(|s| s * s).sum();
+    let trunc_rel = if total > 0.0 { discarded / total } else { 0.0 };
     // Exact σ (no renormalization) — see `truncation_plan` rationale.
     let s_kept: &[f64] = &sigmas[..chi];
 
@@ -109,5 +124,55 @@ pub(crate) fn svd_split(
             site_j[t * cols + col] = narrow(vh);
         }
     }
-    Ok((chi, site_i, site_j, discarded))
+    Ok((chi, site_i, site_j, trunc_rel))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // truncation_plan keeps min(significant, max_bond) σ and reports the dropped
+    // squared weight. With max_bond above the significant count nothing real is
+    // dropped; below it, the smallest σ² are discarded.
+    #[test]
+    fn truncation_plan_drops_below_cap() {
+        let sigmas = [1.0, 0.5, 1e-9]; // third is below the 1e-7·σ_max null floor
+        let (chi, discarded) = truncation_plan(&sigmas, 64);
+        assert_eq!(chi, 2, "null direction pruned, two significant kept");
+        assert!(
+            discarded <= 1e-12,
+            "no real weight dropped, got {discarded}"
+        );
+
+        let (chi, discarded) = truncation_plan(&sigmas, 1);
+        assert_eq!(chi, 1, "cap binds to 1");
+        assert!(
+            (discarded - 0.25).abs() < 1e-12,
+            "drops 0.5² = 0.25, got {discarded}"
+        );
+    }
+
+    // svd_split on a maximally-entangled 2-qubit block (Bell Θ, rows=cols=2):
+    // singular values [1/√2, 1/√2]. Cap 2 ⇒ exact (trunc_rel ≈ 0); cap 1 ⇒ drops
+    // half the squared weight ⇒ trunc_rel ≈ 0.5. Pure CPU (faer), no device.
+    #[test]
+    fn svd_split_reports_relative_truncation() {
+        let inv_sqrt2 = (0.5f32).sqrt();
+        // Bell Θ in the (li=1,2)×(2,ri=1) = 2×2 layout: diag(1/√2, 1/√2).
+        let theta = vec![
+            Complex::<f32>::new(inv_sqrt2, 0.0),
+            Complex::<f32>::new(0.0, 0.0),
+            Complex::<f32>::new(0.0, 0.0),
+            Complex::<f32>::new(inv_sqrt2, 0.0),
+        ];
+        let (_, _, _, trunc) = svd_split(&theta, 2, 2, 2).expect("svd cap=2");
+        assert!(trunc < 1e-6, "no truncation at cap=2, got {trunc}");
+
+        let (chi, _, _, trunc) = svd_split(&theta, 2, 2, 1).expect("svd cap=1");
+        assert_eq!(chi, 1);
+        assert!(
+            (trunc - 0.5).abs() < 1e-5,
+            "half the weight dropped, got {trunc}"
+        );
+    }
 }
