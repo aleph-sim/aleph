@@ -9,9 +9,13 @@
 
 **MET.** The Metal FP32 state-vector backend (`MetalSvBackend`) clears the
 Phase-5.5 exit gate — **≥2× the same-Mac CPU state vector on ≥2 Tier-1 workloads
-at n≈28** — on **all** Tier-1 structures, by a wide margin (4.7–6.3× at n=28). Its
-single-precision results are oracle-verified against the exact FP64 Qiskit-Aer
-fixtures at 1e-5. The MPS-on-Metal backend (`MetalMpsBackend`) is **started**: a
+at n≈28** — on **all** Tier-1 structures, by a wide margin. The honest
+apples-to-apples figure (GPU FP32 vs **CPU FP32**, same precision) is **4.67–6.10×
+at n=28** (Grover 2.82× at n=20); the softer vs-FP64 ratios (4.78–6.27×) are
+secondary, since the FP64 CPU moves 2× the bytes on a bandwidth-bound workload.
+Its single-precision results are oracle-verified against the exact FP64 Qiskit-Aer
+fixtures at 1e-5, and against a full (non-sampled) FP64-CPU amplitude compare at
+n=26. The MPS-on-Metal backend (`MetalMpsBackend`) is **started**: a
 correct nearest-neighbour scaffold whose dominant per-gate cost — the CPU SVD — is
 measured and documented as the next lever.
 
@@ -43,23 +47,42 @@ measured and documented as the next lever.
 on the default-optimized IR pipeline, at the headline n=28 cell. Full sweep
 (n∈{24,26,28} + Grover n=20) and method in [`phase5.5.md` § P5.5-05](phase5.5.md).
 
-| Workload | n  | GPU (median) | CPU FP64 | **GPU speedup (vs FP64)** |
-|----------|----|--------------|----------|---------------------------|
-| QFT      | 28 | 3.735 s      | 23.40 s  | **6.27×** |
-| GHZ      | 28 | 956 ms       | 4.746 s  | **4.97×** |
-| random   | 28 | 9.128 s      | 43.59 s  | **4.78×** |
-| Grover   | 20 | 4.978 s      | 14.49 s  | **2.91×** |
+The headline is **GPU FP32 vs CPU FP32** — both backends carry the same
+single-precision state, so the ratio isolates the *backend*, not the precision.
+The FP64 CPU column is shown alongside as a secondary number: it moves 2× the
+bytes per amplitude on this bandwidth-bound workload, so the vs-FP64 ratios run
+~3–4% higher and would flatter the GPU for a reason that has nothing to do with
+the GPU.
 
-(GPU vs CPU **FP32** — the apples-to-apples precision match — is 4.7–6.1× over the
-same cells.) The advantage **grows** with n (GHZ 4.41×→4.97× over n=24→28): the
-larger the state, the better the GPU amortizes its per-dispatch overhead, so this
-is a genuine win rather than a unified-memory bandwidth ceiling at this scale. A
-pre-timing self-consistency guard (GPU vs FP64 CPU, sampled, 1e-5 at n=24) passed
-for every workload, so the timed GPU work is correct, not merely fast.
+| Workload | n  | GPU FP32 | CPU FP32 | **speedup (FP32, apples-to-apples)** | CPU FP64 | _vs FP64 (secondary)_ |
+|----------|----|----------|----------|--------------------------------------|----------|-----------------------|
+| QFT      | 28 | 3.735 s  | 22.80 s  | **6.10×** | 23.40 s | _6.27×_ |
+| GHZ      | 28 | 956 ms   | 4.503 s  | **4.71×** | 4.746 s | _4.97×_ |
+| random   | 28 | 9.128 s  | 42.59 s  | **4.67×** | 43.59 s | _4.78×_ |
+| Grover   | 20 | 4.978 s  | 14.02 s  | **2.82×** | 14.49 s | _2.91×_ |
+
+The advantage **grows** with n (GHZ 4.41×→4.71× FP32 over n=24→28): the larger the
+state, the better the GPU amortizes its per-dispatch overhead, so this is a
+genuine win rather than a unified-memory bandwidth ceiling at this scale. A
+pre-timing self-consistency guard — a **full, non-sampled** GPU-vs-FP64-CPU
+amplitude compare at **n=26** (every one of 2^26 amplitudes within 1e-5, not a
+sampled stride) — passed for every workload, so the timed GPU work is correct on
+*all* amplitudes, not merely fast. n=26 is the largest sweep cell whose full FP64
+reference fits the 24 GB live-desktop budget; the kernels are size-invariant (n=28
+is the same dispatch on a larger grid), so the full n=26 check gates the timed
+n=28 path.
 
 **Correctness.** `MetalSvBackend` is oracle-tested against the committed exact-FP64
 Aer fixtures on Tier-1 (GHZ/QFT/Grover/random) at 1e-5, covering both the verbatim
-`run` and fused `run_optimized` paths (P5.5-05 Part A).
+`run` and fused `run_optimized` paths (P5.5-05 Part A) — plus the full-compare
+scale guard above.
+
+**No external Metal SV reference.** There is no apples-to-apples third-party
+state-vector simulator on Metal to cross-check against: Apple's MPSGraph targets
+ML tensor graphs, not arbitrary quantum-gate state-vector evolution, and the
+established GPU simulators (cuQuantum, Qiskit-Aer-GPU) are CUDA-only. The
+cross-checks are therefore the exact FP64 CPU reference (full compare, this
+section) and the committed Aer FP64 fixtures (Part A oracle).
 
 ## 2. Gate fusion on the GPU (P5.5-04)
 
