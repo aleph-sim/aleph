@@ -78,8 +78,11 @@ print(aleph.run(aleph.Circuit.from_qasm(qasm), backend="mps", seed=0).counts())
 | `sv` | dense 2ⁿ complex amplitudes | ≤ 28 qubits (default cap) | exact (FP64) | any circuit that fits in memory — the general-purpose workhorse |
 | `mps` | matrix product state (bond dim χ) | 100+ qubits (1024 hard cap) for shallow/local circuits | exact while χ is not binding; controlled truncation otherwise | low-entanglement circuits: shallow brickwork, nearest-neighbour dynamics |
 | `stab` | CHP tableau, O(n²) bits | hundreds of qubits (65,536 hard cap) | exact | Clifford-only circuits: error-correction cycles, stabilizer states |
+| `metal` | dense 2ⁿ complex amplitudes on the GPU | ≤ 28 qubits | approximate (FP32, ~1e-5 vs FP64) | large dense circuits on Apple Silicon — opt-in GPU build |
 
-Backend names are one shared vocabulary across the CLI (`--backend`) and Python (`backend=`): **`auto`** (default — picks from circuit structure: Clifford → stabilizer, large nearest-neighbour + shallow → MPS, else state vector), **`statevector`** (alias `sv`), **`stabilizer`** (alias `stab`), **`mps`**. Under `auto`, a Clifford circuit routes to the stabilizer backend, which has no dense state vector — pass `backend="sv"` (or `--backend sv`) when you need `statevector()`.
+Backend names are one shared vocabulary across the CLI (`--backend`) and Python (`backend=`): **`auto`** (default — picks from circuit structure: Clifford → stabilizer, large nearest-neighbour + shallow → MPS, else state vector), **`statevector`** (alias `sv`), **`stabilizer`** (alias `stab`), **`mps`**, and **`metal`** (alias `gpu`). Under `auto`, a Clifford circuit routes to the stabilizer backend, which has no dense state vector — pass `backend="sv"` (or `--backend sv`) when you need `statevector()`.
+
+The **`metal`** backend is an FP32 Apple Silicon GPU state vector. It is opt-in and macOS-only: build the CLI with `cargo build -p aleph-cli --features metal`, or the Python wheel with `maturin develop --features python,metal`. `auto` never selects it (FP32 accuracy + device availability), so request it explicitly. Both `sv` and `metal` expose `statevector()`.
 
 ## Performance
 

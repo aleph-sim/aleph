@@ -21,14 +21,25 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use std::collections::BTreeMap;
 
-/// Result of `run()`: a shot histogram and, on the SV backend, the final
+/// Final-state amplitude holder. The CPU SV backend keeps its `CpuState` so
+/// `statevector()` is a single zero-copy memcpy of its slice (no 2^n widening,
+/// up to 4 GiB at the n=28 cap); the Metal GPU backend is FP32, so it
+/// materializes the widened f64 buffer once.
+enum AmpStore {
+    Cpu(aleph_sv::CpuState),
+    // Constructed only by the Metal arm (macOS + `metal` feature); the
+    // `statevector()` reader matches it in every build, so silence the
+    // never-constructed warning only when the Metal path is compiled out.
+    #[cfg_attr(not(all(target_os = "macos", feature = "metal")), allow(dead_code))]
+    Owned(Vec<Complex64>),
+}
+
+/// Result of `run()`: a shot histogram and, on the SV/Metal backends, the final
 /// state vector.
 #[pyclass(name = "RunResult")]
 pub(crate) struct RunResult {
     counts: BTreeMap<String, u64>,
-    // Store the full CpuState rather than a copied Vec<Complex> to avoid a
-    // 2^n × 16-byte allocation (up to 4 GiB at the n=28 cap).
-    amps: Option<aleph_sv::CpuState>,
+    amps: Option<AmpStore>,
 }
 
 #[pymethods]
@@ -50,9 +61,10 @@ impl RunResult {
     /// contiguously, so `from_slice` is a single memcpy.
     fn statevector<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray1<Complex64>>> {
         match &self.amps {
-            Some(state) => Ok(PyArray1::from_slice_bound(py, state.amplitudes())),
+            Some(AmpStore::Cpu(state)) => Ok(PyArray1::from_slice_bound(py, state.amplitudes())),
+            Some(AmpStore::Owned(v)) => Ok(PyArray1::from_slice_bound(py, v.as_slice())),
             None => Err(PyValueError::new_err(
-                "statevector is only available on the \"sv\" backend",
+                "statevector is only available on the \"sv\" and \"metal\" backends",
             )),
         }
     }
@@ -92,7 +104,10 @@ fn err<E: std::fmt::Display>(what: &str, e: E) -> PyErr {
 /// `backend` accepts the same names as the CLI's `--backend` (P4-12):
 /// `"auto"` (default — pick from circuit structure: Clifford → stabilizer,
 /// large nearest-neighbor + shallow → MPS, else state vector), `"statevector"`
-/// (alias `"sv"`), `"stabilizer"` (alias `"stab"`), or `"mps"`.
+/// (alias `"sv"`), `"stabilizer"` (alias `"stab"`), `"mps"`, or `"metal"`
+/// (alias `"gpu"`; FP32 Apple Silicon GPU, available only in a macOS wheel built
+/// with the `metal` feature; `"auto"` never picks it). `RunResult.statevector()`
+/// is available on `"sv"` and `"metal"`.
 ///
 /// **Breaking change vs v0.2:** the default was `"sv"`; it is now `"auto"`, so a
 /// Clifford circuit routes to the stabilizer backend by default and
@@ -162,8 +177,36 @@ pub(crate) fn run_circuit(
             )?;
             Ok(RunResult {
                 counts,
-                amps: Some(amps),
+                amps: Some(AmpStore::Cpu(amps)),
             })
+        }
+        BackendKind::Metal => {
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            {
+                let (counts, amps) =
+                    py.allow_threads(|| -> PyResult<(BTreeMap<String, u64>, Vec<Complex64>)> {
+                        let mut be = match seed {
+                            Some(s) => aleph_metal::MetalSvBackend::with_seed(s),
+                            None => aleph_metal::MetalSvBackend::new(),
+                        }
+                        .map_err(|e| err("init metal backend", e))?;
+                        let state = be.run_optimized(c).map_err(|e| err("run metal", e))?;
+                        let samples = be.sample(&state, shots).map_err(|e| err("sample", e))?;
+                        Ok((counts_map(&samples, n), state.to_aos_f64()))
+                    })?;
+                Ok(RunResult {
+                    counts,
+                    amps: Some(AmpStore::Owned(amps)),
+                })
+            }
+            #[cfg(not(all(target_os = "macos", feature = "metal")))]
+            {
+                Err(PyValueError::new_err(
+                    "the \"metal\" backend is not available in this build; \
+                     build the wheel with `--features python,metal` on macOS \
+                     (Apple Silicon)",
+                ))
+            }
         }
         BackendKind::Mps => {
             // MpsBackend already defaults to FixedBond(DEFAULT_MAX_BOND=128);

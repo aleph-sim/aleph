@@ -29,6 +29,10 @@ pub enum BackendKind {
     Stabilizer,
     /// MPS tensor network — bounded-entanglement, approximate beyond χ.
     Mps,
+    /// Metal GPU dense state vector — FP32, Apple Silicon only. An explicit,
+    /// opt-in override; the `auto` heuristic never routes here (FP32 accuracy,
+    /// device/feature availability), so `select_from` never returns it.
+    Metal,
 }
 
 impl std::fmt::Display for BackendKind {
@@ -37,6 +41,7 @@ impl std::fmt::Display for BackendKind {
             BackendKind::Statevector => "state vector",
             BackendKind::Stabilizer => "stabilizer",
             BackendKind::Mps => "MPS",
+            BackendKind::Metal => "Metal GPU",
         })
     }
 }
@@ -47,10 +52,11 @@ impl BackendKind {
     /// variant is *caught at compile time* by the exhaustive match in
     /// `aliases`, not here; the `every_kind_round_trips` test fails if a
     /// variant is added without extending this list too.
-    pub const ALL: [BackendKind; 3] = [
+    pub const ALL: [BackendKind; 4] = [
         BackendKind::Statevector,
         BackendKind::Stabilizer,
         BackendKind::Mps,
+        BackendKind::Metal,
     ];
 
     /// User-facing names that resolve to this kind: the canonical name first,
@@ -64,6 +70,7 @@ impl BackendKind {
             BackendKind::Statevector => &["statevector", "sv"],
             BackendKind::Stabilizer => &["stabilizer", "stab"],
             BackendKind::Mps => &["mps"],
+            BackendKind::Metal => &["metal", "gpu"],
         }
     }
 
@@ -283,6 +290,7 @@ mod tests {
         assert_eq!(BackendKind::Statevector.to_string(), "state vector");
         assert_eq!(BackendKind::Stabilizer.to_string(), "stabilizer");
         assert_eq!(BackendKind::Mps.to_string(), "MPS");
+        assert_eq!(BackendKind::Metal.to_string(), "Metal GPU");
     }
 
     #[test]
@@ -538,13 +546,24 @@ mod tests {
         assert!(BackendRequest::Fixed(Statevector).allows_noise());
         assert!(!BackendRequest::Fixed(Stabilizer).allows_noise());
         assert!(!BackendRequest::Fixed(Mps).allows_noise());
+        // The Metal GPU backend has no noise engine (CPU-only trajectories).
+        assert!(!BackendRequest::Fixed(Metal).allows_noise());
     }
 
     #[test]
     fn unknown_backend_lists_the_whole_vocabulary() {
-        let e = BackendRequest::from_user_str("gpu").unwrap_err();
-        assert!(e.contains("\"gpu\""), "echoes the bad token: {e}");
-        for token in ["auto", "statevector", "sv", "stabilizer", "stab", "mps"] {
+        let e = BackendRequest::from_user_str("cuda").unwrap_err();
+        assert!(e.contains("\"cuda\""), "echoes the bad token: {e}");
+        for token in [
+            "auto",
+            "statevector",
+            "sv",
+            "stabilizer",
+            "stab",
+            "mps",
+            "metal",
+            "gpu",
+        ] {
             assert!(e.contains(token), "message must list {token:?}: {e}");
         }
     }

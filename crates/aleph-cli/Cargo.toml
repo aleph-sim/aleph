@@ -27,6 +27,17 @@ anyhow        = { workspace = true }
 thiserror     = { workspace = true }
 rand          = { workspace = true }
 
+# Metal GPU backend (`--backend metal`). macOS-only and opt-in: build the CLI
+# with `--features metal` on Apple Silicon to enable it; off by default so the
+# default `aleph` binary needs no Metal toolchain and Linux builds are unaffected.
+[target.'cfg(target_os = "macos")'.dependencies]
+aleph-metal = { path = "../aleph-metal", optional = true }
+
+[features]
+# Wire the Metal GPU state-vector backend into the CLI. Pulls aleph-metal and
+# turns on its `metal` feature. Only meaningful on macOS (the dep is target-gated).
+metal = ["dep:aleph-metal", "aleph-metal/metal"]
+
 [dev-dependencies]
 aleph-oracle = { path = "../aleph-oracle" }
 assert_cmd   = { workspace = true }

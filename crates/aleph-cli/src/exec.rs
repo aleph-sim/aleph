@@ -37,6 +37,15 @@ impl AmpsF64 for aleph_sv::Fp32CpuState {
     }
 }
 
+// The Metal GPU state is FP32; widen to f64 for the `--statevector` view exactly
+// like the CPU FP32 backend. Only compiled when the `metal` feature is on (macOS).
+#[cfg(all(target_os = "macos", feature = "metal"))]
+impl AmpsF64 for aleph_metal::MetalSvState {
+    fn amps_f64(&self) -> Vec<Complex> {
+        self.to_aos_f64()
+    }
+}
+
 /// Default shot count when the user passes no view flag.
 pub const DEFAULT_SHOTS: u32 = 1024;
 
@@ -77,10 +86,11 @@ pub fn run_circuit<W: Write>(
     if !noise.is_empty() {
         if !backend.allows_noise() {
             // Report the canonical name of the backend the user pinned, not the
-            // Debug variant name. !allows_noise admits only Fixed(Stabilizer | Mps).
+            // Debug variant name. !allows_noise admits only an explicit
+            // Stabilizer / Mps / Metal (Auto and Statevector allow noise).
             let requested = match backend {
-                BackendRequest::Fixed(BackendKind::Mps) => "mps",
-                _ => "stabilizer",
+                BackendRequest::Fixed(k) => k.canonical_name(),
+                BackendRequest::Auto => "stabilizer",
             };
             return Err(anyhow!(
                 "--noise is only supported on the state-vector backend; \
@@ -136,10 +146,14 @@ pub fn run_circuit<W: Write>(
     let wants_amplitudes = print_statevector || force_statevector;
     let resolved = resolve_backend(backend, &circuit, wants_amplitudes);
 
+    // The dense state-vector family (CPU SV + Metal GPU SV) shares the qubit-cap
+    // and `--statevector` print-cap policy; the stabilizer/MPS backends don't.
+    let sv_family = matches!(resolved, BackendKind::Statevector | BackendKind::Metal);
+
     // Too-large soft warning: an exact dense run past the soft cap may exhaust
     // memory. We warn and proceed (the user stayed in control by not narrowing
     // the backend); this mirrors the SV soft-cap-warns-not-refuses convention.
-    if resolved == aleph_backend::BackendKind::Statevector && n > aleph_backend::SV_EXACT_CAP {
+    if sv_family && n > aleph_backend::SV_EXACT_CAP {
         eprintln!(
             "warning: n={n} exceeds the {}-qubit state-vector soft cap; \
              this run may exhaust memory (override with a different --backend)",
@@ -150,11 +164,7 @@ pub fn run_circuit<W: Write>(
     // 3. Statevector cap check. Skipped for the stabilizer backend, which
     //    has no dense state vector at all — `run_stabilizer` rejects
     //    `--statevector` with a clearer, backend-specific message below.
-    if resolved == aleph_backend::BackendKind::Statevector
-        && print_statevector
-        && !force_statevector
-        && n > STATEVECTOR_CAP_QUBITS
-    {
+    if sv_family && print_statevector && !force_statevector && n > STATEVECTOR_CAP_QUBITS {
         let dim = 1u64 << n;
         return Err(anyhow!(
             "state vector has 2^{n} = {dim} amplitudes; pass --force-statevector to print anyway"
@@ -200,6 +210,19 @@ pub fn run_circuit<W: Write>(
             seed,
             max_bond,
             max_error,
+            &seed_label,
+            out,
+        );
+    }
+
+    if resolved == BackendKind::Metal {
+        return run_metal(
+            &circuit,
+            effective_shots,
+            print_statevector,
+            &paulis,
+            n,
+            seed,
             &seed_label,
             out,
         );
@@ -383,6 +406,61 @@ fn run_mps<W: Write>(
         state.max_bond_reached()
     )?;
     Ok(())
+}
+
+/// Metal GPU state-vector run path (macOS + `metal` feature). FP32; supports
+/// `--shots`, `--statevector`, and `--expectation` through the shared
+/// `run_with_backend` helper (the Metal state implements [`AmpsF64`]). The
+/// backend is built fallibly — GPU/device acquisition can fail — and a failure
+/// surfaces as a clear error rather than a silent CPU fallback.
+#[cfg(all(target_os = "macos", feature = "metal"))]
+#[allow(clippy::too_many_arguments)]
+fn run_metal<W: Write>(
+    circuit: &aleph_ir::Circuit,
+    effective_shots: Option<u32>,
+    print_statevector: bool,
+    paulis: &[(String, aleph_core::PauliString)],
+    n: u32,
+    seed: Option<u64>,
+    seed_label: &str,
+    out: &mut W,
+) -> Result<()> {
+    let backend = match seed {
+        Some(s) => aleph_metal::MetalSvBackend::with_seed(s),
+        None => aleph_metal::MetalSvBackend::new(),
+    }
+    .map_err(|e| anyhow!("initializing the Metal GPU backend: {e}"))?;
+    run_with_backend(
+        backend,
+        circuit,
+        effective_shots,
+        print_statevector,
+        paulis,
+        n,
+        seed_label,
+        out,
+    )
+}
+
+/// Stub when the Metal backend is not compiled in (non-macOS, or built without
+/// `--features metal`). `--backend metal` then fails with a clear, actionable
+/// message instead of silently running on the CPU.
+#[cfg(not(all(target_os = "macos", feature = "metal")))]
+#[allow(clippy::too_many_arguments)]
+fn run_metal<W: Write>(
+    _circuit: &aleph_ir::Circuit,
+    _effective_shots: Option<u32>,
+    _print_statevector: bool,
+    _paulis: &[(String, aleph_core::PauliString)],
+    _n: u32,
+    _seed: Option<u64>,
+    _seed_label: &str,
+    _out: &mut W,
+) -> Result<()> {
+    Err(anyhow!(
+        "the Metal GPU backend is not available in this build; \
+         rebuild aleph with `--features metal` on macOS (Apple Silicon)"
+    ))
 }
 
 /// Run a circuit once and report parse / execute / sample(1024)
@@ -723,6 +801,77 @@ mod tests {
         assert!(s.contains("run"));
         assert!(s.contains("sample(1024)"));
         assert!(s.contains("total"));
+    }
+
+    /// The Metal GPU backend runs a GHZ circuit through the CLI path and yields
+    /// the expected state vector. Device-or-skip: on a device-less mac the
+    /// backend init fails and we accept the clear error instead. Only compiled
+    /// with `--features metal` on macOS.
+    #[cfg(all(target_os = "macos", feature = "metal"))]
+    #[test]
+    fn metal_backend_runs_ghz_statevector() {
+        let qasm = "OPENQASM 3.0;\ninclude \"stdgates.inc\";\nqubit[3] q;\n\
+                    h q[0];\ncx q[0], q[1];\ncx q[1], q[2];\n";
+        let (path, _dir) = temp_qasm(qasm);
+        let mut out = Vec::new();
+        let res = run_circuit(
+            &path,
+            None,
+            true,
+            false,
+            &[],
+            Some(1),
+            Precision::F64,
+            BackendRequest::Fixed(BackendKind::Metal),
+            128,
+            None,
+            &[],
+            &mut out,
+        );
+        match res {
+            Ok(()) => {
+                let s = String::from_utf8(out).unwrap();
+                assert!(s.contains("statevector (3 qubits"), "out = {s}");
+                // GHZ: |000⟩ and |111⟩ ≈ 0.7071 (FP32), all others ≈ 0.
+                assert!(s.contains("|000⟩") && s.contains("|111⟩"), "out = {s}");
+            }
+            Err(e) => {
+                // No Metal device on this box — accept the device-init error.
+                let msg = format!("{e:#}");
+                assert!(msg.contains("Metal GPU backend"), "unexpected error: {msg}");
+            }
+        }
+    }
+
+    /// On a build without the Metal backend (non-macOS, or no `--features
+    /// metal`), `--backend metal` fails with a clear, actionable message rather
+    /// than silently running on the CPU. Runs in default CI.
+    #[cfg(not(all(target_os = "macos", feature = "metal")))]
+    #[test]
+    fn metal_backend_unavailable_errors_clearly() {
+        let (path, _dir) = temp_qasm(QASM_BELL);
+        let mut out = Vec::new();
+        let err = run_circuit(
+            &path,
+            None,
+            false,
+            false,
+            &[],
+            Some(0),
+            Precision::F64,
+            BackendRequest::Fixed(BackendKind::Metal),
+            128,
+            None,
+            &[],
+            &mut out,
+        )
+        .unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("Metal GPU backend is not available"),
+            "msg = {msg}"
+        );
+        assert!(msg.contains("--features metal"), "msg = {msg}");
     }
 
     #[test]
