@@ -23,6 +23,7 @@ metal = [
     "dep:rand",
     "dep:num-complex",
     "dep:faer",
+    "dep:rayon",
 ]
 
 [dependencies]
@@ -47,6 +48,9 @@ num-complex   = { workspace = true, optional = true, features = ["bytemuck"] }
 # same library the CPU MPS uses); `aleph_core::Complex == faer::c64`, so no
 # element-type conversion is needed. Optional → only compiled under `metal`.
 faer = { version = "0.24.0", default-features = false, features = ["linalg", "std"], optional = true }
+# Parallel host-side readout (P5.6-06): measure/sample/expectation reductions and
+# the measure collapse run over 2^n amplitudes; rayon spreads them across cores.
+rayon = { workspace = true, optional = true }
 
 # `metal` is macOS-only: target-cfg the dep so it is never resolved on Linux,
 # even transitively, regardless of feature selection.
@@ -81,5 +85,12 @@ required-features = ["metal"]
 #   cargo bench -p aleph-metal --features metal --bench sv_vs_cpu
 [[bench]]
 name = "sv_vs_cpu"
+harness = false
+required-features = ["metal"]
+
+# Host-readout parallelisation bench (P5.6-06). macOS+Metal only. Run with:
+#   cargo bench -p aleph-metal --features metal --bench sv_readout
+[[bench]]
+name = "sv_readout"
 harness = false
 required-features = ["metal"]
