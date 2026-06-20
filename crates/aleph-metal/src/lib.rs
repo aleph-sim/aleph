@@ -12,12 +12,16 @@ mod buffer;
 #[cfg(all(target_os = "macos", feature = "metal"))]
 mod context;
 #[cfg(all(target_os = "macos", feature = "metal"))]
+mod mps;
+#[cfg(all(target_os = "macos", feature = "metal"))]
 mod sv;
 
 #[cfg(all(target_os = "macos", feature = "metal"))]
 pub use buffer::DeviceBuffer;
 #[cfg(all(target_os = "macos", feature = "metal"))]
 pub use context::MetalContext;
+#[cfg(all(target_os = "macos", feature = "metal"))]
+pub use mps::{MetalMpsBackend, MetalMpsState};
 #[cfg(all(target_os = "macos", feature = "metal"))]
 pub use sv::{AmpsF32, MetalSvBackend, MetalSvState};
 

@@ -118,3 +118,49 @@ bandwidth ceiling at this scale. The pre-timing guard passed for every workload,
 so the timed GPU work is the correct result (Part A's Aer oracle plus this
 scale guard together pin down both small-n and n=24 correctness).
 
+## P5.5-06 — MPS-on-Metal scaffold (CPU-SVD round-trip cost)
+
+**What shipped.** A first GPU MPS backend, `MetalMpsBackend` (scaffold). It stores
+FP32 site tensors in unified-memory buffers and runs the per-gate tensor work on
+the GPU via three Metal kernels — 1q site apply, two-site contraction, and 2q
+gate-apply on Θ — while the truncated SVD that re-splits each gated block runs on
+the CPU via `faer` (the GPU has no SVD). It is nearest-neighbour-only (no SWAP
+router yet); non-adjacent 2q gates, external controls, and ≥3q gates return
+`UnsupportedInstruction`.
+
+**Correctness (AC #1).** `cargo test -p aleph-metal --features metal --test
+mps_oracle` runs NN circuits (a 1q-only case, GHZ at n∈{3,5,8,10}, and NN random
+brickwall at {4×6, 6×8, 8×6}) and checks the GPU MPS dense statevector against
+**both** the CPU MPS backend (`aleph_mps::MpsBackend`, the issue's reference) and
+the exact FP64 `NaiveSvBackend`, all within 1e-5. With the bond cap (64) above the
+circuits' entanglement nothing truncates, so the three agree to fp32 precision.
+(One scaffold-specific note: the naive MPS keeps no orthogonality centre, so the
+SVD split must use the **exact** singular values — the CPU MPS's `1/√(kept-weight)`
+renormalisation is only valid in canonical form and would corrupt a non-unit-norm
+block here.)
+
+**CPU-SVD round-trip cost (AC #2).** On Apple Silicon the site buffers are
+`StorageModeShared`, so the host reads Θ′ **zero-copy** — there is no explicit
+device→host transfer. The cost is therefore not data movement but *serialisation*:
+each NN 2q gate must finish its GPU dispatches (`wait_until_completed`), then the
+CPU runs a single-threaded LAPACK-class SVD while the GPU sits idle, then the two
+factor tensors are written back into fresh shared buffers. Measured on the M4 Mac
+Mini over an NN brickwall (n=12, depth=24; `report_svd_roundtrip_cost`, summed
+over all 2q gates):
+
+| Phase | Time | Share |
+|-------|------|-------|
+| GPU contract + gate-apply | 86.9 ms | 5.5% |
+| host SVD split (+ factor upload) | 1502.5 ms | 94.5% |
+| **host / GPU ratio** | — | **17.3×** |
+
+So ~19 of every 20 units of per-gate tensor work is the host SVD. This is the
+structural reason a unified-memory MPS-on-Metal scaffold cannot yet beat the CPU
+MPS: the factorisation that dominates every 2q gate has no GPU implementation and
+blocks the pipeline. The lever a future ticket would attack is a GPU-resident (or
+batched/streamed) SVD so the factorisation stops serialising against the GPU; the
+contraction/gate-apply kernels here are already a small fraction of the cost.
+Perf for the MPS path is not gated in Phase 5.5 — this scaffold delivers the
+correct NN backend plus the honest round-trip measurement, and the consolidated
+verdict rolls up in P5.5-07.
+
