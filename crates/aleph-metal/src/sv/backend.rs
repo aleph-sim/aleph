@@ -13,7 +13,7 @@ use super::kernel::{
     DiagMeta, DiagTermDesc, Gate1q, GateKqMeta, SV_1Q_ENTRY, SV_1Q_SRC, SV_DIAG_ENTRY, SV_DIAG_SRC,
     SV_KQ_ENTRY, SV_KQ_SRC,
 };
-use super::state::MetalSvState;
+use super::state::{MetalSvState, BATCH_CAP};
 use crate::{DeviceBuffer, Error, MetalContext};
 
 /// Soft qubit cap — the project-wide 28-qubit software limit, matching the CPU
@@ -27,8 +27,6 @@ pub struct MetalSvBackend {
     pipeline_1q: ComputePipelineState,
     pipeline_kq: ComputePipelineState,
     pipeline_diag: ComputePipelineState,
-    // Reused row-major f32 matrix scratch, sized to the k=5 max (32x32 = 1024).
-    mat_scratch: DeviceBuffer<Complex<f32>>,
     // Used by the host-side readout / measure / sample in Task 6.
     rng: StdRng,
 }
@@ -53,8 +51,15 @@ impl MetalSvBackend {
     /// Execute `circuit` gate-by-gate (unfused) on the GPU, returning the
     /// device-resident final state. Thin wrapper over [`aleph_backend::run`];
     /// the verbatim reference path with no IR optimization.
+    ///
+    /// Gates batch into one command buffer (P5.6-04); the trailing `sync` flushes
+    /// that batch so the returned state is fully computed — one wait per circuit,
+    /// not per gate. (The state also self-syncs on first read, so this is just
+    /// belt-and-suspenders for a caller that forwards it without reading.)
     pub fn run(&mut self, circuit: &Circuit) -> Result<MetalSvState, BackendError> {
-        aleph_backend::run(self, circuit)
+        let state = aleph_backend::run(self, circuit)?;
+        state.sync();
+        Ok(state)
     }
 
     /// Optimize `circuit` with the default IR pipeline (cancellation, DCE,
@@ -63,8 +68,12 @@ impl MetalSvBackend {
     /// permutation the pipeline introduces is settled via `unpermute_state`, so
     /// the returned state is in logical qubit order and directly comparable to
     /// [`run`](Self::run). Thin wrapper over [`aleph_backend::run_optimized`].
+    ///
+    /// The trailing `sync` flushes the final gate batch (see [`run`](Self::run)).
     pub fn run_optimized(&mut self, circuit: &Circuit) -> Result<MetalSvState, BackendError> {
-        aleph_backend::run_optimized(self, circuit)
+        let state = aleph_backend::run_optimized(self, circuit)?;
+        state.sync();
+        Ok(state)
     }
 
     fn build(rng: StdRng) -> Result<Self, BackendError> {
@@ -78,66 +87,73 @@ impl MetalSvBackend {
         let pipeline_diag = ctx
             .make_compute_pipeline(SV_DIAG_SRC, SV_DIAG_ENTRY)
             .map_err(map_metal_err)?;
-        let mat_scratch =
-            DeviceBuffer::from_slice(&ctx, &vec![Complex::<f32>::new(0.0, 0.0); 1024]);
         Ok(Self {
             ctx,
             pipeline_1q,
             pipeline_kq,
             pipeline_diag,
-            mat_scratch,
             rng,
         })
     }
 
-    /// Encode and run one 1q-kernel dispatch over `2^(n-1)` pairs, then block
-    /// until the GPU finishes so the unified-memory buffer is current for any
-    /// subsequent host read or gate.
-    fn dispatch_1q(&self, state: &MetalSvState, g: &Gate1q) {
+    /// Encode one 1q-kernel dispatch over `2^(n-1)` pairs into the state's open
+    /// batch — no commit/wait (P5.6-04). Metal's automatic hazard tracking on the
+    /// shared `amps` buffer serialises this dispatch after the previous gate, so
+    /// the un-waited batch is still applied in program order.
+    fn encode_1q(&self, state: &MetalSvState, g: &Gate1q) {
         let pairs = 1u64 << (state.num_qubits - 1); // num_qubits ≥ 1 here
-        let cmd = self.ctx.queue().new_command_buffer();
-        let encoder = cmd.new_compute_command_encoder();
-        encoder.set_compute_pipeline_state(&self.pipeline_1q);
-        encoder.set_buffer(0, Some(state.amps.metal_buffer()), 0);
-        // Metal copies the uniform block synchronously before set_bytes returns,
-        // so the stack-local `g` need not outlive this call.
-        encoder.set_bytes(
-            1,
-            std::mem::size_of::<Gate1q>() as u64,
-            g as *const Gate1q as *const c_void,
-        );
-        let tg = self
-            .pipeline_1q
-            .max_total_threads_per_threadgroup()
-            .min(pairs);
-        encoder.dispatch_threads(MTLSize::new(pairs, 1, 1), MTLSize::new(tg, 1, 1));
-        encoder.end_encoding();
-        cmd.commit();
-        cmd.wait_until_completed();
+        state.encode(self.ctx.queue(), |encoder| {
+            encoder.set_compute_pipeline_state(&self.pipeline_1q);
+            encoder.set_buffer(0, Some(state.amps.metal_buffer()), 0);
+            // Metal copies the uniform block synchronously inside set_bytes, so
+            // the stack-local `g` need not outlive this dispatch even un-waited.
+            encoder.set_bytes(
+                1,
+                std::mem::size_of::<Gate1q>() as u64,
+                g as *const Gate1q as *const c_void,
+            );
+            let tg = self
+                .pipeline_1q
+                .max_total_threads_per_threadgroup()
+                .min(pairs);
+            encoder.dispatch_threads(MTLSize::new(pairs, 1, 1), MTLSize::new(tg, 1, 1));
+        });
+        self.maybe_flush(state);
     }
 
-    /// Encode + run one generic dense-kq dispatch over `2^(n-k)` groups. The
-    /// caller must have already written the row-major matrix into `mat_scratch`.
-    fn dispatch_kq(&self, state: &MetalSvState, meta: &GateKqMeta) {
+    /// Encode one generic dense-kq dispatch over `2^(n-k)` groups into the open
+    /// batch. The row-major f32 `matrix` (length `4^k`) is uploaded into its own
+    /// slot of the state's reusable kq arena (distinct byte offset per dispatch),
+    /// so batched kq dispatches never race over a shared region yet pay no
+    /// per-gate buffer allocation (P5.6-04 AC #1).
+    fn encode_kq(&self, state: &MetalSvState, meta: &GateKqMeta, matrix: &[Complex<f32>]) {
         let groups = 1u64 << (state.num_qubits - meta.k); // num_qubits >= k
-        let cmd = self.ctx.queue().new_command_buffer();
-        let encoder = cmd.new_compute_command_encoder();
-        encoder.set_compute_pipeline_state(&self.pipeline_kq);
-        encoder.set_buffer(0, Some(state.amps.metal_buffer()), 0);
-        encoder.set_buffer(1, Some(self.mat_scratch.metal_buffer()), 0);
-        encoder.set_bytes(
-            2,
-            std::mem::size_of::<GateKqMeta>() as u64,
-            meta as *const GateKqMeta as *const c_void,
-        );
-        let tg = self
-            .pipeline_kq
-            .max_total_threads_per_threadgroup()
-            .min(groups);
-        encoder.dispatch_threads(MTLSize::new(groups, 1, 1), MTLSize::new(tg, 1, 1));
-        encoder.end_encoding();
-        cmd.commit();
-        cmd.wait_until_completed();
+        let mat_offset = state.kq_upload(&self.ctx, matrix);
+        state.encode(self.ctx.queue(), |encoder| {
+            encoder.set_compute_pipeline_state(&self.pipeline_kq);
+            encoder.set_buffer(0, Some(state.amps.metal_buffer()), 0);
+            encoder.set_buffer(1, Some(state.kq_pool_buffer().metal_buffer()), mat_offset);
+            encoder.set_bytes(
+                2,
+                std::mem::size_of::<GateKqMeta>() as u64,
+                meta as *const GateKqMeta as *const c_void,
+            );
+            let tg = self
+                .pipeline_kq
+                .max_total_threads_per_threadgroup()
+                .min(groups);
+            encoder.dispatch_threads(MTLSize::new(groups, 1, 1), MTLSize::new(tg, 1, 1));
+        });
+        self.maybe_flush(state);
+    }
+
+    /// Bound the open batch: once `BATCH_CAP` dispatches are queued, drain so the
+    /// command buffer and the live per-dispatch kq buffers stay bounded on deep
+    /// circuits. Correctness is unaffected — `sync` only adds a wait.
+    fn maybe_flush(&self, state: &MetalSvState) {
+        if state.batch_len() >= BATCH_CAP {
+            state.sync();
+        }
     }
 
     /// Build the [`GateKqMeta`] for a dense gate on `targets` (logical/MSB order,
@@ -276,7 +292,7 @@ impl Backend for MetalSvBackend {
         let mut host = vec![Complex::<f32>::new(0.0, 0.0); dim];
         host[0] = Complex::<f32>::new(1.0, 0.0);
         let amps = DeviceBuffer::from_slice(&self.ctx, &host);
-        Ok(MetalSvState { num_qubits, amps })
+        Ok(MetalSvState::new(num_qubits, amps))
     }
 
     fn apply_gate(
@@ -310,9 +326,8 @@ impl Backend for MetalSvBackend {
         }
         // UnitaryKq carries a raw 2^k x 2^k matrix and has no GateMatrix form;
         // dispatch it directly (mirrors the CPU FP32 backend). 2 <= k <= 5, and
-        // 4^k = data.len(); k=5 fills the full 1024-entry scratch. Entries beyond
-        // 4^k stay stale-but-unread (the kernel only reads mat[0..4^k]).
-        // `k` ignored here — kq_meta re-derives it from gate.qubits.len().
+        // 4^k = data.len(). `k` ignored here — kq_meta re-derives it from
+        // gate.qubits.len().
         if let aleph_core::Gate::UnitaryKq { k: _, data } = &gate.gate {
             // `Gate::UnitaryKq` stores its raw 2^k×2^k matrix without validation,
             // so a non-unitary or NaN block would otherwise be applied silently.
@@ -325,11 +340,8 @@ impl Backend for MetalSvBackend {
                 return Err(BackendError::NonUnitaryMatrix { deviation });
             }
             let meta = Self::kq_meta(&gate.qubits, &gate.controls);
-            let scratch = self.mat_scratch.as_mut_slice();
-            for (dst, src) in scratch.iter_mut().zip(data.iter()) {
-                *dst = narrow(*src);
-            }
-            self.dispatch_kq(state, &meta);
+            let matrix: Vec<Complex<f32>> = data.iter().map(|z| narrow(*z)).collect();
+            self.encode_kq(state, &meta, &matrix);
             return Ok(());
         }
         // Fixed-size GateMatrix gates (M2x2/M4x4/M8x8) below. (UnitaryKq was
@@ -363,7 +375,7 @@ impl Backend for MetalSvBackend {
                     ctrl_mask,
                     _pad: 0,
                 };
-                self.dispatch_1q(state, &g);
+                self.encode_1q(state, &g);
             }
             GateMatrix::M4x4(m) => {
                 // Defense-in-depth unitarity guard (catches a non-unitary or
@@ -373,14 +385,14 @@ impl Backend for MetalSvBackend {
                     return Err(BackendError::NonUnitaryMatrix { deviation });
                 }
                 let meta = Self::kq_meta(&[gate.qubits[0], gate.qubits[1]], &gate.controls);
-                let scratch = self.mat_scratch.as_mut_slice();
+                let mut matrix = vec![Complex::<f32>::new(0.0, 0.0); 16];
                 #[allow(clippy::needless_range_loop)]
                 for r in 0..4 {
                     for c in 0..4 {
-                        scratch[r * 4 + c] = narrow(m[r][c]);
+                        matrix[r * 4 + c] = narrow(m[r][c]);
                     }
                 }
-                self.dispatch_kq(state, &meta);
+                self.encode_kq(state, &meta, &matrix);
             }
             GateMatrix::M8x8(m) => {
                 let deviation = unitarity_deviation_square(&m);
@@ -391,14 +403,14 @@ impl Backend for MetalSvBackend {
                     &[gate.qubits[0], gate.qubits[1], gate.qubits[2]],
                     &gate.controls,
                 );
-                let scratch = self.mat_scratch.as_mut_slice();
+                let mut matrix = vec![Complex::<f32>::new(0.0, 0.0); 64];
                 #[allow(clippy::needless_range_loop)]
                 for r in 0..8 {
                     for c in 0..8 {
-                        scratch[r * 8 + c] = narrow(m[r][c]);
+                        matrix[r * 8 + c] = narrow(m[r][c]);
                     }
                 }
-                self.dispatch_kq(state, &meta);
+                self.encode_kq(state, &meta, &matrix);
             }
         }
         Ok(())
@@ -410,9 +422,11 @@ impl Backend for MetalSvBackend {
         perm: &[u32],
     ) -> Result<(), BackendError> {
         // Host-side single gather: physical-order amplitudes -> logical order.
-        // The state is unified memory and every prior dispatch waited, so the
-        // slice is current. `bit_permute_buf` is the shared SV/MPS helper, so the
-        // gather matches what the run_optimized driver expects after RelabelQubits.
+        // Drain the pending gate batch first so the slice reflects every prior
+        // dispatch (P5.6-04). `bit_permute_buf` is the shared SV/MPS helper, so
+        // the gather matches what the run_optimized driver expects after
+        // RelabelQubits.
+        state.sync();
         let gathered = aleph_core::bit_permute_buf(state.amps.as_slice(), perm);
         state.amps = DeviceBuffer::from_slice(&self.ctx, &gathered);
         Ok(())
@@ -449,33 +463,35 @@ impl Backend for MetalSvBackend {
                 _pad: 0,
             });
         }
-        // cm_buf/desc_buf must stay alive until wait_until_completed() below —
-        // the GPU reads them after commit(). They are dropped at method exit.
+        // Encode into the open batch (P5.6-04) — the diagonal phase joins the same
+        // command buffer as the surrounding gates, hazard-tracked on `amps` so it
+        // runs in order with no extra sync. cm_buf/desc_buf must outlive the batch
+        // (the GPU reads them after commit), so they're retained on the state.
         let cm_buf = DeviceBuffer::from_slice(&self.ctx, &cond_masks);
         let desc_buf = DeviceBuffer::from_slice(&self.ctx, &descs);
         let meta = DiagMeta {
             n_terms: descs.len() as u32,
         };
         let n_amps = 1u64 << state.num_qubits;
-        let cmd = self.ctx.queue().new_command_buffer();
-        let encoder = cmd.new_compute_command_encoder();
-        encoder.set_compute_pipeline_state(&self.pipeline_diag);
-        encoder.set_buffer(0, Some(state.amps.metal_buffer()), 0);
-        encoder.set_buffer(1, Some(cm_buf.metal_buffer()), 0);
-        encoder.set_buffer(2, Some(desc_buf.metal_buffer()), 0);
-        encoder.set_bytes(
-            3,
-            std::mem::size_of::<DiagMeta>() as u64,
-            &meta as *const DiagMeta as *const c_void,
-        );
-        let tg = self
-            .pipeline_diag
-            .max_total_threads_per_threadgroup()
-            .min(n_amps);
-        encoder.dispatch_threads(MTLSize::new(n_amps, 1, 1), MTLSize::new(tg, 1, 1));
-        encoder.end_encoding();
-        cmd.commit();
-        cmd.wait_until_completed();
+        state.encode(self.ctx.queue(), |encoder| {
+            encoder.set_compute_pipeline_state(&self.pipeline_diag);
+            encoder.set_buffer(0, Some(state.amps.metal_buffer()), 0);
+            encoder.set_buffer(1, Some(cm_buf.metal_buffer()), 0);
+            encoder.set_buffer(2, Some(desc_buf.metal_buffer()), 0);
+            encoder.set_bytes(
+                3,
+                std::mem::size_of::<DiagMeta>() as u64,
+                &meta as *const DiagMeta as *const c_void,
+            );
+            let tg = self
+                .pipeline_diag
+                .max_total_threads_per_threadgroup()
+                .min(n_amps);
+            encoder.dispatch_threads(MTLSize::new(n_amps, 1, 1), MTLSize::new(tg, 1, 1));
+        });
+        state.retain_aux(cm_buf);
+        state.retain_aux(desc_buf);
+        self.maybe_flush(state);
         Ok(())
     }
 
@@ -1105,5 +1121,37 @@ mod tests {
         let unfused = b.run(&c).unwrap().amplitudes_f32().to_vec();
         let fused = b.run_optimized(&c).unwrap().amplitudes_f32().to_vec();
         assert_amps_close(&fused, &unfused, 1e-5);
+    }
+
+    /// P5.6-04: a circuit deeper than `BATCH_CAP` must stay correct across the
+    /// forced mid-run flush and the kq-arena slot reuse it triggers. Builds well
+    /// over 2·BATCH_CAP gates (H + CNOT, so the kq path is exercised) and checks
+    /// the batched GPU `run` against the exact FP64 CPU `NaiveSvBackend` within
+    /// the f32 oracle tolerance.
+    #[test]
+    fn deep_circuit_survives_batch_flush() {
+        let Some(mut b) = backend_or_skip() else {
+            return;
+        };
+        let reps = (2 * BATCH_CAP) / 5 + 4; // 5 gates/rep ⇒ well over 2·BATCH_CAP
+        let mut c = Circuit::new(3, 0);
+        for _ in 0..reps {
+            c.h(0).unwrap();
+            c.h(1).unwrap();
+            c.h(2).unwrap();
+            c.cnot(0, 1).unwrap();
+            c.cnot(1, 2).unwrap();
+        }
+        let gpu = b.run(&c).unwrap().to_aos_f64();
+
+        let mut cpu = aleph_sv::NaiveSvBackend::with_seed(0);
+        let cpu_state = aleph_backend::run(&mut cpu, &c).unwrap();
+        let reference = aleph_oracle::HasAmplitudes::amplitudes(&cpu_state);
+
+        assert_eq!(gpu.len(), reference.len());
+        for (i, (g, r)) in gpu.iter().zip(reference.iter()).enumerate() {
+            let d = ((g.re - r.re).powi(2) + (g.im - r.im).powi(2)).sqrt();
+            assert!(d <= 1e-5, "amp {i}: |Δ|={d:.3e}\n  gpu {g:?}\n  ref {r:?}");
+        }
     }
 }
