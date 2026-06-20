@@ -203,6 +203,37 @@ fn unitarity_deviation_square<const N: usize>(m: &[[Complex<f64>; N]; N]) -> f64
     max_dev
 }
 
+/// Max deviation of `M†M` from the identity for a row-major `dim×dim` matrix
+/// stored flat (the `UnitaryKq` representation: `data[r*dim + c] = m[r][c]`,
+/// `dim = 2^k`). Same NaN discipline as `unitarity_deviation_square` (ADR 0006):
+/// any NaN entry returns NaN rather than being swallowed by `dev > max_dev`.
+/// Used for the variable-size `UnitaryKq` arm, which has no const-`N` form.
+fn unitarity_deviation_flat(data: &[Complex<f64>], dim: usize) -> f64 {
+    let mut max_dev = 0.0_f64;
+    for r in 0..dim {
+        for c in 0..dim {
+            let mut acc = Complex::<f64>::new(0.0, 0.0);
+            for k in 0..dim {
+                // (M†M)[r,c] = Σ_k conj(M[k,r]) · M[k,c]
+                acc += data[k * dim + r].conj() * data[k * dim + c];
+            }
+            let target = if r == c {
+                Complex::<f64>::new(1.0, 0.0)
+            } else {
+                Complex::<f64>::new(0.0, 0.0)
+            };
+            let dev = (acc - target).norm();
+            if dev.is_nan() {
+                return f64::NAN;
+            }
+            if dev > max_dev {
+                max_dev = dev;
+            }
+        }
+    }
+    max_dev
+}
+
 /// Max deviation of `M†M` from the identity for a 2×2 — local reimplementation
 /// of `aleph-sv`'s `validation::unitarity_deviation` (which is `pub(crate)`),
 /// restricted to the 2×2 case this backend handles.
@@ -283,6 +314,16 @@ impl Backend for MetalSvBackend {
         // 4^k stay stale-but-unread (the kernel only reads mat[0..4^k]).
         // `k` ignored here — kq_meta re-derives it from gate.qubits.len().
         if let aleph_core::Gate::UnitaryKq { k: _, data } = &gate.gate {
+            // `Gate::UnitaryKq` stores its raw 2^k×2^k matrix without validation,
+            // so a non-unitary or NaN block would otherwise be applied silently.
+            // Guard before narrowing, mirroring the fixed-size arms and ADR-0006
+            // NaN discipline (the `dim` is re-derived from the target count, the
+            // same source `kq_meta` uses, not the unvalidated `k` field).
+            let dim = 1usize << gate.qubits.len();
+            let deviation = unitarity_deviation_flat(data, dim);
+            if !deviation.is_finite() || deviation > AMPLITUDE_TOL {
+                return Err(BackendError::NonUnitaryMatrix { deviation });
+            }
             let meta = Self::kq_meta(&gate.qubits, &gate.controls);
             let scratch = self.mat_scratch.as_mut_slice();
             for (dst, src) in scratch.iter_mut().zip(data.iter()) {
@@ -918,6 +959,83 @@ mod tests {
         let a = s.amplitudes_f32();
         assert!((a[2].re - 1.0).abs() < 1e-6, "amps = {a:?}"); // index 2
         assert!(a[0].norm() < 1e-6 && a[1].norm() < 1e-6 && a[3].norm() < 1e-6);
+    }
+
+    /// AC #2: a `UnitaryKq` carrying a NaN entry must be rejected as
+    /// `NonUnitaryMatrix`, not silently applied. `Gate::UnitaryKq` stores its
+    /// raw matrix without validation, so the NaN reaches the apply-path guard.
+    #[test]
+    fn unitary_kq_nan_is_rejected_as_non_unitary() {
+        use aleph_core::Complex as C;
+        let Some(mut b) = backend_or_skip() else {
+            return;
+        };
+        let mut s = b.allocate(2).unwrap();
+        let z = C::new(0.0, 0.0);
+        let o = C::new(1.0, 0.0);
+        // Identity 4x4 except a NaN in the top-left — a NaN comparison must not
+        // be swallowed (ADR 0006).
+        let data: Vec<C> = vec![
+            C::new(f64::NAN, 0.0),
+            z,
+            z,
+            z, //
+            z,
+            o,
+            z,
+            z, //
+            z,
+            z,
+            o,
+            z, //
+            z,
+            z,
+            z,
+            o, //
+        ];
+        let g = gate(
+            Gate::UnitaryKq {
+                k: 2,
+                data: data.into_boxed_slice(),
+            },
+            &[0, 1],
+        );
+        let err = b.apply_gate(&mut s, &g).unwrap_err();
+        assert!(
+            matches!(err, BackendError::NonUnitaryMatrix { .. }),
+            "got {err:?}"
+        );
+    }
+
+    /// AC #2: a finite-but-non-unitary `UnitaryKq` (a scaled identity, deviation
+    /// well above tolerance) must also be rejected.
+    #[test]
+    fn unitary_kq_non_unitary_is_rejected() {
+        use aleph_core::Complex as C;
+        let Some(mut b) = backend_or_skip() else {
+            return;
+        };
+        let mut s = b.allocate(2).unwrap();
+        let z = C::new(0.0, 0.0);
+        let two = C::new(2.0, 0.0);
+        let data: Vec<C> = vec![
+            two, z, z, z, //
+            z, two, z, z, //
+            z, z, two, z, //
+            z, z, z, two, //
+        ];
+        let g = gate(
+            Gate::UnitaryKq {
+                k: 2,
+                data: data.into_boxed_slice(),
+            },
+            &[0, 1],
+        );
+        let err = b.apply_gate(&mut s, &g).unwrap_err();
+        assert!(
+            matches!(err, BackendError::NonUnitaryMatrix { .. }),
+            "got {err:?}"
+        );
     }
 
     /// Assert two FP32 amplitude buffers agree elementwise within `tol`.
