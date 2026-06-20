@@ -105,6 +105,7 @@ dependencies = [
  "num-complex",
  "proptest",
  "rand 0.8.6",
+ "rayon",
  "thiserror",
 ]
 

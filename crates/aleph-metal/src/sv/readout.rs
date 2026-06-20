@@ -8,6 +8,7 @@
 use aleph_backend::BackendError;
 use aleph_core::{Complex, Pauli, PauliString};
 use rand::{rngs::StdRng, Rng};
+use rayon::prelude::*;
 
 use super::state::MetalSvState;
 
@@ -16,6 +17,11 @@ use super::state::MetalSvState;
 const DEGENERATE_BRANCH_THRESHOLD: f64 = 1e-300;
 /// Relaxed normalization tolerance for an f32-accumulated state.
 const FP32_NORM_TOL: f64 = 1e-4;
+/// Amplitude count (≈ n=14) below which the host readout stays serial: rayon's
+/// fork/join overhead exceeds the gain on small states, and the unit tests
+/// (n ≤ ~10) keep their tight timing. At/above it the 2^n reductions and the
+/// measure collapse fan out across cores (P5.6-06).
+const PAR_THRESHOLD: usize = 1 << 14;
 
 /// `|a|²` of one f32 amplitude, computed in f64. Widening both components
 /// before squaring avoids the f32 cancellation a naive `a.norm_sqr()` would
@@ -47,17 +53,27 @@ fn validate(state: &MetalSvState) -> Result<Vec<f64>, BackendError> {
             reason: "amps.len() != 2^num_qubits",
         });
     }
-    let mut probs = Vec::with_capacity(len);
-    let mut total = 0.0_f64;
-    for &a in amps {
-        let p = norm_sqr_f64(a);
-        if !p.is_finite() {
-            return Err(BackendError::InvalidState {
-                reason: "non-finite amplitude norm²",
-            });
-        }
-        total += p;
-        probs.push(p);
+    // Per-amplitude |a|² (the array every readout op reduces over). Parallel map
+    // for large states; the finiteness check and norm sum fold in afterwards.
+    let probs: Vec<f64> = if len >= PAR_THRESHOLD {
+        amps.par_iter().map(|&a| norm_sqr_f64(a)).collect()
+    } else {
+        amps.iter().map(|&a| norm_sqr_f64(a)).collect()
+    };
+    let (total, all_finite) = if len >= PAR_THRESHOLD {
+        probs
+            .par_iter()
+            .map(|&p| (p, p.is_finite()))
+            .reduce(|| (0.0, true), |(s1, f1), (s2, f2)| (s1 + s2, f1 && f2))
+    } else {
+        probs
+            .iter()
+            .fold((0.0, true), |(s, f), &p| (s + p, f && p.is_finite()))
+    };
+    if !all_finite {
+        return Err(BackendError::InvalidState {
+            reason: "non-finite amplitude norm²",
+        });
     }
     if (total - 1.0).abs() > FP32_NORM_TOL {
         return Err(BackendError::InvalidState {
@@ -92,16 +108,44 @@ pub(crate) fn probabilities(
         return Ok(vec![1.0]);
     }
     let out_dim = 1usize << qubits.len();
-    let mut out = vec![0.0_f64; out_dim];
-    for (i, p) in probs.iter().enumerate() {
+    // Marginal bin for amplitude index `i`: gather the queried qubit bits.
+    let bin = |i: usize| -> usize {
         let mut k = 0usize;
         for (pos, &q) in qubits.iter().enumerate() {
             if (i >> q) & 1 == 1 {
                 k |= 1usize << pos;
             }
         }
-        out[k] += *p;
-    }
+        k
+    };
+    let out = if probs.len() >= PAR_THRESHOLD {
+        // Per-thread local bins, summed at the join — out_dim is small (2^|qubits|).
+        probs
+            .par_iter()
+            .enumerate()
+            .fold(
+                || vec![0.0_f64; out_dim],
+                |mut acc, (i, &p)| {
+                    acc[bin(i)] += p;
+                    acc
+                },
+            )
+            .reduce(
+                || vec![0.0_f64; out_dim],
+                |mut a, b| {
+                    for (slot, v) in a.iter_mut().zip(b) {
+                        *slot += v;
+                    }
+                    a
+                },
+            )
+    } else {
+        let mut out = vec![0.0_f64; out_dim];
+        for (i, p) in probs.iter().enumerate() {
+            out[bin(i)] += *p;
+        }
+        out
+    };
     Ok(out)
 }
 
@@ -145,15 +189,25 @@ pub(crate) fn measure(
     }
     let probs = validate(state)?;
     let q_bit = 1usize << qubit;
-    let mut p0 = 0.0_f64;
-    let mut p1 = 0.0_f64;
-    for (i, &p) in probs.iter().enumerate() {
-        if i & q_bit != 0 {
-            p1 += p;
-        } else {
-            p0 += p;
-        }
-    }
+    // Split weight into the outcome-0 and outcome-1 branches.
+    let (p0, p1) = if probs.len() >= PAR_THRESHOLD {
+        probs
+            .par_iter()
+            .enumerate()
+            .map(|(i, &p)| if i & q_bit != 0 { (0.0, p) } else { (p, 0.0) })
+            .reduce(|| (0.0, 0.0), |(a0, a1), (b0, b1)| (a0 + b0, a1 + b1))
+    } else {
+        probs
+            .iter()
+            .enumerate()
+            .fold((0.0_f64, 0.0_f64), |(a0, a1), (i, &p)| {
+                if i & q_bit != 0 {
+                    (a0, a1 + p)
+                } else {
+                    (a0 + p, a1)
+                }
+            })
+    };
     let p0 = p0.clamp(0.0, 1.0);
     let p1 = p1.clamp(0.0, 1.0);
     let one_degen = p1 < DEGENERATE_BRANCH_THRESHOLD;
@@ -174,14 +228,25 @@ pub(crate) fn measure(
         }
     };
     let scale = (1.0 / p.sqrt()) as f32;
-    for (i, a) in state.amps.as_mut_slice().iter_mut().enumerate() {
-        let bit_set = (i & q_bit) != 0;
-        if bit_set == outcome {
+    // Collapse: zero the eliminated branch, renormalize the kept one. Each index
+    // is independent, so the rewrite fans out over disjoint amplitudes.
+    let collapse = |i: usize, a: &mut Complex<f32>| {
+        if (i & q_bit != 0) == outcome {
             a.re *= scale;
             a.im *= scale;
         } else {
             *a = Complex::<f32>::new(0.0, 0.0);
         }
+    };
+    let amps = state.amps.as_mut_slice();
+    if amps.len() >= PAR_THRESHOLD {
+        amps.par_iter_mut()
+            .enumerate()
+            .for_each(|(i, a)| collapse(i, a));
+    } else {
+        amps.iter_mut()
+            .enumerate()
+            .for_each(|(i, a)| collapse(i, a));
     }
     Ok(outcome)
 }
@@ -230,15 +295,23 @@ pub(crate) fn expectation_value(
         }
     }
     if all_z_or_i {
-        let mut acc = 0.0_f64;
-        for (i, &p) in probs.iter().enumerate() {
-            let sign = if (i as u64 & z_mask).count_ones() & 1 == 0 {
-                1.0
+        // ⟨⊗Zᵢ⟩ = Σ (-1)^popcount(i & z_mask) |aᵢ|² — a sign-weighted parallel sum.
+        let signed = |i: usize, p: f64| {
+            if (i as u64 & z_mask).count_ones() & 1 == 0 {
+                p
             } else {
-                -1.0
-            };
-            acc += sign * p;
-        }
+                -p
+            }
+        };
+        let acc: f64 = if probs.len() >= PAR_THRESHOLD {
+            probs
+                .par_iter()
+                .enumerate()
+                .map(|(i, &p)| signed(i, p))
+                .sum()
+        } else {
+            probs.iter().enumerate().map(|(i, &p)| signed(i, p)).sum()
+        };
         return Ok(pauli.coefficient * acc);
     }
     // Slow path: φ = P|ψ⟩ by direct amplitude inspection, then Re(⟨ψ|φ⟩).
@@ -277,9 +350,18 @@ pub(crate) fn expectation_value(
             }
         }
     }
-    let mut acc_re = 0.0_f64;
-    for (lhs, rhs) in state.amplitudes_f32().iter().zip(tmp.iter()) {
-        acc_re += (lhs.re as f64) * (rhs.re as f64) + (lhs.im as f64) * (rhs.im as f64);
-    }
+    // Re⟨ψ|φ⟩ with φ = P|ψ⟩ — a parallel dot product over the 2^n amplitudes.
+    let lhs = state.amplitudes_f32();
+    let dot = |l: &Complex<f32>, r: &Complex<f32>| {
+        (l.re as f64) * (r.re as f64) + (l.im as f64) * (r.im as f64)
+    };
+    let acc_re: f64 = if tmp.len() >= PAR_THRESHOLD {
+        lhs.par_iter()
+            .zip(tmp.par_iter())
+            .map(|(l, r)| dot(l, r))
+            .sum()
+    } else {
+        lhs.iter().zip(tmp.iter()).map(|(l, r)| dot(l, r)).sum()
+    };
     Ok(pauli.coefficient * acc_re)
 }
