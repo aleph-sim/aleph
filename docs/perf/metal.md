@@ -108,6 +108,13 @@ gate-apply, and a host `faer` truncated SVD per NN 2q gate (the GPU has no SVD).
   single-threaded CPU SVD blocking the GPU), not data transfer. This is the
   structural reason a unified-memory MPS-on-Metal scaffold cannot yet beat the CPU
   MPS, and it names the next lever: a GPU-resident or batched SVD.
+- **Parallel SVD (P5.6-07).** Switching the two-site factorization from
+  `Par::Seq` to size-thresholded `Par::rayon` (faer's CPU parallelism, blocks with
+  min dim ≥ 32) cuts the host SVD on that same n=12 d=24 report from **1502 ms to
+  1390 ms (−7.5%)**, dropping the host/GPU ratio 19.0× → 16.0×. The win is modest:
+  faer's SVD parallelism has little to chew on at these ≤128×128 blocks, so the
+  factorization is **still ~94%** of per-gate time. The decisive lever remains a
+  batched/GPU-resident SVD — left as future work.
 
 ## What's next
 

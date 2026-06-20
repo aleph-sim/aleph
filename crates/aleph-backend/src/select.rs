@@ -20,6 +20,13 @@ pub const SV_EXACT_CAP: u32 = 28;
 /// conservative routing threshold (in two-qubit-gate layers), not a hard bound.
 pub const MPS_DEPTH_THRESHOLD: usize = 64;
 
+/// Qubit count at/above which `auto` prefers the Metal GPU state vector over the
+/// CPU one — *when the Metal backend is available* (P5.6-07). The GPU SV is FP32
+/// but ~4.7–6.1× the CPU SV at n≈24–28 (docs/perf/metal.md); below this the CPU
+/// FP64 SV is exact and fast enough that the GPU's dispatch overhead isn't worth
+/// the precision drop. Bounded above by [`SV_EXACT_CAP`] (both cap at 28 qubits).
+pub const GPU_PREFER_N: u32 = 24;
+
 /// Resolved, abstract backend label produced by the heuristic.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum BackendKind {
@@ -29,9 +36,10 @@ pub enum BackendKind {
     Stabilizer,
     /// MPS tensor network — bounded-entanglement, approximate beyond χ.
     Mps,
-    /// Metal GPU dense state vector — FP32, Apple Silicon only. An explicit,
-    /// opt-in override; the `auto` heuristic never routes here (FP32 accuracy,
-    /// device/feature availability), so `select_from` never returns it.
+    /// Metal GPU dense state vector — FP32, Apple Silicon only. A manual override
+    /// always, and — via [`select_from_env`] — an `auto` pick for large dense
+    /// circuits when the caller reports the Metal backend is available. The pure
+    /// [`select_from`] never returns it (it assumes Metal unavailable).
     Metal,
 }
 
@@ -242,8 +250,17 @@ pub struct Selection {
     pub reason: &'static str,
 }
 
-/// Apply the ordered decision rule to pre-computed features. Pure; total.
-pub fn select_from(f: &CircuitFeatures) -> Selection {
+/// Apply the ordered decision rule to pre-computed features, given whether the
+/// Metal GPU backend is available (Apple Silicon + a usable device). Pure; total.
+///
+/// The only difference from [`select_from`] is the exact-and-fits branch: when
+/// Metal is available and the circuit is large enough ([`GPU_PREFER_N`]), the
+/// GPU state vector is preferred over the CPU one — it is FP32 but several times
+/// faster at that scale (P5.6-07). Smaller circuits, and all non-macOS / no-device
+/// callers, keep the exact FP64 CPU path. Availability is a runtime fact the
+/// caller (CLI / Python) probes, since `aleph-backend` cannot depend on
+/// `aleph-metal`.
+pub fn select_from_env(f: &CircuitFeatures, metal_available: bool) -> Selection {
     if f.all_clifford {
         return Selection {
             kind: BackendKind::Stabilizer,
@@ -251,6 +268,12 @@ pub fn select_from(f: &CircuitFeatures) -> Selection {
         };
     }
     if f.num_qubits <= SV_EXACT_CAP {
+        if metal_available && f.num_qubits >= GPU_PREFER_N {
+            return Selection {
+                kind: BackendKind::Metal,
+                reason: "large dense circuit; Metal GPU state vector (FP32) outpaces the CPU at this scale",
+            };
+        }
         return Selection {
             kind: BackendKind::Statevector,
             reason: "exact and fits in memory",
@@ -269,9 +292,20 @@ pub fn select_from(f: &CircuitFeatures) -> Selection {
     }
 }
 
-/// Analyze `c` and apply the decision rule, returning the kind + rationale.
+/// Apply the ordered decision rule to pre-computed features, assuming no GPU.
+/// Pure; total. Equivalent to [`select_from_env`] with `metal_available = false`.
+pub fn select_from(f: &CircuitFeatures) -> Selection {
+    select_from_env(f, false)
+}
+
+/// Analyze `c` and apply the decision rule (no GPU), returning kind + rationale.
 pub fn select_explained(c: &Circuit) -> Selection {
     select_from(&analyze(c))
+}
+
+/// Analyze `c` and apply the decision rule given Metal availability (P5.6-07).
+pub fn select_explained_env(c: &Circuit, metal_available: bool) -> Selection {
+    select_from_env(&analyze(c), metal_available)
 }
 
 /// Analyze `c` and return the chosen backend kind (AC-exact signature).

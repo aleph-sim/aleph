@@ -20,11 +20,15 @@ pub fn resolve_backend(
     request: BackendRequest,
     circuit: &aleph_ir::Circuit,
     wants_amplitudes: bool,
+    metal_available: bool,
 ) -> BackendKind {
     match request {
         BackendRequest::Fixed(kind) => kind,
         BackendRequest::Auto => {
-            let sel = aleph_backend::select_explained(circuit);
+            // `metal_available` is the caller's runtime probe (Apple Silicon + a
+            // usable Metal device); it lets `auto` route large dense circuits to
+            // the GPU (P5.6-07). Off ⇒ the pure CPU heuristic.
+            let sel = aleph_backend::select_explained_env(circuit, metal_available);
             if sel.kind == BackendKind::Stabilizer && wants_amplitudes {
                 eprintln!(
                     "auto-selected backend: state vector \
@@ -166,11 +170,16 @@ mod backend_choice_tests {
     fn explicit_choice_overrides_without_analysis() {
         let c = clifford();
         assert_eq!(
-            resolve_backend(BackendRequest::Fixed(BackendKind::Mps), &c, false),
+            resolve_backend(BackendRequest::Fixed(BackendKind::Mps), &c, false, false),
             BackendKind::Mps
         );
         assert_eq!(
-            resolve_backend(BackendRequest::Fixed(BackendKind::Statevector), &c, false),
+            resolve_backend(
+                BackendRequest::Fixed(BackendKind::Statevector),
+                &c,
+                false,
+                false
+            ),
             BackendKind::Statevector
         );
     }
@@ -178,7 +187,7 @@ mod backend_choice_tests {
     #[test]
     fn auto_picks_stabilizer_for_clifford() {
         assert_eq!(
-            resolve_backend(BackendRequest::Auto, &clifford(), false),
+            resolve_backend(BackendRequest::Auto, &clifford(), false, false),
             BackendKind::Stabilizer
         );
     }
@@ -187,7 +196,38 @@ mod backend_choice_tests {
     fn auto_downgrades_to_sv_when_amplitudes_requested() {
         // Clifford would be stabilizer, but --statevector needs amplitudes.
         assert_eq!(
-            resolve_backend(BackendRequest::Auto, &clifford(), true),
+            resolve_backend(BackendRequest::Auto, &clifford(), true, false),
+            BackendKind::Statevector
+        );
+    }
+
+    // P5.6-07: a large dense (non-Clifford) circuit auto-routes to Metal when the
+    // caller reports the GPU available, and stays on the CPU SV otherwise.
+    #[test]
+    fn auto_routes_large_dense_to_metal_when_available() {
+        let mut big = aleph_ir::Circuit::new(aleph_backend::GPU_PREFER_N, 0);
+        big.h(0).unwrap();
+        big.t(0).unwrap(); // non-Clifford ⇒ not stabilizer
+        assert_eq!(
+            resolve_backend(BackendRequest::Auto, &big, false, true),
+            BackendKind::Metal,
+            "GPU available + n>=GPU_PREFER_N ⇒ Metal"
+        );
+        assert_eq!(
+            resolve_backend(BackendRequest::Auto, &big, false, false),
+            BackendKind::Statevector,
+            "GPU unavailable ⇒ CPU state vector"
+        );
+    }
+
+    // Below the GPU threshold, auto stays on the CPU SV even when Metal is there.
+    #[test]
+    fn auto_keeps_small_dense_on_cpu_even_with_metal() {
+        let mut small = aleph_ir::Circuit::new(aleph_backend::GPU_PREFER_N - 1, 0);
+        small.h(0).unwrap();
+        small.t(0).unwrap();
+        assert_eq!(
+            resolve_backend(BackendRequest::Auto, &small, false, true),
             BackendKind::Statevector
         );
     }
@@ -209,6 +249,7 @@ mod backend_choice_tests {
             resolve_backend(
                 BackendRequest::from_user_str("sv").unwrap(),
                 &clifford(),
+                false,
                 false
             ),
             BackendKind::Statevector
@@ -217,6 +258,7 @@ mod backend_choice_tests {
             resolve_backend(
                 BackendRequest::from_user_str("stab").unwrap(),
                 &clifford(),
+                false,
                 false
             ),
             BackendKind::Stabilizer
