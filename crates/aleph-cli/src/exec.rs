@@ -144,7 +144,7 @@ pub fn run_circuit<W: Write>(
     //     The requested output view gates an auto stabilizer pick: a
     //     state-vector view needs amplitudes the stabilizer backend lacks.
     let wants_amplitudes = print_statevector || force_statevector;
-    let resolved = resolve_backend(backend, &circuit, wants_amplitudes);
+    let resolved = resolve_backend(backend, &circuit, wants_amplitudes, metal_available());
 
     // The dense state-vector family (CPU SV + Metal GPU SV) shares the qubit-cap
     // and `--statevector` print-cap policy; the stabilizer/MPS backends don't.
@@ -406,6 +406,23 @@ fn run_mps<W: Write>(
         state.max_bond_reached()
     )?;
     Ok(())
+}
+
+/// Whether the Metal GPU backend can actually run here — used by the `auto`
+/// heuristic to decide whether to route large dense circuits to the GPU
+/// (P5.6-07). True only on a macOS+`metal` build where a Metal device is
+/// acquirable, so headless macOS (e.g. CI) and every other platform correctly
+/// stay on the CPU. Probing constructs a backend (acquire device + compile
+/// pipelines); that cost is paid once per `auto` run and avoided entirely when
+/// the user fixes `--backend` explicitly.
+#[cfg(all(target_os = "macos", feature = "metal"))]
+fn metal_available() -> bool {
+    aleph_metal::MetalSvBackend::new().is_ok()
+}
+
+#[cfg(not(all(target_os = "macos", feature = "metal")))]
+fn metal_available() -> bool {
+    false
 }
 
 /// Metal GPU state-vector run path (macOS + `metal` feature). FP32; supports

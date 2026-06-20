@@ -13,6 +13,12 @@ use faer::dyn_stack::{MemBuffer, MemStack};
 use faer::linalg::svd::{svd, svd_scratch, ComputeSvdVectors};
 use faer::{Mat, Par};
 
+/// Minimum `min(rows, cols)` of the two-site block Θ′ at which the SVD switches
+/// from `Par::Seq` to rayon-parallel (P5.6-07). Below it the factorization is too
+/// small for fork/join to pay off; at/above it (bond χ ≳ 16, so rows/cols = 2·χ ≳
+/// 32) the parallel SVD overlaps the cost that dominated per-gate MPS time.
+const PAR_SVD_MIN_DIM: usize = 32;
+
 /// Narrow an f64 SVD factor entry back to the stored f32 site precision.
 #[inline]
 fn narrow(z: Complex) -> Complex<f32> {
@@ -71,6 +77,16 @@ pub(crate) fn svd_split(
         Complex::new(z.re as f64, z.im as f64)
     });
     let size = rows.min(cols);
+    // Parallelise the factorization only once the block is big enough to pay for
+    // rayon's fork/join (P5.6-07). Small early-circuit blocks stay `Par::Seq`;
+    // deep-entanglement blocks (large bond ⇒ rows/cols up to 2·χ) fan out, where
+    // the host SVD used to be 94.5% of per-gate time. `Par::rayon(0)` uses
+    // rayon's default thread count.
+    let par = if size >= PAR_SVD_MIN_DIM {
+        Par::rayon(0)
+    } else {
+        Par::Seq
+    };
     let mut u = Mat::<Complex>::zeros(rows, size);
     let mut v = Mat::<Complex>::zeros(cols, size);
     let mut s = faer::diag::Diag::<Complex>::zeros(size);
@@ -79,7 +95,7 @@ pub(crate) fn svd_split(
         cols,
         ComputeSvdVectors::Thin,
         ComputeSvdVectors::Thin,
-        Par::Seq,
+        par,
         Default::default(),
     );
     let mut mem = MemBuffer::new(req);
@@ -88,7 +104,7 @@ pub(crate) fn svd_split(
         s.as_mut(),
         Some(u.as_mut()),
         Some(v.as_mut()),
-        Par::Seq,
+        par,
         MemStack::new(&mut mem),
         Default::default(),
     )

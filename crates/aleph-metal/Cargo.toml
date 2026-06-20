@@ -47,7 +47,9 @@ num-complex   = { workspace = true, optional = true, features = ["bytemuck"] }
 # SVD, so each NN 2q gate factorizes the 2-site block on the CPU via faer (the
 # same library the CPU MPS uses); `aleph_core::Complex == faer::c64`, so no
 # element-type conversion is needed. Optional → only compiled under `metal`.
-faer = { version = "0.24.0", default-features = false, features = ["linalg", "std"], optional = true }
+# `rayon` feature lets the two-site SVD use `Par::rayon` above a size threshold
+# (P5.6-07) — the host SVD was 94.5% of per-gate MPS time on `Par::Seq`.
+faer = { version = "0.24.0", default-features = false, features = ["linalg", "std", "rayon"], optional = true }
 # Parallel host-side readout (P5.6-06): measure/sample/expectation reductions and
 # the measure collapse run over 2^n amplitudes; rayon spreads them across cores.
 rayon = { workspace = true, optional = true }
