@@ -16,6 +16,10 @@ crate-type = ["cdylib", "rlib"]
 # Enables the PyO3 extension module. OFF by default so `cargo build --workspace`
 # never needs a Python interpreter; `maturin develop --features python` turns it on.
 python = ["dep:pyo3", "dep:numpy", "dep:rand"]
+# Wire the Metal GPU state-vector backend (`backend="metal"`) into the Python
+# `run()`. macOS-only (the dep is target-gated); build the wheel with
+# `maturin develop --features python,metal` on Apple Silicon.
+metal = ["dep:aleph-metal", "aleph-metal/metal"]
 
 [dependencies]
 aleph-core    = { path = "../aleph-core" }
@@ -35,3 +39,8 @@ numpy = { version = "0.22", optional = true }
 # OS entropy; declared here so the follow-up wiring has no Cargo.toml churn.
 # Pulled in only with the `python` feature.
 rand = { workspace = true, optional = true }
+
+# Metal GPU backend for `backend="metal"`. macOS-only; pulled in only with the
+# `metal` feature (off by default, so default/Linux wheels are unaffected).
+[target.'cfg(target_os = "macos")'.dependencies]
+aleph-metal = { path = "../aleph-metal", optional = true }

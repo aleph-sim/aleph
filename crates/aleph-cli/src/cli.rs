@@ -105,8 +105,11 @@ pub enum Cmd {
         /// Simulation backend: `auto` (default — picks from circuit
         /// structure), `statevector` (alias `sv`), `stabilizer` (alias
         /// `stab`; Clifford-only, rejects non-Clifford gates and
-        /// --statevector), or `mps` (tensor network; bounded entanglement,
-        /// rejects --statevector). Same names as the Python `backend=` arg.
+        /// --statevector), `mps` (tensor network; bounded entanglement,
+        /// rejects --statevector), or `metal` (alias `gpu`; FP32 Apple
+        /// Silicon GPU — requires a macOS build with `--features metal`).
+        /// `auto` never picks `metal` (it is an explicit opt-in). Same names
+        /// as the Python `backend=` arg.
         #[arg(long, default_value = BackendRequest::AUTO, value_parser = BackendRequest::from_user_str)]
         backend: BackendRequest,
 
