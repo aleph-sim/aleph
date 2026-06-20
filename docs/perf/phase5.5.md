@@ -1,5 +1,8 @@
 # Phase 5.5 — Apple/Metal GPU performance
 
+> Per-task measurements. The consolidated phase-exit verdict is in
+> [`metal.md`](metal.md).
+
 ## P5.5-04 — Fused-block GPU kernel (fused vs unfused)
 
 **Hardware:** Apple **M3** (MacBook Air, 8-core: 4P+4E, integrated 10-core GPU).
