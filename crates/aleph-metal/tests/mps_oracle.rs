@@ -11,7 +11,7 @@
 
 #![cfg(all(target_os = "macos", feature = "metal"))]
 
-use aleph_backend::run;
+use aleph_backend::{run, BackendError};
 use aleph_core::Complex;
 use aleph_ir::Circuit;
 use aleph_metal::MetalMpsBackend;
@@ -101,6 +101,66 @@ fn mps_metal_matches_cpu_on_nn_circuits() {
             &aleph_benches::random_brickwall_circuit(n, depth),
         );
     }
+}
+
+/// P5.6-02 AC: the truncating regime must be **refused**, not silently applied.
+/// GHZ needs bond 2 (the CNOT entangles); with `max_bond = 1` the first two-site
+/// split drops half the Schmidt weight, which this non-canonical scaffold cannot
+/// renormalize, so `apply_gate` must return `MpsTruncationUnsupported` rather than
+/// return a wrong state. The discarded weight is still surfaced via `trunc_error()`.
+#[test]
+fn truncation_below_required_bond_is_refused() {
+    let mut gpu = match MetalMpsBackend::with_max_bond(1) {
+        Ok(b) => b,
+        Err(_) => {
+            eprintln!("skipping MPS truncation guard: no Metal device available");
+            return;
+        }
+    };
+    // GHZ(3): H(0), CX(0,1), CX(1,2). The first CX forces bond 2 > cap 1.
+    // (`MetalMpsState` isn't `Debug`, so match the Result rather than `expect_err`.)
+    match gpu.run(&aleph_benches::ghz_circuit(3)) {
+        Err(BackendError::MpsTruncationUnsupported {
+            max_bond,
+            trunc_error,
+        }) => {
+            assert_eq!(max_bond, 1);
+            // A maximally-entangling CNOT drops ~half the squared Schmidt weight.
+            assert!(
+                trunc_error > 0.4,
+                "expected a large dropped weight, got {trunc_error}"
+            );
+        }
+        Err(other) => panic!("expected MpsTruncationUnsupported, got {other:?}"),
+        Ok(_) => panic!("bond-1 GHZ must be refused, not truncated"),
+    }
+    // AC #3: the loss is surfaced, not silently dropped.
+    assert!(
+        gpu.trunc_error() > 0.4,
+        "trunc_error accessor must reflect the refused split: {}",
+        gpu.trunc_error()
+    );
+}
+
+/// AC #3 (positive side): a within-cap run stays exact and leaves the cumulative
+/// truncation weight negligible, so the accessor cleanly distinguishes "exact"
+/// from "truncated". GHZ(5) at bond 64 never truncates.
+#[test]
+fn exact_run_records_negligible_truncation() {
+    let mut gpu = match MetalMpsBackend::with_max_bond(MAX_BOND) {
+        Ok(b) => b,
+        Err(_) => {
+            eprintln!("skipping MPS exact-truncation check: no Metal device available");
+            return;
+        }
+    };
+    gpu.run(&aleph_benches::ghz_circuit(5))
+        .expect("exact GHZ run");
+    assert!(
+        gpu.trunc_error() < 1e-9,
+        "exact run must record ≈0 truncation, got {}",
+        gpu.trunc_error()
+    );
 }
 
 /// AC #2: report the CPU-SVD round-trip cost. Times the GPU contract+apply phase
