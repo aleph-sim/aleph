@@ -1,16 +1,21 @@
 name: Bench
 
+# TEMPORARILY DISABLED: the self-hosted runner reliably hits the 30-min
+# timeout and marks every push/PR red, even though main is unprotected and
+# the real gates (ci.yml) pass. Manual-only (workflow_dispatch) for now;
+# restore the push/pull_request triggers below once the runner is fixed.
 on:
-  push:
-    branches: [main]
-  pull_request:
-    paths:
-      - "crates/**"
-      - "benches/**"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "rust-toolchain.toml"
-      - ".github/workflows/bench.yml"
+  workflow_dispatch:
+  # push:
+  #   branches: [main]
+  # pull_request:
+  #   paths:
+  #     - "crates/**"
+  #     - "benches/**"
+  #     - "Cargo.toml"
+  #     - "Cargo.lock"
+  #     - "rust-toolchain.toml"
+  #     - ".github/workflows/bench.yml"
 
 # Concurrency: serialise every bench run on the single self-hosted
 # runner. Two concurrent `cargo bench` invocations would fight for
