@@ -27,19 +27,21 @@ impl SiteTensor {
         }
     }
 
-    /// Build a site from host data (length must be `left*2*right`).
-    pub(crate) fn from_host(
+    /// Overwrite this site's tensor **in place**, reusing its device buffer's
+    /// capacity (P5.8-02): no `new_buffer*` unless the new shape exceeds the buffer's
+    /// high-water mark. Used for the per-gate two-site split and the canonical
+    /// centre-move rebuilds, which previously allocated a fresh `MTLBuffer` every time.
+    pub(crate) fn set_from_host(
+        &mut self,
         ctx: &MetalContext,
         left: usize,
         right: usize,
         data: &[Complex<f32>],
-    ) -> Self {
+    ) {
         debug_assert_eq!(data.len(), left * 2 * right);
-        Self {
-            left,
-            right,
-            buf: DeviceBuffer::from_slice(ctx, data),
-        }
+        self.buf.write(ctx, data);
+        self.left = left;
+        self.right = right;
     }
 }
 
