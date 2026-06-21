@@ -139,6 +139,54 @@ fn batched_layer_matches_sequential() {
     assert_close("batched-vs-sequential", &bat, &seq);
 }
 
+/// P5.7-06 AC: non-nearest-neighbour 2q gates (SWAP-routed) match the references.
+/// A long-range, QAOA-style circuit — `H` layer, then 2q gates spanning gaps of
+/// 2–5 sites, with interleaved 1q rotations — checked via both `run` and
+/// `run_batched` against the CPU MPS and the exact FP64 SV.
+#[test]
+fn swap_routed_non_nn_matches_references() {
+    let mut gpu = match MetalMpsBackend::with_max_bond(MAX_BOND) {
+        Ok(b) => b,
+        Err(_) => {
+            eprintln!("skipping SWAP-router oracle: no Metal device available");
+            return;
+        }
+    };
+    let mut c = Circuit::new(6, 0);
+    for q in 0..6 {
+        c.h(q).unwrap();
+    }
+    c.cnot(0, 5).unwrap(); // gap 5
+    c.rz(0.4, 2).unwrap();
+    c.cnot(1, 4).unwrap(); // gap 3
+    c.cz(0, 3).unwrap(); // gap 3, CZ
+    c.ry(0.9, 5).unwrap();
+    c.cnot(2, 5).unwrap(); // gap 3
+    c.cnot(0, 2).unwrap(); // gap 2
+    check("swap_routed", &mut gpu, &c);
+}
+
+/// P5.7-06: SWAP routing is its own inverse — applying a non-NN CNOT twice returns
+/// the exact pre-gate state (property reversibility; the SWAP network must unwind).
+#[test]
+fn swap_routed_is_reversible() {
+    let mut gpu = match MetalMpsBackend::with_max_bond(MAX_BOND) {
+        Ok(b) => b,
+        Err(_) => return,
+    };
+    let mut prep = Circuit::new(5, 0);
+    prep.h(0).unwrap();
+    prep.ry(0.7, 2).unwrap();
+    prep.h(4).unwrap();
+    let before = gpu.run(&prep).expect("prep").dense_statevector();
+
+    let mut twice = prep.clone();
+    twice.cnot(0, 4).unwrap(); // non-NN
+    twice.cnot(0, 4).unwrap(); // self-inverse ⇒ identity
+    let after = gpu.run(&twice).expect("twice").dense_statevector();
+    assert_close("cnot(0,4) twice == identity", &after, &before);
+}
+
 /// P5.6-02 AC: the truncating regime must be **refused**, not silently applied.
 /// GHZ needs bond 2 (the CNOT entangles); with `max_bond = 1` the first two-site
 /// split drops half the Schmidt weight, which this non-canonical scaffold cannot

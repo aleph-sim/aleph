@@ -3266,12 +3266,22 @@ Schollwöck MPS review (sampling); the CPU MPS readout in `aleph-mps`.
 
 -----
 
-### [P5.7-06] SWAP router for non-nearest-neighbour 2q gates (Metal MPS)
+### [P5.7-06] SWAP router for non-nearest-neighbour 2q gates (Metal MPS) — **SHIPPED (PR #233)**
 
 **Labels:** `area:backend-mps`, `area:backend-gpu`, `type:feature`, `priority:medium`
 **Milestone:** Phase 5.5 — Apple/Metal GPU
 **Estimate:** M
 **Depends on:** P5.7-03
+
+> **Shipped (PR #233).** `apply_2q_routed`: a non-adjacent 2q gate walks the higher
+> qubit down to its neighbour with a **physical** SWAP network (each SWAP a NN 2q
+> gate through the existing contract+apply+SVD path), applies the gate with its
+> original MSB/LSB orientation, then unwinds the SWAPs — restoring the scaffold's
+> site≡qubit-order invariant (so readout/dense stay correct). Lazy permutation
+> tracking (P3-12) was deliberately avoided to keep that invariant. Wired into both
+> `run` and `run_batched` (non-NN gates flush the pending layer, then route).
+> Oracle: long-range/QAOA-style + reversibility; the random property test now emits
+> arbitrary-distance pairs. All match CPU MPS / exact SV within 1e-5.
 
 **Description**
 Support non-adjacent 2q gates by routing with SWAPs (currently
@@ -3289,8 +3299,8 @@ lazy-SWAP P3-12); port the approach to Metal.
 
 **Acceptance Criteria**
 
-- [ ] Arbitrary 2q gate on any pair matches CPU MPS / exact SV within 1e-5.
-- [ ] Oracle extended with non-NN circuits (long-range CX, QAOA-style).
+- [x] Arbitrary 2q gate on any pair matches CPU MPS / exact SV within 1e-5.
+- [x] Oracle extended with non-NN circuits (long-range CX, QAOA-style).
 
 **Testing Requirements**
 Oracle with non-NN circuits; property reversibility.
