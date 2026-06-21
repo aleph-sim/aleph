@@ -1,8 +1,10 @@
 //! Device-resident MPS state: a chain of rank-3 site tensors in FP32, plus the
 //! host dense contraction used by the oracle.
 
-use aleph_core::Complex;
+use aleph_backend::BackendError;
+use aleph_core::{Complex, PauliString};
 
+use crate::mps::readout;
 use crate::{DeviceBuffer, MetalContext};
 
 /// One rank-3 MPS site tensor, shape `(left, 2, right)`, row-major in a shared
@@ -76,6 +78,21 @@ impl MetalMpsState {
     /// the truncation policy).
     pub fn max_bond(&self) -> usize {
         self.sites.iter().map(|s| s.right).max().unwrap_or(1)
+    }
+
+    /// State norm `√⟨ψ|ψ⟩` via a doubled transfer-matrix sweep — `O(n·χ³)`, no
+    /// `2^n` allocation (P5.7-05 readout). A correctly evolved MPS has norm 1;
+    /// this is the cheapest large-`n` correctness invariant for the Phase 5.8
+    /// large-χ harness, where the dense oracle is out of reach.
+    pub fn norm(&self) -> f64 {
+        readout::norm_sq(self).max(0.0).sqrt()
+    }
+
+    /// `⟨ψ|P|ψ⟩ / ⟨ψ|ψ⟩ · coefficient` for a Pauli string `P`, via the same
+    /// `2^n`-free doubled sweep as [`MetalMpsState::norm`]. Gives an analytic,
+    /// dense-free correctness check at large `n` (e.g. GHZ `Z`-string stabilisers).
+    pub fn expectation(&self, p: &PauliString) -> Result<f64, BackendError> {
+        readout::expectation(self, p)
     }
 
     /// Contract the chain into a dense `2^n` amplitude vector (TEST/SMALL-n
