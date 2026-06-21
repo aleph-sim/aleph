@@ -17,10 +17,27 @@ default = []
 cuda = [
     "dep:cudarc",
     "dep:thiserror",
+    "dep:aleph-backend",
+    "dep:aleph-core",
+    "dep:aleph-ir",
+    "dep:aleph-oracle",
+    "dep:rand",
+    "dep:smallvec",
 ]
 
 [dependencies]
 thiserror = { workspace = true, optional = true }
+# Backend trait + IR + Complex/Pauli live in pure-Rust workspace crates; optional
+# so they compile only under `cuda` (Linux+NVIDIA only).
+aleph-backend = { path = "../aleph-backend", optional = true }
+aleph-core    = { path = "../aleph-core", optional = true }
+aleph-ir      = { path = "../aleph-ir", optional = true }
+# `aleph-oracle` provides the `HasAmplitudes` trait the CUDA state implements
+# (external-trait impl must live here, orphan rule). Workspace-internal +
+# feature-gated, so it never weighs on default/macOS builds.
+aleph-oracle  = { path = "../aleph-oracle", optional = true }
+rand          = { workspace = true, optional = true }
+smallvec      = { workspace = true, optional = true }
 
 # `cudarc` is Linux+NVIDIA-only: target-cfg the dep so it is never resolved off
 # Linux (mirrors aleph-metal gating `metal` to macOS), even transitively.
@@ -38,6 +55,18 @@ thiserror = { workspace = true, optional = true }
 cudarc = { version = "0.19.8", default-features = false, features = [
     "std",
     "driver",
+    "nvrtc",
     "cuda-13000",
     "dynamic-loading",
 ], optional = true }
+
+# Dev-deps for the oracle test (Tier-1 GPU vs CPU). The test body is gated on
+# `feature = "cuda"`, so these only do real work under `--features cuda`; pure
+# Rust, so they never pull CUDA in.
+[dev-dependencies]
+aleph-backend = { path = "../aleph-backend" }
+aleph-core    = { path = "../aleph-core" }
+aleph-ir      = { path = "../aleph-ir" }
+aleph-oracle  = { path = "../aleph-oracle" }
+aleph-sv      = { path = "../aleph-sv" }
+rand          = { workspace = true }

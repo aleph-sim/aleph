@@ -78,7 +78,14 @@ dependencies = [
 name = "aleph-cuda"
 version = "0.2.0"
 dependencies = [
+ "aleph-backend",
+ "aleph-core",
+ "aleph-ir",
+ "aleph-oracle",
+ "aleph-sv",
  "cudarc",
+ "rand 0.8.6",
+ "smallvec",
  "thiserror",
 ]
 
