@@ -20,6 +20,8 @@ use super::kernel::{
     Apply2qMeta, ContractMeta, FinalizeOut, Mps1q, MPS_1Q_ENTRY, MPS_1Q_SRC, MPS_APPLY2Q_ENTRY,
     MPS_APPLY2Q_SRC, MPS_CONTRACT_ENTRY, MPS_CONTRACT_SRC, MPS_FINALIZE_ENTRY, MPS_FINALIZE_SRC,
     MPS_JACOBI_BATCHED_ENTRY, MPS_JACOBI_ENTRY, MPS_JACOBI_SRC, MPS_PACK_ENTRY, MPS_PACK_SRC,
+    MPS_QR_ABSORB_LEFT, MPS_QR_ABSORB_RIGHT, MPS_QR_ENTRY, MPS_QR_INSTALL_Q_LEFT,
+    MPS_QR_INSTALL_Q_RIGHT, MPS_QR_INSTALL_SRC, MPS_QR_PACK_GR_ADJ, MPS_QR_SRC,
 };
 use super::readout;
 use super::state::MetalMpsState;
@@ -66,6 +68,17 @@ pub struct MetalMpsBackend {
     /// the GPU, so U/V/σ are never read back. Writes the two new site tensors into
     /// `site_i_out`/`site_j_out` and the `(chi, accept, trunc_rel)` scalars.
     pipeline_finalize: ComputePipelineState,
+    /// GPU Householder thin-QR (P5.8-04): the canonical centre-move factorisation,
+    /// replacing the host f64 SVD in `move_center_*`.
+    pipeline_qr: ComputePipelineState,
+    /// Centre-move install/absorb pipelines (P5.8-04): Q → site, R → neighbour, and
+    /// the grouped-right-adjoint pack for left moves — so a whole move sweep fuses
+    /// onto the gate command buffer.
+    pipeline_install_q_right: ComputePipelineState,
+    pipeline_absorb_right: ComputePipelineState,
+    pipeline_install_q_left: ComputePipelineState,
+    pipeline_absorb_left: ComputePipelineState,
+    pipeline_pack_gr_adj: ComputePipelineState,
     /// Pooled output buffers the finalize kernel writes the two new site tensors into
     /// (then copied into the state sites); reused across gates (P5.8-02 pooling).
     site_i_out: DeviceBuffer<Complex<f32>>,
@@ -81,6 +94,8 @@ pub struct MetalMpsBackend {
     /// Pooled one-sided Jacobi SVD buffers (A/V/σ), reused across every gate-by-gate
     /// two-site split (P5.8-02).
     jacobi_scratch: JacobiScratch,
+    /// Per-step ping-pong buffers for the fused GPU centre-move sweep (P5.8-04).
+    move_scratch: super::move_gpu::MoveScratch,
     max_bond: usize,
     /// RNG for the stochastic readout ops (`measure`/`sample`, P5.7-05). Seeded
     /// via [`with_seed`](Self::with_seed) for reproducibility.
@@ -150,9 +165,28 @@ impl MetalMpsBackend {
         let pipeline_finalize = ctx
             .make_compute_pipeline(MPS_FINALIZE_SRC, MPS_FINALIZE_ENTRY)
             .map_err(map_metal_err)?;
+        let pipeline_qr = ctx
+            .make_compute_pipeline(MPS_QR_SRC, MPS_QR_ENTRY)
+            .map_err(map_metal_err)?;
+        let pipeline_install_q_right = ctx
+            .make_compute_pipeline(MPS_QR_INSTALL_SRC, MPS_QR_INSTALL_Q_RIGHT)
+            .map_err(map_metal_err)?;
+        let pipeline_absorb_right = ctx
+            .make_compute_pipeline(MPS_QR_INSTALL_SRC, MPS_QR_ABSORB_RIGHT)
+            .map_err(map_metal_err)?;
+        let pipeline_install_q_left = ctx
+            .make_compute_pipeline(MPS_QR_INSTALL_SRC, MPS_QR_INSTALL_Q_LEFT)
+            .map_err(map_metal_err)?;
+        let pipeline_absorb_left = ctx
+            .make_compute_pipeline(MPS_QR_INSTALL_SRC, MPS_QR_ABSORB_LEFT)
+            .map_err(map_metal_err)?;
+        let pipeline_pack_gr_adj = ctx
+            .make_compute_pipeline(MPS_QR_INSTALL_SRC, MPS_QR_PACK_GR_ADJ)
+            .map_err(map_metal_err)?;
         let mat_scratch = DeviceBuffer::from_slice(&ctx, &[Complex::<f32>::new(0.0, 0.0); 16]);
         let theta_pool = DeviceBuffer::with_capacity(&ctx, 0);
         let jacobi_scratch = JacobiScratch::new(&ctx);
+        let move_scratch = super::move_gpu::MoveScratch::new();
         let site_i_out = DeviceBuffer::with_capacity(&ctx, 0);
         let site_j_out = DeviceBuffer::with_capacity(&ctx, 0);
         let finalize_out = DeviceBuffer::from_slice(&ctx, &[FinalizeOut::zeroed()]);
@@ -165,12 +199,19 @@ impl MetalMpsBackend {
             pipeline_jacobi_batched,
             pipeline_pack,
             pipeline_finalize,
+            pipeline_qr,
+            pipeline_install_q_right,
+            pipeline_absorb_right,
+            pipeline_install_q_left,
+            pipeline_absorb_left,
+            pipeline_pack_gr_adj,
             site_i_out,
             site_j_out,
             finalize_out,
             mat_scratch,
             theta_pool,
             jacobi_scratch,
+            move_scratch,
             max_bond,
             rng: StdRng::seed_from_u64(seed),
             gpu_ns: 0,
@@ -206,7 +247,7 @@ impl MetalMpsBackend {
         self.trunc_error = 0.0;
     }
 
-    /// Borrow the Metal context (in-crate use, e.g. the canonical-form tests).
+    /// Borrow the Metal context (in-crate use, e.g. the canonical-form fallback test).
     #[cfg(test)]
     pub(crate) fn ctx(&self) -> &MetalContext {
         &self.ctx
@@ -336,39 +377,42 @@ impl MetalMpsBackend {
         // `i_is_msb`: the left site holds the matrix-MSB qubit (qa) iff qa is the
         // lower index. Selects the physical→matrix-index map in the apply kernel.
         let i_is_msb = qa == i;
-        // Canonical form (P5.7-07): move the orthogonality centre onto the active
-        // bond so the gated block has Frobenius² = ⟨ψ|ψ⟩ and the truncated split
-        // can renormalise the kept σ. Canonicalisation can change the bonds, so
-        // read dims afterwards. Skipped on the exact (non-canonical) path.
-        if canonical {
+        // Canonical form (P5.7-07, P5.8-04): move the orthogonality centre onto the
+        // active bond. The whole centre-move sweep + the gate split fuse onto ONE
+        // command buffer (one commit/wait per gate); move dims are deterministic. A
+        // block exceeding the GPU QR cap falls back to the host f64 SVD move.
+        let plan = if canonical {
+            super::move_gpu::plan_canonical_moves(&state.sites, state.center, i)
+        } else {
+            None
+        };
+        if canonical && plan.is_none() {
             super::canonical::move_center_to(&self.ctx, &mut state.sites, &mut state.center, i)?;
         }
-        let li = state.sites[i].left;
-        let ci = state.sites[i].right;
-        debug_assert_eq!(
-            ci, state.sites[j].left,
-            "MPS bond mismatch at sites {i},{j}"
-        );
-        let ri = state.sites[j].right;
+        let (li, ci, ri, dir) = match &plan {
+            Some(p) => (p.li, p.ci, p.ri, p.dir),
+            None => (
+                state.sites[i].left,
+                state.sites[i].right,
+                state.sites[j].right,
+                0i8,
+            ),
+        };
         let rows = li * 2;
         let cols = 2 * ri;
+        let k = rows.min(cols);
 
-        // --- GPU phase: contract → apply → pack → SVD in ONE command buffer ---
-        // P5.8-03: a single `commit`/`wait` per gate, with Θ′ never read to the host
-        // between the contraction and the SVD (the pack transposes it on-device).
+        // --- Phase 1 (sizing): pooled move buffers, Θ, finalize outputs, gate 4×4.
         let gpu_start = std::time::Instant::now();
-        // Θ on the GPU: pooled buffer (P5.8-02), grown on demand and zeroed (the
-        // contract kernel then overwrites the live `rows·cols` window).
+        if let Some(p) = &plan {
+            if p.dir != 0 {
+                super::move_gpu::size_planned_moves(&mut self.move_scratch, &self.ctx, p);
+            }
+        }
         self.theta_pool.ensure_capacity(&self.ctx, rows * cols);
         self.theta_pool.fill_zero();
-        // Output slots for the finalize kernel's two site tensors, sized to the
-        // largest possible χ (= k = min(rows, cols)); the kernel writes `rows·χ` /
-        // `χ·cols` of them. Pooled (P5.8-02): grown on demand only.
-        let k = rows.min(cols);
         self.site_i_out.ensure_capacity(&self.ctx, rows * k);
         self.site_j_out.ensure_capacity(&self.ctx, k * cols);
-        // Upload the 4×4 (qa-MSB/qb-LSB row-major) into the scratch the apply encoder
-        // reads at GPU-execution time (written before `commit`).
         {
             let scratch = self.mat_scratch.as_mut_slice();
             #[allow(clippy::needless_range_loop)]
@@ -390,12 +434,50 @@ impl MetalMpsBackend {
             _pad0: 0,
             _pad1: 0,
         };
+
+        // --- Phase 2 (encode): the move sweep + contract → apply → pack → SVD →
+        // finalize, all on ONE command buffer, one commit/wait. Metal hazard-tracks
+        // the dependent encoders, so the moves' outputs feed the gate with no sync.
         {
             let cmd = self.ctx.queue().new_command_buffer();
+            if let Some(p) = &plan {
+                if p.dir != 0 {
+                    let pls = super::move_gpu::MovePipelines {
+                        pack_left: &self.pipeline_pack,
+                        pack_gr_adj: &self.pipeline_pack_gr_adj,
+                        qr: &self.pipeline_qr,
+                        install_q_right: &self.pipeline_install_q_right,
+                        absorb_right: &self.pipeline_absorb_right,
+                        install_q_left: &self.pipeline_install_q_left,
+                        absorb_left: &self.pipeline_absorb_left,
+                    };
+                    super::move_gpu::encode_planned_moves(
+                        cmd,
+                        &pls,
+                        &self.move_scratch,
+                        &state.sites,
+                        p,
+                    );
+                }
+            }
+            // The gate's two input site buffers, post-move: site i is the last step's
+            // absorbed centre (or the original on no move); site j is the last step's
+            // right-canonical keep on a left sweep, else the original.
+            let last = plan.as_ref().map(|p| p.steps.len()).unwrap_or(0);
+            let site_i_buf = if dir == 0 {
+                &state.sites[i].buf
+            } else {
+                &self.move_scratch.steps[last - 1].center
+            };
+            let site_j_buf = if dir == -1 {
+                &self.move_scratch.steps[last - 1].keep
+            } else {
+                &state.sites[j].buf
+            };
             self.encode_contract(
                 cmd,
-                &state.sites[i].buf,
-                &state.sites[j].buf,
+                site_i_buf,
+                site_j_buf,
                 &self.theta_pool,
                 &cmeta,
                 (rows * cols) as u64,
@@ -407,9 +489,6 @@ impl MetalMpsBackend {
                 &ameta,
                 (li * ri) as u64,
             );
-            // Metal hazard-tracks the dependent encoders (contract writes Θ, apply
-            // reads/writes it, pack reads it, Jacobi reads A), so the whole chain
-            // shares one `commit`/`wait`.
             let wide = encode_pack_jacobi(
                 cmd,
                 &self.ctx,
@@ -420,10 +499,6 @@ impl MetalMpsBackend {
                 rows,
                 cols,
             );
-            // GPU-resident finalize: σ-sort + truncation + site assembly on-device, so
-            // U/V/σ are never read back. `renormalize = canonical`: on the canonical
-            // path the kept σ are rescaled to preserve the centre-on-bond norm; on the
-            // exact path σ are verbatim and a real truncation is refused below.
             encode_finalize(
                 cmd,
                 &self.pipeline_finalize,
@@ -443,10 +518,27 @@ impl MetalMpsBackend {
         }
         self.gpu_ns += gpu_start.elapsed().as_nanos();
 
-        // --- SVD result: read back only the (chi, accept, trunc_rel) scalars. On
-        // accept, the two new site tensors are already assembled in the GPU output
-        // buffers; on decline (oversized block or non-finite σ) rebuild on the f64 CPU
-        // path from Θ′ (still resident, unread between contract and SVD).
+        // --- Phase 3: install the swept canonical sites (swap their `keep` buffers
+        // into the state), then the gate result. For a right sweep all K keeps are
+        // canonical sites; for a left sweep the last step's keep is the gate's site j
+        // (overwritten by the finalize), so install K-1.
+        if let Some(p) = &plan {
+            let n_install = if p.dir > 0 {
+                p.steps.len()
+            } else {
+                p.steps.len().saturating_sub(1)
+            };
+            for kk in 0..n_install {
+                let s = p.steps[kk];
+                std::mem::swap(
+                    &mut state.sites[s.site].buf,
+                    &mut self.move_scratch.steps[kk].keep,
+                );
+                state.sites[s.site].left = s.keep_l;
+                state.sites[s.site].right = s.keep_r;
+            }
+        }
+
         let svd_start = std::time::Instant::now();
         let fo = self.finalize_out.as_slice()[0];
         let (chi, trunc) = if fo.accept != 0 {
@@ -459,25 +551,18 @@ impl MetalMpsBackend {
                 self.max_bond,
                 canonical,
             )?;
-            // Stage the CPU factors into the same output buffers so the install path
-            // below is uniform.
             self.site_i_out.write(&self.ctx, &si);
             self.site_j_out.write(&self.ctx, &sj);
             (chi, trunc)
         };
-        // Surface the discarded Schmidt weight (≈0 unless the bond cap binds).
         self.trunc_error += trunc;
         if !canonical && trunc > MPS_TRUNC_TOL {
-            // Exact path has no centre to renormalise against — refuse, leaving the
-            // pre-gate MPS intact (P5.6-02).
             self.svd_ns += svd_start.elapsed().as_nanos();
             return Err(BackendError::MpsTruncationUnsupported {
                 max_bond: self.max_bond,
                 trunc_error: trunc,
             });
         }
-        // Copy the assembled site tensors out of the GPU buffers into the state sites
-        // (the only host touch of the result — Θ/U/V/σ are never read back).
         state.sites[i].set_from_host(
             &self.ctx,
             li,

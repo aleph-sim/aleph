@@ -42,6 +42,22 @@ pub(crate) const MPS_FINALIZE_SRC: &str = include_str!("../shaders/mps_finalize.
 /// Entry-point name inside [`MPS_FINALIZE_SRC`].
 pub(crate) const MPS_FINALIZE_ENTRY: &str = "finalize_split";
 
+/// MSL source for the GPU Householder thin-QR (P5.8-04): the canonical centre-move
+/// factorisation on-device, replacing the host f64 SVD.
+pub(crate) const MPS_QR_SRC: &str = include_str!("../shaders/mps_qr.metal");
+/// Entry-point name inside [`MPS_QR_SRC`].
+pub(crate) const MPS_QR_ENTRY: &str = "householder_qr";
+
+/// MSL source for the GPU-resident centre-move install/absorb kernels (P5.8-04): Q →
+/// new site tensor and R → neighbour, so a whole move sweep fuses onto the gate
+/// command buffer with no host pack/absorb and one `commit`/`wait` per gate.
+pub(crate) const MPS_QR_INSTALL_SRC: &str = include_str!("../shaders/mps_qr_install.metal");
+pub(crate) const MPS_QR_INSTALL_Q_RIGHT: &str = "qr_install_q_right";
+pub(crate) const MPS_QR_ABSORB_RIGHT: &str = "qr_absorb_right";
+pub(crate) const MPS_QR_INSTALL_Q_LEFT: &str = "qr_install_q_left";
+pub(crate) const MPS_QR_ABSORB_LEFT: &str = "qr_absorb_left";
+pub(crate) const MPS_QR_PACK_GR_ADJ: &str = "qr_pack_gr_adj";
+
 /// Per-gate uniform for [`MPS_1Q_SRC`]. **Layout MUST match the MSL `Mps1q`
 /// struct**: 4×`float2` (row-major 2×2) then `right` and one u32 pad → 40 bytes,
 /// no internal padding (32 + 4 + 4, all 4-byte-aligned).
@@ -143,6 +159,36 @@ pub(crate) struct FinalizeOut {
 
 const _: () = assert!(core::mem::size_of::<FinalizeOut>() == 16);
 
+/// Per-call uniform for [`MPS_QR_SRC`] (P5.8-04). **Layout MUST match the MSL
+/// `QrMeta` struct** (16 bytes): `m`, `n` (block shape, `size = min(m, n)`), two pads.
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub(crate) struct QrMeta {
+    pub m: u32,
+    pub n: u32,
+    pub _pad0: u32,
+    pub _pad1: u32,
+}
+
+const _: () = assert!(core::mem::size_of::<QrMeta>() == 16);
+
+/// Per-step uniform for [`MPS_QR_INSTALL_SRC`] (P5.8-04). **Layout MUST match the MSL
+/// `QrInstallMeta` struct** (32 bytes): `rows`, `mid`, `size`, `nbr`, `phys`, 3 pads.
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub(crate) struct QrInstallMeta {
+    pub rows: u32,
+    pub mid: u32,
+    pub size: u32,
+    pub nbr: u32,
+    pub phys: u32,
+    pub _f0: u32,
+    pub _f1: u32,
+    pub _f2: u32,
+}
+
+const _: () = assert!(core::mem::size_of::<QrInstallMeta>() == 32);
+
 /// Per-block descriptor for the batched Jacobi kernel (P5.7-04). **Layout MUST
 /// match the MSL `JacobiBlockMeta` struct** (32 bytes): `m`, `n` (block dims, as
 /// in [`JacobiMeta`]), then the float2 offsets of this block's `A`/`V` and the
@@ -187,6 +233,12 @@ mod tests {
             (MPS_JACOBI_SRC, MPS_JACOBI_BATCHED_ENTRY),
             (MPS_PACK_SRC, MPS_PACK_ENTRY),
             (MPS_FINALIZE_SRC, MPS_FINALIZE_ENTRY),
+            (MPS_QR_SRC, MPS_QR_ENTRY),
+            (MPS_QR_INSTALL_SRC, MPS_QR_INSTALL_Q_RIGHT),
+            (MPS_QR_INSTALL_SRC, MPS_QR_ABSORB_RIGHT),
+            (MPS_QR_INSTALL_SRC, MPS_QR_INSTALL_Q_LEFT),
+            (MPS_QR_INSTALL_SRC, MPS_QR_ABSORB_LEFT),
+            (MPS_QR_INSTALL_SRC, MPS_QR_PACK_GR_ADJ),
         ] {
             let p = ctx.make_compute_pipeline(src, entry);
             assert!(p.is_ok(), "{entry} must compile: {p:?}");

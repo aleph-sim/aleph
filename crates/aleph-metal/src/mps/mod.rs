@@ -8,6 +8,9 @@ mod canonical;
 mod gpu_jacobi;
 mod jacobi;
 mod kernel;
+mod move_gpu;
+#[cfg(test)]
+mod qr;
 mod readout;
 mod state;
 mod svd;
