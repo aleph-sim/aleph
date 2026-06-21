@@ -96,3 +96,10 @@ required-features = ["metal"]
 name = "sv_readout"
 harness = false
 required-features = ["metal"]
+
+# Layer-batched vs gate-by-gate MPS SVD bench (P5.7-04). macOS+Metal only. Run:
+#   cargo bench -p aleph-metal --features metal --bench mps_batched
+[[bench]]
+name = "mps_batched"
+harness = false
+required-features = ["metal"]

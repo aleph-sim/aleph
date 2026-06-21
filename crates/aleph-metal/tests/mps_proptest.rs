@@ -86,12 +86,21 @@ proptest! {
         };
         let mut rng = StdRng::seed_from_u64(seed);
         let circuit = random_nn_circuit(&mut rng, n, gates);
-        let got = gpu.run(&circuit).expect("gpu mps run").dense_statevector();
         let want = cpu_mps_dense(&circuit);
+
+        let got = gpu.run(&circuit).expect("gpu mps run").dense_statevector();
         prop_assert_eq!(got.len(), want.len());
         for (i, (g, w)) in got.iter().zip(want.iter()).enumerate() {
             let d = ((g.re - w.re).powi(2) + (g.im - w.im).powi(2)).sqrt();
             prop_assert!(d <= 1e-5, "amp {i}: |Δ|={d:.3e} (n={n}, gates={gates}, seed={seed})");
+        }
+
+        // P5.7-04: the layer-batched scheduler must agree with the CPU MPS too.
+        let got_b = gpu.run_batched(&circuit).expect("gpu mps run_batched").dense_statevector();
+        prop_assert_eq!(got_b.len(), want.len());
+        for (i, (g, w)) in got_b.iter().zip(want.iter()).enumerate() {
+            let d = ((g.re - w.re).powi(2) + (g.im - w.im).powi(2)).sqrt();
+            prop_assert!(d <= 1e-5, "batched amp {i}: |Δ|={d:.3e} (n={n}, gates={gates}, seed={seed})");
         }
     }
 }

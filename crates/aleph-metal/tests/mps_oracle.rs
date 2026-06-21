@@ -52,15 +52,23 @@ fn naive_dense(circuit: &Circuit) -> Vec<Complex<f64>> {
     aleph_oracle::HasAmplitudes::amplitudes(&state)
 }
 
-/// Run `circuit` on the GPU MPS scaffold and compare to both references.
+/// Run `circuit` on the GPU MPS scaffold and compare to both references — via the
+/// gate-by-gate `run` *and* the layer-batched `run_batched` (P5.7-04), so both
+/// execution paths are oracle-checked against the CPU MPS and the exact FP64 SV.
 fn check(label: &str, gpu: &mut MetalMpsBackend, circuit: &Circuit) {
+    let cpu = cpu_mps_dense(circuit);
+    let naive = naive_dense(circuit);
+
     let got = gpu.run(circuit).expect("gpu mps run").dense_statevector();
-    assert_close(
-        &format!("{label} vs cpu-mps"),
-        &got,
-        &cpu_mps_dense(circuit),
-    );
-    assert_close(&format!("{label} vs naive-sv"), &got, &naive_dense(circuit));
+    assert_close(&format!("{label} vs cpu-mps"), &got, &cpu);
+    assert_close(&format!("{label} vs naive-sv"), &got, &naive);
+
+    let got_b = gpu
+        .run_batched(circuit)
+        .expect("gpu mps run_batched")
+        .dense_statevector();
+    assert_close(&format!("{label} batched vs cpu-mps"), &got_b, &cpu);
+    assert_close(&format!("{label} batched vs naive-sv"), &got_b, &naive);
 }
 
 #[test]
@@ -103,6 +111,34 @@ fn mps_metal_matches_cpu_on_nn_circuits() {
     }
 }
 
+/// P5.7-04 AC: a layer of disjoint NN 2q gates factored in one batched dispatch
+/// must equal the gate-by-gate result. The circuit has a genuine disjoint 2q layer
+/// — `CX(0,1)` and `CX(2,3)` with no shared site — plus a following `CX(1,2)` that
+/// conflicts (so it lands in its own layer), exercising both the batch and the
+/// flush-on-conflict path.
+#[test]
+fn batched_layer_matches_sequential() {
+    let mut gpu = match MetalMpsBackend::with_max_bond(MAX_BOND) {
+        Ok(b) => b,
+        Err(_) => {
+            eprintln!("skipping batched-vs-sequential: no Metal device available");
+            return;
+        }
+    };
+    let mut c = Circuit::new(4, 0);
+    c.h(0).unwrap();
+    c.h(2).unwrap();
+    c.cnot(0, 1).unwrap(); // ┐ disjoint 2q layer → one batched dispatch
+    c.cnot(2, 3).unwrap(); // ┘
+    c.ry(0.3, 1).unwrap(); // 1q gates flush the layer
+    c.ry(0.7, 2).unwrap();
+    c.cnot(1, 2).unwrap(); // shares sites with both above → its own layer
+
+    let seq = gpu.run(&c).expect("gate-by-gate").dense_statevector();
+    let bat = gpu.run_batched(&c).expect("batched").dense_statevector();
+    assert_close("batched-vs-sequential", &bat, &seq);
+}
+
 /// P5.6-02 AC: the truncating regime must be **refused**, not silently applied.
 /// GHZ needs bond 2 (the CNOT entangles); with `max_bond = 1` the first two-site
 /// split drops half the Schmidt weight, which this non-canonical scaffold cannot
@@ -140,6 +176,21 @@ fn truncation_below_required_bond_is_refused() {
         "trunc_error accessor must reflect the refused split: {}",
         gpu.trunc_error()
     );
+
+    // P5.7-04: the layer-batched path must refuse identically (a single-block
+    // layer is still subject to the truncation guard before mutating state).
+    let mut gpu_b = MetalMpsBackend::with_max_bond(1).expect("device");
+    match gpu_b.run_batched(&aleph_benches::ghz_circuit(3)) {
+        Err(BackendError::MpsTruncationUnsupported {
+            max_bond,
+            trunc_error,
+        }) => {
+            assert_eq!(max_bond, 1);
+            assert!(trunc_error > 0.4, "batched dropped weight {trunc_error}");
+        }
+        Err(other) => panic!("expected MpsTruncationUnsupported (batched), got {other:?}"),
+        Ok(_) => panic!("bond-1 GHZ must be refused on the batched path too"),
+    }
 }
 
 /// AC #3 (positive side): a within-cap run stays exact and leaves the cumulative
@@ -180,6 +231,8 @@ fn report_svd_roundtrip_cost() {
     };
     let (n, depth) = (12u32, 24usize);
     let circuit = aleph_benches::random_brickwall_circuit(n, depth);
+
+    // Gate-by-gate (P5.7-03): one SVD dispatch + GPU sync per 2q gate.
     gpu.reset_timing();
     let _ = gpu.run(&circuit).expect("gpu mps run");
     let (gpu_ns, svd_ns) = gpu.timing_ns();
@@ -187,13 +240,34 @@ fn report_svd_roundtrip_cost() {
     let pct = |x: u128| 100.0 * x as f64 / total;
     eprintln!(
         "SVD round-trip cost (NN brickwall n={n} depth={depth}):\n  \
-         GPU contract+apply: {:.2} ms ({:.1}%)\n  \
-         host SVD split:     {:.2} ms ({:.1}%)\n  \
-         host/GPU ratio:     {:.1}×",
+         gate-by-gate (P5.7-03):\n    \
+         GPU contract+apply: {:.2} ms ({:.1}%)\n    \
+         GPU SVD split:      {:.2} ms ({:.1}%)\n    \
+         split/contract:     {:.1}×",
         gpu_ns as f64 / 1e6,
         pct(gpu_ns),
         svd_ns as f64 / 1e6,
         pct(svd_ns),
         svd_ns as f64 / gpu_ns.max(1) as f64,
+    );
+
+    // Layer-batched (P5.7-04): one batched SVD dispatch per brickwall layer.
+    gpu.reset_timing();
+    let _ = gpu.run_batched(&circuit).expect("gpu mps run_batched");
+    let (gpu_b, svd_b) = gpu.timing_ns();
+    let total_b = (gpu_b + svd_b) as f64;
+    let pct_b = |x: u128| 100.0 * x as f64 / total_b;
+    eprintln!(
+        "  layer-batched (P5.7-04):\n    \
+         GPU contract+apply: {:.2} ms ({:.1}%)\n    \
+         GPU SVD split:      {:.2} ms ({:.1}%)\n    \
+         split/contract:     {:.1}×\n  \
+         split speedup (gate-by-gate ÷ batched): {:.2}×",
+        gpu_b as f64 / 1e6,
+        pct_b(gpu_b),
+        svd_b as f64 / 1e6,
+        pct_b(svd_b),
+        svd_b as f64 / gpu_b.max(1) as f64,
+        svd_ns as f64 / svd_b.max(1) as f64,
     );
 }

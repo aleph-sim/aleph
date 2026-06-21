@@ -20,9 +20,14 @@ pub(crate) const MPS_APPLY2Q_SRC: &str = include_str!("../shaders/mps_apply2q.me
 pub(crate) const MPS_APPLY2Q_ENTRY: &str = "apply_2q_theta";
 
 /// MSL source for the GPU-resident one-sided Jacobi thin-SVD kernel (P5.7-02).
+/// Holds both the single-block (`jacobi_svd`) and batched (`jacobi_svd_batched`)
+/// entry points; one source file, two pipelines.
 pub(crate) const MPS_JACOBI_SRC: &str = include_str!("../shaders/mps_jacobi.metal");
 /// Entry-point name inside [`MPS_JACOBI_SRC`].
 pub(crate) const MPS_JACOBI_ENTRY: &str = "jacobi_svd";
+/// Batched entry-point name inside [`MPS_JACOBI_SRC`] (P5.7-04): one threadgroup
+/// per block, `num_blocks` threadgroups dispatched in a single launch.
+pub(crate) const MPS_JACOBI_BATCHED_ENTRY: &str = "jacobi_svd_batched";
 
 /// Per-gate uniform for [`MPS_1Q_SRC`]. **Layout MUST match the MSL `Mps1q`
 /// struct**: 4×`float2` (row-major 2×2) then `right` and one u32 pad → 40 bytes,
@@ -79,6 +84,26 @@ pub(crate) struct JacobiMeta {
 
 const _: () = assert!(core::mem::size_of::<JacobiMeta>() == 16);
 
+/// Per-block descriptor for the batched Jacobi kernel (P5.7-04). **Layout MUST
+/// match the MSL `JacobiBlockMeta` struct** (32 bytes): `m`, `n` (block dims, as
+/// in [`JacobiMeta`]), then the float2 offsets of this block's `A`/`V` and the
+/// float offset of its `sig` inside the packed buffers, then three pads. Packed
+/// as an array into the kernel's `buffer(3)`, so the 32-byte stride must match.
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub(crate) struct JacobiBlockMeta {
+    pub m: u32,
+    pub n: u32,
+    pub a_off: u32,
+    pub v_off: u32,
+    pub sig_off: u32,
+    pub _pad0: u32,
+    pub _pad1: u32,
+    pub _pad2: u32,
+}
+
+const _: () = assert!(core::mem::size_of::<JacobiBlockMeta>() == 32);
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -100,6 +125,7 @@ mod tests {
             (MPS_CONTRACT_SRC, MPS_CONTRACT_ENTRY),
             (MPS_APPLY2Q_SRC, MPS_APPLY2Q_ENTRY),
             (MPS_JACOBI_SRC, MPS_JACOBI_ENTRY),
+            (MPS_JACOBI_SRC, MPS_JACOBI_BATCHED_ENTRY),
         ] {
             let p = ctx.make_compute_pipeline(src, entry);
             assert!(p.is_ok(), "{entry} must compile: {p:?}");
