@@ -29,6 +29,13 @@ pub(crate) const MPS_JACOBI_ENTRY: &str = "jacobi_svd";
 /// per block, `num_blocks` threadgroups dispatched in a single launch.
 pub(crate) const MPS_JACOBI_BATCHED_ENTRY: &str = "jacobi_svd_batched";
 
+/// MSL source for the GPU column-major pack (P5.8-03): Θ′ (row-major) → the
+/// column-major `A` the Jacobi kernel consumes, so Θ′ never leaves the GPU between
+/// the contraction and the SVD.
+pub(crate) const MPS_PACK_SRC: &str = include_str!("../shaders/mps_pack.metal");
+/// Entry-point name inside [`MPS_PACK_SRC`].
+pub(crate) const MPS_PACK_ENTRY: &str = "pack_theta";
+
 /// Per-gate uniform for [`MPS_1Q_SRC`]. **Layout MUST match the MSL `Mps1q`
 /// struct**: 4×`float2` (row-major 2×2) then `right` and one u32 pad → 40 bytes,
 /// no internal padding (32 + 4 + 4, all 4-byte-aligned).
@@ -84,6 +91,20 @@ pub(crate) struct JacobiMeta {
 
 const _: () = assert!(core::mem::size_of::<JacobiMeta>() == 16);
 
+/// Per-gate uniform for [`MPS_PACK_SRC`] (P5.8-03). **Layout MUST match the MSL
+/// `PackMeta` struct** (16 bytes): `rows`, `cols` (Θ′ shape), `wide` (1 when
+/// `rows < cols`, so Θ′ is packed as its adjoint), one pad.
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub(crate) struct PackMeta {
+    pub rows: u32,
+    pub cols: u32,
+    pub wide: u32,
+    pub _pad0: u32,
+}
+
+const _: () = assert!(core::mem::size_of::<PackMeta>() == 16);
+
 /// Per-block descriptor for the batched Jacobi kernel (P5.7-04). **Layout MUST
 /// match the MSL `JacobiBlockMeta` struct** (32 bytes): `m`, `n` (block dims, as
 /// in [`JacobiMeta`]), then the float2 offsets of this block's `A`/`V` and the
@@ -126,6 +147,7 @@ mod tests {
             (MPS_APPLY2Q_SRC, MPS_APPLY2Q_ENTRY),
             (MPS_JACOBI_SRC, MPS_JACOBI_ENTRY),
             (MPS_JACOBI_SRC, MPS_JACOBI_BATCHED_ENTRY),
+            (MPS_PACK_SRC, MPS_PACK_ENTRY),
         ] {
             let p = ctx.make_compute_pipeline(src, entry);
             assert!(p.is_ok(), "{entry} must compile: {p:?}");

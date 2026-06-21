@@ -9,10 +9,10 @@
 //! kernel home; wiring it into [`super::backend::MetalMpsBackend`] is P5.7-03.
 
 use aleph_core::Complex;
-use metal::{ComputePipelineState, MTLSize};
+use metal::{CommandBufferRef, ComputePipelineState, MTLSize};
 use std::ffi::c_void;
 
-use super::kernel::{JacobiBlockMeta, JacobiMeta};
+use super::kernel::{JacobiBlockMeta, JacobiMeta, PackMeta};
 use super::svd::{truncation_plan, SplitResult};
 use crate::{DeviceBuffer, MetalContext};
 
@@ -22,6 +22,7 @@ use crate::{DeviceBuffer, MetalContext};
 /// - `v`: column-major `cols × k` (`v[j + t*cols]` = `V[j][t]`),
 ///
 /// so that `A[i][j] = Σ_t U[i][t]·σ_t·conj(V[j][t])`.
+#[cfg(test)]
 pub(crate) struct GpuThinSvd {
     pub u: Vec<Complex<f32>>,
     pub sigma: Vec<f32>,
@@ -48,6 +49,119 @@ impl JacobiScratch {
             sig: DeviceBuffer::with_capacity(ctx, 0),
         }
     }
+
+    /// Size the A/V/σ slots for a tall `m × n` block (`m ≥ n`) and seed the kernel's
+    /// inputs: `A` is left for the pack kernel to overwrite, `V` is seeded to `I_n`
+    /// (column-major), `σ` is zeroed. Host writes into unified memory; the GPU reads
+    /// them at command-execution time.
+    fn prepare(&mut self, ctx: &MetalContext, m: usize, n: usize) {
+        self.a.ensure_capacity(ctx, m * n);
+        self.v.ensure_capacity(ctx, n * n);
+        self.v.fill_zero();
+        {
+            let v = self.v.as_mut_slice();
+            for t in 0..n {
+                v[t + t * n] = Complex::<f32>::new(1.0, 0.0);
+            }
+        }
+        self.sig.ensure_capacity(ctx, n);
+        self.sig.fill_zero();
+    }
+}
+
+/// Encode (no commit) the GPU column-major **pack** of `theta` (row-major
+/// `rows × cols`) followed by the one-sided **Jacobi SVD**, onto `cmd` (P5.8-03).
+/// Θ′ never leaves the GPU between the contraction and the SVD: the pack kernel
+/// transposes it into `scratch.a` in-device, and the Jacobi kernel factors it
+/// in place. Returns `wide` (`rows < cols`) so [`split_from_factors`] can map the
+/// `A`/`V` buffers back to the caller's `U`/`V` after the single `commit`/`wait`.
+pub(crate) fn encode_pack_jacobi(
+    cmd: &CommandBufferRef,
+    ctx: &MetalContext,
+    pack_pl: &ComputePipelineState,
+    jacobi_pl: &ComputePipelineState,
+    theta: &DeviceBuffer<Complex<f32>>,
+    scratch: &mut JacobiScratch,
+    rows: usize,
+    cols: usize,
+) -> bool {
+    let wide = rows < cols;
+    let (m, n) = if wide { (cols, rows) } else { (rows, cols) };
+    scratch.prepare(ctx, m, n);
+
+    // --- pack: theta (row-major) → scratch.a (column-major, tall) ---
+    let pmeta = PackMeta {
+        rows: rows as u32,
+        cols: cols as u32,
+        wide: wide as u32,
+        _pad0: 0,
+    };
+    {
+        let enc = cmd.new_compute_command_encoder();
+        enc.set_compute_pipeline_state(pack_pl);
+        enc.set_buffer(0, Some(theta.metal_buffer()), 0);
+        enc.set_buffer(1, Some(scratch.a.metal_buffer()), 0);
+        enc.set_bytes(
+            2,
+            std::mem::size_of::<PackMeta>() as u64,
+            &pmeta as *const PackMeta as *const c_void,
+        );
+        let count = (m * n) as u64;
+        let tg = pack_pl.max_total_threads_per_threadgroup().min(count.max(1));
+        enc.dispatch_threads(MTLSize::new(count.max(1), 1, 1), MTLSize::new(tg, 1, 1));
+        enc.end_encoding();
+    }
+
+    // --- jacobi: scratch.a → U (in A), V, σ ---
+    let jmeta = JacobiMeta {
+        m: m as u32,
+        n: n as u32,
+        _pad0: 0,
+        _pad1: 0,
+    };
+    {
+        let enc = cmd.new_compute_command_encoder();
+        enc.set_compute_pipeline_state(jacobi_pl);
+        enc.set_buffer(0, Some(scratch.a.metal_buffer()), 0);
+        enc.set_buffer(1, Some(scratch.v.metal_buffer()), 0);
+        enc.set_buffer(2, Some(scratch.sig.metal_buffer()), 0);
+        enc.set_bytes(
+            3,
+            std::mem::size_of::<JacobiMeta>() as u64,
+            &jmeta as *const JacobiMeta as *const c_void,
+        );
+        let cap = jacobi_pl.max_total_threads_per_threadgroup().min(256) as usize;
+        let threads = pow2_floor(cap.min(m).max(1)) as u64;
+        enc.dispatch_thread_groups(MTLSize::new(1, 1, 1), MTLSize::new(threads, 1, 1));
+        enc.end_encoding();
+    }
+    wide
+}
+
+/// Build the truncated two-site split from the GPU-resident factors in `scratch`
+/// (filled by [`encode_pack_jacobi`] after its `commit`/`wait`). Labels `A`/`V` →
+/// caller `U`/`V` per `wide`, runs the f32 accuracy guard, and emits the split via
+/// the shared [`split_from_thin`]. `None` (non-finite/mis-converged) degrades to the
+/// f64 CPU SVD, exactly as the standalone path.
+pub(crate) fn split_from_factors(
+    theta: &[Complex<f32>],
+    scratch: &JacobiScratch,
+    rows: usize,
+    cols: usize,
+    wide: bool,
+    max_bond: usize,
+    renormalize: bool,
+) -> Option<SplitResult> {
+    let (m, n) = if wide { (cols, rows) } else { (rows, cols) };
+    let a = &scratch.a.as_slice()[..m * n];
+    let v = &scratch.v.as_slice()[..n * n];
+    let sig = &scratch.sig.as_slice()[..n];
+    // Tall: U=A (rows×k), V=V (cols×k). Wide (factored Aᴴ): U=V (rows×k), V=A (cols×k).
+    let (u_b, v_b) = if wide { (v, a) } else { (a, v) };
+    if recon_residual(theta, u_b, sig, v_b, rows, cols) > RECON_TOL {
+        return None;
+    }
+    split_from_thin(u_b, sig, v_b, rows, cols, max_bond, renormalize)
 }
 
 /// Largest power of two `≤ x` (and `≥ 1`); the Jacobi reduction halves the
@@ -64,6 +178,11 @@ fn pow2_floor(x: usize) -> usize {
 /// (`m × n`, `m ≥ n`), returning `(U(m×n col-major, in place), V(n×n col-major),
 /// σ(n))`. `V` is seeded to the identity here. All device work completes before
 /// return (the unified-memory read-back is then current).
+///
+/// Standalone (own `commit`/`wait`) path — kept as kernel-correctness test scaffolding.
+/// Production fuses the pack + Jacobi onto the per-gate command buffer via
+/// [`encode_pack_jacobi`] (P5.8-03).
+#[cfg(test)]
 fn dispatch_tall(
     ctx: &MetalContext,
     pipeline: &ComputePipelineState,
@@ -128,6 +247,7 @@ fn dispatch_tall(
 /// run on the GPU. Wide blocks (`rows < cols`) are factored as `Aᴴ` and the U/V
 /// roles swapped. The returned factors follow [`GpuThinSvd`]'s column-major layout
 /// with `k = min(rows, cols)`.
+#[cfg(test)]
 pub(crate) fn gpu_thin_svd(
     ctx: &MetalContext,
     pipeline: &ComputePipelineState,
@@ -181,6 +301,7 @@ pub(crate) fn gpu_thin_svd(
 // The block shape (rows/cols), bond cap, renormalize flag, kernel, context, and
 // pooled scratch are all genuinely independent inputs — bundling them into a struct
 // would obscure more than it helps.
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn gpu_svd_split(
     ctx: &MetalContext,
