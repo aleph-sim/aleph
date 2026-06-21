@@ -51,6 +51,12 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --workspace --all-targets -- -D warnings
+      # P5-01: aleph-cuda is an empty crate without the `cuda` feature, so the
+      # workspace clippy above never sees its GPU code. Lint it explicitly with
+      # the feature on. `cudarc`'s `dynamic-loading` means this compiles with no
+      # CUDA SDK on the runner; the actual GPU test runs on the RTX 4000 box.
+      - name: clippy aleph-cuda (cuda feature)
+        run: cargo clippy -p aleph-cuda --features cuda --all-targets -- -D warnings
 
   test-linux:
     name: test linux ${{ matrix.toolchain }}
@@ -85,6 +91,13 @@ jobs:
       # `default-features = false` (P1-09 silent-skip class).
       - name: test aleph-mps without default features
         run: cargo test -p aleph-mps --no-default-features
+      # P5-01: ensure the CUDA GPU code path compiles. `cudarc` `dynamic-loading`
+      # needs no CUDA SDK at build time, so the (GPU-less) runner can build it;
+      # the round-trip test itself runs on the RTX 4000 Ada box, not here. Stable
+      # only — beta adds no signal for this and would just double the load.
+      - name: build aleph-cuda (cuda feature)
+        if: matrix.toolchain == 'stable'
+        run: cargo build -p aleph-cuda --features cuda
 
   test-python:
     name: test python

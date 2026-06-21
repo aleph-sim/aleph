@@ -1,0 +1,43 @@
+[package]
+name = "aleph-cuda"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "CUDA GPU foundation for the aleph quantum circuit simulator (Linux + NVIDIA only)."
+
+[features]
+default = []
+# Enables the real CUDA backend. Off by default so `cargo build --workspace`
+# stays an empty-crate compile on macOS and on default Linux — symmetric with
+# `aleph-metal`'s `metal` feature. The physics (statevector, gate kernels)
+# lands in later Phase 5 tickets; this crate is plumbing only (P5-01).
+cuda = [
+    "dep:cudarc",
+    "dep:thiserror",
+]
+
+[dependencies]
+thiserror = { workspace = true, optional = true }
+
+# `cudarc` is Linux+NVIDIA-only: target-cfg the dep so it is never resolved off
+# Linux (mirrors aleph-metal gating `metal` to macOS), even transitively.
+#
+# Feature choices (see P5-01 rationale in the PR):
+#  - `dynamic-loading`: dlopen libcuda at runtime — the GPU code path compiles
+#    with NO CUDA SDK present, so CI on the (CUDA-less) self-hosted Linux runner
+#    can build `--features cuda`. The actual GPU round-trip test runs on the
+#    RTX 4000 Ada box.
+#  - `cuda-13000`: pin the bindings to CUDA 13.0 (the toolkit installed on the
+#    GPU box; its 580-series driver caps at the 13.0 runtime).
+#  - `driver`: the driver API (alloc / memcpy / free) is all P5-01 needs. cuBLAS,
+#    cuRAND, NVRTC, runtime API come in later tickets when kernels need them.
+[target.'cfg(target_os = "linux")'.dependencies]
+cudarc = { version = "0.19.8", default-features = false, features = [
+    "std",
+    "driver",
+    "cuda-13000",
+    "dynamic-loading",
+], optional = true }
