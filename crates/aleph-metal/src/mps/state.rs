@@ -45,9 +45,10 @@ impl SiteTensor {
     }
 }
 
-/// A device-resident matrix-product state over `num_qubits` sites. Scaffold
-/// invariant (P5.5-06): NN-only, so site order ≡ qubit order throughout — no
-/// permutation bookkeeping. Site `s` carries the bit of qubit `s`.
+/// A device-resident matrix-product state over `num_qubits` sites. Site order need
+/// not equal qubit order: a **lazy permutation** (P5.8-05) tracks which logical qubit
+/// lives on each site, so a non-NN 2q gate routes with a forward SWAP network that is
+/// *not* unwound (≈ half the cost), and a user `Swap` is an O(1) relabel.
 pub struct MetalMpsState {
     pub(crate) num_qubits: u32,
     pub(crate) sites: Vec<SiteTensor>,
@@ -58,17 +59,39 @@ pub struct MetalMpsState {
     /// is trivially canonical (every bond is dimension 1), so the initial value is
     /// arbitrary — 0.
     pub(crate) center: usize,
+    /// `qubit_of_site[s]` = the logical qubit whose bit physically lives on site `s`.
+    pub(crate) qubit_of_site: Vec<u32>,
+    /// Inverse: `site_of_qubit[q]` = the site holding qubit `q`. Both start identity.
+    pub(crate) site_of_qubit: Vec<u32>,
 }
 
 impl MetalMpsState {
-    /// The product state `|0…0⟩`: each site is a `|0⟩` ket.
+    /// The product state `|0…0⟩`: each site is a `|0⟩` ket; identity permutation.
     pub(crate) fn product(ctx: &MetalContext, num_qubits: u32) -> Self {
         let sites = (0..num_qubits).map(|_| SiteTensor::ket0(ctx)).collect();
         Self {
             num_qubits,
             sites,
             center: 0,
+            qubit_of_site: (0..num_qubits).collect(),
+            site_of_qubit: (0..num_qubits).collect(),
         }
+    }
+
+    /// After a *physical* SWAP of adjacent sites `s` and `s+1`, exchange their qubit
+    /// labels (keeps the lazy permutation consistent with the moved tensors).
+    pub(crate) fn swap_site_labels(&mut self, s: usize) {
+        self.qubit_of_site.swap(s, s + 1);
+        self.site_of_qubit[self.qubit_of_site[s] as usize] = s as u32;
+        self.site_of_qubit[self.qubit_of_site[s + 1] as usize] = (s + 1) as u32;
+    }
+
+    /// A user `Swap(qa, qb)`: exchange the two qubits as a pure O(1) relabel — the
+    /// physical state is identical up to which qubit is which, so no tensor moves.
+    pub(crate) fn relabel_swap(&mut self, qa: usize, qb: usize) {
+        self.site_of_qubit.swap(qa, qb);
+        self.qubit_of_site[self.site_of_qubit[qa] as usize] = qa as u32;
+        self.qubit_of_site[self.site_of_qubit[qb] as usize] = qb as u32;
     }
 
     /// Number of qubits (sites) in the chain.
@@ -98,10 +121,9 @@ impl MetalMpsState {
     }
 
     /// Contract the chain into a dense `2^n` amplitude vector (TEST/SMALL-n
-    /// only — allocates `2^n`). Mirrors the CPU MPS `dense_statevector` Phase 1:
-    /// bit `s` of the index is the physical index of site `s`, which (identity
-    /// permutation) is the value of qubit `s` — the ADR-0004 convention shared
-    /// with the SV backends.
+    /// only — allocates `2^n`). The output is indexed by **qubit** (ADR-0004): site
+    /// `s` carries qubit `qubit_of_site[s]`, so its physical bit lands at bit position
+    /// `qubit_of_site[s]` of the amplitude index (the lazy permutation, P5.8-05).
     pub fn dense_statevector(&self) -> Vec<Complex<f64>> {
         let mut amps = vec![Complex::<f64>::new(1.0, 0.0)]; // left bond of site 0 = 1
         let mut left_dim = 1usize;
@@ -127,7 +149,29 @@ impl MetalMpsState {
             amps = next;
             left_dim = right;
         }
-        amps
+        // `amps` is indexed by *site* bits (bit `s` = site `s`). Permute to qubit
+        // order: bit `s` of the site index moves to bit `qubit_of_site[s]` (P5.8-05).
+        // Identity permutation ⇒ this is a no-op copy.
+        if self
+            .qubit_of_site
+            .iter()
+            .enumerate()
+            .all(|(s, &q)| s as u32 == q)
+        {
+            return amps;
+        }
+        let n = self.sites.len();
+        let mut out = vec![Complex::<f64>::new(0.0, 0.0); amps.len()];
+        for (site_idx, amp) in amps.iter().enumerate() {
+            let mut qubit_idx = 0usize;
+            for s in 0..n {
+                if (site_idx >> s) & 1 == 1 {
+                    qubit_idx |= 1 << (self.qubit_of_site[s] as usize);
+                }
+            }
+            out[qubit_idx] = *amp;
+        }
+        out
     }
 }
 
