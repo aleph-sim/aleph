@@ -10,6 +10,12 @@ use cudarc::driver::{CudaContext as RawContext, CudaStream};
 use crate::Error;
 
 /// A CUDA device context plus its default stream.
+///
+/// Cheap to `clone` — both handles are reference-counted (`Arc`) inside
+/// `cudarc`, so a clone shares the same device context and stream. The
+/// state vector keeps a clone so its host-readout paths can copy device→host
+/// without threading the backend's context through every call.
+#[derive(Clone)]
 pub struct CudaContext {
     ctx: Arc<RawContext>,
     stream: Arc<CudaStream>,

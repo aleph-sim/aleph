@@ -65,6 +65,28 @@ impl<T: DeviceRepr> DeviceBuffer<T> {
     pub fn slice(&self) -> &CudaSlice<T> {
         &self.slice
     }
+
+    /// Mutable view of the underlying `CudaSlice`, for binding as a writable
+    /// kernel argument (`launch_builder().arg(buf.slice_mut())`).
+    pub fn slice_mut(&mut self) -> &mut CudaSlice<T> {
+        &mut self.slice
+    }
+
+    /// Overwrite the first `data.len()` elements with `data`, **reusing** the
+    /// existing device allocation whenever it is large enough — only growing
+    /// (reallocating) when `data` exceeds the current capacity. The hot-path
+    /// escape from a per-gate `cudaMalloc` for the small reusable matrix scratch
+    /// (a proper pool is P5-04). Note `len()` continues to report the allocated
+    /// length, which may exceed `data.len()` after a reuse.
+    pub fn write(&mut self, ctx: &CudaContext, data: &[T]) -> Result<(), Error> {
+        if data.len() <= self.slice.len() {
+            ctx.stream().memcpy_htod(data, &mut self.slice)?;
+        } else {
+            DEVICE_ALLOC_COUNT.fetch_add(1, Ordering::Relaxed);
+            self.slice = ctx.stream().clone_htod(data)?;
+        }
+        Ok(())
+    }
 }
 
 impl<T: DeviceRepr + ValidAsZeroBits> DeviceBuffer<T> {

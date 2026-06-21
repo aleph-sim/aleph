@@ -17,11 +17,15 @@
 mod buffer;
 #[cfg(all(target_os = "linux", feature = "cuda"))]
 mod context;
+#[cfg(all(target_os = "linux", feature = "cuda"))]
+mod sv;
 
 #[cfg(all(target_os = "linux", feature = "cuda"))]
 pub use buffer::{device_alloc_count, DeviceBuffer};
 #[cfg(all(target_os = "linux", feature = "cuda"))]
 pub use context::CudaContext;
+#[cfg(all(target_os = "linux", feature = "cuda"))]
+pub use sv::{CudaSvBackend, CudaSvState, MAX_CUDA_QUBITS};
 
 /// Errors from the CUDA foundation layer.
 #[cfg(all(target_os = "linux", feature = "cuda"))]
@@ -31,6 +35,9 @@ pub enum Error {
     /// with no GPU). Callers use this to skip GPU work instead of failing.
     #[error("no CUDA device available at ordinal {0}")]
     NoDevice(usize),
+    /// NVRTC failed to compile the kernel source to PTX.
+    #[error("CUDA kernel compilation failed: {0}")]
+    Compile(String),
     /// Any error surfaced by the CUDA driver API via `cudarc`.
     #[error("CUDA driver error: {0}")]
     Driver(#[from] cudarc::driver::DriverError),
