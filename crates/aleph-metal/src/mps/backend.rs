@@ -13,16 +13,19 @@ use aleph_ir::{Circuit, Instruction};
 use metal::{CommandBufferRef, ComputePipelineState, MTLSize};
 use std::ffi::c_void;
 
-use super::gpu_jacobi::{gpu_svd_split, gpu_svd_split_batch, BatchBlock, JacobiScratch};
+use super::gpu_jacobi::{
+    encode_finalize, encode_pack_jacobi, gpu_svd_split_batch, BatchBlock, JacobiScratch,
+};
 use super::kernel::{
-    Apply2qMeta, ContractMeta, Mps1q, MPS_1Q_ENTRY, MPS_1Q_SRC, MPS_APPLY2Q_ENTRY, MPS_APPLY2Q_SRC,
-    MPS_CONTRACT_ENTRY, MPS_CONTRACT_SRC, MPS_JACOBI_BATCHED_ENTRY, MPS_JACOBI_ENTRY,
-    MPS_JACOBI_SRC,
+    Apply2qMeta, ContractMeta, FinalizeOut, Mps1q, MPS_1Q_ENTRY, MPS_1Q_SRC, MPS_APPLY2Q_ENTRY,
+    MPS_APPLY2Q_SRC, MPS_CONTRACT_ENTRY, MPS_CONTRACT_SRC, MPS_FINALIZE_ENTRY, MPS_FINALIZE_SRC,
+    MPS_JACOBI_BATCHED_ENTRY, MPS_JACOBI_ENTRY, MPS_JACOBI_SRC, MPS_PACK_ENTRY, MPS_PACK_SRC,
 };
 use super::readout;
 use super::state::MetalMpsState;
 use super::svd::svd_split;
 use crate::{DeviceBuffer, Error, MetalContext};
+use bytemuck::Zeroable;
 use rand::{rngs::StdRng, SeedableRng};
 
 /// Qubit cap for the scaffold. The MPS form scales past the SV 28-qubit ceiling,
@@ -55,6 +58,20 @@ pub struct MetalMpsBackend {
     /// brickwall layer's independent splits in a single dispatch. Drives
     /// [`run_batched`](Self::run_batched).
     pipeline_jacobi_batched: ComputePipelineState,
+    /// GPU column-major pack (P5.8-03): Θ′ → the Jacobi input `A`, on-device, so the
+    /// per-gate contract → apply → pack → SVD runs in one command buffer with Θ′
+    /// never read to the host before the split.
+    pipeline_pack: ComputePipelineState,
+    /// GPU-resident split finalize (P5.8-03): σ-sort + truncation + site assembly on
+    /// the GPU, so U/V/σ are never read back. Writes the two new site tensors into
+    /// `site_i_out`/`site_j_out` and the `(chi, accept, trunc_rel)` scalars.
+    pipeline_finalize: ComputePipelineState,
+    /// Pooled output buffers the finalize kernel writes the two new site tensors into
+    /// (then copied into the state sites); reused across gates (P5.8-02 pooling).
+    site_i_out: DeviceBuffer<Complex<f32>>,
+    site_j_out: DeviceBuffer<Complex<f32>>,
+    /// One-element readback of the finalize kernel's `(chi, accept, trunc_rel)`.
+    finalize_out: DeviceBuffer<FinalizeOut>,
     /// Reused 4×4 (16-entry) row-major f32 gate-matrix scratch for the 2q apply.
     mat_scratch: DeviceBuffer<Complex<f32>>,
     /// Pooled Θ block, reused across every NN 2q gate's contract+apply (P5.8-02):
@@ -127,9 +144,18 @@ impl MetalMpsBackend {
         let pipeline_jacobi_batched = ctx
             .make_compute_pipeline(MPS_JACOBI_SRC, MPS_JACOBI_BATCHED_ENTRY)
             .map_err(map_metal_err)?;
+        let pipeline_pack = ctx
+            .make_compute_pipeline(MPS_PACK_SRC, MPS_PACK_ENTRY)
+            .map_err(map_metal_err)?;
+        let pipeline_finalize = ctx
+            .make_compute_pipeline(MPS_FINALIZE_SRC, MPS_FINALIZE_ENTRY)
+            .map_err(map_metal_err)?;
         let mat_scratch = DeviceBuffer::from_slice(&ctx, &[Complex::<f32>::new(0.0, 0.0); 16]);
         let theta_pool = DeviceBuffer::with_capacity(&ctx, 0);
         let jacobi_scratch = JacobiScratch::new(&ctx);
+        let site_i_out = DeviceBuffer::with_capacity(&ctx, 0);
+        let site_j_out = DeviceBuffer::with_capacity(&ctx, 0);
+        let finalize_out = DeviceBuffer::from_slice(&ctx, &[FinalizeOut::zeroed()]);
         Ok(Self {
             ctx,
             pipeline_1q,
@@ -137,6 +163,11 @@ impl MetalMpsBackend {
             pipeline_apply2q,
             pipeline_jacobi,
             pipeline_jacobi_batched,
+            pipeline_pack,
+            pipeline_finalize,
+            site_i_out,
+            site_j_out,
+            finalize_out,
             mat_scratch,
             theta_pool,
             jacobi_scratch,
@@ -203,68 +234,11 @@ impl MetalMpsBackend {
         cmd.wait_until_completed();
     }
 
-    /// Θ = A · B into `theta` (must be pre-sized `rows·cols`). Grid = `threads`.
-    fn dispatch_contract(
-        &self,
-        a: &DeviceBuffer<Complex<f32>>,
-        b: &DeviceBuffer<Complex<f32>>,
-        theta: &DeviceBuffer<Complex<f32>>,
-        meta: &ContractMeta,
-        threads: u64,
-    ) {
-        let cmd = self.ctx.queue().new_command_buffer();
-        let enc = cmd.new_compute_command_encoder();
-        enc.set_compute_pipeline_state(&self.pipeline_contract);
-        enc.set_buffer(0, Some(a.metal_buffer()), 0);
-        enc.set_buffer(1, Some(b.metal_buffer()), 0);
-        enc.set_buffer(2, Some(theta.metal_buffer()), 0);
-        enc.set_bytes(
-            3,
-            std::mem::size_of::<ContractMeta>() as u64,
-            meta as *const ContractMeta as *const c_void,
-        );
-        let tg = self
-            .pipeline_contract
-            .max_total_threads_per_threadgroup()
-            .min(threads);
-        enc.dispatch_threads(MTLSize::new(threads, 1, 1), MTLSize::new(tg, 1, 1));
-        enc.end_encoding();
-        cmd.commit();
-        cmd.wait_until_completed();
-    }
-
-    /// Θ' = U·Θ in place; the caller must have written the 4×4 into `mat_scratch`.
-    fn dispatch_apply2q(
-        &self,
-        theta: &DeviceBuffer<Complex<f32>>,
-        meta: &Apply2qMeta,
-        threads: u64,
-    ) {
-        let cmd = self.ctx.queue().new_command_buffer();
-        let enc = cmd.new_compute_command_encoder();
-        enc.set_compute_pipeline_state(&self.pipeline_apply2q);
-        enc.set_buffer(0, Some(theta.metal_buffer()), 0);
-        enc.set_buffer(1, Some(self.mat_scratch.metal_buffer()), 0);
-        enc.set_bytes(
-            2,
-            std::mem::size_of::<Apply2qMeta>() as u64,
-            meta as *const Apply2qMeta as *const c_void,
-        );
-        let tg = self
-            .pipeline_apply2q
-            .max_total_threads_per_threadgroup()
-            .min(threads);
-        enc.dispatch_threads(MTLSize::new(threads, 1, 1), MTLSize::new(tg, 1, 1));
-        enc.end_encoding();
-        cmd.commit();
-        cmd.wait_until_completed();
-    }
-
     /// Encode (no commit/wait) Θ = A · B into `theta` onto an existing command
-    /// buffer — the batched-layer (P5.7-04) counterpart to [`dispatch_contract`].
-    /// Metal's default resource hazard tracking serializes a later encoder that
-    /// reads `theta` after this one writes it, so a whole layer's contract +
-    /// gate-apply encoders share one `commit`/`wait`.
+    /// buffer. Metal's default resource hazard tracking serializes a later encoder
+    /// that reads `theta` after this one writes it, so the per-gate contract → apply
+    /// → pack → SVD chain (P5.8-03) and a whole batched layer's encoders each share
+    /// one `commit`/`wait`.
     fn encode_contract(
         &self,
         cmd: &CommandBufferRef,
@@ -293,9 +267,9 @@ impl MetalMpsBackend {
     }
 
     /// Encode (no commit/wait) Θ' = U·Θ in place onto an existing command buffer,
-    /// reading the 4×4 from a caller-owned per-gate `mat` buffer (not the shared
-    /// scratch, so a layer's gate-applies don't clobber each other). The
-    /// batched-layer counterpart to [`dispatch_apply2q`].
+    /// reading the 4×4 from a caller-supplied `mat` buffer. The gate-by-gate path
+    /// (P5.8-03) passes the shared `mat_scratch`; the batched layer passes a per-gate
+    /// buffer (so a layer's gate-applies don't clobber each other).
     fn encode_apply2q(
         &self,
         cmd: &CommandBufferRef,
@@ -379,27 +353,22 @@ impl MetalMpsBackend {
         let rows = li * 2;
         let cols = 2 * ri;
 
-        // --- GPU phase: contract + gate-apply ---
+        // --- GPU phase: contract → apply → pack → SVD in ONE command buffer ---
+        // P5.8-03: a single `commit`/`wait` per gate, with Θ′ never read to the host
+        // between the contraction and the SVD (the pack transposes it on-device).
         let gpu_start = std::time::Instant::now();
         // Θ on the GPU: pooled buffer (P5.8-02), grown on demand and zeroed (the
         // contract kernel then overwrites the live `rows·cols` window).
         self.theta_pool.ensure_capacity(&self.ctx, rows * cols);
         self.theta_pool.fill_zero();
-        let cmeta = ContractMeta {
-            c: ci as u32,
-            ri: ri as u32,
-            _pad0: 0,
-            _pad1: 0,
-        };
-        self.dispatch_contract(
-            &state.sites[i].buf,
-            &state.sites[j].buf,
-            &self.theta_pool,
-            &cmeta,
-            (rows * cols) as u64,
-        );
-
-        // Upload the 4×4 (qa-MSB/qb-LSB row-major) into the scratch, then apply.
+        // Output slots for the finalize kernel's two site tensors, sized to the
+        // largest possible χ (= k = min(rows, cols)); the kernel writes `rows·χ` /
+        // `χ·cols` of them. Pooled (P5.8-02): grown on demand only.
+        let k = rows.min(cols);
+        self.site_i_out.ensure_capacity(&self.ctx, rows * k);
+        self.site_j_out.ensure_capacity(&self.ctx, k * cols);
+        // Upload the 4×4 (qa-MSB/qb-LSB row-major) into the scratch the apply encoder
+        // reads at GPU-execution time (written before `commit`).
         {
             let scratch = self.mat_scratch.as_mut_slice();
             #[allow(clippy::needless_range_loop)]
@@ -409,41 +378,92 @@ impl MetalMpsBackend {
                 }
             }
         }
+        let cmeta = ContractMeta {
+            c: ci as u32,
+            ri: ri as u32,
+            _pad0: 0,
+            _pad1: 0,
+        };
         let ameta = Apply2qMeta {
             ri: ri as u32,
             i_is_msb: i_is_msb as u32,
             _pad0: 0,
             _pad1: 0,
         };
-        self.dispatch_apply2q(&self.theta_pool, &ameta, (li * ri) as u64);
+        {
+            let cmd = self.ctx.queue().new_command_buffer();
+            self.encode_contract(
+                cmd,
+                &state.sites[i].buf,
+                &state.sites[j].buf,
+                &self.theta_pool,
+                &cmeta,
+                (rows * cols) as u64,
+            );
+            self.encode_apply2q(
+                cmd,
+                &self.theta_pool,
+                &self.mat_scratch,
+                &ameta,
+                (li * ri) as u64,
+            );
+            // Metal hazard-tracks the dependent encoders (contract writes Θ, apply
+            // reads/writes it, pack reads it, Jacobi reads A), so the whole chain
+            // shares one `commit`/`wait`.
+            let wide = encode_pack_jacobi(
+                cmd,
+                &self.ctx,
+                &self.pipeline_pack,
+                &self.pipeline_jacobi,
+                &self.theta_pool,
+                &mut self.jacobi_scratch,
+                rows,
+                cols,
+            );
+            // GPU-resident finalize: σ-sort + truncation + site assembly on-device, so
+            // U/V/σ are never read back. `renormalize = canonical`: on the canonical
+            // path the kept σ are rescaled to preserve the centre-on-bond norm; on the
+            // exact path σ are verbatim and a real truncation is refused below.
+            encode_finalize(
+                cmd,
+                &self.pipeline_finalize,
+                &self.jacobi_scratch,
+                &self.theta_pool,
+                &self.site_i_out,
+                &self.site_j_out,
+                &self.finalize_out,
+                rows,
+                cols,
+                wide,
+                self.max_bond,
+                canonical,
+            );
+            cmd.commit();
+            cmd.wait_until_completed();
+        }
         self.gpu_ns += gpu_start.elapsed().as_nanos();
 
-        // --- SVD split: GPU-resident (P5.7-03), CPU faer as the fallback ---
-        // The one-sided Jacobi kernel factorizes Θ' on the GPU; faer is the f64
-        // fallback for a non-finite GPU result. The slice is current (the apply
-        // waited). `renormalize = canonical`: on the canonical path the kept σ are
-        // rescaled to preserve the centre-on-bond norm so a bond-cap truncation is
-        // *applied* (P5.7-07); on the exact path σ are verbatim and a real
-        // truncation is refused below (P5.6-02).
+        // --- SVD result: read back only the (chi, accept, trunc_rel) scalars. On
+        // accept, the two new site tensors are already assembled in the GPU output
+        // buffers; on decline (oversized block or non-finite σ) rebuild on the f64 CPU
+        // path from Θ′ (still resident, unread between contract and SVD).
         let svd_start = std::time::Instant::now();
-        let (chi, site_i_data, site_j_data, trunc) = match gpu_svd_split(
-            &self.ctx,
-            &self.pipeline_jacobi,
-            self.theta_pool.as_slice(),
-            rows,
-            cols,
-            self.max_bond,
-            canonical,
-            &mut self.jacobi_scratch,
-        ) {
-            Some(split) => split,
-            None => svd_split(
+        let fo = self.finalize_out.as_slice()[0];
+        let (chi, trunc) = if fo.accept != 0 {
+            (fo.chi as usize, fo.trunc_rel as f64)
+        } else {
+            let (chi, si, sj, trunc) = svd_split(
                 self.theta_pool.as_slice(),
                 rows,
                 cols,
                 self.max_bond,
                 canonical,
-            )?,
+            )?;
+            // Stage the CPU factors into the same output buffers so the install path
+            // below is uniform.
+            self.site_i_out.write(&self.ctx, &si);
+            self.site_j_out.write(&self.ctx, &sj);
+            (chi, trunc)
         };
         // Surface the discarded Schmidt weight (≈0 unless the bond cap binds).
         self.trunc_error += trunc;
@@ -456,8 +476,20 @@ impl MetalMpsBackend {
                 trunc_error: trunc,
             });
         }
-        state.sites[i].set_from_host(&self.ctx, li, chi, &site_i_data);
-        state.sites[j].set_from_host(&self.ctx, chi, ri, &site_j_data);
+        // Copy the assembled site tensors out of the GPU buffers into the state sites
+        // (the only host touch of the result — Θ/U/V/σ are never read back).
+        state.sites[i].set_from_host(
+            &self.ctx,
+            li,
+            chi,
+            &self.site_i_out.as_slice()[..rows * chi],
+        );
+        state.sites[j].set_from_host(
+            &self.ctx,
+            chi,
+            ri,
+            &self.site_j_out.as_slice()[..chi * cols],
+        );
         if canonical {
             state.center = j;
         }
