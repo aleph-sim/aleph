@@ -8,16 +8,12 @@
 //! [`super::jacobi::jacobi_thin_svd`]. This module is the standalone, oracle-checked
 //! kernel home; wiring it into [`super::backend::MetalMpsBackend`] is P5.7-03.
 
-// The dispatch entry points are exercised by this module's on-device tests and
-// land their production caller in P5.7-03 (backend wiring); until then they are
-// unused in a non-test build. Remove when the backend calls `gpu_thin_svd`.
-#![allow(dead_code)]
-
 use aleph_core::Complex;
 use metal::{ComputePipelineState, MTLSize};
 use std::ffi::c_void;
 
 use super::kernel::JacobiMeta;
+use super::svd::{truncation_plan, SplitResult};
 use crate::{DeviceBuffer, MetalContext};
 
 /// Thin-SVD factors of a `rows × cols` block, `k = min(rows, cols)`:
@@ -140,6 +136,57 @@ pub(crate) fn gpu_thin_svd(
             v: u_tilde, // Ũ : cols×k
         }
     }
+}
+
+/// GPU-resident truncated SVD split of the row-major Θ′ block → the two new site
+/// tensors, matching the [`super::svd::svd_split`] contract (so the backend's
+/// truncation guard is unchanged). Runs the Jacobi kernel, sorts σ descending,
+/// applies the same `truncation_plan`, and builds `site_i = U[:, :χ]` /
+/// `site_j = diag(σ_kept)·Vᴴ` directly in f32.
+///
+/// Returns `None` if the kernel produced a non-finite singular value, so the
+/// caller can fall back to the f64 CPU SVD — a single-precision Gram-free Jacobi is
+/// accurate for the well-conditioned exact-only scaffold, but the f64 path stays
+/// the safety net.
+pub(crate) fn gpu_svd_split(
+    ctx: &MetalContext,
+    pipeline: &ComputePipelineState,
+    theta: &[Complex<f32>],
+    rows: usize,
+    cols: usize,
+    max_bond: usize,
+) -> Option<SplitResult> {
+    let svd = gpu_thin_svd(ctx, pipeline, theta, rows, cols);
+    let k = rows.min(cols);
+    // σ descending; carry the permutation so U/V columns follow.
+    let mut order: Vec<usize> = (0..k).collect();
+    order.sort_by(|&a, &b| svd.sigma[b].partial_cmp(&svd.sigma[a]).unwrap());
+    let sigmas_desc: Vec<f64> = order.iter().map(|&t| svd.sigma[t] as f64).collect();
+    if !sigmas_desc.iter().all(|s| s.is_finite()) {
+        return None; // degrade to the CPU SVD
+    }
+
+    let (chi, discarded) = truncation_plan(&sigmas_desc, max_bond);
+    let total: f64 = sigmas_desc.iter().map(|s| s * s).sum();
+    let trunc_rel = if total > 0.0 { discarded / total } else { 0.0 };
+
+    // Site i ← U[:, kept]: row-major (rows, chi). U is column-major: u[i + t*rows].
+    let mut site_i = vec![Complex::<f32>::new(0.0, 0.0); rows * chi];
+    for row in 0..rows {
+        for (t_new, &t_old) in order.iter().take(chi).enumerate() {
+            site_i[row * chi + t_new] = svd.u[row + t_old * rows];
+        }
+    }
+    // Site j ← diag(σ_kept)·Vᴴ: row-major (chi, cols), entry = σ_t·conj(V[col,t]).
+    // V is column-major: v[col + t*cols].
+    let mut site_j = vec![Complex::<f32>::new(0.0, 0.0); chi * cols];
+    for (t_new, &t_old) in order.iter().take(chi).enumerate() {
+        let s = svd.sigma[t_old];
+        for col in 0..cols {
+            site_j[t_new * cols + col] = svd.v[col + t_old * cols].conj().scale(s);
+        }
+    }
+    Some((chi, site_i, site_j, trunc_rel))
 }
 
 #[cfg(test)]

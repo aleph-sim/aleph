@@ -45,7 +45,7 @@ fn narrow(z: Complex) -> Complex<f32> {
 /// converts the relative weight `svd_split` reports into a refusal. `discarded`
 /// here is the absolute dropped Schmidt weight Σ_{j≥chi} σ_j²; `svd_split`
 /// normalizes it by the total Frobenius weight before returning it.
-fn truncation_plan(sigmas: &[f64], max_bond: usize) -> (usize, f64) {
+pub(crate) fn truncation_plan(sigmas: &[f64], max_bond: usize) -> (usize, f64) {
     let s_max = sigmas.first().copied().unwrap_or(0.0);
     let eps = 1e-7 * s_max.max(f64::MIN_POSITIVE);
     let significant = sigmas.iter().filter(|&&s| s > eps).count().max(1);
