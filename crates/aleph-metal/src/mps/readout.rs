@@ -125,7 +125,7 @@ fn transfer_p(site: &SiteTensor, e: &Env, p: usize) -> Env {
 }
 
 /// `⟨ψ|ψ⟩` via a plain norm-transfer sweep (op = I at every site). Real and ≥ 0.
-fn norm_sq(state: &MetalMpsState) -> f64 {
+pub(crate) fn norm_sq(state: &MetalMpsState) -> f64 {
     let mut e = Env::unit();
     for site in &state.sites {
         e = transfer_op(site, &e, &IDENTITY_OP);
