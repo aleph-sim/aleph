@@ -15,6 +15,7 @@
 | **P5.7-02** | The same algorithm as a **Metal compute kernel** (`mps_jacobi.metal`) + dispatch (`gpu_jacobi.rs`), validated standalone against the CPU reference / faer. |
 | **P5.7-03** | Kernel wired into `MetalMpsBackend`: the per-gate split is now GPU-resident; only σ-readout + χ-selection stay on the host. faer remains the CPU fallback. |
 | **P5.7-04** | **Batched layer-parallel SVD** (`jacobi_svd_batched` + `run_batched`): a brickwall layer's disjoint two-site splits factor in one dispatch, one `commit`/`wait` per layer instead of per gate. |
+| **P5.7-05** | **Readout** (`mps/readout.rs`): `measure`/`sample`/`probabilities`/`expectation_value` via doubled transfer-matrix sweeps — bond×bond environments, no `2^n`, exact on the non-canonical scaffold. |
 
 ### Why one-sided Jacobi
 It orthogonalizes the *columns* of Θ′ by right-multiplying 2×2 unitary rotations, so

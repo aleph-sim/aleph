@@ -19,9 +19,11 @@ use super::kernel::{
     MPS_CONTRACT_ENTRY, MPS_CONTRACT_SRC, MPS_JACOBI_BATCHED_ENTRY, MPS_JACOBI_ENTRY,
     MPS_JACOBI_SRC,
 };
+use super::readout;
 use super::state::{MetalMpsState, SiteTensor};
 use super::svd::svd_split;
 use crate::{DeviceBuffer, Error, MetalContext};
+use rand::{rngs::StdRng, SeedableRng};
 
 /// Qubit cap for the scaffold. The MPS form scales past the SV 28-qubit ceiling,
 /// but the scaffold's dense oracle readout is small-n only, so we keep the
@@ -56,6 +58,9 @@ pub struct MetalMpsBackend {
     /// Reused 4×4 (16-entry) row-major f32 gate-matrix scratch for the 2q apply.
     mat_scratch: DeviceBuffer<Complex<f32>>,
     max_bond: usize,
+    /// RNG for the stochastic readout ops (`measure`/`sample`, P5.7-05). Seeded
+    /// via [`with_seed`](Self::with_seed) for reproducibility.
+    rng: StdRng,
     /// Cumulative time (ns) in the GPU contract+apply dispatches vs the host SVD
     /// split, summed over every NN 2q gate. Drives the AC #2 round-trip-cost doc.
     gpu_ns: u128,
@@ -71,19 +76,18 @@ impl MetalMpsBackend {
     /// [`BackendError::InvalidState`] when no device is present (headless CI) or a
     /// shader/pipeline build fails.
     pub fn new() -> Result<Self, BackendError> {
-        Self::build(DEFAULT_MAX_BOND)
+        Self::build(DEFAULT_MAX_BOND, 0)
     }
 
-    /// Construct with an explicit seed. The scaffold has no stochastic ops
-    /// (measure/sample are unsupported), so the seed is currently unused; the
-    /// constructor exists for API parity with the other backends.
-    pub fn with_seed(_seed: u64) -> Result<Self, BackendError> {
-        Self::build(DEFAULT_MAX_BOND)
+    /// Construct with an explicit RNG seed for the stochastic readout ops
+    /// (`measure`/`sample`, P5.7-05). Reproducible for a fixed seed.
+    pub fn with_seed(seed: u64) -> Result<Self, BackendError> {
+        Self::build(DEFAULT_MAX_BOND, seed)
     }
 
     /// Construct with an explicit maximum bond dimension χ.
     pub fn with_max_bond(max_bond: usize) -> Result<Self, BackendError> {
-        Self::build(max_bond.max(1))
+        Self::build(max_bond.max(1), 0)
     }
 
     /// Execute `circuit` gate-by-gate on the GPU. Thin wrapper over
@@ -99,7 +103,7 @@ impl MetalMpsBackend {
         aleph_backend::run_optimized(self, circuit)
     }
 
-    fn build(max_bond: usize) -> Result<Self, BackendError> {
+    fn build(max_bond: usize, seed: u64) -> Result<Self, BackendError> {
         let ctx = MetalContext::new().map_err(map_metal_err)?;
         let pipeline_1q = ctx
             .make_compute_pipeline(MPS_1Q_SRC, MPS_1Q_ENTRY)
@@ -126,6 +130,7 @@ impl MetalMpsBackend {
             pipeline_jacobi_batched,
             mat_scratch,
             max_bond,
+            rng: StdRng::seed_from_u64(seed),
             gpu_ns: 0,
             svd_ns: 0,
             trunc_error: 0.0,
@@ -783,35 +788,35 @@ impl Backend for MetalMpsBackend {
         }
     }
 
-    fn measure(&mut self, _state: &mut Self::State, _qubit: u32) -> Result<bool, BackendError> {
-        Err(BackendError::UnsupportedInstruction {
-            kind: "measure (MPS scaffold)",
-        })
+    fn measure(&mut self, state: &mut Self::State, qubit: u32) -> Result<bool, BackendError> {
+        readout::measure(state, qubit as usize, &mut self.rng)
     }
 
-    fn sample(&mut self, _state: &Self::State, _shots: u32) -> Result<Vec<u64>, BackendError> {
-        Err(BackendError::UnsupportedInstruction {
-            kind: "sample (MPS scaffold)",
-        })
+    fn sample(&mut self, state: &Self::State, shots: u32) -> Result<Vec<u64>, BackendError> {
+        let n = state.num_qubits();
+        // One shot packs one bitstring into a u64 (qubit q → bit q), so n ≤ 64.
+        if n > 64 {
+            return Err(BackendError::TooManyQubits {
+                requested: n,
+                limit: 64,
+            });
+        }
+        Ok(readout::sample(state, shots, &mut self.rng))
     }
 
     fn expectation_value(
         &mut self,
-        _state: &Self::State,
-        _pauli: &PauliString,
+        state: &Self::State,
+        pauli: &PauliString,
     ) -> Result<f64, BackendError> {
-        Err(BackendError::UnsupportedInstruction {
-            kind: "expectation_value (MPS scaffold)",
-        })
+        readout::expectation(state, pauli)
     }
 
     fn probabilities(
         &mut self,
-        _state: &Self::State,
-        _qubits: &[u32],
+        state: &Self::State,
+        qubits: &[u32],
     ) -> Result<Vec<f64>, BackendError> {
-        Err(BackendError::UnsupportedInstruction {
-            kind: "probabilities (MPS scaffold)",
-        })
+        readout::probabilities(state, qubits)
     }
 }

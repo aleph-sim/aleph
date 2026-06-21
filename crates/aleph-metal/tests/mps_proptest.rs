@@ -4,9 +4,10 @@
 //!   match the CPU `aleph_mps::MpsBackend` within the f32 oracle tolerance. The
 //!   bond cap stays above the (small-n, bounded-depth) entanglement, so neither
 //!   MPS truncates and the compare is exact-to-fp32.
-//! * Rejection: every unsupported path (external control, fused `UnitaryKq`,
-//!   non-NN 2q, 3q, and the stochastic/readout ops) must return
-//!   `UnsupportedInstruction`, not silently mis-handle the input.
+//! * Rejection: every unsupported *gate* path (external control, fused
+//!   `UnitaryKq`, non-NN 2q, 3q) must return `UnsupportedInstruction`, not
+//!   silently mis-handle the input. (Readout — measure/sample/probabilities/
+//!   expectation — is now supported; its oracle lives in `mps_readout.rs`.)
 //!
 //! Device-or-skip so headless/Linux CI stays green.
 //!
@@ -159,27 +160,26 @@ fn rejects_fused_unitary_kq() {
     assert_unsupported(reject(3, inst));
 }
 
+/// Readout on a fresh `|0…0⟩` state: the deterministic answers must hold (a quick
+/// smoke that the trait methods are wired; the full oracle is in `mps_readout.rs`).
 #[test]
-fn rejects_stochastic_and_readout_ops() {
+fn readout_on_zero_state() {
     let Some(mut b) = MetalMpsBackend::with_max_bond(MAX_BOND).ok() else {
         return; // headless: skip
     };
-    let mut s = b.allocate(3).unwrap();
-    assert!(matches!(
-        b.measure(&mut s, 0).unwrap_err(),
-        BackendError::UnsupportedInstruction { .. }
-    ));
-    assert!(matches!(
-        b.sample(&s, 8).unwrap_err(),
-        BackendError::UnsupportedInstruction { .. }
-    ));
-    let pauli = PauliString::new(1.0, vec![(0u32, Pauli::Z)]).unwrap();
-    assert!(matches!(
-        b.expectation_value(&s, &pauli).unwrap_err(),
-        BackendError::UnsupportedInstruction { .. }
-    ));
-    assert!(matches!(
-        b.probabilities(&s, &[0]).unwrap_err(),
-        BackendError::UnsupportedInstruction { .. }
-    ));
+    let s = b.allocate(3).unwrap();
+    // P(qubit 0 = 0) = 1.
+    let p = b.probabilities(&s, &[0]).unwrap();
+    assert!(
+        (p[0] - 1.0).abs() < 1e-6 && p[1].abs() < 1e-6,
+        "probs {p:?}"
+    );
+    // ⟨Z₀⟩ = +1 on |0⟩.
+    let z0 = PauliString::new(1.0, vec![(0u32, Pauli::Z)]).unwrap();
+    assert!((b.expectation_value(&s, &z0).unwrap() - 1.0).abs() < 1e-6);
+    // Every shot is 000.
+    assert!(b.sample(&s, 16).unwrap().iter().all(|&x| x == 0));
+    // Measuring qubit 0 yields 0.
+    let mut s = s;
+    assert!(!b.measure(&mut s, 0).unwrap());
 }
