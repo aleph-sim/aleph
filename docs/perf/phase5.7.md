@@ -223,3 +223,7 @@ plateaus near 60×, where faer stays dominant.
   blocks fall back to f64 (P5.7-07 guard), and a blocked GPU SVD for large χ.
 - **Push to the large-χ / large-n regime** where the GPU SVD FLOPs dominate — needs
   lifting the dense-readout test cap (readout is already `2^n`-free since P5.7-05).
+
+A full root-cause post-mortem (per-gate host round-trips, allocations, host SVD
+canonicalisation, physical SWAPs) is in **`docs/perf/phase5.7-audit.md`**; the rewrite
+is scheduled as **Phase 5.8** in `BACKLOG.md`.
