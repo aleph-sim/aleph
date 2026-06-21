@@ -64,12 +64,19 @@ pub(crate) fn truncation_plan(sigmas: &[f64], max_bond: usize) -> (usize, f64) {
 pub(crate) type SplitResult = (usize, Vec<Complex<f32>>, Vec<Complex<f32>>, f64);
 
 /// Truncated SVD of Θ′ (row-major, `rows × cols`, f32) → the two new site tensors.
-/// `max_bond` caps the kept bond dimension χ.
+/// `max_bond` caps the kept bond dimension χ. The CPU (faer) fallback for the GPU
+/// Jacobi split; same `(chi, site_i, site_j, trunc_rel)` contract.
+///
+/// `renormalize`: when true (canonical/truncating path, P5.7-07) the kept σ are
+/// rescaled by `1/√Σ_kept σ²` so a truncated split keeps the (centre-on-bond) norm;
+/// when false (exact `run_batched` path) σ are verbatim and the caller refuses any
+/// non-negligible `trunc_rel`.
 pub(crate) fn svd_split(
     theta: &[Complex<f32>],
     rows: usize,
     cols: usize,
     max_bond: usize,
+    renormalize: bool,
 ) -> Result<SplitResult, BackendError> {
     debug_assert_eq!(theta.len(), rows * cols);
     // Θ′ widened f32 → f64 (exact) into a faer matrix.
@@ -89,8 +96,18 @@ pub(crate) fn svd_split(
     // (non-unit) block norm. `total == 0` only for an all-zero block ⇒ no loss.
     let total: f64 = sigmas.iter().map(|s| s * s).sum();
     let trunc_rel = if total > 0.0 { discarded / total } else { 0.0 };
-    // Exact σ (no renormalization) — see `truncation_plan` rationale.
-    let s_kept: &[f64] = &sigmas[..chi];
+    // Renormalisation factor (1.0 when exact): scale = 1/√Σ_kept σ².
+    let scale = if renormalize {
+        let kept: f64 = sigmas[..chi].iter().map(|s| s * s).sum();
+        if kept > 0.0 {
+            (1.0 / kept).sqrt()
+        } else {
+            1.0
+        }
+    } else {
+        1.0
+    };
+    let s_kept: Vec<f64> = sigmas[..chi].iter().map(|s| s * scale).collect();
 
     // Site i ← U[:, :chi]: row-major (li,2,chi) = rows×chi, data[row*chi + t].
     let mut site_i = vec![Complex::<f32>::new(0.0, 0.0); rows * chi];
@@ -120,7 +137,7 @@ pub(crate) fn svd_split(
 /// slower-but-correct factorization instead of failing the gate. faer and Jacobi
 /// return the same layout (`U(rows×size)`, `V(cols×size)`, σ descending), so the
 /// caller is agnostic to which produced the factors.
-fn factor(a: MatRef<'_, Complex>, size: usize) -> Result<ThinSvd, BackendError> {
+pub(crate) fn factor(a: MatRef<'_, Complex>, size: usize) -> Result<ThinSvd, BackendError> {
     let (rows, cols) = a.shape();
     // Parallelise only once the block is big enough to pay for rayon's fork/join.
     // Small early-circuit blocks stay `Par::Seq`; deep-entanglement blocks (bond
@@ -202,10 +219,10 @@ mod tests {
             Complex::<f32>::new(0.0, 0.0),
             Complex::<f32>::new(inv_sqrt2, 0.0),
         ];
-        let (_, _, _, trunc) = svd_split(&theta, 2, 2, 2).expect("svd cap=2");
+        let (_, _, _, trunc) = svd_split(&theta, 2, 2, 2, false).expect("svd cap=2");
         assert!(trunc < 1e-6, "no truncation at cap=2, got {trunc}");
 
-        let (chi, _, _, trunc) = svd_split(&theta, 2, 2, 1).expect("svd cap=1");
+        let (chi, _, _, trunc) = svd_split(&theta, 2, 2, 1, false).expect("svd cap=1");
         assert_eq!(chi, 1);
         assert!(
             (trunc - 0.5).abs() < 1e-5,

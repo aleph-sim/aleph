@@ -155,9 +155,18 @@ pub(crate) fn gpu_svd_split(
     rows: usize,
     cols: usize,
     max_bond: usize,
+    renormalize: bool,
 ) -> Option<SplitResult> {
     let svd = gpu_thin_svd(ctx, pipeline, theta, rows, cols);
-    split_from_thin(&svd.u, &svd.sigma, &svd.v, rows, cols, max_bond)
+    split_from_thin(
+        &svd.u,
+        &svd.sigma,
+        &svd.v,
+        rows,
+        cols,
+        max_bond,
+        renormalize,
+    )
 }
 
 /// Build the truncated two-site split from thin-SVD factors in [`GpuThinSvd`]'s
@@ -168,6 +177,11 @@ pub(crate) fn gpu_svd_split(
 ///
 /// Returns `None` if any singular value is non-finite, so the caller can fall back
 /// to the f64 CPU SVD (matching the single-block degrade path).
+///
+/// When `renormalize` is true (the canonical, truncating path — P5.7-07), the kept
+/// σ are rescaled by `1/√Σ_kept σ²` so a truncated split preserves the (centre-on-
+/// bond) state norm; with `false` (the exact `run_batched` path) the σ are kept
+/// verbatim and the caller refuses any non-negligible `trunc_rel`.
 fn split_from_thin(
     u: &[Complex<f32>],
     sigma: &[f32],
@@ -175,6 +189,7 @@ fn split_from_thin(
     rows: usize,
     cols: usize,
     max_bond: usize,
+    renormalize: bool,
 ) -> Option<SplitResult> {
     let k = rows.min(cols);
     // σ descending; carry the permutation so U/V columns follow.
@@ -188,6 +203,18 @@ fn split_from_thin(
     let (chi, discarded) = truncation_plan(&sigmas_desc, max_bond);
     let total: f64 = sigmas_desc.iter().map(|s| s * s).sum();
     let trunc_rel = if total > 0.0 { discarded / total } else { 0.0 };
+    // Renormalisation so the kept block keeps the pre-truncation norm. kept_weight
+    // = Σ_kept σ²; scale = 1/√kept_weight (1.0 when not renormalising or exact).
+    let scale = if renormalize {
+        let kept: f64 = sigmas_desc[..chi].iter().map(|s| s * s).sum();
+        if kept > 0.0 {
+            (1.0 / kept).sqrt() as f32
+        } else {
+            1.0
+        }
+    } else {
+        1.0
+    };
 
     // Site i ← U[:, kept]: row-major (rows, chi). U is column-major: u[i + t*rows].
     let mut site_i = vec![Complex::<f32>::new(0.0, 0.0); rows * chi];
@@ -196,11 +223,11 @@ fn split_from_thin(
             site_i[row * chi + t_new] = u[row + t_old * rows];
         }
     }
-    // Site j ← diag(σ_kept)·Vᴴ: row-major (chi, cols), entry = σ_t·conj(V[col,t]).
+    // Site j ← diag(σ_kept·scale)·Vᴴ: row-major (chi, cols), entry = σ_t·scale·conj(V[col,t]).
     // V is column-major: v[col + t*cols].
     let mut site_j = vec![Complex::<f32>::new(0.0, 0.0); chi * cols];
     for (t_new, &t_old) in order.iter().take(chi).enumerate() {
-        let s = sigma[t_old];
+        let s = sigma[t_old] * scale;
         for col in 0..cols {
             site_j[t_new * cols + col] = v[col + t_old * cols].conj().scale(s);
         }
@@ -336,10 +363,12 @@ pub(crate) fn gpu_svd_split_batch(
         let sig_slice = &sig_out[sig_off..sig_off + n];
         // Tall: A→U (rows×k), V→V (cols×k). Wide (factored Aᴴ): the original
         // U = Ṽ (= V-of-Aᴴ, rows×k) and V = Ũ (= A-of-Aᴴ, cols×k); k = n.
+        // Batched path is exact-only (run_batched): no renormalisation; the caller
+        // refuses any truncation.
         let split = if wide {
-            split_from_thin(v_slice, sig_slice, a_slice, rows, cols, max_bond)
+            split_from_thin(v_slice, sig_slice, a_slice, rows, cols, max_bond, false)
         } else {
-            split_from_thin(a_slice, sig_slice, v_slice, rows, cols, max_bond)
+            split_from_thin(a_slice, sig_slice, v_slice, rows, cols, max_bond, false)
         };
         out.push(split);
     }
@@ -533,7 +562,7 @@ mod tests {
             }
             // χ must match the single-block path on the same block.
             let (single_chi, ..) =
-                gpu_svd_split(&ctx, &single, theta, *rows, *cols, 64).expect("single split");
+                gpu_svd_split(&ctx, &single, theta, *rows, *cols, 64, false).expect("single split");
             assert_eq!(*chi, single_chi, "{rows}x{cols} χ batched vs single");
         }
     }

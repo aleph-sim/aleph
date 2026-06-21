@@ -17,6 +17,7 @@
 | **P5.7-04** | **Batched layer-parallel SVD** (`jacobi_svd_batched` + `run_batched`): a brickwall layer's disjoint two-site splits factor in one dispatch, one `commit`/`wait` per layer instead of per gate. |
 | **P5.7-05** | **Readout** (`mps/readout.rs`): `measure`/`sample`/`probabilities`/`expectation_value` via doubled transfer-matrix sweeps — bond×bond environments, no `2^n`, exact on the non-canonical scaffold. |
 | **P5.7-06** | **SWAP router** (`apply_2q_routed`): non-adjacent 2q gates routed by a physical SWAP network (apply → unwind), restoring site≡qubit order; wired into `run` and `run_batched`. |
+| **P5.7-07** | **Canonical form → real truncation** (`mps/canonical.rs`): track an orthogonality centre (SVD-based QR/LQ moves), renormalise the kept σ, and *apply* a bond-cap truncation on the `run` path instead of refusing it. |
 
 ### Why one-sided Jacobi
 It orthogonalizes the *columns* of Θ′ by right-multiplying 2×2 unitary rotations, so
@@ -124,7 +125,11 @@ small; the lever there is the per-block factorization, not the launch count.
   the split column still includes per-block host work (column-major packing, σ sort,
   site-tensor build + upload). Pooling the `A`/`V`/`sig` buffers across layers and
   moving the pack/unpack onto the GPU would chip at the residual.
-- **Still exact-only.** Non-NN gates are now SWAP-routed (P5.7-06) and readout is
-  supported (P5.7-05), but there is still no canonical-form renormalization, so a
-  real truncation is refused, not applied — unchanged from P5.6-02 (canonical form
-  is P5.7-07).
+- **Truncation is canonical on the `run` path (P5.7-07).** `run`/`apply_2q_nn`
+  maintains an orthogonality centre and applies bond-cap truncation with the
+  `1/√(kept weight)` renormalisation, matching the CPU MPS at a matched cap.
+  `run_batched` has no single centre, so it stays **exact-only** and still refuses
+  a real truncation — use `run` when compressing.
+- **Canonicalisation is host-side, SVD-based.** The centre moves via a thin SVD per
+  stepped site (an SVD-standing-in-for-QR); a QR move and GPU offload would cut the
+  per-move cost — a follow-up, not needed for correctness.

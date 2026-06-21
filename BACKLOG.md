@@ -3310,12 +3310,23 @@ P3-06, P3-12 in this backlog.
 
 -----
 
-### [P5.7-07] Canonical-form MPS on Metal → real truncation
+### [P5.7-07] Canonical-form MPS on Metal → real truncation — **SHIPPED (PR #234)**
 
 **Labels:** `area:backend-mps`, `area:backend-gpu`, `type:feature`, `priority:high`
 **Milestone:** Phase 5.5 — Apple/Metal GPU
 **Estimate:** L
 **Depends on:** P5.7-03
+
+> **Shipped (PR #234).** `mps/canonical.rs` tracks an orthogonality centre and
+> moves it one site at a time via a thin SVD (SVD-based QR/LQ). The gate-by-gate
+> path (`run`/`apply_2q_nn`) moves the centre onto the active bond before each
+> two-site split, so the gated block has Frobenius² = ⟨ψ|ψ⟩ and the split rescales
+> the kept σ by `1/√Σ_kept σ²` — **applying** a bond-cap truncation with controlled
+> error instead of refusing it. The `MPS_TRUNC_TOL` refusal is retired on this
+> path; `run_batched` stays exact-only (no single centre) and still refuses.
+> Oracle: a compressible brickwall at capped χ matches the CPU MPS at the same cap
+> (~fp32), the truncated state stays normalised, and a canonical-sweep round-trip
+> preserves the dense state; all exact (uncapped) oracles still hold at 1e-5.
 
 **Description**
 Maintain an orthogonality centre (canonical form) so a two-site split can
@@ -3335,9 +3346,9 @@ large/entangled circuits; without it the GPU MPS only runs exact (small-bond) ca
 
 **Acceptance Criteria**
 
-- [ ] Truncated runs (bond cap below natural bond) match CPU MPS within the
+- [x] Truncated runs (bond cap below natural bond) match CPU MPS within the
   controlled truncation error.
-- [ ] The bond-cap refusal is replaced by correct compression; oracle on a
+- [x] The bond-cap refusal is replaced by correct compression; oracle on a
   compressible circuit at a capped χ.
 
 **Testing Requirements**

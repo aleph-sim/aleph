@@ -4,6 +4,7 @@
 //! the f64 `faer` SVD kept as the CPU fallback.
 
 mod backend;
+mod canonical;
 mod gpu_jacobi;
 mod jacobi;
 mod kernel;

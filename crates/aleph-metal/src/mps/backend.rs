@@ -164,6 +164,12 @@ impl MetalMpsBackend {
         self.trunc_error = 0.0;
     }
 
+    /// Borrow the Metal context (in-crate use, e.g. the canonical-form tests).
+    #[cfg(test)]
+    pub(crate) fn ctx(&self) -> &MetalContext {
+        &self.ctx
+    }
+
     /// Dispatch one kernel over `threads` and block until the GPU finishes so the
     /// unified-memory buffers are current for the next gate or the host SVD.
     fn dispatch_1q_site(&self, buf: &DeviceBuffer<Complex<f32>>, g: &Mps1q, threads: u64) {
@@ -337,6 +343,11 @@ impl MetalMpsBackend {
         // `i_is_msb`: the left site holds the matrix-MSB qubit (qa) iff qa is the
         // lower index. Selects the physical→matrix-index map in the apply kernel.
         let i_is_msb = qa == i;
+        // Canonical form (P5.7-07): move the orthogonality centre onto the active
+        // bond so the gated block has Frobenius² = ⟨ψ|ψ⟩ and the truncated split
+        // can renormalise the kept σ — i.e. *apply* truncation rather than refuse
+        // it. Canonicalisation can change the bonds, so read dims afterwards.
+        super::canonical::move_center_to(&self.ctx, &mut state.sites, &mut state.center, i)?;
         let li = state.sites[i].left;
         let ci = state.sites[i].right;
         debug_assert_eq!(
@@ -390,6 +401,11 @@ impl MetalMpsBackend {
         // CPU round-trip that dominated per-gate time (the documented ~94.5%). The
         // f64 faer `svd_split` stays the safety net for a non-finite GPU result.
         // The slice is current: dispatch_apply2q waited.
+        // Canonical/truncating split (`renormalize = true`): the kept σ are
+        // rescaled to preserve the (centre-on-bond) norm, so a bond-cap truncation
+        // is *applied* with controlled error instead of refused (P5.7-07). faer is
+        // the f64 fallback for a non-finite GPU result. Site i ← U is left-canonical
+        // and site j carries the renormalised σ·Vᴴ, so the new centre is j.
         let svd_start = std::time::Instant::now();
         let (chi, site_i_data, site_j_data, trunc) = match gpu_svd_split(
             &self.ctx,
@@ -398,24 +414,16 @@ impl MetalMpsBackend {
             rows,
             cols,
             self.max_bond,
+            true,
         ) {
             Some(split) => split,
-            None => svd_split(theta.as_slice(), rows, cols, self.max_bond)?,
+            None => svd_split(theta.as_slice(), rows, cols, self.max_bond, true)?,
         };
-        // Record the dropped weight first, then refuse if it's a real truncation:
-        // this naive scaffold has no orthogonality centre to renormalize against,
-        // so applying a truncated split would silently corrupt the state. Refusing
-        // before mutating `state.sites` leaves the pre-gate MPS intact (P5.6-02).
+        // Surface the discarded Schmidt weight (≈0 unless the bond cap binds).
         self.trunc_error += trunc;
-        if trunc > MPS_TRUNC_TOL {
-            self.svd_ns += svd_start.elapsed().as_nanos();
-            return Err(BackendError::MpsTruncationUnsupported {
-                max_bond: self.max_bond,
-                trunc_error: trunc,
-            });
-        }
         state.sites[i] = SiteTensor::from_host(&self.ctx, li, chi, &site_i_data);
         state.sites[j] = SiteTensor::from_host(&self.ctx, chi, ri, &site_j_data);
+        state.center = j;
         self.svd_ns += svd_start.elapsed().as_nanos();
         Ok(())
     }
@@ -719,8 +727,10 @@ impl MetalMpsBackend {
             // GPU split, or the f64 CPU faer fallback for a non-finite GPU result
             // (the slice is current: the phase-A wait completed).
             let (chi, si, sj, trunc) = match split {
+                // Batched path is exact-only (no orthogonality centre maintained):
+                // `renormalize = false`, and a real truncation is refused below.
                 Some(s) => s,
-                None => svd_split(batch[idx].theta, b.rows, b.cols, self.max_bond)?,
+                None => svd_split(batch[idx].theta, b.rows, b.cols, self.max_bond, false)?,
             };
             resolved.push((b, (chi, si, sj, trunc)));
         }
