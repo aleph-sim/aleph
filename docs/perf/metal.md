@@ -124,3 +124,9 @@ command-buffer dispatch to drop the remaining per-gate sync on the SV path, and
 (b) a GPU/batched SVD to unblock the MPS path. Both are out of scope for the
 Phase-5.5 milestone, which set out to stand up the Apple/Metal GPU backend and
 clear the ≥2× SV exit bar — done.
+
+**Update (Phase 5.7):** lever (b) is now addressed — the MPS two-site SVD runs on
+the GPU via a one-sided Jacobi kernel, cutting the host split ~4.6× (~1390 ms →
+~300 ms on this same n=12 d=24 brickwall) and holding the 1e-5 oracle, so the host
+SVD is no longer the round-trip bottleneck reported above. See
+[`phase5.7.md`](phase5.7.md).
