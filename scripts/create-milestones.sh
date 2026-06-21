@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Create the 7 phase milestones from BACKLOG.md. Idempotent.
+# Create the phase milestones from BACKLOG.md. Idempotent.
 # Em-dash (—, U+2014) in titles MUST be preserved verbatim — `gh issue create
 # --milestone` matches by exact title string.
 set -euo pipefail
@@ -41,6 +41,8 @@ create_milestone "Phase 4.6 — CPU Depth" \
   "Pre-GPU CPU window: Pauli-frame multi-shot sampler + measure scan lever (QEC throughput), noise models v1 (Kraus channels, oracle vs Aer), adopted MPS/Python polish tickets."
 create_milestone "Phase 5 — GPU Backend" \
   "GPU state vector backend within 1.5× of cuQuantum standalone."
+create_milestone "Phase 5.5 — Apple/Metal GPU" \
+  "Apple/Metal GPU track (single-box M4 Mac Mini): FP32 Metal state-vector backend (≥2× same-Mac CPU on Tier-1) and GPU-resident MPS (one-sided Jacobi SVD on-device). FP32 accuracy ceiling ~1e-5. Covers sub-phases 5.5/5.6/5.7."
 create_milestone "Phase 6 — Multi-GPU & Distributed" \
   "Distributed state vector across multiple GPUs and nodes."
 
