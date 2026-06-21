@@ -15,8 +15,9 @@
 //! circuit evolution — so they run on the host; offloading the per-site transfer
 //! to the GPU is a future optimisation, not needed for correctness.
 //!
-//! Site order ≡ qubit order in the scaffold (NN-only, no SWAP router), so logical
-//! qubit `q` is physical site `q` throughout.
+//! Site order need not equal qubit order: the lazy SWAP router (P5.8-05) leaves a
+//! permutation, so a qubit-indexed query maps through `state.site_of_qubit` and a
+//! sampled site-bit maps back through `state.qubit_of_site`.
 
 use aleph_backend::BackendError;
 use aleph_core::{Complex, Pauli, PauliString};
@@ -170,7 +171,8 @@ pub(crate) fn probabilities(
             return Err(BackendError::DuplicateQubit { qubit: q });
         }
         seen.push(q);
-        out_bit_for_site[q as usize] = Some(pos); // identity site↔qubit map
+        // Qubit `q` physically lives on site `site_of_qubit[q]` (lazy permutation).
+        out_bit_for_site[state.site_of_qubit[q as usize] as usize] = Some(pos);
     }
 
     // (output index so far, environment). Starts as the unit boundary.
@@ -232,7 +234,8 @@ pub(crate) fn expectation(state: &MetalMpsState, p: &PauliString) -> Result<f64,
             continue;
         }
         let m = pauli.matrix();
-        ops[*q as usize] = [[m[0][0], m[0][1]], [m[1][0], m[1][1]]];
+        // Qubit `q`'s operator acts on its physical site (lazy permutation, P5.8-05).
+        ops[state.site_of_qubit[*q as usize] as usize] = [[m[0][0], m[0][1]], [m[1][0], m[1][1]]];
     }
 
     let mut e = Env::unit();
@@ -305,7 +308,8 @@ pub(crate) fn sample<R: Rng>(state: &MetalMpsState, shots: u32, rng: &mut R) -> 
             let outcome = total > 0.0 && rng.gen::<f64>() * total >= w0;
             let b = if outcome { 1usize } else { 0usize };
             if outcome {
-                bits |= 1u64 << i; // identity site↔qubit map
+                // Site `i` carries qubit `qubit_of_site[i]` (lazy permutation).
+                bits |= 1u64 << state.qubit_of_site[i];
             }
             let wb = if outcome { w1 } else { w0 };
             let scale = if wb > 0.0 { (1.0 / wb).sqrt() } else { 0.0 };
@@ -382,7 +386,8 @@ pub(crate) fn measure<R: Rng>(
     // Rescale the projected state back to the pre-measurement norm (= `total`).
     let scale = (total / pk).sqrt() as f32;
 
-    let site = &mut state.sites[q];
+    // Project the *physical site* holding qubit `q` (lazy permutation, P5.8-05).
+    let site = &mut state.sites[state.site_of_qubit[q] as usize];
     let (left, right) = (site.left, site.right);
     let buf = site.buf.as_mut_slice();
     let drop = 1 - keep;

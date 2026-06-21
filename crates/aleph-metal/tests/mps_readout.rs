@@ -102,6 +102,58 @@ fn probabilities_match_references() {
     assert_eq!(gpu.probabilities(&s, &[]).unwrap(), vec![1.0]);
 }
 
+/// A circuit with **non-NN** gates routes via the lazy SWAP network (P5.8-05), which
+/// no longer unwinds — so the GPU MPS ends with a *non-trivial* site↔qubit
+/// permutation. Readout (probabilities + expectation) must still match the CPU MPS
+/// and exact SV references, which only happens if the permutation is correctly
+/// followed.
+#[test]
+fn readout_matches_under_nontrivial_permutation() {
+    let Some(mut gpu) = metal() else { return };
+    // Non-adjacent CNOTs (gaps ≥ 2) force routing; interleaved rotations break any
+    // symmetry so a mis-mapped qubit would show up.
+    let mut c = Circuit::new(6, 0);
+    for q in 0..6u32 {
+        let _ = c.h(q);
+    }
+    let _ = c.cnot(0, 3);
+    let _ = c.ry(0.4, 2);
+    let _ = c.cnot(1, 5);
+    let _ = c.rz(0.35, 4);
+    let _ = c.cnot(4, 0);
+    let _ = c.ry(0.6, 1);
+    let s = gpu.run(&c).expect("gpu run");
+
+    for qubits in [vec![0u32], vec![3], vec![0, 1], vec![1, 4], vec![0, 2, 5]] {
+        let got = gpu.probabilities(&s, &qubits).expect("gpu probabilities");
+        assert_vec_close(
+            &format!("perm probs{qubits:?} vs cpu-mps"),
+            &got,
+            &cpu_mps_probs(&c, &qubits),
+        );
+        assert_vec_close(
+            &format!("perm probs{qubits:?} vs naive-sv"),
+            &got,
+            &naive_probs(&c, &qubits),
+        );
+    }
+    for terms in [
+        vec![(0u32, Pauli::Z)],
+        vec![(3, Pauli::Z)],
+        vec![(0, Pauli::Z), (4, Pauli::Z)],
+        vec![(1, Pauli::X), (5, Pauli::X)],
+    ] {
+        let p = PauliString::new(1.0, terms).unwrap();
+        let got = gpu.expectation_value(&s, &p).expect("gpu expectation");
+        assert!(
+            (got - cpu_mps_expect(&c, &p)).abs() <= TOL,
+            "perm ⟨{p:?}⟩ {got} vs cpu {}",
+            cpu_mps_expect(&c, &p)
+        );
+        assert!((got - naive_expect(&c, &p)).abs() <= TOL);
+    }
+}
+
 /// `expectation_value` matches CPU MPS and the exact SV for 1- and 2-site Paulis.
 #[test]
 fn expectation_matches_references() {

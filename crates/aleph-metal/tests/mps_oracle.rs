@@ -166,6 +166,51 @@ fn swap_routed_non_nn_matches_references() {
     check("swap_routed", &mut gpu, &c);
 }
 
+/// P5.8-05: a user `Swap` is an O(1) permutation relabel — correct against the
+/// references, and it touches **no** device tensors (allocation counter unchanged).
+#[test]
+fn user_swap_is_relabel_and_correct() {
+    use aleph_backend::Backend;
+    use aleph_core::{Gate, GateInstance};
+    let mut gpu = match MetalMpsBackend::with_max_bond(MAX_BOND) {
+        Ok(b) => b,
+        Err(_) => {
+            eprintln!("skipping user-swap test: no Metal device available");
+            return;
+        }
+    };
+    // Entangle, then SWAP (NN and non-NN), with rotations breaking symmetry.
+    let mut c = Circuit::new(5, 0);
+    for q in 0..5 {
+        c.h(q).unwrap();
+    }
+    c.cnot(0, 1).unwrap();
+    c.ry(0.5, 2).unwrap();
+    c.swap(1, 3).unwrap(); // non-NN swap
+    c.cnot(2, 3).unwrap();
+    c.swap(0, 1).unwrap(); // NN swap
+    c.rz(0.3, 4).unwrap();
+    check("user_swap", &mut gpu, &c);
+
+    // The swap itself allocates no device buffers (pure relabel): drive the circuit
+    // up to a swap, snapshot the counter, apply the swap, and assert it is flat.
+    let mut s = gpu.allocate(5).unwrap();
+    for q in 0..5u32 {
+        gpu.apply_gate(&mut s, &GateInstance::new(Gate::H, vec![q]))
+            .unwrap();
+    }
+    gpu.apply_gate(&mut s, &GateInstance::new(Gate::Cnot, vec![0, 1]))
+        .unwrap();
+    let before = aleph_metal::device_alloc_count();
+    gpu.apply_gate(&mut s, &GateInstance::new(Gate::Swap, vec![1, 4]))
+        .unwrap();
+    assert_eq!(
+        aleph_metal::device_alloc_count(),
+        before,
+        "user Swap must touch no device tensors"
+    );
+}
+
 /// P5.7-06: SWAP routing is its own inverse — applying a non-NN CNOT twice returns
 /// the exact pre-gate state (property reversibility; the SWAP network must unwind).
 #[test]

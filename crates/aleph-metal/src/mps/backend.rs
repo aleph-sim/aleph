@@ -582,17 +582,32 @@ impl MetalMpsBackend {
         Ok(())
     }
 
-    /// Apply a 2q gate `m` to a **non-adjacent** pair (`qa.abs_diff(qb) ≥ 2`) by
-    /// routing with a physical SWAP network (P5.7-06). The qubit on the higher
-    /// site is walked down to sit beside the lower one via adjacent SWAPs (each a
-    /// NN 2q gate through the same contract+apply+SVD path), the gate is applied on
-    /// the now-adjacent pair with its original MSB/LSB orientation, then the SWAPs
-    /// are unwound — so the scaffold's site≡qubit-order invariant is restored and
-    /// the readout/dense paths stay correct. CPU MPS does the same (P3-06); lazy
-    /// permutation tracking (P3-12) is avoided here precisely to keep that invariant.
-    /// `canonical` is threaded to every NN sub-apply (SWAPs + the gate) so the
-    /// whole routed sequence stays in one regime — the canonical (`run`) or the
-    /// exact (`run_batched`) path. Mixing the two on one state is incorrect.
+    /// Apply a 2q gate `m` (`qa` = matrix MSB) to logical qubits `qa`/`qb`, routing by
+    /// their **physical sites** under the lazy permutation (P5.8-05). NN sites apply
+    /// directly; non-NN sites route.
+    fn apply_2q(
+        &mut self,
+        state: &mut MetalMpsState,
+        qa: u32,
+        qb: u32,
+        m: &[[Complex<f64>; 4]; 4],
+        canonical: bool,
+    ) -> Result<(), BackendError> {
+        let sa = state.site_of_qubit[qa as usize] as usize;
+        let sb = state.site_of_qubit[qb as usize] as usize;
+        if sa.abs_diff(sb) == 1 {
+            // `sa` holds the MSB qubit; `apply_2q_nn`'s min/i_is_msb logic maps it.
+            self.apply_2q_nn(state, sa, sb, m, canonical)
+        } else {
+            self.apply_2q_routed(state, qa as usize, qb as usize, m, canonical)
+        }
+    }
+
+    /// Route a non-NN 2q gate via a **lazy** SWAP network (P5.8-05): walk the qubit on
+    /// the higher site down beside the lower one with physical adjacent SWAPs (each
+    /// updating the permutation), apply the gate — and **do not unwind**. The leftover
+    /// permutation is tracked in `qubit_of_site`/`site_of_qubit` and followed by
+    /// readout/dense, halving the old physical-swap-with-unwind cost (P5.7-06).
     fn apply_2q_routed(
         &mut self,
         state: &mut MetalMpsState,
@@ -601,29 +616,25 @@ impl MetalMpsBackend {
         m: &[[Complex<f64>; 4]; 4],
         canonical: bool,
     ) -> Result<(), BackendError> {
-        let i = qa.min(qb);
-        let j = qa.max(qb);
-        debug_assert!(j - i >= 2, "apply_2q_routed requires non-adjacent qubits");
+        let sa = state.site_of_qubit[qa] as usize;
+        let sb = state.site_of_qubit[qb] as usize;
+        let (lo, hi) = (sa.min(sb), sa.max(sb));
+        debug_assert!(hi - lo >= 2, "apply_2q_routed requires non-adjacent sites");
         let swap = swap_matrix();
 
-        // Walk the qubit at site j down to site i+1: swap pairs (m, m+1) for
-        // m = j-1, j-2, …, i+1. After this, sites i and i+1 hold the two targets,
-        // in the same relative order as qubit indices (lower index on site i).
-        for s in (i + 1..j).rev() {
+        // Walk the qubit at site `hi` down to `lo+1` via physical adjacent SWAPs; the
+        // qubit at `lo` is untouched. Each SWAP exchanges the two sites' qubit labels.
+        for s in (lo + 1..hi).rev() {
             self.apply_2q_nn(state, s, s + 1, &swap, canonical)?;
+            state.swap_site_labels(s);
         }
 
-        // Apply the gate on the adjacent pair, preserving orientation: the lower
-        // qubit index sits on site i, so the (site_of_qa, site_of_qb) order tracks
-        // (qa, qb), and `apply_2q_nn`'s own min/i_is_msb logic picks the map.
-        let (pa, pb) = if qa < qb { (i, i + 1) } else { (i + 1, i) };
-        self.apply_2q_nn(state, pa, pb, m, canonical)?;
-
-        // Unwind the SWAP network (reverse order) to restore site≡qubit ordering.
-        for s in (i + 1)..j {
-            self.apply_2q_nn(state, s, s + 1, &swap, canonical)?;
-        }
-        Ok(())
+        // The targets now occupy `lo`/`lo+1`; apply the gate with `qa` (MSB) on its
+        // current site. No unwind — the permutation stays.
+        let site_a = state.site_of_qubit[qa] as usize;
+        let site_b = state.site_of_qubit[qb] as usize;
+        debug_assert_eq!(site_a.abs_diff(site_b), 1, "targets must be adjacent now");
+        self.apply_2q_nn(state, site_a, site_b, m, canonical)
     }
 
     /// Validate `gate` against the scaffold's limits and return its dense matrix.
@@ -712,27 +723,41 @@ impl MetalMpsBackend {
 
         for inst in circuit.instructions() {
             match inst {
+                // A user `Swap` is an O(1) permutation relabel (P5.8-05); flush first
+                // so the pending layer's reads precede the relabel in program order.
+                Instruction::Gate(g) if matches!(g.gate, Gate::Swap) && g.controls.is_empty() => {
+                    self.flush_layer(&mut state, &layer)?;
+                    reset(&mut layer, &mut busy);
+                    state.relabel_swap(g.qubits[0] as usize, g.qubits[1] as usize);
+                }
                 Instruction::Gate(g) => match self.gate_matrix(n, g)? {
                     GateMatrix::M2x2(m) => {
                         // 1q gates apply in place (no SVD); flush so the pending
                         // layer's reads of this site happen in program order.
                         self.flush_layer(&mut state, &layer)?;
                         reset(&mut layer, &mut busy);
-                        self.apply_1q(&state, g.qubits[0] as usize, &m);
+                        let site = state.site_of_qubit[g.qubits[0] as usize] as usize;
+                        self.apply_1q(&state, site, &m);
                     }
                     GateMatrix::M4x4(m) => {
-                        let (qa, qb) = (g.qubits[0], g.qubits[1]);
-                        if qa.abs_diff(qb) != 1 {
-                            // Non-NN: flush the pending layer, then route via SWAPs
-                            // (gate-by-gate; the SWAP network can't join a batch).
-                            // `run_batched` is exact-only (non-canonical), so route
-                            // with `canonical = false`.
+                        // Dispatch by physical sites under the lazy permutation.
+                        let sa = state.site_of_qubit[g.qubits[0] as usize] as usize;
+                        let sb = state.site_of_qubit[g.qubits[1] as usize] as usize;
+                        if sa.abs_diff(sb) != 1 {
+                            // Non-NN sites: flush the pending layer, then route via
+                            // SWAPs (exact-only path ⇒ `canonical = false`).
                             self.flush_layer(&mut state, &layer)?;
                             reset(&mut layer, &mut busy);
-                            self.apply_2q_routed(&mut state, qa as usize, qb as usize, &m, false)?;
+                            self.apply_2q_routed(
+                                &mut state,
+                                g.qubits[0] as usize,
+                                g.qubits[1] as usize,
+                                &m,
+                                false,
+                            )?;
                             continue;
                         }
-                        let i = qa.min(qb) as usize;
+                        let i = sa.min(sb);
                         // A site conflict with the pending layer ⇒ flush first.
                         if busy[i] || busy[i + 1] {
                             self.flush_layer(&mut state, &layer)?;
@@ -740,7 +765,13 @@ impl MetalMpsBackend {
                         }
                         busy[i] = true;
                         busy[i + 1] = true;
-                        layer.push(LayerGate { qa, qb, m });
+                        // Store SITES (sa = MSB qubit's site) so `flush_layer`'s
+                        // min/i_is_msb orientation logic is correct.
+                        layer.push(LayerGate {
+                            qa: sa as u32,
+                            qb: sb as u32,
+                            m,
+                        });
                     }
                     GateMatrix::M8x8(_) => {
                         return Err(BackendError::UnsupportedInstruction {
@@ -986,22 +1017,23 @@ impl Backend for MetalMpsBackend {
         state: &mut Self::State,
         gate: &GateInstance,
     ) -> Result<(), BackendError> {
+        // A user `Swap` is a pure O(1) relabel of the lazy permutation (P5.8-05) —
+        // no tensors touched, canonical form preserved.
+        if matches!(gate.gate, Gate::Swap) && gate.controls.is_empty() {
+            state.relabel_swap(gate.qubits[0] as usize, gate.qubits[1] as usize);
+            return Ok(());
+        }
         let matrix = self.gate_matrix(state.num_qubits, gate)?;
         match matrix {
             GateMatrix::M2x2(m) => {
-                self.apply_1q(state, gate.qubits[0] as usize, &m);
+                // Qubit lives on its physical site under the lazy permutation.
+                let site = state.site_of_qubit[gate.qubits[0] as usize] as usize;
+                self.apply_1q(state, site, &m);
                 Ok(())
             }
             GateMatrix::M4x4(m) => {
-                let qa = gate.qubits[0];
-                let qb = gate.qubits[1];
                 // The `apply_gate`/`run` path maintains canonical form (P5.7-07).
-                if qa.abs_diff(qb) == 1 {
-                    self.apply_2q_nn(state, qa as usize, qb as usize, &m, true)
-                } else {
-                    // Non-adjacent: route with a physical SWAP network (P5.7-06).
-                    self.apply_2q_routed(state, qa as usize, qb as usize, &m, true)
-                }
+                self.apply_2q(state, gate.qubits[0], gate.qubits[1], &m, true)
             }
             GateMatrix::M8x8(_) => Err(BackendError::UnsupportedInstruction {
                 kind: "3q gate (MPS scaffold)",
