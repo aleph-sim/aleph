@@ -103,3 +103,10 @@ required-features = ["metal"]
 name = "mps_batched"
 harness = false
 required-features = ["metal"]
+
+# Phase 5.7 exit bench: Metal GPU MPS vs CPU MPS (P5.7-08). macOS+Metal only. Run:
+#   cargo bench -p aleph-metal --features metal --bench mps_vs_cpu
+[[bench]]
+name = "mps_vs_cpu"
+harness = false
+required-features = ["metal"]

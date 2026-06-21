@@ -3360,12 +3360,23 @@ P3-05 (MPS SVD truncation with controlled error); Schollwöck.
 
 -----
 
-### [P5.7-08] MPS-on-Metal benchmark + Phase 5.7 exit report
+### [P5.7-08] MPS-on-Metal benchmark + Phase 5.7 exit report — **SHIPPED (PR #235)**
 
 **Labels:** `area:backend-mps`, `area:bench`, `area:docs`, `type:docs`, `priority:high`
 **Milestone:** Phase 5.5 — Apple/Metal GPU
 **Estimate:** M
 **Depends on:** P5.7-04
+
+> **Shipped (PR #235).** `benches/mps_vs_cpu.rs`: GPU MPS (`run`/`run_batched`) vs
+> CPU MPS across an n-sweep on NN and bond-saturating brickwalls, with a pre-timing
+> correctness guard. Exit report appended to `docs/perf/phase5.7.md`. **Verdict:
+> exit metric NOT met** — the f64 CPU MPS is 12–190× faster than the GPU MPS at all
+> measured scales (n ≤ 14); per-op dispatch latency + serial host overhead dominate
+> until χ/n are far larger than the scaffold's dense-readout test cap allows. The
+> phase succeeds on correctness/feature-completeness (GPU-resident SVD, batching,
+> readout, SWAP routing, canonical truncation) and fails its performance metric;
+> the NN gap halves per +2 qubits (crossover extrapolated ~n≈18–20). Honest caveats
+> + future levers in the report.
 
 **Description**
 A committed criterion benchmark comparing GPU MPS vs CPU MPS across workloads, plus
@@ -3384,9 +3395,9 @@ call the sub-phase done.
 
 **Acceptance Criteria**
 
-- [ ] Bench committed + runs locally.
-- [ ] Report published with honest caveats; Phase 5.7 exit metric stated and
-  evaluated.
+- [x] Bench committed + runs locally.
+- [x] Report published with honest caveats; Phase 5.7 exit metric stated and
+  evaluated (NOT met — see report verdict).
 
 **Testing Requirements**
 The bench itself; numbers reproduced in the report.
