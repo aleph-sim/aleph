@@ -28,9 +28,19 @@ use rand::{rngs::StdRng, Rng, SeedableRng};
 /// P5.6-02 guard test).
 const MAX_BOND: usize = 64;
 
-/// Build a random nearest-neighbour circuit: 1q gates anywhere, 2q gates only on
-/// adjacent pairs `(q, q+1)` (the scaffold has no SWAP router).
-fn random_nn_circuit(rng: &mut StdRng, n: u32, gates: usize) -> Circuit {
+/// Build a random circuit: 1q gates anywhere, 2q gates on an **arbitrary** distinct
+/// pair — adjacent *or* not, so the SWAP router (P5.7-06) is exercised alongside
+/// the NN path.
+fn random_circuit(rng: &mut StdRng, n: u32, gates: usize) -> Circuit {
+    // Pick two distinct qubits (any distance).
+    let pair = |rng: &mut StdRng| -> [u32; 2] {
+        let a = rng.gen_range(0..n);
+        let mut b = rng.gen_range(0..n - 1);
+        if b >= a {
+            b += 1;
+        }
+        [a, b]
+    };
     let mut c = Circuit::new(n, 0);
     for _ in 0..gates {
         let theta = rng.gen_range(-std::f64::consts::PI..std::f64::consts::PI);
@@ -47,14 +57,8 @@ fn random_nn_circuit(rng: &mut StdRng, n: u32, gates: usize) -> Circuit {
                 Gate::Ry(Param::Concrete(theta)),
                 &[rng.gen_range(0..n)],
             ),
-            4 if n >= 2 => {
-                let q = rng.gen_range(0..n - 1);
-                push(&mut c, Gate::Cnot, &[q, q + 1]);
-            }
-            5 if n >= 2 => {
-                let q = rng.gen_range(0..n - 1);
-                push(&mut c, Gate::Cz, &[q, q + 1]);
-            }
+            4 if n >= 2 => push(&mut c, Gate::Cnot, &pair(rng)),
+            5 if n >= 2 => push(&mut c, Gate::Cz, &pair(rng)),
             // n == 1 fallback.
             _ => push(&mut c, Gate::H, &[rng.gen_range(0..n)]),
         }
@@ -78,15 +82,15 @@ fn cpu_mps_dense(circuit: &Circuit) -> Vec<Complex<f64>> {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(24))]
 
-    /// AC: random NN circuits match the CPU MPS within ε.
+    /// AC: random circuits (NN and SWAP-routed non-NN 2q gates) match the CPU MPS.
     #[test]
-    fn mps_metal_matches_cpu_on_random_nn(seed in any::<u64>(), n in 2u32..=5, gates in 4usize..=24) {
+    fn mps_metal_matches_cpu_on_random(seed in any::<u64>(), n in 2u32..=5, gates in 4usize..=24) {
         let mut gpu = match MetalMpsBackend::with_max_bond(MAX_BOND) {
             Ok(b) => b,
             Err(_) => return Ok(()), // headless: skip
         };
         let mut rng = StdRng::seed_from_u64(seed);
-        let circuit = random_nn_circuit(&mut rng, n, gates);
+        let circuit = random_circuit(&mut rng, n, gates);
         let want = cpu_mps_dense(&circuit);
 
         let got = gpu.run(&circuit).expect("gpu mps run").dense_statevector();
@@ -132,9 +136,21 @@ fn rejects_external_control() {
 }
 
 #[test]
-fn rejects_non_nearest_neighbour_2q() {
-    // CNOT across a gap (q0, q2) — no SWAP router.
-    assert_unsupported(reject(3, GateInstance::new(Gate::Cnot, vec![0u32, 2u32])));
+fn non_nearest_neighbour_2q_is_routed() {
+    // CNOT across a gap (q0, q2) is now SWAP-routed, not rejected: H(0) then
+    // CX(0,2) makes a Bell pair on qubits 0 and 2, so the dense state is
+    // (|000⟩ + |101⟩)/√2 — compared against the CPU MPS.
+    let Some(mut gpu) = MetalMpsBackend::with_max_bond(MAX_BOND).ok() else {
+        return; // headless: skip
+    };
+    let mut c = Circuit::new(3, 0);
+    push(&mut c, Gate::H, &[0]);
+    push(&mut c, Gate::Cnot, &[0, 2]);
+    let got = gpu.run(&c).expect("routed run").dense_statevector();
+    let want = cpu_mps_dense(&c);
+    for (g, w) in got.iter().zip(want.iter()) {
+        assert!((g.re - w.re).abs() < 1e-5 && (g.im - w.im).abs() < 1e-5);
+    }
 }
 
 #[test]

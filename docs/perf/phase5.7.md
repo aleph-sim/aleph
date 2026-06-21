@@ -16,6 +16,7 @@
 | **P5.7-03** | Kernel wired into `MetalMpsBackend`: the per-gate split is now GPU-resident; only σ-readout + χ-selection stay on the host. faer remains the CPU fallback. |
 | **P5.7-04** | **Batched layer-parallel SVD** (`jacobi_svd_batched` + `run_batched`): a brickwall layer's disjoint two-site splits factor in one dispatch, one `commit`/`wait` per layer instead of per gate. |
 | **P5.7-05** | **Readout** (`mps/readout.rs`): `measure`/`sample`/`probabilities`/`expectation_value` via doubled transfer-matrix sweeps — bond×bond environments, no `2^n`, exact on the non-canonical scaffold. |
+| **P5.7-06** | **SWAP router** (`apply_2q_routed`): non-adjacent 2q gates routed by a physical SWAP network (apply → unwind), restoring site≡qubit order; wired into `run` and `run_batched`. |
 
 ### Why one-sided Jacobi
 It orthogonalizes the *columns* of Θ′ by right-multiplying 2×2 unitary rotations, so
@@ -123,5 +124,7 @@ small; the lever there is the per-block factorization, not the launch count.
   the split column still includes per-block host work (column-major packing, σ sort,
   site-tensor build + upload). Pooling the `A`/`V`/`sig` buffers across layers and
   moving the pack/unpack onto the GPU would chip at the residual.
-- **Still NN-only, exact-only.** No SWAP router and no canonical-form renormalization,
-  so a real truncation is refused, not applied — unchanged from P5.6-02.
+- **Still exact-only.** Non-NN gates are now SWAP-routed (P5.7-06) and readout is
+  supported (P5.7-05), but there is still no canonical-form renormalization, so a
+  real truncation is refused, not applied — unchanged from P5.6-02 (canonical form
+  is P5.7-07).

@@ -3,8 +3,8 @@
 //! Runs nearest-neighbour circuits with the hot per-gate tensor work on the GPU
 //! (1q apply, two-site contraction, 2q gate-apply, and — since P5.7-03 — the
 //! truncated SVD via a one-sided Jacobi kernel; `faer` is the CPU fallback).
-//! NN-only: non-adjacent 2q gates, external
-//! controls, and ≥3q gates return `UnsupportedInstruction` (no SWAP router yet).
+//! Non-adjacent 2q gates are routed with a physical SWAP network (P5.7-06);
+//! external controls and ≥3q gates return `UnsupportedInstruction`.
 //! Correctness is gated by the oracle (`tests/mps_oracle.rs`) vs the CPU MPS.
 
 use aleph_backend::{Backend, BackendError};
@@ -420,6 +420,46 @@ impl MetalMpsBackend {
         Ok(())
     }
 
+    /// Apply a 2q gate `m` to a **non-adjacent** pair (`qa.abs_diff(qb) ≥ 2`) by
+    /// routing with a physical SWAP network (P5.7-06). The qubit on the higher
+    /// site is walked down to sit beside the lower one via adjacent SWAPs (each a
+    /// NN 2q gate through the same contract+apply+SVD path), the gate is applied on
+    /// the now-adjacent pair with its original MSB/LSB orientation, then the SWAPs
+    /// are unwound — so the scaffold's site≡qubit-order invariant is restored and
+    /// the readout/dense paths stay correct. CPU MPS does the same (P3-06); lazy
+    /// permutation tracking (P3-12) is avoided here precisely to keep that invariant.
+    fn apply_2q_routed(
+        &mut self,
+        state: &mut MetalMpsState,
+        qa: usize,
+        qb: usize,
+        m: &[[Complex<f64>; 4]; 4],
+    ) -> Result<(), BackendError> {
+        let i = qa.min(qb);
+        let j = qa.max(qb);
+        debug_assert!(j - i >= 2, "apply_2q_routed requires non-adjacent qubits");
+        let swap = swap_matrix();
+
+        // Walk the qubit at site j down to site i+1: swap pairs (m, m+1) for
+        // m = j-1, j-2, …, i+1. After this, sites i and i+1 hold the two targets,
+        // in the same relative order as qubit indices (lower index on site i).
+        for s in (i + 1..j).rev() {
+            self.apply_2q_nn(state, s, s + 1, &swap)?;
+        }
+
+        // Apply the gate on the adjacent pair, preserving orientation: the lower
+        // qubit index sits on site i, so the (site_of_qa, site_of_qb) order tracks
+        // (qa, qb), and `apply_2q_nn`'s own min/i_is_msb logic picks the map.
+        let (pa, pb) = if qa < qb { (i, i + 1) } else { (i + 1, i) };
+        self.apply_2q_nn(state, pa, pb, m)?;
+
+        // Unwind the SWAP network (reverse order) to restore site≡qubit ordering.
+        for s in (i + 1)..j {
+            self.apply_2q_nn(state, s, s + 1, &swap)?;
+        }
+        Ok(())
+    }
+
     /// Validate `gate` against the scaffold's limits and return its dense matrix.
     /// Shared by [`Backend::apply_gate`] (gate-by-gate) and the layered
     /// [`run_batched`](Self::run_batched) scheduler so the two paths reject the
@@ -517,10 +557,12 @@ impl MetalMpsBackend {
                     GateMatrix::M4x4(m) => {
                         let (qa, qb) = (g.qubits[0], g.qubits[1]);
                         if qa.abs_diff(qb) != 1 {
-                            return Err(BackendError::UnsupportedInstruction {
-                                kind:
-                                    "non-nearest-neighbour 2q gate (MPS scaffold; no SWAP router)",
-                            });
+                            // Non-NN: flush the pending layer, then route via SWAPs
+                            // (gate-by-gate; the SWAP network can't join a batch).
+                            self.flush_layer(&mut state, &layer)?;
+                            reset(&mut layer, &mut busy);
+                            self.apply_2q_routed(&mut state, qa as usize, qb as usize, &m)?;
+                            continue;
                         }
                         let i = qa.min(qb) as usize;
                         // A site conflict with the pending layer ⇒ flush first.
@@ -726,6 +768,14 @@ struct LayerBlock {
 /// produced by the batched SVD or the CPU fallback.
 type SplitOut = (usize, Vec<Complex<f32>>, Vec<Complex<f32>>, f64);
 
+/// The 4×4 SWAP gate (exchanges `|01⟩ ↔ |10⟩`), symmetric in its two qubits, used
+/// by the [`apply_2q_routed`](MetalMpsBackend::apply_2q_routed) SWAP network.
+fn swap_matrix() -> [[Complex<f64>; 4]; 4] {
+    let z = Complex::new(0.0, 0.0);
+    let o = Complex::new(1.0, 0.0);
+    [[o, z, z, z], [z, z, o, z], [z, o, z, z], [z, z, z, o]]
+}
+
 /// Narrow an f64 gate-matrix entry to f32 (matrices kept in f64; state is f32).
 #[inline]
 fn narrow(z: Complex<f64>) -> Complex<f32> {
@@ -775,12 +825,12 @@ impl Backend for MetalMpsBackend {
             GateMatrix::M4x4(m) => {
                 let qa = gate.qubits[0];
                 let qb = gate.qubits[1];
-                if qa.abs_diff(qb) != 1 {
-                    return Err(BackendError::UnsupportedInstruction {
-                        kind: "non-nearest-neighbour 2q gate (MPS scaffold; no SWAP router)",
-                    });
+                if qa.abs_diff(qb) == 1 {
+                    self.apply_2q_nn(state, qa as usize, qb as usize, &m)
+                } else {
+                    // Non-adjacent: route with a physical SWAP network (P5.7-06).
+                    self.apply_2q_routed(state, qa as usize, qb as usize, &m)
                 }
-                self.apply_2q_nn(state, qa as usize, qb as usize, &m)
             }
             GateMatrix::M8x8(_) => Err(BackendError::UnsupportedInstruction {
                 kind: "3q gate (MPS scaffold)",
