@@ -17,7 +17,7 @@ mod mps;
 mod sv;
 
 #[cfg(all(target_os = "macos", feature = "metal"))]
-pub use buffer::DeviceBuffer;
+pub use buffer::{device_alloc_count, DeviceBuffer};
 #[cfg(all(target_os = "macos", feature = "metal"))]
 pub use context::MetalContext;
 #[cfg(all(target_os = "macos", feature = "metal"))]

@@ -19,7 +19,7 @@ use faer::Mat;
 
 use super::state::SiteTensor;
 use super::svd::factor;
-use crate::{DeviceBuffer, MetalContext};
+use crate::MetalContext;
 
 #[inline]
 fn widen(z: Complex<f32>) -> Complex {
@@ -95,16 +95,10 @@ fn move_center_right(
         }
     }
 
-    sites[i] = SiteTensor {
-        left: li,
-        right: size,
-        buf: DeviceBuffer::from_slice(ctx, &new_i),
-    };
-    sites[i + 1] = SiteTensor {
-        left: size,
-        right: nr,
-        buf: DeviceBuffer::from_slice(ctx, &new_j),
-    };
+    // In-place rebuild (P5.8-02): `new_i`/`new_j` are owned, so the `sites[..]`
+    // slices read above are no longer borrowed — reuse each site's device buffer.
+    sites[i].set_from_host(ctx, li, size, &new_i);
+    sites[i + 1].set_from_host(ctx, size, nr, &new_j);
     Ok(())
 }
 
@@ -159,16 +153,9 @@ fn move_center_left(
         }
     }
 
-    sites[i - 1] = SiteTensor {
-        left: pl,
-        right: size,
-        buf: DeviceBuffer::from_slice(ctx, &new_h),
-    };
-    sites[i] = SiteTensor {
-        left: size,
-        right: ri,
-        buf: DeviceBuffer::from_slice(ctx, &new_i),
-    };
+    // In-place rebuild (P5.8-02): reuse each site's device buffer.
+    sites[i - 1].set_from_host(ctx, pl, size, &new_h);
+    sites[i].set_from_host(ctx, size, ri, &new_i);
     Ok(())
 }
 

@@ -28,6 +28,28 @@ pub(crate) struct GpuThinSvd {
     pub v: Vec<Complex<f32>>,
 }
 
+/// Reusable device buffers for the one-sided Jacobi SVD (P5.8-02): the input/U
+/// factor `a` (`m×n` col-major), the `V` factor (`n×n` col-major), and the singular
+/// values `sig` (`n`). Held by the backend across gates and grown on demand, so
+/// `dispatch_tall` stops allocating three fresh `MTLBuffer`s per two-site split.
+pub(crate) struct JacobiScratch {
+    a: DeviceBuffer<Complex<f32>>,
+    v: DeviceBuffer<Complex<f32>>,
+    sig: DeviceBuffer<f32>,
+}
+
+impl JacobiScratch {
+    /// Empty scratch (placeholder allocations); first use grows each slot to its
+    /// block size and thereafter reuses it.
+    pub(crate) fn new(ctx: &MetalContext) -> Self {
+        Self {
+            a: DeviceBuffer::with_capacity(ctx, 0),
+            v: DeviceBuffer::with_capacity(ctx, 0),
+            sig: DeviceBuffer::with_capacity(ctx, 0),
+        }
+    }
+}
+
 /// Largest power of two `≤ x` (and `≥ 1`); the Jacobi reduction halves the
 /// threadgroup size, so the dispatched count must be a power of two.
 fn pow2_floor(x: usize) -> usize {
@@ -48,18 +70,25 @@ fn dispatch_tall(
     a_cm: &[Complex<f32>],
     m: usize,
     n: usize,
+    scratch: &mut JacobiScratch,
 ) -> (Vec<Complex<f32>>, Vec<Complex<f32>>, Vec<f32>) {
     debug_assert!(m >= n && n >= 1);
     debug_assert_eq!(a_cm.len(), m * n);
 
-    let mut a_buf = DeviceBuffer::from_slice(ctx, a_cm);
+    // Reuse the pooled buffers (P5.8-02); grow only past the high-water mark.
+    scratch.a.write(ctx, a_cm);
     // V = I_n, column-major.
-    let mut v_host = vec![Complex::<f32>::new(0.0, 0.0); n * n];
-    for t in 0..n {
-        v_host[t + t * n] = Complex::<f32>::new(1.0, 0.0);
+    scratch.v.ensure_capacity(ctx, n * n);
+    scratch.v.fill_zero();
+    {
+        let v = scratch.v.as_mut_slice();
+        for t in 0..n {
+            v[t + t * n] = Complex::<f32>::new(1.0, 0.0);
+        }
     }
-    let mut v_buf = DeviceBuffer::from_slice(ctx, &v_host);
-    let mut sig_buf = DeviceBuffer::from_slice(ctx, &vec![0.0f32; n]);
+    scratch.sig.ensure_capacity(ctx, n);
+    scratch.sig.fill_zero();
+    let (a_buf, v_buf, sig_buf) = (&scratch.a, &scratch.v, &scratch.sig);
 
     let meta = JacobiMeta {
         m: m as u32,
@@ -89,9 +118,9 @@ fn dispatch_tall(
     cmd.wait_until_completed();
 
     (
-        a_buf.as_mut_slice().to_vec(),
-        v_buf.as_mut_slice().to_vec(),
-        sig_buf.as_mut_slice().to_vec(),
+        a_buf.as_slice().to_vec(),
+        v_buf.as_slice().to_vec(),
+        sig_buf.as_slice().to_vec(),
     )
 }
 
@@ -105,6 +134,7 @@ pub(crate) fn gpu_thin_svd(
     theta: &[Complex<f32>],
     rows: usize,
     cols: usize,
+    scratch: &mut JacobiScratch,
 ) -> GpuThinSvd {
     debug_assert_eq!(theta.len(), rows * cols);
     if rows >= cols {
@@ -116,7 +146,7 @@ pub(crate) fn gpu_thin_svd(
                 a_cm[i + t * m] = theta[i * cols + t];
             }
         }
-        let (u, v, sigma) = dispatch_tall(ctx, pipeline, &a_cm, m, n);
+        let (u, v, sigma) = dispatch_tall(ctx, pipeline, &a_cm, m, n, scratch);
         GpuThinSvd { u, sigma, v }
     } else {
         // Wide: factor Aᴴ (cols×rows, tall). Aᴴ = Ũ Σ Ṽᴴ ⇒ A = Ṽ Σ Ũᴴ, so the
@@ -129,7 +159,7 @@ pub(crate) fn gpu_thin_svd(
                 ah_cm[i + t * m] = theta[t * cols + i].conj();
             }
         }
-        let (u_tilde, v_tilde, sigma) = dispatch_tall(ctx, pipeline, &ah_cm, m, n);
+        let (u_tilde, v_tilde, sigma) = dispatch_tall(ctx, pipeline, &ah_cm, m, n, scratch);
         GpuThinSvd {
             u: v_tilde, // Ṽ : rows×k
             sigma,
@@ -148,6 +178,10 @@ pub(crate) fn gpu_thin_svd(
 /// caller can fall back to the f64 CPU SVD — a single-precision Gram-free Jacobi is
 /// accurate for the well-conditioned exact-only scaffold, but the f64 path stays
 /// the safety net.
+// The block shape (rows/cols), bond cap, renormalize flag, kernel, context, and
+// pooled scratch are all genuinely independent inputs — bundling them into a struct
+// would obscure more than it helps.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn gpu_svd_split(
     ctx: &MetalContext,
     pipeline: &ComputePipelineState,
@@ -156,8 +190,9 @@ pub(crate) fn gpu_svd_split(
     cols: usize,
     max_bond: usize,
     renormalize: bool,
+    scratch: &mut JacobiScratch,
 ) -> Option<SplitResult> {
-    let svd = gpu_thin_svd(ctx, pipeline, theta, rows, cols);
+    let svd = gpu_thin_svd(ctx, pipeline, theta, rows, cols, scratch);
     // Accuracy guard: the single-precision one-sided Jacobi can mis-converge on an
     // ill-conditioned block (clustered/large-spread singular values), leaving U not
     // quite isometric — a small per-gate error that compounds the state norm over a
@@ -492,7 +527,8 @@ mod tests {
         ] {
             let theta = test_block(rows, cols);
             let k = rows.min(cols);
-            let svd = gpu_thin_svd(&ctx, &pipeline, &theta, rows, cols);
+            let mut scratch = JacobiScratch::new(&ctx);
+            let svd = gpu_thin_svd(&ctx, &pipeline, &theta, rows, cols, &mut scratch);
             assert_eq!(svd.sigma.len(), k);
             assert_eq!(svd.u.len(), rows * k);
             assert_eq!(svd.v.len(), cols * k);
@@ -549,7 +585,8 @@ mod tests {
             Complex::<f32>::new(0.0, 0.0),
             Complex::<f32>::new(r, 0.0),
         ];
-        let svd = gpu_thin_svd(&ctx, &pipeline, &theta, 2, 2);
+        let mut scratch = JacobiScratch::new(&ctx);
+        let svd = gpu_thin_svd(&ctx, &pipeline, &theta, 2, 2, &mut scratch);
         for &s in &svd.sigma {
             assert!((s - r).abs() < 1e-5, "σ should be 1/√2, got {s}");
         }
@@ -620,8 +657,10 @@ mod tests {
                 }
             }
             // χ must match the single-block path on the same block.
+            let mut scratch = JacobiScratch::new(&ctx);
             let (single_chi, ..) =
-                gpu_svd_split(&ctx, &single, theta, *rows, *cols, 64, false).expect("single split");
+                gpu_svd_split(&ctx, &single, theta, *rows, *cols, 64, false, &mut scratch)
+                    .expect("single split");
             assert_eq!(*chi, single_chi, "{rows}x{cols} χ batched vs single");
         }
     }

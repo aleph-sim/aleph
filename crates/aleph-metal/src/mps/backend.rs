@@ -13,14 +13,14 @@ use aleph_ir::{Circuit, Instruction};
 use metal::{CommandBufferRef, ComputePipelineState, MTLSize};
 use std::ffi::c_void;
 
-use super::gpu_jacobi::{gpu_svd_split, gpu_svd_split_batch, BatchBlock};
+use super::gpu_jacobi::{gpu_svd_split, gpu_svd_split_batch, BatchBlock, JacobiScratch};
 use super::kernel::{
     Apply2qMeta, ContractMeta, Mps1q, MPS_1Q_ENTRY, MPS_1Q_SRC, MPS_APPLY2Q_ENTRY, MPS_APPLY2Q_SRC,
     MPS_CONTRACT_ENTRY, MPS_CONTRACT_SRC, MPS_JACOBI_BATCHED_ENTRY, MPS_JACOBI_ENTRY,
     MPS_JACOBI_SRC,
 };
 use super::readout;
-use super::state::{MetalMpsState, SiteTensor};
+use super::state::MetalMpsState;
 use super::svd::svd_split;
 use crate::{DeviceBuffer, Error, MetalContext};
 use rand::{rngs::StdRng, SeedableRng};
@@ -57,6 +57,13 @@ pub struct MetalMpsBackend {
     pipeline_jacobi_batched: ComputePipelineState,
     /// Reused 4×4 (16-entry) row-major f32 gate-matrix scratch for the 2q apply.
     mat_scratch: DeviceBuffer<Complex<f32>>,
+    /// Pooled Θ block, reused across every NN 2q gate's contract+apply (P5.8-02):
+    /// grown on demand to the largest `2·li × 2·ri` seen, never reallocated in
+    /// steady state. Replaces the per-gate `DeviceBuffer::from_slice`.
+    theta_pool: DeviceBuffer<Complex<f32>>,
+    /// Pooled one-sided Jacobi SVD buffers (A/V/σ), reused across every gate-by-gate
+    /// two-site split (P5.8-02).
+    jacobi_scratch: JacobiScratch,
     max_bond: usize,
     /// RNG for the stochastic readout ops (`measure`/`sample`, P5.7-05). Seeded
     /// via [`with_seed`](Self::with_seed) for reproducibility.
@@ -121,6 +128,8 @@ impl MetalMpsBackend {
             .make_compute_pipeline(MPS_JACOBI_SRC, MPS_JACOBI_BATCHED_ENTRY)
             .map_err(map_metal_err)?;
         let mat_scratch = DeviceBuffer::from_slice(&ctx, &[Complex::<f32>::new(0.0, 0.0); 16]);
+        let theta_pool = DeviceBuffer::with_capacity(&ctx, 0);
+        let jacobi_scratch = JacobiScratch::new(&ctx);
         Ok(Self {
             ctx,
             pipeline_1q,
@@ -129,6 +138,8 @@ impl MetalMpsBackend {
             pipeline_jacobi,
             pipeline_jacobi_batched,
             mat_scratch,
+            theta_pool,
+            jacobi_scratch,
             max_bond,
             rng: StdRng::seed_from_u64(seed),
             gpu_ns: 0,
@@ -370,9 +381,10 @@ impl MetalMpsBackend {
 
         // --- GPU phase: contract + gate-apply ---
         let gpu_start = std::time::Instant::now();
-        // Θ on the GPU (fresh shared buffer, zero-initialised then overwritten).
-        let theta =
-            DeviceBuffer::from_slice(&self.ctx, &vec![Complex::<f32>::new(0.0, 0.0); rows * cols]);
+        // Θ on the GPU: pooled buffer (P5.8-02), grown on demand and zeroed (the
+        // contract kernel then overwrites the live `rows·cols` window).
+        self.theta_pool.ensure_capacity(&self.ctx, rows * cols);
+        self.theta_pool.fill_zero();
         let cmeta = ContractMeta {
             c: ci as u32,
             ri: ri as u32,
@@ -382,7 +394,7 @@ impl MetalMpsBackend {
         self.dispatch_contract(
             &state.sites[i].buf,
             &state.sites[j].buf,
-            &theta,
+            &self.theta_pool,
             &cmeta,
             (rows * cols) as u64,
         );
@@ -403,7 +415,7 @@ impl MetalMpsBackend {
             _pad0: 0,
             _pad1: 0,
         };
-        self.dispatch_apply2q(&theta, &ameta, (li * ri) as u64);
+        self.dispatch_apply2q(&self.theta_pool, &ameta, (li * ri) as u64);
         self.gpu_ns += gpu_start.elapsed().as_nanos();
 
         // --- SVD split: GPU-resident (P5.7-03), CPU faer as the fallback ---
@@ -417,14 +429,21 @@ impl MetalMpsBackend {
         let (chi, site_i_data, site_j_data, trunc) = match gpu_svd_split(
             &self.ctx,
             &self.pipeline_jacobi,
-            theta.as_slice(),
+            self.theta_pool.as_slice(),
             rows,
             cols,
             self.max_bond,
             canonical,
+            &mut self.jacobi_scratch,
         ) {
             Some(split) => split,
-            None => svd_split(theta.as_slice(), rows, cols, self.max_bond, canonical)?,
+            None => svd_split(
+                self.theta_pool.as_slice(),
+                rows,
+                cols,
+                self.max_bond,
+                canonical,
+            )?,
         };
         // Surface the discarded Schmidt weight (≈0 unless the bond cap binds).
         self.trunc_error += trunc;
@@ -437,8 +456,8 @@ impl MetalMpsBackend {
                 trunc_error: trunc,
             });
         }
-        state.sites[i] = SiteTensor::from_host(&self.ctx, li, chi, &site_i_data);
-        state.sites[j] = SiteTensor::from_host(&self.ctx, chi, ri, &site_j_data);
+        state.sites[i].set_from_host(&self.ctx, li, chi, &site_i_data);
+        state.sites[j].set_from_host(&self.ctx, chi, ri, &site_j_data);
         if canonical {
             state.center = j;
         }
@@ -771,8 +790,8 @@ impl MetalMpsBackend {
             });
         }
         for (b, (chi, si, sj, _)) in resolved {
-            state.sites[b.i] = SiteTensor::from_host(&self.ctx, b.li, chi, &si);
-            state.sites[b.i + 1] = SiteTensor::from_host(&self.ctx, chi, b.ri, &sj);
+            state.sites[b.i].set_from_host(&self.ctx, b.li, chi, &si);
+            state.sites[b.i + 1].set_from_host(&self.ctx, chi, b.ri, &sj);
         }
         self.svd_ns += svd_start.elapsed().as_nanos();
         Ok(())
