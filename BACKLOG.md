@@ -3142,7 +3142,7 @@ against faer to 1e-10. See `docs/perf/phase5.7.md`.
 
 -----
 
-### [P5.7-02] GPU-resident Jacobi SVD — Metal kernel + dispatch — **SHIPPED (PR #217)**
+### [P5.7-02] GPU-resident Jacobi SVD — Metal kernel + dispatch — **SHIPPED (PR #220)**
 
 **Labels:** `area:backend-mps`, `area:backend-gpu`, `type:feature`
 **Milestone:** Phase 5.5 — Apple/Metal GPU
