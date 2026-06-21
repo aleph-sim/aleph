@@ -20,12 +20,8 @@ pub(crate) const MPS_APPLY2Q_SRC: &str = include_str!("../shaders/mps_apply2q.me
 pub(crate) const MPS_APPLY2Q_ENTRY: &str = "apply_2q_theta";
 
 /// MSL source for the GPU-resident one-sided Jacobi thin-SVD kernel (P5.7-02).
-/// Used by the gpu_jacobi on-device tests now; the backend builds this pipeline
-/// in P5.7-03 (`allow(dead_code)` until then).
-#[allow(dead_code)]
 pub(crate) const MPS_JACOBI_SRC: &str = include_str!("../shaders/mps_jacobi.metal");
 /// Entry-point name inside [`MPS_JACOBI_SRC`].
-#[allow(dead_code)]
 pub(crate) const MPS_JACOBI_ENTRY: &str = "jacobi_svd";
 
 /// Per-gate uniform for [`MPS_1Q_SRC`]. **Layout MUST match the MSL `Mps1q`

@@ -1,8 +1,9 @@
 //! `MetalMpsBackend` — a scaffold GPU MPS backend (P5.5-06).
 //!
 //! Runs nearest-neighbour circuits with the hot per-gate tensor work on the GPU
-//! (1q apply, two-site contraction, 2q gate-apply) and the truncated SVD on the
-//! CPU via `faer` (the GPU has no SVD). NN-only: non-adjacent 2q gates, external
+//! (1q apply, two-site contraction, 2q gate-apply, and — since P5.7-03 — the
+//! truncated SVD via a one-sided Jacobi kernel; `faer` is the CPU fallback).
+//! NN-only: non-adjacent 2q gates, external
 //! controls, and ≥3q gates return `UnsupportedInstruction` (no SWAP router yet).
 //! Correctness is gated by the oracle (`tests/mps_oracle.rs`) vs the CPU MPS.
 
@@ -12,9 +13,10 @@ use aleph_ir::Circuit;
 use metal::{ComputePipelineState, MTLSize};
 use std::ffi::c_void;
 
+use super::gpu_jacobi::gpu_svd_split;
 use super::kernel::{
     Apply2qMeta, ContractMeta, Mps1q, MPS_1Q_ENTRY, MPS_1Q_SRC, MPS_APPLY2Q_ENTRY, MPS_APPLY2Q_SRC,
-    MPS_CONTRACT_ENTRY, MPS_CONTRACT_SRC,
+    MPS_CONTRACT_ENTRY, MPS_CONTRACT_SRC, MPS_JACOBI_ENTRY, MPS_JACOBI_SRC,
 };
 use super::state::{MetalMpsState, SiteTensor};
 use super::svd::svd_split;
@@ -43,6 +45,9 @@ pub struct MetalMpsBackend {
     pipeline_1q: ComputePipelineState,
     pipeline_contract: ComputePipelineState,
     pipeline_apply2q: ComputePipelineState,
+    /// GPU-resident one-sided Jacobi thin-SVD (P5.7-03). Replaces the host faer
+    /// SVD on the per-gate two-site split; faer remains the CPU fallback.
+    pipeline_jacobi: ComputePipelineState,
     /// Reused 4×4 (16-entry) row-major f32 gate-matrix scratch for the 2q apply.
     mat_scratch: DeviceBuffer<Complex<f32>>,
     max_bond: usize,
@@ -100,12 +105,16 @@ impl MetalMpsBackend {
         let pipeline_apply2q = ctx
             .make_compute_pipeline(MPS_APPLY2Q_SRC, MPS_APPLY2Q_ENTRY)
             .map_err(map_metal_err)?;
+        let pipeline_jacobi = ctx
+            .make_compute_pipeline(MPS_JACOBI_SRC, MPS_JACOBI_ENTRY)
+            .map_err(map_metal_err)?;
         let mat_scratch = DeviceBuffer::from_slice(&ctx, &[Complex::<f32>::new(0.0, 0.0); 16]);
         Ok(Self {
             ctx,
             pipeline_1q,
             pipeline_contract,
             pipeline_apply2q,
+            pipeline_jacobi,
             mat_scratch,
             max_bond,
             gpu_ns: 0,
@@ -301,14 +310,23 @@ impl MetalMpsBackend {
         self.dispatch_apply2q(&theta, &ameta, (li * ri) as u64);
         self.gpu_ns += gpu_start.elapsed().as_nanos();
 
-        // --- Host phase: truncated SVD split (the documented CPU round-trip) ---
-        // Θ' is in unified memory so the read is zero-copy, but the SVD runs
-        // single-threaded on the CPU while the GPU idles, then the two factor
-        // tensors are uploaded into fresh buffers. The slice is current:
-        // dispatch_apply2q waited.
+        // --- SVD split: GPU-resident (P5.7-03), CPU faer as the fallback ---
+        // The one-sided Jacobi kernel factorizes Θ' on the GPU, eliminating the
+        // CPU round-trip that dominated per-gate time (the documented ~94.5%). The
+        // f64 faer `svd_split` stays the safety net for a non-finite GPU result.
+        // The slice is current: dispatch_apply2q waited.
         let svd_start = std::time::Instant::now();
-        let (chi, site_i_data, site_j_data, trunc) =
-            svd_split(theta.as_slice(), rows, cols, self.max_bond)?;
+        let (chi, site_i_data, site_j_data, trunc) = match gpu_svd_split(
+            &self.ctx,
+            &self.pipeline_jacobi,
+            theta.as_slice(),
+            rows,
+            cols,
+            self.max_bond,
+        ) {
+            Some(split) => split,
+            None => svd_split(theta.as_slice(), rows, cols, self.max_bond)?,
+        };
         // Record the dropped weight first, then refuse if it's a real truncation:
         // this naive scaffold has no orthogonality centre to renormalize against,
         // so applying a truncated split would silently corrupt the state. Refusing
