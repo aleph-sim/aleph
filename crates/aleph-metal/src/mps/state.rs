@@ -47,13 +47,24 @@ impl SiteTensor {
 pub struct MetalMpsState {
     pub(crate) num_qubits: u32,
     pub(crate) sites: Vec<SiteTensor>,
+    /// Orthogonality centre for the mixed-canonical form (P5.7-07): sites `<
+    /// center` are left-canonical, sites `> center` right-canonical. Maintained by
+    /// the gate-by-gate (`run`) path so a two-site split can apply truncation;
+    /// `run_batched` leaves the state non-canonical (exact-only). A product state
+    /// is trivially canonical (every bond is dimension 1), so the initial value is
+    /// arbitrary — 0.
+    pub(crate) center: usize,
 }
 
 impl MetalMpsState {
     /// The product state `|0…0⟩`: each site is a `|0⟩` ket.
     pub(crate) fn product(ctx: &MetalContext, num_qubits: u32) -> Self {
         let sites = (0..num_qubits).map(|_| SiteTensor::ket0(ctx)).collect();
-        Self { num_qubits, sites }
+        Self {
+            num_qubits,
+            sites,
+            center: 0,
+        }
     }
 
     /// Number of qubits (sites) in the chain.

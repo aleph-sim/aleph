@@ -187,48 +187,79 @@ fn swap_routed_is_reversible() {
     assert_close("cnot(0,4) twice == identity", &after, &before);
 }
 
-/// P5.6-02 AC: the truncating regime must be **refused**, not silently applied.
-/// GHZ needs bond 2 (the CNOT entangles); with `max_bond = 1` the first two-site
-/// split drops half the Schmidt weight, which this non-canonical scaffold cannot
-/// renormalize, so `apply_gate` must return `MpsTruncationUnsupported` rather than
-/// return a wrong state. The discarded weight is still surfaced via `trunc_error()`.
+/// P5.7-07: the **canonical** gate-by-gate path now *applies* a bond-cap
+/// truncation (with renormalisation) instead of refusing it. A compressible
+/// circuit run at a capped χ must match the CPU MPS at the same cap within the
+/// (controlled) truncation error, and the dropped weight must be surfaced.
 #[test]
-fn truncation_below_required_bond_is_refused() {
-    let mut gpu = match MetalMpsBackend::with_max_bond(1) {
+fn truncation_matches_cpu_mps_at_capped_bond() {
+    const CAP: usize = 4;
+    let mut gpu = match MetalMpsBackend::with_max_bond(CAP) {
         Ok(b) => b,
         Err(_) => {
-            eprintln!("skipping MPS truncation guard: no Metal device available");
+            eprintln!("skipping MPS truncation oracle: no Metal device available");
             return;
         }
     };
-    // GHZ(3): H(0), CX(0,1), CX(1,2). The first CX forces bond 2 > cap 1.
-    // (`MetalMpsState` isn't `Debug`, so match the Result rather than `expect_err`.)
-    match gpu.run(&aleph_benches::ghz_circuit(3)) {
-        Err(BackendError::MpsTruncationUnsupported {
-            max_bond,
-            trunc_error,
-        }) => {
-            assert_eq!(max_bond, 1);
-            // A maximally-entangling CNOT drops ~half the squared Schmidt weight.
-            assert!(
-                trunc_error > 0.4,
-                "expected a large dropped weight, got {trunc_error}"
-            );
-        }
-        Err(other) => panic!("expected MpsTruncationUnsupported, got {other:?}"),
-        Ok(_) => panic!("bond-1 GHZ must be refused, not truncated"),
+    // Bond-saturating brickwall (central bond → 64 at n=8) capped at χ=4: a genuine
+    // truncation. The CPU MPS at the same cap applies the same keep-top-χ +
+    // renormalise policy, so the two compressed states agree to ~fp32.
+    let circuit = aleph_benches::brickwall_ry_cnot_rz(8, 10);
+    let got = gpu
+        .run(&circuit)
+        .expect("truncated run")
+        .dense_statevector();
+
+    let mut cpu = MpsBackend::new().with_max_bond(CAP);
+    let want = run(&mut cpu, &circuit)
+        .expect("cpu mps capped run")
+        .dense_statevector();
+
+    // Compressed-vs-compressed agreement (looser than the exact 1e-5: both sides
+    // truncate, and the GPU SVD is fp32 vs the CPU's fp64).
+    let mut worst = 0.0f64;
+    for (g, w) in got.iter().zip(want.iter()) {
+        worst = worst.max(((g.re - w.re).powi(2) + (g.im - w.im).powi(2)).sqrt());
     }
-    // AC #3: the loss is surfaced, not silently dropped.
+    assert!(worst < 5e-3, "capped GPU vs CPU MPS: max |Δ|={worst:.3e}");
+    // Truncation actually happened and was surfaced.
     assert!(
-        gpu.trunc_error() > 0.4,
-        "trunc_error accessor must reflect the refused split: {}",
+        gpu.trunc_error() > 1e-6,
+        "expected a real dropped weight, got {}",
         gpu.trunc_error()
     );
+}
 
-    // P5.7-04: the layer-batched path must refuse identically (a single-block
-    // layer is still subject to the truncation guard before mutating state).
-    let mut gpu_b = MetalMpsBackend::with_max_bond(1).expect("device");
-    match gpu_b.run_batched(&aleph_benches::ghz_circuit(3)) {
+/// P5.7-07: a truncated MPS stays (approximately) normalised — the renormalisation
+/// `scale` keeps ‖ψ‖ ≈ 1 even when the bond cap drops real Schmidt weight.
+#[test]
+fn truncated_state_stays_normalized() {
+    let mut gpu = match MetalMpsBackend::with_max_bond(4) {
+        Ok(b) => b,
+        Err(_) => return,
+    };
+    let circuit = aleph_benches::brickwall_ry_cnot_rz(8, 10);
+    let amps = gpu.run(&circuit).expect("run").dense_statevector();
+    let norm_sq: f64 = amps.iter().map(|a| a.norm_sqr()).sum();
+    assert!(
+        (norm_sq - 1.0).abs() < 1e-3,
+        "truncated state norm² = {norm_sq}, expected ≈1"
+    );
+}
+
+/// P5.7-04 + P5.6-02: the **batched** path is exact-only (no orthogonality centre),
+/// so it still *refuses* a real truncation rather than applying it. GHZ(3) at
+/// `max_bond = 1` drops ~half the Schmidt weight on the first CX → refused.
+#[test]
+fn batched_truncation_is_refused() {
+    let mut gpu = match MetalMpsBackend::with_max_bond(1) {
+        Ok(b) => b,
+        Err(_) => {
+            eprintln!("skipping batched truncation guard: no Metal device available");
+            return;
+        }
+    };
+    match gpu.run_batched(&aleph_benches::ghz_circuit(3)) {
         Err(BackendError::MpsTruncationUnsupported {
             max_bond,
             trunc_error,
@@ -237,8 +268,13 @@ fn truncation_below_required_bond_is_refused() {
             assert!(trunc_error > 0.4, "batched dropped weight {trunc_error}");
         }
         Err(other) => panic!("expected MpsTruncationUnsupported (batched), got {other:?}"),
-        Ok(_) => panic!("bond-1 GHZ must be refused on the batched path too"),
+        Ok(_) => panic!("bond-1 GHZ must be refused on the batched (exact-only) path"),
     }
+    assert!(
+        gpu.trunc_error() > 0.4,
+        "loss surfaced: {}",
+        gpu.trunc_error()
+    );
 }
 
 /// AC #3 (positive side): a within-cap run stays exact and leaves the cumulative
