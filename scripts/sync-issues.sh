@@ -39,7 +39,9 @@ phase_milestone() {
     3) echo "Phase 3 — Alternative Backends" ;;
     4) echo "Phase 4 — Algorithm Benchmarks & v0.1 Release" ;;
     4.5) echo "Phase 4.5 — CPU Parity" ;;
+    4.6) echo "Phase 4.6 — CPU Depth" ;;
     5) echo "Phase 5 — GPU Backend" ;;
+    5.5) echo "Phase 5.5 — Apple/Metal GPU" ;;
     6) echo "Phase 6 — Multi-GPU & Distributed" ;;
     *) echo "" ;;
   esac
