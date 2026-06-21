@@ -3407,6 +3407,251 @@ The bench itself; numbers reproduced in the report.
 
 -----
 
+# Phase 5.8 — GPU-resident MPS rewrite (Apple/Metal)
+
+Goal: make the Metal MPS backend **faster than the f64 CPU MPS** in its target
+regime (large bond χ, large n), by eliminating the per-gate host round-trips,
+allocations, and CPU-side linear algebra that Phase 5.7's exit bench exposed.
+
+> **Why.** Phase 5.7 shipped a correct, feature-complete GPU MPS but it is 12–190×
+> *slower* than the Phase-3 CPU MPS at n ≤ 14 — its exit metric is unmet
+> (`docs/perf/phase5.7.md`). The audit (`docs/perf/phase5.7-audit.md`) traced the
+> loss to: the canonical `run` path doing **host f64 SVDs (`move_center`) on top of
+> the GPU SVD** — up to O(n) per gate; **Θ bouncing GPU→host→GPU every gate**;
+> **no device-buffer pooling** (a fresh `new_buffer_with_data` per gate); **3
+> `wait_until_completed` per gate**; an **O(χ³) host reconstruction guard per gate**;
+> and **physical SWAP-with-unwind** for non-NN gates. The CPU MPS avoids every one of
+> these (zero-alloc `Scratch` arena, **QR not SVD** for canonicalisation, lazy
+> permutation routing, gemm-everywhere). This phase ports those wins to the GPU.
+>
+> **Honesty up front.** At small χ (≤128) the problem is too small to beat a tuned
+> CPU; the realistic win is **χ ≳ 256 and n > 14**, which the scaffold's 28-qubit
+> dense-readout test cap cannot currently measure — so P5.8-01 lifts that cap first.
+> All entries use the **Phase 5.5 — Apple/Metal GPU** milestone. FP32 is the Metal
+> accuracy ceiling (~1e-5).
+
+-----
+
+### [P5.8-01] Large-χ / large-n MPS test + bench harness
+
+**Labels:** `area:backend-mps`, `area:bench`, `type:infra`, `priority:high`
+**Milestone:** Phase 5.5 — Apple/Metal GPU
+**Estimate:** S
+**Depends on:** P5.7-08
+
+**Description**
+Make the large-bond regime — where a GPU MPS can actually win — measurable.
+
+**Context**
+The current oracle/bench cap (28 qubits, dense `2^n` readout) hides the only regime
+where the GPU should beat the CPU. Readout is already `2^n`-free since P5.7-05, so
+correctness at large n can be checked without the dense vector.
+
+**Technical Details**
+
+- Add bench cells at n ∈ {16, 20, 24} on bond-saturating circuits (χ capped at
+  256/512/1024) to `benches/mps_vs_cpu.rs`; report GPU vs CPU and the χ-sweep.
+- Correctness at large n via `2^n`-free checks: norm = 1, an analytic GHZ/`Z`-string
+  expectation, and `run` vs `run_batched` agreement — no dense compare.
+- Keep the small-n dense oracle for exactness; gate the large-n cells `#[ignore]`
+  if > 30 s.
+
+**Acceptance Criteria**
+
+- [ ] Bench reports a χ-sweep at n ≥ 16 without a `2^n` allocation.
+- [ ] Large-n correctness asserted by `2^n`-free invariants.
+
+**Testing Requirements**
+The bench itself; the invariant checks reproduced in the report.
+
+**References**
+`docs/perf/phase5.7-audit.md`; P5.7-05 (`2^n`-free readout).
+
+-----
+
+### [P5.8-02] Device-buffer pool (kill per-gate allocation)
+
+**Labels:** `area:backend-mps`, `area:backend-gpu`, `type:optimization`, `priority:high`
+**Milestone:** Phase 5.5 — Apple/Metal GPU
+**Estimate:** M
+**Depends on:** P5.7-08
+
+**Description**
+A reusable, monotonically-growing device-buffer pool (the GPU analogue of the CPU
+MPS `Scratch` arena), so the hot path stops calling `new_buffer_with_data` per gate.
+
+**Context**
+`DeviceBuffer::from_slice` allocates a fresh `MTLBuffer` every call (`buffer.rs`);
+the per-gate path allocates ~6 + 2·(centre steps) of them (Θ, Jacobi A/V/σ, two new
+site tensors, canonical moves). The CPU MPS allocates **zero** in steady state via
+`Scratch` (`aleph_mps::mps`).
+
+**Technical Details**
+
+- Pool keyed by role/size, `grow`-on-demand, reset (not freed) per gate; sub-views
+  at exact shape. Site tensors mutated in place where possible instead of rebuilt.
+- Pre-size to χ_max so steady state never reallocates.
+
+**Acceptance Criteria**
+
+- [ ] Steady-state per-gate device allocations ≈ 0 (instrument/assert in a test).
+- [ ] Oracle unchanged; bench shows a per-gate-overhead drop.
+
+**Testing Requirements**
+Oracle/proptest unchanged; an allocation-count probe; bench numbers.
+
+**References**
+`aleph_mps::mps::Scratch` (P3-14); `docs/perf/phase5.7-audit.md`.
+
+-----
+
+### [P5.8-03] GPU-resident per-gate pipeline (no host round-trip)
+
+**Labels:** `area:backend-mps`, `area:backend-gpu`, `type:optimization`, `priority:high`
+**Milestone:** Phase 5.5 — Apple/Metal GPU
+**Estimate:** L
+**Depends on:** P5.8-02
+
+**Description**
+Keep the two-site block and site tensors resident on the GPU across
+contract → gate-apply → SVD → write-back, with the σ-handling/packing on-device,
+so Θ no longer bounces GPU→host→GPU every gate.
+
+**Context**
+Today Θ is contracted on the GPU, **read to host** for a column-major repack,
+re-uploaded into a fresh Jacobi buffer, factored, **read back**, and the factors
+re-uploaded as new site buffers — negating unified memory. The host pack/sort/
+rebuild loops and `.to_vec()` copies are ~96% of per-gate time (P5.7-03 report).
+
+**Technical Details**
+
+- GPU kernels (or one fused kernel) for the column-major pack, σ-sort/select, and
+  the `U` / `diag(σ)·Vᴴ` site assembly; collapse the contract+apply+SVD into one
+  command buffer with a single `commit`/`wait` per gate (or per layer).
+- Move the P5.7-07 reconstruction guard on-device or make it O(k) (e.g. check column
+  orthogonality of `U` rather than a full O(χ³) host reconstruction).
+
+**Acceptance Criteria**
+
+- [ ] No host read of Θ between contract and SVD; ≤ 1 `wait` per gate (≤ 1 per layer
+  batched).
+- [ ] Oracle unchanged; the split phase's host share drops materially.
+
+**Testing Requirements**
+Oracle/proptest unchanged; per-phase timing in the report.
+
+**References**
+`docs/perf/phase5.7-audit.md` (bounce + host-pack findings).
+
+-----
+
+### [P5.8-04] GPU QR/LQ canonicalisation (replace host SVD moves)
+
+**Labels:** `area:backend-mps`, `area:backend-gpu`, `type:optimization`, `priority:high`
+**Milestone:** Phase 5.5 — Apple/Metal GPU
+**Estimate:** L
+**Depends on:** P5.8-03
+
+**Description**
+Move the orthogonality centre with a **GPU QR/LQ** instead of a host f64 SVD, so the
+canonical `run` path stops paying CPU SVDs on top of the GPU SVD.
+
+**Context**
+`canonical::move_center_*` runs a host faer SVD per stepped site — up to O(n) f64
+SVDs per gate, GPU idle (`docs/perf/phase5.7-audit.md`). The CPU MPS uses **QR**
+(2–4× cheaper than SVD) for moves and SVD only for the truncating split
+(`aleph_mps::mps::move_center_right/left`). The GPU MPS should do the same on-device.
+
+**Technical Details**
+
+- A Metal Householder/Givens QR kernel (or block-Householder) for the grouped-left
+  view; LQ via QR of the adjoint for left moves. Keep f64-fallback for accuracy.
+- Reuse the P5.8-02 pool; absorb R via an on-GPU gemm, not a host scalar loop.
+
+**Acceptance Criteria**
+
+- [ ] Centre moves run on the GPU; no host SVD on the move path.
+- [ ] Canonical `run` ≈ `run_batched` cost on non-truncating circuits; oracle holds.
+
+**Testing Requirements**
+`move_center_preserves_state` + oracle; truncation oracle unchanged; bench.
+
+**References**
+`aleph_mps::mps` QR moves; Golub & Van Loan §5 (Householder QR).
+
+-----
+
+### [P5.8-05] Lazy-permutation SWAP routing (no physical swap-back)
+
+**Labels:** `area:backend-mps`, `area:backend-gpu`, `type:optimization`, `priority:medium`
+**Milestone:** Phase 5.5 — Apple/Metal GPU
+**Estimate:** M
+**Depends on:** P5.8-03
+
+**Description**
+Route non-NN 2q gates by tracking a `qubit_of_site`/`site_of_qubit` permutation
+(lazy, P3-12 style) instead of a physical SWAP network that is unwound afterwards.
+
+**Context**
+`apply_2q_routed` does adjacent SWAPs (each a gemm + truncated SVD) **and unwinds
+them in reverse** (`backend.rs`), ~2× the SWAP cost the CPU MPS pays — it leaves the
+permutation in place (`aleph_mps::mps::apply_2q`). The unwind was added to keep
+site≡qubit order for readout/dense; lazy tracking must update those paths instead.
+
+**Technical Details**
+
+- Add the permutation maps to `MetalMpsState`; thread them through readout, dense,
+  and canonical centre indexing. Discharge user `Gate::Swap` as an O(1) relabel.
+- Keep correctness: the dense/readout convention must follow the permutation.
+
+**Acceptance Criteria**
+
+- [ ] Non-NN gate cost ≈ half the current routed cost; oracle (incl. non-NN +
+  reversibility) unchanged.
+- [ ] User `Swap` touches no tensors.
+
+**Testing Requirements**
+Oracle with non-NN/QAOA circuits; readout oracle under a non-trivial permutation.
+
+**References**
+`aleph_mps::mps` lazy SWAP (P3-09/P3-12).
+
+-----
+
+### [P5.8-06] Phase 5.8 exit re-bench + verdict
+
+**Labels:** `area:backend-mps`, `area:bench`, `area:docs`, `type:docs`, `priority:high`
+**Milestone:** Phase 5.5 — Apple/Metal GPU
+**Estimate:** S
+**Depends on:** P5.8-04
+
+**Description**
+Re-run the GPU-vs-CPU MPS sweep after the rewrite and state whether the exit metric
+(GPU MPS ≥ CPU MPS on ≥ 1 regime) is now met.
+
+**Context**
+P5.7-08 left the metric unmet. This records whether P5.8-02…05 closed the gap, and
+in which regime (expected: large χ / large n).
+
+**Technical Details**
+
+- Re-run `benches/mps_vs_cpu.rs` (with the P5.8-01 large-χ cells); update
+  `docs/perf/phase5.7-audit.md` / a new `phase5.8.md` with before/after and the
+  crossover χ/n.
+
+**Acceptance Criteria**
+
+- [ ] Exit metric re-evaluated with numbers; crossover point stated (or, if still
+  unmet, an honest analysis of why and what remains).
+
+**Testing Requirements**
+The bench; numbers reproduced in the report.
+
+**References**
+`docs/perf/phase5.7.md` exit report; `phase5.7-audit.md`.
+
+-----
+
 # Phase 6 — Multi-GPU and Distributed
 
 Goal: Distributed state vector simulation across multiple nodes.
