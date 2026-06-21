@@ -14,6 +14,7 @@
 | **P5.7-01** | Complex one-sided **Jacobi thin-SVD** in Rust (`mps/jacobi.rs`) — the CPU reference, wired as the faer convergence fallback. |
 | **P5.7-02** | The same algorithm as a **Metal compute kernel** (`mps_jacobi.metal`) + dispatch (`gpu_jacobi.rs`), validated standalone against the CPU reference / faer. |
 | **P5.7-03** | Kernel wired into `MetalMpsBackend`: the per-gate split is now GPU-resident; only σ-readout + χ-selection stay on the host. faer remains the CPU fallback. |
+| **P5.7-04** | **Batched layer-parallel SVD** (`jacobi_svd_batched` + `run_batched`): a brickwall layer's disjoint two-site splits factor in one dispatch, one `commit`/`wait` per layer instead of per gate. |
 
 ### Why one-sided Jacobi
 It orthogonalizes the *columns* of Θ′ by right-multiplying 2×2 unitary rotations, so
@@ -66,16 +67,60 @@ The host SVD was the dominant per-gate cost since the scaffold shipped (94.5% in
 P5.5 report); it is now ~4.6× cheaper and runs on-device, so the SVD no longer
 serializes the GPU behind a CPU library.
 
+## Batched layer-parallel SVD (P5.7-04)
+
+P5.7-03 left the split GPU-resident but still **one threadgroup per gate with a
+per-gate `wait_until_completed`** — so per-gate dispatch latency was the named next
+lever. P5.7-04 adds a **batched** path:
+
+- `jacobi_svd_batched` (same `mps_jacobi.metal`, refactored to a shared
+  `jacobi_block` device function): the grid is `num_blocks` threadgroups, each keys
+  off `threadgroup_position_in_grid`, reads its `JacobiBlockMeta` (dims + per-block
+  buffer offsets), and factors its slice of the packed `A`/`V`/`sig` buffers.
+- `MetalMpsBackend::run_batched` is a backend-side scheduler: it greedily groups
+  adjacent NN 2q gates that act on **disjoint** site pairs into a layer (disjoint ⇒
+  commuting ⇒ batching is exact), flushing on a 1q gate, barrier, or site conflict.
+  A flushed layer's contract + gate-apply run on **one** command buffer (one
+  `commit`/`wait`; per-gate 4×4 buffers replace the shared scratch so the applies
+  don't clobber each other), then **one** batched-Jacobi dispatch factors every
+  block. faer stays the per-block CPU fallback; the truncation guard (P5.6-02) is
+  unchanged — a layer is refused before any site tensor is mutated.
+
+### Measurements — NN brickwall n=12 d=24, M4 Mac Mini, live desktop
+
+Internal timer (`report_svd_roundtrip_cost`), summed over the run; load ≈ 3.3 (not
+idle), so order-of-magnitude:
+
+| Path | contract+apply | SVD split | total |
+|------|----------------|-----------|-------|
+| gate-by-gate (P5.7-03) | ~58 ms | ~378 ms | ~436 ms |
+| **layer-batched (P5.7-04)** | **~9 ms** | **~244 ms** | **~254 ms** |
+
+The split phase drops **~1.55×** (the batched dispatch removes the per-gate launch
+latency; the residual is host-side packing/χ-selection/upload, which is still
+per-block and serial). Contract+apply drops **~6×** from collapsing 2·N per-gate
+syncs into one wait per layer.
+
+Criterion wall-clock (`mps_batched` bench, 10 samples):
+
+| Workload | gate-by-gate | batched | speedup |
+|----------|--------------|---------|---------|
+| NN brickwall n=12 d=24 (small bond) | ~448 ms | ~346 ms | **~1.30×** |
+| bond-saturating n=12 (χ→64) | ~265 ms | ~251 ms | ~1.05× |
+
+Batching wins most where per-gate dispatch latency dominates — many small blocks per
+layer (small-bond brickwall). In the bond-saturating case each layer has fewer,
+larger blocks whose per-block compute dwarfs the dispatch overhead, so the gain is
+small; the lever there is the per-block factorization, not the launch count.
+
 ## Honesty caveats & what's next
 
-- **Live desktop, single workload.** One n=12 d=24 brickwall on a contended Mini;
-  treat the ratio as order-of-magnitude. The contract+apply column varied ~53 ms
-  (GPU-busy) vs ~95 ms (after a long idle CPU SVD) between branches — likely GPU DVFS,
-  not the kernel — which is why the split column, not the percentages, is the headline.
-- **Per-gate dispatch is the new bottleneck.** The split is still ~85% of per-gate
-  time because the kernel runs as **one threadgroup per block with a per-gate
-  `wait_until_completed`**. The next levers: batch a brickwall layer's independent
-  blocks into one dispatch, and drop the per-gate sync. Larger bonds (deeper
-  entanglement) will also amortize the dispatch better than these small Tier-1 blocks.
+- **Live desktop, single box.** Same caveats as P5.7-03: a contended Mini, GPU DVFS
+  between runs; treat ratios as order-of-magnitude. The split column is the
+  apples-to-apples comparison of the swapped phase.
+- **Host packing is the new split-phase floor.** The batched dispatch is fast, but
+  the split column still includes per-block host work (column-major packing, σ sort,
+  site-tensor build + upload). Pooling the `A`/`V`/`sig` buffers across layers and
+  moving the pack/unpack onto the GPU would chip at the residual.
 - **Still NN-only, exact-only.** No SWAP router and no canonical-form renormalization,
   so a real truncation is refused, not applied — unchanged from P5.6-02.

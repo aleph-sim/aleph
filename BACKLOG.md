@@ -3167,12 +3167,20 @@ GPU-resident. Holds the 1e-5 oracle end-to-end. Split phase ~1390 ms → ~300 ms
 
 -----
 
-### [P5.7-04] Batched layer-parallel SVD dispatch
+### [P5.7-04] Batched layer-parallel SVD dispatch — **SHIPPED (PR #231)**
 
 **Labels:** `area:backend-mps`, `area:backend-gpu`, `type:optimization`, `priority:high`
 **Milestone:** Phase 5.5 — Apple/Metal GPU
 **Estimate:** M
 **Depends on:** P5.7-03
+
+> **Shipped.** `jacobi_svd_batched` (one threadgroup per block, keyed off
+> `threadgroup_position_in_grid`) + a backend-side scheduler `run_batched` that
+> groups disjoint NN 2q gates into layers and factors each layer in a single
+> dispatch, one `commit`/`wait` per layer. On n=12 d=24 the split phase drops
+> ~1.55× and contract+apply ~6× vs P5.7-03; criterion total ~1.30× (small bond),
+> ~1.05× (bond-saturating). Oracle + proptest cover both `run` and `run_batched`.
+> See `docs/perf/phase5.7.md` "Batched layer-parallel SVD (P5.7-04)".
 
 **Description**
 Factor all independent two-site SVDs of a brickwall layer in a single kernel launch
@@ -3196,8 +3204,8 @@ next lever.
 
 **Acceptance Criteria**
 
-- [ ] A layer's blocks factor in one dispatch; oracle still 1e-5.
-- [ ] Criterion shows the per-gate split share drop materially vs P5.7-03 on
+- [x] A layer's blocks factor in one dispatch; oracle still 1e-5.
+- [x] Criterion shows the per-gate split share drop materially vs P5.7-03 on
   n=12 d=24 and on a larger-bond case.
 
 **Testing Requirements**
