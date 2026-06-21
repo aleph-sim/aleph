@@ -14,17 +14,18 @@ use metal::{CommandBufferRef, ComputePipelineState, MTLSize};
 use std::ffi::c_void;
 
 use super::gpu_jacobi::{
-    encode_pack_jacobi, gpu_svd_split_batch, split_from_factors, BatchBlock, JacobiScratch,
+    encode_finalize, encode_pack_jacobi, gpu_svd_split_batch, BatchBlock, JacobiScratch,
 };
 use super::kernel::{
-    Apply2qMeta, ContractMeta, Mps1q, MPS_1Q_ENTRY, MPS_1Q_SRC, MPS_APPLY2Q_ENTRY, MPS_APPLY2Q_SRC,
-    MPS_CONTRACT_ENTRY, MPS_CONTRACT_SRC, MPS_JACOBI_BATCHED_ENTRY, MPS_JACOBI_ENTRY,
-    MPS_JACOBI_SRC, MPS_PACK_ENTRY, MPS_PACK_SRC,
+    Apply2qMeta, ContractMeta, FinalizeOut, Mps1q, MPS_1Q_ENTRY, MPS_1Q_SRC, MPS_APPLY2Q_ENTRY,
+    MPS_APPLY2Q_SRC, MPS_CONTRACT_ENTRY, MPS_CONTRACT_SRC, MPS_FINALIZE_ENTRY, MPS_FINALIZE_SRC,
+    MPS_JACOBI_BATCHED_ENTRY, MPS_JACOBI_ENTRY, MPS_JACOBI_SRC, MPS_PACK_ENTRY, MPS_PACK_SRC,
 };
 use super::readout;
 use super::state::MetalMpsState;
 use super::svd::svd_split;
 use crate::{DeviceBuffer, Error, MetalContext};
+use bytemuck::Zeroable;
 use rand::{rngs::StdRng, SeedableRng};
 
 /// Qubit cap for the scaffold. The MPS form scales past the SV 28-qubit ceiling,
@@ -61,6 +62,16 @@ pub struct MetalMpsBackend {
     /// per-gate contract → apply → pack → SVD runs in one command buffer with Θ′
     /// never read to the host before the split.
     pipeline_pack: ComputePipelineState,
+    /// GPU-resident split finalize (P5.8-03): σ-sort + truncation + site assembly on
+    /// the GPU, so U/V/σ are never read back. Writes the two new site tensors into
+    /// `site_i_out`/`site_j_out` and the `(chi, accept, trunc_rel)` scalars.
+    pipeline_finalize: ComputePipelineState,
+    /// Pooled output buffers the finalize kernel writes the two new site tensors into
+    /// (then copied into the state sites); reused across gates (P5.8-02 pooling).
+    site_i_out: DeviceBuffer<Complex<f32>>,
+    site_j_out: DeviceBuffer<Complex<f32>>,
+    /// One-element readback of the finalize kernel's `(chi, accept, trunc_rel)`.
+    finalize_out: DeviceBuffer<FinalizeOut>,
     /// Reused 4×4 (16-entry) row-major f32 gate-matrix scratch for the 2q apply.
     mat_scratch: DeviceBuffer<Complex<f32>>,
     /// Pooled Θ block, reused across every NN 2q gate's contract+apply (P5.8-02):
@@ -136,9 +147,15 @@ impl MetalMpsBackend {
         let pipeline_pack = ctx
             .make_compute_pipeline(MPS_PACK_SRC, MPS_PACK_ENTRY)
             .map_err(map_metal_err)?;
+        let pipeline_finalize = ctx
+            .make_compute_pipeline(MPS_FINALIZE_SRC, MPS_FINALIZE_ENTRY)
+            .map_err(map_metal_err)?;
         let mat_scratch = DeviceBuffer::from_slice(&ctx, &[Complex::<f32>::new(0.0, 0.0); 16]);
         let theta_pool = DeviceBuffer::with_capacity(&ctx, 0);
         let jacobi_scratch = JacobiScratch::new(&ctx);
+        let site_i_out = DeviceBuffer::with_capacity(&ctx, 0);
+        let site_j_out = DeviceBuffer::with_capacity(&ctx, 0);
+        let finalize_out = DeviceBuffer::from_slice(&ctx, &[FinalizeOut::zeroed()]);
         Ok(Self {
             ctx,
             pipeline_1q,
@@ -147,6 +164,10 @@ impl MetalMpsBackend {
             pipeline_jacobi,
             pipeline_jacobi_batched,
             pipeline_pack,
+            pipeline_finalize,
+            site_i_out,
+            site_j_out,
+            finalize_out,
             mat_scratch,
             theta_pool,
             jacobi_scratch,
@@ -340,6 +361,12 @@ impl MetalMpsBackend {
         // contract kernel then overwrites the live `rows·cols` window).
         self.theta_pool.ensure_capacity(&self.ctx, rows * cols);
         self.theta_pool.fill_zero();
+        // Output slots for the finalize kernel's two site tensors, sized to the
+        // largest possible χ (= k = min(rows, cols)); the kernel writes `rows·χ` /
+        // `χ·cols` of them. Pooled (P5.8-02): grown on demand only.
+        let k = rows.min(cols);
+        self.site_i_out.ensure_capacity(&self.ctx, rows * k);
+        self.site_j_out.ensure_capacity(&self.ctx, k * cols);
         // Upload the 4×4 (qa-MSB/qb-LSB row-major) into the scratch the apply encoder
         // reads at GPU-execution time (written before `commit`).
         {
@@ -363,7 +390,7 @@ impl MetalMpsBackend {
             _pad0: 0,
             _pad1: 0,
         };
-        let wide = {
+        {
             let cmd = self.ctx.queue().new_command_buffer();
             self.encode_contract(
                 cmd,
@@ -373,7 +400,13 @@ impl MetalMpsBackend {
                 &cmeta,
                 (rows * cols) as u64,
             );
-            self.encode_apply2q(cmd, &self.theta_pool, &self.mat_scratch, &ameta, (li * ri) as u64);
+            self.encode_apply2q(
+                cmd,
+                &self.theta_pool,
+                &self.mat_scratch,
+                &ameta,
+                (li * ri) as u64,
+            );
             // Metal hazard-tracks the dependent encoders (contract writes Θ, apply
             // reads/writes it, pack reads it, Jacobi reads A), so the whole chain
             // shares one `commit`/`wait`.
@@ -387,36 +420,50 @@ impl MetalMpsBackend {
                 rows,
                 cols,
             );
+            // GPU-resident finalize: σ-sort + truncation + site assembly on-device, so
+            // U/V/σ are never read back. `renormalize = canonical`: on the canonical
+            // path the kept σ are rescaled to preserve the centre-on-bond norm; on the
+            // exact path σ are verbatim and a real truncation is refused below.
+            encode_finalize(
+                cmd,
+                &self.pipeline_finalize,
+                &self.jacobi_scratch,
+                &self.theta_pool,
+                &self.site_i_out,
+                &self.site_j_out,
+                &self.finalize_out,
+                rows,
+                cols,
+                wide,
+                self.max_bond,
+                canonical,
+            );
             cmd.commit();
             cmd.wait_until_completed();
-            wide
-        };
+        }
         self.gpu_ns += gpu_start.elapsed().as_nanos();
 
-        // --- SVD assembly: from the GPU-resident factors (P5.8-03), CPU faer as the
-        // fallback. The Jacobi factors are current (the single wait completed).
-        // `renormalize = canonical`: on the canonical path the kept σ are rescaled to
-        // preserve the centre-on-bond norm so a bond-cap truncation is *applied*
-        // (P5.7-07); on the exact path σ are verbatim and a real truncation is
-        // refused below (P5.6-02).
+        // --- SVD result: read back only the (chi, accept, trunc_rel) scalars. On
+        // accept, the two new site tensors are already assembled in the GPU output
+        // buffers; on decline (oversized block or non-finite σ) rebuild on the f64 CPU
+        // path from Θ′ (still resident, unread between contract and SVD).
         let svd_start = std::time::Instant::now();
-        let (chi, site_i_data, site_j_data, trunc) = match split_from_factors(
-            self.theta_pool.as_slice(),
-            &self.jacobi_scratch,
-            rows,
-            cols,
-            wide,
-            self.max_bond,
-            canonical,
-        ) {
-            Some(split) => split,
-            None => svd_split(
+        let fo = self.finalize_out.as_slice()[0];
+        let (chi, trunc) = if fo.accept != 0 {
+            (fo.chi as usize, fo.trunc_rel as f64)
+        } else {
+            let (chi, si, sj, trunc) = svd_split(
                 self.theta_pool.as_slice(),
                 rows,
                 cols,
                 self.max_bond,
                 canonical,
-            )?,
+            )?;
+            // Stage the CPU factors into the same output buffers so the install path
+            // below is uniform.
+            self.site_i_out.write(&self.ctx, &si);
+            self.site_j_out.write(&self.ctx, &sj);
+            (chi, trunc)
         };
         // Surface the discarded Schmidt weight (≈0 unless the bond cap binds).
         self.trunc_error += trunc;
@@ -429,8 +476,20 @@ impl MetalMpsBackend {
                 trunc_error: trunc,
             });
         }
-        state.sites[i].set_from_host(&self.ctx, li, chi, &site_i_data);
-        state.sites[j].set_from_host(&self.ctx, chi, ri, &site_j_data);
+        // Copy the assembled site tensors out of the GPU buffers into the state sites
+        // (the only host touch of the result — Θ/U/V/σ are never read back).
+        state.sites[i].set_from_host(
+            &self.ctx,
+            li,
+            chi,
+            &self.site_i_out.as_slice()[..rows * chi],
+        );
+        state.sites[j].set_from_host(
+            &self.ctx,
+            chi,
+            ri,
+            &self.site_j_out.as_slice()[..chi * cols],
+        );
         if canonical {
             state.center = j;
         }

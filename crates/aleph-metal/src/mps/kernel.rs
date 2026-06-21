@@ -36,6 +36,12 @@ pub(crate) const MPS_PACK_SRC: &str = include_str!("../shaders/mps_pack.metal");
 /// Entry-point name inside [`MPS_PACK_SRC`].
 pub(crate) const MPS_PACK_ENTRY: &str = "pack_theta";
 
+/// MSL source for the GPU-resident split finalize (P5.8-03): sort σ, pick χ, and
+/// assemble the two new site tensors on-device, so U/V/σ are never read back.
+pub(crate) const MPS_FINALIZE_SRC: &str = include_str!("../shaders/mps_finalize.metal");
+/// Entry-point name inside [`MPS_FINALIZE_SRC`].
+pub(crate) const MPS_FINALIZE_ENTRY: &str = "finalize_split";
+
 /// Per-gate uniform for [`MPS_1Q_SRC`]. **Layout MUST match the MSL `Mps1q`
 /// struct**: 4×`float2` (row-major 2×2) then `right` and one u32 pad → 40 bytes,
 /// no internal padding (32 + 4 + 4, all 4-byte-aligned).
@@ -105,6 +111,38 @@ pub(crate) struct PackMeta {
 
 const _: () = assert!(core::mem::size_of::<PackMeta>() == 16);
 
+/// Per-gate uniform for [`MPS_FINALIZE_SRC`] (P5.8-03). **Layout MUST match the MSL
+/// `FinalizeMeta` struct** (32 bytes): `rows`, `cols`, `wide`, `max_bond`,
+/// `renormalize`, `k` (= `min(rows, cols)`), two pads.
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub(crate) struct FinalizeMeta {
+    pub rows: u32,
+    pub cols: u32,
+    pub wide: u32,
+    pub max_bond: u32,
+    pub renormalize: u32,
+    pub k: u32,
+    pub _pad0: u32,
+    pub _pad1: u32,
+}
+
+const _: () = assert!(core::mem::size_of::<FinalizeMeta>() == 32);
+
+/// Output scalars from [`MPS_FINALIZE_SRC`] (P5.8-03). **Layout MUST match the MSL
+/// `FinalizeOut` struct** (16 bytes): kept bond `chi`, `accept` (0 ⇒ host f64
+/// fallback), relative discarded weight `trunc_rel`, one pad.
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub(crate) struct FinalizeOut {
+    pub chi: u32,
+    pub accept: u32,
+    pub trunc_rel: f32,
+    pub _pad: f32,
+}
+
+const _: () = assert!(core::mem::size_of::<FinalizeOut>() == 16);
+
 /// Per-block descriptor for the batched Jacobi kernel (P5.7-04). **Layout MUST
 /// match the MSL `JacobiBlockMeta` struct** (32 bytes): `m`, `n` (block dims, as
 /// in [`JacobiMeta`]), then the float2 offsets of this block's `A`/`V` and the
@@ -148,6 +186,7 @@ mod tests {
             (MPS_JACOBI_SRC, MPS_JACOBI_ENTRY),
             (MPS_JACOBI_SRC, MPS_JACOBI_BATCHED_ENTRY),
             (MPS_PACK_SRC, MPS_PACK_ENTRY),
+            (MPS_FINALIZE_SRC, MPS_FINALIZE_ENTRY),
         ] {
             let p = ctx.make_compute_pipeline(src, entry);
             assert!(p.is_ok(), "{entry} must compile: {p:?}");

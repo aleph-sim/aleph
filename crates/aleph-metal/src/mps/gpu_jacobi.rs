@@ -12,7 +12,7 @@ use aleph_core::Complex;
 use metal::{CommandBufferRef, ComputePipelineState, MTLSize};
 use std::ffi::c_void;
 
-use super::kernel::{JacobiBlockMeta, JacobiMeta, PackMeta};
+use super::kernel::{FinalizeMeta, JacobiBlockMeta, JacobiMeta, PackMeta};
 use super::svd::{truncation_plan, SplitResult};
 use crate::{DeviceBuffer, MetalContext};
 
@@ -73,8 +73,9 @@ impl JacobiScratch {
 /// `rows × cols`) followed by the one-sided **Jacobi SVD**, onto `cmd` (P5.8-03).
 /// Θ′ never leaves the GPU between the contraction and the SVD: the pack kernel
 /// transposes it into `scratch.a` in-device, and the Jacobi kernel factors it
-/// in place. Returns `wide` (`rows < cols`) so [`split_from_factors`] can map the
-/// `A`/`V` buffers back to the caller's `U`/`V` after the single `commit`/`wait`.
+/// in place. Returns `wide` (`rows < cols`) so the finalize can map the `A`/`V`
+/// buffers back to the caller's `U`/`V`.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn encode_pack_jacobi(
     cmd: &CommandBufferRef,
     ctx: &MetalContext,
@@ -107,7 +108,9 @@ pub(crate) fn encode_pack_jacobi(
             &pmeta as *const PackMeta as *const c_void,
         );
         let count = (m * n) as u64;
-        let tg = pack_pl.max_total_threads_per_threadgroup().min(count.max(1));
+        let tg = pack_pl
+            .max_total_threads_per_threadgroup()
+            .min(count.max(1));
         enc.dispatch_threads(MTLSize::new(count.max(1), 1, 1), MTLSize::new(tg, 1, 1));
         enc.end_encoding();
     }
@@ -138,30 +141,59 @@ pub(crate) fn encode_pack_jacobi(
     wide
 }
 
-/// Build the truncated two-site split from the GPU-resident factors in `scratch`
-/// (filled by [`encode_pack_jacobi`] after its `commit`/`wait`). Labels `A`/`V` →
-/// caller `U`/`V` per `wide`, runs the f32 accuracy guard, and emits the split via
-/// the shared [`split_from_thin`]. `None` (non-finite/mis-converged) degrades to the
-/// f64 CPU SVD, exactly as the standalone path.
-pub(crate) fn split_from_factors(
-    theta: &[Complex<f32>],
+/// Encode (no commit) the GPU-resident split **finalize** onto `cmd` (P5.8-03):
+/// sort σ, pick χ (matching the host `truncation_plan`), and assemble the two new
+/// site tensors into `site_i_out` / `site_j_out` — so U/V/σ are never read back to
+/// the host. `out` receives `(chi, accept, trunc_rel)`; `accept == 0` (oversized
+/// block or non-finite σ) signals the caller to rebuild on the f64 CPU path.
+///
+/// `site_i_out` / `site_j_out` must be pre-sized (`rows·k` / `k·cols`, `k =
+/// min(rows, cols)`); the kernel writes their first `rows·χ` / `χ·cols` entries.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn encode_finalize(
+    cmd: &CommandBufferRef,
+    finalize_pl: &ComputePipelineState,
     scratch: &JacobiScratch,
+    theta: &DeviceBuffer<Complex<f32>>,
+    site_i_out: &DeviceBuffer<Complex<f32>>,
+    site_j_out: &DeviceBuffer<Complex<f32>>,
+    out: &DeviceBuffer<super::kernel::FinalizeOut>,
     rows: usize,
     cols: usize,
     wide: bool,
     max_bond: usize,
     renormalize: bool,
-) -> Option<SplitResult> {
-    let (m, n) = if wide { (cols, rows) } else { (rows, cols) };
-    let a = &scratch.a.as_slice()[..m * n];
-    let v = &scratch.v.as_slice()[..n * n];
-    let sig = &scratch.sig.as_slice()[..n];
-    // Tall: U=A (rows×k), V=V (cols×k). Wide (factored Aᴴ): U=V (rows×k), V=A (cols×k).
-    let (u_b, v_b) = if wide { (v, a) } else { (a, v) };
-    if recon_residual(theta, u_b, sig, v_b, rows, cols) > RECON_TOL {
-        return None;
-    }
-    split_from_thin(u_b, sig, v_b, rows, cols, max_bond, renormalize)
+) {
+    let k = rows.min(cols);
+    let meta = FinalizeMeta {
+        rows: rows as u32,
+        cols: cols as u32,
+        wide: wide as u32,
+        max_bond: max_bond as u32,
+        renormalize: renormalize as u32,
+        k: k as u32,
+        _pad0: 0,
+        _pad1: 0,
+    };
+    let enc = cmd.new_compute_command_encoder();
+    enc.set_compute_pipeline_state(finalize_pl);
+    enc.set_buffer(0, Some(scratch.a.metal_buffer()), 0);
+    enc.set_buffer(1, Some(scratch.v.metal_buffer()), 0);
+    enc.set_buffer(2, Some(scratch.sig.metal_buffer()), 0);
+    enc.set_buffer(3, Some(site_i_out.metal_buffer()), 0);
+    enc.set_buffer(4, Some(site_j_out.metal_buffer()), 0);
+    enc.set_buffer(5, Some(out.metal_buffer()), 0);
+    enc.set_bytes(
+        6,
+        std::mem::size_of::<FinalizeMeta>() as u64,
+        &meta as *const FinalizeMeta as *const c_void,
+    );
+    enc.set_buffer(7, Some(theta.metal_buffer()), 0);
+    // One threadgroup factors the block; threads stride the sort/assembly, so any
+    // count ≤ the cap is correct.
+    let threads = finalize_pl.max_total_threads_per_threadgroup().min(256);
+    enc.dispatch_thread_groups(MTLSize::new(1, 1, 1), MTLSize::new(threads, 1, 1));
+    enc.end_encoding();
 }
 
 /// Largest power of two `≤ x` (and `≥ 1`); the Jacobi reduction halves the
