@@ -49,6 +49,7 @@ Each issue follows the same template:
 - Phase 4.5 — CPU Parity
 - Phase 4.6 — CPU Depth
 - Phase 5 — GPU Backend
+- Phase 5.5 — Apple/Metal GPU
 - Phase 6 — Multi-GPU & Distributed
 
 -----
@@ -3107,6 +3108,251 @@ Phase exit criterion.
 **References**
 
 - Phase 1, 2 reports for template.
+
+-----
+
+# Phase 5.7 — GPU-resident MPS (Apple/Metal)
+
+Goal: take the MPS-on-Metal scaffold from "correct but CPU-SVD-bottlenecked" to a
+genuinely GPU-resident, usable MPS backend.
+
+> **Backlog note.** The Apple/Metal GPU track (sub-phases 5.5 SV foundation, 5.6
+> hardening, 5.7 this) was built ahead of its backlog entries — the formal Phase 5
+> above is the CUDA/cuQuantum plan; Metal is a separate single-box track on the M4
+> Mac Mini (documented in `docs/perf/metal.md`). This section starts
+> closing that gap: it records the shipped P5.7 work and queues the open Metal
+> follow-ups. 5.5/5.6 remain documented only in `docs/perf/metal.md` /
+> `phase5.5.md`; retro-filing them is optional cleanup, not tracked here.
+>
+> All entries below use the **Phase 5.5 — Apple/Metal GPU** milestone (the GitHub
+> milestone for the whole Metal track). FP32 is the Metal accuracy ceiling (~1e-5).
+
+-----
+
+### [P5.7-01] Complex one-sided Jacobi SVD — CPU reference + faer fallback — **SHIPPED (PR #216)**
+
+**Labels:** `area:backend-mps`, `area:backend-gpu`, `type:feature`
+**Milestone:** Phase 5.5 — Apple/Metal GPU
+**Estimate:** M
+
+One-sided Jacobi thin-SVD in Rust (`mps/jacobi.rs`) — the CPU reference for the
+Metal kernel, wired as the faer convergence fallback. σ = ‖column‖ avoids squaring
+the condition number (the FP32/GPU-friendly route; cf. cuSOLVER `gesvdj`). Validated
+against faer to 1e-10. See `docs/perf/phase5.7.md`.
+
+-----
+
+### [P5.7-02] GPU-resident Jacobi SVD — Metal kernel + dispatch — **SHIPPED (PR #217)**
+
+**Labels:** `area:backend-mps`, `area:backend-gpu`, `type:feature`
+**Milestone:** Phase 5.5 — Apple/Metal GPU
+**Estimate:** L
+
+The same algorithm as a Metal kernel (`mps_jacobi.metal`): one threadgroup factors
+one two-site block, threads stride the rows, threadgroup memory holds only the 2×2
+reduction + rotation scalars. `gpu_jacobi.rs` dispatch handles wide blocks via `Aᴴ`.
+Validated standalone against the CPU reference / faer (reconstruction 1e-4, σ 1e-4).
+
+-----
+
+### [P5.7-03] Wire GPU-resident Jacobi SVD into MetalMpsBackend — **SHIPPED (PR #218)**
+
+**Labels:** `area:backend-mps`, `area:backend-gpu`, `type:optimization`
+**Milestone:** Phase 5.5 — Apple/Metal GPU
+**Estimate:** M
+
+Per-gate split now runs on the GPU (faer = CPU fallback); whole per-gate path is
+GPU-resident. Holds the 1e-5 oracle end-to-end. Split phase ~1390 ms → ~300 ms
+(~4.6×) on the n=12 d=24 brickwall. Report: `docs/perf/phase5.7.md`.
+
+-----
+
+### [P5.7-04] Batched layer-parallel SVD dispatch
+
+**Labels:** `area:backend-mps`, `area:backend-gpu`, `type:optimization`, `priority:high`
+**Milestone:** Phase 5.5 — Apple/Metal GPU
+**Estimate:** M
+**Depends on:** P5.7-03
+
+**Description**
+Factor all independent two-site SVDs of a brickwall layer in a single kernel launch
+(one threadgroup per block) and drop the per-gate `wait_until_completed`.
+
+**Context**
+P5.7-03 made the SVD GPU-resident (~4.6× the faer split) but it still runs one
+threadgroup per gate with a full GPU sync per gate, so per-dispatch latency is now
+~85% of per-gate time (`docs/perf/phase5.7.md`). Gates within a brickwall layer act
+on disjoint site pairs, so their splits are independent and batchable — the named
+next lever.
+
+**Technical Details**
+
+- Group disjoint NN 2q gates into layers (the generic gate-by-gate runner doesn't
+  expose this; either a layering pass or a backend-side scheduler).
+- Pack each block's `(Θ, dims)` with per-block buffer offsets; dispatch grid =
+  `num_blocks` threadgroups; the kernel keys off `threadgroup_position_in_grid`.
+- Pool the `A`/`V`/`sig` buffers to kill per-gate allocation churn.
+- One `commit`/`wait` per layer instead of per gate.
+
+**Acceptance Criteria**
+
+- [ ] A layer's blocks factor in one dispatch; oracle still 1e-5.
+- [ ] Criterion shows the per-gate split share drop materially vs P5.7-03 on
+  n=12 d=24 and on a larger-bond case.
+
+**Testing Requirements**
+Oracle/proptest unchanged; unit test that a disjoint-gate layer matches sequential
+application; bench in the MPS report.
+
+**References**
+`docs/perf/phase5.7.md` "what's next"; cuSOLVER `gesvdjBatched`.
+
+-----
+
+### [P5.7-05] MPS-on-Metal readout: measure / sample / probabilities / expectation
+
+**Labels:** `area:backend-mps`, `area:backend-gpu`, `type:feature`, `priority:high`
+**Milestone:** Phase 5.5 — Apple/Metal GPU
+**Estimate:** L
+**Depends on:** P5.7-03
+
+**Description**
+Implement the `Backend` readout methods that currently return
+`UnsupportedInstruction` on `MetalMpsState` — `measure`, `sample`, `probabilities`,
+`expectation_value` — without forming the dense `2^n` vector.
+
+**Context**
+The scaffold can evolve NN circuits but can only read out via the dense (test-only,
+`2^n`) contraction. Real use needs sampling and expectations at MPS scale.
+
+**Technical Details**
+
+- MPS sampling via conditional probabilities from site contractions (left/right
+  environment sweep); expectation via `⟨ψ|P|ψ⟩` along the chain; run the hot
+  contractions on the GPU.
+- Seeded RNG for reproducibility (`with_seed` already exists).
+
+**Acceptance Criteria**
+
+- [ ] measure/sample/probabilities/expectation match CPU MPS / Aer within tolerance
+  (1e-5 amplitudes; 1e-5 probabilities @100k shots).
+- [ ] No `2^n` allocation in the readout path.
+
+**Testing Requirements**
+Oracle vs CPU MPS + Aer; sampling distribution-closeness (reuse P3-16 helper);
+property: probabilities sum to 1.
+
+**References**
+Schollwöck MPS review (sampling); the CPU MPS readout in `aleph-mps`.
+
+-----
+
+### [P5.7-06] SWAP router for non-nearest-neighbour 2q gates (Metal MPS)
+
+**Labels:** `area:backend-mps`, `area:backend-gpu`, `type:feature`, `priority:medium`
+**Milestone:** Phase 5.5 — Apple/Metal GPU
+**Estimate:** M
+**Depends on:** P5.7-03
+
+**Description**
+Support non-adjacent 2q gates by routing with SWAPs (currently
+`UnsupportedInstruction`).
+
+**Context**
+NN-only blocks QAOA / long-range circuits. The CPU MPS already does this (P3-06,
+lazy-SWAP P3-12); port the approach to Metal.
+
+**Technical Details**
+
+- SWAP network to bring qubits adjacent → apply → (optionally) swap back; or lazy
+  permutation tracking (P3-12) to avoid physical swaps. SWAP is itself an NN 2q gate
+  through the existing contract+apply+SVD path.
+
+**Acceptance Criteria**
+
+- [ ] Arbitrary 2q gate on any pair matches CPU MPS / exact SV within 1e-5.
+- [ ] Oracle extended with non-NN circuits (long-range CX, QAOA-style).
+
+**Testing Requirements**
+Oracle with non-NN circuits; property reversibility.
+
+**References**
+P3-06, P3-12 in this backlog.
+
+-----
+
+### [P5.7-07] Canonical-form MPS on Metal → real truncation
+
+**Labels:** `area:backend-mps`, `area:backend-gpu`, `type:feature`, `priority:high`
+**Milestone:** Phase 5.5 — Apple/Metal GPU
+**Estimate:** L
+**Depends on:** P5.7-03
+
+**Description**
+Maintain an orthogonality centre (canonical form) so a two-site split can
+renormalize the kept σ and **apply** truncation instead of refusing it (P5.6-02).
+
+**Context**
+The scaffold is non-canonical, so any real bond-cap truncation would corrupt
+amplitudes and is therefore refused. Truncation is the whole point of MPS for
+large/entangled circuits; without it the GPU MPS only runs exact (small-bond) cases.
+
+**Technical Details**
+
+- Track the orthogonality centre; move it onto the active bond before each 2q split
+  (QR/normalization sweeps, GPU where hot); after SVD, absorb σ and rescale by
+  `1/√(kept weight)` as the CPU MPS does. Retire the `MPS_TRUNC_TOL` refusal once
+  canonical.
+
+**Acceptance Criteria**
+
+- [ ] Truncated runs (bond cap below natural bond) match CPU MPS within the
+  controlled truncation error.
+- [ ] The bond-cap refusal is replaced by correct compression; oracle on a
+  compressible circuit at a capped χ.
+
+**Testing Requirements**
+Oracle vs CPU MPS at matched `max_bond`; truncation-error accounting; property
+normalization.
+
+**References**
+P3-05 (MPS SVD truncation with controlled error); Schollwöck.
+
+-----
+
+### [P5.7-08] MPS-on-Metal benchmark + Phase 5.7 exit report
+
+**Labels:** `area:backend-mps`, `area:bench`, `area:docs`, `type:docs`, `priority:high`
+**Milestone:** Phase 5.5 — Apple/Metal GPU
+**Estimate:** M
+**Depends on:** P5.7-04
+
+**Description**
+A committed criterion benchmark comparing GPU MPS vs CPU MPS across workloads, plus
+a consolidated Phase 5.7 exit report with a verdict and a stated exit metric.
+
+**Context**
+Current numbers are an ad-hoc ignored timing test on one n=12 d=24 brickwall. A
+proper sweep and an exit metric (e.g. GPU MPS ≥ CPU MPS on ≥1 regime) are needed to
+call the sub-phase done.
+
+**Technical Details**
+
+- Criterion bench under the `metal` feature (device-or-skip); sweep n / depth / χ;
+  report GPU MPS vs CPU MPS wall-clock; fold in P5.7-04 batching.
+- Update `docs/perf/phase5.7.md` / `metal.md` with the verdict.
+
+**Acceptance Criteria**
+
+- [ ] Bench committed + runs locally.
+- [ ] Report published with honest caveats; Phase 5.7 exit metric stated and
+  evaluated.
+
+**Testing Requirements**
+The bench itself; numbers reproduced in the report.
+
+**References**
+`docs/perf/metal.md`, `phase5.5.md` as templates.
 
 -----
 
