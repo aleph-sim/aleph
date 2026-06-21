@@ -18,6 +18,7 @@
 | **P5.7-05** | **Readout** (`mps/readout.rs`): `measure`/`sample`/`probabilities`/`expectation_value` via doubled transfer-matrix sweeps — bond×bond environments, no `2^n`, exact on the non-canonical scaffold. |
 | **P5.7-06** | **SWAP router** (`apply_2q_routed`): non-adjacent 2q gates routed by a physical SWAP network (apply → unwind), restoring site≡qubit order; wired into `run` and `run_batched`. |
 | **P5.7-07** | **Canonical form → real truncation** (`mps/canonical.rs`): track an orthogonality centre (SVD-based QR/LQ moves), renormalise the kept σ, and *apply* a bond-cap truncation on the `run` path instead of refusing it. |
+| **P5.7-08** | **Exit benchmark + report** (`benches/mps_vs_cpu.rs` + this report's verdict): GPU MPS vs CPU MPS sweep, exit metric stated and evaluated. |
 
 ### Why one-sided Jacobi
 It orthogonalizes the *columns* of Θ′ by right-multiplying 2×2 unitary rotations, so
@@ -142,3 +143,83 @@ small; the lever there is the per-block factorization, not the launch count.
   circuits drifted to a ~1e-1 norm error; with it they hold the ~1e-3 routed-f32
   budget. A higher-precision GPU SVD (or a GPU-side orthogonality polish) would let
   more blocks stay on-device — a follow-up.
+
+-----
+
+## Phase 5.7 exit report (P5.7-08)
+
+### What the sub-phase delivered
+
+The MPS-on-Metal backend went from "correct but CPU-SVD-bottlenecked" (end of 5.6)
+to **GPU-resident and feature-complete**:
+
+- the two-site split runs on the GPU (one-sided Jacobi kernel, P5.7-01/02/03);
+- a brickwall layer's disjoint splits batch into one dispatch (P5.7-04);
+- full readout — `measure`/`sample`/`probabilities`/`expectation_value` — with no
+  `2^n` allocation (P5.7-05);
+- non-nearest-neighbour gates via a SWAP router (P5.7-06);
+- canonical form, so a bond-cap truncation is **applied** with controlled error,
+  not refused (P5.7-07).
+
+Correctness is gated end-to-end vs the CPU MPS **and** the exact FP64 statevector
+(`mps_oracle`, `mps_readout`, `mps_proptest`), including a capped-χ truncation
+oracle and a GHZ n=26 no-`2^n` readout check.
+
+### Benchmark — GPU MPS vs CPU MPS
+
+`benches/mps_vs_cpu.rs`, M4 Mac Mini, live desktop, load ≈ 2.4 (not idle — treat as
+order-of-magnitude), bond cap 256 (no truncation; exact compare). Median wall-clock
+per circuit; `gpu_batched` is `run_batched` (P5.7-04), `cpu` is `aleph_mps::MpsBackend`.
+
+**NN random brickwall, depth 24:**
+
+| n | cpu | gpu_batched | gpu_batched ÷ cpu |
+|---|-----|-------------|-------------------|
+| 8  | 0.81 ms | 84 ms | 104× |
+| 10 | 3.5 ms | 236 ms | 66× |
+| 12 | 17.6 ms | 381 ms | 22× |
+| 14 | 95 ms | 1.10 s | 12× |
+
+**Bond-saturating brickwall (`brickwall_ry_cnot_rz`, central bond → 2^(n/2)):**
+
+| n | cpu | gpu_batched | gpu_batched ÷ cpu |
+|---|-----|-------------|-------------------|
+| 8  | 0.30 ms | 56 ms | 189× |
+| 10 | 1.0 ms | 109 ms | 106× |
+| 12 | 2.9 ms | 182 ms | 62× |
+| 14 | 4.6 ms | 280 ms | 61× |
+
+Batching helps ~1.1–1.3× over gate-by-gate `gpu`, consistent with P5.7-04.
+
+### Exit metric — **not met**
+
+The stated exit metric was *GPU MPS ≥ CPU MPS wall-clock on ≥ 1 regime*. It is **not
+met**: the Phase-3 CPU MPS (f64 faer SVD, rayon, years-tuned) is **12–190× faster**
+than the GPU MPS across every cell measured. Honest verdict: **Phase 5.7 succeeds on
+correctness and feature-completeness, and fails its performance exit metric.**
+
+Why the GPU loses at these scales:
+
+- **Per-op dispatch latency dominates.** Each two-site gate is a handful of small
+  Metal dispatches with a host sync; at bond χ ≤ 128 the kernels finish in
+  microseconds but the launch/sync + unified-memory readback cost far more.
+- **Host overhead is large and serial.** Column-major packing, σ-sort, χ-selection,
+  canonical-form SVD sweeps, and site-tensor rebuild all run on the host per gate.
+- **The CPU baseline is exceptional at small/medium bond.** faer's blocked SVD on a
+  warm cache beats a cold GPU dispatch until the SVD FLOPs are large enough to hide
+  the launch cost — i.e. χ in the high hundreds / large n.
+
+The one encouraging trend: on the NN brickwall the gap **halves per +2 qubits**
+(104× → 12× over n = 8 → 14) as growing bond gives the GPU more work to amortise; a
+naive extrapolation puts crossover around n ≈ 18–20 — beyond the scaffold's 28-qubit
+dense-readout test cap, so not reachable by this bench. The bond-saturating regime
+plateaus near 60×, where faer stays dominant.
+
+### What would move the needle (future work)
+
+- **Cut per-gate host/sync overhead:** GPU-side packing/unpacking and canonical-form
+  moves (QR on-device), fewer `wait_until_completed`s, a persistent buffer pool.
+- **Higher-precision / faster GPU SVD:** an on-device orthogonality polish so fewer
+  blocks fall back to f64 (P5.7-07 guard), and a blocked GPU SVD for large χ.
+- **Push to the large-χ / large-n regime** where the GPU SVD FLOPs dominate — needs
+  lifting the dense-readout test cap (readout is already `2^n`-free since P5.7-05).
