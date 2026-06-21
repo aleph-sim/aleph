@@ -133,3 +133,12 @@ small; the lever there is the per-block factorization, not the launch count.
 - **Canonicalisation is host-side, SVD-based.** The centre moves via a thin SVD per
   stepped site (an SVD-standing-in-for-QR); a QR move and GPU offload would cut the
   per-move cost — a follow-up, not needed for correctness.
+- **GPU-Jacobi accuracy guard (added here).** The f32 one-sided Jacobi can
+  mis-converge on an ill-conditioned two-site block (its U then not quite isometric),
+  a small per-gate error that compounds the state norm over a deep/SWAP-routed
+  circuit. `gpu_svd_split` now checks the reconstruction residual `‖Θ′−UΣVᴴ‖/‖Θ′‖`
+  and degrades that block to the f64 faer SVD when it exceeds ~1e-3 (well-conditioned
+  blocks pass at ~1e-4 and stay on the GPU). Without it, random depth-≳13 routed
+  circuits drifted to a ~1e-1 norm error; with it they hold the ~1e-3 routed-f32
+  budget. A higher-precision GPU SVD (or a GPU-side orthogonality polish) would let
+  more blocks stay on-device — a follow-up.

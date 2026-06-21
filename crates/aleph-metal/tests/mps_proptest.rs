@@ -1,9 +1,10 @@
 //! P5.6-06: property + rejection coverage for `MetalMpsBackend`.
 //!
-//! * Property: a random **nearest-neighbour** circuit's dense statevector must
-//!   match the CPU `aleph_mps::MpsBackend` within the f32 oracle tolerance. The
-//!   bond cap stays above the (small-n, bounded-depth) entanglement, so neither
-//!   MPS truncates and the compare is exact-to-fp32.
+//! * Property: a random circuit (NN *and* SWAP-routed non-NN 2q gates) must match
+//!   the CPU `aleph_mps::MpsBackend`. The bond cap stays above the (small-n,
+//!   bounded-depth) entanglement, so neither MPS truncates; the compare is to a
+//!   routed-f32 budget (~1e-3), the per-split f32 SVD residual accumulated over the
+//!   circuit (representative circuits are pinned to 1e-5 by the structured oracle).
 //! * Rejection: every unsupported *gate* path (external control, fused
 //!   `UnitaryKq`, non-NN 2q, 3q) must return `UnsupportedInstruction`, not
 //!   silently mis-handle the input. (Readout — measure/sample/probabilities/
@@ -93,21 +94,57 @@ proptest! {
         let circuit = random_circuit(&mut rng, n, gates);
         let want = cpu_mps_dense(&circuit);
 
+        // Tolerance 1e-3, not the 1e-5 exact-circuit floor: each GPU Jacobi split
+        // reconstructs to ~1e-4 (its f32 ceiling; an ill-conditioned block that
+        // mis-converges is caught by the recon guard and re-done in f64), and a
+        // non-NN gate is SWAP-routed (P5.7-06) into several such splits, so a deep
+        // random circuit accumulates to ~1e-3 on both paths. Exact 1e-5 agreement
+        // for representative circuits is pinned by the structured oracles.
         let got = gpu.run(&circuit).expect("gpu mps run").dense_statevector();
         prop_assert_eq!(got.len(), want.len());
         for (i, (g, w)) in got.iter().zip(want.iter()).enumerate() {
             let d = ((g.re - w.re).powi(2) + (g.im - w.im).powi(2)).sqrt();
-            prop_assert!(d <= 1e-5, "amp {i}: |Δ|={d:.3e} (n={n}, gates={gates}, seed={seed})");
+            prop_assert!(d <= 1e-3, "amp {i}: |Δ|={d:.3e} (n={n}, gates={gates}, seed={seed})");
         }
 
-        // P5.7-04: the layer-batched scheduler must agree with the CPU MPS too.
+        // P5.7-04: the layer-batched scheduler must also agree with the CPU MPS,
+        // same 1e-3 routed-f32 budget (it SWAP-routes non-NN gates too).
         let got_b = gpu.run_batched(&circuit).expect("gpu mps run_batched").dense_statevector();
         prop_assert_eq!(got_b.len(), want.len());
         for (i, (g, w)) in got_b.iter().zip(want.iter()).enumerate() {
             let d = ((g.re - w.re).powi(2) + (g.im - w.im).powi(2)).sqrt();
-            prop_assert!(d <= 1e-5, "batched amp {i}: |Δ|={d:.3e} (n={n}, gates={gates}, seed={seed})");
+            prop_assert!(d <= 1e-3, "batched amp {i}: |Δ|={d:.3e} (n={n}, gates={gates}, seed={seed})");
         }
     }
+}
+
+/// Regression for the P5.7-07 cross-path bug: `run_batched` routed a non-NN gate
+/// through the canonical `apply_2q_nn`, whose centre-move corrupted the
+/// (non-canonical) batched state. This exact seed/n/gates produced |Δ|≈8.5e-2 on
+/// the batched path before routing was switched to the exact (non-canonical) mode.
+#[test]
+fn run_batched_non_nn_regression() {
+    let Some(mut gpu) = MetalMpsBackend::with_max_bond(MAX_BOND).ok() else {
+        return; // headless: skip
+    };
+    let mut rng = StdRng::seed_from_u64(892_925_150_479_994_423);
+    let circuit = random_circuit(&mut rng, 5, 11);
+    let got = gpu
+        .run_batched(&circuit)
+        .expect("run_batched")
+        .dense_statevector();
+    let want = cpu_mps_dense(&circuit);
+    prop_assert_eq_len(&got, &want);
+    // The bug produced |Δ|≈8.5e-2; the fix brings it back into the routed-f32
+    // budget (1e-3), far below the corruption it regressed against.
+    for (i, (g, w)) in got.iter().zip(want.iter()).enumerate() {
+        let d = ((g.re - w.re).powi(2) + (g.im - w.im).powi(2)).sqrt();
+        assert!(d <= 1e-3, "batched amp {i}: |Δ|={d:.3e}");
+    }
+}
+
+fn prop_assert_eq_len(a: &[aleph_core::Complex<f64>], b: &[aleph_core::Complex<f64>]) {
+    assert_eq!(a.len(), b.len(), "dim mismatch");
 }
 
 /// Apply `inst` to a fresh `n`-qubit state and return the backend error.

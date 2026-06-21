@@ -158,6 +158,14 @@ pub(crate) fn gpu_svd_split(
     renormalize: bool,
 ) -> Option<SplitResult> {
     let svd = gpu_thin_svd(ctx, pipeline, theta, rows, cols);
+    // Accuracy guard: the single-precision one-sided Jacobi can mis-converge on an
+    // ill-conditioned block (clustered/large-spread singular values), leaving U not
+    // quite isometric — a small per-gate error that compounds the state norm over a
+    // deep circuit. Verify ‖Θ′ − UΣVᴴ‖_F is small; if not, degrade to the f64 faer
+    // SVD (as for a non-finite result). Well-conditioned blocks pass at ~1e-4.
+    if recon_residual(theta, &svd.u, &svd.sigma, &svd.v, rows, cols) > RECON_TOL {
+        return None;
+    }
     split_from_thin(
         &svd.u,
         &svd.sigma,
@@ -168,6 +176,48 @@ pub(crate) fn gpu_svd_split(
         renormalize,
     )
 }
+
+/// Relative Frobenius residual `‖Θ − UΣVᴴ‖_F / ‖Θ‖_F` of a thin SVD, in f64.
+/// `u`/`v` are column-major (rows×k / cols×k), `sigma` length `k = min(rows,cols)`.
+fn recon_residual(
+    theta: &[Complex<f32>],
+    u: &[Complex<f32>],
+    sigma: &[f32],
+    v: &[Complex<f32>],
+    rows: usize,
+    cols: usize,
+) -> f64 {
+    let k = rows.min(cols);
+    let mut num = 0.0f64;
+    let mut den = 0.0f64;
+    for i in 0..rows {
+        for j in 0..cols {
+            let mut acc = Complex::<f64>::new(0.0, 0.0);
+            for t in 0..k {
+                let uu = u[i + t * rows];
+                let vv = v[j + t * cols];
+                let uf = Complex::<f64>::new(uu.re as f64, uu.im as f64);
+                let vf = Complex::<f64>::new(vv.re as f64, -vv.im as f64); // conj(V)
+                acc += uf * (sigma[t] as f64) * vf;
+            }
+            let e = theta[i * cols + j];
+            let dr = acc.re - e.re as f64;
+            let di = acc.im - e.im as f64;
+            num += dr * dr + di * di;
+            den += (e.re as f64) * (e.re as f64) + (e.im as f64) * (e.im as f64);
+        }
+    }
+    if den > 0.0 {
+        (num / den).sqrt()
+    } else {
+        0.0
+    }
+}
+
+/// Relative-residual ceiling for accepting a GPU Jacobi split. Converged f32
+/// blocks reconstruct to ~1e-4; a mis-converged block lands far above this and is
+/// re-factored on the f64 CPU path.
+const RECON_TOL: f64 = 1e-3;
 
 /// Build the truncated two-site split from thin-SVD factors in [`GpuThinSvd`]'s
 /// column-major layout (`u`: rows×k, `v`: cols×k, `sigma`: k, `k = min(rows,cols)`),
@@ -203,9 +253,12 @@ fn split_from_thin(
     let (chi, discarded) = truncation_plan(&sigmas_desc, max_bond);
     let total: f64 = sigmas_desc.iter().map(|s| s * s).sum();
     let trunc_rel = if total > 0.0 { discarded / total } else { 0.0 };
-    // Renormalisation so the kept block keeps the pre-truncation norm. kept_weight
-    // = Σ_kept σ²; scale = 1/√kept_weight (1.0 when not renormalising or exact).
-    let scale = if renormalize {
+    // Renormalise the kept block to unit weight ONLY on a real truncation. When
+    // nothing is dropped (`trunc_rel` ≈ 0), rescaling by 1/√Σσ² would inject the
+    // GPU σ's f32 error into the state norm on *every* gate and compound across the
+    // circuit — so leave σ verbatim there (the split is exact). On a genuine
+    // truncation, scale = 1/√Σ_kept σ² restores the centre-on-bond norm (P5.7-07).
+    let scale = if renormalize && trunc_rel > 1e-12 {
         let kept: f64 = sigmas_desc[..chi].iter().map(|s| s * s).sum();
         if kept > 0.0 {
             (1.0 / kept).sqrt() as f32
@@ -363,12 +416,18 @@ pub(crate) fn gpu_svd_split_batch(
         let sig_slice = &sig_out[sig_off..sig_off + n];
         // Tall: A→U (rows×k), V→V (cols×k). Wide (factored Aᴴ): the original
         // U = Ṽ (= V-of-Aᴴ, rows×k) and V = Ũ (= A-of-Aᴴ, cols×k); k = n.
-        // Batched path is exact-only (run_batched): no renormalisation; the caller
-        // refuses any truncation.
-        let split = if wide {
-            split_from_thin(v_slice, sig_slice, a_slice, rows, cols, max_bond, false)
+        let (u_b, v_b) = if wide {
+            (v_slice, a_slice)
         } else {
-            split_from_thin(a_slice, sig_slice, v_slice, rows, cols, max_bond, false)
+            (a_slice, v_slice)
+        };
+        // Same accuracy guard as the single-block path: a mis-converged f32 block
+        // degrades to the f64 CPU SVD (caller maps `None` → `svd_split`). Batched
+        // path is exact-only (run_batched): `renormalize = false`.
+        let split = if recon_residual(blk.theta, u_b, sig_slice, v_b, rows, cols) > RECON_TOL {
+            None
+        } else {
+            split_from_thin(u_b, sig_slice, v_b, rows, cols, max_bond, false)
         };
         out.push(split);
     }

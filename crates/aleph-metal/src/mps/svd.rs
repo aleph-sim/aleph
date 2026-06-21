@@ -96,8 +96,10 @@ pub(crate) fn svd_split(
     // (non-unit) block norm. `total == 0` only for an all-zero block ⇒ no loss.
     let total: f64 = sigmas.iter().map(|s| s * s).sum();
     let trunc_rel = if total > 0.0 { discarded / total } else { 0.0 };
-    // Renormalisation factor (1.0 when exact): scale = 1/√Σ_kept σ².
-    let scale = if renormalize {
+    // Renormalise to unit weight ONLY on a real truncation (see `split_from_thin`):
+    // rescaling when nothing is dropped would inject SVD f32 error into the norm
+    // every gate. scale = 1/√Σ_kept σ² on a genuine truncation, else 1.0.
+    let scale = if renormalize && trunc_rel > 1e-12 {
         let kept: f64 = sigmas[..chi].iter().map(|s| s * s).sum();
         if kept > 0.0 {
             (1.0 / kept).sqrt()

@@ -331,12 +331,20 @@ impl MetalMpsBackend {
     /// Apply a NN 2q gate `m` (4×4, `qa`=MSB, `qb`=LSB) to adjacent sites:
     /// GPU contract → GPU gate-apply → host truncated-SVD split. `qa.abs_diff(qb)`
     /// must be 1 (enforced by the caller).
+    ///
+    /// `canonical` selects the regime (the two cannot mix on one state):
+    /// - `true` (the `run`/`apply_gate` path, P5.7-07): move the orthogonality
+    ///   centre onto the active bond first, renormalise the kept σ, and *apply* a
+    ///   bond-cap truncation; the new centre is `j`.
+    /// - `false` (the exact `run_batched` routing path): no centre is maintained,
+    ///   σ are kept verbatim, and a real truncation is refused (P5.6-02).
     fn apply_2q_nn(
         &mut self,
         state: &mut MetalMpsState,
         qa: usize,
         qb: usize,
         m: &[[Complex<f64>; 4]; 4],
+        canonical: bool,
     ) -> Result<(), BackendError> {
         let i = qa.min(qb);
         let j = i + 1;
@@ -345,9 +353,11 @@ impl MetalMpsBackend {
         let i_is_msb = qa == i;
         // Canonical form (P5.7-07): move the orthogonality centre onto the active
         // bond so the gated block has Frobenius² = ⟨ψ|ψ⟩ and the truncated split
-        // can renormalise the kept σ — i.e. *apply* truncation rather than refuse
-        // it. Canonicalisation can change the bonds, so read dims afterwards.
-        super::canonical::move_center_to(&self.ctx, &mut state.sites, &mut state.center, i)?;
+        // can renormalise the kept σ. Canonicalisation can change the bonds, so
+        // read dims afterwards. Skipped on the exact (non-canonical) path.
+        if canonical {
+            super::canonical::move_center_to(&self.ctx, &mut state.sites, &mut state.center, i)?;
+        }
         let li = state.sites[i].left;
         let ci = state.sites[i].right;
         debug_assert_eq!(
@@ -397,15 +407,12 @@ impl MetalMpsBackend {
         self.gpu_ns += gpu_start.elapsed().as_nanos();
 
         // --- SVD split: GPU-resident (P5.7-03), CPU faer as the fallback ---
-        // The one-sided Jacobi kernel factorizes Θ' on the GPU, eliminating the
-        // CPU round-trip that dominated per-gate time (the documented ~94.5%). The
-        // f64 faer `svd_split` stays the safety net for a non-finite GPU result.
-        // The slice is current: dispatch_apply2q waited.
-        // Canonical/truncating split (`renormalize = true`): the kept σ are
-        // rescaled to preserve the (centre-on-bond) norm, so a bond-cap truncation
-        // is *applied* with controlled error instead of refused (P5.7-07). faer is
-        // the f64 fallback for a non-finite GPU result. Site i ← U is left-canonical
-        // and site j carries the renormalised σ·Vᴴ, so the new centre is j.
+        // The one-sided Jacobi kernel factorizes Θ' on the GPU; faer is the f64
+        // fallback for a non-finite GPU result. The slice is current (the apply
+        // waited). `renormalize = canonical`: on the canonical path the kept σ are
+        // rescaled to preserve the centre-on-bond norm so a bond-cap truncation is
+        // *applied* (P5.7-07); on the exact path σ are verbatim and a real
+        // truncation is refused below (P5.6-02).
         let svd_start = std::time::Instant::now();
         let (chi, site_i_data, site_j_data, trunc) = match gpu_svd_split(
             &self.ctx,
@@ -414,16 +421,27 @@ impl MetalMpsBackend {
             rows,
             cols,
             self.max_bond,
-            true,
+            canonical,
         ) {
             Some(split) => split,
-            None => svd_split(theta.as_slice(), rows, cols, self.max_bond, true)?,
+            None => svd_split(theta.as_slice(), rows, cols, self.max_bond, canonical)?,
         };
         // Surface the discarded Schmidt weight (≈0 unless the bond cap binds).
         self.trunc_error += trunc;
+        if !canonical && trunc > MPS_TRUNC_TOL {
+            // Exact path has no centre to renormalise against — refuse, leaving the
+            // pre-gate MPS intact (P5.6-02).
+            self.svd_ns += svd_start.elapsed().as_nanos();
+            return Err(BackendError::MpsTruncationUnsupported {
+                max_bond: self.max_bond,
+                trunc_error: trunc,
+            });
+        }
         state.sites[i] = SiteTensor::from_host(&self.ctx, li, chi, &site_i_data);
         state.sites[j] = SiteTensor::from_host(&self.ctx, chi, ri, &site_j_data);
-        state.center = j;
+        if canonical {
+            state.center = j;
+        }
         self.svd_ns += svd_start.elapsed().as_nanos();
         Ok(())
     }
@@ -436,12 +454,16 @@ impl MetalMpsBackend {
     /// are unwound — so the scaffold's site≡qubit-order invariant is restored and
     /// the readout/dense paths stay correct. CPU MPS does the same (P3-06); lazy
     /// permutation tracking (P3-12) is avoided here precisely to keep that invariant.
+    /// `canonical` is threaded to every NN sub-apply (SWAPs + the gate) so the
+    /// whole routed sequence stays in one regime — the canonical (`run`) or the
+    /// exact (`run_batched`) path. Mixing the two on one state is incorrect.
     fn apply_2q_routed(
         &mut self,
         state: &mut MetalMpsState,
         qa: usize,
         qb: usize,
         m: &[[Complex<f64>; 4]; 4],
+        canonical: bool,
     ) -> Result<(), BackendError> {
         let i = qa.min(qb);
         let j = qa.max(qb);
@@ -452,18 +474,18 @@ impl MetalMpsBackend {
         // m = j-1, j-2, …, i+1. After this, sites i and i+1 hold the two targets,
         // in the same relative order as qubit indices (lower index on site i).
         for s in (i + 1..j).rev() {
-            self.apply_2q_nn(state, s, s + 1, &swap)?;
+            self.apply_2q_nn(state, s, s + 1, &swap, canonical)?;
         }
 
         // Apply the gate on the adjacent pair, preserving orientation: the lower
         // qubit index sits on site i, so the (site_of_qa, site_of_qb) order tracks
         // (qa, qb), and `apply_2q_nn`'s own min/i_is_msb logic picks the map.
         let (pa, pb) = if qa < qb { (i, i + 1) } else { (i + 1, i) };
-        self.apply_2q_nn(state, pa, pb, m)?;
+        self.apply_2q_nn(state, pa, pb, m, canonical)?;
 
         // Unwind the SWAP network (reverse order) to restore site≡qubit ordering.
         for s in (i + 1)..j {
-            self.apply_2q_nn(state, s, s + 1, &swap)?;
+            self.apply_2q_nn(state, s, s + 1, &swap, canonical)?;
         }
         Ok(())
     }
@@ -567,9 +589,11 @@ impl MetalMpsBackend {
                         if qa.abs_diff(qb) != 1 {
                             // Non-NN: flush the pending layer, then route via SWAPs
                             // (gate-by-gate; the SWAP network can't join a batch).
+                            // `run_batched` is exact-only (non-canonical), so route
+                            // with `canonical = false`.
                             self.flush_layer(&mut state, &layer)?;
                             reset(&mut layer, &mut busy);
-                            self.apply_2q_routed(&mut state, qa as usize, qb as usize, &m)?;
+                            self.apply_2q_routed(&mut state, qa as usize, qb as usize, &m, false)?;
                             continue;
                         }
                         let i = qa.min(qb) as usize;
@@ -835,11 +859,12 @@ impl Backend for MetalMpsBackend {
             GateMatrix::M4x4(m) => {
                 let qa = gate.qubits[0];
                 let qb = gate.qubits[1];
+                // The `apply_gate`/`run` path maintains canonical form (P5.7-07).
                 if qa.abs_diff(qb) == 1 {
-                    self.apply_2q_nn(state, qa as usize, qb as usize, &m)
+                    self.apply_2q_nn(state, qa as usize, qb as usize, &m, true)
                 } else {
                     // Non-adjacent: route with a physical SWAP network (P5.7-06).
-                    self.apply_2q_routed(state, qa as usize, qb as usize, &m)
+                    self.apply_2q_routed(state, qa as usize, qb as usize, &m, true)
                 }
             }
             GateMatrix::M8x8(_) => Err(BackendError::UnsupportedInstruction {
