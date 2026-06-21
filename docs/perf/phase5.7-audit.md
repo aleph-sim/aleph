@@ -86,3 +86,12 @@ gaps (SVD→QR moves, physical→lazy SWAP, host→GPU residency) still loses.
 Phase 5.8 (`BACKLOG.md`): P5.8-01 large-χ harness → P5.8-02 buffer pool →
 P5.8-03 GPU-resident pipeline → P5.8-04 GPU QR canonicalisation →
 P5.8-05 lazy SWAP → P5.8-06 exit re-bench + verdict.
+
+**Outcome (`docs/perf/phase5.8.md`):** all six shipped — the per-gate host
+round-trips, allocations, and host SVDs this audit named are gone (fully
+GPU-resident, zero steady-state allocation, QR moves, lazy SWAP). But the exit
+metric (GPU MPS ≥ CPU MPS on ≥ 1 regime) is **still unmet**: the GPU is 16× slower at
+n=16 and the gap *grows* with n (≈22× at n=20). The residual limiter is the
+**single-threadgroup per-block factorisation** — it caps usable parallelism well
+below what an O(χ³) block needs, so faer's multi-core SVD/QR keeps winning. A
+multi-threadgroup factorisation is the precondition for any crossover.
