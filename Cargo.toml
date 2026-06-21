@@ -16,6 +16,7 @@ members = [
     "crates/aleph-py",
     "crates/aleph-test",
     "crates/aleph-metal",
+    "crates/aleph-cuda",
     "benches",
 ]
 
