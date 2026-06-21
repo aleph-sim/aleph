@@ -7,11 +7,12 @@
 //! the host read is zero-copy, but the SVD runs single-threaded on the CPU while
 //! the GPU is idle, then the two factor tensors are uploaded into fresh buffers.
 
+use super::jacobi::{jacobi_thin_svd, ThinSvd};
 use aleph_backend::BackendError;
 use aleph_core::Complex;
 use faer::dyn_stack::{MemBuffer, MemStack};
 use faer::linalg::svd::{svd, svd_scratch, ComputeSvdVectors};
-use faer::{Mat, Par};
+use faer::{Mat, MatRef, Par};
 
 /// Minimum `min(rows, cols)` of the two-site block Θ′ at which the SVD switches
 /// from `Par::Seq` to rayon-parallel (P5.6-07). Below it the factorization is too
@@ -77,11 +78,53 @@ pub(crate) fn svd_split(
         Complex::new(z.re as f64, z.im as f64)
     });
     let size = rows.min(cols);
-    // Parallelise the factorization only once the block is big enough to pay for
-    // rayon's fork/join (P5.6-07). Small early-circuit blocks stay `Par::Seq`;
-    // deep-entanglement blocks (large bond ⇒ rows/cols up to 2·χ) fan out, where
-    // the host SVD used to be 94.5% of per-gate time. `Par::rayon(0)` uses
-    // rayon's default thread count.
+    let ThinSvd {
+        u,
+        sigma: sigmas,
+        v,
+    } = factor(a.as_ref(), size)?;
+    let (chi, discarded) = truncation_plan(&sigmas, max_bond);
+    // Normalize the dropped weight by the block's own Frobenius weight so the
+    // backend can compare it against a precision tolerance regardless of the
+    // (non-unit) block norm. `total == 0` only for an all-zero block ⇒ no loss.
+    let total: f64 = sigmas.iter().map(|s| s * s).sum();
+    let trunc_rel = if total > 0.0 { discarded / total } else { 0.0 };
+    // Exact σ (no renormalization) — see `truncation_plan` rationale.
+    let s_kept: &[f64] = &sigmas[..chi];
+
+    // Site i ← U[:, :chi]: row-major (li,2,chi) = rows×chi, data[row*chi + t].
+    let mut site_i = vec![Complex::<f32>::new(0.0, 0.0); rows * chi];
+    for row in 0..rows {
+        for t in 0..chi {
+            site_i[row * chi + t] = narrow(u[(row, t)]);
+        }
+    }
+    // Site j ← diag(σ_kept)·Vᴴ: row-major (chi,2,ri) = chi×cols, data[t*cols + col]
+    // = σ_kept[t]·conj(V[col, t]).
+    let mut site_j = vec![Complex::<f32>::new(0.0, 0.0); chi * cols];
+    for t in 0..chi {
+        for col in 0..cols {
+            let vh = v[(col, t)].conj() * s_kept[t];
+            site_j[t * cols + col] = narrow(vh);
+        }
+    }
+    Ok((chi, site_i, site_j, trunc_rel))
+}
+
+/// Thin SVD of the widened block → owned `(U(rows×size), V(cols×size), σ desc)`.
+///
+/// Production path is faer (rayon-parallel once the block clears
+/// [`PAR_SVD_MIN_DIM`], P5.6-07). On the rare faer non-convergence we retry with
+/// the in-house one-sided Jacobi SVD ([`jacobi_thin_svd`]) — the same algorithm the
+/// GPU-resident Metal kernel will run (P5.7) — so a faer hiccup degrades to a
+/// slower-but-correct factorization instead of failing the gate. faer and Jacobi
+/// return the same layout (`U(rows×size)`, `V(cols×size)`, σ descending), so the
+/// caller is agnostic to which produced the factors.
+fn factor(a: MatRef<'_, Complex>, size: usize) -> Result<ThinSvd, BackendError> {
+    let (rows, cols) = a.shape();
+    // Parallelise only once the block is big enough to pay for rayon's fork/join.
+    // Small early-circuit blocks stay `Par::Seq`; deep-entanglement blocks (bond
+    // χ ⇒ rows/cols up to 2·χ) fan out, where the host SVD dominated per-gate time.
     let par = if size >= PAR_SVD_MIN_DIM {
         Par::rayon(0)
     } else {
@@ -99,48 +142,26 @@ pub(crate) fn svd_split(
         Default::default(),
     );
     let mut mem = MemBuffer::new(req);
-    svd(
-        a.as_ref(),
+    match svd(
+        a,
         s.as_mut(),
         Some(u.as_mut()),
         Some(v.as_mut()),
         par,
         MemStack::new(&mut mem),
         Default::default(),
-    )
-    .map_err(|_| BackendError::InvalidState {
-        reason: "MPS two-site SVD failed to converge",
-    })?;
-
-    let sigmas: Vec<f64> = (0..size).map(|t| s.as_ref()[t].re).collect();
-    let (chi, discarded) = truncation_plan(&sigmas, max_bond);
-    // Normalize the dropped weight by the block's own Frobenius weight so the
-    // backend can compare it against a precision tolerance regardless of the
-    // (non-unit) block norm. `total == 0` only for an all-zero block ⇒ no loss.
-    let total: f64 = sigmas.iter().map(|s| s * s).sum();
-    let trunc_rel = if total > 0.0 { discarded / total } else { 0.0 };
-    // Exact σ (no renormalization) — see `truncation_plan` rationale.
-    let s_kept: &[f64] = &sigmas[..chi];
-
-    let u_ref = u.as_ref();
-    let v_ref = v.as_ref();
-    // Site i ← U[:, :chi]: row-major (li,2,chi) = rows×chi, data[row*chi + t].
-    let mut site_i = vec![Complex::<f32>::new(0.0, 0.0); rows * chi];
-    for row in 0..rows {
-        for t in 0..chi {
-            site_i[row * chi + t] = narrow(u_ref[(row, t)]);
+    ) {
+        Ok(()) => {
+            let sigma = (0..size).map(|t| s.as_ref()[t].re).collect();
+            Ok(ThinSvd { u, sigma, v })
         }
+        // faer failed to converge — fall back to the in-house Jacobi SVD before
+        // surfacing an error. Correctness over speed: a correct slow split beats a
+        // failed gate. (Empty/degenerate blocks never reach here: size ≥ 1.)
+        Err(_) => jacobi_thin_svd(a).ok_or(BackendError::InvalidState {
+            reason: "MPS two-site SVD failed to converge",
+        }),
     }
-    // Site j ← diag(σ_kept)·Vᴴ: row-major (chi,2,ri) = chi×cols, data[t*cols + col]
-    // = σ_kept[t]·conj(V[col, t]).
-    let mut site_j = vec![Complex::<f32>::new(0.0, 0.0); chi * cols];
-    for t in 0..chi {
-        for col in 0..cols {
-            let vh = v_ref[(col, t)].conj() * s_kept[t];
-            site_j[t * cols + col] = narrow(vh);
-        }
-    }
-    Ok((chi, site_i, site_j, trunc_rel))
 }
 
 #[cfg(test)]

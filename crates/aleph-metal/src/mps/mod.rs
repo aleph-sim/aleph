@@ -3,6 +3,7 @@
 //! host-side `faer` truncated SVD per NN 2q gate.
 
 mod backend;
+mod jacobi;
 mod kernel;
 mod state;
 mod svd;
