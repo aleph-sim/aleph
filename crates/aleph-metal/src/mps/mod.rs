@@ -7,6 +7,7 @@ mod backend;
 mod gpu_jacobi;
 mod jacobi;
 mod kernel;
+mod readout;
 mod state;
 mod svd;
 

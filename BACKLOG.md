@@ -3217,12 +3217,23 @@ application; bench in the MPS report.
 
 -----
 
-### [P5.7-05] MPS-on-Metal readout: measure / sample / probabilities / expectation
+### [P5.7-05] MPS-on-Metal readout: measure / sample / probabilities / expectation — **SHIPPED (PR #232)**
 
 **Labels:** `area:backend-mps`, `area:backend-gpu`, `type:feature`, `priority:high`
 **Milestone:** Phase 5.5 — Apple/Metal GPU
 **Estimate:** L
 **Depends on:** P5.7-03
+
+> **Shipped (PR #232).** `mps/readout.rs`: `measure`/`sample`/`probabilities`/
+> `expectation_value` via doubled (bra⊗ket) transfer-matrix sweeps — exact for the
+> non-canonical scaffold (no dependence on P5.7-07 canonical form), bond×bond
+> environments only, **no `2^n`**. Perfect (Ferris–Vidal) sampling uses
+> precomputed right environments; `measure` projects + rescales the site leg;
+> `with_seed` now drives a real RNG. Oracle (`mps_readout.rs`) matches CPU MPS +
+> exact FP64 SV within 1e-5, sampling distribution-close at 20k shots, and a
+> GHZ n=26 case checks readout with no dense vector. Contractions run host-side
+> (zero-copy from unified memory); GPU offload of the transfer step is a noted
+> follow-up.
 
 **Description**
 Implement the `Backend` readout methods that currently return
@@ -3242,9 +3253,9 @@ The scaffold can evolve NN circuits but can only read out via the dense (test-on
 
 **Acceptance Criteria**
 
-- [ ] measure/sample/probabilities/expectation match CPU MPS / Aer within tolerance
+- [x] measure/sample/probabilities/expectation match CPU MPS / Aer within tolerance
   (1e-5 amplitudes; 1e-5 probabilities @100k shots).
-- [ ] No `2^n` allocation in the readout path.
+- [x] No `2^n` allocation in the readout path.
 
 **Testing Requirements**
 Oracle vs CPU MPS + Aer; sampling distribution-closeness (reuse P3-16 helper);
