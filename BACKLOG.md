@@ -3409,6 +3409,16 @@ The bench itself; numbers reproduced in the report.
 
 # Phase 5.8 — GPU-resident MPS rewrite (Apple/Metal)
 
+> **Status: COMPLETE (2026-06-21).** All six issues shipped (#238–#243, PRs
+> #244–#249). The backend is now fully GPU-resident — zero steady-state device
+> allocation, the whole per-gate split + the QR centre moves on one command buffer
+> (U/V/σ never read back), and lazy-permutation SWAP routing — and oracle-correct.
+> **But the exit metric (GPU MPS ≥ CPU MPS on ≥1 regime) is NOT met:** ~16× slower
+> than the f64 CPU MPS at n=16 χ=256, gap *growing* with n (~22× at n=20). The wall
+> is the single-threadgroup per-block factorisation; a multi-threadgroup
+> factorisation is the precondition for any crossover. Full verdict:
+> `docs/perf/phase5.8.md`.
+
 Goal: make the Metal MPS backend **faster than the f64 CPU MPS** in its target
 regime (large bond χ, large n), by eliminating the per-gate host round-trips,
 allocations, and CPU-side linear algebra that Phase 5.7's exit bench exposed.
