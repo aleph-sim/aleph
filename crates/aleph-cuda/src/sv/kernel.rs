@@ -11,6 +11,7 @@ pub(crate) const SV_KERNELS_SRC: &str = include_str!("kernels.cu");
 /// Entry-point names (declared `extern "C"`, so NVRTC keeps them unmangled).
 pub(crate) const APPLY_1Q: &str = "apply_1q";
 pub(crate) const APPLY_1Q_MULTI: &str = "apply_1q_multi";
+pub(crate) const APPLY_CNOT: &str = "apply_cnot";
 pub(crate) const APPLY_KQ: &str = "apply_kq";
 
 /// Hard ceiling on the single-qubit-gate batch [`apply_1q_multi`] applies in one
@@ -90,3 +91,21 @@ unsafe impl DeviceRepr for Multi1qParams {}
 
 // 40×f64 (320) + 8×u32 (32) = 352 bytes, matching CUDA's `Multi1q`.
 const _: () = assert!(core::mem::size_of::<Multi1qParams>() == 352);
+
+/// Per-gate uniform for `apply_cnot` (P5.9-04). Matches the CUDA `Cnot` struct:
+/// four `u32` — control, target, and `min`/`max` of the two for ascending
+/// zero-bit insertion.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub(crate) struct CnotParams {
+    pub ctrl: u32,
+    pub targ: u32,
+    pub lo: u32,
+    pub hi: u32,
+}
+
+// SAFETY: `#[repr(C)]`, all-`u32` POD, no padding (4×4 = 16), every bit valid.
+unsafe impl DeviceRepr for CnotParams {}
+
+// 4×u32 = 16 bytes, matching CUDA's `Cnot`.
+const _: () = assert!(core::mem::size_of::<CnotParams>() == 16);
