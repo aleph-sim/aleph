@@ -10,7 +10,8 @@ use cudarc::driver::{CudaFunction, CudaModule, LaunchConfig, PushKernelArg};
 use cudarc::nvrtc::compile_ptx;
 use rand::{rngs::StdRng, SeedableRng};
 
-use crate::common::{control_mask, flatten_matrix, validate_and_extract};
+use crate::common::{control_mask, diagonal_of, flatten_matrix, validate_and_extract};
+use crate::sv::diag::{diag_1q_params, diag_kq_params, DiagKernels};
 use crate::sv::kernel::{Gate1qParams, GateKqParams, APPLY_1Q, APPLY_KQ, SV_KERNELS_SRC};
 use crate::sv::readout::GpuReadout;
 use crate::sv::state::{CudaSvState, MAX_CUDA_QUBITS};
@@ -32,6 +33,12 @@ pub struct CudaSvBackend {
     /// GPU-resident readout (P5-05): measurement / sampling / expectation /
     /// probabilities reduce on the device so only small results cross PCIe.
     readout: GpuReadout,
+    /// Custom diagonal-gate kernels (P5-06).
+    diag: DiagKernels,
+    /// When set (default), diagonal gates divert to [`Self::diag`]; when cleared
+    /// they fall back to the dense `apply_1q` / `apply_kq` path. The A/B switch
+    /// for the P5-06 benchmark and the dual-path oracle test.
+    custom_diag: bool,
 }
 
 impl CudaSvBackend {
@@ -55,6 +62,7 @@ impl CudaSvBackend {
         let module = ctx.raw().load_module(ptx)?;
         let f_1q = module.load_function(APPLY_1Q)?;
         let f_kq = module.load_function(APPLY_KQ)?;
+        let diag = DiagKernels::new(&ctx)?;
         let readout = GpuReadout::new(&ctx)?;
         Ok(Self {
             ctx,
@@ -64,6 +72,8 @@ impl CudaSvBackend {
             rng,
             qubit_cap: MAX_CUDA_QUBITS,
             readout,
+            diag,
+            custom_diag: true,
         })
     }
 
@@ -71,6 +81,14 @@ impl CudaSvBackend {
     /// benchmarks on a GPU that can hold the state.
     pub fn with_qubit_cap(mut self, cap: u32) -> Self {
         self.qubit_cap = cap;
+        self
+    }
+
+    /// Enable (default) or disable routing diagonal gates to the custom
+    /// `apply_diag` kernels (P5-06). Disabling forces the dense `apply_1q` /
+    /// `apply_kq` path — the baseline arm of the P5-06 A/B benchmark.
+    pub fn with_custom_kernels(mut self, on: bool) -> Self {
+        self.custom_diag = on;
         self
     }
 
@@ -130,6 +148,28 @@ impl CudaSvBackend {
                 .launch(cfg)?;
         }
         Ok(())
+    }
+
+    /// Apply a diagonal gate via the custom `apply_diag` kernels (P5-06). `diag`
+    /// is the interleaved `[re, im]` diagonal from [`diagonal_of`]; `qubits` are
+    /// the operands in `gate.matrix()` MSB-first order; `controls` are external
+    /// controls. The 1q case (Z/S/T/Rz/Phase and their controlled forms) skips
+    /// the scratch upload entirely.
+    fn launch_diag(
+        &self,
+        state: &mut CudaSvState,
+        diag: &[f64],
+        qubits: &[u32],
+        controls: &[u32],
+    ) -> Result<(), Error> {
+        let ctrl_mask = control_mask(controls);
+        if qubits.len() == 1 {
+            let params = diag_1q_params(diag, qubits[0], ctrl_mask);
+            self.diag.launch_1q(&self.ctx, state, params)
+        } else {
+            let params = diag_kq_params(qubits, ctrl_mask);
+            self.diag.launch_kq(&self.ctx, state, params, diag)
+        }
     }
 }
 
@@ -216,6 +256,15 @@ impl Backend for CudaSvBackend {
         gate: &GateInstance,
     ) -> Result<(), BackendError> {
         let matrix = validate_and_extract(state.num_qubits, gate)?;
+        // P5-06: a diagonal gate is one coalesced in-place phase multiply —
+        // divert it to the custom `apply_diag` kernels instead of the dense path.
+        if self.custom_diag {
+            if let Some(diag) = diagonal_of(&matrix) {
+                return self
+                    .launch_diag(state, &diag, &gate.qubits, &gate.controls)
+                    .map_err(to_backend_err);
+            }
+        }
         match matrix {
             GateMatrix::M2x2(m) => {
                 let params = gate_1q_params(&m, gate.qubits[0], &gate.controls);
