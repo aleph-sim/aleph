@@ -16,8 +16,8 @@ use crate::common::{
 };
 use crate::sv::diag::{diag_1q_params, diag_kq_params, DiagKernels};
 use crate::sv::kernel::{
-    Gate1qParams, GateKqParams, Multi1qParams, APPLY_1Q, APPLY_1Q_MULTI, APPLY_KQ,
-    DEFAULT_LAYER_BATCH, MAX_LAYER_BATCH, SV_KERNELS_SRC,
+    CnotParams, Gate1qParams, GateKqParams, Multi1qParams, APPLY_1Q, APPLY_1Q_MULTI, APPLY_CNOT,
+    APPLY_KQ, DEFAULT_LAYER_BATCH, MAX_LAYER_BATCH, SV_KERNELS_SRC,
 };
 use crate::sv::readout::GpuReadout;
 use crate::sv::state::{CudaSvState, MAX_CUDA_QUBITS};
@@ -32,6 +32,7 @@ pub struct CudaSvBackend {
     ctx: CudaContext,
     f_1q: CudaFunction,
     f_1q_multi: CudaFunction,
+    f_cnot: CudaFunction,
     f_kq: CudaFunction,
     // Keeps the loaded module alive for the lifetime of the functions.
     _module: Arc<CudaModule>,
@@ -50,6 +51,10 @@ pub struct CudaSvBackend {
     /// clamped to `1..=MAX_LAYER_BATCH`. Tunable for the A/B bench; 1 reproduces
     /// per-gate dispatch.
     layer_batch: usize,
+    /// When set (default), a plain CNOT routes to the `apply_cnot` permutation
+    /// kernel (P5.9-04) instead of the dense `apply_kq` 4×4 matvec. Cleared for
+    /// the A/B baseline.
+    custom_2q: bool,
 }
 
 impl CudaSvBackend {
@@ -73,6 +78,7 @@ impl CudaSvBackend {
         let module = ctx.raw().load_module(ptx)?;
         let f_1q = module.load_function(APPLY_1Q)?;
         let f_1q_multi = module.load_function(APPLY_1Q_MULTI)?;
+        let f_cnot = module.load_function(APPLY_CNOT)?;
         let f_kq = module.load_function(APPLY_KQ)?;
         let diag = DiagKernels::new(&ctx)?;
         let readout = GpuReadout::new(&ctx)?;
@@ -80,6 +86,7 @@ impl CudaSvBackend {
             ctx,
             f_1q,
             f_1q_multi,
+            f_cnot,
             f_kq,
             _module: module,
             rng,
@@ -88,7 +95,16 @@ impl CudaSvBackend {
             diag,
             custom_diag: true,
             layer_batch: DEFAULT_LAYER_BATCH,
+            custom_2q: true,
         })
+    }
+
+    /// Enable (default) or disable routing plain CNOTs to the `apply_cnot`
+    /// permutation kernel (P5.9-04). Disabling forces the dense `apply_kq` 4×4
+    /// path — the baseline arm of the P5.9-04 A/B benchmark.
+    pub fn with_custom_2q(mut self, on: bool) -> Self {
+        self.custom_2q = on;
+        self
     }
 
     /// Override the disjoint-1q-layer batch width for [`Self::run_layered`]
@@ -165,6 +181,33 @@ impl CudaSvBackend {
                 .launch_builder(&self.f_kq)
                 .arg(amps)
                 .arg(mat_dev)
+                .arg(&params)
+                .arg(&n_groups)
+                .launch(cfg)?;
+        }
+        Ok(())
+    }
+
+    /// Launch `apply_cnot` over the `2^(n-2)` control=1 amplitude pairs (P5.9-04).
+    fn launch_cnot(&self, state: &mut CudaSvState, control: u32, target: u32) -> Result<(), Error> {
+        let n_groups: u64 = 1 << (state.num_qubits - 2);
+        let cfg = launch_config(n_groups);
+        let stream = self.ctx.stream();
+        let params = CnotParams {
+            ctrl: control,
+            targ: target,
+            lo: control.min(target),
+            hi: control.max(target),
+        };
+        let amps = state.amps.slice_mut();
+        // SAFETY: kernel signature is (cplx* amps, Cnot g, u64 n_groups); args
+        // match in order/type, `amps` holds 2^n cplx, and the grid covers exactly
+        // `n_groups = 2^(n-2)` threads with an in-bounds guard. `control`/`target`
+        // are validated `< num_qubits` and distinct by the caller.
+        unsafe {
+            stream
+                .launch_builder(&self.f_cnot)
+                .arg(amps)
                 .arg(&params)
                 .arg(&n_groups)
                 .launch(cfg)?;
@@ -433,6 +476,33 @@ impl Backend for CudaSvBackend {
         state: &mut Self::State,
         gate: &GateInstance,
     ) -> Result<(), BackendError> {
+        // P5.9-04: a plain CNOT is a permutation (swap the target pair where the
+        // control is 1) — route it to `apply_cnot`, which touches only the
+        // control=1 half of the state with zero FLOPs, instead of the dense
+        // `apply_kq` 4×4 matvec over all 2^n amplitudes.
+        if self.custom_2q
+            && matches!(gate.gate, Gate::Cnot)
+            && gate.controls.is_empty()
+            && gate.qubits.len() == 2
+        {
+            let (c, t) = (gate.qubits[0], gate.qubits[1]);
+            if c == t {
+                return Err(BackendError::DuplicateQubit { qubit: c });
+            }
+            if c >= state.num_qubits {
+                return Err(BackendError::QubitOutOfRange {
+                    qubit: c,
+                    num_qubits: state.num_qubits,
+                });
+            }
+            if t >= state.num_qubits {
+                return Err(BackendError::QubitOutOfRange {
+                    qubit: t,
+                    num_qubits: state.num_qubits,
+                });
+            }
+            return self.launch_cnot(state, c, t).map_err(to_backend_err);
+        }
         // P5.9-02: a fused `UnitaryKq` (k=4,5) has no fixed-size `GateMatrix`
         // (the enum stops at 8×8), so `validate_and_extract` would reject it. The
         // `apply_kq` kernel already handles k≤5; feed it the raw row-major slice.

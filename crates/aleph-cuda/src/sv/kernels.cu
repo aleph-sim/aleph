@@ -133,6 +133,41 @@ void apply_1q_multi(cplx* amps, Multi1q g, unsigned long long n_groups) {
     for (unsigned l = 0; l < dim; ++l) amps[gidx[l]] = v[l];
 }
 
+// Per-gate uniform for a plain CNOT (P5.9-04). Layout MUST match the Rust
+// `CnotParams` struct. A CNOT is a permutation, not a rotation: it swaps the
+// two amplitudes that differ in the target bit whenever the control bit is 1.
+struct Cnot {
+    unsigned ctrl;    // control qubit index
+    unsigned targ;    // target qubit index
+    unsigned lo;      // min(ctrl, targ) — for ascending zero-bit insertion
+    unsigned hi;      // max(ctrl, targ)
+};
+
+// One thread per amplitude pair in the control=1 subspace; grid covers
+// n_groups = 2^(n-2). Reconstruct the index with control & target bits clear,
+// set control=1, and swap amps[targ=0] ↔ amps[targ=1]. Touches only the
+// control=1 half of the state with zero FLOPs — vs apply_kq's full 2^n sweep
+// plus a 4×4 matvec. Pure permutation, so it is trivially in-place safe.
+extern "C" __global__
+void apply_cnot(cplx* amps, Cnot g, unsigned long long n_groups) {
+    unsigned long long tid = blockIdx.x * (unsigned long long)blockDim.x + threadIdx.x;
+    if (tid >= n_groups) return;
+
+    // Insert two zero bits at the ascending {lo, hi} positions (same scheme as
+    // apply_kq with k=2), yielding the index with control=0, target=0.
+    unsigned long long base = tid;
+    unsigned long long ml = (1ULL << g.lo) - 1ULL;
+    base = ((base & ~ml) << 1) | (base & ml);
+    unsigned long long mh = (1ULL << g.hi) - 1ULL;
+    base = ((base & ~mh) << 1) | (base & mh);
+
+    unsigned long long i = base | (1ULL << g.ctrl); // control=1, target=0
+    unsigned long long j = i | (1ULL << g.targ);     // control=1, target=1
+    cplx tmp = amps[i];
+    amps[i] = amps[j];
+    amps[j] = tmp;
+}
+
 // One thread per group of 2^k amplitudes; grid covers n_groups = 2^(n-k).
 // `mat` is row-major 2^k x 2^k (M[r*dim + c]). dim <= 32 (k <= 5), so the
 // thread-local arrays fit. In-place safe: all inputs are read before any write.
