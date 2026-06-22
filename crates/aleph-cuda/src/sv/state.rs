@@ -68,14 +68,6 @@ impl CudaSvState {
             .expect("device->host amplitude copy")
     }
 
-    /// Upload host amplitudes back to the device (used by the host-side
-    /// measurement collapse). `data` must have length `2 · 2^n`.
-    pub(crate) fn write_host(&mut self, data: &[f64]) {
-        self.amps
-            .write(&self.ctx, data)
-            .expect("host->device amplitude copy");
-    }
-
     /// The amplitudes as `Vec<Complex<f64>>` (one per basis state). The
     /// `HasAmplitudes` oracle hook and interop go through this.
     pub fn amplitudes_vec(&self) -> Vec<Complex<f64>> {
