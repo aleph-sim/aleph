@@ -6,7 +6,10 @@
 
 mod backend;
 mod kernel;
-mod readout;
+// `pub(crate)` so the cuStateVec backend reuses the identical host-side readout
+// (measure / sample / expectation / probabilities), keeping both GPU backends'
+// measurement distributions byte-for-byte aligned with the CPU oracle.
+pub(crate) mod readout;
 mod state;
 
 pub use backend::CudaSvBackend;
