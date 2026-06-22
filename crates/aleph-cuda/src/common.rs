@@ -90,14 +90,80 @@ pub(crate) fn flatten_matrix<const N: usize>(m: &[[Complex; N]; N]) -> Vec<f64> 
     out
 }
 
+/// Row-major interleaved `[re, im]` of a flat complex slice. `UnitaryKq` carries
+/// its `2^k × 2^k` matrix as a raw slice (the fixed-size [`flatten_matrix`] only
+/// covers `k ≤ 3`, since `GateMatrix` stops at 8×8), so the k=4,5 GPU path
+/// flattens through here instead.
+pub(crate) fn flatten_kq(data: &[Complex]) -> Vec<f64> {
+    let mut out = Vec::with_capacity(2 * data.len());
+    for z in data {
+        out.push(z.re);
+        out.push(z.im);
+    }
+    out
+}
+
+/// Structural validation for a fused `UnitaryKq` block against an `n`-qubit
+/// state (P5.9-02). Mirrors the operand checks in [`validate_and_extract`] —
+/// `k` in 2..=5, arity == `k`, the `2^k × 2^k` data length, every operand and
+/// control in range and distinct — but skips matrix materialisation and the
+/// unitarity guard: `UnitaryKq` has no fixed-size `GateMatrix` to check, and it
+/// is emitted only by `passes::FuseKq` from already-unitary members (matching
+/// the CPU SV backend, which also intercepts `UnitaryKq` before its guard).
+/// Both GPU backends call this so they admit identical fused blocks.
+pub(crate) fn validate_kq(
+    num_qubits: u32,
+    k: u8,
+    data_len: usize,
+    qubits: &[u32],
+    controls: &[u32],
+) -> Result<(), BackendError> {
+    let k = k as usize;
+    if !(2..=5).contains(&k) {
+        return Err(BackendError::UnsupportedGate { kind: "UnitaryKq" });
+    }
+    if qubits.len() != k {
+        return Err(BackendError::ArityMismatch {
+            kind: "UnitaryKq",
+            expected: k,
+            got: qubits.len(),
+        });
+    }
+    // data is the row-major 2^k × 2^k matrix ⇒ 2^(2k) complex entries.
+    if data_len != 1usize << (2 * k) {
+        return Err(BackendError::InvalidState {
+            reason: "UnitaryKq data length is not 2^(2k)",
+        });
+    }
+    let mut seen: smallvec::SmallVec<[u32; 6]> = smallvec::SmallVec::new();
+    for &q in qubits.iter().chain(controls.iter()) {
+        if q >= num_qubits {
+            return Err(BackendError::QubitOutOfRange {
+                qubit: q,
+                num_qubits,
+            });
+        }
+        if seen.contains(&q) {
+            return Err(BackendError::DuplicateQubit { qubit: q });
+        }
+        seen.push(q);
+    }
+    Ok(())
+}
+
 /// Validate a gate against an `n`-qubit state and return its dense matrix.
 ///
 /// Checks (in order, matching the original `CudaSvBackend::apply_gate`): arity,
-/// every operand/control qubit in range and distinct, fused `UnitaryKq` blocks
-/// rejected (raw `run` never emits them; their operand order differs), the
-/// matrix is representable, and it is unitary within [`aleph_core::AMPLITUDE_TOL`]
-/// with a finiteness reject. Both GPU backends call this so they reject
-/// identical inputs.
+/// every operand/control qubit in range and distinct, the matrix is
+/// representable, and it is unitary within [`aleph_core::AMPLITUDE_TOL`] with a
+/// finiteness reject. Both GPU backends call this so they reject identical
+/// inputs.
+///
+/// Fused `UnitaryKq` blocks have no fixed-size `GateMatrix`, so both backends
+/// intercept them *before* this call and route through [`validate_kq`] +
+/// `flatten_kq` (P5.9-02). The `UnitaryKq` arm here stays as a safety net for
+/// any path that forgets to intercept: it surfaces `UnsupportedGate` rather
+/// than mis-applying a block whose matrix `gate.matrix()` cannot return.
 pub(crate) fn validate_and_extract(
     num_qubits: u32,
     gate: &GateInstance,

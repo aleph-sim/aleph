@@ -12,7 +12,9 @@ use aleph_core::{GateInstance, GateMatrix, PauliString};
 use cudarc::driver::DevicePtrMut;
 use rand::{rngs::StdRng, SeedableRng};
 
-use crate::common::{control_mask, diagonal_of, flatten_matrix, validate_and_extract};
+use crate::common::{
+    control_mask, diagonal_of, flatten_kq, flatten_matrix, validate_and_extract, validate_kq,
+};
 use crate::cuquantum::sys;
 use crate::sv::diag::{diag_1q_params, diag_kq_params, DiagKernels};
 use crate::sv::readout::GpuReadout;
@@ -261,6 +263,24 @@ impl Backend for CuStateVecBackend {
         state: &mut Self::State,
         gate: &GateInstance,
     ) -> Result<(), BackendError> {
+        // P5.9-02: fused `UnitaryKq` (k=4,5) has no fixed-size `GateMatrix`;
+        // `custatevecApplyMatrix` already takes an arbitrary `2^k × 2^k` row-major
+        // matrix, so feed it the raw slice. Operands are reversed to little-endian
+        // like every other matrix apply (gate.matrix() / UnitaryKq are MSB-first).
+        if let aleph_core::Gate::UnitaryKq { k, data } = &gate.gate {
+            validate_kq(
+                state.num_qubits,
+                *k,
+                data.len(),
+                &gate.qubits,
+                &gate.controls,
+            )?;
+            let targets: Vec<i32> = gate.qubits.iter().rev().map(|&q| q as i32).collect();
+            let controls: Vec<i32> = gate.controls.iter().map(|&c| c as i32).collect();
+            return self
+                .apply_matrix(state, &flatten_kq(data), &targets, &controls)
+                .map_err(to_backend_err);
+        }
         let matrix = validate_and_extract(state.num_qubits, gate)?;
         // P5-06: divert diagonal gates to the custom kernel — the niche where a
         // bespoke phase-multiply beats cuStateVec's generic dense apply.

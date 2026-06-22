@@ -10,7 +10,9 @@ use cudarc::driver::{CudaFunction, CudaModule, LaunchConfig, PushKernelArg};
 use cudarc::nvrtc::compile_ptx;
 use rand::{rngs::StdRng, SeedableRng};
 
-use crate::common::{control_mask, diagonal_of, flatten_matrix, validate_and_extract};
+use crate::common::{
+    control_mask, diagonal_of, flatten_kq, flatten_matrix, validate_and_extract, validate_kq,
+};
 use crate::sv::diag::{diag_1q_params, diag_kq_params, DiagKernels};
 use crate::sv::kernel::{Gate1qParams, GateKqParams, APPLY_1Q, APPLY_KQ, SV_KERNELS_SRC};
 use crate::sv::readout::GpuReadout;
@@ -255,6 +257,24 @@ impl Backend for CudaSvBackend {
         state: &mut Self::State,
         gate: &GateInstance,
     ) -> Result<(), BackendError> {
+        // P5.9-02: a fused `UnitaryKq` (k=4,5) has no fixed-size `GateMatrix`
+        // (the enum stops at 8×8), so `validate_and_extract` would reject it. The
+        // `apply_kq` kernel already handles k≤5; feed it the raw row-major slice.
+        // qubits are MSB-first (qubits[0] = matrix-index MSB), the same order
+        // `gate_kq_params` expects — identical to the `Unitary2q` path below.
+        if let aleph_core::Gate::UnitaryKq { k, data } = &gate.gate {
+            validate_kq(
+                state.num_qubits,
+                *k,
+                data.len(),
+                &gate.qubits,
+                &gate.controls,
+            )?;
+            let params = gate_kq_params(&gate.qubits, &gate.controls);
+            return self
+                .launch_kq(state, params, &flatten_kq(data))
+                .map_err(to_backend_err);
+        }
         let matrix = validate_and_extract(state.num_qubits, gate)?;
         // P5-06: a diagonal gate is one coalesced in-place phase multiply —
         // divert it to the custom `apply_diag` kernels instead of the dense path.
