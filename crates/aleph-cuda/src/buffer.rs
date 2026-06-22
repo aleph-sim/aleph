@@ -23,6 +23,16 @@ pub fn device_alloc_count() -> u64 {
     DEVICE_ALLOC_COUNT.load(Ordering::Relaxed)
 }
 
+/// Process-wide count of bytes copied **device→host** (every `to_vec`). The
+/// P5-05 lazy-transfer invariant — that readout copies back only small results,
+/// never the full `2^n` state — is checked against this in `tests/transfer.rs`.
+static DEVICE_DTOH_BYTES: AtomicU64 = AtomicU64::new(0);
+
+/// Snapshot of the process-wide device→host byte counter.
+pub fn device_dtoh_bytes() -> u64 {
+    DEVICE_DTOH_BYTES.load(Ordering::Relaxed)
+}
+
 /// A `T`-typed buffer in CUDA global memory.
 ///
 /// `T: DeviceRepr` (cudarc's plain-old-data bound for device transfer) keeps the
@@ -48,6 +58,10 @@ impl<T: DeviceRepr> DeviceBuffer<T> {
     pub fn to_vec(&self, ctx: &CudaContext) -> Result<Vec<T>, Error> {
         let host = ctx.stream().clone_dtoh(&self.slice)?;
         ctx.stream().synchronize()?;
+        DEVICE_DTOH_BYTES.fetch_add(
+            (self.slice.len() * std::mem::size_of::<T>()) as u64,
+            Ordering::Relaxed,
+        );
         Ok(host)
     }
 

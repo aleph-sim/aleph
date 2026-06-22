@@ -14,7 +14,7 @@ use rand::{rngs::StdRng, SeedableRng};
 
 use crate::common::{flatten_matrix, validate_and_extract};
 use crate::cuquantum::sys;
-use crate::sv::readout;
+use crate::sv::readout::GpuReadout;
 use crate::sv::{CudaSvState, MAX_CUDA_QUBITS};
 use crate::{CudaContext, DeviceBuffer, Error};
 
@@ -31,6 +31,9 @@ pub struct CuStateVecBackend {
     /// demand. Empty (`None`) for the small `nTargets ≤ 3` gates, which need 0
     /// bytes; kept generic so larger fused gates would still work.
     workspace: Option<DeviceBuffer<u8>>,
+    /// GPU-resident readout (P5-05), shared with the hand-written backend — the
+    /// state buffer layout is identical, so the same reduction kernels apply.
+    readout: GpuReadout,
 }
 
 impl CuStateVecBackend {
@@ -62,12 +65,14 @@ impl CuStateVecBackend {
             unsafe { sys::custatevecDestroy(handle) };
             return Err(e);
         }
+        let readout = GpuReadout::new(&ctx)?;
         Ok(Self {
             ctx,
             handle,
             rng,
             qubit_cap: MAX_CUDA_QUBITS,
             workspace: None,
+            readout,
         })
     }
 
@@ -232,15 +237,11 @@ impl Backend for CuStateVecBackend {
     }
 
     fn measure(&mut self, state: &mut Self::State, qubit: u32) -> Result<bool, BackendError> {
-        let mut amps = state.amplitudes_vec();
-        let outcome = readout::measure(&mut self.rng, &mut amps, state.num_qubits, qubit)?;
-        state.write_host(&complex_to_f64(&amps));
-        Ok(outcome)
+        self.readout.measure(&mut self.rng, state, qubit)
     }
 
     fn sample(&mut self, state: &Self::State, shots: u32) -> Result<Vec<u64>, BackendError> {
-        let amps = state.amplitudes_vec();
-        readout::sample(&mut self.rng, &amps, state.num_qubits, shots)
+        self.readout.sample(&mut self.rng, state, shots)
     }
 
     fn expectation_value(
@@ -248,8 +249,7 @@ impl Backend for CuStateVecBackend {
         state: &Self::State,
         pauli: &PauliString,
     ) -> Result<f64, BackendError> {
-        let amps = state.amplitudes_vec();
-        readout::expectation_value(&amps, state.num_qubits, pauli)
+        self.readout.expectation_value(state, pauli)
     }
 
     fn probabilities(
@@ -257,17 +257,6 @@ impl Backend for CuStateVecBackend {
         state: &Self::State,
         qubits: &[u32],
     ) -> Result<Vec<f64>, BackendError> {
-        let amps = state.amplitudes_vec();
-        readout::probabilities(&amps, state.num_qubits, qubits)
+        self.readout.probabilities(state, qubits)
     }
-}
-
-/// Interleave `[re, im]` for upload back to the device (measurement collapse).
-fn complex_to_f64(amps: &[aleph_core::Complex]) -> Vec<f64> {
-    let mut out = Vec::with_capacity(amps.len() * 2);
-    for a in amps {
-        out.push(a.re);
-        out.push(a.im);
-    }
-    out
 }

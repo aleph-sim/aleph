@@ -29,7 +29,7 @@ mod cuquantum;
 mod sv;
 
 #[cfg(all(target_os = "linux", feature = "cuda"))]
-pub use buffer::{device_alloc_count, DeviceBuffer};
+pub use buffer::{device_alloc_count, device_dtoh_bytes, DeviceBuffer};
 #[cfg(all(target_os = "linux", feature = "cuda"))]
 pub use context::CudaContext;
 #[cfg(all(target_os = "linux", feature = "cuquantum"))]

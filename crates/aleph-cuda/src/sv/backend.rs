@@ -12,7 +12,7 @@ use rand::{rngs::StdRng, SeedableRng};
 
 use crate::common::{control_mask, flatten_matrix, validate_and_extract};
 use crate::sv::kernel::{Gate1qParams, GateKqParams, APPLY_1Q, APPLY_KQ, SV_KERNELS_SRC};
-use crate::sv::readout;
+use crate::sv::readout::GpuReadout;
 use crate::sv::state::{CudaSvState, MAX_CUDA_QUBITS};
 use crate::{CudaContext, DeviceBuffer, Error};
 
@@ -29,6 +29,9 @@ pub struct CudaSvBackend {
     _module: Arc<CudaModule>,
     rng: StdRng,
     qubit_cap: u32,
+    /// GPU-resident readout (P5-05): measurement / sampling / expectation /
+    /// probabilities reduce on the device so only small results cross PCIe.
+    readout: GpuReadout,
 }
 
 impl CudaSvBackend {
@@ -52,6 +55,7 @@ impl CudaSvBackend {
         let module = ctx.raw().load_module(ptx)?;
         let f_1q = module.load_function(APPLY_1Q)?;
         let f_kq = module.load_function(APPLY_KQ)?;
+        let readout = GpuReadout::new(&ctx)?;
         Ok(Self {
             ctx,
             f_1q,
@@ -59,6 +63,7 @@ impl CudaSvBackend {
             _module: module,
             rng,
             qubit_cap: MAX_CUDA_QUBITS,
+            readout,
         })
     }
 
@@ -233,15 +238,11 @@ impl Backend for CudaSvBackend {
     }
 
     fn measure(&mut self, state: &mut Self::State, qubit: u32) -> Result<bool, BackendError> {
-        let mut amps = state.amplitudes_vec();
-        let outcome = readout::measure(&mut self.rng, &mut amps, state.num_qubits, qubit)?;
-        state.write_host(&complex_to_f64(&amps));
-        Ok(outcome)
+        self.readout.measure(&mut self.rng, state, qubit)
     }
 
     fn sample(&mut self, state: &Self::State, shots: u32) -> Result<Vec<u64>, BackendError> {
-        let amps = state.amplitudes_vec();
-        readout::sample(&mut self.rng, &amps, state.num_qubits, shots)
+        self.readout.sample(&mut self.rng, state, shots)
     }
 
     fn expectation_value(
@@ -249,8 +250,7 @@ impl Backend for CudaSvBackend {
         state: &Self::State,
         pauli: &PauliString,
     ) -> Result<f64, BackendError> {
-        let amps = state.amplitudes_vec();
-        readout::expectation_value(&amps, state.num_qubits, pauli)
+        self.readout.expectation_value(state, pauli)
     }
 
     fn probabilities(
@@ -258,17 +258,6 @@ impl Backend for CudaSvBackend {
         state: &Self::State,
         qubits: &[u32],
     ) -> Result<Vec<f64>, BackendError> {
-        let amps = state.amplitudes_vec();
-        readout::probabilities(&amps, state.num_qubits, qubits)
+        self.readout.probabilities(state, qubits)
     }
-}
-
-/// Interleave `[re, im]` for upload back to the device.
-fn complex_to_f64(amps: &[Complex]) -> Vec<f64> {
-    let mut out = Vec::with_capacity(amps.len() * 2);
-    for a in amps {
-        out.push(a.re);
-        out.push(a.im);
-    }
-    out
 }
