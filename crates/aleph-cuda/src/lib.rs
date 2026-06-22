@@ -42,7 +42,7 @@ pub use context::CudaContext;
 #[cfg(all(target_os = "linux", feature = "cuquantum"))]
 pub use cuquantum::CuStateVecBackend;
 #[cfg(all(target_os = "linux", feature = "cuda"))]
-pub use fusion::fuse_for_gpu;
+pub use fusion::{fuse_for_gpu, fuse_for_gpu_with, MAX_FUSE_QUBITS};
 #[cfg(all(target_os = "linux", feature = "cuda"))]
 pub use stab::{op as stab_op, CudaStab, CudaStabState, Generators, StabOp};
 #[cfg(all(target_os = "linux", feature = "cuda"))]
