@@ -5,7 +5,8 @@
 use std::sync::Arc;
 
 use aleph_backend::{Backend, BackendError};
-use aleph_core::{Complex, GateInstance, GateMatrix, PauliString};
+use aleph_core::{Complex, Gate, GateInstance, GateMatrix, PauliString};
+use aleph_ir::{Circuit, Instruction};
 use cudarc::driver::{CudaFunction, CudaModule, LaunchConfig, PushKernelArg};
 use cudarc::nvrtc::compile_ptx;
 use rand::{rngs::StdRng, SeedableRng};
@@ -14,7 +15,10 @@ use crate::common::{
     control_mask, diagonal_of, flatten_kq, flatten_matrix, validate_and_extract, validate_kq,
 };
 use crate::sv::diag::{diag_1q_params, diag_kq_params, DiagKernels};
-use crate::sv::kernel::{Gate1qParams, GateKqParams, APPLY_1Q, APPLY_KQ, SV_KERNELS_SRC};
+use crate::sv::kernel::{
+    Gate1qParams, GateKqParams, Multi1qParams, APPLY_1Q, APPLY_1Q_MULTI, APPLY_KQ,
+    DEFAULT_LAYER_BATCH, MAX_LAYER_BATCH, SV_KERNELS_SRC,
+};
 use crate::sv::readout::GpuReadout;
 use crate::sv::state::{CudaSvState, MAX_CUDA_QUBITS};
 use crate::{CudaContext, DeviceBuffer, Error};
@@ -27,6 +31,7 @@ const BLOCK: u32 = 256;
 pub struct CudaSvBackend {
     ctx: CudaContext,
     f_1q: CudaFunction,
+    f_1q_multi: CudaFunction,
     f_kq: CudaFunction,
     // Keeps the loaded module alive for the lifetime of the functions.
     _module: Arc<CudaModule>,
@@ -41,6 +46,10 @@ pub struct CudaSvBackend {
     /// they fall back to the dense `apply_1q` / `apply_kq` path. The A/B switch
     /// for the P5-06 benchmark and the dual-path oracle test.
     custom_diag: bool,
+    /// Disjoint-1q-layer batch width for [`Self::run_layered`] (P5.9-03),
+    /// clamped to `1..=MAX_LAYER_BATCH`. Tunable for the A/B bench; 1 reproduces
+    /// per-gate dispatch.
+    layer_batch: usize,
 }
 
 impl CudaSvBackend {
@@ -63,12 +72,14 @@ impl CudaSvBackend {
         let ptx = compile_ptx(SV_KERNELS_SRC).map_err(|e| Error::Compile(e.to_string()))?;
         let module = ctx.raw().load_module(ptx)?;
         let f_1q = module.load_function(APPLY_1Q)?;
+        let f_1q_multi = module.load_function(APPLY_1Q_MULTI)?;
         let f_kq = module.load_function(APPLY_KQ)?;
         let diag = DiagKernels::new(&ctx)?;
         let readout = GpuReadout::new(&ctx)?;
         Ok(Self {
             ctx,
             f_1q,
+            f_1q_multi,
             f_kq,
             _module: module,
             rng,
@@ -76,7 +87,16 @@ impl CudaSvBackend {
             readout,
             diag,
             custom_diag: true,
+            layer_batch: DEFAULT_LAYER_BATCH,
         })
+    }
+
+    /// Override the disjoint-1q-layer batch width for [`Self::run_layered`]
+    /// (clamped to `1..=MAX_LAYER_BATCH`). 1 reproduces per-gate dispatch — the
+    /// baseline arm of the P5.9-03 A/B benchmark.
+    pub fn with_layer_batch(mut self, batch: usize) -> Self {
+        self.layer_batch = batch.clamp(1, MAX_LAYER_BATCH);
+        self
     }
 
     /// Override the qubit cap (default [`MAX_CUDA_QUBITS`]). For large-memory
@@ -172,6 +192,162 @@ impl CudaSvBackend {
             let params = diag_kq_params(qubits, ctrl_mask);
             self.diag.launch_kq(&self.ctx, state, params, diag)
         }
+    }
+
+    /// Launch `apply_1q_multi` for one batch of `m = params.m` disjoint 1q gates
+    /// over `2^(n-m)` groups — one state sweep for the whole batch (P5.9-03).
+    fn launch_1q_multi(&self, state: &mut CudaSvState, params: Multi1qParams) -> Result<(), Error> {
+        let n_groups: u64 = 1 << (state.num_qubits - params.m);
+        let cfg = launch_config(n_groups);
+        let stream = self.ctx.stream();
+        let amps = state.amps.slice_mut();
+        // SAFETY: kernel signature is (cplx* amps, Multi1q g, u64 n_groups); args
+        // match in order/type, `amps` holds 2^n cplx, and the grid covers exactly
+        // `n_groups` threads with an in-bounds guard. `m ≤ 5` (enforced by the
+        // batching in `apply_1q_layer`), so `num_qubits - m` never underflows for
+        // an `m`-qubit-or-larger state.
+        unsafe {
+            stream
+                .launch_builder(&self.f_1q_multi)
+                .arg(amps)
+                .arg(&params)
+                .arg(&n_groups)
+                .launch(cfg)?;
+        }
+        Ok(())
+    }
+
+    /// Apply a run of mutually-disjoint single-qubit gates, chunked into batches
+    /// of ≤ [`MAX_LAYER_BATCH`] and dispatched one sweep each via
+    /// `apply_1q_multi`. `gates` is `(qubit, 2×2 matrix)`; the caller guarantees
+    /// the qubits are pairwise distinct (so the gates commute and any chunking /
+    /// per-chunk reordering is exact).
+    fn apply_1q_layer(
+        &self,
+        state: &mut CudaSvState,
+        gates: &[(u32, [[Complex; 2]; 2])],
+    ) -> Result<(), Error> {
+        for chunk in gates.chunks(self.layer_batch) {
+            // Sort the chunk's qubits ascending: the kernel inserts zero bits at
+            // ascending positions and maps local bit j ↔ sorted[j], so `mats[j]`
+            // must be the gate on the j-th smallest qubit.
+            let mut idx: Vec<usize> = (0..chunk.len()).collect();
+            idx.sort_unstable_by_key(|&i| chunk[i].0);
+
+            let mut params = Multi1qParams {
+                mats: [0.0; 40],
+                m: chunk.len() as u32,
+                sorted: [0u32; 5],
+                _pad: [0u32; 2],
+            };
+            for (j, &i) in idx.iter().enumerate() {
+                let (q, m) = chunk[i];
+                params.sorted[j] = q;
+                let base = j * 8;
+                params.mats[base] = m[0][0].re;
+                params.mats[base + 1] = m[0][0].im;
+                params.mats[base + 2] = m[0][1].re;
+                params.mats[base + 3] = m[0][1].im;
+                params.mats[base + 4] = m[1][0].re;
+                params.mats[base + 5] = m[1][0].im;
+                params.mats[base + 6] = m[1][1].re;
+                params.mats[base + 7] = m[1][1].im;
+            }
+            self.launch_1q_multi(state, params)?;
+        }
+        Ok(())
+    }
+
+    /// Run `circuit` with **disjoint-1q-layer batching** (P5.9-03): consecutive
+    /// plain single-qubit gates on distinct qubits are applied in
+    /// `⌈count / MAX_LAYER_BATCH⌉` state sweeps via `apply_1q_multi` instead of
+    /// one sweep each. Every other instruction flushes the pending batch (so
+    /// program order is preserved) and routes through the normal per-gate path.
+    ///
+    /// Oracle-equal to per-gate [`aleph_backend::run`] (pinned at 1e-10 in
+    /// `tests/gpu_layer_oracle.rs`); the A/B speedup is in `tests/gpu_layer_bench.rs`.
+    // The `flush!` macro resets `mask` after every batch; the final flush at
+    // end-of-circuit makes that last reset dead, which is correct, not a bug.
+    #[allow(unused_assignments)]
+    pub fn run_layered(&mut self, circuit: &Circuit) -> Result<CudaSvState, BackendError> {
+        if circuit.num_qubits() == 0 && circuit.is_empty() {
+            return Err(BackendError::EmptyCircuit);
+        }
+        let mut state = self.allocate(circuit.num_qubits())?;
+        // Pending disjoint 1q batch + a mask of the qubits it covers (num_qubits
+        // ≤ 30 ≤ 64, so a u64 mask is always wide enough).
+        let mut pending: Vec<(u32, [[Complex; 2]; 2])> = Vec::new();
+        let mut mask: u64 = 0;
+
+        macro_rules! flush {
+            () => {
+                if !pending.is_empty() {
+                    self.apply_1q_layer(&mut state, &pending)
+                        .map_err(to_backend_err)?;
+                    pending.clear();
+                    mask = 0;
+                }
+            };
+        }
+
+        for inst in circuit.instructions() {
+            match inst {
+                Instruction::Gate(g) => match batchable_1q(g) {
+                    // A collision (qubit already pending) forces a flush first, so
+                    // two gates on the same qubit never reorder.
+                    Some(m) => {
+                        let bit = 1u64 << g.qubits[0];
+                        if mask & bit != 0 {
+                            flush!();
+                        }
+                        mask |= bit;
+                        pending.push((g.qubits[0], m));
+                    }
+                    None => {
+                        flush!();
+                        self.apply_gate(&mut state, g)?;
+                    }
+                },
+                Instruction::Barrier(_) => flush!(),
+                Instruction::Measure { qubit, .. } => {
+                    flush!();
+                    let _ = self.measure(&mut state, *qubit)?;
+                }
+                Instruction::Reset(_) => {
+                    flush!();
+                    return Err(BackendError::UnsupportedInstruction { kind: "reset" });
+                }
+                Instruction::DiagonalPhase(dp) => {
+                    flush!();
+                    self.apply_diagonal_phase(&mut state, dp)?;
+                }
+                Instruction::TiledBlock(tb) => {
+                    flush!();
+                    self.apply_tiled_block(&mut state, tb)?;
+                }
+            }
+        }
+        flush!();
+        Ok(state)
+    }
+}
+
+/// A plain single-qubit gate the layer batcher can fold into `apply_1q_multi`:
+/// exactly one operand, no external controls, and a concrete 2×2 matrix.
+/// Diagonal gates qualify too — inside `run_layered` the dense butterfly is
+/// still correct, and batching the whole 1q sublayer beats per-gate dispatch
+/// even when some members are diagonal.
+fn batchable_1q(g: &GateInstance) -> Option<[[Complex; 2]; 2]> {
+    if g.qubits.len() != 1 || !g.controls.is_empty() {
+        return None;
+    }
+    // UnitaryKq is multi-qubit; everything else with arity 1 resolves to M2x2.
+    if matches!(g.gate, Gate::UnitaryKq { .. }) {
+        return None;
+    }
+    match g.gate.matrix() {
+        Ok(GateMatrix::M2x2(m)) => Some(m),
+        _ => None,
     }
 }
 

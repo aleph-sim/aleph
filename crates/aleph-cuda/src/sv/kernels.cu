@@ -66,6 +66,73 @@ void apply_1q(cplx* amps, Gate1q g, unsigned long long n_pairs) {
     amps[j] = cadd(cmul(g.m[2], a), cmul(g.m[3], b));
 }
 
+// Per-batch uniform for a layer of m DISJOINT single-qubit gates (P5.9-03).
+// Layout MUST match the Rust `Multi1qParams` struct (sv/kernel.rs).
+// `mats[j]` is the row-major 2x2 of the gate on the j-th (ascending) qubit
+// `sorted[j]`; gates act on distinct qubits, so they commute and the whole
+// batch is one tensor product applied in a single state sweep.
+struct Multi1q {
+    cplx     mats[20];   // 5 gates × 4 complex (m00 m01 m10 m11); gate j = mats[j*4..]
+    unsigned m;          // gates in this batch (1..=5)
+    unsigned sorted[5];  // target positions ASCENDING, for zero-bit insertion
+    unsigned _pad[2];
+};
+
+// One thread per group of 2^m amplitudes; grid covers n_groups = 2^(n-m).
+// Gather the 2^m local block (the m disjoint target axes), apply each gate as a
+// butterfly along its own local bit, scatter back. m butterflies = O(m·2^m)
+// work per group — far cheaper than apply_kq's dense O(4^m) matvec — while
+// collapsing m separate full-state passes into one. In-place safe: the whole
+// block is read into registers before any write.
+extern "C" __global__
+void apply_1q_multi(cplx* amps, Multi1q g, unsigned long long n_groups) {
+    unsigned long long tid = blockIdx.x * (unsigned long long)blockDim.x + threadIdx.x;
+    if (tid >= n_groups) return;
+
+    unsigned m = g.m;
+    if (m == 0u || m > 5u) return; // guards the fixed 32-entry stacks
+    unsigned dim = 1u << m;
+
+    // Reconstruct the base index (all m target bits clear) by inserting zero
+    // bits at the ascending sorted positions — same scheme as apply_kq.
+    unsigned long long base = tid;
+    for (unsigned j = 0; j < m; ++j) {
+        unsigned p = g.sorted[j];
+        unsigned long long mask = (1ULL << p) - 1ULL;
+        base = ((base & ~mask) << 1) | (base & mask);
+    }
+
+    // Gather the local block: local bit j ↔ qubit sorted[j].
+    unsigned long long gidx[32];
+    cplx v[32];
+    for (unsigned l = 0; l < dim; ++l) {
+        unsigned long long off = 0ULL;
+        for (unsigned j = 0; j < m; ++j) {
+            if ((l >> j) & 1u) off |= (1ULL << g.sorted[j]);
+        }
+        gidx[l] = base | off; // base's target bits are clear ⇒ | == +
+        v[l] = amps[gidx[l]];
+    }
+
+    // Apply gate j as a butterfly over local bit j (step = 1<<j). Each gate
+    // touches a distinct bit, so sequential application is their tensor product.
+    for (unsigned j = 0; j < m; ++j) {
+        unsigned step = 1u << j;
+        cplx m00 = g.mats[j * 4 + 0], m01 = g.mats[j * 4 + 1];
+        cplx m10 = g.mats[j * 4 + 2], m11 = g.mats[j * 4 + 3];
+        for (unsigned l = 0; l < dim; ++l) {
+            if ((l & step) == 0u) {
+                cplx a = v[l];
+                cplx b = v[l | step];
+                v[l]        = cadd(cmul(m00, a), cmul(m01, b));
+                v[l | step] = cadd(cmul(m10, a), cmul(m11, b));
+            }
+        }
+    }
+
+    for (unsigned l = 0; l < dim; ++l) amps[gidx[l]] = v[l];
+}
+
 // One thread per group of 2^k amplitudes; grid covers n_groups = 2^(n-k).
 // `mat` is row-major 2^k x 2^k (M[r*dim + c]). dim <= 32 (k <= 5), so the
 // thread-local arrays fit. In-place safe: all inputs are read before any write.
