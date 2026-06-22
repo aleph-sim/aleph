@@ -5,11 +5,12 @@
 use std::sync::Arc;
 
 use aleph_backend::{Backend, BackendError};
-use aleph_core::{Complex, GateError, GateInstance, GateMatrix, PauliString};
+use aleph_core::{Complex, GateInstance, GateMatrix, PauliString};
 use cudarc::driver::{CudaFunction, CudaModule, LaunchConfig, PushKernelArg};
 use cudarc::nvrtc::compile_ptx;
 use rand::{rngs::StdRng, SeedableRng};
 
+use crate::common::{control_mask, flatten_matrix, validate_and_extract};
 use crate::sv::kernel::{Gate1qParams, GateKqParams, APPLY_1Q, APPLY_KQ, SV_KERNELS_SRC};
 use crate::sv::readout;
 use crate::sv::state::{CudaSvState, MAX_CUDA_QUBITS};
@@ -137,42 +138,6 @@ fn launch_config(n_threads: u64) -> LaunchConfig {
     }
 }
 
-/// `max_{i,j} |(U·U†)_{i,j} - δ_{i,j}|`, mirroring `aleph_sv::validation`
-/// (crate-private there). NaN-propagating: any NaN entry yields NaN so the
-/// caller's `is_finite` reject fires (ADR 0006).
-fn unitarity_deviation(matrix: &GateMatrix) -> f64 {
-    fn max_dev<const N: usize>(m: &[[Complex; N]; N]) -> f64 {
-        let mut worst = 0.0_f64;
-        for (i, row_i) in m.iter().enumerate() {
-            for (j, row_j) in m.iter().enumerate() {
-                let mut acc = Complex::new(0.0, 0.0);
-                for (a, b) in row_i.iter().zip(row_j.iter()) {
-                    acc += a * b.conj();
-                }
-                let want = if i == j { 1.0 } else { 0.0 };
-                let dev = (acc - Complex::new(want, 0.0)).norm();
-                if dev.is_nan() {
-                    return f64::NAN;
-                }
-                if dev > worst {
-                    worst = dev;
-                }
-            }
-        }
-        worst
-    }
-    match matrix {
-        GateMatrix::M2x2(m) => max_dev::<2>(m),
-        GateMatrix::M4x4(m) => max_dev::<4>(m),
-        GateMatrix::M8x8(m) => max_dev::<8>(m),
-    }
-}
-
-/// Control-qubit bitmask `Σ 1 << c`.
-fn control_mask(controls: &[u32]) -> u32 {
-    controls.iter().fold(0u32, |acc, &c| acc | (1u32 << c))
-}
-
 /// Build a `Gate1qParams` from a 2×2 matrix and external controls.
 fn gate_1q_params(m: &[[Complex; 2]; 2], target: u32, controls: &[u32]) -> Gate1qParams {
     Gate1qParams {
@@ -213,18 +178,6 @@ fn gate_kq_params(qubits: &[u32], controls: &[u32]) -> GateKqParams {
     }
 }
 
-/// Row-major interleaved `[re, im]` of an `N×N` complex matrix.
-fn flatten_matrix<const N: usize>(m: &[[Complex; N]; N]) -> Vec<f64> {
-    let mut out = Vec::with_capacity(2 * N * N);
-    for row in m {
-        for z in row {
-            out.push(z.re);
-            out.push(z.im);
-        }
-    }
-    out
-}
-
 /// Map a CUDA-layer error to a backend error. Launch/transfer failures on a
 /// working GPU indicate an internal fault, not user input; richer plumbing is a
 /// follow-up (the variant set is shared across all backends).
@@ -257,50 +210,7 @@ impl Backend for CudaSvBackend {
         state: &mut Self::State,
         gate: &GateInstance,
     ) -> Result<(), BackendError> {
-        let n = state.num_qubits;
-        let expected = gate.gate.arity();
-        let got = gate.qubits.len();
-        if expected != got {
-            return Err(BackendError::ArityMismatch {
-                kind: gate.gate.name(),
-                expected,
-                got,
-            });
-        }
-        let mut seen: smallvec::SmallVec<[u32; 6]> = smallvec::SmallVec::new();
-        for &q in gate.qubits.iter().chain(gate.controls.iter()) {
-            if q >= n {
-                return Err(BackendError::QubitOutOfRange {
-                    qubit: q,
-                    num_qubits: n,
-                });
-            }
-            if seen.contains(&q) {
-                return Err(BackendError::DuplicateQubit { qubit: q });
-            }
-            seen.push(q);
-        }
-        // Fused k-qubit blocks (run_optimized) use a different operand order and
-        // are out of scope for this first GPU backend — raw `run` never emits
-        // them. Reject explicitly rather than mis-apply.
-        if matches!(gate.gate, aleph_core::Gate::UnitaryKq { .. }) {
-            return Err(BackendError::UnsupportedGate {
-                kind: gate.gate.name(),
-            });
-        }
-        let matrix = gate.gate.matrix().map_err(|e| match e {
-            GateError::SymbolicParam => BackendError::SymbolicParam,
-            GateError::NonFiniteParam => BackendError::NonFiniteParam {
-                kind: gate.gate.name(),
-            },
-            GateError::Unrepresentable => BackendError::UnsupportedGate {
-                kind: gate.gate.name(),
-            },
-        })?;
-        let deviation = unitarity_deviation(&matrix);
-        if !deviation.is_finite() || deviation > aleph_core::AMPLITUDE_TOL {
-            return Err(BackendError::NonUnitaryMatrix { deviation });
-        }
+        let matrix = validate_and_extract(state.num_qubits, gate)?;
         match matrix {
             GateMatrix::M2x2(m) => {
                 let params = gate_1q_params(&m, gate.qubits[0], &gate.controls);

@@ -7,6 +7,9 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 description = "CUDA GPU foundation for the aleph quantum circuit simulator (Linux + NVIDIA only)."
+# build.rs links libcustatevec, but only when the `cuquantum` feature is on
+# (it no-ops otherwise), so the default build needs no CUDA/cuQuantum present.
+build = "build.rs"
 
 [features]
 default = []
@@ -24,6 +27,11 @@ cuda = [
     "dep:rand",
     "dep:smallvec",
 ]
+# cuStateVec (cuQuantum) backend (P5-03). Superset of `cuda`: adds nothing but
+# the hand-written FFI in `src/cuquantum`, whose symbols `build.rs` links against
+# `libcustatevec`. Optional + off by default so it is built/tested only on a host
+# with cuQuantum installed (the RTX 4000 Ada box), never in CI.
+cuquantum = ["cuda"]
 
 [dependencies]
 thiserror = { workspace = true, optional = true }

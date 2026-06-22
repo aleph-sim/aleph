@@ -16,7 +16,13 @@
 #[cfg(all(target_os = "linux", feature = "cuda"))]
 mod buffer;
 #[cfg(all(target_os = "linux", feature = "cuda"))]
+mod common;
+#[cfg(all(target_os = "linux", feature = "cuda"))]
 mod context;
+// cuStateVec (cuQuantum) backend — superset of `cuda`, linked only under the
+// `cuquantum` feature (see `build.rs`).
+#[cfg(all(target_os = "linux", feature = "cuquantum"))]
+mod cuquantum;
 #[cfg(all(target_os = "linux", feature = "cuda"))]
 mod sv;
 
@@ -24,6 +30,8 @@ mod sv;
 pub use buffer::{device_alloc_count, DeviceBuffer};
 #[cfg(all(target_os = "linux", feature = "cuda"))]
 pub use context::CudaContext;
+#[cfg(all(target_os = "linux", feature = "cuquantum"))]
+pub use cuquantum::CuStateVecBackend;
 #[cfg(all(target_os = "linux", feature = "cuda"))]
 pub use sv::{CudaSvBackend, CudaSvState, MAX_CUDA_QUBITS};
 
@@ -41,4 +49,9 @@ pub enum Error {
     /// Any error surfaced by the CUDA driver API via `cudarc`.
     #[error("CUDA driver error: {0}")]
     Driver(#[from] cudarc::driver::DriverError),
+    /// A non-success `custatevecStatus_t` from a cuStateVec call (P5-03). The
+    /// payload is the raw status code (see `custatevec.h`).
+    #[cfg(feature = "cuquantum")]
+    #[error("cuStateVec error (status {0})")]
+    CuStateVec(i32),
 }
