@@ -77,4 +77,5 @@ aleph-core    = { path = "../aleph-core" }
 aleph-ir      = { path = "../aleph-ir" }
 aleph-oracle  = { path = "../aleph-oracle" }
 aleph-sv      = { path = "../aleph-sv" }
+aleph-stab    = { path = "../aleph-stab" }
 rand          = { workspace = true }

@@ -82,6 +82,7 @@ dependencies = [
  "aleph-core",
  "aleph-ir",
  "aleph-oracle",
+ "aleph-stab",
  "aleph-sv",
  "cudarc",
  "rand 0.8.6",

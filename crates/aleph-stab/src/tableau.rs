@@ -78,6 +78,31 @@ impl Tableau {
         self.n
     }
 
+    /// Export the `2n` generator rows as logical bits, orientation-independent.
+    ///
+    /// Returns `(x, z, sign)` where `x`/`z` are row-major `2n × n` (`x[r*n + c]`
+    /// is the x-bit of generator row `r`, qubit `c`) and `sign` is length `2n`
+    /// (`true` = leading `-`). The scratch row `2n` is excluded. Because gate
+    /// application is deterministic (no RNG), two tableaus that started from
+    /// `|0…0⟩` and saw the *same* Clifford sequence are bit-identical here — this
+    /// is the exact ground truth the GPU stabilizer backend (P5-07) is pinned
+    /// against.
+    pub fn export_generators(&self) -> (Vec<bool>, Vec<bool>, Vec<bool>) {
+        let n = self.n;
+        let rows = 2 * n;
+        let mut x = vec![false; rows * n];
+        let mut z = vec![false; rows * n];
+        let mut sign = vec![false; rows];
+        for r in 0..rows {
+            sign[r] = self.sign.get(r);
+            for c in 0..n {
+                x[r * n + c] = self.get_x(r, c);
+                z[r * n + c] = self.get_z(r, c);
+            }
+        }
+        (x, z, sign)
+    }
+
     // --- read accessors (used by tests + readout) ---
     // `pub(crate)` so tests and dispatch can read raw tableau bits.
     // `allow(dead_code)`: only referenced in `#[cfg(test)]` until P3-03
