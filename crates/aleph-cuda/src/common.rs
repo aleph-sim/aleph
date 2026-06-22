@@ -44,6 +44,40 @@ pub(crate) fn control_mask(controls: &[u32]) -> u32 {
     controls.iter().fold(0u32, |acc, &c| acc | (1u32 << c))
 }
 
+/// If `matrix` is diagonal — every off-diagonal entry within [`aleph_core::AMPLITUDE_TOL`]
+/// of zero — return its diagonal as the interleaved `[re, im]` buffer
+/// (`[d00.re, d00.im, d11.re, d11.im, …]`, length `2·dim`); otherwise `None`.
+///
+/// Diagonal gates (Z, S, T, Rz, Phase, and their controlled forms CZ / CPhase /
+/// multi-controlled Z) get routed to the custom `apply_diag` kernels (P5-06),
+/// which beat both the dense `apply_kq` and cuStateVec's generic apply. The test
+/// is numeric, not gate-type-based, so it stays backend-agnostic (CLAUDE.md:
+/// "don't hardcode gate types in kernels") and catches any diagonal unitary.
+pub(crate) fn diagonal_of(matrix: &GateMatrix) -> Option<Vec<f64>> {
+    fn check<const N: usize>(m: &[[Complex; N]; N]) -> Option<Vec<f64>> {
+        for (i, row) in m.iter().enumerate() {
+            for (j, z) in row.iter().enumerate() {
+                // NaN norms compare false here, but `validate_and_extract` has
+                // already rejected non-finite matrices, so entries are finite.
+                if i != j && z.norm() > aleph_core::AMPLITUDE_TOL {
+                    return None;
+                }
+            }
+        }
+        let mut diag = Vec::with_capacity(2 * N);
+        for (i, row) in m.iter().enumerate() {
+            diag.push(row[i].re);
+            diag.push(row[i].im);
+        }
+        Some(diag)
+    }
+    match matrix {
+        GateMatrix::M2x2(m) => check(m),
+        GateMatrix::M4x4(m) => check(m),
+        GateMatrix::M8x8(m) => check(m),
+    }
+}
+
 /// Row-major interleaved `[re, im]` of an `N×N` complex matrix.
 pub(crate) fn flatten_matrix<const N: usize>(m: &[[Complex; N]; N]) -> Vec<f64> {
     let mut out = Vec::with_capacity(2 * N * N);

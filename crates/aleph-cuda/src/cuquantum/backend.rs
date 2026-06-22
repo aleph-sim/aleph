@@ -12,8 +12,9 @@ use aleph_core::{GateInstance, GateMatrix, PauliString};
 use cudarc::driver::DevicePtrMut;
 use rand::{rngs::StdRng, SeedableRng};
 
-use crate::common::{flatten_matrix, validate_and_extract};
+use crate::common::{control_mask, diagonal_of, flatten_matrix, validate_and_extract};
 use crate::cuquantum::sys;
+use crate::sv::diag::{diag_1q_params, diag_kq_params, DiagKernels};
 use crate::sv::readout::GpuReadout;
 use crate::sv::{CudaSvState, MAX_CUDA_QUBITS};
 use crate::{CudaContext, DeviceBuffer, Error};
@@ -34,6 +35,14 @@ pub struct CuStateVecBackend {
     /// GPU-resident readout (P5-05), shared with the hand-written backend — the
     /// state buffer layout is identical, so the same reduction kernels apply.
     readout: GpuReadout,
+    /// Custom diagonal-gate kernels (P5-06). cuStateVec's generic
+    /// `custatevecApplyMatrix` overpays for diagonal gates; this is the
+    /// "niche cuQuantum misses" the issue targets.
+    diag: DiagKernels,
+    /// When set (default), diagonal gates divert to [`Self::diag`] instead of
+    /// cuStateVec. Cleared (`with_custom_kernels(false)`) routes every gate
+    /// through cuStateVec — the pure-cuQuantum baseline for the P5-06 A/B.
+    custom_diag: bool,
 }
 
 impl CuStateVecBackend {
@@ -65,6 +74,7 @@ impl CuStateVecBackend {
             unsafe { sys::custatevecDestroy(handle) };
             return Err(e);
         }
+        let diag = DiagKernels::new(&ctx)?;
         let readout = GpuReadout::new(&ctx)?;
         Ok(Self {
             ctx,
@@ -73,6 +83,8 @@ impl CuStateVecBackend {
             qubit_cap: MAX_CUDA_QUBITS,
             workspace: None,
             readout,
+            diag,
+            custom_diag: true,
         })
     }
 
@@ -80,6 +92,35 @@ impl CuStateVecBackend {
     pub fn with_qubit_cap(mut self, cap: u32) -> Self {
         self.qubit_cap = cap;
         self
+    }
+
+    /// Enable (default) or disable diverting diagonal gates to the custom
+    /// `apply_diag` kernels (P5-06). Disabling routes every gate through
+    /// cuStateVec — the pure-cuQuantum baseline arm of the P5-06 A/B benchmark.
+    pub fn with_custom_kernels(mut self, on: bool) -> Self {
+        self.custom_diag = on;
+        self
+    }
+
+    /// Apply a diagonal gate via the custom `apply_diag` kernels instead of
+    /// `custatevecApplyMatrix` (P5-06). `diag` is the interleaved `[re, im]`
+    /// diagonal from [`diagonal_of`]; `qubits` are the operands MSB-first;
+    /// `controls` are external controls.
+    fn apply_diag(
+        &self,
+        state: &mut CudaSvState,
+        diag: &[f64],
+        qubits: &[u32],
+        controls: &[u32],
+    ) -> Result<(), Error> {
+        let ctrl_mask = control_mask(controls);
+        if qubits.len() == 1 {
+            let params = diag_1q_params(diag, qubits[0], ctrl_mask);
+            self.diag.launch_1q(&self.ctx, state, params)
+        } else {
+            let params = diag_kq_params(qubits, ctrl_mask);
+            self.diag.launch_kq(&self.ctx, state, params, diag)
+        }
     }
 
     /// Apply a validated dense matrix to `state` via `custatevecApplyMatrix`.
@@ -221,6 +262,15 @@ impl Backend for CuStateVecBackend {
         gate: &GateInstance,
     ) -> Result<(), BackendError> {
         let matrix = validate_and_extract(state.num_qubits, gate)?;
+        // P5-06: divert diagonal gates to the custom kernel — the niche where a
+        // bespoke phase-multiply beats cuStateVec's generic dense apply.
+        if self.custom_diag {
+            if let Some(diag) = diagonal_of(&matrix) {
+                return self
+                    .apply_diag(state, &diag, &gate.qubits, &gate.controls)
+                    .map_err(to_backend_err);
+            }
+        }
         // cuStateVec target ordering is little-endian (targets[0] = LSB of the
         // matrix index), but `gate.matrix()` lays operands out MSB-first
         // (qubits[0] = MSB). Reversing the operand list reconciles the two so the

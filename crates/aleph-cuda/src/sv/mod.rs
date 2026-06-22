@@ -5,6 +5,9 @@
 //! is gated by an oracle test vs the CPU `NaiveSvBackend` (ADR 0004 convention).
 
 mod backend;
+// Custom diagonal-gate kernels (P5-06). `pub(crate)` so the cuStateVec backend
+// embeds the same `DiagKernels` and diverts diagonal gates to it.
+pub(crate) mod diag;
 mod kernel;
 // `pub(crate)` so the cuStateVec backend reuses the identical host-side readout
 // (measure / sample / expectation / probabilities), keeping both GPU backends'
