@@ -3111,6 +3111,147 @@ Phase exit criterion.
 
 -----
 
+# Phase 5.9 — CUDA state-vector throughput → Aer-GPU parity
+
+Phase 5 met its exit gate (aleph FP64 GPU SV within 1.22× of cuStateVec on every
+Tier-1 + Tier-2 workload at n=28). But the P5-08 report found **Qiskit Aer-GPU is
+2–5× faster than both aleph and cuStateVec** — and *not* via a better kernel or
+lower precision (Aer is FP64, its own engine, `cuStateVec_enable=False`). The gap
+is entirely **above the kernel**, two levers:
+
+1. **Gate fusion** — Aer fuses runs of gates into larger unitaries before
+   simulating, cutting full-state passes (the dominant cost, since SV is
+   bandwidth-bound). aleph *already has* the IR passes (`Fuse2q`, the P2-08
+   diagonal-run fusion) but the GPU backend never sees them. Disabling Aer's
+   fusion moves it back toward the per-gate engines (Grover 3.89→5.33 s, QAOA
+   6.54→15.03 s), quantifying this lever.
+2. **Batched dispatch** — even fusion-off Aer beats our cuStateVec column (QFT
+   6.4 vs 10.6 s): it streams many gates per launch, where our path is one
+   kernel launch (and, for cuStateVec, a workspace query) per gate.
+
+Goal: close the gap to Aer-GPU on the Tier-1 + Tier-2 SV suite — bandwidth-pass
+reduction the project already knows how to do on the CPU side, applied to the GPU
+backend. Box: `openwebgui.splynx.com` (RTX 4000 SFF Ada; aer-gpu venv at
+`/root/aervenv`). Exit metric in ROADMAP § 7.
+
+-----
+
+### [P5.9-01] Feed the IR gate-fusion passes into the GPU run path
+
+**Labels:** `area:backend-gpu`, `area:ir`, `type:optimization`, `priority:high`
+**Milestone:** Phase 5
+**Estimate:** M
+**Depends on:** P5-02, P5-06, P1-10 (Fuse2q), P2-08 (diagonal-run fusion)
+
+**Description**
+Run the existing IR fusion passes (`Fuse2q` + P2-08 diagonal-run fusion) on the
+circuit before the GPU backends apply it, so adjacent 2q gates collapse to one
+4×4 (`apply_kq`, k=2 — already supported) and diagonal runs collapse to one
+phase multiply (`apply_diag`, P5-06). The cheapest, highest-ROI lever: no new
+kernels, reuses passes that already gate-test against the CPU oracle.
+
+**Technical Details**
+- Apply the passes in `CudaSvBackend`/`CuStateVecBackend` ingestion (or a shared
+  GPU run helper), guarded by a flag so the unfused path stays benchable.
+- QFT/QPE benefit from diagonal-run fusion; brickwall/VQE/QAOA from `Fuse2q`.
+
+**Acceptance Criteria**
+- [ ] Fused GPU run is oracle-equal to unfused (1e-10) across Tier-1 + Tier-2.
+- [ ] Benchmark shows per-workload speedup vs unfused; no Tier-1 regression.
+
+**Testing Requirements**
+- Oracle vs CPU `NaiveSvBackend` on the fused circuit; A/B benchmark (fused vs not).
+
+**References**
+- `docs/perf/p5-08-gpu-report.md` (the gap analysis).
+
+-----
+
+### [P5.9-02] 4–5q fused dense kernel + IR blocks
+
+**Labels:** `area:backend-gpu`, `area:ir`, `type:optimization`, `priority:high`
+**Milestone:** Phase 5
+**Estimate:** L
+**Depends on:** P5.9-01
+
+**Description**
+Let fusion emit up to 5-qubit dense blocks (Aer's default `fusion_max_qubit=5`)
+and apply them on GPU. The `apply_kq` kernel already guards `k ≤ 5`; what's
+missing is an IR/`GateMatrix` representation for 4q/5q dense unitaries, the host
+flatten/launch for k=4,5, and the fusion pass producing them.
+
+**Acceptance Criteria**
+- [ ] 4q/5q fused blocks apply on GPU, oracle-equal to unfused (1e-10).
+- [ ] Benchmark improvement on dense-2q workloads (random/VQE/QAOA) vs P5.9-01.
+
+**Testing Requirements**
+- Oracle vs CPU SV; benchmark vs P5.9-01 baseline.
+
+-----
+
+### [P5.9-03] Batched disjoint-layer dispatch (one memory sweep per layer)
+
+**Labels:** `area:backend-gpu`, `type:optimization`, `priority:medium`
+**Milestone:** Phase 5
+**Estimate:** L
+**Depends on:** P5-02
+
+**Description**
+Apply all disjoint-qubit gates of a circuit layer in a **single pass over the
+state**, cutting both kernel launches and memory sweeps (N disjoint 1q gates →
+1 sweep, not N). Mirrors the P5-07 `stab_layer` idea for the SV backend; schedule
+the circuit into maximal disjoint layers in the IR.
+
+**Acceptance Criteria**
+- [ ] Layer dispatch oracle-equal to per-gate (1e-10).
+- [ ] Benchmark: fewer sweeps/launches → measured speedup on layered circuits.
+
+**Testing Requirements**
+- Oracle vs CPU SV; benchmark vs per-gate dispatch.
+
+-----
+
+### [P5.9-04] Specialized 2q kernels (CNOT / diagonal-2q)
+
+**Labels:** `area:backend-gpu`, `type:optimization`, `priority:low`
+**Milestone:** Phase 5
+**Estimate:** M
+**Depends on:** P5-02
+
+**Description**
+Tuned kernels for the common 2q gates (CNOT as a permutation, `CZ`/`CRz` as
+diagonal-2q) to close the residual 1.13–1.22× vs cuStateVec on dense-2q-heavy
+workloads, instead of the generic 4×4 `apply_kq` matvec.
+
+**Acceptance Criteria**
+- [ ] Oracle-equal (1e-10); benchmark improvement on CNOT-heavy workloads.
+
+**Testing Requirements**
+- Oracle vs CPU SV; benchmark.
+
+-----
+
+### [P5.9-05] Re-bench vs Aer-GPU + verdict
+
+**Labels:** `area:bench`, `area:docs`, `type:docs`, `priority:high`
+**Milestone:** Phase 5
+**Estimate:** S
+**Depends on:** P5.9-01, P5.9-02, P5.9-03
+
+**Description**
+Re-run the P5-08 harness with all Phase-5.9 work enabled, update
+`docs/perf/p5-08-gpu-report.md` (or a new `p5.9` report), and state whether the
+Aer-GPU parity exit metric (ROADMAP § 7) is reached.
+
+**Acceptance Criteria**
+- [ ] Updated report published with the post-fusion numbers.
+- [ ] Exit metric explicitly evaluated (met / not-met + verdict).
+
+**Testing Requirements**
+- Full Tier-1 + Tier-2 re-bench, aleph vs cuStateVec vs Aer-GPU.
+
+-----
+
 # Phase 5.7 — GPU-resident MPS (Apple/Metal)
 
 Goal: take the MPS-on-Metal scaffold from "correct but CPU-SVD-bottlenecked" to a
