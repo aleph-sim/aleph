@@ -19,6 +19,8 @@ mod buffer;
 mod common;
 #[cfg(all(target_os = "linux", feature = "cuda"))]
 mod context;
+#[cfg(all(target_os = "linux", feature = "cuda"))]
+mod pool;
 // cuStateVec (cuQuantum) backend — superset of `cuda`, linked only under the
 // `cuquantum` feature (see `build.rs`).
 #[cfg(all(target_os = "linux", feature = "cuquantum"))]
