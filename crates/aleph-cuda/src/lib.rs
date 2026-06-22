@@ -25,6 +25,10 @@ mod pool;
 // `cuquantum` feature (see `build.rs`).
 #[cfg(all(target_os = "linux", feature = "cuquantum"))]
 mod cuquantum;
+// GPU stabilizer (CHP tableau) Clifford backend (P5-07). Pure `cuda`, no
+// cuStateVec — independent of the dense/SV path.
+#[cfg(all(target_os = "linux", feature = "cuda"))]
+mod stab;
 #[cfg(all(target_os = "linux", feature = "cuda"))]
 mod sv;
 
@@ -34,6 +38,8 @@ pub use buffer::{device_alloc_count, device_dtoh_bytes, DeviceBuffer};
 pub use context::CudaContext;
 #[cfg(all(target_os = "linux", feature = "cuquantum"))]
 pub use cuquantum::CuStateVecBackend;
+#[cfg(all(target_os = "linux", feature = "cuda"))]
+pub use stab::{op as stab_op, CudaStab, CudaStabState, Generators, StabOp};
 #[cfg(all(target_os = "linux", feature = "cuda"))]
 pub use sv::{CudaSvBackend, CudaSvState, MAX_CUDA_QUBITS};
 
