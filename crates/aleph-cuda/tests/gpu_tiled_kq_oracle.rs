@@ -121,7 +121,7 @@ fn gpu_tiled_kq_matches_cpu_unfused() {
     // n=11 spans whole blocks (n=8 thresholds) and the small-tail block path
     // (the last grid block is partially out of range): both must be correct.
     let n = 11;
-    let mut rng = StdRng::seed_from_u64(0x5_10_01);
+    let mut rng = StdRng::seed_from_u64(0x51001);
 
     let mut total: BTreeMap<u8, usize> = BTreeMap::new();
     let workloads: Vec<(&str, Circuit)> = vec![
@@ -167,7 +167,7 @@ fn gpu_tiled_kq_small_n_partial_block() {
             return;
         }
     };
-    let mut rng = StdRng::seed_from_u64(0xabc_510_01);
+    let mut rng = StdRng::seed_from_u64(0xabc51001);
     // n=5: one window fuses to exactly one k=5 block; n=6,7 add k=4,5 mixes whose
     // groups straddle whole + tail grid blocks.
     for n in 5..=7u32 {
