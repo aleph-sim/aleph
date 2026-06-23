@@ -12,9 +12,10 @@
 //!   only emits a block at span ≥ 3 with ≥ 2 members, so isolated 1q/2q gates
 //!   keep their specialised kernels — it is purely additive over P5.9-01.
 //!
-//! It deliberately omits the CPU-tiling `RelabelQubits` / `TileBlock` passes,
-//! which permute qubit labels, and `FuseDiagonalRuns`, which emits
-//! `DiagonalPhase` (no GPU kernel yet — that is P5.9-03's diagonal path).
+//! `FuseDiagonalRuns` runs first (P5.9-06): it collapses a controlled-phase
+//! ladder (QFT/QPE) into one `DiagonalPhase`, which the GPU `apply_phase_poly`
+//! kernel applies in a single coalesced sweep. It deliberately omits the
+//! CPU-tiling `RelabelQubits` / `TileBlock` passes, which permute qubit labels.
 //!
 //! **Why width 3, not Aer's 5.** The P5.9-02b A/B bench (n=28, RTX 4000 Ada;
 //! `docs/perf/p5.9-gpu-fusion.md`) measured `max_qubits ∈ {3,4,5}` on the GPU:
@@ -29,7 +30,8 @@
 //! See `docs/perf/p5-08-gpu-report.md` for the Aer-GPU target.
 
 use aleph_ir::passes::{
-    CancelInversePairs, DeadCodeElim, Fuse1qRuns, Fuse2q, FuseKq, Pass, PassPipeline,
+    CancelInversePairs, DeadCodeElim, Fuse1qRuns, Fuse2q, FuseDiagonalRuns, FuseKq, Pass,
+    PassPipeline,
 };
 use aleph_ir::Circuit;
 
@@ -60,6 +62,10 @@ pub fn fuse_for_gpu_with(circuit: &Circuit, kq_max: Option<usize>) -> Circuit {
     let mut passes: Vec<Box<dyn Pass>> = vec![
         Box::new(CancelInversePairs),
         Box::new(DeadCodeElim),
+        // P5.9-06: collapse controlled-phase ladders (QFT/QPE) into one
+        // DiagonalPhase, applied by the GPU `apply_phase_poly` kernel in a single
+        // coalesced sweep. Runs before Fuse1q/Fuse2q (canonical pipeline order).
+        Box::new(FuseDiagonalRuns),
         Box::new(Fuse1qRuns),
         Box::new(Fuse2q),
     ];
