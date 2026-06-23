@@ -558,7 +558,7 @@ fn launch_config_shared(n_threads: u64, shared_bytes: u32) -> LaunchConfig {
 }
 
 /// Build a `Gate1qParams` from a 2×2 matrix and external controls.
-fn gate_1q_params(m: &[[Complex; 2]; 2], target: u32, controls: &[u32]) -> Gate1qParams {
+pub(crate) fn gate_1q_params(m: &[[Complex; 2]; 2], target: u32, controls: &[u32]) -> Gate1qParams {
     Gate1qParams {
         m: [
             m[0][0].re, m[0][0].im, m[0][1].re, m[0][1].im, m[1][0].re, m[1][0].im, m[1][1].re,
@@ -580,7 +580,7 @@ fn gate_1q_params(m: &[[Complex; 2]; 2], target: u32, controls: &[u32]) -> Gate1
 /// `b` (0 = LSB) corresponds to `qubits[k-1-b]`: `qbit[b] = 1 << qubits[k-1-b]`.
 /// `sorted` (ascending target positions, operand-order-independent) drives the
 /// kernel's zero-bit insertion.
-fn gate_kq_params(qubits: &[u32], controls: &[u32]) -> GateKqParams {
+pub(crate) fn gate_kq_params(qubits: &[u32], controls: &[u32]) -> GateKqParams {
     let k = qubits.len();
     let mut qbit = [0u32; 5];
     let mut sorted = [0u32; 5];
