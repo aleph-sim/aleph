@@ -14,6 +14,7 @@ pub(crate) const APPLY_1Q_MULTI: &str = "apply_1q_multi";
 pub(crate) const APPLY_CNOT: &str = "apply_cnot";
 pub(crate) const APPLY_PHASE_POLY: &str = "apply_phase_poly";
 pub(crate) const APPLY_KQ: &str = "apply_kq";
+pub(crate) const APPLY_KQ_TILED: &str = "apply_kq_tiled";
 
 /// Hard ceiling on the single-qubit-gate batch [`apply_1q_multi`] applies in one
 /// sweep — the `Multi1q` 32-entry local block (2^5). Sizes the struct slots and
