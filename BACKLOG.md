@@ -3386,6 +3386,185 @@ track's FP32 ceiling — with a 1e-5 oracle tolerance instead of FP64's 1e-10.
 
 -----
 
+# Phase 5.11 — single-GPU SV: deeper reach & throughput
+
+Phase 5.10 shipped three single-GPU levers — the register-tiled fused-block
+kernel (P5.10-01), out-of-core host-memory paging to n=31 (P5.10-02), and an FP32
+backend (n=31 in-core, ~2× throughput; P5.10-03). Phase 5.11 **stacks and combines
+them** and attacks the two walls they exposed: the **PCIe-serialised paging cost**
+(~18.5× the in-core rate, no copy/compute overlap) and the **O(4^k) dense-matvec
+compute ceiling** (k=4,5 fusion still loses to k=3 even with the spill removed).
+Every ticket is measurable on the one RTX 4000 SFF Ada box (`openwebgui.splynx.com`,
+20 GiB card, 62 GiB host RAM); true multi-GPU scaling remains Phase 6 (deferred).
+
+### [P5.11-01] FP32 out-of-core paging → n=32
+
+**Labels:** `area:backend-gpu`, `type:feature`, `priority:high`
+**Milestone:** Phase 5
+**Depends on:** P5.10-02, P5.10-03
+**Estimate:** M
+
+**Description**
+`run_paged` (P5.10-02) streams an **FP64** host state, so n=32 needs 64 GiB of
+pinned host memory — past this box's 62 GiB. The FP32 buffer (P5.10-03) halves
+that: FP32 paged n=32 is `2^32 · 8 B = 32 GiB` of pinned host, comfortably inside
+62 GiB. Generalise the paging executor over precision (or add an FP32 paged path):
+hold the host state and stream the tiles as `f32`, and route each tile group's
+compute through `CudaSvBackendF32::apply_gate` instead of the FP64 backend. The
+tiling scheme (high/low split, co-resident gather, qubit remap) is unchanged —
+only the scalar type and the per-tile kernels differ. Sets a new single-GPU reach
+record (n=32) on the same card.
+
+**Acceptance Criteria**
+- [ ] FP32 paged run oracle-equal to the FP32 in-core backend (and CPU FP64 within
+  1e-5) at small `n` with paging forced on.
+- [ ] **n=32 runs on the 20 GiB card** (32 GiB FP32 pinned host); report wall time
+  and effective host↔device throughput.
+
+**Testing Requirements**
+- Oracle vs `CudaSvBackendF32` / CPU at small `n` forced-tiled; n=32 reach bench.
+
+-----
+
+### [P5.11-02] Overlapped (double-buffered) paging copies
+
+**Labels:** `area:backend-gpu`, `type:optimization`, `priority:high`
+**Milestone:** Phase 5
+**Depends on:** P5.10-02
+**Estimate:** M
+
+**Description**
+`run_paged`'s tile copies are **synchronous**: cudarc inserts a host sync whenever
+a borrowed slice backs an async copy, so H2D, compute, and D2H never overlap
+(P5.10-02 measured ~18.5× the in-core cost; the state buffer is pinned so each copy
+is fast pinned DMA — the loss is purely the lack of overlap). Issue the tile copies
+via raw-FFI `memcpy_htod_async` / `memcpy_dtoh_async` on a dedicated copy stream,
+with two (ping/pong) device tile-group buffers and CUDA events, so
+gather(i+1) / compute(i) / scatter(i−1) run concurrently and keep the PCIe link
+saturated in both directions. This cannot beat the PCIe-vs-resident bandwidth ratio
+that sets the floor, but should recover a meaningful fraction by hiding compute and
+overlapping H2D with D2H.
+
+**Acceptance Criteria**
+- [ ] Oracle-equal to the synchronous paged path (1e-10) at small `n` forced-tiled.
+- [ ] Measured speedup vs the synchronous paging baseline at n=30/31; report the
+  transfer-overlap efficiency (achieved vs peak PCIe bandwidth).
+
+**Testing Requirements**
+- Oracle vs the synchronous path; A/B throughput bench vs P5.10-02.
+
+-----
+
+### [P5.11-03] Amortise PCIe over multi-gate tile residency
+
+**Labels:** `area:backend-gpu`, `type:optimization`, `priority:high`
+**Milestone:** Phase 5
+**Depends on:** P5.10-02
+**Estimate:** L
+
+**Description**
+Today every paged gate streams the whole `2^n` state once (one read + one write).
+But a **run of consecutive gates acting only on low (within-tile) qubits** can be
+applied to a tile *while it is resident*, before scattering — collapsing N per-gate
+PCIe passes into one. Schedule the circuit into maximal low-qubit-only runs
+(optionally relabelling qubits so the hot/most-acted qubits are low), load each
+tile once, apply the whole run on-device, scatter once. For locality-rich circuits
+(1q layers, nearest-neighbour 2q on low qubits) this cuts PCIe traffic by the run
+length — the single largest paging lever — and composes with IR fusion (apply
+`UnitaryKq` blocks within a residency) and with P5.11-02's overlap.
+
+**Acceptance Criteria**
+- [ ] Oracle-equal to per-gate paging (1e-10) at small `n` forced-tiled.
+- [ ] On a locality-rich circuit at n=31, **≥2× fewer full-state PCIe passes** than
+  per-gate paging; report the wall-time speedup.
+
+**Testing Requirements**
+- Oracle vs per-gate paging; A/B bench (per-gate vs batched-residency) at n=30/31.
+
+-----
+
+### [P5.11-04] First-class FP32 backend: GPU-resident readout + throughput levers
+
+**Labels:** `area:backend-gpu`, `type:feature`, `priority:medium`
+**Milestone:** Phase 5
+**Depends on:** P5.10-03
+**Estimate:** L
+
+**Description**
+`CudaSvBackendF32` is a per-gate apply path with host-side amplitude readout only:
+it does not implement the full `Backend` trait (no GPU-resident measure / sample /
+expectation / probabilities) and skips the Phase 5.9 / 5.10-01 throughput levers
+(IR fusion, `apply_1q_multi` layer batching, `apply_phase_poly`, `apply_kq_tiled`).
+Port the `GpuReadout` reductions and the apply-side levers to FP32 so it is a
+drop-in first-class backend whose throughput wins **stack on the 2× precision win**
+(e.g. FP32 + `apply_phase_poly` for QFT/QPE, FP32 + fusion for dense workloads).
+
+**Acceptance Criteria**
+- [ ] FP32 backend implements the full `Backend` trait, oracle-equal to FP64 within
+  1e-5 (probabilities at 100k shots within the 1e-5 band).
+- [ ] FP32 + fusion / phase-poly beats per-gate FP32 on QFT/QPE/dense workloads;
+  report the stacked speedup vs FP64.
+
+**Testing Requirements**
+- Readout oracle (measure/sample/expectation/probabilities) vs FP64; throughput
+  bench vs per-gate FP32 and vs FP64.
+
+-----
+
+### [P5.11-05] Tensor-core (TF32) fused-block matvec — break the k=4,5 compute wall
+
+**Labels:** `area:backend-gpu`, `type:optimization`, `priority:medium`
+**Milestone:** Phase 5
+**Depends on:** P5.10-01, P5.10-03
+**Estimate:** L
+
+**Description**
+P5.10-01 established that the wall past k=3 fusion is the **O(4^k) dense matvec
+compute itself**, not register spill — the warp-tiled `apply_kq_tiled` removed the
+spill yet k=4,5 still lose to k=3. The Ada card's **TF32 / FP16 tensor cores**
+(~8× the FP32 FMA rate) sit idle on this path. Recast the `2^k × 2^k` fused-block
+matvec as a tensor-core MMA (TF32 for ~1e-5, or FP16 inputs with FP32 accumulate)
+so the compute that gated wide fusion gets cheap enough to finally pay. Pairs
+naturally with the FP32 amplitude buffer (P5.10-03 / P5.11-04). If it works, this
+is the lever that lets `MAX_FUSE_QUBITS` rise past 3.
+
+**Acceptance Criteria**
+- [ ] TF32 fused-block apply oracle-equal to the FP32 dense apply within 1e-4
+  (TF32 mantissa) across dense workloads.
+- [ ] k=4 and/or k=5 fused blocks **beat the k=3 baseline** on dense workloads (the
+  P5.10-01 metric, now via cheaper compute); raise `MAX_FUSE_QUBITS` if met.
+
+**Testing Requirements**
+- Oracle vs FP32 dense apply; A/B bench tiled vs tensor-core at k=3,4,5.
+
+-----
+
+### [P5.11-06] Backend auto-select: precision + reach policy
+
+**Labels:** `area:backend`, `area:backend-gpu`, `type:feature`, `priority:low`
+**Milestone:** Phase 5
+**Depends on:** P5.10-02, P5.10-03
+**Estimate:** S
+
+**Description**
+The backend selector (`aleph-backend/src/select.rs`) does not know about FP32 or
+paging, so users must hand-wire those backends. Add a precision + reach policy:
+route to `CudaSvBackendF32` when the caller's accuracy tolerance admits FP32 (and
+it buys reach / throughput), and to the paged executor when
+`n > MAX_CUDA_QUBITS` (FP64) or `n > MAX_CUDA_QUBITS_F32` (FP32). Expose the
+precision / reach choice through the CLI and Python bindings so the Phase 5.10/5.11
+reach is reachable without manually constructing backends.
+
+**Acceptance Criteria**
+- [ ] Selector routes `n > 30` FP64 (or `n > 31` FP32) to the paged executor and
+  honours an explicit FP32/precision flag; covered by unit tests.
+- [ ] CLI / Python expose the precision + reach choice; documented.
+
+**Testing Requirements**
+- Selector unit tests; an end-to-end CLI run at n=31.
+
+-----
+
 # Phase 5.7 — GPU-resident MPS (Apple/Metal)
 
 Goal: take the MPS-on-Metal scaffold from "correct but CPU-SVD-bottlenecked" to a
