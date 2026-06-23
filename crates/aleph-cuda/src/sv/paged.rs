@@ -184,7 +184,7 @@ impl CudaSvBackend {
                                     // SAFETY: `alloc_pinned` returns an owned page-locked allocation of
                                     // `host_len` f64; we initialise every element below before any copy
                                     // reads it. The slice is freed on `PagedSvState` drop.
-        let mut host: PinnedHostSlice<f64> = unsafe { ctx.stream().alloc_pinned(host_len) }
+        let mut host: PinnedHostSlice<f64> = unsafe { ctx.raw().alloc_pinned(host_len) }
             .map_err(|e| to_backend_err(Error::Driver(e)))?;
         {
             let s = host
