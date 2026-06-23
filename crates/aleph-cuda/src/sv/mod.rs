@@ -12,10 +12,13 @@ mod kernel;
 // `pub(crate)` so the cuStateVec backend reuses the identical host-side readout
 // (measure / sample / expectation / probabilities), keeping both GPU backends'
 // measurement distributions byte-for-byte aligned with the CPU oracle.
+// Out-of-core (host-memory paged) executor for n > MAX_CUDA_QUBITS (P5.10-02).
+mod paged;
 pub(crate) mod readout;
 mod state;
 
 pub use backend::CudaSvBackend;
+pub use paged::PagedSvState;
 pub use state::{CudaSvState, MAX_CUDA_QUBITS};
 
 // The oracle harness pulls amplitudes through `HasAmplitudes`. Implemented here
