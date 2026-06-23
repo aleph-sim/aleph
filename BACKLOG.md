@@ -3296,6 +3296,96 @@ of cphase passes into **one** coalesced sweep `amps[x] *= exp(i·φ(x))`.
 
 -----
 
+# Phase 5.10 — single-GPU SV: reach & throughput
+
+Phase 5.9 reached Aer-GPU parity on the single RTX 4000 Ada box. Phase 5.10 is the
+set of **single-GPU** levers that still have a measurable exit *on the hardware we
+have* — pushing throughput and qubit reach without a multi-GPU cluster. (True
+distributed / multi-node SV is Phase 6, deferred until multi-GPU hardware is
+available: its exit metric — scaling efficiency across nodes — is unmeasurable on
+one card, so building it now would ship an unverifiable perf claim.) All three
+tickets below oracle-test and benchmark entirely on `openwebgui.splynx.com`.
+
+### [P5.10-01] Register-tiled fused-block kernel (unlock k=4,5 fusion)
+
+**Labels:** `area:backend-gpu`, `type:optimization`, `priority:high`
+**Milestone:** Phase 5
+**Depends on:** P5.9-02
+**Estimate:** L
+
+**Description**
+P5.9-02b measured that the generic `apply_kq` only profits from fusion up to
+**k=3**; k=4,5 regress because the dense `2^k × 2^k` matvec per amplitude group is
+O(4^k) and the `v[32]`/`gidx[32]` thread-local arrays (768 B at k=5) spill to
+local memory. Aer reaches its `fusion_max_qubit=5` default with register-tiled
+fused-block kernels. This ticket writes a kernel that keeps the `2^k` block in
+registers / shared memory without spilling (e.g. a warp-cooperative tile where
+each lane owns a slice of the block and the matvec is a shared-memory reduction),
+so k=4,5 fused blocks beat the k=3 result instead of regressing.
+
+**Acceptance Criteria**
+- [ ] k=4 and k=5 fused blocks apply faster than the k=3 `apply_kq` baseline on
+  dense workloads (random/VQE/QAOA), oracle-equal to unfused CPU SV (1e-10).
+- [ ] `MAX_FUSE_QUBITS` raised to the new measured sweet spot; P5.9-05 verdict
+  re-run shows no regression and a measurable gain on the dense-2q cells.
+
+**Testing Requirements**
+- Oracle vs CPU `NaiveSvBackend`; A/B benchmark vs the generic `apply_kq` at k=3,4,5.
+
+-----
+
+### [P5.10-02] Host-memory paging for n > 30 (out-of-core single-GPU SV)
+
+**Labels:** `area:backend-gpu`, `type:feature`, `priority:medium`
+**Milestone:** Phase 5
+**Depends on:** P5-02, P5-05
+**Estimate:** L
+
+**Description**
+`MAX_CUDA_QUBITS = 30` is the largest state that fits the 20 GiB card (16 GiB of
+FP64 at n=30). Beyond that the state must live in host memory and stream through
+the device. Implement an out-of-core path: hold the `2^n` state in pinned host
+memory, process each gate over device-sized tiles with overlapped H2D/D2H copies
+(double-buffered on the stream), so n=31–33 runs on one GPU at a documented
+bandwidth-bound throughput cost. The P5-05 retaining pool and stream plumbing are
+the foundation; the new work is the tiling schedule and the host-resident state.
+
+**Acceptance Criteria**
+- [ ] Out-of-core run is oracle-equal to the in-core path / CPU SV (1e-10) at
+  small n with paging forced on.
+- [ ] n=31 (and ideally 32) runs on the 20 GiB card; report the throughput hit
+  vs in-core (transfer-overlap efficiency).
+
+**Testing Requirements**
+- Oracle vs CPU `NaiveSvBackend` with forced tiling at small n; throughput bench
+  at n=30 (in-core) vs n=31 (paged).
+
+-----
+
+### [P5.10-03] FP32 / mixed-precision GPU state vector
+
+**Labels:** `area:backend-gpu`, `type:optimization`, `priority:medium`
+**Milestone:** Phase 5
+**Depends on:** P5-02
+**Estimate:** M
+
+**Description**
+FP64 on the Ada card is compute-weak (~1/64 the FP32 rate); the GPU SV is
+bandwidth-bound, and FP32 halves both the memory footprint (2 GiB at n=28) and the
+bytes moved per sweep, for ~2× throughput and +1 qubit of reach. Add an FP32
+(optionally mixed-precision) variant of `CudaSvBackend` — mirroring the Metal
+track's FP32 ceiling — with a 1e-5 oracle tolerance instead of FP64's 1e-10.
+
+**Acceptance Criteria**
+- [ ] FP32 backend oracle-equal to the FP64 backend / Qiskit within 1e-5 across
+  Tier-1 + Tier-2.
+- [ ] Benchmark shows ~2× memory + throughput vs FP64; +1 qubit reach on the card.
+
+**Testing Requirements**
+- Oracle vs FP64 `CudaSvBackend` (1e-5); throughput + reach benchmark vs FP64.
+
+-----
+
 # Phase 5.7 — GPU-resident MPS (Apple/Metal)
 
 Goal: take the MPS-on-Metal scaffold from "correct but CPU-SVD-bottlenecked" to a
