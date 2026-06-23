@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use aleph_backend::{Backend, BackendError};
 use aleph_core::{Complex, Gate, GateInstance, GateMatrix, PauliString};
-use aleph_ir::{Circuit, Instruction};
+use aleph_ir::{Circuit, DiagonalPhase, Instruction};
 use cudarc::driver::{CudaFunction, CudaModule, LaunchConfig, PushKernelArg};
 use cudarc::nvrtc::compile_ptx;
 use rand::{rngs::StdRng, SeedableRng};
@@ -17,7 +17,7 @@ use crate::common::{
 use crate::sv::diag::{diag_1q_params, diag_kq_params, DiagKernels};
 use crate::sv::kernel::{
     CnotParams, Gate1qParams, GateKqParams, Multi1qParams, APPLY_1Q, APPLY_1Q_MULTI, APPLY_CNOT,
-    APPLY_KQ, DEFAULT_LAYER_BATCH, MAX_LAYER_BATCH, SV_KERNELS_SRC,
+    APPLY_KQ, APPLY_PHASE_POLY, DEFAULT_LAYER_BATCH, MAX_LAYER_BATCH, SV_KERNELS_SRC,
 };
 use crate::sv::readout::GpuReadout;
 use crate::sv::state::{CudaSvState, MAX_CUDA_QUBITS};
@@ -33,6 +33,7 @@ pub struct CudaSvBackend {
     f_1q: CudaFunction,
     f_1q_multi: CudaFunction,
     f_cnot: CudaFunction,
+    f_phase_poly: CudaFunction,
     f_kq: CudaFunction,
     // Keeps the loaded module alive for the lifetime of the functions.
     _module: Arc<CudaModule>,
@@ -79,6 +80,7 @@ impl CudaSvBackend {
         let f_1q = module.load_function(APPLY_1Q)?;
         let f_1q_multi = module.load_function(APPLY_1Q_MULTI)?;
         let f_cnot = module.load_function(APPLY_CNOT)?;
+        let f_phase_poly = module.load_function(APPLY_PHASE_POLY)?;
         let f_kq = module.load_function(APPLY_KQ)?;
         let diag = DiagKernels::new(&ctx)?;
         let readout = GpuReadout::new(&ctx)?;
@@ -87,6 +89,7 @@ impl CudaSvBackend {
             f_1q,
             f_1q_multi,
             f_cnot,
+            f_phase_poly,
             f_kq,
             _module: module,
             rng,
@@ -212,6 +215,64 @@ impl CudaSvBackend {
                 .arg(&n_groups)
                 .launch(cfg)?;
         }
+        Ok(())
+    }
+
+    /// Apply a fused [`DiagonalPhase`] in one coalesced sweep (P5.9-06):
+    /// `amps[x] *= exp(i·φ(x))`. Flattens the terms to CSR host arrays
+    /// (`angles` / `conds` / `offsets`), uploads them, launches `apply_phase_poly`
+    /// over all `2^n` amplitudes, then synchronises so the per-call upload buffers
+    /// outlive the kernel. `DiagonalPhase` instructions are rare (one per fused
+    /// cphase ladder), so the upload + sync is amortised over the whole sweep.
+    fn launch_phase_poly(&self, state: &mut CudaSvState, dp: &DiagonalPhase) -> Result<(), Error> {
+        let n_terms = dp.terms.len();
+        if n_terms == 0 {
+            return Ok(()); // empty polynomial ⇒ identity
+        }
+        // CSR encode: term `t` owns `conds[offsets[t]..offsets[t+1]]`.
+        let mut angles: Vec<f64> = Vec::with_capacity(n_terms);
+        let mut conds: Vec<u64> = Vec::new();
+        let mut offsets: Vec<u32> = Vec::with_capacity(n_terms + 1);
+        offsets.push(0);
+        for t in &dp.terms {
+            angles.push(t.angle);
+            conds.extend(t.conds.iter().copied());
+            offsets.push(conds.len() as u32);
+        }
+        // Every term may be a global phase (empty conds) ⇒ `conds` empty. Keep a
+        // valid (non-null) device pointer; the kernel never indexes it then.
+        if conds.is_empty() {
+            conds.push(0);
+        }
+
+        let angles_dev = DeviceBuffer::from_slice(&self.ctx, &angles)?;
+        let conds_dev = DeviceBuffer::from_slice(&self.ctx, &conds)?;
+        let offsets_dev = DeviceBuffer::from_slice(&self.ctx, &offsets)?;
+
+        let n_amps: u64 = 1 << state.num_qubits;
+        let n_terms_u = n_terms as u32;
+        let cfg = launch_config(n_amps);
+        let stream = self.ctx.stream();
+        let amps = state.amps.slice_mut();
+        // SAFETY: signature is (cplx* amps, const double* angles, const ull* conds,
+        // const unsigned* offsets, unsigned n_terms, ull n_amps). Args match in
+        // order/type; `amps` holds 2^n cplx; `angles`/`offsets` have `n_terms`/
+        // `n_terms+1` elements and `conds` is non-empty; the grid covers `n_amps`
+        // with an in-bounds guard.
+        unsafe {
+            stream
+                .launch_builder(&self.f_phase_poly)
+                .arg(amps)
+                .arg(angles_dev.slice())
+                .arg(conds_dev.slice())
+                .arg(offsets_dev.slice())
+                .arg(&n_terms_u)
+                .arg(&n_amps)
+                .launch(cfg)?;
+        }
+        // Block until the kernel finishes so the upload buffers (dropped at end of
+        // scope) are not freed out from under it.
+        self.ctx.synchronize()?;
         Ok(())
     }
 
@@ -550,6 +611,18 @@ impl Backend for CudaSvBackend {
                     .map_err(to_backend_err)
             }
         }
+    }
+
+    /// Apply a fused diagonal phase polynomial (P5.9-06) — the GPU analogue of
+    /// the CPU SV path. Without this override the trait default rejects
+    /// `DiagonalPhase`, so a `FuseDiagonalRuns`-fused circuit (QFT/QPE) could not
+    /// run on the GPU.
+    fn apply_diagonal_phase(
+        &mut self,
+        state: &mut Self::State,
+        dp: &DiagonalPhase,
+    ) -> Result<(), BackendError> {
+        self.launch_phase_poly(state, dp).map_err(to_backend_err)
     }
 
     fn measure(&mut self, state: &mut Self::State, qubit: u32) -> Result<bool, BackendError> {

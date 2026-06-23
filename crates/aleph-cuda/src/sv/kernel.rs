@@ -12,6 +12,7 @@ pub(crate) const SV_KERNELS_SRC: &str = include_str!("kernels.cu");
 pub(crate) const APPLY_1Q: &str = "apply_1q";
 pub(crate) const APPLY_1Q_MULTI: &str = "apply_1q_multi";
 pub(crate) const APPLY_CNOT: &str = "apply_cnot";
+pub(crate) const APPLY_PHASE_POLY: &str = "apply_phase_poly";
 pub(crate) const APPLY_KQ: &str = "apply_kq";
 
 /// Hard ceiling on the single-qubit-gate batch [`apply_1q_multi`] applies in one

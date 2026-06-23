@@ -3252,6 +3252,50 @@ Aer-GPU parity exit metric (ROADMAP § 7) is reached.
 
 -----
 
+### [P5.9-06] GPU diagonal phase-polynomial kernel (close QFT/QPE vs Aer-GPU)
+
+**Labels:** `area:backend-gpu`, `area:ir`, `type:optimization`, `priority:high`
+**Milestone:** Phase 5
+**Depends on:** P5.9-01, P5.9-05
+**Estimate:** M
+
+**Description**
+The P5.9-05 verdict left **QFT (1.73×) and QPE (1.75×)** as the only Tier-1+Tier-2
+cells still over the 1.5×-vs-Aer-GPU exit gate. Both are long **controlled-phase
+ladders**: diagonal, but they do not collapse under `Fuse1q`/`Fuse2q`/`FuseKq`
+(no dense ≤3q block forms), so the GPU still streams the full state once per
+cphase gate (~350 passes for QFT-28). aleph already has `FuseDiagonalRuns`, which
+collapses such a ladder into one `Instruction::DiagonalPhase` (a phase polynomial
+`φ(x) = Σ_t angle_t · [∀ m ∈ conds_t: parity(m & x) odd]`), and the CPU SV backend
+already applies it in one streaming pass. The GPU backend does not — it inherits
+the trait default that rejects `DiagonalPhase`.
+
+This ticket adds the GPU kernel and wires the pass in, turning QFT/QPE's hundreds
+of cphase passes into **one** coalesced sweep `amps[x] *= exp(i·φ(x))`.
+
+**Technical Details**
+- New NVRTC kernel `apply_phase_poly(amps, angles, conds, offsets, n_terms, n_amps)`:
+  one thread per amplitude `x`, accumulate `φ` over the CSR-encoded terms
+  (`conds[offsets[t]..offsets[t+1]]`), `sincos(φ)`, complex-multiply `amps[x]`.
+  Fully coalesced (each amplitude read/written once).
+- Override `CudaSvBackend::apply_diagonal_phase`: flatten the `DiagonalPhase`
+  terms to host `angles:[f64]` / `conds:[u64]` / `offsets:[u32]`, upload, launch
+  over `2^n` threads.
+- Add `FuseDiagonalRuns` to `fuse_for_gpu` (canonical order: after DCE, before
+  `Fuse1q`). `run_layered` already routes `DiagonalPhase` through the trait method.
+
+**Acceptance Criteria**
+- [ ] Fused GPU run with the diagonal kernel is oracle-equal to unfused CPU SV
+  (1e-10) across Tier-1 + Tier-2 (esp. QFT, QPE).
+- [ ] QFT and QPE move from ~1.73–1.75× to **≤ 1.5×** of Aer-GPU at n=28 (the
+  P5.9-05 exit gate), with no regression on the already-passing cells.
+
+**Testing Requirements**
+- Oracle vs CPU `NaiveSvBackend`; A/B benchmark (diagonal-fusion on vs off) and
+  re-run of the P5.9-05 verdict table.
+
+-----
+
 # Phase 5.7 — GPU-resident MPS (Apple/Metal)
 
 Goal: take the MPS-on-Metal scaffold from "correct but CPU-SVD-bottlenecked" to a

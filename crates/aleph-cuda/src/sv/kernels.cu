@@ -133,6 +133,41 @@ void apply_1q_multi(cplx* amps, Multi1q g, unsigned long long n_groups) {
     for (unsigned l = 0; l < dim; ++l) amps[gidx[l]] = v[l];
 }
 
+// Fused multi-qubit diagonal operator (P5.9-06): amps[x] *= exp(i·φ(x)) where
+// φ(x) = Σ_t angles[t] · [∀ c in conds[offsets[t]..offsets[t+1]]: parity(c & x) odd].
+// A long controlled-phase ladder (QFT/QPE) collapses via FuseDiagonalRuns into one
+// such phase polynomial, so this single coalesced sweep replaces ~n²/2 cphase
+// passes. One thread per amplitude; each amplitude is read and written exactly
+// once (fully coalesced) — the term loop is per-thread integer work over the small
+// CSR arrays (L2-cached), with one sincos at the end.
+extern "C" __global__
+void apply_phase_poly(cplx* amps,
+                      const double* angles,
+                      const unsigned long long* conds,
+                      const unsigned* offsets,
+                      unsigned n_terms,
+                      unsigned long long n_amps) {
+    unsigned long long x = blockIdx.x * (unsigned long long)blockDim.x + threadIdx.x;
+    if (x >= n_amps) return;
+
+    double phi = 0.0;
+    for (unsigned t = 0; t < n_terms; ++t) {
+        bool all = true;
+        unsigned end = offsets[t + 1];
+        for (unsigned c = offsets[t]; c < end; ++c) {
+            // parity(conds[c] & x) odd ⇔ __popcll is odd. An empty cond range
+            // (offsets[t]==offsets[t+1]) leaves `all` true ⇒ global phase.
+            if ((__popcll(conds[c] & x) & 1) == 0) { all = false; break; }
+        }
+        if (all) phi += angles[t];
+    }
+
+    double s, co;
+    sincos(phi, &s, &co);
+    cplx a = amps[x];
+    amps[x] = cmk(a.re * co - a.im * s, a.re * s + a.im * co);
+}
+
 // Per-gate uniform for a plain CNOT (P5.9-04). Layout MUST match the Rust
 // `CnotParams` struct. A CNOT is a permutation, not a rotation: it swaps the
 // two amplitudes that differ in the target bit whenever the control bit is 1.
