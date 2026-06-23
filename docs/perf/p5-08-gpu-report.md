@@ -1,5 +1,12 @@
 # P5-08 — Phase 5 GPU benchmark report
 
+> **Follow-up:** the Aer-GPU gap this report identifies (2–5× behind, all above
+> the kernel) was the target of Phase 5.9. With fusion + layer batching + a CNOT
+> kernel, **5 of 7 cells are now within 1.5× of Aer-GPU** and aleph beats
+> cuStateVec 1.7–4.4× on the dense/Grover workloads; only QFT/QPE remain over.
+> See `docs/perf/p5.9-gpu-fusion.md` (§ P5.9-05 verdict).
+
+
 **Phase 5 exit metric — "GPU backend within 1.5× of cuQuantum standalone" — is
 MET.** Across the full Tier-1 + Tier-2 suite at `n = 28`, aleph's hand-written
 FP64 state-vector backend is **≤ 1.22× of NVIDIA cuStateVec** on every workload
