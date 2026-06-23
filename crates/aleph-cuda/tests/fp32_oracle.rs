@@ -54,8 +54,9 @@ fn grover(n: u32) -> Circuit {
     for q in 0..n {
         c.h(q).unwrap();
     }
-    // Oracle: Z controlled on all-but-last targeting the last (marks |1…1⟩).
-    let ctrls: Vec<u32> = (0..n - 1).collect();
+    // Oracle: multi-controlled Z marking a subspace (the builder caps controls
+    // at 8, so use up to the first 8 qubits as controls on the last target).
+    let ctrls: Vec<u32> = (0..(n - 1).min(8)).collect();
     c.add_gate(GateInstance::controlled(
         Gate::Z,
         vec![n - 1],
