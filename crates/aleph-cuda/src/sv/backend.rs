@@ -63,10 +63,12 @@ pub struct CudaSvBackend {
     /// generic `apply_kq` (which spills `v[32]`/`gidx[32]` to local memory at
     /// k=4,5). Cleared for the A/B baseline.
     tiled_kq: bool,
-    /// Smallest `k` routed to `apply_kq_tiled` when [`Self::tiled_kq`] is set
-    /// (default 4 — the regime where generic `apply_kq` regresses; k≤3 keeps the
-    /// proven generic path). Lower it to 2 to force the tiled kernel across all
-    /// dense blocks for the P5.10-01 A/B benchmark.
+    /// Smallest `k` routed to `apply_kq_tiled` when [`Self::tiled_kq`] is set.
+    /// **Default 2** — the P5.10-01 A/B bench (n=28) measured the tiled kernel
+    /// strictly faster than generic `apply_kq` at *every* width (1.07–1.18×, the
+    /// margin growing with k), so every dense block (k≥2) takes it: ~1.07× on the
+    /// production k≤3 path (random/VQE) over the old generic kernel. Raise it to
+    /// disable tiling for small `k`, or 6 to disable it entirely.
     tiled_min_k: u32,
 }
 
@@ -114,7 +116,7 @@ impl CudaSvBackend {
             layer_batch: DEFAULT_LAYER_BATCH,
             custom_2q: true,
             tiled_kq: true,
-            tiled_min_k: 4,
+            tiled_min_k: 2,
         })
     }
 
@@ -135,10 +137,10 @@ impl CudaSvBackend {
         self
     }
 
-    /// Override the smallest `k` routed to `apply_kq_tiled` (clamped to `2..=5`).
-    /// Default 4; set to 2 to force the tiled kernel across all dense blocks for
-    /// the P5.10-01 A/B benchmark, or 6 to disable it without touching
-    /// [`Self::tiled_kq`].
+    /// Override the smallest `k` routed to `apply_kq_tiled` (clamped to `2..=6`).
+    /// Default 2 (tiled for every dense block); raise it to keep small-`k` blocks
+    /// on the generic kernel, or 6 to disable the tiled path without touching
+    /// [`Self::tiled_kq`]. The A/B baseline arm uses [`Self::with_tiled_kq`]`(false)`.
     pub fn with_tiled_min_k(mut self, k: u32) -> Self {
         self.tiled_min_k = k.clamp(2, 6);
         self

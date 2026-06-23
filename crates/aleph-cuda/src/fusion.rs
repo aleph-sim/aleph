@@ -17,17 +17,22 @@
 //! kernel applies in a single coalesced sweep. It deliberately omits the
 //! CPU-tiling `RelabelQubits` / `TileBlock` passes, which permute qubit labels.
 //!
-//! **Why width 3, not Aer's 5.** The P5.9-02b A/B bench (n=28, RTX 4000 Ada;
-//! `docs/perf/p5.9-gpu-fusion.md`) measured `max_qubits ∈ {3,4,5}` on the GPU:
-//! k=3 wins **1.08–1.14×** on every dense workload, but k=4/5 *regress*
-//! (down to 0.68×). The generic `apply_kq` does a dense `2^k × 2^k` matvec per
-//! amplitude group — O(4^k) work — and its `v[32]`/`gidx[32]` thread-local
-//! arrays (768 B at k=5) spill to local memory; past k=3 the extra compute
-//! overtakes the pass-count savings. Aer reaches k=5 with register-tiled
-//! fused-block kernels we don't have yet (that kernel is the precondition for
-//! raising this — a P5.9-04-class lever). The k=4,5 apply path from P5.9-02a is
-//! correct and kept; it is simply not the throughput sweet spot today.
-//! See `docs/perf/p5-08-gpu-report.md` for the Aer-GPU target.
+//! **Why width 3, not Aer's 5 — even with the register-tiled kernel.** The
+//! P5.9-02b A/B bench (n=28, RTX 4000 Ada; `docs/perf/p5.9-gpu-fusion.md`)
+//! measured `max_qubits ∈ {3,4,5}` on the generic `apply_kq`: k=3 wins
+//! **1.08–1.14×** on every dense workload, but k=4/5 *regress* (down to 0.68×).
+//! P5.10-01 then built the register-tiled `apply_kq_tiled` kernel (one amplitude
+//! per warp lane, matvec = intra-warp shuffle reduction, matrix in shared
+//! memory) so neither `v[32]`/`gidx[32]` spills. It **strictly beats** generic
+//! `apply_kq` at every width (1.07–1.18×, the margin growing with k —
+//! `docs/perf/p5.10-01-tiled-fused-block.md`), confirming the spill was real.
+//! But k=4/5 fusion *still* loses to k=3 (tiled k=5 is 0.73–0.80× the generic-k3
+//! baseline): the dominant wall past k=3 is the **O(4^k) matvec compute** itself
+//! (a 32×32 dense matvec per group), not the spill — fewer passes (n/5 vs n/3)
+//! can't pay for 4× the arithmetic. So the sweet spot stays **3**. The tiled
+//! kernel is still the production default at k≤3 (`tiled_min_k=2`), worth ~1.07×
+//! on the dense cells; the k=4,5 path is correct and kept for callers that raise
+//! the width. See `docs/perf/p5-08-gpu-report.md` for the Aer-GPU target.
 
 use aleph_ir::passes::{
     CancelInversePairs, DeadCodeElim, Fuse1qRuns, Fuse2q, FuseDiagonalRuns, FuseKq, Pass,
