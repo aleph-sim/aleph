@@ -102,6 +102,13 @@ impl CudaSvBackend {
         })
     }
 
+    /// The backend's CUDA context (cheap `Arc` clone). `pub(crate)` so the
+    /// out-of-core paging executor ([`crate::sv::paged`]) can schedule its own
+    /// host↔device tile copies on the same stream the gate kernels run on.
+    pub(crate) fn ctx(&self) -> CudaContext {
+        self.ctx.clone()
+    }
+
     /// Enable (default) or disable routing plain CNOTs to the `apply_cnot`
     /// permutation kernel (P5.9-04). Disabling forces the dense `apply_kq` 4×4
     /// path — the baseline arm of the P5.9-04 A/B benchmark.
@@ -508,7 +515,7 @@ fn gate_kq_params(qubits: &[u32], controls: &[u32]) -> GateKqParams {
 /// Map a CUDA-layer error to a backend error. Launch/transfer failures on a
 /// working GPU indicate an internal fault, not user input; richer plumbing is a
 /// follow-up (the variant set is shared across all backends).
-fn to_backend_err(_e: Error) -> BackendError {
+pub(crate) fn to_backend_err(_e: Error) -> BackendError {
     BackendError::InvalidState {
         reason: "CUDA backend failure (compile/launch/transfer)",
     }
