@@ -17,7 +17,8 @@ use crate::common::{
 use crate::sv::diag::{diag_1q_params, diag_kq_params, DiagKernels};
 use crate::sv::kernel::{
     CnotParams, Gate1qParams, GateKqParams, Multi1qParams, APPLY_1Q, APPLY_1Q_MULTI, APPLY_CNOT,
-    APPLY_KQ, APPLY_PHASE_POLY, DEFAULT_LAYER_BATCH, MAX_LAYER_BATCH, SV_KERNELS_SRC,
+    APPLY_KQ, APPLY_KQ_TILED, APPLY_PHASE_POLY, DEFAULT_LAYER_BATCH, MAX_LAYER_BATCH,
+    SV_KERNELS_SRC,
 };
 use crate::sv::readout::GpuReadout;
 use crate::sv::state::{CudaSvState, MAX_CUDA_QUBITS};
@@ -35,6 +36,7 @@ pub struct CudaSvBackend {
     f_cnot: CudaFunction,
     f_phase_poly: CudaFunction,
     f_kq: CudaFunction,
+    f_kq_tiled: CudaFunction,
     // Keeps the loaded module alive for the lifetime of the functions.
     _module: Arc<CudaModule>,
     rng: StdRng,
@@ -56,6 +58,18 @@ pub struct CudaSvBackend {
     /// kernel (P5.9-04) instead of the dense `apply_kq` 4×4 matvec. Cleared for
     /// the A/B baseline.
     custom_2q: bool,
+    /// When set (default), a dense `k`-qubit block with `k >= tiled_min_k` routes
+    /// to the warp-cooperative `apply_kq_tiled` kernel (P5.10-01) instead of the
+    /// generic `apply_kq` (which spills `v[32]`/`gidx[32]` to local memory at
+    /// k=4,5). Cleared for the A/B baseline.
+    tiled_kq: bool,
+    /// Smallest `k` routed to `apply_kq_tiled` when [`Self::tiled_kq`] is set.
+    /// **Default 2** — the P5.10-01 A/B bench (n=28) measured the tiled kernel
+    /// strictly faster than generic `apply_kq` at *every* width (1.07–1.18×, the
+    /// margin growing with k), so every dense block (k≥2) takes it: ~1.07× on the
+    /// production k≤3 path (random/VQE) over the old generic kernel. Raise it to
+    /// disable tiling for small `k`, or 6 to disable it entirely.
+    tiled_min_k: u32,
 }
 
 impl CudaSvBackend {
@@ -82,6 +96,7 @@ impl CudaSvBackend {
         let f_cnot = module.load_function(APPLY_CNOT)?;
         let f_phase_poly = module.load_function(APPLY_PHASE_POLY)?;
         let f_kq = module.load_function(APPLY_KQ)?;
+        let f_kq_tiled = module.load_function(APPLY_KQ_TILED)?;
         let diag = DiagKernels::new(&ctx)?;
         let readout = GpuReadout::new(&ctx)?;
         Ok(Self {
@@ -91,6 +106,7 @@ impl CudaSvBackend {
             f_cnot,
             f_phase_poly,
             f_kq,
+            f_kq_tiled,
             _module: module,
             rng,
             qubit_cap: MAX_CUDA_QUBITS,
@@ -99,6 +115,8 @@ impl CudaSvBackend {
             custom_diag: true,
             layer_batch: DEFAULT_LAYER_BATCH,
             custom_2q: true,
+            tiled_kq: true,
+            tiled_min_k: 2,
         })
     }
 
@@ -107,6 +125,24 @@ impl CudaSvBackend {
     /// path — the baseline arm of the P5.9-04 A/B benchmark.
     pub fn with_custom_2q(mut self, on: bool) -> Self {
         self.custom_2q = on;
+        self
+    }
+
+    /// Enable (default) or disable routing dense `k`-qubit blocks with
+    /// `k >= tiled_min_k` to the warp-cooperative `apply_kq_tiled` kernel
+    /// (P5.10-01). Disabling forces the generic `apply_kq` for every `k` — the
+    /// baseline arm of the P5.10-01 A/B benchmark.
+    pub fn with_tiled_kq(mut self, on: bool) -> Self {
+        self.tiled_kq = on;
+        self
+    }
+
+    /// Override the smallest `k` routed to `apply_kq_tiled` (clamped to `2..=6`).
+    /// Default 2 (tiled for every dense block); raise it to keep small-`k` blocks
+    /// on the generic kernel, or 6 to disable the tiled path without touching
+    /// [`Self::tiled_kq`]. The A/B baseline arm uses [`Self::with_tiled_kq`]`(false)`.
+    pub fn with_tiled_min_k(mut self, k: u32) -> Self {
+        self.tiled_min_k = k.clamp(2, 6);
         self
     }
 
@@ -165,6 +201,12 @@ impl CudaSvBackend {
             Some(buf) => buf.write(&self.ctx, mat)?,
             None => state.mat_scratch = Some(DeviceBuffer::<f64>::from_slice(&self.ctx, mat)?),
         }
+        // P5.10-01: above tiled_min_k the generic `apply_kq` regresses (its
+        // v[32]/gidx[32] thread-local arrays spill); route those to the
+        // warp-cooperative `apply_kq_tiled` kernel instead.
+        if self.tiled_kq && params.k >= self.tiled_min_k {
+            return self.launch_kq_tiled(state, params);
+        }
         let n_groups: u64 = 1 << (state.num_qubits - params.k);
         let cfg = launch_config(n_groups);
         let stream = self.ctx.stream();
@@ -186,6 +228,43 @@ impl CudaSvBackend {
                 .arg(mat_dev)
                 .arg(&params)
                 .arg(&n_groups)
+                .launch(cfg)?;
+        }
+        Ok(())
+    }
+
+    /// Launch the warp-cooperative `apply_kq_tiled` kernel (P5.10-01) over all
+    /// `2^n` amplitudes (one thread each). The `2^k × 2^k` matrix must already be
+    /// uploaded to `state.mat_scratch` by the caller ([`Self::launch_kq`]). Unlike
+    /// `apply_kq`, this keeps each amplitude in a register and does the per-block
+    /// matvec as an intra-warp shuffle reduction, so k=4,5 blocks don't spill.
+    fn launch_kq_tiled(&self, state: &mut CudaSvState, params: GateKqParams) -> Result<(), Error> {
+        let n_amps: u64 = 1 << state.num_qubits;
+        // Shared memory holds the whole 2^k×2^k matrix: dim*dim cplx = 16 bytes
+        // each. At k=5 that is 32·32·16 = 16 KiB, well inside the per-block limit.
+        let dim: u32 = 1 << params.k;
+        let shared_bytes = (dim as usize) * (dim as usize) * std::mem::size_of::<[f64; 2]>();
+        let cfg = launch_config_shared(n_amps, shared_bytes as u32);
+        let stream = self.ctx.stream();
+        let amps = state.amps.slice_mut();
+        let mat_dev = state
+            .mat_scratch
+            .as_ref()
+            .expect("scratch set by launch_kq")
+            .slice();
+        // SAFETY: kernel signature is (cplx* amps, const cplx* mat, GateKq g,
+        // u64 n_amps); args match in order/type. `mat_dev` holds 2^k·2^k cplx,
+        // `amps` holds 2^n cplx, the grid covers exactly `n_amps` threads with an
+        // in-bounds guard, and `shared_bytes` matches the kernel's `dim*dim` cplx
+        // dynamic-shared allocation. BLOCK is a multiple of 32 and dim divides 32
+        // (k≤5), so every 2^k group is warp-local (shuffles stay intra-warp).
+        unsafe {
+            stream
+                .launch_builder(&self.f_kq_tiled)
+                .arg(amps)
+                .arg(mat_dev)
+                .arg(&params)
+                .arg(&n_amps)
                 .launch(cfg)?;
         }
         Ok(())
@@ -457,11 +536,17 @@ fn batchable_1q(g: &GateInstance) -> Option<[[Complex; 2]; 2]> {
 
 /// `((n + BLOCK - 1) / BLOCK)` blocks of `BLOCK` threads, ≥1 block.
 fn launch_config(n_threads: u64) -> LaunchConfig {
+    launch_config_shared(n_threads, 0)
+}
+
+/// Like [`launch_config`] but with `shared_bytes` of dynamic shared memory per
+/// block (for `apply_kq_tiled`'s shared-memory matrix tile, P5.10-01).
+fn launch_config_shared(n_threads: u64, shared_bytes: u32) -> LaunchConfig {
     let blocks = n_threads.div_ceil(BLOCK as u64).max(1) as u32;
     LaunchConfig {
         grid_dim: (blocks, 1, 1),
         block_dim: (BLOCK, 1, 1),
-        shared_mem_bytes: 0,
+        shared_mem_bytes: shared_bytes,
     }
 }
 

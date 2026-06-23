@@ -203,6 +203,82 @@ void apply_cnot(cplx* amps, Cnot g, unsigned long long n_groups) {
     amps[j] = tmp;
 }
 
+// Warp-cooperative register-tiled fused-block kernel (P5.10-01).
+//
+// `apply_kq` puts one thread on a whole 2^k group: each thread holds the entire
+// block in `v[32]`/`gidx[32]` thread-local arrays (768 B at k=5, which spill to
+// local memory) and does a dense O(4^k) matvec alone. Past k=3 the spill + the
+// O(4^k) compute outgrow the fusion pass-count savings, so k=4,5 fused blocks
+// *regress* vs k=3 (P5.9-02b). Aer reaches its `fusion_max_qubit=5` default with
+// register-tiled fused-block kernels; this is ours.
+//
+// Here one thread owns ONE amplitude. A group of dim = 2^k contiguous lanes
+// cooperatively owns one block: lane `sl` holds amplitude-slot `sl` in a single
+// register `v`, and the matvec out[r] = Σ_c M[r][c]·v[c] becomes a warp-shuffle
+// reduction — lane r (= sl) gathers v[c] from lane c via `__shfl_sync`. Nothing
+// spills to local memory; the 2^k×2^k matrix lives in shared memory, loaded once
+// per block. Since dim divides the 32-lane warp (k ≤ 5), every group is
+// warp-local and all shuffles stay intra-warp. Grid covers all 2^n amplitudes
+// (one thread each); group index gid = tid >> k, local slot sl = lane & (dim-1).
+// In-place safe: every lane reads its amplitude into `v` before any write, and
+// the shuffle reads only registers, never the (already-overwritten) state.
+extern "C" __global__
+void apply_kq_tiled(cplx* amps, const cplx* mat, GateKq g, unsigned long long n_amps) {
+    // Whole 2^k×2^k matrix in shared memory, shared by every group this block
+    // processes. ALL block threads cooperate in the load and reach the barrier
+    // BEFORE any divergent return below, so `__syncthreads` cannot deadlock.
+    extern __shared__ cplx smat[];
+    unsigned k = g.k;
+    unsigned dim = 1u << k;
+    for (unsigned idx = threadIdx.x; idx < dim * dim; idx += blockDim.x) {
+        smat[idx] = mat[idx];
+    }
+    __syncthreads();
+
+    unsigned long long tid = blockIdx.x * (unsigned long long)blockDim.x + threadIdx.x;
+    if (tid >= n_amps) return; // tid < n_amps ⇔ gid = tid>>k < n_groups (sl < dim)
+
+    unsigned lane  = (unsigned)(tid & 31u);
+    unsigned sl    = lane & (dim - 1u); // this lane's local slot (0..dim-1) = its row r
+    unsigned gbase = lane - sl;         // first lane of this group within the warp
+    unsigned long long gid = tid >> k;  // global group index
+
+    // Reconstruct the group's base global index (all target bits clear) by
+    // inserting k zero bits at the ascending sorted positions — same scheme as
+    // apply_kq. `gid` is uniform across the group, so `base` is too.
+    unsigned long long base = gid;
+    for (unsigned j = 0; j < k; ++j) {
+        unsigned p = g.sorted[j];
+        unsigned long long mask = (1ULL << p) - 1ULL;
+        base = ((base & ~mask) << 1) | (base & mask);
+    }
+    // Controls: predicate is uniform across the group (shared `base`), so the
+    // whole group either proceeds or skips together — shuffle-safe. Skipping
+    // leaves all dim amplitudes untouched (identity), as required.
+    if ((base & (unsigned long long)g.ctrl_mask) != (unsigned long long)g.ctrl_mask) return;
+
+    // This lane's global amplitude index: local bit j of `sl` ↔ qubit `qbit[j]`.
+    unsigned long long off = 0ULL;
+    for (unsigned j = 0; j < k; ++j) {
+        if ((sl >> j) & 1u) off |= (unsigned long long)g.qbit[j];
+    }
+    unsigned long long myidx = base | off; // base's target bits clear ⇒ | == +
+    cplx v = amps[myidx];
+
+    // Warp-shuffle matvec: out_sl = Σ_c smat[sl*dim + c] · v_c, where v_c is held
+    // by lane gbase+c. The mask names exactly this group's dim lanes (all active,
+    // since a group is fully valid or fully out-of-range — n_amps is a multiple
+    // of dim). For dim==32 that is the full warp (1u<<32 would be UB).
+    unsigned mask = (dim == 32u) ? 0xffffffffu : (((1u << dim) - 1u) << gbase);
+    cplx acc = cmk(0.0, 0.0);
+    for (unsigned c = 0; c < dim; ++c) {
+        double vr = __shfl_sync(mask, v.re, gbase + c);
+        double vi = __shfl_sync(mask, v.im, gbase + c);
+        acc = cadd(acc, cmul(smat[sl * dim + c], cmk(vr, vi)));
+    }
+    amps[myidx] = acc;
+}
+
 // One thread per group of 2^k amplitudes; grid covers n_groups = 2^(n-k).
 // `mat` is row-major 2^k x 2^k (M[r*dim + c]). dim <= 32 (k <= 5), so the
 // thread-local arrays fit. In-place safe: all inputs are read before any write.
