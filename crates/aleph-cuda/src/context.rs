@@ -66,7 +66,7 @@ impl CudaContext {
         CudaContext {
             ctx: self.ctx.clone(),
             stream,
-            pool: self.pool.clone(),
+            pool: self.pool,
         }
     }
 
