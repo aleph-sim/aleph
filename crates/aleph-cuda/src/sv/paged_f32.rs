@@ -12,7 +12,7 @@
 //! See [`crate::sv::paged`] for the full derivation of the tiling scheme; the
 //! comments here only flag where FP32 diverges (scalar width, kernel dispatch).
 
-use aleph_backend::{Backend, BackendError};
+use aleph_backend::BackendError;
 use aleph_core::{Complex, GateInstance};
 use aleph_ir::{Circuit, Instruction};
 use cudarc::driver::PinnedHostSlice;
