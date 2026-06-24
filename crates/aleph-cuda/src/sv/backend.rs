@@ -127,6 +127,13 @@ impl CudaSvBackend {
         self.ctx.clone()
     }
 
+    /// Replace the context the gate kernels launch on. The overlapped paged
+    /// executor swaps in a context bound to a dedicated compute stream for the
+    /// duration of a run, then restores the original.
+    pub(crate) fn set_ctx(&mut self, ctx: CudaContext) {
+        self.ctx = ctx;
+    }
+
     /// Enable (default) or disable routing plain CNOTs to the `apply_cnot`
     /// permutation kernel (P5.9-04). Disabling forces the dense `apply_kq` 4×4
     /// path — the baseline arm of the P5.9-04 A/B benchmark.
