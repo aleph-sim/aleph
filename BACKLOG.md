@@ -3501,10 +3501,12 @@ drop-in first-class backend whose throughput wins **stack on the 2× precision w
 (e.g. FP32 + `apply_phase_poly` for QFT/QPE, FP32 + fusion for dense workloads).
 
 **Acceptance Criteria**
-- [ ] FP32 backend implements the full `Backend` trait, oracle-equal to FP64 within
-  1e-5 (probabilities at 100k shots within the 1e-5 band).
-- [ ] FP32 + fusion / phase-poly beats per-gate FP32 on QFT/QPE/dense workloads;
-  report the stacked speedup vs FP64.
+- [x] FP32 backend implements the full `Backend` trait, oracle-equal to FP64 within
+  1e-5 (worst readout |Δ| 7.2e-7; sampling matches the exact distribution at 400k
+  shots). `GpuReadoutF32` + `readout_f32.cu`.
+- [x] FP32 + fusion / phase-poly beats per-gate FP32 on QFT/QPE/dense workloads
+  (QFT 2.07×, dense 1.82×); stacked **3.92× / 3.58× vs FP64 per-gate**
+  (`docs/perf/p5.11-04-fp32-first-class.md`).
 
 **Testing Requirements**
 - Readout oracle (measure/sample/expectation/probabilities) vs FP64; throughput
