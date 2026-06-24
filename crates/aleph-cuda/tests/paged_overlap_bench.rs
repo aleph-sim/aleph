@@ -35,6 +35,37 @@ fn env_u32(key: &str, default: u32) -> u32 {
         .unwrap_or(default)
 }
 
+/// Diagnostic: a SINGLE gate (one H on q0) — no gate-boundary barrier, so this
+/// is the pure within-gate gather/compute/scatter pipeline. Isolates whether the
+/// overlap itself works (vs the per-gate pipeline drain in the full circuit).
+#[test]
+#[ignore]
+fn overlap_single_gate() {
+    let n = env_u32("ALEPH_PAGED_N", 30);
+    let m = env_u32("ALEPH_PAGED_TILE", 26);
+    let mut gpu = match CudaSvBackend::with_seed(0) {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("skipping single-gate: {e}");
+            return;
+        }
+    };
+    let mut circ = Circuit::new(n, 0);
+    circ.h(0).unwrap();
+    let bytes = 2.0 * (2.0 * (1u64 << n) as f64 * 8.0);
+    let gbps = |secs: f64| bytes / secs / 1e9;
+
+    let t = Instant::now();
+    gpu.run_paged(&circ, m).expect("sync");
+    let s = t.elapsed().as_secs_f64();
+    let t = Instant::now();
+    gpu.run_paged_overlapped(&circ, m, 4).expect("overlap");
+    let o = t.elapsed().as_secs_f64();
+    println!("== P5.11-02 single-gate (n={n}, m={m}) ==");
+    println!("sync    : {s:.3}s ({:.1} GB/s)", gbps(s));
+    println!("overlap : {o:.3}s ({:.1} GB/s) → {:.2}×", gbps(o), s / o);
+}
+
 /// A/B: synchronous vs overlapped paging at n=30/31, reporting the speedup and
 /// the achieved (vs the box's ~12 GB/s sync) host↔device bandwidth.
 #[test]
