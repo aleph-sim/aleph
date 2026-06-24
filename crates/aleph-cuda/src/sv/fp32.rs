@@ -66,7 +66,7 @@ impl core::fmt::Debug for CudaSvStateF32 {
 }
 
 impl CudaSvStateF32 {
-    fn allocate(ctx: &CudaContext, num_qubits: u32) -> Result<Self, Error> {
+    pub(crate) fn allocate(ctx: &CudaContext, num_qubits: u32) -> Result<Self, Error> {
         let n_amps = 1usize << num_qubits;
         let mut amps = DeviceBuffer::<f32>::zeros(ctx, 2 * n_amps)?;
         amps.write(ctx, &[1.0f32])?;
@@ -138,6 +138,13 @@ impl CudaSvBackendF32 {
         self
     }
 
+    /// The CUDA context (cloned handle). `pub(crate)` so the out-of-core paged
+    /// executor in [`crate::sv::paged_f32`] can allocate the group buffer and
+    /// drive the tile copies on the same device/stream.
+    pub(crate) fn ctx(&self) -> CudaContext {
+        self.ctx.clone()
+    }
+
     /// Run `circuit` end-to-end on the FP32 backend, returning the final state.
     /// Supports plain gates + barriers (the Tier-1/Tier-2 set); diagonal-phase /
     /// tiled-block / measure / reset are rejected (pass an unfused circuit).
@@ -182,7 +189,7 @@ impl CudaSvBackendF32 {
     /// Apply one gate — the FP32 mirror of the FP64 [`crate::CudaSvBackend`]
     /// dispatch (CNOT permutation, fused `UnitaryKq`, diagonal fast path, then
     /// the dense 1q/2q/3q kernels), launching the `*_f32` kernels.
-    fn apply_gate(
+    pub(crate) fn apply_gate(
         &mut self,
         state: &mut CudaSvStateF32,
         gate: &GateInstance,
