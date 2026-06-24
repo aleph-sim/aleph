@@ -175,6 +175,153 @@ impl CudaSvBackendF32 {
         })
     }
 
+    /// Run `circuit` out-of-core in FP32 like [`Self::run_paged`], but **amortise
+    /// PCIe over multi-gate tile residency** (P5.11-03) — the FP32 mirror of
+    /// [`crate::CudaSvBackend::run_paged_batched`]. A maximal run of consecutive
+    /// low-only (`< m`) gates is applied to each tile while it is resident (load
+    /// once, apply the run on-device, scatter once), collapsing `L` per-gate PCIe
+    /// passes into one. High-qubit gates flush the run and take the per-gate path.
+    /// Reaches **n=32** (32 GiB FP32 pinned) at a fraction of the per-gate cost on
+    /// locality-rich circuits. See [`crate::paged_pass_counts`] for the pass-count
+    /// metric. Same arguments / restrictions / state as [`Self::run_paged`].
+    pub fn run_paged_batched(
+        &mut self,
+        circuit: &Circuit,
+        tile_qubits: u32,
+    ) -> Result<PagedSvStateF32, BackendError> {
+        let n = circuit.num_qubits();
+        if n == 0 && circuit.is_empty() {
+            return Err(BackendError::EmptyCircuit);
+        }
+        let m = tile_qubits;
+        if m == 0 || m >= n {
+            return Err(BackendError::InvalidState {
+                reason: "paged tile_qubits must satisfy 1 <= tile_qubits < num_qubits",
+            });
+        }
+
+        let mut g_max = 0u32;
+        for inst in circuit.instructions() {
+            match inst {
+                Instruction::Gate(gate) => g_max = g_max.max(high_count(gate, m)),
+                Instruction::Barrier(_) => {}
+                Instruction::Measure { .. } => {
+                    return Err(BackendError::UnsupportedInstruction { kind: "measure" })
+                }
+                Instruction::Reset(_) => {
+                    return Err(BackendError::UnsupportedInstruction { kind: "reset" })
+                }
+                Instruction::DiagonalPhase(_) => {
+                    return Err(BackendError::UnsupportedInstruction {
+                        kind: "diagonal-phase",
+                    })
+                }
+                Instruction::TiledBlock(_) => {
+                    return Err(BackendError::UnsupportedInstruction {
+                        kind: "tiled-block",
+                    })
+                }
+            }
+        }
+        let local_qubits = m + g_max;
+        if local_qubits > MAX_CUDA_QUBITS_F32 {
+            return Err(BackendError::TooManyQubits {
+                requested: local_qubits,
+                limit: MAX_CUDA_QUBITS_F32,
+            });
+        }
+
+        let ctx = self.ctx();
+
+        let host_len = 2usize << n; // 2 · 2^n
+                                    // SAFETY: see [`Self::run_paged`] — owned page-locked alloc, every
+                                    // element initialised below before any copy reads it.
+        let mut host: PinnedHostSlice<f32> = unsafe { ctx.raw().alloc_pinned(host_len) }
+            .map_err(|e| to_backend_err(Error::Driver(e)))?;
+        {
+            let s = host
+                .as_mut_slice()
+                .map_err(|e| to_backend_err(Error::Driver(e)))?;
+            s.fill(0.0);
+            s[0] = 1.0;
+        }
+
+        let mut group = CudaSvStateF32::allocate(&ctx, local_qubits).map_err(to_backend_err)?;
+        let base: *mut f32 = host
+            .as_mut_ptr()
+            .map_err(|e| to_backend_err(Error::Driver(e)))?;
+
+        // Accumulate maximal runs of low-only gates; flush on any high-qubit gate.
+        let mut run: Vec<&GateInstance> = Vec::new();
+        for inst in circuit.instructions() {
+            match inst {
+                Instruction::Gate(gate) => {
+                    if high_count(gate, m) == 0 {
+                        run.push(gate);
+                    } else {
+                        if !run.is_empty() {
+                            self.apply_low_run_paged(&ctx, &mut group, base, n, m, &run)?;
+                            run.clear();
+                        }
+                        self.apply_gate_paged(&ctx, &mut group, base, n, m, gate)?;
+                    }
+                }
+                Instruction::Barrier(_) => {}
+                _ => {}
+            }
+        }
+        if !run.is_empty() {
+            self.apply_low_run_paged(&ctx, &mut group, base, n, m, &run)?;
+        }
+
+        ctx.synchronize().map_err(to_backend_err)?;
+        Ok(PagedSvStateF32 {
+            num_qubits: n,
+            host,
+        })
+    }
+
+    /// FP32 mirror of [`crate::CudaSvBackend::apply_low_run_paged`]: apply a run of
+    /// low-only gates to the whole state in one PCIe pass — gather each tile once,
+    /// apply the entire run on its `2^m`-amplitude device sub-state, scatter once.
+    fn apply_low_run_paged(
+        &mut self,
+        ctx: &CudaContext,
+        group: &mut CudaSvStateF32,
+        base: *mut f32,
+        n: u32,
+        m: u32,
+        gates: &[&GateInstance],
+    ) -> Result<(), BackendError> {
+        let h = n - m;
+        group.num_qubits = m; // each tile is a self-contained m-qubit sub-state
+        let tile_f32 = (1usize << m) * 2; // interleaved f32 per tile
+        let n_tiles = 1u64 << h;
+
+        for tile in 0..n_tiles {
+            let h0 = (tile as usize) << (m + 1); // f32 offset = tile·2^m·2
+                                                 // SAFETY: `base` valid for 2·2^n f32; `h0 + tile_f32 ≤ 2·2^n`
+                                                 // since `tile < 2^h`. Stream-ordered; the tile is disjoint per iter.
+            let src = unsafe { std::slice::from_raw_parts(base.add(h0), tile_f32) };
+            let mut dst = group.amps.slice_mut().slice_mut(0..tile_f32);
+            ctx.stream()
+                .memcpy_htod(src, &mut dst)
+                .map_err(|e| to_backend_err(Error::Driver(e)))?;
+
+            for gate in gates {
+                self.apply_gate(group, gate)?;
+            }
+
+            let view = group.amps.slice().slice(0..tile_f32);
+            // SAFETY: same bounds as the gather; one scatter writes this tile.
+            let dst = unsafe { std::slice::from_raw_parts_mut(base.add(h0), tile_f32) };
+            ctx.stream()
+                .memcpy_dtoh(&view, dst)
+                .map_err(|e| to_backend_err(Error::Driver(e)))?;
+        }
+        Ok(())
+    }
+
     /// Apply one gate over all tile groups (see [`crate::sv::paged`] module docs).
     /// Reuses the in-core FP32 kernels via [`CudaSvBackendF32::apply_gate`] on the
     /// gathered device buffer.

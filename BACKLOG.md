@@ -3474,9 +3474,10 @@ length — the single largest paging lever — and composes with IR fusion (appl
 `UnitaryKq` blocks within a residency) and with P5.11-02's overlap.
 
 **Acceptance Criteria**
-- [ ] Oracle-equal to per-gate paging (1e-10) at small `n` forced-tiled.
-- [ ] On a locality-rich circuit at n=31, **≥2× fewer full-state PCIe passes** than
-  per-gate paging; report the wall-time speedup.
+- [x] Oracle-equal to per-gate paging (1e-10) at small `n` forced-tiled.
+- [x] On a locality-rich circuit at n=31, **≥2× fewer full-state PCIe passes** than
+  per-gate paging; report the wall-time speedup. (**26× fewer passes, 9.93×
+  wall-time** at n=31; `docs/perf/p5.11-03-multi-gate-residency.md`.)
 
 **Testing Requirements**
 - Oracle vs per-gate paging; A/B bench (per-gate vs batched-residency) at n=30/31.

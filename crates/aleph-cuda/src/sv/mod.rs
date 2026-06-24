@@ -23,7 +23,7 @@ mod state;
 
 pub use backend::CudaSvBackend;
 pub use fp32::{CudaSvBackendF32, CudaSvStateF32, MAX_CUDA_QUBITS_F32};
-pub use paged::PagedSvState;
+pub use paged::{paged_pass_counts, PagedSvState};
 pub use paged_f32::PagedSvStateF32;
 pub use state::{CudaSvState, MAX_CUDA_QUBITS};
 
