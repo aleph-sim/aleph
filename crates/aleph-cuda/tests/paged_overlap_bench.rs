@@ -56,6 +56,11 @@ fn overlap_profile() {
     for q in 0..ng {
         circ.h(q % m).unwrap(); // all targets < m ⇒ hh=0 ⇒ overlap path
     }
+    // ALEPH_PAGED_GMAX2=1 appends one high↔high CNOT so g_max=2 (4 GiB buffers)
+    // — isolates whether large buffers slow the hh=0 overlap gates.
+    if std::env::var("ALEPH_PAGED_GMAX2").is_ok() {
+        circ.cnot(n - 2, n - 1).unwrap();
+    }
     let t = Instant::now();
     let st = gpu.run_paged_overlapped(&circ, m, depth).expect("overlap");
     let secs = t.elapsed().as_secs_f64();
