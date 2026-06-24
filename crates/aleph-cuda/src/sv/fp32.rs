@@ -651,7 +651,8 @@ impl CudaSvBackendF32 {
                 }
                 Instruction::DiagonalPhase(dp) => {
                     flush!();
-                    self.launch_phase_poly(&mut state, dp).map_err(to_backend_err)?;
+                    self.launch_phase_poly(&mut state, dp)
+                        .map_err(to_backend_err)?;
                 }
                 Instruction::TiledBlock(_) => {
                     flush!();
