@@ -96,16 +96,23 @@ fn batched_vs_per_gate_throughput() {
     let mut best_pg = f64::INFINITY;
     let mut best_b = f64::INFINITY;
     for _ in 0..reps {
-        let t = Instant::now();
-        let st = gpu.run_paged(&circ, m).expect("per-gate paged");
-        std::hint::black_box(st.num_qubits());
-        best_pg = best_pg.min(t.elapsed().as_secs_f64());
-
-        let t = Instant::now();
-        let st = gpu.run_paged_batched(&circ, m).expect("batched paged");
-        let norm = st.norm_sqr();
-        assert!((norm - 1.0).abs() < 1e-6, "batched norm drifted: {norm}");
-        best_b = best_b.min(t.elapsed().as_secs_f64());
+        // Each run holds the whole 2^n state in pinned host memory (32 GiB at
+        // n=31). Scope each so it frees before the next allocates — two live
+        // states would need 64 GiB, past the box's 62 GiB.
+        {
+            let t = Instant::now();
+            let st = gpu.run_paged(&circ, m).expect("per-gate paged");
+            std::hint::black_box(st.num_qubits());
+            best_pg = best_pg.min(t.elapsed().as_secs_f64());
+        }
+        {
+            let t = Instant::now();
+            let st = gpu.run_paged_batched(&circ, m).expect("batched paged");
+            let elapsed = t.elapsed().as_secs_f64();
+            let norm = st.norm_sqr();
+            assert!((norm - 1.0).abs() < 1e-6, "batched norm drifted: {norm}");
+            best_b = best_b.min(elapsed);
+        }
     }
 
     println!("per-gate: {best_pg:.3}s");
