@@ -54,11 +54,20 @@ fn overlap_profile() {
     };
     let mut circ = Circuit::new(n, 0);
     let use_cnot = std::env::var("ALEPH_PAGED_CNOT").is_ok();
-    for q in 0..ng {
-        if use_cnot {
-            circ.cnot(0, 1).unwrap(); // both < m ⇒ hh=0, but apply_cnot kernel
-        } else {
-            circ.h(q % m).unwrap(); // all targets < m ⇒ hh=0 ⇒ overlap path
+    if std::env::var("ALEPH_PAGED_GHZ").is_ok() {
+        // Real GHZ: H(0) + CNOT ladder — the regressing workload. The top CNOTs
+        // straddle the tile boundary (hh=1,2); most are hh=0.
+        circ.h(0).unwrap();
+        for q in 0..n - 1 {
+            circ.cnot(q, q + 1).unwrap();
+        }
+    } else {
+        for q in 0..ng {
+            if use_cnot {
+                circ.cnot(0, 1).unwrap(); // both < m ⇒ hh=0, but apply_cnot kernel
+            } else {
+                circ.h(q % m).unwrap(); // all targets < m ⇒ hh=0 ⇒ overlap path
+            }
         }
     }
     // ALEPH_PAGED_GMAX2=1 appends one high↔high CNOT so g_max=2 (4 GiB buffers)
