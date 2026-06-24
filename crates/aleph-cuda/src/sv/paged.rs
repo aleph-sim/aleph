@@ -479,6 +479,173 @@ impl CudaSvBackend {
         result
     }
 
+    /// Run `circuit` out-of-core like [`Self::run_paged`], but **amortise PCIe
+    /// over multi-gate tile residency** (P5.11-03). Per-gate paging streams the
+    /// whole `2^n` state once *per gate*; here a maximal run of consecutive gates
+    /// that touch only **low** (within-tile, `< m`) qubits is applied to each tile
+    /// *while it is resident* — load the tile once, apply the entire run on-device,
+    /// scatter once. That collapses a run of `L` low-qubit gates from `L` full-state
+    /// PCIe passes into **one**, the single largest paging lever for locality-rich
+    /// circuits (1q layers, nearest-neighbour 2q on low qubits).
+    ///
+    /// A low-only gate mixes amplitudes that differ only in low bits, so it never
+    /// crosses a tile boundary: each tile `T` is the exact `2^m`-amplitude
+    /// sub-state with the high bits fixed to `T`, and applying the run as an
+    /// `m`-qubit circuit on that tile is bit-for-bit identical to applying each
+    /// gate over the whole state (the oracle test pins this at 1e-10). Gates that
+    /// touch any high qubit fall back to the per-gate [`Self::apply_gate_paged`]
+    /// path (they need co-resident tile groups), and they flush the current run.
+    ///
+    /// Same arguments, restrictions, and returned state as [`Self::run_paged`].
+    /// [`paged_pass_counts`] reports the per-gate vs batched full-state pass counts
+    /// for a given circuit + tile split. Composes with IR fusion (the run's gates
+    /// can be fused `UnitaryKq` blocks on low qubits) and is orthogonal to the
+    /// copy-overlap of [`Self::run_paged_overlapped`].
+    pub fn run_paged_batched(
+        &mut self,
+        circuit: &Circuit,
+        tile_qubits: u32,
+    ) -> Result<PagedSvState, BackendError> {
+        let n = circuit.num_qubits();
+        if n == 0 && circuit.is_empty() {
+            return Err(BackendError::EmptyCircuit);
+        }
+        let m = tile_qubits;
+        if m == 0 || m >= n {
+            return Err(BackendError::InvalidState {
+                reason: "paged tile_qubits must satisfy 1 <= tile_qubits < num_qubits",
+            });
+        }
+
+        let mut g_max = 0u32;
+        for inst in circuit.instructions() {
+            match inst {
+                Instruction::Gate(gate) => g_max = g_max.max(high_count(gate, m)),
+                Instruction::Barrier(_) => {}
+                Instruction::Measure { .. } => {
+                    return Err(BackendError::UnsupportedInstruction { kind: "measure" })
+                }
+                Instruction::Reset(_) => {
+                    return Err(BackendError::UnsupportedInstruction { kind: "reset" })
+                }
+                Instruction::DiagonalPhase(_) => {
+                    return Err(BackendError::UnsupportedInstruction {
+                        kind: "diagonal-phase",
+                    })
+                }
+                Instruction::TiledBlock(_) => {
+                    return Err(BackendError::UnsupportedInstruction {
+                        kind: "tiled-block",
+                    })
+                }
+            }
+        }
+        let local_qubits = m + g_max;
+        if local_qubits > MAX_CUDA_QUBITS {
+            return Err(BackendError::TooManyQubits {
+                requested: local_qubits,
+                limit: MAX_CUDA_QUBITS,
+            });
+        }
+
+        let ctx = self.ctx();
+
+        let host_len = 2usize << n; // 2 · 2^n
+                                    // SAFETY: see [`Self::run_paged`] — owned page-locked alloc, every
+                                    // element initialised below before any copy reads it.
+        let mut host: PinnedHostSlice<f64> = unsafe { ctx.raw().alloc_pinned(host_len) }
+            .map_err(|e| to_backend_err(Error::Driver(e)))?;
+        {
+            let s = host
+                .as_mut_slice()
+                .map_err(|e| to_backend_err(Error::Driver(e)))?;
+            s.fill(0.0);
+            s[0] = 1.0;
+        }
+
+        let mut group = CudaSvState::allocate(&ctx, local_qubits).map_err(to_backend_err)?;
+        let base: *mut f64 = host
+            .as_mut_ptr()
+            .map_err(|e| to_backend_err(Error::Driver(e)))?;
+
+        // Accumulate maximal runs of low-only gates; flush on any high-qubit gate.
+        let mut run: Vec<&GateInstance> = Vec::new();
+        for inst in circuit.instructions() {
+            match inst {
+                Instruction::Gate(gate) => {
+                    if high_count(gate, m) == 0 {
+                        run.push(gate);
+                    } else {
+                        if !run.is_empty() {
+                            self.apply_low_run_paged(&ctx, &mut group, base, n, m, &run)?;
+                            run.clear();
+                        }
+                        self.apply_gate_paged(&ctx, &mut group, base, n, m, gate)?;
+                    }
+                }
+                // Barriers carry no state, so they don't break a residency run.
+                Instruction::Barrier(_) => {}
+                // Unreachable: the scan above rejected every other instruction.
+                _ => {}
+            }
+        }
+        if !run.is_empty() {
+            self.apply_low_run_paged(&ctx, &mut group, base, n, m, &run)?;
+        }
+
+        ctx.synchronize().map_err(to_backend_err)?;
+        Ok(PagedSvState {
+            num_qubits: n,
+            host,
+        })
+    }
+
+    /// Apply a run of **low-only** gates (every qubit/control `< m`) to the whole
+    /// state in one PCIe pass: each of the `2^(n-m)` tiles is gathered once, the
+    /// entire run applied on its `2^m`-amplitude device sub-state (qubits map to
+    /// themselves — no high bits), then scattered once. The P5.11-03 lever.
+    fn apply_low_run_paged(
+        &mut self,
+        ctx: &CudaContext,
+        group: &mut CudaSvState,
+        base: *mut f64,
+        n: u32,
+        m: u32,
+        gates: &[&GateInstance],
+    ) -> Result<(), BackendError> {
+        let h = n - m;
+        // Each tile is a self-contained m-qubit sub-state (hh=0).
+        group.num_qubits = m;
+        let tile_f64 = (1usize << m) * 2; // interleaved f64 per tile
+        let n_tiles = 1u64 << h;
+
+        for tile in 0..n_tiles {
+            let h0 = (tile as usize) << (m + 1); // f64 offset = tile·2^m·2
+                                                 // Gather the resident tile to device offset 0.
+                                                 // SAFETY: `base` valid for 2·2^n f64; `h0 + tile_f64 ≤ 2·2^n`
+                                                 // since `tile < 2^h`. Stream-ordered; the tile is disjoint per iter.
+            let src = unsafe { std::slice::from_raw_parts(base.add(h0), tile_f64) };
+            let mut dst = group.amps.slice_mut().slice_mut(0..tile_f64);
+            ctx.stream()
+                .memcpy_htod(src, &mut dst)
+                .map_err(|e| to_backend_err(Error::Driver(e)))?;
+
+            // Apply the whole run while the tile is resident (low qubits ↦ self).
+            for gate in gates {
+                self.apply_gate(group, gate)?;
+            }
+
+            // Scatter the tile back to its host slot.
+            let view = group.amps.slice().slice(0..tile_f64);
+            // SAFETY: same bounds as the gather; one scatter writes this tile.
+            let dst = unsafe { std::slice::from_raw_parts_mut(base.add(h0), tile_f64) };
+            ctx.stream()
+                .memcpy_dtoh(&view, dst)
+                .map_err(|e| to_backend_err(Error::Driver(e)))?;
+        }
+        Ok(())
+    }
+
     /// Apply one gate over all tile groups (see the module docs). Reuses the
     /// in-core kernels via [`Backend::apply_gate`] on the gathered device buffer.
     fn apply_gate_paged(
@@ -619,6 +786,38 @@ fn plan_gate(gate: &GateInstance, m: u32) -> GatePlan {
     GatePlan { rg, hprime, hh }
 }
 
+/// Full-state PCIe passes (one read + one write of the whole `2^n` state) that
+/// [`CudaSvBackend::run_paged`] (per-gate) vs [`CudaSvBackend::run_paged_batched`]
+/// (multi-gate residency) make for `circuit` under the low-bit split `m` —
+/// `(per_gate, batched)`. Per-gate streams the state once per gate; batched
+/// collapses each maximal run of low-only gates into one pass. The P5.11-03
+/// acceptance metric (≥2× fewer passes on a locality-rich circuit) is
+/// `per_gate / batched`. Barriers carry no state, so they neither cost a pass nor
+/// break a run (matching the executors).
+pub fn paged_pass_counts(circuit: &Circuit, tile_qubits: u32) -> (u64, u64) {
+    let m = tile_qubits;
+    let mut per_gate = 0u64;
+    let mut batched = 0u64;
+    let mut in_low_run = false;
+    for inst in circuit.instructions() {
+        if let Instruction::Gate(gate) = inst {
+            per_gate += 1;
+            if high_count(gate, m) == 0 {
+                // Extend the current low run, or open a new one.
+                if !in_low_run {
+                    batched += 1;
+                    in_low_run = true;
+                }
+            } else {
+                // A high-qubit gate is its own pass and ends any low run.
+                batched += 1;
+                in_low_run = false;
+            }
+        }
+    }
+    (per_gate, batched)
+}
+
 /// Number of distinct **high** qubits (≥ `m`) a gate touches (operands ∪
 /// controls) — the `hh` that sizes its co-resident tile group.
 pub(crate) fn high_count(gate: &GateInstance, m: u32) -> u32 {
@@ -636,7 +835,43 @@ pub(crate) fn high_count(gate: &GateInstance, m: u32) -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use super::compose_high;
+    use super::{compose_high, paged_pass_counts};
+    use aleph_ir::Circuit;
+
+    /// `paged_pass_counts` folds each maximal run of low-only (`< m`) gates into a
+    /// single batched pass while per-gate counts every gate; high-qubit gates end
+    /// a run and cost a pass either way. A GPU-free check of the P5.11-03 schedule.
+    #[test]
+    fn pass_counts_fold_low_runs() {
+        // m=2: qubits 0,1 are low. Build a low run, a high gate, then a low run.
+        let mut c = Circuit::new(4, 0);
+        c.h(0).unwrap(); // low
+        c.h(1).unwrap(); // low  (run #1)
+        c.cnot(0, 1).unwrap(); // both low → still run #1
+        c.cnot(1, 2).unwrap(); // touches high q2 → flush + its own pass
+        c.h(0).unwrap(); // low  (run #2)
+        c.rx(0.3, 1).unwrap(); // low  → still run #2
+        let (per_gate, batched) = paged_pass_counts(&c, 2);
+        // 6 gates per-gate; batched = run#1 + high CNOT + run#2 = 3.
+        assert_eq!(per_gate, 6);
+        assert_eq!(batched, 3);
+    }
+
+    /// A purely low-only circuit folds into exactly one batched pass; a circuit
+    /// where every gate touches a high qubit cannot fold (batched == per-gate).
+    #[test]
+    fn pass_counts_extremes() {
+        let mut low = Circuit::new(4, 0);
+        for _ in 0..5 {
+            low.h(0).unwrap();
+        }
+        assert_eq!(paged_pass_counts(&low, 2), (5, 1));
+
+        let mut high = Circuit::new(4, 0); // m=1 ⇒ q1,q2,q3 high
+        high.cnot(1, 2).unwrap();
+        high.cnot(2, 3).unwrap();
+        assert_eq!(paged_pass_counts(&high, 1), (2, 2));
+    }
 
     /// `compose_high` must place `s` into the `hprime` bit positions and `outer`
     /// into the rest, LSB-first, so the `2^hh` sub-tiles of a group differ only in

@@ -47,8 +47,8 @@ pub use fusion::{fuse_for_gpu, fuse_for_gpu_with, MAX_FUSE_QUBITS};
 pub use stab::{op as stab_op, CudaStab, CudaStabState, Generators, StabOp};
 #[cfg(all(target_os = "linux", feature = "cuda"))]
 pub use sv::{
-    CudaSvBackend, CudaSvBackendF32, CudaSvState, CudaSvStateF32, PagedSvState, PagedSvStateF32,
-    MAX_CUDA_QUBITS, MAX_CUDA_QUBITS_F32,
+    paged_pass_counts, CudaSvBackend, CudaSvBackendF32, CudaSvState, CudaSvStateF32, PagedSvState,
+    PagedSvStateF32, MAX_CUDA_QUBITS, MAX_CUDA_QUBITS_F32,
 };
 
 /// Errors from the CUDA foundation layer.
