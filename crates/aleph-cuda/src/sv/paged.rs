@@ -364,10 +364,8 @@ impl CudaSvBackend {
 
                 // Gate boundary: the first gather of this gate must not read host
                 // tiles the previous gate may still be scattering.
-                if std::env::var("ALEPH_NOBARRIER").is_err() {
-                    if let Some(ev) = &last_scatter {
-                        h2d.wait(ev).map_err(drv_err)?;
-                    }
+                if let Some(ev) = &last_scatter {
+                    h2d.wait(ev).map_err(drv_err)?;
                 }
 
                 for outer in 0..n_outer {
