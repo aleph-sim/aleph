@@ -350,9 +350,21 @@ impl CudaSvBackend {
         let result = (|| -> Result<PagedSvState, BackendError> {
             // Pipeline state, persisting across gates.
             let mut slot_scatter: Vec<Option<Rc<CudaEvent>>> = vec![None; depth];
-            let mut last_scatter: Option<Rc<CudaEvent>> = None;
+            // The most recent host write (scatter), on whatever stream — the
+            // gate-boundary host-hazard barrier waits on it.
+            let mut last_write: Option<Rc<CudaEvent>> = None;
             let tile_f64 = (1usize << m) * 2; // interleaved f64 per tile
             let mut ring = 0usize; // round-robin buffer index, global over the run
+
+            // Overlap pays a duplex penalty: when both copy engines are busy each
+            // direction throttles to ~8 GB/s (vs ~12.9 serial). That only nets a
+            // win when the pipeline is deep enough to actually overlap gather and
+            // scatter. A gate with few groups (high fan-out `hh`, so small
+            // `n_outer`) can't fill the pipeline — it would engage both engines
+            // without overlapping and run *slower* than serial. Such gates fall
+            // back to a single-stream (synchronous) path at full per-direction
+            // bandwidth. Threshold: need ≳ 2× the ring depth in groups.
+            let overlap_threshold = 2 * depth as u64;
 
             for inst in circuit.instructions() {
                 let Instruction::Gate(gate) = inst else {
@@ -362,61 +374,100 @@ impl CudaSvBackend {
                 let n_outer = 1u64 << (h - plan.hh);
                 let n_sub = 1u64 << plan.hh;
 
-                // Gate boundary: the first gather of this gate must not read host
-                // tiles the previous gate may still be scattering.
-                if let Some(ev) = &last_scatter {
-                    h2d.wait(ev).map_err(drv_err)?;
-                }
-
-                for outer in 0..n_outer {
-                    let slot = ring % depth;
-                    ring += 1;
-
-                    // Buffer-reuse: do not overwrite a buffer still scattering.
-                    if let Some(ev) = &slot_scatter[slot] {
+                if n_outer >= overlap_threshold {
+                    // ---- Overlapped path (deep pipeline; H2D ∥ compute ∥ D2H). ----
+                    // Gate boundary: first gather must not read host tiles the
+                    // previous gate may still be scattering.
+                    if let Some(ev) = &last_write {
                         h2d.wait(ev).map_err(drv_err)?;
                     }
+                    for outer in 0..n_outer {
+                        let slot = ring % depth;
+                        ring += 1;
 
-                    // Gather the 2^hh tiles into device offsets s·2^m (H2D stream).
-                    for s in 0..n_sub {
-                        let tile = compose_high(outer, s, &plan.hprime, h);
-                        let h0 = (tile as usize) << (m + 1);
-                        let d0 = (s as usize) << (m + 1);
-                        let dst_ptr = bases[slot] + d0 as u64 * F64;
-                        // SAFETY: `base.add(h0)` is in-bounds (`h0 + tile_f64 ≤
-                        // 2·2^n`); the host region is pinned and stays alive; the
-                        // device range `[dst_ptr, +tile_f64·8)` is within the
-                        // buffer (`d0 + tile_f64 ≤ 2^(m+hh+1) ≤ buffer len`); the
-                        // explicit events below order this copy vs compute/scatter.
-                        let src = unsafe { std::slice::from_raw_parts(base.add(h0), tile_f64) };
-                        unsafe { result::memcpy_htod_async(dst_ptr, src, h2d.cu_stream()) }
-                            .map_err(drv_err)?;
+                        // Buffer-reuse: don't overwrite a buffer still scattering.
+                        if let Some(ev) = &slot_scatter[slot] {
+                            h2d.wait(ev).map_err(drv_err)?;
+                        }
+                        // Gather the 2^hh tiles into device offsets s·2^m (H2D).
+                        for s in 0..n_sub {
+                            let tile = compose_high(outer, s, &plan.hprime, h);
+                            let h0 = (tile as usize) << (m + 1);
+                            let d0 = (s as usize) << (m + 1);
+                            let dst_ptr = bases[slot] + d0 as u64 * F64;
+                            // SAFETY: `base.add(h0)` in-bounds (`h0 + tile_f64 ≤
+                            // 2·2^n`); host region pinned + alive; device range
+                            // within the buffer; events order it vs compute/scatter.
+                            let src = unsafe { std::slice::from_raw_parts(base.add(h0), tile_f64) };
+                            unsafe { result::memcpy_htod_async(dst_ptr, src, h2d.cu_stream()) }
+                                .map_err(drv_err)?;
+                        }
+                        let gather_ev = h2d.record_event(None).map_err(drv_err)?;
+
+                        // Compute after the gather (on the compute stream).
+                        compute.wait(&gather_ev).map_err(drv_err)?;
+                        bufs[slot].num_qubits = m + plan.hh;
+                        self.apply_gate(&mut bufs[slot], &plan.rg)?;
+                        let compute_ev = compute.record_event(None).map_err(drv_err)?;
+
+                        // Scatter back on the D2H stream after the compute.
+                        d2h.wait(&compute_ev).map_err(drv_err)?;
+                        for s in 0..n_sub {
+                            let tile = compose_high(outer, s, &plan.hprime, h);
+                            let h0 = (tile as usize) << (m + 1);
+                            let d0 = (s as usize) << (m + 1);
+                            let src_ptr = bases[slot] + d0 as u64 * F64;
+                            // SAFETY: same bounds as the gather; one scatter/tile.
+                            let dst =
+                                unsafe { std::slice::from_raw_parts_mut(base.add(h0), tile_f64) };
+                            unsafe { result::memcpy_dtoh_async(dst, src_ptr, d2h.cu_stream()) }
+                                .map_err(drv_err)?;
+                        }
+                        let sev = Rc::new(d2h.record_event(None).map_err(drv_err)?);
+                        slot_scatter[slot] = Some(sev.clone());
+                        last_write = Some(sev);
                     }
-                    let gather_ev = h2d.record_event(None).map_err(drv_err)?;
-
-                    // Compute after the gather completes (on the compute stream,
-                    // which is what `self.apply_gate` now launches on).
-                    compute.wait(&gather_ev).map_err(drv_err)?;
-                    bufs[slot].num_qubits = m + plan.hh;
-                    self.apply_gate(&mut bufs[slot], &plan.rg)?;
-                    let compute_ev = compute.record_event(None).map_err(drv_err)?;
-
-                    // Scatter back on the D2H stream after the compute completes.
-                    d2h.wait(&compute_ev).map_err(drv_err)?;
-                    for s in 0..n_sub {
-                        let tile = compose_high(outer, s, &plan.hprime, h);
-                        let h0 = (tile as usize) << (m + 1);
-                        let d0 = (s as usize) << (m + 1);
-                        let src_ptr = bases[slot] + d0 as u64 * F64;
-                        // SAFETY: same bounds as the gather; each tile scattered
-                        // once per gate; ordered after compute by the event wait.
-                        let dst = unsafe { std::slice::from_raw_parts_mut(base.add(h0), tile_f64) };
-                        unsafe { result::memcpy_dtoh_async(dst, src_ptr, d2h.cu_stream()) }
-                            .map_err(drv_err)?;
+                } else {
+                    // ---- Synchronous fallback (shallow gate): everything on the
+                    // compute stream, so only one copy direction is active at a
+                    // time and each runs at full bandwidth. ----
+                    // Gate-start barrier covers both the host hazard and buffer
+                    // reuse: the D2H stream is in-order, so waiting the most recent
+                    // scatter implies all prior scatters (every buffer free).
+                    if let Some(ev) = &last_write {
+                        compute.wait(ev).map_err(drv_err)?;
                     }
-                    let sev = Rc::new(d2h.record_event(None).map_err(drv_err)?);
-                    slot_scatter[slot] = Some(sev.clone());
-                    last_scatter = Some(sev);
+                    for outer in 0..n_outer {
+                        let slot = ring % depth;
+                        ring += 1;
+                        for s in 0..n_sub {
+                            let tile = compose_high(outer, s, &plan.hprime, h);
+                            let h0 = (tile as usize) << (m + 1);
+                            let d0 = (s as usize) << (m + 1);
+                            let dst_ptr = bases[slot] + d0 as u64 * F64;
+                            // SAFETY: as in the overlapped gather above.
+                            let src = unsafe { std::slice::from_raw_parts(base.add(h0), tile_f64) };
+                            unsafe { result::memcpy_htod_async(dst_ptr, src, compute.cu_stream()) }
+                                .map_err(drv_err)?;
+                        }
+                        bufs[slot].num_qubits = m + plan.hh;
+                        self.apply_gate(&mut bufs[slot], &plan.rg)?;
+                        for s in 0..n_sub {
+                            let tile = compose_high(outer, s, &plan.hprime, h);
+                            let h0 = (tile as usize) << (m + 1);
+                            let d0 = (s as usize) << (m + 1);
+                            let src_ptr = bases[slot] + d0 as u64 * F64;
+                            // SAFETY: as in the overlapped scatter above.
+                            let dst =
+                                unsafe { std::slice::from_raw_parts_mut(base.add(h0), tile_f64) };
+                            unsafe { result::memcpy_dtoh_async(dst, src_ptr, compute.cu_stream()) }
+                                .map_err(drv_err)?;
+                        }
+                        // One event after this group's scatter (compute stream).
+                        let sev = Rc::new(compute.record_event(None).map_err(drv_err)?);
+                        slot_scatter[slot] = Some(sev.clone());
+                        last_write = Some(sev);
+                    }
                 }
             }
 
