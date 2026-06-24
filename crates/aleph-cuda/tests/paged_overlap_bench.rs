@@ -35,6 +35,38 @@ fn env_u32(key: &str, default: u32) -> u32 {
         .unwrap_or(default)
 }
 
+/// nsys-friendly profile target: a small multi-gate overlap run, overlap path
+/// only (no sync baseline), so the CUDA trace is clean. Env: ALEPH_PAGED_N,
+/// ALEPH_PAGED_TILE, ALEPH_PAGED_NG (gate count), ALEPH_PAGED_DEPTH.
+#[test]
+#[ignore]
+fn overlap_profile() {
+    let n = env_u32("ALEPH_PAGED_N", 26);
+    let m = env_u32("ALEPH_PAGED_TILE", 22);
+    let ng = env_u32("ALEPH_PAGED_NG", 4);
+    let depth = env_u32("ALEPH_PAGED_DEPTH", 4);
+    let mut gpu = match CudaSvBackend::with_seed(0) {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("skipping profile: {e}");
+            return;
+        }
+    };
+    let mut circ = Circuit::new(n, 0);
+    for q in 0..ng {
+        circ.h(q % m).unwrap(); // all targets < m ⇒ hh=0, 2^(n-m) groups/gate
+    }
+    let t = Instant::now();
+    let st = gpu.run_paged_overlapped(&circ, m, depth).expect("overlap");
+    let secs = t.elapsed().as_secs_f64();
+    let bytes = ng as f64 * 2.0 * (2.0 * (1u64 << n) as f64 * 8.0);
+    println!(
+        "profile n={n} m={m} ng={ng} depth={depth}: {secs:.3}s ({:.1} GB/s) norm={:.4}",
+        bytes / secs / 1e9,
+        st.norm_sqr()
+    );
+}
+
 /// Diagnostic: a SINGLE gate (one H on q0) — no gate-boundary barrier, so this
 /// is the pure within-gate gather/compute/scatter pipeline. Isolates whether the
 /// overlap itself works (vs the per-gate pipeline drain in the full circuit).
