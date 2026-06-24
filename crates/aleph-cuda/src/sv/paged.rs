@@ -30,10 +30,11 @@
 //!
 //! Iterating over the `2^(h - hh)` "outer" high combinations covers the whole
 //! state in exactly one read + one write per gate (bandwidth-optimal, same as
-//! in-core). Today the copies are stream-ordered and synchronous (cudarc forces a
-//! host sync when a borrowed slice backs an async copy); true H2D/D2H/compute
-//! overlap via raw-FFI async + double buffering is a follow-up — see the
-//! `tests/paged_bench.rs` report and `docs/perf/p5.10-02-host-paging.md`.
+//! in-core). [`CudaSvBackend::run_paged`] issues those copies synchronously on
+//! one stream; [`CudaSvBackend::run_paged_overlapped`] (P5.11-02) instead
+//! double-buffers them across dedicated H2D/D2H/compute streams so the copy
+//! directions overlap (~1.10× on the idle box, near the card's ~1.24× PCIe
+//! duplex ceiling) — see `docs/perf/p5.11-02-overlapped-paging.md`.
 
 use std::rc::Rc;
 
