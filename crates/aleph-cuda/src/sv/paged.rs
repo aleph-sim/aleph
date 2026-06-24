@@ -40,7 +40,7 @@ use std::rc::Rc;
 use aleph_backend::{Backend, BackendError};
 use aleph_core::{Complex, GateInstance};
 use aleph_ir::{Circuit, Instruction};
-use cudarc::driver::{CudaEvent, PinnedHostSlice};
+use cudarc::driver::{result, sys, CudaEvent, DevicePtr, PinnedHostSlice};
 
 use crate::sv::backend::to_backend_err;
 use crate::sv::state::{CudaSvState, MAX_CUDA_QUBITS};
@@ -330,6 +330,18 @@ impl CudaSvBackend {
             .as_mut_ptr()
             .map_err(|e| to_backend_err(Error::Driver(e)))?;
 
+        // Stable device base pointer of each ring buffer (no realloc during the
+        // run). The tile copies use **raw-FFI async** memcpy against these — going
+        // through cudarc's safe `memcpy_htod`/`memcpy_dtoh` puts the context in
+        // event-tracking mode and adds per-copy bookkeeping that serialises the
+        // pipeline (it drops to ~0.66× of the synchronous path); raw copies keep
+        // the duplex bandwidth (~1.3× over synchronous, the card's PCIe ceiling).
+        let bases: Vec<sys::CUdeviceptr> = bufs
+            .iter()
+            .map(|b| b.amps.slice().device_ptr(&compute).0)
+            .collect();
+        const F64: u64 = std::mem::size_of::<f64>() as u64;
+
         let h = n - m;
         let saved_ctx = self.ctx();
         self.set_ctx(ctx.with_stream(compute.clone()));
@@ -370,10 +382,15 @@ impl CudaSvBackend {
                         let tile = compose_high(outer, s, &plan.hprime, h);
                         let h0 = (tile as usize) << (m + 1);
                         let d0 = (s as usize) << (m + 1);
-                        // SAFETY: as in `apply_gate_paged` — `h0 + tile_f64 ≤ 2·2^n`.
+                        let dst_ptr = bases[slot] + d0 as u64 * F64;
+                        // SAFETY: `base.add(h0)` is in-bounds (`h0 + tile_f64 ≤
+                        // 2·2^n`); the host region is pinned and stays alive; the
+                        // device range `[dst_ptr, +tile_f64·8)` is within the
+                        // buffer (`d0 + tile_f64 ≤ 2^(m+hh+1) ≤ buffer len`); the
+                        // explicit events below order this copy vs compute/scatter.
                         let src = unsafe { std::slice::from_raw_parts(base.add(h0), tile_f64) };
-                        let mut dst = bufs[slot].amps.slice_mut().slice_mut(d0..d0 + tile_f64);
-                        h2d.memcpy_htod(src, &mut dst).map_err(drv_err)?;
+                        unsafe { result::memcpy_htod_async(dst_ptr, src, h2d.cu_stream()) }
+                            .map_err(drv_err)?;
                     }
                     let gather_ev = h2d.record_event(None).map_err(drv_err)?;
 
@@ -390,10 +407,12 @@ impl CudaSvBackend {
                         let tile = compose_high(outer, s, &plan.hprime, h);
                         let h0 = (tile as usize) << (m + 1);
                         let d0 = (s as usize) << (m + 1);
-                        let view = bufs[slot].amps.slice().slice(d0..d0 + tile_f64);
-                        // SAFETY: same bounds as the gather; each tile once.
+                        let src_ptr = bases[slot] + d0 as u64 * F64;
+                        // SAFETY: same bounds as the gather; each tile scattered
+                        // once per gate; ordered after compute by the event wait.
                         let dst = unsafe { std::slice::from_raw_parts_mut(base.add(h0), tile_f64) };
-                        d2h.memcpy_dtoh(&view, dst).map_err(drv_err)?;
+                        unsafe { result::memcpy_dtoh_async(dst, src_ptr, d2h.cu_stream()) }
+                            .map_err(drv_err)?;
                     }
                     let sev = Rc::new(d2h.record_event(None).map_err(drv_err)?);
                     slot_scatter[slot] = Some(sev.clone());
