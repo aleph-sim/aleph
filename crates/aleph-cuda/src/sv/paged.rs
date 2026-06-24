@@ -577,6 +577,7 @@ impl CudaSvBackend {
 /// backend error — the [`to_backend_err`] convenience for the `DriverError`-typed
 /// APIs the overlapped paged path drives directly.
 fn drv_err(e: cudarc::driver::DriverError) -> BackendError {
+    eprintln!("PAGED DRV ERR: {e:?}");
     to_backend_err(Error::Driver(e))
 }
 
