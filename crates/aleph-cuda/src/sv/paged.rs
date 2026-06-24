@@ -311,20 +311,31 @@ impl CudaSvBackend {
             s[0] = 1.0;
         }
 
+        // Release any pool-retained device blocks (e.g. from a prior in-core or
+        // synchronous-paged run on this backend) before reserving the large ring —
+        // the retaining allocator (P5-04) would otherwise stack on top and can
+        // exhaust the card.
+        ctx.trim_pool(0).map_err(to_backend_err)?;
+
         // A ring of `depth` device buffers, each big enough for the largest group.
         let mut bufs = Vec::with_capacity(depth);
         for _ in 0..depth {
             bufs.push(CudaSvState::allocate(&ctx, local_qubits).map_err(to_backend_err)?);
         }
 
-        // Three dedicated non-blocking streams: gather (H2D), compute, scatter
-        // (D2H). Compute must NOT run on the legacy default stream — that stream
-        // serialises against the others and defeats the overlap (it costs ~1.5×
-        // vs the synchronous path). Swap the backend's context to launch the gate
-        // kernels on `compute`; restored before returning.
+        // Dedicated non-blocking streams for the overlapped path: gather (H2D),
+        // compute, scatter (D2H). Compute must NOT run on the legacy default
+        // stream — it would serialise against the copy streams and defeat the
+        // overlap. The synchronous fallback (shallow gates) instead runs on the
+        // legacy default stream, which gets full copy-engine bandwidth (a
+        // non-blocking stream is throttled to ~half for these single-stream
+        // copies). Swap the backend's context per gate accordingly.
         let h2d = ctx.raw().new_stream().map_err(drv_err)?;
         let d2h = ctx.raw().new_stream().map_err(drv_err)?;
         let compute = ctx.raw().new_stream().map_err(drv_err)?;
+        let compute_ctx = ctx.with_stream(compute.clone());
+        let default_ctx = ctx.clone(); // legacy default stream
+        let def = ctx.stream().clone();
 
         let base: *mut f64 = host
             .as_mut_ptr()
@@ -344,7 +355,7 @@ impl CudaSvBackend {
 
         let h = n - m;
         let saved_ctx = self.ctx();
-        self.set_ctx(ctx.with_stream(compute.clone()));
+        self.set_ctx(compute_ctx.clone());
 
         // Closure so `self.ctx` is restored on every exit path (including `?`).
         let result = (|| -> Result<PagedSvState, BackendError> {
@@ -428,14 +439,16 @@ impl CudaSvBackend {
                         last_write = Some(sev);
                     }
                 } else {
-                    // ---- Synchronous fallback (shallow gate): everything on the
-                    // compute stream, so only one copy direction is active at a
-                    // time and each runs at full bandwidth. ----
-                    // Gate-start barrier covers both the host hazard and buffer
-                    // reuse: the D2H stream is in-order, so waiting the most recent
-                    // scatter implies all prior scatters (every buffer free).
+                    // ---- Synchronous fallback (shallow gate): gather, compute,
+                    // and scatter all on the legacy default stream, so only one
+                    // copy direction is active at a time, each at full bandwidth
+                    // (no duplex throttle). Swap the kernel context to the default
+                    // stream for this gate, then restore the compute stream. ----
+                    self.set_ctx(default_ctx.clone());
+                    // Gate-start barrier: prior scatters (any stream) must finish
+                    // before the default stream reads/overwrites host tiles+buffers.
                     if let Some(ev) = &last_write {
-                        compute.wait(ev).map_err(drv_err)?;
+                        def.wait(ev).map_err(drv_err)?;
                     }
                     for outer in 0..n_outer {
                         let slot = ring % depth;
@@ -447,7 +460,7 @@ impl CudaSvBackend {
                             let dst_ptr = bases[slot] + d0 as u64 * F64;
                             // SAFETY: as in the overlapped gather above.
                             let src = unsafe { std::slice::from_raw_parts(base.add(h0), tile_f64) };
-                            unsafe { result::memcpy_htod_async(dst_ptr, src, compute.cu_stream()) }
+                            unsafe { result::memcpy_htod_async(dst_ptr, src, def.cu_stream()) }
                                 .map_err(drv_err)?;
                         }
                         bufs[slot].num_qubits = m + plan.hh;
@@ -460,21 +473,24 @@ impl CudaSvBackend {
                             // SAFETY: as in the overlapped scatter above.
                             let dst =
                                 unsafe { std::slice::from_raw_parts_mut(base.add(h0), tile_f64) };
-                            unsafe { result::memcpy_dtoh_async(dst, src_ptr, compute.cu_stream()) }
+                            unsafe { result::memcpy_dtoh_async(dst, src_ptr, def.cu_stream()) }
                                 .map_err(drv_err)?;
                         }
-                        // One event after this group's scatter (compute stream).
-                        let sev = Rc::new(compute.record_event(None).map_err(drv_err)?);
+                        // One event after this group's scatter (default stream).
+                        let sev = Rc::new(def.record_event(None).map_err(drv_err)?);
                         slot_scatter[slot] = Some(sev.clone());
                         last_write = Some(sev);
                     }
+                    self.set_ctx(compute_ctx.clone());
                 }
             }
 
-            // Drain all three streams so the host state is complete before readout.
+            // Drain all streams (incl. the default stream used by the sync
+            // fallback) so the host state is complete before readout.
             h2d.synchronize().map_err(drv_err)?;
             compute.synchronize().map_err(drv_err)?;
             d2h.synchronize().map_err(drv_err)?;
+            def.synchronize().map_err(drv_err)?;
             Ok(PagedSvState {
                 num_qubits: n,
                 host,
@@ -577,7 +593,6 @@ impl CudaSvBackend {
 /// backend error — the [`to_backend_err`] convenience for the `DriverError`-typed
 /// APIs the overlapped paged path drives directly.
 fn drv_err(e: cudarc::driver::DriverError) -> BackendError {
-    eprintln!("PAGED DRV ERR: {e:?}");
     to_backend_err(Error::Driver(e))
 }
 

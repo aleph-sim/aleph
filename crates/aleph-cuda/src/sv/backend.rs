@@ -608,7 +608,6 @@ pub(crate) fn gate_kq_params(qubits: &[u32], controls: &[u32]) -> GateKqParams {
 /// working GPU indicate an internal fault, not user input; richer plumbing is a
 /// follow-up (the variant set is shared across all backends).
 pub(crate) fn to_backend_err(_e: Error) -> BackendError {
-    eprintln!("TO_BACKEND_ERR: {_e:?}");
     BackendError::InvalidState {
         reason: "CUDA backend failure (compile/launch/transfer)",
     }
