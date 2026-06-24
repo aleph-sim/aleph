@@ -92,7 +92,7 @@ impl PagedSvState {
 /// High-bit index `T` whose bits at the `hprime` positions carry `s` (LSB-first)
 /// and whose remaining positions carry `outer` (LSB-first). Reconstructs which
 /// tile sub-block `s` of co-resident group `outer` maps to.
-fn compose_high(outer: u64, s: u64, hprime: &[u32], h: u32) -> u64 {
+pub(crate) fn compose_high(outer: u64, s: u64, hprime: &[u32], h: u32) -> u64 {
     let mut val = 0u64;
     let mut oc = 0u32; // cursor over `outer`'s bits
     for p in 0..h {
@@ -307,7 +307,7 @@ impl CudaSvBackend {
 
 /// Number of distinct **high** qubits (≥ `m`) a gate touches (operands ∪
 /// controls) — the `hh` that sizes its co-resident tile group.
-fn high_count(gate: &GateInstance, m: u32) -> u32 {
+pub(crate) fn high_count(gate: &GateInstance, m: u32) -> u32 {
     let mut high: Vec<u32> = gate
         .qubits
         .iter()

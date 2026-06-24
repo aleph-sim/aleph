@@ -16,12 +16,15 @@ mod kernel;
 // measurement distributions byte-for-byte aligned with the CPU oracle.
 // Out-of-core (host-memory paged) executor for n > MAX_CUDA_QUBITS (P5.10-02).
 mod paged;
+// FP32 out-of-core paged executor → n=32 single-GPU reach (P5.11-01).
+mod paged_f32;
 pub(crate) mod readout;
 mod state;
 
 pub use backend::CudaSvBackend;
 pub use fp32::{CudaSvBackendF32, CudaSvStateF32, MAX_CUDA_QUBITS_F32};
 pub use paged::PagedSvState;
+pub use paged_f32::PagedSvStateF32;
 pub use state::{CudaSvState, MAX_CUDA_QUBITS};
 
 // The oracle harness pulls amplitudes through `HasAmplitudes`. Implemented here
