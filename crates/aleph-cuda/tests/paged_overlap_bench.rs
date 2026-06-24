@@ -63,26 +63,48 @@ fn overlap_vs_sync_reach() {
         std::hint::black_box(st.num_qubits());
         best_sync = best_sync.min(t.elapsed().as_secs_f64());
     }
-    let mut best_ov = f64::INFINITY;
-    let mut norm = 0.0;
-    for _ in 0..reps {
-        let t = Instant::now();
-        let st = gpu.run_paged_overlapped(&circ, m).expect("paged overlap");
-        norm = st.norm_sqr();
-        best_ov = best_ov.min(t.elapsed().as_secs_f64());
-    }
-
     let gbps = |secs: f64| (gates as f64 * bytes_per_gate) / secs / 1e9;
     println!(
         "== P5.11-02 overlap A/B: n={n} ({} GiB FP64), tile m={m}, {gates} gates ==",
         (1u64 << n) >> 26
     );
-    println!("sync    : {best_sync:.3}s  ({:.1} GB/s)", gbps(best_sync));
     println!(
-        "overlap : {best_ov:.3}s  ({:.1} GB/s)  → {:.2}× speedup",
-        gbps(best_ov),
-        best_sync / best_ov
+        "sync       : {best_sync:.3}s  ({:.1} GB/s)",
+        gbps(best_sync)
     );
-    println!("overlap norm = {norm:.6} (want ≈ 1)");
-    assert!((norm - 1.0).abs() < 1e-6, "norm drifted: {norm}");
+
+    // Sweep pipeline depth: 2 is too shallow (gather/scatter alternate); a deeper
+    // ring lets H2D run ahead of D2H. Depths are capped by device memory.
+    let depths: Vec<u32> = std::env::var("ALEPH_PAGED_DEPTHS")
+        .ok()
+        .map(|s| s.split(',').filter_map(|x| x.trim().parse().ok()).collect())
+        .unwrap_or_else(|| vec![2, 3, 4]);
+    for depth in depths {
+        let mut best_ov = f64::INFINITY;
+        let mut norm = 0.0;
+        let mut ok = true;
+        for _ in 0..reps {
+            let t = Instant::now();
+            match gpu.run_paged_overlapped(&circ, m, depth) {
+                Ok(st) => {
+                    norm = st.norm_sqr();
+                    best_ov = best_ov.min(t.elapsed().as_secs_f64());
+                }
+                Err(e) => {
+                    println!("overlap d={depth}: skipped ({e})");
+                    ok = false;
+                    break;
+                }
+            }
+        }
+        if !ok {
+            continue;
+        }
+        println!(
+            "overlap d={depth} : {best_ov:.3}s  ({:.1} GB/s)  → {:.2}× speedup  (norm {norm:.6})",
+            gbps(best_ov),
+            best_sync / best_ov
+        );
+        assert!((norm - 1.0).abs() < 1e-6, "norm drifted: {norm}");
+    }
 }

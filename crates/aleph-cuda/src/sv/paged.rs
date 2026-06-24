@@ -230,19 +230,26 @@ impl CudaSvBackend {
     /// Correctness comes from explicit CUDA events:
     /// - `compute(i)` waits the gather of group `i`,
     /// - `scatter(i)` waits the compute of group `i`,
-    /// - `gather(i)` reusing buffer slot `i%2` waits that slot's previous scatter
+    /// - `gather(i)` reusing a ring buffer waits that buffer's previous scatter
     ///   (buffer-reuse hazard), and
     /// - the first gather of each **gate** waits the previous gate's last scatter
     ///   (the host-memory hazard: a gate reads tiles the prior gate wrote — the
     ///   D2H stream is in-order, so its last event covers all earlier scatters).
     ///
-    /// Same contract and arguments as [`Self::run_paged`]; produces an identical
-    /// state (oracle-pinned at 1e-10). The copy streams are `NonBlocking`, so they
-    /// do not implicitly serialise against the legacy default (compute) stream.
+    /// `depth` is the number of ring buffers (pipeline depth, `≥ 2`). Two buffers
+    /// is too shallow: the `gather(i) ← scatter(i−2)` dependency forces gather and
+    /// scatter to *alternate* instead of overlap (it regresses below the
+    /// synchronous path). A deeper ring (≈3–4) lets the H2D engine run ahead of
+    /// D2H so both copy engines stay busy. The ring costs `depth · 2^(m+g)`
+    /// device amplitudes, which must fit the card.
+    ///
+    /// Same state as [`Self::run_paged`] (oracle-pinned at 1e-10). The streams are
+    /// `NonBlocking`, so they do not serialise against the legacy default stream.
     pub fn run_paged_overlapped(
         &mut self,
         circuit: &Circuit,
         tile_qubits: u32,
+        depth: u32,
     ) -> Result<PagedSvState, BackendError> {
         let n = circuit.num_qubits();
         if n == 0 && circuit.is_empty() {
@@ -254,6 +261,7 @@ impl CudaSvBackend {
                 reason: "paged tile_qubits must satisfy 1 <= tile_qubits < num_qubits",
             });
         }
+        let depth = depth.max(2) as usize;
 
         let mut g_max = 0u32;
         for inst in circuit.instructions() {
@@ -279,7 +287,9 @@ impl CudaSvBackend {
             }
         }
         let local_qubits = m + g_max;
-        if local_qubits > MAX_CUDA_QUBITS {
+        // The whole ring (`depth` buffers of `2^local_qubits` amps) must fit the
+        // card's `2^MAX_CUDA_QUBITS` amplitude budget.
+        if (depth as u64).saturating_mul(1u64 << local_qubits) > (1u64 << MAX_CUDA_QUBITS) {
             return Err(BackendError::TooManyQubits {
                 requested: local_qubits,
                 limit: MAX_CUDA_QUBITS,
@@ -301,11 +311,11 @@ impl CudaSvBackend {
             s[0] = 1.0;
         }
 
-        // Two ping-pong device buffers, each big enough for the largest group.
-        let mut bufs = [
-            CudaSvState::allocate(&ctx, local_qubits).map_err(to_backend_err)?,
-            CudaSvState::allocate(&ctx, local_qubits).map_err(to_backend_err)?,
-        ];
+        // A ring of `depth` device buffers, each big enough for the largest group.
+        let mut bufs = Vec::with_capacity(depth);
+        for _ in 0..depth {
+            bufs.push(CudaSvState::allocate(&ctx, local_qubits).map_err(to_backend_err)?);
+        }
 
         // Three dedicated non-blocking streams: gather (H2D), compute, scatter
         // (D2H). Compute must NOT run on the legacy default stream — that stream
@@ -327,9 +337,10 @@ impl CudaSvBackend {
         // Closure so `self.ctx` is restored on every exit path (including `?`).
         let result = (|| -> Result<PagedSvState, BackendError> {
             // Pipeline state, persisting across gates.
-            let mut slot_scatter: [Option<Rc<CudaEvent>>; 2] = [None, None];
+            let mut slot_scatter: Vec<Option<Rc<CudaEvent>>> = vec![None; depth];
             let mut last_scatter: Option<Rc<CudaEvent>> = None;
             let tile_f64 = (1usize << m) * 2; // interleaved f64 per tile
+            let mut ring = 0usize; // round-robin buffer index, global over the run
 
             for inst in circuit.instructions() {
                 let Instruction::Gate(gate) = inst else {
@@ -346,7 +357,8 @@ impl CudaSvBackend {
                 }
 
                 for outer in 0..n_outer {
-                    let slot = (outer % 2) as usize;
+                    let slot = ring % depth;
+                    ring += 1;
 
                     // Buffer-reuse: do not overwrite a buffer still scattering.
                     if let Some(ev) = &slot_scatter[slot] {

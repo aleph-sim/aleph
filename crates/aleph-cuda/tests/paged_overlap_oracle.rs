@@ -88,7 +88,7 @@ fn assert_overlap_matches(name: &str, circ: &Circuit, m: u32) {
         .expect("gpu paged sync")
         .amplitudes_vec();
     let got = gpu
-        .run_paged_overlapped(circ, m)
+        .run_paged_overlapped(circ, m, 4)
         .expect("gpu paged overlap")
         .amplitudes_vec();
 
@@ -143,7 +143,9 @@ fn overlap_preserves_norm() {
     };
     let mut rng = StdRng::seed_from_u64(0x511020a);
     let circ = random_brickwall(&mut rng, 12, 16);
-    let st = gpu.run_paged_overlapped(&circ, 8).expect("paged overlap");
+    let st = gpu
+        .run_paged_overlapped(&circ, 8, 3)
+        .expect("paged overlap");
     let norm = st.norm_sqr();
     assert!((norm - 1.0).abs() < 1e-9, "norm={norm}");
 }
