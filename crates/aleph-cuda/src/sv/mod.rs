@@ -19,6 +19,8 @@ mod paged;
 // FP32 out-of-core paged executor → n=32 single-GPU reach (P5.11-01).
 mod paged_f32;
 pub(crate) mod readout;
+// FP32 GPU-resident readout (P5.11-04) — the f32-amplitude mirror of `readout`.
+mod readout_f32;
 mod state;
 
 pub use backend::CudaSvBackend;
