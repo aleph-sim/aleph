@@ -75,12 +75,13 @@ fn overlap_profile() {
     if std::env::var("ALEPH_PAGED_GMAX2").is_ok() {
         circ.cnot(n - 2, n - 1).unwrap();
     }
+    let gates = circ.instructions().len();
     let t = Instant::now();
     let st = gpu.run_paged_overlapped(&circ, m, depth).expect("overlap");
     let secs = t.elapsed().as_secs_f64();
-    let bytes = ng as f64 * 2.0 * (2.0 * (1u64 << n) as f64 * 8.0);
+    let bytes = gates as f64 * 2.0 * (2.0 * (1u64 << n) as f64 * 8.0);
     println!(
-        "profile n={n} m={m} ng={ng} depth={depth}: {secs:.3}s ({:.1} GB/s) norm={:.4}",
+        "profile n={n} m={m} gates={gates} depth={depth}: {secs:.3}s ({:.1} GB/s) norm={:.4}",
         bytes / secs / 1e9,
         st.norm_sqr()
     );
