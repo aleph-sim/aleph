@@ -83,7 +83,10 @@ fn assert_overlap_matches(name: &str, circ: &Circuit, m: u32) {
     };
     let mut cpu = NaiveSvBackend::with_seed(0);
     let want = HasAmplitudes::amplitudes(&run(&mut cpu, circ).expect("cpu in-core"));
-    let sync = gpu.run_paged(circ, m).expect("gpu paged sync").amplitudes_vec();
+    let sync = gpu
+        .run_paged(circ, m)
+        .expect("gpu paged sync")
+        .amplitudes_vec();
     let got = gpu
         .run_paged_overlapped(circ, m)
         .expect("gpu paged overlap")

@@ -73,7 +73,10 @@ fn overlap_vs_sync_reach() {
     }
 
     let gbps = |secs: f64| (gates as f64 * bytes_per_gate) / secs / 1e9;
-    println!("== P5.11-02 overlap A/B: n={n} ({} GiB FP64), tile m={m}, {gates} gates ==", (1u64 << n) >> 26);
+    println!(
+        "== P5.11-02 overlap A/B: n={n} ({} GiB FP64), tile m={m}, {gates} gates ==",
+        (1u64 << n) >> 26
+    );
     println!("sync    : {best_sync:.3}s  ({:.1} GB/s)", gbps(best_sync));
     println!(
         "overlap : {best_ov:.3}s  ({:.1} GB/s)  → {:.2}× speedup",
