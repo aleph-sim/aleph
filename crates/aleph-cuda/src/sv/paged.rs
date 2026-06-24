@@ -439,48 +439,25 @@ impl CudaSvBackend {
                         last_write = Some(sev);
                     }
                 } else {
-                    // ---- Synchronous fallback (shallow gate): gather, compute,
-                    // and scatter all on the legacy default stream, so only one
-                    // copy direction is active at a time, each at full bandwidth
-                    // (no duplex throttle). Swap the kernel context to the default
-                    // stream for this gate, then restore the compute stream. ----
+                    // ---- Shallow gate: too few groups to fill the pipeline, so
+                    // run it through the proven synchronous per-gate path on the
+                    // legacy default stream (full per-direction bandwidth — a
+                    // non-blocking stream is throttled for these single-stream
+                    // copies). Swap the kernel context to the default stream. ----
                     self.set_ctx(default_ctx.clone());
                     // Gate-start barrier: prior scatters (any stream) must finish
-                    // before the default stream reads/overwrites host tiles+buffers.
+                    // before the default stream reads/overwrites the host tiles.
                     if let Some(ev) = &last_write {
                         def.wait(ev).map_err(drv_err)?;
                     }
-                    for outer in 0..n_outer {
-                        let slot = ring % depth;
-                        ring += 1;
-                        for s in 0..n_sub {
-                            let tile = compose_high(outer, s, &plan.hprime, h);
-                            let h0 = (tile as usize) << (m + 1);
-                            let d0 = (s as usize) << (m + 1);
-                            let dst_ptr = bases[slot] + d0 as u64 * F64;
-                            // SAFETY: as in the overlapped gather above.
-                            let src = unsafe { std::slice::from_raw_parts(base.add(h0), tile_f64) };
-                            unsafe { result::memcpy_htod_async(dst_ptr, src, def.cu_stream()) }
-                                .map_err(drv_err)?;
-                        }
-                        bufs[slot].num_qubits = m + plan.hh;
-                        self.apply_gate(&mut bufs[slot], &plan.rg)?;
-                        for s in 0..n_sub {
-                            let tile = compose_high(outer, s, &plan.hprime, h);
-                            let h0 = (tile as usize) << (m + 1);
-                            let d0 = (s as usize) << (m + 1);
-                            let src_ptr = bases[slot] + d0 as u64 * F64;
-                            // SAFETY: as in the overlapped scatter above.
-                            let dst =
-                                unsafe { std::slice::from_raw_parts_mut(base.add(h0), tile_f64) };
-                            unsafe { result::memcpy_dtoh_async(dst, src_ptr, def.cu_stream()) }
-                                .map_err(drv_err)?;
-                        }
-                        // One event after this group's scatter (default stream).
-                        let sev = Rc::new(def.record_event(None).map_err(drv_err)?);
-                        slot_scatter[slot] = Some(sev.clone());
-                        last_write = Some(sev);
-                    }
+                    // Reuses ring buffer 0 for all groups (serial on the default
+                    // stream, so no cross-group hazard).
+                    self.apply_gate_paged(&default_ctx, &mut bufs[0], base, n, m, gate)?;
+                    let sev = Rc::new(def.record_event(None).map_err(drv_err)?);
+                    // Buffer 0 was last written here; the next overlapped gather
+                    // into slot 0 must wait this. (Other slots are untouched.)
+                    slot_scatter[0] = Some(sev.clone());
+                    last_write = Some(sev);
                     self.set_ctx(compute_ctx.clone());
                 }
             }
