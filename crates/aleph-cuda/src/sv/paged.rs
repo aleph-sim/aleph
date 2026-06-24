@@ -321,8 +321,8 @@ impl CudaSvBackend {
             .map_err(|e| to_backend_err(Error::Driver(e)))?;
 
         let h = n - m;
-        let saved_ctx = self.ctx.clone();
-        self.ctx = ctx.with_stream(compute.clone());
+        let saved_ctx = self.ctx();
+        self.set_ctx(ctx.with_stream(compute.clone()));
 
         // Closure so `self.ctx` is restored on every exit path (including `?`).
         let result = (|| -> Result<PagedSvState, BackendError> {
@@ -399,7 +399,7 @@ impl CudaSvBackend {
             })
         })();
 
-        self.ctx = saved_ctx;
+        self.set_ctx(saved_ctx);
         result
     }
 
