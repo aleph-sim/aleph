@@ -55,6 +55,21 @@ impl CudaContext {
         &self.stream
     }
 
+    /// A clone of this context that submits work to `stream` instead of the
+    /// default one. Shares the same device context and memory pool (both
+    /// reference-counted), so it is cheap. The out-of-core overlapped paged
+    /// executor (P5.11-02) uses this to run gate kernels on a dedicated
+    /// non-blocking compute stream — distinct from the legacy default stream,
+    /// which would otherwise serialise against the copy streams and defeat the
+    /// gather/compute/scatter overlap.
+    pub(crate) fn with_stream(&self, stream: Arc<CudaStream>) -> CudaContext {
+        CudaContext {
+            ctx: self.ctx.clone(),
+            stream,
+            pool: self.pool.clone(),
+        }
+    }
+
     /// The underlying device context, for APIs that need it directly.
     pub fn raw(&self) -> &Arc<RawContext> {
         &self.ctx

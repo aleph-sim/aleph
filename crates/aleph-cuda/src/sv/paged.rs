@@ -307,88 +307,100 @@ impl CudaSvBackend {
             CudaSvState::allocate(&ctx, local_qubits).map_err(to_backend_err)?,
         ];
 
-        // Dedicated copy streams; compute runs on the default stream (the one the
-        // in-core kernels launch on, via `apply_gate`).
+        // Three dedicated non-blocking streams: gather (H2D), compute, scatter
+        // (D2H). Compute must NOT run on the legacy default stream — that stream
+        // serialises against the others and defeats the overlap (it costs ~1.5×
+        // vs the synchronous path). Swap the backend's context to launch the gate
+        // kernels on `compute`; restored before returning.
         let h2d = ctx.raw().new_stream().map_err(drv_err)?;
         let d2h = ctx.raw().new_stream().map_err(drv_err)?;
-        let compute = ctx.stream().clone();
+        let compute = ctx.raw().new_stream().map_err(drv_err)?;
 
         let base: *mut f64 = host
             .as_mut_ptr()
             .map_err(|e| to_backend_err(Error::Driver(e)))?;
 
-        // Pipeline state, persisting across gates.
-        let mut slot_scatter: [Option<Rc<CudaEvent>>; 2] = [None, None];
-        let mut last_scatter: Option<Rc<CudaEvent>> = None;
-
-        let tile_f64 = (1usize << m) * 2; // interleaved f64 per tile
         let h = n - m;
+        let saved_ctx = self.ctx.clone();
+        self.ctx = ctx.with_stream(compute.clone());
 
-        for inst in circuit.instructions() {
-            let Instruction::Gate(gate) = inst else {
-                continue;
-            };
-            let plan = plan_gate(gate, m);
-            let n_outer = 1u64 << (h - plan.hh);
-            let n_sub = 1u64 << plan.hh;
+        // Closure so `self.ctx` is restored on every exit path (including `?`).
+        let result = (|| -> Result<PagedSvState, BackendError> {
+            // Pipeline state, persisting across gates.
+            let mut slot_scatter: [Option<Rc<CudaEvent>>; 2] = [None, None];
+            let mut last_scatter: Option<Rc<CudaEvent>> = None;
+            let tile_f64 = (1usize << m) * 2; // interleaved f64 per tile
 
-            // Gate boundary: the first gather of this gate must not read host
-            // tiles the previous gate may still be scattering.
-            if let Some(ev) = &last_scatter {
-                h2d.wait(ev).map_err(drv_err)?;
-            }
+            for inst in circuit.instructions() {
+                let Instruction::Gate(gate) = inst else {
+                    continue;
+                };
+                let plan = plan_gate(gate, m);
+                let n_outer = 1u64 << (h - plan.hh);
+                let n_sub = 1u64 << plan.hh;
 
-            for outer in 0..n_outer {
-                let slot = (outer % 2) as usize;
-
-                // Buffer-reuse hazard: do not overwrite a buffer still scattering.
-                if let Some(ev) = &slot_scatter[slot] {
+                // Gate boundary: the first gather of this gate must not read host
+                // tiles the previous gate may still be scattering.
+                if let Some(ev) = &last_scatter {
                     h2d.wait(ev).map_err(drv_err)?;
                 }
 
-                // Gather the 2^hh tiles into device offsets s·2^m on the H2D stream.
-                for s in 0..n_sub {
-                    let tile = compose_high(outer, s, &plan.hprime, h);
-                    let h0 = (tile as usize) << (m + 1);
-                    let d0 = (s as usize) << (m + 1);
-                    // SAFETY: as in `apply_gate_paged` — `h0 + tile_f64 ≤ 2·2^n`.
-                    let src = unsafe { std::slice::from_raw_parts(base.add(h0), tile_f64) };
-                    let mut dst = bufs[slot].amps.slice_mut().slice_mut(d0..d0 + tile_f64);
-                    h2d.memcpy_htod(src, &mut dst).map_err(drv_err)?;
-                }
-                let gather_ev = h2d.record_event(None).map_err(drv_err)?;
+                for outer in 0..n_outer {
+                    let slot = (outer % 2) as usize;
 
-                // Compute on the default stream after the gather completes.
-                compute.wait(&gather_ev).map_err(drv_err)?;
-                bufs[slot].num_qubits = m + plan.hh;
-                self.apply_gate(&mut bufs[slot], &plan.rg)?;
-                let compute_ev = compute.record_event(None).map_err(drv_err)?;
+                    // Buffer-reuse: do not overwrite a buffer still scattering.
+                    if let Some(ev) = &slot_scatter[slot] {
+                        h2d.wait(ev).map_err(drv_err)?;
+                    }
 
-                // Scatter back on the D2H stream after the compute completes.
-                d2h.wait(&compute_ev).map_err(drv_err)?;
-                for s in 0..n_sub {
-                    let tile = compose_high(outer, s, &plan.hprime, h);
-                    let h0 = (tile as usize) << (m + 1);
-                    let d0 = (s as usize) << (m + 1);
-                    let view = bufs[slot].amps.slice().slice(d0..d0 + tile_f64);
-                    // SAFETY: same bounds as the gather; each tile scattered once.
-                    let dst = unsafe { std::slice::from_raw_parts_mut(base.add(h0), tile_f64) };
-                    d2h.memcpy_dtoh(&view, dst).map_err(drv_err)?;
+                    // Gather the 2^hh tiles into device offsets s·2^m (H2D stream).
+                    for s in 0..n_sub {
+                        let tile = compose_high(outer, s, &plan.hprime, h);
+                        let h0 = (tile as usize) << (m + 1);
+                        let d0 = (s as usize) << (m + 1);
+                        // SAFETY: as in `apply_gate_paged` — `h0 + tile_f64 ≤ 2·2^n`.
+                        let src = unsafe { std::slice::from_raw_parts(base.add(h0), tile_f64) };
+                        let mut dst = bufs[slot].amps.slice_mut().slice_mut(d0..d0 + tile_f64);
+                        h2d.memcpy_htod(src, &mut dst).map_err(drv_err)?;
+                    }
+                    let gather_ev = h2d.record_event(None).map_err(drv_err)?;
+
+                    // Compute after the gather completes (on the compute stream,
+                    // which is what `self.apply_gate` now launches on).
+                    compute.wait(&gather_ev).map_err(drv_err)?;
+                    bufs[slot].num_qubits = m + plan.hh;
+                    self.apply_gate(&mut bufs[slot], &plan.rg)?;
+                    let compute_ev = compute.record_event(None).map_err(drv_err)?;
+
+                    // Scatter back on the D2H stream after the compute completes.
+                    d2h.wait(&compute_ev).map_err(drv_err)?;
+                    for s in 0..n_sub {
+                        let tile = compose_high(outer, s, &plan.hprime, h);
+                        let h0 = (tile as usize) << (m + 1);
+                        let d0 = (s as usize) << (m + 1);
+                        let view = bufs[slot].amps.slice().slice(d0..d0 + tile_f64);
+                        // SAFETY: same bounds as the gather; each tile once.
+                        let dst = unsafe { std::slice::from_raw_parts_mut(base.add(h0), tile_f64) };
+                        d2h.memcpy_dtoh(&view, dst).map_err(drv_err)?;
+                    }
+                    let sev = Rc::new(d2h.record_event(None).map_err(drv_err)?);
+                    slot_scatter[slot] = Some(sev.clone());
+                    last_scatter = Some(sev);
                 }
-                let sev = Rc::new(d2h.record_event(None).map_err(drv_err)?);
-                slot_scatter[slot] = Some(sev.clone());
-                last_scatter = Some(sev);
             }
-        }
 
-        // Drain all three streams so the host state is complete before readout.
-        h2d.synchronize().map_err(drv_err)?;
-        ctx.synchronize().map_err(to_backend_err)?;
-        d2h.synchronize().map_err(drv_err)?;
-        Ok(PagedSvState {
-            num_qubits: n,
-            host,
-        })
+            // Drain all three streams so the host state is complete before readout.
+            h2d.synchronize().map_err(drv_err)?;
+            compute.synchronize().map_err(drv_err)?;
+            d2h.synchronize().map_err(drv_err)?;
+            Ok(PagedSvState {
+                num_qubits: n,
+                host,
+            })
+        })();
+
+        self.ctx = saved_ctx;
+        result
     }
 
     /// Apply one gate over all tile groups (see the module docs). Reuses the
