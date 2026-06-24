@@ -16,6 +16,7 @@
 use std::time::Instant;
 
 use aleph_backend::{run, Backend};
+use aleph_core::PauliString;
 use aleph_cuda::{fuse_for_gpu, CudaSvBackend, CudaSvBackendF32};
 use aleph_ir::Circuit;
 use rand::{rngs::StdRng, Rng, SeedableRng};
@@ -67,13 +68,18 @@ fn env_u32(key: &str, default: u32) -> u32 {
         .unwrap_or(default)
 }
 
-/// Time `run(circuit)` + a cheap GPU drain (forces kernel completion), best of `reps`.
+/// Time `run(circuit)` + a cheap GPU drain (forces kernel completion), best of
+/// `reps`. The drain is an identity-Pauli expectation — a pure tree reduction over
+/// the state (~2 passes, no atomics). NOT `probabilities` over a 1-qubit subset:
+/// that runs `marginal` with all 2^n threads atomic-adding into 2 bins, whose CAS
+/// contention dwarfs the circuit and swamps the measurement.
 fn timed<B: Backend>(b: &mut B, circ: &Circuit, reps: u32) -> f64 {
+    let id = PauliString::identity(1.0);
     let mut best = f64::INFINITY;
     for _ in 0..reps {
         let t = Instant::now();
         let st = run(b, circ).expect("run");
-        let _ = b.probabilities(&st, &[0]).expect("drain");
+        let _ = b.expectation_value(&st, &id).expect("drain");
         best = best.min(t.elapsed().as_secs_f64());
     }
     best
