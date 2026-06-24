@@ -76,14 +76,22 @@ fn overlap_profile() {
         circ.cnot(n - 2, n - 1).unwrap();
     }
     let gates = circ.instructions().len();
+    // ALEPH_PAGED_SYNC=1 measures the synchronous path instead (for a cold,
+    // separate-process A/B vs the overlapped path).
+    let sync = std::env::var("ALEPH_PAGED_SYNC").is_ok();
     let t = Instant::now();
-    let st = gpu.run_paged_overlapped(&circ, m, depth).expect("overlap");
+    let (label, norm) = if sync {
+        let st = gpu.run_paged(&circ, m).expect("sync");
+        ("sync", st.norm_sqr())
+    } else {
+        let st = gpu.run_paged_overlapped(&circ, m, depth).expect("overlap");
+        ("overlap", st.norm_sqr())
+    };
     let secs = t.elapsed().as_secs_f64();
     let bytes = gates as f64 * 2.0 * (2.0 * (1u64 << n) as f64 * 8.0);
     println!(
-        "profile n={n} m={m} gates={gates} depth={depth}: {secs:.3}s ({:.1} GB/s) norm={:.4}",
+        "profile {label} n={n} m={m} gates={gates} depth={depth}: {secs:.3}s ({:.1} GB/s) norm={norm:.4}",
         bytes / secs / 1e9,
-        st.norm_sqr()
     );
 }
 
