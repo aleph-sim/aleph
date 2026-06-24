@@ -129,7 +129,7 @@ fn assert_batched_matches(name: &str, circ: &Circuit, m: u32) {
 #[test]
 fn batched_matches_oracle_and_per_gate() {
     let n = 8;
-    let mut rng = StdRng::seed_from_u64(0x511_03);
+    let mut rng = StdRng::seed_from_u64(0x51103);
     let workloads: Vec<(&str, Circuit)> = vec![
         ("ghz", ghz(n)),
         ("qft", qft(n)),
@@ -150,7 +150,7 @@ fn batched_matches_oracle_and_per_gate() {
 /// many more full-state passes than batched.
 #[test]
 fn batched_cuts_pcie_passes() {
-    let mut rng = StdRng::seed_from_u64(0x511_03a);
+    let mut rng = StdRng::seed_from_u64(0x51103a);
     let split = 6;
     let circ = locality_rich(&mut rng, 8, split, 6);
     let (per_gate, batched) = paged_pass_counts(&circ, split);

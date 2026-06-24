@@ -76,7 +76,7 @@ fn batched_vs_per_gate_throughput() {
             return;
         }
     };
-    let mut rng = StdRng::seed_from_u64(0x511_03b);
+    let mut rng = StdRng::seed_from_u64(0x51103b);
     // The low block is the tile (`split = m`), so every layer's low run folds into
     // a single resident pass and only the cross-block CNOT stays per-gate.
     let circ = locality_rich(&mut rng, n, m, depth);
