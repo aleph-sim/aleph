@@ -126,21 +126,23 @@ fn overlap_vs_sync_reach() {
     let n = env_u32("ALEPH_PAGED_N", 30);
     let m = env_u32("ALEPH_PAGED_TILE", 26);
     let reps = env_u32("ALEPH_PAGED_REPS", 2);
-    let mut gpu = match CudaSvBackend::with_seed(0) {
-        Ok(b) => b,
-        Err(e) => {
-            eprintln!("skipping overlap A/B: {e}");
-            return;
-        }
-    };
+    if CudaSvBackend::with_seed(0).is_err() {
+        eprintln!("skipping overlap A/B: no GPU");
+        return;
+    }
     let circ = ghz(n);
     let gates = circ.instructions().len();
 
     // Each gate streams the whole state to the device and back: 2·(2·2^n·8 B).
     let bytes_per_gate = 2.0 * (2.0 * (1u64 << n) as f64 * 8.0);
 
+    // Each path runs on a FRESH backend: a `run_paged` (sync) baseline followed
+    // by `run_paged_overlapped` on the *same* backend leaves the prior run's
+    // pinned host + pool state around, which halves the overlap throughput. A
+    // fresh backend isolates the measurement (real usage builds one per run).
     let mut best_sync = f64::INFINITY;
     for _ in 0..reps {
+        let mut gpu = CudaSvBackend::with_seed(0).expect("gpu");
         let t = Instant::now();
         let st = gpu.run_paged(&circ, m).expect("paged sync");
         std::hint::black_box(st.num_qubits());
@@ -167,6 +169,7 @@ fn overlap_vs_sync_reach() {
         let mut norm = 0.0;
         let mut ok = true;
         for _ in 0..reps {
+            let mut gpu = CudaSvBackend::with_seed(0).expect("gpu");
             let t = Instant::now();
             match gpu.run_paged_overlapped(&circ, m, depth) {
                 Ok(st) => {
