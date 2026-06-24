@@ -53,8 +53,9 @@ fn overlap_profile() {
         }
     };
     let mut circ = Circuit::new(n, 0);
-    for q in 0..ng {
-        circ.h(q % m).unwrap(); // all targets < m ⇒ hh=0, 2^(n-m) groups/gate
+    circ.h(0).unwrap();
+    for _ in 0..ng {
+        circ.cnot(n - 2, n - 1).unwrap(); // both high ⇒ hh=2 ⇒ sync fallback path
     }
     let t = Instant::now();
     let st = gpu.run_paged_overlapped(&circ, m, depth).expect("overlap");
