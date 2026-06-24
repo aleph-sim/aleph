@@ -35,10 +35,12 @@
 //! overlap via raw-FFI async + double buffering is a follow-up — see the
 //! `tests/paged_bench.rs` report and `docs/perf/p5.10-02-host-paging.md`.
 
+use std::rc::Rc;
+
 use aleph_backend::{Backend, BackendError};
 use aleph_core::{Complex, GateInstance};
 use aleph_ir::{Circuit, Instruction};
-use cudarc::driver::PinnedHostSlice;
+use cudarc::driver::{CudaEvent, PinnedHostSlice};
 
 use crate::sv::backend::to_backend_err;
 use crate::sv::state::{CudaSvState, MAX_CUDA_QUBITS};
@@ -217,6 +219,178 @@ impl CudaSvBackend {
         })
     }
 
+    /// Run `circuit` out-of-core like [`Self::run_paged`], but with the tile
+    /// copies **double-buffered and overlapped** (P5.11-02). The synchronous path
+    /// issues gather → compute → scatter for each tile group on one stream, so
+    /// they never overlap; here they run on three streams (H2D / compute / D2H)
+    /// against two ping-pong device tile-group buffers, so `gather(i+1)`,
+    /// `compute(i)`, and `scatter(i−1)` execute concurrently and the PCIe link
+    /// stays busy in both directions (it is full-duplex).
+    ///
+    /// Correctness comes from explicit CUDA events:
+    /// - `compute(i)` waits the gather of group `i`,
+    /// - `scatter(i)` waits the compute of group `i`,
+    /// - `gather(i)` reusing buffer slot `i%2` waits that slot's previous scatter
+    ///   (buffer-reuse hazard), and
+    /// - the first gather of each **gate** waits the previous gate's last scatter
+    ///   (the host-memory hazard: a gate reads tiles the prior gate wrote — the
+    ///   D2H stream is in-order, so its last event covers all earlier scatters).
+    ///
+    /// Same contract and arguments as [`Self::run_paged`]; produces an identical
+    /// state (oracle-pinned at 1e-10). The copy streams are `NonBlocking`, so they
+    /// do not implicitly serialise against the legacy default (compute) stream.
+    pub fn run_paged_overlapped(
+        &mut self,
+        circuit: &Circuit,
+        tile_qubits: u32,
+    ) -> Result<PagedSvState, BackendError> {
+        let n = circuit.num_qubits();
+        if n == 0 && circuit.is_empty() {
+            return Err(BackendError::EmptyCircuit);
+        }
+        let m = tile_qubits;
+        if m == 0 || m >= n {
+            return Err(BackendError::InvalidState {
+                reason: "paged tile_qubits must satisfy 1 <= tile_qubits < num_qubits",
+            });
+        }
+
+        let mut g_max = 0u32;
+        for inst in circuit.instructions() {
+            match inst {
+                Instruction::Gate(gate) => g_max = g_max.max(high_count(gate, m)),
+                Instruction::Barrier(_) => {}
+                Instruction::Measure { .. } => {
+                    return Err(BackendError::UnsupportedInstruction { kind: "measure" })
+                }
+                Instruction::Reset(_) => {
+                    return Err(BackendError::UnsupportedInstruction { kind: "reset" })
+                }
+                Instruction::DiagonalPhase(_) => {
+                    return Err(BackendError::UnsupportedInstruction {
+                        kind: "diagonal-phase",
+                    })
+                }
+                Instruction::TiledBlock(_) => {
+                    return Err(BackendError::UnsupportedInstruction {
+                        kind: "tiled-block",
+                    })
+                }
+            }
+        }
+        let local_qubits = m + g_max;
+        if local_qubits > MAX_CUDA_QUBITS {
+            return Err(BackendError::TooManyQubits {
+                requested: local_qubits,
+                limit: MAX_CUDA_QUBITS,
+            });
+        }
+
+        let ctx = self.ctx();
+
+        let host_len = 2usize << n;
+        // SAFETY: see [`Self::run_paged`] — owned page-locked alloc, every element
+        // initialised before any copy reads it.
+        let mut host: PinnedHostSlice<f64> = unsafe { ctx.raw().alloc_pinned(host_len) }
+            .map_err(|e| to_backend_err(Error::Driver(e)))?;
+        {
+            let s = host
+                .as_mut_slice()
+                .map_err(|e| to_backend_err(Error::Driver(e)))?;
+            s.fill(0.0);
+            s[0] = 1.0;
+        }
+
+        // Two ping-pong device buffers, each big enough for the largest group.
+        let mut bufs = [
+            CudaSvState::allocate(&ctx, local_qubits).map_err(to_backend_err)?,
+            CudaSvState::allocate(&ctx, local_qubits).map_err(to_backend_err)?,
+        ];
+
+        // Dedicated copy streams; compute runs on the default stream (the one the
+        // in-core kernels launch on, via `apply_gate`).
+        let h2d = ctx.raw().new_stream().map_err(drv_err)?;
+        let d2h = ctx.raw().new_stream().map_err(drv_err)?;
+        let compute = ctx.stream().clone();
+
+        let base: *mut f64 = host
+            .as_mut_ptr()
+            .map_err(|e| to_backend_err(Error::Driver(e)))?;
+
+        // Pipeline state, persisting across gates.
+        let mut slot_scatter: [Option<Rc<CudaEvent>>; 2] = [None, None];
+        let mut last_scatter: Option<Rc<CudaEvent>> = None;
+
+        let tile_f64 = (1usize << m) * 2; // interleaved f64 per tile
+        let h = n - m;
+
+        for inst in circuit.instructions() {
+            let Instruction::Gate(gate) = inst else {
+                continue;
+            };
+            let plan = plan_gate(gate, m);
+            let n_outer = 1u64 << (h - plan.hh);
+            let n_sub = 1u64 << plan.hh;
+
+            // Gate boundary: the first gather of this gate must not read host
+            // tiles the previous gate may still be scattering.
+            if let Some(ev) = &last_scatter {
+                h2d.wait(ev).map_err(drv_err)?;
+            }
+
+            for outer in 0..n_outer {
+                let slot = (outer % 2) as usize;
+
+                // Buffer-reuse hazard: do not overwrite a buffer still scattering.
+                if let Some(ev) = &slot_scatter[slot] {
+                    h2d.wait(ev).map_err(drv_err)?;
+                }
+
+                // Gather the 2^hh tiles into device offsets s·2^m on the H2D stream.
+                for s in 0..n_sub {
+                    let tile = compose_high(outer, s, &plan.hprime, h);
+                    let h0 = (tile as usize) << (m + 1);
+                    let d0 = (s as usize) << (m + 1);
+                    // SAFETY: as in `apply_gate_paged` — `h0 + tile_f64 ≤ 2·2^n`.
+                    let src = unsafe { std::slice::from_raw_parts(base.add(h0), tile_f64) };
+                    let mut dst = bufs[slot].amps.slice_mut().slice_mut(d0..d0 + tile_f64);
+                    h2d.memcpy_htod(src, &mut dst).map_err(drv_err)?;
+                }
+                let gather_ev = h2d.record_event(None).map_err(drv_err)?;
+
+                // Compute on the default stream after the gather completes.
+                compute.wait(&gather_ev).map_err(drv_err)?;
+                bufs[slot].num_qubits = m + plan.hh;
+                self.apply_gate(&mut bufs[slot], &plan.rg)?;
+                let compute_ev = compute.record_event(None).map_err(drv_err)?;
+
+                // Scatter back on the D2H stream after the compute completes.
+                d2h.wait(&compute_ev).map_err(drv_err)?;
+                for s in 0..n_sub {
+                    let tile = compose_high(outer, s, &plan.hprime, h);
+                    let h0 = (tile as usize) << (m + 1);
+                    let d0 = (s as usize) << (m + 1);
+                    let view = bufs[slot].amps.slice().slice(d0..d0 + tile_f64);
+                    // SAFETY: same bounds as the gather; each tile scattered once.
+                    let dst = unsafe { std::slice::from_raw_parts_mut(base.add(h0), tile_f64) };
+                    d2h.memcpy_dtoh(&view, dst).map_err(drv_err)?;
+                }
+                let sev = Rc::new(d2h.record_event(None).map_err(drv_err)?);
+                slot_scatter[slot] = Some(sev.clone());
+                last_scatter = Some(sev);
+            }
+        }
+
+        // Drain all three streams so the host state is complete before readout.
+        h2d.synchronize().map_err(drv_err)?;
+        ctx.synchronize().map_err(to_backend_err)?;
+        d2h.synchronize().map_err(drv_err)?;
+        Ok(PagedSvState {
+            num_qubits: n,
+            host,
+        })
+    }
+
     /// Apply one gate over all tile groups (see the module docs). Reuses the
     /// in-core kernels via [`Backend::apply_gate`] on the gathered device buffer.
     fn apply_gate_paged(
@@ -303,6 +477,58 @@ impl CudaSvBackend {
         }
         Ok(())
     }
+}
+
+/// Map a raw `cudarc` driver error (from stream / event / memcpy calls) to a
+/// backend error — the [`to_backend_err`] convenience for the `DriverError`-typed
+/// APIs the overlapped paged path drives directly.
+fn drv_err(e: cudarc::driver::DriverError) -> BackendError {
+    to_backend_err(Error::Driver(e))
+}
+
+/// The device-local form of a gate for the paged executor: its qubits/controls
+/// remapped (low ↦ itself, high ↦ `m + rank`), the high-qubit positions relative
+/// to `m` (`hprime`), and the high-qubit count `hh`.
+struct GatePlan {
+    rg: GateInstance,
+    hprime: Vec<u32>,
+    hh: u32,
+}
+
+/// Build the [`GatePlan`] for `gate` under the low-bit split `m` (the prep shared
+/// by the sync and overlapped paged paths: high-qubit set, qubit remap).
+fn plan_gate(gate: &GateInstance, m: u32) -> GatePlan {
+    let mut high: Vec<u32> = gate
+        .qubits
+        .iter()
+        .chain(gate.controls.iter())
+        .copied()
+        .filter(|&q| q >= m)
+        .collect();
+    high.sort_unstable();
+    high.dedup();
+    let hh = high.len() as u32;
+
+    let remap = |q: u32| -> u32 {
+        if q < m {
+            q
+        } else {
+            m + high
+                .iter()
+                .position(|&x| x == q)
+                .expect("high qubit listed") as u32
+        }
+    };
+    let mut rg = gate.clone();
+    for q in rg.qubits.iter_mut() {
+        *q = remap(*q);
+    }
+    for q in rg.controls.iter_mut() {
+        *q = remap(*q);
+    }
+
+    let hprime: Vec<u32> = high.iter().map(|&q| q - m).collect();
+    GatePlan { rg, hprime, hh }
 }
 
 /// Number of distinct **high** qubits (≥ `m`) a gate touches (operands ∪
