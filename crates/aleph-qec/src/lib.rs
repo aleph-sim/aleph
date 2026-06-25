@@ -15,13 +15,15 @@
 //! a [`build_dem`] that derives a DEM from an [`AnnotatedCircuit`] by symbolic Pauli
 //! propagation (Q0-03); and the logical-error-rate Monte-Carlo harness
 //! ([`run_memory_experiment`], [`run_dem_experiment`]) with a baseline [`NullDecoder`] and an
-//! external [`PyMatchingOracle`] (Q0-04).
+//! external [`PyMatchingOracle`] (Q0-04); and the [`MatchingGraph`] that turns a graph-like DEM
+//! into the weighted detector-plus-boundary graph matching decoders consume (Q1-01).
 
 mod builder;
 mod decoder;
 mod dem;
 mod error;
 mod experiment;
+mod matching;
 mod pymatching;
 mod surface;
 mod syndrome;
@@ -31,6 +33,7 @@ pub use decoder::{Decoder, LogicalErrorResult, NullDecoder};
 pub use dem::{DemError, DetectorErrorModel};
 pub use error::{Error, Result};
 pub use experiment::{run_dem_experiment, run_memory_experiment, PhenomenologicalNoise};
+pub use matching::{MatchingEdge, MatchingGraph, NodeId};
 pub use pymatching::PyMatchingOracle;
 pub use surface::{MemoryExperiment, SurfaceCode};
 pub use syndrome::{Correction, Syndrome};
