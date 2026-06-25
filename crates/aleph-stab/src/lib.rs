@@ -12,11 +12,15 @@ mod backend;
 mod bits;
 mod dispatch;
 mod error;
+mod frame;
 mod gates;
+mod noise;
 mod rowsum;
 mod tableau;
 
 pub use backend::StabilizerBackend;
 pub use dispatch::apply_gate;
 pub use error::StabError;
+pub use frame::{sample_noisy, NoisyOutcomes};
+pub use noise::PauliNoise;
 pub use tableau::Tableau;

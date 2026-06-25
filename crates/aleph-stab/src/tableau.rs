@@ -649,6 +649,17 @@ impl Tableau {
             }
         }
     }
+    /// Whether a Z-basis measurement of qubit `a` is deterministic in the
+    /// current state: `true` iff no stabilizer generator anticommutes with
+    /// `Z_a` (i.e. no stabilizer carries an X/Y on `a`). The Pauli-frame
+    /// sampler's reference pass calls this to decide whether a measurement
+    /// needs fresh per-shot randomness. Leaves the state unchanged.
+    pub fn z_measure_is_deterministic(&mut self, a: usize) -> Result<bool, crate::StabError> {
+        self.check_qubit(a)?;
+        self.ensure_row_major();
+        Ok(!(self.n..2 * self.n).any(|row| self.x.get(row, a)))
+    }
+
     /// `⟨ψ|P|ψ⟩` for the unsigned Pauli `P` given by `(x_p, z_p)` per
     /// qubit (`x` bit = X-component, `z` bit = Z-component; both set = Y).
     /// Returns `+1`/`-1` if `P` (up to sign) is in the stabilizer group,

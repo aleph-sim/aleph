@@ -10,6 +10,7 @@ authors.workspace = true
 [dependencies]
 aleph-core    = { path = "../aleph-core" }
 aleph-backend = { path = "../aleph-backend" }
+aleph-ir      = { path = "../aleph-ir" }
 thiserror     = { workspace = true }
 rand          = { workspace = true }
 
