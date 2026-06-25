@@ -12,7 +12,8 @@ aleph-core = { path = "../aleph-core" }
 aleph-ir   = { path = "../aleph-ir" }
 aleph-stab = { path = "../aleph-stab" }
 thiserror  = { workspace = true }
+rayon      = { workspace = true }
+rand       = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
-rand     = { workspace = true }

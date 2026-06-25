@@ -13,18 +13,24 @@
 //! Contents so far: core types + a Stim-compatible [`DetectorErrorModel`] with text round-trip
 //! (Q0-01); the surface-code memory-Z experiment ([`SurfaceCode`], [`MemoryExperiment`]) and
 //! a [`build_dem`] that derives a DEM from an [`AnnotatedCircuit`] by symbolic Pauli
-//! propagation (Q0-03).
+//! propagation (Q0-03); and the logical-error-rate Monte-Carlo harness
+//! ([`run_memory_experiment`], [`run_dem_experiment`]) with a baseline [`NullDecoder`] and an
+//! external [`PyMatchingOracle`] (Q0-04).
 
 mod builder;
 mod decoder;
 mod dem;
 mod error;
+mod experiment;
+mod pymatching;
 mod surface;
 mod syndrome;
 
 pub use builder::{build_dem, AnnotatedCircuit, ErrorMechanism};
-pub use decoder::{Decoder, LogicalErrorResult};
+pub use decoder::{Decoder, LogicalErrorResult, NullDecoder};
 pub use dem::{DemError, DetectorErrorModel};
 pub use error::{Error, Result};
+pub use experiment::{run_dem_experiment, run_memory_experiment, PhenomenologicalNoise};
+pub use pymatching::PyMatchingOracle;
 pub use surface::{MemoryExperiment, SurfaceCode};
 pub use syndrome::{Correction, Syndrome};
