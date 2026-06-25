@@ -27,7 +27,7 @@ use aleph_backend::{Backend, BackendError};
 use aleph_core::{Complex, Gate, GateInstance, GateMatrix, PauliString};
 use aleph_ir::{Circuit, DiagonalPhase, Instruction};
 use cudarc::driver::{CudaFunction, CudaModule, LaunchConfig, PushKernelArg};
-use cudarc::nvrtc::compile_ptx;
+use cudarc::nvrtc::{compile_ptx, compile_ptx_with_opts, CompileOptions};
 use rand::{rngs::StdRng, SeedableRng};
 use std::sync::Arc;
 
@@ -58,6 +58,28 @@ const APPLY_KQ_F32: &str = "apply_kq_f32";
 const APPLY_KQ_TILED_F32: &str = "apply_kq_tiled_f32";
 const APPLY_DIAG_1Q_F32: &str = "apply_diag_1q_f32";
 const APPLY_DIAG_F32: &str = "apply_diag_f32";
+
+/// TF32 tensor-core fused-block kernels (P5.11-05), in their own NVRTC module —
+/// they need `--gpu-architecture=sm_89` + the CUDA `mma.h` include path, which the
+/// base FP32 module (NVRTC-default arch) does not set.
+const SV_TF32_SRC: &str = include_str!("kernels_tf32.cu");
+const APPLY_KQ_TF32_K4: &str = "apply_kq_tf32_k4";
+const APPLY_KQ_TF32_K5: &str = "apply_kq_tf32_k5";
+/// Warps per block for the TF32 kernels — must match `K4_WARPS` / `K5_WARPS` in
+/// `kernels_tf32.cu` (each warp owns one 16-group WMMA tile).
+const TF32_K4_WARPS: u32 = 4;
+const TF32_K5_WARPS: u32 = 2;
+/// Group-tile width — `WMMA_N` in the kernel (16 group vectors per WMMA pass).
+const TF32_TILE: u64 = 16;
+
+/// The loaded TF32 tensor-core kernels + their module (kept alive). Held in an
+/// `Option` on the backend so a host that can't compile the WMMA module degrades
+/// to the tiled path instead of failing construction.
+struct Tf32Kernels {
+    k4: CudaFunction,
+    k5: CudaFunction,
+    _module: Arc<CudaModule>,
+}
 
 /// FP32 device-resident state vector: `2 · 2^n` interleaved `[re, im]` `f32`.
 pub struct CudaSvStateF32 {
@@ -129,6 +151,12 @@ pub struct CudaSvBackendF32 {
     f_phase_poly: CudaFunction,
     f_kq: CudaFunction,
     f_kq_tiled: CudaFunction,
+    /// TF32 tensor-core fused-block kernels (P5.11-05). `None` if the separate
+    /// `sm_89` + `mma.h` NVRTC module failed to compile/load (e.g. a non-Ada card
+    /// or no CUDA include dir) — the backend stays fully usable, k=4/k=5 dense
+    /// blocks just fall back to the warp-tiled FP32 path. So a TF32-unsupported
+    /// host loses the lever, not the whole backend.
+    tf32: Option<Tf32Kernels>,
     f_diag_1q: CudaFunction,
     f_diag: CudaFunction,
     _module: Arc<CudaModule>,
@@ -148,6 +176,10 @@ pub struct CudaSvBackendF32 {
     tiled_kq: bool,
     /// Smallest `k` routed to `apply_kq_tiled_f32` (default 2; clamped `2..=6`).
     tiled_min_k: u32,
+    /// Route dense k=4/k=5 blocks (no external controls) to the TF32 tensor-core
+    /// `apply_kq_tf32_k{4,5}` kernels (P5.11-05, default on). Takes precedence over
+    /// `tiled_kq` for those widths; k≤3 stays on the warp-tiled kernel.
+    tf32_kq: bool,
 }
 
 impl CudaSvBackendF32 {
@@ -168,6 +200,10 @@ impl CudaSvBackendF32 {
         let ctx = CudaContext::new(0)?;
         let ptx = compile_ptx(SV_F32_SRC).map_err(|e| Error::Compile(e.to_string()))?;
         let module = ctx.raw().load_module(ptx)?;
+        // Separate module: TF32 WMMA needs sm_89 + the CUDA mma.h include path.
+        // Non-fatal: a host that can't build it keeps a fully working FP32 backend
+        // (k=4/k=5 dense blocks fall back to the warp-tiled kernel).
+        let tf32 = build_tf32_kernels(&ctx);
         let readout = GpuReadoutF32::new(&ctx)?;
         Ok(Self {
             f_1q: module.load_function(APPLY_1Q_F32)?,
@@ -176,6 +212,7 @@ impl CudaSvBackendF32 {
             f_phase_poly: module.load_function(APPLY_PHASE_POLY_F32)?,
             f_kq: module.load_function(APPLY_KQ_F32)?,
             f_kq_tiled: module.load_function(APPLY_KQ_TILED_F32)?,
+            tf32,
             f_diag_1q: module.load_function(APPLY_DIAG_1Q_F32)?,
             f_diag: module.load_function(APPLY_DIAG_F32)?,
             _module: module,
@@ -188,6 +225,7 @@ impl CudaSvBackendF32 {
             custom_2q: true,
             tiled_kq: true,
             tiled_min_k: 2,
+            tf32_kq: true,
         })
     }
 
@@ -213,6 +251,14 @@ impl CudaSvBackendF32 {
     /// Override the smallest `k` routed to `apply_kq_tiled_f32` (clamped `2..=6`).
     pub fn with_tiled_min_k(mut self, k: u32) -> Self {
         self.tiled_min_k = k.clamp(2, 6);
+        self
+    }
+
+    /// Enable (default) or disable routing dense k=4/k=5 blocks (no external
+    /// controls) to the TF32 tensor-core kernels (P5.11-05). When off, those widths
+    /// fall back to the warp-tiled / generic FP32 ALU path.
+    pub fn with_tf32_kq(mut self, on: bool) -> Self {
+        self.tf32_kq = on;
         self
     }
 
@@ -409,6 +455,15 @@ impl CudaSvBackendF32 {
             Some(buf) => buf.write(&self.ctx, mat)?,
             None => state.mat_scratch = Some(DeviceBuffer::<f64>::from_slice(&self.ctx, mat)?),
         }
+        // P5.11-05: dense k=4/k=5 blocks (no external controls) run the O(4^k)
+        // matvec on the TF32 tensor cores as a batched GEMM — the compute the
+        // warp-tiled kernel can't escape. Takes precedence over `tiled_kq`. Gated on
+        // the module actually loading, so a TF32-unsupported host falls through.
+        if self.tf32_kq && params.ctrl_mask == 0 && (params.k == 4 || params.k == 5) {
+            if let Some(tf32) = self.tf32.as_ref() {
+                return self.launch_kq_tf32(state, tf32, params);
+            }
+        }
         // P5.11-04: above tiled_min_k the generic `apply_kq_f32` spills its
         // v[32]/gidx[32] thread-local arrays — route those to the warp-cooperative
         // `apply_kq_tiled_f32` (mirrors the FP64 P5.10-01 routing).
@@ -470,6 +525,55 @@ impl CudaSvBackendF32 {
                 .arg(mat_dev)
                 .arg(&params)
                 .arg(&n_amps)
+                .launch(cfg)?;
+        }
+        Ok(())
+    }
+
+    /// Launch a TF32 tensor-core fused-block kernel (P5.11-05) for a dense k=4/k=5
+    /// block over all `2^(n-k)` groups. The `2^k × 2^k` matrix must already be in
+    /// `state.mat_scratch` (uploaded by [`Self::launch_kq`]). Each warp owns one
+    /// 16-group WMMA tile; the grid covers `⌈groups / 16⌉` tiles packed
+    /// `K{4,5}_WARPS` to a block. Static shared memory holds the cast matrix + tiles
+    /// (no dynamic shared bytes).
+    fn launch_kq_tf32(
+        &self,
+        state: &mut CudaSvStateF32,
+        tf32: &Tf32Kernels,
+        params: GateKqParams,
+    ) -> Result<(), Error> {
+        let n_groups: u64 = 1 << (state.num_qubits - params.k);
+        let tiles = n_groups.div_ceil(TF32_TILE);
+        let (func, warps) = if params.k == 4 {
+            (&tf32.k4, TF32_K4_WARPS)
+        } else {
+            (&tf32.k5, TF32_K5_WARPS)
+        };
+        let blocks = tiles.div_ceil(warps as u64).max(1) as u32;
+        let cfg = LaunchConfig {
+            grid_dim: (blocks, 1, 1),
+            block_dim: (warps * 32, 1, 1),
+            shared_mem_bytes: 0,
+        };
+        let stream = self.ctx.stream();
+        let amps = state.amps.slice_mut();
+        let mat_dev = state
+            .mat_scratch
+            .as_ref()
+            .expect("scratch set by launch_kq")
+            .slice();
+        // SAFETY: signature (cplxf* amps, const cplx* mat, GateKq g, u64 n_groups);
+        // `mat_dev` holds 2^k·2^k f64 cplx, `amps` 2^n cplxf. The grid covers every
+        // 16-group tile (partial tiles zero-padded + guarded in-kernel by gid <
+        // n_groups), `warps` matches the kernel's K{4,5}_WARPS, and k ∈ {4,5} so the
+        // selected kernel's static shared sizing is valid.
+        unsafe {
+            stream
+                .launch_builder(func)
+                .arg(amps)
+                .arg(mat_dev)
+                .arg(&params)
+                .arg(&n_groups)
                 .launch(cfg)?;
         }
         Ok(())
@@ -720,6 +824,59 @@ impl CudaSvBackendF32 {
                 .launch(cfg)?;
         }
         Ok(())
+    }
+}
+
+/// NVRTC options for the TF32 module: target the Ada tensor cores (`sm_89`) and
+/// add the CUDA toolkit include dir so `<mma.h>` resolves. The include root is
+/// taken from `CUDA_HOME` / `CUDA_PATH`, defaulting to `/usr/local/cuda` (the
+/// Phase-5 box layout). This path is only exercised on a real CUDA host.
+fn tf32_compile_opts() -> CompileOptions {
+    let root = std::env::var("CUDA_HOME")
+        .or_else(|_| std::env::var("CUDA_PATH"))
+        .unwrap_or_else(|_| "/usr/local/cuda".to_string());
+    CompileOptions {
+        arch: Some("sm_89"),
+        include_paths: vec![format!("{root}/include")],
+        ..Default::default()
+    }
+}
+
+/// Compile + load the TF32 tensor-core module, returning `None` (with a one-line
+/// warning) on any failure so [`CudaSvBackendF32::build`] never fails just because
+/// the host can't build WMMA. Failure modes: a pre-Ada card the `sm_89` PTX won't
+/// load on, or a missing CUDA include dir so `<mma.h>` doesn't resolve.
+fn build_tf32_kernels(ctx: &CudaContext) -> Option<Tf32Kernels> {
+    let ptx = match compile_ptx_with_opts(SV_TF32_SRC, tf32_compile_opts()) {
+        Ok(ptx) => ptx,
+        Err(e) => {
+            eprintln!(
+                "aleph-cuda: TF32 fused-block module unavailable ({e}); \
+                 k=4/k=5 dense blocks use the warp-tiled FP32 path"
+            );
+            return None;
+        }
+    };
+    let module = match ctx.raw().load_module(ptx) {
+        Ok(m) => m,
+        Err(e) => {
+            eprintln!("aleph-cuda: TF32 module load failed ({e}); falling back to tiled");
+            return None;
+        }
+    };
+    match (
+        module.load_function(APPLY_KQ_TF32_K4),
+        module.load_function(APPLY_KQ_TF32_K5),
+    ) {
+        (Ok(k4), Ok(k5)) => Some(Tf32Kernels {
+            k4,
+            k5,
+            _module: module,
+        }),
+        _ => {
+            eprintln!("aleph-cuda: TF32 kernel entry points missing; falling back to tiled");
+            None
+        }
     }
 }
 

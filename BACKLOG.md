@@ -3532,10 +3532,14 @@ naturally with the FP32 amplitude buffer (P5.10-03 / P5.11-04). If it works, thi
 is the lever that lets `MAX_FUSE_QUBITS` rise past 3.
 
 **Acceptance Criteria**
-- [ ] TF32 fused-block apply oracle-equal to the FP32 dense apply within 1e-4
-  (TF32 mantissa) across dense workloads.
-- [ ] k=4 and/or k=5 fused blocks **beat the k=3 baseline** on dense workloads (the
-  P5.10-01 metric, now via cheaper compute); raise `MAX_FUSE_QUBITS` if met.
+- [x] TF32 fused-block apply oracle-equal to the FP32 dense apply within 1e-4
+  (TF32 mantissa) across dense workloads. (≤7.7e-5 across random/VQE at k=4,5.)
+- [x] k=4 and/or k=5 fused blocks **beat the k=3 baseline** on dense workloads (the
+  P5.10-01 metric, now via cheaper compute); raise `MAX_FUSE_QUBITS` if met. (k=4
+  TF32 beats tiled-k3 1.02×/1.18× on random/VQE at n=28; k=5 stays 0.94–0.95×, so
+  the win caps at 4. Exposed as FP32-only `MAX_FUSE_QUBITS_TF32=4` /
+  `fuse_for_gpu_tf32` — **not** a bump of the shared `MAX_FUSE_QUBITS`, which also
+  feeds the FP64 backend that has no TF32 kernel and would regress at k=4.)
 
 **Testing Requirements**
 - Oracle vs FP32 dense apply; A/B bench tiled vs tensor-core at k=3,4,5.
