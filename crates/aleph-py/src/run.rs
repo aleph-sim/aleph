@@ -12,7 +12,10 @@
 
 use crate::circuit::PyCircuit;
 use crate::noise::PyNoiseModel;
-use aleph_backend::{run, run_optimized, select_explained, Backend, BackendKind, BackendRequest};
+use aleph_backend::{
+    run, run_optimized, select_explained_full, Backend, BackendKind, BackendRequest, Reach,
+    SelectEnv, Selection,
+};
 use aleph_mps::MpsBackend;
 use aleph_stab::StabilizerBackend;
 use aleph_sv::NaiveSvBackend;
@@ -27,10 +30,16 @@ use std::collections::BTreeMap;
 /// materializes the widened f64 buffer once.
 enum AmpStore {
     Cpu(aleph_sv::CpuState),
-    // Constructed only by the Metal arm (macOS + `metal` feature); the
-    // `statevector()` reader matches it in every build, so silence the
-    // never-constructed warning only when the Metal path is compiled out.
-    #[cfg_attr(not(all(target_os = "macos", feature = "metal")), allow(dead_code))]
+    // Constructed by the Metal arm (macOS + `metal`) and the CUDA in-core arms
+    // (Linux + `cuda`); the `statevector()` reader matches it in every build, so
+    // silence the never-constructed warning only when both GPU paths are compiled out.
+    #[cfg_attr(
+        not(any(
+            all(target_os = "macos", feature = "metal"),
+            all(target_os = "linux", feature = "cuda")
+        )),
+        allow(dead_code)
+    )]
     Owned(Vec<Complex64>),
 }
 
@@ -64,7 +73,8 @@ impl RunResult {
             Some(AmpStore::Cpu(state)) => Ok(PyArray1::from_slice_bound(py, state.amplitudes())),
             Some(AmpStore::Owned(v)) => Ok(PyArray1::from_slice_bound(py, v.as_slice())),
             None => Err(PyValueError::new_err(
-                "statevector is only available on the \"sv\" and \"metal\" backends",
+                "statevector is only available on the \"sv\", \"metal\", and \
+                 in-core \"cuda\"/\"cuda-f32\" backends",
             )),
         }
     }
@@ -104,10 +114,17 @@ fn err<E: std::fmt::Display>(what: &str, e: E) -> PyErr {
 /// `backend` accepts the same names as the CLI's `--backend` (P4-12):
 /// `"auto"` (default — pick from circuit structure: Clifford → stabilizer,
 /// large nearest-neighbor + shallow → MPS, else state vector), `"statevector"`
-/// (alias `"sv"`), `"stabilizer"` (alias `"stab"`), `"mps"`, or `"metal"`
-/// (alias `"gpu"`; FP32 Apple Silicon GPU, available only in a macOS wheel built
-/// with the `metal` feature; `"auto"` never picks it). `RunResult.statevector()`
-/// is available on `"sv"` and `"metal"`.
+/// (alias `"sv"`), `"stabilizer"` (alias `"stab"`), `"mps"`, `"metal"` (alias
+/// `"gpu"`; FP32 Apple Silicon GPU, macOS `metal`-feature wheel only; `"auto"`
+/// never picks it), or `"cuda"` / `"cuda-f32"` (NVIDIA GPU state vector, FP64 /
+/// FP32, Linux `cuda`-feature wheel only). `RunResult.statevector()` is available
+/// on `"sv"`, `"metal"`, and the in-core CUDA backends.
+///
+/// `precision` (`"auto"` default, `"f64"`, `"f32"`) steers an `auto` GPU pick:
+/// with a CUDA wheel on a CUDA host, large dense circuits route to `cuda-f32` by
+/// default (2× throughput, ~1e-5). On the CPU, `auto` stays FP64. Circuits past
+/// the CUDA in-core cap (n>31 FP32 / n>30 FP64) need the CLI/Rust paged API —
+/// Python raises rather than running them, as the paged state has no sampling.
 ///
 /// **Breaking change vs v0.2:** the default was `"sv"`; it is now `"auto"`, so a
 /// Clifford circuit routes to the stabilizer backend by default and
@@ -117,12 +134,13 @@ fn err<E: std::fmt::Display>(what: &str, e: E) -> PyErr {
 /// `shots` samples re-sample that single final state — they do NOT re-run
 /// the circuit per shot (unlike Qiskit's per-shot execution model).
 #[pyfunction]
-#[pyo3(name = "run", signature = (circuit, *, shots = 1024, backend = "auto", seed = None, noise = None))]
+#[pyo3(name = "run", signature = (circuit, *, shots = 1024, backend = "auto", precision = "auto", seed = None, noise = None))]
 pub(crate) fn run_circuit(
     py: Python<'_>,
     circuit: &PyCircuit,
     shots: u32,
     backend: &str,
+    precision: &str,
     seed: Option<u64>,
     noise: Option<&PyNoiseModel>,
 ) -> PyResult<RunResult> {
@@ -131,6 +149,7 @@ pub(crate) fn run_circuit(
 
     // One shared parse site with the CLI: canonical names + `sv`/`stab` aliases.
     let request = BackendRequest::from_user_str(backend).map_err(PyValueError::new_err)?;
+    let precision = parse_precision(precision)?;
 
     // Noisy path: Monte-Carlo trajectories via run_noisy on the UN-optimized
     // circuit (the optimizer emits TiledBlock/UnitaryKq that run_noisy rejects).
@@ -153,11 +172,25 @@ pub(crate) fn run_circuit(
         return Ok(RunResult { counts, amps: None });
     }
 
-    // Resolve `auto` through the same structural heuristic the CLI uses.
-    let kind = match request {
-        BackendRequest::Auto => select_explained(c).kind,
-        BackendRequest::Fixed(k) => k,
+    // Resolve `auto` through the same reach-aware heuristic the CLI uses (P5.11-06):
+    // GPU availability is probed, and a precision preference steers the GPU pick.
+    let env = SelectEnv {
+        // Python `auto` has never GPU-probed Metal (it stays explicit-only via
+        // backend="metal"); P5.11-06 adds CUDA auto-routing only, so Metal-auto
+        // behaviour is unchanged here.
+        metal_available: false,
+        cuda_available: cuda_available(),
+        precision,
     };
+    let selection = match request {
+        BackendRequest::Auto => select_explained_full(c, &env),
+        BackendRequest::Fixed(k) => Selection {
+            kind: k,
+            reach: Reach::for_kind(k, n),
+            reason: "explicit backend",
+        },
+    };
+    let kind = selection.kind;
 
     // Each arm releases the GIL for execute+sample (minutes at n ≥ 25):
     // other Python threads — and Ctrl-C delivery — stay live during the run.
@@ -234,5 +267,106 @@ pub(crate) fn run_circuit(
             })?;
             Ok(RunResult { counts, amps: None })
         }
+        BackendKind::Cuda | BackendKind::CudaF32 => {
+            run_cuda_py(py, c, kind, selection.reach, shots, seed, n)
+        }
+    }
+}
+
+/// CUDA GPU `run()` dispatch (`backend="cuda"` / `"cuda-f32"`, or an `auto` GPU
+/// pick). In core: run the FP64/FP32 backend, sample, and return amplitudes like
+/// the SV/Metal arms. Paged (`n` past the in-core cap) is rejected — the
+/// out-of-core host state exposes no GPU sampling/amplitude readout to Python, so
+/// it raises with guidance rather than silently degrading. Linux + `cuda` only.
+#[cfg(all(target_os = "linux", feature = "cuda"))]
+fn run_cuda_py(
+    py: Python<'_>,
+    c: &aleph_ir::Circuit,
+    kind: BackendKind,
+    reach: Reach,
+    shots: u32,
+    seed: Option<u64>,
+    n: u32,
+) -> PyResult<RunResult> {
+    if let Reach::Paged { .. } = reach {
+        return Err(PyValueError::new_err(format!(
+            "n={n} exceeds the CUDA in-core cap; out-of-core paged runs are not \
+             available from Python (the paged host state has no sampling/amplitude \
+             readout) — use the `aleph` CLI or the Rust API"
+        )));
+    }
+    let (counts, amps) =
+        py.allow_threads(|| -> PyResult<(BTreeMap<String, u64>, Vec<Complex64>)> {
+            // The FP32/FP64 in-core states both widen to Vec<Complex<f64>> via
+            // amplitudes_vec(); run unoptimized (raw gates) as MPS/stab do.
+            match kind {
+                BackendKind::CudaF32 => {
+                    let mut be = match seed {
+                        Some(s) => aleph_cuda::CudaSvBackendF32::with_seed(s),
+                        None => aleph_cuda::CudaSvBackendF32::new(),
+                    }
+                    .map_err(|e| err("init cuda-f32 backend", e))?;
+                    let state = run(&mut be, c).map_err(|e| err("run cuda-f32", e))?;
+                    let samples = be.sample(&state, shots).map_err(|e| err("sample", e))?;
+                    Ok((counts_map(&samples, n), state.amplitudes_vec()))
+                }
+                BackendKind::Cuda => {
+                    let mut be = match seed {
+                        Some(s) => aleph_cuda::CudaSvBackend::with_seed(s),
+                        None => aleph_cuda::CudaSvBackend::new(),
+                    }
+                    .map_err(|e| err("init cuda backend", e))?;
+                    let state = run(&mut be, c).map_err(|e| err("run cuda", e))?;
+                    let samples = be.sample(&state, shots).map_err(|e| err("sample", e))?;
+                    Ok((counts_map(&samples, n), state.amplitudes_vec()))
+                }
+                _ => unreachable!("run_cuda_py is only called for CUDA kinds"),
+            }
+        })?;
+    Ok(RunResult {
+        counts,
+        amps: Some(AmpStore::Owned(amps)),
+    })
+}
+
+/// Stub when CUDA is not compiled in: `backend="cuda"`/`"cuda-f32"` (or an `auto`
+/// CUDA pick, which can't happen without the probe) raises a clear build hint.
+#[cfg(not(all(target_os = "linux", feature = "cuda")))]
+fn run_cuda_py(
+    _py: Python<'_>,
+    _c: &aleph_ir::Circuit,
+    _kind: BackendKind,
+    _reach: Reach,
+    _shots: u32,
+    _seed: Option<u64>,
+    _n: u32,
+) -> PyResult<RunResult> {
+    Err(PyValueError::new_err(
+        "the \"cuda\" / \"cuda-f32\" backend is not available in this build; \
+         build the wheel with `--features python,cuda` on a Linux + NVIDIA host",
+    ))
+}
+
+/// CUDA device probe for the `auto` heuristic (Linux + `cuda` only). Constructing
+/// the FP32 backend compiles the kernels + acquires the device.
+#[cfg(all(target_os = "linux", feature = "cuda"))]
+fn cuda_available() -> bool {
+    aleph_cuda::CudaSvBackendF32::new().is_ok()
+}
+
+#[cfg(not(all(target_os = "linux", feature = "cuda")))]
+fn cuda_available() -> bool {
+    false
+}
+
+/// Parse the `precision=` kwarg into the backend policy's [`aleph_backend::Precision`].
+fn parse_precision(s: &str) -> PyResult<aleph_backend::Precision> {
+    match s {
+        "auto" => Ok(aleph_backend::Precision::Auto),
+        "f64" | "fp64" | "double" => Ok(aleph_backend::Precision::F64),
+        "f32" | "fp32" | "single" => Ok(aleph_backend::Precision::F32),
+        other => Err(PyValueError::new_err(format!(
+            "unknown precision {other:?}; expected one of: auto, f64, f32"
+        ))),
     }
 }

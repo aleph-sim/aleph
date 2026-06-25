@@ -6,9 +6,10 @@
 
 pub mod select;
 pub use select::{
-    analyze, select_backend, select_explained, select_explained_env, select_from, select_from_env,
-    BackendKind, BackendRequest, CircuitFeatures, Selection, GPU_PREFER_N, MPS_DEPTH_THRESHOLD,
-    SV_EXACT_CAP,
+    analyze, select_backend, select_explained, select_explained_env, select_explained_full,
+    select_from, select_from_env, select_from_full, BackendKind, BackendRequest, CircuitFeatures,
+    Precision, Reach, SelectEnv, Selection, GPU_PREFER_N, MAX_CUDA_QUBITS, MAX_CUDA_QUBITS_F32,
+    MPS_DEPTH_THRESHOLD, SV_EXACT_CAP,
 };
 
 /// Errors common to every backend.

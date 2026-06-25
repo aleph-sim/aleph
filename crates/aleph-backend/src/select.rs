@@ -27,6 +27,74 @@ pub const MPS_DEPTH_THRESHOLD: usize = 64;
 /// the precision drop. Bounded above by [`SV_EXACT_CAP`] (both cap at 28 qubits).
 pub const GPU_PREFER_N: u32 = 24;
 
+/// Largest FP64 CUDA state held **in core** on the reference 20 GiB card — mirrors
+/// `aleph_cuda::MAX_CUDA_QUBITS` (16 GiB of `2^30` FP64 amplitudes). Above this the
+/// reach policy switches to the out-of-core paged executor ([`Reach::Paged`]).
+/// Duplicated here because `aleph-backend` must not depend on `aleph-cuda` (the
+/// dependency runs the other way); `aleph-cuda`'s `cuda_caps_match` test pins the
+/// two copies together.
+pub const MAX_CUDA_QUBITS: u32 = 30;
+
+/// Largest FP32 CUDA state held in core — mirrors `aleph_cuda::MAX_CUDA_QUBITS_F32`
+/// (16 GiB of `2^31` FP32 amplitudes, one qubit past FP64). Paged beyond.
+pub const MAX_CUDA_QUBITS_F32: u32 = 31;
+
+/// Amplitude precision preference for the GPU state-vector path. The reach policy
+/// resolves [`Precision::Auto`] to FP32 (faster + more in-core reach, ~1e-5
+/// accuracy — the same trade the Metal `auto` pick makes); `F64` / `F32` are
+/// explicit overrides honoured verbatim.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+pub enum Precision {
+    /// Let the policy choose (resolves to FP32 on the GPU path).
+    #[default]
+    Auto,
+    /// Force FP64 amplitudes.
+    F64,
+    /// Force FP32 amplitudes.
+    F32,
+}
+
+/// Whether the chosen state vector fits in device memory or must stream tiles
+/// through the GPU out-of-core (P5.10-02 / P5.11-01 paging).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+pub enum Reach {
+    /// The whole `2^n` state fits in device memory — the normal in-core run.
+    #[default]
+    InCore,
+    /// `2^n` exceeds the in-core cap; stream device-sized tiles of `tile_qubits`
+    /// low bits through the GPU (the paged executor's split parameter).
+    Paged { tile_qubits: u32 },
+}
+
+impl Reach {
+    /// Reach for a concrete `kind` at `num_qubits`: the CUDA kinds page above their
+    /// in-core cap (paged tile one qubit below the cap, for streaming headroom);
+    /// every other kind is always in-core. Shared by the `auto` policy and the
+    /// CLI/Python explicit-`--backend cuda` path so both compute paging the same way.
+    pub fn for_kind(kind: BackendKind, num_qubits: u32) -> Reach {
+        match kind.cuda_in_core_cap() {
+            Some(cap) if num_qubits > cap => Reach::Paged {
+                tile_qubits: cap.saturating_sub(1),
+            },
+            _ => Reach::InCore,
+        }
+    }
+}
+
+/// Runtime environment for the reach policy: which GPU backends the caller has
+/// probed as available, plus the precision preference. Avoids growing the
+/// positional argument list as backends are added (cf. the older
+/// `select_from_env(_, metal_available)`).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+pub struct SelectEnv {
+    /// Metal GPU backend usable (Apple Silicon + device), as probed by the caller.
+    pub metal_available: bool,
+    /// CUDA GPU backend usable (NVIDIA/Linux + device), as probed by the caller.
+    pub cuda_available: bool,
+    /// Amplitude precision preference for the GPU path.
+    pub precision: Precision,
+}
+
 /// Resolved, abstract backend label produced by the heuristic.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum BackendKind {
@@ -41,6 +109,16 @@ pub enum BackendKind {
     /// circuits when the caller reports the Metal backend is available. The pure
     /// [`select_from`] never returns it (it assumes Metal unavailable).
     Metal,
+    /// CUDA GPU dense state vector — **FP64**, NVIDIA/Linux only (P5). A manual
+    /// override, and — via [`select_from_full`] — an `auto` pick for large dense
+    /// circuits when the caller reports CUDA availability and FP64 precision. In
+    /// core to [`MAX_CUDA_QUBITS`] qubits, out-of-core ([`Reach::Paged`]) beyond.
+    Cuda,
+    /// CUDA GPU dense state vector — **FP32**, NVIDIA/Linux only (P5.10/5.11). The
+    /// `auto` GPU pick at default precision (2× throughput, +1 qubit of in-core
+    /// reach vs FP64, ~1e-5 accuracy). In core to [`MAX_CUDA_QUBITS_F32`], paged
+    /// beyond.
+    CudaF32,
 }
 
 impl std::fmt::Display for BackendKind {
@@ -50,6 +128,8 @@ impl std::fmt::Display for BackendKind {
             BackendKind::Stabilizer => "stabilizer",
             BackendKind::Mps => "MPS",
             BackendKind::Metal => "Metal GPU",
+            BackendKind::Cuda => "CUDA GPU (FP64)",
+            BackendKind::CudaF32 => "CUDA GPU (FP32)",
         })
     }
 }
@@ -60,11 +140,13 @@ impl BackendKind {
     /// variant is *caught at compile time* by the exhaustive match in
     /// `aliases`, not here; the `every_kind_round_trips` test fails if a
     /// variant is added without extending this list too.
-    pub const ALL: [BackendKind; 4] = [
+    pub const ALL: [BackendKind; 6] = [
         BackendKind::Statevector,
         BackendKind::Stabilizer,
         BackendKind::Mps,
         BackendKind::Metal,
+        BackendKind::Cuda,
+        BackendKind::CudaF32,
     ];
 
     /// User-facing names that resolve to this kind: the canonical name first,
@@ -79,12 +161,24 @@ impl BackendKind {
             BackendKind::Stabilizer => &["stabilizer", "stab"],
             BackendKind::Mps => &["mps"],
             BackendKind::Metal => &["metal", "gpu"],
+            BackendKind::Cuda => &["cuda", "cuda-f64"],
+            BackendKind::CudaF32 => &["cuda-f32", "cuda-fp32"],
         }
     }
 
     /// Canonical (preferred) user-facing name — the first of [`Self::aliases`].
     pub fn canonical_name(self) -> &'static str {
         self.aliases()[0]
+    }
+
+    /// In-core qubit cap for the CUDA kinds (FP64 / FP32), or `None` for any
+    /// non-CUDA kind. Drives [`Reach::for_kind`]'s paging decision.
+    pub fn cuda_in_core_cap(self) -> Option<u32> {
+        match self {
+            BackendKind::Cuda => Some(MAX_CUDA_QUBITS),
+            BackendKind::CudaF32 => Some(MAX_CUDA_QUBITS_F32),
+            _ => None,
+        }
     }
 }
 
@@ -246,50 +340,107 @@ pub fn analyze(c: &Circuit) -> CircuitFeatures {
 pub struct Selection {
     /// The chosen backend.
     pub kind: BackendKind,
+    /// In-core vs out-of-core paging. Only the CUDA kinds ever page; every other
+    /// kind is always [`Reach::InCore`].
+    pub reach: Reach,
     /// Why this backend was chosen (for CLI diagnostics).
     pub reason: &'static str,
 }
 
-/// Apply the ordered decision rule to pre-computed features, given whether the
-/// Metal GPU backend is available (Apple Silicon + a usable device). Pure; total.
+impl Selection {
+    /// An in-core selection (the common case for every non-paging backend).
+    const fn in_core(kind: BackendKind, reason: &'static str) -> Self {
+        Self {
+            kind,
+            reach: Reach::InCore,
+            reason,
+        }
+    }
+}
+
+/// Full reach-aware decision rule (P5.11-06): map features + the runtime
+/// [`SelectEnv`] (GPU availability + precision preference) to a backend kind and
+/// its [`Reach`]. Pure; total. The ordered rule:
 ///
-/// The only difference from [`select_from`] is the exact-and-fits branch: when
-/// Metal is available and the circuit is large enough ([`GPU_PREFER_N`]), the
-/// GPU state vector is preferred over the CPU one — it is FP32 but several times
-/// faster at that scale (P5.6-07). Smaller circuits, and all non-macOS / no-device
-/// callers, keep the exact FP64 CPU path. Availability is a runtime fact the
-/// caller (CLI / Python) probes, since `aleph-backend` cannot depend on
-/// `aleph-metal`.
-pub fn select_from_env(f: &CircuitFeatures, metal_available: bool) -> Selection {
+/// 1. **Clifford** → stabilizer.
+/// 2. **Exact-and-fits** (`n ≤ SV_EXACT_CAP`) → CPU FP64 state vector, or the
+///    Metal GPU FP32 SV when available and `n ≥ GPU_PREFER_N` (P5.6-07). CUDA is
+///    *not* auto-picked here — it is the large-circuit reach engine below; a user
+///    who wants the GPU on a small circuit pins it explicitly.
+/// 3. **Large, nearest-neighbor, shallow** → MPS (bounded memory).
+/// 4. **Large and dense, CUDA available** → the CUDA SV at the requested precision
+///    ([`Precision::Auto`] ⇒ FP32), **in core** up to its cap and **paged**
+///    ([`Reach::Paged`]) beyond — the P5.10/5.11 reach lever (`n > 30` FP64 /
+///    `n > 31` FP32 streams out-of-core).
+/// 5. **Otherwise** → CPU FP64 state vector (the honest fallback; OOMs past ~30 q
+///    with no GPU, exactly as before this policy existed).
+pub fn select_from_full(f: &CircuitFeatures, env: &SelectEnv) -> Selection {
     if f.all_clifford {
-        return Selection {
-            kind: BackendKind::Stabilizer,
-            reason: "all gates are Clifford",
-        };
+        return Selection::in_core(BackendKind::Stabilizer, "all gates are Clifford");
     }
     if f.num_qubits <= SV_EXACT_CAP {
-        if metal_available && f.num_qubits >= GPU_PREFER_N {
-            return Selection {
-                kind: BackendKind::Metal,
-                reason: "large dense circuit; Metal GPU state vector (FP32) outpaces the CPU at this scale",
-            };
+        if env.metal_available && f.num_qubits >= GPU_PREFER_N {
+            return Selection::in_core(
+                BackendKind::Metal,
+                "large dense circuit; Metal GPU state vector (FP32) outpaces the CPU at this scale",
+            );
         }
-        return Selection {
-            kind: BackendKind::Statevector,
-            reason: "exact and fits in memory",
-        };
+        return Selection::in_core(BackendKind::Statevector, "exact and fits in memory");
     }
     if f.all_twoq_nearest_neighbor && f.all_gates_at_most_2q && f.twoq_depth <= MPS_DEPTH_THRESHOLD
     {
-        return Selection {
-            kind: BackendKind::Mps,
-            reason: "nearest-neighbor and shallow; too large for exact simulation",
-        };
+        return Selection::in_core(
+            BackendKind::Mps,
+            "nearest-neighbor and shallow; too large for exact simulation",
+        );
     }
+    if env.cuda_available {
+        return cuda_selection(f.num_qubits, env.precision);
+    }
+    Selection::in_core(
+        BackendKind::Statevector,
+        "too large for exact and not MPS-suitable",
+    )
+}
+
+/// The CUDA reach branch: pick FP32 (default / [`Precision::Auto`]) or FP64, then
+/// in-core vs paged by comparing `n` to that precision's in-core cap. The paged
+/// split defaults to one qubit below the cap, leaving device headroom for the
+/// streaming group buffer; callers (CLI `--tile-qubits`) may override it.
+fn cuda_selection(num_qubits: u32, precision: Precision) -> Selection {
+    let use_f32 = !matches!(precision, Precision::F64);
+    let kind = if use_f32 {
+        BackendKind::CudaF32
+    } else {
+        BackendKind::Cuda
+    };
+    let reach = Reach::for_kind(kind, num_qubits);
+    let reason = match (use_f32, reach) {
+        (true, Reach::Paged { .. }) => "too large for in-core; CUDA FP32 out-of-core paging",
+        (false, Reach::Paged { .. }) => "too large for in-core; CUDA FP64 out-of-core paging",
+        (true, Reach::InCore) => "large dense circuit; CUDA FP32 state vector",
+        (false, Reach::InCore) => "large dense circuit; CUDA FP64 state vector",
+    };
     Selection {
-        kind: BackendKind::Statevector,
-        reason: "too large for exact and not MPS-suitable",
+        kind,
+        reach,
+        reason,
     }
+}
+
+/// Apply the ordered decision rule to pre-computed features, given whether the
+/// Metal GPU backend is available. Pure; total. A thin wrapper over
+/// [`select_from_full`] with no CUDA and the default ([`Precision::Auto`])
+/// precision, preserving the pre-P5.11-06 behaviour for existing callers.
+pub fn select_from_env(f: &CircuitFeatures, metal_available: bool) -> Selection {
+    select_from_full(
+        f,
+        &SelectEnv {
+            metal_available,
+            cuda_available: false,
+            precision: Precision::Auto,
+        },
+    )
 }
 
 /// Apply the ordered decision rule to pre-computed features, assuming no GPU.
@@ -306,6 +457,13 @@ pub fn select_explained(c: &Circuit) -> Selection {
 /// Analyze `c` and apply the decision rule given Metal availability (P5.6-07).
 pub fn select_explained_env(c: &Circuit, metal_available: bool) -> Selection {
     select_from_env(&analyze(c), metal_available)
+}
+
+/// Analyze `c` and apply the full reach-aware rule (P5.11-06) — the entry point
+/// the CLI / Python use once they have probed GPU availability and a precision
+/// preference.
+pub fn select_explained_full(c: &Circuit, env: &SelectEnv) -> Selection {
+    select_from_full(&analyze(c), env)
 }
 
 /// Analyze `c` and return the chosen backend kind (AC-exact signature).
@@ -325,6 +483,8 @@ mod tests {
         assert_eq!(BackendKind::Stabilizer.to_string(), "stabilizer");
         assert_eq!(BackendKind::Mps.to_string(), "MPS");
         assert_eq!(BackendKind::Metal.to_string(), "Metal GPU");
+        assert_eq!(BackendKind::Cuda.to_string(), "CUDA GPU (FP64)");
+        assert_eq!(BackendKind::CudaF32.to_string(), "CUDA GPU (FP32)");
     }
 
     #[test]
@@ -437,6 +597,96 @@ mod tests {
     fn rule_large_longrange_falls_to_statevector() {
         let s = select_from(&feats(30, 10, false, false));
         assert_eq!(s.kind, BackendKind::Statevector);
+    }
+
+    // --- P5.11-06: CUDA precision + reach policy ---
+
+    fn cuda_env(precision: Precision) -> SelectEnv {
+        SelectEnv {
+            metal_available: false,
+            cuda_available: true,
+            precision,
+        }
+    }
+
+    // A large, dense, long-range circuit: too big for exact CPU, not MPS-suitable —
+    // the branch the CUDA reach engine owns.
+    fn large_dense(n: u32) -> CircuitFeatures {
+        feats(n, 10, false, false)
+    }
+
+    #[test]
+    fn cuda_auto_large_dense_picks_fp32_in_core() {
+        // n within the FP32 in-core cap → CudaF32, no paging. Auto ⇒ FP32.
+        let s = select_from_full(&large_dense(30), &cuda_env(Precision::Auto));
+        assert_eq!(s.kind, BackendKind::CudaF32);
+        assert_eq!(s.reach, Reach::InCore);
+    }
+
+    #[test]
+    fn cuda_fp32_in_core_boundary_at_cap() {
+        // n == MAX_CUDA_QUBITS_F32 (31) is still in core (>, not >=).
+        let s = select_from_full(&large_dense(MAX_CUDA_QUBITS_F32), &cuda_env(Precision::F32));
+        assert_eq!(s.kind, BackendKind::CudaF32);
+        assert_eq!(s.reach, Reach::InCore);
+    }
+
+    #[test]
+    fn cuda_fp32_beyond_cap_pages() {
+        // n=32 > FP32 cap → paged, tile one below the cap (headroom for streaming).
+        let s = select_from_full(&large_dense(32), &cuda_env(Precision::F32));
+        assert_eq!(s.kind, BackendKind::CudaF32);
+        assert_eq!(
+            s.reach,
+            Reach::Paged {
+                tile_qubits: MAX_CUDA_QUBITS_F32 - 1
+            }
+        );
+    }
+
+    #[test]
+    fn cuda_fp64_in_core_and_paged_boundaries() {
+        // FP64 cap is 30: n=30 in core, n=31 pages.
+        let in_core = select_from_full(&large_dense(MAX_CUDA_QUBITS), &cuda_env(Precision::F64));
+        assert_eq!(in_core.kind, BackendKind::Cuda);
+        assert_eq!(in_core.reach, Reach::InCore);
+
+        let paged = select_from_full(&large_dense(MAX_CUDA_QUBITS + 1), &cuda_env(Precision::F64));
+        assert_eq!(paged.kind, BackendKind::Cuda);
+        assert_eq!(
+            paged.reach,
+            Reach::Paged {
+                tile_qubits: MAX_CUDA_QUBITS - 1
+            }
+        );
+    }
+
+    #[test]
+    fn explicit_fp64_overrides_default_fp32() {
+        let s = select_from_full(&large_dense(30), &cuda_env(Precision::F64));
+        assert_eq!(
+            s.kind,
+            BackendKind::Cuda,
+            "F64 flag must force the FP64 kind"
+        );
+    }
+
+    #[test]
+    fn cuda_not_chosen_for_small_or_clifford() {
+        // Small dense circuits keep the exact CPU path even with CUDA available.
+        let small = select_from_full(&feats(20, 50, false, true), &cuda_env(Precision::Auto));
+        assert_eq!(small.kind, BackendKind::Statevector);
+        // Clifford always wins, regardless of GPU availability.
+        let cliff = select_from_full(&feats(5000, 100, true, false), &cuda_env(Precision::Auto));
+        assert_eq!(cliff.kind, BackendKind::Stabilizer);
+    }
+
+    #[test]
+    fn no_cuda_large_dense_falls_to_cpu_statevector() {
+        // Without CUDA the large-dense branch is the honest CPU SV fallback (legacy).
+        let s = select_from_full(&large_dense(32), &SelectEnv::default());
+        assert_eq!(s.kind, BackendKind::Statevector);
+        assert_eq!(s.reach, Reach::InCore);
     }
 
     #[test]
@@ -586,8 +836,10 @@ mod tests {
 
     #[test]
     fn unknown_backend_lists_the_whole_vocabulary() {
-        let e = BackendRequest::from_user_str("cuda").unwrap_err();
-        assert!(e.contains("\"cuda\""), "echoes the bad token: {e}");
+        // `qsim` is not any backend alias; `cuda` IS one now (P5.11-06), so it must
+        // appear in the listed vocabulary rather than be the rejected token.
+        let e = BackendRequest::from_user_str("qsim").unwrap_err();
+        assert!(e.contains("\"qsim\""), "echoes the bad token: {e}");
         for token in [
             "auto",
             "statevector",
@@ -597,6 +849,8 @@ mod tests {
             "mps",
             "metal",
             "gpu",
+            "cuda",
+            "cuda-f32",
         ] {
             assert!(e.contains(token), "message must list {token:?}: {e}");
         }

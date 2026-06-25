@@ -20,6 +20,10 @@ python = ["dep:pyo3", "dep:numpy", "dep:rand"]
 # `run()`. macOS-only (the dep is target-gated); build the wheel with
 # `maturin develop --features python,metal` on Apple Silicon.
 metal = ["dep:aleph-metal", "aleph-metal/metal"]
+# Wire the CUDA GPU state-vector backends (`backend="cuda"` / `"cuda-f32"`) into
+# the Python `run()`. Linux+NVIDIA-only (the dep is target-gated); build the wheel
+# with `maturin develop --features python,cuda` on a CUDA host.
+cuda = ["dep:aleph-cuda", "aleph-cuda/cuda"]
 
 [dependencies]
 aleph-core    = { path = "../aleph-core" }
@@ -44,3 +48,8 @@ rand = { workspace = true, optional = true }
 # `metal` feature (off by default, so default/Linux wheels are unaffected).
 [target.'cfg(target_os = "macos")'.dependencies]
 aleph-metal = { path = "../aleph-metal", optional = true }
+
+# CUDA GPU backends for `backend="cuda"` / `"cuda-f32"`. Linux-only; pulled in only
+# with the `cuda` feature (off by default, so default/macOS wheels are unaffected).
+[target.'cfg(target_os = "linux")'.dependencies]
+aleph-cuda = { path = "../aleph-cuda", optional = true }

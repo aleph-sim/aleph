@@ -3563,9 +3563,15 @@ precision / reach choice through the CLI and Python bindings so the Phase 5.10/5
 reach is reachable without manually constructing backends.
 
 **Acceptance Criteria**
-- [ ] Selector routes `n > 30` FP64 (or `n > 31` FP32) to the paged executor and
-  honours an explicit FP32/precision flag; covered by unit tests.
-- [ ] CLI / Python expose the precision + reach choice; documented.
+- [x] Selector routes `n > 30` FP64 (or `n > 31` FP32) to the paged executor and
+  honours an explicit FP32/precision flag; covered by unit tests. (`select_from_full`
+  + `SelectEnv`/`Precision`/`Reach` in `aleph-backend`; `BackendKind::{Cuda,CudaF32}`;
+  9 new unit tests; in-core caps pinned to `aleph-cuda` by `cuda_caps_match`.)
+- [x] CLI / Python expose the precision + reach choice; documented. (CLI: `--backend
+  cuda`/`cuda-f32`, `--precision auto|f64|f32` (default `auto` ⇒ FP32 on a GPU pick),
+  out-of-core paging past the cap; Python: `backend="cuda"/"cuda-f32"`, `precision=`
+  kwarg. Both behind a Linux `cuda` feature, mirroring the `metal` gating. e2e n=31
+  in-core (auto + explicit) and n=32 paged verified on the RTX 4000 Ada.)
 
 **Testing Requirements**
 - Selector unit tests; an end-to-end CLI run at n=31.

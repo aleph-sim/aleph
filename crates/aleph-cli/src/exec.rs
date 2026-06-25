@@ -6,7 +6,7 @@ use std::time::Instant;
 
 use anyhow::{anyhow, Context, Result};
 
-use aleph_backend::{run, Backend, BackendKind, BackendRequest};
+use aleph_backend::{run, Backend, BackendKind, BackendRequest, SelectEnv};
 use aleph_core::Complex;
 use aleph_mps::{MpsBackend, TruncationPolicy};
 use aleph_stab::StabilizerBackend;
@@ -43,6 +43,22 @@ impl AmpsF64 for aleph_sv::Fp32CpuState {
 impl AmpsF64 for aleph_metal::MetalSvState {
     fn amps_f64(&self) -> Vec<Complex> {
         self.to_aos_f64()
+    }
+}
+
+// CUDA GPU in-core states (FP64 / FP32). Both already widen to `Vec<Complex<f64>>`
+// via `amplitudes_vec` (the FP32 one casts on the way out). Linux + `cuda` only.
+#[cfg(all(target_os = "linux", feature = "cuda"))]
+impl AmpsF64 for aleph_cuda::CudaSvState {
+    fn amps_f64(&self) -> Vec<Complex> {
+        self.amplitudes_vec()
+    }
+}
+
+#[cfg(all(target_os = "linux", feature = "cuda"))]
+impl AmpsF64 for aleph_cuda::CudaSvStateF32 {
+    fn amps_f64(&self) -> Vec<Complex> {
+        self.amplitudes_vec()
     }
 }
 
@@ -144,11 +160,19 @@ pub fn run_circuit<W: Write>(
     //     The requested output view gates an auto stabilizer pick: a
     //     state-vector view needs amplitudes the stabilizer backend lacks.
     let wants_amplitudes = print_statevector || force_statevector;
-    let resolved = resolve_backend(backend, &circuit, wants_amplitudes, metal_available());
+    let env = SelectEnv {
+        metal_available: metal_available(),
+        cuda_available: cuda_available(),
+        precision: precision.into(),
+    };
+    let selection = resolve_backend(backend, &circuit, wants_amplitudes, &env);
+    let resolved = selection.kind;
 
-    // The dense state-vector family (CPU SV + Metal GPU SV) shares the qubit-cap
-    // and `--statevector` print-cap policy; the stabilizer/MPS backends don't.
+    // The CPU/Metal dense state-vector family shares the qubit soft-cap warning;
+    // CUDA is the *deliberate* large-n GPU path, so it is excluded from that warning
+    // but still shares the `--statevector` print cap (a 2^n dump is absurd either way).
     let sv_family = matches!(resolved, BackendKind::Statevector | BackendKind::Metal);
+    let cuda_family = matches!(resolved, BackendKind::Cuda | BackendKind::CudaF32);
 
     // Too-large soft warning: an exact dense run past the soft cap may exhaust
     // memory. We warn and proceed (the user stayed in control by not narrowing
@@ -164,7 +188,11 @@ pub fn run_circuit<W: Write>(
     // 3. Statevector cap check. Skipped for the stabilizer backend, which
     //    has no dense state vector at all — `run_stabilizer` rejects
     //    `--statevector` with a clearer, backend-specific message below.
-    if sv_family && print_statevector && !force_statevector && n > STATEVECTOR_CAP_QUBITS {
+    if (sv_family || cuda_family)
+        && print_statevector
+        && !force_statevector
+        && n > STATEVECTOR_CAP_QUBITS
+    {
         let dim = 1u64 << n;
         return Err(anyhow!(
             "state vector has 2^{n} = {dim} amplitudes; pass --force-statevector to print anyway"
@@ -228,8 +256,24 @@ pub fn run_circuit<W: Write>(
         );
     }
 
+    if cuda_family {
+        return run_cuda(
+            selection,
+            &circuit,
+            effective_shots,
+            print_statevector,
+            &paulis,
+            n,
+            seed,
+            &seed_label,
+            out,
+        );
+    }
+
     match precision {
-        Precision::F64 => {
+        // CPU default: `auto` resolves to FP64 here (the GPU FP32 reach trade only
+        // applies to a GPU pick, handled above).
+        Precision::Auto | Precision::F64 => {
             let backend = match seed {
                 Some(s) => NaiveSvBackend::with_seed(s),
                 None => NaiveSvBackend::new(),
@@ -477,6 +521,181 @@ fn run_metal<W: Write>(
     Err(anyhow!(
         "the Metal GPU backend is not available in this build; \
          rebuild aleph with `--features metal` on macOS (Apple Silicon)"
+    ))
+}
+
+/// Whether the CUDA GPU backend can run here — the `auto` heuristic's CUDA probe
+/// (mirrors [`metal_available`]). True only on a Linux + `cuda` build where a CUDA
+/// device is acquirable; constructing the FP32 backend (which also compiles the
+/// kernels) is the probe. Paid once per `auto` run, skipped when `--backend` is fixed.
+#[cfg(all(target_os = "linux", feature = "cuda"))]
+fn cuda_available() -> bool {
+    aleph_cuda::CudaSvBackendF32::new().is_ok()
+}
+
+#[cfg(not(all(target_os = "linux", feature = "cuda")))]
+fn cuda_available() -> bool {
+    false
+}
+
+/// CUDA GPU state-vector run path (Linux + `cuda`). Dispatches on the resolved
+/// [`aleph_backend::Selection`]: **in core** (`n ≤ cap`) runs the FP64/FP32 backend
+/// through the shared [`run_with_backend`] helper with full views; **paged**
+/// (`n > cap`) streams the state out-of-core and reports the norm (the paged host
+/// state exposes no GPU sampling/expectation yet — see [`run_cuda_paged`]).
+#[cfg(all(target_os = "linux", feature = "cuda"))]
+#[allow(clippy::too_many_arguments)]
+fn run_cuda<W: Write>(
+    selection: aleph_backend::Selection,
+    circuit: &aleph_ir::Circuit,
+    effective_shots: Option<u32>,
+    print_statevector: bool,
+    paulis: &[(String, aleph_core::PauliString)],
+    n: u32,
+    seed: Option<u64>,
+    seed_label: &str,
+    out: &mut W,
+) -> Result<()> {
+    use aleph_backend::{BackendKind, Reach};
+    use aleph_cuda::{CudaSvBackend, CudaSvBackendF32};
+
+    match selection.reach {
+        Reach::InCore => match selection.kind {
+            BackendKind::CudaF32 => {
+                let backend = match seed {
+                    Some(s) => CudaSvBackendF32::with_seed(s),
+                    None => CudaSvBackendF32::new(),
+                }
+                .map_err(|e| anyhow!("initializing the CUDA FP32 backend: {e}"))?;
+                run_with_backend(
+                    backend,
+                    circuit,
+                    effective_shots,
+                    print_statevector,
+                    paulis,
+                    n,
+                    seed_label,
+                    out,
+                )
+            }
+            BackendKind::Cuda => {
+                let backend = match seed {
+                    Some(s) => CudaSvBackend::with_seed(s),
+                    None => CudaSvBackend::new(),
+                }
+                .map_err(|e| anyhow!("initializing the CUDA FP64 backend: {e}"))?;
+                run_with_backend(
+                    backend,
+                    circuit,
+                    effective_shots,
+                    print_statevector,
+                    paulis,
+                    n,
+                    seed_label,
+                    out,
+                )
+            }
+            _ => unreachable!("run_cuda is only dispatched for CUDA kinds"),
+        },
+        Reach::Paged { tile_qubits } => run_cuda_paged(
+            selection.kind,
+            tile_qubits,
+            circuit,
+            effective_shots,
+            print_statevector,
+            paulis,
+            n,
+            seed,
+            out,
+        ),
+    }
+}
+
+/// CUDA out-of-core paged run (`n` past the in-core cap). The pinned-host paged
+/// state exposes only the norm today — no GPU sampling/expectation — so the rich
+/// views are rejected with an actionable message rather than silently dropped, and
+/// the run reports `‖ψ‖²` as a reach sanity check.
+#[cfg(all(target_os = "linux", feature = "cuda"))]
+#[allow(clippy::too_many_arguments)]
+fn run_cuda_paged<W: Write>(
+    kind: aleph_backend::BackendKind,
+    tile_qubits: u32,
+    circuit: &aleph_ir::Circuit,
+    effective_shots: Option<u32>,
+    print_statevector: bool,
+    paulis: &[(String, aleph_core::PauliString)],
+    n: u32,
+    seed: Option<u64>,
+    out: &mut W,
+) -> Result<()> {
+    use aleph_backend::BackendKind;
+    if print_statevector {
+        return Err(anyhow!(
+            "--statevector is unavailable on the CUDA out-of-core paged path \
+             (n={n} ⇒ 2^{n} amplitudes); paged readout is norm-only"
+        ));
+    }
+    if !paulis.is_empty() {
+        return Err(anyhow!(
+            "--expectation is unavailable on the CUDA out-of-core paged path; \
+             paged readout is norm-only"
+        ));
+    }
+    let norm = match kind {
+        BackendKind::CudaF32 => {
+            let mut b = match seed {
+                Some(s) => aleph_cuda::CudaSvBackendF32::with_seed(s),
+                None => aleph_cuda::CudaSvBackendF32::new(),
+            }
+            .map_err(|e| anyhow!("initializing the CUDA FP32 backend: {e}"))?;
+            b.run_paged_batched(circuit, tile_qubits)
+                .map_err(|e| anyhow!("CUDA FP32 paged run: {e}"))?
+                .norm_sqr()
+        }
+        BackendKind::Cuda => {
+            let mut b = match seed {
+                Some(s) => aleph_cuda::CudaSvBackend::with_seed(s),
+                None => aleph_cuda::CudaSvBackend::new(),
+            }
+            .map_err(|e| anyhow!("initializing the CUDA FP64 backend: {e}"))?;
+            b.run_paged_batched(circuit, tile_qubits)
+                .map_err(|e| anyhow!("CUDA FP64 paged run: {e}"))?
+                .norm_sqr()
+        }
+        _ => unreachable!("run_cuda_paged is only dispatched for CUDA kinds"),
+    };
+    if effective_shots.is_some() {
+        eprintln!(
+            "note: sampling is unavailable on the CUDA out-of-core paged path; \
+             reporting the state norm only"
+        );
+    }
+    writeln!(
+        out,
+        "CUDA out-of-core paged run: n={n}, tile_qubits={tile_qubits}, ‖ψ‖² = {norm:.6}"
+    )?;
+    Ok(())
+}
+
+/// Stub when the CUDA backend is not compiled in (non-Linux, or built without
+/// `--features cuda`). `--backend cuda` / `cuda-f32` then fails with a clear,
+/// actionable message instead of silently running on the CPU.
+#[cfg(not(all(target_os = "linux", feature = "cuda")))]
+#[allow(clippy::too_many_arguments)]
+fn run_cuda<W: Write>(
+    _selection: aleph_backend::Selection,
+    _circuit: &aleph_ir::Circuit,
+    _effective_shots: Option<u32>,
+    _print_statevector: bool,
+    _paulis: &[(String, aleph_core::PauliString)],
+    _n: u32,
+    _seed: Option<u64>,
+    _seed_label: &str,
+    _out: &mut W,
+) -> Result<()> {
+    Err(anyhow!(
+        "the CUDA GPU backend is not available in this build; \
+         rebuild aleph with `--features cuda` on a Linux + NVIDIA host"
     ))
 }
 
