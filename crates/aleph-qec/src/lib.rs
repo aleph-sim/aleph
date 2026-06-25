@@ -18,12 +18,14 @@
 //! external [`PyMatchingOracle`] (Q0-04); and the [`MatchingGraph`] that turns a graph-like DEM
 //! into the weighted detector-plus-boundary graph matching decoders consume (Q1-01).
 
+mod blossom;
 mod builder;
 mod decoder;
 mod dem;
 mod error;
 mod experiment;
 mod matching;
+mod mwpm;
 mod pymatching;
 mod surface;
 mod syndrome;
@@ -34,6 +36,7 @@ pub use dem::{DemError, DetectorErrorModel};
 pub use error::{Error, Result};
 pub use experiment::{run_dem_experiment, run_memory_experiment, PhenomenologicalNoise};
 pub use matching::{MatchingEdge, MatchingGraph, NodeId};
+pub use mwpm::MwpmDecoder;
 pub use pymatching::PyMatchingOracle;
 pub use surface::{MemoryExperiment, SurfaceCode};
 pub use syndrome::{Correction, Syndrome};
