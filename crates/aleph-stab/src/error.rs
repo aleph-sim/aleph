@@ -17,4 +17,10 @@ pub enum StabError {
     /// `CNOT(a, a)`); the column-major kernels require two distinct columns.
     #[error("2-qubit gate referenced qubit {qubit} twice")]
     DuplicateQubit { qubit: u32 },
+
+    /// A circuit instruction the stabilizer engine does not handle (e.g. a
+    /// post-optimization `DiagonalPhase`/`TiledBlock` fused block). QEC
+    /// circuits are unoptimized gate lists, so these never appear there.
+    #[error("unsupported instruction for the stabilizer engine: {what}")]
+    Unsupported { what: &'static str },
 }

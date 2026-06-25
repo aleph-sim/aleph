@@ -46,6 +46,7 @@ version = "0.2.0"
 dependencies = [
  "aleph-backend",
  "aleph-core",
+ "aleph-cuda",
  "aleph-ir",
  "aleph-metal",
  "aleph-mps",
@@ -182,6 +183,7 @@ version = "0.2.0"
 dependencies = [
  "aleph-backend",
  "aleph-core",
+ "aleph-cuda",
  "aleph-ir",
  "aleph-metal",
  "aleph-mps",
@@ -200,6 +202,7 @@ version = "0.2.0"
 dependencies = [
  "aleph-backend",
  "aleph-core",
+ "aleph-ir",
  "aleph-oracle",
  "aleph-parser",
  "aleph-sv",

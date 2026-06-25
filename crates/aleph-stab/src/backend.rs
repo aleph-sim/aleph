@@ -48,6 +48,7 @@ fn map_stab_err(e: StabError) -> BackendError {
             BackendError::QubitOutOfRange { qubit, num_qubits }
         }
         StabError::DuplicateQubit { qubit } => BackendError::DuplicateQubit { qubit },
+        StabError::Unsupported { what } => BackendError::UnsupportedInstruction { kind: what },
     }
 }
 
