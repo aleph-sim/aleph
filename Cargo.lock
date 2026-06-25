@@ -46,6 +46,7 @@ version = "0.2.0"
 dependencies = [
  "aleph-backend",
  "aleph-core",
+ "aleph-cuda",
  "aleph-ir",
  "aleph-metal",
  "aleph-mps",
@@ -182,6 +183,7 @@ version = "0.2.0"
 dependencies = [
  "aleph-backend",
  "aleph-core",
+ "aleph-cuda",
  "aleph-ir",
  "aleph-metal",
  "aleph-mps",
@@ -192,6 +194,14 @@ dependencies = [
  "pyo3",
  "rand 0.8.6",
  "smallvec",
+]
+
+[[package]]
+name = "aleph-qec"
+version = "0.2.0"
+dependencies = [
+ "proptest",
+ "thiserror",
 ]
 
 [[package]]

@@ -11,6 +11,7 @@ members = [
     "crates/aleph-sv",
     "crates/aleph-mps",
     "crates/aleph-stab",
+    "crates/aleph-qec",
     "crates/aleph-oracle",
     "crates/aleph-cli",
     "crates/aleph-py",
