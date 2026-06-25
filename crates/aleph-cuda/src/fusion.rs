@@ -47,6 +47,20 @@ use aleph_ir::Circuit;
 /// (P5.9-02a); this is purely the throughput-optimal fusion width today.
 pub const MAX_FUSE_QUBITS: usize = 3;
 
+/// Throughput-optimal fusion width for the **FP32 + TF32 tensor-core** backend
+/// ([`crate::CudaSvBackendF32`] with `tf32_kq` on). P5.11-05 ran the dense k=4/k=5
+/// matvec as a batched GEMM on the Ada TF32 tensor cores (`apply_kq_tf32_k{4,5}`):
+/// at **k=4** that finally beats the production tiled-k3 baseline — **1.02×**
+/// (random brickwall) / **1.18×** (VQE) at n=28 (`docs/perf/p5.11-05-…`). k=5 is
+/// still 0.94–0.95× (the O(4^5) matvec + 32×16 tiles outweigh the extra fusion),
+/// so the TF32 width caps at **4**, not 5.
+///
+/// This is deliberately **not** [`MAX_FUSE_QUBITS`]: that const also feeds the FP64
+/// backend, which has no TF32 kernel and routes k=4 blocks to the warp-tiled FP32
+/// ALU path — where k=4 *loses* to k=3 (P5.10-01). Bumping the shared const would
+/// regress FP64, so the win is exposed as a separate FP32-only width.
+pub const MAX_FUSE_QUBITS_TF32: usize = 4;
+
 /// Return a fused copy of `circuit` using the GPU-applicable passes, including
 /// dense 3q `UnitaryKq` fusion ([`MAX_FUSE_QUBITS`]).
 ///
@@ -55,6 +69,14 @@ pub const MAX_FUSE_QUBITS: usize = 3;
 /// fewer full-state passes.
 pub fn fuse_for_gpu(circuit: &Circuit) -> Circuit {
     fuse_for_gpu_with(circuit, Some(MAX_FUSE_QUBITS))
+}
+
+/// Like [`fuse_for_gpu`] but fuses to width [`MAX_FUSE_QUBITS_TF32`] (4) — the
+/// throughput-optimal width for [`crate::CudaSvBackendF32`] with the TF32
+/// tensor-core fused-block kernel enabled. Use this instead of [`fuse_for_gpu`]
+/// when driving the FP32 backend; the dense k=4 blocks route to `apply_kq_tf32_k4`.
+pub fn fuse_for_gpu_tf32(circuit: &Circuit) -> Circuit {
+    fuse_for_gpu_with(circuit, Some(MAX_FUSE_QUBITS_TF32))
 }
 
 /// A/B-tunable fusion: `kq_max = None` reproduces the P5.9-01 pipeline
