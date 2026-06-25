@@ -535,7 +535,13 @@ pub fn propagate_pauli_flips(
                     }
                     2 => {
                         let s = derive_sympl2(&gi.gate)?;
-                        conj2(&s, &mut ex, &mut ez, gi.qubits[0] as usize, gi.qubits[1] as usize);
+                        conj2(
+                            &s,
+                            &mut ex,
+                            &mut ez,
+                            gi.qubits[0] as usize,
+                            gi.qubits[1] as usize,
+                        );
                     }
                     _ => {
                         let k = gi.gate.arity() as u32;
@@ -543,7 +549,9 @@ pub fn propagate_pauli_flips(
                             &mut Tableau::new(k as usize),
                             &GateInstance::new(gi.gate.clone(), (0..k).collect::<Vec<_>>()),
                         )?;
-                        return Err(StabError::NonClifford { gate: "multi-qubit" });
+                        return Err(StabError::NonClifford {
+                            gate: "multi-qubit",
+                        });
                     }
                 }
             }
@@ -854,10 +862,16 @@ mod tests {
         // the gates propagates X onto the ancilla and flips its measurement; an X
         // on the ancilla itself flips it; a Z on d0 does not.
         let mut c = Circuit::new(3, 1);
-        c.add_instruction(Instruction::Gate(GateInstance::new(Gate::Cnot, vec![0u32, 2u32])))
-            .unwrap();
-        c.add_instruction(Instruction::Gate(GateInstance::new(Gate::Cnot, vec![1u32, 2u32])))
-            .unwrap();
+        c.add_instruction(Instruction::Gate(GateInstance::new(
+            Gate::Cnot,
+            vec![0u32, 2u32],
+        )))
+        .unwrap();
+        c.add_instruction(Instruction::Gate(GateInstance::new(
+            Gate::Cnot,
+            vec![1u32, 2u32],
+        )))
+        .unwrap();
         c.measure(2, 0).unwrap();
         let xon = |q: usize| {
             let mut x = vec![false; 3];
