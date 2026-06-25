@@ -8,7 +8,11 @@ repository.workspace = true
 authors.workspace = true
 
 [dependencies]
-thiserror = { workspace = true }
+aleph-core = { path = "../aleph-core" }
+aleph-ir   = { path = "../aleph-ir" }
+aleph-stab = { path = "../aleph-stab" }
+thiserror  = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
+rand     = { workspace = true }

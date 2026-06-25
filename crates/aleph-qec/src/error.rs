@@ -23,6 +23,17 @@ pub enum Error {
         /// The instruction keyword that is not supported.
         what: String,
     },
+
+    /// Error propagation through the stabilizer engine failed (e.g. a
+    /// non-Clifford gate in a circuit handed to the DEM builder).
+    #[error("stabilizer propagation failed: {0}")]
+    Propagation(String),
+}
+
+impl From<aleph_stab::StabError> for Error {
+    fn from(e: aleph_stab::StabError) -> Self {
+        Error::Propagation(e.to_string())
+    }
 }
 
 /// Convenience alias for results in this crate.

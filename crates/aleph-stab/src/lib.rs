@@ -21,6 +21,6 @@ mod tableau;
 pub use backend::StabilizerBackend;
 pub use dispatch::apply_gate;
 pub use error::StabError;
-pub use frame::{sample_noisy, NoisyOutcomes};
+pub use frame::{propagate_pauli_flips, sample_noisy, NoisyOutcomes};
 pub use noise::PauliNoise;
 pub use tableau::Tableau;
