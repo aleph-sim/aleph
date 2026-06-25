@@ -4,6 +4,7 @@
 //! [`Decoder`]; the experiment harness (Q0-04) feeds them syndromes and tallies logical
 //! errors into a [`LogicalErrorResult`].
 
+use crate::error::Result;
 use crate::syndrome::{Correction, Syndrome};
 
 /// A QEC decoder: maps a measured [`Syndrome`] to a predicted [`Correction`].
@@ -14,6 +15,42 @@ use crate::syndrome::{Correction, Syndrome};
 pub trait Decoder {
     /// Predict the logical correction for a single syndrome.
     fn decode(&self, syndrome: &Syndrome) -> Correction;
+
+    /// Predict corrections for a batch of syndromes at once.
+    ///
+    /// The default loops [`decode`](Self::decode) — correct for any in-process decoder. It is
+    /// a separate, *fallible* method because some decoders (notably the external
+    /// [`PyMatchingOracle`](crate::PyMatchingOracle), which shells out to PyMatching) decode a
+    /// whole batch in one round-trip and can fail at the process boundary. The Monte-Carlo
+    /// harness ([`run_dem_experiment`](crate::run_dem_experiment)) decodes through this method,
+    /// so a batch decoder never pays one subprocess per shot.
+    fn decode_batch(&self, syndromes: &[Syndrome]) -> Result<Vec<Correction>> {
+        Ok(syndromes.iter().map(|s| self.decode(s)).collect())
+    }
+}
+
+/// A trivial decoder that always predicts *no* correction.
+///
+/// The Q0-04 baseline: it is the worst possible decoder (it ignores the syndrome entirely),
+/// so its logical-error rate is just the rate at which the raw noise flips an observable. It
+/// exists to exercise the harness end-to-end before a real decoder lands in Q1, and to anchor
+/// the `p = 0 ⇒ rate = 0` invariant.
+#[derive(Clone, Copy, Debug)]
+pub struct NullDecoder {
+    observables: usize,
+}
+
+impl NullDecoder {
+    /// A `NullDecoder` over a model with `observables` logical observables.
+    pub fn new(observables: usize) -> Self {
+        NullDecoder { observables }
+    }
+}
+
+impl Decoder for NullDecoder {
+    fn decode(&self, _syndrome: &Syndrome) -> Correction {
+        Correction::none(self.observables)
+    }
 }
 
 /// Outcome of a logical-error-rate Monte-Carlo run.
@@ -61,26 +98,23 @@ mod tests {
     use super::*;
     use crate::dem::DetectorErrorModel;
 
-    /// A trivial decoder predicting no correction — the Q0-04 `NullDecoder` baseline, used
-    /// here to exercise the trait object boundary.
-    struct NullDecoder {
-        observables: usize,
-    }
-
-    impl Decoder for NullDecoder {
-        fn decode(&self, _syndrome: &Syndrome) -> Correction {
-            Correction::none(self.observables)
-        }
-    }
-
     #[test]
     fn decoder_is_object_safe_and_callable() {
         let m = DetectorErrorModel::parse("error(0.1) D0 L0\n").unwrap();
-        let dec: Box<dyn Decoder> = Box::new(NullDecoder {
-            observables: m.observables,
-        });
+        let dec: Box<dyn Decoder> = Box::new(NullDecoder::new(m.observables));
         let s = Syndrome::from_bits(&[true]);
         assert_eq!(dec.decode(&s), Correction::none(1));
+    }
+
+    #[test]
+    fn decode_batch_default_loops_decode() {
+        let dec = NullDecoder::new(2);
+        let batch = vec![
+            Syndrome::from_bits(&[true, false]),
+            Syndrome::from_bits(&[false, true, true]),
+        ];
+        let out = dec.decode_batch(&batch).unwrap();
+        assert_eq!(out, vec![Correction::none(2), Correction::none(2)]);
     }
 
     #[test]

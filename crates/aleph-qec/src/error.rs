@@ -28,6 +28,11 @@ pub enum Error {
     /// non-Clifford gate in a circuit handed to the DEM builder).
     #[error("stabilizer propagation failed: {0}")]
     Propagation(String),
+
+    /// An external decoder oracle (e.g. the PyMatching subprocess) failed to run
+    /// or returned malformed output.
+    #[error("decoder oracle failed: {0}")]
+    Oracle(String),
 }
 
 impl From<aleph_stab::StabError> for Error {
