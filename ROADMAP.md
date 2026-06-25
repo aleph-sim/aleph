@@ -2,6 +2,10 @@
 
 > A high-performance quantum circuit simulator written in Rust, with pluggable backends, CUDA acceleration, and a long-term path toward distributed multi-GPU execution.
 
+> **Companion track:** `docs/qec/ROADMAP.md` lays out the long-term QEC-decoder track
+> (software decoder → GPU decoder → FPGA → ASIC), with its detailed issues in
+> `docs/qec/BACKLOG.md`. North Star: a real-time decoder ASIC co-designed with this simulator.
+
 -----
 
 ## 1. Project Vision
