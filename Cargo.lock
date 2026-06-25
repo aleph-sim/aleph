@@ -200,7 +200,11 @@ dependencies = [
 name = "aleph-qec"
 version = "0.2.0"
 dependencies = [
+ "aleph-core",
+ "aleph-ir",
+ "aleph-stab",
  "proptest",
+ "rand 0.8.6",
  "thiserror",
 ]
 

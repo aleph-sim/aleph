@@ -457,6 +457,121 @@ fn bernoulli_word(p: f64, w: usize, shots: u32, _nwords: usize, rng: &mut StdRng
     word
 }
 
+/// Conjugate a single (non-packed) Pauli component on one qubit by a 1q Clifford.
+fn conj1(s: &Sympl1, exq: &mut bool, ezq: &mut bool) {
+    let (x, z) = (*exq, *ezq);
+    *exq = (x & s.xx) ^ (z & s.zx);
+    *ezq = (x & s.xz) ^ (z & s.zz);
+}
+
+/// Conjugate a single (non-packed) Pauli on qubits `a`,`b` by a 2q Clifford.
+fn conj2(s: &Sympl2, ex: &mut [bool], ez: &mut [bool], a: usize, b: usize) {
+    let inp = [ex[a], ez[a], ex[b], ez[b]];
+    let mut o = [false; 4]; // [x_a, z_a, x_b, z_b]
+    for (g, &set) in inp.iter().enumerate() {
+        if set {
+            for (k, oslot) in o.iter_mut().enumerate() {
+                *oslot ^= s.img[g][k];
+            }
+        }
+    }
+    ex[a] = o[0];
+    ez[a] = o[1];
+    ex[b] = o[2];
+    ez[b] = o[3];
+}
+
+/// Deterministically propagate a single Pauli error through `circuit`, reporting
+/// which measurements it flips.
+///
+/// The error is the Pauli `∏_q X^{x[q]} Z^{z[q]}` inserted *just before*
+/// instruction index `at` (gates before `at` do not act on it). Walking the rest
+/// of the circuit: each Clifford gate conjugates the error; a Z-basis `Measure`
+/// of qubit `q` flips iff the propagated error then has an X/Y component on `q`
+/// (it anticommutes with `Z_q`); a `Reset` clears the error on its qubit. Returns
+/// one bool per measurement, in circuit order (measurements at an index before
+/// `at`'s measurement count are never flipped).
+///
+/// This is the symbolic backbone of detector-error-model construction: it is
+/// exact and independent of measurement randomness (it tracks an operator, not an
+/// outcome), so it is correct even when individual measurements are random.
+///
+/// # Errors
+/// [`StabError::NonClifford`] / [`StabError::Unsupported`] as in [`sample_noisy`].
+///
+/// # Panics
+/// If `x.len()` or `z.len()` is not `circuit.num_qubits()`.
+pub fn propagate_pauli_flips(
+    circuit: &Circuit,
+    x: &[bool],
+    z: &[bool],
+    at: usize,
+) -> Result<Vec<bool>, StabError> {
+    let n = circuit.num_qubits() as usize;
+    assert_eq!(x.len(), n, "x must have num_qubits entries");
+    assert_eq!(z.len(), n, "z must have num_qubits entries");
+    let mut ex = x.to_vec();
+    let mut ez = z.to_vec();
+    let mut flips = Vec::new();
+    for (i, inst) in circuit.instructions().iter().enumerate() {
+        match inst {
+            Instruction::Gate(gi) => {
+                if i < at {
+                    continue; // error not present yet
+                }
+                if !gi.controls.is_empty() {
+                    return Err(StabError::NonClifford {
+                        gate: "controlled (ctrl@)",
+                    });
+                }
+                match gi.gate.arity() {
+                    1 => {
+                        let s = derive_sympl1(&gi.gate)?;
+                        let q = gi.qubits[0] as usize;
+                        let (mut xq, mut zq) = (ex[q], ez[q]);
+                        conj1(&s, &mut xq, &mut zq);
+                        ex[q] = xq;
+                        ez[q] = zq;
+                    }
+                    2 => {
+                        let s = derive_sympl2(&gi.gate)?;
+                        conj2(&s, &mut ex, &mut ez, gi.qubits[0] as usize, gi.qubits[1] as usize);
+                    }
+                    _ => {
+                        let k = gi.gate.arity() as u32;
+                        apply_gate(
+                            &mut Tableau::new(k as usize),
+                            &GateInstance::new(gi.gate.clone(), (0..k).collect::<Vec<_>>()),
+                        )?;
+                        return Err(StabError::NonClifford { gate: "multi-qubit" });
+                    }
+                }
+            }
+            Instruction::Measure { qubit, .. } => {
+                let q = *qubit as usize;
+                flips.push(i >= at && ex[q]);
+            }
+            Instruction::Reset(q) => {
+                if i >= at {
+                    let q = *q as usize;
+                    ex[q] = false;
+                    ez[q] = false;
+                }
+            }
+            Instruction::Barrier(_) => {}
+            Instruction::DiagonalPhase(_) => {
+                return Err(StabError::Unsupported {
+                    what: "DiagonalPhase",
+                })
+            }
+            Instruction::TiledBlock(_) => {
+                return Err(StabError::Unsupported { what: "TiledBlock" })
+            }
+        }
+    }
+    Ok(flips)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -731,5 +846,50 @@ mod tests {
         c.measure(0, 0).unwrap();
         let err = sample_noisy(&c, &PauliNoise::none(), 4, 1).unwrap_err();
         assert!(matches!(err, StabError::NonClifford { .. }));
+    }
+
+    #[test]
+    fn propagate_x_error_flips_zz_ancilla() {
+        // ZZ check (CNOT d0->anc, CNOT d1->anc, M anc). An X on d0 inserted before
+        // the gates propagates X onto the ancilla and flips its measurement; an X
+        // on the ancilla itself flips it; a Z on d0 does not.
+        let mut c = Circuit::new(3, 1);
+        c.add_instruction(Instruction::Gate(GateInstance::new(Gate::Cnot, vec![0u32, 2u32])))
+            .unwrap();
+        c.add_instruction(Instruction::Gate(GateInstance::new(Gate::Cnot, vec![1u32, 2u32])))
+            .unwrap();
+        c.measure(2, 0).unwrap();
+        let xon = |q: usize| {
+            let mut x = vec![false; 3];
+            x[q] = true;
+            x
+        };
+        assert_eq!(
+            propagate_pauli_flips(&c, &xon(0), &[false; 3], 0).unwrap(),
+            vec![true]
+        );
+        assert_eq!(
+            propagate_pauli_flips(&c, &xon(1), &[false; 3], 0).unwrap(),
+            vec![true]
+        );
+        // Z on data does not flip a Z-basis ancilla measurement.
+        let mut z = vec![false; 3];
+        z[0] = true;
+        assert_eq!(
+            propagate_pauli_flips(&c, &[false; 3], &z, 0).unwrap(),
+            vec![false]
+        );
+    }
+
+    #[test]
+    fn propagate_reset_clears_error() {
+        // X on q0, then Reset(q0), then measure: reset wipes the error.
+        let mut c = Circuit::new(1, 1);
+        c.add_instruction(Instruction::Reset(0)).unwrap();
+        c.measure(0, 0).unwrap();
+        assert_eq!(
+            propagate_pauli_flips(&c, &[true], &[false], 0).unwrap(),
+            vec![false]
+        );
     }
 }

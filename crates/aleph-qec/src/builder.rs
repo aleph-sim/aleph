@@ -1,0 +1,188 @@
+//! Detector-error-model construction from an annotated Clifford circuit.
+//!
+//! A [`DetectorErrorModel`] is a property of the circuit + noise, not of any
+//! particular run: error mechanism `E` flips detector `D` iff `E`, propagated
+//! through the remaining Cliffords, flips an odd number of the measurements that
+//! `D` is the parity of. We build it by *symbolic Pauli propagation*
+//! ([`aleph_stab::propagate_pauli_flips`]) — deterministic and exact, with no
+//! dependence on measurement randomness.
+//!
+//! Mechanisms with identical (detector, observable) support are merged into a
+//! single edge whose probability is the odd-parity combination of the parts
+//! (`p₁ ⊕ p₂ = p₁ + p₂ − 2p₁p₂`), matching Stim's DEM.
+
+use std::collections::BTreeMap;
+
+use aleph_ir::Circuit;
+
+use crate::dem::{DemError, DetectorErrorModel};
+use crate::error::Result;
+
+/// A Clifford circuit plus the detector and observable definitions over its
+/// measurement record.
+///
+/// Measurements are indexed in circuit order (the i-th `Measure` instruction is
+/// record `i`). A detector / observable is the XOR (parity) of the records in
+/// its list. A *detector* is a parity that is deterministic in the noiseless
+/// circuit (so any flip signals an error); an *observable* is the logical
+/// quantity whose flip is a logical error.
+#[derive(Clone, Debug)]
+pub struct AnnotatedCircuit {
+    /// The Clifford circuit (gates, measurements, resets).
+    pub circuit: Circuit,
+    /// Each detector as the list of measurement-record indices it XORs.
+    pub detectors: Vec<Vec<usize>>,
+    /// Each logical observable as the list of measurement-record indices it XORs.
+    pub observables: Vec<Vec<usize>>,
+}
+
+/// One independent physical error mechanism for DEM construction: the Pauli
+/// `∏ X^{x} Z^{z}` occurring with probability `prob`, inserted just before
+/// instruction index `at`. A measurement error is expressed as an `X` on the
+/// measured qubit at its `Measure` instruction (it flips that record and is then
+/// cleared by the following reset).
+#[derive(Clone, Debug)]
+pub struct ErrorMechanism {
+    /// Probability the mechanism fires.
+    pub prob: f64,
+    /// Qubits carrying an X component.
+    pub x: Vec<u32>,
+    /// Qubits carrying a Z component.
+    pub z: Vec<u32>,
+    /// Instruction index the error is inserted before.
+    pub at: usize,
+}
+
+/// Build a [`DetectorErrorModel`] for `ac` under the given error `mechanisms`.
+///
+/// Each mechanism is propagated to its detector/observable support; mechanisms
+/// with no support (undetectable / logically trivial) are dropped; the rest are
+/// merged by support with odd-parity probability combination.
+///
+/// # Errors
+/// Propagates [`crate::Error::Propagation`] if the circuit contains a gate the
+/// stabilizer engine cannot handle.
+pub fn build_dem(
+    ac: &AnnotatedCircuit,
+    mechanisms: &[ErrorMechanism],
+) -> Result<DetectorErrorModel> {
+    let n = ac.circuit.num_qubits() as usize;
+    // Merge by (detectors, observables) support; value = combined probability.
+    let mut edges: BTreeMap<(Vec<u32>, Vec<u32>), f64> = BTreeMap::new();
+
+    for m in mechanisms {
+        let mut xv = vec![false; n];
+        let mut zv = vec![false; n];
+        for &q in &m.x {
+            xv[q as usize] = true;
+        }
+        for &q in &m.z {
+            zv[q as usize] = true;
+        }
+        let flips = aleph_stab::propagate_pauli_flips(&ac.circuit, &xv, &zv, m.at)?;
+
+        let dets: Vec<u32> = ac
+            .detectors
+            .iter()
+            .enumerate()
+            .filter(|(_, recs)| parity(recs, &flips))
+            .map(|(i, _)| i as u32)
+            .collect();
+        let obs: Vec<u32> = ac
+            .observables
+            .iter()
+            .enumerate()
+            .filter(|(_, recs)| parity(recs, &flips))
+            .map(|(i, _)| i as u32)
+            .collect();
+
+        if dets.is_empty() && obs.is_empty() {
+            continue; // undetectable and logically trivial
+        }
+        let e = edges.entry((dets, obs)).or_insert(0.0);
+        *e = xor_combine(*e, m.prob);
+    }
+
+    let errors = edges
+        .into_iter()
+        .map(|((dets, obs), prob)| DemError { prob, dets, obs })
+        .collect();
+    Ok(DetectorErrorModel {
+        detectors: ac.detectors.len(),
+        observables: ac.observables.len(),
+        errors,
+    })
+}
+
+/// XOR-parity of the measurement records in `recs` under the flip vector.
+fn parity(recs: &[usize], flips: &[bool]) -> bool {
+    recs.iter().fold(false, |acc, &m| acc ^ flips[m])
+}
+
+/// Probability that an odd number of two independent events fire.
+fn xor_combine(a: f64, b: f64) -> f64 {
+    a + b - 2.0 * a * b
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aleph_core::{Gate, GateInstance};
+    use aleph_ir::Instruction;
+
+    #[test]
+    fn xor_combine_is_odd_parity() {
+        assert!((xor_combine(0.0, 0.1) - 0.1).abs() < 1e-15);
+        assert!((xor_combine(0.1, 0.1) - 0.18).abs() < 1e-15);
+        assert!((xor_combine(0.5, 0.5) - 0.5).abs() < 1e-15);
+    }
+
+    #[test]
+    fn single_zz_check_dem() {
+        // ZZ check: CNOT d0->anc, CNOT d1->anc, M anc. One detector = [m0].
+        // X on d0 (prob p) and X on d1 (prob p) each flip the detector → merge.
+        let mut c = Circuit::new(3, 1);
+        c.add_instruction(Instruction::Gate(GateInstance::new(
+            Gate::Cnot,
+            vec![0u32, 2u32],
+        )))
+        .unwrap();
+        c.add_instruction(Instruction::Gate(GateInstance::new(
+            Gate::Cnot,
+            vec![1u32, 2u32],
+        )))
+        .unwrap();
+        c.measure(2, 0).unwrap();
+        let ac = AnnotatedCircuit {
+            circuit: c,
+            detectors: vec![vec![0]],
+            observables: vec![],
+        };
+        let mechs = vec![
+            ErrorMechanism {
+                prob: 0.1,
+                x: vec![0],
+                z: vec![],
+                at: 0,
+            },
+            ErrorMechanism {
+                prob: 0.1,
+                x: vec![1],
+                z: vec![],
+                at: 0,
+            },
+            // A Z on d0 flips nothing → dropped.
+            ErrorMechanism {
+                prob: 0.1,
+                x: vec![],
+                z: vec![0],
+                at: 0,
+            },
+        ];
+        let dem = build_dem(&ac, &mechs).unwrap();
+        assert_eq!(dem.detectors, 1);
+        assert_eq!(dem.errors.len(), 1, "two X mechs merge, Z mech dropped");
+        assert_eq!(dem.errors[0].dets, vec![0]);
+        assert!((dem.errors[0].prob - xor_combine(0.1, 0.1)).abs() < 1e-12);
+    }
+}
