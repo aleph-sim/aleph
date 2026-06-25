@@ -2,43 +2,52 @@
 
 use std::path::PathBuf;
 
-use aleph_backend::{BackendKind, BackendRequest};
+use aleph_backend::{BackendKind, BackendRequest, Reach, SelectEnv, Selection};
 use clap::{Parser, Subcommand};
 
-/// Resolve a parsed [`BackendRequest`] into a concrete [`BackendKind`].
+/// Resolve a parsed [`BackendRequest`] into a [`Selection`] (kind + [`Reach`]).
 ///
-/// `Auto` runs the [`aleph_backend::select_explained`] heuristic; an auto pick
-/// of `Stabilizer` is downgraded to `Statevector` when `wants_amplitudes` is set
-/// (`--statevector`/`--force-statevector`), because the stabilizer backend has
-/// no dense state vector. A `Fixed` choice is returned verbatim (manual
-/// override). Diagnostic notes go to stderr so stdout stays pipeable.
+/// `Auto` runs the [`aleph_backend::select_explained_full`] reach-aware heuristic
+/// over `env` (GPU availability + precision preference); an auto pick of
+/// `Stabilizer` is downgraded to `Statevector` when `wants_amplitudes` is set
+/// (`--statevector`/`--force-statevector`), because the stabilizer backend has no
+/// dense state vector. A `Fixed` choice keeps its kind verbatim (manual override)
+/// but still gets its [`Reach`] computed from `n` (so `--backend cuda` at n>cap
+/// pages). Diagnostics go to stderr so stdout stays pipeable.
 ///
-/// Parsing the backend name (canonical + `sv`/`stab` aliases) lives once in
-/// [`BackendRequest::from_user_str`], shared with the Python binding (P4-12); this
-/// function is only the CLI-side resolution + diagnostics.
+/// Backend-name parsing lives once in [`BackendRequest::from_user_str`], shared
+/// with the Python binding (P4-12); this is only the CLI-side resolution.
 pub fn resolve_backend(
     request: BackendRequest,
     circuit: &aleph_ir::Circuit,
     wants_amplitudes: bool,
-    metal_available: bool,
-) -> BackendKind {
+    env: &SelectEnv,
+) -> Selection {
     match request {
-        BackendRequest::Fixed(kind) => kind,
+        BackendRequest::Fixed(kind) => Selection {
+            kind,
+            reach: Reach::for_kind(kind, circuit.num_qubits()),
+            reason: "explicit --backend override",
+        },
         BackendRequest::Auto => {
-            // `metal_available` is the caller's runtime probe (Apple Silicon + a
-            // usable Metal device); it lets `auto` route large dense circuits to
-            // the GPU (P5.6-07). Off ⇒ the pure CPU heuristic.
-            let sel = aleph_backend::select_explained_env(circuit, metal_available);
+            // `env` carries the caller's runtime GPU probes (Metal / CUDA) and the
+            // precision preference; the reach-aware heuristic routes large dense
+            // circuits to the GPU and pages past the in-core cap (P5.6-07, P5.11-06).
+            let sel = aleph_backend::select_explained_full(circuit, env);
             if sel.kind == BackendKind::Stabilizer && wants_amplitudes {
                 eprintln!(
                     "auto-selected backend: state vector \
                      (downgraded from stabilizer: --statevector needs amplitudes \
                      the stabilizer backend cannot provide)"
                 );
-                BackendKind::Statevector
+                Selection {
+                    kind: BackendKind::Statevector,
+                    reach: Reach::InCore,
+                    reason: "downgraded from stabilizer for --statevector",
+                }
             } else {
                 eprintln!("auto-selected backend: {} ({})", sel.kind, sel.reason);
-                sel.kind
+                sel
             }
         }
     }
@@ -47,11 +56,25 @@ pub fn resolve_backend(
 /// Floating-point precision for the state-vector backend.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, clap::ValueEnum, Default)]
 pub enum Precision {
-    /// Double precision (default). Oracle-reference accuracy (~1e-10).
+    /// Let the backend choose (default). The CPU/`auto`-CPU path stays FP64
+    /// (oracle accuracy); an `auto` GPU pick resolves to FP32 — 2× throughput and
+    /// one extra qubit of in-core reach, the P5.10/5.11 default GPU trade.
     #[default]
+    Auto,
+    /// Force double precision. Oracle-reference accuracy (~1e-10).
     F64,
-    /// Single precision. ~2× less memory traffic at large n; ~1e-6 accuracy.
+    /// Force single precision. ~2× less memory traffic at large n; ~1e-6 accuracy.
     F32,
+}
+
+impl From<Precision> for aleph_backend::Precision {
+    fn from(p: Precision) -> Self {
+        match p {
+            Precision::Auto => aleph_backend::Precision::Auto,
+            Precision::F64 => aleph_backend::Precision::F64,
+            Precision::F32 => aleph_backend::Precision::F32,
+        }
+    }
 }
 
 /// `aleph` — quantum circuit simulator command-line tool.
@@ -101,19 +124,21 @@ pub enum Cmd {
         #[arg(long)]
         seed: Option<u64>,
 
-        /// State-vector precision: `f64` (default) or `f32` (faster at
-        /// large n, lower accuracy).
-        #[arg(long, value_enum, default_value_t = Precision::F64)]
+        /// State-vector precision: `auto` (default — FP64 on CPU, FP32 on an
+        /// `auto` GPU pick), `f64`, or `f32` (faster at large n, lower accuracy).
+        #[arg(long, value_enum, default_value_t = Precision::Auto)]
         precision: Precision,
 
         /// Simulation backend: `auto` (default — picks from circuit
         /// structure), `statevector` (alias `sv`), `stabilizer` (alias
         /// `stab`; Clifford-only, rejects non-Clifford gates and
         /// --statevector), `mps` (tensor network; bounded entanglement,
-        /// rejects --statevector), or `metal` (alias `gpu`; FP32 Apple
-        /// Silicon GPU — requires a macOS build with `--features metal`).
-        /// `auto` never picks `metal` (it is an explicit opt-in). Same names
-        /// as the Python `backend=` arg.
+        /// rejects --statevector), `metal` (alias `gpu`; FP32 Apple Silicon
+        /// GPU — needs a macOS `--features metal` build), or `cuda` /
+        /// `cuda-f32` (NVIDIA GPU state vector, FP64 / FP32 — needs a Linux
+        /// `--features cuda` build; out-of-core paging past the in-core cap).
+        /// `auto` picks a CUDA GPU backend for large dense circuits only when
+        /// a CUDA build reports a device. Same names as the Python `backend=`.
         #[arg(long, default_value = BackendRequest::AUTO, value_parser = BackendRequest::from_user_str)]
         backend: BackendRequest,
 
@@ -166,11 +191,27 @@ mod backend_choice_tests {
         c
     }
 
+    use aleph_backend::SelectEnv;
+
+    /// SelectEnv with only Metal available (the pre-P5.11-06 `auto` probe shape).
+    fn metal_env(on: bool) -> SelectEnv {
+        SelectEnv {
+            metal_available: on,
+            ..SelectEnv::default()
+        }
+    }
+
     #[test]
     fn explicit_choice_overrides_without_analysis() {
         let c = clifford();
         assert_eq!(
-            resolve_backend(BackendRequest::Fixed(BackendKind::Mps), &c, false, false),
+            resolve_backend(
+                BackendRequest::Fixed(BackendKind::Mps),
+                &c,
+                false,
+                &SelectEnv::default()
+            )
+            .kind,
             BackendKind::Mps
         );
         assert_eq!(
@@ -178,8 +219,9 @@ mod backend_choice_tests {
                 BackendRequest::Fixed(BackendKind::Statevector),
                 &c,
                 false,
-                false
-            ),
+                &SelectEnv::default()
+            )
+            .kind,
             BackendKind::Statevector
         );
     }
@@ -187,7 +229,13 @@ mod backend_choice_tests {
     #[test]
     fn auto_picks_stabilizer_for_clifford() {
         assert_eq!(
-            resolve_backend(BackendRequest::Auto, &clifford(), false, false),
+            resolve_backend(
+                BackendRequest::Auto,
+                &clifford(),
+                false,
+                &SelectEnv::default()
+            )
+            .kind,
             BackendKind::Stabilizer
         );
     }
@@ -196,7 +244,13 @@ mod backend_choice_tests {
     fn auto_downgrades_to_sv_when_amplitudes_requested() {
         // Clifford would be stabilizer, but --statevector needs amplitudes.
         assert_eq!(
-            resolve_backend(BackendRequest::Auto, &clifford(), true, false),
+            resolve_backend(
+                BackendRequest::Auto,
+                &clifford(),
+                true,
+                &SelectEnv::default()
+            )
+            .kind,
             BackendKind::Statevector
         );
     }
@@ -209,12 +263,12 @@ mod backend_choice_tests {
         big.h(0).unwrap();
         big.t(0).unwrap(); // non-Clifford ⇒ not stabilizer
         assert_eq!(
-            resolve_backend(BackendRequest::Auto, &big, false, true),
+            resolve_backend(BackendRequest::Auto, &big, false, &metal_env(true)).kind,
             BackendKind::Metal,
             "GPU available + n>=GPU_PREFER_N ⇒ Metal"
         );
         assert_eq!(
-            resolve_backend(BackendRequest::Auto, &big, false, false),
+            resolve_backend(BackendRequest::Auto, &big, false, &metal_env(false)).kind,
             BackendKind::Statevector,
             "GPU unavailable ⇒ CPU state vector"
         );
@@ -227,9 +281,43 @@ mod backend_choice_tests {
         small.h(0).unwrap();
         small.t(0).unwrap();
         assert_eq!(
-            resolve_backend(BackendRequest::Auto, &small, false, true),
+            resolve_backend(BackendRequest::Auto, &small, false, &metal_env(true)).kind,
             BackendKind::Statevector
         );
+    }
+
+    // P5.11-06: with CUDA available, a large dense circuit auto-routes to the FP32
+    // CUDA backend, paging past the in-core cap.
+    #[test]
+    fn auto_routes_large_dense_to_cuda_and_pages() {
+        let cuda_env = SelectEnv {
+            cuda_available: true,
+            ..SelectEnv::default()
+        };
+        // n=32 > FP32 in-core cap ⇒ CudaF32, paged. A long-range CNOT keeps it off
+        // the MPS route (otherwise a shallow nearest-neighbor circuit picks MPS).
+        let mut big = aleph_ir::Circuit::new(32, 0);
+        big.h(0).unwrap();
+        big.t(0).unwrap();
+        big.cnot(0, 16).unwrap();
+        let sel = resolve_backend(BackendRequest::Auto, &big, false, &cuda_env);
+        assert_eq!(sel.kind, BackendKind::CudaF32);
+        assert!(matches!(sel.reach, Reach::Paged { .. }));
+    }
+
+    // An explicit `--backend cuda` at n past the FP64 cap still computes a paged reach.
+    #[test]
+    fn explicit_cuda_pages_past_cap() {
+        let mut big = aleph_ir::Circuit::new(aleph_backend::MAX_CUDA_QUBITS + 1, 0);
+        big.h(0).unwrap();
+        let sel = resolve_backend(
+            BackendRequest::Fixed(BackendKind::Cuda),
+            &big,
+            false,
+            &SelectEnv::default(),
+        );
+        assert_eq!(sel.kind, BackendKind::Cuda);
+        assert!(matches!(sel.reach, Reach::Paged { .. }));
     }
 
     // The `--backend` default string parses to Auto (parity with the Python
@@ -250,8 +338,9 @@ mod backend_choice_tests {
                 BackendRequest::from_user_str("sv").unwrap(),
                 &clifford(),
                 false,
-                false
-            ),
+                &SelectEnv::default()
+            )
+            .kind,
             BackendKind::Statevector
         );
         assert_eq!(
@@ -259,8 +348,9 @@ mod backend_choice_tests {
                 BackendRequest::from_user_str("stab").unwrap(),
                 &clifford(),
                 false,
-                false
-            ),
+                &SelectEnv::default()
+            )
+            .kind,
             BackendKind::Stabilizer
         );
     }

@@ -33,10 +33,19 @@ rand          = { workspace = true }
 [target.'cfg(target_os = "macos")'.dependencies]
 aleph-metal = { path = "../aleph-metal", optional = true }
 
+# CUDA GPU backend (`--backend cuda` / `cuda-f32`). Linux+NVIDIA-only and opt-in:
+# build with `--features cuda` on a CUDA host; off by default so the default
+# `aleph` binary needs no CUDA toolkit and non-Linux builds are unaffected.
+[target.'cfg(target_os = "linux")'.dependencies]
+aleph-cuda = { path = "../aleph-cuda", optional = true }
+
 [features]
 # Wire the Metal GPU state-vector backend into the CLI. Pulls aleph-metal and
 # turns on its `metal` feature. Only meaningful on macOS (the dep is target-gated).
 metal = ["dep:aleph-metal", "aleph-metal/metal"]
+# Wire the CUDA GPU state-vector backends (FP64 + FP32, in-core + paged) into the
+# CLI. Pulls aleph-cuda and turns on its `cuda` feature. Linux-only (target-gated).
+cuda = ["dep:aleph-cuda", "aleph-cuda/cuda"]
 
 [dev-dependencies]
 aleph-oracle = { path = "../aleph-oracle" }
