@@ -24,6 +24,7 @@ cuda = [
     "dep:aleph-core",
     "dep:aleph-ir",
     "dep:aleph-oracle",
+    "dep:aleph-qec",
     "dep:rand",
     "dep:smallvec",
 ]
@@ -44,6 +45,9 @@ aleph-ir      = { path = "../aleph-ir", optional = true }
 # (external-trait impl must live here, orphan rule). Workspace-internal +
 # feature-gated, so it never weighs on default/macOS builds.
 aleph-oracle  = { path = "../aleph-oracle", optional = true }
+# The GPU Union-Find decoder (Q3-01) consumes an `aleph-qec` matching graph and is oracle-checked
+# against its CPU `UnionFindDecoder`. Optional + feature-gated like the other workspace deps.
+aleph-qec     = { path = "../aleph-qec", optional = true }
 rand          = { workspace = true, optional = true }
 smallvec      = { workspace = true, optional = true }
 
@@ -78,4 +82,5 @@ aleph-ir      = { path = "../aleph-ir" }
 aleph-oracle  = { path = "../aleph-oracle" }
 aleph-sv      = { path = "../aleph-sv" }
 aleph-stab    = { path = "../aleph-stab" }
+aleph-qec     = { path = "../aleph-qec" }
 rand          = { workspace = true }

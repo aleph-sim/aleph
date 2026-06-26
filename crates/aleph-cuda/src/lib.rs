@@ -30,6 +30,10 @@ mod cuquantum;
 mod fusion;
 // GPU stabilizer (CHP tableau) Clifford backend (P5-07). Pure `cuda`, no
 // cuStateVec — independent of the dense/SV path.
+// GPU Union-Find decoder (Q3-01). Pure `cuda`; consumes an `aleph-qec` matching graph and is
+// bit-identical to the CPU Union-Find decoder.
+#[cfg(all(target_os = "linux", feature = "cuda"))]
+mod qec;
 #[cfg(all(target_os = "linux", feature = "cuda"))]
 mod stab;
 #[cfg(all(target_os = "linux", feature = "cuda"))]
@@ -45,6 +49,8 @@ pub use cuquantum::CuStateVecBackend;
 pub use fusion::{
     fuse_for_gpu, fuse_for_gpu_tf32, fuse_for_gpu_with, MAX_FUSE_QUBITS, MAX_FUSE_QUBITS_TF32,
 };
+#[cfg(all(target_os = "linux", feature = "cuda"))]
+pub use qec::{mask_to_flips, CudaUnionFind};
 #[cfg(all(target_os = "linux", feature = "cuda"))]
 pub use stab::{op as stab_op, CudaStab, CudaStabState, Generators, StabOp};
 #[cfg(all(target_os = "linux", feature = "cuda"))]

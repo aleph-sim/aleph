@@ -54,6 +54,36 @@ const MIN_LEN: u32 = 2;
 /// blowing up the ratios.
 const MAX_LEN: u32 = 256;
 
+/// Read-only borrow of a [`UnionFindDecoder`]'s flattened graph — the CSR adjacency plus the
+/// per-edge endpoint / observable-mask / growth-length arrays — together with its growth mode.
+///
+/// Returned by [`UnionFindDecoder::graph`] for an external decoder (e.g. the Q3-01 GPU port) that
+/// reproduces the CPU algorithm and therefore must upload exactly these arrays, in exactly this
+/// order, to stay bit-identical. Every field mirrors the identically-named private field.
+#[derive(Clone, Copy, Debug)]
+pub struct DecoderGraph<'a> {
+    /// Number of real detectors; node `num_detectors` is the virtual boundary.
+    pub num_detectors: usize,
+    /// Number of logical observables (correction bit-width).
+    pub num_observables: usize,
+    /// Total nodes (`num_detectors + 1`).
+    pub n_nodes: usize,
+    /// CSR offsets: edges of node `v` are `adj_edges[adj_off[v]..adj_off[v+1]]`.
+    pub adj_off: &'a [u32],
+    /// CSR edge indices, concatenated per node.
+    pub adj_edges: &'a [u32],
+    /// Lower endpoint of each edge.
+    pub edge_a: &'a [u32],
+    /// Upper endpoint of each edge (may be the boundary).
+    pub edge_b: &'a [u32],
+    /// Observable-flip bitmask of each edge.
+    pub edge_obs: &'a [u64],
+    /// Integer growth length of each edge (weighted mode only).
+    pub edge_len: &'a [u32],
+    /// Whether growth is weighted (Q2-02) or unweighted (Q2-01).
+    pub weighted: bool,
+}
+
 /// A Union-Find (cluster-growth) decoder for a fixed [`DetectorErrorModel`].
 ///
 /// Construct once from a DEM (or a prebuilt [`MatchingGraph`]); the graph is flattened into
@@ -173,6 +203,26 @@ impl UnionFindDecoder {
             edge_obs,
             edge_len,
             weighted: false,
+        }
+    }
+
+    /// Read-only view of this decoder's flattened graph (CSR adjacency + per-edge data) and
+    /// growth mode. Exposed so an external decoder that **replicates this exact algorithm** —
+    /// notably the GPU Union-Find decoder (Q3-01) — can consume the *identical* graph layout and
+    /// edge ordering, which is the precondition for bit-identical corrections. Internal callers use
+    /// the fields directly; this is purely an external-consumer accessor.
+    pub fn graph(&self) -> DecoderGraph<'_> {
+        DecoderGraph {
+            num_detectors: self.num_detectors,
+            num_observables: self.num_observables,
+            n_nodes: self.n_nodes,
+            adj_off: &self.adj_off,
+            adj_edges: &self.adj_edges,
+            edge_a: &self.edge_a,
+            edge_b: &self.edge_b,
+            edge_obs: &self.edge_obs,
+            edge_len: &self.edge_len,
+            weighted: self.weighted,
         }
     }
 

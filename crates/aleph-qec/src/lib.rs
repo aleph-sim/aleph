@@ -41,4 +41,4 @@ pub use mwpm::MwpmDecoder;
 pub use pymatching::PyMatchingOracle;
 pub use surface::{MemoryExperiment, SurfaceCode};
 pub use syndrome::{Correction, Syndrome};
-pub use union_find::UnionFindDecoder;
+pub use union_find::{DecoderGraph, UnionFindDecoder};
