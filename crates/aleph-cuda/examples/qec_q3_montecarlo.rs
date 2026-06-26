@@ -15,7 +15,7 @@ fn main() {
     use std::time::Instant;
 
     use aleph_cuda::CudaThreshold;
-    use aleph_qec::{build_dem, run_dem_experiment, SurfaceCode, UnionFindDecoder};
+    use aleph_qec::{build_dem, run_dem_experiment, MwpmDecoder, SurfaceCode, UnionFindDecoder};
 
     let args: Vec<String> = std::env::args().collect();
     let shots: u64 = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(100_000);
@@ -83,9 +83,43 @@ fn main() {
         }
     }
     eprintln!(
-        "# aggregate sweep wall-clock: gpu={tot_gpu:.2}s cpu={tot_cpu:.2}s  speedup={:.2}x",
+        "# aggregate sweep wall-clock (same decoder, UF): gpu={tot_gpu:.2}s cpu={tot_cpu:.2}s  speedup={:.2}x",
         tot_cpu / tot_gpu
     );
+
+    // Cross-decoder context: the realistic CPU threshold harness (Q0-05) used MWPM, the *accurate*
+    // decoder. The GPU swaps in batch Union-Find at matched-within-CI threshold. Time CPU-MWPM at a
+    // capped shot count (serial decode is ~linear in shots) and extrapolate to `shots` for a same-box
+    // GPU-UF-vs-CPU-MWPM ratio. One representative `p` per distance to bound runtime.
+    let mwpm_shots = shots.min(15_000);
+    eprintln!("# --- GPU-UF end-to-end vs CPU-MWPM harness (p=0.030, {mwpm_shots} MWPM shots, extrapolated) ---");
+    println!("mwpm_block,d,p,gpu_s,cpu_mwpm_s,speedup_vs_mwpm");
+    for &d in DISTANCES {
+        let p = 0.030;
+        let exp = SurfaceCode::new(d).memory_z_experiment(d);
+        let dem = build_dem(&exp.annotated, &exp.phenomenological_mechanisms(p, p)).unwrap();
+        let gpu = CudaThreshold::new(&dem).expect("gpu");
+        let mut gpu_best = f64::INFINITY;
+        let _ = gpu.run(shots, seed);
+        for _ in 0..2 {
+            let t = Instant::now();
+            let _ = gpu.run(shots, seed).expect("gpu run");
+            gpu.synchronize().ok();
+            gpu_best = gpu_best.min(t.elapsed().as_secs_f64());
+        }
+        let mw = MwpmDecoder::new(&dem).unwrap();
+        let t = Instant::now();
+        let _ = run_dem_experiment(&dem, mwpm_shots, &mw, seed).expect("cpu mwpm");
+        let mwpm_full = t.elapsed().as_secs_f64() * shots as f64 / mwpm_shots as f64;
+        println!(
+            "mwpm_block,{d},{p},{gpu_best:.4},{mwpm_full:.4},{:.2}",
+            mwpm_full / gpu_best
+        );
+        eprintln!(
+            "  d={d}: gpu-uf={gpu_best:.3}s  cpu-mwpm≈{mwpm_full:.2}s  speedup={:.1}x",
+            mwpm_full / gpu_best
+        );
+    }
 }
 
 #[cfg(not(all(target_os = "linux", feature = "cuda")))]
