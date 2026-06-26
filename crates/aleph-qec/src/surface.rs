@@ -243,6 +243,25 @@ pub struct MemoryExperiment {
 }
 
 impl MemoryExperiment {
+    /// Time coordinate (round index) of every detector, for streaming / sliding-window decoding
+    /// (Q4-01). Detectors are emitted round-by-round (`nz` stabilizer detectors per round, in index
+    /// order), so the round-difference detectors live at their round `r ∈ 0..rounds`; the final
+    /// data-readout block lives at time `rounds` (one slice past the last round). Times span
+    /// `0..=rounds`, giving `rounds + 1` time slices the sliding window can cut across.
+    pub fn detector_rounds(&self) -> Vec<usize> {
+        let nz = self.num_ancilla_records / self.rounds;
+        let n_round_dets = self.rounds * nz;
+        (0..self.annotated.detectors.len())
+            .map(|d| {
+                if d < n_round_dets {
+                    d / nz
+                } else {
+                    self.rounds
+                }
+            })
+            .collect()
+    }
+
     /// Phenomenological error mechanisms: an independent `X` error of probability
     /// `p_data` on every data qubit before every round and before final readout,
     /// and a measurement flip of probability `p_meas` on every ancilla
