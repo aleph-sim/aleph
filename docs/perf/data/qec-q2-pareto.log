@@ -1,0 +1,19 @@
+    Finished `release` profile [optimized] target(s) in 0.03s
+     Running `target/release/examples/qec_q2_pareto 200000 20000 2024`
+# Q2-03 Pareto: acc_shots=200000 tput_shots=20000 seed=2024
+# decoders: uf (unweighted UF, Q2-01), wuf (weighted UF, Q2-02), mwpm (Q1)
+  [perd-uniform] d=3 p=(0.03,0.03) def=1.9: rate uf=1.1265e-1 wuf=9.9425e-2 mwpm=9.8785e-2 | syn/s uf=2827455 wuf=3033386 mwpm=5510273 (uf/mwpm=0.5x)
+  [perd-uniform] d=5 p=(0.03,0.03) def=9.5: rate uf=1.2739e-1 wuf=1.1860e-1 mwpm=1.0766e-1 | syn/s uf=488458 wuf=494623 mwpm=407384 (uf/mwpm=1.2x)
+  [perd-uniform] d=7 p=(0.03,0.03) def=26.5: rate uf=1.5133e-1 wuf=1.2964e-1 mwpm=1.1015e-1 | syn/s uf=176064 wuf=174053 mwpm=64063 (uf/mwpm=2.7x)
+  [perd-uniform] d=9 p=(0.03,0.03) def=56.5: rate uf=1.6746e-1 wuf=1.4263e-1 mwpm=1.1076e-1 | syn/s uf=82745 wuf=77767 mwpm=13778 (uf/mwpm=6.0x)
+  [perd-uniform] d=11 p=(0.03,0.03) def=103.4: rate uf=1.8568e-1 wuf=1.5665e-1 mwpm=1.1406e-1 | syn/s uf=43243 wuf=40223 mwpm=3551 (uf/mwpm=12.2x)
+  [perd-asym] d=3 p=(0.02,0.06) def=2.1: rate uf=7.6910e-2 wuf=6.1065e-2 mwpm=6.0840e-2 | syn/s uf=2805672 wuf=2298014 mwpm=4087646 (uf/mwpm=0.7x)
+  [perd-asym] d=5 p=(0.02,0.06) def=10.5: rate uf=1.0292e-1 wuf=7.1215e-2 mwpm=6.4505e-2 | syn/s uf=461063 wuf=344570 mwpm=247820 (uf/mwpm=1.9x)
+  [perd-asym] d=7 p=(0.02,0.06) def=29.3: rate uf=1.2989e-1 wuf=7.5890e-2 mwpm=6.3990e-2 | syn/s uf=165810 wuf=114213 mwpm=36658 (uf/mwpm=4.5x)
+  [perd-asym] d=9 p=(0.02,0.06) def=62.6: rate uf=1.6062e-1 wuf=8.3230e-2 mwpm=6.5030e-2 | syn/s uf=76634 wuf=49758 mwpm=7616 (uf/mwpm=10.1x)
+  [perd-asym] d=11 p=(0.02,0.06) def=114.4: rate uf=1.9165e-1 wuf=9.0855e-2 mwpm=6.5490e-2 | syn/s uf=39808 wuf=25005 mwpm=1930 (uf/mwpm=20.6x)
+  [psweep-d7] d=7 p=(0.01,0.01) def=9.6: rate uf=3.0050e-3 wuf=2.5200e-3 mwpm=2.1400e-3 | syn/s uf=649479 wuf=609133 mwpm=385056 (uf/mwpm=1.7x)
+  [psweep-d7] d=7 p=(0.02,0.02) def=18.5: rate uf=4.1265e-2 wuf=3.4545e-2 mwpm=2.8160e-2 | syn/s uf=284152 wuf=277659 mwpm=124573 (uf/mwpm=2.3x)
+  [psweep-d7] d=7 p=(0.03,0.03) def=26.5: rate uf=1.5133e-1 wuf=1.2964e-1 mwpm=1.1015e-1 | syn/s uf=174720 wuf=174044 mwpm=63349 (uf/mwpm=2.8x)
+  [psweep-d7] d=7 p=(0.04,0.04) def=33.8: rate uf=2.9270e-1 wuf=2.6414e-1 mwpm=2.3594e-1 | syn/s uf=129509 wuf=127422 mwpm=39192 (uf/mwpm=3.3x)
+  [psweep-d7] d=7 p=(0.05,0.05) def=40.5: rate uf=4.0481e-1 wuf=3.8076e-1 mwpm=3.5660e-1 | syn/s uf=106110 wuf=104837 mwpm=27162 (uf/mwpm=3.9x)
