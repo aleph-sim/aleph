@@ -33,6 +33,16 @@ pub enum Error {
     /// or returned malformed output.
     #[error("decoder oracle failed: {0}")]
     Oracle(String),
+
+    /// A DEM error mechanism flips more than two detectors (a hyperedge), so the model is not
+    /// graph-like and cannot be turned into a matching graph. Matching decoders (MWPM, UF)
+    /// need a graph-like DEM; hyperedges require decomposition or a hypergraph decoder (qLDPC,
+    /// Q5). The surface-code memory DEMs from Q0-03 are graph-like by construction.
+    #[error("non-graphlike DEM: an error mechanism flips {dets} detectors (>2); matching needs a graph-like DEM")]
+    NonGraphlike {
+        /// Number of detectors the offending mechanism flips.
+        dets: usize,
+    },
 }
 
 impl From<aleph_stab::StabError> for Error {
