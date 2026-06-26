@@ -27,8 +27,18 @@
 // iterator combinators, so we opt out of the lints that would fight that style here.
 #![allow(clippy::needless_range_loop)]
 
+use std::cell::RefCell;
+
 /// Sentinel for "no vertex / no endpoint / no edge" — the algorithm's `-1`.
 const NONE: i64 = -1;
+
+thread_local! {
+    /// One reusable solver per thread. Matching is called once per decoded shot, so reusing the
+    /// solver's buffers (rather than allocating ~`O(n)` vectors per call in [`Blossom::load`])
+    /// removes the dominant per-decode allocation cost. Thread-local keeps it `Sync`-free and
+    /// correct under the parallel decode paths.
+    static SOLVER: RefCell<Blossom> = RefCell::new(Blossom::empty());
+}
 
 /// Compute a maximum-weight matching of the graph on `n` vertices (`0..n`) with the given
 /// weighted `edges` (`(i, j, weight)`, `i != j`).
@@ -44,9 +54,12 @@ pub fn max_weight_matching(
     edges: &[(usize, usize, i64)],
     maxcardinality: bool,
 ) -> Vec<usize> {
-    let mut state = Blossom::new(n, edges, maxcardinality);
-    state.run();
-    state.extract_mates()
+    SOLVER.with(|cell| {
+        let mut state = cell.borrow_mut();
+        state.load(n, edges, maxcardinality);
+        state.run();
+        state.extract_mates()
+    })
 }
 
 /// Internal solver state. All the `-1`-bearing arrays are `i64`; pure counts/lengths are `usize`.
@@ -94,47 +107,100 @@ struct Blossom {
     queue: Vec<i64>,
 }
 
+/// Resize `v` to at least `len` (growing with empty inners) and clear the first `len` inner
+/// vectors so their capacity is reused. Entries beyond `len` are stale but never indexed.
+fn reset_nested(v: &mut Vec<Vec<i64>>, len: usize) {
+    if v.len() < len {
+        v.resize_with(len, Vec::new);
+    }
+    for inner in v.iter_mut().take(len) {
+        inner.clear();
+    }
+}
+
 impl Blossom {
-    fn new(n: usize, edges: &[(usize, usize, i64)], maxcardinality: bool) -> Self {
+    /// An empty solver; call [`load`](Self::load) before [`run`](Self::run).
+    fn empty() -> Self {
+        Blossom {
+            n: 0,
+            edges: Vec::new(),
+            maxcardinality: false,
+            endpoint: Vec::new(),
+            neighbend: Vec::new(),
+            mate: Vec::new(),
+            label: Vec::new(),
+            labelend: Vec::new(),
+            inblossom: Vec::new(),
+            blossomparent: Vec::new(),
+            blossomchilds: Vec::new(),
+            blossombase: Vec::new(),
+            blossomendps: Vec::new(),
+            bestedge: Vec::new(),
+            blossombestedges: Vec::new(),
+            unusedblossoms: Vec::new(),
+            dualvar: Vec::new(),
+            allowedge: Vec::new(),
+            queue: Vec::new(),
+        }
+    }
+
+    /// (Re)initialise the solver for a new problem, reusing all buffer capacity from the previous
+    /// call. Equivalent to a fresh solver but without the per-call allocation.
+    fn load(&mut self, n: usize, edges: &[(usize, usize, i64)], maxcardinality: bool) {
         let m = edges.len();
-        let mut endpoint = vec![0i64; 2 * m];
-        let mut neighbend: Vec<Vec<i64>> = vec![Vec::new(); n];
+        let nb = 2 * n; // vertices 0..n are trivial blossoms; n..2n are slots for real blossoms
+        self.n = n;
+        self.maxcardinality = maxcardinality;
+
+        self.edges.clear();
+        self.edges.extend_from_slice(edges);
+
+        self.endpoint.clear();
+        self.endpoint.resize(2 * m, 0);
+        reset_nested(&mut self.neighbend, n);
         let mut maxweight = 0i64;
         for (k, &(i, j, w)) in edges.iter().enumerate() {
-            endpoint[2 * k] = i as i64;
-            endpoint[2 * k + 1] = j as i64;
-            neighbend[i].push((2 * k + 1) as i64);
-            neighbend[j].push((2 * k) as i64);
+            self.endpoint[2 * k] = i as i64;
+            self.endpoint[2 * k + 1] = j as i64;
+            self.neighbend[i].push((2 * k + 1) as i64);
+            self.neighbend[j].push((2 * k) as i64);
             maxweight = maxweight.max(w);
         }
 
-        let nb = 2 * n; // vertices 0..n are trivial blossoms; n..2n are slots for real blossoms
-        let mut dualvar = vec![0i64; nb];
-        for v in 0..n {
-            dualvar[v] = maxweight;
-        }
+        self.mate.clear();
+        self.mate.resize(n, NONE);
 
-        Blossom {
-            n,
-            edges: edges.to_vec(),
-            maxcardinality,
-            endpoint,
-            neighbend,
-            mate: vec![NONE; n],
-            label: vec![0; nb],
-            labelend: vec![NONE; nb],
-            inblossom: (0..n as i64).collect(),
-            blossomparent: vec![NONE; nb],
-            blossomchilds: vec![Vec::new(); nb],
-            blossombase: (0..n as i64).chain(std::iter::repeat_n(NONE, n)).collect(),
-            blossomendps: vec![Vec::new(); nb],
-            bestedge: vec![NONE; nb],
-            blossombestedges: vec![None; nb],
-            unusedblossoms: (n as i64..nb as i64).collect(),
-            dualvar,
-            allowedge: vec![false; m],
-            queue: Vec::new(),
+        self.label.clear();
+        self.label.resize(nb, 0);
+        self.labelend.clear();
+        self.labelend.resize(nb, NONE);
+        self.inblossom.clear();
+        self.inblossom.extend(0..n as i64);
+        self.blossomparent.clear();
+        self.blossomparent.resize(nb, NONE);
+        reset_nested(&mut self.blossomchilds, nb);
+        self.blossombase.clear();
+        self.blossombase.extend(0..n as i64);
+        self.blossombase.resize(nb, NONE);
+        reset_nested(&mut self.blossomendps, nb);
+        self.bestedge.clear();
+        self.bestedge.resize(nb, NONE);
+        if self.blossombestedges.len() < nb {
+            self.blossombestedges.resize_with(nb, || None);
         }
+        for be in self.blossombestedges.iter_mut().take(nb) {
+            *be = None;
+        }
+        self.unusedblossoms.clear();
+        self.unusedblossoms.extend(n as i64..nb as i64);
+        self.dualvar.clear();
+        self.dualvar.resize(nb, 0);
+        for v in 0..n {
+            self.dualvar[v] = maxweight;
+        }
+        self.allowedge.clear();
+        self.allowedge.resize(m, false);
+        self.queue.clear();
     }
 
     /// Slack of edge `k`: `dualvar[i] + dualvar[j] − 2·w`. Always `≥ 0` at a consistent state.
@@ -169,9 +235,15 @@ impl Blossom {
         self.bestedge[w as usize] = NONE;
         self.bestedge[b as usize] = NONE;
         if t == 1 {
-            // S-blossom: queue all its vertices for scanning.
-            let leaves = self.blossom_leaves(b);
-            self.queue.extend(leaves);
+            // S-blossom: queue all its vertices for scanning. Trivial vertex-blossoms (the common
+            // case, e.g. every exposed vertex at the start of a stage) are their own only leaf, so
+            // queue directly and skip the `blossom_leaves` allocation.
+            if (b as usize) < self.n {
+                self.queue.push(b);
+            } else {
+                let leaves = self.blossom_leaves(b);
+                self.queue.extend(leaves);
+            }
         } else if t == 2 {
             // T-blossom: its base is matched; label the partner S.
             let base = self.blossombase[b as usize];
@@ -505,8 +577,11 @@ impl Blossom {
                 // Scan S-vertices' edges for tight edges that grow the tree or augment.
                 while !self.queue.is_empty() && !augmented {
                     let v = self.queue.pop().unwrap();
-                    let neigh = self.neighbend[v as usize].clone();
-                    for p in neigh {
+                    // `neighbend` is immutable after construction, so index it directly rather
+                    // than cloning the (potentially large) neighbour list on every scan.
+                    let deg = self.neighbend[v as usize].len();
+                    for idx in 0..deg {
+                        let p = self.neighbend[v as usize][idx];
                         let k = (p / 2) as usize;
                         let w = self.endpoint[p as usize];
                         if self.inblossom[v as usize] == self.inblossom[w as usize] {
@@ -784,6 +859,74 @@ mod tests {
         assert_eq!(matching_weight(6, &edges, &mate), opt);
         // Every vertex matched (perfect).
         assert!(mate.iter().all(|&m| m != usize::MAX));
+    }
+
+    /// Brute-force maximum-weight (non-perfect) matching by subset DP: each vertex may be left
+    /// unmatched. The oracle for `maxcardinality = false`.
+    fn brute_max_nonperfect(n: usize, edges: &[(usize, usize, i64)]) -> i64 {
+        let mut w = vec![vec![i64::MIN; n]; n];
+        for &(i, j, wt) in edges {
+            w[i][j] = w[i][j].max(wt);
+            w[j][i] = w[j][i].max(wt);
+        }
+        let full = 1usize << n;
+        let mut dp = vec![i64::MIN; full];
+        dp[0] = 0;
+        for mask in 0..full {
+            if dp[mask] == i64::MIN {
+                continue;
+            }
+            let i = match (0..n).find(|&i| mask & (1 << i) == 0) {
+                Some(i) => i,
+                None => continue,
+            };
+            // Leave i unmatched.
+            let m1 = mask | (1 << i);
+            dp[m1] = dp[m1].max(dp[mask]);
+            // Or match i to some free j with a positive-or-any edge.
+            for j in (i + 1)..n {
+                if mask & (1 << j) == 0 && w[i][j] != i64::MIN {
+                    let nm = mask | (1 << i) | (1 << j);
+                    dp[nm] = dp[nm].max(dp[mask] + w[i][j]);
+                }
+            }
+        }
+        dp[full - 1]
+    }
+
+    #[test]
+    fn nonperfect_matches_brute_force() {
+        // Validate maxcardinality = false (the mode the savings-formulation decoder relies on)
+        // against brute force, including negative edges (which must be left out).
+        let mut state = 0x0BAD_F00D_1234_5678u64;
+        let mut next = || {
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            (state >> 33) as i64
+        };
+        for n in [2usize, 4, 5, 7, 9, 11] {
+            for _ in 0..200 {
+                let mut edges = Vec::new();
+                for i in 0..n {
+                    for j in (i + 1)..n {
+                        // Mix of positive and negative weights; skip ~1/4 of edges (sparse).
+                        if next() % 4 != 0 {
+                            edges.push((i, j, next() % 200 - 100));
+                        }
+                    }
+                }
+                let mate = max_weight_matching(n, &edges, false);
+                for v in 0..n {
+                    if mate[v] != usize::MAX {
+                        assert_eq!(mate[mate[v]], v, "n={n}: asymmetric mate");
+                    }
+                }
+                let got = matching_weight(n, &edges, &mate);
+                let opt = brute_max_nonperfect(n, &edges);
+                assert_eq!(got, opt, "n={n}: non-perfect weight {got} != optimum {opt}");
+            }
+        }
     }
 
     #[test]
