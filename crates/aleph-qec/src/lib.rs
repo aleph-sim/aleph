@@ -28,6 +28,7 @@ mod experiment;
 mod matching;
 mod mwpm;
 mod pymatching;
+mod sliding;
 mod surface;
 mod syndrome;
 mod union_find;
@@ -41,6 +42,7 @@ pub use experiment::{run_dem_experiment, run_memory_experiment, Phenomenological
 pub use matching::{MatchingEdge, MatchingGraph, NodeId};
 pub use mwpm::MwpmDecoder;
 pub use pymatching::PyMatchingOracle;
+pub use sliding::SlidingWindowDecoder;
 pub use surface::{MemoryExperiment, SurfaceCode};
 pub use syndrome::{Correction, Syndrome};
 pub use union_find::{DecoderGraph, UnionFindDecoder};
