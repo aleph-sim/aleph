@@ -1,0 +1,14 @@
+    Finished `release` profile [optimized] target(s) in 0.03s
+     Running `target/release/examples/qec_q1_compare 100000 50000 2024`
+# Q1-05 compare: p=0.03 rounds=d acc_shots=100000 thru_shots=50000 seed=2024
+  acc d=3: aleph=1.0014e-1±1.9e-3  pymatching=1.0019e-1±1.9e-3  |Δ|=5.00e-5 ci=2.63e-3  within_ci=true
+  acc d=5: aleph=1.0667e-1±1.9e-3  pymatching=1.0556e-1±1.9e-3  |Δ|=1.11e-3 ci=2.70e-3  within_ci=true
+  acc d=7: aleph=1.1088e-1±1.9e-3  pymatching=1.1087e-1±1.9e-3  |Δ|=1.00e-5 ci=2.75e-3  within_ci=true
+  acc d=9: aleph=1.1018e-1±1.9e-3  pymatching=1.1156e-1±2.0e-3  |Δ|=1.38e-3 ci=2.75e-3  within_ci=true
+  acc d=11: aleph=1.1196e-1±2.0e-3  pymatching=1.1352e-1±2.0e-3  |Δ|=1.56e-3 ci=2.77e-3  within_ci=true
+  thru d=3 (det=16, avg_def=1.9): aleph=5372445/s  pymatching_core=6358256/s  pymatching_e2e=242465/s
+  thru d=5 (det=72, avg_def=9.5): aleph=406835/s  pymatching_core=863927/s  pymatching_e2e=191321/s
+  thru d=7 (det=192, avg_def=26.5): aleph=63910/s  pymatching_core=277071/s  pymatching_e2e=128940/s
+  thru d=9 (det=400, avg_def=56.6): aleph=13825/s  pymatching_core=114552/s  pymatching_e2e=77245/s
+  thru d=11 (det=720, avg_def=103.4): aleph=3605/s  pymatching_core=55525/s  pymatching_e2e=44161/s
+# accuracy: all distances within combined CI ✓
