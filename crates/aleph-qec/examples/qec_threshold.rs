@@ -9,7 +9,7 @@
 //!
 //! ```text
 //! cargo run --release -p aleph-qec --example qec_threshold -- [decoder] [source] [shots] [seed]
-//! # decoder ∈ {mwpm (default), pymatching}; source ∈ {analytic (default), stim}
+//! # decoder ∈ {mwpm (default), uf, pymatching}; source ∈ {analytic (default), stim}
 //! # e.g. native sweep:  cargo run --release -p aleph-qec --example qec_threshold -- mwpm analytic 200000 2024
 //! # oracle sweep:       PYMATCHING_PYTHON=/tmp/pmvenv/bin/python cargo run ... -- pymatching analytic 200000 2024
 //! ```
@@ -28,6 +28,7 @@ use std::process::{Command, Stdio};
 
 use aleph_qec::{
     build_dem, run_dem_experiment, DetectorErrorModel, MwpmDecoder, PyMatchingOracle, SurfaceCode,
+    UnionFindDecoder,
 };
 
 /// Code distances swept.
@@ -70,7 +71,11 @@ fn main() {
                     let dec = PyMatchingOracle::new(&dem);
                     run_dem_experiment(&dem, shots, &dec, seed)
                 }
-                other => panic!("unknown decoder `{other}` (expected mwpm|pymatching)"),
+                "uf" | "unionfind" => {
+                    let dec = UnionFindDecoder::new(&dem).expect("graphlike dem");
+                    run_dem_experiment(&dem, shots, &dec, seed)
+                }
+                other => panic!("unknown decoder `{other}` (expected mwpm|uf|pymatching)"),
             }
             .expect("sweep cell");
             println!(

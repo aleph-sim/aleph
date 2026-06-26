@@ -29,6 +29,7 @@ mod mwpm;
 mod pymatching;
 mod surface;
 mod syndrome;
+mod union_find;
 
 pub use builder::{build_dem, AnnotatedCircuit, ErrorMechanism};
 pub use decoder::{Decoder, LogicalErrorResult, NullDecoder};
@@ -40,3 +41,4 @@ pub use mwpm::MwpmDecoder;
 pub use pymatching::PyMatchingOracle;
 pub use surface::{MemoryExperiment, SurfaceCode};
 pub use syndrome::{Correction, Syndrome};
+pub use union_find::UnionFindDecoder;
