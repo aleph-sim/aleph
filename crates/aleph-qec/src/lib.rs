@@ -19,6 +19,7 @@
 //! into the weighted detector-plus-boundary graph matching decoders consume (Q1-01).
 
 mod blossom;
+mod bp;
 mod builder;
 mod decoder;
 mod dem;
@@ -31,6 +32,7 @@ mod surface;
 mod syndrome;
 mod union_find;
 
+pub use bp::{BpDecoder, TannerGraph, DEFAULT_MAX_ITER};
 pub use builder::{build_dem, AnnotatedCircuit, ErrorMechanism};
 pub use decoder::{Decoder, LogicalErrorResult, NullDecoder};
 pub use dem::{DemError, DetectorErrorModel};

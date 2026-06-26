@@ -11,6 +11,8 @@
 //! The host consumes an [`aleph_qec::DecoderGraph`] (the CPU decoder's own arrays), so the GPU and
 //! CPU decode the identical graph layout, edge ordering and growth mode.
 
+mod bp;
 mod uf;
 
+pub use bp::CudaBp;
 pub use uf::{mask_to_flips, CudaUnionFind};
