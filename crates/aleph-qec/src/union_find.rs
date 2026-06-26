@@ -19,10 +19,14 @@
 //!    The surviving edge set reproduces the syndrome exactly; XOR-ing those edges' observable masks
 //!    gives the logical correction.
 //!
-//! Unlike MWPM this is unweighted (every edge grows at the same rate), so it is slightly less
-//! accurate than [`MwpmDecoder`](crate::MwpmDecoder) but runs in near-linear time with integer-only
-//! control flow over fixed-size arrays — the property that makes it the natural FPGA/ASIC target
-//! (Q6/Q7). Weighted growth (closing part of the accuracy gap) is Q2-02.
+//! Growth comes in two modes ([`UnionFindDecoder::weighted`]): **unweighted** (Q2-01, default —
+//! every edge grows at the same rate, isotropic balls) and **weighted** (Q2-02 — each edge's growth
+//! length is proportional to its matching weight `ln((1-p)/p)`, via a jump step that keeps the round
+//! count near the unweighted decoder's). Weighted growth recovers most of MWPM's edge-weight
+//! awareness on heterogeneous-weight noise (Huang/Newman/Brown, arXiv:2004.04693). Either way the
+//! decoder is near-linear with integer-only control flow over fixed-size arrays — the property that
+//! makes it the natural FPGA/ASIC target (Q6/Q7) — and slightly less accurate than
+//! [`MwpmDecoder`](crate::MwpmDecoder).
 //!
 //! All per-decode scratch lives in a thread-local arena, reset by a generation counter so a decode
 //! only touches the nodes/edges its clusters actually reach (not the whole graph) — decode is
@@ -39,10 +43,29 @@ use crate::syndrome::{Correction, Syndrome};
 /// Sentinel for "no parent" in the peeling forest (a tree root).
 const NONE: u32 = u32::MAX;
 
+/// Discretisation scale for weighted growth: an edge's integer length is `round(weight * SCALE)`,
+/// floored at [`MIN_LEN`] and capped at [`MAX_LEN`]. The absolute magnitude is irrelevant (the
+/// jump-growth step skips empty rounds); only the *ratios* of lengths steer the growth, so a
+/// modest scale that keeps lengths small and well-separated is best.
+const GROWTH_SCALE: f64 = 4.0;
+/// Minimum edge length (matches the unweighted "two half-edges").
+const MIN_LEN: u32 = 2;
+/// Cap on edge length, guarding against a near-degenerate (p ≈ 0.5, weight ≈ 0) reference edge
+/// blowing up the ratios.
+const MAX_LEN: u32 = 256;
+
 /// A Union-Find (cluster-growth) decoder for a fixed [`DetectorErrorModel`].
 ///
 /// Construct once from a DEM (or a prebuilt [`MatchingGraph`]); the graph is flattened into
 /// CSR-style fixed arrays for a cache-friendly, hardware-shaped hot loop, then reused across shots.
+///
+/// Two growth modes (see [`weighted`](Self::weighted)):
+/// * **unweighted** (default, Q2-01) — every edge grows at the same rate (isotropic balls).
+/// * **weighted** (Q2-02) — each edge's growth length is proportional to its matching weight
+///   `ln((1-p)/p)`, so clusters expand cheaply along likely (low-weight) error paths first. This
+///   recovers part of MWPM's edge-weight awareness — better accuracy on heterogeneous-weight noise
+///   (e.g. `p_data ≠ p_meas`) — at near-identical runtime (Huang/Newman/Brown, arXiv:2004.04693).
+///   On *uniform*-weight noise the two modes coincide exactly.
 #[derive(Clone, Debug)]
 pub struct UnionFindDecoder {
     num_detectors: usize,
@@ -57,10 +80,14 @@ pub struct UnionFindDecoder {
     edge_b: Vec<u32>,
     /// Observable-flip bitmask of each edge (bit `o` set ⇔ the edge flips observable `o`).
     edge_obs: Vec<u64>,
+    /// Integer growth length of each edge (`weight`-proportional); used only in weighted mode.
+    edge_len: Vec<u32>,
+    /// Whether cluster growth is weighted (Q2-02) or unweighted/isotropic (Q2-01).
+    weighted: bool,
 }
 
 impl UnionFindDecoder {
-    /// Build a decoder for `dem`.
+    /// Build an (unweighted) decoder for `dem`.
     ///
     /// # Errors
     /// Propagates [`crate::Error::NonGraphlike`] if the DEM has a hyperedge (Union-Find, like
@@ -70,7 +97,22 @@ impl UnionFindDecoder {
         Ok(Self::from_graph(&graph))
     }
 
-    /// Build a decoder directly from an already-constructed [`MatchingGraph`].
+    /// Build a **weighted-growth** decoder for `dem` (Q2-02). Equivalent to
+    /// `UnionFindDecoder::new(dem)?.weighted(true)`.
+    ///
+    /// # Errors
+    /// Propagates [`crate::Error::NonGraphlike`] if the DEM has a hyperedge.
+    pub fn new_weighted(dem: &DetectorErrorModel) -> Result<Self> {
+        Ok(Self::new(dem)?.weighted(true))
+    }
+
+    /// Switch growth mode: `true` for weighted (Q2-02), `false` for unweighted (Q2-01, default).
+    pub fn weighted(mut self, yes: bool) -> Self {
+        self.weighted = yes;
+        self
+    }
+
+    /// Build a decoder directly from an already-constructed [`MatchingGraph`] (unweighted).
     pub fn from_graph(graph: &MatchingGraph) -> Self {
         let n_nodes = graph.num_nodes();
         let edges = graph.edges();
@@ -84,6 +126,19 @@ impl UnionFindDecoder {
                     .iter()
                     .filter(|&&o| o < 64)
                     .fold(0u64, |m, &o| m | (1u64 << o))
+            })
+            .collect();
+        // Weight-proportional integer growth lengths (used only in weighted mode). A non-finite or
+        // non-positive weight degenerates to the minimum length.
+        let edge_len: Vec<u32> = edges
+            .iter()
+            .map(|e| {
+                let scaled = (e.weight.max(0.0) * GROWTH_SCALE).round();
+                if scaled.is_finite() {
+                    (scaled as u32).clamp(MIN_LEN, MAX_LEN)
+                } else {
+                    MAX_LEN
+                }
             })
             .collect();
 
@@ -116,6 +171,8 @@ impl UnionFindDecoder {
             edge_a,
             edge_b,
             edge_obs,
+            edge_len,
+            weighted: false,
         }
     }
 
@@ -159,12 +216,18 @@ impl UnionFindDecoder {
         SCRATCH.with(|cell| {
             let mut sc = cell.borrow_mut();
             sc.begin(self.n_nodes, self.edge_a.len());
-            self.grow_clusters(&mut sc, &defects);
+            if self.weighted {
+                self.grow_clusters_weighted(&mut sc, &defects);
+            } else {
+                self.grow_clusters(&mut sc, &defects);
+            }
             self.peel(&mut sc, &defects)
         })
     }
 
-    /// Phase 1: grow odd clusters until all are neutral, accumulating the erasure.
+    /// Phase 1 (unweighted, Q2-01): grow every odd cluster by one unit per round (isotropic) until
+    /// all clusters are neutral, accumulating the erasure. Each edge is two half-edges, fully grown
+    /// at support 2.
     fn grow_clusters(&self, sc: &mut Scratch, defects: &[u32]) {
         let boundary = self.boundary();
         for &d in defects {
@@ -201,6 +264,7 @@ impl UnionFindDecoder {
                             sc.support[e as usize] = s + 1;
                             grew = true;
                             if s + 1 == 2 {
+                                sc.mark_grown(e);
                                 to_fuse.push(e);
                                 sc.erasure.push(e);
                             }
@@ -216,6 +280,87 @@ impl UnionFindDecoder {
             // detector reaches the boundary.)
             if !grew && to_fuse.is_empty() {
                 break;
+            }
+        }
+    }
+
+    /// Phase 1 (weighted, Q2-02): grow odd clusters with edge lengths proportional to matching
+    /// weight, using a **jump step** so the round count stays ~equal to the unweighted decoder's.
+    ///
+    /// Each round: (1) scan every odd cluster's boundary edges, recording each once with the number
+    /// of growing sides (1, or 2 if both endpoints are in odd clusters) and the remaining length;
+    /// (2) take the global jump `δ` = the fewest units that complete the *next* edge anywhere; (3)
+    /// advance every boundary edge by `δ × sides` and fuse those that reach full length. Because the
+    /// per-round work is one vertex scan plus a cheap edge pass — exactly as unweighted — and each
+    /// round still completes ≥ 1 edge, total cost stays within a small factor of Q2-01.
+    fn grow_clusters_weighted(&self, sc: &mut Scratch, defects: &[u32]) {
+        let boundary = self.boundary();
+        for &d in defects {
+            sc.ensure(d, boundary);
+            sc.parity[d as usize] = 1;
+        }
+
+        let mut odd: Vec<u32> = Vec::new();
+        let mut to_fuse: Vec<u32> = Vec::new();
+        let mut frontier: Vec<u32> = Vec::new();
+        // Boundary edges touched this round (each once), with their growing-side count in `sc.sides`.
+        let mut touched: Vec<u32> = Vec::new();
+
+        loop {
+            sc.collect_odd_roots(defects, &mut odd, boundary);
+            if odd.is_empty() {
+                break;
+            }
+
+            // Pass 1: enumerate this round's boundary edges and count their growing sides.
+            touched.clear();
+            sc.step_ctr += 1;
+            let step = sc.step_ctr;
+            for &r in &odd {
+                frontier.clear();
+                frontier.extend_from_slice(&sc.verts[r as usize]);
+                for &v in &frontier {
+                    for &e in self.incident(v) {
+                        if sc.find(self.other(e, v), boundary) == r {
+                            continue; // internal edge
+                        }
+                        let ei = e as usize;
+                        if sc.edge_step[ei] != step {
+                            sc.edge_step[ei] = step;
+                            sc.sides[ei] = 0;
+                            touched.push(e);
+                            sc.growth_init(e);
+                        }
+                        sc.sides[ei] += 1;
+                    }
+                }
+            }
+            if touched.is_empty() {
+                break; // unsatisfiable component guard (no boundary edge to grow)
+            }
+
+            // The jump: the smallest number of units that completes some edge.
+            let mut delta = u32::MAX;
+            for &e in &touched {
+                let ei = e as usize;
+                let rem = self.edge_len[ei] - sc.growth[ei];
+                let sides = sc.sides[ei] as u32;
+                delta = delta.min(rem.div_ceil(sides));
+            }
+
+            // Pass 2: advance and fuse completed edges.
+            to_fuse.clear();
+            for &e in &touched {
+                let ei = e as usize;
+                sc.growth[ei] += delta * sc.sides[ei] as u32;
+                if sc.growth[ei] >= self.edge_len[ei] {
+                    sc.mark_grown(e);
+                    to_fuse.push(e);
+                    sc.erasure.push(e);
+                }
+            }
+            for &e in &to_fuse {
+                sc.union(self.edge_a[e as usize], self.edge_b[e as usize], boundary);
             }
         }
     }
@@ -236,7 +381,7 @@ impl UnionFindDecoder {
         sc.order.clear();
         // Root boundary-touching trees at the boundary so leftover parity drains into it. The
         // boundary is in the erasure iff one of its incident edges is fully grown.
-        let boundary_in_erasure = self.incident(boundary).iter().any(|&e| sc.support(e) == 2);
+        let boundary_in_erasure = self.incident(boundary).iter().any(|&e| sc.is_grown(e));
         if boundary_in_erasure {
             self.bfs_tree(sc, boundary);
         }
@@ -282,7 +427,7 @@ impl UnionFindDecoder {
             q += 1;
             for idx in self.adj_off[u as usize]..self.adj_off[u as usize + 1] {
                 let e = self.adj_edges[idx as usize];
-                if sc.support(e) != 2 {
+                if !sc.is_grown(e) {
                     continue;
                 }
                 let w = self.other(e, u);
@@ -322,10 +467,18 @@ struct Scratch {
     parity: Vec<u8>,
     boundary_touch: Vec<bool>,
     verts: Vec<Vec<u32>>,
-    // --- edge growth ---
+    // --- edge growth (unweighted) ---
     edge_gen: Vec<u64>,
     support: Vec<u8>,
     erasure: Vec<u32>,
+    /// Edges fully grown this decode (mode-agnostic erasure membership for peeling).
+    grown_gen: Vec<u64>,
+    // --- edge growth (weighted jump-growth) ---
+    growth: Vec<u32>,
+    /// Per-round dedup of touched boundary edges + their growing-side count.
+    edge_step: Vec<u64>,
+    sides: Vec<u8>,
+    step_ctr: u64,
     // --- odd-root dedup within a growth round ---
     mark: Vec<u64>,
     mark_ctr: u64,
@@ -350,6 +503,11 @@ impl Scratch {
             edge_gen: Vec::new(),
             support: Vec::new(),
             erasure: Vec::new(),
+            grown_gen: Vec::new(),
+            growth: Vec::new(),
+            edge_step: Vec::new(),
+            sides: Vec::new(),
+            step_ctr: 0,
             mark: Vec::new(),
             mark_ctr: 0,
             visit_gen: Vec::new(),
@@ -379,8 +537,34 @@ impl Scratch {
         if self.edge_gen.len() < n_edges {
             self.edge_gen.resize(n_edges, 0);
             self.support.resize(n_edges, 0);
+            self.grown_gen.resize(n_edges, 0);
+            self.growth.resize(n_edges, 0);
+            self.edge_step.resize(n_edges, 0);
+            self.sides.resize(n_edges, 0);
         }
         self.erasure.clear();
+    }
+
+    /// Mark edge `e` as fully grown this decode (erasure membership read by peeling).
+    #[inline]
+    fn mark_grown(&mut self, e: u32) {
+        self.grown_gen[e as usize] = self.gen;
+    }
+
+    /// Whether edge `e` is fully grown this decode.
+    #[inline]
+    fn is_grown(&self, e: u32) -> bool {
+        self.grown_gen[e as usize] == self.gen
+    }
+
+    /// Lazily zero an edge's weighted-growth accumulator for this decode.
+    #[inline]
+    fn growth_init(&mut self, e: u32) {
+        let i = e as usize;
+        if self.edge_gen[i] != self.gen {
+            self.edge_gen[i] = self.gen;
+            self.growth[i] = 0;
+        }
     }
 
     /// Lazily initialise node `v` as a fresh singleton cluster for this decode.
@@ -481,12 +665,13 @@ mod tests {
     use crate::matching::MatchingGraph;
     use crate::surface::SurfaceCode;
 
-    /// The surface-code memory-Z matching graph + UF decoder at distance `d`, phys error `p`.
-    fn setup(d: usize, p: f64) -> (MatchingGraph, UnionFindDecoder) {
+    /// The surface-code memory-Z matching graph + UF decoder at distance `d`, phys error `p`,
+    /// in the chosen growth mode.
+    fn setup(d: usize, p: f64, weighted: bool) -> (MatchingGraph, UnionFindDecoder) {
         let exp = SurfaceCode::new(d).memory_z_experiment(d);
         let dem = build_dem(&exp.annotated, &exp.phenomenological_mechanisms(p, p)).unwrap();
         let graph = MatchingGraph::from_dem(&dem).unwrap();
-        let dec = UnionFindDecoder::from_graph(&graph);
+        let dec = UnionFindDecoder::from_graph(&graph).weighted(weighted);
         (graph, dec)
     }
 
@@ -507,89 +692,139 @@ mod tests {
 
     #[test]
     fn empty_syndrome_decodes_to_no_flip() {
-        let (_g, dec) = setup(5, 0.05);
-        let s = Syndrome::new(dec.num_detectors, vec![]);
-        let (c, edges) = dec.decode_edges(&s);
-        assert_eq!(c, Correction::none(dec.num_observables));
-        assert!(edges.is_empty());
+        for weighted in [false, true] {
+            let (_g, dec) = setup(5, 0.05, weighted);
+            let s = Syndrome::new(dec.num_detectors, vec![]);
+            let (c, edges) = dec.decode_edges(&s);
+            assert_eq!(c, Correction::none(dec.num_observables));
+            assert!(edges.is_empty());
+        }
     }
 
     #[test]
     fn correction_reproduces_a_single_edge_syndrome() {
         // A single interior edge lights its two detectors; UF must return a correction whose
         // detector boundary is exactly those two detectors.
-        let (graph, dec) = setup(5, 0.05);
-        let e = graph
-            .edges()
-            .iter()
-            .position(|ed| ed.b < dec.num_detectors) // a non-boundary edge
-            .expect("an interior edge");
-        let truth = detector_flips(&graph, &[e], dec.num_detectors);
-        let s = Syndrome::from_bits(&truth);
-        let (_c, chosen) = dec.decode_edges(&s);
-        let got = detector_flips(&graph, &chosen, dec.num_detectors);
-        assert_eq!(got, truth, "decoded edges must reproduce the syndrome");
+        for weighted in [false, true] {
+            let (graph, dec) = setup(5, 0.05, weighted);
+            let e = graph
+                .edges()
+                .iter()
+                .position(|ed| ed.b < dec.num_detectors) // a non-boundary edge
+                .expect("an interior edge");
+            let truth = detector_flips(&graph, &[e], dec.num_detectors);
+            let s = Syndrome::from_bits(&truth);
+            let (_c, chosen) = dec.decode_edges(&s);
+            let got = detector_flips(&graph, &chosen, dec.num_detectors);
+            assert_eq!(got, truth, "decoded edges must reproduce the syndrome");
+        }
     }
 
     /// Every decoded correction must reproduce the input syndrome (Q2-01 acceptance + property
-    /// test). We draw the input syndrome from a *realisable* error (a random subset of edges) so it
-    /// is guaranteed to have a consistent correction, then check the decoder finds one with the
-    /// same detector boundary.
+    /// test), in **both** growth modes. We draw the input syndrome from a *realisable* error (a
+    /// random subset of edges) so it is guaranteed to have a consistent correction, then check the
+    /// decoder finds one with the same detector boundary.
     #[test]
     fn corrections_are_syndrome_consistent() {
-        for &d in &[3usize, 5, 7] {
-            let (graph, dec) = setup(d, 0.10);
-            let m = graph.edges().len();
-            // Deterministic SplitMix64 stream — many random error patterns of varying weight.
-            let mut z: u64 = 0xC0FFEE ^ (d as u64);
+        for weighted in [false, true] {
+            for &d in &[3usize, 5, 7] {
+                let (graph, dec) = setup(d, 0.10, weighted);
+                let m = graph.edges().len();
+                // Deterministic SplitMix64 stream — many random error patterns of varying weight.
+                let mut z: u64 = 0xC0FFEE ^ (d as u64) ^ ((weighted as u64) << 40);
+                let mut next = || {
+                    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+                    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+                    z ^= z >> 31;
+                    z
+                };
+                for trial in 0..2000 {
+                    // Error density swept across trials so we cover sparse and dense syndromes.
+                    let q = 0.02 + 0.20 * (trial as f64 / 2000.0);
+                    let error: Vec<usize> = (0..m)
+                        .filter(|_| ((next() >> 11) as f64 / (1u64 << 53) as f64) < q)
+                        .collect();
+                    let truth = detector_flips(&graph, &error, dec.num_detectors);
+                    let s = Syndrome::from_bits(&truth);
+                    let (_c, chosen) = dec.decode_edges(&s);
+                    let got = detector_flips(&graph, &chosen, dec.num_detectors);
+                    assert_eq!(
+                        got, truth,
+                        "weighted={weighted} d={d} trial={trial}: decoded edges must reproduce the input syndrome"
+                    );
+                }
+            }
+        }
+    }
+
+    /// Arbitrary (not necessarily error-derived) random syndromes must also decode to something
+    /// syndrome-consistent in both modes: in the surface code every detector reaches the boundary,
+    /// so any detector pattern is realisable and the peeler must reproduce it exactly.
+    #[test]
+    fn arbitrary_syndromes_are_consistent() {
+        for weighted in [false, true] {
+            let (graph, dec) = setup(5, 0.05, weighted);
+            let nd = dec.num_detectors;
+            let mut z: u64 = 0x1234_5678 ^ ((weighted as u64) << 40);
             let mut next = || {
                 z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
                 z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
                 z ^= z >> 31;
                 z
             };
-            for trial in 0..2000 {
-                // Error density swept across trials so we cover sparse and dense syndromes.
-                let q = 0.02 + 0.20 * (trial as f64 / 2000.0);
-                let error: Vec<usize> = (0..m)
-                    .filter(|_| ((next() >> 11) as f64 / (1u64 << 53) as f64) < q)
+            for _ in 0..1000 {
+                let bits: Vec<bool> = (0..nd)
+                    .map(|_| next() & 1 == 0 && next() & 3 == 0)
                     .collect();
-                let truth = detector_flips(&graph, &error, dec.num_detectors);
-                let s = Syndrome::from_bits(&truth);
+                let s = Syndrome::from_bits(&bits);
                 let (_c, chosen) = dec.decode_edges(&s);
-                let got = detector_flips(&graph, &chosen, dec.num_detectors);
+                let got = detector_flips(&graph, &chosen, nd);
                 assert_eq!(
-                    got, truth,
-                    "d={d} trial={trial}: decoded edges must reproduce the input syndrome"
+                    got, bits,
+                    "weighted={weighted}: decoded edges must reproduce"
                 );
             }
         }
     }
 
-    /// Arbitrary (not necessarily error-derived) random syndromes must also decode to something
-    /// syndrome-consistent: in the surface code every detector reaches the boundary, so any
-    /// detector pattern is realisable and the peeler must reproduce it exactly.
+    /// When **all edge weights are equal**, weighted and unweighted growth must produce the
+    /// identical correction on every syndrome: equal lengths ⇒ the jump-growth schedule coincides
+    /// with the isotropic one. (On a real surface-code DEM the weights are *not* all equal — edge
+    /// merging and boundary structure spread them even at `p_data == p_meas` — which is exactly why
+    /// weighted growth can change, and improve, the result.) We use a uniform-`p` repetition chain,
+    /// whose mechanisms have disjoint support so no merging perturbs the weights.
     #[test]
-    fn arbitrary_syndromes_are_consistent() {
-        let (graph, dec) = setup(5, 0.05);
-        let nd = dec.num_detectors;
-        let mut z: u64 = 0x1234_5678;
+    fn weighted_equals_unweighted_on_equal_weights() {
+        use crate::dem::DemError;
+        let n = 8usize;
+        let p = 0.07;
+        let mut errors = vec![DemError::new(p, vec![0], vec![0])];
+        for i in 0..n - 1 {
+            errors.push(DemError::new(p, vec![i as u32, (i + 1) as u32], vec![]));
+        }
+        errors.push(DemError::new(p, vec![(n - 1) as u32], vec![]));
+        let dem = DetectorErrorModel {
+            detectors: n,
+            observables: 1,
+            errors,
+        };
+        let uw = UnionFindDecoder::new(&dem).unwrap();
+        let we = UnionFindDecoder::new(&dem).unwrap().weighted(true);
+
+        let mut z: u64 = 0xBEEF_F00D;
         let mut next = || {
             z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
             z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
             z ^= z >> 31;
             z
         };
-        for _ in 0..1000 {
-            let bits: Vec<bool> = (0..nd)
-                .map(|_| next() & 1 == 0 && next() & 3 == 0)
-                .collect();
+        for _ in 0..3000 {
+            let bits: Vec<bool> = (0..n).map(|_| next() & 1 == 0).collect();
             let s = Syndrome::from_bits(&bits);
-            let (_c, chosen) = dec.decode_edges(&s);
-            let got = detector_flips(&graph, &chosen, nd);
             assert_eq!(
-                got, bits,
-                "decoded edges must reproduce an arbitrary syndrome"
+                uw.decode(&s),
+                we.decode(&s),
+                "equal weights: weighted and unweighted corrections must match"
             );
         }
     }
