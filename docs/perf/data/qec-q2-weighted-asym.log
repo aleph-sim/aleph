@@ -1,0 +1,8 @@
+    Finished `release` profile [optimized] target(s) in 0.03s
+     Running `target/release/examples/qec_q2_weighted 0.02 0.06 300000 2024`
+# Q2-02 weighted UF: p_data=0.02 p_meas=0.06 shots=300000 seed=2024
+  d=3: uf=7.7200e-2 wuf=6.1207e-2 mwpm=6.0877e-2  Δ=1.60e-2 (20.7% rel, closes 98% of UF→MWPM gap)  slowdown wuf/uf=1.23x
+  d=5: uf=1.0280e-1 wuf=7.0977e-2 mwpm=6.4107e-2  Δ=3.18e-2 (31.0% rel, closes 82% of UF→MWPM gap)  slowdown wuf/uf=1.39x
+  d=7: uf=1.3029e-1 wuf=7.6097e-2 mwpm=6.3587e-2  Δ=5.42e-2 (41.6% rel, closes 81% of UF→MWPM gap)  slowdown wuf/uf=1.48x
+  d=9: uf=1.6066e-1 wuf=8.3373e-2 mwpm=6.5053e-2  Δ=7.73e-2 (48.1% rel, closes 81% of UF→MWPM gap)  slowdown wuf/uf=1.55x
+  d=11: uf=1.9217e-1 wuf=9.0560e-2 mwpm=6.5423e-2  Δ=1.02e-1 (52.9% rel, closes 80% of UF→MWPM gap)  slowdown wuf/uf=1.61x
