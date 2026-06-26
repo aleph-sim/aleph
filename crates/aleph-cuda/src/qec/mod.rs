@@ -12,7 +12,9 @@
 //! CPU decode the identical graph layout, edge ordering and growth mode.
 
 mod bp;
+mod montecarlo;
 mod uf;
 
 pub use bp::CudaBp;
+pub use montecarlo::{CellResult, CudaThreshold};
 pub use uf::{mask_to_flips, CudaUnionFind};
