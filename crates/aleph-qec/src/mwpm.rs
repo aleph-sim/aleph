@@ -1,5 +1,5 @@
 //! [`MwpmDecoder`] — a from-scratch minimum-weight perfect matching decoder over the
-//! [`MatchingGraph`] built from a DEM (Q1-02).
+//! [`MatchingGraph`] built from a DEM (Q1-02), with a localized matching reformulation (Q1-03).
 //!
 //! Decoding a syndrome is three steps:
 //!
@@ -8,12 +8,17 @@
 //!    running Dijkstra from each detector ([`MatchingGraph`] edge weights are `≥ 0`). The boundary
 //!    node is never expanded, so a detector→detector distance never routes "through" the boundary
 //!    (that would be two separate boundary matches, which the matching handles itself).
-//! 2. **Matching.** For the fired detectors (defects) of a shot, build the complete graph of
-//!    pairwise distances plus, for each defect, an edge to a private boundary clone (cost =
-//!    distance to the boundary); boundary clones interconnect at cost 0. A minimum-weight
-//!    *perfect* matching of this augmented graph pairs each defect either with another defect or
-//!    with the boundary — Edmonds' blossom ([`crate::blossom`]) on the negated weights with
-//!    maximum cardinality.
+//! 2. **Matching.** Find the minimum-weight way to pair each fired detector (defect) with another
+//!    defect or with the boundary, via Edmonds' blossom ([`crate::blossom`]). Two equivalent
+//!    encodings are implemented:
+//!     - [`decode_dense`](MwpmDecoder::decode_dense) — the Q1-02 reference: the complete graph of
+//!       defect pairs plus a private boundary clone per defect (clones interconnected at cost 0),
+//!       solved as a maximum-cardinality maximum-weight matching on `2n` nodes. `O(n²)` edges.
+//!     - [`decode`](Decoder::decode) — the Q1-03 production path: drop the clones and solve a
+//!       *non-perfect* maximum-weight matching on just the `n` defect nodes using *savings*
+//!       weights `b_i + b_j − dist(i,j)` (an unmatched defect goes to the boundary). Half the
+//!       nodes, no clone clique, and only positive-savings edges — exactly the same optimum, ~5×
+//!       faster at d=11. See [`decode_local`](MwpmDecoder::decode_local).
 //! 3. **Correction.** XOR the observable parity along every matched path. The result is the
 //!    decoder's predicted logical-observable flip.
 //!
@@ -21,9 +26,10 @@
 //! It wraps nothing — the matching is our own blossom — which is the point of the exercise
 //! (ROADMAP Phase B): the understanding it builds feeds Union-Find (Q2), GPU (Q3), and hardware.
 //!
-//! The all-pairs pre-compute is `O(D · E log D)` time and `O(D²)` memory; fine for the d ≤ 9
-//! correctness target of Q1-02. Q1-03 replaces it with local, lazy region growing (Sparse
-//! Blossom) so it scales.
+//! Both paths still run the textbook O(n·m) blossom on a candidate graph, so cost grows with the
+//! defect count. Closing the remaining gap to the Q1-03 ≥10× target needs local region-growing
+//! (Sparse Blossom; Higgott & Gidney, arXiv:2303.15933), a follow-up. The all-pairs pre-compute is
+//! `O(D · E log D)` time and `O(D²)` memory; fine for the d ≤ 13 sizes measured here.
 
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
@@ -46,6 +52,13 @@ const WEIGHT_SCALE: f64 = (1u64 << 24) as f64;
 /// (or adding a finite distance) cannot overflow.
 const INF: i64 = i64::MAX / 4;
 
+/// Default neighbours-per-defect kept in the localized matching graph. The default keeps *every*
+/// positive-savings neighbour (no cap), which is weight-exact — the savings prune alone never
+/// drops an edge the optimum needs. A finite cap trades that guarantee for speed and is opt-in via
+/// [`MwpmDecoder::with_locality_k`]; it must be validated weight-identical on the differential test
+/// for the target distance (K = 12 was already too aggressive at d = 11).
+const DEFAULT_LOCALITY_K: usize = usize::MAX;
+
 /// A minimum-weight perfect matching decoder for a fixed [`DetectorErrorModel`].
 #[derive(Clone, Debug)]
 pub struct MwpmDecoder {
@@ -59,6 +72,8 @@ pub struct MwpmDecoder {
     /// `parity[src * stride + dst]` = observable-flip bitmask along that shortest path (bit `o`
     /// set ⇔ observable `o` flipped an odd number of times).
     parity: Vec<u64>,
+    /// Neighbours-per-defect kept in the localized matching graph (see [`DEFAULT_LOCALITY_K`]).
+    locality_k: usize,
 }
 
 impl MwpmDecoder {
@@ -111,7 +126,16 @@ impl MwpmDecoder {
             stride,
             dist,
             parity,
+            locality_k: DEFAULT_LOCALITY_K,
         }
+    }
+
+    /// Override the neighbours-per-defect cap of the localized matcher (default
+    /// [`DEFAULT_LOCALITY_K`]). Larger values approach the dense matching (and its cost); smaller
+    /// values are faster but risk missing a far optimal edge. Mainly for benchmarking/tuning.
+    pub fn with_locality_k(mut self, k: usize) -> Self {
+        self.locality_k = k.max(1);
+        self
     }
 
     #[inline]
@@ -119,27 +143,85 @@ impl MwpmDecoder {
         self.num_detectors
     }
 
-    /// Build the augmented matching graph for a defect set: vertices `0..n` are the defects and
-    /// `n..2n` are private boundary clones. Returns `(edges, maxw)` with raw (positive) scaled
-    /// weights; `maxw` is the largest weight, used to offset into a max-weight problem.
-    ///
-    /// Edges: defect `i` ↔ clone `n+i` (cost = distance to boundary), defect `i` ↔ defect `j`
-    /// (cost = direct shortest path), and clone ↔ clone (cost 0). Unreachable pairs are omitted.
-    fn augmented_edges(&self, defects: &[usize]) -> (Vec<(usize, usize, i64)>, i64) {
+    /// Decode `syndrome` with the **dense** all-pairs matching of Q1-02 (every defect pair plus
+    /// the full boundary-clone clique). Quadratic in the defect count; kept as the reference
+    /// implementation the localized [`decode`](Decoder::decode) is differentially tested against,
+    /// and as the benchmark baseline.
+    pub fn decode_dense(&self, syndrome: &Syndrome) -> Correction {
+        self.decode_with(syndrome, |s, d| s.augmented_edges_dense(d))
+            .0
+    }
+
+    /// Defect indices that fired in `syndrome` (clamped to this model's detector range).
+    fn defects_of(&self, syndrome: &Syndrome) -> Vec<usize> {
+        syndrome
+            .fired
+            .iter()
+            .map(|&d| d as usize)
+            .filter(|&d| d < self.num_detectors)
+            .collect()
+    }
+
+    /// Shared decode skeleton: build the augmented graph with `build_edges`, solve the
+    /// minimum-weight perfect matching, and reconstruct the correction. Returns the correction and
+    /// the total scaled weight of the matched paths (used by differential tests to certify that
+    /// the localized and dense graphs reach the same optimum).
+    fn decode_with(
+        &self,
+        syndrome: &Syndrome,
+        build_edges: impl Fn(&Self, &[usize]) -> (Vec<(usize, usize, i64)>, i64),
+    ) -> (Correction, i64) {
+        let defects = self.defects_of(syndrome);
+        let n = defects.len();
+        if n == 0 {
+            return (Correction::none(self.num_observables), 0);
+        }
+        let boundary = self.boundary();
+        let (edges, maxw) = build_edges(self, &defects);
+
+        // Minimum-weight perfect matching = maximum-weight (of offset weights) perfect matching.
+        let transformed: Vec<(usize, usize, i64)> =
+            edges.iter().map(|&(u, v, w)| (u, v, maxw - w)).collect();
+        let mate = max_weight_matching(2 * n, &transformed, true);
+
+        // Reconstruct the correction (XOR observable parity along matched paths) and total weight.
+        let mut acc: u64 = 0;
+        let mut weight = 0i64;
+        for i in 0..n {
+            let m = mate[i];
+            if m == usize::MAX {
+                continue; // unmatched (only if a defect is unreachable; best-effort skip)
+            }
+            if m == n + i {
+                acc ^= self.parity[defects[i] * self.stride + boundary];
+                weight += self.dist[defects[i] * self.stride + boundary];
+            } else if m < n && i < m {
+                acc ^= self.parity[defects[i] * self.stride + defects[m]];
+                weight += self.dist[defects[i] * self.stride + defects[m]];
+            }
+            // m >= n && m != n+i cannot occur: defect i only has an edge to clone n+i.
+        }
+        let flips = (0..self.num_observables)
+            .map(|o| (acc >> o) & 1 == 1)
+            .collect();
+        (Correction::new(flips), weight)
+    }
+
+    /// Dense Q1-02 augmented graph: all defect pairs + full boundary-clone clique. `O(n²)` edges.
+    fn augmented_edges_dense(&self, defects: &[usize]) -> (Vec<(usize, usize, i64)>, i64) {
         let n = defects.len();
         let boundary = self.boundary();
         let mut edges: Vec<(usize, usize, i64)> = Vec::new();
         let mut maxw = 0i64;
         #[allow(clippy::needless_range_loop)]
         for i in 0..n {
-            let di = defects[i];
-            let db = self.dist[di * self.stride + boundary];
+            let db = self.dist[defects[i] * self.stride + boundary];
             if db < INF {
                 edges.push((i, n + i, db));
                 maxw = maxw.max(db);
             }
             for j in (i + 1)..n {
-                let dd = self.dist[di * self.stride + defects[j]];
+                let dd = self.dist[defects[i] * self.stride + defects[j]];
                 if dd < INF {
                     edges.push((i, j, dd));
                     maxw = maxw.max(dd);
@@ -153,52 +235,112 @@ impl MwpmDecoder {
         }
         (edges, maxw)
     }
-}
 
-impl Decoder for MwpmDecoder {
-    fn decode(&self, syndrome: &Syndrome) -> Correction {
-        // Defects = fired detectors that are real indices in this model.
-        let defects: Vec<usize> = syndrome
-            .fired
-            .iter()
-            .map(|&d| d as usize)
-            .filter(|&d| d < self.num_detectors)
-            .collect();
+    /// Decode `syndrome` with the localized matching (Q1-03), returning the correction and the
+    /// total scaled weight of the matched paths.
+    ///
+    /// Reformulated to drop the boundary clones entirely. "Matching with a boundary" is equivalent
+    /// to a **non-perfect** maximum-weight matching on just the `n` defect nodes, where each edge
+    /// carries the *savings* of pairing two defects instead of sending both to the boundary:
+    ///
+    /// ```text
+    ///   savings(i,j) = b_i + b_j − dist(i,j)          (b = distance to boundary)
+    ///   total cost   = Σ b_i − Σ_matched savings(i,j) (unmatched defects go to the boundary)
+    /// ```
+    ///
+    /// Minimising cost ⇔ maximising total savings, so an unmatched defect simply pays its boundary
+    /// cost. This halves the node count (`n`, not `2n`), needs no clone clique, and keeps only the
+    /// positive-savings edges — exactly the boundary prune (`dist(i,j) < b_i + b_j`), which is
+    /// weight-exact. A [`locality_k`](Self::locality_k) cap keeps each defect's most-beneficial
+    /// neighbours; the differential test certifies the optimum is unchanged.
+    fn decode_local(&self, syndrome: &Syndrome) -> (Correction, i64) {
+        let defects = self.defects_of(syndrome);
         let n = defects.len();
         if n == 0 {
-            return Correction::none(self.num_observables);
+            return (Correction::none(self.num_observables), 0);
         }
-
         let boundary = self.boundary();
-        let (edges, maxw) = self.augmented_edges(&defects);
+        let stride = self.stride;
+        let b: Vec<i64> = defects
+            .iter()
+            .map(|&di| self.dist[di * stride + boundary])
+            .collect();
 
-        // Minimum-weight perfect matching = maximum-weight (of offset weights) perfect matching.
-        // Offset by `maxw` so transformed weights stay non-negative.
-        let transformed: Vec<(usize, usize, i64)> =
-            edges.iter().map(|&(u, v, w)| (u, v, maxw - w)).collect();
-        let mate = max_weight_matching(2 * n, &transformed, true);
+        let edges = self.local_savings_edges(&defects, &b);
 
-        // Reconstruct the correction: XOR observable parity along each matched path.
+        // Non-perfect max-weight matching: defects with no worthwhile partner stay unmatched
+        // (i.e. matched to the boundary).
+        let mate = max_weight_matching(n, &edges, false);
+
         let mut acc: u64 = 0;
+        let mut weight = 0i64;
         for i in 0..n {
             let m = mate[i];
             if m == usize::MAX {
-                continue; // unmatched (only if a defect was unreachable; best-effort skip)
+                acc ^= self.parity[defects[i] * stride + boundary];
+                weight += b[i];
+            } else if i < m {
+                acc ^= self.parity[defects[i] * stride + defects[m]];
+                weight += self.dist[defects[i] * stride + defects[m]];
             }
-            if m == n + i {
-                // Defect i matched to the boundary.
-                acc ^= self.parity[defects[i] * self.stride + boundary];
-            } else if m < n && i < m {
-                // Defect i matched to defect m (count each pair once).
-                acc ^= self.parity[defects[i] * self.stride + defects[m]];
-            }
-            // m >= n && m != n+i cannot occur: defect i only has an edge to clone n+i.
         }
-
         let flips = (0..self.num_observables)
             .map(|o| (acc >> o) & 1 == 1)
             .collect();
-        Correction::new(flips)
+        (Correction::new(flips), weight)
+    }
+
+    /// Positive-savings candidate edges for the defects (savings = `b_i + b_j − dist(i,j)`),
+    /// capped to each defect's [`locality_k`](Self::locality_k) most beneficial neighbours.
+    /// `b[i]` is defect `i`'s boundary distance.
+    fn local_savings_edges(&self, defects: &[usize], b: &[i64]) -> Vec<(usize, usize, i64)> {
+        let n = defects.len();
+        let stride = self.stride;
+        let mut pairs: Vec<(usize, usize)> = Vec::new();
+        let mut scratch: Vec<(i64, usize)> = Vec::with_capacity(n);
+        for i in 0..n {
+            scratch.clear();
+            let row = defects[i] * stride;
+            for j in 0..n {
+                if j == i {
+                    continue;
+                }
+                let d = self.dist[row + defects[j]];
+                // `saturating_sub` guards the unreachable-boundary (b == INF) case.
+                let savings = b[i].saturating_add(b[j]).saturating_sub(d);
+                if d < INF && savings > 0 {
+                    scratch.push((savings, j));
+                }
+            }
+            if scratch.len() > self.locality_k {
+                // Keep the K *largest* savings: partition so the top-K are last, then take them.
+                let cut = scratch.len() - self.locality_k;
+                scratch.select_nth_unstable(cut);
+                scratch.drain(..cut);
+            }
+            for &(_, j) in &scratch {
+                pairs.push((i.min(j), i.max(j)));
+            }
+        }
+        pairs.sort_unstable();
+        pairs.dedup();
+        pairs
+            .iter()
+            .map(|&(i, j)| {
+                (
+                    i,
+                    j,
+                    b[i] + b[j] - self.dist[defects[i] * stride + defects[j]],
+                )
+            })
+            .collect()
+    }
+}
+
+impl Decoder for MwpmDecoder {
+    /// Decode via the localized minimum-weight perfect matching (Q1-03).
+    fn decode(&self, syndrome: &Syndrome) -> Correction {
+        self.decode_local(syndrome).0
     }
 }
 
@@ -406,7 +548,7 @@ mod tests {
             if n == 0 {
                 continue;
             }
-            let (edges, maxw) = dec.augmented_edges(&defects);
+            let (edges, maxw) = dec.augmented_edges_dense(&defects);
             let transformed: Vec<(usize, usize, i64)> =
                 edges.iter().map(|&(u, v, w)| (u, v, maxw - w)).collect();
             let mate = max_weight_matching(2 * n, &transformed, true);
@@ -424,6 +566,115 @@ mod tests {
                 "trial: MWPM weight {mwpm_w} exceeds greedy {greedy_w}"
             );
         }
+    }
+
+    /// Sample defect lists from a DEM via Bernoulli-per-mechanism (deterministic LCG).
+    fn sample_defects(dem: &DetectorErrorModel, shots: usize, seed: u64) -> Vec<Vec<u32>> {
+        let mut state = seed;
+        let mut bit = |p: f64| {
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            ((state >> 40) as f64 / (1u64 << 24) as f64) < p
+        };
+        (0..shots)
+            .map(|_| {
+                let mut det = vec![false; dem.detectors];
+                for e in &dem.errors {
+                    if bit(e.prob) {
+                        for &d in &e.dets {
+                            det[d as usize] ^= true;
+                        }
+                    }
+                }
+                det.iter()
+                    .enumerate()
+                    .filter_map(|(i, &b)| b.then_some(i as u32))
+                    .collect()
+            })
+            .collect()
+    }
+
+    /// Localized matching reaches the *same minimum weight* as the dense matching on every shot
+    /// (the rigorous optimality invariant), and the same correction except on genuine ties.
+    #[test]
+    fn local_matches_dense_weight_and_corrections() {
+        use crate::{build_dem, SurfaceCode};
+        for d in [5usize, 7, 9, 11] {
+            let exp = SurfaceCode::new(d).memory_z_experiment(d);
+            let dem =
+                build_dem(&exp.annotated, &exp.phenomenological_mechanisms(0.03, 0.03)).unwrap();
+            let dec = MwpmDecoder::new(&dem).unwrap();
+            let shots = if d >= 11 { 400 } else { 3000 };
+            let (mut nonempty, mut ties) = (0usize, 0usize);
+            for fired in sample_defects(&dem, shots, 0xD00D ^ d as u64) {
+                let s = Syndrome::new(dem.detectors, fired);
+                if s.weight() > 0 {
+                    nonempty += 1;
+                }
+                let (cl, wl) = dec.decode_local(&s);
+                let (cd, wd) = dec.decode_with(&s, |s, d| s.augmented_edges_dense(d));
+                // THE invariant: localized reaches the same minimum weight as dense on every shot.
+                // This proves the locality prune/cap never dropped an edge the optimum needed.
+                assert_eq!(wl, wd, "d={d}: localized weight {wl} != dense {wd}");
+                // A correction difference can now only be a weight-tie (equal-weight matchings in
+                // different homology classes), since the weights are provably equal above.
+                if cl != cd {
+                    ties += 1;
+                }
+            }
+            // Sanity ceiling on the tie fraction (smaller codes tie more; d=5 ≈ 1.4%). Far below
+            // this would be a bug; the weight equality above is the real correctness gate.
+            let rate = ties as f64 / nonempty.max(1) as f64;
+            assert!(
+                rate < 0.05,
+                "d={d}: {ties}/{nonempty} tie disagreements ({rate:.4}) exceeds sentinel"
+            );
+        }
+    }
+
+    #[test]
+    #[ignore = "profiling only: run with --ignored --nocapture"]
+    fn profile_local_phases_d11() {
+        use crate::{build_dem, SurfaceCode};
+        use std::time::Instant;
+        let exp = SurfaceCode::new(11).memory_z_experiment(11);
+        let dem = build_dem(&exp.annotated, &exp.phenomenological_mechanisms(0.03, 0.03)).unwrap();
+        let dec = MwpmDecoder::new(&dem).unwrap();
+        let shots = 512;
+        let synds: Vec<Syndrome> = sample_defects(&dem, shots, 1)
+            .into_iter()
+            .map(|f| Syndrome::new(dem.detectors, f))
+            .collect();
+
+        let (mut t_build, mut t_blossom) = (0u128, 0u128);
+        let (mut tot_edges, mut tot_n) = (0usize, 0usize);
+        for s in &synds {
+            let defects = dec.defects_of(s);
+            let n = defects.len();
+            if n == 0 {
+                continue;
+            }
+            let b: Vec<i64> = defects
+                .iter()
+                .map(|&di| dec.dist[di * dec.stride + dec.boundary()])
+                .collect();
+            let t0 = Instant::now();
+            let edges = dec.local_savings_edges(&defects, &b);
+            t_build += t0.elapsed().as_nanos();
+            tot_edges += edges.len();
+            tot_n += n;
+            let t1 = Instant::now();
+            std::hint::black_box(max_weight_matching(n, &edges, false));
+            t_blossom += t1.elapsed().as_nanos();
+        }
+        eprintln!(
+            "d=11 over {shots} shots: avg n={}, avg edges={}, build={}us/shot, blossom={}us/shot",
+            tot_n / shots,
+            tot_edges / shots,
+            t_build / 1000 / shots as u128,
+            t_blossom / 1000 / shots as u128,
+        );
     }
 
     #[test]

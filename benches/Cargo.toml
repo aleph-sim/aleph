@@ -27,6 +27,7 @@ aleph-backend = { path = "../crates/aleph-backend" }
 aleph-sv      = { path = "../crates/aleph-sv" }
 aleph-stab    = { path = "../crates/aleph-stab" }
 aleph-parser  = { path = "../crates/aleph-parser" }
+aleph-qec     = { path = "../crates/aleph-qec" }
 smallvec      = { workspace = true }
 
 [[bin]]
@@ -115,6 +116,10 @@ harness = false
 
 [[bench]]
 name = "frame_sampler"
+harness = false
+
+[[bench]]
+name = "mwpm_decode"
 harness = false
 
 [[bench]]
