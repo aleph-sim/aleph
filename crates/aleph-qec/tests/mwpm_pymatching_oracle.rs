@@ -1,16 +1,22 @@
 //! Q1-02 oracle: our from-scratch MWPM decoder ([`MwpmDecoder`]) agrees with PyMatching — the
 //! reference minimum-weight perfect matching decoder — on shared surface-code memory DEMs.
 //!
-//! Two tests, each over the *same* DEM and the *same* sampled syndromes as PyMatching:
+//! Two tests, each over the *same* DEM and the *same* sampled syndromes as PyMatching, across the
+//! full Q1-05 distance set `d ∈ {3,5,7,9,11}`:
 //!
-//! 1. [`mwpm_logical_error_rate_matches_pymatching`] — at a below-threshold rate (`p=0.03`, d∈{3,5})
-//!    the **logical error rate** matches PyMatching's within the combined 95% confidence interval.
-//!    This is the Q1-02 exit metric, and it holds even though the two decoders sometimes pick
-//!    different equal-weight matchings: MWPM ties (equal-weight matchings in different homology
-//!    classes) are genuine, and on a tie either choice is equally (in)correct, so they wash out.
+//! 1. [`mwpm_logical_error_rate_matches_pymatching`] — at a near-threshold rate (`p=0.03`) the
+//!    **logical error rate** matches PyMatching's within the combined 95% confidence interval.
+//!    This is the Q1-02/Q1-05 accuracy exit, and it holds even though the two decoders sometimes
+//!    pick different equal-weight matchings: MWPM ties (equal-weight matchings in different
+//!    homology classes) are genuine, and on a tie either choice is equally (in)correct, so they
+//!    wash out.
 //! 2. [`mwpm_corrections_match_pymatching_when_unambiguous`] — in the sparse regime (`p=0.006`),
 //!    where the minimum-weight matching is essentially unique, the **corrections** themselves match
 //!    on ≥ 99% of non-empty shots. This pins down per-shot correctness where ties don't muddy it.
+//!
+//! Shot counts default to a value that exceeds the ~10³ non-empty-shot statistical floor by orders
+//! of magnitude while keeping the nightly run quick; override with `Q1_ORACLE_SHOTS` (e.g. set it
+//! to `1000000` for the exhaustive Q1-05 sweep).
 //!
 //! Together: provably-optimal matching (the hermetic brute-force test in `blossom.rs`) + identical
 //! logical performance to PyMatching + identical corrections where the answer is unambiguous.
@@ -22,6 +28,19 @@
 //!     cargo test -p aleph-qec --test mwpm_pymatching_oracle -- --ignored --nocapture
 
 use aleph_qec::{build_dem, Decoder, DetectorErrorModel, MwpmDecoder, PyMatchingOracle, Syndrome};
+use rayon::prelude::*;
+
+/// The Q1-05 distance set.
+const DISTANCES: &[usize] = &[3, 5, 7, 9, 11];
+
+/// Shots per distance, default `default`, overridable via `Q1_ORACLE_SHOTS` (capped to the same
+/// value for every distance so the pipe transfer at `d=11` stays bounded).
+fn shots(default: usize) -> usize {
+    std::env::var("Q1_ORACLE_SHOTS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(default)
+}
 
 /// Sample `shots` syndromes (and true observable flips) from `dem`, deterministically per seed —
 /// the same Bernoulli-per-mechanism model the Monte-Carlo harness uses.
@@ -76,7 +95,10 @@ fn compare(d: usize, p: f64, shots: usize, seed: u64) -> Compare {
     let oracle = PyMatchingOracle::new(&dem);
 
     let (syndromes, truths) = sample(&dem, shots, seed);
-    let ours = mwpm.decode_batch(&syndromes).unwrap();
+    // Decode the native side in parallel across shots (each syndrome is independent, so this is
+    // identical to the single-thread `decode_batch` but keeps the nightly run tractable at the
+    // larger distances / shot counts).
+    let ours: Vec<_> = syndromes.par_iter().map(|s| mwpm.decode(s)).collect();
     let theirs = oracle
         .decode_batch(&syndromes)
         .expect("PyMatching subprocess (set PYMATCHING_PYTHON)");
@@ -117,10 +139,11 @@ fn compare(d: usize, p: f64, shots: usize, seed: u64) -> Compare {
 #[test]
 #[ignore = "requires python3 + numpy + stim + pymatching; set PYMATCHING_PYTHON"]
 fn mwpm_logical_error_rate_matches_pymatching() {
-    // Exit metric (Q1-02): aleph-MWPM's logical error rate equals PyMatching's within CI on
-    // shared DEMs, for d ∈ {3,5}, at a below-threshold rate with plenty of logical errors.
-    for d in [3usize, 5] {
-        let c = compare(d, 0.03, 30_000, 0xABCD ^ d as u64);
+    // Accuracy exit (Q1-02/Q1-05): aleph-MWPM's logical error rate equals PyMatching's within CI
+    // on shared DEMs, for every d ∈ {3,5,7,9,11}, at a near-threshold rate with plenty of errors.
+    let n = shots(50_000);
+    for &d in DISTANCES {
+        let c = compare(d, 0.03, n, 0xABCD ^ d as u64);
         eprintln!(
             "d={d} p=0.03: aleph rate={:.4} pymatching rate={:.4} |Δ|={:.4} ci95={:.4} \
              nonempty-agreement={:.4} ({} nonempty)",
@@ -149,8 +172,9 @@ fn mwpm_corrections_match_pymatching_when_unambiguous() {
     // PyMatching on (almost) every non-empty shot. (At higher p the two correctly disagree on
     // equal-weight ties in different homology classes — that degeneracy is exercised, and bounded,
     // by the rate-within-CI test above, not here.)
-    for d in [3usize, 5] {
-        let c = compare(d, 0.006, 60_000, 0x1234 ^ d as u64);
+    let n = shots(100_000);
+    for &d in DISTANCES {
+        let c = compare(d, 0.006, n, 0x1234 ^ d as u64);
         eprintln!(
             "d={d} p=0.006: nonempty-agreement={:.5} over {} nonempty shots",
             c.nonempty_agreement, c.nonempty
