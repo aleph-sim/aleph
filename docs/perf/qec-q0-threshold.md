@@ -108,6 +108,39 @@ measure a logical-error-rate threshold with a real MWPM decoder. Phase Q1 replac
 PyMatching oracle with a from-scratch Rust MWPM decoder, validated against this same harness and
 these same DEMs.
 
+## Q1-04 — native decoder reproduces the threshold
+
+The same sweep, decoded by aleph's **own** MWPM decoder ([`MwpmDecoder`], Q1-02/Q1-03) instead of
+the PyMatching oracle, gives the **same threshold** — the native decoder is now the harness
+default (`qec_threshold` example: `mwpm` decoder). Regenerate with:
+
+```text
+cargo run --release -p aleph-qec --example qec_threshold -- mwpm analytic 200000 2024 \
+  > docs/perf/data/qec-q1-threshold-mwpm.csv
+python scripts/qec_threshold_plot.py docs/perf/data/qec-q1-threshold-mwpm.csv \
+  --overlay docs/perf/data/qec-q0-threshold.csv --out docs/perf/data/qec-q1-threshold-mwpm.png
+```
+
+![aleph-MWPM threshold vs PyMatching oracle](data/qec-q1-threshold-mwpm.png)
+
+| decoder | p_th (curve crossing) | p_th (finite-size scaling) | ν |
+|---------|-----------------------|----------------------------|------|
+| **aleph-MWPM** (native) | 2.83 % | 2.58 % | 1.45 |
+| PyMatching (oracle)     | 2.82 % | 2.57 % | 1.45 |
+
+The two curves are **visually coincident** (the gray dashed oracle reference sits under the solid
+native curves), and per-cell logical-error rates agree within the Monte-Carlo CI across all
+d ∈ {3,5,7,9} × p ∈ {1.5…5 %} (200 k shots/cell, seed 2024) — e.g. d=9, p=3 %: native 0.11076 vs
+oracle 0.11165. The from-scratch Rust decoder is a drop-in replacement for PyMatching at the
+threshold, with no external dependency.
+
+Regression coverage:
+- `tests/mwpm_threshold.rs` — hermetic: the native decoder shows distance *suppressing* logical
+  error below threshold (p=2 %) and *amplifying* it above (p=4.5 %), so the threshold sits in the
+  right place with no PyMatching/Stim.
+- `tests/mwpm_pymatching_oracle.rs` — `#[ignore]`d: native vs PyMatching logical-error rate within
+  CI at d=3,5 (gated on a PyMatching install).
+
 ## References
 
 - Fowler, Mariantoni, Martinis, Cleland, *Surface codes: Towards practical large-scale quantum

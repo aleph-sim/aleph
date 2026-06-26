@@ -22,15 +22,18 @@ from collections import defaultdict
 
 
 def load(path):
-    """Return {d: (ps, rates, ci95s)} sorted by p, plus the shot count and source."""
+    """Return {d: (ps, rates, ci95s)} sorted by p, plus shot count, source, and decoder.
+
+    Accepts both the Q0-05 schema (no `decoder` column) and the Q1-04 schema (with it)."""
     by_d = defaultdict(list)
-    shots = source = None
+    shots = source = decoder = None
     with open(path) as f:
         for row in csv.DictReader(f):
             d = int(row["d"])
             by_d[d].append((float(row["p"]), float(row["rate"]), float(row["ci95"])))
             shots = int(row["shots"])
-            source = row["source"]
+            source = row.get("source")
+            decoder = row.get("decoder")
     out = {}
     for d, pts in by_d.items():
         pts.sort()
@@ -38,7 +41,7 @@ def load(path):
         rates = [b for _, b, _ in pts]
         cis = [c for _, _, c in pts]
         out[d] = (ps, rates, cis)
-    return out, shots, source
+    return out, shots, source, decoder
 
 
 def crossing_threshold(by_d):
@@ -102,18 +105,33 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("csv")
     ap.add_argument("--out", default=None, help="PNG output path")
+    ap.add_argument(
+        "--overlay", default=None,
+        help="reference CSV (e.g. the PyMatching-oracle sweep) drawn as faint dashed curves",
+    )
+    ap.add_argument("--overlay-label", default="PyMatching (ref)")
     args = ap.parse_args()
 
-    by_d, shots, source = load(args.csv)
+    by_d, shots, source, decoder = load(args.csv)
 
     p_cross = crossing_threshold(by_d)
     fit = scaling_threshold(by_d)
 
-    print(f"source={source} shots={shots}")
+    print(f"decoder={decoder} source={source} shots={shots}")
     if p_cross is not None:
         print(f"threshold (curve crossing): p_th = {p_cross*100:.3f}%")
     if fit is not None:
         print(f"threshold (finite-size scaling): p_th = {fit[0]*100:.3f}%, nu = {fit[1]:.2f}")
+
+    if args.overlay:
+        ref_by_d, _, _, ref_dec = load(args.overlay)
+        ref_cross = crossing_threshold(ref_by_d)
+        ref_fit = scaling_threshold(ref_by_d)
+        print(f"overlay decoder={ref_dec}:")
+        if ref_cross is not None:
+            print(f"  threshold (curve crossing): p_th = {ref_cross*100:.3f}%")
+        if ref_fit is not None:
+            print(f"  threshold (finite-size scaling): p_th = {ref_fit[0]*100:.3f}%, nu = {ref_fit[1]:.2f}")
 
     if args.out:
         try:
@@ -124,6 +142,16 @@ def main():
             print("matplotlib unavailable; skipping plot", file=sys.stderr)
             return
         fig, ax = plt.subplots(figsize=(7, 5))
+        # Reference (oracle) curves first, faint dashed, so the native curves sit on top.
+        if args.overlay:
+            ref_by_d, _, _, _ = load(args.overlay)
+            for i, d in enumerate(sorted(ref_by_d)):
+                ps, rates, _ = ref_by_d[d]
+                ax.plot(
+                    [p * 100 for p in ps], rates,
+                    ls="--", lw=1, alpha=0.45, color="gray", marker="x", ms=4,
+                    label=args.overlay_label if i == 0 else None,
+                )
         for d in sorted(by_d):
             ps, rates, cis = by_d[d]
             ax.errorbar(
@@ -138,8 +166,9 @@ def main():
         ax.set_yscale("log")
         ax.set_xlabel("physical error rate p (%)")
         ax.set_ylabel("logical error rate")
+        dec_label = {"mwpm": "aleph-MWPM", "pymatching": "PyMatching"}.get(decoder, decoder or "MWPM")
         ax.set_title(
-            f"Rotated surface-code memory-Z threshold ({source} DEM, MWPM, {shots:,} shots)"
+            f"Rotated surface-code memory-Z threshold ({source} DEM, {dec_label}, {shots:,} shots)"
         )
         ax.grid(True, which="both", alpha=0.3)
         ax.legend()
