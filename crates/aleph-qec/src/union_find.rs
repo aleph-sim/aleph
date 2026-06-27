@@ -275,6 +275,40 @@ impl UnionFindDecoder {
         })
     }
 
+    /// Like [`decode_edges`](Self::decode_edges) but also returns the wall-clock time spent in the
+    /// **cluster-growth** and **peel** phases (in that order, seconds). Used by the Q4-03 latency-
+    /// budget instrumentation (`examples/qec_q4_latency.rs`) to break the decode into stages; the
+    /// hot [`decode_edges`](Self::decode_edges) path is untouched.
+    #[doc(hidden)]
+    pub fn decode_edges_timed(&self, syndrome: &Syndrome) -> (Correction, Vec<usize>, [f64; 2]) {
+        let defects: Vec<u32> = syndrome
+            .fired
+            .iter()
+            .copied()
+            .filter(|&d| (d as usize) < self.num_detectors)
+            .collect();
+
+        if defects.is_empty() {
+            return (Correction::none(self.num_observables), Vec::new(), [0.0; 2]);
+        }
+
+        SCRATCH.with(|cell| {
+            let mut sc = cell.borrow_mut();
+            sc.begin(self.n_nodes, self.edge_a.len());
+            let t_grow = std::time::Instant::now();
+            if self.weighted {
+                self.grow_clusters_weighted(&mut sc, &defects);
+            } else {
+                self.grow_clusters(&mut sc, &defects);
+            }
+            let grow_secs = t_grow.elapsed().as_secs_f64();
+            let t_peel = std::time::Instant::now();
+            let (corr, edges) = self.peel(&mut sc, &defects);
+            let peel_secs = t_peel.elapsed().as_secs_f64();
+            (corr, edges, [grow_secs, peel_secs])
+        })
+    }
+
     /// Phase 1 (unweighted, Q2-01): grow every odd cluster by one unit per round (isotropic) until
     /// all clusters are neutral, accumulating the erasure. Each edge is two half-edges, fully grown
     /// at support 2.
@@ -738,6 +772,29 @@ mod tests {
             }
         }
         bits
+    }
+
+    /// The Q4-03 instrumented decode returns exactly the same correction + edges as the hot path,
+    /// with non-negative stage timings — so the latency budget measures the real decoder.
+    #[test]
+    fn timed_decode_matches_hot_path() {
+        let (_g, dec) = setup(5, 0.06, false);
+        let mut z: u64 = 0xF00D_BA11;
+        let mut next = || {
+            z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+            z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+            z ^= z >> 31;
+            z
+        };
+        for _ in 0..200 {
+            let bits: Vec<bool> = (0..dec.num_detectors).map(|_| next() & 7 == 0).collect();
+            let syn = Syndrome::from_bits(&bits);
+            let (c0, e0) = dec.decode_edges(&syn);
+            let (c1, e1, [g, p]) = dec.decode_edges_timed(&syn);
+            assert_eq!(c0, c1, "timed correction must match hot path");
+            assert_eq!(e0, e1, "timed edge set must match hot path");
+            assert!(g >= 0.0 && p >= 0.0, "stage timings are non-negative");
+        }
     }
 
     #[test]
