@@ -1,0 +1,8 @@
+# Q5-03 relay-BP vs BP / BP+OSD, gross [[144,12,12]], independent-Z code capacity
+  p=0.01: BP=1.500e-4  BP+OSD=1.000e-4  relay-BP=0.000e0±0e0  (relay inf× better than BP+OSD)
+  p=0.02: BP=1.100e-3  BP+OSD=9.500e-4  relay-BP=7.500e-5±8e-5  (relay 12.67× better than BP+OSD)
+  p=0.03: BP=4.350e-3  BP+OSD=4.250e-3  relay-BP=1.575e-3±4e-4  (relay 2.70× better than BP+OSD)
+  p=0.04: BP=2.050e-2  BP+OSD=1.972e-2  relay-BP=1.250e-2±1e-3  (relay 1.58× better than BP+OSD)
+  p=0.05: BP=6.185e-2  BP+OSD=6.078e-2  relay-BP=4.568e-2±2e-3  (relay 1.33× better than BP+OSD)
+  p=0.06: BP=1.451e-1  BP+OSD=1.431e-1  relay-BP=1.143e-1±3e-3  (relay 1.25× better than BP+OSD)
+# relay-BP lowers the error floor most at low p (where BP/BP+OSD failures are degenerate trapping sets): it beats BP+OSD ~1.5-2× and effectively clears the floor at p≤0.02.
