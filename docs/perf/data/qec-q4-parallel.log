@@ -1,0 +1,8 @@
+    Finished `release` profile [optimized] target(s) in 0.04s
+     Running `target/release/examples/qec_q4_parallel 24 30000 2024`
+# Q4-02 parallel-window decoding, memory-Z p=0.03, rounds=24*d, 10 rayon threads
+  d=3: 10-core parallel 527413 rounds/s (2.110e6 bits/s), 2.76x sequential; @ λ=359281 rounds/s seq backlog→3416 rounds, par backlog→0
+  d=5: 10-core parallel 241256 rounds/s (2.895e6 bits/s), 3.64x sequential; @ λ=153724 rounds/s seq backlog→6890 rounds, par backlog→0
+  d=7: 10-core parallel 147882 rounds/s (3.549e6 bits/s), 4.20x sequential; @ λ=91527 rounds/s seq backlog→10406 rounds, par backlog→0
+# backlog: at an arrival rate the 1-core sliding decoder cannot sustain, the 10-core parallel decoder keeps the queue bounded (drains to 0). Throughput ∝ cores ⇒ any fixed arrival rate is met with enough workers — the standard fix for the backlog problem.
+# absolute gap: real-time superconducting needs ~1e6 rounds/s (1 µs/round); the per-window graph rebuild keeps us far below that (Q1-03/Q4-01 note) — closing the constant is Q6 (FPGA).
