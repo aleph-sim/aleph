@@ -24,8 +24,20 @@
 //! [`BBCode::code_capacity_dem`] emits a [`DetectorErrorModel`] for the standard code-capacity
 //! benchmark (independent `Z` noise, the `X`-checks as detectors, the dual logical-`X` operators as
 //! observables). Feed it to [`TannerGraph::new`](crate::TannerGraph) / `BpDecoder` for decoding.
+//!
+//! [`BBCode::circuit_level_dem`] (Q5-04) goes one level deeper: it lays down the **depth-7
+//! syndrome-extraction circuit** of Bravyi et al. (the exact CNOT schedule from the authors'
+//! reference implementation), runs a `rounds`-cycle **memory-`X`** experiment, and emits a DEM
+//! under **circuit-level depolarizing noise** (faulty CNOTs, init, measurement, idle). Detectors
+//! are the `X`-check round differences (plus a final difference reconstructed from a transversal
+//! `X` readout); the model is the `Z`-error sector — the circuit-level analogue of
+//! `code_capacity_dem`, directly comparable to the published BB-code thresholds (~0.7%).
 
+use crate::builder::{build_dem, AnnotatedCircuit, ErrorMechanism};
 use crate::dem::{DemError, DetectorErrorModel};
+use crate::error::Result;
+use aleph_core::{Gate, GateInstance};
+use aleph_ir::{Circuit, Instruction};
 
 /// A bivariate-bicycle CSS code over `Z_ℓ × Z_m`.
 #[derive(Clone, Debug)]
@@ -41,6 +53,13 @@ pub struct BBCode {
     lz: Vec<BitVec>,
     /// Logical `X` operators, the **symplectic dual** of `lz` (`lx[i]·lz[j] = δ_ij`).
     lx: Vec<BitVec>,
+    /// Per `X`-check, its data-qubit neighbours **in monomial order** `[A₁,A₂,A₃,B₁,B₂,B₃]`
+    /// (left-block qubits from `A`, right-block from `B`). The depth-7 syndrome schedule
+    /// ([`SX`]) indexes into this, so the order matters (unlike the sorted [`Self::hx_rows`]).
+    xchk_nbrs: Vec<Vec<usize>>,
+    /// Per `Z`-check, its data-qubit neighbours in monomial order `[B₁,B₂,B₃,A₁,A₂,A₃]`
+    /// (left-block from `Bᵀ`, right-block from `Aᵀ`). Indexed by [`SZ`].
+    zchk_nbrs: Vec<Vec<usize>>,
 }
 
 impl BBCode {
@@ -74,20 +93,23 @@ impl BBCode {
                 .collect()
         };
 
-        // H_X check c (a row of [A|B]): A-row(c) in the left block, B-row(c) in the right block.
+        // Conventions follow the Bravyi et al. reference implementation so the depth-7 schedule
+        // (which pairs X- and Z-check CNOTs by monomial index) measures both stabiliser types
+        // without mutual disturbance. H_X check c (a row of [A|B]): A acts forward — qubit
+        // `nonzero(A_k[c,:])` = `fwd`. H_Z check c (a row of [Bᵀ|Aᵀ]): the transpose acts backward —
+        // qubit `nonzero(B_k[:,c])` = `inv`.
         let hx_rows: Vec<Vec<usize>> = (0..lm)
             .map(|c| {
-                let mut row = inv(a_monos, c);
-                row.extend(inv(b_monos, c).into_iter().map(|q| q + lm));
+                let mut row = fwd(a_monos, c);
+                row.extend(fwd(b_monos, c).into_iter().map(|q| q + lm));
                 row.sort_unstable();
                 row
             })
             .collect();
-        // H_Z check c (a row of [Bᵀ|Aᵀ]): B-col(c) left, A-col(c) right.
         let hz_rows: Vec<Vec<usize>> = (0..lm)
             .map(|c| {
-                let mut row = fwd(b_monos, c);
-                row.extend(fwd(a_monos, c).into_iter().map(|q| q + lm));
+                let mut row = inv(b_monos, c);
+                row.extend(inv(a_monos, c).into_iter().map(|q| q + lm));
                 row.sort_unstable();
                 row
             })
@@ -109,6 +131,26 @@ impl BBCode {
         let lx_raw = quotient_basis(&gf2_kernel(&hz, n), &hx, n);
         let lx = symplectic_dualize(&lx_raw, &lz, n);
 
+        // Monomial-ordered neighbour lists for the depth-7 schedule. These are the same qubit
+        // sets as `hx_rows`/`hz_rows` (asserted in tests) but kept in the order the schedule
+        // indexes: X-check c couples [A₁,A₂,A₃] (left) then [B₁,B₂,B₃] (right); Z-check c couples
+        // [B₁,B₂,B₃] (left) then [A₁,A₂,A₃] (right). `inv`/`fwd` preserve the monomial order they
+        // were given, matching the reference implementation (sbravyi/BivariateBicycleCodes).
+        let xchk_nbrs: Vec<Vec<usize>> = (0..lm)
+            .map(|c| {
+                let mut v = fwd(a_monos, c);
+                v.extend(fwd(b_monos, c).into_iter().map(|q| q + lm));
+                v
+            })
+            .collect();
+        let zchk_nbrs: Vec<Vec<usize>> = (0..lm)
+            .map(|c| {
+                let mut v = inv(b_monos, c);
+                v.extend(inv(a_monos, c).into_iter().map(|q| q + lm));
+                v
+            })
+            .collect();
+
         Self {
             l,
             m,
@@ -116,6 +158,8 @@ impl BBCode {
             hz_rows,
             lz,
             lx,
+            xchk_nbrs,
+            zchk_nbrs,
         }
     }
 
@@ -186,6 +230,431 @@ impl BBCode {
             observables: self.lz.len(),
             errors,
         }
+    }
+
+    /// `X`-check `c`'s data-qubit neighbours in monomial order (see [`Self::xchk_nbrs`]).
+    pub fn xcheck_neighbours(&self) -> &[Vec<usize>] {
+        &self.xchk_nbrs
+    }
+
+    /// `Z`-check `c`'s data-qubit neighbours in monomial order (see [`Self::zchk_nbrs`]).
+    pub fn zcheck_neighbours(&self) -> &[Vec<usize>] {
+        &self.zchk_nbrs
+    }
+
+    /// Build the `rounds`-cycle **memory-`X`** syndrome-extraction experiment using the Bravyi
+    /// depth-7 CNOT schedule ([`SX`]/[`SZ`]).
+    ///
+    /// Qubit layout: data `0..n` (left block `0..ℓm`, right block `ℓm..2ℓm`), `X`-check ancillas
+    /// `n..n+ℓm`, `Z`-check ancillas `n+ℓm..n+2ℓm`. Data start in `|+⟩^n` (a `+1` eigenstate of
+    /// every `X`-stabiliser and logical `X`), so the `X`-check syndromes and the logical-`X`
+    /// observable are deterministic in the noiseless circuit — the regime [`build_dem`] and the
+    /// frame sampler require. Each cycle: prepare ancillas, run the 7 CNOT rounds (`X`-ancilla
+    /// controls data, data controls `Z`-ancilla), measure ancillas (`X`-checks in the `X` basis via
+    /// `H`+measure, `Z`-checks in the `Z` basis); a final transversal `X` readout of the data closes
+    /// the last detector.
+    ///
+    /// # Panics
+    /// If `rounds == 0` or the code is not weight-6 (the depth-7 schedule needs three monomials
+    /// per polynomial).
+    pub fn memory_x_experiment(&self, rounds: usize) -> BBMemoryExperiment {
+        assert!(rounds >= 1, "need at least one round");
+        assert!(
+            self.xchk_nbrs.iter().all(|v| v.len() == 6)
+                && self.zchk_nbrs.iter().all(|v| v.len() == 6),
+            "depth-7 schedule requires weight-6 checks (3 monomials per polynomial)"
+        );
+        let lm = self.num_checks();
+        let n = self.n();
+        let nq = n + 2 * lm;
+        let xanc = |c: usize| (n + c) as u32;
+        let zanc = |c: usize| (n + lm + c) as u32;
+
+        let mut inst: Vec<Instruction> = Vec::new();
+        let mut clbit = 0u32;
+        let mut rec_count = 0usize; // running count of Measure instructions = next record index
+
+        // Geometry of the circuit-level noise, rate-free (probabilities are applied later by
+        // `circuit_level_mechanisms`). `(at, qubit[, qubit])` with `at` the instruction index the
+        // error is inserted *before* (matching `ErrorMechanism::at`).
+        let mut cnot_sites: Vec<(usize, u32, u32)> = Vec::new();
+        let mut prep_sites: Vec<(usize, u32)> = Vec::new();
+        let mut meas_sites: Vec<(usize, u32)> = Vec::new();
+        let mut idle_sites: Vec<(usize, u32)> = Vec::new();
+
+        let measure = |inst: &mut Vec<Instruction>,
+                       rec_count: &mut usize,
+                       clbit: &mut u32,
+                       q: u32|
+         -> usize {
+            let rec = *rec_count;
+            *rec_count += 1;
+            inst.push(Instruction::Measure {
+                qubit: q,
+                clbit: *clbit,
+            });
+            *clbit += 1;
+            rec
+        };
+
+        // Initial data |+⟩^n: reset + H, with a basis-flip (Z) prep error after each H.
+        for q in 0..n as u32 {
+            inst.push(Instruction::Reset(q));
+            inst.push(Instruction::Gate(GateInstance::new(Gate::H, vec![q])));
+            prep_sites.push((inst.len(), q));
+        }
+
+        // xrec[cycle][c] = measurement-record index of X-check c in that cycle.
+        let mut xrec: Vec<Vec<usize>> = Vec::with_capacity(rounds);
+
+        for _cycle in 0..rounds {
+            // Prepare ancillas: X-checks in |+⟩ (reset+H, Z prep error), Z-checks in |0⟩ (reset;
+            // its X prep error is the X-error sector, not modelled by this Z-sector DEM).
+            for c in 0..lm {
+                inst.push(Instruction::Reset(xanc(c)));
+                inst.push(Instruction::Gate(GateInstance::new(Gate::H, vec![xanc(c)])));
+                prep_sites.push((inst.len(), xanc(c)));
+            }
+            for c in 0..lm {
+                inst.push(Instruction::Reset(zanc(c)));
+            }
+
+            // 7 CNOT rounds. Within a round the X-check and Z-check CNOTs act on disjoint qubits
+            // (the depth-7 property, asserted by `depth7_schedule_is_conflict_free`), so emission
+            // order within a round is immaterial. The *measurement* staggering is not: following the
+            // reference, the Z-checks are measured at round 6 **before** that round's X-check CNOTs.
+            // Measuring Z later (after the round-6 X-CNOTs) would let an `X` spread by a round-6
+            // X-CNOT be pulled back as a `Z` hook onto an X-ancilla at the Z-measurement, disturbing
+            // the X-stabilisers. Idle data qubits in a round take an idle (Z) error at the round
+            // start.
+            for t in 0..7 {
+                // round 6 (sZ idle): measure Z-checks before the round's X-check CNOTs.
+                if SZ[t].is_none() {
+                    for c in 0..lm {
+                        measure(&mut inst, &mut rec_count, &mut clbit, zanc(c));
+                        inst.push(Instruction::Reset(zanc(c)));
+                    }
+                }
+                let round_start = inst.len();
+                let mut data_touched = vec![false; n];
+                if let Some(d) = SX[t] {
+                    for c in 0..lm {
+                        let tgt = self.xchk_nbrs[c][d] as u32;
+                        inst.push(Instruction::Gate(GateInstance::new(
+                            Gate::Cnot,
+                            vec![xanc(c), tgt],
+                        )));
+                        cnot_sites.push((inst.len(), xanc(c), tgt));
+                        data_touched[tgt as usize] = true;
+                    }
+                }
+                if let Some(d) = SZ[t] {
+                    for c in 0..lm {
+                        let ctrl = self.zchk_nbrs[c][d] as u32;
+                        inst.push(Instruction::Gate(GateInstance::new(
+                            Gate::Cnot,
+                            vec![ctrl, zanc(c)],
+                        )));
+                        cnot_sites.push((inst.len(), ctrl, zanc(c)));
+                        data_touched[ctrl as usize] = true;
+                    }
+                }
+                for (q, &hit) in data_touched.iter().enumerate() {
+                    if !hit {
+                        idle_sites.push((round_start, q as u32));
+                    }
+                }
+            }
+
+            // Measure X-checks in the X basis (Z measurement-flip error before H). Reset returns each
+            // ancilla to |0⟩ for the next cycle's prep.
+            let mut this_x = Vec::with_capacity(lm);
+            for c in 0..lm {
+                meas_sites.push((inst.len(), xanc(c)));
+                inst.push(Instruction::Gate(GateInstance::new(Gate::H, vec![xanc(c)])));
+                this_x.push(measure(&mut inst, &mut rec_count, &mut clbit, xanc(c)));
+                inst.push(Instruction::Reset(xanc(c)));
+            }
+            xrec.push(this_x);
+        }
+
+        // Final transversal X readout of the data (Z measurement-flip error before H).
+        let mut data_rec = vec![0usize; n];
+        #[allow(clippy::needless_range_loop)] // q is the data qubit index, used throughout the body
+        for q in 0..n {
+            meas_sites.push((inst.len(), q as u32));
+            inst.push(Instruction::Gate(GateInstance::new(
+                Gate::H,
+                vec![q as u32],
+            )));
+            data_rec[q] = measure(&mut inst, &mut rec_count, &mut clbit, q as u32);
+        }
+
+        // Detectors: X-check round differences (round 0 is the raw outcome; deterministic in |+⟩),
+        // then a final block reconstructing each X-stabiliser from the data readout XOR the last
+        // ancilla round.
+        let mut detectors: Vec<Vec<usize>> = Vec::with_capacity((rounds + 1) * lm);
+        for cycle in 0..rounds {
+            for (c, &rec) in xrec[cycle].iter().enumerate() {
+                if cycle == 0 {
+                    detectors.push(vec![rec]);
+                } else {
+                    detectors.push(vec![rec, xrec[cycle - 1][c]]);
+                }
+            }
+        }
+        for (c, hx_row) in self.hx_rows.iter().enumerate() {
+            let mut recs: Vec<usize> = hx_row.iter().map(|&q| data_rec[q]).collect();
+            recs.push(xrec[rounds - 1][c]);
+            detectors.push(recs);
+        }
+
+        // Observables: logical-X operators reconstructed from the transversal X readout. A logical
+        // Z error (the error sector this DEM tracks) anticommutes with logical X and flips it.
+        let observables: Vec<Vec<usize>> = self
+            .lx
+            .iter()
+            .map(|lx| (0..n).filter(|&q| lx.get(q)).map(|q| data_rec[q]).collect())
+            .collect();
+
+        let circuit = {
+            let mut c = Circuit::new(nq as u32, clbit.max(1));
+            for i in inst {
+                c.add_instruction(i).expect("valid instruction");
+            }
+            c
+        };
+
+        BBMemoryExperiment {
+            annotated: AnnotatedCircuit {
+                circuit,
+                detectors,
+                observables,
+            },
+            rounds,
+            num_qubits: nq,
+            num_data: n,
+            num_checks: lm,
+            cnot_sites,
+            prep_sites,
+            meas_sites,
+            idle_sites,
+        }
+    }
+
+    /// Circuit-level [`DetectorErrorModel`] for the gross code: the `Z`-error sector of a
+    /// `rounds`-cycle memory-`X` experiment under depth-7 syndrome extraction with `noise`.
+    ///
+    /// This is the circuit-level analogue of [`Self::code_capacity_dem`]: feed it to `BpDecoder` /
+    /// `OsdDecoder` exactly the same way. Convention `rounds = code distance` for a fair memory
+    /// benchmark.
+    ///
+    /// # Errors
+    /// Propagates [`crate::Error::Propagation`] from the underlying Pauli propagation.
+    pub fn circuit_level_dem(
+        &self,
+        rounds: usize,
+        noise: CircuitNoise,
+    ) -> Result<DetectorErrorModel> {
+        let exp = self.memory_x_experiment(rounds);
+        build_dem(&exp.annotated, &exp.circuit_level_mechanisms(noise))
+    }
+}
+
+/// Depth-7 CNOT schedule of Bravyi et al. ([arXiv:2308.07915](https://arxiv.org/abs/2308.07915)),
+/// transcribed from the authors' reference implementation
+/// ([sbravyi/BivariateBicycleCodes](https://github.com/sbravyi/BivariateBicycleCodes),
+/// `decoder_setup.py`: `sX = ['idle',1,4,3,5,0,2]`). `SX[t]` is the monomial-neighbour index
+/// (`0..6` into [`BBCode::xchk_nbrs`]) each `X`-check couples to in round `t`, or `None` for the
+/// idle slot. Over the 7 rounds every check touches all six of its neighbours exactly once.
+const SX: [Option<usize>; 7] = [None, Some(1), Some(4), Some(3), Some(5), Some(0), Some(2)];
+/// `Z`-check half of the schedule (`sZ = [3,5,0,1,2,4,'idle']`); indexes [`BBCode::zchk_nbrs`].
+const SZ: [Option<usize>; 7] = [Some(3), Some(5), Some(0), Some(1), Some(2), Some(4), None];
+
+/// Circuit-level depolarizing noise strengths for [`BBCode::circuit_level_dem`].
+///
+/// Following Bravyi et al.'s model, each source contributes its `Z`-component to the `Z`-error
+/// sector: a two-qubit depolarizing channel after every CNOT (its 15 non-identity Paulis split so
+/// each of `Z⊗I`, `I⊗Z`, `Z⊗Z` appears with weight `4/15`), a single-qubit depolarizing channel on
+/// idle qubits (`Z` with weight `2/3`), and basis-flip errors at preparation and measurement.
+#[derive(Clone, Copy, Debug)]
+pub struct CircuitNoise {
+    /// Two-qubit depolarizing rate per CNOT.
+    pub p_cnot: f64,
+    /// Preparation (reset-into-basis) error rate.
+    pub p_init: f64,
+    /// Measurement flip rate.
+    pub p_meas: f64,
+    /// Single-qubit depolarizing rate on an idle qubit.
+    pub p_idle: f64,
+}
+
+impl CircuitNoise {
+    /// The standard uniform circuit-level model: every source at the same physical rate `p`
+    /// (Bravyi et al.'s `error_rate`).
+    pub fn uniform(p: f64) -> Self {
+        Self {
+            p_cnot: p,
+            p_init: p,
+            p_meas: p,
+            p_idle: p,
+        }
+    }
+}
+
+/// A built `rounds`-cycle memory-`X` experiment on a BB code: the annotated Clifford circuit plus
+/// the rate-free geometry of the circuit-level noise, from which [`Self::circuit_level_mechanisms`]
+/// produces the [`ErrorMechanism`]s and [`Self::stim_program`] an equivalent Stim program.
+#[derive(Clone, Debug)]
+pub struct BBMemoryExperiment {
+    /// Circuit + detector / observable definitions.
+    pub annotated: AnnotatedCircuit,
+    /// Number of syndrome-extraction cycles.
+    pub rounds: usize,
+    /// Total qubits (data + both ancilla blocks).
+    pub num_qubits: usize,
+    num_data: usize,
+    num_checks: usize,
+    /// `(at, control, target)` for every CNOT — site of a two-qubit depolarizing channel.
+    cnot_sites: Vec<(usize, u32, u32)>,
+    /// `(at, qubit)` for every `X`-basis preparation (data + `X`-ancillas).
+    prep_sites: Vec<(usize, u32)>,
+    /// `(at, qubit)` for every `X`-basis measurement (data + `X`-ancillas).
+    meas_sites: Vec<(usize, u32)>,
+    /// `(at, qubit)` for every idle data qubit in a CNOT round.
+    idle_sites: Vec<(usize, u32)>,
+}
+
+impl BBMemoryExperiment {
+    /// The `Z`-error-sector [`ErrorMechanism`]s for circuit-level `noise`. Each CNOT contributes
+    /// `Z(c)`, `Z(t)`, `Z(c)Z(t)` at `4/15·p_cnot`; each idle data qubit a `Z` at `2/3·p_idle`;
+    /// each `X`-basis prep/measurement a `Z` at `p_init`/`p_meas`. [`build_dem`] propagates these,
+    /// drops the ones that flip no `X`-check detector and no observable (e.g. a `Z` on a `Z`-check
+    /// ancilla), and merges the rest.
+    pub fn circuit_level_mechanisms(&self, noise: CircuitNoise) -> Vec<ErrorMechanism> {
+        let mut mechs = Vec::new();
+        let z1 = |prob: f64, q: u32, at: usize| ErrorMechanism {
+            prob,
+            x: vec![],
+            z: vec![q],
+            at,
+        };
+        let cnot_w = noise.p_cnot * 4.0 / 15.0;
+        for &(at, c, t) in &self.cnot_sites {
+            mechs.push(z1(cnot_w, c, at));
+            mechs.push(z1(cnot_w, t, at));
+            mechs.push(ErrorMechanism {
+                prob: cnot_w,
+                x: vec![],
+                z: vec![c, t],
+                at,
+            });
+        }
+        let idle_w = noise.p_idle * 2.0 / 3.0;
+        for &(at, q) in &self.idle_sites {
+            mechs.push(z1(idle_w, q, at));
+        }
+        for &(at, q) in &self.prep_sites {
+            mechs.push(z1(noise.p_init, q, at));
+        }
+        for &(at, q) in &self.meas_sites {
+            mechs.push(z1(noise.p_meas, q, at));
+        }
+        mechs
+    }
+
+    /// Number of `X`-check detectors (`(rounds + 1)·ℓm`).
+    pub fn num_detectors(&self) -> usize {
+        self.annotated.detectors.len()
+    }
+
+    /// Number of data qubits (`n = 2ℓm`).
+    pub fn num_data(&self) -> usize {
+        self.num_data
+    }
+
+    /// Round index (time coordinate) of every detector, for sliding-window decoding: the round-`r`
+    /// difference detectors live at time `r ∈ 0..rounds`; the final readout block at time `rounds`.
+    pub fn detector_rounds(&self) -> Vec<usize> {
+        let nc = self.num_checks;
+        (0..self.annotated.detectors.len())
+            .map(|d| (d / nc).min(self.rounds))
+            .collect()
+    }
+
+    /// Emit an equivalent Stim program with the same `Z`-sector circuit-level noise, so Stim's
+    /// `detector_error_model` can be cross-checked against [`build_dem`]. Detectors and observables
+    /// are emitted in the same order as [`AnnotatedCircuit`], using `rec[-k]` relative indexing, so
+    /// Stim's `D{i}`/`L{i}` match ours edge-for-edge.
+    pub fn stim_program(&self, noise: CircuitNoise) -> String {
+        let ac = &self.annotated;
+        let insts = ac.circuit.instructions();
+        // Map each Measure instruction index -> its record number, then to rec[-k].
+        let total_recs = insts
+            .iter()
+            .filter(|i| matches!(i, Instruction::Measure { .. }))
+            .count();
+        let rel = |rec: usize| format!("rec[-{}]", total_recs - rec);
+
+        // Group rate-free noise sites by the instruction index they precede, so we can splat them
+        // in while re-walking the circuit.
+        let cnot_w = noise.p_cnot * 4.0 / 15.0;
+        let idle_w = noise.p_idle * 2.0 / 3.0;
+        let mut emit_before: std::collections::BTreeMap<usize, Vec<String>> =
+            std::collections::BTreeMap::new();
+        for &(at, c, t) in &self.cnot_sites {
+            let e = emit_before.entry(at).or_default();
+            e.push(format!("E({cnot_w}) Z{c}"));
+            e.push(format!("E({cnot_w}) Z{t}"));
+            e.push(format!("E({cnot_w}) Z{c} Z{t}"));
+        }
+        for &(at, q) in &self.idle_sites {
+            emit_before
+                .entry(at)
+                .or_default()
+                .push(format!("E({idle_w}) Z{q}"));
+        }
+        for &(at, q) in &self.prep_sites {
+            emit_before
+                .entry(at)
+                .or_default()
+                .push(format!("E({}) Z{q}", noise.p_init));
+        }
+        for &(at, q) in &self.meas_sites {
+            emit_before
+                .entry(at)
+                .or_default()
+                .push(format!("E({}) Z{q}", noise.p_meas));
+        }
+
+        let mut s = String::new();
+        for (i, inst) in insts.iter().enumerate() {
+            if let Some(errs) = emit_before.get(&i) {
+                for e in errs {
+                    s.push_str(e);
+                    s.push('\n');
+                }
+            }
+            match inst {
+                Instruction::Reset(q) => s.push_str(&format!("R {q}\n")),
+                Instruction::Gate(gi) => match gi.gate {
+                    Gate::H => s.push_str(&format!("H {}\n", gi.qubits[0])),
+                    Gate::Cnot => s.push_str(&format!("CX {} {}\n", gi.qubits[0], gi.qubits[1])),
+                    _ => {}
+                },
+                Instruction::Measure { qubit, .. } => s.push_str(&format!("M {qubit}\n")),
+                _ => {}
+            }
+        }
+        for recs in &ac.detectors {
+            let parts: Vec<String> = recs.iter().map(|&r| rel(r)).collect();
+            s.push_str(&format!("DETECTOR {}\n", parts.join(" ")));
+        }
+        for (o, recs) in ac.observables.iter().enumerate() {
+            let parts: Vec<String> = recs.iter().map(|&r| rel(r)).collect();
+            s.push_str(&format!("OBSERVABLE_INCLUDE({o}) {}\n", parts.join(" ")));
+        }
+        s
     }
 }
 
@@ -487,5 +956,122 @@ mod tests {
         let code = BBCode::new(6, 6, &[(3, 0), (0, 1), (0, 2)], &[(0, 3), (1, 0), (2, 0)]);
         assert_eq!(code.n(), 72);
         assert_eq!(code.k(), 12);
+    }
+
+    /// The monomial-ordered neighbour lists are the same qubit sets as the (sorted) parity-check
+    /// rows — i.e. the schedule drives the *same* stabilisers, just in a controlled order.
+    #[test]
+    fn schedule_neighbours_match_check_rows() {
+        let code = BBCode::gross();
+        for c in 0..code.num_checks() {
+            let mut xs = code.xchk_nbrs[c].clone();
+            xs.sort_unstable();
+            assert_eq!(xs, code.hx_rows[c], "X-check {c} neighbours");
+            let mut zs = code.zchk_nbrs[c].clone();
+            zs.sort_unstable();
+            assert_eq!(zs, code.hz_rows[c], "Z-check {c} neighbours");
+            assert_eq!(code.xchk_nbrs[c].len(), 6);
+            assert_eq!(code.zchk_nbrs[c].len(), 6);
+        }
+    }
+
+    /// The Bravyi depth-7 property: in every round, every physical qubit is involved in at most one
+    /// CNOT — the X-check CNOTs (ancilla→data) and Z-check CNOTs (data→ancilla) never collide. This
+    /// is what makes the schedule depth-7 rather than depth-12, and it depends on the monomial order
+    /// matching the reference. Also checks each check touches all six neighbours across the rounds.
+    #[test]
+    fn depth7_schedule_is_conflict_free() {
+        for l in [6usize, 12] {
+            let code = BBCode::new(l, 6, &[(3, 0), (0, 1), (0, 2)], &[(0, 3), (1, 0), (2, 0)]);
+            let lm = code.num_checks();
+            let n = code.n();
+            let mut x_hits = vec![0usize; lm]; // CNOTs each X-check performs
+            let mut z_hits = vec![0usize; lm];
+            for t in 0..7 {
+                let mut used = std::collections::HashSet::new();
+                let mut insert = |q: usize| {
+                    assert!(
+                        used.insert(q),
+                        "ℓ={l} round {t}: qubit {q} used twice (schedule conflict)"
+                    );
+                };
+                #[allow(clippy::needless_range_loop)] // c is the check index, used several ways
+                if let Some(d) = SX[t] {
+                    for c in 0..lm {
+                        insert(n + c); // X-ancilla
+                        insert(code.xchk_nbrs[c][d]); // data target
+                        x_hits[c] += 1;
+                    }
+                }
+                #[allow(clippy::needless_range_loop)]
+                if let Some(d) = SZ[t] {
+                    for c in 0..lm {
+                        insert(n + lm + c); // Z-ancilla
+                        insert(code.zchk_nbrs[c][d]); // data control
+                        z_hits[c] += 1;
+                    }
+                }
+            }
+            assert!(
+                x_hits.iter().all(|&h| h == 6),
+                "ℓ={l}: every X-check makes 6 CNOTs"
+            );
+            assert!(
+                z_hits.iter().all(|&h| h == 6),
+                "ℓ={l}: every Z-check makes 6 CNOTs"
+            );
+        }
+    }
+
+    /// The memory-X experiment has the expected shape: qubit count `n + 2ℓm`, detector count
+    /// `(rounds+1)·ℓm`, `k` observables, and a CNOT count matching the depth-7 schedule (each of the
+    /// `2ℓm` checks makes 6 CNOTs per cycle). Determinism of the detectors and full DEM correctness
+    /// are gated by the Stim oracle (`tests/bb_circuit_dem_stim_oracle.rs`): the noiseless circuit
+    /// here has genuinely random measurements (Z-ancillas on |+⟩^n, transversal X readout), so the
+    /// Pauli-frame sampler does not apply — only a full Clifford simulator (Stim) can check it.
+    #[test]
+    fn memory_x_experiment_shape() {
+        let code = BBCode::new(6, 6, &[(3, 0), (0, 1), (0, 2)], &[(0, 3), (1, 0), (2, 0)]);
+        let lm = code.num_checks();
+        let rounds = 3;
+        let exp = code.memory_x_experiment(rounds);
+        assert_eq!(exp.num_qubits, code.n() + 2 * lm);
+        assert_eq!(exp.num_data(), code.n());
+        assert_eq!(exp.num_detectors(), (rounds + 1) * lm);
+        assert_eq!(exp.annotated.observables.len(), code.k());
+        let cnots = exp
+            .annotated
+            .circuit
+            .instructions()
+            .iter()
+            .filter(|i| matches!(i, aleph_ir::Instruction::Gate(g) if matches!(g.gate, aleph_core::Gate::Cnot)))
+            .count();
+        assert_eq!(cnots, rounds * 2 * lm * 6, "6 CNOTs per check per cycle");
+    }
+
+    /// The circuit-level DEM is well-formed: right detector/observable counts, all probabilities in
+    /// (0,1), it contains genuine hyperedges (weight > 2, since BB checks are weight-6 hypergraphs),
+    /// and some mechanism reaches a logical observable.
+    #[test]
+    fn circuit_level_dem_well_formed() {
+        let code = BBCode::gross();
+        let rounds = 3;
+        let dem = code
+            .circuit_level_dem(rounds, CircuitNoise::uniform(0.003))
+            .unwrap();
+        assert_eq!(dem.detectors, (rounds + 1) * code.num_checks());
+        assert_eq!(dem.observables, code.k());
+        assert!(!dem.errors.is_empty());
+        for e in &dem.errors {
+            assert!(e.prob > 0.0 && e.prob < 1.0, "prob {} out of range", e.prob);
+        }
+        assert!(
+            dem.errors.iter().any(|e| e.dets.len() > 2),
+            "circuit-level BB DEM must contain hyperedges"
+        );
+        assert!(
+            dem.errors.iter().any(|e| !e.obs.is_empty()),
+            "some mechanism must flip a logical observable"
+        );
     }
 }

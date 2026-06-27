@@ -14,6 +14,7 @@
 use std::collections::BTreeMap;
 
 use aleph_ir::Circuit;
+use rayon::prelude::*;
 
 use crate::dem::{DemError, DetectorErrorModel};
 use crate::error::Result;
@@ -67,40 +68,57 @@ pub fn build_dem(
     mechanisms: &[ErrorMechanism],
 ) -> Result<DetectorErrorModel> {
     let n = ac.circuit.num_qubits() as usize;
+
+    // (detectors, observables, probability) for one propagated mechanism.
+    type Support = (Vec<u32>, Vec<u32>, f64);
+
+    // Propagate each mechanism to its (detector, observable) support. This is the dominant cost
+    // for circuit-level DEMs (thousands of mechanisms × a deep circuit), and each propagation is
+    // independent, so it parallelises cleanly; the cheap merge is done sequentially afterwards.
+    let supports: Vec<Support> = mechanisms
+        .par_iter()
+        .map(|m| -> Result<Option<Support>> {
+            let mut xv = vec![false; n];
+            let mut zv = vec![false; n];
+            for &q in &m.x {
+                xv[q as usize] = true;
+            }
+            for &q in &m.z {
+                zv[q as usize] = true;
+            }
+            let flips = aleph_stab::propagate_pauli_flips(&ac.circuit, &xv, &zv, m.at)?;
+
+            let dets: Vec<u32> = ac
+                .detectors
+                .iter()
+                .enumerate()
+                .filter(|(_, recs)| parity(recs, &flips))
+                .map(|(i, _)| i as u32)
+                .collect();
+            let obs: Vec<u32> = ac
+                .observables
+                .iter()
+                .enumerate()
+                .filter(|(_, recs)| parity(recs, &flips))
+                .map(|(i, _)| i as u32)
+                .collect();
+
+            if dets.is_empty() && obs.is_empty() {
+                Ok(None) // undetectable and logically trivial
+            } else {
+                Ok(Some((dets, obs, m.prob)))
+            }
+        })
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .flatten()
+        .collect();
+
     // Merge by (detectors, observables) support; value = combined probability.
     let mut edges: BTreeMap<(Vec<u32>, Vec<u32>), f64> = BTreeMap::new();
-
-    for m in mechanisms {
-        let mut xv = vec![false; n];
-        let mut zv = vec![false; n];
-        for &q in &m.x {
-            xv[q as usize] = true;
-        }
-        for &q in &m.z {
-            zv[q as usize] = true;
-        }
-        let flips = aleph_stab::propagate_pauli_flips(&ac.circuit, &xv, &zv, m.at)?;
-
-        let dets: Vec<u32> = ac
-            .detectors
-            .iter()
-            .enumerate()
-            .filter(|(_, recs)| parity(recs, &flips))
-            .map(|(i, _)| i as u32)
-            .collect();
-        let obs: Vec<u32> = ac
-            .observables
-            .iter()
-            .enumerate()
-            .filter(|(_, recs)| parity(recs, &flips))
-            .map(|(i, _)| i as u32)
-            .collect();
-
-        if dets.is_empty() && obs.is_empty() {
-            continue; // undetectable and logically trivial
-        }
+    for (dets, obs, prob) in supports {
         let e = edges.entry((dets, obs)).or_insert(0.0);
-        *e = xor_combine(*e, m.prob);
+        *e = xor_combine(*e, prob);
     }
 
     let errors = edges
