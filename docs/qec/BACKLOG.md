@@ -894,8 +894,12 @@ feasible. This is the first hard datapoint on the < 1 µs question.
 - [x] **(sim)** Repetition-code UF datapath in RTL (`hw/uf_rep_decoder.sv`): a Verilator testbench
   over all syndromes confirms the correction reproduces the syndrome and the logical flip matches the
   CPU `UnionFindDecoder` (Q2-01); 1-cycle latency.
-- [ ] **(sim)** 2-D surface-code cluster-growth UF datapath; cycle-accurate latency for d=3,5 vs CPU
-  UF golden vectors.
+- [x] **(sim)** 2-D surface-code cluster-growth UF datapath (`hw/uf_surface_decoder.sv`: growth →
+  spanning forest → peeling on the d=3 matching graph). Verilator TB: valid on all syndromes,
+  distance-3 correct (all weight-1 errors), weight-≤2 logical-error-rate matches/beats the CPU UF
+  (40 vs 50). Tie-breaks differ from CPU UF on degenerate syndromes (both valid min-weight).
+- [ ] **(sim)** Parametrise to d=5; **pipeline the growth iterations** for timing (currently a
+  single-cycle combinational decode).
 - [ ] **(board, pending hardware)** Decodes on the KV260; measured per-round latency in ns.
 
 **Testing Requirements**
