@@ -1,0 +1,8 @@
+    Finished `release` profile [optimized] target(s) in 0.03s
+     Running `target/release/examples/qec_q4_latency 4000 2024`
+# Q4-03 latency budget, single window W=3d commit C=d, memory-Z p=0.03, 4000 samples
+  d=5: window total p50=59.58µs (build 53.96 / grow 4.08 / peel 1.33 / commit 0.041) ⇒ 11.92µs/round = 12× the 1µs target
+  d=7: window total p50=154.12µs (build 138.71 / grow 11.67 / peel 3.79 / commit 0.083) ⇒ 22.02µs/round = 22× the 1µs target
+  d=9: window total p50=334.71µs (build 298.96 / grow 26.79 / peel 8.67 / commit 0.166) ⇒ 37.19µs/round = 37× the 1µs target
+  d=11: window total p50=625.75µs (build 553.96 / grow 54.50 / peel 16.58 / commit 0.250) ⇒ 56.89µs/round = 57× the 1µs target
+# graph build dominates the window budget (rebuilt per window per shot); growth+peel are the actual matching work. Per-round latency is far above 1µs ⇒ the gap motivates Q6 (FPGA): a fixed-array, build-free pipeline that amortises the graph and keeps growth/peel in hardware.
