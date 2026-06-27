@@ -1,0 +1,4 @@
+# Verilator build artifacts
+obj_dir/
+sim_*
+*.vcd
