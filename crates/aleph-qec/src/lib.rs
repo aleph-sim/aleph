@@ -18,6 +18,7 @@
 //! external [`PyMatchingOracle`] (Q0-04); and the [`MatchingGraph`] that turns a graph-like DEM
 //! into the weighted detector-plus-boundary graph matching decoders consume (Q1-01).
 
+mod bivariate_bicycle;
 mod blossom;
 mod bp;
 mod builder;
@@ -34,6 +35,7 @@ mod surface;
 mod syndrome;
 mod union_find;
 
+pub use bivariate_bicycle::BBCode;
 pub use bp::{BpDecoder, TannerGraph, DEFAULT_MAX_ITER};
 pub use builder::{build_dem, AnnotatedCircuit, ErrorMechanism};
 pub use decoder::{Decoder, LogicalErrorResult, NullDecoder};
