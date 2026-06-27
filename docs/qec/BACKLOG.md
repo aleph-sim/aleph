@@ -882,19 +882,24 @@ host↔board round-trip.
 **Depends on:** Q6-01, Q2-01
 
 **Description**
-Implement the Union-Find decoder in RTL (Verilog/SystemVerilog or Chisel/Amaranth) for a
-small distance, and measure decode latency in cycles → ns.
+Implement the Union-Find decoder in RTL (SystemVerilog) and measure decode latency in cycles → ns.
+Built sim-first: a 1-D **repetition-code** UF core lands first (the line specialisation of UF =
+minimum-weight matching), then the 2-D **surface-code cluster-growth** UF (grow / union / peel).
 
 **Context**
 UF's bounded-memory integer control flow (designed in for since Q2) is what makes this
 feasible. This is the first hard datapoint on the < 1 µs question.
 
 **Acceptance Criteria**
-- [ ] Decodes d=3,5 syndromes correctly on-board (vs CPU UF golden vectors).
-- [ ] Measured per-round latency reported in ns.
+- [x] **(sim)** Repetition-code UF datapath in RTL (`hw/uf_rep_decoder.sv`): a Verilator testbench
+  over all syndromes confirms the correction reproduces the syndrome and the logical flip matches the
+  CPU `UnionFindDecoder` (Q2-01); 1-cycle latency.
+- [ ] **(sim)** 2-D surface-code cluster-growth UF datapath; cycle-accurate latency for d=3,5 vs CPU
+  UF golden vectors.
+- [ ] **(board, pending hardware)** Decodes on the KV260; measured per-round latency in ns.
 
 **Testing Requirements**
-- Co-simulation: RTL output == CPU UF (Q2-01) on a test-vector suite.
+- Co-simulation: RTL output == CPU UF (Q2-01) on a test-vector suite. ✅ (repetition code)
 
 **References**
 - Liyanage et al., ArXiv:2301.08419 (FPGA surface-code decoding).
