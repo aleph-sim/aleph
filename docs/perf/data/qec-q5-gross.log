@@ -1,0 +1,10 @@
+    Finished `release` profile [optimized] target(s) in 0.03s
+     Running `target/release/examples/qec_q5_gross 20000 2024`
+# Q5-01 gross bivariate-bicycle code
+# construction: ℓ=12, m=6, A=x³+y+y², B=y³+x+x²  ⇒  [[n=144, k=12, d=12]] (d from Bravyi et al.)
+# code-capacity DEM (Z noise): 72 detectors (X-checks), 12 observables, 144 mechanisms, 432 Tanner edges
+# single-qubit hyperedge syndromes decoded (no panic/NaN): 30/30
+  p=0.002: logical_rate=0.0000e0 ± 0.0e0
+  p=0.005: logical_rate=5.0000e-5 ± 9.8e-5
+  p=0.01: logical_rate=2.0000e-4 ± 2.0e-4
+# NOTE: standalone BP is degeneracy-limited on qLDPC (Q3-02 caveat); the proper qLDPC decoder is BP+OSD (Q5-02), which uses this exact DEM + Tanner graph. Q5-01 ships the code + DEM.

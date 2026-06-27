@@ -1,0 +1,18 @@
+property,value
+n,144
+k,12
+d,12
+x_checks,72
+z_checks,72
+check_weight,6
+qubit_degree,3
+dem_detectors,72
+dem_observables,12
+dem_mechanisms,144
+tanner_edges,432
+
+# end-to-end BP decode through the MC harness (sanity, not a threshold)
+p,shots,logical_rate,ci95
+0.002,20000,0.000000,0.000000
+0.005,20000,0.000050,0.000098
+0.01,20000,0.000200,0.000196
