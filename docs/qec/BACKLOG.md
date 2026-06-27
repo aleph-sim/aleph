@@ -785,6 +785,35 @@ against the literature. Track ArXiv for the latest (≤12 months).
 
 -----
 
+### [Q5-04] Circuit-level DEM for the gross code (depth-7 syndrome extraction)
+
+**Labels:** `area:qec`, `type:feature`, `priority:medium`
+**Milestone:** Phase Q5
+**Depends on:** Q5-01
+
+**Description**
+Q5-01 shipped only a *code-capacity* DEM (single round, perfect measurements, independent `Z`
+noise), despite its brief naming circuit-level noise; Q5-02/Q5-03 decoded that. Close the gap:
+build the **depth-7 syndrome-extraction circuit** of Bravyi et al. (the exact CNOT schedule
+`sX=[idle,1,4,3,5,0,2]`, `sZ=[3,5,0,1,2,4,idle]` and qubit-labelling convention from the
+authors' reference implementation), run a `rounds`-cycle **memory-X** experiment, and emit a
+**circuit-level** DEM under depolarizing noise (faulty CNOTs `4/15·p`, idle `2/3·p`, init/measure
+flips). The DEM is a hypergraph (errors flip up to 6 detectors), consumed by BP+OSD (Q5-02) /
+relay-BP (Q5-03) exactly like the code-capacity DEM.
+
+**Acceptance Criteria**
+- [ ] `BBCode::circuit_level_dem(rounds, noise)` builds the gross-code circuit-level DEM; the
+  depth-7 schedule is verified conflict-free and measures both stabiliser types without disturbance.
+- [ ] DEM cross-checked **edge-for-edge against Stim** for the same circuit (the determinism +
+  correctness gate).
+- [ ] `docs/perf/qec-q5-circuit-dem.md` with the DEM structure, a circuit-level logical-rate curve,
+  and an honest comparison to the published ~0.7% threshold.
+
+**References**
+- Bravyi et al., ArXiv:2308.07915 (gross codes); `sbravyi/BivariateBicycleCodes` (reference circuit).
+
+-----
+
 # Phase Q6 — FPGA
 
 Goal: the real hardware milestone (ROADMAP §2 truth #1). Put a decoder on an FPGA and measure
