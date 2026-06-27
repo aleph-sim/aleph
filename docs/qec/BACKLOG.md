@@ -814,6 +814,30 @@ relay-BP (Q5-03) exactly like the code-capacity DEM.
 
 -----
 
+### [Q5-05] relay-BP + OSD decoder; circuit-level threshold
+
+**Labels:** `area:decoder`, `area:docs`, `type:optimization`, `priority:medium`
+**Milestone:** Phase Q5
+**Depends on:** Q5-02, Q5-03, Q5-04
+
+**Description**
+Q5-04 gave a Stim-exact circuit-level DEM but a modest BP+OSD reached only a ~0.1% threshold (per-
+shot metric) vs the published ~0.7%. Improve the decoder and the methodology: (1) **relay-BP + OSD**
+— feed relay-BP's (Q5-03) disordered-memory soft output into OSD's combination sweep (Q5-02), the
+strongest qLDPC decoder; (2) use the correct **per-cycle** logical-error metric (a d=12 memory runs
+2× the rounds of d=6) for the threshold crossing.
+
+**Acceptance Criteria**
+- [ ] `RelayBpOsdDecoder` implemented; beats BP+OSD and standalone relay-BP on the circuit-level DEM
+  with CI separation.
+- [ ] Circuit-level threshold re-measured with the per-cycle metric; honest positioning vs ~0.7% in
+  `docs/perf/qec-q5-circuit-dem.md`.
+
+**References**
+- Panteleev-Kalachev BP+OSD; Müller et al. relay-BP; Bravyi et al. ArXiv:2308.07915.
+
+-----
+
 # Phase Q6 — FPGA
 
 Goal: the real hardware milestone (ROADMAP §2 truth #1). Put a decoder on an FPGA and measure

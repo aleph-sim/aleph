@@ -8,12 +8,10 @@
 //!
 //! Two blocks:
 //!   1. **gross code** ([[144,12,12]], rounds = d = 12): logical-error rate vs physical rate `p`
-//!      for plain BP vs BP+OSD.
+//!      for plain BP, BP+OSD, and **relay-BP+OSD** (Q5-05 — the strongest decoder here).
 //!   2. **code-size comparison**: [[72,12,6]] (d=6, 6 rounds) vs [[144,12,12]] (d=12, 12 rounds)
-//!      under BP+OSD, to see where (if anywhere in range) the larger code wins.
-//!
-//! relay-BP (Q5-03) layers on the same DEM but is omitted here for runtime; the decoder comparison
-//! is `qec_q5_bposd`/Q5-03's job — this example's point is the *circuit-level DEM* itself.
+//!      under relay-BP+OSD, reported **per cycle** (the fair threshold metric — a d=12 memory runs
+//!      2× the rounds of d=6), to locate the circuit-level threshold crossing.
 //!
 //! Usage:
 //! ```text
@@ -22,7 +20,8 @@
 //! ```
 
 use aleph_qec::{
-    run_dem_experiment, BBCode, BpDecoder, CircuitNoise, OsdDecoder, DEFAULT_MAX_ITER,
+    run_dem_experiment, BBCode, BpDecoder, CircuitNoise, OsdDecoder, RelayBpOsdDecoder,
+    DEFAULT_MAX_ITER,
 };
 
 const ALPHA: f64 = 0.875; // normalised min-sum
@@ -55,52 +54,58 @@ fn main() {
             dem.errors.len()
         );
     }
-    println!("# gross [[144,12,12]], rounds=12: logical rate vs p");
-    println!("p,shots,bp_rate,bp_ci,bposd_rate,bposd_ci,improvement");
+    println!("# gross [[144,12,12]], rounds=12: logical rate vs p (BP / BP+OSD / relay-BP+OSD)");
+    println!("p,shots,bp_rate,bp_ci,bposd_rate,bposd_ci,relayosd_rate,relayosd_ci");
     for &p in &PS {
         let dem = gross
             .circuit_level_dem(12, CircuitNoise::uniform(p))
             .unwrap();
         let bp = BpDecoder::with_params(&dem, DEFAULT_MAX_ITER, ALPHA);
         let osd = OsdDecoder::with_params(&dem, DEFAULT_MAX_ITER, ALPHA, order);
+        let ro = RelayBpOsdDecoder::new(&dem, order);
         let rb = run_dem_experiment(&dem, shots, &bp, seed).unwrap();
-        let ro = run_dem_experiment(&dem, shots, &osd, seed).unwrap();
-        let imp = if ro.rate > 0.0 {
-            rb.rate / ro.rate
-        } else {
-            f64::INFINITY
-        };
+        let rosd = run_dem_experiment(&dem, shots, &osd, seed).unwrap();
+        let rr = run_dem_experiment(&dem, shots, &ro, seed).unwrap();
         println!(
-            "{p},{shots},{:.6},{:.6},{:.6},{:.6},{imp:.2}",
-            rb.rate, rb.ci95, ro.rate, ro.ci95
+            "{p},{shots},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6}",
+            rb.rate, rb.ci95, rosd.rate, rosd.ci95, rr.rate, rr.ci95
         );
         eprintln!(
-            "  p={p}: BP={:.3e}±{:.0e}  BP+OSD={:.3e}±{:.0e}  ({imp:.1}× better)",
-            rb.rate, rb.ci95, ro.rate, ro.ci95
+            "  p={p}: BP={:.3e}  BP+OSD={:.3e}  relay-BP+OSD={:.3e}",
+            rb.rate, rosd.rate, rr.rate
         );
     }
 
-    // ---- block 2: d=6 vs d=12 under BP+OSD ----
+    // ---- block 2: d=6 vs d=12 under relay-BP+OSD, per-cycle metric ----
+    //
+    // The fair threshold metric is the logical error rate **per cycle**: a d=12 memory runs 12
+    // rounds vs d=6's 6, so the larger code is exposed ~2× longer. p_L,cycle ≈ p_L / rounds (for
+    // small p_L). The threshold is the p where the d=12 per-cycle curve crosses below d=6's.
     println!();
-    println!("# code-size comparison (BP+OSD), rounds = d: logical rate vs p");
-    println!("l,n,d,p,shots,logical_rate,ci95");
+    println!(
+        "# code-size comparison (relay-BP+OSD), rounds = d: per-shot and per-cycle logical rate"
+    );
+    println!("l,n,d,p,shots,logical_rate,ci95,per_cycle_rate");
     for &(l, d) in &[(6usize, 6usize), (12, 12)] {
         let code = bb(l);
         for &p in &PS {
             let dem = code.circuit_level_dem(d, CircuitNoise::uniform(p)).unwrap();
-            let osd = OsdDecoder::with_params(&dem, DEFAULT_MAX_ITER, ALPHA, order);
-            let r = run_dem_experiment(&dem, shots, &osd, seed).unwrap();
+            let ro = RelayBpOsdDecoder::new(&dem, order);
+            let r = run_dem_experiment(&dem, shots, &ro, seed).unwrap();
+            let per_cycle = r.rate / d as f64;
             println!(
-                "{l},{},{d},{p},{shots},{:.6},{:.6}",
+                "{l},{},{d},{p},{shots},{:.6},{:.6},{:.6}",
                 code.n(),
                 r.rate,
-                r.ci95
+                r.ci95,
+                per_cycle
             );
             eprintln!(
-                "  ℓ={l} d={d} n={} p={p}: {:.4e} ± {:.1e}",
+                "  ℓ={l} d={d} n={} p={p}: {:.4e} ± {:.1e}  (per-cycle {:.4e})",
                 code.n(),
                 r.rate,
-                r.ci95
+                r.ci95,
+                per_cycle
             );
         }
     }

@@ -19,9 +19,10 @@
 //! deterministic and `Sync`. It reuses the [`BpDecoder`](crate::BpDecoder) Tanner layout (and its
 //! min-sum check update) verbatim, differing only in the memory term and the leg/keep-best loop.
 
-use crate::bp::BpDecoder;
+use crate::bp::{BpDecoder, BpSoft};
 use crate::decoder::Decoder;
 use crate::dem::DetectorErrorModel;
+use crate::osd::OsdDecoder;
 use crate::syndrome::{Correction, Syndrome};
 
 /// Number of relay legs by default.
@@ -107,6 +108,16 @@ impl RelayBpDecoder {
     /// Decode, returning the correction and whether a syndrome-valid hard decision was found (relay-BP
     /// "converged" in some leg). When none is valid, the lowest-weight hard decision seen is returned.
     pub fn decode_relay(&self, syndrome: &Syndrome) -> (Correction, bool) {
+        let soft = self.decode_soft(syndrome);
+        (self.correction_of(&soft.ehat), soft.converged)
+    }
+
+    /// Soft decode: run the relay legs and return the chosen hard decision, posterior LLRs, and a
+    /// `converged` flag. The posterior `L_v = λ_v + Σ_c E_{c→v}` is taken from the final leg's
+    /// messages; the hard decision is the lowest-weight syndrome-valid one seen across legs (or the
+    /// final hard decision if none was valid). This is the soft information BP+OSD post-processing
+    /// consumes — see [`RelayBpOsdDecoder`].
+    pub fn decode_soft(&self, syndrome: &Syndrome) -> BpSoft {
         let mut s = vec![0u8; self.num_detectors];
         for &d in &syndrome.fired {
             if (d as usize) < self.num_detectors {
@@ -141,11 +152,22 @@ impl RelayBpDecoder {
             }
         }
 
+        // Posterior LLR per variable from the final check→variable messages.
+        let mut llr = vec![0.0f64; self.n_vars];
+        for (v, w) in self.var_off.windows(2).enumerate() {
+            let (lo, hi) = (w[0] as usize, w[1] as usize);
+            llr[v] = self.lambda[v] + e_cv[lo..hi].iter().sum::<f64>();
+        }
+
         let chosen = match best {
             Some((_, e)) => e,
             None => ehat, // no valid decision in any leg; return the last hard decision
         };
-        (self.correction_of(&chosen), found_valid)
+        BpSoft {
+            ehat: chosen,
+            llr,
+            converged: found_valid,
+        }
     }
 
     /// Min-sum check → variable update (identical to [`BpDecoder`]'s; see Q3-02).
@@ -227,6 +249,45 @@ impl RelayBpDecoder {
 impl Decoder for RelayBpDecoder {
     fn decode(&self, syndrome: &Syndrome) -> Correction {
         self.decode_relay(syndrome).0
+    }
+}
+
+/// **Relay-BP + OSD** (Q5-05) — the strongest qLDPC decoder in this crate: relay-BP's
+/// disordered-memory message passing produces better soft information than plain BP, and OSD's
+/// ordered-statistics combination sweep ([`OsdDecoder`]) cleans up the residual wrong-coset
+/// failures relay-BP leaves on the circuit-level hypergraph. On the gross code's circuit-level DEM
+/// this beats both BP+OSD and standalone relay-BP (`docs/perf/qec-q5-circuit-dem.md`).
+#[derive(Clone, Debug)]
+pub struct RelayBpOsdDecoder {
+    relay: RelayBpDecoder,
+    osd: OsdDecoder,
+}
+
+impl RelayBpOsdDecoder {
+    /// Build with the default relay-BP front-end ([`RelayBpDecoder::new`]) and an OSD post-processor
+    /// at combination-sweep `order` (sharing the same `α`).
+    pub fn new(dem: &DetectorErrorModel, order: usize) -> Self {
+        Self::with_parts(
+            RelayBpDecoder::new(dem),
+            OsdDecoder::new(dem).with_order(order),
+        )
+    }
+
+    /// Build from an explicit relay-BP front-end and OSD post-processor (both over the *same* DEM).
+    pub fn with_parts(relay: RelayBpDecoder, osd: OsdDecoder) -> Self {
+        Self { relay, osd }
+    }
+
+    /// Decode: relay-BP soft pass, then OSD post-processing.
+    pub fn decode_relay_osd(&self, syndrome: &Syndrome) -> Correction {
+        let soft = self.relay.decode_soft(syndrome);
+        self.osd.correction_from_soft(syndrome, &soft)
+    }
+}
+
+impl Decoder for RelayBpOsdDecoder {
+    fn decode(&self, syndrome: &Syndrome) -> Correction {
+        self.decode_relay_osd(syndrome)
     }
 }
 
