@@ -96,6 +96,19 @@ impl OsdDecoder {
         (self.bp.correction_of(&ehat), true)
     }
 
+    /// Run the OSD post-processor on **externally supplied** soft information (e.g. from relay-BP,
+    /// Q5-03) instead of this decoder's own BP. If `soft.converged`, the valid hard decision is
+    /// returned directly; otherwise the OSD combination sweep refines it using `soft.llr` for the
+    /// most-reliable basis. This is how [`RelayBpOsdDecoder`](crate::RelayBpOsdDecoder) couples a
+    /// stronger BP front-end to OSD.
+    pub fn correction_from_soft(&self, syndrome: &Syndrome, soft: &crate::BpSoft) -> Correction {
+        if soft.converged {
+            return self.bp.correction_of(&soft.ehat);
+        }
+        let ehat = self.osd_solve(syndrome, &soft.ehat, &soft.llr);
+        self.bp.correction_of(&ehat)
+    }
+
     /// OSD solve: see the module docs. `bp_hard` is BP's hard decision (kept on non-pivot columns so
     /// OSD refines BP rather than discarding it); `llr` drives the column ordering and soft weight.
     /// Returns the per-variable error decision.

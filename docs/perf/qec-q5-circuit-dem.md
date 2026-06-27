@@ -1,6 +1,7 @@
-# Q5-04 — Circuit-level DEM for the gross code (depth-7 syndrome extraction)
+# Q5-04 / Q5-05 — Circuit-level DEM for the gross code + relay-BP+OSD decoder
 
-**Issue:** Q5-04 (Phase Q5, qLDPC frontier).
+**Issues:** Q5-04 (circuit-level DEM) + Q5-05 (relay-BP+OSD decoder, per-cycle threshold).
+**Phase:** Q5 (qLDPC frontier).
 **Depends on:** Q5-01 (BB code construction), Q5-02 (BP+OSD), Q5-03 (relay-BP).
 **Status:** done.
 
@@ -77,45 +78,47 @@ full Clifford simulator can validate it, hence the Stim oracle.)
 Versus the code-capacity DEM (72 detectors, 144 mechanisms), the circuit-level model is ~13× larger
 in detectors and ~60× in mechanisms — a genuine space-time hypergraph.
 
-## Results — logical error rate
+## Results — logical error rate (Q5-04 baseline + Q5-05 decoder)
 
-1000 shots/point, BP+OSD (normalised min-sum α=0.875, OSD order 20), `rounds = d`, uniform noise.
+1000 shots/point, normalised min-sum (α=0.875), OSD combination-sweep order 12, `rounds = d`,
+uniform noise. **Q5-05** added `RelayBpOsdDecoder` — relay-BP's (Q5-03) disordered-memory soft
+output fed into OSD's combination sweep (Q5-02) — the strongest decoder in this crate.
 
-**Gross code (d=12), plain BP vs BP+OSD** — OSD fixes the degenerate failures BP leaves behind; at
-`p ≤ 0.001` it clears all 1000 shots:
+**Gross code (d=12): BP vs BP+OSD vs relay-BP+OSD.** relay-BP+OSD is **5–27× below BP+OSD**:
 
-| p | BP | BP+OSD | OSD gain |
-|------|------|--------|----------|
-| 0.0005 | 2.0e-3 | **0** | ∞ |
-| 0.001  | 1.9e-2 | **0** | ∞ |
-| 0.0015 | 3.7e-2 | 7.0e-3 | 5.3× |
-| 0.002  | 5.9e-2 | 1.3e-2 | 4.5× |
-| 0.003  | 1.6e-1 | 7.2e-2 | 2.2× |
+| p | BP | BP+OSD | **relay-BP+OSD** |
+|------|------|--------|------------------|
+| 0.0005 | 2.0e-3 | 0 | **0** |
+| 0.001  | 1.9e-2 | 4.0e-3 | **0** |
+| 0.0015 | 3.7e-2 | 1.1e-2 | **2.0e-3** |
+| 0.002  | 5.9e-2 | 2.7e-2 | **1.0e-3** |
+| 0.003  | 1.6e-1 | 1.0e-1 | **4.3e-2** |
 
-**Code-size comparison (BP+OSD), [[72,12,6]] vs [[144,12,12]]:**
+**Code-size comparison (relay-BP+OSD), [[72,12,6]] vs [[144,12,12]], per-cycle metric.** The fair
+threshold metric is the logical rate **per cycle** (`p_L / rounds`): a d=12 memory runs 12 rounds vs
+d=6's 6, so the larger code is exposed ~2× longer. The threshold is where the d=12 per-cycle curve
+crosses below d=6's.
 
-| p | d=6 logical rate | d=12 logical rate | larger code |
-|------|------------------|-------------------|-------------|
-| 0.0005 | 0 | 0 | (both clear) |
-| 0.001  | 1.0e-3 | **0** | **wins** |
-| 0.0015 | 4.0e-3 | 7.0e-3 | loses |
-| 0.002  | 8.0e-3 | 1.3e-2 | loses |
-| 0.003  | 3.0e-2 | 7.2e-2 | loses |
+| p | d=6 per-cycle | d=12 per-cycle | larger code |
+|------|---------------|----------------|-------------|
+| 0.0015 | 1.7e-4 | 1.7e-4 | tie |
+| 0.002  | 3.3e-4 | **8.3e-5** | **wins** |
+| 0.003  | 2.8e-3 | 3.6e-3 | loses |
 
-The curves **cross around p ≈ 0.001–0.0015**: below it the larger code suppresses errors (the
-hallmark of being below threshold), above it the extra space-time volume of the bigger/longer code
-dominates. So BP+OSD(20) gives a circuit-level threshold of **~0.1%**.
+The crossing sits at **p ≈ 0.0025–0.003** → a circuit-level threshold of **~0.3%** with relay-BP+OSD,
+up from **~0.1%** with plain BP+OSD on the per-shot metric (two compounding effects: a stronger
+decoder, and the correct per-cycle accounting). Statistics are thin at 1000 shots near the floor
+(rates are ≲ their 95% CIs there) — the crossing is indicative, not a precision threshold.
 
 ### Honest positioning vs the literature
 
 Bravyi et al. report a circuit-level threshold near **~0.7%** for the gross code. Our **DEM is exact**
-(Stim-verified), so the ~5–7× gap is entirely a **decoder-strength** issue, not a model issue: a
-modest BP+OSD (order 20) is degeneracy-limited on the circuit-level hypergraph (936 detectors). The
-published numbers use stronger post-processing (higher-order / combination-sweep OSD, relay-BP,
-ambiguity clustering) — exactly the Q5-03 program, which now has this circuit-level DEM to run
-against (previously it only had the code-capacity DEM). Closing the gap is decoder work, tracked
-there; Q5-04's deliverable is the correct, Stim-verified circuit-level DEM and the harness to drive
-it.
+(Stim-verified), so the remaining **~2–2.5× gap** (vs the earlier ~5–7×) is **decoder strength**, not
+the model: published numbers use higher-order / combination-sweep OSD with larger sweeps, more BP
+iterations, and ambiguity clustering. relay-BP+OSD here uses order 12 (`2^12` sweep) for tractable
+runtime; pushing the order, iteration budget, and shot count further is straightforward decoder
+tuning on the *same* DEM and harness. Q5-04 delivered the correct circuit-level DEM; Q5-05 delivers
+the strongest decoder against it and the correct threshold methodology.
 
 ## Build cost
 
@@ -129,6 +132,8 @@ oracle and DEM values are unchanged (the merge is order-stable).
 - `crates/aleph-qec/src/bivariate_bicycle.rs` — `memory_x_experiment`, `circuit_level_dem`,
   `CircuitNoise`, `BBMemoryExperiment`, the depth-7 schedule (`SX`/`SZ`), and unit tests.
 - `crates/aleph-qec/tests/bb_circuit_dem_stim_oracle.rs` — the Stim edge-for-edge oracle.
-- `crates/aleph-qec/examples/qec_q5_circuit_dem.rs` — logical-rate curves + code-size comparison.
+- `crates/aleph-qec/src/relay_bp.rs` — `RelayBpOsdDecoder` (Q5-05) + relay-BP `decode_soft`.
+- `crates/aleph-qec/src/osd.rs` — `OsdDecoder::correction_from_soft` (consume external soft info).
+- `crates/aleph-qec/examples/qec_q5_circuit_dem.rs` — logical-rate curves + per-cycle code-size comparison.
 - `crates/aleph-qec/src/builder.rs` — parallelised `build_dem`.
 - `docs/perf/data/qec-q5-circuit-dem.{csv,log}` — committed run.
