@@ -1,0 +1,24 @@
+# Q5-02 BP+OSD, independent-Z code capacity, normalised min-sum α=0.875, osd_order=10
+  p=0.01: BP=1.667e-4±1e-4  BP+OSD=1.333e-4±1e-4  (1.25× better)
+  p=0.02: BP=1.133e-3±4e-4  BP+OSD=9.000e-4±3e-4  (1.26× better)
+  p=0.03: BP=4.367e-3±7e-4  BP+OSD=4.267e-3±7e-4  (1.02× better)
+  p=0.04: BP=2.093e-2±2e-3  BP+OSD=2.010e-2±2e-3  (1.04× better)
+  p=0.05: BP=6.223e-2±3e-3  BP+OSD=6.120e-2±3e-3  (1.02× better)
+  p=0.06: BP=1.440e-1±4e-3  BP+OSD=1.420e-1±4e-3  (1.01× better)
+  ℓ=6 d=6 n=72 p=0.06: 2.5663e-1 ± 4.9e-3
+  ℓ=6 d=6 n=72 p=0.07: 3.6540e-1 ± 5.4e-3
+  ℓ=6 d=6 n=72 p=0.08: 4.7300e-1 ± 5.6e-3
+  ℓ=6 d=6 n=72 p=0.085: 5.2697e-1 ± 5.6e-3
+  ℓ=6 d=6 n=72 p=0.09: 5.7720e-1 ± 5.6e-3
+  ℓ=6 d=6 n=72 p=0.095: 6.2457e-1 ± 5.5e-3
+  ℓ=6 d=6 n=72 p=0.1: 6.7117e-1 ± 5.3e-3
+  ℓ=6 d=6 n=72 p=0.11: 7.5413e-1 ± 4.9e-3
+  ℓ=12 d=12 n=144 p=0.06: 1.4200e-1 ± 3.9e-3
+  ℓ=12 d=12 n=144 p=0.07: 2.6697e-1 ± 5.0e-3
+  ℓ=12 d=12 n=144 p=0.08: 4.1237e-1 ± 5.6e-3
+  ℓ=12 d=12 n=144 p=0.085: 4.9230e-1 ± 5.7e-3
+  ℓ=12 d=12 n=144 p=0.09: 5.6760e-1 ± 5.6e-3
+  ℓ=12 d=12 n=144 p=0.095: 6.3883e-1 ± 5.4e-3
+  ℓ=12 d=12 n=144 p=0.1: 7.0190e-1 ± 5.2e-3
+  ℓ=12 d=12 n=144 p=0.11: 8.0667e-1 ± 4.5e-3
+# threshold p_th ≈ 0.0920 (d=6/d=12 crossing). Single-Pauli code capacity; cf. surface code ~0.109 same channel — a qLDPC code at rate 1/12 with a comparable code-capacity threshold.

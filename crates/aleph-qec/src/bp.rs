@@ -63,6 +63,18 @@ pub struct BpDecoder {
     check_edges: Vec<u32>,
 }
 
+/// Soft output of one BP run: the hard decision, the posterior LLRs, and convergence. Consumed by
+/// the OSD post-processing stage (Q5-02).
+#[derive(Clone, Debug)]
+pub struct BpSoft {
+    /// Hard decision per variable (`1` ⇒ the mechanism is predicted to have fired).
+    pub ehat: Vec<u8>,
+    /// Posterior log-likelihood ratio per variable: `sign` is the decision, `|·|` the reliability.
+    pub llr: Vec<f64>,
+    /// Whether `H ê = s` held within the iteration cap.
+    pub converged: bool,
+}
+
 impl BpDecoder {
     /// Build a min-sum BP decoder for `dem` with the default iteration cap and plain min-sum (`α=1`).
     pub fn new(dem: &DetectorErrorModel) -> Self {
@@ -171,6 +183,15 @@ impl BpDecoder {
     /// Decode `syndrome`, returning the correction and whether BP **converged** (`H ê = s` within
     /// the iteration cap). The bool is exposed for diagnostics; [`decode`](Decoder::decode) drops it.
     pub fn decode_bp(&self, syndrome: &Syndrome) -> (Correction, bool) {
+        let soft = self.decode_bp_soft(syndrome);
+        (self.correction_of(&soft.ehat), soft.converged)
+    }
+
+    /// BP with **soft output**: the hard decision `ehat`, the per-variable posterior LLR (sign =
+    /// decision, `|·|` = reliability), and whether BP converged (`H ê = s`). The reliabilities are
+    /// what OSD post-processing (Q5-02 BP+OSD) orders columns by; exposed so the OSD stage can reuse
+    /// the exact BP run rather than re-deriving it.
+    pub fn decode_bp_soft(&self, syndrome: &Syndrome) -> BpSoft {
         // Syndrome bits over checks.
         let mut s = vec![0u8; self.num_detectors];
         for &d in &syndrome.fired {
@@ -199,6 +220,25 @@ impl BpDecoder {
             }
         }
 
+        // Posterior LLR per variable from the final check→variable messages: L_v = λ_v + Σ E_{c→v}.
+        let mut llr = vec![0.0f64; self.n_vars];
+        for (v, w) in self.var_off.windows(2).enumerate() {
+            let (lo, hi) = (w[0] as usize, w[1] as usize);
+            let total = self.lambda[v] + e_cv[lo..hi].iter().sum::<f64>();
+            llr[v] = total;
+            ehat[v] = (total < 0.0) as u8;
+        }
+
+        BpSoft {
+            ehat,
+            llr,
+            converged,
+        }
+    }
+
+    /// Map a hard error decision (one bit per variable) to a logical [`Correction`] via the
+    /// variables' observable masks.
+    pub(crate) fn correction_of(&self, ehat: &[u8]) -> Correction {
         let mut mask = 0u64;
         for (v, &e) in ehat.iter().enumerate() {
             if e == 1 {
@@ -208,7 +248,7 @@ impl BpDecoder {
         let flips = (0..self.num_observables)
             .map(|o| (mask >> o) & 1 == 1)
             .collect();
-        (Correction::new(flips), converged)
+        Correction::new(flips)
     }
 
     /// Min-sum check → variable update: `E_{c→v} = (-1)^{s_c} α · (∏_{v'≠v} sign) · min_{v'≠v} |·|`.
