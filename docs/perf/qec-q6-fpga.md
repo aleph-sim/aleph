@@ -93,6 +93,42 @@ chains into bounded-depth sub-steps to restore Fmax — which is the preconditio
 Max code distance per board *within budget*, as-is: **d=3 on both** (KV260 has ~3.6× the timing
 headroom of Zybo, so it is the path to d=5 once pipelining lands).
 
+## Q6-10 — pipelining attempt: parallel peel + the real critical path
+
+Q6-09 named the per-cycle O(M) chains as the Fmax wall. Q6-10 rewrites the **peel** sweep from a
+loop-carried M-edge chain (one cycle, O(M) depth) to a **parallel leaf-strip** — each round peels all
+current non-boundary leaves at once via associative count/XOR reductions (bit-equivalent: the
+per-edge correction is the leaf-side subtree parity, peel-order-independent; the d=3 golden still
+matches, d=5 still corrects 0/1431).
+
+Before (loop-carried peel) → after (parallel peel):
+
+| part | d | LUT before→after | Fmax before→after |
+|------|---|------------------|-------------------|
+| Zybo `xc7z020` | 3 | 1178 → **872** (−26%) | 58.7 → 62.4 MHz |
+| Zybo `xc7z020` | 5 | 6139 → 6061 | 15.9 → **15.4 MHz** (unchanged) |
+| KV260 `xck26` | 3 | 1200 → 876 | 170 → 173.6 MHz |
+| KV260 `xck26` | 5 | 6427 → 6111 | 38.0 → **38.2 MHz** (unchanged) |
+
+**Finding: the peel was *not* the binding critical path.** Freeing it dropped LUTs ~26% at d=3 but
+left d=5 Fmax flat. The d=5 post-route worst path is unambiguous:
+
+```
+Source: e_idx_reg → Destination: troot_reg[24]   (the spanning-forest phase)
+Logic Levels: 78  (LUT6=62 …)   Data path 64.6 ns
+```
+
+That is the **union-find root-walk** in `S_FOREST` (`for k in 0..N: ra = troot[ra]`, done for both
+endpoints): an N-deep chain of index-muxed `troot` lookups, unrolled to ~78 LUT levels at d=5. It is
+a *true* serial dependency (each hop needs the previous lookup), so it cannot be balanced like the
+peel reductions. **This is the actual wall for d≥5 Fmax**, and removing it needs a bounded-depth /
+parallel union-find for the forest (path-compression/union-by-rank across cycles, or the parallel
+cluster architecture of Liyanage et al., ArXiv:2301.08419) — a real redesign, not a chain rewrite.
+
+Net: the parallel peel ships as a correctness-preserving area win and removes one chain that *would*
+become critical once the find is fixed; the d≥5 real-time lever is now precisely targeted (the forest
+find) and tracked in #372.
+
 ## Q6-03 — GPU vs FPGA
 
 > Pending board bring-up (Q6-08) for measured on-board latency/throughput/power vs the Q3 GPU decoder.

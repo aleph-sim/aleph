@@ -186,31 +186,48 @@ module uf_surface_decoder (
           state <= S_PEEL_PASS;
         end
 
-        // one full leaf-strip sweep over all edges (loop-carried, identical to the Q6-02 inner body).
+        // one PARALLEL leaf-strip round: peel ALL current non-boundary leaves at once. The correction
+        // for a tree edge is the defect-parity of its leaf-side subtree, which is independent of peel
+        // order, so this is bit-equivalent to the Q6-02 loop-carried sweep (golden-locked) — but each
+        // round is bounded-depth: the per-node updates are associative count/XOR reductions over
+        // incident edges (Vivado balances them into O(log M) trees), with no M-long dependency chain.
+        // That removes the O(M) critical path that collapsed Fmax with distance (Q6-09).
         S_PEEL_PASS: begin
-          automatic logic [4:0]      d  [UF_N];
-          automatic logic            df [UF_N];
-          automatic logic            it [UF_M];
-          automatic logic [UF_M-1:0] cr;
-          for (int i = 0; i < UF_N; i++) begin d[i] = deg[i]; df[i] = dfct[i]; end
-          for (int e = 0; e < UF_M; e++) it[e] = istree[e];
-          cr = corr;
-          for (int e = 0; e < UF_M; e++)
-            if (it[e]) begin
-              automatic int u, v;
-              u = -1; v = -1;
-              if (d[UF_EA[e]] == 5'd1 && UF_EA[e] != UF_BOUNDARY) begin u = UF_EA[e]; v = UF_EB[e]; end
-              else if (d[UF_EB[e]] == 5'd1 && UF_EB[e] != UF_BOUNDARY) begin u = UF_EB[e]; v = UF_EA[e]; end
-              if (u != -1) begin
-                if (df[u]) begin cr[e] = 1'b1; df[v] = df[v] ^ 1'b1; end
-                it[e] = 1'b0;
-                d[u]  = 5'd0;
-                d[v]  = d[v] - 5'd1;
+          automatic logic            peel [UF_M];   // edge peels this round
+          automatic logic [IDXW-1:0] lf   [UF_M];   // its leaf endpoint
+          automatic logic [IDXW-1:0] nb   [UF_M];   // its neighbour (non-leaf) endpoint
+          automatic logic            lfd  [UF_M];   // defect routed off the leaf onto the neighbour
+          // 1. classify each tree edge — all reads from registers, no inter-edge dependency.
+          for (int e = 0; e < UF_M; e++) begin
+            peel[e] = 1'b0; lf[e] = '0; nb[e] = '0; lfd[e] = 1'b0;
+            if (istree[e]) begin
+              if (deg[UF_EA[e]] == 5'd1 && UF_EA[e] != UF_BOUNDARY) begin
+                peel[e] = 1'b1; lf[e] = IDXW'(UF_EA[e]); nb[e] = IDXW'(UF_EB[e]);
+              end else if (deg[UF_EB[e]] == 5'd1 && UF_EB[e] != UF_BOUNDARY) begin
+                peel[e] = 1'b1; lf[e] = IDXW'(UF_EB[e]); nb[e] = IDXW'(UF_EA[e]);
               end
+              lfd[e] = peel[e] & dfct[lf[e]];
             end
-          for (int i = 0; i < UF_N; i++) begin deg[i] <= d[i]; dfct[i] <= df[i]; end
-          for (int e = 0; e < UF_M; e++) istree[e] <= it[e];
-          corr <= cr;
+          end
+          // 2. correction + tree removal — per-edge, independent.
+          for (int e = 0; e < UF_M; e++) begin
+            if (lfd[e]) corr[e] <= 1'b1;
+            istree[e] <= istree[e] & ~peel[e];
+          end
+          // 3. per-node update via associative reductions over incident peeling edges.
+          for (int vv = 0; vv < UF_N; vv++) begin
+            automatic logic [4:0] cnt;     // # peeling edges whose neighbour is vv
+            automatic logic       tog;     // XOR of defects routed into vv
+            automatic logic       vleaf;   // vv was peeled as a leaf this round
+            cnt = 5'd0; tog = 1'b0; vleaf = 1'b0;
+            for (int e = 0; e < UF_M; e++)
+              if (peel[e]) begin
+                if (nb[e] == IDXW'(vv)) begin cnt = cnt + 5'd1; tog = tog ^ lfd[e]; end
+                if (lf[e] == IDXW'(vv)) vleaf = 1'b1;
+              end
+            deg[vv]  <= vleaf ? 5'd0 : (deg[vv] - cnt);
+            dfct[vv] <= dfct[vv] ^ tog;
+          end
           if (pit == IDXW'(UF_N - 1)) state <= S_FINISH;
           else                        pit   <= pit + 1'b1;
         end
