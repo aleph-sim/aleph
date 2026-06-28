@@ -3,9 +3,13 @@ obj_dir/
 sim_*
 *.vcd
 
-# Vivado / synth outputs (Q6-05)
+# Vivado / synth outputs (Q6-05, Q6-06)
 syn/reports/
+syn/gatesim/
+xsim.dir/
 *.jou
+*.wdb
+*.pb
 *.log
 .Xil/
 vivado*.str

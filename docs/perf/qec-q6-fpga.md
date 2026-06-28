@@ -37,6 +37,26 @@ and the union-find root-walk (depth N). They still clear the 1 µs budget at d=3
 those passes is the lever** for higher Fmax / margin and for d≥5 (tracked under Q6-09 and follow-on
 timing work). Area is nowhere near a constraint; latency-per-cycle-depth is.
 
+## Q6-06 — gate-level sign-off (xsim)
+
+The same self-checking SV testbench (`hw/tb_uf_surface_xsim.sv`) replays all 256 syndromes against
+three elaborations of the decoder; run via `hw/syn/gatesim.sh <part-dir>` on `openwebgui`. Every
+stage must bit-match the frozen Q6-02 golden table, reproduce the syndrome, and drive no X.
+
+| stage | what it catches | Zybo | KV260 |
+|-------|-----------------|------|-------|
+| behavioral RTL | TB sanity | PASS | PASS |
+| **post-route functional netlist** | synth/sim mismatch, inferred latches | PASS | PASS |
+| **post-route timing (SDF, 50 MHz)** | X-prop / setup at real cell delays | PASS | PASS |
+
+All: **256/256 bit-match golden, valid, zero X** on both parts. The routed netlist behaves
+bit-identically to the RTL and holds up under back-annotated cell delays — **no RTL fixes were
+needed** for sim/synth parity (the Verilator TB stays green). Two sim-infra fixes folded in: compile
+RTL and TB in separate compilation units (both `include the graph header), and hold reset past the
+gate-level `glbl` GSR window (~100 ns) before the first decode. Timing sim is clocked at 50 MHz —
+below both parts' closed Fmax (58.7 / 170 MHz) — so it reflects cell delays without spurious
+over-clock violations.
+
 ## Q6-09 — d=5 scaling
 
 > Pending Q6-09 (d=5 graph + re-synth). Will add d=5 rows for both parts and the max-distance-per-board
