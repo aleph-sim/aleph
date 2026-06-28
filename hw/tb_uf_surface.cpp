@@ -5,6 +5,7 @@
 // (2) logical — the predicted flip matches the Rust unweighted UnionFindDecoder oracle
 // (`uf_surface_oracle.mem`). A pass certifies a real UF datapath, equivalent to the CPU decoder.
 
+#include <cctype>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -47,6 +48,7 @@ int main(int argc, char **argv) {
   Verilated::commandArgs(argc, argv);
   const std::string svh = (argc > 1) ? argv[1] : "uf_surface_graph.svh";
   const std::string orc = (argc > 2) ? argv[2] : "uf_surface_oracle.mem";
+  const std::string gld = (argc > 3) ? argv[3] : "uf_surface_golden.mem";
 
   int N = 0, M = 0, B = 0;
   std::vector<int> ea, eb, elog;
@@ -86,28 +88,56 @@ int main(int argc, char **argv) {
     return 2;
   }
 
+  // Frozen golden table: {obs_flip<<M | correction} per syndrome, snapshotted from the Q6-02
+  // combinational RTL. The Q6-04 sequential FSM must reproduce it bit-for-bit.
+  std::vector<uint32_t> golden;
+  {
+    std::ifstream f(gld);
+    if (!f) { std::fprintf(stderr, "FAIL: open %s\n", gld.c_str()); return 2; }
+    std::string l;
+    while (std::getline(f, l)) {
+      auto p = l.find("//");
+      if (p != std::string::npos) l = l.substr(0, p);
+      bool hex = false;
+      for (char c : l) if (std::isxdigit((unsigned char)c)) { hex = true; break; }
+      if (hex) golden.push_back((uint32_t)std::strtoul(l.c_str(), nullptr, 16));
+    }
+  }
+  if ((int)golden.size() != entries) {
+    std::fprintf(stderr, "FAIL: golden %zu entries, expected %d\n", golden.size(), entries);
+    return 2;
+  }
+
   auto *dut = new Vuf_surface_decoder;
   auto tick = [&]() { dut->clk = 0; dut->eval(); dut->clk = 1; dut->eval(); };
   dut->rst_n = 0; dut->in_valid = 0; dut->syndrome = 0;
   tick(); tick();
   dut->rst_n = 1;
 
-  dut->in_valid = 1; dut->syndrome = 0; tick();
-  dut->in_valid = 0;
-  int latency = 1;
-  while (!dut->out_valid && latency < 32) { tick(); ++latency; }
-
+  // Multi-cycle handshake: pulse in_valid, then tick until out_valid (the FSM runs many cycles).
   auto decode = [&](int s) {
     dut->in_valid = 1; dut->syndrome = s; tick();
-    dut->in_valid = 0; dut->eval();
+    dut->in_valid = 0;
+    int g = 0;
+    while (!dut->out_valid && g < 4096) { tick(); ++g; }
+    dut->eval();
   };
 
+  decode(0);                                   // warm-up
+  const int latency = dut->latency_cycles;     // cycles from in_valid to out_valid (PL-reported)
+
   // (1) Validity over all syndromes: the correction reproduces the syndrome on every detector.
-  int fails = 0, obs_mismatch = 0;
+  int fails = 0, obs_mismatch = 0, gold_fail = 0;
   for (int s = 0; s < entries; ++s) {
     decode(s);
     if (!dut->out_valid) { std::fprintf(stderr, "FAIL s=%d: out_valid low\n", s); ++fails; continue; }
     const uint32_t corr = dut->correction;
+    // bit-for-bit equivalence vs the frozen Q6-02 combinational golden.
+    const uint32_t packed = ((uint32_t)(dut->obs_flip & 1) << M) | (corr & ((1u << M) - 1));
+    if (packed != golden[s]) {
+      std::fprintf(stderr, "GOLDEN FAIL s=%d: rtl=0x%X golden=0x%X\n", s, packed, golden[s]);
+      ++gold_fail;
+    }
     int syn_rtl = 0;
     for (int d = 0; d < dets; ++d) {
       int par = 0;
@@ -159,17 +189,17 @@ int main(int argc, char **argv) {
     }
   }
 
-  std::printf("validity: %s (%d fail); weight-1 correctness: %s (%d fail); "
-              "logical vs Rust UF: %d/%d agree; latency = %d clk\n",
-              fails ? "FAIL" : "PASS", fails, dist_fail ? "FAIL" : "PASS", dist_fail,
-              entries - obs_mismatch, entries, latency);
+  std::printf("validity: %s (%d fail); golden bit-match: %s (%d fail); weight-1 correctness: %s "
+              "(%d fail); logical vs Rust UF: %d/%d agree; latency = %d clk\n",
+              fails ? "FAIL" : "PASS", fails, gold_fail ? "FAIL" : "PASS", gold_fail,
+              dist_fail ? "FAIL" : "PASS", dist_fail, entries - obs_mismatch, entries, latency);
   std::printf("quality (wt<=2 errors, n=%d): RTL logical errors=%d, CPU UF=%d\n",
               total, rtl_le, cpu_le);
   dut->final();
   delete dut;
-  if (fails || dist_fail) return 1;
-  std::printf("PASS: valid on all %d syndromes + corrects all %d weight-1 errors "
-              "(UF tie-breaks differ from CPU UF on %d degenerate syndromes)\n",
+  if (fails || dist_fail || gold_fail) return 1;
+  std::printf("PASS: valid on all %d syndromes + bit-identical to Q6-02 golden + corrects all %d "
+              "weight-1 errors (UF tie-breaks differ from CPU UF on %d degenerate syndromes)\n",
               entries, M, obs_mismatch);
   return 0;
 }

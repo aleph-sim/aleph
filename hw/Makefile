@@ -33,7 +33,15 @@ surf:
 	cd .. && $(CARGO) qec_surface_uf_graph -- oracle > hw/uf_surface_oracle.mem
 	$(VERILATOR) --cc --exe --build -Wall --top-module uf_surface_decoder \
 		uf_surface_decoder.sv tb_uf_surface.cpp -o sim_surf
-	./$(OBJ_DIR)/sim_surf uf_surface_graph.svh uf_surface_oracle.mem
+	./$(OBJ_DIR)/sim_surf uf_surface_graph.svh uf_surface_oracle.mem uf_surface_golden.mem
+
+# Re-baseline the Q6-04 golden table {obs_flip,correction} from the CURRENT RTL. Only run this
+# deliberately when the decoder's intended output changes — it overwrites the frozen reference that
+# `surf` checks against, so a careless run would mask a regression.
+golden-rebaseline:
+	$(VERILATOR) --cc --exe --build -Wall --top-module uf_surface_decoder \
+		uf_surface_decoder.sv tb_dump_golden.cpp -o dump_golden
+	./$(OBJ_DIR)/dump_golden > uf_surface_golden.mem
 
 clean:
 	rm -rf $(OBJ_DIR)
