@@ -843,11 +843,24 @@ strongest qLDPC decoder; (2) use the correct **per-cycle** logical-error metric 
 Goal: the real hardware milestone (ROADMAP §2 truth #1). Put a decoder on an FPGA and measure
 latency. ASIC stays out of scope until this proves competitive.
 
-**Exit metric:** Union-Find decoder on the FPGA (Kria KV260) with measured per-round latency;
-GPU-vs-FPGA comparison report.
+**Exit metric:** Union-Find decoder on the FPGA with measured per-round latency; GPU-vs-FPGA
+comparison report. Targeted at **two boards** (see Hardware) — synthesis is board-independent, so
+the whole pre-silicon path proceeds now regardless of shipping.
 
-**Hardware:** Xilinx **Kria KV260** (ordered; ~1 week out). Sim is Mac-native (Verilator);
-synthesis (Vivado, x86-Linux) targets the KV260; the board self-programs from its on-board ARM Linux.
+**Hardware (both ordered; ETA unknown — design for both):**
+- **Digilent Zybo Z7-20** — Zynq-7020 (`xc7z020clg400-1`): dual Cortex-A9 PS + Artix-class PL
+  (~53k LUT, 140 BRAM36, 220 DSP). The smaller, cheaper, likely-sooner board. Fit headroom is tight
+  → the d=5 scaling risk lives here.
+- **Xilinx Kria KV260** — K26 SOM (`xck26-sfvc784-2LV-c`): Zynq UltraScale+ PS + much larger PL
+  (~256k LUT). The headroom board; self-programs from its on-board ARM Linux.
+
+Sim is Mac-native (Verilator); synthesis (Vivado, x86-Linux box `openwebgui`) builds **both** parts
+from one RTL base; only the final on-board bring-up needs the physical board.
+
+**Execution order:** Q6-04 → Q6-09 are the board-independent pre-silicon path (synthesizable rewrite,
+dual-target synth, gate-level sign-off, PS↔PL integration, host software, d=5 scaling). Run them in
+order now; do the board ACs of Q6-01/Q6-02 when hardware lands; **Q6-03** (the GPU-vs-FPGA report)
+is last because it needs measured on-board numbers.
 
 -----
 
@@ -899,8 +912,9 @@ feasible. This is the first hard datapoint on the < 1 µs question.
   distance-3 correct (all weight-1 errors), weight-≤2 logical-error-rate matches/beats the CPU UF
   (40 vs 50). Tie-breaks differ from CPU UF on degenerate syndromes (both valid min-weight).
 - [ ] **(sim)** Parametrise to d=5; **pipeline the growth iterations** for timing (currently a
-  single-cycle combinational decode).
-- [ ] **(board, pending hardware)** Decodes on the KV260; measured per-round latency in ns.
+  single-cycle combinational decode). → **carried by Q6-04 (sequential rewrite) + Q6-09 (d=5 scaling).**
+- [ ] **(board, pending hardware)** Decodes on the board; measured per-round latency in ns.
+  → **carried by Q6-08** (host bring-up on Zybo / KV260).
 
 **Testing Requirements**
 - Co-simulation: RTL output == CPU UF (Q2-01) on a test-vector suite. ✅ (repetition code)
@@ -915,15 +929,166 @@ feasible. This is the first hard datapoint on the < 1 µs question.
 **Labels:** `area:fpga`, `area:docs`, `type:docs`, `priority:medium`
 **Milestone:** Phase Q6
 **Estimate:** S
-**Depends on:** Q6-02, Q3-04
+**Depends on:** Q6-08, Q6-09, Q3-04 (runs **last** — needs measured on-board numbers)
 
 **Description**
-Compare the same UF algorithm on GPU (Q3-01) vs FPGA (Q6-02): latency, throughput, power.
+Compare the same UF algorithm on GPU (Q3-01) vs FPGA (Q6-08/Q6-09): latency, throughput, power.
 This report is the decision input for whether ASIC (Q7) is worth pursuing.
 
 **Acceptance Criteria**
-- [ ] `docs/perf/qec-q6-fpga.md` with latency/throughput/power for GPU and FPGA.
+- [ ] `docs/perf/qec-q6-fpga.md` with latency/throughput/power for GPU and FPGA (both boards).
 - [ ] Explicit recommendation: does an ASIC close a gap that FPGA cannot? Go/no-go for Q7.
+
+-----
+
+### [Q6-04] Synthesizable sequential UF decoder (de-combinationalize growth/forest/peel)
+
+**Labels:** `area:fpga`, `area:decoder`, `type:refactor`, `priority:high`
+**Milestone:** Phase Q6
+**Estimate:** L
+**Depends on:** Q6-02
+
+**Description**
+`hw/uf_surface_decoder.sv` currently does the *entire* decode (growth → spanning forest → peeling)
+inside one `always_comb`: a triple-nested fixpoint (`for gi … for p … for e`) unrolled into a single
+giant combinational cloud, with only the result registered to a 1-cycle handshake. Verilator-correct,
+but for synthesis this will not close timing at any useful clock and blows up area. Rewrite the engine
+as a **clocked FSM** with bounded per-cycle work (one growth step / one connected-components pass /
+one peel step per cycle), all working state in registers/arrays, and a multi-cycle valid handshake
+with a latency counter. Keep it parametrised by the generated graph (`uf_surface_graph.svh`) so d=5
+follows in Q6-09.
+
+**Context**
+This is the precondition for *every* downstream task: synthesis (Q6-05), gate-level sign-off (Q6-06),
+and the on-board latency number (Q6-08) are all meaningless on a combinational-cloud netlist. It
+supersedes the open "pipeline the growth iterations" criterion of Q6-02.
+
+**Acceptance Criteria**
+- [ ] Clocked FSM replaces the single `always_comb` decode; per-cycle combinational depth bounded
+  (no unrolled fixpoint cloud); cluster/forest/peel state held in registers or BRAM-inferable arrays.
+- [ ] Multi-cycle `in_valid → out_valid` handshake with `busy`/`done`; decode latency exposed as a
+  cycle count.
+- [ ] **Bit-for-bit identical** `correction` and `obs_flip` vs the current combinational decode on all
+  256 d=3 syndromes (regression-locked in the Verilator TB).
+- [ ] Verilator TB green: validity on all syndromes, distance-3 correctness, quality unchanged
+  (RTL 40 vs CPU UF 50).
+- [ ] No inferred latches; single synchronous-reset style; `verilator -Wall` lint-clean.
+
+**Testing Requirements**
+- Co-simulation against the frozen combinational golden output (snapshot the current 256-row
+  {obs_flip, correction} table, assert equality).
+
+-----
+
+### [Q6-05] Vivado dual-target synth/impl flow (XC7Z020 + XCK26)
+
+**Labels:** `area:fpga`, `type:infra`, `priority:high`
+**Milestone:** Phase Q6
+**Estimate:** M
+**Depends on:** Q6-04
+
+**Description**
+Stand up a non-project Tcl Vivado flow on the x86 Linux box (`openwebgui`) and build the decoder for
+**both** parts — no board required. Synthesis answers the two questions that decide the whole
+prototype: **does it fit**, and **how fast** (Fmax). Free Vivado edition covers both the Zynq-7020 and
+the Kria K26.
+
+**Acceptance Criteria**
+- [ ] `hw/syn/` non-project Tcl flow: read RTL → `synth_design` → `opt/place/route` →
+  `report_utilization` + `report_timing_summary`, parameterised by `-part`.
+- [ ] Per-board XDC (clock + reset, PL clock from PS): Zybo Z7-20 (`xc7z020clg400-1`) and KV260
+  (`xck26-sfvc784-2LV-c`).
+- [ ] Utilization (LUT/FF/BRAM/DSP) and Fmax (WNS at a target clock) for d=3 on **both** parts,
+  committed to `docs/perf/qec-q6-fpga.md`.
+- [ ] Explicit fit verdict for XC7Z020 (53k LUT / 140 BRAM / 220 DSP) and headroom for XCK26.
+
+-----
+
+### [Q6-06] Post-synth / post-impl gate-level sign-off (xsim)
+
+**Labels:** `area:fpga`, `type:test`, `priority:medium`
+**Milestone:** Phase Q6
+**Estimate:** S
+**Depends on:** Q6-05
+
+**Description**
+Re-run the verification vectors on the synthesized and implemented netlist in Vivado `xsim` to catch
+what Verilator RTL sim cannot: synth/Verilator semantic mismatch, inferred latches, X-propagation,
+and reset behaviour. Board-independent.
+
+**Acceptance Criteria**
+- [ ] Post-synthesis functional sim of the netlist passes the full 256-syndrome vector suite.
+- [ ] Post-implementation timing sim (SDF back-annotated) passes at the closed clock; no `X` on
+  outputs after reset deassertion.
+- [ ] Any RTL fixes for sim/synth parity folded back; Verilator TB still green.
+
+-----
+
+### [Q6-07] PS↔PL integration: AXI4-Lite control + AXI4-Stream syndrome wrapper
+
+**Labels:** `area:fpga`, `type:feature`, `priority:medium`
+**Milestone:** Phase Q6
+**Estimate:** L
+**Depends on:** Q6-04
+
+**Description**
+Wrap the decoder for the Zynq PS so the ARM can drive it: an **AXI4-Lite** slave for control/status +
+register map, and **AXI4-Stream** for syndrome ingress / correction egress (this is where the Q4
+sliding-window streaming model maps onto hardware). The wrapper is PS-agnostic — identical for the
+Zynq-7020 (Zybo) and Zynq UltraScale+ (KV260) PS. Fully simulatable; no board.
+
+**Acceptance Criteria**
+- [ ] `hw/uf_axi_wrap.sv`: AXI4-Lite slave (start, busy/done, latency, obs_flip, correction read-back)
+  + AXI4-Stream syndrome ingress.
+- [ ] Register map documented in `hw/README.md`.
+- [ ] Cocotb (or Verilog-AXI) testbench drives a syndrome frame in and reads the correction out,
+  matching the bare decoder on the vector suite. No board.
+- [ ] Wrapper builds for both PS variants (Zynq-7020 and Zynq UltraScale+).
+
+-----
+
+### [Q6-08] PS-side host software + on-board bring-up + latency wiring
+
+**Labels:** `area:fpga`, `area:decoder`, `type:feature`, `priority:medium`
+**Milestone:** Phase Q6
+**Estimate:** M
+**Depends on:** Q6-07
+
+**Description**
+Bare-metal C (Vitis) host that configures the AXI-Lite registers, streams a syndrome, polls `done`,
+and reads `correction`/`obs_flip`/`latency`. Wire the PL cycle-counter latency into the Q4-03
+latency-budget instrumentation so on-board numbers land in the same table. Software dev is
+board-independent (against the block design); the on-board round-trip closes when hardware arrives.
+
+**Acceptance Criteria**
+- [ ] `hw/sw/` bare-metal C driver: configure AXI-Lite, stream a syndrome, poll done, read results;
+  portable across Zynq-7020 / UltraScale+ PS.
+- [ ] PL-reported latency surfaced to the host and folded into the Q4-03 budget table.
+- [ ] **(board, pending hardware)** End-to-end on Zybo and/or KV260: host↔PL round-trip verified,
+  per-round latency measured in ns. **Closes the board ACs of Q6-01 and Q6-02.**
+
+-----
+
+### [Q6-09] d=5 parametrization + scaling/fit study (both boards)
+
+**Labels:** `area:fpga`, `area:decoder`, `type:feature`, `priority:medium`
+**Milestone:** Phase Q6
+**Estimate:** L
+**Depends on:** Q6-04, Q6-05
+
+**Description**
+Drive the generated-graph parametrisation to **d=5** (and project d=7), re-verify in Verilator, and
+re-synth on both parts. This is where the XC7Z020 fit risk gets resolved: report where the decoder
+stops fitting the small part and how much headroom the K26 has — deciding which board carries which
+code distance, and feeding Q6-03 and the ASIC question.
+
+**Acceptance Criteria**
+- [ ] d=5 matching graph generated (`qec_surface_uf_graph`); UF FSM verified in Verilator (validity +
+  distance-5 correctness vs the CPU UF).
+- [ ] Synth/impl for d=3 and d=5 on `xc7z020clg400-1` and `xck26-sfvc784-2LV-c`: utilization + Fmax
+  table in `docs/perf/qec-q6-fpga.md`.
+- [ ] Scaling verdict: max code distance per board; decode latency (cycles → ns at Fmax) vs the 1 µs
+  per-round budget, per distance and board.
 
 -----
 
