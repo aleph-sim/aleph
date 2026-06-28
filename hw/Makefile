@@ -12,7 +12,7 @@ OBJ_DIR   := obj_dir
 VERILATOR ?= verilator
 CARGO     := cargo run --release -q -p aleph-qec --example
 
-.PHONY: all d3 rep surf clean
+.PHONY: all d3 rep surf surf-d5 clean
 
 all: d3 rep surf
 
@@ -34,6 +34,17 @@ surf:
 	$(VERILATOR) --cc --exe --build -Wall --top-module uf_surface_decoder \
 		uf_surface_decoder.sv tb_uf_surface.cpp -o sim_surf
 	./$(OBJ_DIR)/sim_surf uf_surface_graph.svh uf_surface_oracle.mem uf_surface_golden.mem
+
+# Q6-09 — distance scaling: build the SAME parametric FSM with the d=5 graph and verify it over all
+# weight-≤2 errors (2^24 syndromes is too many to enumerate; a distance-5 code must correct ≤2 errors).
+surf-d5:
+	cd .. && $(CARGO) qec_surface_uf_graph -- graph 5 > hw/uf_surface_graph_d5.svh
+	rm -rf _d5build && mkdir _d5build
+	cp uf_surface_decoder.sv uf_surface_graph_d5.svh _d5build/
+	mv _d5build/uf_surface_graph_d5.svh _d5build/uf_surface_graph.svh
+	cd _d5build && $(VERILATOR) --cc --exe --build -Wall --top-module uf_surface_decoder \
+		uf_surface_decoder.sv ../tb_uf_surface_scale.cpp -o sim_scale_d5
+	./_d5build/$(OBJ_DIR)/sim_scale_d5 _d5build/uf_surface_graph.svh
 
 # Re-baseline the Q6-04 golden table {obs_flip,correction} from the CURRENT RTL. Only run this
 # deliberately when the decoder's intended output changes — it overwrites the frozen reference that
