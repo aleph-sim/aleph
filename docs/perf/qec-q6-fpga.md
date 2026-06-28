@@ -59,8 +59,39 @@ over-clock violations.
 
 ## Q6-09 — d=5 scaling
 
-> Pending Q6-09 (d=5 graph + re-synth). Will add d=5 rows for both parts and the max-distance-per-board
-> verdict.
+The decoder is parametric in the generated matching graph, so d=5 is the same RTL with a larger graph
+(`hw/uf_surface_graph_d5.svh`: N=25 / 24 detectors / M=54 edges, vs d=3's N=9 / M=18).
+
+**Verification** (`hw/tb_uf_surface_scale.cpp`, `make -C hw surf-d5`). 2^24 syndromes can't be
+enumerated, so we check every weight-1 and weight-2 error pattern (a distance-5 code must correct ≤2
+errors):
+
+| | validity | weight-1 (distance) | weight-≤2 logical errors |
+|---|---|---|---|
+| d=3 (cross-check) | 0 fail | 0 fail | 40 / 153 (d=3 corrects only weight-1) |
+| **d=5** | **0 fail** | **0 fail** | **0 / 1431** ⇒ corrects *every* ≤2-error fault |
+
+**Synthesis** (both parts, OOC, Vivado 2024.2):
+
+| part | d | LUT | FF | Fmax | worst-case latency | budget (1 µs) |
+|------|---|-----|----|------|--------------------|---------------|
+| Zybo `xc7z020` | 3 | 1178 (2.2%) | 268 | 58.7 MHz | 47 clk → **801 ns** | ✅ |
+| Zybo `xc7z020` | 5 | 6139 (11.5%) | 754 | 15.9 MHz | 109 clk → **6.86 µs** | ❌ |
+| KV260 `xck26` | 3 | 1200 (1.0%) | 268 | 170 MHz | 47 clk → **276 ns** | ✅ |
+| KV260 `xck26` | 5 | 6427 (5.5%) | 754 | 38.0 MHz | 109 clk → **2.87 µs** | ❌ |
+
+(Worst-case latency is over all weight-≤2 syndromes; the "33 clk" quoted under Q6-05 was the
+empty-syndrome *best* case. Latency is syndrome-dependent: more growth rounds ⇒ more cycles.)
+
+**Scaling verdict.** d=3 meets the ~1 µs round budget on both boards. **d=5 misses it on both** with
+the current single-bounded-pass-per-cycle FSM. Area is never the limit (d=5 is 11.5 % of the small
+XC7Z020). The wall is two compounding factors as the graph grows: **Fmax collapses** ~3.7–4.5×
+(58.7→15.9 MHz, 170→38 MHz — the per-cycle combinational chains are O(M): the 54-edge loop-carried
+peel sweep and the CC/forest passes over 25 nodes) **and the cycle count grows** ~2.3× (47→109). The
+fix is the lever flagged since Q6-05: **pipeline the per-cycle passes** — split the O(M) peel/CC
+chains into bounded-depth sub-steps to restore Fmax — which is the precondition for real-time d≥5.
+Max code distance per board *within budget*, as-is: **d=3 on both** (KV260 has ~3.6× the timing
+headroom of Zybo, so it is the path to d=5 once pipelining lands).
 
 ## Q6-03 — GPU vs FPGA
 

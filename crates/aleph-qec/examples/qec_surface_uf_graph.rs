@@ -21,9 +21,12 @@ use std::collections::BTreeMap;
 use aleph_qec::{build_dem, SurfaceCode, Syndrome, UnionFindDecoder};
 
 fn main() {
-    let mode = std::env::args().nth(1).unwrap_or_else(|| "graph".into());
+    let args: Vec<String> = std::env::args().collect();
+    let mode = args.get(1).cloned().unwrap_or_else(|| "graph".into());
+    // Optional distance argument (default 3 — keeps the d=3 Makefile targets working unchanged).
+    let d: usize = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(3);
 
-    let exp = SurfaceCode::new(3).memory_z_experiment(1);
+    let exp = SurfaceCode::new(d).memory_z_experiment(1);
     // Uniform noise so the unweighted graph the RTL decodes matches the oracle decoder's graph.
     let dem = build_dem(&exp.annotated, &exp.phenomenological_mechanisms(0.01, 0.01)).unwrap();
     let n = dem.detectors;
@@ -48,8 +51,8 @@ fn main() {
             let ea: Vec<String> = edges.keys().map(|(a, _)| a.to_string()).collect();
             let eb: Vec<String> = edges.keys().map(|(_, b)| b.to_string()).collect();
             let el: Vec<String> = edges.values().map(|l| l.to_string()).collect();
-            println!("// d=3 rotated surface-code memory-Z (1 round) matching graph — GENERATED, do not edit.");
-            println!("// regenerate: cargo run -p aleph-qec --example qec_surface_uf_graph -- graph > hw/uf_surface_graph.svh");
+            println!("// d={d} rotated surface-code memory-Z (1 round) matching graph — GENERATED, do not edit.");
+            println!("// regenerate: cargo run -p aleph-qec --example qec_surface_uf_graph -- graph {d} > hw/uf_surface_graph_d{d}.svh");
             println!("localparam int UF_N = {};", n + 1);
             println!("localparam int UF_M = {m};");
             println!("localparam int UF_BOUNDARY = {boundary};");
