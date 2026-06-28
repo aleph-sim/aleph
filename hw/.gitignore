@@ -2,3 +2,10 @@
 obj_dir/
 sim_*
 *.vcd
+
+# Vivado / synth outputs (Q6-05)
+syn/reports/
+*.jou
+*.log
+.Xil/
+vivado*.str
