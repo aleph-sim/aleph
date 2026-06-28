@@ -68,3 +68,27 @@ Targeted at **two boards** — Digilent **Zybo Z7-20** (`xc7z020clg400-1`) and X
 (`xck26-sfvc784-2LV-c`). Synthesis is board-independent; only final bring-up needs hardware. Boards
 self-program / load over JTAG; Vivado (x86-Linux only) builds the bitstream. See `docs/qec/BACKLOG.md`
 Phase Q6 and the project memory for hardware specifics.
+
+## Q6-07 — AXI PS↔PL wrapper
+
+`uf_axi_wrap.sv` wraps the decoder for the Zynq PS over two standard interfaces (identical on
+Zynq-7020 and Zynq UltraScale+): an **AXI4-Lite** slave (control plane) and an **AXI4-Stream** pair
+(syndrome in / correction out — the data plane the Q4 streaming maps onto). A single decode-owner
+FSM serves whichever interface triggered the decode; the decoder core is unchanged.
+
+`tb_uf_axi_xsim.sv` (run via `syn/axisim.sh` on a Vivado host) drives **all 256 syndromes through
+both planes** and checks them bit-for-bit against `uf_surface_golden.mem` → `RESULT: PASS`.
+
+**AXI4-Lite register map** (32-bit data, byte addresses):
+
+| addr | name | access | meaning |
+|------|------|--------|---------|
+| 0x00 | `CTRL`       | W  | bit0 `START` (self-clearing): latch `SYNDROME`, run one decode |
+| 0x04 | `STATUS`     | R  | bit0 `BUSY`, bit1 `DONE` (sticky, cleared on next `START`), bit2 `OBS_FLIP` |
+| 0x08 | `SYNDROME`   | RW | `syndrome[SYN_W-1:0]` |
+| 0x0C | `CORRECTION` | R  | `correction[M-1:0]` |
+| 0x10 | `LATENCY`    | R  | last decode latency in cycles |
+| 0x14 | `IDCODE`     | R  | `0x5546_0003` constant ('UF', d=3) for bring-up sanity |
+
+AXI4-Stream: write a syndrome word on `s_axis` (one beat per frame); the wrapper emits
+`{obs_flip, correction}` on `m_axis` with `tlast` per frame.
