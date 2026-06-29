@@ -229,6 +229,37 @@ remaining d≥5 levers are cycle-count (the fixed `S_FOREST`/`S_PEEL` passes) ra
 **Q6 d=5 status:** KV260 meets the ~1 µs budget (802 ns); Zybo (2.17 µs) is bounded by the slow
 `-1` part more than by any single remaining path.
 
+## Q6-13 — early-terminate the peel sweep (cut the d=5 cycle count)
+
+Q6-12 established that the remaining d≥5 lever is **cycle count**, not Fmax. The biggest fixed cost
+in the schedule is `S_PEEL_PASS`, which runs a constant `UF_N` rounds (the worst-case tree depth).
+But a peel round that strips no leaf makes **zero** register changes — every `peel[e]=0` forces
+`lfd`/`cnt`/`tog`/`vleaf` to 0, so `corr`/`deg`/`dfct`/`istree` all write back their current values —
+and because nothing changed, every subsequent scheduled round is also empty. So the first empty round
+is the fixpoint: jump straight to `S_FINISH`. Implemented with one `anypeel = |peel` reduction
+gating the state transition. **Bit-identical** (golden d=3 + d=5 0/1431 both preserved); it cuts the
+peel cost from a fixed `N` to (actual max tree depth + 1).
+
+Verilator worst-case latency: **d=5 109 → 91 clk** (−18, −16.5%); d=3 33 → 25 clk.
+
+Re-synth (Vivado 2024.2, OOC; **before** = the #377 parity-gather decoder re-synthesised on the same
+box — baseline reproduced exactly, no drift — **after** = + early-terminate):
+
+| part | d | Fmax before→after | cycles | latency before→after |
+|------|---|-------------------|--------|----------------------|
+| Zybo `xc7z020` | 5 | 50.3 → 46.4 MHz | 109 → 91 | 2.167 → **1.961 µs** (−9.5%) |
+| KV260 `xck26`  | 5 | 135.9 → 124.2 MHz | 109 → 91 | 0.802 → **0.733 µs** (−8.7%) |
+
+**Net latency improves on both parts** — the 16.5% cycle cut outweighs an ~8% Fmax cost. The Fmax dip
+is *not* a new critical path: the worst path is unchanged (`label_reg[24] → FSM_state`, the
+`S_CC_RELAX` Jacobi path, 26 levels), but feeding `anypeel` into the next-state mux widened that
+register's input cone and cost it some routing slack (−14.88 → −16.56 ns @ Zybo). LUT grew trivially
+(Zybo 2799→2826, KV260 2807→2864). The trade is clearly worth it for the latency goal: KV260 d=5
+moves further under the ~1 µs budget (733 ns) and Zybo d=5 closes to 1.96 µs.
+
+**Q6 d=5 status:** KV260 733 ns (real-time, comfortably under budget); Zybo 1.96 µs. Remaining cycle
+lever is the one-edge-per-cycle `S_FOREST` (M rounds) — the next target.
+
 ## Q6-03 — GPU vs FPGA
 
 > Pending board bring-up (Q6-08) for measured on-board latency/throughput/power vs the Q3 GPU decoder.

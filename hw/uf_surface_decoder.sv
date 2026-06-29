@@ -219,6 +219,7 @@ module uf_surface_decoder (
           automatic logic [IDXW-1:0] lf   [UF_M];   // its leaf endpoint
           automatic logic [IDXW-1:0] nb   [UF_M];   // its neighbour (non-leaf) endpoint
           automatic logic            lfd  [UF_M];   // defect routed off the leaf onto the neighbour
+          automatic logic            anypeel;       // any leaf stripped this round?
           // 1. classify each tree edge — all reads from registers, no inter-edge dependency.
           for (int e = 0; e < UF_M; e++) begin
             peel[e] = 1'b0; lf[e] = '0; nb[e] = '0; lfd[e] = 1'b0;
@@ -250,8 +251,17 @@ module uf_surface_decoder (
             deg[vv]  <= vleaf ? 5'd0 : (deg[vv] - cnt);
             dfct[vv] <= dfct[vv] ^ tog;
           end
-          if (pit == IDXW'(UF_N - 1)) state <= S_FINISH;
-          else                        pit   <= pit + 1'b1;
+          // Q6-13: early terminate. S_PEEL_PASS is scheduled for a fixed UF_N rounds (worst-case
+          // tree depth), but a round that strips no leaf makes ZERO register changes (every peel[e]=0
+          // => lfd/cnt/tog/vleaf all 0 => corr/deg/dfct/istree write back their current values), and
+          // since nothing changed the next round would also peel nothing. So once a round is empty the
+          // remaining scheduled rounds are provably no-ops: jump to S_FINISH. This is BIT-IDENTICAL to
+          // running all UF_N rounds (golden d=3 + d=5 weight-<=2 quality unchanged); it just cuts the
+          // peel cost from a fixed N to (actual max tree depth + 1), typically << N at d>=5.
+          anypeel = 1'b0;
+          for (int e = 0; e < UF_M; e++) anypeel = anypeel | peel[e];
+          if (!anypeel || pit == IDXW'(UF_N - 1)) state <= S_FINISH;
+          else                                    pit   <= pit + 1'b1;
         end
 
         // ---- logical flip = parity of the logical flag over the correction edges ----
