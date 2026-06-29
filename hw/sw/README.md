@@ -44,3 +44,18 @@ PL clock (the Q6-05 closed Fmax) so `uf_latency_ns` reports real time against th
 
 **Remaining (needs a board):** flash the bitstream + this app onto Zybo / KV260 and confirm the
 host↔PL round-trip + measured per-round latency — closes the board criteria of Q6-01/Q6-02/Q6-08.
+
+## Bring-up is Mac-attached (no Mac-side JTAG)
+
+The boards plug into the **M4 Mac**, but Vivado/Vitis are x86-Linux-only and there is no macOS
+Xilinx JTAG/hw_server — so bring-up goes via **SD-boot + serial**, never Mac JTAG:
+
+1. **Build on `openwebgui`** (x86 Linux): bitstream (Vivado) + this bare-metal app, packaged into
+   **`BOOT.bin`** (FSBL + bitstream + `app.elf`) for the Zybo; or a PetaLinux/Ubuntu **SD image** for
+   the KV260 (the K26 boots Linux on its ARM and self-programs the PL).
+2. **`scp`** the boot artifact to the Mac.
+3. **Mac writes the microSD** (`dd` / Raspberry Pi Imager / balenaEtcher) and inserts it.
+4. The board **self-boots from SD and programs its own PL** — no host JTAG.
+5. **Mac ↔ board** over USB-UART (`screen /dev/tty.usbserial-* 115200`); for the KV260 also
+   Ethernet/SSH (direct cable or a small switch). `main.c`'s `printf` lands in the serial console.
+
