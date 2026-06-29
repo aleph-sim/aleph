@@ -129,6 +129,49 @@ Net: the parallel peel ships as a correctness-preserving area win and removes on
 become critical once the find is fixed; the d≥5 real-time lever is now precisely targeted (the forest
 find) and tracked in #372.
 
+### Q6-10 (part 2) — forest find: quick-union → quick-find (flat union-find)
+
+The remaining #372 work: kill the `S_FOREST` root-walk identified above. The Q6-02/Q6-04 form was a
+**lazy quick-union** — `find` walked `troot` N times per endpoint (`for k in 0..N: ra = troot[ra]`),
+an N-deep *serial* chain of index-muxed lookups (77–78 LUT levels at d=5). Replace it with
+**quick-find**: hold the invariant that `troot[x]` is *always* the direct component root (a flat
+forest). Then `find` is a single depth-1 read, and `union` eagerly relabels every node of the
+absorbed root in parallel — N independent compare-muxes (`troot[i] <= (troot[i]==ra)?rb:troot[i]`),
+no serial dependency. This is **bit-identical** to the lazy form: edges are still processed in index
+order, the union test is still `ra!=rb`, and the surviving root is still `rb`, so `istree[]` is
+unchanged — d=3 still bit-matches `uf_surface_golden.mem` and d=5 still corrects 0/1431 weight-≤2
+(both re-verified in Verilator; cycle counts unchanged: d=3 47 clk worst, d=5 109 clk worst).
+
+Re-synth (Vivado 2024.2, OOC, both parts; **base** = the parallel-peel decoder above, re-run on the
+same box for a same-day before/after):
+
+| part | d | LUT base→new | Fmax base→new | d=5 worst-case latency base→new (109 clk) |
+|------|---|--------------|---------------|--------------------------------------------|
+| Zybo `xc7z020`  | 3 | 872 → **760**  | 62.4 → **81.5 MHz** (+31%) | — (d=3 47 clk: 753→**577 ns** ✅) |
+| Zybo `xc7z020`  | 5 | 6061 → **3622** (−40%) | 15.4 → **17.8 MHz** (+16%) | 7.08 → **6.12 µs** ❌ |
+| KV260 `xck26`   | 3 | 876 → **670**  | 173.6 → **191.1 MHz** (+10%) | — (d=3 47 clk: 271→**246 ns** ✅) |
+| KV260 `xck26`   | 5 | 6111 → **3799** (−38%) | 38.2 → **47.5 MHz** (+24%) | 2.85 → **2.29 µs** ❌ |
+
+**Two wins, not one.** Quick-find lifts d=5 Fmax +16% (Zybo) / +24% (KV260) *and* nearly **halves
+d=5 LUT** (the N-deep unrolled root-walk was also large combinational area) — d=5 now fits in ~3.8k
+LUT (1.5% of KV260). The root-walk is **gone** from the worst path: the new d=5 binding path is
+
+```
+Zybo : label_reg[1][2] → anyodd_reg    77 levels, 56.1 ns
+KV260: defect_reg[0]   → anyodd_reg    78 levels, 21.0 ns   (via oddc[])
+```
+
+i.e. the **connected-component relabel + odd-cluster parity** scatter — `S_CC_RELAX`'s Jacobi
+min-relaxation (`nl[EA]=min(...)`) and `S_ODD`'s per-cluster parity (`par[label[i]] ^= defect[i]`,
+a histogram scatter indexed by `label`) feeding `anyodd`. These are label-indexed scatters with
+read-after-write on a shared bucket, which synth serialises into a long chain — the same *shape* of
+wall the find had, one stage upstream.
+
+**Budget verdict.** d=3 now clears 1 µs with wide margin on both boards. d=5 still misses (6.12 µs
+Zybo, 2.29 µs KV260) but is **materially closer** — KV260 is within ~2.3× of budget. The next lever
+is bounding the **CC/odd scatter** (e.g. tree-reduced per-label parity, or fusing the relabel into
+the growth loop so `anyodd` doesn't depend on a fresh full CC pass), tracked as follow-up to #372.
+
 ## Q6-03 — GPU vs FPGA
 
 > Pending board bring-up (Q6-08) for measured on-board latency/throughput/power vs the Q3 GPU decoder.
