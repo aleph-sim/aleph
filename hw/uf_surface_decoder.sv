@@ -44,8 +44,12 @@ module uf_surface_decoder (
   // MHz), erasing the cycle win. See docs/perf/qec-q6-fpga.md §Q6-14.
   localparam int FOREST_UNROLL = 3;
 
+  // Q6-15: S_CC_INIT folded away — the label-to-identity reset is now done in the predecessor states
+  // (S_IDLE on accept, S_GROW after a grow round), which already write registers, so it costs no
+  // extra cycle. Saves one clock per growth round (G+1 total). Bit-identical: S_CC_RELAX still reads
+  // label=identity + the current support on entry, exactly as it did via the dedicated init state.
   typedef enum logic [3:0] {
-    S_IDLE, S_CC_INIT, S_CC_RELAX, S_ODD, S_GROW,
+    S_IDLE, S_CC_RELAX, S_GROW,
     S_FOREST, S_PEEL_INIT, S_PEEL_PASS, S_FINISH
   } state_t;
 
@@ -62,8 +66,6 @@ module uf_surface_decoder (
   logic [IDXW-1:0]   troot  [UF_N];   // spanning-tree union-find parent
   logic              istree [UF_M];   // edge is in the spanning forest
   logic [4:0]        deg    [UF_N];   // node degree in the forest
-  logic              oddc   [UF_N];   // per-node: in an odd (non-neutral) cluster
-  logic              anyodd;
   logic [UF_M-1:0]   corr;
   logic [IDXW-1:0]   grow_cnt;        // growth rounds done (caps at UF_N, as in Q6-02)
   logic [EIDXW-1:0]  e_idx;           // forest edge cursor
@@ -79,14 +81,13 @@ module uf_surface_decoder (
       obs_flip       <= 1'b0;
       latency_cycles <= '0;
       lat            <= '0;
-      anyodd         <= 1'b0;
       grow_cnt       <= '0;
       e_idx          <= '0;
       pit            <= '0;
       corr           <= '0;
       for (int i = 0; i < UF_N; i++) begin
         defect[i] <= 1'b0; dfct[i] <= 1'b0; label[i] <= '0; troot[i] <= '0;
-        deg[i] <= '0; oddc[i] <= 1'b0;
+        deg[i] <= '0;
       end
       for (int e = 0; e < UF_M; e++) begin support[e] <= 2'd0; istree[e] <= 1'b0; end
     end else begin
@@ -100,19 +101,15 @@ module uf_surface_decoder (
             for (int i = 0; i < UF_N; i++)
               defect[i] <= (i < UF_N - 1) ? syndrome[i] : 1'b0;
             for (int e = 0; e < UF_M; e++) support[e] <= 2'd0;
+            for (int i = 0; i < UF_N; i++) label[i] <= IDXW'(i);  // Q6-15: folded CC_INIT
             grow_cnt <= '0;
             lat      <= 16'd1;
             busy     <= 1'b1;
-            state    <= S_CC_INIT;
+            state    <= S_CC_RELAX;
           end
         end
 
-        // ---- GROWTH: recompute connected components, then grow odd clusters ----
-        S_CC_INIT: begin
-          for (int i = 0; i < UF_N; i++) label[i] <= IDXW'(i);
-          state <= S_CC_RELAX;
-        end
-
+        // ---- GROWTH: connected components (label reset is folded into S_IDLE/S_GROW), grow odd ----
         // one parallel (Jacobi) min-relaxation pass over fused edges; iterate until stable.
         S_CC_RELAX: begin
           automatic logic [IDXW-1:0] nl [UF_N];
@@ -128,19 +125,19 @@ module uf_surface_decoder (
             if (nl[i] != label[i]) changed = 1'b1;
             label[i] <= nl[i];
           end
-          if (!changed) state <= S_ODD;
+          if (!changed) state <= S_GROW;
         end
 
-        // per-cluster defect parity + boundary flag -> odd (non-neutral) nodes.
-        // Q6-11: per-label parity by GATHER, not the serial `par[label[i]] ^= defect[i]`
-        // SCATTER. XOR is associative/commutative, so par[v] = XOR{defect[i] : label[i]==v}
-        // is bit-identical to the scatter result — but each bucket is an INDEPENDENT masked
-        // XOR-reduction over the N nodes, which Vivado balances into an O(log N) tree with no
-        // running-accumulator chain. The scatter form was the new d>=5 critical path after the
-        // quick-find landed (label/defect -> anyodd_reg, ~77 LUT levels; #375 finding).
-        S_ODD: begin
-          automatic logic par  [UF_N];
-          automatic logic hasb [UF_N];
+        // Q6-15: fused ODD+GROW. The odd-cluster flags are a pure combinational function of label +
+        // defect (the Q6-11 parity GATHER), so there is no need to register them and spend a separate
+        // S_ODD cycle — compute them here and grow in the same cycle. Saves one clock per growth round.
+        // Bit-identical: `oddc_c` is exactly what S_ODD wrote to the `oddc` register, the grow update
+        // and the anyodd/cap test are unchanged. The parity gather (O(log N) tree) + the shallow grow
+        // adder stay below the binding S_CC_RELAX critical path.
+        S_GROW: begin
+          automatic logic par    [UF_N];
+          automatic logic hasb   [UF_N];
+          automatic logic oddc_c [UF_N];
           automatic logic any;
           for (int v = 0; v < UF_N; v++) begin
             automatic logic p;
@@ -152,23 +149,23 @@ module uf_surface_decoder (
           end
           any = 1'b0;
           for (int i = 0; i < UF_N; i++) begin
-            oddc[i] <= par[label[i]] & ~hasb[label[i]];
-            any = any | (par[label[i]] & ~hasb[label[i]]);
+            oddc_c[i] = par[label[i]] & ~hasb[label[i]];
+            any = any | oddc_c[i];
           end
-          anyodd <= any;
-          state  <= S_GROW;
-        end
-
-        // grow incident edges of odd clusters by one half-step (cap support at 2); else enter forest.
-        S_GROW: begin
-          if (anyodd && grow_cnt < IDXW'(UF_N)) begin
+          if (any && grow_cnt < IDXW'(UF_N)) begin
             for (int e = 0; e < UF_M; e++) begin
               automatic logic [2:0] s;
-              s = {1'b0, support[e]} + {2'b0, oddc[UF_EA[e]]} + {2'b0, oddc[UF_EB[e]]};
+              s = {1'b0, support[e]} + {2'b0, oddc_c[UF_EA[e]]} + {2'b0, oddc_c[UF_EB[e]]};
               support[e] <= (s > 3'd2) ? 2'd2 : s[1:0];
             end
+            // Q6-15: do NOT reset labels here — keep this round's converged labels as the next
+            // round's CC_RELAX seed. Growth only MERGES components, and the min-label Jacobi fixpoint
+            // is unique (every node starts >= its new component min, and that min node keeps its
+            // self-label), so the converged result is identical — but starting from the prior labels
+            // only the newly-merged frontier has to propagate, so CC_RELAX converges in a couple of
+            // passes instead of re-running the full component diameter from identity each round.
             grow_cnt <= grow_cnt + 1'b1;
-            state    <= S_CC_INIT;
+            state    <= S_CC_RELAX;
           end else begin
             for (int i = 0; i < UF_N; i++) troot[i] <= IDXW'(i);
             for (int e = 0; e < UF_M; e++) istree[e] <= 1'b0;
