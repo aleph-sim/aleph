@@ -33,7 +33,7 @@
 //! `X` readout); the model is the `Z`-error sector — the circuit-level analogue of
 //! `code_capacity_dem`, directly comparable to the published BB-code thresholds (~0.7%).
 
-use crate::builder::{build_dem, AnnotatedCircuit, ErrorMechanism};
+use crate::builder::{build_dem, AnnotatedCircuit, CircuitNoise, ErrorMechanism};
 use crate::dem::{DemError, DetectorErrorModel};
 use crate::error::Result;
 use aleph_core::{Gate, GateInstance};
@@ -470,37 +470,6 @@ impl BBCode {
 const SX: [Option<usize>; 7] = [None, Some(1), Some(4), Some(3), Some(5), Some(0), Some(2)];
 /// `Z`-check half of the schedule (`sZ = [3,5,0,1,2,4,'idle']`); indexes [`BBCode::zchk_nbrs`].
 const SZ: [Option<usize>; 7] = [Some(3), Some(5), Some(0), Some(1), Some(2), Some(4), None];
-
-/// Circuit-level depolarizing noise strengths for [`BBCode::circuit_level_dem`].
-///
-/// Following Bravyi et al.'s model, each source contributes its `Z`-component to the `Z`-error
-/// sector: a two-qubit depolarizing channel after every CNOT (its 15 non-identity Paulis split so
-/// each of `Z⊗I`, `I⊗Z`, `Z⊗Z` appears with weight `4/15`), a single-qubit depolarizing channel on
-/// idle qubits (`Z` with weight `2/3`), and basis-flip errors at preparation and measurement.
-#[derive(Clone, Copy, Debug)]
-pub struct CircuitNoise {
-    /// Two-qubit depolarizing rate per CNOT.
-    pub p_cnot: f64,
-    /// Preparation (reset-into-basis) error rate.
-    pub p_init: f64,
-    /// Measurement flip rate.
-    pub p_meas: f64,
-    /// Single-qubit depolarizing rate on an idle qubit.
-    pub p_idle: f64,
-}
-
-impl CircuitNoise {
-    /// The standard uniform circuit-level model: every source at the same physical rate `p`
-    /// (Bravyi et al.'s `error_rate`).
-    pub fn uniform(p: f64) -> Self {
-        Self {
-            p_cnot: p,
-            p_init: p,
-            p_meas: p,
-            p_idle: p,
-        }
-    }
-}
 
 /// A built `rounds`-cycle memory-`X` experiment on a BB code: the annotated Clifford circuit plus
 /// the rate-free geometry of the circuit-level noise, from which [`Self::circuit_level_mechanisms`]

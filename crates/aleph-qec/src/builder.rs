@@ -54,6 +54,39 @@ pub struct ErrorMechanism {
     pub at: usize,
 }
 
+/// Circuit-level depolarizing noise strengths for a syndrome-extraction experiment, shared by the
+/// surface-code ([`crate::SurfaceCode::circuit_level_dem`]) and BB-code
+/// ([`crate::BBCode::circuit_level_dem`]) circuit-level DEMs.
+///
+/// Following the standard circuit-level model, each source contributes only the Pauli sector the
+/// experiment detects: a two-qubit depolarizing channel after every CNOT (its 15 non-identity Paulis
+/// split so each of the relevant-sector components `P⊗I`, `I⊗P`, `P⊗P` appears with weight `4/15`),
+/// a single-qubit depolarizing channel on idle data qubits (the detected Pauli with weight `2/3`),
+/// and basis-flip errors at preparation and measurement.
+#[derive(Clone, Copy, Debug)]
+pub struct CircuitNoise {
+    /// Two-qubit depolarizing rate per CNOT.
+    pub p_cnot: f64,
+    /// Preparation (reset-into-basis) error rate.
+    pub p_init: f64,
+    /// Measurement flip rate.
+    pub p_meas: f64,
+    /// Single-qubit depolarizing rate on an idle qubit.
+    pub p_idle: f64,
+}
+
+impl CircuitNoise {
+    /// The standard uniform circuit-level model: every source at the same physical rate `p`.
+    pub fn uniform(p: f64) -> Self {
+        Self {
+            p_cnot: p,
+            p_init: p,
+            p_meas: p,
+            p_idle: p,
+        }
+    }
+}
+
 /// Build a [`DetectorErrorModel`] for `ac` under the given error `mechanisms`.
 ///
 /// Each mechanism is propagated to its detector/observable support; mechanisms

@@ -37,9 +37,9 @@ mod surface;
 mod syndrome;
 mod union_find;
 
-pub use bivariate_bicycle::{BBCode, BBMemoryExperiment, CircuitNoise};
+pub use bivariate_bicycle::{BBCode, BBMemoryExperiment};
 pub use bp::{BpDecoder, BpSoft, TannerGraph, DEFAULT_MAX_ITER};
-pub use builder::{build_dem, AnnotatedCircuit, ErrorMechanism};
+pub use builder::{build_dem, AnnotatedCircuit, CircuitNoise, ErrorMechanism};
 pub use decoder::{Decoder, LogicalErrorResult, NullDecoder};
 pub use dem::{DemError, DetectorErrorModel};
 pub use error::{Error, Result};
