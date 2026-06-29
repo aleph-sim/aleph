@@ -1,5 +1,5 @@
-// d=7 rotated surface-code memory-Z (1 round) matching graph — GENERATED, do not edit.
-// regenerate: cargo run -p aleph-qec --example qec_surface_uf_graph -- graph 7 > hw/uf_surface_graph_d7.svh
+// d=7 rotated surface-code memory-Z (1 round(s)) matching graph — GENERATED, do not edit.
+// regenerate: cargo run -p aleph-qec --example qec_surface_uf_graph -- graph 7 1 > hw/uf_surface_graph_d7.svh
 localparam int UF_N = 49;
 localparam int UF_M = 110;
 localparam int UF_BOUNDARY = 48;

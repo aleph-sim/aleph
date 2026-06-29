@@ -51,6 +51,23 @@ static inline int cbit(uint64_t c, int e) { return (int)((c >> e) & 1ull); }
 template <std::size_t W>
 static inline int cbit(const VlWide<W> &c, int e) { return (int)((c[e >> 5] >> (e & 31)) & 1u); }
 
+// Write a detector bit-vector into the DUT `syndrome` port regardless of its width class. For d>=5
+// with multiple rounds (Q6-19) the detector count exceeds 64, so the port is a VlWide<>; the scalar
+// template covers the narrow CData/SData/IData/QData cases. `lit[i]` = detector i is set.
+template <class T>
+static inline void set_syndrome(T &port, const std::vector<bool> &lit) {
+  T v = 0;
+  for (std::size_t i = 0; i < lit.size(); ++i)
+    if (lit[i]) v |= (T(1) << i);
+  port = v;
+}
+template <std::size_t W>
+static inline void set_syndrome(VlWide<W> &port, const std::vector<bool> &lit) {
+  for (std::size_t w = 0; w < W; ++w) port[w] = 0;
+  for (std::size_t i = 0; i < lit.size(); ++i)
+    if (lit[i]) port[i >> 5] |= (1u << (i & 31));
+}
+
 int main(int argc, char **argv) {
   Verilated::commandArgs(argc, argv);
   const std::string svh = (argc > 1) ? argv[1] : "uf_surface_graph.svh";
@@ -73,14 +90,14 @@ int main(int argc, char **argv) {
 
   auto *dut = new Vuf_surface_decoder;
   auto tick = [&]() { dut->clk = 0; dut->eval(); dut->clk = 1; dut->eval(); };
-  dut->rst_n = 0; dut->in_valid = 0; dut->syndrome = 0;
+  dut->rst_n = 0; dut->in_valid = 0; set_syndrome(dut->syndrome, std::vector<bool>(dets, false));
   tick(); tick();
   dut->rst_n = 1;
 
-  // syndrome is UF_N-2 bits wide; at d=7 that is 47 bits, so use 64-bit throughout (a 32-bit shift
-  // `1u << det` would overflow for detectors >= 32).
-  auto decode = [&](uint64_t s) {
-    dut->in_valid = 1; dut->syndrome = s; tick();
+  // Syndrome is UF_N-2 bits wide; at d=7 that is 47 bits and for multi-round 3D graphs (Q6-19) it
+  // exceeds 64, so syndromes are detector bit-vectors written via the width-agnostic set_syndrome().
+  auto decode = [&](const std::vector<bool> &lit) {
+    dut->in_valid = 1; set_syndrome(dut->syndrome, lit); tick();
     dut->in_valid = 0;
     int g = 0;
     while (!dut->out_valid && g < 8192) { tick(); ++g; }
@@ -88,21 +105,20 @@ int main(int argc, char **argv) {
   };
   // syndrome of a single edge error: flip its two detector endpoints (boundary has no detector bit).
   auto syn_of = [&](int e) {
-    uint64_t s = 0;
-    if (ea[e] != B) s ^= 1ull << ea[e];
-    if (eb[e] != B) s ^= 1ull << eb[e];
+    std::vector<bool> s(dets, false);
+    if (ea[e] != B) s[ea[e]] = !s[ea[e]];
+    if (eb[e] != B) s[eb[e]] = !s[eb[e]];
     return s;
   };
-  // does the correction reproduce syndrome `s`? (UF_M may exceed 64 at d>=7 -> read via cbit)
-  auto valid = [&](uint64_t s) {
-    uint64_t syn_rtl = 0;
+  // does the correction reproduce syndrome `lit`? (UF_M may exceed 64 -> read via cbit)
+  auto valid = [&](const std::vector<bool> &lit) {
     for (int d = 0; d < dets; ++d) {
       int par = 0;
       for (int e = 0; e < M; ++e)
         if (ea[e] == d || eb[e] == d) par ^= cbit(dut->correction, e);
-      syn_rtl |= (uint64_t)par << d;
+      if ((par != 0) != lit[d]) return false;
     }
-    return syn_rtl == s;
+    return true;
   };
 
   int valid_fail = 0, dist_fail = 0, le_w2 = 0, n_w2 = 0, max_lat = 0;
@@ -117,7 +133,9 @@ int main(int argc, char **argv) {
   // (3) weight-2: validity + logical-error count vs the true XOR logical.
   for (int e1 = 0; e1 < M; ++e1)
     for (int e2 = e1 + 1; e2 < M; ++e2) {
-      const uint64_t s = syn_of(e1) ^ syn_of(e2);
+      std::vector<bool> s = syn_of(e1);
+      const std::vector<bool> s2 = syn_of(e2);
+      for (int d = 0; d < dets; ++d) s[d] = s[d] != s2[d];   // XOR the two edge syndromes
       const int otrue = (el[e1] ^ el[e2]) & 1;
       decode(s); track_lat();
       ++n_w2;

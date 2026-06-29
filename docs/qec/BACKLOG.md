@@ -1101,6 +1101,104 @@ code distance, and feeding Q6-03 and the ASIC question.
 
 -----
 
+## Phase Q6.5 — from code-capacity toy to a *real* decoder (no hardware needed)
+
+Q6-04…Q6-18 built and optimized a synthesizable UF decoder that is **real-time at d=5 (both boards)
+and d=7 (KV260)** — but on a **single-round, code-capacity** matching graph (2D, space only). A *real*
+QEC decoder must handle the **time dimension**: many measurement rounds, with measurement errors, on
+the 3D space-time matching graph, decoded as a bounded-latency **stream** (you cannot wait for the
+experiment to end). That gap — not more Fmax — is what separates this from the field
+(Riverlane/Google decode circuit-level, streaming, at distance). These three issues close it, all
+**board-free** (Verilator + Vivado + the existing simulator); board bring-up (Q6-01/02/08) waits on
+hardware. The ASIC (Q7) stays parked until this lands and we are at/near the frontier (see Q7 note).
+
+### [Q6-19] Multi-round (3D space-time) decoding on the FPGA decoder
+
+**Labels:** `area:fpga`, `area:decoder`, `type:feature`, `priority:high`
+**Milestone:** Phase Q6
+**Estimate:** M
+**Depends on:** Q6-17
+
+**Description**
+Move the FPGA decoder from a single-round code-capacity graph to a **multi-round phenomenological**
+3D space-time graph: `T` measurement rounds with **measurement-error (time-like) edges** between
+consecutive rounds, plus the usual data edges. The decoder RTL (`hw/uf_surface_decoder.sv`) is
+**graph-agnostic** (parametric in `UF_N`/`UF_M`/edge tables) and was verified to decode a 3D graph
+**with zero RTL changes** during scoping — so this is graph-generation + verification + a synth/scaling
+verdict, not an RTL rewrite. The generator (`qec_surface_uf_graph`) already gained a `rounds` argument
+(`graph <d> <rounds>`, built on `SurfaceCode::memory_z_experiment(rounds)` + the existing
+`phenomenological_mechanisms`, whose `p_meas` creates the time-like edges).
+
+**Scoping results (validated):** d=5 × 3 rounds → 48 detectors / 120 edges, **0/7140 weight-≤2
+logical errors** (d=5 corrects ≤2), 85 clk worst-case; d=3 × 5 rounds → 24 det / 62 edges, validity +
+distance(weight-1) clean. Note: at d=5 × 5 rounds the graph hits 72 detectors → the **syndrome
+exceeds 64 bits**, which the scale TB's 64-bit syndrome can't hold (the input-side analogue of the
+d=7 wide-`correction` fix) — extend the TB with a wide-syndrome setter to reach the GPU-comparable
+d=5×5 graph (72 det / 186 edges — *identical size to the Q3 GPU bench*, enabling a true apples-to-apples
+GPU-vs-FPGA latency number for Q6-03).
+
+**Acceptance Criteria**
+- [ ] `surf-3d` make target generating + Verilator-verifying ≥1 clean 3D case (d=5×3: validity 0,
+  distance(weight-1) 0, weight-≤2 = 0 logical errors).
+- [ ] Dual-target synth (Zybo + KV260) of a representative 3D case: fit / Fmax / latency vs the budget
+  in `docs/perf/qec-q6-fpga.md`, and the cycle/area scaling vs round count.
+- [ ] Wide-syndrome TB extension so >64-detector graphs verify (unlocks d=5×5 = the GPU-comparable size).
+- [ ] **Follow-up noted:** *phenomenological* ≠ *circuit-level*. Full circuit-level (gate/CX-level
+  noise) needs a surface-code `circuit_level_mechanisms()` mirroring `BBCode::circuit_level_dem`
+  (`bivariate_bicycle.rs`) — track as a refinement once phenomenological 3D ships.
+
+### [Q6-20] Sliding-window streaming decoder on FPGA (bounded-latency real-time)
+
+**Labels:** `area:fpga`, `area:decoder`, `type:feature`, `priority:high`
+**Milestone:** Phase Q6
+**Estimate:** L
+**Depends on:** Q6-19
+
+**Description**
+A real decoder consumes an **unbounded stream** of rounds at the QPU's rate; it cannot store the whole
+history or it falls behind (the backlog problem). Transcribe the **already-complete, tested** software
+`SlidingWindowDecoder` (`crates/aleph-qec/src/sliding.rs`) to an RTL streaming wrapper around the
+existing per-window UF core: decode a window of `W` rounds, **commit** the oldest `C` rounds, carry the
+**residual** syndrome forward, and handle the **temporal-sink** seam nodes (out-of-window detectors
+drain to a separate sink, *not* the spatial boundary, so time-cut edges don't spuriously flip the
+logical). Per-window working set is `O(W)` → fixed on-chip RAM, independent of stream length.
+
+**Hard parts (flagged in scoping):** residual read-modify-write on on-chip memory between windows;
+per-window temporal-sink set differs (pre-allocate a sink pool); DMA sequencing so window latency
+stays under the syndrome arrival rate (else backlog). Software window params for reference (Q4-03):
+`W = 3d`, `C = d`, buffer `= 2d`.
+
+**Acceptance Criteria**
+- [ ] RTL streaming wrapper: windowed decode + commit + residual carry + temporal sinks, Verilator-
+  verified bit-equal to the software `SlidingWindowDecoder` on long streams.
+- [ ] Bounded memory (per-window working set independent of total rounds) demonstrated.
+- [ ] Per-window latency vs the per-round budget (cycles → ns at Fmax), synth on ≥1 board.
+
+### [Q6-21] Sim↔RTL co-simulation: simulator as a QPU emulator driving the decoder (board-free HiL)
+
+**Labels:** `area:fpga`, `area:decoder`, `type:test`, `priority:medium`
+**Milestone:** Phase Q6
+**Estimate:** M
+**Depends on:** Q6-19
+
+**Description**
+The board-free form of hardware-in-the-loop, and the ROADMAP §2.4 co-design differentiator made
+concrete: drive the **Verilated decoder model** from the simulator's Monte-Carlo syndrome stream
+(`qec_threshold` / on-device sampling), feed corrections back, and measure the **logical error rate /
+threshold using the actual RTL decoder** — confirming it matches the software decoder's threshold
+(Q0). Closes the whole verification chain on realistic noise: noise model → syndromes → **RTL** decode
+→ logical error rate. When hardware lands (Q6-08) the same harness swaps the Verilated model for the
+real board over the Q6-07 AXI link.
+
+**Acceptance Criteria**
+- [ ] Harness streams simulator syndromes (≥ phenomenological, ideally 3D from Q6-19) into the
+  Verilated `uf_surface_decoder`, collects `obs_flip`, accumulates logical error rate.
+- [ ] RTL-decoder threshold/LER curve matches the software UF decoder within Monte-Carlo CI (a plot or
+  table in `docs/perf/`).
+- [ ] Documented as the board-free HiL path; note the AXI swap-in for Q6-08.
+
+-----
+
 # Phase Q7 — ASIC (North Star)
 
 Goal: the endgame from ROADMAP §0. **Gated** on Q6 proving FPGA competitive AND a business
@@ -1109,6 +1207,13 @@ when Q6 results justify it.
 
 **Exit metric:** an architecture spec + RTL core + tape-out feasibility study with a funding
 and customer commitment in place. (Tape-out itself is a separate, funded program.)
+
+> **Do not build a me-too ASIC.** Q6-03 returned a *conditional* GO: an ASIC closes real gaps
+> (sub-100 ns, d≥9 real-time, µW/decode, one-decoder-per-qubit, cryo). But it only makes sense once we
+> are **at or near the frontier** — i.e. Q6.5 (circuit-level + streaming, Q6-19/20) lands so the chip
+> decodes *real* QEC traffic, and measured silicon (Q6-08) confirms the estimates. Taping out a chip
+> that merely re-does what Riverlane/Google already ship adds nothing. The trigger is **frontier-parity
+> + a customer + funding**, not just funding.
 
 -----
 

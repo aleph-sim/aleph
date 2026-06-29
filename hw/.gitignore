@@ -15,3 +15,5 @@ xsim.dir/
 *.log
 .Xil/
 vivado*.str
+_d5r3build/
+_d5r5build/
