@@ -430,6 +430,112 @@ d=7 — KV260 562 ns (real-time, ~1.8× margin), Zybo 1.185 µs (≈1.2× over t
 1.4×). Zybo d=7 is the one remaining cell over budget; closing it needs a structurally shallower forest
 relabel (the K-sweep is exhausted), or accept that d=7 targets the KV260-class part.
 
-## Q6-03 — GPU vs FPGA
+## Q6-03 — GPU vs FPGA: latency, throughput, power, and the ASIC go/no-go
 
-> Pending board bring-up (Q6-08) for measured on-board latency/throughput/power vs the Q3 GPU decoder.
+This compares the **same** Delfosse–Nickerson Union-Find decoder on two substrates: the GPU batch
+decoder (Q3-01, `CudaUnionFind`, [qec-q3-gpu-uf.md]) and the FPGA sequential FSM (Q6-04…Q6-18,
+`hw/uf_surface_decoder.sv`, this document). It is the decision input for Phase Q7 (ASIC).
+
+**What "the same algorithm" does and does not mean.** Both implement the identical decode (edge-centric
+synchronous growth → spanning forest → reverse-pre-order peel) and both are bit-exactly verified
+against the CPU reference. They do **not** decode the same-sized graph at the same nominal `d`: the
+GPU bench uses a larger matching graph (d=5 → 72 detectors / 186 edges) while the FPGA uses the
+single-round rotated code-capacity graph (d=5 → 24 detectors / 54 edges; d=7 → 48 / 110). So compare
+on the **axis each substrate optimizes**, and read same-`d` rows as *order-of-magnitude*, not
+head-to-head. Closest graph-size pairing: FPGA d=7 (110 edges) ≈ between GPU d=3 (40) and d=5 (186).
+
+**Source of numbers.** GPU = measured whole-batch throughput on the RTX 4000 SFF Ada (70 W TDP),
+100 000-shot batch incl. PCIe round-trip ([qec-q3-gpu-uf.md]). FPGA = the shipped `FOREST_UNROLL=2`
+decoder, **Vivado 2024.2 post-route estimates** (OOC), latency = worst-case cycles / Fmax, power =
+`report_power` on the routed checkpoint. **Caveat: FPGA figures are post-route estimates, not
+on-silicon measurements** — on-board validation is Q6-08 (pending). Power excludes board/PS/DDR (the
+PL block only).
+
+### Latency — the real-time axis (FPGA wins decisively, by architecture)
+
+Real-time QEC must decode each syndrome round *within* the measurement cycle (~1 µs for
+superconducting qubits) so corrections feed forward before errors compound. This is a **single-decode
+latency** requirement.
+
+| substrate | d=5 latency | d=7 latency | nature |
+|-----------|-------------|-------------|--------|
+| FPGA KV260 | **0.294 µs** | **0.562 µs** | deterministic, fixed cycle count |
+| FPGA Zybo  | 0.655 µs | 1.185 µs | deterministic |
+| GPU (single decode) | ~5–20 µs (launch + PCIe-bound) | ~5–20 µs | not a single-decode engine |
+
+The GPU's strength is **batch** throughput; a *single* decode pays kernel-launch + PCIe round-trip
+overhead (microseconds) that the batch amortizes but real-time cannot. One-thread-per-shot also means
+a lone decode gets one lane of a 1000-wide machine. So the GPU is structurally a 5–20 µs+
+single-decode device — **outside the ~1 µs round budget** regardless of tuning. The FPGA is the
+opposite: sub-µs, deterministic (no data-dependent jitter beyond the bounded worst case), and already
+real-time at d=5 (both parts) and d=7 (KV260). **FPGA wins single-decode latency by ~10–50×, and the
+gap is architectural, not a tuning artifact.**
+
+### Throughput — the offline / Monte-Carlo axis (GPU's home turf, but closer than it looks)
+
+The non-pipelined FPGA FSM retires one decode per worst-case window, so a single instance throughputs
+≈ 1/latency; the block is tiny (4–22 % of the part), so a chip holds many instances.
+
+| substrate | d=5 throughput | d=7 throughput |
+|-----------|----------------|----------------|
+| GPU (whole card, batch) | 2.38 M syn/s (72-det graph) | 0.58 M syn/s (192-det graph) |
+| FPGA KV260, 1 instance | 3.4 M syn/s (24-det) | 1.78 M syn/s (48-det) |
+| FPGA KV260, area-filled* | ~60–80 M syn/s | ~15–18 M syn/s |
+
+*back-of-envelope: 1 instance / (its LUT %), ignoring routing congestion at high fill — an upper
+bound, not a synthesised result. Even a *single* FPGA instance is in the GPU's throughput class (on a
+smaller graph); replication trades the FPGA's spare area for aggregate throughput the GPU matches only
+by burning its full 70 W. **Throughput is roughly a wash per-chip and decisively FPGA's per-watt** —
+which is the next axis.
+
+### Power & energy-per-decode (FPGA wins by 2–3 orders of magnitude)
+
+| cell | total on-chip power | dynamic | energy / decode (total · latency) |
+|------|--------------------|---------|-----------------------------------|
+| FPGA KV260 d=5 | 0.341 W | 0.052 W | **0.10 µJ** |
+| FPGA KV260 d=7 | 0.399 W | 0.110 W | **0.22 µJ** |
+| FPGA Zybo d=5  | 0.149 W | 0.046 W | 0.10 µJ |
+| GPU d=5 (card) | 70 W (TDP) | — | **~29 µJ** (70 W / 2.38 M syn·s⁻¹) |
+| GPU d=7 (card) | 70 W (TDP) | — | ~120 µJ |
+
+The decoder's *dynamic* switching is **46–110 mW**; total on-chip incl. device static leakage is
+0.15–0.4 W. Per-decode energy is **~0.1–0.2 µJ vs the GPU's ~29–120 µJ — a 150–600× advantage**, even
+before accounting for the GPU graph being larger. This is the metric that matters for a fault-tolerant
+machine: thousands of logical qubits each needing a continuously-running decoder, inside a cryostat's
+strictly bounded power budget. A GPU-per-logical-qubit is a non-starter on power alone; an
+FPGA/ASIC decoder per qubit is the only path.
+
+### Why each substrate wins its axis
+
+- **GPU**: thousands of independent shots in flight amortize launch + PCIe; ideal for **offline**
+  threshold/Monte-Carlo sweeps (where aleph's GPU UF already out-throughputs PyMatching's MWPM core at
+  large d). Wrong tool for the in-loop control path: single-decode latency is launch-bound and power
+  is 70 W.
+- **FPGA**: a bounded clocked FSM gives **deterministic sub-µs latency** at single-digit-% area and
+  sub-watt power — exactly the real-time control-loop profile. Loses raw aggregate throughput to a
+  full GPU only until you replicate it across the spare 80–96 % of the fabric.
+
+### ASIC go/no-go (Q7)
+
+**Does an ASIC close a gap the FPGA cannot?** The FPGA latency is **76–82 % routing delay** (logic is
+only ~18–24 %; see the Q6-16/18 critical-path traces) — i.e. the programmable interconnect, not the
+logic, is the wall. A std-cell ASIC removes exactly that tax: custom place-and-route on the same RTL
+typically yields **3–10× higher clock and 10–100× lower energy**. Concretely that means a **sub-100 ns
+decode**, real-time headroom at **d ≥ 9** (where the FPGA's d²-growing graph will push Zybo and
+eventually KV260 over budget — already visible: Zybo d=7 is 1.2× over), **µW-class** energy per
+decode, and density to place **one decoder per logical qubit** at machine scale — plus cryo-adjacent
+operation a GPU can never offer.
+
+The FPGA cannot reach those: its Fmax is interconnect-capped (the Q6-13…18 work extracted the
+algorithmic and within-fabric wins; Zybo d=7 over budget is where that runs out), and its per-qubit
+power/area do not scale to thousands of logical qubits.
+
+**Recommendation: conditional GO for Q7.** The technical case is made — Q6 proves the decoder is
+*algorithmically* real-time-capable (FPGA hits the ~1 µs budget at d=5 both parts, d=7 on KV260, at
+sub-watt power and 150–600× the GPU's energy efficiency), and an ASIC closes the **d ≥ 9 latency**,
+**machine-scale power/area**, and **cryo-integration** gaps the FPGA structurally cannot. Per
+ROADMAP §Q7 the trigger is **commercial, not technical**: gate tape-out on funding + a committed
+QPU-company customer. Immediate next engineering step before any silicon commitment is **Q6-08 on-board
+bring-up** to replace these post-route estimates with measured wall-clock latency and power.
+
+[qec-q3-gpu-uf.md]: qec-q3-gpu-uf.md
