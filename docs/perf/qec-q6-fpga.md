@@ -401,6 +401,35 @@ troot`/`istree`) — the min-tree fix held, so `S_CC_RELAX` is *not* the d=7 wal
 bring Zybo d=7 under budget (or widen the KV260 margin) is that forest relabel path: a shallower
 union-relabel or a re-sweep of `FOREST_UNROLL` now that the CC path is gone.
 
+## Q6-18 — re-sweep FOREST_UNROLL after the min-tree (Zybo latency)
+
+Q6-14 set `FOREST_UNROLL=3` when the binding path was `S_CC_RELAX` (so a deeper forest unroll was
+"free" up to that 26-level cap). Q6-16's CC min-tree removed that cap and **exposed the forest relabel
+as the new critical path** — which makes the K=3 choice stale. Re-sweep K ∈ {2,3,4} × {d5,d7} × both
+parts (bit-identical for every K — d=3 golden + d=5 0/1431 + d=7 0/5995 all preserved). Latency =
+cycles / Fmax:
+
+| K | d5 clk | Zybo d5 | KV260 d5 | d7 clk | Zybo d7 | KV260 d7 |
+|---|--------|---------|----------|--------|---------|----------|
+| 2 ✅ | 52 | **0.655 µs** (79.4 MHz) | 0.294 µs (177.1) | 80 | **1.185 µs** (67.5 MHz) | 0.562 µs (142.4) |
+| 3 (Q6-14) | 43 | 0.738 µs (58.3) | **0.293 µs** (146.8) | 62 | 1.363 µs (45.5) | 0.549 µs (112.9) |
+| 4 | 39 | 0.818 µs (47.7) | 0.327 µs (119.1) | 53 | 1.460 µs (36.3) | **0.485 µs** (109.2) |
+
+**`FOREST_UNROLL=2` ships.** With the CC cap gone, the shallower relabel lifts Fmax by more than its
++cycles cost: Zybo d5 58→**79 MHz** (+36%), d7 45→**67 MHz** (+48%). K=2 is best on **3 of 4 cells**
+(both d5, Zybo d7); only KV260-d7 marginally prefers a deeper K (K=2 is +2% vs K=3 there, still 1.8×
+under budget — and K=4, which wins that one cell, regresses the other three badly). At K=2 the forest
+path drops to **13–14 levels** (from 17 at d5 / 25–27 at d7 under K=3) — still the binding path but no
+longer a tall pole.
+
+Net vs Q6-16/17 (K=3): **Zybo d5 0.738 → 0.655 µs (−11%), Zybo d7 1.363 → 1.185 µs (−13%)**; KV260
+flat (d5 0.293→0.294, d7 0.549→0.562, both within noise / still deep under budget).
+
+**Q6 distance status (final, `FOREST_UNROLL=2`):** d=5 — KV260 294 ns, Zybo 655 ns (both real-time).
+d=7 — KV260 562 ns (real-time, ~1.8× margin), Zybo 1.185 µs (≈1.2× over the ~1 µs budget, down from
+1.4×). Zybo d=7 is the one remaining cell over budget; closing it needs a structurally shallower forest
+relabel (the K-sweep is exhausted), or accept that d=7 targets the KV260-class part.
+
 ## Q6-03 — GPU vs FPGA
 
 > Pending board bring-up (Q6-08) for measured on-board latency/throughput/power vs the Q3 GPU decoder.

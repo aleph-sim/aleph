@@ -38,11 +38,13 @@ module uf_surface_decoder (
   // with strictly sequential semantics (each sub-union sees the previous one's relabel), so the set
   // and order of `istree[]` edges is IDENTICAL to the one-edge-per-cycle form — only the cycle count
   // drops from ~M to ~ceil(M/FOREST_UNROLL). Cost: the per-cycle combinational path is ~UNROLL× the
-  // single-edge find+relabel depth. 3 is the measured d=5 sweet spot — the forest path stays BELOW
-  // the binding S_CC_RELAX critical path (still `label_reg->FSM_state`, 26 levels) so Fmax holds while
-  // forest cycles drop 3x; at 4 the forest path finally crosses it and Fmax collapses (KV260 132->110
-  // MHz), erasing the cycle win. See docs/perf/qec-q6-fpga.md §Q6-14.
-  localparam int FOREST_UNROLL = 3;
+  // single-edge find+relabel depth. 2 is the measured sweet spot: Q6-14 picked 3 when the binding path
+  // was S_CC_RELAX (so a deeper forest was "free" up to that cap), but Q6-16's CC min-tree removed
+  // that cap and EXPOSED the forest relabel as the new critical path — so the shallower 2 now wins on
+  // Fmax (Zybo d5 58->79 MHz) by more than its +cycles cost, at d=5 AND d=7. Re-swept K∈{2,3,4} ×
+  // {d5,d7} × both parts; 2 is best on 3 of 4 cells (only d7/KV260 marginally prefers a deeper K).
+  // See docs/perf/qec-q6-fpga.md §Q6-18.
+  localparam int FOREST_UNROLL = 2;
 
   // Q6-15: S_CC_INIT folded away — the label-to-identity reset is now done in the predecessor states
   // (S_IDLE on accept, S_GROW after a grow round), which already write registers, so it costs no
