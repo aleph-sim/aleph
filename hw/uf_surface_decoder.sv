@@ -34,6 +34,15 @@ module uf_surface_decoder (
 );
   localparam int IDXW  = $clog2(UF_N);       // node-index width (N=9 -> 4)
   localparam int EIDXW = $clog2(UF_M + 1);   // edge-counter width (M=18 -> 5)
+  // Q6-14: spanning-forest edges processed per cycle. The union loop is unrolled FOREST_UNROLL times
+  // with strictly sequential semantics (each sub-union sees the previous one's relabel), so the set
+  // and order of `istree[]` edges is IDENTICAL to the one-edge-per-cycle form — only the cycle count
+  // drops from ~M to ~ceil(M/FOREST_UNROLL). Cost: the per-cycle combinational path is ~UNROLL× the
+  // single-edge find+relabel depth. 3 is the measured d=5 sweet spot — the forest path stays BELOW
+  // the binding S_CC_RELAX critical path (still `label_reg->FSM_state`, 26 levels) so Fmax holds while
+  // forest cycles drop 3x; at 4 the forest path finally crosses it and Fmax collapses (KV260 132->110
+  // MHz), erasing the cycle win. See docs/perf/qec-q6-fpga.md §Q6-14.
+  localparam int FOREST_UNROLL = 3;
 
   typedef enum logic [3:0] {
     S_IDLE, S_CC_INIT, S_CC_RELAX, S_ODD, S_GROW,
@@ -180,20 +189,31 @@ module uf_surface_decoder (
         // the surviving root is still rb, so `istree[]` is unchanged (d=3 stays golden-bit-exact;
         // d=5 weight-<=2 quality identical). Only the per-cycle depth drops from O(N) to O(log N)
         // (the troot/UF_EA index muxes), which is what frees Fmax at d>=5.
+        // Q6-14: process FOREST_UNROLL edges per cycle. `wt` is a working copy of `troot` mutated
+        // with BLOCKING writes, so sub-union k sees the relabel from sub-union k-1 — exactly the
+        // sequential quick-find of the one-edge form, just folded into one cycle. Same edges become
+        // `istree[]`, in the same index order => d=3 golden + d=5 0/1431 both bit-preserved.
         S_FOREST: begin
-          if (support[e_idx] == 2'd2) begin
-            automatic logic [IDXW-1:0] ra, rb;
-            ra = troot[UF_EA[e_idx]];   // depth-1 find: flat invariant => troot[x] is the root
-            rb = troot[UF_EB[e_idx]];
-            if (ra != rb) begin
-              // absorb component `ra` into `rb`: every node rooted at ra now points at rb.
-              for (int i = 0; i < UF_N; i++)
-                if (troot[i] == ra) troot[i] <= rb;
-              istree[e_idx] <= 1'b1;
+          automatic logic [IDXW-1:0] wt [UF_N];   // working troot for this cycle's sequential unions
+          for (int i = 0; i < UF_N; i++) wt[i] = troot[i];
+          for (int k = 0; k < FOREST_UNROLL; k++) begin
+            automatic int unsigned ei;
+            ei = UF_M;                             // sentinel: out-of-range => skip
+            if (int'(e_idx) + k < UF_M) ei = int'(e_idx) + k;
+            if (ei < UF_M && support[ei] == 2'd2) begin
+              automatic logic [IDXW-1:0] ra, rb;
+              ra = wt[UF_EA[ei]];                  // depth-1 find on the in-cycle working forest
+              rb = wt[UF_EB[ei]];
+              if (ra != rb) begin
+                for (int i = 0; i < UF_N; i++)
+                  if (wt[i] == ra) wt[i] = rb;     // blocking: visible to the next sub-union
+                istree[ei] <= 1'b1;
+              end
             end
           end
-          if (e_idx == EIDXW'(UF_M - 1)) state <= S_PEEL_INIT;
-          else                          e_idx <= e_idx + 1'b1;
+          for (int i = 0; i < UF_N; i++) troot[i] <= wt[i];
+          if (int'(e_idx) + FOREST_UNROLL >= UF_M) state <= S_PEEL_INIT;
+          else                                     e_idx <= e_idx + EIDXW'(FOREST_UNROLL);
         end
 
         // ---- PEELING: init degrees, then N leaf-strip sweeps ----
