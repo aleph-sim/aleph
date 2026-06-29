@@ -12,7 +12,7 @@ OBJ_DIR   := obj_dir
 VERILATOR ?= verilator
 CARGO     := cargo run --release -q -p aleph-qec --example
 
-.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d clean
+.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window clean
 
 all: d3 rep surf
 
@@ -81,6 +81,19 @@ surf-3d:
 		uf_surface_decoder.sv ../tb_uf_surface_scale.cpp -o sim_3d
 	@echo "== d=5 x 5 rounds (72 detectors, = GPU bench graph size) =="
 	./_d5r5build/$(OBJ_DIR)/sim_3d _d5r5build/uf_surface_graph.svh
+
+# Q6-20 (part 1) — streaming-window graph: verify the existing per-window core decodes a steady-state
+# sliding-window graph (a W-round volume whose time cuts route to temporal-sink nodes), generated from
+# the same SlidingWindowDecoder::window_dem the software uses. This validates the window-graph
+# structure the Q6-20 streaming wrapper will drive; the wrapper itself (residual carry, commit, shift)
+# is parts 2-3. d=3 W=9 C=3 mirrors the software Q4-03 params (W=3d, C=d).
+surf-window:
+	cd .. && $(CARGO) qec_surface_uf_graph -- window 3 9 3 > hw/uf_surface_graph_win.svh
+	rm -rf _winbuild && mkdir _winbuild && cp uf_surface_decoder.sv _winbuild/
+	cp uf_surface_graph_win.svh _winbuild/uf_surface_graph.svh
+	cd _winbuild && $(VERILATOR) --cc --exe --build -Wall --top-module uf_surface_decoder \
+		uf_surface_decoder.sv ../tb_uf_surface_scale.cpp -o sim_win
+	./_winbuild/$(OBJ_DIR)/sim_win _winbuild/uf_surface_graph.svh
 
 # Re-baseline the Q6-04 golden table {obs_flip,correction} from the CURRENT RTL. Only run this
 # deliberately when the decoder's intended output changes — it overwrites the frozen reference that

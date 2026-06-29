@@ -50,7 +50,7 @@ pub use osd::OsdDecoder;
 pub use parallel_window::{ParallelWindowDecoder, WindowPlan};
 pub use pymatching::PyMatchingOracle;
 pub use relay_bp::{RelayBpDecoder, RelayBpOsdDecoder, DEFAULT_LEGS};
-pub use sliding::SlidingWindowDecoder;
+pub use sliding::{SlidingWindowDecoder, WindowExport};
 pub use surface::{MemoryExperiment, SurfaceCode};
 pub use syndrome::{Correction, Syndrome};
 pub use union_find::{DecoderGraph, UnionFindDecoder};

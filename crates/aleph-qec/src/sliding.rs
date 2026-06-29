@@ -58,6 +58,18 @@ pub struct SlidingWindowDecoder {
     weighted: bool,
 }
 
+/// A single window's matching problem, exported for reuse (software decode + RTL window-graph gen).
+#[derive(Clone, Debug)]
+pub struct WindowExport {
+    /// Window DEM: detectors `0..n_active` are in-window (lit-able), `n_active..dem.detectors` are
+    /// temporal-sink nodes (never lit), and `dem.detectors` is the spatial boundary.
+    pub dem: DetectorErrorModel,
+    /// Number of in-window (lit-able) detectors.
+    pub n_active: usize,
+    /// `globals[l]` = global detector id of active local detector `l` (`l < n_active`).
+    pub globals: Vec<usize>,
+}
+
 impl SlidingWindowDecoder {
     /// Build a sliding-window decoder. `detector_round[d]` is the time coordinate of detector `d`
     /// (e.g. from [`MemoryExperiment::detector_rounds`](crate::MemoryExperiment::detector_rounds)).
@@ -161,17 +173,14 @@ impl SlidingWindowDecoder {
     /// observable masks. Out-of-window detectors are routed to per-detector temporal-sink nodes
     /// (distinct from the spatial boundary, free obs-less drains) so a time cut never flips the
     /// logical observable.
-    fn decode_window(
-        &self,
-        lit: &mut [bool],
-        s: usize,
-        win_hi: usize,
-        commit_hi: usize,
-        accumulate_obs: bool,
-    ) -> Result<u64> {
+    /// Build the per-window DEM for the window covering rounds `[s, win_hi)`: in-window detectors get
+    /// local indices `0..n_active` (lit-able); out-of-window detectors touched by in-window mechanisms
+    /// become temporal-sink nodes `n_active..n_local` (never lit, each a free observable-less drain to
+    /// the boundary). Returns the DEM plus the local→global map for the active detectors. This is the
+    /// single source of truth for both the software decode and the exported RTL window graph (Q6-20).
+    pub fn window_dem(&self, s: usize, win_hi: usize) -> Result<WindowExport> {
         let nd = self.dem.detectors;
 
-        // In-window (lit-able) detectors get local indices `0..n_active`.
         let mut local_of = vec![u32::MAX; nd];
         let mut globals: Vec<usize> = Vec::new();
         for (d, &r) in self.detector_round.iter().enumerate() {
@@ -182,8 +191,6 @@ impl SlidingWindowDecoder {
         }
         let n_active = globals.len();
 
-        // Out-of-window detectors touched by in-window mechanisms become temporal-sink nodes
-        // (`n_active..n_local`), never lit, each given a free observable-less drain to the boundary.
         let mut temporal_of = vec![u32::MAX; nd];
         let mut n_local = n_active;
         let mut errors: Vec<DemError> = Vec::new();
@@ -215,17 +222,36 @@ impl SlidingWindowDecoder {
             errors.push(DemError::new(0.5, vec![t as u32], vec![]));
         }
 
-        let win_dem = DetectorErrorModel {
-            detectors: n_local,
-            observables: self.dem.observables,
-            errors,
-        };
+        Ok(WindowExport {
+            dem: DetectorErrorModel {
+                detectors: n_local,
+                observables: self.dem.observables,
+                errors,
+            },
+            n_active,
+            globals,
+        })
+    }
+
+    fn decode_window(
+        &self,
+        lit: &mut [bool],
+        s: usize,
+        win_hi: usize,
+        commit_hi: usize,
+        accumulate_obs: bool,
+    ) -> Result<u64> {
+        let WindowExport {
+            dem: win_dem,
+            n_active,
+            globals,
+        } = self.window_dem(s, win_hi)?;
 
         // Window syndrome: only active (in-window) detectors can be lit.
         let fired: Vec<u32> = (0..n_active as u32)
             .filter(|&l| lit[globals[l as usize]])
             .collect();
-        let win_syn = Syndrome::new(n_local, fired);
+        let win_syn = Syndrome::new(win_dem.detectors, fired);
 
         let graph = MatchingGraph::from_dem(&win_dem)?;
         let dec = UnionFindDecoder::from_graph(&graph).weighted(self.weighted);
