@@ -299,6 +299,45 @@ budget — and Zybo d=5 closes to **1.17 µs**, within ~1.2× of budget on the s
 longer the worst-case bottleneck; the binding path is now `S_CC_RELAX` (Fmax) and the growth/CC/peel
 cycle floor (~37 clk).
 
+## Q6-15 — cut the d=5 growth/CC cycle floor (fold CC_INIT, incremental labels, fuse ODD+GROW)
+
+With the forest unrolled, the d=5 worst case (55 clk) is dominated by the GROWTH loop, which for the
+worst syndrome runs 5 rounds of `S_CC_INIT → S_CC_RELAX(converge) → S_ODD → S_GROW`. Three
+**bit-identical** structural cuts (d=3 golden + d=5 0/1431 preserved throughout):
+
+1. **Fold `S_CC_INIT`** — the label-to-identity reset is a pure register write, so it is done in the
+   predecessor that already writes registers (`S_IDLE` on accept, `S_GROW` after a round) instead of
+   in its own state. Removes one state and saves 1 clk/round.
+2. **Incremental labels** — don't reset labels between growth rounds. Growth only *merges*
+   components, and the min-label Jacobi fixpoint is unique (every node starts ≥ its new component min;
+   that min node keeps its self-label), so seeding `S_CC_RELAX` with the prior round's converged
+   labels reaches the identical fixpoint but only the newly-merged frontier has to propagate — a
+   couple of passes instead of the full component diameter from identity.
+3. **Fuse `S_ODD` into `S_GROW`** — the odd-cluster flags are a pure combinational function of
+   `label`+`defect` (the Q6-11 parity gather), so they are computed in the grow cycle rather than
+   registered in a separate state. Removes the second state and saves 1 clk/round.
+
+Verilator worst-case d=5: 55 → 50 (fold) → 48 (+incremental) → **43 clk** (+fuse) — −22%.
+
+Re-synth (Vivado 2024.2, OOC; **before** = the #382 forest-unroll decoder re-synthesised on the same
+box — reproduced exactly, no drift). `a` = folds 1+2, `b` = + the ODD/GROW fuse; latency = clk / Fmax:
+
+| variant | d=5 clk | Zybo Fmax | Zybo latency | KV260 Fmax | KV260 latency | LUT (Zybo / KV260) |
+|---------|---------|-----------|--------------|------------|---------------|--------------------|
+| 1 (#382 base) | 55 | 47.0 MHz | 1.170 µs | 131.8 MHz | 0.417 µs | 3782 / 3911 |
+| a (fold + incr.) | 48 | 49.8 MHz | 0.964 µs | 132.8 MHz | 0.361 µs | 3839 / 3882 |
+| **b (+ fuse)** ✅ | **43** | 49.4 MHz | **0.870 µs** | 134.1 MHz | **0.321 µs** | 3864 / 3879 |
+
+**Variant `b` ships.** Removing two FSM states (`S_CC_INIT`, `S_ODD`) *shrank* the next-state decode,
+so Fmax **rose** on both parts despite folding the parity gather into the grow cycle — the worst path
+is still `label_reg → FSM_state` (`S_CC_RELAX`) but one level shorter (26 → 25), and the fused grow
+path stays below it. LUT is flat (KV260 even drops). Net vs #382: **Zybo 1.170 → 0.870 µs (−26%),
+KV260 0.417 → 0.321 µs (−23%)**.
+
+**Q6 d=5 status:** KV260 **321 ns** (~3.1× margin under the ~1 µs budget); Zybo **870 ns** — *both
+parts now decode d=5 in real time.* Cumulative over Q6-13/14/15: d=5 109 → 43 clk, KV260 802 → 321 ns,
+Zybo 2.17 → 0.87 µs. The binding constraint is now the `S_CC_RELAX` Fmax path on both parts.
+
 ## Q6-03 — GPU vs FPGA
 
 > Pending board bring-up (Q6-08) for measured on-board latency/throughput/power vs the Q3 GPU decoder.
