@@ -172,6 +172,39 @@ Zybo, 2.29 µs KV260) but is **materially closer** — KV260 is within ~2.3× of
 is bounding the **CC/odd scatter** (e.g. tree-reduced per-label parity, or fusing the relabel into
 the growth loop so `anyodd` doesn't depend on a fresh full CC pass), tracked as follow-up to #372.
 
+## Q6-11 — odd-cluster parity: scatter → gather (d=5 crosses the budget on KV260)
+
+The forest-find PR (#375) left the d≥5 worst path as the `S_ODD` per-cluster parity **scatter**
+(`par[label[i]] ^= defect[i]`, ~77 levels feeding `anyodd`). A scatter into a label-indexed bucket
+with read-after-write serialises into a long accumulator chain. Replace it with a **gather**: for
+each label `v`, `par[v] = XOR{ defect[i] : label[i]==v }` — an independent masked XOR-reduction over
+the N nodes, which Vivado balances into an O(log N) tree (XOR is associative/commutative, so this is
+**bit-identical** to the scatter; d=3 still bit-matches the golden, d=5 still 0/1431; cycle counts
+unchanged 33/47/109 clk).
+
+Re-synth (Vivado 2024.2, OOC; **before** = the #375 quick-find decoder, **after** = + parity gather):
+
+| part | d | LUT before→after | Fmax before→after | d=5 latency (109 clk) |
+|------|---|------------------|-------------------|------------------------|
+| Zybo `xc7z020`  | 3 | 760 → **650**  | 81.5 → **84.6 MHz** | d=3 47 clk: 577→**556 ns** ✅ |
+| Zybo `xc7z020`  | 5 | 3622 → **2799** | 17.8 → **50.3 MHz** (+183%) | 6.12 → **2.17 µs** ❌ |
+| KV260 `xck26`   | 3 | 670 → **591**  | 191.1 → **260.8 MHz** | d=3 47 clk: 246→**180 ns** ✅ |
+| KV260 `xck26`   | 5 | 3799 → **2807** | 47.5 → **135.9 MHz** (+186%) | 2.29 → **0.80 µs** ✅ |
+
+**The d=5 wall was overwhelmingly this one scatter.** Removing it nearly **triples** d=5 Fmax on both
+parts, and **KV260 d=5 now meets the ~1 µs round budget at 802 ns** — the first real-time d=5 result,
+reached entirely board-free. Zybo d=5 (2.17 µs) is still over but within ~2.2×.
+
+New d=5 worst path (down from 77 to 26 levels):
+```
+Zybo : label_reg[24] → FSM_sequential_state_reg    26 levels, 19.6 ns
+KV260: label_reg[24] → FSM_sequential_state_reg    26 levels,  7.2 ns
+```
+i.e. the `S_CC_RELAX` Jacobi min-relaxation feeding the `changed`/next-state logic — the remaining
+label-indexed scatter (`nl[EA]=min(nl[EA],label[EB])`) plus the per-pass convergence test. That is
+the target of the CC pointer-jumping follow-up (replacing the Jacobi relax wholesale, which also cuts
+the d=5 cycle count).
+
 ## Q6-03 — GPU vs FPGA
 
 > Pending board bring-up (Q6-08) for measured on-board latency/throughput/power vs the Q3 GPU decoder.
