@@ -1,5 +1,7 @@
 // d=3 W=9 C=3 streaming-window graph (interior; future/past cuts -> temporal sinks) — GENERATED, do not edit.
 // regenerate: cargo run -p aleph-qec --example qec_surface_uf_graph -- window 3 9 3
+`ifndef UF_SURFACE_GRAPH_SVH
+`define UF_SURFACE_GRAPH_SVH
 localparam int UF_N = 45;
 localparam int UF_M = 111;
 localparam int UF_BOUNDARY = 44;
@@ -7,7 +9,14 @@ localparam int UF_EA   [UF_M] = '{0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4
 localparam int UF_EB   [UF_M] = '{2, 4, 36, 44, 2, 3, 5, 37, 44, 6, 38, 44, 7, 39, 44, 6, 8, 44, 6, 7, 9, 44, 10, 44, 11, 44, 10, 12, 44, 10, 11, 13, 44, 14, 44, 15, 44, 14, 16, 44, 14, 15, 17, 44, 18, 44, 19, 44, 18, 20, 44, 18, 19, 21, 44, 22, 44, 23, 44, 22, 24, 44, 22, 23, 25, 44, 26, 44, 27, 44, 26, 28, 44, 26, 27, 29, 44, 30, 44, 31, 44, 30, 32, 44, 30, 31, 33, 44, 34, 44, 35, 44, 34, 40, 44, 34, 35, 41, 44, 42, 44, 43, 44, 44, 44, 44, 44, 44, 44, 44, 44};
 localparam bit UF_ELOG [UF_M] = '{0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 /* verilator lint_off UNUSEDPARAM */
-localparam int UF_ACTIVE = 36;
+localparam int UF_ACTIVE  = 36;
+localparam int UF_W       = 9;
+localparam int UF_C       = 3;
+localparam int UF_DPR     = 4;  // detectors per measurement round
+localparam int UF_LOAD_LO = 24;  // real detectors [LOAD_LO, ACTIVE) reload from the stream each slide
 localparam int UF_DROUND  [UF_ACTIVE] = '{0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 6, 6, 6, 6, 7, 7, 7, 7, 8, 8, 8, 8};
 localparam bit UF_DCOMMIT [UF_ACTIVE] = '{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+localparam int UF_SHIFT   [UF_ACTIVE] = '{36, 36, 36, 36, 36, 36, 36, 36, 36, 36, 36, 36, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23};
+localparam bit UF_ECOMMIT [UF_M]      = '{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 /* verilator lint_on UNUSEDPARAM */
+`endif

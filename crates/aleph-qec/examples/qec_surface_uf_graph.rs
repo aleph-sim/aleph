@@ -75,23 +75,55 @@ fn main() {
         let we = sw.window_dem(s, s + w).unwrap();
         let boundary = we.dem.detectors;
         let edges = extract_edges(&we.dem.errors, boundary);
-        let commit_hi = s + c;
-        let droud: Vec<String> = (0..we.n_active)
-            .map(|l| (drounds[we.globals[l]] - s).to_string())
+        let na = we.n_active;
+        // Relative round of each real detector (0..W-1); detectors are round-major in the window DEM.
+        let rr: Vec<usize> = (0..na).map(|l| drounds[we.globals[l]] - s).collect();
+        let mut round_start = vec![usize::MAX; w]; // first local index of each relative round
+        for (l, &r) in rr.iter().enumerate() {
+            if round_start[r] == usize::MAX {
+                round_start[r] = l;
+            }
+        }
+        // Slide-by-C map: detector at round r, position p within its round, carries to the detector at
+        // round r-C, same position (new local index `round_start[r-C] + p`). Rounds < C are committed
+        // and dropped (sentinel = UF_ACTIVE). Rounds >= W-C are reloaded from the incoming stream.
+        let droud: Vec<String> = rr.iter().map(|r| r.to_string()).collect();
+        let dcommit: Vec<String> = rr.iter().map(|&r| u8::from(r < c).to_string()).collect();
+        let shift: Vec<String> = (0..na)
+            .map(|l| {
+                let r = rr[l];
+                if r >= c {
+                    (round_start[r - c] + (l - round_start[r])).to_string()
+                } else {
+                    na.to_string() // sentinel: committed-and-dropped
+                }
+            })
             .collect();
-        let dcommit: Vec<String> = (0..we.n_active)
-            .map(|l| u8::from(drounds[we.globals[l]] < commit_hi).to_string())
+        let load_lo = round_start[w - c]; // first local index of the C newest rounds (stream-loaded)
+        let dpr = round_start[1]; // detectors per round (round 0 occupies [0, round_start[1]))
+                                  // Per-edge commit-touch: 1 if either endpoint is a real detector (< n_active) in the commit
+                                  // region (relative round < C). Edges are emitted in `edges` key order = UF_EA/EB order.
+        let in_commit = |node: usize| node < na && rr[node] < c;
+        let ecommit: Vec<String> = edges
+            .keys()
+            .map(|&(a, b)| u8::from(in_commit(a) || in_commit(b)).to_string())
             .collect();
         println!("// d={d} W={w} C={c} streaming-window graph (interior; future/past cuts -> temporal sinks) — GENERATED, do not edit.");
         println!("// regenerate: cargo run -p aleph-qec --example qec_surface_uf_graph -- window {d} {w} {c}");
+        // Include guard: the Q6-20 streaming wrapper AND the per-window core both `include this header
+        // in one compilation unit; the guard makes the $unit-scope localparams idempotent.
+        println!("`ifndef UF_SURFACE_GRAPH_SVH");
+        println!("`define UF_SURFACE_GRAPH_SVH");
         emit_graph_consts(boundary + 1, boundary, &edges);
         // Streaming metadata: detectors 0..UF_ACTIVE-1 are real/lit-able; UF_ACTIVE..UF_N-2 are
-        // temporal sinks (never lit); UF_N-1 is the spatial boundary. UF_DROUND/UF_DCOMMIT cover only
-        // the real detectors (relative round 0..W-1; commit flag = round < C).
-        // Streaming-only metadata: unused by the bare per-window core (which only reads UF_N/M/edges),
-        // used by the Q6-20 streaming wrapper. Pragma-guarded so a bare-core build stays -Wall clean.
+        // temporal sinks (never lit); UF_N-1 is the spatial boundary. The arrays cover only the real
+        // detectors. Unused by the bare core (UF_N/M/edges only) -> pragma-guarded for -Wall.
         println!("/* verilator lint_off UNUSEDPARAM */");
-        println!("localparam int UF_ACTIVE = {};", we.n_active);
+        println!("localparam int UF_ACTIVE  = {na};");
+        println!("localparam int UF_W       = {w};");
+        println!("localparam int UF_C       = {c};");
+        println!("localparam int UF_DPR     = {dpr};  // detectors per measurement round");
+        println!("localparam int UF_LOAD_LO = {load_lo};  // real detectors [LOAD_LO, ACTIVE) reload from the stream each slide");
         println!(
             "localparam int UF_DROUND  [UF_ACTIVE] = '{{{}}};",
             droud.join(", ")
@@ -100,7 +132,16 @@ fn main() {
             "localparam bit UF_DCOMMIT [UF_ACTIVE] = '{{{}}};",
             dcommit.join(", ")
         );
+        println!(
+            "localparam int UF_SHIFT   [UF_ACTIVE] = '{{{}}};",
+            shift.join(", ")
+        );
+        println!(
+            "localparam bit UF_ECOMMIT [UF_M]      = '{{{}}};",
+            ecommit.join(", ")
+        );
         println!("/* verilator lint_on UNUSEDPARAM */");
+        println!("`endif");
         return;
     }
 

@@ -12,7 +12,7 @@ OBJ_DIR   := obj_dir
 VERILATOR ?= verilator
 CARGO     := cargo run --release -q -p aleph-qec --example
 
-.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window clean
+.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream clean
 
 all: d3 rep surf
 
@@ -94,6 +94,18 @@ surf-window:
 	cd _winbuild && $(VERILATOR) --cc --exe --build -Wall --top-module uf_surface_decoder \
 		uf_surface_decoder.sv ../tb_uf_surface_scale.cpp -o sim_win
 	./_winbuild/$(OBJ_DIR)/sim_win _winbuild/uf_surface_graph.svh
+
+# Q6-20 (part 2) — sliding-window streaming wrapper smoke test: build the wrapper + the per-window
+# core against the d=3 W=9 C=3 window graph and run the streaming handshake (zero stream -> zero
+# logical, windows fire, no stall). Both modules `include the window graph (include-guarded).
+stream:
+	cd .. && $(CARGO) qec_surface_uf_graph -- window 3 9 3 > hw/uf_surface_graph_win.svh
+	rm -rf _streambuild && mkdir _streambuild
+	cp uf_streaming_decoder.sv uf_surface_decoder.sv uf_surface_graph_win.svh _streambuild/
+	mv _streambuild/uf_surface_graph_win.svh _streambuild/uf_surface_graph.svh
+	cd _streambuild && $(VERILATOR) --cc --exe --build -Wall --top-module uf_streaming_decoder \
+		uf_streaming_decoder.sv uf_surface_decoder.sv ../tb_uf_streaming.cpp -o sim_stream
+	./_streambuild/$(OBJ_DIR)/sim_stream
 
 # Re-baseline the Q6-04 golden table {obs_flip,correction} from the CURRENT RTL. Only run this
 # deliberately when the decoder's intended output changes — it overwrites the frozen reference that
