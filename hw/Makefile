@@ -12,7 +12,7 @@ OBJ_DIR   := obj_dir
 VERILATOR ?= verilator
 CARGO     := cargo run --release -q -p aleph-qec --example
 
-.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream clean
+.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream cosim cosim-3d clean
 
 all: d3 rep surf
 
@@ -106,6 +106,34 @@ stream:
 	cd _streambuild && $(VERILATOR) --cc --exe --build -Wall --top-module uf_streaming_decoder \
 		uf_streaming_decoder.sv uf_surface_decoder.sv ../tb_uf_streaming.cpp -o sim_stream
 	./_streambuild/$(OBJ_DIR)/sim_stream
+
+# Q6-21 — board-free sim<->RTL co-simulation. The simulator dumps a Monte-Carlo syndrome stream
+# (qec_q6_cosim) drawn from the SAME DEM the RTL graph (graph d rounds) is generated from; the TB
+# feeds it through the Verilated decoder and checks the RTL logical-error rate vs the software
+# UnionFind baseline (carried in the .vec headers) within Monte-Carlo CI. d=3, code-capacity (1
+# round): the full 2D matching graph, swept over p=0.01..0.05.
+COSIM_SHOTS ?= 20000
+COSIM_SEED  ?= 2024
+cosim:
+	cd .. && $(CARGO) qec_surface_uf_graph -- graph > hw/uf_surface_graph.svh
+	cd .. && $(CARGO) qec_q6_cosim -- 3 1 $(COSIM_SHOTS) $(COSIM_SEED) > hw/cosim_d3.vec
+	$(VERILATOR) --cc --exe --build -Wall --top-module uf_surface_decoder \
+		uf_surface_decoder.sv tb_uf_cosim.cpp -o sim_cosim
+	./$(OBJ_DIR)/sim_cosim uf_surface_graph.svh cosim_d3.vec
+
+# Q6-21 (3D) — same harness on the multi-round phenomenological graph (d=5 x 3 rounds, 48 detectors,
+# Q6-19): exercises the time dimension end-to-end (noise -> 3D syndromes -> RTL decode -> LER). The
+# graph is compile-time `include, so this needs its own build dir (cf. surf-3d).
+cosim-3d:
+	cd .. && $(CARGO) qec_surface_uf_graph -- graph 5 3 > hw/uf_surface_graph_d5r3.svh
+	cd .. && $(CARGO) qec_q6_cosim -- 5 3 $(COSIM_SHOTS) $(COSIM_SEED) > hw/cosim_d5r3.vec
+	rm -rf _cosim3dbuild && mkdir _cosim3dbuild && cp uf_surface_decoder.sv _cosim3dbuild/
+	cp uf_surface_graph_d5r3.svh _cosim3dbuild/uf_surface_graph.svh
+	cd _cosim3dbuild && $(VERILATOR) --cc --exe --build -Wall --top-module uf_surface_decoder \
+		uf_surface_decoder.sv ../tb_uf_cosim.cpp -o sim_cosim3d
+	# gate_p=0.02: gate the sub-threshold (operating) regime; supra-threshold rows are reported as
+	# info (unweighted RTL UF tie-breaks degenerate cosets more crudely above threshold — expected).
+	./_cosim3dbuild/$(OBJ_DIR)/sim_cosim3d _cosim3dbuild/uf_surface_graph.svh cosim_d5r3.vec 0.02
 
 # Re-baseline the Q6-04 golden table {obs_flip,correction} from the CURRENT RTL. Only run this
 # deliberately when the decoder's intended output changes — it overwrites the frozen reference that

@@ -133,10 +133,7 @@ pub fn run_dem_experiment(
 
     // Sample every shot in parallel; each shot's RNG is seeded only from (seed, index), so the
     // collected order — and thus the result — is independent of rayon's scheduling.
-    let (syndromes, truths): (Vec<Syndrome>, Vec<Vec<bool>>) = (0..shots)
-        .into_par_iter()
-        .map(|s| sample_shot(dem, seed, s))
-        .unzip();
+    let (syndromes, truths): (Vec<Syndrome>, Vec<Vec<bool>>) = sample_shots(dem, shots, seed);
 
     let predictions = decoder.decode_batch(&syndromes)?;
 
@@ -147,6 +144,28 @@ pub fn run_dem_experiment(
         .count() as u64;
 
     Ok(LogicalErrorResult::new(shots, logical_errors))
+}
+
+/// Sample `shots` independent shots from `dem`, returning their syndromes and *true* observable
+/// flips as parallel vectors (shot `i` is `(syndromes[i], truths[i])`).
+///
+/// This is the same sampler [`run_dem_experiment`] decodes, exposed so callers that need the raw
+/// shot stream — e.g. the Q6-21 sim↔RTL co-simulation harness, which dumps these exact shots to
+/// drive a Verilated decoder — sample *identically* to the software baseline: same `(seed, index)`
+/// SplitMix64 derivation per shot, same DEM order, so the RTL and software decoders see the very
+/// same Monte-Carlo stream and their logical-error rates are comparable shot-for-shot.
+///
+/// Deterministic for a fixed `seed` regardless of rayon scheduling (each shot seeds only from
+/// `(seed, index)`).
+pub fn sample_shots(
+    dem: &DetectorErrorModel,
+    shots: u64,
+    seed: u64,
+) -> (Vec<Syndrome>, Vec<Vec<bool>>) {
+    (0..shots)
+        .into_par_iter()
+        .map(|s| sample_shot(dem, seed, s))
+        .unzip()
 }
 
 /// Draw one shot from the DEM: returns its measured syndrome and the *true* observable flips.

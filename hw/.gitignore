@@ -19,3 +19,7 @@ _d5r3build/
 _d5r5build/
 _winbuild/
 _streambuild/
+
+# Q6-21 co-sim generated artifacts
+cosim_*.vec
+_cosim3dbuild/

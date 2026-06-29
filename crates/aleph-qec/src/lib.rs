@@ -43,7 +43,9 @@ pub use builder::{build_dem, AnnotatedCircuit, ErrorMechanism};
 pub use decoder::{Decoder, LogicalErrorResult, NullDecoder};
 pub use dem::{DemError, DetectorErrorModel};
 pub use error::{Error, Result};
-pub use experiment::{run_dem_experiment, run_memory_experiment, PhenomenologicalNoise};
+pub use experiment::{
+    run_dem_experiment, run_memory_experiment, sample_shots, PhenomenologicalNoise,
+};
 pub use matching::{MatchingEdge, MatchingGraph, NodeId};
 pub use mwpm::MwpmDecoder;
 pub use osd::OsdDecoder;
