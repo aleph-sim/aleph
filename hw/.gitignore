@@ -3,6 +3,7 @@ obj_dir/
 sim_*
 *.vcd
 _d5build/
+_d7build/
 
 # Vivado / synth outputs (Q6-05, Q6-06)
 syn/reports/

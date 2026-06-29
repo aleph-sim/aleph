@@ -43,6 +43,14 @@ static bool list(const std::string &l, const char *name, std::vector<int> &out) 
   return true;
 }
 
+// Read bit `e` of the DUT `correction` port regardless of its Verilator width class: a narrow port
+// (<=32 / <=64 bits) is an IData/QData scalar, but for d>=7 UF_M exceeds 64 so it is a VlWide<>.
+// Overloads keep the same call site (`cbit(dut->correction, e)`) working across distances.
+static inline int cbit(uint32_t c, int e) { return (int)((c >> e) & 1u); }
+static inline int cbit(uint64_t c, int e) { return (int)((c >> e) & 1ull); }
+template <std::size_t W>
+static inline int cbit(const VlWide<W> &c, int e) { return (int)((c[e >> 5] >> (e & 31)) & 1u); }
+
 int main(int argc, char **argv) {
   Verilated::commandArgs(argc, argv);
   const std::string svh = (argc > 1) ? argv[1] : "uf_surface_graph.svh";
@@ -69,7 +77,9 @@ int main(int argc, char **argv) {
   tick(); tick();
   dut->rst_n = 1;
 
-  auto decode = [&](uint32_t s) {
+  // syndrome is UF_N-2 bits wide; at d=7 that is 47 bits, so use 64-bit throughout (a 32-bit shift
+  // `1u << det` would overflow for detectors >= 32).
+  auto decode = [&](uint64_t s) {
     dut->in_valid = 1; dut->syndrome = s; tick();
     dut->in_valid = 0;
     int g = 0;
@@ -78,20 +88,19 @@ int main(int argc, char **argv) {
   };
   // syndrome of a single edge error: flip its two detector endpoints (boundary has no detector bit).
   auto syn_of = [&](int e) {
-    uint32_t s = 0;
-    if (ea[e] != B) s ^= 1u << ea[e];
-    if (eb[e] != B) s ^= 1u << eb[e];
+    uint64_t s = 0;
+    if (ea[e] != B) s ^= 1ull << ea[e];
+    if (eb[e] != B) s ^= 1ull << eb[e];
     return s;
   };
-  // does the correction reproduce syndrome `s`?
-  auto valid = [&](uint32_t s) {
-    const uint64_t corr = dut->correction;
-    uint32_t syn_rtl = 0;
+  // does the correction reproduce syndrome `s`? (UF_M may exceed 64 at d>=7 -> read via cbit)
+  auto valid = [&](uint64_t s) {
+    uint64_t syn_rtl = 0;
     for (int d = 0; d < dets; ++d) {
       int par = 0;
       for (int e = 0; e < M; ++e)
-        if (ea[e] == d || eb[e] == d) par ^= (corr >> e) & 1;
-      syn_rtl |= (uint32_t)par << d;
+        if (ea[e] == d || eb[e] == d) par ^= cbit(dut->correction, e);
+      syn_rtl |= (uint64_t)par << d;
     }
     return syn_rtl == s;
   };
@@ -108,7 +117,7 @@ int main(int argc, char **argv) {
   // (3) weight-2: validity + logical-error count vs the true XOR logical.
   for (int e1 = 0; e1 < M; ++e1)
     for (int e2 = e1 + 1; e2 < M; ++e2) {
-      const uint32_t s = syn_of(e1) ^ syn_of(e2);
+      const uint64_t s = syn_of(e1) ^ syn_of(e2);
       const int otrue = (el[e1] ^ el[e2]) & 1;
       decode(s); track_lat();
       ++n_w2;

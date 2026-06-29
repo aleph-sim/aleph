@@ -12,7 +12,7 @@ OBJ_DIR   := obj_dir
 VERILATOR ?= verilator
 CARGO     := cargo run --release -q -p aleph-qec --example
 
-.PHONY: all d3 rep surf surf-d5 clean
+.PHONY: all d3 rep surf surf-d5 surf-d7 clean
 
 all: d3 rep surf
 
@@ -45,6 +45,19 @@ surf-d5:
 	cd _d5build && $(VERILATOR) --cc --exe --build -Wall --top-module uf_surface_decoder \
 		uf_surface_decoder.sv ../tb_uf_surface_scale.cpp -o sim_scale_d5
 	./_d5build/$(OBJ_DIR)/sim_scale_d5 _d5build/uf_surface_graph.svh
+
+# Q6-17 — d=7 scaling: same parametric FSM with the d=7 graph (N=49, M=110). UF_M>64 makes the
+# `correction` port a Verilator VlWide<>, which the scale TB handles via the cbit() overloads. A
+# distance-7 code corrects <=3 errors, so the weight-<=2 sweep here is a necessary (not exhaustive)
+# correctness check; its real purpose is the scaling verdict (fit/Fmax/latency, measured by synth).
+surf-d7:
+	cd .. && $(CARGO) qec_surface_uf_graph -- graph 7 > hw/uf_surface_graph_d7.svh
+	rm -rf _d7build && mkdir _d7build
+	cp uf_surface_decoder.sv uf_surface_graph_d7.svh _d7build/
+	mv _d7build/uf_surface_graph_d7.svh _d7build/uf_surface_graph.svh
+	cd _d7build && $(VERILATOR) --cc --exe --build -Wall --top-module uf_surface_decoder \
+		uf_surface_decoder.sv ../tb_uf_surface_scale.cpp -o sim_scale_d7
+	./_d7build/$(OBJ_DIR)/sim_scale_d7 _d7build/uf_surface_graph.svh
 
 # Re-baseline the Q6-04 golden table {obs_flip,correction} from the CURRENT RTL. Only run this
 # deliberately when the decoder's intended output changes — it overwrites the frozen reference that
