@@ -25,8 +25,11 @@ fn main() {
     let mode = args.get(1).cloned().unwrap_or_else(|| "graph".into());
     // Optional distance argument (default 3 — keeps the d=3 Makefile targets working unchanged).
     let d: usize = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(3);
+    // Q6-19: optional measurement-round count (default 1 = code-capacity 2D graph; >1 = multi-round
+    // phenomenological 3D space-time graph with time-like measurement-error edges between rounds).
+    let rounds: usize = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(1);
 
-    let exp = SurfaceCode::new(d).memory_z_experiment(1);
+    let exp = SurfaceCode::new(d).memory_z_experiment(rounds);
     // Uniform noise so the unweighted graph the RTL decodes matches the oracle decoder's graph.
     let dem = build_dem(&exp.annotated, &exp.phenomenological_mechanisms(0.01, 0.01)).unwrap();
     let n = dem.detectors;
@@ -51,8 +54,8 @@ fn main() {
             let ea: Vec<String> = edges.keys().map(|(a, _)| a.to_string()).collect();
             let eb: Vec<String> = edges.keys().map(|(_, b)| b.to_string()).collect();
             let el: Vec<String> = edges.values().map(|l| l.to_string()).collect();
-            println!("// d={d} rotated surface-code memory-Z (1 round) matching graph — GENERATED, do not edit.");
-            println!("// regenerate: cargo run -p aleph-qec --example qec_surface_uf_graph -- graph {d} > hw/uf_surface_graph_d{d}.svh");
+            println!("// d={d} rotated surface-code memory-Z ({rounds} round(s)) matching graph — GENERATED, do not edit.");
+            println!("// regenerate: cargo run -p aleph-qec --example qec_surface_uf_graph -- graph {d} {rounds} > hw/uf_surface_graph_d{d}.svh");
             println!("localparam int UF_N = {};", n + 1);
             println!("localparam int UF_M = {m};");
             println!("localparam int UF_BOUNDARY = {boundary};");

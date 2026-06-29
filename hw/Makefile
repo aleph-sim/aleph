@@ -12,7 +12,7 @@ OBJ_DIR   := obj_dir
 VERILATOR ?= verilator
 CARGO     := cargo run --release -q -p aleph-qec --example
 
-.PHONY: all d3 rep surf surf-d5 surf-d7 clean
+.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d clean
 
 all: d3 rep surf
 
@@ -58,6 +58,29 @@ surf-d7:
 	cd _d7build && $(VERILATOR) --cc --exe --build -Wall --top-module uf_surface_decoder \
 		uf_surface_decoder.sv ../tb_uf_surface_scale.cpp -o sim_scale_d7
 	./_d7build/$(OBJ_DIR)/sim_scale_d7 _d7build/uf_surface_graph.svh
+
+# Q6-19 — multi-round (3D space-time) decoding. The SAME parametric FSM, fed a multi-round
+# phenomenological graph (`graph <d> <rounds>`): T measurement rounds with time-like measurement-error
+# edges. Proves the decoder handles the time dimension (not just code-capacity) with no RTL change.
+# Two cases: d=5x3 (48 det, clean 0/N weight-<=2 since d=5 corrects 2) and d=5x5 (72 det / 186 edges =
+# identical size to the Q3 GPU bench graph, exercising the wide-syndrome TB path; for the apples-to-
+# apples GPU-vs-FPGA latency comparison in docs/perf/qec-q6-fpga.md §Q6-03).
+surf-3d:
+	cd .. && $(CARGO) qec_surface_uf_graph -- graph 5 3 > hw/uf_surface_graph_d5r3.svh
+	cd .. && $(CARGO) qec_surface_uf_graph -- graph 5 5 > hw/uf_surface_graph_d5r5.svh
+	# The graph is compile-time (`include) in the RTL, so each case needs its own Verilator build.
+	rm -rf _d5r3build && mkdir _d5r3build && cp uf_surface_decoder.sv _d5r3build/
+	cp uf_surface_graph_d5r3.svh _d5r3build/uf_surface_graph.svh
+	cd _d5r3build && $(VERILATOR) --cc --exe --build -Wall --top-module uf_surface_decoder \
+		uf_surface_decoder.sv ../tb_uf_surface_scale.cpp -o sim_3d
+	@echo "== d=5 x 3 rounds (48 detectors, 3 measurement rounds) =="
+	./_d5r3build/$(OBJ_DIR)/sim_3d _d5r3build/uf_surface_graph.svh
+	rm -rf _d5r5build && mkdir _d5r5build && cp uf_surface_decoder.sv _d5r5build/
+	cp uf_surface_graph_d5r5.svh _d5r5build/uf_surface_graph.svh
+	cd _d5r5build && $(VERILATOR) --cc --exe --build -Wall --top-module uf_surface_decoder \
+		uf_surface_decoder.sv ../tb_uf_surface_scale.cpp -o sim_3d
+	@echo "== d=5 x 5 rounds (72 detectors, = GPU bench graph size) =="
+	./_d5r5build/$(OBJ_DIR)/sim_3d _d5r5build/uf_surface_graph.svh
 
 # Re-baseline the Q6-04 golden table {obs_flip,correction} from the CURRENT RTL. Only run this
 # deliberately when the decoder's intended output changes — it overwrites the frozen reference that

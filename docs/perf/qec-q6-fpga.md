@@ -430,6 +430,41 @@ d=7 — KV260 562 ns (real-time, ~1.8× margin), Zybo 1.185 µs (≈1.2× over t
 1.4×). Zybo d=7 is the one remaining cell over budget; closing it needs a structurally shallower forest
 relabel (the K-sweep is exhausted), or accept that d=7 targets the KV260-class part.
 
+## Q6-19 — multi-round (3D space-time) decoding
+
+Everything up to Q6-18 decodes a **single-round, code-capacity** graph (2D, space only). A *real*
+decoder must handle the **time dimension**: many measurement rounds, with measurement errors, on the
+3D space-time matching graph. This moves the FPGA decoder to a **multi-round phenomenological** graph —
+`T` rounds with **time-like measurement-error edges** between consecutive rounds (the generator gained
+a `rounds` arg, `graph <d> <rounds>`, built on `memory_z_experiment(rounds)`).
+
+The decoder RTL is **graph-agnostic** (parametric in `UF_N`/`UF_M`/edge tables), so it decodes the 3D
+graph **with zero RTL changes** — time is just baked into node numbering and which edges exist. The
+only infra change was a wide-syndrome TB path (>64 detectors → the `syndrome` port becomes a
+Verilator `VlWide<>`, mirroring the Q6-17 wide-`correction` fix). Verified bit-exact (`make surf-3d`):
+
+| case | detectors | edges | cyc | weight-≤2 logical errs | Zybo Fmax / latency / LUT | KV260 Fmax / latency / LUT |
+|------|-----------|-------|-----|------------------------|---------------------------|----------------------------|
+| d=5 × 3 rounds | 48 | 120 | 85 | **0 / 7140** | 63.5 MHz / 1.339 µs / 19.1% | 145.0 MHz / **0.586 µs** / 9.5% |
+| d=5 × 5 rounds | 72 | 186 | 118 | **0 / 17205** | 48.2 MHz / 2.448 µs / 40.6% | 104.0 MHz / 1.135 µs / 18.9% |
+
+(d=5 corrects ≤2, so a clean **0** weight-≤2 logical-error count is the meaningful gate; validity and
+weight-1 distance are 0-fail on both.)
+
+**The right budget for a `T`-round volume is `T` µs, not 1 µs** — acquiring `T` rounds *takes* `T` µs
+at the ~1 µs/round measurement rate, so a **block** decoder keeps up if it decodes the volume in
+< `T` µs. By that measure **both boards keep up**: d=5×3 (acquire 3 µs) decodes in 0.586 µs (KV260) /
+1.339 µs (Zybo); d=5×5 (acquire 5 µs) in 1.135 µs / 2.448 µs — all well under their acquisition window.
+KV260 d=5×3 decodes a full 3-round circuit volume in **586 ns**. Caveat: block decoding waits for all
+`T` rounds before starting (latency = acquire + decode); low feed-forward latency needs the
+**streaming** decoder (Q6-20). LUT grows with the volume (the O(N²) min-tree gather): d=5×5 is 40.6 %
+of Zybo — fits, but the small part is filling up.
+
+**Honest scope:** this is *phenomenological* 3D (data + measurement-error edges), not full
+*circuit-level* (gate/CX-level) noise — the standard intermediate model, and the one that introduces
+the time dimension + measurement-error edges that matter. Full circuit-level needs a surface-code
+`circuit_level_mechanisms()` (mirroring the BB-code one); tracked as a Q6-19 follow-up.
+
 ## Q6-03 — GPU vs FPGA: latency, throughput, power, and the ASIC go/no-go
 
 This compares the **same** Delfosse–Nickerson Union-Find decoder on two substrates: the GPU batch
@@ -471,6 +506,12 @@ opposite: sub-µs, deterministic (no data-dependent jitter beyond the bounded wo
 real-time at d=5 (both parts) and d=7 (KV260). **FPGA wins single-decode latency by ~10–50×, and the
 gap is architectural, not a tuning artifact.**
 
+**Apples-to-apples on the identical graph (added with Q6-19).** The GPU bench's d=5 graph (72
+detectors / 186 edges) is *exactly* the FPGA's d=5 × 5-round graph (Q6-19). On that same graph, FPGA
+single-decode latency is **1.135 µs (KV260) / 2.448 µs (Zybo)** deterministic — versus the GPU's
+~5–20 µs single-decode (launch+PCIe). So even on the GPU's own graph size, the FPGA is **~5–18×
+lower latency per decode**; the GPU only pulls ahead when thousands of decodes are batched.
+
 ### Throughput — the offline / Monte-Carlo axis (GPU's home turf, but closer than it looks)
 
 The non-pipelined FPGA FSM retires one decode per worst-case window, so a single instance throughputs
@@ -481,6 +522,11 @@ The non-pipelined FPGA FSM retires one decode per worst-case window, so a single
 | GPU (whole card, batch) | 2.38 M syn/s (72-det graph) | 0.58 M syn/s (192-det graph) |
 | FPGA KV260, 1 instance | 3.4 M syn/s (24-det) | 1.78 M syn/s (48-det) |
 | FPGA KV260, area-filled* | ~60–80 M syn/s | ~15–18 M syn/s |
+
+On the **identical 72-det / 186-edge graph** (GPU d=5 = FPGA d=5×5), one KV260 instance does
+0.88 M syn/s vs the GPU's 2.38 M/s — here the GPU's batch parallelism wins raw throughput on the
+bigger 3D graph, but the FPGA replicates (d=5×5 is 18.9 % of KV260 → ~5 instances → ~4.4 M/s) at
+sub-watt, and still wins single-decode latency ~5–18×.
 
 *back-of-envelope: 1 instance / (its LUT %), ignoring routing congestion at high fill — an upper
 bound, not a synthesised result. Even a *single* FPGA instance is in the GPU's throughput class (on a
