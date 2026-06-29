@@ -157,17 +157,28 @@ module uf_surface_decoder (
           end
         end
 
-        // ---- SPANNING FOREST: one fused edge per cycle (root-walk find + union) ----
+        // ---- SPANNING FOREST: one fused edge per cycle, QUICK-FIND (flat forest) ----
+        // Q6-10: the Q6-02/Q6-04 form did a lazy quick-union — find walked `troot` N times per
+        // endpoint (`for k in 0..N: ra = troot[ra]`), an N-deep serial chain of index-muxed troot
+        // lookups. That chain was the binding d>=5 critical path (78 LUT levels @ d=5, the #373
+        // finding) and the reason Fmax collapsed with distance. Switch to QUICK-FIND: maintain the
+        // invariant that `troot[x]` is ALWAYS the direct component root (flat forest). Then find is
+        // a single depth-1 read, and union eagerly relabels every member of the absorbed root in
+        // parallel — N independent compare-muxes, no serial dependency. This is BIT-IDENTICAL to the
+        // lazy form: edges are still processed in index order, the union test is still ra!=rb, and
+        // the surviving root is still rb, so `istree[]` is unchanged (d=3 stays golden-bit-exact;
+        // d=5 weight-<=2 quality identical). Only the per-cycle depth drops from O(N) to O(log N)
+        // (the troot/UF_EA index muxes), which is what frees Fmax at d>=5.
         S_FOREST: begin
           if (support[e_idx] == 2'd2) begin
             automatic logic [IDXW-1:0] ra, rb;
-            ra = IDXW'(UF_EA[e_idx]);
-            for (int k = 0; k < UF_N; k++) ra = troot[ra];
-            rb = IDXW'(UF_EB[e_idx]);
-            for (int k = 0; k < UF_N; k++) rb = troot[rb];
+            ra = troot[UF_EA[e_idx]];   // depth-1 find: flat invariant => troot[x] is the root
+            rb = troot[UF_EB[e_idx]];
             if (ra != rb) begin
-              troot[ra]      <= rb;
-              istree[e_idx]  <= 1'b1;
+              // absorb component `ra` into `rb`: every node rooted at ra now points at rb.
+              for (int i = 0; i < UF_N; i++)
+                if (troot[i] == ra) troot[i] <= rb;
+              istree[e_idx] <= 1'b1;
             end
           end
           if (e_idx == EIDXW'(UF_M - 1)) state <= S_PEEL_INIT;
