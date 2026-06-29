@@ -373,6 +373,34 @@ d=5 109 → 43 clk; KV260 802 → 293 ns (2.7×), Zybo 2.17 → 0.74 µs (2.9×)
 `S_FOREST` troot relabel (`e_idx → troot`) — the next Fmax target if d=5 needs more, though both parts
 already clear the budget comfortably.
 
+## Q6-17 — d=7 scaling study
+
+With the Q6-16 min-tree removing the boundary-degree serial-fold wall (the precondition for larger
+distances), the decoder is measured at **d=7: N=49, M=110** (vs 25/54 at d=5). The same parametric FSM
+is used unchanged; the scale TB gained `cbit()` overloads + a 64-bit syndrome so it handles the wide
+ports (UF_M=110 makes `correction` a Verilator `VlWide<>`; the syndrome is 47 bits). Verify
+(`make surf-d7`, weight-≤2 sweep — a *necessary* check for a distance-7 code, which fully corrects
+≤3): **validity 0 fail, distance-correct on all 110 weight-1 errors, 0/5995 weight-2 logical errors,
+worst-case 62 clk.**
+
+Dual-target OOC synth (Vivado 2024.2; d=5 column = the #386 Q6-16 decoder, same RTL):
+
+| part | d | cycles | Fmax | latency | LUT (util) |
+|------|---|--------|------|---------|------------|
+| Zybo `xc7z020`  | 5 | 43 | 58.3 MHz | 0.738 µs | 4568 (8.6%) |
+| Zybo `xc7z020`  | 7 | 62 | 45.5 MHz | **1.363 µs** | 11673 (**21.9%**) |
+| KV260 `xck26`   | 5 | 43 | 146.8 MHz | 0.293 µs | 4656 (4.0%) |
+| KV260 `xck26`   | 7 | 62 | 112.9 MHz | **0.549 µs** | 11705 (**10.0%**) |
+
+**Verdict: KV260 decodes d=7 in real time (549 ns, ~1.8× margin under the ~1 µs round budget); Zybo
+does not (1.363 µs, ~1.4× over).** Both parts *fit* comfortably — the O(N²) per-node min-tree gather
+grew LUTs ~2.5× (N doubled), but even on the small Zybo it is only 22%. Scaling d=5→7: cycles +44%
+(forest `⌈M/3⌉` 18→37 dominates), Fmax −22/−23% (longer routes + deeper logic on the bigger graph),
+net latency ~1.85× per part. The binding path is still the `S_FOREST` troot relabel (`e_idx →
+troot`/`istree`) — the min-tree fix held, so `S_CC_RELAX` is *not* the d=7 wall either. The lever to
+bring Zybo d=7 under budget (or widen the KV260 margin) is that forest relabel path: a shallower
+union-relabel or a re-sweep of `FOREST_UNROLL` now that the CC path is gone.
+
 ## Q6-03 — GPU vs FPGA
 
 > Pending board bring-up (Q6-08) for measured on-board latency/throughput/power vs the Q3 GPU decoder.
