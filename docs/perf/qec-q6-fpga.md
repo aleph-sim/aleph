@@ -200,10 +200,34 @@ New d=5 worst path (down from 77 to 26 levels):
 Zybo : label_reg[24] → FSM_sequential_state_reg    26 levels, 19.6 ns
 KV260: label_reg[24] → FSM_sequential_state_reg    26 levels,  7.2 ns
 ```
-i.e. the `S_CC_RELAX` Jacobi min-relaxation feeding the `changed`/next-state logic — the remaining
-label-indexed scatter (`nl[EA]=min(nl[EA],label[EB])`) plus the per-pass convergence test. That is
-the target of the CC pointer-jumping follow-up (replacing the Jacobi relax wholesale, which also cuts
-the d=5 cycle count).
+i.e. the `S_CC_RELAX` Jacobi min-relaxation feeding the `changed`/next-state logic — the per-pass
+convergence test gated on the per-node min.
+
+### Q6-12 — CC pointer-jumping: tried, measured, rejected (negative result)
+
+The natural next idea was to attack that path with a Hillis-Steele **pointer-jump** in `S_CC_RELAX`:
+rewrite the min-relax as a per-node gather and add a `label[label[v]]` shortcut term so label chains
+collapse in O(log diameter) passes instead of O(diameter). It is correctness-neutral (the extra
+candidates are same-component ids ≥ the component min, so the converged labels are unchanged —
+re-verified: d=3 golden + d=5 0/1431 both still pass). **But it regressed every metric and was not
+shipped:**
+
+| part | d | Fmax PR-A → +ptr-jump | LUT PR-A → +ptr-jump |
+|------|---|-----------------------|----------------------|
+| Zybo `xc7z020`  | 5 | 50.3 → **40.3 MHz** | 2799 → 3849 |
+| KV260 `xck26`   | 5 | 135.9 → **113.9 MHz** | 2807 → 3500 |
+
+Two reasons, both instructive: (1) the cycle win was negligible — d=5 worst-case dropped only
+**109 → 108 clk**, because the d=5 cycle budget is dominated by the one-edge-per-cycle `S_FOREST`
+(M=54) and the N-round `S_PEEL_PASS` (N=25), *not* the handful of CC relax passes; (2) the
+`label[label[v]]` shortcut is a **double-indexed** register read — a depth-2 N:1 mux — that *added*
+to the critical path (26 → 30 levels) rather than shortening it, and the gather rewrite bought
+nothing because synth already constant-folds the original per-edge scatter (the edge endpoints are
+`localparam`s). Net: pointer-jumping is the wrong lever here. The CC relax path is left as-is; the
+remaining d≥5 levers are cycle-count (the fixed `S_FOREST`/`S_PEEL` passes) rather than this path.
+
+**Q6 d=5 status:** KV260 meets the ~1 µs budget (802 ns); Zybo (2.17 µs) is bounded by the slow
+`-1` part more than by any single remaining path.
 
 ## Q6-03 — GPU vs FPGA
 
