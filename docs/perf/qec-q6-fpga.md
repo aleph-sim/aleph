@@ -338,6 +338,41 @@ KV260 0.417 → 0.321 µs (−23%)**.
 parts now decode d=5 in real time.* Cumulative over Q6-13/14/15: d=5 109 → 43 clk, KV260 802 → 321 ns,
 Zybo 2.17 → 0.87 µs. The binding constraint is now the `S_CC_RELAX` Fmax path on both parts.
 
+## Q6-16 — balanced min-reduction in S_CC_RELAX (kill the d=5 Fmax wall)
+
+After Q6-15 the d=5 worst case (43 clk) is **Fmax-bound**, not cycle-bound. The binding path on both
+parts was `label_reg → FSM_state` — the `S_CC_RELAX` Jacobi min-relax + convergence test — **25 LUT
+levels, 82% routing**. The cell trace showed a long chain of `label[24][3]_i_*` LUTs (node 24 = the
+boundary super-node). Root cause: the min-relax was written as a **serial min-fold** over incident
+edges (`if (label[nbr] < nl[v]) nl[v] = label[nbr]`), which synthesises to a chain of depth = node
+degree — and the boundary node's high degree made that the wall.
+
+Fix: rewrite the relax as a per-node **gather + balanced O(log N) min-reduction tree** (`cc_min_reduce`).
+For each node build the candidate set `{label[v]} ∪ {label[u] : fused edge v–u}` (non-neighbours
+masked to an all-ones sentinel ≥ every real label), then tree-reduce. `min` is associative +
+commutative, so it is **bit-identical** to the serial fold (same candidate set) — d=3 golden + d=5
+0/1431 preserved, cycles unchanged at 43. Same scatter→tree idea as the Q6-11 parity gather.
+
+Re-synth (Vivado 2024.2, OOC; **before** = the #384 decoder re-synthesised on the same box,
+reproduced exactly — no drift). Cycles unchanged, so latency moves purely with Fmax:
+
+| part | d=5 clk | Fmax before→after | latency before→after | LUT before→after |
+|------|---------|-------------------|----------------------|------------------|
+| Zybo `xc7z020` | 43 | 49.4 → **58.3 MHz** (+18%) | 0.870 → **0.738 µs** (−15%) | 3864 → 4568 (8.6%) |
+| KV260 `xck26`  | 43 | 134.1 → **146.8 MHz** (+9.5%) | 0.321 → **0.293 µs** (−9%) | 3879 → 4656 (4.0%) |
+
+The tree dropped the relax path from ~degree to ~log₂(N) levels and **moved the critical path off
+`S_CC_RELAX` entirely** — the new binding path is `e_idx → troot` (the Q6-14 forest-unroll relabel,
+17 levels, again route-dominated). LUT grew ~18–20% (the O(N²) per-node candidate gather) but stays
+small in absolute terms (Zybo 8.6%, KV260 4.0% of the part). The min-fold→tree win compounds with
+distance: the boundary degree (and so the old serial chain) grows with d, so this is also a
+precondition for d=7.
+
+**Q6 d=5 status:** KV260 **293 ns**, Zybo **738 ns** — both real-time. Cumulative over Q6-13/14/15/16:
+d=5 109 → 43 clk; KV260 802 → 293 ns (2.7×), Zybo 2.17 → 0.74 µs (2.9×). New binding path is the
+`S_FOREST` troot relabel (`e_idx → troot`) — the next Fmax target if d=5 needs more, though both parts
+already clear the budget comfortably.
+
 ## Q6-03 — GPU vs FPGA
 
 > Pending board bring-up (Q6-08) for measured on-board latency/throughput/power vs the Q3 GPU decoder.

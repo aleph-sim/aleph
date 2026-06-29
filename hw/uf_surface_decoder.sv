@@ -72,6 +72,27 @@ module uf_surface_decoder (
   logic [IDXW-1:0]   pit;             // peel sweep counter
   logic [15:0]       lat;             // cycles since in_valid accepted
 
+  // Q6-16: balanced pairwise min-reduction over UF_N label candidates. Used by S_CC_RELAX to compute
+  // each node's relaxed label as min(self, fused-neighbour labels). The Q6-04 form folded the min
+  // SERIALLY across incident edges (`if (label[nbr] < nl[v]) nl[v] = label[nbr]`), which synthesises
+  // to a chain of depth = node degree — and the boundary super-node's high degree made that the
+  // binding d=5 critical path (25 LUT levels, `label_reg -> FSM_state`). min is associative +
+  // commutative, so reducing the same candidate set as an explicit O(log N) tree is bit-identical but
+  // shrinks the path to ~log2(N) levels. (Same scatter->tree idea as the Q6-11 parity gather.)
+  function automatic logic [IDXW-1:0] cc_min_reduce(input logic [IDXW-1:0] a [UF_N]);
+    logic [IDXW-1:0] r [UF_N];
+    int n;
+    for (int i = 0; i < UF_N; i++) r[i] = a[i];
+    n = UF_N;
+    while (n > 1) begin
+      for (int i = 0; i < n / 2; i++)
+        r[i] = (r[2*i + 1] < r[2*i]) ? r[2*i + 1] : r[2*i];
+      if (n[0]) r[n/2] = r[n - 1];   // odd count: carry the unpaired element up a level
+      n = (n + 1) / 2;
+    end
+    return r[0];
+  endfunction
+
   always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
       state          <= S_IDLE;
@@ -114,12 +135,22 @@ module uf_surface_decoder (
         S_CC_RELAX: begin
           automatic logic [IDXW-1:0] nl [UF_N];
           automatic logic            changed;
-          for (int i = 0; i < UF_N; i++) nl[i] = label[i];
-          for (int e = 0; e < UF_M; e++)
-            if (support[e] == 2'd2) begin
-              if (label[UF_EB[e]] < nl[UF_EA[e]]) nl[UF_EA[e]] = label[UF_EB[e]];
-              if (label[UF_EA[e]] < nl[UF_EB[e]]) nl[UF_EB[e]] = label[UF_EA[e]];
-            end
+          // Q6-16: per-node GATHER then balanced min-reduce (see cc_min_reduce). For each node v,
+          // build the candidate set { label[v] } ∪ { label[u] : fused edge v–u }, with non-neighbours
+          // masked to the all-ones sentinel (>= every real label, since UF_N-1 <= 2^IDXW-1), then
+          // tree-reduce. Bit-identical to the old serial min-fold (same set, min is assoc/comm) but
+          // the per-node path is O(log N) deep instead of O(degree).
+          for (int v = 0; v < UF_N; v++) begin
+            automatic logic [IDXW-1:0] cand [UF_N];
+            for (int u = 0; u < UF_N; u++) cand[u] = '1;   // sentinel = +inf
+            cand[v] = label[v];                            // self
+            for (int e = 0; e < UF_M; e++)
+              if (support[e] == 2'd2) begin
+                if (UF_EA[e] == v) cand[UF_EB[e]] = label[UF_EB[e]];
+                if (UF_EB[e] == v) cand[UF_EA[e]] = label[UF_EA[e]];
+              end
+            nl[v] = cc_min_reduce(cand);
+          end
           changed = 1'b0;
           for (int i = 0; i < UF_N; i++) begin
             if (nl[i] != label[i]) changed = 1'b1;
