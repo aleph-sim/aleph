@@ -92,8 +92,14 @@ fn main() {
         // used by the Q6-20 streaming wrapper. Pragma-guarded so a bare-core build stays -Wall clean.
         println!("/* verilator lint_off UNUSEDPARAM */");
         println!("localparam int UF_ACTIVE = {};", we.n_active);
-        println!("localparam int UF_DROUND  [UF_ACTIVE] = '{{{}}};", droud.join(", "));
-        println!("localparam bit UF_DCOMMIT [UF_ACTIVE] = '{{{}}};", dcommit.join(", "));
+        println!(
+            "localparam int UF_DROUND  [UF_ACTIVE] = '{{{}}};",
+            droud.join(", ")
+        );
+        println!(
+            "localparam bit UF_DCOMMIT [UF_ACTIVE] = '{{{}}};",
+            dcommit.join(", ")
+        );
         println!("/* verilator lint_on UNUSEDPARAM */");
         return;
     }
