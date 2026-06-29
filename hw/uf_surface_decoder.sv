@@ -123,13 +123,24 @@ module uf_surface_decoder (
         end
 
         // per-cluster defect parity + boundary flag -> odd (non-neutral) nodes.
+        // Q6-11: per-label parity by GATHER, not the serial `par[label[i]] ^= defect[i]`
+        // SCATTER. XOR is associative/commutative, so par[v] = XOR{defect[i] : label[i]==v}
+        // is bit-identical to the scatter result — but each bucket is an INDEPENDENT masked
+        // XOR-reduction over the N nodes, which Vivado balances into an O(log N) tree with no
+        // running-accumulator chain. The scatter form was the new d>=5 critical path after the
+        // quick-find landed (label/defect -> anyodd_reg, ~77 LUT levels; #375 finding).
         S_ODD: begin
           automatic logic par  [UF_N];
           automatic logic hasb [UF_N];
           automatic logic any;
-          for (int v = 0; v < UF_N; v++) begin par[v] = 1'b0; hasb[v] = 1'b0; end
-          for (int i = 0; i < UF_N; i++) par[label[i]] = par[label[i]] ^ defect[i];
-          hasb[label[UF_BOUNDARY]] = 1'b1;
+          for (int v = 0; v < UF_N; v++) begin
+            automatic logic p;
+            p = 1'b0;
+            for (int i = 0; i < UF_N; i++)
+              if (label[i] == IDXW'(v)) p = p ^ defect[i];
+            par[v]  = p;
+            hasb[v] = (label[UF_BOUNDARY] == IDXW'(v));
+          end
           any = 1'b0;
           for (int i = 0; i < UF_N; i++) begin
             oddc[i] <= par[label[i]] & ~hasb[label[i]];
