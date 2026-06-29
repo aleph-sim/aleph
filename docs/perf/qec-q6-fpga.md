@@ -260,6 +260,45 @@ moves further under the ~1 µs budget (733 ns) and Zybo d=5 closes to 1.96 µs.
 **Q6 d=5 status:** KV260 733 ns (real-time, comfortably under budget); Zybo 1.96 µs. Remaining cycle
 lever is the one-edge-per-cycle `S_FOREST` (M rounds) — the next target.
 
+## Q6-14 — unroll the spanning-forest pass (the big d=5 cycle cut)
+
+After Q6-13, `S_FOREST` (one fused edge per cycle, scanned to the last spanning-tree edge) is the
+dominant fixed cost in the d=5 schedule. A **union-counter early-exit** (stop once `N − #components`
+tree edges are added) was tried and **rejected**: the worst-case syndrome's last tree edge sits near
+index `M−1`, so it saved only **1 clk** (91 → 90) — the same near-zero-worst-case wall Q6-12 hit.
+
+The lever that works is **unrolling**: process `FOREST_UNROLL` edges per cycle with *strictly
+sequential* union semantics inside the cycle. A working copy `wt[]` of `troot` is mutated with
+blocking writes, so sub-union `k` sees sub-union `k−1`'s relabel — exactly the one-edge quick-find,
+folded into one clock. The same edges become `istree[]` in the same index order, so it is
+**bit-identical** (d=3 golden + d=5 0/1431 both preserved); only the cycle count drops from `~M` to
+`~⌈M/UNROLL⌉`. Cost: the per-cycle path is `~UNROLL×` the single-edge find+relabel depth.
+
+Unroll sweep (Vivado 2024.2, OOC; **before** = the #380 early-terminate decoder re-synthesised on the
+same box — reproduced exactly, no drift). d=5, both parts; latency = cycles / Fmax:
+
+| UNROLL | d=5 clk | Zybo Fmax | Zybo latency | KV260 Fmax | KV260 latency | LUT (Zybo / KV260) |
+|--------|---------|-----------|--------------|------------|---------------|--------------------|
+| 1 (#380 base) | 91 | 46.4 MHz | 1.961 µs | 124.2 MHz | 0.733 µs | 2826 / 2864 |
+| 2 | 64 | 49.0 MHz | 1.306 µs | 137.2 MHz | 0.467 µs | 3187 / 3148 |
+| **3** ✅ | **55** | **47.0 MHz** | **1.170 µs** | **131.8 MHz** | **0.417 µs** | 3782 / 3911 |
+| 4 | 51 | 44.0 MHz | 1.159 µs | 109.7 MHz | 0.465 µs | 4136 / 4322 |
+
+**UNROLL=3 is the sweet spot.** At UNROLL ≤ 3 the worst path is *unchanged* — still
+`label_reg[24] → FSM_state` (the `S_CC_RELAX` Jacobi path, 26 levels): the unrolled forest path stays
+**below** it, so the 3× forest-cycle cut is essentially free (Fmax even ticks up vs base, placement
+noise around the same path). At UNROLL=4 the forest path finally crosses the CC path and Fmax
+collapses (KV260 132 → 110 MHz), erasing the cycle win. So 3 is the deepest unroll before the forest
+becomes critical.
+
+Net vs #380 base: **Zybo 1.961 → 1.170 µs (−40%), KV260 0.733 → 0.417 µs (−43%)**. LUT cost is modest
+(Zybo 7.1%, KV260 3.3% of the part). KV260 d=5 now decodes in **417 ns** — well inside the ~1 µs round
+budget — and Zybo d=5 closes to **1.17 µs**, within ~1.2× of budget on the slow `-1` part.
+
+**Q6 d=5 status:** KV260 **417 ns** (real-time, ~2.4× margin); Zybo **1.17 µs**. The forest is no
+longer the worst-case bottleneck; the binding path is now `S_CC_RELAX` (Fmax) and the growth/CC/peel
+cycle floor (~37 clk).
+
 ## Q6-03 — GPU vs FPGA
 
 > Pending board bring-up (Q6-08) for measured on-board latency/throughput/power vs the Q3 GPU decoder.
