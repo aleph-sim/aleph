@@ -92,6 +92,15 @@ issues in `docs/qec/BACKLOG.md`. Issue IDs: `Q{phase}-{nn}` (e.g. `Q0-01`).
 | **Q6** | FPGA | UF on Arty A7 with measured latency; GPU-vs-FPGA report | Q2 (Q3) |
 | **Q7** | **ASIC (North Star)** | Architecture spec + RTL core + tape-out feasibility / customer gate | Q6 |
 
+**Q6 status (pre-silicon, on KV260 + Zybo via Vivado post-route):** the synthesizable UF surface
+decoder is **real-time at d=5 on both boards** (KV260 294 ns / Zybo 655 ns) and **at d=7 on KV260**
+(562 ns, ~1.8× under the ~1 µs round budget); Zybo d=7 (1.185 µs) is the one cell still over. Bit-exact
+vs the CPU reference at d=3/5/7. **Q6-03 (GPU-vs-FPGA report) is done** and returns a **conditional GO
+for Q7**: FPGA beats the GPU UF decoder ~10–50× on single-decode latency and 150–600× on energy/decode;
+its latency is 76–82 % routing, the tax an ASIC removes. Remaining board ACs (Q6-01/02/08) need
+physical hardware (KV260 in hand) and would replace the post-route estimates with measured silicon.
+**Q7 trigger is commercial, not technical** (funding + a committed QPU-company customer).
+
 **Recommended start: Q0.** It unblocks everything downstream, builds entirely on what already
 exists, and delivers the first publishable result (a threshold plot) for little work.
 

@@ -924,7 +924,7 @@ feasible. This is the first hard datapoint on the < 1 µs question.
 
 -----
 
-### [Q6-03] GPU vs FPGA comparison report
+### [Q6-03] GPU vs FPGA comparison report — ✅ DONE (#391, on post-route estimates)
 
 **Labels:** `area:fpga`, `area:docs`, `type:docs`, `priority:medium`
 **Milestone:** Phase Q6
@@ -936,8 +936,17 @@ Compare the same UF algorithm on GPU (Q3-01) vs FPGA (Q6-08/Q6-09): latency, thr
 This report is the decision input for whether ASIC (Q7) is worth pursuing.
 
 **Acceptance Criteria**
-- [ ] `docs/perf/qec-q6-fpga.md` with latency/throughput/power for GPU and FPGA (both boards).
-- [ ] Explicit recommendation: does an ASIC close a gap that FPGA cannot? Go/no-go for Q7.
+- [x] `docs/perf/qec-q6-fpga.md` with latency/throughput/power for GPU and FPGA (both boards).
+- [x] Explicit recommendation: does an ASIC close a gap that FPGA cannot? Go/no-go for Q7.
+
+**Outcome (`docs/perf/qec-q6-fpga.md` §Q6-03).** FPGA wins single-decode **latency** by ~10–50×
+(deterministic sub-µs vs GPU's launch+PCIe-bound batch device) and **energy/decode** by 150–600×
+(~0.1–0.22 µJ vs ~29–120 µJ); GPU wins raw batch throughput but a single FPGA instance is already in
+its class and replicates across spare fabric. **Verdict: conditional GO for Q7** — the FPGA latency is
+76–82 % routing, a tax a std-cell ASIC removes (→ sub-100 ns, d≥9 real-time, µW-class, one
+decoder/qubit, cryo); gate tape-out on funding + customer per Q7. **Caveat:** built on Vivado
+post-route *estimates*; Q6-08 on-board bring-up must confirm with measured silicon before any tape-out
+commitment. (Done ahead of Q6-08 because the synth numbers were decisive enough to make the Q7 call.)
 
 -----
 
