@@ -28,7 +28,8 @@ module uf_streaming_decoder (
     // Streaming output: pulses once per committed window with that window's committed logical parity.
     output logic               out_valid,
     output logic               out_obs,
-    output logic [15:0]        last_latency     // core decode latency of the last window (cycles)
+    output logic [15:0]        last_latency,    // core decode latency of the last window (cycles)
+    output logic               residual_empty   // no real defect remains (validity drain check)
 );
   localparam int RESW = UF_ACTIVE;            // residual width (real detectors only)
   localparam int SYNW = UF_N - 1;             // core syndrome width (detectors 0..UF_N-2)
@@ -88,6 +89,7 @@ module uf_streaming_decoder (
   end
 
   assign in_ready = (state == S_WARM) || (state == S_RELOAD);
+  assign residual_empty = (res == '0);
 
   always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin

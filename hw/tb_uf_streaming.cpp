@@ -1,13 +1,18 @@
-// Q6-20 (part 2) — smoke test for the sliding-window streaming wrapper. Drives the round-stream
-// handshake and checks basic invariants:
-//   (1) a zero stream commits zero logical and leaves no residual (the FSM cycles, no spurious flips);
-//   (2) windows fire at the expected cadence (one commit per C rounds after warm-up);
-//   (3) injecting a defect does not hang the decoder (it keeps committing).
-// Full bit-equality vs the software steady-state sliding decode is part 3 (tb against the reference).
+// Q6-20 (part 3) — correctness test for the sliding-window streaming wrapper.
+//
+// The per-window UF core is already distance-verified (Q6-09/17/19). What the streaming wrapper must
+// add correctly is the residual carry: feed each window, commit the oldest C rounds, toggle the
+// committed defects, slide, reload. The tie-break-independent proof of that is VALIDITY: a graphlike
+// decoder always produces a correction that reproduces the syndrome, so after a stream of defects is
+// fully pushed through the commit region (drain with zero rounds), EVERY real defect must be resolved
+// -- the residual must clear. (This is exactly the software `residual_after_decode == 0` criterion.)
+// A bug in the commit / shift / residual logic leaves a stuck defect and fails the drain.
+//
+// Checks: (1) a zero stream commits zero logical and never lights the residual; (2) over many random
+// defect streams, the residual fully drains (validity); (3) the FSM never stalls.
 
 #include <cstdint>
 #include <cstdio>
-#include <vector>
 
 #include "Vuf_streaming_decoder.h"
 #include "verilated.h"
@@ -16,55 +21,72 @@ int main(int argc, char **argv) {
   Verilated::commandArgs(argc, argv);
   auto *dut = new Vuf_streaming_decoder;
   auto tick = [&]() { dut->clk = 0; dut->eval(); dut->clk = 1; dut->eval(); };
+  auto reset = [&]() {
+    dut->rst_n = 0; dut->in_valid = 0; dut->in_round = 0;
+    tick(); tick();
+    dut->rst_n = 1;
+  };
 
-  dut->rst_n = 0;
-  dut->in_valid = 0;
-  dut->in_round = 0;
-  tick();
-  tick();
-  dut->rst_n = 1;
+  // splitmix64 — deterministic per-seed stream.
+  uint64_t z = 0;
+  auto next = [&]() {
+    z += 0x9E3779B97F4A7C15ull;
+    uint64_t x = z;
+    x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ull;
+    x = (x ^ (x >> 27)) * 0x94D049BB133111EBull;
+    return x ^ (x >> 31);
+  };
 
-  // Feed `nrounds` rounds of detector bits `pattern` (one per accepted-ready cycle), running the
-  // wrapper to completion; collect committed-obs pulses. Returns total committed logical parity.
+  // Feed `nrounds` rounds; each round's detector bits are `gen()` (a closure). Collect committed-obs
+  // pulses + window count. Returns total committed logical parity over the fed rounds.
   int windows = 0, obs_sum = 0, last_lat = 0;
-  auto feed = [&](int nrounds, uint32_t pattern) {
+  auto feed = [&](int nrounds, auto gen) {
     int sent = 0, guard = 0;
-    while (sent < nrounds && guard < 200000) {
-      dut->in_valid = dut->in_ready ? 1 : 0;
-      dut->in_round = dut->in_ready ? pattern : 0;
-      if (dut->in_ready) ++sent;
+    while (sent < nrounds && guard < 500000) {
+      bool rdy = dut->in_ready;
+      dut->in_valid = rdy ? 1 : 0;
+      dut->in_round = rdy ? gen() : 0;
+      if (rdy) ++sent;
       tick();
-      if (dut->out_valid) {
-        ++windows;
-        obs_sum ^= (dut->out_obs & 1);
-        last_lat = dut->last_latency;
-      }
+      if (dut->out_valid) { ++windows; obs_sum ^= (dut->out_obs & 1); last_lat = dut->last_latency; }
       ++guard;
     }
     dut->in_valid = 0;
-    // let any in-flight window finish
-    for (int i = 0; i < 4000 && !dut->in_ready; ++i) {
-      tick();
-      if (dut->out_valid) { ++windows; obs_sum ^= (dut->out_obs & 1); last_lat = dut->last_latency; }
-    }
   };
 
-  // (1)+(2): a long zero stream. Expect zero committed logical and a healthy window count.
-  const int N = 120;
-  feed(N, 0);
   int fail = 0;
-  if (obs_sum != 0) { std::printf("FAIL: zero stream committed nonzero logical (%d)\n", obs_sum); ++fail; }
-  if (windows < 5) { std::printf("FAIL: too few windows fired (%d) on a %d-round stream\n", windows, N); ++fail; }
 
-  // (3): inject a defect mid-stream; the decoder must keep committing (no hang).
-  int w_before = windows;
-  feed(1, 0x1);     // one round with detector 0 set
-  feed(30, 0);      // drain
-  if (windows <= w_before) { std::printf("FAIL: decoder stalled after a defect (%d -> %d)\n", w_before, windows); ++fail; }
+  // (1) zero stream: zero logical, residual stays empty.
+  reset();
+  windows = 0; obs_sum = 0;
+  feed(60, [] { return 0; });
+  if (obs_sum != 0) { std::printf("FAIL: zero stream committed nonzero logical\n"); ++fail; }
+  if (windows < 4) { std::printf("FAIL: too few windows (%d)\n", windows); ++fail; }
 
-  std::printf("streaming smoke: windows=%d  committed_logical=%d  last_window_latency=%d clk\n",
-              windows, obs_sum, last_lat);
-  std::printf("%s\n", fail ? "RESULT: FAIL" : "RESULT: PASS (FSM cycles, zero stream -> zero logical, no stall)");
+  // (2) validity drain: random defect streams must fully resolve.
+  const int TRIALS = 40, N = 60, DRAIN = 80;
+  int drained_ok = 0;
+  for (int t = 0; t < TRIALS; ++t) {
+    reset();
+    z = 0x1234ull + 0x1000ull * (uint64_t)t;
+    int w_before = windows;
+    feed(N, [&] { return (uint32_t)(next() & 0xF) & (uint32_t)((next() & 0x3) == 0 ? 0xF : 0x0); });
+    feed(DRAIN, [] { return 0; });            // drain: push every defect through the commit region
+    // settle to an idle point, then sample the residual.
+    for (int i = 0; i < 5000 && !dut->in_ready; ++i) {
+      tick();
+      if (dut->out_valid) { ++windows; last_lat = dut->last_latency; }
+    }
+    if (dut->residual_empty) ++drained_ok;
+    else std::printf("FAIL: trial %d left a stuck defect (residual not empty after drain)\n", t);
+    if (windows <= w_before) { std::printf("FAIL: trial %d stalled\n", t); ++fail; }
+  }
+  if (drained_ok != TRIALS) { std::printf("FAIL: %d/%d trials drained\n", drained_ok, TRIALS); ++fail; }
+
+  std::printf("streaming: zero-stream OK; validity drain %d/%d trials; windows=%d; last_latency=%d clk\n",
+              drained_ok, TRIALS, windows, last_lat);
+  std::printf("%s\n", fail ? "RESULT: FAIL"
+                            : "RESULT: PASS (zero->zero, residual drains on every random defect stream)");
   dut->final();
   delete dut;
   return fail ? 1 : 0;

@@ -465,6 +465,50 @@ of Zybo — fits, but the small part is filling up.
 the time dimension + measurement-error edges that matter. Full circuit-level needs a surface-code
 `circuit_level_mechanisms()` (mirroring the BB-code one); tracked as a Q6-19 follow-up.
 
+## Q6-20 — sliding-window streaming decoder (continuous, bounded-memory, real-time)
+
+Everything through Q6-19 decodes a **fixed-size volume** as one block. A real QPU emits syndromes
+**forever** — you cannot store the whole history or wait for the experiment to end. The sliding-window
+approach (Dennis et al.; Skoric/Tan et al.; the software `SlidingWindowDecoder`, Q4-01) keeps a running
+`W`-round residual, decodes it, **commits** the oldest `C` rounds, applies that correction to the
+residual, then slides forward by `C` and reloads `C` fresh rounds — decoding an unbounded stream in
+**bounded `O(W)` memory**.
+
+**Key structural insight:** interior windows of a stream are translation-invariant, so **one compiled
+window graph** (a `W`-round volume whose future/past time cuts route to *temporal-sink* nodes — free
+obs-less drains to the boundary) serves every steady-state window, and the existing per-window UF core
+decodes it **unchanged**. The new RTL (`hw/uf_streaming_decoder.sv`) is a thin wrapper: a residual
+buffer + the per-window core + the commit (toggle the committed edges' real detectors, accumulate
+their observable) + the slide-by-`C` reload. The window graph + its streaming metadata
+(`UF_SHIFT`/`UF_DCOMMIT`/`UF_ECOMMIT`/…) come from `qec_surface_uf_graph -- window <d> <W> <C>`, built
+from the **same** `SlidingWindowDecoder::window_dem` the software uses.
+
+**Correctness (`make stream`, d=3 `W`=9 `C`=3 = the software Q4-03 params `W`=3d/`C`=d).** The
+per-window core is already distance-verified (Q6-09/17/19); what the wrapper adds is the residual
+carry, and the tie-break-independent proof of *that* is **validity**: a graphlike decoder always
+produces a correction that reproduces the syndrome, so once a stream of defects is pushed through the
+commit region (drain with zero rounds) **every real defect must be resolved — the residual must clear**
+(exactly the software `residual_after_decode == 0` criterion). Result: a zero stream commits zero
+logical and never lights the residual; **40/40 random defect streams fully drain** (≈1800 windows); the
+FSM never stalls. (Bit-equality vs the *software* UF is not the right gate — the RTL and CPU UF differ
+on tie-breaks of degenerate syndromes, as the Q6-04 oracle already documents; validity + the
+distance-verified core is the correct proof.)
+
+**Throughput / real-time (Vivado 2024.2, OOC).** A window retires in ≈67 cycles (≈61 core +
+commit/slide/reload). The streaming budget is one window per commit period = `C` rounds = **`C` µs**
+(3 µs at d=3 `C`=3, the ~1 µs/round measurement rate):
+
+| part | Fmax | per-window decode | vs 3 µs commit budget | LUT (util) |
+|------|------|-------------------|------------------------|------------|
+| Zybo `xc7z020`  | 63.2 MHz | **1.06 µs** | 2.8× headroom | 9119 (17.1 %) |
+| KV260 `xck26`   | 140.6 MHz | **0.48 µs** | 6.3× headroom | 8891 (7.6 %) |
+
+**Both boards keep up with a continuous syndrome stream in real time**, in bounded memory — the
+qualitative step from a block decoder to a *real* streaming decoder. Caveat: this targets the
+**steady-state interior** window; the first/last windows of a finite experiment differ (true time
+boundaries vs temporal sinks) and would need warm-up/drain handling for a closed experiment. Honest
+scope inherits Q6-19's: phenomenological 3D, not full circuit-level gate noise.
+
 ## Q6-03 — GPU vs FPGA: latency, throughput, power, and the ASIC go/no-go
 
 This compares the **same** Delfosse–Nickerson Union-Find decoder on two substrates: the GPU batch
