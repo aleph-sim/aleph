@@ -22,6 +22,7 @@ Two decoders as synthesisable RTL, each verified in simulation against its Rust 
 | `uf_surface_golden.mem` | **Q6-04:** frozen `{obs_flip,correction}` table snapshotted from the Q6-02 combinational RTL; the regression lock for the sequential rewrite. Re-baseline via `make golden-rebaseline` + `tb_dump_golden.cpp`. |
 | `tb_uf_surface_xsim.sv` | **Q6-06:** self-checking SV testbench for Vivado `xsim` — replays all 256 syndromes against behavioral RTL, the post-route functional netlist, and the post-route timing (SDF) netlist; checks golden bit-match + validity + no-X. Driven by `syn/gatesim.sh`. |
 | `syn/gatesim.{tcl,sh}` | **Q6-06:** write funcsim/timesim netlists + SDF from a routed checkpoint and run the three `xsim` gate-level elaborations. |
+| `tb_uf_cosim.cpp` | **Q6-21:** board-free sim↔RTL **co-simulation** — drives the decoder from the simulator's Monte-Carlo syndrome stream (`qec_q6_cosim.rs`) and checks the **RTL logical-error rate** vs the software Union-Find baseline within MC CI. Closes noise→syndrome→**RTL**→LER without a board (`docs/perf/qec-q6-cosim.md`). |
 | `Makefile` | regenerate the reference tables, build with Verilator, run. |
 
 ## Run it
@@ -31,6 +32,8 @@ brew install verilator        # one-time (macOS)
 make -C hw                    # build + run all decoders
 make -C hw rep                # repetition-code UF
 make -C hw surf               # surface-code UF (2-D)
+make -C hw cosim              # Q6-21: board-free sim<->RTL co-sim (d=3, LER vs software UF)
+make -C hw cosim-3d           # Q6-21: same, on the d=5x3 3-D space-time graph
 ```
 
 Expected:
@@ -69,6 +72,11 @@ quality* (validity + distance + a weight-≤2 logical-error-rate that matches/be
   golden on both parts, no X.
 - **Q6-07…Q6-09:** AXI PS↔PL wrapper, host software, d=5 scaling. **Q6-03:** GPU-vs-FPGA report
   (last; needs on-board numbers).
+- **Q6-21:** board-free sim↔RTL **co-simulation** ✅ (sim) — the simulator's Monte-Carlo syndrome
+  stream drives the Verilated decoder; the RTL logical-error rate matches the software UF within CI
+  at d=3 (every p) and sub-threshold at d=5×3, with the supra-threshold unweighted-UF quality gap
+  surfaced honestly (`docs/perf/qec-q6-cosim.md`). The board-free stand-in for full HiL; swaps the
+  Verilated model for the real board over the Q6-07 AXI link at Q6-08.
 
 Targeted at **two boards** — Digilent **Zybo Z7-20** (`xc7z020clg400-1`) and Xilinx **Kria KV260**
 (`xck26-sfvc784-2LV-c`). Synthesis is board-independent; only final bring-up needs hardware. Boards
