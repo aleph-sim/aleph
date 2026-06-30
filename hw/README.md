@@ -34,6 +34,7 @@ make -C hw rep                # repetition-code UF
 make -C hw surf               # surface-code UF (2-D)
 make -C hw cosim              # Q6-21: board-free sim<->RTL co-sim (d=3, LER vs software UF)
 make -C hw cosim-3d           # Q6-21: same, on the d=5x3 3-D space-time graph
+make -C hw cosim-circuit      # Q6-21: same, on the d=3x3 CIRCUIT-LEVEL graph (hook errors)
 ```
 
 Expected:

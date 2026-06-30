@@ -18,9 +18,12 @@
 //! so one RTL build serves the whole `p` sweep — this emits every `p` block into one vectors file.
 //!
 //! Usage:
-//!   cargo run --release -p aleph-qec --example qec_q6_cosim -- [d] [rounds] [shots] [seed] [p,p,..]
-//!   # defaults: d=3 rounds=1 shots=20000 seed=2024 p=0.01,0.02,0.03,0.04,0.05
+//!   cargo run --release -p aleph-qec --example qec_q6_cosim -- [d] [rounds] [shots] [seed] [noise] [p,..]
+//!   # defaults: d=3 rounds=1 shots=20000 seed=2024 noise=phenom p=0.01,0.02,0.03,0.04,0.05
+//!   # noise ∈ {phenom, circuit}; circuit pairs with the `graph-circuit` RTL build and defaults to
+//!   #   the lower circuit-level prob grid (0.002..0.010).
 //!   cargo run --release -p aleph-qec --example qec_q6_cosim -- 3 1 20000 2024 > hw/cosim_d3.vec
+//!   cargo run --release -p aleph-qec --example qec_q6_cosim -- 3 3 20000 2024 circuit > hw/cosim_d3_circuit.vec
 //!
 //! Output (stdout) — the `.vec` file the TB reads:
 //!   # comment lines (metadata)
@@ -30,7 +33,8 @@
 //! `<det-bits>` is `detectors` chars, detector 0 first; `<obs>` is the true logical flip (0/1).
 
 use aleph_qec::{
-    build_dem, sample_shots, Decoder, LogicalErrorResult, SurfaceCode, UnionFindDecoder,
+    build_dem, sample_shots, CircuitNoise, Decoder, LogicalErrorResult, SurfaceCode,
+    UnionFindDecoder,
 };
 
 fn main() {
@@ -39,30 +43,45 @@ fn main() {
     let rounds: usize = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(1);
     let shots: u64 = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(20_000);
     let seed: u64 = args.get(4).and_then(|s| s.parse().ok()).unwrap_or(2024);
+    // Noise model: `phenom` (default, pairs with the `graph` RTL build) or `circuit` (full
+    // circuit-level gate noise + hook errors, pairs with the `graph-circuit` RTL build).
+    let noise = args.get(5).map(String::as_str).unwrap_or("phenom");
     let probs: Vec<f64> = args
-        .get(5)
+        .get(6)
         .map(|s| s.split(',').filter_map(|t| t.trim().parse().ok()).collect())
-        .unwrap_or_else(|| vec![0.01, 0.02, 0.03, 0.04, 0.05]);
+        .unwrap_or_else(|| match noise {
+            "circuit" => vec![0.002, 0.004, 0.006, 0.008, 0.010],
+            _ => vec![0.01, 0.02, 0.03, 0.04, 0.05],
+        });
+    assert!(
+        matches!(noise, "phenom" | "circuit"),
+        "unknown noise `{noise}` (expected phenom|circuit)"
+    );
 
     let code = SurfaceCode::new(d);
     let exp = code.memory_z_experiment(rounds);
-    // Detector indexing is fixed by the experiment (p-independent), so it matches the RTL graph
-    // emitted by `qec_surface_uf_graph -- graph d rounds` for any p>0.
-    let dets = build_dem(&exp.annotated, &exp.phenomenological_mechanisms(0.01, 0.01))
-        .unwrap()
-        .detectors;
+
+    // The DEM for a given p, under the selected noise model. Detector indexing is fixed by the
+    // experiment (p-independent), so it matches the RTL graph for any p>0 — the same model the RTL
+    // graph is generated from (`graph` ↔ phenom, `graph-circuit` ↔ circuit).
+    let dem_at = |p: f64| match noise {
+        "circuit" => exp.circuit_level_dem(CircuitNoise::uniform(p)).unwrap(),
+        _ => build_dem(&exp.annotated, &exp.phenomenological_mechanisms(p, p)).unwrap(),
+    };
+
+    let dets = dem_at(0.01).detectors;
 
     println!("# Q6-21 sim<->RTL co-sim vectors — GENERATED, do not edit.");
-    println!("# d={d} rounds={rounds} detectors={dets} observables=1 shots={shots} seed={seed}");
+    println!("# d={d} rounds={rounds} noise={noise} detectors={dets} observables=1 shots={shots} seed={seed}");
     println!(
-        "# regenerate: cargo run --release -p aleph-qec --example qec_q6_cosim -- {d} {rounds} {shots} {seed}"
+        "# regenerate: cargo run --release -p aleph-qec --example qec_q6_cosim -- {d} {rounds} {shots} {seed} {noise}"
     );
 
-    eprintln!("# d={d} rounds={rounds} shots={shots} seed={seed} (software UnionFind baseline)");
+    eprintln!("# d={d} rounds={rounds} noise={noise} shots={shots} seed={seed} (software UnionFind baseline)");
     eprintln!("#   p      sw_rate      ci95     errors");
 
     for &p in &probs {
-        let dem = build_dem(&exp.annotated, &exp.phenomenological_mechanisms(p, p)).unwrap();
+        let dem = dem_at(p);
         assert_eq!(dem.detectors, dets, "p must not change detector count");
         assert_eq!(
             dem.observables, 1,

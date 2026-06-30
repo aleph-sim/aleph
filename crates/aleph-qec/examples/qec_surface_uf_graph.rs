@@ -146,8 +146,18 @@ fn main() {
     }
 
     let exp = SurfaceCode::new(d).memory_z_experiment(rounds);
-    // Uniform noise so the unweighted graph the RTL decodes matches the oracle decoder's graph.
-    let dem = build_dem(&exp.annotated, &exp.phenomenological_mechanisms(0.01, 0.01)).unwrap();
+    // `graph-circuit`: build the matching graph from the full circuit-level DEM (Q-surface) instead
+    // of the phenomenological one. It has the same detectors but extra **hook-error** edges (the
+    // diagonal space-time edges from CNOT faults), so the RTL decoder sees the realistic graph. The
+    // edge set is p-independent (structure only), so a fixed small rate suffices here.
+    let circuit = mode == "graph-circuit";
+    let dem = if circuit {
+        exp.circuit_level_dem(aleph_qec::CircuitNoise::uniform(0.001))
+            .unwrap()
+    } else {
+        // Uniform noise so the unweighted graph the RTL decodes matches the oracle decoder's graph.
+        build_dem(&exp.annotated, &exp.phenomenological_mechanisms(0.01, 0.01)).unwrap()
+    };
     let n = dem.detectors;
     let boundary = n; // boundary node id
 
@@ -165,13 +175,18 @@ fn main() {
     }
 
     match mode.as_str() {
-        "graph" => {
+        "graph" | "graph-circuit" => {
             let m = edges.len();
             let ea: Vec<String> = edges.keys().map(|(a, _)| a.to_string()).collect();
             let eb: Vec<String> = edges.keys().map(|(_, b)| b.to_string()).collect();
             let el: Vec<String> = edges.values().map(|l| l.to_string()).collect();
-            println!("// d={d} rotated surface-code memory-Z ({rounds} round(s)) matching graph — GENERATED, do not edit.");
-            println!("// regenerate: cargo run -p aleph-qec --example qec_surface_uf_graph -- graph {d} {rounds} > hw/uf_surface_graph_d{d}.svh");
+            let model = if circuit {
+                "circuit-level"
+            } else {
+                "phenomenological"
+            };
+            println!("// d={d} rotated surface-code memory-Z ({rounds} round(s)) {model} matching graph — GENERATED, do not edit.");
+            println!("// regenerate: cargo run -p aleph-qec --example qec_surface_uf_graph -- {mode} {d} {rounds} > hw/uf_surface_graph_d{d}.svh");
             println!("localparam int UF_N = {};", n + 1);
             println!("localparam int UF_M = {m};");
             println!("localparam int UF_BOUNDARY = {boundary};");
@@ -195,7 +210,9 @@ fn main() {
             }
         }
         other => {
-            eprintln!("unknown mode '{other}' (use 'graph' or 'oracle')");
+            eprintln!(
+                "unknown mode '{other}' (use 'graph', 'graph-circuit', 'oracle', or 'window')"
+            );
             std::process::exit(2);
         }
     }
