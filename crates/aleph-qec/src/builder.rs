@@ -85,6 +85,26 @@ impl CircuitNoise {
             p_idle: p,
         }
     }
+
+    /// The **SI1000** superconducting-inspired noise model (Gidney, Newman, Fowler, Broughton,
+    /// "A Fault-Tolerant Honeycomb Memory", arXiv:2108.10457): a ~1000 ns cycle where the dominant
+    /// error is the long idle/measurement window, so the sources are *unequal* — two-qubit gates at
+    /// `p`, reset at `2p`, measurement flip at `5p`, and idle at `2p` (the measurement-window idle,
+    /// the largest single-qubit contribution).
+    ///
+    /// This maps SI1000 onto our four-source [`CircuitNoise`] model. It is faithful for circuits
+    /// without single-qubit gates (e.g. the memory-Z Z-extraction, whose only single-qubit op is the
+    /// idle); SI1000's separate `p/10` single-qubit-*gate* depolarizing applies wherever the circuit
+    /// has explicit 1q gates (e.g. the Hadamards in memory-X) and is not represented by these four
+    /// rates — it is the smallest term and is omitted.
+    pub fn si1000(p: f64) -> Self {
+        Self {
+            p_cnot: p,
+            p_init: 2.0 * p,
+            p_meas: 5.0 * p,
+            p_idle: 2.0 * p,
+        }
+    }
 }
 
 /// Build a [`DetectorErrorModel`] for `ac` under the given error `mechanisms`.

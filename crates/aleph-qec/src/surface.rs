@@ -955,6 +955,20 @@ mod tests {
     }
 
     #[test]
+    fn si1000_dem_well_formed_and_graphlike() {
+        // The SI1000 preset (unequal rates: reset 2p, measure 5p, idle 2p) builds the same-shaped,
+        // graphlike circuit-level DEM as the uniform model — only the probabilities differ.
+        use crate::CircuitNoise;
+        let exp = SurfaceCode::new(5).memory_z_experiment(5);
+        let dem = exp.circuit_level_dem(CircuitNoise::si1000(0.001)).unwrap();
+        let nz = (5 * 5 - 1) / 2;
+        assert_eq!(dem.detectors, 5 * nz + nz);
+        assert_eq!(dem.observables, 1);
+        assert!(!dem.errors.is_empty());
+        assert!(dem.errors.iter().all(|e| e.dets.len() <= 2));
+    }
+
+    #[test]
     fn circuit_level_dem_is_graphlike() {
         // The value of this test is the empirical claim: with the surface code's CNOT schedule,
         // the X-sector circuit-level DEM is graphlike (every single-fault mechanism flips ≤ 2
