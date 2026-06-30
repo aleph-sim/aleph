@@ -10,9 +10,10 @@
 //! ```text
 //! cargo run --release -p aleph-qec --example qec_threshold -- [decoder] [source] [shots] [seed] [noise]
 //! # decoder ∈ {mwpm (default), uf, pymatching}; source ∈ {analytic (default), stim}
-//! # noise   ∈ {phenom (default), circuit}
+//! # noise   ∈ {phenom (default), circuit, circuit-si1000}
 //! # e.g. native sweep:        cargo run --release -p aleph-qec --example qec_threshold -- mwpm analytic 200000 2024
 //! # circuit-level sweep:      cargo run --release -p aleph-qec --example qec_threshold -- uf analytic 200000 2024 circuit
+//! # SI1000 sweep:             cargo run --release -p aleph-qec --example qec_threshold -- uf analytic 200000 2024 circuit-si1000
 //! # oracle sweep:             PYMATCHING_PYTHON=/tmp/pmvenv/bin/python cargo run ... -- pymatching analytic 200000 2024
 //! ```
 //!
@@ -26,8 +27,10 @@
 //! * `noise = circuit` — full circuit-level noise ([`MemoryExperiment::circuit_level_dem`], uniform
 //!   `CircuitNoise`): every CNOT / idle / prep / measurement is a fault site, so the DEM has hook
 //!   errors and the threshold is substantially lower (~0.5–1%). The prob grid auto-switches.
+//! * `noise = circuit-si1000` — circuit-level with the SI1000 superconducting-inspired rates
+//!   ([`CircuitNoise::si1000`]: reset 2p, measure 5p, idle 2p); threshold ~0.3–0.6% in `p`.
 //!
-//! `rounds == d` in both models.
+//! `rounds == d` in all models.
 
 use std::io::Write;
 use std::process::{Command, Stdio};
@@ -43,6 +46,8 @@ const DISTANCES: &[usize] = &[3, 5, 7, 9];
 const PROBS_PHENOM: &[f64] = &[0.015, 0.020, 0.025, 0.030, 0.035, 0.040, 0.045, 0.050];
 /// Lower grid bracketing the circuit-level threshold (~0.5–1%).
 const PROBS_CIRCUIT: &[f64] = &[0.002, 0.003, 0.004, 0.005, 0.006, 0.008, 0.010, 0.012];
+/// Lowest grid bracketing the SI1000 threshold (~0.3–0.6%; reset/meas/idle rates are 2–5×p).
+const PROBS_SI1000: &[f64] = &[0.001, 0.002, 0.003, 0.004, 0.005, 0.006, 0.008, 0.010];
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -55,10 +60,11 @@ fn main() {
     let probs: &[f64] = match noise {
         "phenom" => PROBS_PHENOM,
         "circuit" => PROBS_CIRCUIT,
-        other => panic!("unknown noise `{other}` (expected phenom|circuit)"),
+        "circuit-si1000" => PROBS_SI1000,
+        other => panic!("unknown noise `{other}` (expected phenom|circuit|circuit-si1000)"),
     };
     assert!(
-        !(noise == "circuit" && source == "stim"),
+        !(noise.starts_with("circuit") && source == "stim"),
         "circuit-level stim source not wired here; use analytic (DEM is Stim-verified in tests)"
     );
 
@@ -74,6 +80,7 @@ fn main() {
             let exp = code.memory_z_experiment(d);
             let dem = match (noise, source) {
                 ("circuit", _) => exp.circuit_level_dem(CircuitNoise::uniform(p)).unwrap(),
+                ("circuit-si1000", _) => exp.circuit_level_dem(CircuitNoise::si1000(p)).unwrap(),
                 ("phenom", "analytic") => {
                     build_dem(&exp.annotated, &exp.phenomenological_mechanisms(p, p)).unwrap()
                 }

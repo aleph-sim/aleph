@@ -24,3 +24,4 @@ _streambuild/
 cosim_*.vec
 _cosim3dbuild/
 _cosimcircuitbuild/
+_cosimc3dbuild/
