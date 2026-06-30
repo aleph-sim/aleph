@@ -54,25 +54,36 @@ decoder, `rounds = d`, 100 000 shots/cell, seed 2024 (`p_th` = the per-distance 
 | noise model | d=3/5/7/9 logical-error rates near the crossing | threshold `p_th` |
 |---|---|---|
 | **phenomenological** | cross at `p ≈ 0.025` (all ≈ 0.085) | **~2.5 %** |
-| **circuit-level** | below threshold to `p ≈ 0.008`; above by `p ≈ 0.010` | **~0.8–0.9 %** |
+| **circuit-level (uniform)** | below threshold to `p ≈ 0.008`; above by `p ≈ 0.010` | **~0.8–0.9 %** |
+| **circuit-level (SI1000)** | below threshold to `p ≈ 0.004`; above by `p ≈ 0.005` | **~0.4–0.5 %** |
 
-The circuit-level threshold is **~3× lower** than the phenomenological one — the expected, important
-qualitative result: once every gate is a fault site (and hook errors appear), the code tolerates far
-less physical noise. (Absolute values are for the *unweighted* Union-Find decoder and this model's
-conventions — idle included, pre-gate depolarizing; a weighted MWPM would sit somewhat higher. The
-circuit-vs-phenomenological *ratio* is the robust takeaway and is consistent with the literature.)
+The thresholds form the expected, important hierarchy — **phenomenological > uniform circuit-level >
+SI1000** — each step adding realism lowers the noise the code tolerates: once every gate is a fault
+site hook errors appear (uniform circuit), and once the long measurement/reset/idle windows cost
+2–5× the gate rate (SI1000, [`CircuitNoise::si1000`], Gidney et al. arXiv:2108.10457) the budget
+shrinks again. The ~0.4–0.5 % SI1000 figure matches the literature's superconducting-surface-code
+threshold. (Absolute values are for the *unweighted* Union-Find decoder and this model's conventions —
+idle included, pre-gate depolarizing; a weighted MWPM would sit somewhat higher. The *ratios* between
+models are the robust takeaway.)
 
 Reproduce:
 
 ```bash
-cargo run --release -p aleph-qec --example qec_threshold -- uf analytic 100000 2024 circuit
 cargo run --release -p aleph-qec --example qec_threshold -- uf analytic 100000 2024 phenom
+cargo run --release -p aleph-qec --example qec_threshold -- uf analytic 100000 2024 circuit
+cargo run --release -p aleph-qec --example qec_threshold -- uf analytic 100000 2024 circuit-si1000
 ```
+
+## In the board-free co-sim
+
+Because the DEM is graphlike it drops straight into the RTL matching-graph generator
+(`qec_surface_uf_graph -- graph-circuit`) and the board-free Q6-21 co-sim
+(`qec_q6_cosim … circuit`): the RTL decoder is driven from circuit-level syndromes and its
+logical-error rate matched to the software UF within CI. The circuit-level graph is denser than the
+phenomenological one (d=3×3: `M=49` vs 18; d=5×3: `M=165` vs 120 — the extra edges are the hook
+errors). See `docs/perf/qec-q6-cosim.md` § circuit-level (`make -C hw cosim-circuit{,-3d}`).
 
 ## Scope / follow-ups
 
-- Memory-Z (`X`-sector) only, matching the existing surface track; memory-X is the mirror image.
-- The DEM is graphlike, so it drops straight into the RTL matching-graph generator
-  (`qec_surface_uf_graph`) and the board-free co-sim (Q6-21) — wiring a **circuit-level** RTL graph +
-  co-sim noise mode is the natural next step (it lands once Q6-21 merges; the hook-error edges give
-  the FPGA decoder a more realistic graph than the phenomenological one).
+- Memory-Z (`X`-sector) only, matching the existing surface track; memory-X (`Z`-sector) is the
+  mirror image — a follow-up.

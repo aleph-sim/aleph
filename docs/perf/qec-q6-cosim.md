@@ -107,12 +107,28 @@ prob grid (the circuit-level threshold is ~0.9%, so the grid is lower and we gat
 the full board-free HiL chain on realistic gate noise: **circuit-level DEM → 3-D syndromes → RTL decode
 → LER**.
 
+The same on the larger **d=5 × 3** circuit-level graph (`make -C hw cosim-circuit-3d`) — `N=49 M=165`
+(vs 120 for d=5×3 phenomenological; the extra 45 edges are hook errors) — also passes at every p:
+
+```
+co-sim: graph N=49 M=165 dets=48 | circuit-level
+   p       rtl_rate     sw_rate     |diff|    combined_ci  verdict
+  0.002   2.5000e-04  1.5000e-04  1.00e-04  3.89e-04   PASS
+  0.004   2.4000e-03  1.7000e-03  7.00e-04  1.25e-03   PASS
+  0.006   7.9000e-03  7.6000e-03  3.00e-04  2.43e-03   PASS
+  0.008   1.7300e-02  1.6500e-02  8.00e-04  3.57e-03   PASS
+  0.010   3.1650e-02  2.8200e-02  3.45e-03  4.72e-03   PASS
+max decode latency = 123 clk
+RESULT: PASS
+```
+
 ## Reproduce
 
 ```bash
 make -C hw cosim          # d=3, phenomenological, p=0.01..0.05, all within CI
 make -C hw cosim-3d       # d=5×3 (3-D phenomenological), gated on p ≤ 0.02
-make -C hw cosim-circuit  # d=3×3, circuit-level (hook errors), gated on p ≤ 0.006
+make -C hw cosim-circuit     # d=3×3, circuit-level (hook errors), gated on p ≤ 0.006
+make -C hw cosim-circuit-3d  # d=5×3, circuit-level (denser graph, M=165), gated on p ≤ 0.006
 # knobs: COSIM_SHOTS (default 20000), COSIM_SEED (default 2024)
 make -C hw cosim COSIM_SHOTS=100000
 ```

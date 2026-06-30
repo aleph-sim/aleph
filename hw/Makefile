@@ -12,7 +12,7 @@ OBJ_DIR   := obj_dir
 VERILATOR ?= verilator
 CARGO     := cargo run --release -q -p aleph-qec --example
 
-.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream cosim cosim-3d cosim-circuit clean
+.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream cosim cosim-3d cosim-circuit cosim-circuit-3d clean
 
 all: d3 rep surf
 
@@ -148,6 +148,18 @@ cosim-circuit:
 	cd _cosimcircuitbuild && $(VERILATOR) --cc --exe --build -Wall --top-module uf_surface_decoder \
 		uf_surface_decoder.sv ../tb_uf_cosim.cpp -o sim_cosimc
 	./_cosimcircuitbuild/$(OBJ_DIR)/sim_cosimc _cosimcircuitbuild/uf_surface_graph.svh cosim_d3r3c.vec 0.006
+
+# Q6-21 (circuit-level, d=5) — circuit-level co-sim on the larger d=5 x 3 graph: more detectors and a
+# denser hook-error graph than d=3 (a sterner test of the RTL decoder on the realistic graph). d=5
+# corrects 2 errors, so it stays within CI deeper into the grid; gate the sub-threshold regime.
+cosim-circuit-3d:
+	cd .. && $(CARGO) qec_surface_uf_graph -- graph-circuit 5 3 > hw/uf_surface_graph_d5r3c.svh
+	cd .. && $(CARGO) qec_q6_cosim -- 5 3 $(COSIM_SHOTS) $(COSIM_SEED) circuit > hw/cosim_d5r3c.vec
+	rm -rf _cosimc3dbuild && mkdir _cosimc3dbuild && cp uf_surface_decoder.sv _cosimc3dbuild/
+	cp uf_surface_graph_d5r3c.svh _cosimc3dbuild/uf_surface_graph.svh
+	cd _cosimc3dbuild && $(VERILATOR) --cc --exe --build -Wall --top-module uf_surface_decoder \
+		uf_surface_decoder.sv ../tb_uf_cosim.cpp -o sim_cosimc3d
+	./_cosimc3dbuild/$(OBJ_DIR)/sim_cosimc3d _cosimc3dbuild/uf_surface_graph.svh cosim_d5r3c.vec 0.006
 
 # Re-baseline the Q6-04 golden table {obs_flip,correction} from the CURRENT RTL. Only run this
 # deliberately when the decoder's intended output changes — it overwrites the frozen reference that
