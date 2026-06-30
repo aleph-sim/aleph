@@ -8,9 +8,9 @@
 //! Usage:
 //!
 //! ```text
-//! cargo run --release -p aleph-qec --example qec_threshold -- [decoder] [source] [shots] [seed] [noise]
+//! cargo run --release -p aleph-qec --example qec_threshold -- [decoder] [source] [shots] [seed] [noise] [basis]
 //! # decoder ∈ {mwpm (default), uf, pymatching}; source ∈ {analytic (default), stim}
-//! # noise   ∈ {phenom (default), circuit}
+//! # noise   ∈ {phenom (default), circuit}; basis ∈ {z (default), x} (memory-Z / memory-X)
 //! # e.g. native sweep:        cargo run --release -p aleph-qec --example qec_threshold -- mwpm analytic 200000 2024
 //! # circuit-level sweep:      cargo run --release -p aleph-qec --example qec_threshold -- uf analytic 200000 2024 circuit
 //! # oracle sweep:             PYMATCHING_PYTHON=/tmp/pmvenv/bin/python cargo run ... -- pymatching analytic 200000 2024
@@ -26,6 +26,9 @@
 //! * `noise = circuit` — full circuit-level noise ([`MemoryExperiment::circuit_level_dem`], uniform
 //!   `CircuitNoise`): every CNOT / idle / prep / measurement is a fault site, so the DEM has hook
 //!   errors and the threshold is substantially lower (~0.5–1%). The prob grid auto-switches.
+//!
+//! * `basis = z` (default) — memory-Z (detects `X` errors). `basis = x` — the memory-X mirror
+//!   (X-stabilizers, detects `Z` errors); by code symmetry its threshold matches memory-Z.
 //!
 //! `rounds == d` in both models.
 
@@ -51,6 +54,7 @@ fn main() {
     let shots: u64 = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(200_000);
     let seed: u64 = args.get(4).and_then(|s| s.parse().ok()).unwrap_or(2024);
     let noise = args.get(5).map(String::as_str).unwrap_or("phenom");
+    let basis = args.get(6).map(String::as_str).unwrap_or("z");
 
     let probs: &[f64] = match noise {
         "phenom" => PROBS_PHENOM,
@@ -61,17 +65,28 @@ fn main() {
         !(noise == "circuit" && source == "stim"),
         "circuit-level stim source not wired here; use analytic (DEM is Stim-verified in tests)"
     );
+    assert!(
+        matches!(basis, "z" | "x"),
+        "unknown basis `{basis}` (expected z|x)"
+    );
+    assert!(
+        !(basis == "x" && source == "stim"),
+        "memory-X stim source not wired here; use analytic (DEM is Stim-verified in tests)"
+    );
 
     eprintln!(
         "# decoder={decoder} source={source} shots={shots} seed={seed} \
-         rounds=d noise={noise}"
+         rounds=d noise={noise} basis={basis}"
     );
     println!("decoder,source,d,rounds,p,shots,logical_errors,rate,ci95");
 
     for &d in DISTANCES {
         let code = SurfaceCode::new(d);
         for &p in probs {
-            let exp = code.memory_z_experiment(d);
+            let exp = match basis {
+                "x" => code.memory_x_experiment(d),
+                _ => code.memory_z_experiment(d),
+            };
             let dem = match (noise, source) {
                 ("circuit", _) => exp.circuit_level_dem(CircuitNoise::uniform(p)).unwrap(),
                 ("phenom", "analytic") => {

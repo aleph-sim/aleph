@@ -95,6 +95,97 @@ fn analytic_dem_matches_stim() {
     }
 }
 
+/// Memory-X oracle: our phenomenological memory-X DEM (X-stabilizers, Z-sector data errors, the
+/// Hadamard-dual circuit) matches Stim's `detector_error_model` edge-for-edge. Stim refuses to build
+/// a DEM with non-deterministic detectors, so a clean match also gates the memory-X circuit's
+/// determinism (the prep/H/readout wiring).
+#[test]
+#[ignore = "requires python3 + stim; run with STIM_PYTHON set on a stim box"]
+fn memory_x_dem_matches_stim() {
+    let (p_data, p_meas) = (0.013, 0.021);
+    for d in [3usize, 5] {
+        for rounds in [1usize, 2, 3] {
+            let exp = SurfaceCode::new(d).memory_x_experiment(rounds);
+            let ours = build_dem(
+                &exp.annotated,
+                &exp.phenomenological_mechanisms(p_data, p_meas),
+            )
+            .unwrap();
+
+            let program = exp.stim_program(p_data, p_meas);
+            let stim_text = stim_dem(&program)
+                .unwrap_or_else(|| panic!("could not run stim (set STIM_PYTHON to a stim python)"));
+            let stim = DetectorErrorModel::parse(&stim_text).expect("parse stim dem");
+
+            let (a, b) = (edge_map(&ours), edge_map(&stim));
+            assert!(!a.is_empty(), "d={d} r={rounds}: empty memory-X DEM");
+            assert_eq!(
+                a.len(),
+                b.len(),
+                "d={d} r={rounds}: edge count {} vs stim {}",
+                a.len(),
+                b.len()
+            );
+            for (k, &pa) in &a {
+                let pb = b
+                    .get(k)
+                    .unwrap_or_else(|| panic!("d={d} r={rounds}: edge {k:?} missing in stim"));
+                assert!(
+                    (pa - pb).abs() < 1e-9,
+                    "d={d} r={rounds}: edge {k:?} prob {pa} vs stim {pb}"
+                );
+            }
+        }
+    }
+}
+
+/// Memory-X circuit-level oracle: the full-depolarizing circuit-level memory-X DEM matches Stim's
+/// `detector_error_model` edge-for-edge (the H-gate basis mixing makes the full enumeration the safe
+/// path; Stim's `DEPOLARIZE1/2` channels are the reference).
+#[test]
+#[ignore = "requires python3 + stim; run with STIM_PYTHON set on a stim box"]
+fn memory_x_circuit_level_dem_matches_stim() {
+    let noise = CircuitNoise {
+        p_cnot: 0.011,
+        p_init: 0.007,
+        p_meas: 0.013,
+        p_idle: 0.005,
+    };
+    for d in [3usize, 5] {
+        for rounds in [1usize, 2, 3] {
+            let exp = SurfaceCode::new(d).memory_x_experiment(rounds);
+            let ours = exp.circuit_level_dem(noise).unwrap();
+
+            let program = exp.stim_program_circuit_level(noise);
+            let stim_text = stim_dem(&program)
+                .unwrap_or_else(|| panic!("could not run stim (set STIM_PYTHON to a stim python)"));
+            let stim = DetectorErrorModel::parse(&stim_text).expect("parse stim dem");
+
+            let (a, b) = (edge_map(&ours), edge_map(&stim));
+            assert!(
+                !a.is_empty(),
+                "d={d} r={rounds}: empty memory-X circuit DEM"
+            );
+            assert_eq!(
+                a.len(),
+                b.len(),
+                "d={d} r={rounds}: edge count {} vs stim {}",
+                a.len(),
+                b.len()
+            );
+            for (k, &pa) in &a {
+                let pb = b
+                    .get(k)
+                    .unwrap_or_else(|| panic!("d={d} r={rounds}: edge {k:?} missing in stim"));
+                assert!(
+                    (pa - pb).abs() < 1e-9,
+                    "d={d} r={rounds}: edge {k:?} prob {pa} vs stim {pb}"
+                );
+            }
+        }
+    }
+}
+
 /// Circuit-level oracle: our `X`-sector circuit-level DEM matches Stim's `detector_error_model` for
 /// the same depth-(per-round) syndrome-extraction circuit + circuit-level noise, edge-for-edge. This
 /// isolates the circuit-level mechanism enumeration (CNOT depolarizing / idle / prep / measurement)
