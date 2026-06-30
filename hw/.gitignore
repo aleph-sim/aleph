@@ -23,3 +23,4 @@ _streambuild/
 # Q6-21 co-sim generated artifacts
 cosim_*.vec
 _cosim3dbuild/
+_cosimcircuitbuild/

@@ -81,11 +81,38 @@ This is consistent with `hw/README.md` (the RTL UF and CPU UF agree bit-for-bit 
 syndromes; the rest are logically-degenerate cosets where UF tie-breaks legitimately differ) — here we
 quantify the aggregate effect across distance, rounds, and noise strength.
 
+### Circuit-level noise (d=3 × 3 rounds) — the realistic graph with hook errors, 20 000 shots/cell
+
+The phenomenological model above puts one data error per round + a measurement flip. The
+**circuit-level** model (`docs/perf/qec-surface-circuit-dem.md`) makes every CNOT / idle / prep /
+measurement a fault site — so the matching graph carries **hook-error edges** the phenomenological
+graph lacks (here `M = 49` edges over 16 detectors, vs 18 over 8 for d=3×1 phenomenological). The RTL
+decoder thus closes the loop on the *realistic* graph: `graph-circuit` builds the RTL graph from the
+circuit-level DEM, `qec_q6_cosim … circuit` samples from the same model.
+
+```
+co-sim: graph N=17 M=49 dets=16 | circuit-level
+   p       rtl_rate     sw_rate     |diff|    combined_ci  verdict
+  0.002   2.2000e-03  2.2500e-03  5.00e-05  1.31e-03   PASS
+  0.004   8.3500e-03  8.7500e-03  4.00e-04  2.55e-03   PASS
+  0.006   1.6650e-02  1.7250e-02  6.00e-04  3.58e-03   PASS
+  0.008   2.7800e-02  2.8600e-02  8.00e-04  4.59e-03   PASS
+  0.010   3.9500e-02  4.0750e-02  1.25e-03  5.44e-03   PASS
+max decode latency = 50 clk
+RESULT: PASS  (gated on the sub-threshold operating regime, p ≤ 0.006)
+```
+
+The RTL decoder reproduces the software UF logical-error curve within CI across the whole circuit-level
+prob grid (the circuit-level threshold is ~0.9%, so the grid is lower and we gate `p ≤ 0.006`). This is
+the full board-free HiL chain on realistic gate noise: **circuit-level DEM → 3-D syndromes → RTL decode
+→ LER**.
+
 ## Reproduce
 
 ```bash
-make -C hw cosim        # d=3, p=0.01..0.05, all within CI
-make -C hw cosim-3d     # d=5×3 (3-D), gated on p ≤ 0.02
+make -C hw cosim          # d=3, phenomenological, p=0.01..0.05, all within CI
+make -C hw cosim-3d       # d=5×3 (3-D phenomenological), gated on p ≤ 0.02
+make -C hw cosim-circuit  # d=3×3, circuit-level (hook errors), gated on p ≤ 0.006
 # knobs: COSIM_SHOTS (default 20000), COSIM_SEED (default 2024)
 make -C hw cosim COSIM_SHOTS=100000
 ```

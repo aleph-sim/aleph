@@ -12,7 +12,7 @@ OBJ_DIR   := obj_dir
 VERILATOR ?= verilator
 CARGO     := cargo run --release -q -p aleph-qec --example
 
-.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream cosim cosim-3d clean
+.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream cosim cosim-3d cosim-circuit clean
 
 all: d3 rep surf
 
@@ -134,6 +134,20 @@ cosim-3d:
 	# gate_p=0.02: gate the sub-threshold (operating) regime; supra-threshold rows are reported as
 	# info (unweighted RTL UF tie-breaks degenerate cosets more crudely above threshold — expected).
 	./_cosim3dbuild/$(OBJ_DIR)/sim_cosim3d _cosim3dbuild/uf_surface_graph.svh cosim_d5r3.vec 0.02
+
+# Q6-21 (circuit-level) — board-free co-sim on the full CIRCUIT-LEVEL graph (Q-surface): every CNOT /
+# idle / prep / measurement is a fault site, so the matching graph carries hook-error edges the
+# phenomenological graph lacks. The RTL decoder thus sees the realistic graph. d=3 x 3 rounds; the
+# circuit-level threshold is ~0.9%, so the prob grid is lower (0.002..0.010) and we gate the
+# sub-threshold operating regime (gate_p=0.006). Own build dir (compile-time `include graph).
+cosim-circuit:
+	cd .. && $(CARGO) qec_surface_uf_graph -- graph-circuit 3 3 > hw/uf_surface_graph_d3r3c.svh
+	cd .. && $(CARGO) qec_q6_cosim -- 3 3 $(COSIM_SHOTS) $(COSIM_SEED) circuit > hw/cosim_d3r3c.vec
+	rm -rf _cosimcircuitbuild && mkdir _cosimcircuitbuild && cp uf_surface_decoder.sv _cosimcircuitbuild/
+	cp uf_surface_graph_d3r3c.svh _cosimcircuitbuild/uf_surface_graph.svh
+	cd _cosimcircuitbuild && $(VERILATOR) --cc --exe --build -Wall --top-module uf_surface_decoder \
+		uf_surface_decoder.sv ../tb_uf_cosim.cpp -o sim_cosimc
+	./_cosimcircuitbuild/$(OBJ_DIR)/sim_cosimc _cosimcircuitbuild/uf_surface_graph.svh cosim_d3r3c.vec 0.006
 
 # Re-baseline the Q6-04 golden table {obs_flip,correction} from the CURRENT RTL. Only run this
 # deliberately when the decoder's intended output changes — it overwrites the frozen reference that
