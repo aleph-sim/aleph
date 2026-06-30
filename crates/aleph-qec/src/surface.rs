@@ -14,7 +14,9 @@
 use aleph_core::{Gate, GateInstance};
 use aleph_ir::{Circuit, Instruction};
 
-use crate::builder::{AnnotatedCircuit, ErrorMechanism};
+use crate::builder::{build_dem, AnnotatedCircuit, CircuitNoise, ErrorMechanism};
+use crate::dem::DetectorErrorModel;
+use crate::error::Result;
 
 /// One stabilizer ancilla and the data qubits it checks.
 #[derive(Clone, Debug)]
@@ -111,6 +113,10 @@ impl SurfaceCode {
         let mut round_starts: Vec<usize> = Vec::with_capacity(rounds);
         // ancilla_rec[r][k] = measurement-record index of z-ancilla k in round r.
         let mut ancilla_rec: Vec<Vec<usize>> = Vec::with_capacity(rounds);
+        // Circuit-level noise geometry (Q-surface circuit-level DEM). `at` follows
+        // ErrorMechanism semantics (the error is present for instructions ≥ at).
+        let mut cnot_sites: Vec<(usize, u32, u32)> = Vec::new(); // (at = CNOT index, control, target)
+        let mut reset_sites: Vec<(usize, u32)> = Vec::new(); // (at = index after reset, ancilla qubit)
 
         let mut clbit = 0u32;
         let push_measure = |inst: &mut Vec<Instruction>,
@@ -135,6 +141,7 @@ impl SurfaceCode {
             // Z-stabilizer extraction: CX(data -> ancilla).
             for a in &z_anc {
                 for &dq in &a.data_neighbours {
+                    cnot_sites.push((inst.len(), dq, a.index));
                     inst.push(Instruction::Gate(GateInstance::new(
                         Gate::Cnot,
                         vec![dq, a.index],
@@ -153,6 +160,8 @@ impl SurfaceCode {
                 );
                 this_round.push(rec);
                 inst.push(Instruction::Reset(a.index));
+                // A faulty reset leaves the ancilla X-flipped *after* the reset clears it.
+                reset_sites.push((inst.len(), a.index));
             }
             ancilla_rec.push(this_round);
         }
@@ -217,6 +226,8 @@ impl SurfaceCode {
             meas_qubit,
             meas_instr,
             num_ancilla_records: rounds * nz,
+            cnot_sites,
+            reset_sites,
         }
     }
 }
@@ -240,6 +251,11 @@ pub struct MemoryExperiment {
     meas_qubit: Vec<u32>,
     meas_instr: Vec<usize>,
     num_ancilla_records: usize,
+    /// `(at = CNOT instruction index, control, target)` for every CNOT — site of a two-qubit
+    /// depolarizing channel in the circuit-level model.
+    cnot_sites: Vec<(usize, u32, u32)>,
+    /// `(at = index just after each ancilla reset, ancilla qubit)` — site of a preparation flip.
+    reset_sites: Vec<(usize, u32)>,
 }
 
 impl MemoryExperiment {
@@ -310,6 +326,155 @@ impl MemoryExperiment {
                 at: self.meas_instr[rec],
             })
             .collect()
+    }
+
+    /// Circuit-level error mechanisms (`X`-sector) for the memory-Z experiment.
+    ///
+    /// This is the realistic upgrade over [`Self::phenomenological_mechanisms`]: instead of one data
+    /// error per round and a measurement flip, every *gate and operation* in the syndrome-extraction
+    /// circuit is a fault site. Because memory-Z detects `X` errors, only each depolarizing channel's
+    /// `X`-sector contributes (`build_dem` discards mechanisms that flip no detector and no
+    /// observable). The sources, following the standard circuit-level model:
+    ///
+    /// * **CNOT** — a two-qubit depolarizing channel: `X(c)`, `X(t)`, `X(c)X(t)` each at
+    ///   `4/15·p_cnot`. The `X(c)X(t)` correlated component (and the lone `X(t)` on the ancilla) is
+    ///   what produces **hook errors** — the diagonal space-time edges that make a circuit-level DEM
+    ///   qualitatively harder than the phenomenological one.
+    /// * **Idle / storage** — a single-qubit depolarizing `X` at `2/3·p_idle` on every data qubit
+    ///   once per round (placed at the round start, before that round's CNOTs).
+    /// * **Preparation** — an `X` flip at `p_init` on the initial `|0…0⟩` prep of every qubit (at
+    ///   `t=0`) and after every per-round ancilla reset.
+    /// * **Measurement** — an `X` flip at `p_meas` on every measurement record (ancilla and final
+    ///   data readout).
+    ///
+    /// The error placed at a CNOT is conjugated *by* that CNOT (a pre-gate channel), matching the
+    /// Stim program [`Self::stim_program_circuit_level`] emits, so the two agree edge-for-edge.
+    pub fn circuit_level_mechanisms(&self, noise: CircuitNoise) -> Vec<ErrorMechanism> {
+        let x1 = |prob: f64, q: u32, at: usize| ErrorMechanism {
+            prob,
+            x: vec![q],
+            z: vec![],
+            at,
+        };
+        let mut mechs = Vec::new();
+
+        // CNOT two-qubit depolarizing, X-sector: X(c), X(t), X(c)X(t) at 4/15·p_cnot.
+        let cnot_w = noise.p_cnot * 4.0 / 15.0;
+        for &(at, c, t) in &self.cnot_sites {
+            mechs.push(x1(cnot_w, c, at));
+            mechs.push(x1(cnot_w, t, at));
+            mechs.push(ErrorMechanism {
+                prob: cnot_w,
+                x: vec![c, t],
+                z: vec![],
+                at,
+            });
+        }
+
+        // Idle/storage: one single-qubit depolarizing X per data qubit per round (X weight 2/3).
+        let idle_w = noise.p_idle * 2.0 / 3.0;
+        for &at in &self.round_starts {
+            for &q in &self.data_qubits {
+                mechs.push(x1(idle_w, q, at));
+            }
+        }
+
+        // Preparation: initial |0…0⟩ prep of every qubit at t=0, plus every per-round ancilla reset.
+        for q in 0..self.num_qubits as u32 {
+            mechs.push(x1(noise.p_init, q, 0));
+        }
+        for &(at, q) in &self.reset_sites {
+            mechs.push(x1(noise.p_init, q, at));
+        }
+
+        // Measurement flips: an X on every measured qubit at its measurement record.
+        for rec in 0..self.meas_qubit.len() {
+            mechs.push(x1(noise.p_meas, self.meas_qubit[rec], self.meas_instr[rec]));
+        }
+
+        mechs
+    }
+
+    /// Build the circuit-level [`DetectorErrorModel`] for this experiment under `noise`.
+    ///
+    /// Convenience wrapper over [`build_dem`] + [`Self::circuit_level_mechanisms`].
+    ///
+    /// # Errors
+    /// Propagates DEM-construction errors ([`crate::Error::Propagation`]).
+    pub fn circuit_level_dem(&self, noise: CircuitNoise) -> Result<DetectorErrorModel> {
+        build_dem(&self.annotated, &self.circuit_level_mechanisms(noise))
+    }
+
+    /// Emit an equivalent Stim program with the same `X`-sector circuit-level noise, so Stim's
+    /// `detector_error_model` can be cross-checked against [`Self::circuit_level_dem`] edge-for-edge.
+    /// Detectors/observables are emitted in [`AnnotatedCircuit`] order (so `D{i}`/`L{i}` match ours).
+    pub fn stim_program_circuit_level(&self, noise: CircuitNoise) -> String {
+        let ac = &self.annotated;
+        let insts = ac.circuit.instructions();
+        let total_recs = self.meas_qubit.len();
+        let rel = |rec: usize| -> String { format!("rec[-{}]", total_recs - rec) };
+
+        // Group the rate-free X-sector noise channels by the instruction index they precede.
+        let cnot_w = noise.p_cnot * 4.0 / 15.0;
+        let idle_w = noise.p_idle * 2.0 / 3.0;
+        let mut emit_before: std::collections::BTreeMap<usize, Vec<String>> =
+            std::collections::BTreeMap::new();
+        let mut push = |at: usize, s: String| emit_before.entry(at).or_default().push(s);
+
+        for &(at, c, t) in &self.cnot_sites {
+            push(at, format!("E({cnot_w}) X{c}"));
+            push(at, format!("E({cnot_w}) X{t}"));
+            push(at, format!("E({cnot_w}) X{c} X{t}"));
+        }
+        for &at in &self.round_starts {
+            for &q in &self.data_qubits {
+                push(at, format!("E({idle_w}) X{q}"));
+            }
+        }
+        for &(at, q) in &self.reset_sites {
+            push(at, format!("E({}) X{q}", noise.p_init));
+        }
+        for rec in 0..self.meas_qubit.len() {
+            push(
+                self.meas_instr[rec],
+                format!("E({}) X{}", noise.p_meas, self.meas_qubit[rec]),
+            );
+        }
+
+        let mut s = String::new();
+        // Initial prep of all qubits in |0⟩ with a prep-flip channel each (t=0 errors).
+        let all_qubits: Vec<String> = (0..self.num_qubits).map(|q| q.to_string()).collect();
+        s.push_str(&format!("R {}\n", all_qubits.join(" ")));
+        for q in 0..self.num_qubits as u32 {
+            s.push_str(&format!("E({}) X{q}\n", noise.p_init));
+        }
+
+        for (i, inst) in insts.iter().enumerate() {
+            if let Some(errs) = emit_before.get(&i) {
+                for e in errs {
+                    s.push_str(e);
+                    s.push('\n');
+                }
+            }
+            match inst {
+                Instruction::Gate(gi) => {
+                    let q = &gi.qubits;
+                    s.push_str(&format!("CX {} {}\n", q[0], q[1]));
+                }
+                Instruction::Measure { qubit, .. } => s.push_str(&format!("M {qubit}\n")),
+                Instruction::Reset(q) => s.push_str(&format!("R {q}\n")),
+                _ => {}
+            }
+        }
+        for recs in &ac.detectors {
+            let parts: Vec<String> = recs.iter().map(|&r| rel(r)).collect();
+            s.push_str(&format!("DETECTOR {}\n", parts.join(" ")));
+        }
+        for (o, recs) in ac.observables.iter().enumerate() {
+            let parts: Vec<String> = recs.iter().map(|&r| rel(r)).collect();
+            s.push_str(&format!("OBSERVABLE_INCLUDE({o}) {}\n", parts.join(" ")));
+        }
+        s
     }
 
     /// Emit an equivalent Stim program with the same phenomenological noise, so
@@ -413,6 +578,49 @@ mod tests {
                     );
                 }
                 assert!(!dem.errors.is_empty());
+            }
+        }
+    }
+
+    #[test]
+    fn circuit_level_dem_sized() {
+        // The circuit-level DEM has the same detector/observable layout as the phenomenological
+        // one (same circuit, same detectors), just a richer mechanism set. It must be non-empty
+        // and produce sensible per-error detector supports.
+        use crate::CircuitNoise;
+        for d in [3usize, 5] {
+            for rounds in [1usize, 3] {
+                let sc = SurfaceCode::new(d);
+                let exp = sc.memory_z_experiment(rounds);
+                let nz = (d * d - 1) / 2;
+                let dem = exp.circuit_level_dem(CircuitNoise::uniform(0.001)).unwrap();
+                assert_eq!(dem.detectors, rounds * nz + nz, "d={d} rounds={rounds}");
+                assert_eq!(dem.observables, 1);
+                assert!(!dem.errors.is_empty());
+                // Every fired mechanism flips at least one detector or the observable (build_dem
+                // drops the trivial ones, e.g. an X on a Z-ancilla that no detector sees).
+                for e in &dem.errors {
+                    assert!(!e.dets.is_empty() || !e.obs.is_empty());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn circuit_level_dem_is_graphlike() {
+        // The value of this test is the empirical claim: with the surface code's CNOT schedule,
+        // the X-sector circuit-level DEM is graphlike (every single-fault mechanism flips ≤ 2
+        // detectors), so MWPM / Union-Find decode it directly — no hyperedge decomposition needed.
+        use crate::CircuitNoise;
+        for d in [3usize, 5] {
+            for rounds in [1usize, 2, 3] {
+                let exp = SurfaceCode::new(d).memory_z_experiment(rounds);
+                let dem = exp.circuit_level_dem(CircuitNoise::uniform(0.001)).unwrap();
+                let max = dem.errors.iter().map(|e| e.dets.len()).max().unwrap_or(0);
+                assert!(
+                    max <= 2,
+                    "d={d} rounds={rounds}: circuit-level DEM has a {max}-detector hyperedge"
+                );
             }
         }
     }

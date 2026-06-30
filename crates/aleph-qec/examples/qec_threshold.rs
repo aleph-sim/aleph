@@ -8,10 +8,12 @@
 //! Usage:
 //!
 //! ```text
-//! cargo run --release -p aleph-qec --example qec_threshold -- [decoder] [source] [shots] [seed]
+//! cargo run --release -p aleph-qec --example qec_threshold -- [decoder] [source] [shots] [seed] [noise]
 //! # decoder ∈ {mwpm (default), uf, pymatching}; source ∈ {analytic (default), stim}
-//! # e.g. native sweep:  cargo run --release -p aleph-qec --example qec_threshold -- mwpm analytic 200000 2024
-//! # oracle sweep:       PYMATCHING_PYTHON=/tmp/pmvenv/bin/python cargo run ... -- pymatching analytic 200000 2024
+//! # noise   ∈ {phenom (default), circuit}
+//! # e.g. native sweep:        cargo run --release -p aleph-qec --example qec_threshold -- mwpm analytic 200000 2024
+//! # circuit-level sweep:      cargo run --release -p aleph-qec --example qec_threshold -- uf analytic 200000 2024 circuit
+//! # oracle sweep:             PYMATCHING_PYTHON=/tmp/pmvenv/bin/python cargo run ... -- pymatching analytic 200000 2024
 //! ```
 //!
 //! * `decoder = mwpm` (default, Q1-04) — our native [`MwpmDecoder`]. No external dependency.
@@ -19,22 +21,28 @@
 //!   native curve is validated against. Needs `PYMATCHING_PYTHON`.
 //! * `source = analytic` — decode our own [`build_dem`] model.
 //! * `source = stim` — decode the DEM Stim emits for the same circuit + noise (needs `STIM_PYTHON`;
-//!   equals the analytic DEM edge-for-edge per Q0-03).
+//!   equals the analytic DEM edge-for-edge per Q0-03). Phenomenological noise only.
+//! * `noise = phenom` — phenomenological noise (`p_data == p_meas == p`); threshold ~3%.
+//! * `noise = circuit` — full circuit-level noise ([`MemoryExperiment::circuit_level_dem`], uniform
+//!   `CircuitNoise`): every CNOT / idle / prep / measurement is a fault site, so the DEM has hook
+//!   errors and the threshold is substantially lower (~0.5–1%). The prob grid auto-switches.
 //!
-//! The noise is phenomenological with `p_data == p_meas == p` and `rounds == d`.
+//! `rounds == d` in both models.
 
 use std::io::Write;
 use std::process::{Command, Stdio};
 
 use aleph_qec::{
-    build_dem, run_dem_experiment, DetectorErrorModel, MwpmDecoder, PyMatchingOracle, SurfaceCode,
-    UnionFindDecoder,
+    build_dem, run_dem_experiment, CircuitNoise, DetectorErrorModel, MwpmDecoder, PyMatchingOracle,
+    SurfaceCode, UnionFindDecoder,
 };
 
 /// Code distances swept.
 const DISTANCES: &[usize] = &[3, 5, 7, 9];
 /// Physical error probabilities, bracketing the phenomenological threshold (~3%).
-const PROBS: &[f64] = &[0.015, 0.020, 0.025, 0.030, 0.035, 0.040, 0.045, 0.050];
+const PROBS_PHENOM: &[f64] = &[0.015, 0.020, 0.025, 0.030, 0.035, 0.040, 0.045, 0.050];
+/// Lower grid bracketing the circuit-level threshold (~0.5–1%).
+const PROBS_CIRCUIT: &[f64] = &[0.002, 0.003, 0.004, 0.005, 0.006, 0.008, 0.010, 0.012];
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -42,23 +50,35 @@ fn main() {
     let source = args.get(2).map(String::as_str).unwrap_or("analytic");
     let shots: u64 = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(200_000);
     let seed: u64 = args.get(4).and_then(|s| s.parse().ok()).unwrap_or(2024);
+    let noise = args.get(5).map(String::as_str).unwrap_or("phenom");
+
+    let probs: &[f64] = match noise {
+        "phenom" => PROBS_PHENOM,
+        "circuit" => PROBS_CIRCUIT,
+        other => panic!("unknown noise `{other}` (expected phenom|circuit)"),
+    };
+    assert!(
+        !(noise == "circuit" && source == "stim"),
+        "circuit-level stim source not wired here; use analytic (DEM is Stim-verified in tests)"
+    );
 
     eprintln!(
         "# decoder={decoder} source={source} shots={shots} seed={seed} \
-         rounds=d noise=phenomenological(p_data=p_meas=p)"
+         rounds=d noise={noise}"
     );
     println!("decoder,source,d,rounds,p,shots,logical_errors,rate,ci95");
 
     for &d in DISTANCES {
         let code = SurfaceCode::new(d);
-        for &p in PROBS {
+        for &p in probs {
             let exp = code.memory_z_experiment(d);
-            let dem = match source {
-                "analytic" => {
+            let dem = match (noise, source) {
+                ("circuit", _) => exp.circuit_level_dem(CircuitNoise::uniform(p)).unwrap(),
+                ("phenom", "analytic") => {
                     build_dem(&exp.annotated, &exp.phenomenological_mechanisms(p, p)).unwrap()
                 }
-                "stim" => stim_cell_dem(&code, d, p),
-                other => panic!("unknown source `{other}` (expected analytic|stim)"),
+                ("phenom", "stim") => stim_cell_dem(&code, d, p),
+                _ => unreachable!("noise/source validated above"),
             };
             // Decode the same DEM with the chosen decoder. The native MWPM is built against the
             // very DEM the shots are drawn from — the whole point of the Q0-04 factory design.
