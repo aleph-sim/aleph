@@ -672,6 +672,32 @@ The on-board RTL logical-error rate matches the software Union-Find baseline wit
 this is **host-bound**, not decoder-bound: the Python-polled AXI4-Lite round-trip dominates (≫ the
 600 ns decode), so it is a floor. The decoder's own rate is 1 decode per its latency; the AXI4-Stream
 + DMA data plane (`uf_axi_wrap` already exposes it) is the path to decoder-bound throughput and is the
-next step for the Q6-03 GPU-vs-FPGA throughput comparison. Next on-board: the d=5 board build.
+next step for the Q6-03 GPU-vs-FPGA throughput comparison.
+
+### d=5 on-board (measured latency wall on the small part)
+
+Rebuilt the same block design with the d=5 graph (`UF_N=25`, `UF_M=54`; the AXI wrapper now supports
+`UF_M > 31` — correction is surfaced as `CORRECTION[31:0]` + the `OBS_FLIP` bit). It **closes timing at
+50 MHz** (WNS +3.18 ns, in-context Fmax ~60 MHz) — so on the Arty the d=5 wall is **cycles, not fit or
+Fmax**. On-board HiL over `hw/cosim_d5.vec` (per-block worst latency added):
+
+| p | rtl_rate | sw_rate | verdict | worst latency |
+|---|---|---|---|---|
+| 0.01 | 1.80e-3 | 1.95e-3 | PASS | 62 clk = 1240 ns |
+| 0.02 | 1.31e-2 | 1.13e-2 | PASS | 62 clk = 1240 ns |
+| 0.03 | 3.49e-2 | 3.12e-2 | PASS | 67 clk = 1340 ns |
+| 0.04 | 6.92e-2 | 6.11e-2 | info (supra-threshold) | 65 clk = 1300 ns |
+| 0.05 | 1.14e-1 | 1.01e-1 | info (supra-threshold) | 69 clk = 1380 ns |
+
+Correctness: on-board d=5 logical-error rate tracks the software Union-Find within CI at every
+**sub-threshold** p (the supra-threshold rows show the known unweighted-UF quality gap, same as the
+board-free co-sim; not gated). **Latency verdict: d=5 misses the 1 µs round budget on the Arty Z7-20**
+— worst-case 62–69 clk at 50 MHz = 1.24–1.38 µs, and even at the closed ~60 MHz Fmax (16.8 ns) that
+is ~1.04–1.16 µs, still over. This is the *measured* confirmation of the small-part (XC7Z020) latency
+wall the Q6-09/Q6-10 synth study predicted: d=3 is real-time on this part, d=5 needs the higher-Fmax
+KV260 or a pipelined factorisation (the open Q6-10 lever). Throughput is again host-bound (~6.8k/s).
+
+Next on-board: AXI4-Stream + DMA for decoder-bound throughput (Q6-03), and the same d=5 build on a
+KV260 when that board is available.
 
 [qec-q3-gpu-uf.md]: qec-q3-gpu-uf.md

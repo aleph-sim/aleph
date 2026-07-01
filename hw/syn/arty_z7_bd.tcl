@@ -15,10 +15,11 @@
 set part   xc7z020clg400-1
 set bdname uf_bd
 set outname uf_arty
-set fclk_mhz 50
 
 set proj_dir [expr {$argc >= 1 ? [lindex $argv 0] : "artybd"}]
 set out_dir  [expr {$argc >= 2 ? [lindex $argv 1] : "out"}]
+# Optional 3rd arg: PL clock in MHz (default 50 — closes d=3 with margin; lower it for larger graphs).
+set fclk_mhz [expr {$argc >= 3 ? [lindex $argv 2] : 50}]
 # hw/ dir = parent of this script's dir.
 set hw [file normalize [file join [file dirname [info script]] ..]]
 file mkdir $out_dir

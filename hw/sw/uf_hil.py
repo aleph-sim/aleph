@@ -32,7 +32,7 @@ def syndrome_int(bits):
 
 
 def run_vec(dev, vec_path, dets, gate_p=0.011):
-    print("   p       rtl_rate     sw_rate     |diff|     comb_ci    verdict")
+    print("   p       rtl_rate     sw_rate     |diff|     comb_ci   max_latency    verdict")
     all_pass = True
     total_shots = 0
     t_decode = 0.0
@@ -40,7 +40,7 @@ def run_vec(dev, vec_path, dets, gate_p=0.011):
 
     blk = None  # (p, sw_rate, sw_ci); accumulate rtl_errs, shots, invalid
 
-    def finish(blk, rtl_errs, shots, invalid):
+    def finish(blk, rtl_errs, shots, invalid, blk_lat):
         nonlocal all_pass
         if blk is None or shots == 0:
             return
@@ -61,23 +61,23 @@ def run_vec(dev, vec_path, dets, gate_p=0.011):
         else:
             verdict = "info (supra-threshold)"
         print(
-            "  %.3f   %.4e  %.4e  %.3e  %.3e   %s"
-            % (p, rate, sw_rate, diff, comb, verdict)
+            "  %.3f   %.4e  %.4e  %.3e  %.3e  %4d clk=%4d ns   %s"
+            % (p, rate, sw_rate, diff, comb, blk_lat, dev.latency_ns(blk_lat), verdict)
         )
 
-    rtl_errs = shots = invalid = 0
+    rtl_errs = shots = invalid = blk_lat = 0
     with open(vec_path) as f:
         for l in f:
             if not l or l[0] == "#":
                 continue
             if l[0] == "P":
-                finish(blk, rtl_errs, shots, invalid)
+                finish(blk, rtl_errs, shots, invalid, blk_lat)
                 total_shots += shots
                 kv = dict(
                     tok.split("=", 1) for tok in l[1:].split() if "=" in tok
                 )
                 blk = (float(kv["p"]), float(kv["sw_rate"]), float(kv["sw_ci"]))
-                rtl_errs = shots = invalid = 0
+                rtl_errs = shots = invalid = blk_lat = 0
                 continue
             if len(l) < dets + 2:
                 continue
@@ -86,12 +86,14 @@ def run_vec(dev, vec_path, dets, gate_p=0.011):
             t0 = time.perf_counter()
             corr, obs, lat = dev.decode(syndrome_int(bits))
             t_decode += time.perf_counter() - t0
+            if lat > blk_lat:
+                blk_lat = lat
             if lat > max_lat:
                 max_lat = lat
             if obs != truth:
                 rtl_errs += 1
             shots += 1
-    finish(blk, rtl_errs, shots, invalid)
+    finish(blk, rtl_errs, shots, invalid, blk_lat)
     total_shots += shots
 
     thru = total_shots / t_decode if t_decode > 0 else 0.0
