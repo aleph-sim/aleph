@@ -17,6 +17,8 @@ set outname uf_arty_dma
 set proj_dir [expr {$argc >= 1 ? [lindex $argv 0] : "artybd_dma"}]
 set out_dir  [expr {$argc >= 2 ? [lindex $argv 1] : "out_dma"}]
 set fclk_mhz [expr {$argc >= 3 ? [lindex $argv 2] : 50}]
+# 4th arg: number of parallel decoder engines. K<=1 -> single uf_stream; K>=2 -> K-way uf_stream_array.
+set nk       [expr {$argc >= 4 ? [lindex $argv 3] : 1}]
 set hw [file normalize [file join [file dirname [info script]] ..]]
 file mkdir $out_dir
 
@@ -26,10 +28,13 @@ add_files -norecurse [list \
   [file join $hw uf_surface_decoder.sv] \
   [file join $hw uf_stream_core.sv] \
   [file join $hw uf_stream.v] \
+  [file join $hw uf_stream_array_core.sv] \
+  [file join $hw uf_stream_array.v] \
   [file join $hw uf_surface_graph.svh]]
 set_property include_dirs $hw [current_fileset]
 set_property file_type SystemVerilog        [get_files uf_surface_decoder.sv]
 set_property file_type SystemVerilog        [get_files uf_stream_core.sv]
+set_property file_type SystemVerilog        [get_files uf_stream_array_core.sv]
 set_property file_type {Verilog Header}      [get_files uf_surface_graph.svh]
 update_compile_order -fileset sources_1
 
@@ -57,8 +62,15 @@ set_property -dict [list \
   CONFIG.c_sg_length_width {26} \
   CONFIG.c_micro_dma {0}] [get_bd_cells axi_dma_0]
 
-# ---- decoder streaming datapath ----
-create_bd_cell -type module -reference uf_stream uf_0
+# ---- decoder streaming datapath (single engine or K-way array) ----
+if {$nk <= 1} {
+  create_bd_cell -type module -reference uf_stream uf_0
+} else {
+  create_bd_cell -type module -reference uf_stream_array uf_0
+  if {[catch {set_property CONFIG.K [format %d $nk] [get_bd_cells uf_0]} e]} {
+    puts "WARN: could not set CONFIG.K=$nk on module ref ($e); using the module's default K"
+  }
+}
 
 # ---- reset + smartconnects ----
 create_bd_cell -type ip -vlnv xilinx.com:ip:proc_sys_reset rst0   ;# FCLK_RESET0_N (active-low) -> ext_reset_in

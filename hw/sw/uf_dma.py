@@ -89,12 +89,13 @@ def main(argv):
     warm = blocks[0][3][: min(256, len(blocks[0][3]))]
     run_batch(warm)
 
+    # ---- correctness: per-block LER vs software UF ----
     print("   p       rtl_rate     sw_rate     |diff|     comb_ci    verdict")
     all_pass = True
-    total_shots = 0
-    total_time = 0.0
+    all_syns = []
     for p, sw_rate, sw_ci, syns, truth in blocks:
-        obs, dt = run_batch(syns)
+        obs, _dt = run_batch(syns)
+        all_syns.extend(syns)
         n = len(syns)
         errs = int((obs != np.asarray(truth, dtype=np.uint32)).sum())
         rate = errs / n
@@ -113,13 +114,14 @@ def main(argv):
             "  %.3f   %.4e  %.4e  %.3e  %.3e   %s"
             % (p, rate, sw_rate, diff, comb, verdict)
         )
-        total_shots += n
-        total_time += dt
 
-    thru = total_shots / total_time if total_time > 0 else 0.0
+    # ---- sustained throughput: one big DMA transfer of the whole stream (no per-block setup) ----
+    _o, dt = run_batch(all_syns)     # correctness already checked above; here we only time it
+    n = len(all_syns)
+    thru = n / dt if dt > 0 else 0.0
     print(
-        "\non-board DMA: shots=%d  wall=%.3f s  throughput=%.0f decodes/s (%.3f us/decode)"
-        % (total_shots, total_time, thru, 1e6 / thru if thru else 0.0)
+        "\non-board DMA: shots=%d  wall=%.4f s  throughput=%.0f decodes/s (%.3f us/decode)"
+        % (n, dt, thru, 1e6 / thru if thru else 0.0)
     )
     print("RESULT:", "PASS (on-board LER within CI at all gated p)" if all_pass else "FAIL")
     return 0 if all_pass else 1

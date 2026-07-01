@@ -139,7 +139,10 @@ ACs of Q6-01/Q6-02/Q6-08. Details in `docs/perf/qec-q6-fpga.md`.
 | `uf_stream.v` | Verilog board top for the BD module reference (fixed 32-bit AXIS, distance-independent). |
 | `syn/arty_z7_dma_bd.tcl` | block design with **AXI DMA** (MM2S+S2MM) feeding the engine from PS DDR and back — the PS is out of the per-decode loop. |
 | `sw/uf_dma.py` | PYNQ driver: DMA a batch through the decoder, measure throughput, re-check LER. |
+| `uf_stream_array_core.sv` | K decoder engines behind one AXI4-Stream (round-robin dispatch + in-order collect) — replicates the engine across the free fabric. |
+| `uf_stream_array.v` | Verilog board top for the array (parameter `K`); `arty_z7_dma_bd.tcl <proj> <out> <fclk> <K>` picks single-engine (K≤1) or the K-way array. |
 
-Measured d=3: **1.39 M decodes/s (0.72 µs/decode) — ~191× the PS-polled AXI4-Lite path, and
-decoder-bound** (0.72 µs ≈ the 30-clk decode + stream overhead at 50 MHz). LER still matches software
-UF. This is the Q6-03 FPGA throughput figure.
+Measured d=3: single engine **1.39 M decodes/s (0.72 µs/decode) — ~191× the PS-polled AXI4-Lite path,
+decoder-bound**. Replicated: **K=8 → 9.55 M/s (6.56×, 20 % LUT); K=16 → 16.5 M/s (11.3×, 32 % LUT)**,
+all timing-met, LER unchanged. This is the Q6-03 FPGA throughput figure; see `docs/perf/qec-q6-fpga.md`
+for the scaling table and the sub-linearity analysis.
