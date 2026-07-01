@@ -1070,11 +1070,16 @@ latency-budget instrumentation so on-board numbers land in the same table. Softw
 board-independent (against the block design); the on-board round-trip closes when hardware arrives.
 
 **Acceptance Criteria**
-- [ ] `hw/sw/` bare-metal C driver: configure AXI-Lite, stream a syndrome, poll done, read results;
-  portable across Zynq-7020 / UltraScale+ PS.
-- [ ] PL-reported latency surfaced to the host and folded into the Q4-03 budget table.
-- [ ] **(board, pending hardware)** End-to-end on Zybo and/or KV260: host↔PL round-trip verified,
-  per-round latency measured in ns. **Closes the board ACs of Q6-01 and Q6-02.**
+- [x] `hw/sw/` host driver: configure AXI-Lite, stream a syndrome, poll done, read results;
+  portable across Zynq-7020 / UltraScale+ PS. (Bare-metal C `hw/sw/uf_decoder.c` + a PYNQ/Python
+  twin `hw/sw/uf_pynq.py` for the Linux/LAN bring-up path — same regmap, verified vs golden.)
+- [x] PL-reported latency surfaced to the host and folded into the latency-budget instrumentation
+  (LATENCY register → `uf_latency_ns`; measured on-board below).
+- [x] **End-to-end on hardware (Arty Z7-20, `xc7z020clg400-1` — same PL part as the Zybo Z7-20):**
+  built the board bitstream (`hw/syn/arty_z7_bd.tcl`, Zynq7 PS + `uf_axi_top` on AXI GP0, FCLK
+  50 MHz, WNS +7.29 ns), loaded via PYNQ overlay, host↔PL round-trip verified — **256/256 syndromes
+  bit-identical to golden, IDCODE ok, worst decode latency 30 clk = 600 ns @ 50 MHz (< 1 µs
+  round budget → real-time on silicon)**. **Closes the board ACs of Q6-01 and Q6-02.**
 
 -----
 

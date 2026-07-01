@@ -628,4 +628,29 @@ ROADMAP §Q7 the trigger is **commercial, not technical**: gate tape-out on fund
 QPU-company customer. Immediate next engineering step before any silicon commitment is **Q6-08 on-board
 bring-up** to replace these post-route estimates with measured wall-clock latency and power.
 
+## Q6-08 — on-board bring-up (measured silicon, Arty Z7-20)
+
+The post-route latency estimates above are now confirmed on hardware. Board: **Digilent Arty Z7-20**
+(`xc7z020clg400-1` — the same PL part as the Zybo Z7-20 target), booted from the PYNQ-Z1 v3.1.1 SD
+image over LAN.
+
+**Board bitstream** (`hw/syn/arty_z7_bd.tcl`, not the OOC study): Zynq-7 PS + `uf_axi_top`
+(uf_axi_wrap, AXI4-Lite control plane; AXI4-Stream tied off for this run) on the PS GP0 AXI master,
+FCLK **50 MHz**. In-context impl: **WNS +7.29 ns → TIMING_MET** (achievable ~79 MHz; clocked at 50
+for margin), DRC clean.
+
+**Result** (`hw/sw/uf_pynq.py`, PYNQ overlay + `pynq.MMIO`, all 256 d=3 syndromes):
+
+| metric | value |
+|--------|-------|
+| IDCODE probe | `0x5546_0003` ✓ (PS↔PL link) |
+| correctness | **256/256 bit-identical to `uf_surface_golden.mem`** |
+| worst decode latency | **30 clk = 600 ns @ 50 MHz** |
+| round budget | 1 µs → **met with 40 % headroom (real-time on silicon)** |
+
+This replaces the d=3 post-route *estimate* (562 ns @ 58.7 MHz OOC) with a *measured* 600 ns at the
+conservative 50 MHz board clock, and closes the on-board ACs of Q6-01/Q6-02/Q6-08. The Q7 ASIC call
+above no longer rests on estimates for the d=3 latency floor. Next on-board: the HiL Monte-Carlo
+stream over AXI4-Stream (Q6-03 GPU-vs-FPGA numbers) and the d=5 board build.
+
 [qec-q3-gpu-uf.md]: qec-q3-gpu-uf.md

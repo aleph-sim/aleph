@@ -187,12 +187,19 @@ fn main() {
             };
             println!("// d={d} rotated surface-code memory-Z ({rounds} round(s)) {model} matching graph — GENERATED, do not edit.");
             println!("// regenerate: cargo run -p aleph-qec --example qec_surface_uf_graph -- {mode} {d} {rounds} > hw/uf_surface_graph_d{d}.svh");
+            // Include guard: the board build compiles uf_axi_wrap.sv and uf_surface_decoder.sv (which
+            // both `include this header) into one compilation unit, so without a guard the localparams
+            // are declared twice. Matches the window-mode header. (Verilator/xsim read files as
+            // separate units, so this is a no-op there.)
+            println!("`ifndef UF_SURFACE_GRAPH_SVH");
+            println!("`define UF_SURFACE_GRAPH_SVH");
             println!("localparam int UF_N = {};", n + 1);
             println!("localparam int UF_M = {m};");
             println!("localparam int UF_BOUNDARY = {boundary};");
             println!("localparam int UF_EA   [UF_M] = '{{{}}};", ea.join(", "));
             println!("localparam int UF_EB   [UF_M] = '{{{}}};", eb.join(", "));
             println!("localparam bit UF_ELOG [UF_M] = '{{{}}};", el.join(", "));
+            println!("`endif");
         }
         "oracle" => {
             // Unweighted UF to match the unweighted RTL engine.
