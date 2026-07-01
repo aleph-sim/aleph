@@ -24,20 +24,20 @@ file mkdir $out_dir
 
 create_project -force uf_arty_dma_win $proj_dir -part $part
 
-# The streaming window graph lives under uf_surface_graph_win.svh; both RTL modules `include the fixed
-# name "uf_surface_graph.svh", so stage a copy under a project-local include dir (ahead of $hw) that
-# shadows the block build's graph of the same name.
-set gdir [file join $proj_dir gen_inc]
-file mkdir $gdir
-file copy -force [file join $hw uf_surface_graph_win.svh] [file join $gdir uf_surface_graph.svh]
+# Both RTL modules `include the fixed name "uf_surface_graph.svh"; the hw/ build flow stages the right
+# graph under that name per build (the Makefile `stream` targets rename the window graph in). Vivado's
+# module-reference compile only resolves the include from the RTL file's own dir ($hw), so stage the
+# streaming WINDOW graph over that name in $hw. This overwrites the tracked block graph in the working
+# tree, which is fine here: the synth box `git reset --hard`s before every build.
+file copy -force [file join $hw uf_surface_graph_win.svh] [file join $hw uf_surface_graph.svh]
 
 add_files -norecurse [list \
   [file join $hw uf_surface_decoder.sv] \
   [file join $hw uf_streaming_decoder.sv] \
   [file join $hw uf_stream_win_core.sv] \
   [file join $hw uf_stream_win.v] \
-  [file join $gdir uf_surface_graph.svh]]
-set_property include_dirs [list $gdir $hw] [current_fileset]
+  [file join $hw uf_surface_graph.svh]]
+set_property include_dirs $hw [current_fileset]
 set_property file_type SystemVerilog   [get_files uf_surface_decoder.sv]
 set_property file_type SystemVerilog   [get_files uf_streaming_decoder.sv]
 set_property file_type SystemVerilog   [get_files uf_stream_win_core.sv]
