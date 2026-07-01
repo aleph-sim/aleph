@@ -798,6 +798,28 @@ Reproduce the circuit-level and d=5 builds by pointing `uf_surface_graph.svh` at
 generated header before `arty_z7_dma_bd.tcl` (the graph is a compile-time include), as the Makefile
 does for the Verilator scaling builds.
 
+### 3D space-time (multi-round) decode on silicon (Q6-19)
+
+The d=5×3 phenomenological 3D graph (T=3 measurement rounds + time-like measurement-error edges) has a
+**48-bit** syndrome — wider than the 32-bit stream word. `uf_stream_core` now takes a syndrome over
+`NBEATS = ceil(SYN_W/32)` beats (little-endian, reassembled on-chip), so the AXI DMA sends 2 words per
+syndrome and receives 1 result word; `uf_dma.py` packs accordingly. `NBEATS=1` (SYN_W≤32) is the
+original single-beat path unchanged. Single-engine build (48 detectors, 120 edges, 27 % LUT, WNS
++0.10 ns @ 50 MHz):
+
+| p | rtl_rate (silicon) | sw_rate (UF) | verdict |
+|---|---|---|---|
+| 0.01 | 4.60e-3 | 4.05e-3 | PASS |
+| 0.02 | 3.52e-2 | 3.08e-2 | PASS |
+| 0.03 | 9.03e-2 | 8.06e-2 | info (supra-threshold) |
+
+On-board LER matches software Union-Find within CI at the **sub-threshold** rates (supra-threshold shows
+the known unweighted-UF gap, as in the board-free co-sim). 384 k decodes/s (2.6 µs/decode single-engine
+— the deep 3D graph takes ~130 clk/decode). This is the first **time-dimension** decode (multiple
+measurement rounds with measurement errors, on the 3D space-time matching graph) run on silicon — the
+code-capacity → real-decoder step, matching the Q6-19 simulation. d=7 (also 48-bit syndrome) reuses the
+same 2-beat path.
+
 Next on-board: the same builds on a KV260 when that board is available.
 
 [qec-q3-gpu-uf.md]: qec-q3-gpu-uf.md

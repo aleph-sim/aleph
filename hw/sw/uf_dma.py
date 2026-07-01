@@ -61,16 +61,26 @@ def main(argv):
         return 2
 
     blocks, dets = load_blocks(vec)
-    print("[board] loading overlay %s (dets=%d, %d blocks)" % (bitfile, dets, len(blocks)))
+    # Syndromes wider than a 32-bit stream word (d5×3 / d7 have 48 detectors) are sent little-endian
+    # over NBEATS words per syndrome; the engine reassembles them. Output stays one word per syndrome.
+    nbeats = (dets + 31) // 32
+    print(
+        "[board] loading overlay %s (dets=%d, %d blocks, %d word(s)/syndrome)"
+        % (bitfile, dets, len(blocks), nbeats)
+    )
     ol = Overlay(bitfile)
     dma_name = next(k for k in ol.ip_dict if "dma" in k.lower())
     dma = getattr(ol, dma_name)
 
     def run_batch(syndromes):
         n = len(syndromes)
-        ib = allocate(shape=(n,), dtype=np.uint32)
+        ib = allocate(shape=(n * nbeats,), dtype=np.uint32)
         ob = allocate(shape=(n,), dtype=np.uint32)
-        ib[:] = np.asarray(syndromes, dtype=np.uint32)
+        if nbeats == 1:
+            ib[:] = np.asarray(syndromes, dtype=np.uint32)
+        else:
+            packed = [(s >> (32 * b)) & 0xFFFFFFFF for s in syndromes for b in range(nbeats)]
+            ib[:] = np.asarray(packed, dtype=np.uint32)   # interleaved: [s0_w0,s0_w1, s1_w0,...]
         ob[:] = 0
         ib.flush()
         t0 = time.perf_counter()
