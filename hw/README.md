@@ -130,3 +130,16 @@ sudo env XILINX_XRT=/usr /usr/local/share/pynq-venv/bin/python3 uf_pynq.py uf_ar
 Measured d=3: `WNS +7.29 ns (TIMING_MET)`, **256/256 bit-identical to golden**, IDCODE ok, worst
 decode **600 ns @ 50 MHz** — under the 1 µs round budget (real-time on silicon). Closes the on-board
 ACs of Q6-01/Q6-02/Q6-08. Details in `docs/perf/qec-q6-fpga.md`.
+
+### Decoder-bound throughput (AXI DMA)
+
+| file | role |
+|------|------|
+| `uf_stream_core.sv` | pure AXI4-Stream engine over the `uf_surface_decoder` core (syndrome in → decode → `{obs,corr}` out), tlast propagated input→output so one DMA transfer streams a whole batch. |
+| `uf_stream.v` | Verilog board top for the BD module reference (fixed 32-bit AXIS, distance-independent). |
+| `syn/arty_z7_dma_bd.tcl` | block design with **AXI DMA** (MM2S+S2MM) feeding the engine from PS DDR and back — the PS is out of the per-decode loop. |
+| `sw/uf_dma.py` | PYNQ driver: DMA a batch through the decoder, measure throughput, re-check LER. |
+
+Measured d=3: **1.39 M decodes/s (0.72 µs/decode) — ~191× the PS-polled AXI4-Lite path, and
+decoder-bound** (0.72 µs ≈ the 30-clk decode + stream overhead at 50 MHz). LER still matches software
+UF. This is the Q6-03 FPGA throughput figure.
