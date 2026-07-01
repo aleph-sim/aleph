@@ -71,10 +71,14 @@ static void reset() {
 
 // Drive `rounds` over AXI (one round/beat, tlast on the last beat) and collect the per-window result
 // words. `bp_seed`==0 -> S2MM always ready (full speed); otherwise pseudo-random back-pressure.
-static std::vector<OutWord> run_stream(const std::vector<uint32_t> &rounds, uint64_t bp_seed) {
+// `do_reset`==false skips the initial reset, so a second frame runs back-to-back on a DUT that was NOT
+// re-armed externally — the on-board case (one overlay, many DMA transfers). The wrapper's per-frame
+// reset must make that frame independent (fresh warm-up), or its window count/drain would be wrong.
+static std::vector<OutWord> run_stream(const std::vector<uint32_t> &rounds, uint64_t bp_seed,
+                                       bool do_reset = true) {
   std::vector<OutWord> out;
   Rng bp(bp_seed ? bp_seed : 1);
-  reset();
+  if (do_reset) reset();
   size_t sent = 0;
   int guard = 0, guard_max = (int)rounds.size() * 200 + 200000;
   bool done_sending = false;
@@ -159,8 +163,30 @@ int main(int argc, char **argv) {
   if (drained_ok != TRIALS) { std::printf("FAIL: %d/%d drained+framed\n", drained_ok, TRIALS); ++fail; }
   if (bp_match != TRIALS)  { std::printf("FAIL: %d/%d back-pressure-invariant\n", bp_match, TRIALS); ++fail; }
 
-  std::printf("stream-axi: W=%d C=%d R=%d win/stream=%d; zero-stream OK; drain %d/%d; bp-invariant %d/%d\n",
-              WARMUP_ROUNDS, RELOAD_ROUNDS, R, EXPECT_WIN, drained_ok, TRIALS, bp_match, TRIALS);
+  // (4) FRAME INDEPENDENCE: many DMA frames back-to-back with NO external reset between them (the
+  // on-board case: one overlay, repeated transfers). Each frame must produce exactly EXPECT_WIN windows
+  // and drain — proving the wrapper re-arms the decoder to warm-up at every tlast. Without the per-frame
+  // reset a follow-on frame resumes mid-stream and its window count/drain would be wrong.
+  int frame_ok = 0;
+  const int FRAMES = 6;
+  reset();  // fresh once; subsequent frames rely on the wrapper's own re-arm
+  for (int fnum = 0; fnum < FRAMES; ++fnum) {
+    Rng g(0xABCDull + 0x777ull * (uint64_t)fnum);
+    std::vector<uint32_t> rounds(R, 0u);
+    for (int i = 0; i < R / 2; ++i)
+      rounds[i] = (uint32_t)((g.next() & ROUND_MASK) & ((g.next() & 0x3) == 0 ? ROUND_MASK : 0u));
+    auto out = run_stream(rounds, 0, /*do_reset=*/false);
+    if ((int)out.size() == EXPECT_WIN && !out.empty() && rese_of(out.back().data) && out.back().last)
+      ++frame_ok;
+    else
+      std::printf("FAIL: frame %d wrong count/undrained (win=%zu)\n", fnum, out.size());
+  }
+  if (frame_ok != FRAMES) { std::printf("FAIL: %d/%d frames independent\n", frame_ok, FRAMES); ++fail; }
+
+  std::printf("stream-axi: W=%d C=%d R=%d win/stream=%d; zero-stream OK; drain %d/%d; bp-invariant %d/%d; "
+              "frame-indep %d/%d\n",
+              WARMUP_ROUNDS, RELOAD_ROUNDS, R, EXPECT_WIN, drained_ok, TRIALS, bp_match, TRIALS,
+              frame_ok, FRAMES);
   std::printf("%s\n", fail ? "RESULT: FAIL"
                            : "RESULT: PASS (AXI framing preserves validity; tlast + back-pressure correct)");
   dut->final();

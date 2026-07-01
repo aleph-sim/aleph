@@ -47,8 +47,15 @@ module uf_stream_win_core (
   logic               dec_out_valid, dec_out_obs, dec_res_empty;
   logic [15:0]        dec_last_lat;
 
+  // Per-FRAME reset: a DMA transfer is one self-contained stream. When the last (tlast) window of a
+  // frame drains, pulse the decoder's reset so the NEXT transfer starts fresh in warm-up with an empty
+  // residual — otherwise it would resume mid-stream from S_RELOAD and the host's fresh-start window
+  // count would not match, stalling S2MM. (The host arms one S2MM buffer per transfer.)
+  logic frame_rst;
+  wire  dec_rst_n = aresetn & ~frame_rst;
+
   uf_streaming_decoder u_stream (
-    .clk(aclk), .rst_n(aresetn),
+    .clk(aclk), .rst_n(dec_rst_n),
     .in_valid(dec_in_valid), .in_round(dec_in_round), .in_ready(dec_in_ready),
     .out_valid(dec_out_valid), .out_obs(dec_out_obs),
     .last_latency(dec_last_lat), .residual_empty(dec_res_empty)
@@ -60,8 +67,10 @@ module uf_stream_win_core (
   logic [31:0]  out_word;
   logic         out_last;
 
-  // A round beat is consumed only when the decoder wants one AND the result slot is free.
-  assign s_axis_tready = dec_in_ready & ~out_full;
+  // A round beat is consumed only when the decoder wants one, the result slot is free, and we are not
+  // in the 1-cycle per-frame re-arm (else the first beat of the next frame would be swallowed by the
+  // interface while the decoder is held in reset, shorting its warm-up).
+  assign s_axis_tready = dec_in_ready & ~out_full & ~frame_rst;
   assign dec_in_valid  = s_axis_tvalid & s_axis_tready;
   /* verilator lint_off UNUSEDSIGNAL */          // only the low UF_DPR detector bits carry a round
   assign dec_in_round  = s_axis_tdata[UF_DPR-1:0];
@@ -81,7 +90,10 @@ module uf_stream_win_core (
       out_word     <= '0;
       out_last     <= 1'b0;
       pending_last <= 1'b0;
+      frame_rst    <= 1'b0;
     end else begin
+      frame_rst <= 1'b0;          // default: 1-cycle re-arm pulse only
+
       // remember the end-of-batch marker on the final accepted round beat
       if (dec_in_valid && s_axis_tlast)
         pending_last <= 1'b1;
@@ -93,8 +105,10 @@ module uf_stream_win_core (
         out_full     <= 1'b1;
         pending_last <= 1'b0;
       end else if (out_full && m_axis_tready) begin
-        // S2MM consumed the result; free the slot
+        // S2MM consumed the result; free the slot. If this was the frame's last (tlast) window,
+        // re-arm the decoder for the next transfer.
         out_full <= 1'b0;
+        if (out_last) frame_rst <= 1'b1;
         out_last <= 1'b0;
       end
     end
