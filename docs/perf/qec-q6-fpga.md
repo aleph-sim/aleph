@@ -714,8 +714,30 @@ propagated input→output so one DMA transfer streams a whole batch). Driver: `h
 + ~6 clk stream/handshake overhead — i.e. the DMA feeds the engine at its own rate, confirming this is
 the decoder-bound number, not an interconnect limit. Measured over the same 100 000-shot co-sim stream
 (d=3), on-board LER still matches software UF within CI at every p. This is the FPGA throughput figure
-for the Q6-03 GPU-vs-FPGA comparison (the engine is a single-decode core; replicating it across the
-spare ~98 % of the XC7Z020 fabric multiplies aggregate throughput linearly).
+for the Q6-03 GPU-vs-FPGA comparison (the engine is a single-decode core; the spare ~98 % of the
+XC7Z020 fabric is used to replicate it below).
+
+### Throughput scaling — K-way engine replication (measured)
+
+`hw/uf_stream_array_core.sv` puts K decoder cores behind one AXI4-Stream interface (round-robin
+dispatch + in-order round-robin collect, tlast carried through), so the same single-DMA block design
+(`arty_z7_dma_bd.tcl <proj> <out> <fclk> <K>`) fans a batch across K engines. Measured on the Arty
+Z7-20 at 50 MHz over the 100 000-shot d=3 co-sim stream (single sustained DMA transfer; LER matches
+software UF at every p in all cases):
+
+| K | throughput | µs/decode | speedup | Slice LUTs | timing |
+|---|-----------|-----------|---------|-----------|--------|
+| 1 | 1.46 M/s | 0.687 | 1.0× | ~5 k | WNS +8.81 ns |
+| 8 | 9.55 M/s | 0.105 | 6.56× | 10 728 (20 %) | WNS +7.75 ns |
+| 16 | 16.5 M/s | 0.061 | 11.3× | 17 192 (32 %) | WNS +6.70 ns |
+
+**16.5 M decodes/s on one small part**, all timing-met. Scaling is sub-linear (~82 % at K=8, ~71 % at
+K=16): the binding costs are round-robin head-of-line blocking (decode latency varies 30–69 clk, so a
+heavy syndrome briefly stalls its slot) and the 1-per-cycle dispatch/collect serialisation, not area —
+each engine is only ~808 LUT, so K=32 (~56 %) still fits. At the ~1 µs surface-code round budget,
+16.5 M decodes/s is enough decode headroom to time-multiplex thousands of logical-qubit rounds per
+second on a single XC7Z020; a KV260 (higher Fmax + ~5× the fabric) scales both the per-engine rate and
+K. Out-of-order collect with a reorder buffer would recover most of the remaining head-of-line loss.
 
 Next on-board: the same d=5 build on a KV260 when that board is available.
 
