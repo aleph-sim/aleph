@@ -760,7 +760,44 @@ where you are engine-count-bound rather than area-bound, or where latency varian
 both K and a wider ROB fit.
 
 At the ~1 µs surface-code round budget, 16.5 M decodes/s on a single XC7Z020 is enough decode headroom
-to time-multiplex thousands of logical-qubit rounds per second. Next on-board: the same builds on a
-KV260 when that board is available.
+to time-multiplex thousands of logical-qubit rounds per second.
+
+### On-silicon characterization sweep
+
+Four further board experiments (all on the Arty Z7-20; the same builds move to the KV260 next):
+
+**1. Decode-latency distribution — real-time profile.** The 600 ns headline is the worst case;
+`hw/sw/uf_latstat.py` reads the PL `LATENCY` register per decode over the d=3 co-sim stream (AXI4-Lite
+build, @50 MHz):
+
+| p | mean | p90 | p99 | max |
+|---|------|-----|-----|-----|
+| 0.01 | 306 ns | 420 ns | 460 ns | 580 ns |
+| 0.03 | 346 ns | 440 ns | 540 ns | 600 ns |
+| 0.05 | 378 ns | 480 ns | 560 ns | 600 ns |
+
+Typical decode is **~300–380 ns**, p99 ≤ 560 ns; the 600 ns worst case is a rare tail (heavy
+syndromes), not the operating norm — the decoder is comfortably real-time sub-threshold.
+
+**2. Fmax headroom (75 MHz).** The +8.8 ns d=3 slack allows a faster PL clock. Rebuilt the single-engine
+DMA at **FCLK 75 MHz** (closes at WNS +2.45 ns, 8.9 % LUT): **2.88 M decodes/s (0.348 µs), worst decode
+~400 ns** — ~2× the 50 MHz throughput (both the decode and the fixed stream overhead scale with the
+clock).
+
+**3. Circuit-level (gate) noise on silicon.** Rebuilt with the **circuit-level** d=3×3 graph
+(`uf_surface_graph_d3r3c.svh` — hook errors from CNOT faults, 16 detectors) and ran its co-sim stream:
+on-board LER matches software Union-Find within CI at **every p (0.002–0.010)**. The decoder handles
+*realistic gate noise* on silicon, not just the phenomenological model — the level the field
+(Riverlane/Google) decodes at. 849 k decodes/s single-engine (the richer graph takes more cycles/decode).
+
+**4. d=5 throughput scaling.** K=8 array of the d=5 decoder (`uf_surface_graph_d5.svh`, 63.5 % LUT, WNS
++2.36 ns): **5.24 M decodes/s (0.191 µs)**, sub-threshold LER matches software UF (supra-threshold shows
+the known unweighted-UF gap). Confirms the replication lever holds for the larger, slower d=5 engine.
+
+Reproduce the circuit-level and d=5 builds by pointing `uf_surface_graph.svh` at the corresponding
+generated header before `arty_z7_dma_bd.tcl` (the graph is a compile-time include), as the Makefile
+does for the Verilator scaling builds.
+
+Next on-board: the same builds on a KV260 when that board is available.
 
 [qec-q3-gpu-uf.md]: qec-q3-gpu-uf.md
