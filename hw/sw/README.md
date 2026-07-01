@@ -13,6 +13,7 @@ only per-board difference is the AXI base address (from the Vitis BSP `xparamete
 | `uf_pynq.py` | PYNQ/Python driver — same regmap over `pynq.MMIO`; drives the board over LAN, or runs a board-free software-model self-test. See "Run on the board over LAN" below. |
 | `uf_hil.py` | on-board Hardware-in-the-Loop: replays the co-sim Monte-Carlo stream (`hw/cosim_d3.vec`) through the real decoder, checks the on-silicon logical-error rate vs software UF within MC CI, and measures throughput. |
 | `uf_dma.py` | AXI-DMA driver for the streaming build (`arty_z7_dma_bd.tcl`): DMA a batch of syndromes through the decoder and back, measure **decoder-bound** throughput (1.39 M decodes/s, ~191× the polled path), re-check LER. |
+| `uf_latstat.py` | decode-latency distribution (min/mean/p90/p99/max) from the PL `LATENCY` register over the co-sim stream (AXI4-Lite build) — the honest real-time profile behind the worst-case number. |
 | `test/` | host-side verification (no board) — see below. |
 
 The register map mirrors `../uf_axi_wrap.sv`: `CTRL`(START) / `STATUS`(BUSY,DONE,OBS) / `SYNDROME` /
