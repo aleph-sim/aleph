@@ -107,3 +107,26 @@ both planes** and checks them bit-for-bit against `uf_surface_golden.mem` → `R
 
 AXI4-Stream: write a syndrome word on `s_axis` (one beat per frame); the wrapper emits
 `{obs_flip, correction}` on `m_axis` with `tlast` per frame.
+
+## Q6-08 — board bring-up (Arty Z7-20, PYNQ, measured silicon)
+
+The decoder now runs on real hardware. Board: **Digilent Arty Z7-20** (`xc7z020clg400-1`, the same PL
+part as the Zybo Z7-20 target), booted from the PYNQ-Z1 v3.1.1 image over LAN.
+
+| file | role |
+|------|------|
+| `uf_axi_top.v` | Verilog-2001 board top: instantiates `uf_axi_wrap` exposing only the AXI4-Lite control plane, ties off the AXI4-Stream data plane. (Vivado forbids a SystemVerilog file as the top of a block-design module reference, so this thin structural top is Verilog; the submodules stay SV.) |
+| `syn/arty_z7_bd.tcl` | Vivado **block design + bitstream** (not the OOC study): Zynq-7 PS + `uf_axi_top` on the PS GP0 AXI master, FCLK 50 MHz → `<name>.bit` + `<name>.hwh` for PYNQ. No Digilent board files needed (generic PS7; DDR/MIO from the image FSBL, PL clock applied by PYNQ from the `.hwh`). |
+| `sw/uf_pynq.py` | PYNQ/Python host driver (twin of the bare-metal C `sw/uf_decoder.c`): loads the overlay, drives the AXI4-Lite regmap, checks all 256 syndromes vs golden, reports latency. Also runs a board-free software-model self-test. |
+
+Build the bitstream (Vivado on an x86 Linux host):
+```bash
+vivado -mode batch -source syn/arty_z7_bd.tcl -tclargs <proj_dir> <out_dir>
+```
+Run on the board (root + XRT env; PYNQ lives in a venv):
+```bash
+sudo env XILINX_XRT=/usr /usr/local/share/pynq-venv/bin/python3 uf_pynq.py uf_arty.bit uf_surface_golden.mem
+```
+Measured d=3: `WNS +7.29 ns (TIMING_MET)`, **256/256 bit-identical to golden**, IDCODE ok, worst
+decode **600 ns @ 50 MHz** — under the 1 µs round budget (real-time on silicon). Closes the on-board
+ACs of Q6-01/Q6-02/Q6-08. Details in `docs/perf/qec-q6-fpga.md`.

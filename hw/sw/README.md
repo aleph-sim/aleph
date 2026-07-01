@@ -10,6 +10,8 @@ only per-board difference is the AXI base address (from the Vitis BSP `xparamete
 | `uf_mmio.h` | MMIO shim the driver goes through (so it links unchanged on board vs host test). |
 | `uf_mmio_hw.c` | hardware MMIO (volatile 32-bit) — the on-board image. |
 | `main.c` | bare-metal demo: probe, decode example syndromes, print correction/obs/latency vs the ~1 µs budget. |
+| `uf_pynq.py` | PYNQ/Python driver — same regmap over `pynq.MMIO`; drives the board over LAN, or runs a board-free software-model self-test. See "Run on the board over LAN" below. |
+| `uf_hil.py` | on-board Hardware-in-the-Loop: replays the co-sim Monte-Carlo stream (`hw/cosim_d3.vec`) through the real decoder, checks the on-silicon logical-error rate vs software UF within MC CI, and measures throughput. |
 | `test/` | host-side verification (no board) — see below. |
 
 The register map mirrors `../uf_axi_wrap.sv`: `CTRL`(START) / `STATUS`(BUSY,DONE,OBS) / `SYNDROME` /
@@ -34,7 +36,27 @@ RESULT: PASS (driver protocol verified vs golden over all 256 syndromes; IDCODE 
 This exercises the register protocol end-to-end (offsets, START pulse, DONE poll, OBS bit, reads)
 without hardware — the driver object that runs on the board is the one under test.
 
-## Build for the board (Vitis, pending hardware)
+## Run on the board over LAN (PYNQ — the path actually used)
+
+`uf_pynq.py` is the Python twin of the C driver: same AXI4-Lite regmap and protocol, but it drives
+the PL through `pynq.MMIO` after loading the bitstream as a PYNQ overlay — so bring-up is over
+SSH/LAN with no JTAG or serial. Board: **Arty Z7-20** on the PYNQ-Z1 v3.1.1 image.
+
+```bash
+# on the board (root + XRT env; pynq is in a venv):
+sudo env XILINX_XRT=/usr /usr/local/share/pynq-venv/bin/python3 uf_pynq.py uf_arty.bit uf_surface_golden.mem
+# -> [board] IDCODE ok (0x55460003)
+#    uf-pynq driver: syndromes=256  fails=0  worst latency=30 clk = 600 ns @ 50 MHz
+#    RESULT: PASS (256/256 syndromes match golden; IDCODE ok)
+```
+
+Gotchas (cost real time): pynq lives in `/usr/local/share/pynq-venv`, needs **root**, and needs
+`XILINX_XRT=/usr` — a bare `sudo python3` gives `RuntimeError: No Devices Found`. The bitstream is
+built by `hw/syn/arty_z7_bd.tcl` (produces `uf_arty.bit` + `uf_arty.hwh`; PYNQ needs both, matching
+basenames). Off-board, `python3 uf_pynq.py` (no `.bit`) runs a software-model self-test against the
+golden table — same driver logic, no hardware.
+
+## Build for the board (Vitis bare-metal, alternative)
 
 In a Vitis bare-metal application against the PS BSP, compile `main.c`, `uf_decoder.c`, and
 `uf_mmio_hw.c`. The base address resolves from the BSP (`XPAR_UF_AXI_WRAP_0_BASEADDR`); override

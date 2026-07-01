@@ -56,6 +56,10 @@ module uf_axi_wrap #(
   output logic                 m_axis_tlast
 );
   localparam int SYN_W = UF_N - 1;             // 8 detectors for d=3
+  // Top-zero pad for the {obs, correction} stream word. For UF_M >= 31 (d >= 5) the correction alone
+  // fills the 32-bit word, so there is no room to pad and obs is dropped from the stream view (the
+  // AXI4-Lite OBS_FLIP bit and CORRECTION[31:0] register still carry it) — keeps the width legal.
+  localparam int AXIS_PAD = (UF_M < 31) ? (31 - UF_M) : 0;
   localparam logic [31:0] IDCODE = 32'h5546_0003;
 
   // word-address decode
@@ -144,7 +148,7 @@ module uf_axi_wrap #(
           A_CTRL:   rdata_r <= 32'h0;
           A_STATUS: rdata_r <= {29'h0, reg_obs, done, busy};
           A_SYND:   rdata_r <= {{(32-SYN_W){1'b0}}, reg_syndrome};
-          A_CORR:   rdata_r <= {{(32-UF_M){1'b0}}, reg_corr};
+          A_CORR:   rdata_r <= 32'(reg_corr);   // low 32 correction bits (zero-extended for M<32)
           A_LAT:    rdata_r <= {16'h0, reg_lat};
           A_ID:     rdata_r <= IDCODE;
           default:  rdata_r <= 32'hDEAD_BEEF;
@@ -168,7 +172,7 @@ module uf_axi_wrap #(
           if (dec_out_valid) begin
             reg_corr <= dec_corr; reg_obs <= dec_obs; reg_lat <= dec_lat; busy <= 1'b0;
             if (src_axis) begin
-              m_axis_tdata  <= {{(31-UF_M){1'b0}}, dec_obs, dec_corr};
+              m_axis_tdata  <= {{AXIS_PAD{1'b0}}, dec_obs, dec_corr};
               m_axis_tvalid <= 1'b1;
               m_axis_tlast  <= 1'b1;             // one correction per syndrome frame
               ostate <= O_STREAM_OUT;

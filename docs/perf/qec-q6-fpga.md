@@ -628,4 +628,76 @@ ROADMAP §Q7 the trigger is **commercial, not technical**: gate tape-out on fund
 QPU-company customer. Immediate next engineering step before any silicon commitment is **Q6-08 on-board
 bring-up** to replace these post-route estimates with measured wall-clock latency and power.
 
+## Q6-08 — on-board bring-up (measured silicon, Arty Z7-20)
+
+The post-route latency estimates above are now confirmed on hardware. Board: **Digilent Arty Z7-20**
+(`xc7z020clg400-1` — the same PL part as the Zybo Z7-20 target), booted from the PYNQ-Z1 v3.1.1 SD
+image over LAN.
+
+**Board bitstream** (`hw/syn/arty_z7_bd.tcl`, not the OOC study): Zynq-7 PS + `uf_axi_top`
+(uf_axi_wrap, AXI4-Lite control plane; AXI4-Stream tied off for this run) on the PS GP0 AXI master,
+FCLK **50 MHz**. In-context impl: **WNS +7.29 ns → TIMING_MET** (achievable ~79 MHz; clocked at 50
+for margin), DRC clean.
+
+**Result** (`hw/sw/uf_pynq.py`, PYNQ overlay + `pynq.MMIO`, all 256 d=3 syndromes):
+
+| metric | value |
+|--------|-------|
+| IDCODE probe | `0x5546_0003` ✓ (PS↔PL link) |
+| correctness | **256/256 bit-identical to `uf_surface_golden.mem`** |
+| worst decode latency | **30 clk = 600 ns @ 50 MHz** |
+| round budget | 1 µs → **met with 40 % headroom (real-time on silicon)** |
+
+This replaces the d=3 post-route *estimate* (562 ns @ 58.7 MHz OOC) with a *measured* 600 ns at the
+conservative 50 MHz board clock, and closes the on-board ACs of Q6-01/Q6-02/Q6-08. The Q7 ASIC call
+above no longer rests on estimates for the d=3 latency floor.
+
+### On-board Hardware-in-the-Loop (Monte-Carlo LER on silicon)
+
+`hw/sw/uf_hil.py` replays the co-simulation Monte-Carlo syndrome stream (`hw/cosim_d3.vec`, 5 physical
+error rates × 20 000 shots, from the same detector-error model the matching graph was generated from)
+through the **real decoder** over AXI4-Lite — the on-silicon version of the Q6-21 board-free co-sim.
+The on-board RTL logical-error rate matches the software Union-Find baseline within Monte-Carlo CI at
+**every p** (0.01–0.05):
+
+| p | rtl_rate (silicon) | sw_rate (UF) | verdict |
+|---|---|---|---|
+| 0.01 | 7.25e-3 | 7.80e-3 | PASS |
+| 0.02 | 2.69e-2 | 2.73e-2 | PASS |
+| 0.03 | 5.18e-2 | 5.24e-2 | PASS |
+| 0.04 | 8.23e-2 | 8.14e-2 | PASS |
+| 0.05 | 1.15e-1 | 1.14e-1 | PASS |
+
+100 000 shots, worst decode latency 30 clk = 600 ns. **Throughput 7 285 decodes/s (137 µs/decode)** —
+this is **host-bound**, not decoder-bound: the Python-polled AXI4-Lite round-trip dominates (≫ the
+600 ns decode), so it is a floor. The decoder's own rate is 1 decode per its latency; the AXI4-Stream
++ DMA data plane (`uf_axi_wrap` already exposes it) is the path to decoder-bound throughput and is the
+next step for the Q6-03 GPU-vs-FPGA throughput comparison.
+
+### d=5 on-board (measured latency wall on the small part)
+
+Rebuilt the same block design with the d=5 graph (`UF_N=25`, `UF_M=54`; the AXI wrapper now supports
+`UF_M > 31` — correction is surfaced as `CORRECTION[31:0]` + the `OBS_FLIP` bit). It **closes timing at
+50 MHz** (WNS +3.18 ns, in-context Fmax ~60 MHz) — so on the Arty the d=5 wall is **cycles, not fit or
+Fmax**. On-board HiL over `hw/cosim_d5.vec` (per-block worst latency added):
+
+| p | rtl_rate | sw_rate | verdict | worst latency |
+|---|---|---|---|---|
+| 0.01 | 1.80e-3 | 1.95e-3 | PASS | 62 clk = 1240 ns |
+| 0.02 | 1.31e-2 | 1.13e-2 | PASS | 62 clk = 1240 ns |
+| 0.03 | 3.49e-2 | 3.12e-2 | PASS | 67 clk = 1340 ns |
+| 0.04 | 6.92e-2 | 6.11e-2 | info (supra-threshold) | 65 clk = 1300 ns |
+| 0.05 | 1.14e-1 | 1.01e-1 | info (supra-threshold) | 69 clk = 1380 ns |
+
+Correctness: on-board d=5 logical-error rate tracks the software Union-Find within CI at every
+**sub-threshold** p (the supra-threshold rows show the known unweighted-UF quality gap, same as the
+board-free co-sim; not gated). **Latency verdict: d=5 misses the 1 µs round budget on the Arty Z7-20**
+— worst-case 62–69 clk at 50 MHz = 1.24–1.38 µs, and even at the closed ~60 MHz Fmax (16.8 ns) that
+is ~1.04–1.16 µs, still over. This is the *measured* confirmation of the small-part (XC7Z020) latency
+wall the Q6-09/Q6-10 synth study predicted: d=3 is real-time on this part, d=5 needs the higher-Fmax
+KV260 or a pipelined factorisation (the open Q6-10 lever). Throughput is again host-bound (~6.8k/s).
+
+Next on-board: AXI4-Stream + DMA for decoder-bound throughput (Q6-03), and the same d=5 build on a
+KV260 when that board is available.
+
 [qec-q3-gpu-uf.md]: qec-q3-gpu-uf.md
