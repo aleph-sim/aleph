@@ -17,8 +17,10 @@ set outname uf_arty_dma
 set proj_dir [expr {$argc >= 1 ? [lindex $argv 0] : "artybd_dma"}]
 set out_dir  [expr {$argc >= 2 ? [lindex $argv 1] : "out_dma"}]
 set fclk_mhz [expr {$argc >= 3 ? [lindex $argv 2] : 50}]
-# 4th arg: number of parallel decoder engines. K<=1 -> single uf_stream; K>=2 -> K-way uf_stream_array.
+# 4th arg: number of parallel decoder engines. K<=1 -> single uf_stream; K>=2 -> K-way array.
 set nk       [expr {$argc >= 4 ? [lindex $argv 3] : 1}]
+# 5th arg: array flavour when nk>=2. 0 -> in-order round-robin; 1 -> out-of-order + reorder buffer.
+set ooo      [expr {$argc >= 5 ? [lindex $argv 4] : 0}]
 set hw [file normalize [file join [file dirname [info script]] ..]]
 file mkdir $out_dir
 
@@ -30,11 +32,14 @@ add_files -norecurse [list \
   [file join $hw uf_stream.v] \
   [file join $hw uf_stream_array_core.sv] \
   [file join $hw uf_stream_array.v] \
+  [file join $hw uf_stream_array_ooo_core.sv] \
+  [file join $hw uf_stream_array_ooo.v] \
   [file join $hw uf_surface_graph.svh]]
 set_property include_dirs $hw [current_fileset]
 set_property file_type SystemVerilog        [get_files uf_surface_decoder.sv]
 set_property file_type SystemVerilog        [get_files uf_stream_core.sv]
 set_property file_type SystemVerilog        [get_files uf_stream_array_core.sv]
+set_property file_type SystemVerilog        [get_files uf_stream_array_ooo_core.sv]
 set_property file_type {Verilog Header}      [get_files uf_surface_graph.svh]
 update_compile_order -fileset sources_1
 
@@ -66,7 +71,8 @@ set_property -dict [list \
 if {$nk <= 1} {
   create_bd_cell -type module -reference uf_stream uf_0
 } else {
-  create_bd_cell -type module -reference uf_stream_array uf_0
+  set arr_ref [expr {$ooo ? "uf_stream_array_ooo" : "uf_stream_array"}]
+  create_bd_cell -type module -reference $arr_ref uf_0
   if {[catch {set_property CONFIG.K [format %d $nk] [get_bd_cells uf_0]} e]} {
     puts "WARN: could not set CONFIG.K=$nk on module ref ($e); using the module's default K"
   }

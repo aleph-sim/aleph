@@ -140,9 +140,12 @@ ACs of Q6-01/Q6-02/Q6-08. Details in `docs/perf/qec-q6-fpga.md`.
 | `syn/arty_z7_dma_bd.tcl` | block design with **AXI DMA** (MM2S+S2MM) feeding the engine from PS DDR and back — the PS is out of the per-decode loop. |
 | `sw/uf_dma.py` | PYNQ driver: DMA a batch through the decoder, measure throughput, re-check LER. |
 | `uf_stream_array_core.sv` | K decoder engines behind one AXI4-Stream (round-robin dispatch + in-order collect) — replicates the engine across the free fabric. |
-| `uf_stream_array.v` | Verilog board top for the array (parameter `K`); `arty_z7_dma_bd.tcl <proj> <out> <fclk> <K>` picks single-engine (K≤1) or the K-way array. |
+| `uf_stream_array.v` | Verilog board top for the array (parameter `K`); `arty_z7_dma_bd.tcl <proj> <out> <fclk> <K> [ooo]` picks single-engine (K≤1) or the K-way array. |
+| `uf_stream_array_ooo_core.sv` | out-of-order variant: dispatch to any free engine + a **reorder buffer** (in-order output), removing round-robin head-of-line stalls. `uf_stream_array_ooo.v` is its Verilog top (5th tcl arg `1`). |
 
 Measured d=3: single engine **1.39 M decodes/s (0.72 µs/decode) — ~191× the PS-polled AXI4-Lite path,
-decoder-bound**. Replicated: **K=8 → 9.55 M/s (6.56×, 20 % LUT); K=16 → 16.5 M/s (11.3×, 32 % LUT)**,
-all timing-met, LER unchanged. This is the Q6-03 FPGA throughput figure; see `docs/perf/qec-q6-fpga.md`
-for the scaling table and the sub-linearity analysis.
+decoder-bound**. Replicated: **K=8 → 9.55 M/s (6.56×); K=16 → 16.5 M/s (11.3×, 32 % LUT)**, all
+timing-met, LER unchanged. Out-of-order lifts per-engine efficiency (K=8: 82 % → **95 %**, 11.0 M/s) but
+its reorder buffer is O(K²) area — OOO K=8 ≈ in-order K=16 in LUTs, and OOO K=16 fails to route; so on
+this small part more engines beat reordering. This is the Q6-03 FPGA throughput figure; see
+`docs/perf/qec-q6-fpga.md` for the full table and verdict.
