@@ -650,7 +650,28 @@ for margin), DRC clean.
 
 This replaces the d=3 post-route *estimate* (562 ns @ 58.7 MHz OOC) with a *measured* 600 ns at the
 conservative 50 MHz board clock, and closes the on-board ACs of Q6-01/Q6-02/Q6-08. The Q7 ASIC call
-above no longer rests on estimates for the d=3 latency floor. Next on-board: the HiL Monte-Carlo
-stream over AXI4-Stream (Q6-03 GPU-vs-FPGA numbers) and the d=5 board build.
+above no longer rests on estimates for the d=3 latency floor.
+
+### On-board Hardware-in-the-Loop (Monte-Carlo LER on silicon)
+
+`hw/sw/uf_hil.py` replays the co-simulation Monte-Carlo syndrome stream (`hw/cosim_d3.vec`, 5 physical
+error rates × 20 000 shots, from the same detector-error model the matching graph was generated from)
+through the **real decoder** over AXI4-Lite — the on-silicon version of the Q6-21 board-free co-sim.
+The on-board RTL logical-error rate matches the software Union-Find baseline within Monte-Carlo CI at
+**every p** (0.01–0.05):
+
+| p | rtl_rate (silicon) | sw_rate (UF) | verdict |
+|---|---|---|---|
+| 0.01 | 7.25e-3 | 7.80e-3 | PASS |
+| 0.02 | 2.69e-2 | 2.73e-2 | PASS |
+| 0.03 | 5.18e-2 | 5.24e-2 | PASS |
+| 0.04 | 8.23e-2 | 8.14e-2 | PASS |
+| 0.05 | 1.15e-1 | 1.14e-1 | PASS |
+
+100 000 shots, worst decode latency 30 clk = 600 ns. **Throughput 7 285 decodes/s (137 µs/decode)** —
+this is **host-bound**, not decoder-bound: the Python-polled AXI4-Lite round-trip dominates (≫ the
+600 ns decode), so it is a floor. The decoder's own rate is 1 decode per its latency; the AXI4-Stream
++ DMA data plane (`uf_axi_wrap` already exposes it) is the path to decoder-bound throughput and is the
+next step for the Q6-03 GPU-vs-FPGA throughput comparison. Next on-board: the d=5 board build.
 
 [qec-q3-gpu-uf.md]: qec-q3-gpu-uf.md

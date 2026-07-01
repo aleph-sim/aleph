@@ -11,6 +11,7 @@ only per-board difference is the AXI base address (from the Vitis BSP `xparamete
 | `uf_mmio_hw.c` | hardware MMIO (volatile 32-bit) — the on-board image. |
 | `main.c` | bare-metal demo: probe, decode example syndromes, print correction/obs/latency vs the ~1 µs budget. |
 | `uf_pynq.py` | PYNQ/Python driver — same regmap over `pynq.MMIO`; drives the board over LAN, or runs a board-free software-model self-test. See "Run on the board over LAN" below. |
+| `uf_hil.py` | on-board Hardware-in-the-Loop: replays the co-sim Monte-Carlo stream (`hw/cosim_d3.vec`) through the real decoder, checks the on-silicon logical-error rate vs software UF within MC CI, and measures throughput. |
 | `test/` | host-side verification (no board) — see below. |
 
 The register map mirrors `../uf_axi_wrap.sv`: `CTRL`(START) / `STATUS`(BUSY,DONE,OBS) / `SYNDROME` /
