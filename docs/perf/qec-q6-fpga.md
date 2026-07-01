@@ -697,7 +697,26 @@ is ~1.04–1.16 µs, still over. This is the *measured* confirmation of the smal
 wall the Q6-09/Q6-10 synth study predicted: d=3 is real-time on this part, d=5 needs the higher-Fmax
 KV260 or a pipelined factorisation (the open Q6-10 lever). Throughput is again host-bound (~6.8k/s).
 
-Next on-board: AXI4-Stream + DMA for decoder-bound throughput (Q6-03), and the same d=5 build on a
-KV260 when that board is available.
+### Decoder-bound throughput via AXI DMA (Q6-03)
+
+The AXI4-Lite figure above is host-bound. `hw/syn/arty_z7_dma_bd.tcl` builds a streaming design —
+PS DDR → **AXI DMA MM2S** → the decoder's `s_axis` → decode → `m_axis` → **AXI DMA S2MM** → DDR — so
+the PS only arms one transfer and the measured rate is the decoder's own. The streaming datapath is
+`hw/uf_stream_core.sv` (a pure AXI4-Stream engine over the same `uf_surface_decoder` core, tlast
+propagated input→output so one DMA transfer streams a whole batch). Driver: `hw/sw/uf_dma.py`.
+
+| path | throughput | per decode |
+|------|-----------|-----------|
+| AXI4-Lite, PS-polled (`uf_hil.py`) | 7 285 /s | 137 µs (host-bound) |
+| **AXI DMA (`uf_dma.py`)** | **1 389 667 /s** | **0.72 µs (decoder-bound)** |
+
+**~191× over the polled path**, and 0.72 µs/decode = 36 cycles @ 50 MHz ≈ the decode latency (30 clk)
++ ~6 clk stream/handshake overhead — i.e. the DMA feeds the engine at its own rate, confirming this is
+the decoder-bound number, not an interconnect limit. Measured over the same 100 000-shot co-sim stream
+(d=3), on-board LER still matches software UF within CI at every p. This is the FPGA throughput figure
+for the Q6-03 GPU-vs-FPGA comparison (the engine is a single-decode core; replicating it across the
+spare ~98 % of the XC7Z020 fabric multiplies aggregate throughput linearly).
+
+Next on-board: the same d=5 build on a KV260 when that board is available.
 
 [qec-q3-gpu-uf.md]: qec-q3-gpu-uf.md
