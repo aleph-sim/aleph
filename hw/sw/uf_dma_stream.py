@@ -124,8 +124,13 @@ def main(argv):
         )
         _ = obs  # committed-logical parity available per window; validity is the on-board gate
 
-    # ---- sustained throughput: one big streamed run (windows/s = decoder-bound window rate) ----
-    out, dt, nwin = run_stream(all_rounds)
+    # ---- sustained throughput: ONE big streamed run so the fixed PS/DMA setup cost is fully amortized
+    # and the measured rate is decoder-bound (a few-k-round transfer is dominated by driver setup, not
+    # the decoder). Tile the concatenated stream up to a large round count, like the block driver does. ----
+    TARGET_ROUNDS = 400_000
+    reps = max(1, TARGET_ROUNDS // max(1, len(all_rounds)))
+    big = all_rounds * reps
+    out, dt, nwin = run_stream(big)
     thru = nwin / dt if dt > 0 else 0.0
     us_win = 1e6 / thru if thru else 0.0
     budget_us = float(C)  # one window per commit period = C rounds ≈ C µs at ~1 µs/round
