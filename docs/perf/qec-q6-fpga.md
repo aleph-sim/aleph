@@ -734,11 +734,33 @@ software UF at every p in all cases):
 **16.5 M decodes/s on one small part**, all timing-met. Scaling is sub-linear (~82 % at K=8, ~71 % at
 K=16): the binding costs are round-robin head-of-line blocking (decode latency varies 30–69 clk, so a
 heavy syndrome briefly stalls its slot) and the 1-per-cycle dispatch/collect serialisation, not area —
-each engine is only ~808 LUT, so K=32 (~56 %) still fits. At the ~1 µs surface-code round budget,
-16.5 M decodes/s is enough decode headroom to time-multiplex thousands of logical-qubit rounds per
-second on a single XC7Z020; a KV260 (higher Fmax + ~5× the fabric) scales both the per-engine rate and
-K. Out-of-order collect with a reorder buffer would recover most of the remaining head-of-line loss.
+each engine is only ~808 LUT, so K=32 (~56 %) still fits.
 
-Next on-board: the same d=5 build on a KV260 when that board is available.
+### Out-of-order collect (reorder buffer) — recovers per-engine efficiency, but costs area
+
+`hw/uf_stream_array_ooo_core.sv` removes the head-of-line stall: dispatch goes to **any** free engine,
+each engine frees the instant it writes its result into a **reorder buffer** (depth 4K), and the
+collector emits ROB entries strictly in sequence order (`arty_z7_dma_bd.tcl <proj> <out> <fclk> <K> 1`).
+Measured d=3, same stream:
+
+| config | throughput | speedup | efficiency | Slice LUTs | timing |
+|--------|-----------|---------|-----------|-----------|--------|
+| in-order K=8 | 9.55 M/s | 6.56× | 82 % | 10 728 (20 %) | WNS +7.75 ns |
+| **OOO K=8** | **11.0 M/s** | **7.58×** | **95 %** | 17 594 (33 %) | WNS +5.24 ns |
+| in-order K=16 | 16.5 M/s | 11.3× | 71 % | 17 192 (32 %) | WNS +6.70 ns |
+| OOO K=16 | — | — | — | 43 532 (82 %) | **fails to route** |
+
+OOO does what it should — it lifts per-engine efficiency **82 % → 95 %** (recovers most of the head-of-
+line loss). **But the reorder buffer is O(K²) in the fabric** (D=4K slots × K engine write-comparators):
+OOO K=8 costs ~the same LUTs as in-order K=16, and OOO K=16 (82 % LUT) congests and cannot route on the
+XC7Z020. **Verdict for this small part: at a fixed area budget, spend LUTs on more engines, not on
+reordering** — in-order K=16 (11.3×, 32 % LUT) beats OOO K=8 (7.58×, 33 % LUT). OOO is the right lever
+where you are engine-count-bound rather than area-bound, or where latency variance is larger
+(circuit-level / higher d) — i.e. on a bigger fabric like the KV260 (higher Fmax + ~5× the LUTs), where
+both K and a wider ROB fit.
+
+At the ~1 µs surface-code round budget, 16.5 M decodes/s on a single XC7Z020 is enough decode headroom
+to time-multiplex thousands of logical-qubit rounds per second. Next on-board: the same builds on a
+KV260 when that board is available.
 
 [qec-q3-gpu-uf.md]: qec-q3-gpu-uf.md
