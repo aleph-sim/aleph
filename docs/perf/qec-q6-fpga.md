@@ -509,6 +509,48 @@ qualitative step from a block decoder to a *real* streaming decoder. Caveat: thi
 boundaries vs temporal sinks) and would need warm-up/drain handling for a closed experiment. Honest
 scope inherits Q6-19's: phenomenological 3D, not full circuit-level gate noise.
 
+### Q6-20 on silicon — the streaming decoder on the Arty Z7-20
+
+The above was Verilator + OOC synthesis. This runs the **sliding-window streaming decoder on real
+silicon**, over the same AXI-DMA path Q6-19 put the block decoder on. The block DMA build streams one
+whole syndrome in / one result out (`uf_stream_core` → `uf_surface_decoder`); the streaming decoder has
+a different shape — a stream of measurement **rounds** in, one result per **committed window** out — so
+a new AXI4-Stream front-end (`hw/uf_stream_win_core.sv` → `uf_streaming_decoder`) carries the round
+handshake over the DMA: one round per MM2S beat (low `UF_DPR` bits), one word per window on S2MM
+(`{obs, residual_empty, latency[15:0]}`), `tlast` from the last beat tagging the window it completes. A
+1-deep result slot gated against S2MM back-pressure (input reload stalls until the previous window
+drains) means no window is ever dropped. **Per-frame re-arm:** one overlay serves many DMA transfers
+and nothing else resets the decoder between them, so each transfer's last (`tlast`) window pulses the
+decoder's reset — every transfer starts fresh in warm-up with an empty residual, and the host arms one
+S2MM buffer per transfer against a fresh-start window count. (Without this, only the first transfer
+starts in warm-up; the next resumes mid-stream and S2MM's word count mismatches — a real bug the
+Verilator frame-independence test now gates, 6/6.)
+
+**On-board result** (d=3 `W`=9 `C`=3, single engine, Arty Z7-20 `xc7z020`, FCLK 50 MHz, WNS **+1.048
+ns**, `TIMING_MET`; **12 725 LUT = 23.9 %**, 6 932 FF = 6.5 %, 2 BRAM). Driver `hw/sw/uf_dma_stream.py`
+streams realistic Monte-Carlo round streams (`qec_q6_stream_cosim`, phenomenological DEM) + a zero-drain
+and reads `residual_empty` back per window:
+
+| p | windows/stream | last-window residual-empty | verdict |
+|---|----------------|-----------------------------|---------|
+| 0.01 | 271 | ✓ | validity ✓ |
+| 0.02 | 271 | ✓ | validity ✓ |
+| 0.03 | 271 | ✓ | validity ✓ |
+| 0.04 | 271 | ✓ | validity ✓ |
+| 0.05 | 271 | ✓ | validity ✓ |
+
+Every stream **fully drains on silicon** (the residual clears once the defects are pushed through the
+commit region) — the tie-break- and boundary-independent #399 validity proof, now on hardware, at every
+p. Sustained throughput over one large decoder-bound transfer (≈300 k windows, setup fully amortised):
+**391 k windows/s = 2.55 µs/window**, under the `C` = 3 µs commit budget → **real-time, 1.2× headroom**.
+
+The measured 2.55 µs/window (≈128 clk at 50 MHz) is the per-window decode (~67 clk) **plus** the
+serialised S2MM drain round-trip: the 1-deep result slot holds the next window's reload until the
+previous word has been written to DDR. Decoupling that (a small output FIFO so the next window decodes
+while the previous drains) or a higher FCLK would widen the margin toward the ~67-clk compute floor;
+the interior-window / phenomenological-noise caveats above carry over unchanged. First **streaming
+(continuous, bounded-memory) decode on hardware** — the block-to-streaming step, on silicon.
+
 ## Q6-03 — GPU vs FPGA: latency, throughput, power, and the ASIC go/no-go
 
 This compares the **same** Delfosse–Nickerson Union-Find decoder on two substrates: the GPU batch
