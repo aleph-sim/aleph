@@ -19,6 +19,9 @@ set outname uf_arty_dma_win
 set proj_dir [expr {$argc >= 1 ? [lindex $argv 0] : "artybd_dma_win"}]
 set out_dir  [expr {$argc >= 2 ? [lindex $argv 1] : "out_dma_win"}]
 set fclk_mhz [expr {$argc >= 3 ? [lindex $argv 2] : 50}]
+# 4th arg: streaming window graph header to stage as uf_surface_graph.svh (phenomenological by default;
+# pass uf_surface_graph_win_circuit.svh for the Q6-23 circuit-level build).
+set graph_hdr [expr {$argc >= 4 ? [lindex $argv 3] : "uf_surface_graph_win.svh"}]
 set hw [file normalize [file join [file dirname [info script]] ..]]
 file mkdir $out_dir
 
@@ -29,7 +32,7 @@ create_project -force uf_arty_dma_win $proj_dir -part $part
 # module-reference compile only resolves the include from the RTL file's own dir ($hw), so stage the
 # streaming WINDOW graph over that name in $hw. This overwrites the tracked block graph in the working
 # tree, which is fine here: the synth box `git reset --hard`s before every build.
-file copy -force [file join $hw uf_surface_graph_win.svh] [file join $hw uf_surface_graph.svh]
+file copy -force [file join $hw $graph_hdr] [file join $hw uf_surface_graph.svh]
 
 add_files -norecurse [list \
   [file join $hw uf_surface_decoder.sv] \

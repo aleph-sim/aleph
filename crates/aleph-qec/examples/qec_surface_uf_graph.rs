@@ -63,12 +63,22 @@ fn main() {
     // nodes (free obs-less drains to the boundary), plus per-active-detector round + commit metadata.
     // Built from the SAME SlidingWindowDecoder::window_dem the software decoder uses (single source of
     // truth). An interior offset s=W (over a 3W-round experiment) gives both past and future buffers.
-    if mode == "window" {
+    if mode == "window" || mode == "window-circuit" {
         let w: usize = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(3 * d);
         let c: usize = args.get(4).and_then(|s| s.parse().ok()).unwrap_or(d);
         let total = 3 * w;
         let exp = SurfaceCode::new(d).memory_z_experiment(total);
-        let dem = build_dem(&exp.annotated, &exp.phenomenological_mechanisms(0.01, 0.01)).unwrap();
+        // `window-circuit`: build the window graph from the full circuit-level (gate-noise) DEM instead
+        // of the phenomenological one — same detectors, but extra hook-error space-time edges. The bulk
+        // is still translation-invariant, so one interior window graph serves every steady-state window;
+        // the per-detector streaming metadata (round/shift/commit) is noise-model-independent.
+        let win_circuit = mode == "window-circuit";
+        let dem = if win_circuit {
+            exp.circuit_level_dem(aleph_qec::CircuitNoise::uniform(0.001))
+                .unwrap()
+        } else {
+            build_dem(&exp.annotated, &exp.phenomenological_mechanisms(0.01, 0.01)).unwrap()
+        };
         let drounds = exp.detector_rounds();
         let sw = SlidingWindowDecoder::new(dem, drounds.clone(), w, c);
         let s = w;
@@ -108,8 +118,13 @@ fn main() {
             .keys()
             .map(|&(a, b)| u8::from(in_commit(a) || in_commit(b)).to_string())
             .collect();
-        println!("// d={d} W={w} C={c} streaming-window graph (interior; future/past cuts -> temporal sinks) — GENERATED, do not edit.");
-        println!("// regenerate: cargo run -p aleph-qec --example qec_surface_uf_graph -- window {d} {w} {c}");
+        let noise = if win_circuit {
+            "circuit-level"
+        } else {
+            "phenomenological"
+        };
+        println!("// d={d} W={w} C={c} {noise} streaming-window graph (interior; future/past cuts -> temporal sinks) — GENERATED, do not edit.");
+        println!("// regenerate: cargo run -p aleph-qec --example qec_surface_uf_graph -- {mode} {d} {w} {c}");
         // Include guard: the Q6-20 streaming wrapper AND the per-window core both `include this header
         // in one compilation unit; the guard makes the $unit-scope localparams idempotent.
         println!("`ifndef UF_SURFACE_GRAPH_SVH");
@@ -218,7 +233,7 @@ fn main() {
         }
         other => {
             eprintln!(
-                "unknown mode '{other}' (use 'graph', 'graph-circuit', 'oracle', or 'window')"
+                "unknown mode '{other}' (use 'graph', 'graph-circuit', 'oracle', 'window', or 'window-circuit')"
             );
             std::process::exit(2);
         }

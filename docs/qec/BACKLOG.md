@@ -1235,6 +1235,29 @@ shots.
 - [x] **Verdict:** interior+drain finite handling is statistically equivalent to boundary-aware
   software at these sizes ⇒ **no head/tail RTL warranted.** See `docs/perf/qec-q6-fpga.md` § Q6-22.
 
+### [Q6-23] Circuit-level (gate-noise) noise through the streaming decoder — ✅ DONE
+
+**Labels:** `area:fpga`, `area:decoder`, `type:feature`, `priority:medium`
+**Milestone:** Phase Q6
+**Depends on:** Q6-20, Q-surface circuit-level DEM
+
+**Description**
+Close the last Q6.5 noise gap: run the circuit-level (gate-noise + hook-error) surface DEM through the
+**streaming** window path — realistic noise *and* streaming together, on silicon. The circuit-level DEM
+(Stim-verified graphlike) already exists; the streaming decoder is graph-agnostic, so this is a
+graph-generation + verification + synth/board task, not an RTL rewrite.
+
+**Acceptance Criteria**
+- [x] `qec_surface_uf_graph -- window-circuit` builds the interior window graph from `circuit_level_dem`
+  (same detectors + bit-identical streaming metadata; only edges differ, `UF_M` 111→141 hook edges).
+- [x] Streaming decoder decodes the circuit-level window graph with **zero RTL change** (`make
+  stream-axi-circuit`: validity 40/40, back-pressure 40/40, frame-indep 6/6).
+- [x] On silicon (Arty Z7-20, circuit-level bitstream, WNS +0.128 ns, 25.2 % LUT): validity drains at
+  every p=0.002–0.010; streaming LER within CI of the boundary-aware software; sustained
+  2.87 µs/window (real-time). See `docs/perf/qec-q6-fpga.md` § Q6-23.
+- [x] **Verdict:** the complete "real decoder" configuration — circuit-level gate noise, streaming,
+  bounded memory, matching software LER within CI — runs on the FPGA at d=3.
+
 -----
 
 # Phase Q7 — ASIC (North Star)

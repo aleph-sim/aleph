@@ -12,7 +12,7 @@ OBJ_DIR   := obj_dir
 VERILATOR ?= verilator
 CARGO     := cargo run --release -q -p aleph-qec --example
 
-.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi cosim-stream cosim-stream-ler cosim cosim-3d cosim-circuit cosim-circuit-3d clean
+.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi stream-axi-circuit cosim-stream cosim-stream-circuit cosim-stream-ler cosim-stream-ler-circuit cosim cosim-3d cosim-circuit cosim-circuit-3d clean
 
 all: d3 rep surf
 
@@ -126,6 +126,24 @@ stream-axi:
 	    -o sim_stream_axi
 	./_streamaxibuild/$(OBJ_DIR)/sim_stream_axi
 
+# Q6-23 (circuit-level) — same AXI framing smoke test, but on the CIRCUIT-LEVEL window graph
+# (window-circuit: same detectors/streaming metadata, +hook-error edges). The graph-agnostic decoder
+# handles it with no RTL change; this checks validity/tlast/back-pressure/frame-independence hold.
+stream-axi-circuit:
+	cd .. && $(CARGO) qec_surface_uf_graph -- window-circuit 3 9 3 > hw/uf_surface_graph_win_circuit.svh
+	rm -rf _streamaxicirc && mkdir _streamaxicirc
+	cp uf_stream_win_core.sv uf_streaming_decoder.sv uf_surface_decoder.sv uf_surface_graph_win_circuit.svh _streamaxicirc/
+	mv _streamaxicirc/uf_surface_graph_win_circuit.svh _streamaxicirc/uf_surface_graph.svh
+	cd _streamaxicirc && \
+	  A=$$(grep -oE 'UF_ACTIVE *= *[0-9]+' uf_surface_graph.svh | grep -oE '[0-9]+$$'); \
+	  D=$$(grep -oE 'UF_DPR *= *[0-9]+' uf_surface_graph.svh | grep -oE '[0-9]+$$'); \
+	  L=$$(grep -oE 'UF_LOAD_LO *= *[0-9]+' uf_surface_graph.svh | grep -oE '[0-9]+$$'); \
+	  $(VERILATOR) --cc --exe --build -Wall --top-module uf_stream_win_core \
+	    -CFLAGS "-DUF_ACTIVE=$$A -DUF_DPR=$$D -DUF_LOAD_LO=$$L" \
+	    uf_stream_win_core.sv uf_streaming_decoder.sv uf_surface_decoder.sv ../tb_uf_stream_win.cpp \
+	    -o sim_stream_axi_circ
+	./_streamaxicirc/$(OBJ_DIR)/sim_stream_axi_circ
+
 # Q6-20 (on silicon) — regenerate the per-round streaming co-sim vector for the on-board DMA driver
 # (hw/sw/uf_dma_stream.py). Realistic Monte-Carlo round streams from the phenomenological DEM at each p.
 STREAM_ROUNDS ?= 800
@@ -133,12 +151,19 @@ STREAM_SEED   ?= 2024
 cosim-stream:
 	cd .. && $(CARGO) qec_q6_stream_cosim -- 3 9 3 $(STREAM_ROUNDS) $(STREAM_SEED) > hw/cosim_stream_d3.vec
 
+# Q6-23 — circuit-level variants of the streaming vectors (pair with the window-circuit bitstream).
+cosim-stream-circuit:
+	cd .. && $(CARGO) qec_q6_stream_cosim -- 3 9 3 $(STREAM_ROUNDS) $(STREAM_SEED) circuit > hw/cosim_stream_circuit_d3.vec
+
 # Q6-22 (on silicon) — regenerate the finite-experiment streaming LER vector: E memory-Z experiments
 # (17 rounds = 18 slices = W+3C) with true logical + the software SlidingWindowDecoder baseline, for
 # the on-board streaming LER-within-CI check (hw/sw/uf_dma_stream_ler.py).
 LER_SHOTS ?= 4000
 cosim-stream-ler:
 	cd .. && $(CARGO) qec_q6_stream_ler -- 3 9 3 17 $(LER_SHOTS) $(STREAM_SEED) > hw/cosim_stream_ler_d3.vec
+
+cosim-stream-ler-circuit:
+	cd .. && $(CARGO) qec_q6_stream_ler -- 3 9 3 17 $(LER_SHOTS) $(STREAM_SEED) circuit > hw/cosim_stream_ler_circuit_d3.vec
 
 # Q6-21 — board-free sim<->RTL co-simulation. The simulator dumps a Monte-Carlo syndrome stream
 # (qec_q6_cosim) drawn from the SAME DEM the RTL graph (graph d rounds) is generated from; the TB
