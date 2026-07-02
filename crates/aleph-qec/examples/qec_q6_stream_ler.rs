@@ -35,16 +35,37 @@ fn main() {
     let rounds: usize = a.get(4).and_then(|s| s.parse().ok()).unwrap_or(17);
     let shots: u64 = a.get(5).and_then(|s| s.parse().ok()).unwrap_or(4000);
     let seed: u64 = a.get(6).and_then(|s| s.parse().ok()).unwrap_or(2024);
+    // Noise model: `phenom` (default, pairs with the `window` RTL build) or `circuit` (full
+    // circuit-level gate noise + hook errors, pairs with the `window-circuit` build). Circuit-level has
+    // a lower threshold, so it defaults to the lower prob grid.
+    let noise = a.get(7).map(String::as_str).unwrap_or("phenom");
+    assert!(
+        matches!(noise, "phenom" | "circuit"),
+        "noise must be phenom|circuit"
+    );
+    let circuit = noise == "circuit";
     let probs: Vec<f64> = a
-        .get(7)
+        .get(8)
         .map(|s| s.split(',').filter_map(|t| t.trim().parse().ok()).collect())
-        .unwrap_or_else(|| vec![0.01, 0.02, 0.03, 0.04, 0.05]);
+        .unwrap_or_else(|| {
+            if circuit {
+                vec![0.002, 0.004, 0.006, 0.008, 0.010]
+            } else {
+                vec![0.01, 0.02, 0.03, 0.04, 0.05]
+            }
+        });
 
     let exp = SurfaceCode::new(d).memory_z_experiment(rounds);
     let det_round = exp.detector_rounds();
-    let dem_at =
-        |p: f64| build_dem(&exp.annotated, &exp.phenomenological_mechanisms(p, p)).unwrap();
-    let dets = dem_at(0.01).detectors;
+    let dem_at = |p: f64| {
+        if circuit {
+            exp.circuit_level_dem(aleph_qec::CircuitNoise::uniform(p))
+                .unwrap()
+        } else {
+            build_dem(&exp.annotated, &exp.phenomenological_mechanisms(p, p)).unwrap()
+        }
+    };
+    let dets = dem_at(if circuit { 0.002 } else { 0.01 }).detectors;
 
     // Group detector ids by slice (round-major): the RTL round handshake. Assert a fixed dpr and that
     // the stream lands on a window boundary (slices = W + k*C) so the last round completes a window.
@@ -66,10 +87,10 @@ fn main() {
 
     println!("# Q6-22 streaming finite-experiment LER vectors — GENERATED, do not edit.");
     println!(
-        "# d={d} W={w} C={c} dpr={dpr} slices={n_slices} detectors={dets} observables=1 shots={shots} seed={seed}"
+        "# d={d} W={w} C={c} dpr={dpr} slices={n_slices} detectors={dets} observables=1 noise={noise} shots={shots} seed={seed}"
     );
     println!(
-        "# regenerate: cargo run --release -p aleph-qec --example qec_q6_stream_ler -- {d} {w} {c} {rounds} {shots} {seed}"
+        "# regenerate: cargo run --release -p aleph-qec --example qec_q6_stream_ler -- {d} {w} {c} {rounds} {shots} {seed} {noise}"
     );
 
     eprintln!("# d={d} W={w} C={c} slices={n_slices} shots={shots} (software SlidingWindowDecoder baseline)");
