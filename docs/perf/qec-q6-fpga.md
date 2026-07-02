@@ -859,8 +859,21 @@ On-board LER matches software Union-Find within CI at the **sub-threshold** rate
 the known unweighted-UF gap, as in the board-free co-sim). 384 k decodes/s (2.6 µs/decode single-engine
 — the deep 3D graph takes ~130 clk/decode). This is the first **time-dimension** decode (multiple
 measurement rounds with measurement errors, on the 3D space-time matching graph) run on silicon — the
-code-capacity → real-decoder step, matching the Q6-19 simulation. d=7 (also 48-bit syndrome) reuses the
-same 2-beat path.
+code-capacity → real-decoder step, matching the Q6-19 simulation.
+
+**d=7 on silicon** (also a 48-bit syndrome; reuses the same 2-beat path, no RTL change): single-engine
+build, 48 detectors / 110 edges, 27.9 % LUT, WNS +0.44 ns @ 50 MHz. On-board LER matches software
+Union-Find within CI at **every** p (0.01–0.05) — d=7 code-capacity has a high threshold, so this whole
+range is sub-threshold and the unweighted-UF gap does not appear:
+
+| p | rtl_rate (silicon) | sw_rate (UF) | verdict |
+|---|---|---|---|
+| 0.01 | 5.0e-4 | 3.0e-4 | PASS |
+| 0.03 | 2.36e-2 | 2.08e-2 | PASS |
+| 0.05 | 1.04e-1 | 9.82e-2 | PASS |
+
+414 k decodes/s (2.4 µs/decode). This is the **largest code distance decoded on the Arty** — the same
+build scales to the KV260 (higher Fmax + fabric for arrays).
 
 Next on-board: the same builds on a KV260 when that board is available.
 
