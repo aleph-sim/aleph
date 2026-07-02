@@ -589,6 +589,45 @@ This is the "measure before building" discipline paying off — and it upgrades 
 throughput on silicon* to *finite-experiment logical-error-rate within CI of the boundary-aware
 software, on silicon*.
 
+### Q6-23 — circuit-level (gate-noise) streaming decode on silicon
+
+Everything above is **phenomenological** 3D noise (data + measurement-error edges). The last gap to
+real QPU traffic is **circuit-level** noise: each gate/CNOT/idle/prep/measure faults, producing extra
+**hook-error** diagonal space-time edges the phenomenological graph doesn't have. The circuit-level
+surface DEM (Q-surface, Stim-verified graphlike) already exists; this runs it through the **streaming**
+window path — realistic noise *and* streaming together, the fullest "real decoder" configuration, on
+silicon.
+
+`qec_surface_uf_graph -- window-circuit` builds the interior window graph from `circuit_level_dem`
+instead of the phenomenological DEM. The result is **structurally identical** to the phenomenological
+window graph — same detectors, same `UF_ACTIVE`/`W`/`C`/`DPR`, and **bit-identical** streaming metadata
+(`UF_DROUND`/`UF_SHIFT`/`UF_DCOMMIT`/`UF_LOAD_LO`) — differing only in the **edge set** (`UF_M` 111 →
+141, the +30 hook-error edges). Because the streaming wrapper and the UF core are graph-agnostic
+(parametric in the edge tables), the decoder handles circuit-level noise with **zero RTL change**;
+`make stream-axi-circuit` confirms validity drain 40/40, back-pressure invariance 40/40, and
+frame-independence 6/6 on the circuit-level graph in Verilator.
+
+**On-board** (Arty Z7-20, d=3 `W`=9 `C`=3, circuit-level bitstream: WNS **+0.128 ns** @ 50 MHz,
+`TIMING_MET`, **13 429 LUT = 25.2 %** — the +30 edges add ~700 LUT and tighten the critical path vs the
+phenomenological build's +1.048 ns / 23.9 %). Circuit-level prob grid p = 0.002–0.010 (the circuit
+threshold is ~0.9 %, an order of magnitude below phenomenological):
+
+| p | validity (drain) | RTL streaming LER | software sliding LER | \|diff\| |
+|---|------------------|-------------------|----------------------|--------|
+| 0.002 | ✓ (all) | 1.18e-2 | 8.75e-3 | 3.0e-3 |
+| 0.004 | ✓ | 3.75e-2 | 3.30e-2 | 4.5e-3 |
+| 0.006 | ✓ | 7.68e-2 | 7.20e-2 | 4.8e-3 |
+| 0.008 | ✓ | 1.205e-1 | 1.210e-1 | 5.0e-4 |
+| 0.010 | ✓ | 1.700e-1 | 1.722e-1 | 2.3e-3 |
+
+Every stream drains, and the RTL streaming LER is **within CI of the boundary-aware software at every
+circuit-level p** (same shots, so the diff is the algorithmic gap). Sustained **347 k windows/s =
+2.87 µs/window** (vs 2.55 µs phenomenological — the deeper hook-edge graph costs ~16 clk/window more),
+still under the `C` = 3 µs commit budget → real-time. This is the complete "real decoder" configuration
+on silicon: **circuit-level gate noise, decoded as a bounded-memory stream, matching software LER within
+CI** — Q6.5's field-gap (Riverlane/Google decode circuit-level, streaming, at distance) closed on the
+FPGA at d=3.
+
 ## Q6-03 — GPU vs FPGA: latency, throughput, power, and the ASIC go/no-go
 
 This compares the **same** Delfosse–Nickerson Union-Find decoder on two substrates: the GPU batch
