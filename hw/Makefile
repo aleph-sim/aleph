@@ -12,7 +12,7 @@ OBJ_DIR   := obj_dir
 VERILATOR ?= verilator
 CARGO     := cargo run --release -q -p aleph-qec --example
 
-.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi cosim-stream cosim cosim-3d cosim-circuit cosim-circuit-3d clean
+.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi cosim-stream cosim-stream-ler cosim cosim-3d cosim-circuit cosim-circuit-3d clean
 
 all: d3 rep surf
 
@@ -132,6 +132,13 @@ STREAM_ROUNDS ?= 800
 STREAM_SEED   ?= 2024
 cosim-stream:
 	cd .. && $(CARGO) qec_q6_stream_cosim -- 3 9 3 $(STREAM_ROUNDS) $(STREAM_SEED) > hw/cosim_stream_d3.vec
+
+# Q6-22 (on silicon) — regenerate the finite-experiment streaming LER vector: E memory-Z experiments
+# (17 rounds = 18 slices = W+3C) with true logical + the software SlidingWindowDecoder baseline, for
+# the on-board streaming LER-within-CI check (hw/sw/uf_dma_stream_ler.py).
+LER_SHOTS ?= 4000
+cosim-stream-ler:
+	cd .. && $(CARGO) qec_q6_stream_ler -- 3 9 3 17 $(LER_SHOTS) $(STREAM_SEED) > hw/cosim_stream_ler_d3.vec
 
 # Q6-21 — board-free sim<->RTL co-simulation. The simulator dumps a Monte-Carlo syndrome stream
 # (qec_q6_cosim) drawn from the SAME DEM the RTL graph (graph d rounds) is generated from; the TB
