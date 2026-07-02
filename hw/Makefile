@@ -12,7 +12,7 @@ OBJ_DIR   := obj_dir
 VERILATOR ?= verilator
 CARGO     := cargo run --release -q -p aleph-qec --example
 
-.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi stream-axi-circuit cosim-stream cosim-stream-circuit cosim-stream-ler cosim-stream-ler-circuit cosim cosim-3d cosim-circuit cosim-circuit-3d bpcheck clean
+.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi stream-axi-circuit cosim-stream cosim-stream-circuit cosim-stream-ler cosim-stream-ler-circuit cosim cosim-3d cosim-circuit cosim-circuit-3d bpcheck bprelay clean
 
 all: d3 rep surf
 
@@ -26,6 +26,15 @@ bpcheck:
 		bp_check_update.sv tb_bp_check.cpp -o sim_bpcheck
 	./$(OBJ_DIR)/sim_bpcheck bp_check_vectors.txt
 
+# Q7-02 M2 — full sequential relay-BP decoder vs the Rust golden (gross [[144,12,12]]).
+# Emits the graph + full-decode golden vectors, then drives each syndrome through the FSM and checks
+# the chosen error, observable flips, and validity bit-for-bit against FixedRelayBp::decode_fixed_ehat.
+bprelay:
+	cd .. && $(CARGO) qec_q7_bp_graph -- graph      > hw/bb_gross_tanner.svh
+	cd .. && $(CARGO) qec_q7_bp_graph -- decvectors > hw/bp_dec_vectors.txt
+	$(VERILATOR) --cc --exe --build -Wall --top-module bp_relay_decoder \
+		bp_relay_decoder.sv tb_bp_relay.cpp -o sim_bprelay
+	./$(OBJ_DIR)/sim_bprelay bp_dec_vectors.txt
 
 d3:
 	cd .. && $(CARGO) qec_d3_lut_table > hw/surface_d3_lut.mem

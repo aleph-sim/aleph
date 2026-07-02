@@ -130,3 +130,57 @@ relay-BP decode, reusing this `.svh`.
 - `hw/bp_check_update.sv` — combinational check-update RTL.
 - `hw/tb_bp_check.cpp`, `hw/Makefile` (`bpcheck`) — Verilator TB.
 - `hw/bb_gross_tanner.svh`, `hw/bp_check_vectors.txt` — generated.
+
+-----
+
+# Q7-02 M2 — sequential FSM full relay-BP decoder
+
+**Status:** done (Verilator).
+
+## What
+
+`hw/bp_relay_decoder.sv` — the complete relay-BP decode of `FixedRelayBp` time-multiplexed into a
+clocked FSM, **one bounded pass per cycle** (the Q6-04 UF methodology): a cycle touches exactly one
+check (≤ `BP_CHK_DEG`=6 edges) or one variable (≤ `BP_VAR_DEG`=3 edges), so per-cycle combinational
+depth is bounded and graph-size-independent. Per iteration:
+
+- `S_CHECK` (72 cyc): `e_cv ← min-sum(m_vc, s)`, one check/cycle (multiply-free α=7/8).
+- `S_VAR` (144 cyc): `m_vc, ehat ← var-update-with-memory`, one variable/cycle — the **memory blend
+  `(1−γ)·computed + γ·m_old`, the one multiply**, γ from the per-leg disorder ROM; running Hamming
+  weight tracked here.
+- `S_SAT` (72 cyc): `all_sat ← (H·ehat == s)`; keep the lowest-weight syndrome-valid `ehat` seen.
+
+looped `BP_LEGS`×`BP_ITERS` = 4×25, then `S_EMIT` (144 cyc) reduces the chosen `ehat` → observable
+flips, `S_DONE` pulses `out_valid`. Handshake mirrors the UF core (`in_valid`/`busy`/`out_valid`/
+`latency_cycles`).
+
+## Verification
+
+`make -C hw bprelay` drives 65 syndromes (empty + every single-variable error + 40 random low-weight)
+through the FSM and checks the chosen error `corr_out[144]`, observable flips `obs_flip[12]`, and the
+validity flag bit-for-bit against `FixedRelayBp::decode_fixed_ehat`:
+
+> **PASS: 65 / 65 full decodes bit-identical to the fixed-point golden.**
+
+Bit-exact agreement with the golden means the RTL's logical-error rate **is** the golden's (which is
+within CI of `f64` relay-BP, M0) — no separate statistical LER run needed.
+
+## Honest latency headline (the M3/M4 target)
+
+> **Worst-case latency = 28 944 cycles/decode.**
+
+That is `4·25·(72+144+72) + 144` — the full legs×iterations schedule with **no early exit** (relay-BP
+must keep the best across *all* legs). At a nominal ~150 MHz that is ~193 µs — far over a ~1 µs round
+budget. This is the honest cost of a real qLDPC decoder and exactly what M3 (measure it in silicon)
+and M4 attack: **process K checks/variables per cycle** (the UF `FOREST_UNROLL` lever — the graph's
+constant degree 6/3 and 72/144 independent nodes per pass make this embarrassingly parallel, so a
+K-wide datapath cuts the pass length by K), plus revisiting the leg/iteration budget. The point of M2
+is a *correct, bounded-depth, synthesizable* baseline to optimise from.
+
+## Files
+
+- `hw/bp_relay_decoder.sv` — sequential relay-BP FSM.
+- `hw/tb_bp_relay.cpp`, `hw/Makefile` (`bprelay`) — Verilator TB.
+- `crates/aleph-qec/examples/qec_q7_bp_graph.rs` (`decvectors` mode) — full-decode golden vectors.
+- `crates/aleph-qec/src/fixed_bp.rs` — `decode_fixed_ehat` exposes the chosen `ehat` for the TB.
+- `hw/bp_dec_vectors.txt` — generated.
