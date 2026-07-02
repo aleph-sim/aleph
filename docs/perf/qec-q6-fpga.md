@@ -551,6 +551,44 @@ while the previous drains) or a higher FCLK would widen the margin toward the ~6
 the interior-window / phenomenological-noise caveats above carry over unchanged. First **streaming
 (continuous, bounded-memory) decode on hardware** — the block-to-streaming step, on silicon.
 
+### Q6-22 — finite-experiment streaming LER on silicon (the warm-up/drain caveat, measured)
+
+Q6-20's honest caveat was that the streaming wrapper targets the **steady-state interior** window
+(both time cuts → temporal sinks), whereas a *finite* experiment has real time boundaries: a known
+initial state at round 0, and a final data-measurement boundary that the software `SlidingWindowDecoder`
+handles with a boundary-aware **last window** that commits every remaining round. The on-board decoder
+instead runs interior windows only + a **zero-drain** (a tail of quiet rounds that pushes the last
+`W−C` rounds through the commit region). Does that drain-based finite handling actually cost accuracy
+at the operating point? **Measure before adding RTL.**
+
+`qec_q6_stream_ler` emits finite memory-Z experiments (`slices` = `W`+k·`C` rounds, true logical) + the
+**boundary-aware** software sliding-window LER; `hw/sw/uf_dma_stream_ler.py` decodes each as one DMA
+frame on the board (the per-frame re-arm gives each a fresh warm-up + empty residual), XORs the per-
+window obs into a predicted logical, and compares the RTL streaming LER to the software baseline within
+CI. RTL and software decode the **same shots**, so the rate difference is the genuine algorithmic gap,
+not sampling noise between them.
+
+**On-board (Arty Z7-20, d=3 `W`=9 `C`=3, `slices`=18, the Q6-20 bitstream unchanged):**
+
+| p | RTL streaming LER | software sliding LER | \|diff\| | drained |
+|---|-------------------|----------------------|--------|---------|
+| 0.01 | 7.20e-2 | 7.63e-2 | 4.3e-3 | 4000/4000 |
+| 0.02 | 2.200e-1 | 2.222e-1 | 2.3e-3 | 4000/4000 |
+| 0.03 | 3.593e-1 | 3.638e-1 | 4.5e-3 | 4000/4000 |
+| 0.04 | 4.390e-1 | 4.385e-1 | 5.0e-4 | 4000/4000 |
+| 0.05 | 4.633e-1 | 4.640e-1 | 7.5e-4 | 4000/4000 |
+
+Within CI at **every** p, every experiment drains, and the differences are small with **varying sign**
+(the RTL is not systematically worse — consistent with tie-break-level noise, not a boundary
+degradation). Tightening the operating point to **E=40 000 shots at p=0.01** the gap *shrinks* to
+**1.15e-3** (RTL 8.04e-2 vs software 7.92e-2, CI 5.3e-3) — i.e. it tracks sampling noise, not a fixed
+offset. **Conclusion: the interior-window + drain finite handling is statistically equivalent to the
+boundary-aware software at the operating point; the Q6-20 warm-up/drain caveat costs no measurable
+accuracy at these sizes, so no head/tail RTL is warranted** (it would add area/logic for no LER gain).
+This is the "measure before building" discipline paying off — and it upgrades Q6-20 from *validity +
+throughput on silicon* to *finite-experiment logical-error-rate within CI of the boundary-aware
+software, on silicon*.
+
 ## Q6-03 — GPU vs FPGA: latency, throughput, power, and the ASIC go/no-go
 
 This compares the **same** Delfosse–Nickerson Union-Find decoder on two substrates: the GPU batch

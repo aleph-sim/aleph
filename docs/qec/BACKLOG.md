@@ -1210,6 +1210,31 @@ real board over the Q6-07 AXI link.
 **Result:** the verification chain noise→syndrome→**RTL**→LER closes board-free. See
 `docs/perf/qec-q6-cosim.md`.
 
+### [Q6-22] Streaming decoder on silicon + finite-experiment warm-up/drain (measured) — ✅ DONE
+
+**Labels:** `area:fpga`, `area:decoder`, `type:feature`, `priority:medium`
+**Milestone:** Phase Q6
+**Depends on:** Q6-20
+
+**Description**
+Put the Q6-20 sliding-window streaming decoder on **real Arty Z7-20 silicon** over the AXI-DMA path
+(`hw/uf_stream_win_core.sv` → `uf_streaming_decoder`, one round/beat in, one word/window out), and close
+the Q6-20 warm-up/drain caveat — finite experiments have real time boundaries the steady-state interior
+wrapper doesn't model. **Measure before building** the head/tail RTL: compare the on-board streaming
+LER (interior windows + zero-drain) to the boundary-aware software `SlidingWindowDecoder` on the same
+shots.
+
+**Acceptance Criteria**
+- [x] AXI4-Stream front-end + DMA block design + on-board driver; per-frame re-arm so each DMA transfer
+  is an independent stream (fresh warm-up). *(PR #412; `stream-axi` frame-independence 6/6.)*
+- [x] On silicon: validity drains at every p; sustained window rate under the `C`-µs commit budget.
+  *(391k windows/s = 2.55 µs/window, real-time 1.2× @ 50 MHz.)*
+- [x] Finite-experiment streaming LER within CI of the boundary-aware software (`qec_q6_stream_ler` +
+  `uf_dma_stream_ler.py`). *(d=3: within CI at all p=0.01–0.05; E=40 000 at p=0.01 → |diff| 1.15e-3,
+  shrinks with shots ⇒ noise, not a boundary offset.)*
+- [x] **Verdict:** interior+drain finite handling is statistically equivalent to boundary-aware
+  software at these sizes ⇒ **no head/tail RTL warranted.** See `docs/perf/qec-q6-fpga.md` § Q6-22.
+
 -----
 
 # Phase Q7 — ASIC (North Star)
