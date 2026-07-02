@@ -184,3 +184,52 @@ is a *correct, bounded-depth, synthesizable* baseline to optimise from.
 - `crates/aleph-qec/examples/qec_q7_bp_graph.rs` (`decvectors` mode) — full-decode golden vectors.
 - `crates/aleph-qec/src/fixed_bp.rs` — `decode_fixed_ehat` exposes the chosen `ehat` for the TB.
 - `hw/bp_dec_vectors.txt` — generated.
+
+-----
+
+# Q7-02 M3 — Vivado OOC synth (Zybo + KV260)
+
+**Status:** done. Vivado 2024.2, out-of-context synth + place + route, both target parts (same flow as
+the UF `syn/synth.tcl`). Ran on `openwebgui`.
+
+## Result — the M2 baseline is nowhere near real-time (as expected)
+
+| part | LUTs | FFs | DSP | BRAM | Fmax | latency (28 944 clk) | vs ~1 µs budget |
+|------|------|-----|-----|------|------|----------------------|-----------------|
+| Zybo `xc7z020` | 23 596 (44%) | 7 601 | 0 | 0 | **28.3 MHz** | **1023 µs** | ~1000× over |
+| KV260 `xck26`  | 24 119 (21%) | 7 616 | 0 | 0 | **67.8 MHz** | **427 µs**  | ~430× over |
+
+It **fits** (LUT-heavy, no DSP, no BRAM) but is 2–3 orders of magnitude off real-time. Both the
+cycle count (28 944) *and* Fmax are bad. This is the honest baseline M4 optimises.
+
+## Critical path — the cursor mux, not the multiply
+
+The binding path on both parts is `idx_reg → e_cv_reg[*]` (Zybo **44 logic levels**, 35.4 ns,
+**74% routing**; KV260 37 levels, 14.8 ns, 64% routing). Diagnosis:
+
+- **The `idx` cursor is the wall.** Reading `BP_CHECK_OFF[idx]` then `BP_CHECK_EDGES[off+k]` with a
+  *runtime* check cursor synthesises to a 72-way select feeding the min-sum, whose result then fans
+  out through a 432-way address-decode to write `e_cv` (observed net fanouts of **586 / 626**). That
+  giant mux/demux — not arithmetic — is the deep path. Same root cause the UF decoder never hit
+  because its per-cycle graph was tiny (d=3: 18 edges); here it is 432 edges / 72 checks.
+- **The multiply is free.** `DSP = 0` on both parts: the relay memory blend's `γ`/`(1−γ)` are small
+  per-variable *constants*, so Vivado folded the "multiply" into a few LUTs. Confirms the M0 design
+  call — the one multiply is not the bottleneck.
+- **Routing-dominated** (74% on Zybo) — the same tax the Q6-03 UF report flagged, and the tax an
+  ASIC removes. Feeds lever #3 (the logic-vs-routing ASIC argument).
+
+## Verdict → M4 architecture
+
+The per-node **cursor** FSM was the wrong micro-architecture for a 432-edge graph. The fix is
+**spatial unrolling**: wire each check's min-sum to its *constant* 6 edges and each variable's update
+to its constant 3 edges, and evaluate a whole layer (all 72 checks, then all 144 variables) per
+cycle. That deletes the `idx` mux entirely (edges become constant wiring), collapses a
+check-pass + var-pass to **2 cycles** (so `legs·iters·2 ≈ 200` cycles, ~140× fewer), and is how real
+BP silicon is built. Area grows (72 + 144 small fixed datapaths) but each unit is tiny; the register
+count barely moves (the messages already exist as flops). M4 will also then pipeline the layer and
+revisit the leg/iteration budget.
+
+## Files
+
+- `hw/syn/synth_bp.tcl` — OOC synth/impl flow for `bp_relay_decoder` (any part).
+- `docs/perf/data/` — reports live on `openwebgui:/root/q7synth/reports/` (fmax + util + timing).
