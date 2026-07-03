@@ -233,3 +233,87 @@ revisit the leg/iteration budget.
 
 - `hw/syn/synth_bp.tcl` — OOC synth/impl flow for `bp_relay_decoder` (any part).
 - `docs/perf/data/` — reports live on `openwebgui:/root/q7synth/reports/` (fmax + util + timing).
+
+-----
+
+# Q7-02 M4 — spatial unrolling (all checks/vars per cycle)
+
+**Status:** done (Verilator + Vivado 2024.2 OOC on `openwebgui`).
+
+## What
+
+`hw/bp_relay_unrolled.sv` replaces M2's runtime node cursor `idx` with a **spatially-unrolled**
+datapath: every check's 6 edges and every variable's 3 edges are compile-time constants, so a whole BP
+layer evaluates in **one cycle**. The schedule collapses from M2's 72/144/72 cycles-per-phase to
+
+- `S_CHECK` (1 cyc): all 72 min-sum check updates in parallel,
+- `S_VAR`   (1 cyc): all 144 var-updates-with-memory in parallel (the one relay blend multiply per var),
+- `S_SAT`   (1 cyc): all 72 parity checks + keep-lowest-weight-valid,
+
+looped 4×25, then `S_EMIT` (1 cyc). **Worst-case latency 301 cycles**, down from 28 944 — **96× fewer**.
+
+Bit-exactness is structural: within each M2 phase the nodes are already independent (each Tanner edge
+belongs to exactly one check and one variable), so folding 72/144 sequential cycles into one parallel
+cycle changes only timing. `make -C hw bpunroll` runs the same golden vectors as M2 (TB shared via
+`-DUNROLL`):
+
+> **PASS: 65 / 65 full decodes bit-identical to the fixed-point golden; worst latency = 301 cycles.**
+
+## Two synthesis gotchas the unroll exposed (both real, both fixed in-RTL)
+
+The spatial unroll makes **every array index a compile-time constant**, which turns on Vivado
+optimisations that M2's runtime `idx` mux had been (accidentally) suppressing. Two of them silently
+**deleted the entire message datapath**, leaving a 158-FF control shell that "closed timing" at a
+*meaningless* ~485 MHz. A netlist probe (`get_cells -filter IS_SEQUENTIAL`) caught it: `m_vc`, `e_cv`,
+`ehat`, `best_e`, `corr_out` all at 0 FFs. Root causes and fixes:
+
+1. **Async-reset set/reset conflict** (`Synth 8-7137`, *"has both Set and reset with same priority …
+   may cause simulation mismatches"*). M2's `@(posedge clk or negedge rst_n)` makes each datapath FF
+   an async-reset FF whose S_IDLE constant load (`m_vc←λ`) collides with the async reset. → switched
+   to a **synchronous reset**. (Necessary hygiene, but not sufficient here — the fold persisted.)
+2. **Sequential constant-propagation folding the 100-iteration feedback to `ehat≡0`.** With constant
+   indices, Vivado chases the message recurrence to a bogus fixpoint and proves the decision constant
+   (the tell: `found` — which reduces to `syndrome == 0` — was the *only* datapath FF that survived).
+   → anchored the message/decision registers with **`(* dont_touch = "true" *)`**. This disables only
+   that fold; the reachable logic is still fully optimised. Verilator computes the real
+   syndrome-dependent decode (65/65), so this is an over-aggressive synth pass, not an RTL bug.
+
+Lesson for M5+: on constant-indexed unrolled decoders, **verify the post-synth register count against
+elaboration** (`report_utilization` FFs ≈ the RTL's ~7.6 k), never trust an Fmax alone.
+
+## Result — the idx-mux wall is gone; the new wall is arithmetic depth + congestion
+
+Full datapath (post-`dont_touch`), OOC synth + place + route:
+
+| part | LUTs | FFs | DSP | Fmax | latency (301 clk) | vs M2/M3 |
+|------|------|-----|-----|------|-------------------|----------|
+| KV260 `xck26` | 94 194 (80%) | 7 578 | 0 | **95.2 MHz** | **3.16 µs** | **135× faster** than M3's 427 µs |
+| Zybo `xc7z020` | 91 829 LUTs = **172.6% of cap** | 7 616 | 0 | **does not fit** | — | full unroll is a KV260-class design |
+
+- **Latency: 427 µs → 3.16 µs on KV260** — 96× from the cycle count, ×1.40 from Fmax (67.8→95.2 MHz).
+  The `idx` cursor mux (M3's binding path, 44 logic levels / 74% routing) is **gone**.
+- **New critical path = the S_VAR blend.** 25 logic levels (5 CARRY8 chains) through
+  `(1−γ)·computed + γ·m_old` + the λ+Σe_cv accumulate — real fixed-point arithmetic, not a mux. DSP
+  still 0 (γ folded to LUTs). Fmax is also held back by **routing congestion at 80% LUT**.
+- **Area: the honest cost of full unroll.** 72 min-sum + 144 var-update + 72 parity units in parallel
+  = 94 k LUTs, fitting the KV260 (80%) but **overflowing the small Zybo** (53 k LUT). M4 is therefore
+  a **KV260-targeted** design; a Zybo fit needs *partial* unrolling (K<full nodes/cycle — a middle
+  point on the area/latency curve).
+
+## Verdict → still ~3× over the ~1 µs budget; M5 closes it
+
+M4 delivered the two headline wins — **96× fewer cycles** and the **removal of the idx-mux wall** — but
+sub-µs needs two more levers, now that the bottleneck is arithmetic-depth-bound not mux-bound:
+
+1. **Pipeline the S_VAR blend** (register the multiply-add) to lift Fmax past the 25-level CARRY8 path.
+2. **Revisit the leg/iteration budget** (4×25): fewer legs/iters cuts the 301 cycles directly, at a
+   quantified LER cost (re-run the M0 sweep). Early-exit-on-valid is off the table for relay-BP (it
+   keeps the best across *all* legs), but the budget itself is tunable.
+3. **Partial unroll** for area/congestion relief (and Zybo fit), trading some of the 96× back.
+
+## Files
+
+- `hw/bp_relay_unrolled.sv` — spatially-unrolled relay-BP decoder (sync reset + `dont_touch` anchors).
+- `hw/tb_bp_relay.cpp` (built `-DUNROLL`), `hw/Makefile` (`bpunroll`) — shared Verilator TB.
+- `hw/syn/synth_bp.tcl` — now takes `[top] [rtl.sv]` args (M3 sequential = default, M4 = unrolled).
+- reports on `openwebgui:/root/q7synth/reports/{kv260_unroll,zybo_unroll}/`.

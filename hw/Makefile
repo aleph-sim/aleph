@@ -12,7 +12,7 @@ OBJ_DIR   := obj_dir
 VERILATOR ?= verilator
 CARGO     := cargo run --release -q -p aleph-qec --example
 
-.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi stream-axi-circuit cosim-stream cosim-stream-circuit cosim-stream-ler cosim-stream-ler-circuit cosim cosim-3d cosim-circuit cosim-circuit-3d bpcheck bprelay clean
+.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi stream-axi-circuit cosim-stream cosim-stream-circuit cosim-stream-ler cosim-stream-ler-circuit cosim cosim-3d cosim-circuit cosim-circuit-3d bpcheck bprelay bpunroll clean
 
 all: d3 rep surf
 
@@ -35,6 +35,16 @@ bprelay:
 	$(VERILATOR) --cc --exe --build -Wall --top-module bp_relay_decoder \
 		bp_relay_decoder.sv tb_bp_relay.cpp -o sim_bprelay
 	./$(OBJ_DIR)/sim_bprelay bp_dec_vectors.txt
+
+# Q7-02 M4 — spatially-unrolled relay-BP decoder (all checks/vars per cycle) vs the SAME golden.
+# Same TB/vectors as M2 (built with -DUNROLL); a pass proves the unroll is bit-for-bit identical to
+# the sequential M2 (hence FixedRelayBp) while collapsing 28 944 cycles → ~302.
+bpunroll:
+	cd .. && $(CARGO) qec_q7_bp_graph -- graph      > hw/bb_gross_tanner.svh
+	cd .. && $(CARGO) qec_q7_bp_graph -- decvectors > hw/bp_dec_vectors.txt
+	$(VERILATOR) --cc --exe --build -Wall --Mdir obj_unroll --top-module bp_relay_unrolled -CFLAGS -DUNROLL \
+		bp_relay_unrolled.sv tb_bp_relay.cpp -o sim_bpunroll
+	./obj_unroll/sim_bpunroll bp_dec_vectors.txt
 
 d3:
 	cd .. && $(CARGO) qec_d3_lut_table > hw/surface_d3_lut.mem
