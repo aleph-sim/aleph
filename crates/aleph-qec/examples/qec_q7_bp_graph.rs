@@ -15,7 +15,7 @@
 //!   cargo run --release -p aleph-qec --example qec_q7_bp_graph -- graph   > hw/bb_gross_tanner.svh
 //!   cargo run --release -p aleph-qec --example qec_q7_bp_graph -- vectors > hw/bp_check_vectors.txt
 
-use aleph_qec::{BBCode, FixedRelayBp};
+use aleph_qec::{BBCode, CircuitNoise, DetectorErrorModel, FixedHwView, FixedRelayBp};
 
 /// M0-chosen fixed-point word: 8-bit signed, 3 fractional bits (Q5.3).
 const MSG_BITS: u32 = 8;
@@ -31,11 +31,41 @@ const ITERS: u32 = 10;
 const GAMMA: (f64, f64) = (-0.3, 0.9);
 const SEED: u64 = 0x5E1A_4B9C;
 
-fn emit_graph() {
-    let dem = BBCode::gross().code_capacity_dem(0.03);
+/// Build the DEM + fixed-point relay-BP decoder. `circuit = Some((rounds, p))` selects the depth-7
+/// circuit-level DEM (irregular, much larger graph — the co-sim target); `None` is the code-capacity
+/// gross graph the RTL bakes in by default.
+fn build(circuit: Option<(usize, f64)>) -> (DetectorErrorModel, FixedRelayBp) {
+    let code = BBCode::gross();
+    let dem = match circuit {
+        Some((rounds, p)) => code
+            .circuit_level_dem(rounds, CircuitNoise::uniform(p))
+            .expect("circuit-level DEM"),
+        None => code.code_capacity_dem(0.03),
+    };
     let fx = FixedRelayBp::with_budget(&dem, LEGS, ITERS, GAMMA, SEED, MSG_BITS, FRAC_BITS);
-    let v = fx.hw_view();
+    (dem, fx)
+}
 
+fn emit_graph() {
+    let (_dem, fx) = build(None);
+    print_graph(&fx.hw_view(), "Gross BB code [[144,12,12]] code capacity");
+}
+
+/// Emit the SAME `.svh` format for the depth-7 **circuit-level** DEM (rounds × p) — an irregular,
+/// much larger graph (e.g. rounds=1: 864 vars, 144 checks, max check-degree 25 vs code-capacity's
+/// uniform 6). Written to a separate file and cp'd over `bb_gross_tanner.svh` for the M2 co-sim build,
+/// so the parametric RTL decodes it unchanged (the `bpcirc` Makefile target).
+fn emit_circ_graph(rounds: usize, p: f64) {
+    let (_dem, fx) = build(Some((rounds, p)));
+    print_graph(
+        &fx.hw_view(),
+        &format!("Gross BB code [[144,12,12]] CIRCUIT-LEVEL (depth-7, rounds={rounds}, p={p})"),
+    );
+}
+
+/// Print the flattened Tanner graph + fixed-point params as an `.svh` header. Works for any DEM (the
+/// node degrees are read from the CSR, so the irregular circuit-level graph emits identically).
+fn print_graph(v: &FixedHwView, title: &str) {
     let ints = |xs: &[u32]| -> String {
         xs.iter()
             .map(|x| x.to_string())
@@ -49,7 +79,7 @@ fn emit_graph() {
             .join(", ")
     };
 
-    println!("// Gross BB code [[144,12,12]] Tanner graph + fixed-point relay-BP params — GENERATED, do not edit.");
+    println!("// {title} — Tanner graph + fixed-point relay-BP params — GENERATED, do not edit.");
     println!("// regenerate: cargo run -p aleph-qec --example qec_q7_bp_graph -- graph > hw/bb_gross_tanner.svh");
     println!("`ifndef BB_GROSS_TANNER_SVH");
     println!("`define BB_GROSS_TANNER_SVH");
@@ -179,6 +209,40 @@ fn emit_dec_vectors() {
     }
 }
 
+/// Full-decode golden vectors for the **circuit-level** DEM, sampled from **real DEM shots** (realistic
+/// gate-noise syndromes, not synthetic low-weight errors), with the golden `ehat`/obs/validity from the
+/// same `FixedRelayBp` the RTL implements. The M2 sequential decoder (graph-generic) decodes these
+/// bit-for-bit in Verilator — the sim↔RTL co-sim proving the decoder generalises past code capacity.
+fn emit_circ_vectors(rounds: usize, p: f64, n: usize, seed: u64) {
+    use aleph_qec::sample_shots;
+    let (dem, fx) = build(Some((rounds, p)));
+    let n_checks = dem.detectors;
+    let n_vars = dem.errors.len();
+    let n_obs = dem.observables;
+    let (syndromes, _truths) = sample_shots(&dem, n as u64, seed);
+
+    println!("# CIRCUIT-LEVEL full-decode golden vectors (depth-7, rounds={rounds}, p={p}) — GENERATED, do not edit.");
+    println!("# regenerate: cargo run -p aleph-qec --example qec_q7_bp_graph -- circvectors {rounds} {p} {n} {seed} > hw/bp_circ_vectors.txt");
+    println!("# format: header 'T BP_N BP_C BP_OBS'; per test: 's'(BP_C bits) 'h'(BP_N bits ehat) 'o'(BP_OBS bits) 'v'(valid)");
+    println!("{} {n_vars} {n_checks} {n_obs}", syndromes.len());
+    for syn in &syndromes {
+        let mut lit = vec![false; n_checks];
+        for &d in &syn.fired {
+            if (d as usize) < n_checks {
+                lit[d as usize] = true;
+            }
+        }
+        let (ehat, obs, valid) = fx.decode_fixed_ehat(syn);
+        let s_str: String = lit.iter().map(|&b| if b { '1' } else { '0' }).collect();
+        let h_str: String = ehat.iter().map(|&b| char::from(b'0' + (b & 1))).collect();
+        let o_str: String = obs.iter().map(|&b| if b { '1' } else { '0' }).collect();
+        println!("s {s_str}");
+        println!("h {h_str}");
+        println!("o {o_str}");
+        println!("v {}", u8::from(valid));
+    }
+}
+
 fn emit_vectors() {
     let dem = BBCode::gross().code_capacity_dem(0.03);
     let fx = FixedRelayBp::with_budget(&dem, LEGS, ITERS, GAMMA, SEED, MSG_BITS, FRAC_BITS);
@@ -228,13 +292,20 @@ fn emit_vectors() {
 }
 
 fn main() {
-    let mode = std::env::args().nth(1).unwrap_or_else(|| "graph".into());
-    match mode.as_str() {
+    let args: Vec<String> = std::env::args().collect();
+    let mode = args.get(1).map(String::as_str).unwrap_or("graph");
+    let rounds = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(1usize);
+    let p = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(0.003f64);
+    let n = args.get(4).and_then(|s| s.parse().ok()).unwrap_or(40usize);
+    let seed = args.get(5).and_then(|s| s.parse().ok()).unwrap_or(2024u64);
+    match mode {
         "graph" => emit_graph(),
         "vectors" => emit_vectors(),
         "decvectors" => emit_dec_vectors(),
+        "circgraph" => emit_circ_graph(rounds, p),
+        "circvectors" => emit_circ_vectors(rounds, p, n, seed),
         other => {
-            eprintln!("unknown mode '{other}'; use 'graph' or 'vectors'");
+            eprintln!("unknown mode '{other}'; use graph|vectors|decvectors|circgraph|circvectors");
             std::process::exit(2);
         }
     }

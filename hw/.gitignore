@@ -32,3 +32,6 @@ cosim_*.vec
 _cosim3dbuild/
 _cosimcircuitbuild/
 _cosimc3dbuild/
+_bpcircbuild/
+bb_circuit_tanner.svh
+bp_circ_vectors.txt

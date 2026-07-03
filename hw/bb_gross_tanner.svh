@@ -1,4 +1,4 @@
-// Gross BB code [[144,12,12]] Tanner graph + fixed-point relay-BP params — GENERATED, do not edit.
+// Gross BB code [[144,12,12]] code capacity — Tanner graph + fixed-point relay-BP params — GENERATED, do not edit.
 // regenerate: cargo run -p aleph-qec --example qec_q7_bp_graph -- graph > hw/bb_gross_tanner.svh
 `ifndef BB_GROSS_TANNER_SVH
 `define BB_GROSS_TANNER_SVH
