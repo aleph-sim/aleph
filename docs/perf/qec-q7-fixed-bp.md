@@ -361,14 +361,72 @@ Two findings:
 ## Verdict → M5 step 2 (the sub-µs recipe)
 
 **6×10 (181 cyc, 1.06× LER, within CI at all p)** is the M5 schedule — a **40% cycle cut for no
-measurable LER cost**. But 181 cyc is still 1.90 µs at 95.2 MHz, so sub-µs needs the **Fmax lever too**:
-
-- **Pipeline the S_VAR blend** (register the `(1−γ)·computed + γ·m_old` multiply-add, M4's 25-level /
-  5-CARRY8 critical path). Target ~2× Fmax (≈190 MHz). 6×10 at 190 MHz = **0.95 µs** → under budget.
-- Regenerate the `.svh` at `BP_LEGS=6 BP_ITERS=10`; the M4 RTL consumes it unchanged.
+measurable LER cost**. But 181 cyc is still 1.90 µs at 95.2 MHz, so sub-µs also needs an Fmax lever.
+Step 2 (below) applies it and re-measures — and finds the Fmax bottleneck is **not** where this section
+predicted (it is the S_CHECK min-sum, not the S_VAR blend). Regenerating the `.svh` at
+`BP_LEGS=6 BP_ITERS=10` is a drop-in — the M4 RTL consumes it unchanged.
 
 ## Files
 
 - `crates/aleph-qec/src/fixed_bp.rs` — `FixedRelayBp::with_budget` (explicit `legs`/`iters_per_leg`).
 - `crates/aleph-qec/examples/qec_q7_budget.rs` — the schedule sweep.
 - `docs/perf/data/qec-q7-budget.csv` — committed 80 k-shot run.
+
+-----
+
+# Q7-02 M5 step 2 — adopt 6×10 + right-size the accumulator; re-measure
+
+**Status:** done (Verilator + Vivado KV260 OOC). Two RTL changes, both bit-exact with the golden.
+
+## Changes
+
+1. **6×10 schedule** (2b). The graph emitter switched from `FixedRelayBp::new` (4×25) to
+   `with_budget(6, 10, …)` — the step-1 study's schedule. `bb_gross_tanner.svh` regenerates with
+   `BP_LEGS=6 BP_ITERS=10` and a 6-leg γ ROM (legs 0–3 keep their original γ, 4–5 are new), so the
+   golden and RTL stay bit-exact. **Worst-case latency 301 → 181 cycles** (`60·3 + 1`). Both decoders
+   re-verified: `bpunroll` (M4) PASS 65/65 @ 181 cyc; `bprelay` (M2) PASS 65/65 @ 17 424 cyc.
+2. **WACC 32 → 16** (2a). M4 carried M2's generous 32-bit blend accumulator, so every
+   `total`/`computed`/`num` add was a 32-bit CARRY chain. `|blend| ≤ ~5 600` fits signed 16 bits with
+   5× margin, so 16 is bit-exact with 32 at half the CARRY depth.
+
+## Result — 1.68× faster than M4, at no LER cost (KV260 OOC synth + P&R)
+
+| build | schedule | cycles | LUTs | Fmax | latency | vs M4 | LER |
+|-------|----------|--------|------|------|---------|-------|-----|
+| M4 | 4×25 | 301 | 94 194 | 95.2 MHz | 3.16 µs | 1.0× | 1.00× |
+| WACC=16 only | 4×25 | 301 | 86 352 | **100.9 MHz** | 2.98 µs | 1.06× | 1.00× |
+| **M5 (6×10 + WACC=16)** | **6×10** | **181** | 93 562 | **96.0 MHz** | **1.89 µs** | **1.68×** | **1.06×** |
+
+The gain is **almost entirely the cycle cut** (301 → 181). The two honest surprises:
+
+- **WACC narrowing's Fmax win (95.2 → 100.9 MHz at 4×25) is *cancelled* at 6×10.** The 6-leg γ ROM is
+  ~50% larger than 4-leg, which pushed LUT utilisation back to 80% (86 k → 93.5 k) and the extra
+  routing congestion ate the WACC gain — net Fmax 96.0 MHz, essentially M4's 95.2. Right-sizing WACC is
+  still kept (strictly smaller adders, headroom at 4×25), but at 6×10 it is masked by congestion.
+- **The Fmax wall is the S_CHECK min-sum, not the S_VAR blend.** The binding path on both the WACC and
+  6×10 builds is `m_vc_reg[*] → e_cv_reg[*]` — the **check→variable min-sum update** (two-pass
+  two-smallest-magnitude + exclude), **route-dominated (55% of the delay) at ~80% util**. The M4→M5
+  plan named the S_VAR relay blend as the target; the timing report says otherwise. Pipelining or
+  narrowing the *blend* would not have moved Fmax.
+
+## Verdict → the real sub-µs levers (M5 follow-up)
+
+181 cyc / 96 MHz = 1.89 µs is ~1.9× over the ~1 µs budget, and the wall is now **min-sum logic depth +
+routing congestion**, so:
+
+1. **Pipeline the S_CHECK min-sum** (register between the two magnitude passes), not the blend — the +1
+   cycle/iteration (→ 4/iter, 241 cyc at 6×10) only pays off if it lifts Fmax by more than the 1.33×
+   cycle penalty; the route-dominated path means the win is uncertain until measured.
+2. **Relieve congestion** — a *partial* unroll (K < all-72 checks/cycle) trades some of M4's 96× cycle
+   win back for far less area (M4 is 80% of the KV260) and shorter routes, which the 55%-route path
+   says matters more than logic here. This also un-does the γ-ROM congestion penalty.
+
+Both are microarchitecture work with uncertain payoff on a route-bound design — the honest state is
+**M5 landed a 1.68× latency cut for free (no LER cost)**; closing the remaining ~1.9× to sub-µs is a
+congestion/pipelining problem, not a schedule one.
+
+## Files
+
+- `hw/bp_relay_unrolled.sv` — `WACC=16`.
+- `crates/aleph-qec/examples/qec_q7_bp_graph.rs` — `LEGS=6 ITERS=10` via `with_budget`.
+- `hw/bb_gross_tanner.svh` — regenerated at 6×10 (committed).
