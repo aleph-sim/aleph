@@ -76,7 +76,10 @@ module bp_axi_wrap #(
   logic [BP_OBS-1:0]  dec_obs;
   logic [15:0]        dec_lat;
 
-  bp_relay_partial u_dec (
+  // The SAT-overlapped partial (bp_relay_partial_fast) — same ports/fit as bp_relay_partial but ~1.5×
+  // fewer cycles (folds S_SAT into the next S_CHECK's group cursor); it supersedes the slow partial as
+  // the board decoder. bp_relay_partial.sv stays as the curve point + its own Verilator test.
+  bp_relay_partial_fast u_dec (
     .clk(aclk), .rst_n(aresetn), .in_valid(dec_in_valid),
     .syndrome_in(dec_syndrome), .busy(dec_busy), .out_valid(dec_out_valid),
     .corr_out(dec_corr), .obs_flip(dec_obs), .valid_flag(dec_vflag),

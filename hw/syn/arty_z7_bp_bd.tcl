@@ -28,7 +28,7 @@ create_project -force bp_arty $proj_dir -part $part
 
 # RTL: decoder core + AXI wrapper + board top. The generated graph header is found via include dir.
 add_files -norecurse [list \
-  [file join $hw bp_relay_partial.sv] \
+  [file join $hw bp_relay_partial_fast.sv] \
   [file join $hw bp_axi_wrap.sv] \
   [file join $hw bp_axi_top.v] \
   [file join $hw bb_gross_tanner.svh]]
