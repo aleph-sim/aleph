@@ -83,7 +83,8 @@ impl FixedRelayBp {
 
     /// Build with explicit leg count, disordered-memory range `(γ_min, γ_max)`, disorder seed, and
     /// fixed-point width `(msg_bits, frac_bits)`. `α` is fixed at `7/8` (the multiply-free
-    /// normalisation the hardware uses).
+    /// normalisation the hardware uses). `iters_per_leg` defaults to `DEFAULT_MAX_ITER / legs`
+    /// (= 25 at the default 4 legs) — the full relay-BP schedule.
     pub fn with_params(
         dem: &DetectorErrorModel,
         legs: usize,
@@ -92,14 +93,41 @@ impl FixedRelayBp {
         msg_bits: u32,
         frac_bits: u32,
     ) -> Self {
+        let legs = legs.max(1);
+        let iters_per_leg = (crate::DEFAULT_MAX_ITER / legs as u32).max(8);
+        Self::with_budget(
+            dem,
+            legs,
+            iters_per_leg,
+            gamma_range,
+            seed,
+            msg_bits,
+            frac_bits,
+        )
+    }
+
+    /// Like [`with_params`](Self::with_params) but with an **explicit `iters_per_leg`**. The relay-BP
+    /// schedule is `legs × iters_per_leg` message-passing sweeps; on the RTL that is the dominant
+    /// term in the per-decode cycle count (M4: `legs·iters·3 + overhead`). The Q7-02 M5 budget study
+    /// sweeps `(legs, iters_per_leg)` to find the smallest schedule whose LER still matches the full
+    /// 4×25 relay-BP within Monte-Carlo CI — every sweep dropped is a direct latency win.
+    pub fn with_budget(
+        dem: &DetectorErrorModel,
+        legs: usize,
+        iters_per_leg: u32,
+        gamma_range: (f64, f64),
+        seed: u64,
+        msg_bits: u32,
+        frac_bits: u32,
+    ) -> Self {
         assert!((2..=31).contains(&msg_bits), "msg_bits must be in 2..=31");
         assert!(frac_bits < msg_bits, "frac_bits must be < msg_bits");
         let legs = legs.max(1);
+        let iters_per_leg = iters_per_leg.max(1);
 
         // Reuse the BpDecoder's flattened Tanner graph (identical layout to RelayBpDecoder).
         let bp = BpDecoder::with_params(dem, crate::DEFAULT_MAX_ITER, 0.875);
         let t = bp.tanner();
-        let iters_per_leg = (t.max_iter / legs as u32).max(8);
 
         let scale = (1i64 << frac_bits) as f64;
         let max_mag = (1i32 << (msg_bits - 1)) - 1;

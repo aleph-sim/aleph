@@ -317,3 +317,58 @@ sub-µs needs two more levers, now that the bottleneck is arithmetic-depth-bound
 - `hw/tb_bp_relay.cpp` (built `-DUNROLL`), `hw/Makefile` (`bpunroll`) — shared Verilator TB.
 - `hw/syn/synth_bp.tcl` — now takes `[top] [rtl.sv]` args (M3 sequential = default, M4 = unrolled).
 - reports on `openwebgui:/root/q7synth/reports/{kv260_unroll,zybo_unroll}/`.
+
+-----
+
+# Q7-02 M5 (step 1) — leg/iteration budget study (the cycle-count lever)
+
+**Status:** budget study done; RTL pipelining + schedule-swap is M5 step 2.
+
+## Why
+
+M4's 301 cycles = `legs·iters·3 + 1` (4 legs × 25 iters) is 3.16 µs at the KV260's 95.2 MHz — ~3× over
+the ~1 µs budget. The dominant term is the schedule length `legs·iters`, so the first (and cheapest)
+lever is to **stop doing sweeps the decode doesn't need**. `FixedRelayBp::with_budget(legs,
+iters_per_leg, …)` makes the schedule explicit; `qec_q7_budget` sweeps it at the hardware word (Q5.3)
+and reports each schedule's LER **relative to the full 4×25** plus the RTL cycles/latency it costs.
+
+## Result — the split matters more than the total (80 000 shots, gross code, indep-Z)
+
+LER as a ratio to the full 4×25 relay-BP; `within_ci` at the discriminating p=0.05 (tightest relative
+CI). Data: `docs/perf/data/qec-q7-budget.csv`.
+
+| schedule | sweeps | cycles | latency @95.2 MHz | LER ratio (p=0.05) | within CI |
+|----------|--------|--------|-------------------|--------------------|-----------|
+| **4×25** (full) | 100 | 301 | 3.16 µs | 1.000 | ✓ |
+| 4×20 | 80 | 241 | 2.53 µs | 1.028 | ✓ |
+| **6×10** | 60 | 181 | 1.90 µs | **1.057** | **✓** |
+| 5×12 | 60 | 181 | 1.90 µs | 1.065 | ✗ |
+| 4×15 | 60 | 181 | 1.90 µs | 1.067 | ✗ |
+| 3×20 | 60 | 181 | 1.90 µs | 1.073 | ✗ |
+| 4×12 | 48 | 145 | 1.52 µs | 1.109 | ✗ |
+| 2×15 | 30 | 91  | **0.96 µs** | 1.295 | ✗ |
+
+Two findings:
+
+1. **At a fixed sweep budget, more legs / fewer iters-per-leg wins.** All four 60-sweep schedules cost
+   the same 181 cycles, but only **6×10 stays within CI** (1.057×) — beating 4×15 (1.067×), 5×12, and
+   3×20. Relay-BP's strength is the **leg disorder diversity** (each leg reseeds γ and relays the
+   messages); iterations-per-leg have diminishing returns once BP has settled. So the schedule to spend
+   cycles on is *many short legs*, not *few long ones*.
+2. **The budget lever alone cannot reach sub-µs.** The only sub-µs schedule (2×15, 91 cyc, 0.96 µs)
+   costs 1.30× LER — outside CI at every p. Even the aggressive-but-safe 6×10 is 1.90 µs.
+
+## Verdict → M5 step 2 (the sub-µs recipe)
+
+**6×10 (181 cyc, 1.06× LER, within CI at all p)** is the M5 schedule — a **40% cycle cut for no
+measurable LER cost**. But 181 cyc is still 1.90 µs at 95.2 MHz, so sub-µs needs the **Fmax lever too**:
+
+- **Pipeline the S_VAR blend** (register the `(1−γ)·computed + γ·m_old` multiply-add, M4's 25-level /
+  5-CARRY8 critical path). Target ~2× Fmax (≈190 MHz). 6×10 at 190 MHz = **0.95 µs** → under budget.
+- Regenerate the `.svh` at `BP_LEGS=6 BP_ITERS=10`; the M4 RTL consumes it unchanged.
+
+## Files
+
+- `crates/aleph-qec/src/fixed_bp.rs` — `FixedRelayBp::with_budget` (explicit `legs`/`iters_per_leg`).
+- `crates/aleph-qec/examples/qec_q7_budget.rs` — the schedule sweep.
+- `docs/perf/data/qec-q7-budget.csv` — committed 80 k-shot run.
