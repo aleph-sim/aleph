@@ -719,3 +719,53 @@ the M2↔M4 curve point.
 - `hw/bp_relay_partial_fast.sv` — SAT-overlapped partial (the Arty board decoder).
 - `hw/tb_bp_relay.cpp` (`-DPARTIALFAST`), `hw/Makefile` (`bppartialfast`); `hw/bp_axi_wrap.sv` +
   `hw/syn/arty_z7_bp_bd.tcl` now instantiate it.
+
+-----
+
+# Q7-02 M5-followup — circuit-level decode on the Arty: the M2 cursor-mux wall is fatal (needs BRAM)
+
+**Status:** attempted; the wrapper/co-sim/driver are validated, but the **M2 decoder core does not fit the
+xc7z020** at circuit scale. This records exactly why, and the path that would.
+
+The plan: bring up the circuit-level relay-BP decode on the Arty via the **graph-generic M2 sequential
+decoder** (the only variant that isn't baked to a fixed graph) behind a **size-generic AXI4-Lite wrapper**
+(`bp_axi_wrap_wide`, deriving `NS = ⌈BP_C/32⌉` syndrome words / `NC = ⌈BP_N/32⌉` correction words from the
+header — 5 / 27 for the rounds=1 circuit graph). Everything **off the fabric works**:
+
+- `make -C hw bpaxiwide` → **40/40 circuit-level decodes bit-exact over the wide AXI4-Lite regmap**, and
+- `bp_circ_pynq.py` (GoldenModel) → **40/40**, and the M2 latency counter, widened 16→32-bit, now reports
+  the true **69 984** cycles (this also fixes the § circuit co-sim 16-bit overflow — `bpcirc` no longer
+  wraps to 4448).
+
+**But the M2 core will not synthesise for the xc7z020.** M2 reads its message arrays by a *runtime* node
+cursor — `m_vc[BP_CHECK_EDGES[off+k]]` — which the M3 study already found to be the wall (a large select
+feeding the min-sum, demuxed back across the edges). At code capacity that mux is over `BP_E = 432` edges
+(M2 = 23 596 LUT, 44%). The circuit-level graph has **`BP_E = 2952`** edges (6.8×), and the mux blows up
+super-linearly: an OOC synth on the 62 GB build box was **OOM-killed** —
+
+```
+oom-kill: task=vivado ... Out of memory: Killed process (vivado)
+          total-vm:86 GB, anon-rss:63.8 GB
+```
+
+Vivado consumed **~64 GB** in RTL/timing optimization on the cursor mux and died before place. Even had it
+completed, the mux extrapolates to **~90 k+ LUT ≫ the 53 200-LUT part**. So the runtime-cursor M2 path is a
+dead end at circuit scale — not merely too big, but not synthesisable on the box.
+
+## The path that would fit — BRAM-backed messages (an M2 redesign, not a wrapper change)
+
+The cursor mux exists because M2 does *many scattered message reads per cycle* (all `deg` edges of a check
+in one cycle). Mapping `m_vc`/`e_cv` to **block RAM** (the xc7z020 has 140 BRAM tiles, unused here) removes
+the mux — but a single-port BRAM serves *one* access per cycle, so the check/var updates must be
+restructured to an **edge-serial FSM** (one edge per cycle, ~`deg`× more cycles). That is a genuine core
+redesign, deferred. Until then, circuit-level relay-BP is validated end-to-end **in simulation** (the wide
+wrapper + co-sim + driver above), and runs on real silicon only at **code capacity** (§ board bring-up);
+the circuit-scale core wants BRAM-backed messages or a larger fabric.
+
+## Files
+
+- `hw/bp_axi_wrap_wide.sv`, `hw/bp_axi_top_wide.v` — size-generic wide AXI4-Lite wrapper (validated 40/40).
+- `hw/tb_bp_axi_wide.cpp` (`make -C hw bpaxiwide`), `hw/sw/bp_circ_pynq.py` — wide-regmap sim + driver.
+- `hw/bp_relay_decoder.sv` — M2 latency widened to 32-bit (real circuit latency; fixes the co-sim wrap).
+- `hw/syn/arty_z7_bp_circ_bd.tcl` — the (currently un-synthesisable) circuit board BD, kept for the future
+  BRAM-backed core.
