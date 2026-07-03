@@ -581,3 +581,57 @@ M2 616 µs → M4 3.16 µs → M5 1.89 µs → **fast 1.27 µs**.
 - `hw/bp_relay_fast.sv` — SAT-overlapped unrolled decoder (the 1.27 µs production variant).
 - `hw/bp_relay_pipe.sv` — min-sum-pipelined variant (kept as the measured negative-result experiment).
 - `hw/tb_bp_relay.cpp` (`-DFAST` / `-DPIPE`), `hw/Makefile` (`bpfast` / `bppipe`) — shared Verilator TB.
+
+-----
+
+# Q7-02 M5-followup — the OSD-0 tail, measured: not worth the silicon (ships pure relay-BP)
+
+**Status:** done — measured and rejected. Relay-BP on a degenerate qLDPC code occasionally leaves a
+hard decision that does not satisfy `H ê = s`. The classic fix is an **OSD** tail (Fossorier–Lin: order
+the variables by BP reliability, most-reliable-basis GF(2) Gauss–Jordan, solve the pivots). We built it
+on the fixed-point golden — [`FixedRelayBpOsd`], a rare **slow-path escape** (the RTL emits `valid_flag`;
+the PS runs OSD only on `!valid_flag` shots, since OSD's data-dependent Gauss–Jordan is exactly the
+hardware-hostile work Q7-02 chose relay-BP to avoid) — and measured whether it earns its place.
+
+## Result — OSD-0 does not cut LER; the win needs an order-12 sweep
+
+`qec_q7_osd` sweeps the OSD combination-sweep **order** at code-capacity and circuit-level (gross code,
+Q5.3 front-end, fixed **and** float relay-BP as reference).
+
+**Code capacity** (20 000 shots): OSD-0 is **LER-neutral** at every `p` (within CI), tail-rate grows
+0.15 % → 8.6 % over p = 0.03 → 0.06. Relay-BP's failures here are mostly *uncorrectable* (weight > d/2),
+so a valid OSD decode is a ~coin-flip coset — no gain.
+
+**Circuit-level** (depth-7 extraction, rounds = 6, 3 000 shots), fixed vs float, by OSD order:
+
+| p | plain (fx / fl) | +OSD-0 | +OSD-4 | +OSD-12 |
+|---|-----------------|--------|--------|---------|
+| 0.002 | 4.0e-3 / 3.3e-3 | 6.7e-3 / 5.7e-3 **worse** | 4.0e-3 / 4.3e-3 ≈ | **1.7e-3 / 1.3e-3 wins** |
+| 0.003 | 2.0e-2 / 1.9e-2 | 2.7e-2 / 2.8e-2 **worse** | 2.3e-2 / 2.6e-2 ≈ | **1.3e-2 / 1.5e-2 wins** |
+
+Two decisive findings:
+
+1. **OSD-0 (order 0) hurts** — in *both* float and fixed. Replacing BP's invalid guess with a valid but
+   often-wrong-coset decode loses more shots than it rescues. The beneficial regime is **order ≈ 12**
+   (`2^12` = 4096 flip patterns re-solved per shot), which reproduces the Q5-05 relay-BP+OSD win
+   (`qec-q5-circuit-dem.md` used order 12). Order 4 is roughly break-even.
+2. **Fixed Q5.3 tracks float at every order** (order-12: fixed 1.3e-2 vs float 1.5e-2). So the Q5.3
+   hardware word is **not** the limiter for OSD — the *order* is. (This also re-validates Q5.3: even the
+   OSD reliability ordering survives the quantisation.)
+
+## Verdict → no OSD tail on the Q7-02 hardware
+
+The only hardware-tractable OSD order (0) does not help, and the order that helps (12) is a 4096-way
+reliability-ordered GF(2) Gauss–Jordan per failure shot — utterly impractical as an RTL datapath or even
+a PS slow-path tail, and precisely the data-dependent variable-latency decoder Q7-02 rejected up front.
+**So Q7-02 ships pure relay-BP; the OSD tail is not worth the silicon or the PS cycles.** This is the
+data that *validates* the original architecture call (relay-BP over BP+OSD). `FixedRelayBpOsd` remains as
+the measured evidence and a validity-guarantee option (its decode always satisfies `H ê = s`), which the
+logical-observable readout use case does not need.
+
+## Files
+
+- `crates/aleph-qec/src/fixed_bp.rs` — `FixedRelayBp::decode_fixed_soft` (exposes the fixed-point
+  posterior LLR) + `FixedRelayBpOsd` (the OSD-0 tail decoder + `decode_fixed_osd` returning the
+  tail-ran flag).
+- `crates/aleph-qec/examples/qec_q7_osd.rs` — the order/precision sweep (`capacity` | `circuit`).

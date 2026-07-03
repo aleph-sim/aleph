@@ -240,11 +240,34 @@ impl FixedRelayBp {
         (chosen, flips, found)
     }
 
+    /// Decode exposing the BP **soft** output — the final hard decision, quantised posterior LLR, and
+    /// whether a syndrome-valid decision was found — as a [`BpSoft`](crate::BpSoft) (LLR dequantised to
+    /// `f64`; only its *ordering* and *sign* matter to OSD, both preserved by the linear scale). This is
+    /// the hook the OSD-0 tail ([`FixedRelayBpOsd`]) consumes: when `converged` it carries the valid
+    /// lowest-weight `ê`, otherwise the final BP belief for OSD to refine into a valid low-weight error.
+    pub fn decode_fixed_soft(&self, syndrome: &Syndrome) -> crate::BpSoft {
+        let (chosen, found, llr_q) = self.run_soft(syndrome);
+        crate::BpSoft {
+            ehat: chosen,
+            llr: llr_q.into_iter().map(|x| x as f64).collect(),
+            converged: found,
+        }
+    }
+
     /// The relay-BP legs/iterations loop, returning the chosen hard decision (lowest-weight
     /// syndrome-valid across all legs, or the final one if none was valid) and whether any valid
     /// decision was seen. Shared by [`decode_fixed`](Self::decode_fixed) and
     /// [`decode_fixed_ehat`](Self::decode_fixed_ehat).
     fn run(&self, syndrome: &Syndrome) -> (Vec<u8>, bool) {
+        let (chosen, found, _llr) = self.run_soft(syndrome);
+        (chosen, found)
+    }
+
+    /// Like [`run`](Self::run) but also returns the **final-iteration** per-variable soft LLR
+    /// (quantised): `λ_v + Σ_c e_{c→v}`, the same posterior the f64 relay-BP exposes. This is the
+    /// reliability information the OSD-0 tail ([`FixedRelayBpOsd`]) needs on the shots where no leg
+    /// found a valid `ê` — its `sign` is the hard decision, its `|·|` the ordering key.
+    fn run_soft(&self, syndrome: &Syndrome) -> (Vec<u8>, bool, Vec<i32>) {
         let mut s = vec![0u8; self.num_detectors];
         for &d in &syndrome.fired {
             if (d as usize) < self.num_detectors {
@@ -278,7 +301,17 @@ impl FixedRelayBp {
             }
         }
 
-        (best.map(|(_, e)| e).unwrap_or(ehat), found_valid)
+        // Final-iteration posterior LLR per variable (λ_v + Σ of this variable's check→variable
+        // messages). `e_cv`/`var_off` are variable-major-contiguous, matching `var_update_memory`.
+        // Magnitudes are tiny (|λ|+deg·max_mag ≈ 28 + 3·127), so the i32 sum cannot overflow.
+        let llr_q: Vec<i32> = (0..self.n_vars)
+            .map(|v| {
+                let (lo, hi) = (self.var_off[v] as usize, self.var_off[v + 1] as usize);
+                self.lambda_q[v] + e_cv[lo..hi].iter().sum::<i32>()
+            })
+            .collect();
+
+        (best.map(|(_, e)| e).unwrap_or(ehat), found_valid, llr_q)
     }
 
     /// α = 7/8 on a non-negative magnitude: `x − (x >> 3)`, exact and multiply-free.
@@ -382,6 +415,65 @@ impl FixedRelayBp {
 impl Decoder for FixedRelayBp {
     fn decode(&self, syndrome: &Syndrome) -> Correction {
         self.decode_fixed(syndrome).0
+    }
+}
+
+/// **Fixed-point relay-BP + OSD-0 tail** — the hardware golden decoder with a software OSD-0 escape
+/// for the rare shots where no relay-BP leg produces a syndrome-valid `ê`.
+///
+/// The fixed-point relay-BP ([`FixedRelayBp`]) is the whole point of the Q7-02 RTL: a fixed-schedule,
+/// multiply-light message-passing datapath. But BP on a degenerate qLDPC code occasionally leaves a
+/// hard decision that does **not** satisfy `H ê = s` — a guaranteed failure. OSD-0 (Fossorier–Lin, via
+/// [`OsdDecoder`]) turns the fixed decoder's *soft* output into a guaranteed syndrome-consistent
+/// low-weight error on exactly those shots, and returns BP's own valid decision untouched otherwise.
+///
+/// **Hardware division of labour.** OSD-0's reliability-ordered GF(2) Gauss–Jordan is data-dependent
+/// and variable-latency — deliberately *not* on the RTL datapath (the reason Q7-02 chose relay-BP over
+/// BP+OSD in the first place). So the tail is a **rare slow-path escape**: the RTL emits `valid_flag`
+/// per decode, and the PS (ARM) runs this OSD-0 in software only on the `!valid_flag` shots. The
+/// tail-rate (fraction of shots where OSD runs) is the cost metric, measured by `qec_q7_osd`.
+#[derive(Clone, Debug)]
+pub struct FixedRelayBpOsd {
+    fixed: FixedRelayBp,
+    osd: crate::OsdDecoder,
+}
+
+impl FixedRelayBpOsd {
+    /// Build the default 4-leg fixed relay-BP front-end (`FixedRelayBp::new`) with an OSD-0 tail
+    /// (combination-sweep `order`; `0` = plain OSD-0) over the same `dem`.
+    pub fn new(dem: &DetectorErrorModel, msg_bits: u32, frac_bits: u32, order: usize) -> Self {
+        Self::with_parts(
+            FixedRelayBp::new(dem, msg_bits, frac_bits),
+            crate::OsdDecoder::new(dem).with_order(order),
+        )
+    }
+
+    /// Build from an explicit fixed relay-BP front-end and OSD post-processor (both over the *same*
+    /// DEM — they must share the [`BpDecoder`](crate::BpDecoder) Tanner layout so the soft output's
+    /// variable order lines up with OSD's parity-check columns; `FixedRelayBp` and `OsdDecoder` both
+    /// derive it from `BpDecoder::with_params`, so any constructor pairing over one DEM is aligned).
+    pub fn with_parts(fixed: FixedRelayBp, osd: crate::OsdDecoder) -> Self {
+        Self { fixed, osd }
+    }
+
+    /// Decode: fixed relay-BP, then — only if no leg found a valid `ê` — the OSD-0 tail. Returns the
+    /// correction and whether the **OSD tail ran** (`true` ⇒ this was a relay-BP failure shot; the
+    /// fraction of `true`s is the slow-path tail-rate).
+    pub fn decode_fixed_osd(&self, syndrome: &Syndrome) -> (Correction, bool) {
+        let soft = self.fixed.decode_fixed_soft(syndrome);
+        let tail_ran = !soft.converged;
+        (self.osd.correction_from_soft(syndrome, &soft), tail_ran)
+    }
+
+    /// The fixed relay-BP front-end (e.g. for its `(msg_bits, frac_bits)` width).
+    pub fn fixed(&self) -> &FixedRelayBp {
+        &self.fixed
+    }
+}
+
+impl Decoder for FixedRelayBpOsd {
+    fn decode(&self, syndrome: &Syndrome) -> Correction {
+        self.decode_fixed_osd(syndrome).0
     }
 }
 
@@ -526,6 +618,45 @@ mod tests {
         assert!(
             agree * 100 >= shots * 95,
             "wide fixed vs f64 relay agreed on only {agree}/{shots} shots"
+        );
+    }
+
+    /// The OSD-0 tail fires only on the relay-BP failure shots (`!converged`), leaves BP's valid
+    /// decisions untouched, and turns each failure into a guaranteed syndrome-consistent low-weight
+    /// error. At code capacity relay-BP's failures are mostly genuinely uncorrectable (weight > d/2, so
+    /// any valid decode is ~coin-flip coset) → the tail is roughly LER-*neutral* here (its LER win is a
+    /// circuit-level story); the invariant we assert is that it fires on a nonzero fraction and does not
+    /// worsen the logical-error count beyond Monte-Carlo noise.
+    #[test]
+    fn osd_tail_runs_and_within_noise() {
+        use crate::experiment::sample_shots;
+        let code = BBCode::gross();
+        let dem = code.code_capacity_dem(0.06); // hard enough that some legs fail to find a valid ê
+        let plain = FixedRelayBp::new(&dem, 8, 3);
+        let osd = FixedRelayBpOsd::new(&dem, 8, 3, 0);
+
+        let (syndromes, truths) = sample_shots(&dem, 3000, 0x0D5D_0001);
+        let (mut plain_err, mut osd_err, mut tail) = (0u64, 0u64, 0u64);
+        for (syn, truth) in syndromes.iter().zip(&truths) {
+            let p = plain.decode(syn).observable_flips;
+            let (o, ran) = osd.decode_fixed_osd(syn);
+            if ran {
+                tail += 1;
+            }
+            if &p != truth {
+                plain_err += 1;
+            }
+            if &o.observable_flips != truth {
+                osd_err += 1;
+            }
+        }
+        assert!(tail > 0, "OSD-0 tail should fire on some shots at p=0.06");
+        // Within ~3σ of the plain error count (Poisson): the tail must not make things meaningfully
+        // worse. (It is ~neutral at code capacity; the strict improvement shows up circuit-level.)
+        let slack = 3.0 * (plain_err as f64).sqrt();
+        assert!(
+            (osd_err as f64) <= plain_err as f64 + slack,
+            "OSD-0 tail worsened LER beyond noise: osd={osd_err} plain={plain_err} slack={slack:.0}"
         );
     }
 }
