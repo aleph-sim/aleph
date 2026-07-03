@@ -26,6 +26,7 @@ mod decoder;
 mod dem;
 mod error;
 mod experiment;
+mod fixed_bp;
 mod matching;
 mod mwpm;
 mod osd;
@@ -46,6 +47,7 @@ pub use error::{Error, Result};
 pub use experiment::{
     run_dem_experiment, run_memory_experiment, sample_shots, PhenomenologicalNoise,
 };
+pub use fixed_bp::{FixedHwView, FixedRelayBp};
 pub use matching::{MatchingEdge, MatchingGraph, NodeId};
 pub use mwpm::MwpmDecoder;
 pub use osd::OsdDecoder;
