@@ -12,7 +12,7 @@ OBJ_DIR   := obj_dir
 VERILATOR ?= verilator
 CARGO     := cargo run --release -q -p aleph-qec --example
 
-.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi stream-axi-circuit cosim-stream cosim-stream-circuit cosim-stream-ler cosim-stream-ler-circuit cosim cosim-3d cosim-circuit cosim-circuit-3d bpcheck bprelay bpunroll clean
+.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi stream-axi-circuit cosim-stream cosim-stream-circuit cosim-stream-ler cosim-stream-ler-circuit cosim cosim-3d cosim-circuit cosim-circuit-3d bpcheck bprelay bpunroll bppartial clean
 
 all: d3 rep surf
 
@@ -45,6 +45,16 @@ bpunroll:
 	$(VERILATOR) --cc --exe --build -Wall --Mdir obj_unroll --top-module bp_relay_unrolled -CFLAGS -DUNROLL \
 		bp_relay_unrolled.sv tb_bp_relay.cpp -o sim_bpunroll
 	./obj_unroll/sim_bpunroll bp_dec_vectors.txt
+
+# Q7-02 M5-followup — partially-unrolled relay-BP decoder (CHK_UNROLL checks / VAR_UNROLL vars per
+# cycle) vs the SAME golden. Middle point between M2 (1 node/cyc, fits anything) and M4 (all/cyc, KV260-
+# only): fits a xc7z020 (Arty/Zybo) while far faster than M2. -DPARTIAL selects it in the shared TB.
+bppartial:
+	cd .. && $(CARGO) qec_q7_bp_graph -- graph      > hw/bb_gross_tanner.svh
+	cd .. && $(CARGO) qec_q7_bp_graph -- decvectors > hw/bp_dec_vectors.txt
+	$(VERILATOR) --cc --exe --build -Wall --Mdir obj_partial --top-module bp_relay_partial -CFLAGS -DPARTIAL \
+		bp_relay_partial.sv tb_bp_relay.cpp -o sim_bppartial
+	./obj_partial/sim_bppartial bp_dec_vectors.txt
 
 d3:
 	cd .. && $(CARGO) qec_d3_lut_table > hw/surface_d3_lut.mem
