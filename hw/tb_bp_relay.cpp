@@ -17,7 +17,10 @@
 // (`-DUNROLL`), the M5-followup partially-unrolled decoder (`-DPARTIAL`), and the min-sum-pipelined
 // unrolled decoder (`-DPIPE`). All share the exact port list and are checked against the same golden
 // vectors, so a pass certifies each is the bit-for-bit twin of the others (hence of `FixedRelayBp`).
-#if defined(FAST)
+#if defined(PARTIALFAST)
+#include "Vbp_relay_partial_fast.h"
+using Dut = Vbp_relay_partial_fast;
+#elif defined(FAST)
 #include "Vbp_relay_fast.h"
 using Dut = Vbp_relay_fast;
 #elif defined(PIPE)

@@ -12,7 +12,7 @@ OBJ_DIR   := obj_dir
 VERILATOR ?= verilator
 CARGO     := cargo run --release -q -p aleph-qec --example
 
-.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi stream-axi-circuit cosim-stream cosim-stream-circuit cosim-stream-ler cosim-stream-ler-circuit cosim cosim-3d cosim-circuit cosim-circuit-3d bpcheck bprelay bpunroll bppartial bppipe bpfast bpaxi bpcirc clean
+.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi stream-axi-circuit cosim-stream cosim-stream-circuit cosim-stream-ler cosim-stream-ler-circuit cosim cosim-3d cosim-circuit cosim-circuit-3d bpcheck bprelay bpunroll bppartial bppartialfast bppipe bpfast bpaxi bpcirc clean
 
 all: d3 rep surf
 
@@ -56,6 +56,16 @@ bppartial:
 		bp_relay_partial.sv tb_bp_relay.cpp -o sim_bppartial
 	./obj_partial/sim_bppartial bp_dec_vectors.txt
 
+# Q7-02 M5-followup — SAT-OVERLAPPED partial decoder (the Arty-fit fast variant): folds S_SAT into the
+# next S_CHECK's group cursor → G_CHK+G_VAR cyc/iter not 2·G_CHK+G_VAR (12/24: 12 not 18 → ~720 vs 1086,
+# ~1.5×) at the same Arty part. -DPARTIALFAST selects it in the shared TB.
+bppartialfast:
+	cd .. && $(CARGO) qec_q7_bp_graph -- graph      > hw/bb_gross_tanner.svh
+	cd .. && $(CARGO) qec_q7_bp_graph -- decvectors > hw/bp_dec_vectors.txt
+	$(VERILATOR) --cc --exe --build -Wall --Mdir obj_partialfast --top-module bp_relay_partial_fast -CFLAGS -DPARTIALFAST \
+		bp_relay_partial_fast.sv tb_bp_relay.cpp -o sim_bppartialfast
+	./obj_partialfast/sim_bppartialfast bp_dec_vectors.txt
+
 # Q7-02 M5-followup — min-sum-PIPELINED unrolled decoder: S_CHECK split into S_CHK1 (reduction, deep)
 # + S_CHK2 (output, shallow) to raise Fmax past the ~96 MHz min-sum wall. +1 cyc/iter (181->241);
 # net win only if Fmax rises >1.33×. -DPIPE selects it in the shared TB.
@@ -83,7 +93,7 @@ bpaxi:
 	cd .. && $(CARGO) qec_q7_bp_graph -- graph      > hw/bb_gross_tanner.svh
 	cd .. && $(CARGO) qec_q7_bp_graph -- decvectors > hw/bp_dec_vectors.txt
 	$(VERILATOR) --cc --exe --build -Wall -Wno-fatal --Mdir obj_bpaxi --top-module bp_axi_wrap \
-		bp_axi_wrap.sv bp_relay_partial.sv tb_bp_axi.cpp -o sim_bpaxi
+		bp_axi_wrap.sv bp_relay_partial_fast.sv tb_bp_axi.cpp -o sim_bpaxi
 	./obj_bpaxi/sim_bpaxi bp_dec_vectors.txt
 
 # Q7-02 M5-followup — sim↔RTL CO-SIM at CIRCUIT LEVEL. Emits the depth-7 circuit-level gross-code graph
