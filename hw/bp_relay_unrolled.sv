@@ -50,7 +50,12 @@ module bp_relay_unrolled (
   // All-ones word (> every real magnitude) is the +∞ sentinel for the running minima — matches the
   // Rust golden's i32::MAX. Magnitudes are ≤ MAX_MAG (127) at Q5.3.
   localparam logic [MSG_BITS-1:0] INF = '1;
-  localparam int WACC = 32;             // wide accumulator/product (matches M2; blend needs ~13 b)
+  // M5 Fmax lever #1 (free — no cycle cost): right-size the blend accumulator. M4 used WACC=32 (M2's
+  // generous width), so every `total`/`computed`/`num` add was a 32-bit CARRY chain (4 CARRY8 each) —
+  // a big part of the 25-level / 5-CARRY8 S_VAR critical path. The blend never exceeds ~5 600 in
+  // magnitude (|omg·computed + γ·old| ≤ 10·472 + 7·127), which fits signed 16 bits with 5× margin, so
+  // 16 bits is bit-exact with 32 (verified in Verilator) at half the CARRY depth.
+  localparam int WACC = 16;
   localparam int WW   = $clog2(BP_N + 1);
 
   typedef enum logic [2:0] { S_IDLE, S_CHECK, S_VAR, S_SAT, S_EMIT, S_DONE } state_t;
