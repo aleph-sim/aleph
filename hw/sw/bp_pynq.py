@@ -46,8 +46,9 @@ BP_OBS = 12  # logical observables
 class BpDecoder:
     """Host driver for bp_axi_wrap over any MMIO backend exposing read(off)/write(off, val)."""
 
-    def __init__(self, mmio, clk_hz=50_000_000, poll_limit=200_000):
-        # 50 MHz: the timing-closed PL clock for xc7z020 (matches the Q6 UF board builds).
+    def __init__(self, mmio, clk_hz=25_000_000, poll_limit=200_000):
+        # 25 MHz: the PL clock the bp_arty bitstream is built at (WNS +4.57 ns, in-context Fmax ~28 MHz;
+        # the 12/24 partial's OOC Fmax was 35.5 MHz). Pass clk_hz to match a differently-clocked build.
         self.mmio = mmio
         self.clk_hz = clk_hz
         self.poll_limit = poll_limit

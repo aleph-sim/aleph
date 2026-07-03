@@ -481,13 +481,41 @@ chain is a clean `G:1` mux — no runtime address arithmetic reaches the arrays.
 (bit-exact), synthesises in minutes instead of grinding. **Lesson: to time-multiplex a
 constant-indexed unrolled datapath, mux the operands, never the indices.**
 
-## Next → onto the Arty
+## On silicon — the Arty Z7-20 board bring-up (done)
 
-`bp_relay_partial` is the decoder to bring up on the Arty Z7-20 we already have (no KV260 needed):
-30.6 µs is over the ~1 µs budget but is a *working, reasonably fast relay-BP qLDPC decoder on owned
-hardware*. Board bring-up reuses the Q6 `uf_arty` AXI/DMA wrapper (a separate step).
+`bp_relay_partial` now runs on the **real Arty Z7-20** (`xc7z020clg400-1`), the first **qLDPC frontier
+relay-BP decoder on owned silicon** (all prior on-hardware decodes were UF surface-code). The value here
+is *correctness on real hardware*, not real-time latency — the gross code on this small part is over the
+~1 µs surface budget, exactly as expected.
+
+**PS↔PL interface — AXI4-Lite (`bp_axi_wrap.sv` + Verilog top `bp_axi_top.v`).** One syndrome in / one
+correction out (code-capacity), so — unlike the Q6 UF throughput path (AXI-Stream + DMA) — the plain
+AXI4-Lite control plane is the right fit (same shape as `uf_axi_wrap`/`uf_pynq.py`). The gross code is
+wider than a 32-bit word, so the register map spreads the ports: syndrome (72 b) over **3 write words**,
+correction (144 b) over **5 read words**, `obs_flip` (12 b) in one; plus CTRL/STATUS/LATENCY and an
+IDCODE constant `0x4250_0001` ('BP', v1) for PS↔PL sanity.
+
+**Verified before Vivado.** `hw/tb_bp_axi.cpp` (`make -C hw bpaxi`) drives *real* AXI4-Lite transactions
+through the wrapper per golden vector — **65/65 bit-exact, worst latency 1086 cycles**. The Python driver
+`hw/sw/bp_pynq.py` is its twin (pynq.MMIO on-board / a `GoldenModel` software backend off-board), so the
+protocol self-tests 65/65 with no board.
+
+**Board build (`hw/syn/arty_z7_bp_bd.tcl`, openwebgui Vivado 2024.2).** Zynq-7 PS GP0 → `bp_axi_top`,
+generic PS7 (no board files; DDR/MIO from the PYNQ-Z1 FSBL). At **FCLK 25 MHz** (the 12/24 partial's OOC
+Fmax was 35.5 MHz; 25 MHz gives in-context margin): **WNS +4.57 ns → TIMING_MET** (in-context Fmax
+≈ 28 MHz), **23 881 LUT (44.9 %), 8 400 FF (7.9 %), 0 DSP, 0 BRAM** — the datapath survives placement.
+
+**On-silicon result (`bp_pynq.py bp_arty.bit`).** IDCODE ok; **65/65 decodes bit-identical to the
+fixed-point golden**; worst latency **1086 cycles = 43.4 µs @ 25 MHz**. The cycle count matches the
+Verilator sim and the Rust `FixedRelayBp` golden exactly — the silicon is the bit-for-bit twin. Board
+dir `~/bp`; artifacts routed openwebgui → Mac → board (the cloud box can't reach the private LAN).
 
 ## Files
+
+- `hw/bp_axi_wrap.sv`, `hw/bp_axi_top.v` — AXI4-Lite PS↔PL wrapper + Verilog module-ref top.
+- `hw/tb_bp_axi.cpp` (`make -C hw bpaxi`) — Verilator TB driving real AXI4-Lite per golden vector.
+- `hw/sw/bp_pynq.py` — host driver (on-board pynq.MMIO / off-board GoldenModel self-test).
+- `hw/syn/arty_z7_bp_bd.tcl` — Arty Z7-20 block design + bitstream (default FCLK 25 MHz).
 
 - `hw/bp_relay_partial.sv` — parameterised partial unroll (gather/compute/scatter, synth-friendly).
 - `hw/tb_bp_relay.cpp` (`-DPARTIAL`), `hw/Makefile` (`bppartial`) — shared Verilator TB.
