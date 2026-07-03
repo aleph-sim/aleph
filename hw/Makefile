@@ -12,7 +12,7 @@ OBJ_DIR   := obj_dir
 VERILATOR ?= verilator
 CARGO     := cargo run --release -q -p aleph-qec --example
 
-.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi stream-axi-circuit cosim-stream cosim-stream-circuit cosim-stream-ler cosim-stream-ler-circuit cosim cosim-3d cosim-circuit cosim-circuit-3d bpcheck bprelay bpunroll bppartial clean
+.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi stream-axi-circuit cosim-stream cosim-stream-circuit cosim-stream-ler cosim-stream-ler-circuit cosim cosim-3d cosim-circuit cosim-circuit-3d bpcheck bprelay bpunroll bppartial bpaxi clean
 
 all: d3 rep surf
 
@@ -55,6 +55,16 @@ bppartial:
 	$(VERILATOR) --cc --exe --build -Wall --Mdir obj_partial --top-module bp_relay_partial -CFLAGS -DPARTIAL \
 		bp_relay_partial.sv tb_bp_relay.cpp -o sim_bppartial
 	./obj_partial/sim_bppartial bp_dec_vectors.txt
+
+# Q7-02 board bring-up — AXI4-Lite wrapper (bp_axi_wrap) around the partial decoder, driven by REAL
+# AXI-Lite transactions from tb_bp_axi.cpp (the sim twin of hw/sw/bp_pynq.py). Validates the PS<->PL
+# shell + multi-word syndrome/correction register map before the Vivado board build.
+bpaxi:
+	cd .. && $(CARGO) qec_q7_bp_graph -- graph      > hw/bb_gross_tanner.svh
+	cd .. && $(CARGO) qec_q7_bp_graph -- decvectors > hw/bp_dec_vectors.txt
+	$(VERILATOR) --cc --exe --build -Wall -Wno-fatal --Mdir obj_bpaxi --top-module bp_axi_wrap \
+		bp_axi_wrap.sv bp_relay_partial.sv tb_bp_axi.cpp -o sim_bpaxi
+	./obj_bpaxi/sim_bpaxi bp_dec_vectors.txt
 
 d3:
 	cd .. && $(CARGO) qec_d3_lut_table > hw/surface_d3_lut.mem
