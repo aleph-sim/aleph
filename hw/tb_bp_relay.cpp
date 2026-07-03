@@ -13,10 +13,19 @@
 #include <string>
 #include <vector>
 
+// One TB, two DUTs: the M2 sequential decoder (default) and the M4 spatially-unrolled decoder
+// (`-DUNROLL`). Both share the exact port list and are checked against the same golden vectors, so a
+// pass on both certifies M4 is the bit-for-bit twin of M2 (hence of `FixedRelayBp`).
+#ifdef UNROLL
+#include "Vbp_relay_unrolled.h"
+using Dut = Vbp_relay_unrolled;
+#else
 #include "Vbp_relay_decoder.h"
+using Dut = Vbp_relay_decoder;
+#endif
 #include "verilated.h"
 
-static Vbp_relay_decoder *top;
+static Dut *top;
 
 static void tick() {
   top->clk = 0;
@@ -47,7 +56,7 @@ int main(int argc, char **argv) {
     return 2;
   }
 
-  top = new Vbp_relay_decoder;
+  top = new Dut;
   // Reset.
   top->rst_n = 0;
   top->in_valid = 0;
