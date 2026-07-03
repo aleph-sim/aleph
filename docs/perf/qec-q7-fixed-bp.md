@@ -687,3 +687,35 @@ the AXI wrapper for a number the co-sim does not check, so it is left as-is and 
 - `crates/aleph-qec/examples/qec_q7_bp_graph.rs` — `circgraph` / `circvectors` modes (circuit-level
   graph + real-shot golden vectors); `build()` selects code-capacity vs circuit-level DEM.
 - `hw/Makefile` (`bpcirc`) — the circuit-level co-sim: emit → cp header → M2 Verilator → bit-exact.
+
+-----
+
+# Q7-02 M5-followup — SAT-overlap on the Arty partial: 43.4 → 29.3 µs on real silicon
+
+**Status:** done, on the board. The `bp_relay_fast` SAT-overlap lever (§ sub-µs levers, #443) — fold the
+S_SAT parity check to run in parallel with the next iteration's S_CHECK, since one reads only `ehat` and
+the other only `m_vc` — applies just as well to the **Arty-fit partial** decoder. The partial sweeps
+`G_CHK` check-groups per S_CHECK and per S_SAT over the same `grp` cursor, so S_SAT folds group-for-group
+into S_CHECK: **`G_CHK + G_VAR` cycles/iteration instead of `2·G_CHK + G_VAR`** (12/24 build: 12 not 18).
+
+`bp_relay_partial_fast.sv`, `make -C hw bppartialfast` → **65/65 bit-exact, 732 cycles** (was 1086).
+
+**On the real Arty Z7-20** (same `bp_axi_wrap` AXI4-Lite path, rebuilt bitstream at 25 MHz):
+
+| decoder | cycles | LUT | Fmax (WNS) | on-silicon latency |
+|---------|--------|-----|-----------|--------------------|
+| `bp_relay_partial` (#442) | 1086 | 23 881 (44.9%) | +4.57 ns | 43.4 µs |
+| **`bp_relay_partial_fast`** | **732** | **23 454 (44.1%)** | **+4.59 ns** | **29.3 µs** |
+
+`65/65 decodes match golden; IDCODE ok; worst latency 732 clk = 29.3 µs @ 25 MHz`. **1.48× faster on the
+board at *slightly less* area** (folding the S_SAT state removed control logic — SAT parity XOR is
+shallower than the min-sum, so timing is unchanged), bit-exact on silicon. This is the SAT-overlap win
+(measured 1.48× OOC on the KV260 unrolled decoder) landed on the hardware we actually have — no KV260
+needed. `bp_relay_partial_fast` supersedes `bp_relay_partial` as the board decoder; the latter stays as
+the M2↔M4 curve point.
+
+## Files
+
+- `hw/bp_relay_partial_fast.sv` — SAT-overlapped partial (the Arty board decoder).
+- `hw/tb_bp_relay.cpp` (`-DPARTIALFAST`), `hw/Makefile` (`bppartialfast`); `hw/bp_axi_wrap.sv` +
+  `hw/syn/arty_z7_bp_bd.tcl` now instantiate it.
