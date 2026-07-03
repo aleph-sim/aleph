@@ -2,6 +2,8 @@
 obj_dir/
 obj_unroll/
 obj_partial/
+obj_pipe/
+obj_fast/
 obj_bpaxi/
 sim_*
 *.vcd

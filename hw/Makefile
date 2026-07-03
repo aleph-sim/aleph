@@ -12,7 +12,7 @@ OBJ_DIR   := obj_dir
 VERILATOR ?= verilator
 CARGO     := cargo run --release -q -p aleph-qec --example
 
-.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi stream-axi-circuit cosim-stream cosim-stream-circuit cosim-stream-ler cosim-stream-ler-circuit cosim cosim-3d cosim-circuit cosim-circuit-3d bpcheck bprelay bpunroll bppartial bpaxi clean
+.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi stream-axi-circuit cosim-stream cosim-stream-circuit cosim-stream-ler cosim-stream-ler-circuit cosim cosim-3d cosim-circuit cosim-circuit-3d bpcheck bprelay bpunroll bppartial bppipe bpfast bpaxi clean
 
 all: d3 rep surf
 
@@ -55,6 +55,26 @@ bppartial:
 	$(VERILATOR) --cc --exe --build -Wall --Mdir obj_partial --top-module bp_relay_partial -CFLAGS -DPARTIAL \
 		bp_relay_partial.sv tb_bp_relay.cpp -o sim_bppartial
 	./obj_partial/sim_bppartial bp_dec_vectors.txt
+
+# Q7-02 M5-followup — min-sum-PIPELINED unrolled decoder: S_CHECK split into S_CHK1 (reduction, deep)
+# + S_CHK2 (output, shallow) to raise Fmax past the ~96 MHz min-sum wall. +1 cyc/iter (181->241);
+# net win only if Fmax rises >1.33×. -DPIPE selects it in the shared TB.
+bppipe:
+	cd .. && $(CARGO) qec_q7_bp_graph -- graph      > hw/bb_gross_tanner.svh
+	cd .. && $(CARGO) qec_q7_bp_graph -- decvectors > hw/bp_dec_vectors.txt
+	$(VERILATOR) --cc --exe --build -Wall --Mdir obj_pipe --top-module bp_relay_pipe -CFLAGS -DPIPE \
+		bp_relay_pipe.sv tb_bp_relay.cpp -o sim_bppipe
+	./obj_pipe/sim_bppipe bp_dec_vectors.txt
+
+# Q7-02 M5-followup — SAT-OVERLAPPED unrolled decoder: fold S_SAT to run in parallel with the next
+# S_CHECK (independent reg->reg paths) → 2 cyc/iter (181->~123) at the unchanged min-sum Fmax wall.
+# Pure cycle-count lever, no Fmax gamble. -DFAST selects it in the shared TB.
+bpfast:
+	cd .. && $(CARGO) qec_q7_bp_graph -- graph      > hw/bb_gross_tanner.svh
+	cd .. && $(CARGO) qec_q7_bp_graph -- decvectors > hw/bp_dec_vectors.txt
+	$(VERILATOR) --cc --exe --build -Wall --Mdir obj_fast --top-module bp_relay_fast -CFLAGS -DFAST \
+		bp_relay_fast.sv tb_bp_relay.cpp -o sim_bpfast
+	./obj_fast/sim_bpfast bp_dec_vectors.txt
 
 # Q7-02 board bring-up — AXI4-Lite wrapper (bp_axi_wrap) around the partial decoder, driven by REAL
 # AXI-Lite transactions from tb_bp_axi.cpp (the sim twin of hw/sw/bp_pynq.py). Validates the PS<->PL

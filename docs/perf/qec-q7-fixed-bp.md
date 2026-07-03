@@ -519,3 +519,65 @@ dir `~/bp`; artifacts routed openwebgui → Mac → board (the cloud box can't r
 
 - `hw/bp_relay_partial.sv` — parameterised partial unroll (gather/compute/scatter, synth-friendly).
 - `hw/tb_bp_relay.cpp` (`-DPARTIAL`), `hw/Makefile` (`bppartial`) — shared Verilator TB.
+
+-----
+
+# Q7-02 M5-followup — the sub-µs levers, measured (KV260 OOC): SAT-overlap wins, min-sum pipeline loses
+
+**Status:** done. The M5 verdict named two *uncertain* levers to close the remaining ~1.9× to sub-µs —
+pipeline the min-sum, or relieve congestion. Both are now **measured on KV260** (OOC, `synth_bp.tcl`,
+xck26-sfvc784-2LV-c, 3 ns target). The result is a clean **1.48× latency cut for free**, plus a decisive
+finding on *why* sub-µs stays out of reach.
+
+## Result — 6×10 schedule, KV260 OOC P&R
+
+| variant | RTL | states/iter | cycles | Fmax | **latency** | LUT | verdict |
+|---------|-----|-------------|--------|------|-------------|-----|---------|
+| M5 baseline | `bp_relay_unrolled` | S_CHECK·S_VAR·S_SAT (3) | 181 | 96.0 MHz | 1.885 µs | 93 562 (79.9%) | — |
+| **SAT-overlap** | **`bp_relay_fast`** | **S_CHECK‖S_SAT · S_VAR (2)** | **122** | **95.9 MHz** | **1.272 µs** | **93 487 (79.8%)** | **✓ 1.48× win, free** |
+| min-sum pipeline | `bp_relay_pipe` | S_CHK1·S_CHK2·S_VAR·S_SAT (4) | 241 | 111.3 MHz | 2.165 µs | 100 102 (85.5%) | ✗ 15% regression |
+
+All three are **bit-identical to the golden** in Verilator (`make -C hw bpunroll|bpfast|bppipe` →
+181 / 122 / 241 cycles, 65/65 each).
+
+## SAT-overlap (`bp_relay_fast`) — the win: cut a cycle, keep the wall
+
+M4/M5 spent a whole cycle on `S_SAT` (`H·ehat == s` + keep-lowest-weight-valid). But `S_SAT` reads only
+`ehat` (from the just-finished `S_VAR`), while the *next* `S_CHECK` reads only `m_vc` — **independent
+register→register clouds**. So `S_SAT` is folded to run **in parallel** with the next iteration's
+`S_CHECK` (a trailing `S_SATF` handles the last iteration, whose `ehat` has no following `S_CHECK`).
+That is **2 cyc/iter instead of 3** → 122 cycles at 6×10.
+
+Crucially the per-cycle critical path is **unchanged**: the `S_SAT` parity XOR is far shallower than the
+`S_CHECK` min-sum, so running them concurrently keeps Fmax at the min-sum bound (**95.9 vs 96.0 MHz**),
+at the **same area** (79.8 vs 79.9% — folding a state removes control logic, adds none). Pure
+cycle-count lever, **no Fmax gamble** — 1.885 → **1.272 µs, 1.48× faster, for free.** This is the
+production unrolled decoder.
+
+## Min-sum pipeline (`bp_relay_pipe`) — the measured negative result
+
+Splitting `S_CHECK` into `S_CHK1` (the deep 6-way exclusive-minimum tournament, registered) + `S_CHK2`
+(the shallow output shift) **did** raise Fmax — but only **96.0 → 111.3 MHz (1.16×)**, well under the
+**1.33×** cycle penalty (+1 cyc/iter → 241 cyc). Net: **2.165 µs, a 15% regression.** And the extra
+pipeline registers pushed util **79.9 → 85.5%**, *worsening* congestion.
+
+This is the key finding: **the min-sum wall is routing/congestion at ~80% util, not logic depth.**
+Pipelining shortens logic levels but the path is route-dominated (M5's 55%-routing diagnosis), so the
+Fmax gain is small — and adding area to an already-congested part makes it worse, not better. The lever
+that helps is the *opposite* of pipelining: remove work (SAT-overlap), don't add registers.
+
+## Verdict → sub-µs needs a bigger fabric, not more microarchitecture
+
+`bp_relay_fast` at **1.27 µs** is the practical floor for the 6×10 gross-code decoder on the KV260: the
+schedule is LER-optimal (§ M5 step 1), the cycle count is at its 2-cyc/iter minimum for a
+CHECK→VAR message-passing loop, and Fmax is pinned by min-sum *routing* at 80% util — which the pipeline
+experiment showed cannot be bought with pipelining. Closing the last ~1.3× to sub-µs is now a **fabric**
+problem: a larger / faster part (more routing resource → higher Fmax at this util, or the same util
+spread thinner), or an ASIC — which is the North-Star target anyway. Latency ladder for the gross code:
+M2 616 µs → M4 3.16 µs → M5 1.89 µs → **fast 1.27 µs**.
+
+## Files
+
+- `hw/bp_relay_fast.sv` — SAT-overlapped unrolled decoder (the 1.27 µs production variant).
+- `hw/bp_relay_pipe.sv` — min-sum-pipelined variant (kept as the measured negative-result experiment).
+- `hw/tb_bp_relay.cpp` (`-DFAST` / `-DPIPE`), `hw/Makefile` (`bpfast` / `bppipe`) — shared Verilator TB.

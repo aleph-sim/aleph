@@ -13,11 +13,17 @@
 #include <string>
 #include <vector>
 
-// One TB, three DUTs: the M2 sequential decoder (default), the M4 spatially-unrolled decoder
-// (`-DUNROLL`), and the M5-followup partially-unrolled decoder (`-DPARTIAL`). All share the exact port
-// list and are checked against the same golden vectors, so a pass certifies each is the bit-for-bit
-// twin of the others (hence of `FixedRelayBp`).
-#if defined(PARTIAL)
+// One TB, four DUTs: the M2 sequential decoder (default), the M4 spatially-unrolled decoder
+// (`-DUNROLL`), the M5-followup partially-unrolled decoder (`-DPARTIAL`), and the min-sum-pipelined
+// unrolled decoder (`-DPIPE`). All share the exact port list and are checked against the same golden
+// vectors, so a pass certifies each is the bit-for-bit twin of the others (hence of `FixedRelayBp`).
+#if defined(FAST)
+#include "Vbp_relay_fast.h"
+using Dut = Vbp_relay_fast;
+#elif defined(PIPE)
+#include "Vbp_relay_pipe.h"
+using Dut = Vbp_relay_pipe;
+#elif defined(PARTIAL)
 #include "Vbp_relay_partial.h"
 using Dut = Vbp_relay_partial;
 #elif defined(UNROLL)
