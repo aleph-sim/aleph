@@ -433,59 +433,61 @@ congestion/pipelining problem, not a schedule one.
 
 -----
 
-# Q7-02 M5-followup — partial unroll for a small-part (Arty) fit
+# Q7-02 M5-followup — partial unroll: a fast relay-BP decoder that fits the Arty
 
-**Status:** RTL done + Verilator-verified; **synth-hostile as written** (finding below). M2 is the ready
-small-part target.
+**Status:** done — `bp_relay_partial` synthesises clean on the xc7z020 and is **20× faster than the
+sequential M2 at the same area**. It is the Arty-fitting decoder.
 
 ## Why
 
 M4/M5's full unroll is a **KV260-class** design (93.5 k LUT = 80% of the KV260, **172% of a xc7z020**),
-so it cannot run on the Zybo/Arty parts we already have. The three points on the
-unroll/area/latency curve:
+so it cannot run on the Zybo/Arty parts we already have. `bp_relay_partial` is parameterised
+(`CHK_UNROLL`/`VAR_UNROLL`) to sit between M2 (1 node/cycle) and M4 (all nodes/cycle): process
+`CHK_UNROLL` checks / `VAR_UNROLL` variables per cycle via a group cursor. Bit-exact in Verilator at
+12/24 (65/65, 1 086 cycles) and at the uneven 16/32 (905 cycles, exercises the `c < BP_C` guard).
 
-| variant | nodes/cycle | cycles @6×10 | LUTs | Fmax | latency | fits xc7z020 (Arty)? |
-|---------|-------------|--------------|------|------|---------|----------------------|
-| **M2** sequential (`bp_relay_decoder`) | 1 | 17 424 | **23 596 (44%)** | 28.3 MHz | **616 µs** | **yes — ready** |
-| partial 12/24 (`bp_relay_partial`) | 12 chk / 24 var | **1 086** | *(synth-hostile — see below)* | — | — | — |
+## Result — 12/24 on the xc7z020 (= Arty/Zybo part)
+
+| variant | nodes/cycle | cycles @6×10 | LUTs | Fmax | latency | fits xc7z020? |
+|---------|-------------|--------------|------|------|---------|---------------|
+| M2 sequential (`bp_relay_decoder`) | 1 | 17 424 | 23 596 (44%) | 28.3 MHz | 616 µs | yes |
+| **partial 12/24 (`bp_relay_partial`)** | 12 chk / 24 var | **1 086** | **24 790 (47%)** | 35.5 MHz | **30.6 µs** | **yes** |
 | M4 unrolled (`bp_relay_unrolled`) | all 72 / 144 | 181 | 93 562 (172%) | 96.0 MHz | 1.89 µs | no |
 
-`bp_relay_partial` is parameterised (`CHK_UNROLL`/`VAR_UNROLL`) to sit between these — process
-`CHK_UNROLL` checks / `VAR_UNROLL` variables per cycle via a group cursor. At 12/24 it is **bit-exact
-in Verilator** (65/65, 1 086 cycles; the uneven 16/32 config also passes, exercising the `c < BP_C`
-guard).
+The partial is the sweet spot for the small part: **~same LUTs as M2 (47% vs 44%) but 16× fewer cycles
+(1 086 vs 17 424) → 20× lower latency (30.6 µs vs 616 µs)**. Datapath survives (7 684 FF, no shell), no
+DSP, no BRAM. Larger factors (e.g. 24/48) trade area for fewer cycles; 12/24 clears the part at 47%.
 
-## Finding — partial-via-runtime-cursor hits the M3 cursor-mux wall
+## The finding that got here — do the mux on the inputs, not the addresses
 
-Synthesising `bp_relay_partial` (12/24) for the xc7z020 **did not complete**: Vivado ground at **100%
-CPU / 6.6 GB for 18 min in `synth_design` alone** and was killed. Root cause, and it is the **same wall
-M3 hit** with the sequential node cursor:
+The **first** partial draft was Verilator-correct but **synthesis-hostile**: with a runtime cursor an
+edge read written as `m_vc[BP_CHECK_EDGES[BP_CHECK_OFF[grp·CU+i] + k]]` is a *nested runtime
+indirection* (runtime → offset → edge index → message), which Vivado expanded explosively — it ground
+at 100% CPU / 6.6 GB for 18 min in `synth_design` and was killed. **The same cursor-mux wall M3 hit**
+(M4 has the identical expression, but `grp·CU+i` is compile-time constant there → a direct wire).
 
-- With a runtime group cursor `grp`, a check's edge read is `m_vc[BP_CHECK_EDGES[BP_CHECK_OFF[grp·CU+i]
-  + k]]` — a **nested runtime indirection** (runtime → offset → edge index → message). M4 has the
-  identical expression but `grp·CU+i` is a *compile-time constant*, so it is a direct wire; the runtime
-  cursor turns each of the `CU·6` per-cycle reads into a table-lookup mux that Vivado expands
-  explosively.
-- This is exactly the M3 diagnosis (a runtime cursor over a 432-edge CSR synthesises to giant
-  mux/demux), just at partial width. The spatial full unroll (M4) exists precisely to *delete* that
-  cursor; re-introducing a smaller one brings back a smaller — but still synthesis-hostile — version.
+The fix — the shipped RTL — does the time-multiplexing on the **inputs** with **compile-time-constant
+addresses**: a *gather → compute → scatter* per slot, where the group selection is an unrolled
+`for (g) if (grp == g)` over **literal** edge indices:
 
-### The synth-friendly fix (future work)
+```
+gather:  for (g) if (grp==g) mm[k] = m_vc[<constant edge of check g*CU+i>];   // G:1 mux of direct wires
+compute: one min-sum / var-update on the gathered mm[];                        // one shared unit / slot
+scatter: for (g) if (grp==g) e_cv[<constant edge>] <= result[k];
+```
 
-Do the time-multiplexing on the **inputs**, not the addresses: for each slot, an explicit
-`case (grp)` whose branches read `m_vc` at **compile-time-constant** edge sets (one branch per group)
-and feed *one* min-sum unit. That is a clean `G:1` mux of direct wires — area-saving *and*
-Vivado-friendly — instead of a nested runtime table lookup. The current `bp_relay_partial` is the
-correct behavioural reference to rewrite against.
+Vivado unrolls `g` (constant per iteration), so every array index is a literal and the `if(grp==g)`
+chain is a clean `G:1` mux — no runtime address arithmetic reaches the arrays. Same behaviour
+(bit-exact), synthesises in minutes instead of grinding. **Lesson: to time-multiplex a
+constant-indexed unrolled datapath, mux the operands, never the indices.**
 
-## Ready path — M2 already fits the Arty
+## Next → onto the Arty
 
-The sequential M2 decoder fits the xc7z020 today (**23 596 LUT / 44%, 28.3 MHz**, measured on the
-Zybo = Arty part) and synthesises cleanly. At 6×10 it is 17 424 cycles = **616 µs** — far over the ~1 µs
-budget, but a *working relay-BP qLDPC decoder on hardware we already own*, which is the point of the
-no-new-board path. Board bring-up would reuse the Q6 `uf_arty` AXI/DMA wrapper.
+`bp_relay_partial` is the decoder to bring up on the Arty Z7-20 we already have (no KV260 needed):
+30.6 µs is over the ~1 µs budget but is a *working, reasonably fast relay-BP qLDPC decoder on owned
+hardware*. Board bring-up reuses the Q6 `uf_arty` AXI/DMA wrapper (a separate step).
 
 ## Files
 
-- `hw/bp_relay_partial.sv` — parameterised partial unroll (behavioural reference; synth-friendly rewrite pending).
+- `hw/bp_relay_partial.sv` — parameterised partial unroll (gather/compute/scatter, synth-friendly).
 - `hw/tb_bp_relay.cpp` (`-DPARTIAL`), `hw/Makefile` (`bppartial`) — shared Verilator TB.
