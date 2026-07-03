@@ -21,9 +21,19 @@ use aleph_qec::{BBCode, FixedRelayBp};
 const MSG_BITS: u32 = 8;
 const FRAC_BITS: u32 = 3;
 
+/// M5 relay-BP schedule: `LEGS × ITERS` message-passing sweeps. The M5 budget study (`qec_q7_budget`)
+/// found **6×10** reproduces the full 4×25 LER within Monte-Carlo CI (1.06×) while cutting the RTL
+/// schedule from 100 to 60 sweeps (301→181 cycles) — because relay-BP's strength is leg diversity, so
+/// *many short legs* beat *few long ones* at equal sweep budget. `GAMMA`/`SEED` are the M0 golden
+/// defaults (identical to `FixedRelayBp::new`), so legs 0–3 keep their original γ and 4–5 are new.
+const LEGS: usize = 6;
+const ITERS: u32 = 10;
+const GAMMA: (f64, f64) = (-0.3, 0.9);
+const SEED: u64 = 0x5E1A_4B9C;
+
 fn emit_graph() {
     let dem = BBCode::gross().code_capacity_dem(0.03);
-    let fx = FixedRelayBp::new(&dem, MSG_BITS, FRAC_BITS);
+    let fx = FixedRelayBp::with_budget(&dem, LEGS, ITERS, GAMMA, SEED, MSG_BITS, FRAC_BITS);
     let v = fx.hw_view();
 
     let ints = |xs: &[u32]| -> String {
@@ -105,7 +115,7 @@ fn emit_graph() {
 fn emit_dec_vectors() {
     use aleph_qec::Syndrome;
     let dem = BBCode::gross().code_capacity_dem(0.03);
-    let fx = FixedRelayBp::new(&dem, MSG_BITS, FRAC_BITS);
+    let fx = FixedRelayBp::with_budget(&dem, LEGS, ITERS, GAMMA, SEED, MSG_BITS, FRAC_BITS);
     let n_vars = dem.errors.len();
     let n_checks = dem.detectors;
     let n_obs = 12usize;
@@ -171,7 +181,7 @@ fn emit_dec_vectors() {
 
 fn emit_vectors() {
     let dem = BBCode::gross().code_capacity_dem(0.03);
-    let fx = FixedRelayBp::new(&dem, MSG_BITS, FRAC_BITS);
+    let fx = FixedRelayBp::with_budget(&dem, LEGS, ITERS, GAMMA, SEED, MSG_BITS, FRAC_BITS);
     let v = fx.hw_view();
     let (n_checks, n_edges, max_mag) = (v.n_checks, v.n_edges, v.max_mag);
 
