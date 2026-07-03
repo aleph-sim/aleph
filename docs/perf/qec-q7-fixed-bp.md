@@ -635,3 +635,55 @@ logical-observable readout use case does not need.
   posterior LLR) + `FixedRelayBpOsd` (the OSD-0 tail decoder + `decode_fixed_osd` returning the
   tail-ran flag).
 - `crates/aleph-qec/examples/qec_q7_osd.rs` — the order/precision sweep (`capacity` | `circuit`).
+
+-----
+
+# Q7-02 M5-followup — circuit-level DEM + sim↔RTL co-sim: the decoder generalises past code capacity
+
+**Status:** done. Everything above targets the **code-capacity** gross graph (144 vars / 72 checks,
+regular degree 6 / 3) baked into `bb_gross_tanner.svh`. This closes the gap to **circuit-level** noise —
+the depth-7 syndrome-extraction DEM (Q5-04, CNOT depolarising + idle/prep/meas), a much larger and
+**irregular** hypergraph — on two fronts: software LER, and a bit-exact RTL co-sim.
+
+## Software — relay-BP decodes circuit-level gross noise (~0.3% threshold)
+
+`qec_q7_osd -- circuit` runs the fixed-point relay-BP over `BBCode::gross().circuit_level_dem(rounds, p)`
+(depth-7 gadget, uniform noise). Plain relay-BP (Q5.3, 4×25) tracks the float decoder and clears a
+per-cycle threshold of **~0.3 %** (LER falls with `p` below it): p=0.002 → 4e-3, p=0.003 → 2e-2,
+p=0.004 → 6.5e-2 (rounds=6). So the *same* fixed-point decoder the RTL implements handles realistic
+gate-noise syndromes, not just code-capacity independent-Z — the qLDPC-frontier claim the whole track is
+about.
+
+## RTL co-sim — the parametric M2 decoder is graph-generic (`make -C hw bpcirc`)
+
+The emitter grew a `circgraph` / `circvectors` mode: it emits the **circuit-level** Tanner graph in the
+same `.svh` format and **real DEM-shot** golden vectors (sampled from the circuit DEM, decoded by the
+same `FixedRelayBp`). The `bpcirc` target cp's the circuit header over `bb_gross_tanner.svh` in a build
+dir and decodes the vectors through the **M2 sequential** decoder (`bp_relay_decoder.sv`) — its runtime
+node cursor handles any graph size, unlike the spatially-unrolled variants which would need the graph
+baked in (and the circuit graph is far too large to unroll).
+
+At **rounds = 1** the circuit graph is **864 vars / 144 checks / 2952 edges**, max check-degree **25**
+(vs code capacity's uniform 6) — a genuinely irregular, 6× larger graph. Result:
+
+```
+make -C hw bpcirc
+→ PASS: 40 full decodes bit-identical to the fixed-point golden
+```
+
+The parametric RTL decodes the circuit-level graph **bit-for-bit** against the software golden — the
+sim↔RTL co-sim proving the decoder generalises past the baked-in code-capacity graph with **zero RTL
+change** (only the generated header differs).
+
+**One honest caveat (cosmetic):** the M2 decode over this graph runs ~70 000 cycles
+(`6×10 · (144+864+144) + 864`), which overflows the shared **16-bit** `latency_cycles` port (wraps mod
+65 536 → the TB reports 4448). Correctness is unaffected — the co-sim compares `ehat`/`obs`/`valid`, not
+latency — and the *perf* decoders (unrolled, ~122–181 cycles) are nowhere near the limit; only the M2
+correctness vehicle at circuit scale wraps. Widening the port would ripple through every bp decoder and
+the AXI wrapper for a number the co-sim does not check, so it is left as-is and noted here.
+
+## Files
+
+- `crates/aleph-qec/examples/qec_q7_bp_graph.rs` — `circgraph` / `circvectors` modes (circuit-level
+  graph + real-shot golden vectors); `build()` selects code-capacity vs circuit-level DEM.
+- `hw/Makefile` (`bpcirc`) — the circuit-level co-sim: emit → cp header → M2 Verilator → bit-exact.

@@ -12,7 +12,7 @@ OBJ_DIR   := obj_dir
 VERILATOR ?= verilator
 CARGO     := cargo run --release -q -p aleph-qec --example
 
-.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi stream-axi-circuit cosim-stream cosim-stream-circuit cosim-stream-ler cosim-stream-ler-circuit cosim cosim-3d cosim-circuit cosim-circuit-3d bpcheck bprelay bpunroll bppartial bppipe bpfast bpaxi clean
+.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi stream-axi-circuit cosim-stream cosim-stream-circuit cosim-stream-ler cosim-stream-ler-circuit cosim cosim-3d cosim-circuit cosim-circuit-3d bpcheck bprelay bpunroll bppartial bppipe bpfast bpaxi bpcirc clean
 
 all: d3 rep surf
 
@@ -85,6 +85,22 @@ bpaxi:
 	$(VERILATOR) --cc --exe --build -Wall -Wno-fatal --Mdir obj_bpaxi --top-module bp_axi_wrap \
 		bp_axi_wrap.sv bp_relay_partial.sv tb_bp_axi.cpp -o sim_bpaxi
 	./obj_bpaxi/sim_bpaxi bp_dec_vectors.txt
+
+# Q7-02 M5-followup — sim↔RTL CO-SIM at CIRCUIT LEVEL. Emits the depth-7 circuit-level gross-code graph
+# (irregular, 864 vars / 144 checks / 2952 edges, max check-deg 25 vs code capacity's uniform 6) + real
+# DEM-shot golden vectors, then decodes them through the graph-generic M2 sequential decoder in a build
+# dir (the circuit header cp'd over bb_gross_tanner.svh). A pass proves the parametric RTL generalises
+# past the baked-in code-capacity graph. (Uses M2, not the unrolled variants: the circuit graph is far
+# too large to spatially unroll; M2's runtime cursor handles any size.)
+bpcirc:
+	cd .. && $(CARGO) qec_q7_bp_graph -- circgraph   1 0.003        > hw/bb_circuit_tanner.svh
+	cd .. && $(CARGO) qec_q7_bp_graph -- circvectors 1 0.003 40 2024 > hw/bp_circ_vectors.txt
+	rm -rf _bpcircbuild && mkdir _bpcircbuild
+	cp bp_relay_decoder.sv tb_bp_relay.cpp _bpcircbuild/
+	cp bb_circuit_tanner.svh _bpcircbuild/bb_gross_tanner.svh
+	cd _bpcircbuild && $(VERILATOR) --cc --exe --build -Wall --top-module bp_relay_decoder \
+		bp_relay_decoder.sv tb_bp_relay.cpp -o sim_bpcirc
+	./_bpcircbuild/obj_dir/sim_bpcirc bp_circ_vectors.txt
 
 d3:
 	cd .. && $(CARGO) qec_d3_lut_table > hw/surface_d3_lut.mem
