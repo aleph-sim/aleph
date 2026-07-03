@@ -90,3 +90,43 @@ matches `f64` exactly there, so it is not gating.
 - `crates/aleph-qec/src/fixed_bp.rs` — `FixedRelayBp` + `FixedHwView` + unit tests.
 - `crates/aleph-qec/examples/qec_q7_fixed_bp.rs` — the width sweep.
 - `docs/perf/data/qec-q7-fixed-bp.csv` — committed run.
+
+-----
+
+# Q7-02 M1 — Tanner `.svh` + combinational check-update RTL
+
+**Status:** done (Verilator).
+
+## What
+
+The RTL half of the check→variable min-sum update, plus the generator that bakes the gross-code
+graph into a SystemVerilog header (as `uf_surface_graph.svh` does for UF).
+
+- `qec_q7_bp_graph.rs` emits **`hw/bb_gross_tanner.svh`**: `BP_N=144`, `BP_C=72`, `BP_E=432`,
+  `MSG_BITS=8`, `FRAC_BITS=3`, `MAX_MAG=127`, `BP_LEGS=4`, `BP_ITERS=25`, the flattened CSR
+  (`BP_VAR_OFF`, `BP_EDGE_VAR`, `BP_CHECK_OFF`, `BP_CHECK_EDGES`), quantised priors `BP_LAMBDA[144]`,
+  and disorder `BP_GAMMA[4*144]`. `BP_VAR_OFF = {0,3,6,…}` confirms the constant variable-degree 3;
+  the whole graph (M2 needs all of it) is in one header.
+- `hw/bp_check_update.sv` is the combinational datapath: for each degree-6 check, the two-pass
+  exclusive-minimum (min1/min2 + argmin), the check parity / per-edge sign, and **α = 7/8 as
+  `mag − (mag >> 3)`** — no multiplier. Like the Q6-02 combinational UF draft it is one `always_comb`
+  cloud (M2 sequentialises it).
+
+## Verification
+
+`make -C hw bpcheck` replays 256 random `(syndrome, m_vc)` vectors — `m_vc` spanning the full signed
+Q5.3 range — through the RTL and checks all 432 outputs per vector against
+`FixedRelayBp::check_update_once`:
+
+> **PASS: 110 592 / 110 592 check-update outputs bit-identical to the fixed-point golden.**
+
+The RTL check-update is the exact silicon twin of the M0 golden. Next (M2): sequentialise into a
+clocked FSM (S_CHECK → S_VAR-with-memory → leg/iteration loop → keep-best-valid) for the full
+relay-BP decode, reusing this `.svh`.
+
+## Files
+
+- `crates/aleph-qec/examples/qec_q7_bp_graph.rs` — `.svh` + vector generator.
+- `hw/bp_check_update.sv` — combinational check-update RTL.
+- `hw/tb_bp_check.cpp`, `hw/Makefile` (`bpcheck`) — Verilator TB.
+- `hw/bb_gross_tanner.svh`, `hw/bp_check_vectors.txt` — generated.

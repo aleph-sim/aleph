@@ -12,9 +12,20 @@ OBJ_DIR   := obj_dir
 VERILATOR ?= verilator
 CARGO     := cargo run --release -q -p aleph-qec --example
 
-.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi stream-axi-circuit cosim-stream cosim-stream-circuit cosim-stream-ler cosim-stream-ler-circuit cosim cosim-3d cosim-circuit cosim-circuit-3d clean
+.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi stream-axi-circuit cosim-stream cosim-stream-circuit cosim-stream-ler cosim-stream-ler-circuit cosim cosim-3d cosim-circuit cosim-circuit-3d bpcheck clean
 
 all: d3 rep surf
+
+# Q7-02 M1 — fixed-point relay-BP check-update datapath vs the Rust golden (gross [[144,12,12]]).
+# Emits the baked-in Tanner graph + Q5.3 params, then replays 256 random check-update vectors through
+# the combinational RTL and checks all 432 output messages bit-for-bit against FixedRelayBp.
+bpcheck:
+	cd .. && $(CARGO) qec_q7_bp_graph -- graph   > hw/bb_gross_tanner.svh
+	cd .. && $(CARGO) qec_q7_bp_graph -- vectors > hw/bp_check_vectors.txt
+	$(VERILATOR) --cc --exe --build -Wall --top-module bp_check_update \
+		bp_check_update.sv tb_bp_check.cpp -o sim_bpcheck
+	./$(OBJ_DIR)/sim_bpcheck bp_check_vectors.txt
+
 
 d3:
 	cd .. && $(CARGO) qec_d3_lut_table > hw/surface_d3_lut.mem
