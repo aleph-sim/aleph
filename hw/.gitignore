@@ -2,6 +2,7 @@
 obj_dir/
 obj_unroll/
 obj_partial/
+obj_bpaxi/
 sim_*
 *.vcd
 _d5build/
