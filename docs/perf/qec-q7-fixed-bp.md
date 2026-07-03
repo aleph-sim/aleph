@@ -430,3 +430,62 @@ congestion/pipelining problem, not a schedule one.
 - `hw/bp_relay_unrolled.sv` — `WACC=16`.
 - `crates/aleph-qec/examples/qec_q7_bp_graph.rs` — `LEGS=6 ITERS=10` via `with_budget`.
 - `hw/bb_gross_tanner.svh` — regenerated at 6×10 (committed).
+
+-----
+
+# Q7-02 M5-followup — partial unroll for a small-part (Arty) fit
+
+**Status:** RTL done + Verilator-verified; **synth-hostile as written** (finding below). M2 is the ready
+small-part target.
+
+## Why
+
+M4/M5's full unroll is a **KV260-class** design (93.5 k LUT = 80% of the KV260, **172% of a xc7z020**),
+so it cannot run on the Zybo/Arty parts we already have. The three points on the
+unroll/area/latency curve:
+
+| variant | nodes/cycle | cycles @6×10 | LUTs | Fmax | latency | fits xc7z020 (Arty)? |
+|---------|-------------|--------------|------|------|---------|----------------------|
+| **M2** sequential (`bp_relay_decoder`) | 1 | 17 424 | **23 596 (44%)** | 28.3 MHz | **616 µs** | **yes — ready** |
+| partial 12/24 (`bp_relay_partial`) | 12 chk / 24 var | **1 086** | *(synth-hostile — see below)* | — | — | — |
+| M4 unrolled (`bp_relay_unrolled`) | all 72 / 144 | 181 | 93 562 (172%) | 96.0 MHz | 1.89 µs | no |
+
+`bp_relay_partial` is parameterised (`CHK_UNROLL`/`VAR_UNROLL`) to sit between these — process
+`CHK_UNROLL` checks / `VAR_UNROLL` variables per cycle via a group cursor. At 12/24 it is **bit-exact
+in Verilator** (65/65, 1 086 cycles; the uneven 16/32 config also passes, exercising the `c < BP_C`
+guard).
+
+## Finding — partial-via-runtime-cursor hits the M3 cursor-mux wall
+
+Synthesising `bp_relay_partial` (12/24) for the xc7z020 **did not complete**: Vivado ground at **100%
+CPU / 6.6 GB for 18 min in `synth_design` alone** and was killed. Root cause, and it is the **same wall
+M3 hit** with the sequential node cursor:
+
+- With a runtime group cursor `grp`, a check's edge read is `m_vc[BP_CHECK_EDGES[BP_CHECK_OFF[grp·CU+i]
+  + k]]` — a **nested runtime indirection** (runtime → offset → edge index → message). M4 has the
+  identical expression but `grp·CU+i` is a *compile-time constant*, so it is a direct wire; the runtime
+  cursor turns each of the `CU·6` per-cycle reads into a table-lookup mux that Vivado expands
+  explosively.
+- This is exactly the M3 diagnosis (a runtime cursor over a 432-edge CSR synthesises to giant
+  mux/demux), just at partial width. The spatial full unroll (M4) exists precisely to *delete* that
+  cursor; re-introducing a smaller one brings back a smaller — but still synthesis-hostile — version.
+
+### The synth-friendly fix (future work)
+
+Do the time-multiplexing on the **inputs**, not the addresses: for each slot, an explicit
+`case (grp)` whose branches read `m_vc` at **compile-time-constant** edge sets (one branch per group)
+and feed *one* min-sum unit. That is a clean `G:1` mux of direct wires — area-saving *and*
+Vivado-friendly — instead of a nested runtime table lookup. The current `bp_relay_partial` is the
+correct behavioural reference to rewrite against.
+
+## Ready path — M2 already fits the Arty
+
+The sequential M2 decoder fits the xc7z020 today (**23 596 LUT / 44%, 28.3 MHz**, measured on the
+Zybo = Arty part) and synthesises cleanly. At 6×10 it is 17 424 cycles = **616 µs** — far over the ~1 µs
+budget, but a *working relay-BP qLDPC decoder on hardware we already own*, which is the point of the
+no-new-board path. Board bring-up would reuse the Q6 `uf_arty` AXI/DMA wrapper.
+
+## Files
+
+- `hw/bp_relay_partial.sv` — parameterised partial unroll (behavioural reference; synth-friendly rewrite pending).
+- `hw/tb_bp_relay.cpp` (`-DPARTIAL`), `hw/Makefile` (`bppartial`) — shared Verilator TB.

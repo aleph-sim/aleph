@@ -1,6 +1,7 @@
 # Verilator build artifacts
 obj_dir/
 obj_unroll/
+obj_partial/
 sim_*
 *.vcd
 _d5build/

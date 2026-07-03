@@ -13,10 +13,14 @@
 #include <string>
 #include <vector>
 
-// One TB, two DUTs: the M2 sequential decoder (default) and the M4 spatially-unrolled decoder
-// (`-DUNROLL`). Both share the exact port list and are checked against the same golden vectors, so a
-// pass on both certifies M4 is the bit-for-bit twin of M2 (hence of `FixedRelayBp`).
-#ifdef UNROLL
+// One TB, three DUTs: the M2 sequential decoder (default), the M4 spatially-unrolled decoder
+// (`-DUNROLL`), and the M5-followup partially-unrolled decoder (`-DPARTIAL`). All share the exact port
+// list and are checked against the same golden vectors, so a pass certifies each is the bit-for-bit
+// twin of the others (hence of `FixedRelayBp`).
+#if defined(PARTIAL)
+#include "Vbp_relay_partial.h"
+using Dut = Vbp_relay_partial;
+#elif defined(UNROLL)
 #include "Vbp_relay_unrolled.h"
 using Dut = Vbp_relay_unrolled;
 #else
