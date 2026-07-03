@@ -39,7 +39,7 @@ module bp_relay_decoder (
     output logic                corr_out    [BP_N],       // chosen error pattern (one bit / variable)
     output logic [BP_OBS-1:0]   obs_flip,                 // predicted observable flips
     output logic                valid_flag,               // a syndrome-valid decision was found
-    output logic [15:0]         latency_cycles
+    output logic [31:0]         latency_cycles
 );
   // Magnitudes are ≤ MAX_MAG (< 2^(MSG_BITS-1)); the all-ones word (> every magnitude) is the +∞
   // sentinel for the running minima, matching the Rust golden's i32::MAX sentinel.
@@ -64,7 +64,7 @@ module bp_relay_decoder (
   logic [BP_OBS-1:0]          obs_acc;
 
   int          leg, iter, idx;
-  logic [15:0] lat;
+  logic [31:0] lat;
 
   assign busy = (state != S_IDLE);
   assign latency_cycles = lat;
@@ -130,7 +130,7 @@ module bp_relay_decoder (
           end
           if (idx == BP_C - 1) begin idx <= '0; state <= S_VAR; end
           else idx <= idx + 1;
-          lat <= lat + 16'd1;
+          lat <= lat + 32'd1;
         end
 
         // ----------------------------------------------------------------- variable → check + memory
@@ -163,7 +163,7 @@ module bp_relay_decoder (
           end
           if (idx == BP_N - 1) begin idx <= '0; all_sat <= 1'b1; state <= S_SAT; end
           else idx <= idx + 1;
-          lat <= lat + 16'd1;
+          lat <= lat + 32'd1;
         end
 
         // ----------------------------------------------------------------- H·ehat == s ? keep best
@@ -196,7 +196,7 @@ module bp_relay_decoder (
               state <= S_CHECK;
             end
           end else idx <= idx + 1;
-          lat <= lat + 16'd1;
+          lat <= lat + 32'd1;
         end
 
         // ----------------------------------------------------------------- reduce chosen ehat → obs
@@ -209,7 +209,7 @@ module bp_relay_decoder (
           obs_acc <= (idx == 0 ? {BP_OBS{1'b0}} : obs_acc) ^ (b ? msk : {BP_OBS{1'b0}});
           if (idx == BP_N - 1) state <= S_DONE;
           else idx <= idx + 1;
-          lat <= lat + 16'd1;
+          lat <= lat + 32'd1;
         end
 
         S_DONE: begin

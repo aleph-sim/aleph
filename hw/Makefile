@@ -12,7 +12,7 @@ OBJ_DIR   := obj_dir
 VERILATOR ?= verilator
 CARGO     := cargo run --release -q -p aleph-qec --example
 
-.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi stream-axi-circuit cosim-stream cosim-stream-circuit cosim-stream-ler cosim-stream-ler-circuit cosim cosim-3d cosim-circuit cosim-circuit-3d bpcheck bprelay bpunroll bppartial bppartialfast bppipe bpfast bpaxi bpcirc clean
+.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi stream-axi-circuit cosim-stream cosim-stream-circuit cosim-stream-ler cosim-stream-ler-circuit cosim cosim-3d cosim-circuit cosim-circuit-3d bpcheck bprelay bpunroll bppartial bppartialfast bppipe bpfast bpaxi bpcirc bpaxiwide clean
 
 all: d3 rep surf
 
@@ -111,6 +111,20 @@ bpcirc:
 	cd _bpcircbuild && $(VERILATOR) --cc --exe --build -Wall --top-module bp_relay_decoder \
 		bp_relay_decoder.sv tb_bp_relay.cpp -o sim_bpcirc
 	./_bpcircbuild/obj_dir/sim_bpcirc bp_circ_vectors.txt
+
+# Q7-02 M5-followup — WIDE AXI4-Lite wrapper (bp_axi_wrap_wide) around the M2 circuit-level decoder,
+# driven by REAL AXI-Lite transactions (tb_bp_axi_wide.cpp = the on-board driver's sim twin) over the
+# generic NS-syndrome-word / NC-correction-word register map. Validates the wide PS<->PL shell before
+# the Vivado circuit-level board build. Same circuit graph/vectors as bpcirc.
+bpaxiwide:
+	cd .. && $(CARGO) qec_q7_bp_graph -- circgraph   1 0.003        > hw/bb_circuit_tanner.svh
+	cd .. && $(CARGO) qec_q7_bp_graph -- circvectors 1 0.003 40 2024 > hw/bp_circ_vectors.txt
+	rm -rf _bpaxiwidebuild && mkdir _bpaxiwidebuild
+	cp bp_axi_wrap_wide.sv bp_relay_decoder.sv tb_bp_axi_wide.cpp _bpaxiwidebuild/
+	cp bb_circuit_tanner.svh _bpaxiwidebuild/bb_gross_tanner.svh
+	cd _bpaxiwidebuild && $(VERILATOR) --cc --exe --build -Wall -Wno-fatal --top-module bp_axi_wrap_wide \
+		bp_axi_wrap_wide.sv bp_relay_decoder.sv tb_bp_axi_wide.cpp -o sim_bpaxiwide
+	./_bpaxiwidebuild/obj_dir/sim_bpaxiwide bp_circ_vectors.txt
 
 d3:
 	cd .. && $(CARGO) qec_d3_lut_table > hw/surface_d3_lut.mem
