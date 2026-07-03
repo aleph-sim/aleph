@@ -47,7 +47,7 @@ pub use error::{Error, Result};
 pub use experiment::{
     run_dem_experiment, run_memory_experiment, sample_shots, PhenomenologicalNoise,
 };
-pub use fixed_bp::{FixedHwView, FixedRelayBp};
+pub use fixed_bp::{FixedHwView, FixedRelayBp, FixedRelayBpOsd};
 pub use matching::{MatchingEdge, MatchingGraph, NodeId};
 pub use mwpm::MwpmDecoder;
 pub use osd::OsdDecoder;
