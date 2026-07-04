@@ -1,9 +1,11 @@
 # Q7-02 M5-followup — Arty Z7-20 block design + bitstream for the CIRCUIT-LEVEL M2 relay-BP decoder.
 #
-# Same structure as arty_z7_bp_bd.tcl, but builds the graph-generic M2 sequential decoder
-# (bp_relay_decoder) behind the WIDE AXI4-Lite wrapper (bp_axi_wrap_wide), against the depth-7
-# circuit-level gross-code graph. The circuit header must be staged as `bb_gross_tanner.svh` in $hw
-# (the wide wrapper + M2 both `include that name). First circuit-level qLDPC decode on the Arty.
+# Same structure as arty_z7_bp_bd.tcl, but builds the graph-generic M2-BRAM decoder
+# (bp_relay_bram — block-RAM message tables + edge-serial updates) behind the WIDE AXI4-Lite wrapper
+# (bp_axi_wrap_wide), against the depth-7 circuit-level gross-code graph. The BRAM core is the one that
+# actually FITS the xc7z020: the flop-array M2 (bp_relay_decoder) OOMs Vivado at BP_E=2952 (PR #447).
+# The circuit header must be staged as `bb_gross_tanner.svh` in $hw (the wide wrapper + core both
+# `include that name). First circuit-level qLDPC decode on the Arty.
 #
 # Usage (from a dir whose parent `hw` holds the circuit-level bb_gross_tanner.svh):
 #   vivado -mode batch -source syn/arty_z7_bp_circ_bd.tcl -tclargs <proj_dir> <out_dir> [fclk_mhz]
@@ -21,7 +23,7 @@ file mkdir $out_dir
 create_project -force bp_arty_circ $proj_dir -part $part
 
 add_files -norecurse [list \
-  [file join $hw bp_relay_decoder.sv] \
+  [file join $hw bp_relay_bram.sv] \
   [file join $hw bp_axi_wrap_wide.sv] \
   [file join $hw bp_axi_top_wide.v] \
   [file join $hw bb_gross_tanner.svh]]
