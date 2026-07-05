@@ -905,11 +905,63 @@ silicon** (29.8 → 21.42 ms), silicon == sim == `FixedRelayBp` exactly. Honest 
 1 cyc/edge, so the remaining edge-serial cost is inherent to single-port BRAM; a further ~2× needs *dual-port*
 (true 2 edges/cycle) or multiple BRAM banks, and real-time stays the KV260-fabric / ASIC story (M6).
 
+## Dual-port follow-up — `bp_relay_bram_dp`, 2 edges/cycle everywhere, 2.22× on silicon
+
+The pipelined core got each edge-serial pass to **1 cyc/edge**; the remaining cost is the single BRAM
+read/write port. To go to **2 edges/cycle** every pass needs two message accesses per cycle. The catch is
+the edge numbering is *variable-major*: the variable passes (INIT, VAR1, VAR2) touch **contiguous** edge
+indices, but the check passes (`CHK1` reads m_vc, `CHK2` writes e_cv) touch **scattered** ones through
+`BP_CHECK_EDGES` (the Tanner-graph transpose). A plain even/odd 2-bank split is conflict-free only for the
+contiguous passes — two scattered edges can hit the same bank.
+
+`bp_relay_bram_dp` makes each message table **two banks, each a TRUE dual-port BRAM** (bank = `edge&1`,
+row = `edge>>1`). With two independent R/W ports per bank, even two *same-bank* scattered accesses use the
+bank's two ports, so **every** pass runs 2/cycle:
+
+- **INIT / CHK2** — 2 writes/cycle (slot0→portA, slot1→portB of each slot's bank).
+- **CHK1 / VAR1** — 2 pipelined reads/cycle; 1-cycle read latency, consume the pair presented last cycle.
+- **VAR2** — 2 pipelined read-modify-writes/cycle: portA reads the leading pair, portB writes the lagging
+  pair's blend. Contiguous ⇒ the pair straddles both banks, so per bank portA (read) + portB (write) never
+  collide and hit distinct rows.
+- **SAT1** — 2 ehat (flop) reads/cycle folded into the running parity.
+
+The 2-wide min-sum folds both magnitudes into the running top-2 **in edge order**, so argmin ties match the
+sequential golden exactly. Arithmetic is byte-for-byte the M2 golden.
+
+> **TDP inference gotcha.** Vivado (`Synth 8-4767`) refuses BRAM if a memory is written from **multiple
+> ports in one process** — the first attempt put all 8 port-blocks in one `always_ff` and every bank
+> *dissolved into registers*. Fix: **one `always_ff` per port** (two processes writing the same array →
+> one true dual-port BRAM). After the split: 4× RAMB18E1, each `1K×8 (READ_FIRST)`, PORT A and B both W+R.
+
+**Cycle count.** Halving every pass → worst-case **672 000** cycles/decode. Verilator `make -C hw bpbramdp`
+and `make -C hw bpaxiwide` (wide wrapper now on the dp core) are **40/40 bit-exact**.
+
+**xc7z020 OOC**: **8328 LUT (15.7 %), 3224 FF, 4 RAMB18 (2 tiles), 11 DSP, Fmax 54.3 MHz** — LUT roughly
+doubles the fast core (the 2-wide datapath + port muxing) but still a small fraction of the part; the two
+per-cycle blends need 2 DSP multiplies (6→11 DSP).
+
+**On silicon** (board bitstream, PL @ 50 MHz, **WNS +0.113 ns TIMING_MET**):
+
+```
+[board] IDCODE ok (0x42500002)
+bp-circ driver: decodes=40 fails=0 worst latency=672000 clk = 13440000 ns @ 50 MHz
+RESULT: PASS (40/40 circuit-level decodes match golden; IDCODE ok)
+```
+
+**40/40 bit-identical on the real Arty at 672 000 cycles = 13.44 ms/decode** — **2.22× the original
+edge-serial core** (29.8 → 13.44 ms) and 1.59× the pipelined one, silicon == sim == `FixedRelayBp`. This is
+the practical floor for the Arty: 2 edges/cycle is the max a 2-bank dual-port layout gives without a
+graph-dependent scattered-access scheme; more parallelism needs the KV260 fabric (which fits the unrolled
+core at circuit scale for real-time µs decoding — M6) or an ASIC.
+
+Ladder on silicon: **29.8 ms (#448) → 21.42 ms (#449) → 13.44 ms (dp)**.
+
 ## Files
 
-- `hw/bp_relay_bram.sv` — the BRAM, edge-serial relay-BP core (drop-in port-compatible with the M2 reference).
-  `hw/bp_relay_bram_fast.sv` — the pipelined-read variant (1.39× fewer cycles); the current board decoder.
-- `hw/tb_bp_relay.cpp` (`-DBRAM` / `-DBRAMFAST`), `hw/Makefile` (`make -C hw bpbram` / `bpbramfast`) —
-  bit-exact verification of each core vs the same golden.
-- `hw/bp_axi_wrap_wide.sv` — wide AXI4-Lite wrapper now instantiates `bp_relay_bram_fast` (`make -C hw bpaxiwide`).
-- `hw/syn/arty_z7_bp_circ_bd.tcl`, `hw/syn/arty_z7.xdc` — circuit board BD (now on the fast core) + Arty OOC clock.
+- `hw/bp_relay_bram.sv` — the original BRAM edge-serial core (1 cyc/edge via a `ph` sub-phase; curve point).
+  `hw/bp_relay_bram_fast.sv` — pipelined-read variant (1 cyc/edge, no `ph`; 1.39×; curve point).
+  `hw/bp_relay_bram_dp.sv` — **dual-port 2-edges/cycle variant (2.22×); the current board decoder.**
+- `hw/tb_bp_relay.cpp` (`-DBRAM` / `-DBRAMFAST` / `-DBRAMDP`), `hw/Makefile` (`make -C hw bpbram` /
+  `bpbramfast` / `bpbramdp`) — bit-exact verification of each core vs the same golden.
+- `hw/bp_axi_wrap_wide.sv` — wide AXI4-Lite wrapper now instantiates `bp_relay_bram_dp` (`make -C hw bpaxiwide`).
+- `hw/syn/arty_z7_bp_circ_bd.tcl`, `hw/syn/arty_z7.xdc` — circuit board BD (now on the dp core) + Arty OOC clock.
