@@ -956,12 +956,57 @@ core at circuit scale for real-time µs decoding — M6) or an ASIC.
 
 Ladder on silicon: **29.8 ms (#448) → 21.42 ms (#449) → 13.44 ms (dp)**.
 
+## Early termination — average-case latency, ~18× on silicon, zero LER cost
+
+Everything above optimises the **worst case**: the fixed `LEGS×ITERS` (6×10 = 60) schedule runs to the end,
+so worst == every case. Standard BP instead stops the moment the hard decision satisfies the syndrome. That
+**changes the result** (the first valid `ê` rather than the lowest-weight valid one over the whole schedule),
+so it is an *algorithm* change, verified end-to-end against a matching golden — not a microarchitecture one.
+
+**Does it hurt LER?** No, measurably. `qec_q7_early` (circuit-level rounds=1, 40 000 shots) compares the two:
+
+| p | LER full | LER early | within CI | converged | iters mean / p50 / p99 / max |
+|------|-----------|-----------|-----------|-----------|------------------------------|
+| 0.001 | 2.5e-5 | 2.5e-5 | ✓ | 100.0 % | 1.45 / 1 / 9 / 60 |
+| 0.002 | 1.75e-4 | 1.75e-4 | ✓ | 100.0 % | 2.26 / 1 / 14 / 60 |
+| 0.003 | 7.0e-4 | 7.0e-4 | ✓ | 99.9 % | 3.28 / 2 / 20 / 60 |
+| 0.005 | 6.98e-3 | 6.98e-3 | ✓ | 99.2 % | 5.97 / 4 / 48 / 60 |
+
+The LER is identical within Monte-Carlo CI at every p — the extra relay legs almost never change the
+predicted observable — while the decode converges in a *handful* of iterations on average (3.3 of 60 at
+p=0.003), not the full schedule.
+
+**RTL.** `bp_relay_bram_dp` gains an `early_exit` input; `S_SAT2` jumps to `S_EMIT` the moment an iteration's
+decision satisfies the syndrome (`found`). The wide wrapper exposes it as **CTRL bit1 (sticky)**, so the
+*same bitstream* runs either mode at runtime. Verilator `make -C hw bpbramdpearly` is 40/40 bit-exact against
+the early-exit golden (`circvectorsearly`).
+
+**On silicon** (same board bitstream, PL @ 50 MHz, both modes, the 40 circuit shots at p=0.003):
+
+```
+[full-schedule]  min=p50=mean=p99=max = 672 000 cyc = 13.440 ms   (fixed)
+[early-exit]     min=13 501  p50=24 662  mean=38 055  p99=max=180 916 cyc
+                 min=0.270  p50=0.493  mean=0.761  p99=max=3.618 ms
+```
+
+**Average 0.761 ms vs 13.44 ms = 17.7× on real silicon** (median 27×), 40/40 still bit-exact, LER unchanged.
+Worst-case is **not** improved (a non-converging shot still runs the full 60 iters → 13.44 ms), so this is an
+average-throughput / energy lever, not a hard-deadline one — the CTRL bit lets you pick per workload.
+
+Silicon ladder (worst-case): **29.8 ms (#448) → 21.42 ms (#449) → 13.44 ms (dp)**; early-exit adds an
+**average** 0.76 ms path on the same dp bitstream.
+
 ## Files
 
 - `hw/bp_relay_bram.sv` — the original BRAM edge-serial core (1 cyc/edge via a `ph` sub-phase; curve point).
   `hw/bp_relay_bram_fast.sv` — pipelined-read variant (1 cyc/edge, no `ph`; 1.39×; curve point).
-  `hw/bp_relay_bram_dp.sv` — **dual-port 2-edges/cycle variant (2.22×); the current board decoder.**
-- `hw/tb_bp_relay.cpp` (`-DBRAM` / `-DBRAMFAST` / `-DBRAMDP`), `hw/Makefile` (`make -C hw bpbram` /
-  `bpbramfast` / `bpbramdp`) — bit-exact verification of each core vs the same golden.
-- `hw/bp_axi_wrap_wide.sv` — wide AXI4-Lite wrapper now instantiates `bp_relay_bram_dp` (`make -C hw bpaxiwide`).
+  `hw/bp_relay_bram_dp.sv` — **dual-port 2-edges/cycle variant (2.22×) with a runtime `early_exit` input;
+  the current board decoder.**
+- `hw/tb_bp_relay.cpp` (`-DBRAM` / `-DBRAMFAST` / `-DBRAMDP`; optional `early` arg), `hw/Makefile`
+  (`make -C hw bpbram` / `bpbramfast` / `bpbramdp` / `bpbramdpearly`) — bit-exact verification of each core
+  (and both dp modes) vs the same golden.
+- `crates/aleph-qec/examples/qec_q7_early.rs` — full-vs-early LER + iteration-distribution study.
+- `hw/bp_axi_wrap_wide.sv` — wide AXI4-Lite wrapper instantiates `bp_relay_bram_dp`; **CTRL bit1 = sticky
+  early-exit enable** (`make -C hw bpaxiwide`).
+- `hw/sw/bp_circ_pynq.py` — board driver; `early` arg sets CTRL bit1 and reports the latency distribution.
 - `hw/syn/arty_z7_bp_circ_bd.tcl`, `hw/syn/arty_z7.xdc` — circuit board BD (now on the dp core) + Arty OOC clock.
