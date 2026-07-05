@@ -1,7 +1,7 @@
 # Q7-02 M5-followup — Arty Z7-20 block design + bitstream for the CIRCUIT-LEVEL M2 relay-BP decoder.
 #
 # Same structure as arty_z7_bp_bd.tcl, but builds the graph-generic M2-BRAM decoder
-# (bp_relay_bram_fast — block-RAM message tables + pipelined-read edge-serial updates) behind the WIDE AXI4-Lite wrapper
+# (bp_relay_bram_dp — dual-port block-RAM message tables + 2-edges/cycle edge-serial updates) behind the WIDE AXI4-Lite wrapper
 # (bp_axi_wrap_wide), against the depth-7 circuit-level gross-code graph. The BRAM core is the one that
 # actually FITS the xc7z020: the flop-array M2 (bp_relay_decoder) OOMs Vivado at BP_E=2952 (PR #447).
 # The circuit header must be staged as `bb_gross_tanner.svh` in $hw (the wide wrapper + core both
@@ -23,7 +23,7 @@ file mkdir $out_dir
 create_project -force bp_arty_circ $proj_dir -part $part
 
 add_files -norecurse [list \
-  [file join $hw bp_relay_bram_fast.sv] \
+  [file join $hw bp_relay_bram_dp.sv] \
   [file join $hw bp_axi_wrap_wide.sv] \
   [file join $hw bp_axi_top_wide.v] \
   [file join $hw bb_gross_tanner.svh]]
