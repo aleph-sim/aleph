@@ -863,9 +863,53 @@ relay-BP that **fits and is correct on a $200 commodity board**, proving the gra
 circuit scale on real silicon. Latency stays the KV260-fabric / ASIC story. A dual-port-BRAM or pipelined-read
 follow-up (2 edges/cycle) would roughly halve the cycle count; deeper unrolling needs more BRAM banks.
 
+## Pipelined-read follow-up — `bp_relay_bram_fast`, 1.39× on the same silicon
+
+The BRAM core above spent **2 cycles/edge** in its three edge-serial *read* passes (`S_CHK1` min-sum scan,
+`S_VAR1` e_cv accumulate, `S_VAR2` old-m_vc read): a `ph` sub-phase presented the address on `ph==0` and
+consumed the registered read datum on `ph==1`. The read port can accept a new address every cycle, so this
+is pure idle. `bp_relay_bram_fast` **pipelines** the reads — an address cursor `p` runs `0..deg`, presenting
+the read for edge `p` (when `p<deg`) while the seq block consumes the registered read for edge `p-1` (when
+`p>=1`). Each read pass drops from `2·deg` to `deg+1` cycles (one-cycle fill). `S_VAR2` is a pipelined
+**read-modify-write**: it presents the read of `m_vc[lo+p]` while the comb block writes the blend for edge
+`p-1`; adjacent edges are distinct addresses, so the BRAM read and write ports never collide (no RAW hazard).
+
+Second lever: the **S_SAT keep-best commit is registered**. The slow core folded, in a single cycle at the
+last check of each iteration, the parity scan + `ehat_w < best_w` compare into the 864-wide `best_e`
+register-enable fan-out (its route-dominated critical path). The fast core latches that decision (`do_commit`)
+in `S_SAT1` and runs the wide copy the next cycle in a dedicated `S_SAT2` state, so the 864 enables are driven
+by a plain flop instead of the deep combinational chain. Costs +1 cycle/iteration (60 total — negligible).
+
+Arithmetic is byte-for-byte the M2 golden — a microarchitecture change, not an algorithm change.
+
+**Cycle count.** Per iteration `5·BP_E + 3·BP_C + 3·BP_N` (vs the slow core's `8·BP_E + 2·BP_C + BP_N`):
+on the rounds=1 circuit graph 17 785 vs 24 768 cyc/iter → worst-case **1 070 916** cycles/decode (vs
+1 489 896). Verilator `make -C hw bpbramfast` and `make -C hw bpaxiwide` (the wide wrapper now instantiates
+the fast core) are both **40/40 bit-exact**.
+
+**xc7z020 OOC** (`synth_bp.tcl`, `bp_relay_bram_fast`): **6127 LUT (11.5 %), 3230 FF, 2 BRAM, 6 DSP,
+Fmax 57.9 MHz** (WNS −7.269 ns at 100 MHz) — slightly *smaller* than the slow core (6147 LUT; removing the
+`ph` handshake logic offsets the extra state) at a slightly higher Fmax (55.4 → 57.9 MHz).
+
+**On silicon** (rebuilt board bitstream, PL @ 50 MHz, **WNS +0.567 ns TIMING_MET** — comfortable margin vs the
+slow core's +0.037 ns, the registered commit paying off in-context too):
+
+```
+[board] IDCODE ok (0x42500002)
+bp-circ driver: decodes=40 fails=0 worst latency=1070916 clk = 21418320 ns @ 50 MHz
+RESULT: PASS (40/40 circuit-level decodes match golden; IDCODE ok)
+```
+
+**40/40 bit-identical on the real Arty at 1 070 916 cycles = 21.42 ms/decode** — a **1.39× speed-up on owned
+silicon** (29.8 → 21.42 ms), silicon == sim == `FixedRelayBp` exactly. Honest ceiling: the read passes are now
+1 cyc/edge, so the remaining edge-serial cost is inherent to single-port BRAM; a further ~2× needs *dual-port*
+(true 2 edges/cycle) or multiple BRAM banks, and real-time stays the KV260-fabric / ASIC story (M6).
+
 ## Files
 
 - `hw/bp_relay_bram.sv` — the BRAM, edge-serial relay-BP core (drop-in port-compatible with the M2 reference).
-- `hw/tb_bp_relay.cpp` (`-DBRAM`), `hw/Makefile` (`make -C hw bpbram`) — bit-exact verification vs golden.
-- `hw/bp_axi_wrap_wide.sv` — wide AXI4-Lite wrapper now instantiates `bp_relay_bram` (`make -C hw bpaxiwide`).
-- `hw/syn/arty_z7_bp_circ_bd.tcl`, `hw/syn/arty_z7.xdc` — circuit board BD (now synthesisable) + Arty OOC clock.
+  `hw/bp_relay_bram_fast.sv` — the pipelined-read variant (1.39× fewer cycles); the current board decoder.
+- `hw/tb_bp_relay.cpp` (`-DBRAM` / `-DBRAMFAST`), `hw/Makefile` (`make -C hw bpbram` / `bpbramfast`) —
+  bit-exact verification of each core vs the same golden.
+- `hw/bp_axi_wrap_wide.sv` — wide AXI4-Lite wrapper now instantiates `bp_relay_bram_fast` (`make -C hw bpaxiwide`).
+- `hw/syn/arty_z7_bp_circ_bd.tcl`, `hw/syn/arty_z7.xdc` — circuit board BD (now on the fast core) + Arty OOC clock.

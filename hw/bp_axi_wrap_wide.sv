@@ -5,7 +5,7 @@
 // of 32-bit syndrome / correction words from `BP_C` / `BP_N` in the included header — so the SAME wrapper
 // serves the code-capacity graph AND the far larger, irregular **circuit-level** graph (rounds=1: 144
 // checks / 864 vars → 5 syndrome words / 27 correction words). It wraps the graph-generic **M2-BRAM
-// decoder** (`bp_relay_bram`): the block-RAM, edge-serial relay-BP core — the only variant that both
+// decoder** (`bp_relay_bram_fast`): the block-RAM, pipelined-read edge-serial relay-BP core — the only variant that both
 // handles the irregular circuit graph AND actually **fits on the xc7z020**. (The flop-array M2
 // `bp_relay_decoder` decodes the circuit graph in Verilator but its runtime-cursor register-file mux
 // OOMs Vivado at BP_E=2952 — see PR #447; the unrolled/partial variants bake the graph in and don't fit.)
@@ -68,7 +68,7 @@ module bp_axi_wrap_wide #(
   logic [BP_OBS-1:0]  dec_obs;
   logic [31:0]        dec_lat;
 
-  bp_relay_bram u_dec (
+  bp_relay_bram_fast u_dec (
     .clk(aclk), .rst_n(aresetn), .in_valid(dec_in_valid),
     .syndrome_in(dec_syndrome), .busy(dec_busy), .out_valid(dec_out_valid),
     .corr_out(dec_corr), .obs_flip(dec_obs), .valid_flag(dec_vflag),
