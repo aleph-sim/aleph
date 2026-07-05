@@ -59,6 +59,8 @@ static void tick() {
 int main(int argc, char **argv) {
   Verilated::commandArgs(argc, argv);
   const std::string vec = (argc > 1) ? argv[1] : "bp_dec_vectors.txt";
+  // Optional 2nd arg "early" enables the dual-port core's early-exit mode (first-valid stop).
+  const bool early = (argc > 2) && (std::string(argv[2]) == "early");
 
   std::ifstream f(vec);
   if (!f) {
@@ -82,6 +84,11 @@ int main(int argc, char **argv) {
   // Reset.
   top->rst_n = 0;
   top->in_valid = 0;
+#ifdef BRAMDP
+  top->early_exit = early;                 // only the dual-port core has this input
+#else
+  (void)early;
+#endif
   for (int i = 0; i < 4; ++i) tick();
   top->rst_n = 1;
   tick();

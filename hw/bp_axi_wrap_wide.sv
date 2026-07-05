@@ -14,7 +14,7 @@
 // edge-serial decode over AXI4-Lite; value is on-silicon correctness + per-decode latency, not throughput.
 //
 // Register map (AXI4-Lite, 32-bit data, byte addresses; NS = ceil(BP_C/32), NC = ceil(BP_N/32)):
-//   0x00 CTRL     [W]  bit0 START (self-clearing)
+//   0x00 CTRL     [W]  bit0 START (self-clearing), bit1 EARLY_EXIT (sticky: 1 = stop at first valid)
 //   0x04 STATUS   [R]  bit0 BUSY, bit1 DONE (sticky), bit2 VALID (=valid_flag)
 //   0x08 LATENCY  [R]  last decode latency in cycles (32-bit — the circuit M2 decode is ~70k cycles)
 //   0x0C OBS      [R]  obs_flip[BP_OBS-1:0]
@@ -68,8 +68,10 @@ module bp_axi_wrap_wide #(
   logic [BP_OBS-1:0]  dec_obs;
   logic [31:0]        dec_lat;
 
+  logic               early_mode;               // CTRL bit1: sticky early-exit enable
+
   bp_relay_bram_dp u_dec (
-    .clk(aclk), .rst_n(aresetn), .in_valid(dec_in_valid),
+    .clk(aclk), .rst_n(aresetn), .in_valid(dec_in_valid), .early_exit(early_mode),
     .syndrome_in(dec_syndrome), .busy(dec_busy), .out_valid(dec_out_valid),
     .corr_out(dec_corr), .obs_flip(dec_obs), .valid_flag(dec_vflag),
     .latency_cycles(dec_lat)
@@ -121,7 +123,7 @@ module bp_axi_wrap_wide #(
     if (!aresetn) begin
       ostate <= O_IDLE; dec_in_valid <= 1'b0;
       reg_synd <= '0; reg_corr <= '0; reg_obs <= '0; reg_lat <= '0; reg_vflag <= 1'b0;
-      busy <= 1'b0; done <= 1'b0;
+      busy <= 1'b0; done <= 1'b0; early_mode <= 1'b0;
       awready_r <= 1'b0; wready_r <= 1'b0; bvalid_r <= 1'b0;
       arready_r <= 1'b0; rvalid_r <= 1'b0; rdata_r <= '0;
     end else begin
@@ -132,6 +134,8 @@ module bp_axi_wrap_wide #(
       if (wready_r)  wready_r  <= 1'b0;
       if (!awready_r && !wready_r && !bvalid_r && s_axil_awvalid && s_axil_wvalid) begin
         awready_r <= 1'b1; wready_r <= 1'b1; bvalid_r <= 1'b1;
+        // CTRL bit1 = sticky early-exit enable (bit0 START is handled by lite_start below).
+        if (word(s_axil_awaddr) == A_CTRL) early_mode <= s_axil_wdata[1];
         for (int i = 0; i < NS; i++)
           if (word(s_axil_awaddr) == SYND_BASE + 6'(i)) reg_synd[i*32 +: 32] <= s_axil_wdata;
       end
