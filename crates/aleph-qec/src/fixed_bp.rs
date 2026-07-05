@@ -64,6 +64,11 @@ pub struct FixedRelayBp {
     /// Per-leg, per-variable memory strength `γ_v`, quantised to the same `2^F` scale (may be
     /// negative). `1−γ_v` is derived at use as `2^F − γ_q`.
     gamma_q: Vec<Vec<i32>>,
+    /// Early termination: stop at the **first** iteration whose hard decision satisfies the syndrome,
+    /// returning that `ê` instead of the lowest-weight valid one over the whole `legs×iters` schedule.
+    /// This is standard BP early-stop — it changes the result (average latency ↓, worst-case unchanged),
+    /// so the RTL `early_exit` mode is verified bit-for-bit against a golden built with this set.
+    early_exit: bool,
 }
 
 impl FixedRelayBp {
@@ -176,7 +181,15 @@ impl FixedRelayBp {
             check_off: t.check_off.to_vec(),
             check_edges: t.check_edges.to_vec(),
             gamma_q,
+            early_exit: false,
         }
+    }
+
+    /// Enable/disable early termination (see [`early_exit`](Self::early_exit) field). Returns `self`
+    /// for chaining. With it on, the decoder returns the first syndrome-valid `ê` and stops.
+    pub fn with_early_exit(mut self, on: bool) -> Self {
+        self.early_exit = on;
+        self
     }
 
     /// The fixed-point width `(msg_bits, frac_bits)`.
@@ -287,7 +300,7 @@ impl FixedRelayBp {
         let mut best: Option<(u32, Vec<u8>)> = None;
         let mut found_valid = false;
 
-        for gamma in &self.gamma_q {
+        'schedule: for gamma in &self.gamma_q {
             for _ in 0..self.iters_per_leg {
                 self.check_update(&m_vc, &mut e_cv, &s);
                 self.var_update_memory(&e_cv, &mut m_vc, &mut ehat, gamma);
@@ -296,6 +309,10 @@ impl FixedRelayBp {
                     let w = ehat.iter().map(|&b| b as u32).sum();
                     if best.as_ref().is_none_or(|(bw, _)| w < *bw) {
                         best = Some((w, ehat.clone()));
+                    }
+                    // Early termination: take the first valid ê (matches the RTL `early_exit` mode).
+                    if self.early_exit {
+                        break 'schedule;
                     }
                 }
             }
@@ -312,6 +329,38 @@ impl FixedRelayBp {
             .collect();
 
         (best.map(|(_, e)| e).unwrap_or(ehat), found_valid, llr_q)
+    }
+
+    /// Number of message-passing **iterations executed** before the decode stops: the 1-based global
+    /// iteration index (`leg·iters_per_leg + iter + 1`) of the first syndrome-valid decision, or the
+    /// full `legs·iters_per_leg` schedule if none converges. This is exactly what the RTL `early_exit`
+    /// mode runs, so it models the per-shot latency distribution (iterations → cycles on silicon).
+    /// Independent of the `early_exit` flag — it always reports where a first-valid stop *would* land.
+    pub fn iters_to_valid(&self, syndrome: &Syndrome) -> (bool, u32) {
+        let mut s = vec![0u8; self.num_detectors];
+        for &d in &syndrome.fired {
+            if (d as usize) < self.num_detectors {
+                s[d as usize] = 1;
+            }
+        }
+        let mut m_vc = vec![0i32; self.n_edges];
+        let mut e_cv = vec![0i32; self.n_edges];
+        let mut ehat = vec![0u8; self.n_vars];
+        for (edge, m) in m_vc.iter_mut().enumerate() {
+            *m = self.lambda_q[self.edge_var[edge] as usize];
+        }
+        let mut n = 0u32;
+        for gamma in &self.gamma_q {
+            for _ in 0..self.iters_per_leg {
+                n += 1;
+                self.check_update(&m_vc, &mut e_cv, &s);
+                self.var_update_memory(&e_cv, &mut m_vc, &mut ehat, gamma);
+                if self.satisfies(&ehat, &s) {
+                    return (true, n);
+                }
+            }
+        }
+        (false, n)
     }
 
     /// α = 7/8 on a non-negative magnitude: `x − (x >> 3)`, exact and multiply-free.

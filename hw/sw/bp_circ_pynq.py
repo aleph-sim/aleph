@@ -22,6 +22,7 @@ SYND_BASE = 0x40
 CORR_BASE = 0x80
 
 CTRL_START = 1 << 0
+CTRL_EARLY = 1 << 1        # sticky: 1 = stop at first syndrome-valid decision
 STATUS_DONE = 1 << 1
 STATUS_VALID = 1 << 2
 IDCODE_EXPECTED = 0x42500002
@@ -30,7 +31,8 @@ IDCODE_EXPECTED = 0x42500002
 class BpCircDecoder:
     """Host driver for bp_axi_wrap_wide over any MMIO backend exposing read(off)/write(off, val)."""
 
-    def __init__(self, mmio, n_checks, n_vars, n_obs, clk_hz=50_000_000, poll_limit=2_000_000):
+    def __init__(self, mmio, n_checks, n_vars, n_obs, clk_hz=50_000_000, poll_limit=2_000_000,
+                 early=False):
         self.mmio = mmio
         self.n_checks = n_checks
         self.n_vars = n_vars
@@ -39,6 +41,7 @@ class BpCircDecoder:
         self.nc = (n_vars + 31) // 32
         self.clk_hz = clk_hz
         self.poll_limit = poll_limit
+        self.early = early     # drive CTRL bit1 so the core stops at the first valid decision
 
     @classmethod
     def from_overlay(cls, bitfile, n_checks, n_vars, n_obs, ip_name=None, **kw):
@@ -70,7 +73,7 @@ class BpCircDecoder:
             s = v
         for w in range(self.ns):
             self.mmio.write(SYND_BASE + 4 * w, (s >> (32 * w)) & 0xFFFFFFFF)
-        self.mmio.write(REG_CTRL, CTRL_START)
+        self.mmio.write(REG_CTRL, CTRL_START | (CTRL_EARLY if self.early else 0))
         for _ in range(self.poll_limit):
             status = self.mmio.read(REG_STATUS)
             if status & STATUS_DONE:
@@ -161,18 +164,28 @@ class GoldenModel:
 
 
 def run_check(dev, tests, verbose=True):
-    fails, max_lat = 0, 0
+    fails, lats = 0, []
     for (s, want_h, want_o, want_v) in tests:
         corr, obs, valid, lat = dev.decode(s)
-        max_lat = max(max_lat, lat)
+        lats.append(lat)
         if corr != want_h or obs != want_o or valid != want_v:
             fails += 1
             if verbose and fails <= 10:
                 print("FAIL s=0x%036x: obs got %03x want %03x, v %d/%d, corr %s"
                       % (s, obs, want_o, valid, want_v, "ok" if corr == want_h else "MISMATCH"))
     if verbose:
-        print("bp-circ driver: decodes=%d fails=%d worst latency=%d clk = %d ns @ %.0f MHz"
-              % (len(tests), fails, max_lat, dev.latency_ns(max_lat), dev.clk_hz / 1e6))
+        mode = "early-exit" if dev.early else "full-schedule"
+        sl = sorted(lats)
+        n = len(sl)
+        pct = lambda q: sl[min(int(n * q), n - 1)]
+        mean = sum(sl) // n
+        us = lambda c: dev.latency_ns(c) / 1000.0
+        print("bp-circ driver [%s]: decodes=%d fails=%d @ %.0f MHz" % (mode, n, fails, dev.clk_hz / 1e6))
+        print("  latency cycles: min=%d p50=%d mean=%d p99=%d max=%d"
+              % (sl[0], pct(0.50), mean, pct(0.99), sl[-1]))
+        print("  latency    ms : min=%.3f p50=%.3f mean=%.3f p99=%.3f max=%.3f"
+              % (us(sl[0]) / 1000, us(pct(0.50)) / 1000, us(mean) / 1000,
+                 us(pct(0.99)) / 1000, us(sl[-1]) / 1000))
     return fails
 
 
@@ -184,11 +197,14 @@ def _default_vec_path():
 def main(argv):
     vec_path = _default_vec_path()
     bitfile = None
+    early = False
     for a in argv[1:]:
         if a.endswith(".bit"):
             bitfile = a
         elif a.endswith(".txt"):
             vec_path = a
+        elif a == "early":
+            early = True
 
     tests, n_checks, n_vars, n_obs = load_vectors(vec_path)
     if not tests:
@@ -199,14 +215,14 @@ def main(argv):
 
     if bitfile:
         print("[board] loading overlay %s" % bitfile)
-        dev = BpCircDecoder.from_overlay(bitfile, n_checks, n_vars, n_obs, clk_hz=50_000_000)
+        dev = BpCircDecoder.from_overlay(bitfile, n_checks, n_vars, n_obs, clk_hz=50_000_000, early=early)
         if not dev.probe():
             print("FAIL: IDCODE probe (read 0x%08x)" % dev.mmio.read(REG_ID))
             return 1
         print("[board] IDCODE ok (0x%08x)" % IDCODE_EXPECTED)
     else:
         print("[host] no .bit given -> software golden-model self-test (no board)")
-        dev = BpCircDecoder(GoldenModel(tests), n_checks, n_vars, n_obs)
+        dev = BpCircDecoder(GoldenModel(tests), n_checks, n_vars, n_obs, early=early)
         if not dev.probe():
             print("FAIL: IDCODE probe")
             return 1

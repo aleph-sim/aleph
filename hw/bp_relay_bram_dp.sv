@@ -34,6 +34,7 @@ module bp_relay_bram_dp (
     input  logic                clk,
     input  logic                rst_n,
     input  logic                in_valid,
+    input  logic                early_exit,               // stop at the first syndrome-valid decision
     input  logic                syndrome_in [BP_C],
     output logic                busy,
     output logic                out_valid,
@@ -371,7 +372,11 @@ module bp_relay_bram_dp (
             best_w <= ehat_w;
             for (int v=0;v<BP_N;v++) best_e[v] <= ehat[v];
           end
-          if (iter == BP_ITERS-1) begin
+          // early_exit: `found` is set in S_SAT1 the moment an iteration's decision satisfies the
+          // syndrome; with the schedule fixed we'd have exited on the first, so found here ⇒ first valid.
+          if (early_exit && found) begin
+            state <= S_EMIT;                       // idx already reset to 0 in S_SAT1
+          end else if (iter == BP_ITERS-1) begin
             iter<=0;
             if (leg == BP_LEGS-1) state<=S_EMIT;
             else begin leg<=leg+1; state<=S_CHK0; end

@@ -213,16 +213,19 @@ fn emit_dec_vectors() {
 /// gate-noise syndromes, not synthetic low-weight errors), with the golden `ehat`/obs/validity from the
 /// same `FixedRelayBp` the RTL implements. The M2 sequential decoder (graph-generic) decodes these
 /// bit-for-bit in Verilator — the sim↔RTL co-sim proving the decoder generalises past code capacity.
-fn emit_circ_vectors(rounds: usize, p: f64, n: usize, seed: u64) {
+fn emit_circ_vectors(rounds: usize, p: f64, n: usize, seed: u64, early: bool) {
     use aleph_qec::sample_shots;
     let (dem, fx) = build(Some((rounds, p)));
+    let fx = fx.with_early_exit(early);
     let n_checks = dem.detectors;
     let n_vars = dem.errors.len();
     let n_obs = dem.observables;
     let (syndromes, _truths) = sample_shots(&dem, n as u64, seed);
 
-    println!("# CIRCUIT-LEVEL full-decode golden vectors (depth-7, rounds={rounds}, p={p}) — GENERATED, do not edit.");
-    println!("# regenerate: cargo run -p aleph-qec --example qec_q7_bp_graph -- circvectors {rounds} {p} {n} {seed} > hw/bp_circ_vectors.txt");
+    let mode = if early { "early-exit" } else { "full-decode" };
+    let modearg = if early { "circvectorsearly" } else { "circvectors" };
+    println!("# CIRCUIT-LEVEL {mode} golden vectors (depth-7, rounds={rounds}, p={p}) — GENERATED, do not edit.");
+    println!("# regenerate: cargo run -p aleph-qec --example qec_q7_bp_graph -- {modearg} {rounds} {p} {n} {seed} > hw/bp_circ_vectors.txt");
     println!("# format: header 'T BP_N BP_C BP_OBS'; per test: 's'(BP_C bits) 'h'(BP_N bits ehat) 'o'(BP_OBS bits) 'v'(valid)");
     println!("{} {n_vars} {n_checks} {n_obs}", syndromes.len());
     for syn in &syndromes {
@@ -303,9 +306,10 @@ fn main() {
         "vectors" => emit_vectors(),
         "decvectors" => emit_dec_vectors(),
         "circgraph" => emit_circ_graph(rounds, p),
-        "circvectors" => emit_circ_vectors(rounds, p, n, seed),
+        "circvectors" => emit_circ_vectors(rounds, p, n, seed, false),
+        "circvectorsearly" => emit_circ_vectors(rounds, p, n, seed, true),
         other => {
-            eprintln!("unknown mode '{other}'; use graph|vectors|decvectors|circgraph|circvectors");
+            eprintln!("unknown mode '{other}'; use graph|vectors|decvectors|circgraph|circvectors|circvectorsearly");
             std::process::exit(2);
         }
     }

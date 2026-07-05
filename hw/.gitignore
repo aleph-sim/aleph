@@ -40,3 +40,5 @@ _bpaxiwidebuild/
 _bpbrambuild/
 _bpbramfastbuild/
 _bpbramdpbuild/
+_bpbramdpearlybuild/
+bp_circ_vectors_early.txt
