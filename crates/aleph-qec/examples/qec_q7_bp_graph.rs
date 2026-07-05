@@ -223,7 +223,11 @@ fn emit_circ_vectors(rounds: usize, p: f64, n: usize, seed: u64, early: bool) {
     let (syndromes, _truths) = sample_shots(&dem, n as u64, seed);
 
     let mode = if early { "early-exit" } else { "full-decode" };
-    let modearg = if early { "circvectorsearly" } else { "circvectors" };
+    let modearg = if early {
+        "circvectorsearly"
+    } else {
+        "circvectors"
+    };
     println!("# CIRCUIT-LEVEL {mode} golden vectors (depth-7, rounds={rounds}, p={p}) — GENERATED, do not edit.");
     println!("# regenerate: cargo run -p aleph-qec --example qec_q7_bp_graph -- {modearg} {rounds} {p} {n} {seed} > hw/bp_circ_vectors.txt");
     println!("# format: header 'T BP_N BP_C BP_OBS'; per test: 's'(BP_C bits) 'h'(BP_N bits ehat) 'o'(BP_OBS bits) 'v'(valid)");
