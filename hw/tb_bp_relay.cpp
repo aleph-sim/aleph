@@ -17,7 +17,10 @@
 // (`-DUNROLL`), the M5-followup partially-unrolled decoder (`-DPARTIAL`), and the min-sum-pipelined
 // unrolled decoder (`-DPIPE`). All share the exact port list and are checked against the same golden
 // vectors, so a pass certifies each is the bit-for-bit twin of the others (hence of `FixedRelayBp`).
-#if defined(BRAMFAST)
+#if defined(BRAMDP)
+#include "Vbp_relay_bram_dp.h"
+using Dut = Vbp_relay_bram_dp;
+#elif defined(BRAMFAST)
 #include "Vbp_relay_bram_fast.h"
 using Dut = Vbp_relay_bram_fast;
 #elif defined(BRAM)
