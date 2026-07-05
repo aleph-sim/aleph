@@ -12,7 +12,7 @@ OBJ_DIR   := obj_dir
 VERILATOR ?= verilator
 CARGO     := cargo run --release -q -p aleph-qec --example
 
-.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi stream-axi-circuit cosim-stream cosim-stream-circuit cosim-stream-ler cosim-stream-ler-circuit cosim cosim-3d cosim-circuit cosim-circuit-3d bpcheck bprelay bpunroll bppartial bppartialfast bppipe bpfast bpaxi bpcirc bpaxiwide clean
+.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi stream-axi-circuit cosim-stream cosim-stream-circuit cosim-stream-ler cosim-stream-ler-circuit cosim cosim-3d cosim-circuit cosim-circuit-3d bpcheck bprelay bpunroll bppartial bppartialfast bppipe bpfast bpaxi bpcirc bpaxiwide bpbram clean
 
 all: d3 rep surf
 
@@ -120,11 +120,25 @@ bpaxiwide:
 	cd .. && $(CARGO) qec_q7_bp_graph -- circgraph   1 0.003        > hw/bb_circuit_tanner.svh
 	cd .. && $(CARGO) qec_q7_bp_graph -- circvectors 1 0.003 40 2024 > hw/bp_circ_vectors.txt
 	rm -rf _bpaxiwidebuild && mkdir _bpaxiwidebuild
-	cp bp_axi_wrap_wide.sv bp_relay_decoder.sv tb_bp_axi_wide.cpp _bpaxiwidebuild/
+	cp bp_axi_wrap_wide.sv bp_relay_bram.sv tb_bp_axi_wide.cpp _bpaxiwidebuild/
 	cp bb_circuit_tanner.svh _bpaxiwidebuild/bb_gross_tanner.svh
 	cd _bpaxiwidebuild && $(VERILATOR) --cc --exe --build -Wall -Wno-fatal --top-module bp_axi_wrap_wide \
-		bp_axi_wrap_wide.sv bp_relay_decoder.sv tb_bp_axi_wide.cpp -o sim_bpaxiwide
+		bp_axi_wrap_wide.sv bp_relay_bram.sv tb_bp_axi_wide.cpp -o sim_bpaxiwide
 	./_bpaxiwidebuild/obj_dir/sim_bpaxiwide bp_circ_vectors.txt
+
+# Q7-02 M2-BRAM — the SYNTHESIZABLE-at-circuit-scale relay-BP core (bp_relay_bram): m_vc/e_cv in block
+# RAM + edge-serial check/var updates, so the runtime-cursor register-file mux that OOMs Vivado on the
+# flop-array M2 (#447) disappears. Bit-for-bit verified against the SAME golden as bpcirc (tb_bp_relay
+# with -DBRAM), proving the BRAM core is the exact silicon twin of the M2 reference at circuit level.
+bpbram:
+	cd .. && $(CARGO) qec_q7_bp_graph -- circgraph   1 0.003        > hw/bb_circuit_tanner.svh
+	cd .. && $(CARGO) qec_q7_bp_graph -- circvectors 1 0.003 40 2024 > hw/bp_circ_vectors.txt
+	rm -rf _bpbrambuild && mkdir _bpbrambuild
+	cp bp_relay_bram.sv tb_bp_relay.cpp _bpbrambuild/
+	cp bb_circuit_tanner.svh _bpbrambuild/bb_gross_tanner.svh
+	cd _bpbrambuild && $(VERILATOR) --cc --exe --build -Wall -Wno-fatal -CFLAGS -DBRAM \
+		--top-module bp_relay_bram bp_relay_bram.sv tb_bp_relay.cpp -o sim_bpbram
+	./_bpbrambuild/obj_dir/sim_bpbram bp_circ_vectors.txt
 
 d3:
 	cd .. && $(CARGO) qec_d3_lut_table > hw/surface_d3_lut.mem

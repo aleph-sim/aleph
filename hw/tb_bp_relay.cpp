@@ -17,7 +17,10 @@
 // (`-DUNROLL`), the M5-followup partially-unrolled decoder (`-DPARTIAL`), and the min-sum-pipelined
 // unrolled decoder (`-DPIPE`). All share the exact port list and are checked against the same golden
 // vectors, so a pass certifies each is the bit-for-bit twin of the others (hence of `FixedRelayBp`).
-#if defined(PARTIALFAST)
+#if defined(BRAM)
+#include "Vbp_relay_bram.h"
+using Dut = Vbp_relay_bram;
+#elif defined(PARTIALFAST)
 #include "Vbp_relay_partial_fast.h"
 using Dut = Vbp_relay_partial_fast;
 #elif defined(FAST)
@@ -102,8 +105,11 @@ int main(int argc, char **argv) {
     top->in_valid = 0;
 
     // Run until out_valid (bounded guard).
+    // Edge-serial BRAM core (bp_relay_bram) is O(BP_E) per pass, ~1.5M cycles/decode at circuit
+    // scale — well past the flop M2's ~70k. Guard generously so the slow-but-correct core isn't
+    // clipped; the flop variants finish far sooner.
     int guard = 0;
-    while (!top->out_valid && guard < 200000) {
+    while (!top->out_valid && guard < 8000000) {
       tick();
       ++guard;
     }

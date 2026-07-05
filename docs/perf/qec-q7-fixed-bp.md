@@ -769,3 +769,103 @@ the circuit-scale core wants BRAM-backed messages or a larger fabric.
 - `hw/bp_relay_decoder.sv` — M2 latency widened to 32-bit (real circuit latency; fixes the co-sim wrap).
 - `hw/syn/arty_z7_bp_circ_bd.tcl` — the (currently un-synthesisable) circuit board BD, kept for the future
   BRAM-backed core.
+
+-----
+
+# Q7-02 M2-BRAM — circuit-level relay-BP FITS the Arty: block-RAM messages + edge-serial updates
+
+**Status:** done. The BRAM redesign the previous section called for is built (`bp_relay_bram`), verified
+bit-for-bit against the golden, and **synthesises + closes timing on the xc7z020** — the first
+circuit-level qLDPC decode to fit commodity Arty silicon. It resolves the § "cursor-mux wall is fatal"
+OOM directly.
+
+## Why the flop-array M2 couldn't fit (recap)
+
+`bp_relay_decoder` holds the two per-edge message tables `m_vc`/`e_cv` (`BP_E` deep) in **flip-flops** and
+reads them by a *runtime* node cursor — `m_vc[BP_CHECK_EDGES[off+k]]` — up to `BP_CHK_DEG = 25` times
+*combinationally per cycle*. That is a 2952:1 × 8-bit register-file select replicated ~25× per port. At
+circuit scale (`BP_E = 2952`) Vivado spent **~64 GB** optimising the mux and was **OOM-killed before place**;
+the mux extrapolated to **~90 k LUT ≫ 53 200**.
+
+## The fix — `bp_relay_bram`: map the messages to BRAM, serialise the updates
+
+Two changes, both mechanical once framed right:
+
+1. **`m_vc`/`e_cv` → block RAM** (one synchronous read port + one write port each). Vivado infers **2 BRAM
+   tiles** and the register-file mux *disappears* — a BRAM is addressed, not demuxed.
+2. **Edge-serial check/var updates.** A single-port BRAM serves one access per cycle, so the min-sum and
+   memory-blend loops that touched all `deg` edges of a node in one cycle are unrolled *in time*: one edge
+   per BRAM access, the node/leg/iter loops advancing across FSM states. The registered BRAM read gives a
+   2-cycle address/data handshake on the read passes. Check pass-2 (`e_cv` write) and the SAT parity scan
+   need no read latency (inputs are registered / `ehat` is a 1-bit flop array), so they stay 1 cycle/edge.
+
+Everything else (syndrome, hard decisions `ehat`, best-so-far `best_e`, observable reduce) stays in flops —
+1-bit or single-access, cheap. **The arithmetic is byte-for-byte the M2 golden**: same Q5.3 quantisation,
+multiply-free α=7/8 check-update, single memory-blend multiply `(1−γ)·computed + γ·m_old`, truncating
+arithmetic-shift rounding, keep-lowest-weight-valid rule.
+
+## Correctness — bit-exact, unchanged golden
+
+```
+make -C hw bpbram      → PASS: 40 full decodes bit-identical to the fixed-point golden
+make -C hw bpaxiwide   → PASS: 40 circuit-level decodes bit-identical to golden over wide AXI4-Lite
+```
+
+Both replay the same `bp_circ_vectors.txt` (real depth-7 circuit-level DEM shots) the flop-M2 was checked
+against. `bp_relay_bram` is the exact silicon twin of the M2 reference — the redesign is a *microarchitecture*
+change, not an algorithm change.
+
+## It fits — OOC synth + P&R on the xc7z020 (`xc7z020clg400-1`)
+
+Peak Vivado RSS **3.2 GB** (was 64 GB → OOM). Post-route utilisation:
+
+| Resource       | Used | Avail  |     %  |
+|----------------|-----:|-------:|-------:|
+| Slice LUTs     | 6147 | 53 200 | 11.5 % |
+| Slice Registers| 3235 |106 400 |  3.0 % |
+| **Block RAM**  |  **2** |  140 |  1.4 % |
+| DSP48E1        |    6 |    220 |  2.7 % |
+
+From ~90 k-LUT-that-wouldn't-build to **6147 LUT (11.5 %) + 2 BRAM**. The message tables are the 2 BRAMs;
+the DSP is the memory-blend multiply. Huge headroom remains on the part.
+
+## Timing — closes at 50 MHz; Fmax 55.4 MHz
+
+`Fmax = 55.4 MHz` (WNS −8.056 ns at a 100 MHz target). The board BD clocks the PL at **50 MHz**, **under**
+Fmax, so the integrated PS+PL design **meets timing**. The critical path is the S_SAT *keep-best* decision:
+the edge cursor `p` → `deg−1` compare → parity/`ehat` mux → `final_sat` fanning out to the **864 `best_e`
+register clock-enables** (route-dominated, 24 logic levels, 69 % routing). Registering that decision one
+cycle would break it — a cheap Fmax lever left for later, since this is a *reach* result (fit + correct),
+not a latency result.
+
+## On silicon — the first circuit-level qLDPC decode on the Arty Z7-20
+
+The full board build (`arty_z7_bp_circ_bd.tcl`, PS7 + wide AXI4-Lite + `bp_relay_bram`, PL @ 50 MHz)
+**closes timing** (`WNS +0.037 ns, TIMING_MET`) and produces a bitstream. Loaded onto the real Arty
+(PYNQ, `hw/sw/bp_circ_pynq.py bp_arty_circ.bit bp_circ_vectors.txt`):
+
+```
+[board] IDCODE ok (0x42500002)
+bp-circ driver: decodes=40 fails=0 worst latency=1489896 clk = 29797920 ns @ 50 MHz
+RESULT: PASS (40/40 circuit-level decodes match golden; IDCODE ok)
+```
+
+**40/40 circuit-level decodes bit-identical to the golden on owned silicon.** The on-hardware cycle count
+(1 489 896) equals the Verilator sim equals `FixedRelayBp` — silicon, sim, and reference agree exactly.
+This is the first qLDPC **circuit-level** decode on the Arty; prior on-silicon relay-BP (#442/#446) ran only
+at code capacity, and the flop-M2 circuit core wouldn't build at all (#447).
+
+## Cost — latency, honestly
+
+Edge-serial is O(`BP_E`) per pass, not O(`BP_C + BP_N`): worst-case **1 489 896 cycles/decode** (vs the flop
+M2's 69 984). At 50 MHz that is **~29.8 ms/decode** — slow, but this is the *reach* deliverable: circuit-level
+relay-BP that **fits and is correct on a $200 commodity board**, proving the graph-generic core works at
+circuit scale on real silicon. Latency stays the KV260-fabric / ASIC story. A dual-port-BRAM or pipelined-read
+follow-up (2 edges/cycle) would roughly halve the cycle count; deeper unrolling needs more BRAM banks.
+
+## Files
+
+- `hw/bp_relay_bram.sv` — the BRAM, edge-serial relay-BP core (drop-in port-compatible with the M2 reference).
+- `hw/tb_bp_relay.cpp` (`-DBRAM`), `hw/Makefile` (`make -C hw bpbram`) — bit-exact verification vs golden.
+- `hw/bp_axi_wrap_wide.sv` — wide AXI4-Lite wrapper now instantiates `bp_relay_bram` (`make -C hw bpaxiwide`).
+- `hw/syn/arty_z7_bp_circ_bd.tcl`, `hw/syn/arty_z7.xdc` — circuit board BD (now synthesisable) + Arty OOC clock.
