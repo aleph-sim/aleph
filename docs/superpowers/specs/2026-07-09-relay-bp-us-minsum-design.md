@@ -129,3 +129,85 @@ Banked-BRAM streaming: partition `BP_E` across many BRAM banks (≤288 accesses/
 synthesis before committing the full build. If it fits, this is the first µs-class circuit-level qLDPC decoder
 on the KV260; if it doesn't, we bank the ~10 µs banked-BRAM result and the documented reason. Either way the
 claim stays measured on silicon, never projected.
+
+---
+
+## AMENDMENT 2 (2026-07-09) — banked-store pivot: check-major banking + König edge-coloring
+
+**Why.** Both non-banked paths are now empirically dead on `xck26` (see the plan's Amendment 1 and the M7
+handoff): the modular **full unroll synthesizes but does not fit** (453k LUT = 386 %), and the modular
+**partial unroll fits but does not synthesize** — area-opt stalls on the runtime-`grp` gather muxes over the
+`m_vc`/`e_cv` flop arrays (~O(BP_E)-wide operand muxes), independent of the compute modularization and of
+`-directive RuntimeOptimized`. §7's banked-BRAM fallback is therefore the path; this amendment specifies it
+concretely, and the offline analysis below makes it *stronger* than §7's ~10 µs guess.
+
+### A2.1 Architecture — `bp_relay_banked.sv`, parameterized `(W, V)`
+
+Scale `bp_relay_bram_dp`'s 2-bank idea to hundreds of tiny LUTRAM banks, banked **check-major with a
+β split** so the check passes are hardwired and the scattered var passes stay ≤1 access/bank/cycle:
+
+- **Message stores.** Three LUTRAM bank arrays (all tiny; **zero BRAM tiles**). Let `GC = ⌈144/W⌉`,
+  `GV = ⌈864/V⌉`; the emitter assigns each check a `(group g, slot j)` and each var a `(group h, slot i)`.
+  - `m_cm[W·25·2]` half-banks: variable→check messages. Edge `e` = check `c`'s **logical** position-`k`
+    edge lives at half-bank `(slot j(c), k, β(e))`, `β(e) ∈ {0,1}` chosen offline; row = a per-half-bank
+    packed index (ROM of its ≤GC resident groups). Logical `k` is **never permuted** — β only splits.
+  - `e_cm[W·25]` banks × `GC` rows: check→variable messages, banked `(j, k)`, row `g` — no split
+    (reads tolerate 2/bank: both LUTRAM read ports; written only by the CHK phase, conflict-free).
+  - `m_vm[V·6]` banks × `GV` rows: a **var-major shadow copy** of `m_vc` (bank `(i, d)`, row `h`).
+    Written together with `m_cm`; read only by the VAR phase (the "old message" blend operand).
+- **Access pattern (conflict-free by construction, II=1):**
+  - CHK phase, group `g`: each `check_minsum` lane `(j,k)` reads `m_cm` via a **2:1 β-mux** + row ROM
+    (select/row are compile-time functions of `g`); two cycles later slot outputs write `e_cm[(j,k)]`
+    row `g−2` hardwired. One check-group per cycle → `GC+4` cyc/phase.
+  - VAR phase, group `h`: V stamped `var_update` slots read `e_cm` scattered (≤GV:1 ROM-driven mux per
+    operand; ≤2 reads/bank guaranteed) + `m_vm` mux-free; two cycles later write blended `m_vc` to
+    **both** `m_cm` (≤1 write/half-bank/cycle guaranteed, ≤GC:1 source mux per half-bank) and `m_vm`
+    (mux-free). One var-group per cycle → `GV+4` cyc/phase.
+  - SAT overlapped on `ehat` flops (per-(j,k) 1-bit GC:1 gathers), INIT via the VAR write path (λ),
+    EMIT V vars/cycle — FSM structure carried from `bp_relay_unroll_pipe` (launch/scatter software
+    pipeline), plus `early_exit` + 32-bit `latency_cycles` for a clean `bp_axi_wrap_wide` drop-in.
+
+### A2.2 The conflict-freedom result (measured on the real graph, not conjectured)
+
+The one hard constraint is the VAR phase: within a var-group, its edges must hit distinct half-banks.
+Distinct slots/positions are distinct banks automatically; the residual collisions — same `(j,k)` from
+two same-slot checks — are handled by the emitter's offline solve: (1) slot assignment + var grouping
+such that every var-group hits every `(j,k)` **≤2** times (greedy + local repair; verified exactly on
+`bb_gross_tanner.svh` at all four configs below), then (2) β splits each such pair — always possible.
+If a future graph defeats the cap-2 grouping search, the guaranteed fallback is per-check bank
+permutations via bipartite edge-coloring (König, ≤25 colors — exists for any graph of this degree;
+costs 25:1 CHK muxes ≈ +20k LUT, measured feasible on this graph too). Verified configs:
+
+| W (chk/cyc) | V (var/cyc) | m_cm half-banks | cyc/decode | @100 MHz | @200 MHz | est. LUT |
+|---|---|---|---|---|---|---|
+| 8  | 24 | 400×≤18 | ~3 946 | 39.5 µs | 19.7 µs | ~40–45k |
+| 12 | 36 | 600×≤12 | ~2 836 | 28.4 µs | 14.2 µs | ~55–60k |
+| 16 | 48 | 800×≤9  | ~2 281 | 22.8 µs | 11.4 µs | ~65–75k |
+
+Residual muxes are **bounded by construction**: `e_cm` reads ≤GV:1 per var operand (measured avg 15–22),
+`m_cm` writes ≤GC:1 per half-bank (avg 7–13), CHK β-muxes 2:1 — vs the ~O(BP_E) operand muxes that
+stalled partial-unroll's area-opt. Rejected on data: naive `edge % K` (up to 15 same-bank edges/cycle →
+stalls, ~100 µs class) and unrestricted search-based banking (feasible but ~128:1 muxes/operand ≈
+60–130k LUT of routing).
+
+### A2.3 Correctness — bit-exact, **no golden regeneration**
+
+Banking never touches logical edge order: `check_minsum`'s min1/min2/argmin reduction consumes positions
+`k` exactly as today (β/row are pure physical placement), so tie-breaks — and every message value — are
+unchanged; var-side sums are wrap-add order-invariant, and grouping is the same pure-scheduling change
+already proven G-invariant for `bp_relay_unroll_pipe`. The core stays **bit-exact to the existing
+`FixedRelayBp` golden and `bp_circ_vectors.txt`** (same TB pattern; plus a (W,V)-invariance check).
+§5's LER oracle stays unused (no precision change). The `MSG_BITS` narrowing lever remains available but
+unneeded (LUTRAM stores bits cheaply).
+
+### A2.4 Emitter & deliverables delta
+
+- `qec_q7_bp_graph` gains the offline solve (`(W, V)` parameters): slot assignment, cap-2 var grouping,
+  β assignment — emitting `check→(group, slot)`, `var→(group, slot)`, `β(e)` alongside the existing CSR
+  tables (which stay byte-identical). Address/select ROMs derive from these in RTL `generate`
+  (compile-time constants — the partial_fast rule). The solve asserts feasibility loudly.
+- New core `hw/bp_relay_banked.sv`; OOC fit/Fmax probes at (8,24), (12,36), (16,48) → pick the fastest
+  that fits ≤ ~105k LUT and closes timing; then the M6 board flow (`kv260_bp_circ_bd.tcl` swap,
+  `bp_circ_kv260.py`), silicon numbers, `docs/perf/qec-q7-fixed-bp.md` M7 section, PR **Advances #322**.
+- Honest expectation vs M6's 6.72 ms: **~11–40 µs on silicon** (~200–500×), decided by fit + Fmax, not
+  projection.
