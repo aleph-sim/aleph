@@ -1010,3 +1010,73 @@ Silicon ladder (worst-case): **29.8 ms (#448) → 21.42 ms (#449) → 13.44 ms (
   early-exit enable** (`make -C hw bpaxiwide`).
 - `hw/sw/bp_circ_pynq.py` — board driver; `early` arg sets CTRL bit1 and reports the latency distribution.
 - `hw/syn/arty_z7_bp_circ_bd.tcl`, `hw/syn/arty_z7.xdc` — circuit board BD (now on the dp core) + Arty OOC clock.
+
+-----
+
+# Q7-02 M6 — KV260 (Zynq UltraScale+): circuit-level relay-BP on the bigger fabric
+
+The KV260 (XCK26, `xck26-sfvc784-2LV-c`) has ~117k 6-input LUTs vs the Arty's ~53k. The M6 hypothesis
+(from the pre-KV260 handoff) was that the bigger fabric would fit an **unrolled** circuit-scale core and
+turn the Arty's 13.44 ms edge-serial *reach* result into a *real-time* (~1–3 µs) *latency* result.
+
+**That hypothesis is false, and the OOC sweep is why.** The circuit-level gross-code graph is
+`BP_N=864 / BP_C=144 / BP_E=2952`, irregular, **max check-degree 25**. A spatially-unrolled min-sum
+evaluates every check's 25-input min₁/min₂ reduction combinationally every cycle — a colossal comparator
+network that Vivado's synthesis cannot handle at this scale:
+
+| core | result @ xck26 | verdict |
+|---|---|---|
+| `bp_relay_fast` (full unroll, ~123 cyc) | ~43 GB RSS, **stuck in Cross-Boundary-Area-Optimization ~1 h, killed** | infeasible (OOM) |
+| `bp_relay_partial_fast` (CHK12/VAR24, ~2.9k cyc) | ~20 GB RSS, **stalled the same area-opt phase >40 min, no progress** | infeasible (non-convergent) |
+| `bp_relay_bram_fast` (edge-serial) | LUT 6466 (**5.5%**), FF 3217, BRAM 2, DSP 6, Fmax 122.5 MHz | fits |
+| `bp_relay_bram_dp` (2 edges/cyc)  | LUT 8509 (**7.3%**), FF 3216, BRAM 2, DSP 11, Fmax 121.3 MHz | fits |
+
+The cores that **fit** are BRAM edge-serial (fabric-light); the cores that would **exploit** the fabric
+don't synthesize. **On this decoder the KV260's larger fabric buys clock, not unrolling.** The wall is
+synthesis of the deg-25 min-sum, not placement/area — it is the same class of wall the flop-array M2 hit
+on the Arty (#447), just triggered in the optimizer instead of at elaboration.
+
+**Chosen core: `bp_relay_bram_dp`** — fewest cycles of the fitting family (672 000 cyc worst-case, matching
+the Arty silicon), and already the core instantiated in `bp_axi_wrap_wide`, so **zero RTL change**.
+
+**Board build** (`hw/syn/kv260_bp_circ_bd.tcl`): `zynq_ultra_ps_e` (KV260) → `M_AXI_HPM0_FPD` AXI4-Lite →
+`bp_axi_top_wide` (IDCODE `0x4250_0002`) at base `0xA000_0000`, `pl_clk0` FCLK **100 MHz**. Implementation
+**closes timing** (WNS **+0.310 ns**), fit 7.3% LUT.
+
+**On silicon** (KV260, PL @ 100 MHz, the 40 circuit shots at p=0.003, IDCODE probed `0x4250_0002`,
+**40/40 bit-exact to the fixed-point golden in both modes**):
+
+```
+[full-schedule]  min=p50=mean=p99=max = 672 000 cyc = 6.720 ms   (fixed)
+[early-exit]     min=13 501  p50=24 662  mean=38 055  p99=max=180 916 cyc
+                 min=0.135  p50=0.247  mean=0.381  p99=max=1.809 ms
+```
+
+vs the Arty (dp core @ 50 MHz): identical cycle counts, **half the wall-clock** — worst-case
+**13.44 → 6.72 ms = 2.0×**, early-exit average **0.761 → 0.381 ms = 2.0×** (17.6× the average lever, as on
+the Arty). The 2× is purely the clock (100 vs 50 MHz); the OOC Fmax (~121 MHz) leaves ~1.2× more clock on
+the table for a future tightened build, but not the orders of magnitude that only unrolling would give.
+
+**Silicon ladder (worst-case):** Arty 29.8 ms (#448) → 21.42 ms (#449) → 13.44 ms (dp) → **KV260 6.72 ms (dp)**.
+
+**PYNQ gotcha (KV260 / Kria-PYNQ 3.0.1).** `pynq.Overlay(bit)` fails on a design with **no PL DRAM banks**:
+the image ships a *stub* `/usr/bin/xclbinutil` that wraps `unwrapped/xclbinutil` and `exit 0`s regardless of
+its return code, so the empty `MEM_TOPOLOGY` makes the real tool fail, the failure is masked, `t.xclbin` is
+never written, and `Overlay` dies with `FileNotFoundError: .../t.xclbin`. **Bypass:** program the PL with
+`pynq.Bitstream(bit).download()` (skips the metadata/xclbin path) and talk to the IP via
+`pynq.MMIO(0xA000_0000, 0x1000)` directly — no Overlay. See `hw/sw/bp_circ_kv260.py`.
+
+**Honest scope.** M6 did **not** reach µs real-time, and OOC proved it is unreachable with the current RTL:
+it needs an unrolled datapath, and the deg-25 min-sum does not synthesize unrolled at circuit scale. The
+route to µs is a **synthesis-friendly restructure of the min-sum** (pipelined/registered comparator
+reduction so no single cycle carries the whole deg-25 tree, or a different parallel-but-registered
+architecture), not a bigger fabric. What M6 delivers is the **first UltraScale+ bring-up of the decoder**,
+correct on silicon, at 2× the Arty clock plus the early-exit average-case lever.
+
+## Files (M6)
+
+- `hw/syn/kv260_bp_circ_bd.tcl` — KV260 block design + bitstream (`zynq_ultra_ps_e` + wide wrap on
+  `bp_relay_bram_dp`; `bdonly` 4th arg does a fast BD-assembly pre-flight). Usage in the header.
+- `hw/sw/bp_circ_kv260.py` — KV260 runner: `Bitstream.download()` + raw `MMIO` (Overlay-bypass, see gotcha),
+  reuses `bp_circ_pynq.BpCircDecoder` / `load_vectors` / `run_check`; runs full-schedule + early-exit.
+- Cores unchanged (`bp_relay_bram_dp.sv`, `bp_axi_wrap_wide.sv`, `bp_axi_top_wide.v`); no RTL edits for M6.
