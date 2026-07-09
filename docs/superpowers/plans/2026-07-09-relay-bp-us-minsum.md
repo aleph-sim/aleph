@@ -243,3 +243,43 @@ gh pr create --base main --title "[Q7-02] M7: µs-class circuit-level relay-BP o
 **Type consistency:** `check_minsum(clk,en,sbit,m_in[DEG],present[DEG],e_out[DEG])` and `var_update(clk,en,lam,gam,e_in[DEG],present[DEG],m_in[DEG],m_out[DEG],ehat_bit)` — the `m_in` addition to `var_update` (Task 2 Step 3) is reflected in the Task-4 wiring (old-message feedback). Core ports match `bp_relay_fast` (Task 4) and the wrap port delta is resolved in Task 6 Step 1.
 
 **Note on granularity:** Tasks 4–5 are RTL-heavy and inherently iterative (timing/wiring debug) — the "write core / elaborate / co-sim to green" cycle is the test loop; expect multiple edit-run passes within Step 3 of Task 5, which is normal for the FSM assembly and not a plan gap.
+
+---
+
+## AMENDMENT 2026-07-09 — fit-gate pivot (full-unroll → modular partial-unroll)
+
+**Task 3 (Step-0 fit gate) result:** the modular full-unroll skeleton (144 `check_minsum` + 864
+`var_update`, `-flatten_hierarchy none`) **synthesized in ~3 min / 4.7 GB peak** — confirming
+modularization defeats the flat-cloud area-opt wall (the core M7 hypothesis). **But it does NOT fit:**
+CLB LUT **452 802 = 386 %** of the KV260's 117 120 (CARRY8 276 %; FF 66 % ok; DSP/BRAM 0). Full spatial
+unroll is ~3.9× too big → true 1–3 µs at full unroll is physically impossible on this part.
+
+**Decision (user): push to ~3 µs via MODULAR PARTIAL-UNROLL + narrow fixed-point.** Process a fraction
+`1/G` of checks+vars per cycle through stamped groups (modularization also tames the mux that stalled
+`partial_fast`), and narrow the fixed-point (`FixedRelayBp` is `(msg_bits,frac_bits)`-parameterizable →
+regenerate a matching golden, so the RTL stays **bit-exact at the re-derived width**; the width's LER is
+sanity-checked separately vs Aer/8-bit). Fit math: `453k × (1/G) × (width/8) + mux`. Target `G≈4`,
+`msg_bits≈5–6` → ~70–90k LUT (fits), ~4–5× the full-unroll cycle count; push FCLK ~150–200 MHz toward 3 µs.
+
+**Revised tasks (supersede Tasks 4–5 above):**
+
+### Task 4′: `bp_relay_unroll_pipe.sv` — modular PARTIAL-unroll core, param `(G, MW)`
+- Parameters: `NGROUP` (checks/vars processed per cycle = `BP_C/NGROUP` etc.), `MW`/`WACC`/`FRAC` from header.
+- `generate` `CHK_UNROLL = ceil(BP_C/NGROUP)` `check_minsum` slots + `VAR_UNROLL = ceil(BP_N/NGROUP)`
+  `var_update` slots. Each slot, for the active group `grp`, gathers its check/var's messages at
+  **compile-time-constant** edge indices (the `bp_relay_fast`/`partial_fast` gather idiom — mux the operands
+  by `grp == g`, never runtime-index the arrays), feeds the submodule, scatters the result back.
+- FSM: per iteration, sweep `grp = 0..NGROUP-1` through S_CHECK then S_VAR (2-stage submodule pipeline;
+  overlap groups where the reg→reg paths are independent). SAT-overlap as in `bp_relay_fast`. 6×10 schedule.
+- Same top ports as `bp_relay_fast` (drop-in). Synchronous reset.
+- **Fit-tune loop (in-session, openwebgui):** OOC-synth the core at `(G,MW)`; if LUT > ~105k, raise `G`
+  or narrow `MW`; if it fits with margin, lower `G` (fewer cycles). Land the smallest-cycle config that
+  fits ≤ ~105k LUT and closes timing at the target FCLK.
+
+### Task 5′: bit-exact co-sim at the re-derived precision
+- Add `msg_bits`/`frac_bits` CLI args to `crates/aleph-qec/examples/qec_q7_bp_graph.rs` (emitter currently
+  hardcodes `MSG_BITS=8,FRAC_BITS=3` at lines 21-22; `FixedRelayBp::with_budget` already takes them) so
+  `circgraph`/`circvectors` emit at the chosen width. Regenerate header + `bp_circ_vectors.txt` at the tuned
+  width. Co-sim `bp_relay_unroll_pipe` vs that golden → 40/40 bit-exact + latency. **Plus** a one-time LER
+  sanity: confirm the chosen width's `FixedRelayBp` LER is within band vs the 8-bit / Aer reference
+  (reuse the existing message-width sweep in `crates/aleph-qec` if present, else a short Monte-Carlo).
