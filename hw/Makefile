@@ -12,7 +12,7 @@ OBJ_DIR   := obj_dir
 VERILATOR ?= verilator
 CARGO     := cargo run --release -q -p aleph-qec --example
 
-.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi stream-axi-circuit cosim-stream cosim-stream-circuit cosim-stream-ler cosim-stream-ler-circuit cosim cosim-3d cosim-circuit cosim-circuit-3d bpcheck bprelay bpunroll bppartial bppartialfast bppipe bpfast bpaxi bpcirc bpaxiwide bpbram bpbramfast bpbramdp bpbramdpearly clean
+.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi stream-axi-circuit cosim-stream cosim-stream-circuit cosim-stream-ler cosim-stream-ler-circuit cosim cosim-3d cosim-circuit cosim-circuit-3d bpcheck bprelay bpunroll bppartial bppartialfast bppipe bpfast bpaxi bpcirc bpaxiwide bpbram bpbramfast bpbramdp bpbramdpearly checkminsum clean
 
 all: d3 rep surf
 
@@ -178,6 +178,15 @@ bpbramdpearly:
 	cd _bpbramdpearlybuild && $(VERILATOR) --cc --exe --build -Wall -Wno-fatal -CFLAGS -DBRAMDP \
 		--top-module bp_relay_bram_dp bp_relay_bram_dp.sv tb_bp_relay.cpp -o sim_bpbramdpearly
 	./_bpbramdpearlybuild/obj_dir/sim_bpbramdpearly bp_circ_vectors_early.txt early
+
+# Q7-02 M7 — standalone `check_minsum` submodule: the FIRST of the two small per-node submodules the
+# hierarchically-modular relay-BP core (M7) will stamp out many times (one per check node). Generic in
+# MW/DEG (no baked-in graph `include), so no golden-vector regeneration step is needed here — the C++
+# TB reimplements the bp_relay_fast.sv S_CHECK arithmetic directly and drives >=10000 random cases.
+checkminsum:
+	$(VERILATOR) --cc --exe --build -Wall --top-module check_minsum \
+		check_minsum.sv tb_check_minsum.cpp -o sim_checkminsum
+	./$(OBJ_DIR)/sim_checkminsum
 
 d3:
 	cd .. && $(CARGO) qec_d3_lut_table > hw/surface_d3_lut.mem
