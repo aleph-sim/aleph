@@ -5,6 +5,8 @@ obj_partial/
 obj_pipe/
 obj_fast/
 obj_bpaxi/
+obj_unrollpipe2/
+obj_unrollpipe4/
 sim_*
 *.vcd
 _d5build/
