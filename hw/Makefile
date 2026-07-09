@@ -12,7 +12,7 @@ OBJ_DIR   := obj_dir
 VERILATOR ?= verilator
 CARGO     := cargo run --release -q -p aleph-qec --example
 
-.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi stream-axi-circuit cosim-stream cosim-stream-circuit cosim-stream-ler cosim-stream-ler-circuit cosim cosim-3d cosim-circuit cosim-circuit-3d bpcheck bprelay bpunroll bppartial bppartialfast bppipe bpfast bpaxi bpcirc bpaxiwide bpbram bpbramfast bpbramdp bpbramdpearly checkminsum varupdate clean
+.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi stream-axi-circuit cosim-stream cosim-stream-circuit cosim-stream-ler cosim-stream-ler-circuit cosim cosim-3d cosim-circuit cosim-circuit-3d bpcheck bprelay bpunroll bppartial bppartialfast bppipe bpfast bpaxi bpcirc bpaxiwide bpbram bpbramfast bpbramdp bpbramdpearly checkminsum varupdate unrollskel clean
 
 all: d3 rep surf
 
@@ -197,6 +197,17 @@ varupdate:
 	$(VERILATOR) --cc --exe --build -Wall --top-module var_update \
 		var_update.sv tb_var_update.cpp -o sim_varupdate
 	./$(OBJ_DIR)/sim_varupdate
+
+# Q7-02 M7 — Step-0 OOC fit-gate SKELETON: Verilator LINT-ONLY elaboration of `bp_unroll_skeleton`
+# (all 144 `check_minsum` + all 864 `var_update` instances, CSR-constant-indexed wiring at circuit-graph
+# scale) against `check_minsum`/`var_update` (already unit-verified in isolation by `checkminsum`/
+# `varupdate` above). Lint-only, no C++ TB: the skeleton has no intended functional behavior to check —
+# it exists to catch width/UNDRIVEN/index mistakes in the generate-based stamping CHEAPLY, before the
+# expensive step of staging to Vivado for an out-of-context synth "fit" run (hw/syn/ooc_fit_gate.tcl).
+unrollskel:
+	cd .. && $(CARGO) qec_q7_bp_graph -- circgraph 1 0.003 > hw/bb_gross_tanner.svh
+	$(VERILATOR) --lint-only -Wall --top-module bp_unroll_skeleton \
+		check_minsum.sv var_update.sv bp_unroll_skeleton.sv
 
 d3:
 	cd .. && $(CARGO) qec_d3_lut_table > hw/surface_d3_lut.mem
