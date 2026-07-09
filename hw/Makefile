@@ -12,7 +12,7 @@ OBJ_DIR   := obj_dir
 VERILATOR ?= verilator
 CARGO     := cargo run --release -q -p aleph-qec --example
 
-.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi stream-axi-circuit cosim-stream cosim-stream-circuit cosim-stream-ler cosim-stream-ler-circuit cosim cosim-3d cosim-circuit cosim-circuit-3d bpcheck bprelay bpunroll bppartial bppartialfast bppipe bpfast bpaxi bpcirc bpaxiwide bpbram bpbramfast bpbramdp bpbramdpearly checkminsum clean
+.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi stream-axi-circuit cosim-stream cosim-stream-circuit cosim-stream-ler cosim-stream-ler-circuit cosim cosim-3d cosim-circuit cosim-circuit-3d bpcheck bprelay bpunroll bppartial bppartialfast bppipe bpfast bpaxi bpcirc bpaxiwide bpbram bpbramfast bpbramdp bpbramdpearly checkminsum varupdate clean
 
 all: d3 rep surf
 
@@ -187,6 +187,16 @@ checkminsum:
 	$(VERILATOR) --cc --exe --build -Wall --top-module check_minsum \
 		check_minsum.sv tb_check_minsum.cpp -o sim_checkminsum
 	./$(OBJ_DIR)/sim_checkminsum
+
+# Q7-02 M7 — standalone `var_update` submodule: the SECOND of the two small per-node submodules the
+# hierarchically-modular relay-BP core (M7) will stamp out many times (one per variable node, 864x on
+# the circuit graph). Generic in MW/WACC/FRAC/DEG/MAXMAG (no baked-in graph `include), so no
+# golden-vector regeneration step is needed here — the C++ TB reimplements the bp_relay_fast.sv S_VAR
+# arithmetic directly and drives >=10000 random cases.
+varupdate:
+	$(VERILATOR) --cc --exe --build -Wall --top-module var_update \
+		var_update.sv tb_var_update.cpp -o sim_varupdate
+	./$(OBJ_DIR)/sim_varupdate
 
 d3:
 	cd .. && $(CARGO) qec_d3_lut_table > hw/surface_d3_lut.mem
