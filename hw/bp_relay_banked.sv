@@ -137,6 +137,9 @@ module bp_relay_banked (
   // is dropped; (c) a wrong BP_EDGE_POS mis-taps the m_cm half-bank in the CHK gather. Recompute and enforce
   // all three at elaboration (time-0 `initial`, constant-folded over the header tables — no runtime hardware;
   // an initial block of system tasks synthesises to nothing). Fail LOUDLY on any violation.
+  // Fenced from synthesis: Vivado's handling of $fatal-in-initial is not a documented guarantee, and the
+  // guard's job is done in the Verilator co-sim gate that always precedes any synth run of this core.
+`ifndef SYNTHESIS
   initial begin : elab_guards
     automatic int fails = 0;
     // (a)/(b): per var-group, accumulate writers-per-half-bank and readers-per-e_cm-bank in ONE pass
@@ -189,6 +192,7 @@ module bp_relay_banked (
       $display("bp_relay_banked: elaboration guards (a/b/c) PASS (GV=%0d NHB=%0d NEB=%0d BP_E=%0d)",
                GV, NHB, NEB, BP_E);
   end
+`endif
 
   // =============================================================================== FSM state / registers
   typedef enum logic [2:0] {
