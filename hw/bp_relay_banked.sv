@@ -1,42 +1,244 @@
-// Q7-02 M7 — K-BANKED relay-BP decoder core (`bp_relay_banked`): beta-split, check-major LUTRAM banks.
+// Q7-02 M7 — K-BANKED relay-BP decoder core (`bp_relay_banked`): beta-split, check-major LUTRAM banks,
+// with the message-bank fabric restructured into HIERARCHICALLY-MODULAR STAMPED CELLS (area-opt rescue).
 //
-// Same schedule / quantisation / keep-lowest-weight-valid decision as `bp_relay_fast.sv` and the modular
-// partial-unroll `bp_relay_unroll_pipe.sv`, and it STAMPS the SAME two unit-verified submodules
-// (`check_minsum`, `var_update`, Tasks 1-2). The difference is WHERE the per-edge messages live: not in
-// flop arrays (which rebuild the runtime-index register-file mux wall that stalled Vivado area-opt), but
-// in many small single-write-port LUTRAM banks, one message per (bank,row) addressed by a compile-time
-// group/slot map baked into the header (Task 9). Every runtime index touches ONLY: (a) the banks' async
-// read OUTPUT wires, tapped at compile-time-constant bank ids, and (b) small ehat/s_reg flop arrays. No
-// runtime index ever reaches a bank memory CELL or the graph tables by a computed edge index — that is
-// the LUTRAM-inference rule the M7 synthesis post-mortems require.
+// WHY THIS FILE IS SHAPED AS MANY SMALL MODULES (the M7 synthesis post-mortem):
+//   The functionally-proven FLAT version of this core (40/40 bit-exact co-sim vs the fixed-point golden at
+//   8/24, 12/36, 16/48; worst latency 3570/2460/1905) STALLED Vivado OOC synthesis: all three configs sat
+//   >3.5 h single-threaded in "Cross Boundary and Area Optimization" without completing — one flat top-level
+//   bank/mux/ROM cloud is the pathological input for that pass. The empirically-proven fix this milestone
+//   found (the 1008-instance `bp_unroll_skeleton` cleared the SAME phase in ~3 min where flat cores
+//   OOM'd/stalled) is HIERARCHICAL MODULARIZATION: with `synth_design -flatten_hierarchy none`, Vivado
+//   optimizes many small stamped module instances independently and cheaply, but chokes on the equivalent
+//   flattened cloud. So the LUTRAM message-bank fabric — the 2*W*CHK_DEG m_cm half-banks, the W*CHK_DEG
+//   e_cm banks, and the V*VAR_DEG m_vm banks (744 memories at 8/24) — is decomposed into small
+//   `parameter int`-stamped cell modules (`bp_mcm_cell`, `bp_ecm_cell`, `bp_mvm_cell`), one instance per
+//   memory. This is a PURE-STRUCTURAL refactor of the flat core: identical schedule, quantisation, memory
+//   map, and keep-lowest-weight-valid decision — the worst-case latency is bit-for-bit unchanged (3570
+//   cycles at 8/24). No behavior moved; only module boundaries were drawn.
+//
+// SCOPE OF THE MODULARIZATION (a stated, forced deviation from a "5-cell / cell-owns-its-ROM" plan):
+//   The per-edge SCATTER/GATHER RESOLUTION (which var-slot writes which half-bank; which e_cm bank each var
+//   operand reads at which port) is an O(GV*V*VAR_DEG) sweep over the header graph tables. Pushing it INTO
+//   each cell — whether as elaboration-time `localparam` ROMs (constant functions) or as per-cell RTL
+//   scans — is infeasible on the Verilator 5.050 co-sim box this gate runs on: constant-function evaluation
+//   over the large header arrays (BP_CHECK_EDGES/BP_VAR_AT/... , thousands of elements) is pathologically
+//   memory-hungry (even four small reverse-lookup tables cost ~22 s; the full per-cell-ROM set OOM-kills the
+//   process at ~35 s on a 16 GB host), and replicating the O(GV*V*VAR_DEG) sweep as RTL across 744 cells
+//   likewise blows past memory. So the scatter/read-address RESOLUTION stays in the TOP as the SAME shared
+//   combs the flat core used (constant-indexed — every bank id folds to a compile-time constant; the cursor
+//   only selects the row/group), and each cell is the MEMORY plus its own mux-free (e_cm/m_vm) or top-fed
+//   (m_cm) write port. The 744 memories ARE the LUTRAM fabric the area-opt pass chokes on, and they are now
+//   independent hierarchy units. The gathers feeding check_minsum/var_update are pure constant-tap selects
+//   of the cells' async-read OUTPUT wires and remain in the TOP (they were never the mux wall).
+//
+// It still STAMPS the SAME two unit-verified submodules (`check_minsum`, `var_update`, Tasks 1-2). The
+// difference from `bp_relay_fast.sv` is WHERE the per-edge messages live: not in flop arrays (which rebuild
+// the runtime-index register-file mux wall that stalled Vivado area-opt), but in many small single-write-
+// port LUTRAM banks, one message per (bank,row) addressed by a compile-time group/slot map baked into the
+// header (Task 9). Every runtime index touches ONLY: (a) the banks' async read OUTPUT wires, tapped at
+// compile-time-constant bank ids in the gathers, and (b) small ehat/s_reg flop arrays in the TOP.
 //
 // MEMORY MAP (spec A2.1):
-//   * m_cm (v->c messages, read by the CHK phase): 2*W*CHK_DEG half-banks x GC rows. Bank of edge e =
-//     slot_of_chk(EDGE_CHK[e])*CHK_DEG + EDGE_POS[e]; half = EDGE_BETA[e]; row = grp_of_chk(EDGE_CHK[e]).
-//     One sync write port; async read at row = pc (uniform across banks — every CHK lane of group pc
-//     reads its own bank at row pc). Beta is compile-time-constant per lane/group, so the 2:1 beta-select
-//     folds into a constant bank tap.
-//   * e_cm (c->v messages, written by CHK, read by VAR): W*CHK_DEG banks x GC rows, same (j,k) map, no
-//     beta split, TWO async read address ports (the guaranteed <=2 readers/bank/var-group; readers of a
-//     bank in a var-group are ordered by (i,d): first -> port A, second -> port B).
-//   * m_vm (the "old" v->c message the var-update blends against): V*VAR_DEG banks x GV rows. Bank =
-//     (var-slot i, edge d); read row = pc, write row = pc-2 (disjoint groups in the software pipeline).
+//   * m_cm (v->c messages, read by the CHK phase): 2*W*CHK_DEG half-banks x GC rows (`bp_mcm_cell`). Bank
+//     of edge e = slot_of_chk(EDGE_CHK[e])*CHK_DEG + EDGE_POS[e]; half = EDGE_BETA[e]; row =
+//     grp_of_chk(EDGE_CHK[e]). One sync write port; async read at row = pc.
+//   * e_cm (c->v messages, written by CHK, read by VAR): W*CHK_DEG banks x GC rows (`bp_ecm_cell`), same
+//     (j,k) map, no beta split, TWO async read address ports (readers ordered by (i,d): first->A, second->B).
+//   * m_vm (the "old" v->c message the var-update blends against): V*VAR_DEG banks x GV rows (`bp_mvm_cell`).
+//     Bank = (var-slot i, edge d); read row = pc, write row = pc-2 (disjoint in the software pipeline).
 //
-// FSM mirrors `bp_relay_unroll_pipe.sv` (S_CHECK/S_VAR launch-group-pc / scatter-group-(pc-2) 2-deep
-// software pipeline over the submodules' 2-cycle latency; SAT folded into the S_CHECK launches;
-// sat_pending; best-kept commit; obs reduction; sync reset) with three additions the banked layout forces
-// or the drop-in contract needs: (1) an S_INIT state that seeds m_cm/m_vm with lambda through the write
-// ports (the unroll core could flop-init m_vc in S_IDLE; banked messages must be written a group/cycle);
-// (2) an `early_exit` input — at the S_CHECK-entry SAT finalize, `early_exit && found` jumps to S_EMIT
-// (the `bp_relay_bram_dp` S_SAT2 semantics: found the moment a decision satisfies the syndrome => first
-// valid); (3) a 32-bit `latency_cycles` output. W/V/GC/GV come from the header, never module parameters,
-// so header and RTL cannot desync.
+// FSM mirrors `bp_relay_unroll_pipe.sv` (S_CHECK/S_VAR 2-deep software pipeline over the submodules' 2-cycle
+// latency; SAT folded into the S_CHECK launches; best-kept commit; obs reduction; sync reset) with the
+// banked additions: (1) an S_INIT state seeding m_cm/m_vm with lambda; (2) an `early_exit` input (first
+// syndrome-valid decision jumps to S_EMIT); (3) a 32-bit `latency_cycles` output. W/V/GC/GV come from the
+// header, never module parameters, so header and RTL cannot desync.
 
 `timescale 1ns / 1ps
 /* verilator lint_off UNUSEDPARAM */
 `include "bb_gross_tanner.svh"
 /* verilator lint_on UNUSEDPARAM */
 
+// ================================================================ $unit-scope geometry (shared by cells)
+// Hoisted out of `bp_relay_banked` so the sibling cell modules below can size their ports/memories against
+// the same header-derived geometry.
+localparam int BB_GC   = BP_GC;                       // number of check groups (m_cm / e_cm rows)
+localparam int BB_GV   = BP_GV;                       // number of var groups   (m_vm rows)
+localparam int BB_BWC  = $clog2(BP_GC);               // m_cm / e_cm row address width
+localparam int BB_BWV  = $clog2(BP_GV);               // m_vm row address width
+
+/* verilator lint_off UNUSEDSIGNAL */
+// ============================================================ $unit elaboration helpers over header tables
+// Hoisted to compilation-unit scope so the sibling cell modules can call them (functions defined INSIDE
+// bp_relay_banked are not visible to siblings). Called only with compile-time-constant arguments (genvar /
+// cell parameters, or a group index gated to a constant by `pc == g` / `wg == h`), so every use constant-
+// folds into a fixed bank id / row / constant — never a runtime index into the graph tables. These are the
+// SAME bodies the flat core used inline; keeping them as ordinary RTL helper functions (NOT elaboration-time
+// constant functions building localparams) is deliberate — the latter OOM-kills Verilator over the large
+// header arrays (see the SCOPE note in the file header).
+function automatic int chk_at(input int g, input int j);
+  return BP_CHK_AT[g * BP_BANK_W + j];
+endfunction
+function automatic int var_at(input int h, input int i);
+  return BP_VAR_AT[h * BP_BANK_V + i];
+endfunction
+function automatic int chk_deg(input int c);
+  return BP_CHECK_OFF[c + 1] - BP_CHECK_OFF[c];
+endfunction
+function automatic int var_deg(input int v);
+  return BP_VAR_OFF[v + 1] - BP_VAR_OFF[v];
+endfunction
+function automatic int grp_of_chk(input int c);
+  for (int g = 0; g < BP_GC; g++)
+    for (int j = 0; j < BP_BANK_W; j++)
+      if (BP_CHK_AT[g * BP_BANK_W + j] == c) return g;
+  return -1;
+endfunction
+function automatic int slot_of_chk(input int c);
+  for (int g = 0; g < BP_GC; g++)
+    for (int j = 0; j < BP_BANK_W; j++)
+      if (BP_CHK_AT[g * BP_BANK_W + j] == c) return j;
+  return -1;
+endfunction
+// edge index at (check-group g, slot j, position k), or -1 if empty slot / k >= that check's degree.
+function automatic int edge_at(input int g, input int j, input int k);
+  automatic int c = chk_at(g, j);
+  if (c < 0) return -1;
+  if (k >= chk_deg(c)) return -1;
+  return BP_CHECK_EDGES[BP_CHECK_OFF[c] + k];       // edge whose EDGE_POS == k (verified in TB step)
+endfunction
+// edge index at (var-group h, slot i, edge d), or -1 if empty slot / d >= that var's degree.
+function automatic int vedge_at(input int h, input int i, input int d);
+  automatic int v = var_at(h, i);
+  if (v < 0) return -1;
+  if (d >= var_deg(v)) return -1;
+  return BP_VAR_OFF[v] + d;                         // var edges are variable-major contiguous
+endfunction
+// e_cm bank of edge e (also the un-split m_cm bank before the beta half).
+function automatic int ecm_bank(input int e);
+  return slot_of_chk(BP_EDGE_CHK[e]) * BP_CHK_DEG + BP_EDGE_POS[e];
+endfunction
+// m_cm half-bank of edge e = 2 * (bank) + beta.
+function automatic int hb_of_edge(input int e);
+  return 2 * (slot_of_chk(BP_EDGE_CHK[e]) * BP_CHK_DEG + BP_EDGE_POS[e]) + BP_EDGE_BETA[e];
+endfunction
+// port of the (i,d) reader of its e_cm bank within var-group h: readers ordered by (i,d), first -> A(0),
+// second -> B(1). Guaranteed <=2 readers/bank/var-group by the offline (Task 9) assignment.
+function automatic int ecm_port(input int h, input int i, input int d);
+  automatic int bank = ecm_bank(vedge_at(h, i, d));
+  automatic int cnt  = 0;
+  for (int ii = 0; ii < BP_BANK_V; ii++)
+    for (int dd = 0; dd < BP_VAR_DEG; dd++) begin
+      if (ii == i && dd == d) return cnt;
+      begin
+        automatic int e = vedge_at(h, ii, dd);
+        if (e >= 0 && ecm_bank(e) == bank) cnt = cnt + 1;
+      end
+    end
+  return cnt;
+endfunction
+/* verilator lint_on UNUSEDSIGNAL */
+
+// ============================================================================ STAMPED BANK CELL MODULES
+// One instance per (half-bank | bank), so `-flatten_hierarchy none` keeps each memory as an independent
+// area-opt hierarchy unit instead of one flat cloud. m_cm is a thin memory driven by the top's shared
+// scatter (its write-select is the constant-indexed sweep that cannot be per-cell-ized on this co-sim box —
+// see the file header); e_cm and m_vm carry their own MUX-FREE write ports (a single writer keyed on the
+// bank's own compile-time (j,k)/(i,d) coordinates, cheap in RTL). DECLFILENAME is fenced: multiple modules
+// share this file so Vivado optimizes the bank fabric per cell.
+/* verilator lint_off DECLFILENAME */
+
+// --------------------------------------------------------------- m_cm half-bank: 1 sync write, 1 async read
+// B is identity-only (this cell is a pure port-driven memory — its write-select is the top's shared
+// scatter), so its parameter is intentionally unread; fence UNUSEDPARAM for it alone.
+/* verilator lint_off UNUSEDPARAM */
+module bp_mcm_cell #(
+    parameter int B = 0                                  // half-bank id (identity only; wiring via ports)
+) (
+    input  logic                       clk,
+    input  logic                       we,               // from the top's shared m_cm write scatter
+    input  logic [BB_BWC-1:0]          wa,               // write row (= edge's CHECK group)
+    input  logic signed [MSG_BITS-1:0] wd,               // write data (lambda in S_INIT, var m_out in S_VAR)
+    input  logic [BB_BWC-1:0]          ra,               // read row (= pc, clamped)
+    output logic signed [MSG_BITS-1:0] q
+);
+  logic signed [MSG_BITS-1:0] mem [BB_GC];
+  always_ff @(posedge clk) if (we) mem[wa] <= wd;
+  assign q = mem[ra];
+endmodule
+/* verilator lint_on UNUSEDPARAM */
+
+// --------------------------------------------------------------- e_cm bank: 1 sync write, 2 async reads
+module bp_ecm_cell #(
+    parameter int B = 0                                  // bank id = check-slot j * CHK_DEG + lane k
+) (
+    input  logic                       clk,
+    input  logic                       wr_en,            // S_CHECK && pc>=2 (scatter of group pc-2)
+    input  logic [BB_BWC-1:0]          wg,               // write chk-group cursor (= pc-2)
+    input  logic signed [MSG_BITS-1:0] wd,               // this bank's chk lane message (chk_e_out[JJ][KK])
+    input  logic [BB_BWC-1:0]          ra,               // port-A read row (from top's e_cm read-addr comb)
+    input  logic [BB_BWC-1:0]          rb,               // port-B read row
+    output logic signed [MSG_BITS-1:0] qa,
+    output logic signed [MSG_BITS-1:0] qb
+);
+  localparam int JJ = B / BP_CHK_DEG;                    // check slot j
+  localparam int KK = B % BP_CHK_DEG;                    // lane / position k
+  logic signed [MSG_BITS-1:0] mem [BB_GC];
+  logic                       we_b;
+  logic [BB_BWC-1:0]          wa_b;
+  // CHK scatter: lane (JJ,KK) of group pc-2 writes its OWN bank — a single writer, no runtime-index mux
+  // (JJ/KK are compile-time constants, so edge_at(g,JJ,KK) folds per group).
+  always_comb begin
+    we_b = 1'b0;
+    wa_b = '0;
+    if (wr_en)
+      for (int g = 0; g < BB_GC; g++)
+        if (wg == BB_BWC'(g) && edge_at(g, JJ, KK) >= 0) begin
+          we_b = 1'b1;
+          wa_b = BB_BWC'(g);
+        end
+  end
+  always_ff @(posedge clk) if (we_b) mem[wa_b] <= wd;
+  assign qa = mem[ra];
+  assign qb = mem[rb];
+endmodule
+
+// --------------------------------------------------------------- m_vm bank: 1 sync write, 1 async read
+module bp_mvm_cell #(
+    parameter int B = 0                                  // bank id = var-slot i * VAR_DEG + edge d
+) (
+    input  logic                       clk,
+    input  logic                       wr_init,          // S_INIT (lambda seed)
+    input  logic                       wr_var,           // S_VAR && pc>=2 (scatter of group pc-2)
+    input  logic [BB_BWV-1:0]          wg,               // write var-group cursor (S_INIT: pc, S_VAR: pc-2)
+    input  logic signed [MSG_BITS-1:0] wd,               // this bank's var slot message (var_m_out[II][DD])
+    input  logic [BB_BWV-1:0]          rg,               // read row (= pc, clamped)
+    output logic signed [MSG_BITS-1:0] q
+);
+  localparam int II = B / BP_VAR_DEG;                    // var slot i
+  localparam int DD = B % BP_VAR_DEG;                    // edge d
+  logic signed [MSG_BITS-1:0] mem [BB_GV];
+  logic                       we_b;
+  logic [BB_BWV-1:0]          wa_b;
+  logic signed [MSG_BITS-1:0] wd_b;
+  // written by its own var slot (mux-free): row = write group wg; data = var-update output (or lambda).
+  always_comb begin
+    we_b = 1'b0;
+    wa_b = '0;
+    wd_b = wd;
+    if (wr_init || wr_var)
+      for (int h = 0; h < BB_GV; h++)
+        if (wg == BB_BWV'(h) && vedge_at(h, II, DD) >= 0) begin
+          we_b = 1'b1;
+          wa_b = BB_BWV'(h);
+          if (wr_init) wd_b = signed'(BP_LAMBDA[var_at(h, II)][MSG_BITS-1:0]);
+        end
+  end
+  always_ff @(posedge clk) if (we_b) mem[wa_b] <= wd_b;
+  assign q = mem[rg];
+endmodule
+/* verilator lint_on DECLFILENAME */
+
+// ========================================================================================= TOP CORE
 module bp_relay_banked (
     input  logic                clk,
     input  logic                rst_n,
@@ -64,72 +266,6 @@ module bp_relay_banked (
   localparam int BWV  = $clog2(BP_GV);               // m_vm row address width
 
   /* verilator lint_off UNUSEDSIGNAL */
-  // ============================================================ elaboration helpers over header tables
-  // All are called only with compile-time-constant arguments (genvar / unrolled-loop indices, or a
-  // group index gated to a constant by `pc == g`), so Verilator constant-folds every use into a fixed
-  // bank id / row / constant — never a runtime index into the graph tables.
-  function automatic int chk_at(input int g, input int j);
-    return BP_CHK_AT[g * BP_BANK_W + j];
-  endfunction
-  function automatic int var_at(input int h, input int i);
-    return BP_VAR_AT[h * BP_BANK_V + i];
-  endfunction
-  function automatic int chk_deg(input int c);
-    return BP_CHECK_OFF[c + 1] - BP_CHECK_OFF[c];
-  endfunction
-  function automatic int var_deg(input int v);
-    return BP_VAR_OFF[v + 1] - BP_VAR_OFF[v];
-  endfunction
-  function automatic int grp_of_chk(input int c);
-    for (int g = 0; g < BP_GC; g++)
-      for (int j = 0; j < BP_BANK_W; j++)
-        if (BP_CHK_AT[g * BP_BANK_W + j] == c) return g;
-    return -1;
-  endfunction
-  function automatic int slot_of_chk(input int c);
-    for (int g = 0; g < BP_GC; g++)
-      for (int j = 0; j < BP_BANK_W; j++)
-        if (BP_CHK_AT[g * BP_BANK_W + j] == c) return j;
-    return -1;
-  endfunction
-  // edge index at (check-group g, slot j, position k), or -1 if empty slot / k >= that check's degree.
-  function automatic int edge_at(input int g, input int j, input int k);
-    automatic int c = chk_at(g, j);
-    if (c < 0) return -1;
-    if (k >= chk_deg(c)) return -1;
-    return BP_CHECK_EDGES[BP_CHECK_OFF[c] + k];       // edge whose EDGE_POS == k (verified in TB step)
-  endfunction
-  // edge index at (var-group h, slot i, edge d), or -1 if empty slot / d >= that var's degree.
-  function automatic int vedge_at(input int h, input int i, input int d);
-    automatic int v = var_at(h, i);
-    if (v < 0) return -1;
-    if (d >= var_deg(v)) return -1;
-    return BP_VAR_OFF[v] + d;                         // var edges are variable-major contiguous
-  endfunction
-  // e_cm bank of edge e (also the un-split m_cm bank before the beta half).
-  function automatic int ecm_bank(input int e);
-    return slot_of_chk(BP_EDGE_CHK[e]) * BP_CHK_DEG + BP_EDGE_POS[e];
-  endfunction
-  // m_cm half-bank of edge e = 2 * (bank) + beta.
-  function automatic int hb_of_edge(input int e);
-    return 2 * (slot_of_chk(BP_EDGE_CHK[e]) * BP_CHK_DEG + BP_EDGE_POS[e]) + BP_EDGE_BETA[e];
-  endfunction
-  // port of the (i,d) reader of its e_cm bank within var-group h: readers ordered by (i,d), first -> A(0),
-  // second -> B(1). Guaranteed <=2 readers/bank/var-group by the offline (Task 9) assignment.
-  function automatic int ecm_port(input int h, input int i, input int d);
-    automatic int bank = ecm_bank(vedge_at(h, i, d));
-    automatic int cnt  = 0;
-    for (int ii = 0; ii < BP_BANK_V; ii++)
-      for (int dd = 0; dd < BP_VAR_DEG; dd++) begin
-        if (ii == i && dd == d) return cnt;
-        begin
-          automatic int e = vedge_at(h, ii, dd);
-          if (e >= 0 && ecm_bank(e) == bank) cnt = cnt + 1;
-        end
-      end
-    return cnt;
-  endfunction
-
   // ================================================================== elaboration guards (Task-10 review)
   // The banked datapath silently depends on three offline (Task-9 emitter) guarantees. If a future emitter
   // split ever violates one, the RTL corrupts messages with NO other symptom: (a) a second writer on a
@@ -224,7 +360,7 @@ module bp_relay_banked (
   logic signed [MSG_BITS-1:0] var_m_out    [V][BP_VAR_DEG];
   logic                       var_ehat_out [V];
 
-  // bank async-read output wires (tapped by CONSTANT bank id in the gathers) + shared read addresses
+  // bank async-read output wires (produced by the stamped cells, tapped by CONSTANT bank id in the gathers)
   logic signed [MSG_BITS-1:0] qmcm   [NHB];
   logic signed [MSG_BITS-1:0] qa_ecm [NEB];
   logic signed [MSG_BITS-1:0] qb_ecm [NEB];
@@ -234,21 +370,37 @@ module bp_relay_banked (
   logic [BWC-1:0]             ra_ecm [NEB];           // per-bank e_cm port-A read row
   logic [BWC-1:0]             rb_ecm [NEB];           // per-bank e_cm port-B read row
 
-  // m_cm write drivers (one shared always_comb; each half-bank has <=1 writer per write-group)
+  // m_cm write drivers (shared scatter; each half-bank has <=1 writer per write-group — guard(a))
   logic                       we_mcm [NHB];
   logic [BWC-1:0]             wa_mcm [NHB];
   logic signed [MSG_BITS-1:0] wd_mcm [NHB];
 
+  // flattened submodule-output buses feeding the cells' write-data ports (thin glue)
+  logic signed [MSG_BITS-1:0] chk_e_flat [NEB];      // chk_e_out[j][k]  -> e_cm cell wd
+  logic signed [MSG_BITS-1:0] var_m_flat [NVB];      // var_m_out[i][d]  -> m_vm cell wd
+
+  // sized write cursors / phase gates for the e_cm and m_vm cells (m_cm uses the shared scatter above)
+  logic [BWV-1:0] wg_var;                            // var-group write cursor (S_INIT: pc, S_VAR: pc-2)
+  logic [BWC-1:0] wg_chk;                            // chk-group write cursor (S_CHECK: pc-2)
+  logic           mvm_wr_init, mvm_wr_var, ecm_wr_en;
+
   // ------------------------------------------------------------------- shared comb: cursors / addresses
   always_comb begin
-    wg     = (state == S_INIT) ? pc : (pc - 2);
-    mcm_ra = (pc >= 0 && pc < GC) ? BWC'(pc) : '0;    // clamp: out-of-phase reads are unused
-    mvm_ra = (pc >= 0 && pc < GV) ? BWV'(pc) : '0;
+    wg          = (state == S_INIT) ? pc : (pc - 2);  // int; the shared m_cm scatter relies on <0 not matching
+    mcm_ra      = (pc >= 0 && pc < GC) ? BWC'(pc) : '0;    // clamp: out-of-phase reads are unused
+    mvm_ra      = (pc >= 0 && pc < GV) ? BWV'(pc) : '0;
+    wg_var      = (state == S_INIT) ? BWV'(pc) : BWV'(pc - 2);
+    wg_chk      = BWC'(pc - 2);
+    mvm_wr_init = (state == S_INIT);
+    mvm_wr_var  = (state == S_VAR)   && (pc >= 2);     // pc>=2 gate: pc-2 in [0,GV-1], no spurious wrap
+    ecm_wr_en   = (state == S_CHECK) && (pc >= 2);
   end
 
   // ------------------------------------------------------------------- shared comb: m_cm write scatter
   // VAR (or S_INIT) scatters group `wg`: for each present edge of each var slot, drive its half-bank's
   // single write port. Row = the edge's CHECK group; data = the var-update output (or lambda in S_INIT).
+  // This O(GV*V*VAR_DEG) constant-indexed sweep is the resolution that cannot be per-cell-ized on the
+  // co-sim box; it stays SHARED here, exactly as the flat core (bank ids fold to constants, cursor picks row).
   always_comb begin
     for (int b = 0; b < NHB; b++) begin
       we_mcm[b] = 1'b0;
@@ -274,7 +426,8 @@ module bp_relay_banked (
   end
 
   // ------------------------------------------------------------------- shared comb: e_cm read addresses
-  // VAR launch group `pc`: for each present edge operand, route its bank's port-A/B read row.
+  // VAR launch group `pc`: for each present edge operand, route its bank's port-A/B read row. Same O(...)
+  // constant-indexed sweep, kept shared for the same reason.
   always_comb begin
     for (int b = 0; b < NEB; b++) begin
       ra_ecm[b] = '0;
@@ -297,66 +450,62 @@ module bp_relay_banked (
     end
   end
 
-  // ===================================================================== m_cm half-banks (LUTRAM idiom)
+  // ------------------------------------------------------------------- thin glue: submodule outputs -> buses
+  generate
+    for (genvar j = 0; j < W; j++) begin : gceflat
+      for (genvar k = 0; k < BP_CHK_DEG; k++) begin : gceflat_k
+        assign chk_e_flat[j * BP_CHK_DEG + k] = chk_e_out[j][k];
+      end
+    end
+    for (genvar i = 0; i < V; i++) begin : gvmflat
+      for (genvar d = 0; d < BP_VAR_DEG; d++) begin : gvmflat_d
+        assign var_m_flat[i * BP_VAR_DEG + d] = var_m_out[i][d];
+      end
+    end
+  endgenerate
+
+  // ===================================================================== m_cm half-bank cells
   generate
     for (genvar b = 0; b < NHB; b++) begin : gmcm
-      logic signed [MSG_BITS-1:0] mem [GC];
-      always_ff @(posedge clk) if (we_mcm[b]) mem[wa_mcm[b]] <= wd_mcm[b];
-      assign qmcm[b] = mem[mcm_ra];
+      bp_mcm_cell #(.B(b)) u_mcm (
+          .clk(clk),
+          .we (we_mcm[b]),
+          .wa (wa_mcm[b]),
+          .wd (wd_mcm[b]),
+          .ra (mcm_ra),
+          .q  (qmcm[b])
+      );
     end
   endgenerate
 
-  // ===================================================================== e_cm banks (LUTRAM, 2 read ports)
+  // ===================================================================== e_cm bank cells
   generate
     for (genvar b = 0; b < NEB; b++) begin : gecm
-      localparam int JJ = b / BP_CHK_DEG;             // check slot j
-      localparam int KK = b % BP_CHK_DEG;             // lane / position k
-      logic signed [MSG_BITS-1:0] mem [GC];
-      logic                       we_b;
-      logic [BWC-1:0]             wa_b;
-      logic signed [MSG_BITS-1:0] wd_b;
-      // CHK scatter: lane (JJ,KK) of group pc-2 writes its own bank (single writer, no mux).
-      always_comb begin
-        we_b = 1'b0;
-        wa_b = '0;
-        wd_b = chk_e_out[JJ][KK];
-        if (state == S_CHECK && pc >= 2)
-          for (int g = 0; g < GC; g++)
-            if ((pc - 2) == g && edge_at(g, JJ, KK) >= 0) begin
-              we_b = 1'b1;
-              wa_b = BWC'(g);
-            end
-      end
-      always_ff @(posedge clk) if (we_b) mem[wa_b] <= wd_b;
-      assign qa_ecm[b] = mem[ra_ecm[b]];
-      assign qb_ecm[b] = mem[rb_ecm[b]];
+      bp_ecm_cell #(.B(b)) u_ecm (
+          .clk  (clk),
+          .wr_en(ecm_wr_en),
+          .wg   (wg_chk),
+          .wd   (chk_e_flat[b]),
+          .ra   (ra_ecm[b]),
+          .rb   (rb_ecm[b]),
+          .qa   (qa_ecm[b]),
+          .qb   (qb_ecm[b])
+      );
     end
   endgenerate
 
-  // ===================================================================== m_vm banks (LUTRAM idiom)
+  // ===================================================================== m_vm bank cells
   generate
     for (genvar b = 0; b < NVB; b++) begin : gmvm
-      localparam int II = b / BP_VAR_DEG;             // var slot i
-      localparam int DD = b % BP_VAR_DEG;             // edge d
-      logic signed [MSG_BITS-1:0] mem [GV];
-      logic                       we_b;
-      logic [BWV-1:0]             wa_b;
-      logic signed [MSG_BITS-1:0] wd_b;
-      // written by its own var slot (mux-free): row = write group wg; data = var-update output (or lambda).
-      always_comb begin
-        we_b = 1'b0;
-        wa_b = '0;
-        wd_b = var_m_out[II][DD];
-        if (state == S_INIT || state == S_VAR)
-          for (int h = 0; h < GV; h++)
-            if (wg == h && vedge_at(h, II, DD) >= 0) begin
-              we_b = 1'b1;
-              wa_b = BWV'(h);
-              if (state == S_INIT) wd_b = signed'(BP_LAMBDA[var_at(h, II)][MSG_BITS-1:0]);
-            end
-      end
-      always_ff @(posedge clk) if (we_b) mem[wa_b] <= wd_b;
-      assign qmvm[b] = mem[mvm_ra];
+      bp_mvm_cell #(.B(b)) u_mvm (
+          .clk    (clk),
+          .wr_init(mvm_wr_init),
+          .wr_var (mvm_wr_var),
+          .wg     (wg_var),
+          .wd     (var_m_flat[b]),
+          .rg     (mvm_ra),
+          .q      (qmvm[b])
+      );
     end
   endgenerate
 
@@ -514,7 +663,7 @@ module bp_relay_banked (
               end
             end
           end
-          // e_cm scatter of group pc-2 handled by the per-bank gecm write comb.
+          // e_cm scatter of group pc-2 handled by the per-bank bp_ecm_cell write.
           // advance cursor; early_exit takes the first syndrome-valid decision straight to S_EMIT.
           if (early_exit && final_sat) begin
             pc <= '0; state <= S_EMIT;
@@ -541,7 +690,7 @@ module bp_relay_banked (
                 end
             ehat_w <= ehat_w + WW'(wsum);
           end
-          // m_vm / m_cm writes of group pc-2 handled by the gmvm write comb + m_cm scatter comb.
+          // m_vm / m_cm writes of group pc-2 handled by the bp_mvm_cell + m_cm scatter comb.
           if (pc == GV + 1) begin
             pc          <= '0;
             sat_pending <= 1'b1;
