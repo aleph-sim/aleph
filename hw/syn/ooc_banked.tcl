@@ -12,6 +12,7 @@ synth_design -top bp_relay_banked -part $part -mode out_of_context \
 
 create_clock -name clk -period $period [get_ports clk]
 report_utilization -file util_banked.rpt
+report_utilization -hierarchical -hierarchical_depth 2 -file util_hier.rpt
 report_timing_summary -delay_type max -file timing_banked.rpt
 
 set lut    [llength [get_cells -hier -filter {REF_NAME =~ LUT*}]]
