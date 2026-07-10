@@ -711,17 +711,21 @@ module bp_relay_banked (
 
         // ------------------------------ launch var group `pc` + scatter `pc-2`
         S_VAR: begin
-          automatic int wsum;
+          automatic logic wterm [V];                  // per-slot decision bit (present slot of group pc-2)
+          automatic int   wsum;
           wsum = 0;
           if (pc == 0) ehat_w <= '0;                  // fresh decision-weight accumulation
           if (pc >= 2) begin
+            for (int i = 0; i < V; i++) wterm[i] = 1'b0;
             for (int i = 0; i < V; i++)
               for (int g = 0; g < GV; g++)
                 if (var_at(g, i) >= 0 && (pc - 2) == g) begin
                   automatic int v = var_at(g, i);
                   ehat[v] <= var_ehat_out[i];
-                  wsum = wsum + (var_ehat_out[i] ? 1 : 0);
+                  wterm[i] = var_ehat_out[i];         // hoist the group mux out of the accumulation
                 end
+            // balanced add reduction over the V 1-bit terms (integer add associative -> identical wsum)
+            for (int i = 0; i < V; i++) wsum = wsum + (wterm[i] ? 1 : 0);
             ehat_w <= ehat_w + WW'(wsum);
           end
           // m_vm / m_cm writes of group pc-2 handled by the bp_mvm_cell + m_cm scatter comb.
@@ -773,19 +777,28 @@ module bp_relay_banked (
         end
 
         // ----------------------------------------------------------------- reduce chosen ehat -> obs
+        // TIMING RESCUE (137-level `pc_reg -> obs_acc_reg` path): the former serial fold interleaved the
+        // GV:1 group mux with the observable XOR inside one V-deep double loop, which Vivado could not
+        // rebalance. Split it: compute an independent per-slot term (its own constant-folded group mux),
+        // then XOR-reduce the term array. XOR is associative/commutative -> bit-exact regardless of order.
         S_EMIT: begin
+          automatic logic [BP_OBS-1:0] base;
+          automatic logic [BP_OBS-1:0] term [V];
           automatic logic [BP_OBS-1:0] acc;
           automatic logic              bb;
-          acc = (pc == 0) ? {BP_OBS{1'b0}} : obs_acc;
-          bb  = 1'b0;
+          base = (pc == 0) ? {BP_OBS{1'b0}} : obs_acc;
+          bb   = 1'b0;
+          for (int i = 0; i < V; i++) term[i] = {BP_OBS{1'b0}};
           for (int i = 0; i < V; i++)
             for (int g = 0; g < GV; g++)
               if (var_at(g, i) >= 0 && pc == g) begin
                 automatic int v = var_at(g, i);
                 bb = found ? best_e[v] : ehat[v];
                 corr_out[v] <= bb;
-                if (bb) acc = acc ^ BP_OBS_MASK[v][BP_OBS-1:0];
+                if (bb) term[i] = BP_OBS_MASK[v][BP_OBS-1:0];
               end
+          acc = base;                              // pure XOR reduction over the per-slot term array
+          for (int i = 0; i < V; i++) acc = acc ^ term[i];
           obs_acc <= acc;
           if (pc == GV - 1) begin pc <= '0; state <= S_DONE; end
           else pc <= pc + 1;
