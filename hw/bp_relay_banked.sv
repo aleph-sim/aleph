@@ -597,7 +597,12 @@ module bp_relay_banked (
           if (var_at(g, i) >= 0 && pc == g) begin
             automatic int v = var_at(g, i);
             lam_i = signed'(BP_LAMBDA[v][MSG_BITS-1:0]);
-            gam_i = signed'(BP_GAMMA[leg * BP_N + v][MSG_BITS-1:0]);
+            // Constant-fold the BP_GAMMA index over leg: `leg` is a runtime 32-bit int, and Vivado does
+            // not range-bound it — `BP_GAMMA[leg*BP_N+v]` elaborates to full 32-bit index arithmetic (a
+            // DSP multiply!) plus a 5184:1 ROM mux PER SITE (~864 sites = the ~386k-LUT whale the OOC
+            // probes caught). Folding over l makes every index a compile-time constant -> a 6:1 mux.
+            for (int l = 0; l < BP_LEGS; l++)
+              if (leg == l) gam_i = signed'(BP_GAMMA[l * BP_N + v][MSG_BITS-1:0]);
             for (int d = 0; d < BP_VAR_DEG; d++) begin
               automatic int e = vedge_at(g, i, d);
               if (e >= 0) begin
