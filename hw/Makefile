@@ -12,7 +12,7 @@ OBJ_DIR   := obj_dir
 VERILATOR ?= verilator
 CARGO     := cargo run --release -q -p aleph-qec --example
 
-.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi stream-axi-circuit cosim-stream cosim-stream-circuit cosim-stream-ler cosim-stream-ler-circuit cosim cosim-3d cosim-circuit cosim-circuit-3d bpcheck bprelay bpunroll bppartial bppartialfast bppipe bpfast bpaxi bpcirc bpaxiwide bpbram bpbramfast bpbramdp bpbramdpearly checkminsum varupdate unrollskel bpunrollpipe bpbanked-lint clean
+.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi stream-axi-circuit cosim-stream cosim-stream-circuit cosim-stream-ler cosim-stream-ler-circuit cosim cosim-3d cosim-circuit cosim-circuit-3d bpcheck bprelay bpunroll bppartial bppartialfast bppipe bpfast bpaxi bpcirc bpaxiwide bpbram bpbramfast bpbramdp bpbramdpearly checkminsum varupdate unrollskel bpunrollpipe bpbanked-lint bpbanked clean
 
 all: d3 rep surf
 
@@ -237,6 +237,24 @@ bpbanked-lint:
 	cd .. && $(CARGO) qec_q7_bp_graph -- circgraph 1 0.003 8 24 > hw/bb_gross_tanner.svh
 	$(VERILATOR) --lint-only -Wall --top-module bp_relay_banked \
 		check_minsum.sv var_update.sv bp_relay_banked.sv
+
+# Q7-02 M7 — K-BANKED relay-BP core (`bp_relay_banked`) FULL CO-SIM: drive the 40-shot circuit-level
+# golden (`bp_circ_vectors.txt`, the SAME golden bpcirc/bpfast/bpunrollpipe pass, spec A2.3 UNCHANGED)
+# through the beta-split check-major LUTRAM-bank core, asserting 40/40 bit-identical. The (W,V) bank
+# geometry is chosen offline by the Task-9 emitter and baked into the header (BP_BANK_W/V, BP_GC/GV,
+# BP_CHK_AT/BP_VAR_AT, BP_EDGE_CHK/POS/BETA) — NOT a Verilator -G parameter — so W/V change by header
+# regen. Builds+runs at THREE (W,V) configs (8/24, 12/36, 16/48); 40/40 at each IS the (W,V)-invariance
+# check that catches any bank gather/scatter/schedule bug. Prints per-config worst/mean latency.
+bpbanked:
+	cd .. && $(CARGO) qec_q7_bp_graph -- circvectors 1 0.003 40 2024 > hw/bp_circ_vectors.txt
+	@for wv in "8 24" "12 36" "16 48"; do \
+		set -- $$wv; echo "== W=$$1 V=$$2 =="; \
+		(cd .. && $(CARGO) qec_q7_bp_graph -- circgraph 1 0.003 $$1 $$2 > hw/bb_gross_tanner.svh); \
+		rm -rf obj_banked; \
+		$(VERILATOR) --cc --exe --build -Wall --Mdir obj_banked --top-module bp_relay_banked \
+			check_minsum.sv var_update.sv bp_relay_banked.sv tb_bp_banked.cpp -o sim_bpbanked || exit 1; \
+		./obj_banked/sim_bpbanked bp_circ_vectors.txt || exit 1; \
+	done
 
 d3:
 	cd .. && $(CARGO) qec_d3_lut_table > hw/surface_d3_lut.mem

@@ -130,6 +130,66 @@ module bp_relay_banked (
     return cnt;
   endfunction
 
+  // ================================================================== elaboration guards (Task-10 review)
+  // The banked datapath silently depends on three offline (Task-9 emitter) guarantees. If a future emitter
+  // split ever violates one, the RTL corrupts messages with NO other symptom: (a) a second writer on a
+  // half-bank's single write port would last-write-win; (b) a third reader of an e_cm bank has no port and
+  // is dropped; (c) a wrong BP_EDGE_POS mis-taps the m_cm half-bank in the CHK gather. Recompute and enforce
+  // all three at elaboration (time-0 `initial`, constant-folded over the header tables — no runtime hardware;
+  // an initial block of system tasks synthesises to nothing). Fail LOUDLY on any violation.
+  initial begin : elab_guards
+    automatic int fails = 0;
+    // (a)/(b): per var-group, accumulate writers-per-half-bank and readers-per-e_cm-bank in ONE pass
+    // over the group's present edges, then scan the counters. Counting in a single (i,d) pass (rather
+    // than re-scanning all edges for each bank) keeps Verilator's constant-unroll of this initial block
+    // O(GV*V*VAR_DEG) instead of O(GV*(NHB+NEB)*V*VAR_DEG) — the latter symbolically explodes cvt.
+    for (int h = 0; h < GV; h++) begin
+      automatic int wcnt [NHB];
+      automatic int rcnt [NEB];
+      for (int b = 0; b < NHB; b++) wcnt[b] = 0;
+      for (int b = 0; b < NEB; b++) rcnt[b] = 0;
+      for (int i = 0; i < V; i++)
+        for (int d = 0; d < BP_VAR_DEG; d++) begin
+          automatic int e = vedge_at(h, i, d);
+          if (e >= 0) begin
+            automatic int hb = hb_of_edge(e);
+            automatic int eb = ecm_bank(e);
+            wcnt[hb] = wcnt[hb] + 1;
+            rcnt[eb] = rcnt[eb] + 1;
+          end
+        end
+      // (a) <=1 writer per (var-group, m_cm half-bank) — the single m_cm write port per half-bank.
+      for (int b = 0; b < NHB; b++)
+        if (wcnt[b] > 1) begin
+          $display("bp_relay_banked GUARD(a) FAIL: var-group %0d m_cm half-bank %0d has %0d writers (>1)",
+                   h, b, wcnt[b]);
+          fails = fails + 1;
+        end
+      // (b) <=2 readers per (var-group, e_cm bank) — the two async read ports per e_cm bank.
+      for (int b = 0; b < NEB; b++)
+        if (rcnt[b] > 2) begin
+          $display("bp_relay_banked GUARD(b) FAIL: var-group %0d e_cm bank %0d has %0d readers (>2)",
+                   h, b, rcnt[b]);
+          fails = fails + 1;
+        end
+    end
+    // (c) BP_EDGE_POS[e] is e's position in its check's CSR row (edge_at / hb_of_edge tap correctness).
+    for (int e = 0; e < BP_E; e++) begin
+      automatic int c   = BP_EDGE_CHK[e];
+      automatic int idx = BP_CHECK_OFF[c] + BP_EDGE_POS[e];
+      if (idx >= BP_CHECK_OFF[c + 1] || BP_CHECK_EDGES[idx] != e) begin
+        $display("bp_relay_banked GUARD(c) FAIL: edge %0d (check %0d) EDGE_POS=%0d does not match CSR row",
+                 e, c, BP_EDGE_POS[e]);
+        fails = fails + 1;
+      end
+    end
+    if (fails != 0)
+      $fatal(1, "bp_relay_banked: %0d elaboration-guard violation(s) — header/emitter split is unsafe", fails);
+    else
+      $display("bp_relay_banked: elaboration guards (a/b/c) PASS (GV=%0d NHB=%0d NEB=%0d BP_E=%0d)",
+               GV, NHB, NEB, BP_E);
+  end
+
   // =============================================================================== FSM state / registers
   typedef enum logic [2:0] {
     S_IDLE, S_INIT, S_CHECK, S_VAR, S_SATF, S_EMIT, S_DONE
