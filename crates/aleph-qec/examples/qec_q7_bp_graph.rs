@@ -50,6 +50,7 @@ fn build(circuit: Option<(usize, f64)>) -> (DetectorErrorModel, FixedRelayBp) {
 fn emit_graph() {
     let (_dem, fx) = build(None);
     print_graph(&fx.hw_view(), "Gross BB code [[144,12,12]] code capacity");
+    println!("`endif");
 }
 
 /// Emit the SAME `.svh` format for the depth-7 **circuit-level** DEM (rounds × p) — an irregular,
@@ -70,6 +71,7 @@ fn emit_circ_graph(rounds: usize, p: f64, bank_w: usize, bank_v: usize) {
     );
     let banking = solve_banking(view, bank_w, bank_v, BANK_SOLVE_SEED);
     print_banking(&banking);
+    println!("`endif");
 }
 
 /// Print the flattened Tanner graph + fixed-point params as an `.svh` header. Works for any DEM (the
@@ -146,7 +148,6 @@ fn print_graph(v: &FixedHwView, title: &str) {
         "localparam int BP_OBS_MASK    [BP_N]   = '{{{}}};",
         signed(&obs_mask)
     );
-    println!("`endif");
 }
 
 /// Deterministic seed for the offline banking solve (`solve_banking`) — matches the verified Python

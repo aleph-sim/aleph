@@ -12,7 +12,7 @@ OBJ_DIR   := obj_dir
 VERILATOR ?= verilator
 CARGO     := cargo run --release -q -p aleph-qec --example
 
-.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi stream-axi-circuit cosim-stream cosim-stream-circuit cosim-stream-ler cosim-stream-ler-circuit cosim cosim-3d cosim-circuit cosim-circuit-3d bpcheck bprelay bpunroll bppartial bppartialfast bppipe bpfast bpaxi bpcirc bpaxiwide bpbram bpbramfast bpbramdp bpbramdpearly checkminsum varupdate unrollskel bpunrollpipe bpbanked-lint bpbanked clean
+.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi stream-axi-circuit cosim-stream cosim-stream-circuit cosim-stream-ler cosim-stream-ler-circuit cosim cosim-3d cosim-circuit cosim-circuit-3d bpcheck bprelay bpunroll bppartial bppartialfast bppipe bpfast bpaxi bpcirc bpaxiwide bpbram bpbramfast bpbramdp bpbramdpearly checkminsum varupdate unrollskel bpunrollpipe bpbanked-lint bpbanked bpaxibanked clean
 
 all: d3 rep surf
 
@@ -204,6 +204,18 @@ varupdate:
 # `varupdate` above). Lint-only, no C++ TB: the skeleton has no intended functional behavior to check —
 # it exists to catch width/UNDRIVEN/index mistakes in the generate-based stamping CHEAPLY, before the
 # expensive step of staging to Vivado for an out-of-context synth "fit" run (hw/syn/ooc_fit_gate.tcl).
+# Q7-02 M7 — AXI-level co-sim of the BANKED core behind the wide wrapper (IDCODE 0x4250_0003): the
+# pre-silicon gate for the M7 board build. Header at the M7-picked (W,V) = (12,36).
+bpaxibanked:
+	cd .. && $(CARGO) qec_q7_bp_graph -- circgraph   1 0.003 12 36  > hw/bb_circuit_tanner.svh
+	cd .. && $(CARGO) qec_q7_bp_graph -- circvectors 1 0.003 40 2024 > hw/bp_circ_vectors.txt
+	rm -rf _bpaxibankedbuild && mkdir _bpaxibankedbuild
+	cp bp_axi_wrap_banked.sv bp_relay_banked.sv check_minsum.sv var_update.sv tb_bp_axi_banked.cpp _bpaxibankedbuild/
+	cp bb_circuit_tanner.svh _bpaxibankedbuild/bb_gross_tanner.svh
+	cd _bpaxibankedbuild && $(VERILATOR) --cc --exe --build -Wall -Wno-fatal --top-module bp_axi_wrap_banked \
+		bp_axi_wrap_banked.sv bp_relay_banked.sv check_minsum.sv var_update.sv tb_bp_axi_banked.cpp -o sim_bpaxibanked
+	./_bpaxibankedbuild/obj_dir/sim_bpaxibanked bp_circ_vectors.txt
+
 unrollskel:
 	cd .. && $(CARGO) qec_q7_bp_graph -- circgraph 1 0.003 > hw/bb_gross_tanner.svh
 	$(VERILATOR) --lint-only -Wall --top-module bp_unroll_skeleton \

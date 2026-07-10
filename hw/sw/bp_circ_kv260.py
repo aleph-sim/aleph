@@ -34,6 +34,7 @@ def main(argv):
     bitfile = vecfile = None
     base = 0xA0000000
     clk = 100_000_000
+    idcode_override = None
     it = iter(argv[1:])
     for a in it:
         if a.endswith(".bit"):
@@ -44,13 +45,17 @@ def main(argv):
             base = int(next(it), 0)
         elif a == "--clk":
             clk = int(float(next(it)))
+        elif a == "--idcode":
+            idcode_override = int(next(it), 0)
     if not bitfile or not vecfile:
-        print("usage: bp_circ_kv260.py <bit> <vectors.txt> [--base 0xADDR] [--clk 100e6]")
+        print("usage: bp_circ_kv260.py <bit> <vectors.txt> [--base 0xADDR] [--clk 100e6] [--idcode 0x42500003]")
         return 2
 
     from pynq import Bitstream, MMIO
 
     bpc = _load_driver()
+    if idcode_override is not None:
+        bpc.IDCODE_EXPECTED = idcode_override
     tests, n_checks, n_vars, n_obs = bpc.load_vectors(vecfile)
     if not tests:
         print("FAIL: no golden vectors parsed from %s" % vecfile)
