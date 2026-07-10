@@ -44,3 +44,5 @@ _bpbramfastbuild/
 _bpbramdpbuild/
 _bpbramdpearlybuild/
 bp_circ_vectors_early.txt
+obj_banked/
+_bpaxibankedbuild/

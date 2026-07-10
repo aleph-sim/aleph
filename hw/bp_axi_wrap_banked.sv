@@ -9,7 +9,7 @@
 // Register map (AXI4-Lite, 32-bit data, byte addresses; NS = ceil(BP_C/32), NC = ceil(BP_N/32)):
 //   0x00 CTRL     [W]  bit0 START (self-clearing), bit1 EARLY_EXIT (sticky: 1 = stop at first valid)
 //   0x04 STATUS   [R]  bit0 BUSY, bit1 DONE (sticky), bit2 VALID (=valid_flag)
-//   0x08 LATENCY  [R]  last decode latency in cycles (32-bit — the circuit M2 decode is ~70k cycles)
+//   0x08 LATENCY  [R]  last decode latency in cycles (32-bit; banked full-schedule decode = 2 460)
 //   0x0C OBS      [R]  obs_flip[BP_OBS-1:0]
 //   0x10 IDCODE   [R]  0x4250_0003 ('BP', v3 — the banked-core wrapper)
 //   0x40 SYND0..  [RW] syndrome, NS words (word i = syndrome[i*32 +: 32]); low BP_C bits used
@@ -54,7 +54,7 @@ module bp_axi_wrap_banked #(
     return a[7:2];
   endfunction
 
-  // ---- decoder core (M2-BRAM, edge-serial: synthesizable at circuit scale) ----
+  // ---- decoder core (M7 banked: W checks + V vars per cycle, LUTRAM message banks) ----
   logic               dec_in_valid, dec_busy, dec_out_valid, dec_vflag;
   logic               dec_syndrome [BP_C];
   logic               dec_corr     [BP_N];

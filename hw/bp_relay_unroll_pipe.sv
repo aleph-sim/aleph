@@ -1,4 +1,6 @@
 // Q7-02 M7 — MODULAR PARTIAL-UNROLL relay-BP decoder core (hierarchically-modular, pipelined slots).
+// SUPERSEDED by `bp_relay_banked.sv` (its runtime-`grp` gather muxes stall Vivado area-opt at circuit
+// scale) — kept as the G-invariance / FSM reference, NOT a ship vehicle.
 //
 // The KV260 fit-gate (`bp_unroll_skeleton.sv` OOC) proved a FULL modular unroll — one `check_minsum`
 // per check (144x) + one `var_update` per variable (864x) — is 3.9x too big for the part. This core

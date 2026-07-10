@@ -1,7 +1,7 @@
-// Q7-02 M5-followup — Verilog module-ref top for the AXI4-Lite wrapper for the M7 banked decoder.
+// Q7-02 M7 — Verilog module-ref top for the banked-decoder AXI4-Lite wrapper.
 //
 // Thin structural top so Vivado's block-design module reference elaborates (must be Verilog, not SV; the
-// submodules bp_axi_wrap_banked / bp_relay_decoder stay SystemVerilog). Same shape as bp_axi_top.v.
+// submodules bp_axi_wrap_banked / bp_relay_banked stay SystemVerilog). Same shape as bp_axi_top.v.
 
 `timescale 1ns / 1ps
 

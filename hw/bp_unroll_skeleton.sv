@@ -1,4 +1,6 @@
 // Q7-02 M7 — Step-0 OOC "fit gate": full modular unroll SKELETON for the circuit-level gross BB
+// SUPERSEDED (fit-gate evidence only): proved the modular full unroll synthesizes but is 3.9x over the
+// part (453k LUT). The ship vehicle is `bp_relay_banked.sv`. NOT for boards.
 // Tanner graph (BP_N=864 vars / BP_C=144 checks / BP_E=2952 edges, from `bb_gross_tanner.svh`
 // regenerated here via `circgraph 1 0.003` — NOT the code-capacity graph the header's own filename
 // historically held; see hw/Makefile's `bpcirc`/`bpbram*` targets for the same "circuit graph under the

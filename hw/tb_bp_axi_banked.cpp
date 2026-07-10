@@ -1,4 +1,4 @@
-// Q7-02 M5-followup — Verilator TB for the WIDE AXI4-Lite wrapper (bp_axi_wrap_banked) around the M2
+// Q7-02 M7 — Verilator TB for the WIDE AXI4-Lite wrapper (bp_axi_wrap_banked) around the M7 banked core
 // circuit-level decoder. Drives REAL AXI4-Lite transactions per golden vector — the sim twin of the
 // on-board driver — over the generic register map (NS syndrome words, NC correction words derived from
 // BP_C/BP_N). A pass certifies the wide PS<->PL shell before the Vivado board build.
