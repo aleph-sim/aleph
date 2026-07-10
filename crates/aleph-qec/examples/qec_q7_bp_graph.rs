@@ -221,6 +221,28 @@ struct Banking {
     edge_pos: Vec<u32>,
     /// `BP_EDGE_BETA[e]`: 0/1 half-bank split within `e`'s var group.
     edge_beta: Vec<u8>,
+
+    // ---- M7 (Vivado-folding rescue) literal resolution tables: the offline inverses of the maps above,
+    // baked so the RTL directly indexes them instead of scanning `BP_CHK_AT`/`BP_VAR_AT` at elaboration
+    // (the scan loops materialise as ~386k-LUT hardware scanners under Vivado; Verilator const-folds them,
+    // Vivado does not — see the file-header post-mortem in `hw/bp_relay_banked.sv`).
+    /// `BP_CHK_GRP[c]`: check `c`'s group `g` (inverse of `BP_CHK_AT`; every check has one).
+    chk_grp: Vec<i32>,
+    /// `BP_CHK_SLOT[c]`: check `c`'s slot `j`.
+    chk_slot: Vec<i32>,
+    /// `BP_VAR_GRP[v]`: var `v`'s group `h` (inverse of `BP_VAR_AT`).
+    var_grp: Vec<i32>,
+    /// `BP_VAR_SLOT[v]`: var `v`'s position `i` within its group.
+    var_slot: Vec<i32>,
+    /// `BP_EDGE_HB[e]`: `e`'s m_cm half-bank id, `(slot_j*BP_CHK_DEG + pos_k)*2 + beta` (= `eb*2+beta`).
+    edge_hb: Vec<i32>,
+    /// `BP_EDGE_EB[e]`: `e`'s e_cm bank id, `slot_j*BP_CHK_DEG + pos_k`.
+    edge_eb: Vec<i32>,
+    /// `BP_EDGE_ROW[e]`: `e`'s m_cm/e_cm row = its check's group `g`.
+    edge_row: Vec<i32>,
+    /// `BP_EDGE_EPORT[e]`: 0/1 e_cm read port (A/B) — among the edges of `e`'s var-group that read the
+    /// same e_cm bank, ordered by (var-slot `i`, then position `d`), the first gets 0, the second 1.
+    edge_eport: Vec<i32>,
 }
 
 /// Solve the offline bank/group assignment: a direct Rust port of the verified Python prototype
@@ -428,6 +450,69 @@ fn solve_banking(hw: FixedHwView<'_>, bank_w: usize, bank_v: usize, seed: u64) -
         }
     }
 
+    // --- M7 literal resolution tables (inverses of the maps above), computed offline so the RTL indexes
+    // them directly. `chk_row[c]`/`slot_of[c]` ARE the group/slot of check c (chk_at[chk_row*W+slot]=c),
+    // so grp_of_chk(c)=chk_row[c] and slot_of_chk(c)=slot_of[c] by construction.
+    let chk_deg_max = hw
+        .check_off
+        .windows(2)
+        .map(|w| (w[1] - w[0]) as usize)
+        .max()
+        .unwrap_or(0);
+    let var_deg_max = hw
+        .var_off
+        .windows(2)
+        .map(|w| (w[1] - w[0]) as usize)
+        .max()
+        .unwrap_or(0);
+
+    let mut chk_grp = vec![0i32; bp_c];
+    let mut chk_slot = vec![0i32; bp_c];
+    for c in 0..bp_c {
+        chk_grp[c] = chk_row[c] as i32;
+        chk_slot[c] = slot_of[c] as i32;
+    }
+    let mut var_grp = vec![0i32; bp_n];
+    let mut var_slot = vec![0i32; bp_n];
+    for (h, grp) in var_groups.iter().enumerate() {
+        for (i, &vv) in grp.iter().enumerate() {
+            var_grp[vv] = h as i32;
+            var_slot[vv] = i as i32;
+        }
+    }
+    // Per-edge banks: eb = slot_of_chk(check) * BP_CHK_DEG + pos_k; hb = eb*2 + beta; row = grp_of_chk.
+    let mut edge_eb = vec![0i32; bp_e];
+    let mut edge_hb = vec![0i32; bp_e];
+    let mut edge_row = vec![0i32; bp_e];
+    for e in 0..bp_e {
+        let c = check_of[e] as usize;
+        let eb = slot_of[c] * chk_deg_max + pos_k[e] as usize;
+        edge_eb[e] = eb as i32;
+        edge_hb[e] = (eb * 2 + edge_beta[e] as usize) as i32;
+        edge_row[e] = chk_row[c] as i32;
+    }
+    // Per-edge e_cm read port: replicate the RTL `ecm_port` (i,d)-ordered count exactly — within a var
+    // group, edges reading the same e_cm bank get port 0 (first) then 1 (second), in (slot i, edge d)
+    // order. The count-so-far of a bank at the moment we visit an edge IS its port.
+    let mut edge_eport = vec![0i32; bp_e];
+    for grp in &var_groups {
+        let mut bank_cnt: HashMap<i32, i32> = HashMap::new();
+        for i in 0..bank_v {
+            let Some(&vv) = grp.get(i) else { continue }; // empty var slot -> vedge_at == -1
+            let vdeg = (hw.var_off[vv + 1] - hw.var_off[vv]) as usize;
+            for d in 0..var_deg_max {
+                if d >= vdeg {
+                    continue; // d beyond this var's degree -> vedge_at == -1
+                }
+                let e = hw.var_off[vv] as usize + d;
+                let bank = edge_eb[e];
+                let cnt = bank_cnt.entry(bank).or_insert(0);
+                edge_eport[e] = *cnt;
+                *cnt += 1;
+            }
+        }
+    }
+
     let banking = Banking {
         w: bank_w,
         v: bank_v,
@@ -438,6 +523,14 @@ fn solve_banking(hw: FixedHwView<'_>, bank_w: usize, bank_v: usize, seed: u64) -
         edge_chk: check_of,
         edge_pos: pos_k,
         edge_beta,
+        chk_grp,
+        chk_slot,
+        var_grp,
+        var_slot,
+        edge_hb,
+        edge_eb,
+        edge_row,
+        edge_eport,
     };
     verify_banking(hw, &banking);
     banking
@@ -548,6 +641,74 @@ fn verify_banking(hw: FixedHwView<'_>, b: &Banking) {
             );
         }
     }
+
+    // ---- M7 literal resolution tables: cross-check the inverses against the primary maps + solve.
+    let chk_deg_max = hw
+        .check_off
+        .windows(2)
+        .map(|w| (w[1] - w[0]) as usize)
+        .max()
+        .unwrap_or(0);
+
+    // BP_CHK_GRP/BP_CHK_SLOT invert BP_CHK_AT: chk_at[grp*W + slot] == c for every check.
+    for c in 0..bp_c {
+        let g = b.chk_grp[c];
+        let j = b.chk_slot[c];
+        assert!(
+            g >= 0 && (g as usize) < b.gc && j >= 0 && (j as usize) < b.w,
+            "BP_CHK_GRP/SLOT: check {c} maps to out-of-range (g={g}, j={j})"
+        );
+        assert_eq!(
+            b.chk_at[g as usize * b.w + j as usize],
+            c as i32,
+            "BP_CHK_GRP/SLOT: check {c} inverse ({g},{j}) does not point back in BP_CHK_AT"
+        );
+    }
+    // BP_VAR_GRP/BP_VAR_SLOT invert BP_VAR_AT.
+    for v in 0..bp_n {
+        let h = b.var_grp[v];
+        let i = b.var_slot[v];
+        assert!(
+            h >= 0 && (h as usize) < b.gv && i >= 0 && (i as usize) < b.v,
+            "BP_VAR_GRP/SLOT: var {v} maps to out-of-range (h={h}, i={i})"
+        );
+        assert_eq!(
+            b.var_at[h as usize * b.v + i as usize],
+            v as i32,
+            "BP_VAR_GRP/SLOT: var {v} inverse ({h},{i}) does not point back in BP_VAR_AT"
+        );
+    }
+    // Per-edge EB/HB/ROW recompute from the (independently cross-checked) chk grp/slot tables.
+    for e in 0..hw.n_edges {
+        let c = b.edge_chk[e] as usize;
+        let eb = b.chk_slot[c] * chk_deg_max as i32 + b.edge_pos[e] as i32;
+        assert_eq!(b.edge_eb[e], eb, "BP_EDGE_EB[{e}] != slot*CHK_DEG + pos");
+        assert_eq!(
+            b.edge_hb[e],
+            eb * 2 + b.edge_beta[e] as i32,
+            "BP_EDGE_HB[{e}] != eb*2 + beta"
+        );
+        assert_eq!(
+            b.edge_row[e], b.chk_grp[c],
+            "BP_EDGE_ROW[{e}] != check group"
+        );
+    }
+    // BP_EDGE_EPORT: within each (var-group h, e_cm bank EB) at most one port-0 and one port-1, and every
+    // port is 0/1 (the offline cap-2 assignment guarantees <=2 readers/bank/group).
+    let mut port_seen: HashMap<(i32, i32, i32), ()> = HashMap::new();
+    for e in 0..hw.n_edges {
+        let h = b.var_grp[hw.edge_var[e] as usize];
+        let eb = b.edge_eb[e];
+        let port = b.edge_eport[e];
+        assert!(
+            port == 0 || port == 1,
+            "BP_EDGE_EPORT[{e}] = {port} (expected 0 or 1)"
+        );
+        assert!(
+            port_seen.insert((h, eb, port), ()).is_none(),
+            "BP_EDGE_EPORT: var group {h} e_cm bank {eb} has two edges on port {port}"
+        );
+    }
 }
 
 /// Print the [`Banking`] solve as `.svh` `localparam` tables — same `localparam int NAME [SIZE] =
@@ -595,6 +756,42 @@ fn print_banking(b: &Banking) {
     println!(
         "localparam int BP_EDGE_BETA [BP_E] = '{{{}}};",
         bytes(&b.edge_beta)
+    );
+
+    // ---- M7 literal resolution tables (Vivado-folding rescue): direct-index replacements for the RTL's
+    // former scan-loop helpers (grp_of_chk/slot_of_chk/ecm_bank/hb_of_edge/ecm_port). See print_banking
+    // header comment + hw/bp_relay_banked.sv post-mortem.
+    println!(
+        "localparam int BP_CHK_GRP [BP_C] = '{{{}}};",
+        ints(&b.chk_grp)
+    );
+    println!(
+        "localparam int BP_CHK_SLOT [BP_C] = '{{{}}};",
+        ints(&b.chk_slot)
+    );
+    println!(
+        "localparam int BP_VAR_GRP [BP_N] = '{{{}}};",
+        ints(&b.var_grp)
+    );
+    println!(
+        "localparam int BP_VAR_SLOT [BP_N] = '{{{}}};",
+        ints(&b.var_slot)
+    );
+    println!(
+        "localparam int BP_EDGE_HB [BP_E] = '{{{}}};",
+        ints(&b.edge_hb)
+    );
+    println!(
+        "localparam int BP_EDGE_EB [BP_E] = '{{{}}};",
+        ints(&b.edge_eb)
+    );
+    println!(
+        "localparam int BP_EDGE_ROW [BP_E] = '{{{}}};",
+        ints(&b.edge_row)
+    );
+    println!(
+        "localparam int BP_EDGE_EPORT [BP_E] = '{{{}}};",
+        ints(&b.edge_eport)
     );
 }
 

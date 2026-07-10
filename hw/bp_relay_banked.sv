@@ -39,9 +39,9 @@
 // compile-time-constant bank ids in the gathers, and (b) small ehat/s_reg flop arrays in the TOP.
 //
 // MEMORY MAP (spec A2.1):
-//   * m_cm (v->c messages, read by the CHK phase): 2*W*CHK_DEG half-banks x GC rows (`bp_mcm_cell`). Bank
-//     of edge e = slot_of_chk(EDGE_CHK[e])*CHK_DEG + EDGE_POS[e]; half = EDGE_BETA[e]; row =
-//     grp_of_chk(EDGE_CHK[e]). One sync write port; async read at row = pc.
+//   * m_cm (v->c messages, read by the CHK phase): 2*W*CHK_DEG half-banks x GC rows (`bp_mcm_cell`). Half-
+//     bank of edge e = BP_EDGE_HB[e] (= EB*2 + beta, EB = slot*CHK_DEG + pos); row = BP_EDGE_ROW[e] (the
+//     edge's check group). One sync write port; async read at row = pc. (M7: literal tables, was a scan.)
 //   * e_cm (c->v messages, written by CHK, read by VAR): W*CHK_DEG banks x GC rows (`bp_ecm_cell`), same
 //     (j,k) map, no beta split, TWO async read address ports (readers ordered by (i,d): first->A, second->B).
 //   * m_vm (the "old" v->c message the var-update blends against): V*VAR_DEG banks x GV rows (`bp_mvm_cell`).
@@ -87,18 +87,6 @@ endfunction
 function automatic int var_deg(input int v);
   return BP_VAR_OFF[v + 1] - BP_VAR_OFF[v];
 endfunction
-function automatic int grp_of_chk(input int c);
-  for (int g = 0; g < BP_GC; g++)
-    for (int j = 0; j < BP_BANK_W; j++)
-      if (BP_CHK_AT[g * BP_BANK_W + j] == c) return g;
-  return -1;
-endfunction
-function automatic int slot_of_chk(input int c);
-  for (int g = 0; g < BP_GC; g++)
-    for (int j = 0; j < BP_BANK_W; j++)
-      if (BP_CHK_AT[g * BP_BANK_W + j] == c) return j;
-  return -1;
-endfunction
 // edge index at (check-group g, slot j, position k), or -1 if empty slot / k >= that check's degree.
 function automatic int edge_at(input int g, input int j, input int k);
   automatic int c = chk_at(g, j);
@@ -113,29 +101,13 @@ function automatic int vedge_at(input int h, input int i, input int d);
   if (d >= var_deg(v)) return -1;
   return BP_VAR_OFF[v] + d;                         // var edges are variable-major contiguous
 endfunction
-// e_cm bank of edge e (also the un-split m_cm bank before the beta half).
-function automatic int ecm_bank(input int e);
-  return slot_of_chk(BP_EDGE_CHK[e]) * BP_CHK_DEG + BP_EDGE_POS[e];
-endfunction
-// m_cm half-bank of edge e = 2 * (bank) + beta.
-function automatic int hb_of_edge(input int e);
-  return 2 * (slot_of_chk(BP_EDGE_CHK[e]) * BP_CHK_DEG + BP_EDGE_POS[e]) + BP_EDGE_BETA[e];
-endfunction
-// port of the (i,d) reader of its e_cm bank within var-group h: readers ordered by (i,d), first -> A(0),
-// second -> B(1). Guaranteed <=2 readers/bank/var-group by the offline (Task 9) assignment.
-function automatic int ecm_port(input int h, input int i, input int d);
-  automatic int bank = ecm_bank(vedge_at(h, i, d));
-  automatic int cnt  = 0;
-  for (int ii = 0; ii < BP_BANK_V; ii++)
-    for (int dd = 0; dd < BP_VAR_DEG; dd++) begin
-      if (ii == i && dd == d) return cnt;
-      begin
-        automatic int e = vedge_at(h, ii, dd);
-        if (e >= 0 && ecm_bank(e) == bank) cnt = cnt + 1;
-      end
-    end
-  return cnt;
-endfunction
+// M7 Vivado-folding rescue: the former scan-loop resolvers `grp_of_chk`/`slot_of_chk` (and the helpers
+// built on them — `ecm_bank`/`hb_of_edge`/`ecm_port`) have been REPLACED by direct literal-table indexing
+// of the emitter-baked inverses `BP_CHK_GRP`/`BP_CHK_SLOT`/`BP_EDGE_EB`/`BP_EDGE_HB`/`BP_EDGE_ROW`/
+// `BP_EDGE_EPORT`. Verilator const-folded the old scans, but Vivado materialised each call site as a
+// hardware scanner + mux cloud (~386k LUT / 747 DSP / 1445 CARRY8 top-level whale). The `ifndef SYNTHESIS`
+// elaboration guard below re-derives grp/slot/EB/HB/ROW/EPORT by SCANNING (simulation-only) and asserts
+// the literal tables match — so the guard's protection is preserved with zero scans on synthesised paths.
 /* verilator lint_on UNUSEDSIGNAL */
 
 // ============================================================================ STAMPED BANK CELL MODULES
@@ -267,21 +239,72 @@ module bp_relay_banked (
 
   /* verilator lint_off UNUSEDSIGNAL */
   // ================================================================== elaboration guards (Task-10 review)
-  // The banked datapath silently depends on three offline (Task-9 emitter) guarantees. If a future emitter
-  // split ever violates one, the RTL corrupts messages with NO other symptom: (a) a second writer on a
-  // half-bank's single write port would last-write-win; (b) a third reader of an e_cm bank has no port and
-  // is dropped; (c) a wrong BP_EDGE_POS mis-taps the m_cm half-bank in the CHK gather. Recompute and enforce
-  // all three at elaboration (time-0 `initial`, constant-folded over the header tables — no runtime hardware;
-  // an initial block of system tasks synthesises to nothing). Fail LOUDLY on any violation.
+  // The banked datapath silently depends on offline (Task-9 emitter) guarantees. If a future emitter split
+  // ever violates one, the RTL corrupts messages with NO other symptom: (a) a second writer on a half-bank's
+  // single write port would last-write-win; (b) a third reader of an e_cm bank has no port and is dropped;
+  // (c) a wrong BP_EDGE_POS mis-taps the m_cm half-bank in the CHK gather. Recompute and enforce all of these
+  // at elaboration (time-0 `initial`, constant-folded over the header tables — no runtime hardware; an initial
+  // block of system tasks synthesises to nothing). Fail LOUDLY on any violation.
+  //
+  // M7 addition (d): the synthesised paths now index the emitter-baked literal resolution tables
+  // (BP_CHK_GRP/SLOT, BP_EDGE_EB/HB/ROW/EPORT) instead of scanning BP_CHK_AT at elaboration. To keep the
+  // guard's protection, this block RE-DERIVES those maps by scanning (scans are fine here — simulation-only,
+  // never synthesised) and asserts every literal table matches the scan. So a bad emitter table now fails the
+  // co-sim gate LOUDLY rather than silently mis-routing a bank. (a)/(b)/EPORT then reuse the scan-validated
+  // BP_EDGE_HB/EB, and EPORT is validated as "readers-so-far of the edge's e_cm bank in (i,d) order".
   // Fenced from synthesis: Vivado's handling of $fatal-in-initial is not a documented guarantee, and the
   // guard's job is done in the Verilator co-sim gate that always precedes any synth run of this core.
 `ifndef SYNTHESIS
   initial begin : elab_guards
     automatic int fails = 0;
-    // (a)/(b): per var-group, accumulate writers-per-half-bank and readers-per-e_cm-bank in ONE pass
-    // over the group's present edges, then scan the counters. Counting in a single (i,d) pass (rather
-    // than re-scanning all edges for each bank) keeps Verilator's constant-unroll of this initial block
-    // O(GV*V*VAR_DEG) instead of O(GV*(NHB+NEB)*V*VAR_DEG) — the latter symbolically explodes cvt.
+    // (d1) BP_CHK_GRP/BP_CHK_SLOT invert BP_CHK_AT: a fresh scan finds check c at (g_scan,j_scan).
+    for (int c = 0; c < BP_C; c++) begin
+      automatic int g_scan = -1;
+      automatic int j_scan = -1;
+      for (int g = 0; g < BP_GC; g++)
+        for (int j = 0; j < BP_BANK_W; j++)
+          if (BP_CHK_AT[g * BP_BANK_W + j] == c) begin
+            g_scan = g;
+            j_scan = j;
+          end
+      if (BP_CHK_GRP[c] != g_scan || BP_CHK_SLOT[c] != j_scan) begin
+        $display("bp_relay_banked GUARD(d1) FAIL: check %0d table grp/slot (%0d,%0d) != scan (%0d,%0d)",
+                 c, BP_CHK_GRP[c], BP_CHK_SLOT[c], g_scan, j_scan);
+        fails = fails + 1;
+      end
+    end
+    // (d2) BP_VAR_GRP/BP_VAR_SLOT invert BP_VAR_AT.
+    for (int v = 0; v < BP_N; v++) begin
+      automatic int h_scan = -1;
+      automatic int i_scan = -1;
+      for (int h = 0; h < BP_GV; h++)
+        for (int i = 0; i < BP_BANK_V; i++)
+          if (BP_VAR_AT[h * BP_BANK_V + i] == v) begin
+            h_scan = h;
+            i_scan = i;
+          end
+      if (BP_VAR_GRP[v] != h_scan || BP_VAR_SLOT[v] != i_scan) begin
+        $display("bp_relay_banked GUARD(d2) FAIL: var %0d table grp/slot (%0d,%0d) != scan (%0d,%0d)",
+                 v, BP_VAR_GRP[v], BP_VAR_SLOT[v], h_scan, i_scan);
+        fails = fails + 1;
+      end
+    end
+    // (d3) BP_EDGE_EB/HB/ROW recompute from the (d1-validated) chk grp/slot tables.
+    for (int e = 0; e < BP_E; e++) begin
+      automatic int c   = BP_EDGE_CHK[e];
+      automatic int eb  = BP_CHK_SLOT[c] * BP_CHK_DEG + BP_EDGE_POS[e];
+      automatic int hb  = 2 * eb + BP_EDGE_BETA[e];
+      automatic int row = BP_CHK_GRP[c];
+      if (BP_EDGE_EB[e] != eb || BP_EDGE_HB[e] != hb || BP_EDGE_ROW[e] != row) begin
+        $display("bp_relay_banked GUARD(d3) FAIL: edge %0d EB/HB/ROW (%0d,%0d,%0d) != recompute (%0d,%0d,%0d)",
+                 e, BP_EDGE_EB[e], BP_EDGE_HB[e], BP_EDGE_ROW[e], eb, hb, row);
+        fails = fails + 1;
+      end
+    end
+    // (a)/(b)/EPORT: per var-group, accumulate writers-per-half-bank and readers-per-e_cm-bank in ONE pass
+    // over the group's present edges (via the scan-validated BP_EDGE_HB/EB), then scan the counters. Counting
+    // in a single (i,d) pass (rather than re-scanning all edges for each bank) keeps Verilator's constant-
+    // unroll O(GV*V*VAR_DEG) instead of O(GV*(NHB+NEB)*V*VAR_DEG) — the latter symbolically explodes cvt.
     for (int h = 0; h < GV; h++) begin
       automatic int wcnt [NHB];
       automatic int rcnt [NEB];
@@ -291,8 +314,14 @@ module bp_relay_banked (
         for (int d = 0; d < BP_VAR_DEG; d++) begin
           automatic int e = vedge_at(h, i, d);
           if (e >= 0) begin
-            automatic int hb = hb_of_edge(e);
-            automatic int eb = ecm_bank(e);
+            automatic int hb = BP_EDGE_HB[e];
+            automatic int eb = BP_EDGE_EB[e];
+            // EPORT is the count of same-e_cm-bank readers of this group seen BEFORE e in (i,d) order.
+            if (BP_EDGE_EPORT[e] != rcnt[eb]) begin
+              $display("bp_relay_banked GUARD(eport) FAIL: var-group %0d edge %0d EPORT=%0d != readers-so-far %0d",
+                       h, e, BP_EDGE_EPORT[e], rcnt[eb]);
+              fails = fails + 1;
+            end
             wcnt[hb] = wcnt[hb] + 1;
             rcnt[eb] = rcnt[eb] + 1;
           end
@@ -312,7 +341,7 @@ module bp_relay_banked (
           fails = fails + 1;
         end
     end
-    // (c) BP_EDGE_POS[e] is e's position in its check's CSR row (edge_at / hb_of_edge tap correctness).
+    // (c) BP_EDGE_POS[e] is e's position in its check's CSR row (edge_at / BP_EDGE_HB tap correctness).
     for (int e = 0; e < BP_E; e++) begin
       automatic int c   = BP_EDGE_CHK[e];
       automatic int idx = BP_CHECK_OFF[c] + BP_EDGE_POS[e];
@@ -325,7 +354,7 @@ module bp_relay_banked (
     if (fails != 0)
       $fatal(1, "bp_relay_banked: %0d elaboration-guard violation(s) — header/emitter split is unsafe", fails);
     else
-      $display("bp_relay_banked: elaboration guards (a/b/c) PASS (GV=%0d NHB=%0d NEB=%0d BP_E=%0d)",
+      $display("bp_relay_banked: elaboration guards (a/b/c/d) PASS (GV=%0d NHB=%0d NEB=%0d BP_E=%0d)",
                GV, NHB, NEB, BP_E);
   end
 `endif
@@ -414,9 +443,9 @@ module bp_relay_banked (
             for (int d = 0; d < BP_VAR_DEG; d++) begin
               automatic int e = vedge_at(h, i, d);
               if (e >= 0) begin
-                automatic int hb = hb_of_edge(e);
+                automatic int hb = BP_EDGE_HB[e];             // literal half-bank (was hb_of_edge scan)
                 we_mcm[hb] = 1'b1;
-                wa_mcm[hb] = BWC'(grp_of_chk(BP_EDGE_CHK[e]));
+                wa_mcm[hb] = BWC'(BP_EDGE_ROW[e]);            // literal row (was grp_of_chk scan)
                 if (state == S_INIT) wd_mcm[hb] = signed'(BP_LAMBDA[BP_EDGE_VAR[e]][MSG_BITS-1:0]);
                 else                 wd_mcm[hb] = var_m_out[i][d];
               end
@@ -440,10 +469,10 @@ module bp_relay_banked (
             for (int d = 0; d < BP_VAR_DEG; d++) begin
               automatic int e = vedge_at(h, i, d);
               if (e >= 0) begin
-                automatic int bank = ecm_bank(e);
-                automatic int row  = grp_of_chk(BP_EDGE_CHK[e]);
-                if (ecm_port(h, i, d) == 0) ra_ecm[bank] = BWC'(row);
-                else                        rb_ecm[bank] = BWC'(row);
+                automatic int bank = BP_EDGE_EB[e];          // literal e_cm bank (was ecm_bank scan)
+                automatic int row  = BP_EDGE_ROW[e];         // literal row (was grp_of_chk scan)
+                if (BP_EDGE_EPORT[e] == 0) ra_ecm[bank] = BWC'(row);  // literal port (was ecm_port scan)
+                else                       rb_ecm[bank] = BWC'(row);
               end
             end
         end
@@ -528,7 +557,7 @@ module bp_relay_banked (
             for (int k = 0; k < BP_CHK_DEG; k++) begin
               automatic int e = edge_at(g, j, k);
               if (e >= 0) begin
-                m_in_j[k]    = qmcm[hb_of_edge(e)];   // hb_of_edge(e) is a compile-time constant here
+                m_in_j[k]    = qmcm[BP_EDGE_HB[e]];   // literal half-bank tap (compile-time constant)
                 present_j[k] = 1'b1;
               end
             end
@@ -572,8 +601,8 @@ module bp_relay_banked (
             for (int d = 0; d < BP_VAR_DEG; d++) begin
               automatic int e = vedge_at(g, i, d);
               if (e >= 0) begin
-                automatic int bank = ecm_bank(e);
-                e_in_i[d]    = (ecm_port(g, i, d) == 1) ? qb_ecm[bank] : qa_ecm[bank];
+                automatic int bank = BP_EDGE_EB[e];          // literal e_cm bank (was ecm_bank scan)
+                e_in_i[d]    = (BP_EDGE_EPORT[e] == 1) ? qb_ecm[bank] : qa_ecm[bank];  // literal port
                 m_in_i[d]    = qmvm[i * BP_VAR_DEG + d];
                 present_i[d] = 1'b1;
               end
