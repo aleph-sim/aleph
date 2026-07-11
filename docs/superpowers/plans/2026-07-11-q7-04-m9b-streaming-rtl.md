@@ -115,6 +115,12 @@ pub struct WindowTrace {
     pub obs: u64,
     /// The base decoder's syndrome-valid flag for this slot.
     pub valid: bool,
+    /// True iff the commit region [0, C*dpr) of the frame is all-zero AFTER this slot's
+    /// commit toggle — i.e. the rounds about to slide off are drained. A converged decode
+    /// always drains them (every var with a det in the commit region has its commit bit
+    /// set by construction), so this is the non-vacuous per-slot drain observable; it maps
+    /// to the RTL result word's residual_empty bit.
+    pub commit_clean: bool,
 }
 
 pub struct HwSlidingWindowBp { /* private */ }
@@ -161,8 +167,14 @@ impl HwSlidingWindowBp {
 //       frame.copy_within(commit * dpr .., 0);
 //       for r in 0..commit { load slice (k+1)*C + (window-commit) + r  or zeros }
 //   }
+//   per-slot, after the commit toggle and BEFORE the slide:
+//       commit_clean = frame[0 .. commit*dpr) all zero
 //   StreamStats { windows: num_slots, nonconverged: count(!valid),
-//                 residual: frame.count_ones() at end }
+//                 residual: cumulative popcount of frame[0 .. commit*dpr) sampled after
+//                           each slot's commit — lit bits DISCARDED by the slide, summed
+//                           over all slots. (Measuring the frame after the final slide is
+//                           always 0 by construction — the frame is then entirely
+//                           zero-padded rounds — so that is NOT the metric.) }
 //   Correction: obs XOR accumulated across slots (same construction as
 //               SlidingWindowBp::decode_stream uses for its Correction)
 ```
@@ -278,7 +290,7 @@ localparam bit BP_VAR_COMMIT [BP_N] = '{...};  // 1 iff var has an in-window det
 # qec_q7_bp_graph streamvectors <rounds> <p> <W> <C> <n> <seed>  (+ regen command comment)
 T SLICES DPR SLOTS BP_N BP_OBS
 r <DPR bits '0'/'1'>          <- SLICES round lines per trial, round 0 first, det 0 first
-w <slot> <BP_N bits committed> <BP_OBS bits obs> <0|1 vflag>   <- SLOTS lines per trial
+w <slot> <BP_N bits committed> <BP_OBS bits obs> <0|1 vflag> <0|1 commit_clean>   <- SLOTS lines per trial
 ```
 
 - [ ] **Step 1: `streamgraph` mode.** CLI `streamgraph rounds p W C bankW bankV` (wingraph arg
@@ -437,8 +449,8 @@ module bp_streaming_decoder (
     output logic [BP_OBS-1:0] out_obs,      // this slot's committed-obs XOR
     output logic out_vflag,
     output logic out_last,                  // pulses with the final slot's out_valid
+    output logic out_commit_clean,          // commit region drained after this slot's commit
     output logic commit_corr [BP_N],        // per-slot committed vars (TB gate; unconnected in AXI wrap)
-    output logic residual_empty,
     output logic [15:0] last_latency
 );
 ```
@@ -459,11 +471,13 @@ module bp_streaming_decoder (
   `out_obs` = XOR-reduce `BP_OBS_MASK[v][BP_OBS-1:0]` over committed vars; residual toggle:
   for each committed v, for each edge `e in BP_VAR_OFF[v]..BP_VAR_OFF[v+1]`,
   `tog[BP_EDGE_CHK[e]] ^= 1`; `res <= res ^ tog`; drive `commit_corr <= committed`; pulse
-  `out_valid` with `out_vflag = valid_flag`, `out_last = (slots_done+1 == slots_total)`.
+  `out_valid` with `out_vflag = valid_flag`, `out_last = (slots_done+1 == slots_total)`,
+  and `out_commit_clean = ((res ^ tog)[BP_WIN_C*BP_DPR-1:0] == '0)` — the golden's
+  per-slot `WindowTrace.commit_clean` (drain observable over the rounds about to slide off).
 - S_SLIDE: `res <= res >> (BP_WIN_C*BP_DPR)` — equivalently the `BP_SHIFT` map; use the shift
   map form so a future non-uniform layout still works — `lptr <= BP_LOAD_LO`.
 - S_RELOAD: load `BP_WIN_C` rounds into `[BP_LOAD_LO, BP_C)` (zeros past `in_last`) → S_RUN;
-  when `slots_done == slots_total` → S_WARM (frame done; `residual_empty = (res == '0)`).
+  when `slots_done == slots_total` → S_WARM (frame done).
 - `in_ready = (state inside {S_WARM, S_RELOAD}) && !seen_last`.
 
 - [ ] **Step 1:** write the module; `make bpstream-lint` (mirror of `bpbanked-lint` with the
@@ -471,7 +485,7 @@ module bp_streaming_decoder (
 - [ ] **Step 2: TB.** `tb_bp_stream.cpp` (adapt `tb_bp_banked.cpp`'s vector parser + latency
   histogram to the `bp_stream_vectors.txt` format): per trial, drive SLICES rounds
   (handshake, `in_last` on the final one), collect SLOTS results, compare
-  `{commit_corr, out_obs, out_vflag}` **bit-exact** per slot, all 40 trials, both
+  `{commit_corr, out_obs, out_vflag, out_commit_clean}` **bit-exact** per slot, all 40 trials, both
   `early_exit=0` and `early_exit=1` runs (golden is schedule-independent: same decisions).
   Guard: 32 M cycles/trial.
 - [ ] **Step 3:** Makefile `bpstream` target (scratch dir `_bpstreambuild`, stream header copy,
@@ -496,7 +510,7 @@ module bp_streaming_decoder (
 - Input: one round = **3 MM2S beats**: beat0 = round bits [31:0], beat1 = [63:32], beat2 =
   {24'b0, bits[71:64]}; `in_last` ← tlast (on the round completed by the tlast beat).
 - Output: **one 32-bit S2MM word per slot**:
-  `[31:20] = out_obs[11:0]`, `[19] = vflag`, `[18] = residual_empty`, `[17:16] = 2'b00`,
+  `[31:20] = out_obs[11:0]`, `[19] = vflag`, `[18] = commit_clean`, `[17:16] = 2'b00`,
   `[15:0] = latency` (saturating). tlast on the frame's final slot (`out_last`).
 - 1-deep result slot: `s_axis_tready = dec_ready & ~out_full & ~frame_rst` (UF pattern).
 - Per-frame re-arm: when the tlast-tagged result word is consumed, pulse `frame_rst` for one
@@ -508,7 +522,7 @@ module bp_streaming_decoder (
   target greps `BP_DPR/BP_WIN_W/BP_WIN_C/BP_OBS` from the generated header into `-CFLAGS -D`
   (the `stream-axi` pattern at `Makefile:374-387`).
 - [ ] **Step 2: TB gates** (`tb_bp_stream_axi.cpp`, mirror `tb_uf_stream_win.cpp` §§):
-  1. zero stream → all slots obs=0, vflag=1, residual_empty=1 on the last word, exact slot
+  1. zero stream → all slots obs=0, vflag=1, commit_clean=1 on every word, exact slot
      count ⌈13/2⌉=7, tlast on word 7 only;
   2. golden equality — 40 vector trials, output words' obs/vflag fields bit-equal to
      `bp_stream_vectors.txt` (latency field: assert > 0, not golden-compared);
