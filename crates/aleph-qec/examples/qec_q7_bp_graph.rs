@@ -113,9 +113,11 @@ fn emit_win_graph(rounds: usize, p: f64, w: usize, c: usize, bank_w: usize, bank
 
     let fx = FixedRelayBp::with_budget(&win.dem, LEGS, ITERS, GAMMA, SEED, MSG_BITS, FRAC_BITS);
     let view = fx.hw_view();
+    // C is recorded for provenance only: the window graph depends on W alone; the commit
+    // metadata (VAR_COMMIT/SHIFT/...) that consumes C is M9b's `streamgraph`, not this probe.
     println!(
-        "// M9b fit-probe window: rounds={rounds}, p={p}, W={w}, C={c}, s={s} — window checks={}, \
-         vars={}, edges={}",
+        "// M9b fit-probe window: rounds={rounds}, p={p}, W={w}, C={c} (provenance only), s={s} — \
+         window checks={}, vars={}, edges={}",
         view.n_checks, view.n_vars, view.n_edges
     );
     print_graph(

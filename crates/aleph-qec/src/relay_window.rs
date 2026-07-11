@@ -21,6 +21,12 @@
 //! discipline, bounded binary state) or residual + **soft priors** (the previous window's
 //! posterior LLRs seed the shared uncommitted variables of the next window). The M9a sweep
 //! (`examples/qec_q7_stream_sweep.rs`) decides which ships to RTL.
+//!
+//! **Tail schedule (M9b co-sim contract):** the slot loop advances `s += C` past the first
+//! commit-all window, so a stream decodes `⌈num_slices/C⌉` slots INCLUDING degenerate shrinking
+//! commit-all tail windows (rounds=12, W=6, C=2 → 7 slots, of which s=8/10/12 are all
+//! commit-all). This mirrors `sliding.rs`; the streaming RTL must replay the same schedule or
+//! the bit-exact gate fails at stream end.
 
 use std::collections::HashMap;
 

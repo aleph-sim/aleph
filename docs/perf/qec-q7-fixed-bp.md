@@ -1311,10 +1311,13 @@ stream, so differences are windowing cost, not sampling noise. `nonconv` = fract
   p=0.001 they tie. (6,3) remains the throughput-optimized alternate: −33 % window invocations
   per round and a 3-round commit budget, for +8 % LER at threshold.
 - **The honest cost of streaming**: sub-threshold (p=0.001, the operating regime) the chosen
-  config is **within batch CI** (1.11e-3 vs 8.2e-4, CIs overlap); at threshold (p=0.003) the
-  now-resolvable penalty is **1.24× batch** — the documented, accepted gap (the pilot's 2 k-shot
-  "within CI" there was lack of statistics, not absence of cost). At p=0.005 (deep
-  supra-threshold) everything is broken including batch — recorded for completeness only.
+  config overlaps batch under the sweep's unpaired CI test (1.11e-3 vs 8.2e-4) — but the shots
+  are paired (same stream), and a paired read (82 vs 111 errors on the same 100 k shots,
+  McNemar p ≈ 1e-7) resolves a small **~1.35× sub-threshold cost**: the same accepted-gap
+  category as threshold, where the penalty is **1.24× batch** (the pilot's 2 k-shot "within CI"
+  there was lack of statistics, not absence of cost). The M9c re-sweep should upgrade the
+  within-CI flag to a paired test. At p=0.005 (deep supra-threshold) everything is broken
+  including batch — recorded for completeness only.
 - **Non-convergence input for Q7-07**: at (6,2), 12 % / 67 % / 96 % of shots see ≥1
   non-converged window at p = 1/3/5 × 10⁻³ — window BP on the truncated graph converges notably
   less often than batch on the full graph; the resid column shows most of those still commit a
