@@ -192,6 +192,24 @@ impl FixedRelayBp {
         self
     }
 
+    /// The quantised per-variable prior LLRs `λ_q` (build-time quantisation of `ln((1−p)/p)`).
+    pub fn lambda_q(&self) -> &[i32] {
+        &self.lambda_q
+    }
+
+    /// Replace the per-variable quantised priors. The sliding-window soft-priors seam (Q7-04)
+    /// re-decodes buffer-round variables in the next window seeded with the previous window's
+    /// posterior LLR; this is the injection point. Values are used as-is — the caller clamps to
+    /// the message magnitude range.
+    ///
+    /// # Panics
+    /// If `lambda_q.len()` differs from the number of variables.
+    pub fn with_lambda_q(mut self, lambda_q: Vec<i32>) -> Self {
+        assert_eq!(lambda_q.len(), self.n_vars, "one prior per variable");
+        self.lambda_q = lambda_q;
+        self
+    }
+
     /// The fixed-point width `(msg_bits, frac_bits)`.
     pub fn width(&self) -> (u32, u32) {
         (self.msg_bits, self.frac_bits)
@@ -707,5 +725,24 @@ mod tests {
             (osd_err as f64) <= plain_err as f64 + slack,
             "OSD-0 tail worsened LER beyond noise: osd={osd_err} plain={plain_err} slack={slack:.0}"
         );
+    }
+
+    /// Q7-04: the sliding-window soft-priors seam re-seeds per-variable priors. Overriding λ_q
+    /// must change the decode inputs; an identity override must change nothing.
+    #[test]
+    fn lambda_q_override_roundtrip() {
+        let dem = DetectorErrorModel::parse("error(0.1) D0 L0\nerror(0.1) D0 D1\nerror(0.1) D1\n")
+            .unwrap();
+        let dec = FixedRelayBp::new(&dem, 8, 3);
+        let lam = dec.lambda_q().to_vec();
+        assert_eq!(lam.len(), 3, "one prior per variable");
+        // Identity override: decode of a fixed syndrome is unchanged.
+        let syn = Syndrome::new(2, vec![0]);
+        let base = dec.decode_fixed(&syn);
+        let same = dec.clone().with_lambda_q(lam.clone()).decode_fixed(&syn);
+        assert_eq!(base, same);
+        // A hostile override (all strongly "fired") flips the hard decision inputs.
+        let forced = dec.clone().with_lambda_q(vec![-127; 3]);
+        assert_eq!(forced.lambda_q(), &[-127, -127, -127]);
     }
 }
