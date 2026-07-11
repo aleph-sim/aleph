@@ -1235,7 +1235,7 @@ Bit-exact in values to the same golden at all three configs (Mac + EPYC co-sim, 
 
 -----
 
-# M9a — sliding-window streaming golden + (W, C) sweep (Q7-04)
+# M9a — sliding-window streaming golden + (W, C) sweep (Q7-04, PR #460)
 
 The banked core decodes one rounds=1 batch per START; real-time QEC is a continuous round stream.
 M9 builds the BB-code analog of the surface-code UF streaming decoder (Q6-20/22) in three stages
