@@ -18,7 +18,9 @@ report_timing_summary -delay_type max -file timing_banked.rpt
 set lut    [llength [get_cells -hier -filter {REF_NAME =~ LUT*}]]
 set ff     [llength [get_cells -hier -filter {IS_SEQUENTIAL}]]
 set carry  [llength [get_cells -hier -filter {REF_NAME =~ CARRY*}]]
-set dsp    [llength [get_cells -hier -filter {REF_NAME =~ DSP*}]]
+# DSP48E2 exactly: `REF_NAME =~ DSP*` also matches the ~9 sub-primitives each DSP48E2 macro expands
+# into (DSP_ALU, DSP_A_B_DATA, ...), inflating the count 9x — the M7 report shipped with that error.
+set dsp    [llength [get_cells -hier -filter {REF_NAME == DSP48E2}]]
 set bram   [llength [get_cells -hier -filter {REF_NAME =~ RAMB*}]]
 set wns    [get_property SLACK [lindex [get_timing_paths -max_paths 1 -nworst 1 -setup] 0]]
 set fmax   [expr {1000.0/($period - $wns)}]
