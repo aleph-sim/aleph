@@ -492,6 +492,16 @@ module bp_streaming_decoder (
   `--prefix` trick not needed here — fresh TB). Run: expect **40/40 ×2 modes**. Debug until
   green; the golden is truth (any mismatch is an RTL bug or a Task 1/2 contract bug — if the
   contract is wrong, fix it in Rust FIRST, regen vectors, then re-gate).
+
+**AMENDMENT (execution finding):** "the golden is schedule-independent — identical decisions
+both modes" was WRONG: the core's early-exit takes the FIRST syndrome-valid leg, the software
+golden keeps the BEST-KEPT decision over all legs; they differ whenever first-valid ≠ best-kept
+(25/280 slots at the op point). The house pattern (M6–M8 `circvectorsearly`) applies: each mode
+gets its OWN golden. `HwSlidingWindowBp` gains `with_early_exit(bool)` (passthrough to
+`FixedRelayBp::with_early_exit`, trace unchanged otherwise); emitter gains `streamvectorsearly`
+(same CLI as `streamvectors`) emitting `hw/bp_stream_vectors_early.txt` (committed); the TB
+gates early_exit=0 against `bp_stream_vectors.txt` and early_exit=1 against the early file,
+both **40/40 bit-exact**.
 - [ ] **Step 4: commit** `"[Q7-04] M9b: bp_streaming_decoder — W/C sliding FSM, bit-exact 40/40 vs HW-schedule golden"`.
 
 ### Task 6: AXI-Stream front-end + robustness co-sim
