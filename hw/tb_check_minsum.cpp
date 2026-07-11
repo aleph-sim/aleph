@@ -1,12 +1,14 @@
-// Q7-02 M7 — standalone Verilator testbench for the `check_minsum` submodule.
+// Q7-02 M7/M8 — standalone Verilator testbench for the `check_minsum` submodule.
 //
-// `check_minsum` is a bit-exact, 2-cycle-pipelined twin of ONE check's inner loop from
-// `bp_relay_fast.sv`'s S_CHECK state (lines 121-145): min-sum with exclusive minimum via the running
-// (min1,min2,argmin) trick, alpha=7/8 multiply-free scaling, and a per-edge sign from the syndrome bit
-// XOR'd with each edge's own message sign. This TB reimplements that arithmetic directly in C++
-// (`reference()` below — no golden-vector file, no dependency on the Rust crate) and drives the RTL
-// with >=10000 random (m_in, present, sbit) cases, exercising random unused slots (present[k]=0), and
-// asserts every one of the DEG registered `e_out` lanes is bit-identical to the reference.
+// `check_minsum` is a bit-exact, STAGES-cycle-pipelined (2 by default, 3 with M8's optional mid-tree
+// register plane) twin of ONE check's inner loop from `bp_relay_fast.sv`'s S_CHECK state (lines
+// 121-145): min-sum with exclusive minimum via the running (min1,min2,argmin) trick, alpha=7/8
+// multiply-free scaling, and a per-edge sign from the syndrome bit XOR'd with each edge's own message
+// sign. This TB reimplements that arithmetic directly in C++ (`reference()` below — no golden-vector
+// file, no dependency on the Rust crate) and drives the RTL with >=10000 random (m_in, present, sbit)
+// cases, exercising random unused slots (present[k]=0), and asserts every one of the DEG registered
+// `e_out` lanes is bit-identical to the reference. STAGES only changes latency, never the value, so this
+// TB is identical at both pipeline depths save for how many clocks it waits (LATENCY, see below).
 
 #include <algorithm>
 #include <cstdint>
@@ -24,6 +26,14 @@
 static constexpr int MW  = 8;
 static constexpr int DEG = 25;
 static constexpr int INF = (1 << MW) - 1;  // MW-wide all-ones sentinel, matching bp_relay_fast's INF
+
+// Q7-02 M8: check_minsum's pipeline depth (module parameter STAGES) is chosen at Verilator elaboration
+// time via `-GSTAGES=N`; LATENCY must be passed in lockstep via `-CFLAGS -DLATENCY=N` so this TB waits
+// the right number of clocks after `en` before sampling e_out. The reference model is untouched — the
+// computed VALUES never depend on STAGES, only when they land.
+#ifndef LATENCY
+#define LATENCY 2
+#endif
 
 static Vcheck_minsum *top;
 
@@ -126,16 +136,18 @@ int main(int argc, char **argv) {
 
     reference(m_in, present, sbit, e_out);
 
-    // Drive one `en` pulse, then wait 2 clocks (per the module's documented 2-cycle latency).
+    // Drive one `en` pulse, then wait LATENCY clocks (per the module's documented STAGES-clock latency:
+    // LATENCY=2 for the default 2-stage tree, LATENCY=3 when built with -GSTAGES=3's extra mid-tree
+    // register plane).
     top->sbit = sbit ? 1 : 0;
     for (int k = 0; k < DEG; ++k) {
       top->m_in[k]    = sext(m_in[k], MW);
       top->present[k] = present[k] ? 1 : 0;
     }
     top->en = 1;
-    tick();  // stage 1 captures m_in/present/sbit -> min1/min2/argmin/neg (+ registered m_in/present)
+    tick();  // first clock: `en` pulse captured by the reduction's (first) register stage
     top->en = 0;
-    tick();  // stage 2 emits e_out from the stage-1 registers
+    for (int c = 1; c < LATENCY; ++c) tick();  // remaining clocks: free-running stages drain to e_out
 
     bool case_ok = true;
     for (int k = 0; k < DEG; ++k) {
@@ -156,8 +168,9 @@ int main(int argc, char **argv) {
   delete top;
 
   if (mismatches == 0) {
-    std::printf("PASS: %d/%d check_minsum outputs bit-identical to bp_relay_fast reference\n",
-                cases_ok, NCASES);
+    std::printf(
+        "PASS: %d/%d check_minsum (LATENCY=%d) outputs bit-identical to bp_relay_fast reference\n",
+        cases_ok, NCASES, LATENCY);
     return 0;
   }
   std::printf("FAIL: %d/%d check_minsum test cases had a mismatch (%d/%d individual outputs)\n",

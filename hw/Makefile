@@ -179,14 +179,22 @@ bpbramdpearly:
 		--top-module bp_relay_bram_dp bp_relay_bram_dp.sv tb_bp_relay.cpp -o sim_bpbramdpearly
 	./_bpbramdpearlybuild/obj_dir/sim_bpbramdpearly bp_circ_vectors_early.txt early
 
-# Q7-02 M7 — standalone `check_minsum` submodule: the FIRST of the two small per-node submodules the
+# Q7-02 M7/M8 — standalone `check_minsum` submodule: the FIRST of the two small per-node submodules the
 # hierarchically-modular relay-BP core (M7) will stamp out many times (one per check node). Generic in
 # MW/DEG (no baked-in graph `include), so no golden-vector regeneration step is needed here — the C++
 # TB reimplements the bp_relay_fast.sv S_CHECK arithmetic directly and drives >=10000 random cases.
+# M8: builds TWICE — once at the M7-compatible STAGES=2 default, once at STAGES=3 (M8's extra mid-tree
+# register plane) — each leg's LATENCY (-CFLAGS -DLATENCY=N) must match its STAGES (-GSTAGES=N) so the
+# TB waits the right number of clocks after `en`; both legs share the same C++ reference model (values
+# never depend on STAGES, only when they land), so 10000/10000 at BOTH is the STAGES-invariance check.
 checkminsum:
-	$(VERILATOR) --cc --exe --build -Wall --top-module check_minsum \
-		check_minsum.sv tb_check_minsum.cpp -o sim_checkminsum
-	./$(OBJ_DIR)/sim_checkminsum
+	rm -rf obj_chkmin2 obj_chkmin3
+	$(VERILATOR) --cc --exe --build -Wall --Mdir obj_chkmin2 --top-module check_minsum \
+		-GSTAGES=2 -CFLAGS -DLATENCY=2 check_minsum.sv tb_check_minsum.cpp -o sim_checkminsum2
+	./obj_chkmin2/sim_checkminsum2
+	$(VERILATOR) --cc --exe --build -Wall --Mdir obj_chkmin3 --top-module check_minsum \
+		-GSTAGES=3 -CFLAGS -DLATENCY=3 check_minsum.sv tb_check_minsum.cpp -o sim_checkminsum3
+	./obj_chkmin3/sim_checkminsum3
 
 # Q7-02 M7 — standalone `var_update` submodule: the SECOND of the two small per-node submodules the
 # hierarchically-modular relay-BP core (M7) will stamp out many times (one per variable node, 864x on
