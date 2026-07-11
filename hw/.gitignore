@@ -48,5 +48,6 @@ obj_banked/
 obj_bankedbram/
 _bpaxibankedbuild/
 _bpstreambuild/
+_bpstreamaxibuild/
 obj_chkmin2/
 obj_chkmin3/
