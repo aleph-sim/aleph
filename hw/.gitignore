@@ -5,6 +5,8 @@ obj_partial/
 obj_pipe/
 obj_fast/
 obj_bpaxi/
+obj_unrollpipe2/
+obj_unrollpipe4/
 sim_*
 *.vcd
 _d5build/
@@ -42,3 +44,5 @@ _bpbramfastbuild/
 _bpbramdpbuild/
 _bpbramdpearlybuild/
 bp_circ_vectors_early.txt
+obj_banked/
+_bpaxibankedbuild/

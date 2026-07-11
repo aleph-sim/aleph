@@ -1080,3 +1080,92 @@ correct on silicon, at 2× the Arty clock plus the early-exit average-case lever
 - `hw/sw/bp_circ_kv260.py` — KV260 runner: `Bitstream.download()` + raw `MMIO` (Overlay-bypass, see gotcha),
   reuses `bp_circ_pynq.BpCircDecoder` / `load_vectors` / `run_check`; runs full-schedule + early-exit.
 - Cores unchanged (`bp_relay_bram_dp.sv`, `bp_axi_wrap_wide.sv`, `bp_axi_top_wide.v`); no RTL edits for M6.
+
+# Q7-02 M7 — µs-class banked relay-BP on the KV260: 6.72 ms → 32.8 µs worst-case (2.5 µs early-exit avg)
+
+**Goal.** M6 ended at 6.72 ms with the edge-serial `bp_relay_bram_dp` (2 edges/cycle). M7 asked for µs-class:
+process ~all 2952 edges per BP phase instead of 2. Target restated after the fit-gate (below): ~20–40 µs
+worst-case on this part.
+
+## The design space is a trilemma (all three corners measured)
+
+| approach | fit | synthesizes? | verdict |
+|---|---|---|---|
+| full spatial unroll (`bp_unroll_skeleton`, 144+864 stamped submodules) | **453 k LUT = 386 %** (CARRY8 276 %) | yes, ~3 min once modular | needs a ~4× bigger part |
+| partial unroll (`bp_relay_unroll_pipe`, runtime-`grp` gather from flop arrays) | ~est. fits | **area-opt stalls** (O(BP_E) operand muxes; `RuntimeOptimized` doesn't help) | dead — the M2 cursor-mux wall again |
+| **banked LUTRAM store (this milestone)** | 88 k LUT = 75 % | yes (~30 min) | **shipped** |
+
+## The banked design (`bp_relay_banked`, spec amendment 2)
+
+Scale `bram_dp`'s 2 banks to hundreds of tiny LUTRAM banks so W checks + V vars update per cycle
+(M7 pick: **W=12, V=36** → GC=12 check groups, GV=24 var groups):
+
+- **Check-major banking with a β split**: edge `e` lives at half-bank `(slot(check(e))·25 + pos(e))·2 + β(e)`,
+  row = its check's group. CHK phases are then *hardwired* (broadcast row, 2:1 β-muxes); the only scattered
+  access is the VAR phase, and an **offline solve in the emitter** (slot assignment + cap-2 var grouping +
+  β assignment, deterministic, exactly verified on every regen) guarantees ≤1 write per m_cm half-bank and
+  ≤2 reads per e_cm bank per cycle. König edge-coloring is the guaranteed-existence fallback if the greedy
+  ever fails on a future graph; on this graph greedy succeeds at 8/24, 12/36, 16/48.
+- **Three stores**: `m_cm` (v→c, check-major, β-split), `e_cm` (c→v, check-major, 2 read ports), `m_vm`
+  (v→c shadow, var-major — makes the VAR read of the "old" message mux-free). All distributed RAM;
+  **0 BRAM tiles**; the message fabric costs ~7 k LUT.
+- **Bit-exact by construction**: banking never touches the logical in-check edge order (min-sum tie-breaks)
+  or the wrap-add order — the SAME `FixedRelayBp` golden and vectors as every core since M2. 40/40 at all
+  three (W,V) on Verilator (Mac + EPYC), through the AXI wrapper, and on silicon.
+
+## What it took to synthesize (the whale hunt — each step measured OOC at 5 ns)
+
+1. **Flat top** (functionally perfect): area-opt churns **~8 h**, converges to a garbage netlist —
+   386 k LUT, DSP 747, Fmax 24 MHz.
+2. **Memory cells modularized** (`bp_mcm/ecm/mvm_cell`, one per bank): same numbers — the fabric was
+   never the whale.
+3. **Literal resolution tables** (emitter-baked `BP_CHK_GRP/SLOT`, `BP_VAR_GRP/SLOT`, `BP_EDGE_HB/EB/ROW/EPORT`,
+   replacing scan-loop helper functions Vivado can't constant-fold): faster synth, same size.
+4. **`BP_GAMMA[leg·BP_N+v]` was the whale**: `leg` is a runtime 32-bit int, so Vivado built full 32-bit
+   index arithmetic (a DSP multiply) + a 5184:1 ROM mux at each of ~864 gather sites — Verilator
+   range-folds this, Vivado does not. Constant-folding over `leg` (6:1 mux): **386 k → 71 k LUT**.
+5. **Serial reductions capped Fmax at 26 MHz** (worst path: S_EMIT obs fold, 137 logic levels; then
+   `check_minsum`'s 25-deep serial min chain). Tree restructuring — a tournament (min1,min2,argmin) tree
+   with first-occurrence tie-breaks, XOR/add trees for the folds — all provably bit-exact: **26 → 93 MHz**.
+
+Every step re-proved bit-exact (40/40, cycle counts unchanged) before the next synthesis. Lint fences
+Verilator↔Vivado disagreements (`ifndef SYNTHESIS` around the elaboration guards).
+
+## OOC probe sweep (tree core, xck26-sfvc784-2LV-c, 5 ns)
+
+| (W,V) | LUT | DSP | Fmax | cyc/decode | latency @Fmax |
+|---|---|---|---|---|---|
+| 8/24 | 68.8 k (59 %) | 738 (59 %) | 92.8 MHz | 3 570 | 38.5 µs |
+| **12/36** | **88.0 k (75 %)** | **1 116 (89 %)** | **91.1 MHz** | **2 460** | **27.0 µs** |
+| 16/48 | 105.3 k (90 %) | **1 476 (118 %)** | 93.8 MHz | 1 905 | **no fit** (DSP) |
+
+DSP scales ~31/var (the `var_update` blend multiplies) and kills 16/48; 12/36 is the largest fitting config.
+
+## Board + silicon
+
+Board build (`kv260_bp_circ_banked_bd.tcl`, `bp_axi_wrap_banked`, IDCODE `0x4250_0003`,
+`FLATTEN_HIERARCHY none` on synth_1 — load-bearing): @90 MHz WNS −1.53 ns (post-route eats the OOC margin);
+**@75 MHz (exact PS grid 1500/20) TIMING_MET, WNS +0.224 ns**.
+
+**On silicon** (KV260, PL @ 75 MHz, 40 circuit shots p=0.003, IDCODE `0x4250_0003`,
+**40/40 bit-exact in both modes**):
+
+```
+[full-schedule]  min=p50=mean=p99=max = 2 460 cyc = 32.8 µs   (fixed)
+[early-exit]     min=100  p50=140  mean=188  p99=700  max=700 cyc
+                 min=1.3  p50=1.9  mean=2.5  p99=9.3  max=9.3 µs
+```
+
+**Silicon ladder (worst-case):** Arty 29.8 ms → 13.44 ms (dp) → KV260 6.72 ms (M6) → **32.8 µs (M7) = 205×
+M6**. Early-exit average 381 µs → **2.5 µs = 152×**; the average case now sits in the original 1–3 µs band.
+
+## Honest scope & levers left on the table
+
+- True 1–3 µs **worst-case** stays out of reach on this part (needs the full unroll = a ~4× bigger FPGA).
+- Clock: the worst path (bank read → gather → `check_minsum` stage-1) allows ~91 MHz OOC but post-route
+  closed only at 75 MHz with the default strategy. Registering the bank outputs (+~2 cyc/phase, ~+5 %
+  cycles) should push past 120 MHz → ~20 µs; a Performance_Explore impl run may also recover 90 MHz as-is.
+- DSP pressure (89 %) is the wall to 16/48's 1 905 cycles (~25 µs @75): forcing the blend multiplies to
+  LUT fabric (`use_dsp = "no"`) would trade ~10–15 k LUT for the 360 extra DSPs — untested.
+- The offline solve generalizes (parameterized (W,V), loud failure + a proven fallback), so a future
+  bigger part lifts straight to 16/48 or beyond.

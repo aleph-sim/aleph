@@ -16,6 +16,7 @@
 //!   cargo run --release -p aleph-qec --example qec_q7_bp_graph -- vectors > hw/bp_check_vectors.txt
 
 use aleph_qec::{BBCode, CircuitNoise, DetectorErrorModel, FixedHwView, FixedRelayBp};
+use std::collections::{HashMap, HashSet};
 
 /// M0-chosen fixed-point word: 8-bit signed, 3 fractional bits (Q5.3).
 const MSG_BITS: u32 = 8;
@@ -49,18 +50,28 @@ fn build(circuit: Option<(usize, f64)>) -> (DetectorErrorModel, FixedRelayBp) {
 fn emit_graph() {
     let (_dem, fx) = build(None);
     print_graph(&fx.hw_view(), "Gross BB code [[144,12,12]] code capacity");
+    println!("`endif");
 }
 
 /// Emit the SAME `.svh` format for the depth-7 **circuit-level** DEM (rounds × p) — an irregular,
 /// much larger graph (e.g. rounds=1: 864 vars, 144 checks, max check-degree 25 vs code-capacity's
 /// uniform 6). Written to a separate file and cp'd over `bb_gross_tanner.svh` for the M2 co-sim build,
 /// so the parametric RTL decodes it unchanged (the `bpcirc` Makefile target).
-fn emit_circ_graph(rounds: usize, p: f64) {
+///
+/// M7 (Q7-02): also solves and appends the offline `K`-banked relay-BP datapath tables — which
+/// physical slot each check occupies, which capacity-`bank_v` group each var occupies, and the
+/// resulting per-edge `(check, position, β)` (spec A2.2; see `solve_banking`) — so the RTL bakes in a
+/// fixed, mux-light bank/group schedule instead of computing one at runtime.
+fn emit_circ_graph(rounds: usize, p: f64, bank_w: usize, bank_v: usize) {
     let (_dem, fx) = build(Some((rounds, p)));
+    let view = fx.hw_view();
     print_graph(
-        &fx.hw_view(),
+        &view,
         &format!("Gross BB code [[144,12,12]] CIRCUIT-LEVEL (depth-7, rounds={rounds}, p={p})"),
     );
+    let banking = solve_banking(view, bank_w, bank_v, BANK_SOLVE_SEED);
+    print_banking(&banking);
+    println!("`endif");
 }
 
 /// Print the flattened Tanner graph + fixed-point params as an `.svh` header. Works for any DEM (the
@@ -137,7 +148,652 @@ fn print_graph(v: &FixedHwView, title: &str) {
         "localparam int BP_OBS_MASK    [BP_N]   = '{{{}}};",
         signed(&obs_mask)
     );
-    println!("`endif");
+}
+
+/// Deterministic seed for the offline banking solve (`solve_banking`) — matches the verified Python
+/// prototype's `seed=7` (`.superpowers/sdd/task-9-reference-solver.py::try_nopi`).
+const BANK_SOLVE_SEED: u64 = 7;
+
+/// `(slot, in-check-position)` bank cap within a single var group for the offline banking solve —
+/// verified feasible at `cap=2` for `(bank_w, bank_v) ∈ {(8,24), (12,36), (16,48)}` by the reference
+/// Python prototype (spec A2.2). Not exposed as a knob: cap=1 (LUTRAM) was the preferred-but-infeasible
+/// case in the prototype sweep, cap=2 (RAMB18) is what ships.
+const BANK_CAP: usize = 2;
+
+/// Eviction-repair iteration budget for the var-grouping local search (spec A2.2 §3). Past this, the
+/// greedy + local-search heuristic is presumed stuck and `solve_banking` panics rather than looping
+/// forever — the spec's documented fallback is an exact König-theorem bipartite matching, out of scope
+/// here since the heuristic is verified feasible at all three probe configs.
+const BANK_EVICT_BUDGET: usize = 200_000;
+
+/// A tiny deterministic xorshift64 PRNG (Marsaglia 2003, "Xorshift RNGs") for the offline banking
+/// solve's tie-breaks and eviction-repair randomness. Not a new crate dependency — the solve only needs
+/// a cheap, reproducible, non-cryptographic stream, and the whole generator is 15 lines.
+struct Xorshift64(u64);
+
+impl Xorshift64 {
+    /// `seed` must be nonzero for xorshift64 (an all-zero state is a fixed point); remap 0 defensively.
+    fn new(seed: u64) -> Self {
+        Self(if seed == 0 {
+            0x9E37_79B9_7F4A_7C15
+        } else {
+            seed
+        })
+    }
+
+    fn next_u64(&mut self) -> u64 {
+        let mut x = self.0;
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        self.0 = x;
+        x
+    }
+
+    /// Uniform float in `[0, 1)`, top 53 bits of the stream (fills an `f64` mantissa exactly).
+    fn next_f64(&mut self) -> f64 {
+        (self.next_u64() >> 11) as f64 * (1.0 / (1u64 << 53) as f64)
+    }
+
+    /// Uniform integer in `[0, n)`. `n` must be nonzero.
+    fn gen_range(&mut self, n: usize) -> usize {
+        (self.next_u64() % n as u64) as usize
+    }
+}
+
+/// Offline bank/group assignment for the `K`-banked relay-BP RTL datapath (spec A2.2), solved once at
+/// header-emit time (never on the RTL critical path). Fields mirror the emitted header tables 1:1.
+struct Banking {
+    /// `BP_BANK_W` — number of check slots.
+    w: usize,
+    /// `BP_BANK_V` — capacity (vars) per var group.
+    v: usize,
+    /// `BP_GC` — number of check groups (rows), `ceil(BP_C / w)`.
+    gc: usize,
+    /// `BP_GV` — number of var groups, `ceil(BP_N / v)`.
+    gv: usize,
+    /// `BP_CHK_AT[g*w+j]`: check id at (group `g`, slot `j`), or `-1` if empty.
+    chk_at: Vec<i32>,
+    /// `BP_VAR_AT[h*v+i]`: var id at (group `h`, position `i`), or `-1` if empty.
+    var_at: Vec<i32>,
+    /// `BP_EDGE_CHK[e]`: the check owning edge `e` (canonical edge order, same as `BP_EDGE_VAR`).
+    edge_chk: Vec<u32>,
+    /// `BP_EDGE_POS[e]`: `e`'s logical position within its check's edge list.
+    edge_pos: Vec<u32>,
+    /// `BP_EDGE_BETA[e]`: 0/1 half-bank split within `e`'s var group.
+    edge_beta: Vec<u8>,
+
+    // ---- M7 (Vivado-folding rescue) literal resolution tables: the offline inverses of the maps above,
+    // baked so the RTL directly indexes them instead of scanning `BP_CHK_AT`/`BP_VAR_AT` at elaboration
+    // (the scan loops materialise as ~386k-LUT hardware scanners under Vivado; Verilator const-folds them,
+    // Vivado does not — see the file-header post-mortem in `hw/bp_relay_banked.sv`).
+    /// `BP_CHK_GRP[c]`: check `c`'s group `g` (inverse of `BP_CHK_AT`; every check has one).
+    chk_grp: Vec<i32>,
+    /// `BP_CHK_SLOT[c]`: check `c`'s slot `j`.
+    chk_slot: Vec<i32>,
+    /// `BP_VAR_GRP[v]`: var `v`'s group `h` (inverse of `BP_VAR_AT`).
+    var_grp: Vec<i32>,
+    /// `BP_VAR_SLOT[v]`: var `v`'s position `i` within its group.
+    var_slot: Vec<i32>,
+    /// `BP_EDGE_HB[e]`: `e`'s m_cm half-bank id, `(slot_j*BP_CHK_DEG + pos_k)*2 + beta` (= `eb*2+beta`).
+    edge_hb: Vec<i32>,
+    /// `BP_EDGE_EB[e]`: `e`'s e_cm bank id, `slot_j*BP_CHK_DEG + pos_k`.
+    edge_eb: Vec<i32>,
+    /// `BP_EDGE_ROW[e]`: `e`'s m_cm/e_cm row = its check's group `g`.
+    edge_row: Vec<i32>,
+    /// `BP_EDGE_EPORT[e]`: 0/1 e_cm read port (A/B) — among the edges of `e`'s var-group that read the
+    /// same e_cm bank, ordered by (var-slot `i`, then position `d`), the first gets 0, the second 1.
+    edge_eport: Vec<i32>,
+}
+
+/// Solve the offline bank/group assignment: a direct Rust port of the verified Python prototype
+/// `.superpowers/sdd/task-9-reference-solver.py::try_nopi` (spec A2.2), using an independent xorshift64
+/// stream rather than Python's Mersenne Twister — the RNG only breaks ties / drives eviction order, so
+/// the two implementations need not draw bit-identical numbers, only both find *a* feasible assignment
+/// (verified exactly at the end, every time; see `verify_banking`).
+///
+/// Algorithm:
+/// 1. **Slot assignment.** Checks in descending-degree order; each check picks the slot `j` (of `w`,
+///    capacity `gc`) minimizing the count of `(in-check-position, var)` pairs already seen in `j`
+///    (ties: lower current occupancy, then RNG). A check's row within its slot is its insertion order.
+/// 2. **Var grouping (cap `BANK_CAP`).** Bank of edge `e` = `(slot_of[check(e)], pos_k[e])`. Vars in
+///    descending-degree order; place into the emptiest group where every bank stays ≤ `BANK_CAP`
+///    counting the var's own edges; on failure, an eviction-repair loop (random group, evict a
+///    conflicting var, re-queue it) up to `BANK_EVICT_BUDGET` iterations.
+/// 3. **β assignment.** Per `(group, bank)` pair with 2 edges, β = 0/1 split by edge-id order;
+///    singletons get β = 0.
+/// 4. **Exact verify**, always on (`verify_banking`).
+///
+/// # Panics
+/// If the eviction-repair loop exceeds `BANK_EVICT_BUDGET`, or if the exact verify finds any bank/group
+/// invariant violated (both would indicate a solver bug or an infeasible `(bank_w, bank_v)` choice).
+fn solve_banking(hw: FixedHwView<'_>, bank_w: usize, bank_v: usize, seed: u64) -> Banking {
+    let bp_n = hw.n_vars;
+    let bp_c = hw.n_checks;
+    let bp_e = hw.n_edges;
+    let gc = bp_c.div_ceil(bank_w);
+    let gv = bp_n.div_ceil(bank_v);
+
+    // Canonical edge -> (check, in-check logical position `k`). Fixed forever by the CSR the graph
+    // emitter already built above; the banking solve only ever reads this, never reorders it — the
+    // golden bit-exactness of BP_EDGE_VAR / BP_CHECK_EDGES etc. does not depend on the banking choice.
+    let mut pos_k = vec![0u32; bp_e];
+    let mut check_of = vec![0u32; bp_e];
+    for c in 0..bp_c {
+        let lo = hw.check_off[c] as usize;
+        let hi = hw.check_off[c + 1] as usize;
+        for (k, &e) in hw.check_edges[lo..hi].iter().enumerate() {
+            pos_k[e as usize] = k as u32;
+            check_of[e as usize] = c as u32;
+        }
+    }
+
+    let mut rng = Xorshift64::new(seed);
+
+    // --- Step 1: slot assignment.
+    let mut slot_of = vec![usize::MAX; bp_c];
+    let mut chk_row = vec![0usize; bp_c];
+    let mut slot_cnt = vec![0usize; bank_w];
+    let mut seen: Vec<HashSet<(u32, u32)>> = (0..bank_w).map(|_| HashSet::new()).collect();
+
+    let mut corder: Vec<usize> = (0..bp_c).collect();
+    corder.sort_by_key(|&c| std::cmp::Reverse(hw.check_off[c + 1] - hw.check_off[c]));
+
+    for c in corder {
+        let lo = hw.check_off[c] as usize;
+        let hi = hw.check_off[c + 1] as usize;
+        let mut best_j = None;
+        let mut best_cost = 0usize;
+        let mut best_cnt = 0usize;
+        let mut best_rand = 0.0f64;
+        for j in 0..bank_w {
+            if slot_cnt[j] >= gc {
+                continue;
+            }
+            let mut cost = 0usize;
+            for (k, &e) in hw.check_edges[lo..hi].iter().enumerate() {
+                if seen[j].contains(&(k as u32, hw.edge_var[e as usize])) {
+                    cost += 1;
+                }
+            }
+            let r = rng.next_f64();
+            let better = best_j.is_none()
+                || (cost, slot_cnt[j]) < (best_cost, best_cnt)
+                || ((cost, slot_cnt[j]) == (best_cost, best_cnt) && r < best_rand);
+            if better {
+                best_j = Some(j);
+                best_cost = cost;
+                best_cnt = slot_cnt[j];
+                best_rand = r;
+            }
+        }
+        let j = best_j.expect("banking solve: no free slot for check (bank_w too small for BP_C)");
+        slot_of[c] = j;
+        chk_row[c] = slot_cnt[j];
+        slot_cnt[j] += 1;
+        for (k, &e) in hw.check_edges[lo..hi].iter().enumerate() {
+            seen[j].insert((k as u32, hw.edge_var[e as usize]));
+        }
+    }
+
+    let bank_of = |e: usize| -> (usize, u32) { (slot_of[check_of[e] as usize], pos_k[e]) };
+    let edges_of_var = |vv: usize| (hw.var_off[vv] as usize)..(hw.var_off[vv + 1] as usize);
+
+    // --- Step 2: var grouping, cap BANK_CAP per bank within a group (greedy + eviction repair).
+    let mut var_groups: Vec<Vec<usize>> = vec![Vec::new(); gv];
+    let mut gb: Vec<HashMap<(usize, u32), usize>> = vec![HashMap::new(); gv];
+
+    let fits = |vv: usize, g: usize, gb: &[HashMap<(usize, u32), usize>]| -> bool {
+        let mut cnt: HashMap<(usize, u32), usize> = HashMap::new();
+        for e in edges_of_var(vv) {
+            *cnt.entry(bank_of(e)).or_insert(0) += 1;
+        }
+        cnt.iter()
+            .all(|(b, c)| gb[g].get(b).copied().unwrap_or(0) + c <= BANK_CAP)
+    };
+    let add = |vv: usize,
+               g: usize,
+               var_groups: &mut [Vec<usize>],
+               gb: &mut [HashMap<(usize, u32), usize>]| {
+        var_groups[g].push(vv);
+        for e in edges_of_var(vv) {
+            *gb[g].entry(bank_of(e)).or_insert(0) += 1;
+        }
+    };
+    let remove = |vv: usize,
+                  g: usize,
+                  var_groups: &mut [Vec<usize>],
+                  gb: &mut [HashMap<(usize, u32), usize>]| {
+        var_groups[g].retain(|&x| x != vv);
+        for e in edges_of_var(vv) {
+            let slot = gb[g]
+                .get_mut(&bank_of(e))
+                .expect("banking solve: gb entry missing on remove (internal invariant violated)");
+            *slot -= 1;
+        }
+    };
+
+    let mut vorder: Vec<usize> = (0..bp_n).collect();
+    vorder.sort_by_key(|&vv| std::cmp::Reverse(hw.var_off[vv + 1] - hw.var_off[vv]));
+
+    let mut pending: Vec<usize> = Vec::new();
+    for vv in vorder {
+        let cands: Vec<usize> = (0..gv)
+            .filter(|&g| var_groups[g].len() < bank_v && fits(vv, g, &gb))
+            .collect();
+        if let Some(&g) = cands.iter().min_by_key(|&&g| var_groups[g].len()) {
+            add(vv, g, &mut var_groups, &mut gb);
+        } else {
+            pending.push(vv);
+        }
+    }
+
+    let mut t = 0usize;
+    while !pending.is_empty() && t < BANK_EVICT_BUDGET {
+        t += 1;
+        let vv = pending.pop().expect("pending checked non-empty");
+        let g = rng.gen_range(gv);
+        loop {
+            let ok = var_groups[g].len() < bank_v && fits(vv, g, &gb);
+            if ok || var_groups[g].is_empty() {
+                break;
+            }
+            let v_banks: HashSet<(usize, u32)> = edges_of_var(vv).map(&bank_of).collect();
+            let blockers: Vec<usize> = var_groups[g]
+                .iter()
+                .copied()
+                .filter(|&w| edges_of_var(w).map(&bank_of).any(|b| v_banks.contains(&b)))
+                .collect();
+            let w = if !blockers.is_empty() {
+                blockers[rng.gen_range(blockers.len())]
+            } else {
+                var_groups[g][rng.gen_range(var_groups[g].len())]
+            };
+            remove(w, g, &mut var_groups, &mut gb);
+            pending.push(w);
+        }
+        add(vv, g, &mut var_groups, &mut gb);
+    }
+    assert!(
+        pending.is_empty(),
+        "banking solve failed — see spec A2.2 König fallback ({} var(s) unplaced after {} eviction \
+         iterations at (bank_w={bank_w}, bank_v={bank_v}))",
+        pending.len(),
+        BANK_EVICT_BUDGET
+    );
+
+    // --- Step 3: β assignment — per (group, bank) pair, split by edge-id order.
+    let mut edge_beta = vec![0u8; bp_e];
+    for grp in &var_groups {
+        let mut bank_edges: HashMap<(usize, u32), Vec<u32>> = HashMap::new();
+        for &vv in grp {
+            for e in edges_of_var(vv) {
+                bank_edges.entry(bank_of(e)).or_default().push(e as u32);
+            }
+        }
+        for edges in bank_edges.values_mut() {
+            edges.sort_unstable();
+            for (i, &e) in edges.iter().enumerate() {
+                edge_beta[e as usize] = u8::from(i > 0);
+            }
+        }
+    }
+
+    // --- Assemble the flat header tables.
+    let mut chk_at = vec![-1i32; gc * bank_w];
+    for c in 0..bp_c {
+        chk_at[chk_row[c] * bank_w + slot_of[c]] = c as i32;
+    }
+    let mut var_at = vec![-1i32; gv * bank_v];
+    for (h, grp) in var_groups.iter().enumerate() {
+        for (i, &vv) in grp.iter().enumerate() {
+            var_at[h * bank_v + i] = vv as i32;
+        }
+    }
+
+    // --- M7 literal resolution tables (inverses of the maps above), computed offline so the RTL indexes
+    // them directly. `chk_row[c]`/`slot_of[c]` ARE the group/slot of check c (chk_at[chk_row*W+slot]=c),
+    // so grp_of_chk(c)=chk_row[c] and slot_of_chk(c)=slot_of[c] by construction.
+    let chk_deg_max = hw
+        .check_off
+        .windows(2)
+        .map(|w| (w[1] - w[0]) as usize)
+        .max()
+        .unwrap_or(0);
+    let var_deg_max = hw
+        .var_off
+        .windows(2)
+        .map(|w| (w[1] - w[0]) as usize)
+        .max()
+        .unwrap_or(0);
+
+    let mut chk_grp = vec![0i32; bp_c];
+    let mut chk_slot = vec![0i32; bp_c];
+    for c in 0..bp_c {
+        chk_grp[c] = chk_row[c] as i32;
+        chk_slot[c] = slot_of[c] as i32;
+    }
+    let mut var_grp = vec![0i32; bp_n];
+    let mut var_slot = vec![0i32; bp_n];
+    for (h, grp) in var_groups.iter().enumerate() {
+        for (i, &vv) in grp.iter().enumerate() {
+            var_grp[vv] = h as i32;
+            var_slot[vv] = i as i32;
+        }
+    }
+    // Per-edge banks: eb = slot_of_chk(check) * BP_CHK_DEG + pos_k; hb = eb*2 + beta; row = grp_of_chk.
+    let mut edge_eb = vec![0i32; bp_e];
+    let mut edge_hb = vec![0i32; bp_e];
+    let mut edge_row = vec![0i32; bp_e];
+    for e in 0..bp_e {
+        let c = check_of[e] as usize;
+        let eb = slot_of[c] * chk_deg_max + pos_k[e] as usize;
+        edge_eb[e] = eb as i32;
+        edge_hb[e] = (eb * 2 + edge_beta[e] as usize) as i32;
+        edge_row[e] = chk_row[c] as i32;
+    }
+    // Per-edge e_cm read port: replicate the RTL `ecm_port` (i,d)-ordered count exactly — within a var
+    // group, edges reading the same e_cm bank get port 0 (first) then 1 (second), in (slot i, edge d)
+    // order. The count-so-far of a bank at the moment we visit an edge IS its port.
+    let mut edge_eport = vec![0i32; bp_e];
+    for grp in &var_groups {
+        let mut bank_cnt: HashMap<i32, i32> = HashMap::new();
+        for i in 0..bank_v {
+            let Some(&vv) = grp.get(i) else { continue }; // empty var slot -> vedge_at == -1
+            let vdeg = (hw.var_off[vv + 1] - hw.var_off[vv]) as usize;
+            for d in 0..var_deg_max {
+                if d >= vdeg {
+                    continue; // d beyond this var's degree -> vedge_at == -1
+                }
+                let e = hw.var_off[vv] as usize + d;
+                let bank = edge_eb[e];
+                let cnt = bank_cnt.entry(bank).or_insert(0);
+                edge_eport[e] = *cnt;
+                *cnt += 1;
+            }
+        }
+    }
+
+    let banking = Banking {
+        w: bank_w,
+        v: bank_v,
+        gc,
+        gv,
+        chk_at,
+        var_at,
+        edge_chk: check_of,
+        edge_pos: pos_k,
+        edge_beta,
+        chk_grp,
+        chk_slot,
+        var_grp,
+        var_slot,
+        edge_hb,
+        edge_eb,
+        edge_row,
+        edge_eport,
+    };
+    verify_banking(hw, &banking);
+    banking
+}
+
+/// Exact verify of a solved [`Banking`] (spec A2.2 step 4), run unconditionally at the end of
+/// `solve_banking`. Operates on the emitted tables themselves (not the solver's internal state), so it
+/// also catches bugs in the flat-array assembly, not just the placement heuristic.
+///
+/// # Panics
+/// On any invariant violation: a check or var placed twice (or never) in `BP_CHK_AT`/`BP_VAR_AT`, a
+/// duplicate `(slot, position)` bank within one check group, a duplicate `(slot, position, β)`
+/// half-bank within one var group, or a `(slot, position)` bank hit more than `BANK_CAP` times within
+/// one var group.
+fn verify_banking(hw: FixedHwView<'_>, b: &Banking) {
+    let bp_c = hw.n_checks;
+    let bp_n = hw.n_vars;
+
+    // Every check / var appears exactly once in BP_CHK_AT / BP_VAR_AT.
+    let mut chk_seen = vec![false; bp_c];
+    for &c in &b.chk_at {
+        if c >= 0 {
+            let c = c as usize;
+            assert!(c < bp_c, "BP_CHK_AT: check id {c} out of range");
+            assert!(!chk_seen[c], "BP_CHK_AT: check {c} placed twice");
+            chk_seen[c] = true;
+        }
+    }
+    assert!(
+        chk_seen.iter().all(|&s| s),
+        "BP_CHK_AT: not every check was placed"
+    );
+
+    let mut var_seen = vec![false; bp_n];
+    for &v in &b.var_at {
+        if v >= 0 {
+            let v = v as usize;
+            assert!(v < bp_n, "BP_VAR_AT: var id {v} out of range");
+            assert!(!var_seen[v], "BP_VAR_AT: var {v} placed twice");
+            var_seen[v] = true;
+        }
+    }
+    assert!(
+        var_seen.iter().all(|&s| s),
+        "BP_VAR_AT: not every var was placed"
+    );
+
+    // Reconstruct check -> slot from the emitted table (rather than trusting solver-internal state).
+    let mut check_slot = vec![-1i32; bp_c];
+    for g in 0..b.gc {
+        for j in 0..b.w {
+            let c = b.chk_at[g * b.w + j];
+            if c >= 0 {
+                check_slot[c as usize] = j as i32;
+            }
+        }
+    }
+
+    // Per check group g: all its edges' (slot, position) are distinct.
+    for g in 0..b.gc {
+        let mut seen: HashSet<(usize, usize)> = HashSet::new();
+        for j in 0..b.w {
+            let c = b.chk_at[g * b.w + j];
+            if c < 0 {
+                continue;
+            }
+            let c = c as usize;
+            let lo = hw.check_off[c] as usize;
+            let hi = hw.check_off[c + 1] as usize;
+            for k in 0..(hi - lo) {
+                assert!(
+                    seen.insert((j, k)),
+                    "check group {g}: duplicate bank ({j},{k})"
+                );
+            }
+        }
+    }
+
+    // Per var group h: (slot, position) hit <= BANK_CAP times, and (slot, position, beta) half-banks
+    // are all distinct.
+    for h in 0..b.gv {
+        let mut bank_cnt: HashMap<(i32, u32), usize> = HashMap::new();
+        let mut half_seen: HashSet<(i32, u32, u8)> = HashSet::new();
+        for i in 0..b.v {
+            let vv = b.var_at[h * b.v + i];
+            if vv < 0 {
+                continue;
+            }
+            let vv = vv as usize;
+            for e in hw.var_off[vv]..hw.var_off[vv + 1] {
+                let e = e as usize;
+                let c = b.edge_chk[e] as usize;
+                let j = check_slot[c];
+                assert!(j >= 0, "edge {e}: check {c} not placed in BP_CHK_AT");
+                let k = b.edge_pos[e];
+                let beta = b.edge_beta[e];
+                *bank_cnt.entry((j, k)).or_insert(0) += 1;
+                assert!(
+                    half_seen.insert((j, k, beta)),
+                    "var group {h}: duplicate half-bank ({j},{k},{beta})"
+                );
+            }
+        }
+        for (&(j, k), &cnt) in &bank_cnt {
+            assert!(
+                cnt <= BANK_CAP,
+                "var group {h}: bank ({j},{k}) hit {cnt} times (cap {BANK_CAP})"
+            );
+        }
+    }
+
+    // ---- M7 literal resolution tables: cross-check the inverses against the primary maps + solve.
+    let chk_deg_max = hw
+        .check_off
+        .windows(2)
+        .map(|w| (w[1] - w[0]) as usize)
+        .max()
+        .unwrap_or(0);
+
+    // BP_CHK_GRP/BP_CHK_SLOT invert BP_CHK_AT: chk_at[grp*W + slot] == c for every check.
+    for c in 0..bp_c {
+        let g = b.chk_grp[c];
+        let j = b.chk_slot[c];
+        assert!(
+            g >= 0 && (g as usize) < b.gc && j >= 0 && (j as usize) < b.w,
+            "BP_CHK_GRP/SLOT: check {c} maps to out-of-range (g={g}, j={j})"
+        );
+        assert_eq!(
+            b.chk_at[g as usize * b.w + j as usize],
+            c as i32,
+            "BP_CHK_GRP/SLOT: check {c} inverse ({g},{j}) does not point back in BP_CHK_AT"
+        );
+    }
+    // BP_VAR_GRP/BP_VAR_SLOT invert BP_VAR_AT.
+    for v in 0..bp_n {
+        let h = b.var_grp[v];
+        let i = b.var_slot[v];
+        assert!(
+            h >= 0 && (h as usize) < b.gv && i >= 0 && (i as usize) < b.v,
+            "BP_VAR_GRP/SLOT: var {v} maps to out-of-range (h={h}, i={i})"
+        );
+        assert_eq!(
+            b.var_at[h as usize * b.v + i as usize],
+            v as i32,
+            "BP_VAR_GRP/SLOT: var {v} inverse ({h},{i}) does not point back in BP_VAR_AT"
+        );
+    }
+    // Per-edge EB/HB/ROW recompute from the (independently cross-checked) chk grp/slot tables.
+    for e in 0..hw.n_edges {
+        let c = b.edge_chk[e] as usize;
+        let eb = b.chk_slot[c] * chk_deg_max as i32 + b.edge_pos[e] as i32;
+        assert_eq!(b.edge_eb[e], eb, "BP_EDGE_EB[{e}] != slot*CHK_DEG + pos");
+        assert_eq!(
+            b.edge_hb[e],
+            eb * 2 + b.edge_beta[e] as i32,
+            "BP_EDGE_HB[{e}] != eb*2 + beta"
+        );
+        assert_eq!(
+            b.edge_row[e], b.chk_grp[c],
+            "BP_EDGE_ROW[{e}] != check group"
+        );
+    }
+    // BP_EDGE_EPORT: within each (var-group h, e_cm bank EB) at most one port-0 and one port-1, and every
+    // port is 0/1 (the offline cap-2 assignment guarantees <=2 readers/bank/group).
+    let mut port_seen: HashMap<(i32, i32, i32), ()> = HashMap::new();
+    for e in 0..hw.n_edges {
+        let h = b.var_grp[hw.edge_var[e] as usize];
+        let eb = b.edge_eb[e];
+        let port = b.edge_eport[e];
+        assert!(
+            port == 0 || port == 1,
+            "BP_EDGE_EPORT[{e}] = {port} (expected 0 or 1)"
+        );
+        assert!(
+            port_seen.insert((h, eb, port), ()).is_none(),
+            "BP_EDGE_EPORT: var group {h} e_cm bank {eb} has two edges on port {port}"
+        );
+    }
+}
+
+/// Print the [`Banking`] solve as `.svh` `localparam` tables — same `localparam int NAME [SIZE] =
+/// '{...};` style as `print_graph`, appended after it (existing lines stay byte-identical).
+fn print_banking(b: &Banking) {
+    let ints = |xs: &[i32]| -> String {
+        xs.iter()
+            .map(|x| x.to_string())
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let uints = |xs: &[u32]| -> String {
+        xs.iter()
+            .map(|x| x.to_string())
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let bytes = |xs: &[u8]| -> String {
+        xs.iter()
+            .map(|x| x.to_string())
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+
+    println!("localparam int BP_BANK_W = {};", b.w);
+    println!("localparam int BP_BANK_V = {};", b.v);
+    println!("localparam int BP_GC = {};", b.gc);
+    println!("localparam int BP_GV = {};", b.gv);
+    println!(
+        "localparam int BP_CHK_AT [BP_GC*BP_BANK_W] = '{{{}}};",
+        ints(&b.chk_at)
+    );
+    println!(
+        "localparam int BP_VAR_AT [BP_GV*BP_BANK_V] = '{{{}}};",
+        ints(&b.var_at)
+    );
+    println!(
+        "localparam int BP_EDGE_CHK [BP_E] = '{{{}}};",
+        uints(&b.edge_chk)
+    );
+    println!(
+        "localparam int BP_EDGE_POS [BP_E] = '{{{}}};",
+        uints(&b.edge_pos)
+    );
+    println!(
+        "localparam int BP_EDGE_BETA [BP_E] = '{{{}}};",
+        bytes(&b.edge_beta)
+    );
+
+    // ---- M7 literal resolution tables (Vivado-folding rescue): direct-index replacements for the RTL's
+    // former scan-loop helpers (grp_of_chk/slot_of_chk/ecm_bank/hb_of_edge/ecm_port). See print_banking
+    // header comment + hw/bp_relay_banked.sv post-mortem.
+    println!(
+        "localparam int BP_CHK_GRP [BP_C] = '{{{}}};",
+        ints(&b.chk_grp)
+    );
+    println!(
+        "localparam int BP_CHK_SLOT [BP_C] = '{{{}}};",
+        ints(&b.chk_slot)
+    );
+    println!(
+        "localparam int BP_VAR_GRP [BP_N] = '{{{}}};",
+        ints(&b.var_grp)
+    );
+    println!(
+        "localparam int BP_VAR_SLOT [BP_N] = '{{{}}};",
+        ints(&b.var_slot)
+    );
+    println!(
+        "localparam int BP_EDGE_HB [BP_E] = '{{{}}};",
+        ints(&b.edge_hb)
+    );
+    println!(
+        "localparam int BP_EDGE_EB [BP_E] = '{{{}}};",
+        ints(&b.edge_eb)
+    );
+    println!(
+        "localparam int BP_EDGE_ROW [BP_E] = '{{{}}};",
+        ints(&b.edge_row)
+    );
+    println!(
+        "localparam int BP_EDGE_EPORT [BP_E] = '{{{}}};",
+        ints(&b.edge_eport)
+    );
 }
 
 /// Full-decode golden vectors: `T` sampled syndromes with the chosen `ehat`, observable flips, and
@@ -309,7 +965,13 @@ fn main() {
         "graph" => emit_graph(),
         "vectors" => emit_vectors(),
         "decvectors" => emit_dec_vectors(),
-        "circgraph" => emit_circ_graph(rounds, p),
+        "circgraph" => {
+            // circgraph reuses positional args 4/5 as (bankW, bankV) for the offline banking solve,
+            // not (n, seed) like the vector-emitting modes below.
+            let bank_w = args.get(4).and_then(|s| s.parse().ok()).unwrap_or(8usize);
+            let bank_v = args.get(5).and_then(|s| s.parse().ok()).unwrap_or(24usize);
+            emit_circ_graph(rounds, p, bank_w, bank_v);
+        }
         "circvectors" => emit_circ_vectors(rounds, p, n, seed, false),
         "circvectorsearly" => emit_circ_vectors(rounds, p, n, seed, true),
         other => {
