@@ -19,9 +19,18 @@
 //! [`emit_win_graph`] for why one window stands in for every steady-state window):
 //!   cargo run --release -p aleph-qec --example qec_q7_bp_graph -- \
 //!       wingraph <rounds> <p> <W> <C> <bankW> <bankV> > hw/bb_win_tanner.svh
+//!
+//! M9b (Q7-04) streaming decoder header + golden vectors — the window graph/banking above plus the
+//! per-detector slide (`BP_SHIFT`) and per-var commit (`BP_VAR_COMMIT`) metadata the RTL streaming FSM
+//! needs to replay [`HwSlidingWindowBp`]'s baked-graph schedule, and the bit-exact co-sim vectors:
+//!   cargo run --release -p aleph-qec --example qec_q7_bp_graph -- \
+//!       streamgraph <rounds> <p> <W> <C> <bankW> <bankV> > hw/bb_stream_tanner.svh
+//!   cargo run --release -p aleph-qec --example qec_q7_bp_graph -- \
+//!       streamvectors <rounds> <p> <W> <C> <n> <seed> > hw/bp_stream_vectors.txt
 
 use aleph_qec::{
-    BBCode, CircuitNoise, DetectorErrorModel, FixedHwView, FixedRelayBp, SlidingWindowBp,
+    BBCode, CircuitNoise, DetectorErrorModel, FixedHwView, FixedRelayBp, HwSlidingWindowBp,
+    SlidingWindowBp,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -129,6 +138,230 @@ fn emit_win_graph(rounds: usize, p: f64, w: usize, c: usize, bank_w: usize, bank
     let banking = solve_banking(view, bank_w, bank_v, BANK_SOLVE_SEED);
     print_banking(&banking);
     println!("`endif");
+}
+
+/// M9b (Q7-04) **streaming decoder header**: the same interior-window Tanner graph + banking tables
+/// `emit_win_graph` emits (M9b's fit-de-risk probe), PLUS the streaming metadata the RTL streaming FSM
+/// needs to run [`HwSlidingWindowBp`]'s baked-graph schedule — the per-window-detector slide target
+/// (`BP_SHIFT`) and the per-window-var commit bit (`BP_VAR_COMMIT`). Unlike `emit_win_graph` (whose `C`
+/// is provenance-only), this mode's window graph AND metadata both key on `C`.
+///
+/// Usage:
+///   cargo run --release -p aleph-qec --example qec_q7_bp_graph -- \
+///       streamgraph <rounds> <p> <W> <C> <bankW> <bankV> > hw/bb_stream_tanner.svh
+fn emit_stream_graph(rounds: usize, p: f64, w: usize, c: usize, bank_w: usize, bank_v: usize) {
+    let code = BBCode::gross();
+    let dem = code
+        .circuit_level_dem(rounds, CircuitNoise::uniform(p))
+        .expect("circuit-level DEM");
+    let detector_rounds = code.memory_x_experiment(rounds).detector_rounds();
+    // HwSlidingWindowBp::new takes the detector-round vector by value; keep our own copy to derive
+    // the streaming metadata below (it also re-validates the round-major/uniform-dpr layout this
+    // whole M9b mode depends on — see the type's doc comment).
+    let hw = HwSlidingWindowBp::new(dem, detector_rounds.clone(), w, c);
+
+    let export = hw.window_export();
+    let fx = FixedRelayBp::with_budget(&export.dem, LEGS, ITERS, GAMMA, SEED, MSG_BITS, FRAC_BITS);
+    let view = fx.hw_view();
+    println!(
+        "// M9b streaming window: rounds={rounds}, p={p}, W={w}, C={c}, bankW={bank_w}, \
+         bankV={bank_v} — window checks={}, vars={}, edges={}",
+        view.n_checks, view.n_vars, view.n_edges
+    );
+    println!(
+        "// regenerate: cargo run --release -q -p aleph-qec --example qec_q7_bp_graph -- \
+         streamgraph {rounds} {p} {w} {c} {bank_w} {bank_v} > hw/bb_stream_tanner.svh"
+    );
+    print_graph(
+        &view,
+        &format!(
+            "Gross BB code [[144,12,12]] STREAMING WINDOW (rounds={rounds}, p={p}, W={w}, C={c})"
+        ),
+    );
+    let banking = solve_banking(view, bank_w, bank_v, BANK_SOLVE_SEED);
+    print_banking(&banking);
+
+    // --- Streaming metadata: the per-detector slide target and per-var commit bit the RTL FSM
+    // reads every slot. Derived from the SAME window export the graph/banking tables above came
+    // from, so a header regen can never see the graph and the metadata disagree.
+    let dpr = hw.dpr();
+    let bp_c = view.n_checks;
+    assert_eq!(
+        bp_c,
+        w * dpr,
+        "streamgraph: BP_C ({bp_c}) != BP_WIN_W*BP_DPR ({w}*{dpr}) — every window detector must be \
+         a check (a hyperedge check would break this)"
+    );
+    let load_lo = (w - c) * dpr;
+
+    // Relative round of each local window detector, computed from the ACTUAL global detector round
+    // (not a closed-form `l / dpr`) — the UF `window` emitter's `round_start` pattern — so a future
+    // non-uniform window layout fails this assert loudly instead of silently emitting a wrong shift.
+    let base_round = detector_rounds[export.globals[0]];
+    let rr: Vec<usize> = export
+        .globals
+        .iter()
+        .map(|&g| detector_rounds[g] - base_round)
+        .collect();
+    let mut round_start = vec![usize::MAX; w]; // first local index of each relative round
+    for (l, &r) in rr.iter().enumerate() {
+        if round_start[r] == usize::MAX {
+            round_start[r] = l;
+        }
+    }
+    // Slide-by-C map: a kept (rel round >= C) detector at (round r, position p within its round)
+    // carries to the detector at (round r-C, same position) — local index `round_start[r-C] + p`.
+    // Rounds < C are committed and dropped this slide (sentinel = BP_C).
+    let shift: Vec<usize> = (0..bp_c)
+        .map(|l| {
+            let r = rr[l];
+            if r >= c {
+                round_start[r - c] + (l - round_start[r])
+            } else {
+                bp_c // sentinel: committed-and-dropped
+            }
+        })
+        .collect();
+
+    // --- Inline asserts (house style: unconditional at generation time, like `verify_banking`).
+    // (1) Commit tiling: every real stream detector's round is covered by the C*num_slots budget
+    //     the slot schedule replays (this bounds every window var's in-window det rounds too, since
+    //     those are a subset of the full stream's detector rounds).
+    let num_slots = hw.num_slots();
+    for &r in &detector_rounds {
+        assert!(
+            r < c * num_slots,
+            "streamgraph: detector round {r} not covered by commit tiling (C={c} * \
+             num_slots={num_slots} = {})",
+            c * num_slots
+        );
+    }
+    // (2) Every window var has >= 1 in-window detector (compile_window drops the rest, but a future
+    //     refactor could reintroduce a degenerate all-truncated mechanism — catch it here).
+    for (v, e) in export.dem.errors.iter().enumerate() {
+        assert!(
+            !e.dets.is_empty(),
+            "streamgraph: window var {v} has no in-window detector"
+        );
+    }
+    // (3) SHIFT is injective on kept (non-sentinel) local detectors — two window detectors sliding
+    //     onto the same target index would silently corrupt the RTL's residual frame.
+    let mut seen_shift: HashSet<usize> = HashSet::new();
+    for (l, &sh) in shift.iter().enumerate() {
+        if sh != bp_c {
+            assert!(
+                seen_shift.insert(sh),
+                "streamgraph: BP_SHIFT not injective — det {l} collides with an earlier det at \
+                 target {sh}"
+            );
+        }
+    }
+
+    let shift_str = shift
+        .iter()
+        .map(|x| x.to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let commit_str = hw
+        .commit_mask()
+        .iter()
+        .map(|&cv| u8::from(cv).to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    println!("/* verilator lint_off UNUSEDPARAM */");
+    println!("localparam int BP_DPR      = {dpr};  // detectors per round");
+    println!("localparam int BP_WIN_W    = {w};  // window rounds");
+    println!("localparam int BP_WIN_C    = {c};  // commit rounds per slide");
+    println!(
+        "localparam int BP_LOAD_LO  = {load_lo};  // (BP_WIN_W-BP_WIN_C)*BP_DPR, reload region base"
+    );
+    println!(
+        "localparam int BP_SHIFT [BP_C]  = '{{{shift_str}}};  // det l -> l - BP_WIN_C*BP_DPR, \
+         sentinel BP_C if dropped"
+    );
+    println!(
+        "localparam bit BP_VAR_COMMIT [BP_N] = '{{{commit_str}}};  // 1 iff var has an in-window \
+         det at rel round < C"
+    );
+    println!("/* verilator lint_on UNUSEDPARAM */");
+    println!("`endif");
+}
+
+/// M9b (Q7-04) **streaming golden vectors**: `n` sampled multi-round shots, decoded slot-by-slot on
+/// [`HwSlidingWindowBp::decode_stream_trace`] (the hardware-schedule golden — see that type's doc
+/// comment), for the RTL streaming FSM co-sim gate. Round lines are the RAW stream detector bits: the
+/// RTL XORs commit toggles into its own frame, so the vectors must NOT be pre-toggled.
+///
+/// Usage:
+///   cargo run --release -p aleph-qec --example qec_q7_bp_graph -- \
+///       streamvectors <rounds> <p> <W> <C> <n> <seed> > hw/bp_stream_vectors.txt
+fn emit_stream_vectors(rounds: usize, p: f64, w: usize, c: usize, n: usize, seed: u64) {
+    use aleph_qec::sample_shots;
+    let code = BBCode::gross();
+    let dem = code
+        .circuit_level_dem(rounds, CircuitNoise::uniform(p))
+        .expect("circuit-level DEM");
+    let detector_rounds = code.memory_x_experiment(rounds).detector_rounds();
+    let hw = HwSlidingWindowBp::new(dem.clone(), detector_rounds, w, c);
+
+    let dpr = hw.dpr();
+    let slices = rounds + 1; // detector rounds run 0..=rounds (BBMemoryExperiment::detector_rounds)
+    let slots = hw.num_slots();
+    let export = hw.window_export();
+    let bp_n = export.dem.errors.len();
+    let bp_obs = export.dem.observables;
+
+    let (syndromes, _truths) = sample_shots(&dem, n as u64, seed);
+
+    println!(
+        "# streaming-window golden vectors (rounds={rounds}, p={p}, W={w}, C={c}) — GENERATED, do \
+         not edit."
+    );
+    println!(
+        "# regenerate: cargo run --release -q -p aleph-qec --example qec_q7_bp_graph -- \
+         streamvectors {rounds} {p} {w} {c} {n} {seed} > hw/bp_stream_vectors.txt"
+    );
+    println!(
+        "# format: header 'T SLICES DPR SLOTS BP_N BP_OBS'; per trial: SLICES 'r' lines (DPR bits, \
+         round-major, round 0 first, det 0 first) then SLOTS 'w' lines '<slot> <BP_N bits \
+         committed> <BP_OBS bits obs> <0|1 vflag> <0|1 commit_clean>'"
+    );
+    println!("{n} {slices} {dpr} {slots} {bp_n} {bp_obs}");
+
+    let total_dets = slices * dpr;
+    for syn in &syndromes {
+        let mut lit = vec![false; total_dets];
+        for &d in &syn.fired {
+            if (d as usize) < total_dets {
+                lit[d as usize] = true;
+            }
+        }
+        for r in 0..slices {
+            let bits: String = lit[r * dpr..(r + 1) * dpr]
+                .iter()
+                .map(|&b| if b { '1' } else { '0' })
+                .collect();
+            println!("r {bits}");
+        }
+
+        let (_corr, _stats, trace) = hw.decode_stream_trace(syn);
+        for (slot, t) in trace.iter().enumerate() {
+            let committed: String = t
+                .committed
+                .iter()
+                .map(|&b| char::from(b'0' + (b & 1)))
+                .collect();
+            let obs: String = (0..bp_obs)
+                .map(|o| char::from(b'0' + (((t.obs >> o) & 1) as u8)))
+                .collect();
+            println!(
+                "w {slot} {committed} {obs} {} {}",
+                u8::from(t.valid),
+                u8::from(t.commit_clean)
+            );
+        }
+    }
 }
 
 /// Print the flattened Tanner graph + fixed-point params as an `.svh` header. Works for any DEM (the
@@ -1040,10 +1273,27 @@ fn main() {
             let bank_v = args.get(7).and_then(|s| s.parse().ok()).unwrap_or(24usize);
             emit_win_graph(rounds, p, w, c, bank_w, bank_v);
         }
+        "streamgraph" => {
+            // streamgraph rounds p W C bankW bankV — same arg layout as wingraph (see above).
+            let w = args.get(4).and_then(|s| s.parse().ok()).unwrap_or(6usize);
+            let c = args.get(5).and_then(|s| s.parse().ok()).unwrap_or(2usize);
+            let bank_w = args.get(6).and_then(|s| s.parse().ok()).unwrap_or(8usize);
+            let bank_v = args.get(7).and_then(|s| s.parse().ok()).unwrap_or(24usize);
+            emit_stream_graph(rounds, p, w, c, bank_w, bank_v);
+        }
+        "streamvectors" => {
+            // streamvectors rounds p W C n seed — positions 4/5 are (W, C) like streamgraph/
+            // wingraph, so (n, seed) move to fresh positions 6/7 (not the generic 4/5 above).
+            let w = args.get(4).and_then(|s| s.parse().ok()).unwrap_or(6usize);
+            let c = args.get(5).and_then(|s| s.parse().ok()).unwrap_or(2usize);
+            let sn = args.get(6).and_then(|s| s.parse().ok()).unwrap_or(40usize);
+            let sseed = args.get(7).and_then(|s| s.parse().ok()).unwrap_or(7u64);
+            emit_stream_vectors(rounds, p, w, c, sn, sseed);
+        }
         other => {
             eprintln!(
                 "unknown mode '{other}'; use graph|vectors|decvectors|circgraph|circvectors|\
-                 circvectorsearly|wingraph"
+                 circvectorsearly|wingraph|streamgraph|streamvectors"
             );
             std::process::exit(2);
         }
