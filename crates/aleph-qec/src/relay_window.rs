@@ -43,6 +43,13 @@
 //! and the RTL co-sim gate key on this struct and its
 //! [`WindowTrace`]-producing [`HwSlidingWindowBp::decode_stream_trace`]; [`SlidingWindowBp`]
 //! remains the exact-schedule LER reference the (W, C, seam) sweep picked from.
+//!
+//! **Discard semantics.** Each slide drops the frame's leading `C` rounds unconditionally —
+//! commit-region bits still lit after a slot's commit toggle slide off and are *gone*; no later
+//! window can re-explain them (unlike [`SlidingWindowBp`], whose residual stays in the global
+//! stream). Mid-stream nonconvergence is therefore visible only through the per-slot
+//! [`WindowTrace::commit_clean`] flag and the cumulative discarded-bit count in
+//! [`StreamStats::residual`]; the logical-error rate remains the true quality metric.
 
 use std::collections::HashMap;
 
@@ -90,9 +97,14 @@ pub struct StreamStats {
     pub windows: usize,
     /// Windows whose relay-BP found no syndrome-valid decision (committed best-effort + flagged).
     pub nonconverged: usize,
-    /// Detectors still lit after the final window. When every window converged this must be 0
-    /// (each lit commit-region detector is covered by an odd number of fired mechanisms, all of
-    /// which touch the commit region and therefore commit and toggle it).
+    /// Undrained detector count. When every window converged this must be 0 (each lit
+    /// commit-region detector is covered by an odd number of fired mechanisms, all of which
+    /// touch the commit region and therefore commit and toggle it).
+    ///
+    /// [`SlidingWindowBp`]: detectors still lit in the global stream after the final window.
+    /// [`HwSlidingWindowBp`]: cumulative count of lit commit-region bits **discarded** by the
+    /// slides (sampled per slot after the commit toggle, before the slide) — the end-of-stream
+    /// local frame is all zero-padded rounds and would always count 0.
     pub residual: usize,
 }
 
@@ -429,6 +441,12 @@ pub struct WindowTrace {
     /// The base decoder's syndrome-valid flag for this slot (`true` iff some relay-BP leg found
     /// an `ê` reproducing this slot's local syndrome).
     pub valid: bool,
+    /// True iff the commit region `frame[0, C·dpr)` is all-zero AFTER this slot's commit toggle
+    /// (and before the slide). Every var with a det in the commit region has its commit bit set
+    /// by construction, so a converged decode always drains the region — the flag is non-vacuous
+    /// (nonconverged decodes can leave it dirty) and maps to the RTL result word's
+    /// `residual_empty` bit.
+    pub commit_clean: bool,
 }
 
 /// The hardware-schedule golden: decodes **every** window slot on the single interior window
@@ -542,7 +560,13 @@ impl HwSlidingWindowBp {
             .dem
             .errors
             .iter()
-            .map(|e| e.obs.iter().fold(0u64, |acc, &o| acc | (1u64 << o)))
+            .map(|e| {
+                e.obs.iter().fold(0u64, |acc, &o| {
+                    // The per-slot obs contribution is a u64 mask (the RTL's BP_OBS_MASK word).
+                    assert!(o < 64, "observable index {o} does not fit the u64 obs mask");
+                    acc | (1u64 << o)
+                })
+            })
             .collect();
         let num_slots = num_slices.div_ceil(commit);
 
@@ -639,8 +663,10 @@ impl HwSlidingWindowBp {
         Self::load_rounds(&mut frame, 0, self.window, &lit, self.dpr, self.num_slices);
 
         let nvars = self.export.dem.errors.len();
+        let clen = self.commit * self.dpr;
         let mut logical = vec![false; self.export.dem.observables];
         let mut nonconverged = 0usize;
+        let mut residual = 0usize;
         let mut trace = Vec::with_capacity(self.num_slots);
 
         for k in 0..self.num_slots {
@@ -665,17 +691,23 @@ impl HwSlidingWindowBp {
             for (o, flip) in logical.iter_mut().enumerate() {
                 *flip ^= (obs >> o) & 1 == 1;
             }
+            // Sampled after the commit toggle, before the slide: lit commit-region bits are
+            // about to slide off and be DISCARDED — they, summed over slots, are the residual.
+            // (The frame after the final slide is all zero-padded rounds, always 0 — useless.)
+            let dirty = frame[..clen].iter().filter(|&&x| x).count();
+            residual += dirty;
             trace.push(WindowTrace {
                 committed,
                 obs,
                 valid: soft.converged,
+                commit_clean: dirty == 0,
             });
 
             // Slide by C rounds: drop the committed C rounds, pull in C fresh ones (or zero past
             // stream end) — the exact FSM reload the RTL replays every slot.
-            frame.copy_within(self.commit * self.dpr.., 0);
+            frame.copy_within(clen.., 0);
             let new_lo = (k + 1) * self.commit + (self.window - self.commit);
-            let tail_lo = wlen - self.commit * self.dpr;
+            let tail_lo = wlen - clen;
             Self::load_rounds(
                 &mut frame[tail_lo..],
                 new_lo,
@@ -686,7 +718,6 @@ impl HwSlidingWindowBp {
             );
         }
 
-        let residual = frame.iter().filter(|&&x| x).count();
         (
             Correction::new(logical),
             StreamStats {
@@ -866,20 +897,50 @@ mod tests {
         }
     }
 
+    /// Mirror of M9a's `converged_stream_drains_residual`, on the HW schedule and its discarded-
+    /// bits residual semantics: a fully-converged stream discards nothing (`residual == 0`,
+    /// every slot `commit_clean`), and the dirty path is reachable — some nonconverged shot at
+    /// p=0.005 leaves lit commit-region bits for the slide to discard (non-vacuous metric).
     #[test]
     fn hw_converged_stream_drains_residual() {
-        // mirror of M9a's converged_stream_drains_residual, on the HW schedule
-        let (hw, dem) = hw_gross(12, 0.003, 6, 2);
-        let mut checked = 0;
+        let (hw, dem) = hw_gross(12, 0.005, 6, 2);
+        let mut converged_checked = 0;
+        let mut nonconv_shots = 0;
+        let mut dirty_shots = 0;
         for seed in 0..200u64 {
             let syn = sample_one_shot(&dem, seed);
-            let (_c, stats) = hw.decode_stream(&syn);
+            let (_c, stats, trace) = hw.decode_stream_trace(&syn);
             if stats.nonconverged == 0 {
-                assert_eq!(stats.residual, 0);
-                checked += 1;
+                assert_eq!(
+                    stats.residual, 0,
+                    "all windows converged but lit bits were discarded"
+                );
+                assert!(
+                    trace.iter().all(|t| t.commit_clean),
+                    "all windows converged but some slot left its commit region dirty"
+                );
+                converged_checked += 1;
+            } else {
+                nonconv_shots += 1;
+                // residual > 0 ⟺ some slot's commit_clean is false (residual is exactly the
+                // per-slot dirty popcounts summed); the two views must agree.
+                let any_dirty = trace.iter().any(|t| !t.commit_clean);
+                assert_eq!(stats.residual > 0, any_dirty);
+                if any_dirty {
+                    dirty_shots += 1;
+                }
             }
         }
-        assert!(checked > 0);
+        assert!(converged_checked > 0, "expected some fully-converged shots");
+        assert!(
+            nonconv_shots > 0,
+            "expected some nonconverged shots at p=0.005"
+        );
+        assert!(
+            dirty_shots > 0,
+            "expected some nonconverged shot to leave a dirty commit region \
+             (the residual metric must be non-vacuous)"
+        );
     }
 
     #[test]

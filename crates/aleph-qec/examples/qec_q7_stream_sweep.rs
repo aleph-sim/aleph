@@ -16,6 +16,9 @@
 //! `FixedRelayBp`, the exact-schedule `SlidingWindowBp`, and the hardware-schedule
 //! `HwSlidingWindowBp` at the frozen M9a verdict point (W=6, C=2, residual-only) and print a
 //! per-p LER table — the cost of the RTL's one-baked-graph + zero-pad schedule vs the exact one.
+//! `hw_resid_frac` is the fraction of shots that DISCARDED lit commit-region bits in some slide
+//! (`StreamStats::residual > 0` under the HW discard semantics — see `relay_window`'s module
+//! docs), not an end-of-stream frame count.
 //!
 //! Decision rule (spec § 4-M9a): pick the smallest (W, C, seam) whose LER stays within the batch
 //! CI at every p (or a documented, explicitly-accepted gap). Soft priors ship only on a clear win.
@@ -200,7 +203,7 @@ fn hw_sweep(rounds: usize, shots: u64, seed: u64) {
         );
         eprintln!(
             "p={p}: batch {:.3e} ± {:.1e} | exact {:.3e} ± {:.1e} | hw {:.3e} ± {:.1e} {} | \
-             hw nonconv {:.2}% | hw resid>0 {:.2}%",
+             hw nonconv {:.2}% | hw discarded>0 {:.2}%",
             rb.rate,
             rb.ci95,
             rs.rate,
