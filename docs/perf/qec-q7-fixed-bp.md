@@ -1232,3 +1232,117 @@ Bit-exact in values to the same golden at all three configs (Mac + EPYC co-sim, 
   behind its gather; a 3-stage var_update would chase ~150+ MHz (~13.9 µs) for +60 cycles.
 - LUT 88 % is the ceiling for wider configs on this part; a bigger part lifts the same RTL to
   W=24+ (full-unroll territory ~1–3 µs worst-case).
+
+-----
+
+# M9a — sliding-window streaming golden + (W, C) sweep (Q7-04)
+
+The banked core decodes one rounds=1 batch per START; real-time QEC is a continuous round stream.
+M9 builds the BB-code analog of the surface-code UF streaming decoder (Q6-20/22) in three stages
+(design spec `docs/superpowers/specs/2026-07-11-q7-04-streaming-relay-bp-design.md`): **M9a**
+(this section) = software golden + the (W, C, seam) decision; **M9b** = emitter + streaming RTL +
+bit-exact co-sim; **M9c** = KV260 silicon + sustained round rate.
+
+## What shipped
+
+`SlidingWindowBp` (`crates/aleph-qec/src/relay_window.rs`) — residual-carry sliding window over
+multi-round circuit-level BB DEMs, per-window base decoder = the frozen `FixedRelayBp` operating
+point (Q5.3, 6×10 schedule, γ ∈ [−0.3, 0.9], seed `0x5E1A_4B9C`). Two BP-specific deltas vs the
+UF streaming pattern:
+
+1. **Hypergraph time cut by truncation.** A mechanism straddling the window edge keeps its
+   probability and observables but loses its out-of-window detectors (open temporal boundary —
+   BP decodes hypergraphs directly, so no temporal-sink nodes are needed).
+2. **Commit on error-vars.** A fired variable with an in-window detector at round < commit
+   boundary XORs its observable mask into the running logical and toggles its in-window detectors
+   in the residual; buffer rounds (W−C) re-decode next window. Non-convergence =
+   report-and-flag: the best-kept decision commits anyway and `StreamStats.nonconverged` counts
+   it (feeds Q7-07).
+
+**Pins (all green):** one-window case (W = stream) **bit-exact to the batch `FixedRelayBp`**
+(50/50 shots); interior windows compile to the **identical local DEM** (strict `assert_eq!` — the
+translation invariance that lets M9b bake ONE window-graph header); all-windows-converged streams
+drain the residual to zero; SoftPriors ≡ ResidualOnly on a single window; decode is a pure
+function.
+
+## The sweep (EPYC, gross [[144,12,12]], rounds=12, 100 000 shots/point, seed 2024)
+
+Same-shots discipline: batch and every windowed config decode the identical `sample_shots`
+stream, so differences are windowing cost, not sampling noise. `nonconv` = fraction of shots with
+≥1 non-converged window; `resid` = fraction with a non-empty final residual.
+
+| p | W | C | seam | LER win ±CI | LER batch ±CI | within CI | nonconv | resid |
+|---|---|---|------|------------|---------------|-----------|---------|-------|
+| 0.001 | 3 | 1 | residual | 4.58e-3 ± 4.2e-4 | 8.20e-4 ± 1.8e-4 | ✗ | 26.2 % | 2.1 % |
+| 0.001 | 3 | 1 | soft     | 3.15e-3 ± 3.5e-4 | 8.20e-4 ± 1.8e-4 | ✗ | 21.7 % | 0.7 % |
+| 0.001 | 4 | 2 | residual | 2.29e-3 ± 3.0e-4 | 8.20e-4 ± 1.8e-4 | ✗ | 14.3 % | 0.5 % |
+| 0.001 | 4 | 2 | soft     | 2.46e-3 ± 3.1e-4 | 8.20e-4 ± 1.8e-4 | ✗ | 14.0 % | 0.6 % |
+| 0.001 | 6 | 2 | residual | **1.11e-3 ± 2.1e-4** | 8.20e-4 ± 1.8e-4 | **✓** | 11.9 % | 0.2 % |
+| 0.001 | 6 | 2 | soft     | 1.10e-3 ± 2.1e-4 | 8.20e-4 ± 1.8e-4 | ✓ | 11.6 % | 0.2 % |
+| 0.001 | 6 | 3 | residual | 1.18e-3 ± 2.1e-4 | 8.20e-4 ± 1.8e-4 | ✓ | 9.2 % | 0.2 % |
+| 0.001 | 6 | 3 | soft     | 1.37e-3 ± 2.3e-4 | 8.20e-4 ± 1.8e-4 | ✗ | 9.0 % | 0.3 % |
+| 0.003 | 3 | 1 | residual | 1.51e-1 ± 2.2e-3 | 4.43e-2 ± 1.3e-3 | ✗ | 91.1 % | 30.3 % |
+| 0.003 | 3 | 1 | soft     | 1.55e-1 ± 2.2e-3 | 4.43e-2 ± 1.3e-3 | ✗ | 87.1 % | 23.7 % |
+| 0.003 | 4 | 2 | residual | 9.92e-2 ± 1.9e-3 | 4.43e-2 ± 1.3e-3 | ✗ | 73.7 % | 16.7 % |
+| 0.003 | 4 | 2 | soft     | 1.16e-1 ± 2.0e-3 | 4.43e-2 ± 1.3e-3 | ✗ | 72.5 % | 18.6 % |
+| 0.003 | 6 | 2 | residual | **5.47e-2 ± 1.4e-3** | 4.43e-2 ± 1.3e-3 | ✗ (1.24×) | 66.9 % | 8.2 % |
+| 0.003 | 6 | 2 | soft     | 7.77e-2 ± 1.7e-3 | 4.43e-2 ± 1.3e-3 | ✗ | 65.3 % | 11.6 % |
+| 0.003 | 6 | 3 | residual | 5.93e-2 ± 1.5e-3 | 4.43e-2 ± 1.3e-3 | ✗ (1.34×) | 57.8 % | 9.3 % |
+| 0.003 | 6 | 3 | soft     | 7.96e-2 ± 1.7e-3 | 4.43e-2 ± 1.3e-3 | ✗ | 56.8 % | 12.2 % |
+| 0.005 | 3 | 1 | residual | 6.26e-1 ± 3.0e-3 | 3.51e-1 ± 3.0e-3 | ✗ | 99.8 % | 79.6 % |
+| 0.005 | 3 | 1 | soft     | 6.59e-1 ± 2.9e-3 | 3.51e-1 ± 3.0e-3 | ✗ | 99.6 % | 76.8 % |
+| 0.005 | 4 | 2 | residual | 5.29e-1 ± 3.1e-3 | 3.51e-1 ± 3.0e-3 | ✗ | 97.6 % | 66.2 % |
+| 0.005 | 4 | 2 | soft     | 5.76e-1 ± 3.1e-3 | 3.51e-1 ± 3.0e-3 | ✗ | 97.3 % | 69.9 % |
+| 0.005 | 6 | 2 | residual | 3.89e-1 ± 3.0e-3 | 3.51e-1 ± 3.0e-3 | ✗ (1.11×) | 95.7 % | 48.1 % |
+| 0.005 | 6 | 2 | soft     | 4.77e-1 ± 3.1e-3 | 3.51e-1 ± 3.0e-3 | ✗ | 95.2 % | 57.0 % |
+| 0.005 | 6 | 3 | residual | 4.11e-1 ± 3.1e-3 | 3.51e-1 ± 3.0e-3 | ✗ | 92.4 % | 51.2 % |
+| 0.005 | 6 | 3 | soft     | 4.74e-1 ± 3.1e-3 | 3.51e-1 ± 3.0e-3 | ✗ | 91.8 % | 58.0 % |
+
+## Verdict — (W=6, C=2, residual-only) ships to RTL
+
+- **Seam: residual-only.** Soft priors never win at a viable window: at W=6, p=0.003 they are
+  **42 % worse** (7.77e-2 vs 5.47e-2); they help only the too-short W=3 window (partially
+  compensating a buffer that is simply too small). The extra carried state (posterior LLRs per
+  buffer var) buys nothing — the disorder restart from DEM priors each window is at least as
+  good. This is the UF-streaming discipline exactly: the seam carries only the binary residual.
+- **W=6 is the floor.** W=3/W=4 pay 2.8–5.6× at p=0.001 and 2.2–3.4× at p=0.003 — a buffer of
+  W−C < 4 rounds cannot protect seam commits on this code.
+- **C=2 over C=3 on LER**: at p=0.003 the gap (5.47 vs 5.93e-2) exceeds the summed CIs; at
+  p=0.001 they tie. (6,3) remains the throughput-optimized alternate: −33 % window invocations
+  per round and a 3-round commit budget, for +8 % LER at threshold.
+- **The honest cost of streaming**: sub-threshold (p=0.001, the operating regime) the chosen
+  config is **within batch CI** (1.11e-3 vs 8.2e-4, CIs overlap); at threshold (p=0.003) the
+  now-resolvable penalty is **1.24× batch** — the documented, accepted gap (the pilot's 2 k-shot
+  "within CI" there was lack of statistics, not absence of cost). At p=0.005 (deep
+  supra-threshold) everything is broken including batch — recorded for completeness only.
+- **Non-convergence input for Q7-07**: at (6,2), 12 % / 67 % / 96 % of shots see ≥1
+  non-converged window at p = 1/3/5 × 10⁻³ — window BP on the truncated graph converges notably
+  less often than batch on the full graph; the resid column shows most of those still commit a
+  syndrome-consistent stream (resid ≪ nonconv).
+
+**AC-1 met:** multi-round (rounds = 12 ≥ 3) circuit-level windows generated and decoded; the
+golden matches batch bit-exactly on the one-window anchor and within the documented band at the
+chosen config.
+
+## M9b fit pre-probe (parallel de-risk, openwebgui OOC @5 ns)
+
+The interior W=6 window graph is **432 checks / 4 824 vars / 15 120 edges** (5.1× the rounds=1
+graph), max check degree **35** (vs 25). The new emitter mode
+(`qec_q7_bp_graph -- wingraph rounds p W C bankW bankV`) solves banking at 8/24 (GC=54, GV=201)
+and 4/12 (GC=108, GV=402); the M8 `bp_relay_banked` RTL synthesises against the swapped header
+unchanged:
+
+| config | CLB LUT | % of 117 120 | LUT-as-logic | LUTRAM | DSP | Fmax OOC | closed-form worst-case @133 MHz |
+|--------|---------|--------------|--------------|--------|-----|----------|--------------------------------|
+| 8/24   | 197 701 | **169 %**    | 183 491      | 14 210 | 78  | 177.7 MHz | ~16.0 k cyc ≈ 120 µs |
+| 4/12   | ~160 k  | **~138 %**   | —            | 13 880 | 40  | 174.7 MHz | ~31.8 k cyc ≈ 238 µs |
+
+**Neither banking fits the KV260, and the failure mode is informative**: narrowing 8/24 → 4/12
+cut only 19 % — the area is dominated by an E-proportional constant (the literal edge-table ROMs
+`BP_CHK_EDGES`/`BP_EDGE_*`/λ/γ, all in LUT logic), not by the bank/compute fabric (LUTRAM is a
+cheap 14 k, DSP negligible, timing comfortable at ~175 MHz). Meanwhile **144 BRAM36 + 64 URAM sit
+idle (RAMB=0)**. The M9b architecture lever is therefore to move the E-indexed tables into
+BRAM/URAM (+1 read-latency stage, absorbed by the existing software pipeline) — or a bigger part.
+Worst-case real-time at 1 µs/round was already out of reach per the spec's honest-expectations
+section; M9b targets the architecture + honestly measured max round rate (the Q7-01 ASIC de-risk
+input), with early-exit medians expected ~5 % of worst-case per the M8 distribution.

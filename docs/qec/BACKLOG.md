@@ -1357,7 +1357,9 @@ product-defining gap between the lab prototype and a deployable decoder, and the
 input for Q7-01.
 
 **Acceptance Criteria**
-- [ ] Emitter generates multi-round (rounds ≥ 3) circuit-level windows; golden model matches.
+- [x] Emitter generates multi-round (rounds ≥ 3) circuit-level windows; golden model matches.
+      (M9a — `SlidingWindowBp` golden + 100k-shot (W,C)×seam sweep → (W=6, C=2, residual-only);
+      see `docs/perf/qec-q7-fixed-bp.md` § M9a.)
 - [ ] Streaming schedule (window advance + commit) on the banked core, bit-exact to the windowed
       golden in co-sim.
 - [ ] On silicon: sustained decode of a round stream with a measured per-round latency
