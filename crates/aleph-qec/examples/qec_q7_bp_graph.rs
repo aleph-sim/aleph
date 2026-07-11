@@ -14,8 +14,15 @@
 //! Usage:
 //!   cargo run --release -p aleph-qec --example qec_q7_bp_graph -- graph   > hw/bb_gross_tanner.svh
 //!   cargo run --release -p aleph-qec --example qec_q7_bp_graph -- vectors > hw/bp_check_vectors.txt
+//!
+//! M9b (Q7-04) fit-de-risk probe — a single interior W-round sliding-window Tanner header (see
+//! [`emit_win_graph`] for why one window stands in for every steady-state window):
+//!   cargo run --release -p aleph-qec --example qec_q7_bp_graph -- \
+//!       wingraph <rounds> <p> <W> <C> <bankW> <bankV> > hw/bb_win_tanner.svh
 
-use aleph_qec::{BBCode, CircuitNoise, DetectorErrorModel, FixedHwView, FixedRelayBp};
+use aleph_qec::{
+    BBCode, CircuitNoise, DetectorErrorModel, FixedHwView, FixedRelayBp, SlidingWindowBp,
+};
 use std::collections::{HashMap, HashSet};
 
 /// M0-chosen fixed-point word: 8-bit signed, 3 fractional bits (Q5.3).
@@ -68,6 +75,56 @@ fn emit_circ_graph(rounds: usize, p: f64, bank_w: usize, bank_v: usize) {
     print_graph(
         &view,
         &format!("Gross BB code [[144,12,12]] CIRCUIT-LEVEL (depth-7, rounds={rounds}, p={p})"),
+    );
+    let banking = solve_banking(view, bank_w, bank_v, BANK_SOLVE_SEED);
+    print_banking(&banking);
+    println!("`endif");
+}
+
+/// M9b (Q7-04) **fit de-risk probe**: emit the SAME `.svh` format for a single **interior W-round
+/// sliding window** of the `rounds`-round circuit-level gross DEM, instead of the whole-stream
+/// `rounds=1` graph `emit_circ_graph` bakes. `SlidingWindowBp` interior windows are
+/// translation-invariant (pinned by `relay_window::tests`), so one compiled window DEM stands in
+/// for every steady-state window the M9b streaming RTL will decode — this is the graph an OOC
+/// synthesis run checks for KV260 fit *before* the streaming FSM is written (design spec
+/// `docs/superpowers/specs/2026-07-11-q7-04-streaming-relay-bp-design.md` § 4-M9b, "Fit de-risk
+/// FIRST").
+///
+/// `s` is chosen away from both the head (round 0) and the boundary-widened final window: `s =
+/// (rounds − W) / 2`, clamped to `>= 1`, with `s + W <= rounds` asserted so the window never
+/// reaches the last detector round (`rounds`, inclusive — see `BBMemoryExperiment::detector_rounds`)
+/// where the stream's boundary-commit special case lives.
+fn emit_win_graph(rounds: usize, p: f64, w: usize, c: usize, bank_w: usize, bank_v: usize) {
+    let code = BBCode::gross();
+    let dem = code
+        .circuit_level_dem(rounds, CircuitNoise::uniform(p))
+        .expect("circuit-level DEM");
+    let detector_rounds = code.memory_x_experiment(rounds).detector_rounds();
+    let sw = SlidingWindowBp::new(dem, detector_rounds, w, c);
+
+    let s = ((rounds.saturating_sub(w)) / 2).max(1);
+    assert!(
+        s + w <= rounds,
+        "wingraph: window [{s}, {}) is not interior to a {rounds}-round stream (need s + W <= \
+         rounds) — pick a smaller W or a longer stream",
+        s + w
+    );
+    let win = sw.window_dem(s, s + w);
+
+    let fx = FixedRelayBp::with_budget(&win.dem, LEGS, ITERS, GAMMA, SEED, MSG_BITS, FRAC_BITS);
+    let view = fx.hw_view();
+    // C is recorded for provenance only: the window graph depends on W alone; the commit
+    // metadata (VAR_COMMIT/SHIFT/...) that consumes C is M9b's `streamgraph`, not this probe.
+    println!(
+        "// M9b fit-probe window: rounds={rounds}, p={p}, W={w}, C={c} (provenance only), s={s} — \
+         window checks={}, vars={}, edges={}",
+        view.n_checks, view.n_vars, view.n_edges
+    );
+    print_graph(
+        &view,
+        &format!(
+            "Gross BB code [[144,12,12]] SLIDING WINDOW (rounds={rounds}, p={p}, W={w}, C={c}, s={s})"
+        ),
     );
     let banking = solve_banking(view, bank_w, bank_v, BANK_SOLVE_SEED);
     print_banking(&banking);
@@ -974,8 +1031,20 @@ fn main() {
         }
         "circvectors" => emit_circ_vectors(rounds, p, n, seed, false),
         "circvectorsearly" => emit_circ_vectors(rounds, p, n, seed, true),
+        "wingraph" => {
+            // wingraph rounds p W C bankW bankV — positions 4/5 are (W, C) here (not bankW/bankV
+            // like circgraph's 4/5), so bankW/bankV move to fresh positions 6/7.
+            let w = args.get(4).and_then(|s| s.parse().ok()).unwrap_or(6usize);
+            let c = args.get(5).and_then(|s| s.parse().ok()).unwrap_or(3usize);
+            let bank_w = args.get(6).and_then(|s| s.parse().ok()).unwrap_or(8usize);
+            let bank_v = args.get(7).and_then(|s| s.parse().ok()).unwrap_or(24usize);
+            emit_win_graph(rounds, p, w, c, bank_w, bank_v);
+        }
         other => {
-            eprintln!("unknown mode '{other}'; use graph|vectors|decvectors|circgraph|circvectors|circvectorsearly");
+            eprintln!(
+                "unknown mode '{other}'; use graph|vectors|decvectors|circgraph|circvectors|\
+                 circvectorsearly|wingraph"
+            );
             std::process::exit(2);
         }
     }
