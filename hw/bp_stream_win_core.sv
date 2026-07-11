@@ -1,11 +1,10 @@
 // Q7-04 M9b (Task 6) — AXI4-Stream front-end for the SLIDING-WINDOW banked-BP streaming decoder
 // (`bp_streaming_decoder`, Task 5).
 //
-// Structural lift of `uf_stream_win_core.sv` (Q6-20 on-silicon AXI wrapper): same 1-deep result slot,
-// same tlast latch, same per-frame re-arm (`frame_rst` pulse, `dec_rst_n = aresetn & ~frame_rst` — the
-// Q6-20 mid-stream-resume fix) so a follow-on DMA transfer always starts the wrapped decoder fresh in
-// warm-up instead of resuming mid-window. Deltas vs the UF wrapper, driven by `bp_streaming_decoder`'s
-// distinct handshake:
+// Structural lift of `uf_stream_win_core.sv` (Q6-20 on-silicon AXI wrapper): same per-frame re-arm
+// (`frame_rst` pulse, `dec_rst_n = aresetn & ~frame_rst` — the Q6-20 mid-stream-resume fix) so a
+// follow-on DMA transfer always starts the wrapped decoder fresh in warm-up instead of resuming
+// mid-window. Deltas vs the UF wrapper, driven by `bp_streaming_decoder`'s distinct handshake:
 //   * input framing is 3 MM2S beats per round (BP_DPR=72 > 32, so one round no longer fits a single
 //     32-bit beat): beat0 = round bits [31:0], beat1 = [63:32], beat2 = {24'b0, bits[71:64]}. A small
 //     beat-assembler register captures beat0/beat1; the completing (3rd) beat combines its own tdata with
@@ -16,9 +15,16 @@
 //     tlast on the round's final beat).
 //   * the decoder emits its OWN `out_last` (unlike the UF core, which had to reconstruct end-of-batch via
 //     a `pending_last` latch over `residual_empty`), so the result word's tlast is a direct pass-through.
+//   * the UF shell's 1-deep result slot becomes a small result FIFO. The UF streaming decoder cannot
+//     retire a window without first consuming input (which the shell gates on the slot being free), so
+//     1-deep sufficed there. `bp_streaming_decoder` does NOT have that property: after `in_last` it
+//     self-drives through the tail slots with NO input handshake (its S_WARM/S_RELOAD zero-fill branches
+//     never consult in_valid, and in_ready is low for the rest of the frame), so S2MM back-pressure
+//     cannot stall the drain — a 1-deep slot would be OVERWRITTEN if m_axis_tready stalled across an
+//     inter-slot gap of the drain. The FIFO absorbs the whole (bounded) tail; depth derivation below.
 //   * reset style: `bp_streaming_decoder` uses a SYNCHRONOUS reset (its own comment: "matches the core,
 //     Synth 8-7137"). To avoid a mixed sync/async reset net feeding the same decoder instance, this shell
-//     uses a SYNCHRONOUS `aresetn` too (the UF shell used async, matching ITS wrapped decoder) — the one
+//     uses a SYNCHRONOUS `aresetn` too (the UF shell used async, matching ITS wrapped decoder) — a
 //     deliberate deviation from the UF template's structure, forced by the wrapped core's own reset style.
 //
 // Output framing: one 32-bit S2MM word per committed slot —
@@ -52,10 +58,14 @@ module bp_stream_win_core (
     output logic         m_axis_tlast
 );
 `ifndef SYNTHESIS
-  initial
+  initial begin
     if (BP_DPR != 72)
       $fatal(1, "bp_stream_win_core: framing hardcodes 3 beats of {32,32,8} for BP_DPR=72, got %0d",
              BP_DPR);
+    if (BP_OBS != 12)
+      $fatal(1, "bp_stream_win_core: result word hardcodes obs[11:0] at bits [31:20], got BP_OBS=%0d",
+             BP_OBS);
+  end
 `endif
 
   // ---- input beat assembler: one round = 3 MM2S beats ----
@@ -97,20 +107,44 @@ module bp_stream_win_core (
   );
   /* verilator lint_on PINCONNECTEMPTY */
 
-  // ---- single result slot (1-deep). Input is gated on it being free, so the decoder cannot retire a
-  // new slot until S2MM has consumed the previous one — a 1-deep buffer suffices, no overflow. ----
-  logic        out_full;
-  logic [31:0] out_word;
-  logic        out_last;
+  // ---- result FIFO ----
+  // During STREAMING, the input gate below keeps occupancy <= 1: a round is accepted only while the FIFO
+  // is EMPTY (exactly the old 1-deep slot's `~out_full` semantics), and the decoder needs C fresh rounds
+  // before it can retire another slot, so back-pressure reaches the decoder through the input path.
+  // During the post-`in_last` DRAIN that path does not exist — the decoder zero-fills internally and
+  // emits the remaining slots regardless of m_axis_tready — so the FIFO must absorb the whole tail.
+  // The tail is bounded: at most ceil(W/C) slots (the W-round residual still unretired when in_last
+  // lands), and the drain starts with an EMPTY FIFO (the in_last round can only have been accepted while
+  // the FIFO was empty, and the decoder never emits a slot in the same cycle it accepts a round: its
+  // out_valid pulse is registered from S_COMMIT, when in_ready is low). ceil(W/C)+1 therefore covers the
+  // tail with one slot of margin (4 at W=6, C=2).
+  localparam int TAIL_SLOTS = (BP_WIN_W + BP_WIN_C - 1) / BP_WIN_C;  // ceil(W/C) drain-tail slots
+  localparam int OUT_DEPTH  = TAIL_SLOTS + 1;
+  localparam int OPTR_W     = (OUT_DEPTH > 1) ? $clog2(OUT_DEPTH) : 1;
+  localparam int OCNT_W     = $clog2(OUT_DEPTH + 1);
 
-  // Gate ALL beats (not just the round-completing one) on the decoder + result-slot + re-arm state, the
-  // same flat formula as the UF shell: it is safe because `dec_in_valid` only ever fires on the
-  // round-completing beat, so beats 0/1 merely accumulate into the assembler.
-  assign s_axis_tready = dec_in_ready & ~out_full & ~frame_rst;
+  logic [32:0]       out_q [OUT_DEPTH];  // {tlast, result word}
+  logic [OPTR_W-1:0] wptr, rptr;
+  logic [OCNT_W-1:0] count;
 
-  assign m_axis_tvalid = out_full;
-  assign m_axis_tdata  = out_word;
-  assign m_axis_tlast  = out_last;
+  wire out_empty = (count == '0);
+  wire pop       = m_axis_tvalid & m_axis_tready;
+
+  // Input gate: ANY parked result blocks further rounds (the old 1-deep `~out_full` semantics). This is
+  // what confines FIFO occupancy > 1 to the drain, where the TAIL_SLOTS bound above applies.
+  assign s_axis_tready = dec_in_ready & out_empty & ~frame_rst;
+
+  assign m_axis_tvalid = ~out_empty;
+  assign m_axis_tdata  = out_q[rptr][31:0];
+  assign m_axis_tlast  = out_q[rptr][32];
+
+`ifndef SYNTHESIS
+  // Tripwire for the depth derivation above: a push while full means the drain-tail bound was violated.
+  always_ff @(posedge aclk)
+    if (aresetn && dec_out_valid && count == OCNT_W'(OUT_DEPTH))
+      $fatal(1, "bp_stream_win_core: result FIFO overflow (depth %0d) — drain-tail bound violated",
+             OUT_DEPTH);
+`endif
 
   always_ff @(posedge aclk) begin
     if (!aresetn) begin
@@ -118,9 +152,9 @@ module bp_stream_win_core (
       beat0_r         <= '0;
       beat1_r         <= '0;
       round_tlast_acc <= 1'b0;
-      out_full        <= 1'b0;
-      out_word        <= '0;
-      out_last        <= 1'b0;
+      wptr            <= '0;
+      rptr            <= '0;
+      count           <= '0;
       frame_rst       <= 1'b0;
     end else begin
       frame_rst <= 1'b0;  // default: 1-cycle re-arm pulse only
@@ -138,18 +172,26 @@ module bp_stream_win_core (
         endcase
       end
 
-      // a committed slot arrives: latch its result word into the free slot
+      // a committed slot arrives: push its result word (cannot overflow, per the tail bound above —
+      // guarded by the non-synth tripwire)
       if (dec_out_valid) begin
-        out_word <= {dec_out_obs, dec_out_vflag, dec_out_commit_clean, 2'b00, dec_out_lat};
-        out_last <= dec_out_last;
-        out_full <= 1'b1;
-      end else if (out_full && m_axis_tready) begin
-        // S2MM consumed the result; free the slot. If this was the frame's last (tlast) slot, re-arm
-        // the decoder for the next transfer.
-        out_full <= 1'b0;
-        if (out_last) frame_rst <= 1'b1;
-        out_last <= 1'b0;
+        out_q[wptr] <= {dec_out_last, dec_out_obs, dec_out_vflag, dec_out_commit_clean, 2'b00,
+                        dec_out_lat};
+        wptr        <= (wptr == OPTR_W'(OUT_DEPTH - 1)) ? '0 : wptr + 1'b1;
       end
+
+      // S2MM consumed a result: advance the read side. If it was the frame's last (tlast) word, re-arm
+      // the decoder for the next transfer.
+      if (pop) begin
+        if (out_q[rptr][32]) frame_rst <= 1'b1;
+        rptr <= (rptr == OPTR_W'(OUT_DEPTH - 1)) ? '0 : rptr + 1'b1;
+      end
+
+      unique case ({dec_out_valid, pop})
+        2'b10:   count <= count + 1'b1;
+        2'b01:   count <= count - 1'b1;
+        default: ;  // 2'b00 / 2'b11: occupancy unchanged
+      endcase
     end
   end
 

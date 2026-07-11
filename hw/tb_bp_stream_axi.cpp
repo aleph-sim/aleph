@@ -24,6 +24,25 @@
 //   4. FRAME INDEPENDENCE — 3 golden trials driven BACK-TO-BACK with NO external reset between them (only
 //                       the shell's own per-frame `frame_rst` re-arm), each still producing the exact
 //                       golden slot count/fields/tlast placement (gates 1+2, per frame).
+//   5. ADVERSARIAL DRAIN STALL — after `in_last`, the decoder self-drives through the tail slots with NO
+//                       input handshake (its zero-fill branches never consult in_valid and in_ready is
+//                       low), so S2MM back-pressure CANNOT stall the drain: the shell's result FIFO must
+//                       absorb the whole tail. Golden trial 0 is driven full-speed, then m_axis_tready is
+//                       held LOW from the moment the final round is accepted for STALL_CYCLES = 40000
+//                       cycles (> 2x the max observed core latency 16298, so at least two tail slots are
+//                       forced to retire INTO the stall), then released; all SLOTS words must arrive
+//                       intact (field-compared vs the golden). On the pre-review 1-deep shell this gate
+//                       fails: each new dec_out_valid overwrote the unconsumed parked word, losing every
+//                       stalled tail slot but the last (verified in the Task-6 report's negative-control
+//                       build). Note tready is NOT dropped while the final round's beats are still being
+//                       presented: the shell (old and new) only accepts input while the result buffer is
+//                       empty, so a pre-drain parked word + early tready-low would deadlock the handshake
+//                       by construction (input blocked on the parked word, parked word blocked on tready)
+//                       — the adversarial window is the drain itself, which is exactly the un-back-
+//                       pressurable region.
+//
+// Gates 1-4 mirror tb_uf_stream_win.cpp; gate 5 is BP-specific (the UF streaming decoder cannot retire a
+// window without consuming input first, so its 1-deep slot was sufficient there).
 //
 // Result-word layout (bit-exact to the Task-6 contract): [31:20]=obs[11:0], [19]=vflag, [18]=commit_clean,
 // [17:16]=00, [15:0]=latency (already 16-bit saturated by the decoder).
@@ -211,6 +230,71 @@ static std::vector<OutWord> run_frame(const std::vector<std::array<uint32_t, 3>>
   return out;
 }
 
+// Gate-5 driver: stream all rounds full-speed, then hold m_axis_tready LOW for `stall_cycles` starting
+// the cycle AFTER the final round's last beat is accepted (the start of the drain), then release and
+// collect. `phase3_words` reports how many words were collected after the release — i.e., how many tail
+// slots the shell had to hold across / emit after the stall. tready must stay high until the final round
+// is accepted: the shell only accepts input while the result buffer is empty, so a pre-drain parked word
+// under early tready-low would deadlock the handshake by design (see the gate-5 header comment).
+static std::vector<OutWord> run_frame_drain_stall(const std::vector<std::array<uint32_t, 3>> &round_beats,
+                                                  int early_exit, long stall_cycles,
+                                                  size_t &phase3_words) {
+  std::vector<OutWord> out;
+  reset(early_exit);
+
+  // Phase 1: full-speed stream of every round, exactly as run_frame's bp_seed==0 path.
+  size_t round_idx = 0;
+  int beat_idx = 0;
+  const size_t total_rounds = round_beats.size();
+  long guard = 0, guard_max = (long)total_rounds * 200 + 400000 + 2 * stall_cycles;
+  while (round_idx < total_rounds && guard++ < guard_max) {
+    bool is_final_beat = (round_idx + 1 == total_rounds) && (beat_idx == 2);
+    dut->s_axis_tvalid = 1;
+    dut->s_axis_tdata = round_beats[round_idx][beat_idx];
+    dut->s_axis_tlast = is_final_beat ? 1 : 0;
+    dut->m_axis_tready = 1;
+    dut->eval();
+    bool beat = dut->s_axis_tready;
+    if (dut->m_axis_tvalid && dut->m_axis_tready)
+      out.push_back({(uint32_t)dut->m_axis_tdata, (bool)dut->m_axis_tlast});
+    tick();
+    if (beat) {
+      if (beat_idx == 2) {
+        beat_idx = 0;
+        ++round_idx;
+      } else {
+        ++beat_idx;
+      }
+    }
+  }
+  dut->s_axis_tvalid = 0;
+  dut->s_axis_tlast = 0;
+
+  // Phase 2: the drain — hold m_axis_tready low across (multiple) tail-slot retirements.
+  dut->m_axis_tready = 0;
+  for (long i = 0; i < stall_cycles; ++i) {
+    dut->eval();
+    tick();
+  }
+
+  // Phase 3: release and consume everything up to the tlast word.
+  phase3_words = 0;
+  dut->m_axis_tready = 1;
+  while (guard++ < guard_max) {
+    dut->eval();
+    bool got = dut->m_axis_tvalid;
+    bool last = got && dut->m_axis_tlast;
+    if (got) {
+      out.push_back({(uint32_t)dut->m_axis_tdata, (bool)dut->m_axis_tlast});
+      ++phase3_words;
+    }
+    tick();
+    if (last) break;
+  }
+  dut->m_axis_tready = 0;
+  return out;
+}
+
 // Check one frame's captured words against a golden trial's fields (obs/vflag/commit_clean), the exact
 // slot count, and tlast placement (only on the last word). Also asserts latency > 0 on every word.
 // Returns the number of mismatches found; appends up to `budget` diagnostic lines to stderr.
@@ -364,6 +448,32 @@ int main(int argc, char **argv) {
         std::printf("FAIL: mode %d gate4(frame-independence) — %d/%d frames ok\n", ee, ok, FRAMES);
       fail += (ok != FRAMES);
     }
+
+    // ---- Gate 5: adversarial drain stall (m_axis_tready low across the whole drain) ----
+    {
+      // > 2x the max observed core latency (16298 cycles, bpstream latency stats), so at least two tail
+      // slots retire INTO the stall even in full-decode mode — the 1-deep-overwrite trigger condition.
+      const long STALL_CYCLES = 40000;
+      std::vector<std::array<uint32_t, 3>> rb(SLICES);
+      for (int s = 0; s < SLICES; ++s) rb[s] = pack_round(g.trials[0].rounds[s], DPR);
+      size_t phase3_words = 0;
+      auto out = run_frame_drain_stall(rb, ee, STALL_CYCLES, phase3_words);
+      long m = check_trial(out, g.trials[0], ee, 0, printed);
+      // The stall must actually have covered the tail: every remaining word arrives after the release.
+      if (phase3_words < 2) {
+        std::printf("FAIL: mode %d gate5: only %zu word(s) after the stall release — stall did not span "
+                    "the drain\n",
+                    ee, phase3_words);
+        ++m;
+      }
+      if (m == 0)
+        std::printf("PASS: mode %d gate5(drain-stall) — tready low %ld cycles across the drain; all %d "
+                    "words intact (%zu held across/after the stall)\n",
+                    ee, STALL_CYCLES, SLOTS, phase3_words);
+      else
+        std::printf("FAIL: mode %d gate5(drain-stall) — %ld mismatch(es)\n", ee, m);
+      fail += (m != 0);
+    }
   }
 
   dut->final();
@@ -371,8 +481,8 @@ int main(int argc, char **argv) {
 
   if (fail == 0) {
     std::printf(
-        "PASS: bp_stream_win_core — all 4 gates x 2 early-exit modes green (zero-stream, golden-equality, "
-        "back-pressure-invariance, frame-independence)\n");
+        "PASS: bp_stream_win_core — all 5 gates x 2 early-exit modes green (zero-stream, golden-equality, "
+        "back-pressure-invariance, frame-independence, drain-stall)\n");
     return 0;
   }
   std::printf("FAIL: %d gate(s) failed\n", fail);

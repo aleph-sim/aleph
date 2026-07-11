@@ -341,23 +341,16 @@ bpstreamaxi-lint:
 
 # Q7-04 M9b (Task 6) — `bp_stream_win_core` AXI front-end CO-SIM: wraps `bp_streaming_decoder` behind the
 # 3-beats/round AXI4-Stream framing and drives the SAME HW-schedule goldens as `bpstream` through it,
-# gating zero-stream, golden-equality, back-pressure invariance, and frame independence (both early-exit
-# modes). BP_DPR/BP_WIN_W/BP_WIN_C/BP_OBS are grepped from the staged window header into -CFLAGS -D (the
-# `stream-axi` pattern, Makefile ~374-387) though the TB itself only needs the golden header fields; the
-# defines are threaded through for parity with that pattern and future TB reuse.
+# gating zero-stream, golden-equality, back-pressure invariance, frame independence, and the adversarial
+# drain stall (both early-exit modes). Unlike the UF `stream-axi` target, no -CFLAGS -D window params are
+# threaded to the TB: it reads T/SLICES/DPR/SLOTS/N/OBS from the golden file headers at runtime.
 bpstreamaxi:
 	rm -rf _bpstreamaxibuild && mkdir _bpstreamaxibuild
 	cp bp_stream_win_core.sv bp_streaming_decoder.sv bp_relay_banked_bram.sv check_minsum.sv var_update.sv tb_bp_stream_axi.cpp _bpstreamaxibuild/
 	perl -pe 's/,/,\n/g if length($$_) > 8000' bb_stream_tanner.svh > _bpstreamaxibuild/bb_gross_tanner.svh
-	cd _bpstreamaxibuild && \
-	  D=$$(grep -oE 'BP_DPR *= *[0-9]+' bb_gross_tanner.svh | grep -oE '[0-9]+$$'); \
-	  W=$$(grep -oE 'BP_WIN_W *= *[0-9]+' bb_gross_tanner.svh | grep -oE '[0-9]+$$'); \
-	  C=$$(grep -oE 'BP_WIN_C *= *[0-9]+' bb_gross_tanner.svh | grep -oE '[0-9]+$$'); \
-	  O=$$(grep -oE 'BP_OBS *= *[0-9]+' bb_gross_tanner.svh | grep -oE '[0-9]+$$'); \
-	  $(VERILATOR) --cc --exe --build -Wall --top-module bp_stream_win_core \
-	    -CFLAGS "-DBP_DPR=$$D -DBP_WIN_W=$$W -DBP_WIN_C=$$C -DBP_OBS=$$O" \
-	    check_minsum.sv var_update.sv bp_relay_banked_bram.sv bp_streaming_decoder.sv bp_stream_win_core.sv \
-	    tb_bp_stream_axi.cpp -o sim_bpstreamaxi
+	cd _bpstreamaxibuild && $(VERILATOR) --cc --exe --build -Wall --top-module bp_stream_win_core \
+		check_minsum.sv var_update.sv bp_relay_banked_bram.sv bp_streaming_decoder.sv bp_stream_win_core.sv \
+		tb_bp_stream_axi.cpp -o sim_bpstreamaxi
 	./_bpstreamaxibuild/obj_dir/sim_bpstreamaxi bp_stream_vectors.txt bp_stream_vectors_early.txt
 
 d3:
