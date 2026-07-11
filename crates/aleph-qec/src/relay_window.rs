@@ -26,7 +26,6 @@ use std::collections::HashMap;
 
 use crate::dem::{DemError, DetectorErrorModel};
 use crate::fixed_bp::FixedRelayBp;
-#[allow(unused_imports)] // consumed by decode_stream (Task 3)
 use crate::syndrome::{Correction, Syndrome};
 
 /// The frozen M5/M8 relay-BP operating point the RTL implements (`docs/perf/qec-q7-fixed-bp.md`).
@@ -80,7 +79,6 @@ pub struct StreamStats {
 /// Windows are compiled once at construction — the stream length is known up front here, and
 /// interior windows are translation-invariant anyway (the RTL relies on exactly that to bake a
 /// single window graph). Memory is `O(num_slices/C)` window slots of `O(W)` size each.
-#[allow(dead_code)] // consumed by decode_stream (Task 3)
 #[derive(Clone, Debug)]
 struct WindowSlot {
     s: usize,
@@ -95,7 +93,6 @@ struct WindowSlot {
 }
 
 /// Sliding-window streaming relay-BP over a multi-round DEM with per-detector round coordinates.
-#[allow(dead_code)] // consumed by decode_stream (Task 3)
 #[derive(Clone, Debug)]
 pub struct SlidingWindowBp {
     dem: DetectorErrorModel,
@@ -225,6 +222,11 @@ impl SlidingWindowBp {
         self.commit
     }
 
+    /// Total number of round-slices in the stream (`max(detector_round) + 1`).
+    pub fn num_slices(&self) -> usize {
+        self.num_slices
+    }
+
     /// Compile the window covering rounds `[s, win_hi)` — public because it is the single source
     /// of truth the M9b RTL window-graph emitter will consume (mirrors `sliding::window_dem`).
     pub fn window_dem(&self, s: usize, win_hi: usize) -> WindowBpExport {
@@ -239,6 +241,90 @@ impl SlidingWindowBp {
             .map(|w| w.export.globals.len())
             .max()
             .unwrap_or(0)
+    }
+
+    /// Decode an entire stream syndrome by sliding the window across the rounds, committing each
+    /// window's commit-region variables. Returns the committed logical correction and the
+    /// per-stream statistics (non-convergence feeds Q7-07; `residual` is the validity probe).
+    ///
+    /// A window that finds no syndrome-valid decision still commits its best-kept decision —
+    /// report-and-flag (spec § 4-M9a); the flag lands in [`StreamStats::nonconverged`].
+    pub fn decode_stream(&self, syndrome: &Syndrome) -> (Correction, StreamStats) {
+        let nd = self.dem.detectors;
+        let mut lit = vec![false; nd];
+        for &d in &syndrome.fired {
+            if (d as usize) < nd {
+                lit[d as usize] = true;
+            }
+        }
+
+        let mut logical = vec![false; self.dem.observables];
+        let mut nonconverged = 0usize;
+        // Soft-priors carry: previous window's (posterior λ_q by prev-local var, committed).
+        let mut carry: Option<(Vec<i32>, Vec<bool>)> = None;
+
+        for slot in &self.slots {
+            let fired: Vec<u32> = (0..slot.export.globals.len() as u32)
+                .filter(|&l| lit[slot.export.globals[l as usize]])
+                .collect();
+            let win_syn = Syndrome::new(slot.export.dem.detectors, fired);
+
+            let soft = match (self.seam, &carry) {
+                (SeamMode::SoftPriors, Some((post, committed)))
+                    if !slot.prev_var_map.is_empty() =>
+                {
+                    let mut lam = slot.decoder.lambda_q().to_vec();
+                    for &(pl, tl) in &slot.prev_var_map {
+                        // Committed mechanisms are already accounted for (obs applied, residual
+                        // toggled) — they restart from the DEM prior, not the stale posterior.
+                        if !committed[pl] {
+                            lam[tl] = post[pl].clamp(-self.max_mag, self.max_mag);
+                        }
+                    }
+                    slot.decoder
+                        .clone()
+                        .with_lambda_q(lam)
+                        .decode_fixed_soft(&win_syn)
+                }
+                _ => slot.decoder.decode_fixed_soft(&win_syn),
+            };
+            if !soft.converged {
+                nonconverged += 1;
+            }
+
+            // Commit: fired vars touching the commit region. XOR obs into the logical, toggle
+            // the mechanism's in-window detectors in the residual (out-of-window detectors were
+            // truncated from the decode and stay for the next window to explain).
+            let mut committed = vec![false; soft.ehat.len()];
+            for (v, (&e, &cv)) in soft.ehat.iter().zip(&slot.commit_var).enumerate() {
+                if e == 1 && cv {
+                    committed[v] = true;
+                    let g = slot.export.mech_globals[v];
+                    for &o in &self.dem.errors[g].obs {
+                        logical[o as usize] ^= true;
+                    }
+                    for &d in &self.dem.errors[g].dets {
+                        let r = self.detector_round[d as usize];
+                        if r >= slot.s && r < slot.win_hi {
+                            lit[d as usize] ^= true;
+                        }
+                    }
+                }
+            }
+            // The posterior llr is the quantised i32 the fixed decoder computed, round-tripped
+            // through f64 losslessly (magnitudes ≪ 2^53).
+            carry = Some((soft.llr.iter().map(|&x| x as i32).collect(), committed));
+        }
+
+        let residual = lit.iter().filter(|&&x| x).count();
+        (
+            Correction::new(logical),
+            StreamStats {
+                windows: self.slots.len(),
+                nonconverged,
+                residual,
+            },
+        )
     }
 }
 
@@ -289,6 +375,21 @@ fn compile_window(
         },
         globals,
         mech_globals,
+    }
+}
+
+impl crate::decoder::Decoder for SlidingWindowBp {
+    /// Decode a full-stream syndrome via sliding windows (stats dropped; use
+    /// [`SlidingWindowBp::decode_stream`] to keep them).
+    fn decode(&self, syndrome: &Syndrome) -> Correction {
+        self.decode_stream(syndrome).0
+    }
+
+    /// Shots are independent; the sweep decodes hundreds of thousands of streams, so the batch
+    /// path is rayon-parallel (mirrors the sampler's determinism: output order is input order).
+    fn decode_batch(&self, syndromes: &[Syndrome]) -> crate::error::Result<Vec<Correction>> {
+        use rayon::prelude::*;
+        Ok(syndromes.par_iter().map(|s| self.decode(s)).collect())
     }
 }
 
@@ -347,5 +448,80 @@ mod tests {
             a.dem, b.dem,
             "interior windows must compile to the identical local DEM"
         );
+    }
+
+    use crate::experiment::sample_shots;
+    use crate::fixed_bp::FixedRelayBp;
+
+    /// With one window covering the whole stream (W = num_slices, commit-all), the sliding
+    /// decoder IS the batch decode: same vars in the same order ⇒ same γ disorder ⇒ bit-exact.
+    #[test]
+    fn full_window_equals_batch() {
+        let code = BBCode::gross();
+        let rounds = 3;
+        let dem = code
+            .circuit_level_dem(rounds, CircuitNoise::uniform(0.003))
+            .unwrap();
+        let dr = code.memory_x_experiment(rounds).detector_rounds();
+        let ns = rounds + 1; // detector rounds run 0..=rounds
+        let sw = SlidingWindowBp::new(dem.clone(), dr, ns, ns);
+        // One window, and it must keep every mechanism (all BB circuit mechanisms detect).
+        assert_eq!(sw.window_dem(0, ns).mech_globals.len(), dem.errors.len());
+        let batch = FixedRelayBp::with_budget(&dem, 6, 10, (-0.3, 0.9), 0x5E1A_4B9C, 8, 3);
+
+        let (syndromes, _) = sample_shots(&dem, 50, 7);
+        for syn in &syndromes {
+            let (corr, stats) = sw.decode_stream(syn);
+            let (want, _) = batch.decode_fixed(syn);
+            assert_eq!(
+                corr, want,
+                "one-window sliding decode must be bit-exact to batch"
+            );
+            assert_eq!(stats.windows, 1);
+        }
+    }
+
+    /// When every window converges, the committed correction must clear every real detector —
+    /// the residual drains to zero (the streaming validity property).
+    #[test]
+    fn converged_stream_drains_residual() {
+        let code = BBCode::gross();
+        let rounds = 8;
+        let dem = code
+            .circuit_level_dem(rounds, CircuitNoise::uniform(0.002))
+            .unwrap();
+        let dr = code.memory_x_experiment(rounds).detector_rounds();
+        let sw = SlidingWindowBp::new(dem.clone(), dr, 3, 1);
+
+        let (syndromes, _) = sample_shots(&dem, 30, 11);
+        let mut converged_shots = 0;
+        for syn in &syndromes {
+            let (_, stats) = sw.decode_stream(syn);
+            if stats.nonconverged == 0 {
+                converged_shots += 1;
+                assert_eq!(
+                    stats.residual, 0,
+                    "all windows converged but the residual did not drain"
+                );
+            }
+        }
+        assert!(
+            converged_shots > 0,
+            "expected some fully-converged shots at p=0.002"
+        );
+    }
+
+    /// The per-window working set is bounded by W, independent of stream length.
+    #[test]
+    fn working_set_is_bounded() {
+        let code = BBCode::gross();
+        let mk = |rounds: usize| {
+            let dem = code
+                .circuit_level_dem(rounds, CircuitNoise::uniform(0.003))
+                .unwrap();
+            let dr = code.memory_x_experiment(rounds).detector_rounds();
+            SlidingWindowBp::new(dem, dr, 3, 1)
+        };
+        assert_eq!(mk(6).max_window_detectors(), mk(12).max_window_detectors());
     }
 }
