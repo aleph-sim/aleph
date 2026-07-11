@@ -77,6 +77,21 @@ module check_minsum #(
   localparam int SPLIT_LVL = 3;
   localparam int PLANE_SZ  = NLEAF >> SPLIT_LVL;   // node count registered at the plane (4 for DEG=25)
 
+  // Task-1 hardening (M8 review): only STAGES 2 and 3 have generate branches below, and STAGES==3 needs at
+  // least one node at the mid-tree plane (PLANE_SZ>=1) — a smaller DEG (NLEAF <= 2^SPLIT_LVL) would fold
+  // PLANE_SZ to 0 and elaborate a degenerate/empty plane reduction. Fail LOUDLY at elaboration rather than
+  // silently mis-pipelining a future small-DEG / odd-STAGES reuse. Simulation-only (an initial block
+  // synthesises to nothing); fenced from synthesis, exactly like the caller's own elaboration guards.
+`ifndef SYNTHESIS
+  initial begin : stages_guard
+    if (STAGES < 2 || STAGES > 3)
+      $fatal(1, "check_minsum: STAGES=%0d unsupported (only 2 or 3)", STAGES);
+    if (STAGES == 3 && PLANE_SZ < 1)
+      $fatal(1, "check_minsum: STAGES=3 needs PLANE_SZ>=1 (DEG=%0d -> NLEAF=%0d, SPLIT_LVL=%0d -> PLANE_SZ=%0d)",
+             DEG, NLEAF, SPLIT_LVL, PLANE_SZ);
+  end
+`endif
+
   typedef struct packed {
     logic [MW-1:0]   m1;      // smallest magnitude in this subtree (NEUTRAL if none present)
     logic [MW-1:0]   m2;      // second-smallest counting duplicates (NEUTRAL if <2 present)
