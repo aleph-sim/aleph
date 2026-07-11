@@ -355,92 +355,151 @@ module bp_relay_banked_bram (
 
   // ===================================================================== BRAM ROMs (constant decode fabric)
   // Filled at time-0 from the SAME header expressions the M8 combs used; sync-read at the group cursor.
-  // R3 — CHK gather selects (m_cm half-bank tap + syndrome-bit source), per (check-group).
-  (* rom_style = "block" *) logic [CW-1:0]  chk_sbit_idx  [GC][W];
-  (* rom_style = "block" *) logic           chk_sbit_pres [GC][W];
-  (* rom_style = "block" *) logic [HBW-1:0] chk_hbsel     [GC][NEB];
-  (* rom_style = "block" *) logic           chk_epres     [GC][NEB];
-  // R4 + R2(read) — VAR gather (lambda / gamma / e_cm operand bank+port+row), per (var-group[, leg]).
-  (* rom_style = "block" *) logic                 var_pres  [GV][V];
-  (* rom_style = "block" *) logic [MSG_BITS-1:0]  var_lam   [GV][V];
-  (* rom_style = "block" *) logic [MSG_BITS-1:0]  var_gam   [BP_LEGS*GV][V];
-  (* rom_style = "block" *) logic                 var_epres [GV][NVB];
-  (* rom_style = "block" *) logic [EBW-1:0]       var_ebsel [GV][NVB];
-  (* rom_style = "block" *) logic                 var_eport [GV][NVB];   // 1 => port B (EPORT==1)
-  (* rom_style = "block" *) logic [BWC-1:0]       var_erow  [GV][NVB];
-  // R1 — m_cm scatter (+ shared by the m_vm write): half-bank, check-group row, lambda-seed, present.
-  (* rom_style = "block" *) logic                 scat_pres [GV][NVB];
-  (* rom_style = "block" *) logic [HBW-1:0]       scat_hb   [GV][NVB];
-  (* rom_style = "block" *) logic [BWC-1:0]       scat_row  [GV][NVB];
-  (* rom_style = "block" *) logic [MSG_BITS-1:0]  scat_lam  [GV][NVB];
-  // R2(write) — e_cm write present mask, per (check-group).
-  (* rom_style = "block" *) logic                 ecm_wpres [GC][NEB];
-  // R6 — S_EMIT observable (per-var present / index / obs-mask), per (var-group).
-  (* rom_style = "block" *) logic                 obs_pres  [GV][V];
-  (* rom_style = "block" *) logic [VW-1:0]        obs_var   [GV][V];
-  (* rom_style = "block" *) logic [BP_OBS-1:0]    obs_mask  [GV][V];
+  //
+  // ROM SHAPE (Task-4 probe rework): every ROM is a SINGLE unpacked dimension (depth = group count) with a
+  // PACKED row word — Vivado's BRAM inference requires exactly this shape; the earlier two-dimensional
+  // unpacked form ([GC][W] etc.) silently ignored `rom_style="block"` and decomposed into per-element
+  // registers + a read network, reproducing the register+mux explosion this core exists to remove (the
+  // rounds=1 graph then stalled synthesis at 47 GB RSS). Packing layout, uniform for every ROM: slot t's
+  // field of width FW occupies row bits [t*FW +: FW] (slot = check-slot j, (j,k) lane, var-slot i, or (i,d)
+  // slot as noted per ROM). Fields are NOT merged across ROMs: one ROM per field keeps the +: slicing
+  // trivial and each ROM independently BRAM-inferable (disclosed choice; same total bits either way).
+  // R3 — CHK gather selects (m_cm half-bank tap + syndrome-bit source), per check-group; slot = j or (j,k).
+  (* rom_style = "block" *) logic [W*CW-1:0]        chk_sbit_idx_rom  [GC];
+  (* rom_style = "block" *) logic [W-1:0]           chk_sbit_pres_rom [GC];
+  (* rom_style = "block" *) logic [NEB*HBW-1:0]     chk_hbsel_rom     [GC];
+  (* rom_style = "block" *) logic [NEB-1:0]         chk_epres_rom     [GC];
+  // R4 + R2(read) — VAR gather (lambda / gamma / e_cm operand bank+port+row), per var-group[, leg];
+  // slot = i or (i,d). var_gam_rom row address = leg*GV + group.
+  (* rom_style = "block" *) logic [V-1:0]           var_pres_rom  [GV];
+  (* rom_style = "block" *) logic [V*MSG_BITS-1:0]  var_lam_rom   [GV];
+  (* rom_style = "block" *) logic [V*MSG_BITS-1:0]  var_gam_rom   [BP_LEGS*GV];
+  (* rom_style = "block" *) logic [NVB-1:0]         var_epres_rom [GV];
+  (* rom_style = "block" *) logic [NVB*EBW-1:0]     var_ebsel_rom [GV];
+  (* rom_style = "block" *) logic [NVB-1:0]         var_eport_rom [GV];   // 1 => port B (EPORT==1)
+  (* rom_style = "block" *) logic [NVB*BWC-1:0]     var_erow_rom  [GV];
+  // R1 — m_cm scatter (+ shared by the m_vm write): half-bank, check-group row, lambda-seed, present;
+  // per var-group, slot = (i,d).
+  (* rom_style = "block" *) logic [NVB-1:0]          scat_pres_rom [GV];
+  (* rom_style = "block" *) logic [NVB*HBW-1:0]      scat_hb_rom   [GV];
+  (* rom_style = "block" *) logic [NVB*BWC-1:0]      scat_row_rom  [GV];
+  (* rom_style = "block" *) logic [NVB*MSG_BITS-1:0] scat_lam_rom  [GV];
+  // R2(write) — e_cm write present mask, per check-group; slot = (j,k).
+  (* rom_style = "block" *) logic [NEB-1:0]          ecm_wpres_rom [GC];
+  // R6 — S_EMIT observable (per-var present / index / obs-mask), per var-group; slot = i.
+  (* rom_style = "block" *) logic [V-1:0]            obs_pres_rom [GV];
+  (* rom_style = "block" *) logic [V*VW-1:0]         obs_var_rom  [GV];
+  (* rom_style = "block" *) logic [V*BP_OBS-1:0]     obs_mask_rom [GV];
 
   // -------------------------------------------------------------------------- ROM fills (time-0 initial)
+  // PURE DIRECT ARRAY INDEXING of the header localparams — no helper-function calls (Task-4 probe / house
+  // 12c lesson: Vivado materializes function evaluation in initial-block ROM fills pathologically). The
+  // `_bq` helper bodies (chk_at/var_at/edge_at/vedge_at) are inlined below; the empty-slot / short-degree
+  // guards are nested `if`s so no out-of-range header index is ever formed.
   initial begin : fill_chk
     for (int g = 0; g < GC; g++)
       for (int j = 0; j < W; j++) begin
-        automatic int c = chk_at_bq(g, j);
-        chk_sbit_pres[g][j] = (c >= 0);
-        chk_sbit_idx[g][j]  = (c >= 0) ? CW'(c) : '0;
+        automatic int c = BP_CHK_AT[g * BP_BANK_W + j];              // chk_at_bq, inlined
+        chk_sbit_pres_rom[g][j]         = (c >= 0);
+        chk_sbit_idx_rom[g][j*CW +: CW] = (c >= 0) ? CW'(c) : '0;
         for (int k = 0; k < BP_CHK_DEG; k++) begin
-          automatic int e = edge_at_bq(g, j, k);
-          chk_epres[g][j*BP_CHK_DEG + k] = (e >= 0);
-          chk_hbsel[g][j*BP_CHK_DEG + k] = (e >= 0) ? HBW'(BP_EDGE_HB[e]) : '0;
+          automatic int e;
+          e = -1;                                                    // edge_at_bq, inlined
+          if (c >= 0)
+            if (k < BP_CHECK_OFF[c + 1] - BP_CHECK_OFF[c]) e = BP_CHECK_EDGES[BP_CHECK_OFF[c] + k];
+          chk_epres_rom[g][j*BP_CHK_DEG + k]                 = (e >= 0);
+          chk_hbsel_rom[g][(j*BP_CHK_DEG + k)*HBW +: HBW]    = (e >= 0) ? HBW'(BP_EDGE_HB[e]) : '0;
         end
       end
   end
   initial begin : fill_var
     for (int g = 0; g < GV; g++)
       for (int i = 0; i < V; i++) begin
-        automatic int v = var_at_bq(g, i);
-        var_pres[g][i] = (v >= 0);
-        var_lam[g][i]  = (v >= 0) ? BP_LAMBDA[v][MSG_BITS-1:0] : '0;
+        automatic int v = BP_VAR_AT[g * BP_BANK_V + i];              // var_at_bq, inlined
+        var_pres_rom[g][i]                          = (v >= 0);
+        var_lam_rom[g][i*MSG_BITS +: MSG_BITS]      = (v >= 0) ? BP_LAMBDA[v][MSG_BITS-1:0] : '0;
         for (int l = 0; l < BP_LEGS; l++)
-          var_gam[l*GV + g][i] = (v >= 0) ? BP_GAMMA[l*BP_N + v][MSG_BITS-1:0] : '0;
+          var_gam_rom[l*GV + g][i*MSG_BITS +: MSG_BITS] =
+              (v >= 0) ? BP_GAMMA[l*BP_N + v][MSG_BITS-1:0] : '0;
         for (int d = 0; d < BP_VAR_DEG; d++) begin
-          automatic int e = vedge_at_bq(g, i, d);
-          var_epres[g][i*BP_VAR_DEG + d] = (e >= 0);
-          var_ebsel[g][i*BP_VAR_DEG + d] = (e >= 0) ? EBW'(BP_EDGE_EB[e]) : '0;
-          var_eport[g][i*BP_VAR_DEG + d] = (e >= 0) ? (BP_EDGE_EPORT[e] == 1) : 1'b0;
-          var_erow[g][i*BP_VAR_DEG + d]  = (e >= 0) ? BWC'(BP_EDGE_ROW[e]) : '0;
+          automatic int e;
+          e = -1;                                                    // vedge_at_bq, inlined
+          if (v >= 0)
+            if (d < BP_VAR_OFF[v + 1] - BP_VAR_OFF[v]) e = BP_VAR_OFF[v] + d;
+          var_epres_rom[g][i*BP_VAR_DEG + d]              = (e >= 0);
+          var_ebsel_rom[g][(i*BP_VAR_DEG + d)*EBW +: EBW] = (e >= 0) ? EBW'(BP_EDGE_EB[e]) : '0;
+          var_eport_rom[g][i*BP_VAR_DEG + d]              = (e >= 0) ? (BP_EDGE_EPORT[e] == 1) : 1'b0;
+          var_erow_rom[g][(i*BP_VAR_DEG + d)*BWC +: BWC]  = (e >= 0) ? BWC'(BP_EDGE_ROW[e]) : '0;
         end
       end
   end
   initial begin : fill_scat
     for (int g = 0; g < GV; g++)
-      for (int i = 0; i < V; i++)
+      for (int i = 0; i < V; i++) begin
+        automatic int v = BP_VAR_AT[g * BP_BANK_V + i];              // var_at_bq, inlined
         for (int d = 0; d < BP_VAR_DEG; d++) begin
-          automatic int e = vedge_at_bq(g, i, d);
-          scat_pres[g][i*BP_VAR_DEG + d] = (e >= 0);
-          scat_hb[g][i*BP_VAR_DEG + d]   = (e >= 0) ? HBW'(BP_EDGE_HB[e]) : '0;
-          scat_row[g][i*BP_VAR_DEG + d]  = (e >= 0) ? BWC'(BP_EDGE_ROW[e]) : '0;
+          automatic int e;
+          e = -1;                                                    // vedge_at_bq, inlined
+          if (v >= 0)
+            if (d < BP_VAR_OFF[v + 1] - BP_VAR_OFF[v]) e = BP_VAR_OFF[v] + d;
+          scat_pres_rom[g][i*BP_VAR_DEG + d]              = (e >= 0);
+          scat_hb_rom[g][(i*BP_VAR_DEG + d)*HBW +: HBW]   = (e >= 0) ? HBW'(BP_EDGE_HB[e]) : '0;
+          scat_row_rom[g][(i*BP_VAR_DEG + d)*BWC +: BWC]  = (e >= 0) ? BWC'(BP_EDGE_ROW[e]) : '0;
           // m_cm S_INIT seed and m_vm S_INIT seed are the SAME lambda: BP_LAMBDA[BP_EDGE_VAR[e]] ==
           // BP_LAMBDA[var_at(g,i)] for e = vedge_at(g,i,d). One ROM serves both scatters.
-          scat_lam[g][i*BP_VAR_DEG + d]  = (e >= 0) ? BP_LAMBDA[BP_EDGE_VAR[e]][MSG_BITS-1:0] : '0;
+          scat_lam_rom[g][(i*BP_VAR_DEG + d)*MSG_BITS +: MSG_BITS] =
+              (e >= 0) ? BP_LAMBDA[BP_EDGE_VAR[e]][MSG_BITS-1:0] : '0;
         end
+      end
   end
   initial begin : fill_ecmw
     for (int g = 0; g < GC; g++)
-      for (int j = 0; j < W; j++)
-        for (int k = 0; k < BP_CHK_DEG; k++)
-          ecm_wpres[g][j*BP_CHK_DEG + k] = (edge_at_bq(g, j, k) >= 0);
+      for (int j = 0; j < W; j++) begin
+        automatic int c = BP_CHK_AT[g * BP_BANK_W + j];              // chk_at_bq, inlined
+        for (int k = 0; k < BP_CHK_DEG; k++) begin
+          automatic int e;
+          e = -1;                                                    // edge_at_bq, inlined
+          if (c >= 0)
+            if (k < BP_CHECK_OFF[c + 1] - BP_CHECK_OFF[c]) e = BP_CHECK_EDGES[BP_CHECK_OFF[c] + k];
+          ecm_wpres_rom[g][j*BP_CHK_DEG + k] = (e >= 0);
+        end
+      end
   end
   initial begin : fill_obs
     for (int g = 0; g < GV; g++)
       for (int i = 0; i < V; i++) begin
-        automatic int v = var_at_bq(g, i);
-        obs_pres[g][i] = (v >= 0);
-        obs_var[g][i]  = (v >= 0) ? VW'(v) : '0;
-        obs_mask[g][i] = (v >= 0) ? BP_OBS_MASK[v][BP_OBS-1:0] : '0;
+        automatic int v = BP_VAR_AT[g * BP_BANK_V + i];              // var_at_bq, inlined
+        obs_pres_rom[g][i]                        = (v >= 0);
+        obs_var_rom[g][i*VW +: VW]                = (v >= 0) ? VW'(v) : '0;
+        obs_mask_rom[g][i*BP_OBS +: BP_OBS]       = (v >= 0) ? BP_OBS_MASK[v][BP_OBS-1:0] : '0;
       end
   end
 
-  // -------------------------------------------------------------------------- registered ROM outputs
+  // -------------------------------------------------------------------------- registered ROM row words
+  // ONE sync read per ROM per cycle; the `_q` row register IS the (single) ROM output register — the same
+  // pipeline stage the earlier per-field registered copies formed, no extra depth.
+  logic [W*CW-1:0]         chk_sbit_idx_q;
+  logic [W-1:0]            chk_sbit_pres_q;
+  logic [NEB*HBW-1:0]      chk_hbsel_q;
+  logic [NEB-1:0]          chk_epres_q;
+  logic [V-1:0]            var_pres_q;
+  logic [V*MSG_BITS-1:0]   var_lam_q;
+  logic [V*MSG_BITS-1:0]   var_gam_q;
+  logic [NVB-1:0]          var_epres_q;
+  logic [NVB*EBW-1:0]      var_ebsel_q;
+  logic [NVB-1:0]          var_eport_q;
+  logic [NVB*BWC-1:0]      var_erow_q;
+  logic [NVB-1:0]          scat_pres_q;
+  logic [NVB*HBW-1:0]      scat_hb_q;
+  logic [NVB*BWC-1:0]      scat_row_q;
+  logic [NVB*MSG_BITS-1:0] scat_lam_q;
+  logic [NEB-1:0]          ecm_wpres_q;
+  logic [V-1:0]            obs_pres_q;
+  logic [V*VW-1:0]         obs_var_q;
+  logic [V*BP_OBS-1:0]     obs_mask_q;
+
+  // combinational per-slot field slices of the registered rows (the pre-rework consumer names, unchanged
+  // downstream: gathers, scatters, S_EMIT all read these exactly as before)
   logic [CW-1:0]        chk_sbit_idx_r  [W];
   logic                 chk_sbit_pres_r [W];
   logic [HBW-1:0]       chk_hbsel_r     [NEB];
@@ -460,6 +519,35 @@ module bp_relay_banked_bram (
   logic                 obs_pres_r  [V];
   logic [VW-1:0]        obs_var_r   [V];
   logic [BP_OBS-1:0]    obs_mask_r  [V];
+  always_comb begin
+    for (int j = 0; j < W; j++) begin
+      chk_sbit_idx_r[j]  = chk_sbit_idx_q[j*CW +: CW];
+      chk_sbit_pres_r[j] = chk_sbit_pres_q[j];
+    end
+    for (int b = 0; b < NEB; b++) begin
+      chk_hbsel_r[b] = chk_hbsel_q[b*HBW +: HBW];
+      chk_epres_r[b] = chk_epres_q[b];
+      ecm_wpres_r[b] = ecm_wpres_q[b];
+    end
+    for (int i = 0; i < V; i++) begin
+      var_pres_r[i] = var_pres_q[i];
+      var_lam_r[i]  = var_lam_q[i*MSG_BITS +: MSG_BITS];
+      var_gam_r[i]  = var_gam_q[i*MSG_BITS +: MSG_BITS];
+      obs_pres_r[i] = obs_pres_q[i];
+      obs_var_r[i]  = obs_var_q[i*VW +: VW];
+      obs_mask_r[i] = obs_mask_q[i*BP_OBS +: BP_OBS];
+    end
+    for (int b = 0; b < NVB; b++) begin
+      var_epres_r[b] = var_epres_q[b];
+      var_ebsel_r[b] = var_ebsel_q[b*EBW +: EBW];
+      var_eport_r[b] = var_eport_q[b];
+      var_erow_r[b]  = var_erow_q[b*BWC +: BWC];
+      scat_pres_r[b] = scat_pres_q[b];
+      scat_hb_r[b]   = scat_hb_q[b*HBW +: HBW];
+      scat_row_r[b]  = scat_row_q[b*BWC +: BWC];
+      scat_lam_r[b]  = scat_lam_q[b*MSG_BITS +: MSG_BITS];
+    end
+  end
 
   // ------------------------------------------------------------------- shared comb: read/write cursors
   // Gather ROMs are addressed by the M8 GATHER cursor (pc); their registered output aligns with the
@@ -491,34 +579,28 @@ module bp_relay_banked_bram (
   end
 
   // ------------------------------------------------------------------- sync ROM reads + read-addr registers
+  // ONE whole-row sync read per ROM per cycle (the BRAM-inference template); per-slot fields are sliced
+  // combinationally from the `_q` row registers above.
   always_ff @(posedge clk) begin
-    for (int j = 0; j < W; j++) begin
-      chk_sbit_idx_r[j]  <= chk_sbit_idx[chk_rd][j];
-      chk_sbit_pres_r[j] <= chk_sbit_pres[chk_rd][j];
-    end
-    for (int b = 0; b < NEB; b++) begin
-      chk_hbsel_r[b] <= chk_hbsel[chk_rd][b];
-      chk_epres_r[b] <= chk_epres[chk_rd][b];
-      ecm_wpres_r[b] <= ecm_wpres[ecmw_rd][b];
-    end
-    for (int i = 0; i < V; i++) begin
-      var_pres_r[i] <= var_pres[var_rd][i];
-      var_lam_r[i]  <= var_lam[var_rd][i];
-      var_gam_r[i]  <= var_gam[gam_rd][i];
-      obs_pres_r[i] <= obs_pres[obs_rd][i];
-      obs_var_r[i]  <= obs_var[obs_rd][i];
-      obs_mask_r[i] <= obs_mask[obs_rd][i];
-    end
-    for (int b = 0; b < NVB; b++) begin
-      var_epres_r[b] <= var_epres[var_rd][b];
-      var_ebsel_r[b] <= var_ebsel[var_rd][b];
-      var_eport_r[b] <= var_eport[var_rd][b];
-      var_erow_r[b]  <= var_erow[var_rd][b];
-      scat_pres_r[b] <= scat_pres[scat_rd][b];
-      scat_hb_r[b]   <= scat_hb[scat_rd][b];
-      scat_row_r[b]  <= scat_row[scat_rd][b];
-      scat_lam_r[b]  <= scat_lam[scat_rd][b];
-    end
+    chk_sbit_idx_q  <= chk_sbit_idx_rom[chk_rd];
+    chk_sbit_pres_q <= chk_sbit_pres_rom[chk_rd];
+    chk_hbsel_q     <= chk_hbsel_rom[chk_rd];
+    chk_epres_q     <= chk_epres_rom[chk_rd];
+    ecm_wpres_q     <= ecm_wpres_rom[ecmw_rd];
+    var_pres_q      <= var_pres_rom[var_rd];
+    var_lam_q       <= var_lam_rom[var_rd];
+    var_gam_q       <= var_gam_rom[gam_rd];
+    var_epres_q     <= var_epres_rom[var_rd];
+    var_ebsel_q     <= var_ebsel_rom[var_rd];
+    var_eport_q     <= var_eport_rom[var_rd];
+    var_erow_q      <= var_erow_rom[var_rd];
+    scat_pres_q     <= scat_pres_rom[scat_rd];
+    scat_hb_q       <= scat_hb_rom[scat_rd];
+    scat_row_q      <= scat_row_rom[scat_rd];
+    scat_lam_q      <= scat_lam_rom[scat_rd];
+    obs_pres_q      <= obs_pres_rom[obs_rd];
+    obs_var_q       <= obs_var_rom[obs_rd];
+    obs_mask_q      <= obs_mask_rom[obs_rd];
     mcm_ra_r <= BWC'(chk_rd);
     mvm_ra_r <= BWV'(var_rd);
   end
