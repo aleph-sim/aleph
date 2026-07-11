@@ -524,4 +524,47 @@ mod tests {
         };
         assert_eq!(mk(6).max_window_detectors(), mk(12).max_window_detectors());
     }
+
+    /// One window ⇒ no seam ⇒ SoftPriors must be identical to ResidualOnly (and to batch).
+    #[test]
+    fn soft_priors_single_window_matches_residual_only() {
+        let code = BBCode::gross();
+        let rounds = 3;
+        let dem = code
+            .circuit_level_dem(rounds, CircuitNoise::uniform(0.003))
+            .unwrap();
+        let dr = code.memory_x_experiment(rounds).detector_rounds();
+        let ns = rounds + 1;
+        let a = SlidingWindowBp::new(dem.clone(), dr.clone(), ns, ns);
+        let b = SlidingWindowBp::new(dem.clone(), dr, ns, ns).with_seam(SeamMode::SoftPriors);
+        let (syndromes, _) = sample_shots(&dem, 20, 3);
+        for syn in &syndromes {
+            assert_eq!(a.decode_stream(syn).0, b.decode_stream(syn).0);
+        }
+    }
+
+    /// Multi-window SoftPriors decodes, drains on convergence, and is deterministic.
+    #[test]
+    fn soft_priors_decodes_and_is_deterministic() {
+        let code = BBCode::gross();
+        let rounds = 8;
+        let dem = code
+            .circuit_level_dem(rounds, CircuitNoise::uniform(0.002))
+            .unwrap();
+        let dr = code.memory_x_experiment(rounds).detector_rounds();
+        let sw = SlidingWindowBp::new(dem.clone(), dr, 3, 1).with_seam(SeamMode::SoftPriors);
+        let (syndromes, _) = sample_shots(&dem, 20, 13);
+        for syn in &syndromes {
+            let (c1, s1) = sw.decode_stream(syn);
+            let (c2, s2) = sw.decode_stream(syn);
+            assert_eq!(
+                (&c1, &s1),
+                (&c2, &s2),
+                "decode_stream must be a pure function"
+            );
+            if s1.nonconverged == 0 {
+                assert_eq!(s1.residual, 0);
+            }
+        }
+    }
 }
