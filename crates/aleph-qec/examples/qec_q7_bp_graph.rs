@@ -293,17 +293,31 @@ fn emit_stream_graph(rounds: usize, p: f64, w: usize, c: usize, bank_w: usize, b
 /// comment), for the RTL streaming FSM co-sim gate. Round lines are the RAW stream detector bits: the
 /// RTL XORs commit toggles into its own frame, so the vectors must NOT be pre-toggled.
 ///
+/// With `early` the golden decodes first-valid instead of best-kept (the RTL core's early-exit
+/// mode) — a genuinely different decision stream, so it gets its own vector file (M6–M8 house
+/// pattern, like `circvectorsearly`).
+///
 /// Usage:
 ///   cargo run --release -p aleph-qec --example qec_q7_bp_graph -- \
 ///       streamvectors <rounds> <p> <W> <C> <n> <seed> > hw/bp_stream_vectors.txt
-fn emit_stream_vectors(rounds: usize, p: f64, w: usize, c: usize, n: usize, seed: u64) {
+///   cargo run --release -p aleph-qec --example qec_q7_bp_graph -- \
+///       streamvectorsearly <rounds> <p> <W> <C> <n> <seed> > hw/bp_stream_vectors_early.txt
+fn emit_stream_vectors(
+    rounds: usize,
+    p: f64,
+    w: usize,
+    c: usize,
+    n: usize,
+    seed: u64,
+    early: bool,
+) {
     use aleph_qec::sample_shots;
     let code = BBCode::gross();
     let dem = code
         .circuit_level_dem(rounds, CircuitNoise::uniform(p))
         .expect("circuit-level DEM");
     let detector_rounds = code.memory_x_experiment(rounds).detector_rounds();
-    let hw = HwSlidingWindowBp::new(dem.clone(), detector_rounds, w, c);
+    let hw = HwSlidingWindowBp::new(dem.clone(), detector_rounds, w, c).with_early_exit(early);
 
     let dpr = hw.dpr();
     let slices = rounds + 1; // detector rounds run 0..=rounds (BBMemoryExperiment::detector_rounds)
@@ -314,13 +328,26 @@ fn emit_stream_vectors(rounds: usize, p: f64, w: usize, c: usize, n: usize, seed
 
     let (syndromes, _truths) = sample_shots(&dem, n as u64, seed);
 
+    let (mode_name, mode_arg, out_file) = if early {
+        (
+            "early-exit (first-valid)",
+            "streamvectorsearly",
+            "hw/bp_stream_vectors_early.txt",
+        )
+    } else {
+        (
+            "full-decode (best-kept)",
+            "streamvectors",
+            "hw/bp_stream_vectors.txt",
+        )
+    };
     println!(
-        "# streaming-window golden vectors (rounds={rounds}, p={p}, W={w}, C={c}) — GENERATED, do \
-         not edit."
+        "# streaming-window {mode_name} golden vectors (rounds={rounds}, p={p}, W={w}, C={c}) — \
+         GENERATED, do not edit."
     );
     println!(
         "# regenerate: cargo run --release -q -p aleph-qec --example qec_q7_bp_graph -- \
-         streamvectors {rounds} {p} {w} {c} {n} {seed} > hw/bp_stream_vectors.txt"
+         {mode_arg} {rounds} {p} {w} {c} {n} {seed} > {out_file}"
     );
     println!(
         "# format: header 'T SLICES DPR SLOTS BP_N BP_OBS'; per trial: SLICES 'r' lines (DPR bits, \
@@ -1281,19 +1308,20 @@ fn main() {
             let bank_v = args.get(7).and_then(|s| s.parse().ok()).unwrap_or(24usize);
             emit_stream_graph(rounds, p, w, c, bank_w, bank_v);
         }
-        "streamvectors" => {
-            // streamvectors rounds p W C n seed — positions 4/5 are (W, C) like streamgraph/
-            // wingraph, so (n, seed) move to fresh positions 6/7 (not the generic 4/5 above).
+        "streamvectors" | "streamvectorsearly" => {
+            // streamvectors[early] rounds p W C n seed — positions 4/5 are (W, C) like
+            // streamgraph/wingraph, so (n, seed) move to fresh positions 6/7 (not the generic
+            // 4/5 above).
             let w = args.get(4).and_then(|s| s.parse().ok()).unwrap_or(6usize);
             let c = args.get(5).and_then(|s| s.parse().ok()).unwrap_or(2usize);
             let sn = args.get(6).and_then(|s| s.parse().ok()).unwrap_or(40usize);
             let sseed = args.get(7).and_then(|s| s.parse().ok()).unwrap_or(7u64);
-            emit_stream_vectors(rounds, p, w, c, sn, sseed);
+            emit_stream_vectors(rounds, p, w, c, sn, sseed, mode == "streamvectorsearly");
         }
         other => {
             eprintln!(
                 "unknown mode '{other}'; use graph|vectors|decvectors|circgraph|circvectors|\
-                 circvectorsearly|wingraph|streamgraph|streamvectors"
+                 circvectorsearly|wingraph|streamgraph|streamvectors|streamvectorsearly"
             );
             std::process::exit(2);
         }

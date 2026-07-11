@@ -583,6 +583,18 @@ impl HwSlidingWindowBp {
         }
     }
 
+    /// Enable/disable first-valid early termination in the per-slot base decode (passthrough to
+    /// [`FixedRelayBp::with_early_exit`]; `decode_fixed_soft` honors it). The RTL core's
+    /// early-exit mode takes the FIRST syndrome-valid leg while the default keeps the
+    /// lowest-weight valid decision over the whole schedule — the decisions genuinely differ
+    /// where first-valid ≠ best-kept, so each RTL mode is gated against its own golden (the
+    /// M6–M8 `circvectors`/`circvectorsearly` house pattern). Schedule, commit logic, and trace
+    /// fields are unchanged.
+    pub fn with_early_exit(mut self, on: bool) -> Self {
+        self.decoder = self.decoder.with_early_exit(on);
+        self
+    }
+
     /// The one interior window graph every slot decodes on (see the module's "Hardware schedule"
     /// doc section) — public because the M9b RTL window-graph emitter consumes it.
     pub fn window_export(&self) -> &WindowBpExport {
@@ -895,6 +907,37 @@ mod tests {
             let obs_xor = trace.iter().fold(0u64, |a, t| a ^ t.obs);
             assert_eq!(obs_from(&corr), obs_xor);
         }
+    }
+
+    /// The early-exit golden is a genuinely DIFFERENT golden (M6–M8 house pattern): first-valid
+    /// and best-kept decisions must differ on at least one slot at p=0.005 within a few seeds,
+    /// and the early-exit decode must itself stay a pure function of the shot.
+    #[test]
+    fn hw_early_exit_differs_and_is_deterministic() {
+        let (dem, dr) = gross_stream(12, 0.005);
+        let best = HwSlidingWindowBp::new(dem.clone(), dr.clone(), 6, 2);
+        let early = HwSlidingWindowBp::new(dem.clone(), dr, 6, 2).with_early_exit(true);
+        let mut differs = false;
+        for seed in 0..40u64 {
+            let syn = sample_one_shot(&dem, seed);
+            let (ca, sa, ta) = early.decode_stream_trace(&syn);
+            let (cb, sb, tb) = early.decode_stream_trace(&syn);
+            assert_eq!(
+                (&ca, &sa, &ta),
+                (&cb, &sb, &tb),
+                "early-exit decode_stream_trace must be deterministic"
+            );
+            let (_c, _s, t_best) = best.decode_stream_trace(&syn);
+            if t_best != ta {
+                differs = true;
+                break; // mechanism pinned; determinism already checked on every seed seen
+            }
+        }
+        assert!(
+            differs,
+            "first-valid (early-exit) and best-kept traces never differed in 40 shots at \
+             p=0.005 — the two goldens would be redundant"
+        );
     }
 
     /// Mirror of M9a's `converged_stream_drains_residual`, on the HW schedule and its discarded-
