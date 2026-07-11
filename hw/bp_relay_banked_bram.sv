@@ -27,7 +27,8 @@
 //     XOR trees — UNCHANGED, still finalising at pc==GC-1 (re-verified against the co-sim waves). The
 //     `early_exit` path (first syndrome-valid decision -> S_EMIT) is likewise structurally unchanged; the
 //     golden gate drives early_exit=0.
-//   The m_vm read-row(pc-1)/write-row(pc-4) disjointness argument gets MORE slack than M8 (a 3-cycle gap).
+//   The m_vm read-row(pc-1)/write-row(pc-4) disjointness argument keeps the SAME 3-cycle gap as M8
+//     (which reads row pc and writes row pc-3): both cursors shift by one, the gap is unchanged.
 //
 // CELLS: `bp_ecm_cell_bq` / `bp_mvm_cell_bq` become PURE PORT-DRIVEN memories (like the M7 `bp_mcm_cell`) —
 //   their write decode no longer calls `edge_at`/`vedge_at` internally (that self-scan is exactly the LUT
@@ -183,6 +184,7 @@ module bp_relay_banked_bram (
 `ifndef SYNTHESIS
   initial begin : elab_guards
     automatic int fails = 0;
+    // (d1) BP_CHK_GRP/BP_CHK_SLOT invert BP_CHK_AT: a fresh scan finds check c at (g_scan,j_scan).
     for (int c = 0; c < BP_C; c++) begin
       automatic int g_scan = -1;
       automatic int j_scan = -1;
@@ -198,6 +200,7 @@ module bp_relay_banked_bram (
         fails = fails + 1;
       end
     end
+    // (d2) BP_VAR_GRP/BP_VAR_SLOT invert BP_VAR_AT.
     for (int v = 0; v < BP_N; v++) begin
       automatic int h_scan = -1;
       automatic int i_scan = -1;
@@ -213,6 +216,7 @@ module bp_relay_banked_bram (
         fails = fails + 1;
       end
     end
+    // (d3) BP_EDGE_EB/HB/ROW recompute from the (d1-validated) chk grp/slot tables.
     for (int e = 0; e < BP_E; e++) begin
       automatic int c   = BP_EDGE_CHK[e];
       automatic int eb  = BP_CHK_SLOT[c] * BP_CHK_DEG + BP_EDGE_POS[e];
@@ -224,6 +228,10 @@ module bp_relay_banked_bram (
         fails = fails + 1;
       end
     end
+    // (a)/(b)/EPORT: per var-group, accumulate writers-per-half-bank and readers-per-e_cm-bank in ONE pass
+    // over the group's present edges (via the scan-validated BP_EDGE_HB/EB), then scan the counters. Counting
+    // in a single (i,d) pass (rather than re-scanning all edges for each bank) keeps Verilator's constant-
+    // unroll O(GV*V*VAR_DEG) instead of O(GV*(NHB+NEB)*V*VAR_DEG) — the latter symbolically explodes cvt.
     for (int h = 0; h < GV; h++) begin
       automatic int wcnt [NHB];
       automatic int rcnt [NEB];
@@ -235,6 +243,7 @@ module bp_relay_banked_bram (
           if (e >= 0) begin
             automatic int hb = BP_EDGE_HB[e];
             automatic int eb = BP_EDGE_EB[e];
+            // EPORT is the count of same-e_cm-bank readers of this group seen BEFORE e in (i,d) order.
             if (BP_EDGE_EPORT[e] != rcnt[eb]) begin
               $display("bp_relay_banked_bram GUARD(eport) FAIL: var-group %0d edge %0d EPORT=%0d != readers-so-far %0d",
                        h, e, BP_EDGE_EPORT[e], rcnt[eb]);
@@ -244,12 +253,14 @@ module bp_relay_banked_bram (
             rcnt[eb] = rcnt[eb] + 1;
           end
         end
+      // (a) <=1 writer per (var-group, m_cm half-bank) — the single m_cm write port per half-bank.
       for (int b = 0; b < NHB; b++)
         if (wcnt[b] > 1) begin
           $display("bp_relay_banked_bram GUARD(a) FAIL: var-group %0d m_cm half-bank %0d has %0d writers (>1)",
                    h, b, wcnt[b]);
           fails = fails + 1;
         end
+      // (b) <=2 readers per (var-group, e_cm bank) — the two async read ports per e_cm bank.
       for (int b = 0; b < NEB; b++)
         if (rcnt[b] > 2) begin
           $display("bp_relay_banked_bram GUARD(b) FAIL: var-group %0d e_cm bank %0d has %0d readers (>2)",
@@ -257,6 +268,7 @@ module bp_relay_banked_bram (
           fails = fails + 1;
         end
     end
+    // (c) BP_EDGE_POS[e] is e's position in its check's CSR row (edge_at_bq / BP_EDGE_HB tap correctness).
     for (int e = 0; e < BP_E; e++) begin
       automatic int c   = BP_EDGE_CHK[e];
       automatic int idx = BP_CHECK_OFF[c] + BP_EDGE_POS[e];

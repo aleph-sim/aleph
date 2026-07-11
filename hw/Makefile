@@ -288,11 +288,13 @@ bpbankedbram-lint:
 # BRAM-ified banked core, asserting 40/40 DECISION-EQUAL (corr, obs, vflag) to the fixed-point golden — the
 # M8 banked core's `bp_relay_banked` twin with the constant fabrics moved to sync-read ROMs (latency grows,
 # decisions do not). Reuses `tb_bp_banked.cpp` UNCHANGED via Verilator `--prefix Vbp_relay_banked` (keeps the
-# TB's model class name while the top module is `bp_relay_banked_bram`). Builds+runs at BOTH 16/48 and 8/24
+# TB's model class name while the top module is `bp_relay_banked_bram`). Builds+runs at BOTH 8/24 and 16/48
 # (the two bankings the M9b gate covers); 40/40 at each is the (W,V)-invariance check. Prints worst/mean lat.
+# The sweep ENDS on 16/48 so the TRACKED header `bb_gross_tanner.svh` is left at its committed at-rest
+# state after a run (the same reason `bpbanked` ends on 16/48) — `git status` stays clean.
 bpbankedbram:
 	cd .. && $(CARGO) qec_q7_bp_graph -- circvectors 1 0.003 40 2024 > hw/bp_circ_vectors.txt
-	@for wv in "16 48" "8 24"; do \
+	@for wv in "8 24" "16 48"; do \
 		set -- $$wv; echo "== W=$$1 V=$$2 =="; \
 		(cd .. && $(CARGO) qec_q7_bp_graph -- circgraph 1 0.003 $$1 $$2 > hw/bb_gross_tanner.svh); \
 		rm -rf obj_bankedbram; \
