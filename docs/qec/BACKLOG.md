@@ -1336,3 +1336,94 @@ Without both, stop at FPGA — that is still a complete, valuable outcome.
 
 **References**
 - Riverlane as precedent (decoder ASIC company founded by non-physicist).
+
+-----
+
+### [Q7-04] Multi-round sliding-window streaming relay-BP on FPGA (real-time M9)
+
+**Labels:** `area:fpga`, `type:feature`, `priority:medium`
+**Milestone:** Phase Q7
+**Estimate:** XL
+**Depends on:** Q7-02 (M8 core)
+
+**Description**
+The banked relay-BP core (M7/M8: 15.64 µs worst / 0.85 µs median on KV260) decodes one syndrome
+batch at rounds=1. Real-time QEC is a continuous stream of measurement rounds (~1 µs/round)
+decoded in a sliding window with bounded per-round latency — the backlog problem. Build the
+BB-code analog of the surface-code streaming decoder (Q6-20/Q6-22, DONE for UF): multi-round
+circuit-level graph from the emitter (rounds>1), a window/commit schedule over the banked core,
+and a sustained-throughput measurement on silicon against a target round rate. This is the
+product-defining gap between the lab prototype and a deployable decoder, and the main de-risk
+input for Q7-01.
+
+**Acceptance Criteria**
+- [ ] Emitter generates multi-round (rounds ≥ 3) circuit-level windows; golden model matches.
+- [ ] Streaming schedule (window advance + commit) on the banked core, bit-exact to the windowed
+      golden in co-sim.
+- [ ] On silicon: sustained decode of a round stream with a measured per-round latency
+      distribution and the max round rate the decoder keeps up with (no unbounded backlog).
+
+-----
+
+### [Q7-05] KV260 power measurement — W and energy per decode
+
+**Labels:** `area:fpga`, `type:infra`, `priority:medium`
+**Milestone:** Phase Q7
+**Estimate:** S
+**Depends on:** Q7-02
+
+**Description**
+No power data exists for any decoder build; ASIC projections (Q7-01) and the FPGA-product story
+both need it. The Kria SOM exposes PMBus rails (INA226) readable from PYNQ. Measure idle vs
+decode-load power for the shipped M8 overlay (full-schedule and early-exit sweeps), derive
+energy per decode.
+
+**Acceptance Criteria**
+- [ ] Scripted rail readout on the KV260 alongside the standard 40-vector run.
+- [ ] Reported: PL power idle/under-load, energy per decode (both modes), documented in
+      `docs/perf/qec-q7-fixed-bp.md`.
+
+-----
+
+### [Q7-06] Silicon-accelerated LER qualification (batched decode interface + MC campaign)
+
+**Labels:** `area:fpga`, `type:feature`, `priority:medium`
+**Milestone:** Phase Q7
+**Estimate:** L
+**Depends on:** Q7-02
+
+**Description**
+Freezing a decoder in silicon needs an LER qualification matrix far beyond the 40-vector
+bit-exact gate. The board decodes in ~1 µs mean but the AXI-Lite per-word harness dominates
+wall time. Add a batched interface (BRAM/DMA batch of syndromes per invocation), then run
+Monte-Carlo campaigns (millions of shots across a (p, legs, iters) grid) through the silicon
+itself, comparing LER curves against the software golden / Aer references — the FPGA becomes
+the accelerator of its own qualification.
+
+**Acceptance Criteria**
+- [ ] Batched syndrome-in / correction-out path with ≥100× harness-throughput improvement over
+      the AXI-Lite per-word runner.
+- [ ] MC campaign ≥10⁶ shots per operating point on ≥3 physical error rates; RTL LER within the
+      statistical band of the software golden at every point.
+
+-----
+
+### [Q7-07] Non-convergence fallback policy (valid_flag=0 path)
+
+**Labels:** `area:fpga`, `type:feature`, `priority:low`
+**Milestone:** Phase Q7
+**Estimate:** M
+**Depends on:** Q7-02
+
+**Description**
+Relay-BP occasionally fails to converge (valid_flag=0: the best-kept decision may still violate
+the syndrome). A deployable decoder needs a defined policy: report-and-flag, cheap
+post-processing (e.g. OSD-lite on the residual), or retry with different disorder. Measure the
+non-convergence rate across operating points (feeds on Q7-06's campaign), evaluate candidate
+fallbacks in software first, and specify (implement only if the rate demands it) the hardware
+path.
+
+**Acceptance Criteria**
+- [ ] Non-convergence rate quantified per operating point.
+- [ ] Fallback policy chosen with data (incl. do-nothing-but-flag if rates are negligible); the
+      LER impact of the chosen policy measured in software.
