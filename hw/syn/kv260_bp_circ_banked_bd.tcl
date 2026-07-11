@@ -24,6 +24,8 @@ set proj_dir [expr {$argc >= 1 ? [lindex $argv 0] : "kv260bpcirc"}]
 set out_dir  [expr {$argc >= 2 ? [lindex $argv 1] : "out"}]
 set fclk_mhz [expr {$argc >= 3 ? [lindex $argv 2] : 100}]
 set bdonly   [expr {$argc >= 4 && [lindex $argv 3] eq "bdonly"}]
+# optional 5th arg: impl_1 strategy (M8 escalation ladder, e.g. Performance_Explore); empty = defaults
+set strategy [expr {$argc >= 5 ? [lindex $argv 4] : ""}]
 set hw [file normalize [file join [file dirname [info script]] ..]]
 file mkdir $out_dir
 
@@ -76,6 +78,7 @@ set_property top ${bdname}_wrapper [current_fileset]
 update_compile_order -fileset sources_1
 
 set_property STEPS.SYNTH_DESIGN.ARGS.FLATTEN_HIERARCHY none [get_runs synth_1]
+if {$strategy ne ""} { set_property strategy $strategy [get_runs impl_1] }
 launch_runs impl_1 -to_step write_bitstream -jobs 8
 wait_on_run impl_1
 if {[get_property PROGRESS [get_runs impl_1]] ne "100%"} {

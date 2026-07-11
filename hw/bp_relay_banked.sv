@@ -45,7 +45,18 @@
 //   * e_cm (c->v messages, written by CHK, read by VAR): W*CHK_DEG banks x GC rows (`bp_ecm_cell`), same
 //     (j,k) map, no beta split, TWO async read address ports (readers ordered by (i,d): first->A, second->B).
 //   * m_vm (the "old" v->c message the var-update blends against): V*VAR_DEG banks x GV rows (`bp_mvm_cell`).
-//     Bank = (var-slot i, edge d); read row = pc, write row = pc-2 (disjoint in the software pipeline).
+//     Bank = (var-slot i, edge d); read row = pc, write row = pc-3 (M8; disjoint in the software pipeline).
+//
+// M8 PIPELINE DEEPENING (this milestone): a 1-cycle BANK-READ + LAUNCH-CONTEXT register plane is inserted
+// between the (unregistered, pc-addressed) bank async reads / gather muxes and the submodule input ports,
+// and `check_minsum` runs at STAGES=3 (one extra mid-tree register plane). Net per-launch latency grows by
+// 2 for CHK (reg plane +1, STAGES 2->3 +1) and by 1 for VAR (reg plane +1; var_update stays 2-stage). So
+// the SOFTWARE-PIPELINE lags lengthen: CHK scatter of group pc-4 (was pc-2), phase pc=0..GC+3 (was GC+1);
+// VAR scatter of group pc-3 (was pc-2), phase pc=0..GV+2 (was GV+1). Bank read ADDRESSES stay pc-driven;
+// only the read DATA + the gathered per-slot launch context (sbit/present/m_in on CHK; lam/gam/e_in/m_in/
+// present on VAR) latch through the plane, and the submodule `en` is delayed one cycle (en_chk_r/en_var_r)
+// so the plane's pc=0 garbage snapshot is never consumed. Values are BIT-EXACT to M7; only cycle counts
+// grow (worst latency 3570 -> 3750 at 8/24: +60*(2+1) over 60 CHK + 60 VAR phases).
 //
 // FSM mirrors `bp_relay_unroll_pipe.sv` (S_CHECK/S_VAR 2-deep software pipeline over the submodules' 2-cycle
 // latency; SAT folded into the S_CHECK launches; best-kept commit; obs reduction; sync reset) with the
@@ -144,8 +155,8 @@ module bp_ecm_cell #(
     parameter int B = 0                                  // bank id = check-slot j * CHK_DEG + lane k
 ) (
     input  logic                       clk,
-    input  logic                       wr_en,            // S_CHECK && pc>=2 (scatter of group pc-2)
-    input  logic [BB_BWC-1:0]          wg,               // write chk-group cursor (= pc-2)
+    input  logic                       wr_en,            // S_CHECK && pc>=4 (M8: scatter of group pc-4)
+    input  logic [BB_BWC-1:0]          wg,               // write chk-group cursor (M8: = pc-4)
     input  logic signed [MSG_BITS-1:0] wd,               // this bank's chk lane message (chk_e_out[JJ][KK])
     input  logic [BB_BWC-1:0]          ra,               // port-A read row (from top's e_cm read-addr comb)
     input  logic [BB_BWC-1:0]          rb,               // port-B read row
@@ -157,7 +168,7 @@ module bp_ecm_cell #(
   logic signed [MSG_BITS-1:0] mem [BB_GC];
   logic                       we_b;
   logic [BB_BWC-1:0]          wa_b;
-  // CHK scatter: lane (JJ,KK) of group pc-2 writes its OWN bank — a single writer, no runtime-index mux
+  // CHK scatter: lane (JJ,KK) of group pc-4 (M8 lag) writes its OWN bank — a single writer, no index mux
   // (JJ/KK are compile-time constants, so edge_at(g,JJ,KK) folds per group).
   always_comb begin
     we_b = 1'b0;
@@ -180,8 +191,8 @@ module bp_mvm_cell #(
 ) (
     input  logic                       clk,
     input  logic                       wr_init,          // S_INIT (lambda seed)
-    input  logic                       wr_var,           // S_VAR && pc>=2 (scatter of group pc-2)
-    input  logic [BB_BWV-1:0]          wg,               // write var-group cursor (S_INIT: pc, S_VAR: pc-2)
+    input  logic                       wr_var,           // S_VAR && pc>=3 (M8: scatter of group pc-3)
+    input  logic [BB_BWV-1:0]          wg,               // write var-group cursor (S_INIT: pc, S_VAR: pc-3)
     input  logic signed [MSG_BITS-1:0] wd,               // this bank's var slot message (var_m_out[II][DD])
     input  logic [BB_BWV-1:0]          rg,               // read row (= pc, clamped)
     output logic signed [MSG_BITS-1:0] q
@@ -373,7 +384,7 @@ module bp_relay_banked (
   logic [BP_OBS-1:0] obs_acc;
 
   int          leg, iter, pc;                        // pc = phase/group cursor
-  int          wg;                                   // write group (comb): pc in S_INIT, pc-2 in S_VAR
+  int          wg;                                   // write group (comb): pc in S_INIT, pc-3 in S_VAR (M8)
   logic [31:0] lat;
 
   assign busy           = (state != S_IDLE);
@@ -383,6 +394,17 @@ module bp_relay_banked (
   logic en_chk, en_var;
   assign en_chk = (state == S_CHECK) && (pc < GC);
   assign en_var = (state == S_VAR)   && (pc < GV);
+
+  // M8: the bank-read + launch-context register plane (below, in the gchk/gvar slots) delays each launch's
+  // operands by exactly one cycle, so the submodule `en` is delayed one cycle to stay aligned. This is also
+  // the fence that keeps the plane's first (pc=0) garbage snapshot from being consumed: en_chk/en_var are 0
+  // outside their phase (and at the phase's first cycle the registered copy still holds that 0), so the
+  // submodule only captures once the plane holds a real group's operands. Free-running, mirroring the plane.
+  logic en_chk_r, en_var_r;
+  always_ff @(posedge clk) begin
+    en_chk_r <= en_chk;
+    en_var_r <= en_var;
+  end
 
   // registered submodule outputs (2 clocks after their group launch)
   logic signed [MSG_BITS-1:0] chk_e_out    [W][BP_CHK_DEG];
@@ -409,20 +431,22 @@ module bp_relay_banked (
   logic signed [MSG_BITS-1:0] var_m_flat [NVB];      // var_m_out[i][d]  -> m_vm cell wd
 
   // sized write cursors / phase gates for the e_cm and m_vm cells (m_cm uses the shared scatter above)
-  logic [BWV-1:0] wg_var;                            // var-group write cursor (S_INIT: pc, S_VAR: pc-2)
-  logic [BWC-1:0] wg_chk;                            // chk-group write cursor (S_CHECK: pc-2)
+  logic [BWV-1:0] wg_var;                            // var-group write cursor (S_INIT: pc, S_VAR: pc-3)
+  logic [BWC-1:0] wg_chk;                            // chk-group write cursor (S_CHECK: pc-4)
   logic           mvm_wr_init, mvm_wr_var, ecm_wr_en;
 
   // ------------------------------------------------------------------- shared comb: cursors / addresses
+  // M8 lags: reg plane (+1) deepens both phases; STAGES=3 CHK (+1 more) -> scatter group pc-4; var_update
+  // stays 2-stage -> scatter group pc-3. Read ADDRESSES stay pc-driven; only the data/context is registered.
   always_comb begin
-    wg          = (state == S_INIT) ? pc : (pc - 2);  // int; the shared m_cm scatter relies on <0 not matching
+    wg          = (state == S_INIT) ? pc : (pc - 3);  // int; the shared m_cm scatter relies on <0 not matching
     mcm_ra      = (pc >= 0 && pc < GC) ? BWC'(pc) : '0;    // clamp: out-of-phase reads are unused
     mvm_ra      = (pc >= 0 && pc < GV) ? BWV'(pc) : '0;
-    wg_var      = (state == S_INIT) ? BWV'(pc) : BWV'(pc - 2);
-    wg_chk      = BWC'(pc - 2);
+    wg_var      = (state == S_INIT) ? BWV'(pc) : BWV'(pc - 3);
+    wg_chk      = BWC'(pc - 4);
     mvm_wr_init = (state == S_INIT);
-    mvm_wr_var  = (state == S_VAR)   && (pc >= 2);     // pc>=2 gate: pc-2 in [0,GV-1], no spurious wrap
-    ecm_wr_en   = (state == S_CHECK) && (pc >= 2);
+    mvm_wr_var  = (state == S_VAR)   && (pc >= 3);     // pc>=3 gate (M8): pc-3 in [0,GV-1], no spurious wrap
+    ecm_wr_en   = (state == S_CHECK) && (pc >= 4);     // pc>=4 gate (M8): STAGES=3 CHK + 1-cyc reg plane
   end
 
   // ------------------------------------------------------------------- shared comb: m_cm write scatter
@@ -563,15 +587,30 @@ module bp_relay_banked (
             end
           end
       end
+      // M8 register plane: latch this slot's gathered launch context (bank-read magnitudes + syndrome bit +
+      // present mask) one cycle, so the async-LUTRAM read + gather mux is no longer in series with the
+      // check_minsum stage-1 reduction (Fmax). Free-running (unconditional, like check_minsum's stage 2);
+      // en_chk_r fences the pc=0 garbage snapshot out. Registers the gather OUTPUTS (pc-select stays at pc).
+      logic                       sbit_jr;
+      logic signed [MSG_BITS-1:0] m_in_jr    [BP_CHK_DEG];
+      logic                       present_jr [BP_CHK_DEG];
+      always_ff @(posedge clk) begin
+        sbit_jr <= sbit_j;
+        for (int k = 0; k < BP_CHK_DEG; k++) begin
+          m_in_jr[k]    <= m_in_j[k];
+          present_jr[k] <= present_j[k];
+        end
+      end
       check_minsum #(
-          .MW (MSG_BITS),
-          .DEG(BP_CHK_DEG)
+          .MW    (MSG_BITS),
+          .DEG   (BP_CHK_DEG),
+          .STAGES(3)                                   // M8: extra mid-tree register plane for Fmax
       ) u_chk (
           .clk    (clk),
-          .en     (en_chk),
-          .sbit   (sbit_j),
-          .m_in   (m_in_j),
-          .present(present_j),
+          .en     (en_chk_r),
+          .sbit   (sbit_jr),
+          .m_in   (m_in_jr),
+          .present(present_jr),
           .e_out  (chk_e_out[j])
       );
     end
@@ -614,6 +653,21 @@ module bp_relay_banked (
             end
           end
       end
+      // M8 register plane (same rationale as the CHK slots): latch the gathered var launch context (e_cm
+      // operands, old m_vc, lambda, gamma, present mask) one cycle. Free-running; en_var_r fences pc=0.
+      logic signed [MSG_BITS-1:0] lam_ir, gam_ir;
+      logic signed [MSG_BITS-1:0] e_in_ir    [BP_VAR_DEG];
+      logic signed [MSG_BITS-1:0] m_in_ir    [BP_VAR_DEG];
+      logic                       present_ir [BP_VAR_DEG];
+      always_ff @(posedge clk) begin
+        lam_ir <= lam_i;
+        gam_ir <= gam_i;
+        for (int d = 0; d < BP_VAR_DEG; d++) begin
+          e_in_ir[d]    <= e_in_i[d];
+          m_in_ir[d]    <= m_in_i[d];
+          present_ir[d] <= present_i[d];
+        end
+      end
       var_update #(
           .MW    (MSG_BITS),
           .WACC  (WACC),
@@ -622,12 +676,12 @@ module bp_relay_banked (
           .MAXMAG(MAX_MAG)
       ) u_var (
           .clk     (clk),
-          .en      (en_var),
-          .lam     (lam_i),
-          .gam     (gam_i),
-          .e_in    (e_in_i),
-          .m_in    (m_in_i),
-          .present (present_i),
+          .en      (en_var_r),
+          .lam     (lam_ir),
+          .gam     (gam_ir),
+          .e_in    (e_in_ir),
+          .m_in    (m_in_ir),
+          .present (present_ir),
           .m_out   (var_m_out[i]),
           .ehat_bit(var_ehat_out[i])
       );
@@ -667,7 +721,7 @@ module bp_relay_banked (
           lat <= lat + 32'd1;
         end
 
-        // ------------------------------ launch check group `pc` + scatter `pc-2`  ||  overlapped S_SAT
+        // ------------------------------ launch check group `pc` + scatter `pc-4` (M8)  ||  overlapped S_SAT
         S_CHECK: begin
           automatic logic grp_sat, final_sat, p;
           grp_sat   = 1'b1;
@@ -697,11 +751,13 @@ module bp_relay_banked (
               end
             end
           end
-          // e_cm scatter of group pc-2 handled by the per-bank bp_ecm_cell write.
+          // e_cm scatter of group pc-4 (M8 lag) handled by the per-bank bp_ecm_cell write.
           // advance cursor; early_exit takes the first syndrome-valid decision straight to S_EMIT.
+          // (SAT is launch-aligned at pc<GC and finalises at pc==GC-1 — unaffected by the longer drain tail;
+          //  the tail pc=GC..GC+3 only completes the deepened CHK scatter pipeline, no SAT runs there.)
           if (early_exit && final_sat) begin
             pc <= '0; state <= S_EMIT;
-          end else if (pc == GC + 1) begin
+          end else if (pc == GC + 3) begin              // M8: was GC+1 (reg plane +1, STAGES 2->3 +1)
             pc      <= '0;
             all_sat <= 1'b1;
             state   <= S_VAR;
@@ -709,17 +765,17 @@ module bp_relay_banked (
           lat <= lat + 32'd1;
         end
 
-        // ------------------------------ launch var group `pc` + scatter `pc-2`
+        // ------------------------------ launch var group `pc` + scatter `pc-3` (M8)
         S_VAR: begin
-          automatic logic wterm [V];                  // per-slot decision bit (present slot of group pc-2)
+          automatic logic wterm [V];                  // per-slot decision bit (present slot of group pc-3)
           automatic int   wsum;
           wsum = 0;
           if (pc == 0) ehat_w <= '0;                  // fresh decision-weight accumulation
-          if (pc >= 2) begin
+          if (pc >= 3) begin                          // M8: var scatter lag pc-3 (was pc-2)
             for (int i = 0; i < V; i++) wterm[i] = 1'b0;
             for (int i = 0; i < V; i++)
               for (int g = 0; g < GV; g++)
-                if (var_at(g, i) >= 0 && (pc - 2) == g) begin
+                if (var_at(g, i) >= 0 && (pc - 3) == g) begin
                   automatic int v = var_at(g, i);
                   ehat[v] <= var_ehat_out[i];
                   wterm[i] = var_ehat_out[i];         // hoist the group mux out of the accumulation
@@ -728,8 +784,10 @@ module bp_relay_banked (
             for (int i = 0; i < V; i++) wsum = wsum + (wterm[i] ? 1 : 0);
             ehat_w <= ehat_w + WW'(wsum);
           end
-          // m_vm / m_cm writes of group pc-2 handled by the bp_mvm_cell + m_cm scatter comb.
-          if (pc == GV + 1) begin
+          // m_vm / m_cm writes of group pc-3 (M8 lag) handled by the bp_mvm_cell + m_cm scatter comb.
+          // End at pc==GV+2 so the last scatter (group GV-1 at pc=GV+2) — and its ehat[]/ehat_w update —
+          // completes before the handoff; the next S_CHECK's launch-time SAT then reads a fully-written ehat.
+          if (pc == GV + 2) begin                       // M8: was GV+1 (reg plane +1; var_update 2-stage)
             pc          <= '0;
             sat_pending <= 1'b1;
             if (iter == BP_ITERS - 1) begin

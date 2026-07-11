@@ -1141,6 +1141,13 @@ Verilator↔Vivado disagreements (`ifndef SYNTHESIS` around the elaboration guar
 
 DSP scales ~31/var (the `var_update` blend multiplies) and kills 16/48; 12/36 is the largest fitting config.
 
+> **Correction (M8).** The DSP column above is **9× inflated**: the OOC tcl counted
+> `REF_NAME =~ DSP*`, which also matches the ~9 sub-primitives every DSP48E2 macro expands into
+> (DSP_ALU, DSP_A_B_DATA, …). Real usage: 8/24 → **82 (6.6 %)**, 12/36 → **124 (10 %)**,
+> 16/48 → **164 (13 %)**. The "no fit (DSP)" verdict for 16/48 — and the "DSP … kills 16/48"
+> sentence — were wrong: 16/48 was only ever **LUT-bound (90 %)** and is rehabilitated (and shipped)
+> in M8 below. The M7 silicon result itself is unaffected.
+
 ## Board + silicon
 
 Board build (`kv260_bp_circ_banked_bd.tcl`, `bp_axi_wrap_banked`, IDCODE `0x4250_0003`,
@@ -1169,3 +1176,59 @@ M6**. Early-exit average 381 µs → **2.5 µs = 152×**; the average case now s
   LUT fabric (`use_dsp = "no"`) would trade ~10–15 k LUT for the 360 extra DSPs — untested.
 - The offline solve generalizes (parameterized (W,V), loud failure + a proven fallback), so a future
   bigger part lifts straight to 16/48 or beyond.
+
+# Q7-02 M8 — squeeze the KV260: 32.8 → 15.6 µs worst-case, sub-µs median early-exit
+
+**Goal.** M7 shipped 32.8 µs at 75 MHz with one long unregistered path (bank read → gather →
+min-sum stage-1, ~12.6 ns routed) and a mistakenly-condemned 16/48 config (see the M7 correction
+note above). M8 pipelines the path and ships 16/48.
+
+## Levers
+
+1. **L1 — bank-output register plane.** The gather OUTPUTS (not the raw banks) latch one cycle:
+   group-g data stays paired with group-g context, and the gather mux leaves the min-sum's input
+   path. Submodule `en` delayed 1 cycle; addresses stay combinational.
+2. **L3 — 3-stage `check_minsum`.** One register plane after tournament-tree level 3, behind a
+   `STAGES` parameter (default 2 — `bp_relay_unroll_pipe`/`bp_unroll_skeleton` byte-unchanged,
+   regression-gated). Values provably unchanged; an elaboration guard rejects unsupported
+   STAGES/degenerate small-DEG splits.
+3. **L4 — 16/48.** With the real DSP numbers it was always viable; with L1+L3 it times *better*
+   than 12/36 (shallower per-group muxes at GC=9/GV=18).
+4. **L2 — impl-strategy tclarg** on the board flow (used in the ladder below).
+
+New timing contract: CHK scatter lag pc−4 (phase GC+4 cyc), VAR pc−3 (GV+3) → +3 cyc/iteration.
+Bit-exact in values to the same golden at all three configs (Mac + EPYC co-sim, AXI gate,
+`checkminsum` at both STAGES, `bpunrollpipe`/`bpbramdp` regressions): **8/24 → 3 750 cyc,
+12/36 → 2 640, 16/48 → 2 085** (M7: 3 570 / 2 460 / 1 905).
+
+## OOC probes (5 ns, corrected DSP counter)
+
+| (W,V) | LUT | DSP (real) | WNS | Fmax |
+|---|---|---|---|---|
+| 12/36 | 85.5 k (73 %) | 124 (10 %) | −3.02 | 124.7 MHz |
+| **16/48** | **102.8 k (88 %)** | **164 (13 %)** | **−0.63** | **177.7 MHz** |
+
+## Board ladder + silicon
+
+16/48: 150 MHz default → WNS −0.238; 150 `Performance_Explore` → −0.147; 136-request (PS grants
+**133.332 MHz**, 1500-grid) default → **TIMING_MET, WNS 0.000**. 12/36 fallback unneeded.
+
+**On silicon** (KV260, PL @ 133.332 MHz, 40 circuit shots p=0.003, IDCODE `0x4250_0003`,
+**40/40 bit-exact in both modes**):
+
+```
+[full-schedule]  min=p50=mean=p99=max = 2 085 cyc = 15.64 µs   (fixed)
+[early-exit]     min=79  p50=113  mean=153  p99=589  max=589 cyc
+                 min=0.59  p50=0.85  mean=1.15  p99=4.4  max=4.4 µs
+```
+
+**Silicon ladder (worst-case):** 6.72 ms (M6) → 32.8 µs (M7) → **15.64 µs (M8) = 2.1× over M7,
+430× over M6**. Early-exit average 2.5 → **1.15 µs**; the **median decode is now sub-microsecond
+(0.85 µs)** — the original 1–3 µs target band is met by the average case with room to spare.
+
+## Levers left on the table
+
+- The closed path at 133 MHz still has the var_update stage-2 blend (DSP mult + clamp) unregistered
+  behind its gather; a 3-stage var_update would chase ~150+ MHz (~13.9 µs) for +60 cycles.
+- LUT 88 % is the ceiling for wider configs on this part; a bigger part lifts the same RTL to
+  W=24+ (full-unroll territory ~1–3 µs worst-case).
