@@ -12,7 +12,7 @@ OBJ_DIR   := obj_dir
 VERILATOR ?= verilator
 CARGO     := cargo run --release -q -p aleph-qec --example
 
-.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi stream-axi-circuit cosim-stream cosim-stream-circuit cosim-stream-ler cosim-stream-ler-circuit cosim cosim-3d cosim-circuit cosim-circuit-3d bpcheck bprelay bpunroll bppartial bppartialfast bppipe bpfast bpaxi bpcirc bpaxiwide bpbram bpbramfast bpbramdp bpbramdpearly checkminsum varupdate unrollskel bpunrollpipe bpbanked-lint bpbanked bpaxibanked clean
+.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi stream-axi-circuit cosim-stream cosim-stream-circuit cosim-stream-ler cosim-stream-ler-circuit cosim cosim-3d cosim-circuit cosim-circuit-3d bpcheck bprelay bpunroll bppartial bppartialfast bppipe bpfast bpaxi bpcirc bpaxiwide bpbram bpbramfast bpbramdp bpbramdpearly checkminsum varupdate unrollskel bpunrollpipe bpbanked-lint bpbanked bpbankedbram-lint bpbankedbram bpaxibanked clean
 
 all: d3 rep surf
 
@@ -274,6 +274,32 @@ bpbanked:
 		$(VERILATOR) --cc --exe --build -Wall --Mdir obj_banked --top-module bp_relay_banked \
 			check_minsum.sv var_update.sv bp_relay_banked.sv tb_bp_banked.cpp -o sim_bpbanked || exit 1; \
 		./obj_banked/sim_bpbanked bp_circ_vectors.txt || exit 1; \
+	done
+
+# Q7-04 M9b — BRAM-ified banked relay-BP core (`bp_relay_banked_bram`): Verilator LINT-ONLY elaboration.
+# Sibling of `bp_relay_banked` whose per-group constant decode fabrics are sync-read BRAM ROMs (+1 re-lag).
+# NOTE: named `bpbankedbram` (not `bpbram`, which is already the unrelated edge-serial M2-BRAM core above).
+bpbankedbram-lint:
+	cd .. && $(CARGO) qec_q7_bp_graph -- circgraph 1 0.003 8 24 > hw/bb_gross_tanner.svh
+	$(VERILATOR) --lint-only -Wall --top-module bp_relay_banked_bram \
+		check_minsum.sv var_update.sv bp_relay_banked_bram.sv
+
+# Q7-04 M9b — `bp_relay_banked_bram` FULL CO-SIM: drive the SAME 40-shot circuit-level golden through the
+# BRAM-ified banked core, asserting 40/40 DECISION-EQUAL (corr, obs, vflag) to the fixed-point golden — the
+# M8 banked core's `bp_relay_banked` twin with the constant fabrics moved to sync-read ROMs (latency grows,
+# decisions do not). Reuses `tb_bp_banked.cpp` UNCHANGED via Verilator `--prefix Vbp_relay_banked` (keeps the
+# TB's model class name while the top module is `bp_relay_banked_bram`). Builds+runs at BOTH 16/48 and 8/24
+# (the two bankings the M9b gate covers); 40/40 at each is the (W,V)-invariance check. Prints worst/mean lat.
+bpbankedbram:
+	cd .. && $(CARGO) qec_q7_bp_graph -- circvectors 1 0.003 40 2024 > hw/bp_circ_vectors.txt
+	@for wv in "16 48" "8 24"; do \
+		set -- $$wv; echo "== W=$$1 V=$$2 =="; \
+		(cd .. && $(CARGO) qec_q7_bp_graph -- circgraph 1 0.003 $$1 $$2 > hw/bb_gross_tanner.svh); \
+		rm -rf obj_bankedbram; \
+		$(VERILATOR) --cc --exe --build -Wall --Mdir obj_bankedbram --prefix Vbp_relay_banked \
+			--top-module bp_relay_banked_bram \
+			check_minsum.sv var_update.sv bp_relay_banked_bram.sv tb_bp_banked.cpp -o sim_bpbankedbram || exit 1; \
+		./obj_bankedbram/sim_bpbankedbram bp_circ_vectors.txt || exit 1; \
 	done
 
 d3:
