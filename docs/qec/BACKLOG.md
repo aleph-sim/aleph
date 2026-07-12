@@ -1361,7 +1361,7 @@ input for Q7-01.
       (M9a — `SlidingWindowBp` golden + 100k-shot (W,C)×seam sweep → (W=6, C=2, residual-only);
       see `docs/perf/qec-q7-fixed-bp.md` § M9a.)
 - [x] Streaming schedule (window advance + commit) on the banked core, bit-exact to the windowed
-      golden in co-sim. (M9b — PR #TBD. `bpstream`: 40 trials × 7 slots × 2 early-exit modes
+      golden in co-sim. (M9b — PR #461. `bpstream`: 40 trials × 7 slots × 2 early-exit modes
       bit-exact vs their own HW-schedule goldens; `bpstreamaxi`: 5/5 AXI gates × 2 modes green.
       See `docs/perf/qec-q7-fixed-bp.md` § M9b.)
 - [ ] On silicon: sustained decode of a round stream with a measured per-round latency
