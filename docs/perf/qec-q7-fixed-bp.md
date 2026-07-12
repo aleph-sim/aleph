@@ -1349,3 +1349,244 @@ BRAM/URAM (+1 read-latency stage, absorbed by the existing software pipeline) �
 Worst-case real-time at 1 µs/round was already out of reach per the spec's honest-expectations
 section; M9b targets the architecture + honestly measured max round rate (the Q7-01 ASIC de-risk
 input), with early-exit medians expected ~5 % of worst-case per the M8 distribution.
+
+-----
+
+# M9b — streaming RTL: uniform-graph schedule, bit-exact co-sim, KV260 fit in progress (Q7-04)
+
+**Status:** AC-2 (streaming schedule bit-exact to the windowed golden, Verilator co-sim) is
+**met**. Vivado synthesis of the BRAM-ified core is **in progress** at time of writing — see the
+KV260 fit subsection; the fit outcome does not gate AC-2.
+
+M9a froze the software operating point (W=6, C=2, residual-only seam). M9b builds the RTL that
+implements it: a hardware-schedule golden that one baked RTL header can reproduce, a BRAM-ified
+sibling of the M8 banked core sized for the 5.1×-bigger window graph, a WARM/RUN/WAIT/COMMIT/
+SLIDE/RELOAD streaming FSM lifted from the Q6-20 UF pattern, and an AXI-Stream front end — all
+gated bit-exact against `FixedRelayBp` at every layer.
+
+## What shipped
+
+- **`HwSlidingWindowBp`** (`crates/aleph-qec/src/relay_window.rs`) — the hardware-schedule golden.
+  Unlike M9a's `SlidingWindowBp` (a different, exact DEM per window position), it compiles **one**
+  interior window graph and decodes every slot on it, zero-padding past the stream end; commit is
+  the baked rule "var has an in-window detector at relative round < C". `WindowTrace` (per-slot
+  `committed`/`obs`/`valid`/`commit_clean`) is the unit the RTL co-sim compares bit-for-bit.
+  `with_early_exit(bool)` passes through to `FixedRelayBp`'s first-valid-leg break.
+- **Emitter modes** `streamgraph`/`streamvectors`/`streamvectorsearly`
+  (`crates/aleph-qec/examples/qec_q7_bp_graph.rs`) — window header + streaming metadata, and
+  per-mode golden round-streams/slot-decisions (`hw/bb_stream_tanner.svh`,
+  `hw/bp_stream_vectors.txt`, `hw/bp_stream_vectors_early.txt`, all committed).
+- **`bp_relay_banked_bram(_m)`** (`hw/bp_relay_banked_bram.sv`, `hw/bp_relay_banked_bram_m.sv`) —
+  the M8 `bp_relay_banked` core with its O(E) literal-constant fabrics (edge tables, λ/γ, obs
+  masks, scatter addresses) moved into sync-read ROMs; `_m` further wraps each ROM in a stamped
+  cell module (14 cells) for the Vivado fit attempt. Decision-equal to M8's `bp_relay_banked`.
+- **`bp_streaming_decoder.sv`** — the WARM→RUN→WAIT→COMMIT→SLIDE→RELOAD FSM (lift of
+  `uf_streaming_decoder.sv`) implementing the W=6/C=2 window slide over the BRAM core.
+- **`bp_stream_win_core.sv` / `bp_stream_win.v`** — the AXI4-Stream front end (3-beat 72-bit round
+  framing, 32-bit result word, per-frame `frame_rst` re-arm) plus the Verilog-2001 BD-top
+  passthrough, both M9c board-build units.
+
+## Why a uniform graph, and its measured price
+
+M9a's exact-schedule golden compiles a *different* DEM per window position (left boundary, right
+boundary, interior, tail all differ). A single baked RTL header cannot replay that bit-exactly, so
+M9b's hardware contract is: **every slot decodes on the one interior window graph** — the strict
+translation-invariant DEM M9a already proved identical across interior positions — with local
+zero-pad drain past the stream end and the baked commit rule. This is a **documented deviation from
+the design spec**, not a shortcut: it is the only way one RTL header can serve every slot, and its
+cost is measured, not assumed.
+
+**The cost, measured (EPYC, 20 000 shots, gross code, rounds=12, seed 2024, W=6/C=2):**
+
+| p | LER batch | LER exact-schedule (M9a) | LER hw-schedule | within CI | hw nonconv | hw discarded>0 |
+|---|-----------|---------------------------|------------------|-----------|------------|-----------------|
+| 0.001 | 1.050e-3 ± 4.5e-4 | 1.400e-3 ± 5.2e-4 | 2.000e-3 ± 6.2e-4 | ✓ | 11.82 % | 0.33 % |
+| 0.003 | 4.565e-2 ± 2.9e-3 | 5.250e-2 ± 3.1e-3 | 5.840e-2 ± 3.3e-3 | ✓ | 66.82 % | 8.91 % |
+| 0.005 | 3.517e-1 ± 6.6e-3 | 3.857e-1 ± 6.7e-3 | 4.158e-1 ± 6.8e-3 | ✗ | 96.01 % | 51.02 % |
+
+(`m9b-hw-sweep-20k.csv`, `--hw` mode of `qec_q7_stream_sweep`.) At p=0.003 the hw schedule is
+**1.11× the exact schedule / 1.28× batch** — worse than M9a's accepted **1.24× batch** at the same
+config, an honest widening the uniform-graph simplification costs. At p=0.005 it **DIFFERS**
+outside CI (4.16e-1 vs 3.86e-1, +8 %) with 96 % non-convergence — recorded for completeness, the
+same "everything is broken here" regime M9a flagged. At the sub-threshold operating point
+(p=0.001) hw is within CI of both references.
+
+**Discarded-bits metric (`commit_clean`).** The first cut at a residual observable — the frame's
+lit-bit count after the final slide — is **vacuous by construction**: after the last slide the
+frame holds only zero-padded rounds, so it is always 0 (found in review; the initial smoke's
+`hw_resid_frac = 0.0000` at every p was the tell, not a clean result). The fix:
+`WindowTrace.commit_clean` = commit region `[0, C·dpr)` all-zero **after** the slot's commit toggle
+but **before** the slide — a per-slot, non-vacuous drain check that maps directly to the RTL result
+word's `residual_empty` bit. `StreamStats.residual` becomes the cumulative popcount of bits
+discarded by slides. Measured discard rate: **0.33 % / 8.91 % / 51.02 %** of shots at p = 1/3/5×
+10⁻³ — well below the non-convergence rate (12 %/67 %/96 %) at every p, because most non-converged
+windows still drain their commit region cleanly; discarded-bits is the sharper RTL health signal
+for Q7-07's fallback-policy design, non-convergence alone overstates the problem.
+
+## Per-mode goldens — first-valid ≠ best-kept
+
+The plan's original assumption ("the golden is schedule-independent — identical decisions both
+modes") was wrong, caught by the first co-sim run: the RTL core's early-exit commits the **first**
+syndrome-valid leg, while the software golden (as in M9a) keeps the **best-kept** (lowest-weight
+valid) decision over the whole schedule. These differ whenever a later leg finds a lower-weight
+valid decision than an earlier one — **25 of 280 slots** at the operating point (40 trials × 7
+slots). This is exactly the house pattern already established at M6–M8 (`circvectors` /
+`circvectorsearly`): each mode gets **its own golden**. `HwSlidingWindowBp::with_early_exit`
+generates `hw/bp_stream_vectors_early.txt` alongside the best-kept `hw/bp_stream_vectors.txt`
+(identical header, identical 520 r-lines/shots, exactly 25/280 w-lines differing — the divergence
+set was cross-validated software-golden-diff vs RTL-co-sim-diff and the two sets match exactly).
+Both files are committed; the co-sim gates each mode against its own file.
+
+## Co-sim gates
+
+- **`bpstream`** (`hw/tb_bp_stream.cpp`, `hw/bp_streaming_decoder.sv`): **40 trials × 7 slots ×
+  2 early-exit modes, each bit-exact vs its own HW-schedule golden.**
+- **`bpstreamaxi`** (`hw/tb_bp_stream_axi.cpp`, `hw/bp_stream_win_core.sv`): **5 gates × 2 modes,
+  all green** — zero-stream, golden-equality, back-pressure-invariance, frame-independence, and a
+  review-driven **adversarial drain-stall** gate with a **negative control**. The drain-stall gate
+  holds `m_axis_tready` low for 40 000 cycles spanning the post-`in_last` tail (the decoder
+  self-drives ⌈W/C⌉=3 zero-pad slots with no input handshake to gate on) and checks all 7 words
+  survive intact. The original 1-deep result slot **failed** this gate 6/7 and 5/7 words under the
+  same stall (the negative control, run from the pre-fix commit outside the tracked tree) — proof
+  the new gate discriminates the exact defect the review caught: a stalled consumer during the
+  drain silently overwrites a parked result. The fix is a **result FIFO of depth ⌈W/C⌉+1 = 4**,
+  sized to the drain's own bound (the drain starts from an empty FIFO by construction — the
+  streaming-phase input gate only ever admits a round when the prior slot's result has already been
+  consumed — and emits at most ⌈W/C⌉ slots with no further input), because the internal zero-pad
+  drain removes the decoder's own input-gating back-pressure guarantee once `in_last` lands.
+
+## Latencies (core → window, at the operating point)
+
+| level | config | cycles | wall-clock |
+|-------|--------|--------|------------|
+| core, rounds=1 (M8 comparison) | 16/48 | 2085 (M8) → **2206** (BRAM, +121) | 15.64 → 16.5 µs @133.332 MHz |
+| core, rounds=1 (M8 comparison) | 8/24 | 3750 (M8) → **3871** (BRAM, +121) | — |
+| window decode, full schedule | W=6, 16/48-class fabric | **16 298** cyc (fixed, 280/280 slots) | **≈ 122 µs** @133.332 MHz |
+| window decode, early-exit | W=6 | min **722**, mean **4898** (236/280 windows exit early; 44/280 run full) | min ≈ **5.4 µs**, mean ≈ **37 µs** |
+
+The BRAM re-lag (+121 cyc, not the originally-projected +122 — one cycle recovered when the
+S_EMIT/CHK-sbit ROM reverts below removed a tail cycle) is the honest price of moving the E-fabric
+off LUT-constant taps onto sync-read ROMs: one extra register stage per launch/scatter, uniformly.
+It is unrelated to the window-vs-core jump — the window's 16 298 cyc is a **6.8×** larger schedule
+than the rounds=1 core's 2206 (the W=6 window graph is 5.1× the rounds=1 edge count, plus one
+extra CHK/VAR-fabric register stage from the BRAM core).
+
+**The honest framing (feeds M9c):** at 122 µs worst-case and ~37 µs mean, the window decoder is
+**far over** the ~C µs (2 µs) real-time budget a continuous round stream needs — exactly the
+spec's own honest-expectations section anticipated. M9b's deliverable is not sub-µs streaming; it
+is the **architecture** (bit-exact schedule, robust AXI shell) plus the **honestly measured**
+worst/mean rate, which is the Q7-01 ASIC de-risk input and the M9c starting line, not a claimed
+real-time result.
+
+## KV260 fit — Vivado synthesis in progress, honest status
+
+**Pre-probe (parallel de-risk, done before Task 3/4 started; recorded in M9a's tail).** The W=6
+window graph (432 checks / 4824 vars / 15 120 edges, 5.1× the rounds=1 graph, max check-degree 35)
+run through the **unmodified M8 LUT core** does not fit: 8/24 → 169 % LUT, 4/12 → 138 % LUT.
+Narrowing the banking barely helped (only 19 %), because the area is dominated by an
+**E-proportional constant** — the literal edge-table ROMs (`BP_CHK_EDGES`/`BP_EDGE_*`/λ/γ), all
+synthesized as LUT logic — not by the bank/compute fabric. Meanwhile 144 BRAM36 + 64 URAM sat
+idle. The lever: move the E-indexed tables into BRAM/URAM. This became the M9b Task 3 mandate.
+
+**The rule, re-learned (cites the M7-era Vivado-folding lessons already in this doc: constant-fold
+over `leg`, tree-restructure serial reductions, modularize before flattening).** The BRAM-ify pass
+went through five structural iterations before landing on a synthesizable shape, each one a genuine
+Vivado behavior (not a simulator quirk — Verilator constant-folds all of these; Vivado does not):
+
+1. **2-D unpacked ROMs stall.** The first BRAM-ified core used two-dimensional unpacked ROM
+   arrays; Vivado silently ignores `rom_style="block"` on that shape and decomposes it into
+   per-element registers + a read network — reproducing the exact register-fan-out explosion the
+   BRAM conversion exists to remove. Fixed by repacking every ROM to one unpacked dim (depth) ×
+   one packed row word.
+2. **Repacked 1-D ROMs still OOM.** The cost was not the ROM shape but Vivado *elaborating* the
+   computed `initial`-block fills (helper functions over header localparams) — independent of
+   `rom_style` (a `distributed` variant hit the same ~50 GB peak). Fixed by moving all ROM content
+   computation into the Rust emitter as packed-row hex literal tables; the RTL fills became pure
+   literal copies, with a `rom_contract` guard recomputing every row the old way and `$fatal`ing on
+   any mismatch.
+3. **Same stall persisted — the real whale was ROM-fed runtime indices into big register arrays.**
+   Two sites used a ROM output to index a `BP_C`/`BP_N`-scale register array at runtime
+   (`s_reg[chk_sbit_idx_r[j]]`, the S_EMIT `obs`/`corr_out` reduction) — Vivado does not fold
+   runtime-indexed reads/writes into large register arrays; it port-splits and explodes, the exact
+   M7-era cursor-mux lesson recurring one level down. Fixed by reverting those two sites to the
+   original constant-folded `pc==g` form and deleting their ROMs (14 ROMs remain from the original
+   19). This produced the documented **rule**, now written into the core's own header comment: **ROM
+   outputs may feed data or real-memory addresses only, never register-array indices** — C/N-scale
+   index sites stay constant-folded; only the genuinely E-scale edge fabric needs the ROM lever.
+4. **Literal-table fills alone did not clear the wall** — confirms (3) was the actual root cause,
+   not the fills.
+5. **A rule-clean flat core was, at time of writing, still grinding** through Vivado's elaboration
+   at the rounds=1 fit-probe scale (part-load ~2× faster than run 2, plateaued after part-load with
+   no phase banner for over 1.5 hours) — left running as the A/B control. In parallel, a
+   **modular** sibling (`bp_relay_banked_bram_m.sv`, 14 stamped ROM cells, the same
+   `-flatten_hierarchy none` lesson that cleared the M7 full-unroll wall in ~3 minutes where the
+   flat top stalled) was built and is racing it, on the theory that hierarchy — not ROM shape —
+   is what Vivado's Cross-Boundary-Area-Optimization needs on this fabric.
+
+Both cores are **bit-exact / decision-equal to `FixedRelayBp` and to the M8 LUT core** in Verilator
+(40/40 at every banking, worst latency unchanged at 2206/3871 for the flat core and identical for
+the modular sibling) — the open question is Vivado synthesizability of the W=6 window header at
+fit-probe scale, not correctness.
+
+<!-- FIT-RESULT-PENDING: table to be filled from RESULT lines once run 5 / the modular A/B converges -->
+
+| config | CLB LUT | LUTRAM | DSP | RAMB | URAM | Fmax |
+|--------|---------|--------|-----|------|------|------|
+| TBD (flat, rule-clean) | — | — | — | — | — | — |
+| TBD (modular, `_m`) | — | — | — | — | — | — |
+
+**Honest framing.** AC-2 (streaming schedule bit-exact to the windowed golden, Verilator co-sim) is
+**met and independent of this fit outcome** — it was gated entirely on the software golden and
+Verilator, not on Vivado. The BRAM-ify lever is **validated in simulation**; Vivado synthesis of
+the W=6 window header is **in progress**, and this table will be filled from the run-5 / modular-A-B
+`RESULT` lines once one of them converges (or from whichever escalation — a bigger part, or a
+further structural rework — the outcome demands).
+
+## Deviations from the design spec
+
+- **Uniform hardware schedule, not per-slot exact DEMs** — one baked interior window graph
+  replays every slot (boundary/tail slots use the same graph as interior ones); the LER cost is
+  measured above (1.11× exact-schedule at threshold), not assumed.
+- **No `BP_VAR_DET` array** — a committed var's residual toggle set is derived from the existing
+  CSR tables (`BP_VAR_OFF`/`BP_EDGE_CHK`) already in the header; only the new 1-bit/var
+  `BP_VAR_COMMIT` was added, per the plan's design-decision #2.
+- **Emitter CLI arg order** — `streamgraph`/`streamvectors[early] rounds p W C [bankW bankV | n
+  seed]` puts (W, C) at positions 4/5 (matching `wingraph`), not the spec's `bankW bankV W C`.
+- **Per-mode goldens, not one schedule-independent golden** — see the "first-valid ≠ best-kept"
+  section above; a plan-execution finding, not a pre-planned design choice.
+- **`commit_clean`/residual redefinition** — the spec's original end-of-frame residual metric was
+  vacuous (always 0); redefined to the per-slot pre-slide drain check documented above.
+
+## Reproduce
+
+```bash
+# Software: hardware-schedule golden vs exact-schedule vs batch, at the frozen op point
+cargo run --release -p aleph-qec --example qec_q7_stream_sweep -- 12 20000 2024 --hw
+
+# Emitter: window header + streaming metadata, and per-mode golden vectors (W=6, C=2)
+cargo run --release -p aleph-qec --example qec_q7_bp_graph -- streamgraph 12 0.003 6 2 8 24
+cargo run --release -p aleph-qec --example qec_q7_bp_graph -- streamvectors 12 0.003 6 2 40 7
+cargo run --release -p aleph-qec --example qec_q7_bp_graph -- streamvectorsearly 12 0.003 6 2 40 7
+
+# RTL co-sim gates
+make -C hw bpbankedbram      # BRAM-ified core vs M8 core, both bankings, 40/40 decision-equal
+make -C hw bpbankedbramm     # modular ROM-cell sibling, same gate
+make -C hw bpstream          # streaming FSM, 40 trials x 7 slots x 2 modes vs own goldens
+make -C hw bpstreamaxi       # AXI shell, 5 gates x 2 modes incl. adversarial drain-stall
+```
+
+## Files
+
+- `crates/aleph-qec/src/relay_window.rs` — `HwSlidingWindowBp`, `WindowTrace`, `with_early_exit`.
+- `crates/aleph-qec/examples/qec_q7_bp_graph.rs` — `streamgraph`/`streamvectors`/
+  `streamvectorsearly` emitter modes.
+- `crates/aleph-qec/examples/qec_q7_stream_sweep.rs` — `--hw` comparison mode.
+- `hw/bp_relay_banked_bram.sv`, `hw/bp_relay_banked_bram_m.sv` — BRAM-ified banked core (flat +
+  modular-ROM-cell sibling).
+- `hw/bp_streaming_decoder.sv` — WARM/RUN/WAIT/COMMIT/SLIDE/RELOAD streaming FSM.
+- `hw/bp_stream_win_core.sv`, `hw/bp_stream_win.v` — AXI4-Stream front end + BD-top passthrough.
+- `hw/tb_bp_stream.cpp`, `hw/tb_bp_stream_axi.cpp` — Verilator TBs (`bpstream`, `bpstreamaxi`).
+- `hw/bb_stream_tanner.svh`, `hw/bp_stream_vectors.txt`, `hw/bp_stream_vectors_early.txt` —
+  committed generated artifacts.
+- `m9b-hw-sweep-20k.csv` (EPYC 20k-shot `--hw` sweep; scratchpad-only, not committed to the repo,
+  matching the M9a-sweep-CSV convention) — source of the batch/exact/hw LER table above.
