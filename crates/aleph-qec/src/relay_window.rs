@@ -822,7 +822,8 @@ mod tests {
     /// Build a gross-code circuit-level DEM + detector-round vector — the fixture the realistic
     /// (RTL-representative) HW-schedule tests build. Its rounds=12 circuit-level DEM + 4824-var
     /// window Tanner graph take ~200 s to construct in the unoptimized debug profile CI uses, so
-    /// every test on this fixture is `#[ignore]`-marked and runs in the release nightly sweep.
+    /// every test on this fixture is `#[ignore]`-marked (run manually with
+    /// `cargo test -p aleph-qec --release -- --ignored`).
     fn gross_stream(rounds: usize, p: f64) -> (DetectorErrorModel, Vec<usize>) {
         let code = BBCode::gross();
         let dem = code
@@ -835,8 +836,8 @@ mod tests {
     /// The small `[[72,12,6]]` BB code (ℓ=m=6, same polynomials as gross) — its circuit-level DEM
     /// and window graph are a fraction of gross's, cheap to build even in the debug profile, so
     /// the code-agnostic golden invariants (slot arithmetic, interior-graph match, determinism,
-    /// trace aggregation, converged-drain) are gated LIVE here. The gross fixture carries the
-    /// RTL-representative dense-regime checks in the nightly `--ignored` sweep.
+    /// trace aggregation, converged-drain, early-exit divergence) are gated LIVE here. The gross
+    /// fixture carries the RTL-representative dense-regime checks in the manual `--ignored` runs.
     fn small_stream(rounds: usize, p: f64) -> (DetectorErrorModel, Vec<usize>, usize) {
         let code = BBCode::new(6, 6, &[(3, 0), (0, 1), (0, 2)], &[(0, 3), (1, 0), (2, 0)]);
         let dem = code
@@ -900,9 +901,11 @@ mod tests {
     }
 
     /// Realistic gross-code interior-graph match at the RTL op point (rounds=12, W=6, C=2 ⇒ 7
-    /// slots, dpr=72). `#[ignore]`: the rounds=12 gross DEM + 4824-var window Tanner build is
-    /// ~200 s in the debug profile (construction cost, not decode — no shots are run here); the
-    /// small-code live twin above covers the invariant, the emitter's gross vectors gate the RTL.
+    /// slots, dpr=72). Heavy: the rounds=12 gross DEM + 4824-var window Tanner build is ~200 s in
+    /// the debug profile (construction cost, not decode — no shots are run here), so it is
+    /// `#[ignore]`d out of the debug CI gate. Run it manually with
+    /// `cargo test -p aleph-qec --release -- --ignored`; the small-code live twin above covers the
+    /// invariant, and the emitter's committed gross vectors gate the RTL.
     #[test]
     #[ignore]
     fn hw_interior_graph_matches_window_dem_gross() {
@@ -927,6 +930,7 @@ mod tests {
         let (dem, dr, _dpr) = small_stream(6, 0.004);
         let hw = HwSlidingWindowBp::new(dem.clone(), dr, 3, 1);
         let mut converged_checked = 0;
+        let mut dirty_shots = 0;
         for seed in 0..8u64 {
             let syn = sample_one_shot(&dem, seed);
             let (corr, stats, trace) = hw.decode_stream_trace(&syn);
@@ -946,19 +950,63 @@ mod tests {
                 assert_eq!(stats.residual, 0, "converged stream discarded lit bits");
                 assert!(trace.iter().all(|t| t.commit_clean));
                 converged_checked += 1;
+            } else if stats.residual > 0 {
+                dirty_shots += 1;
             }
         }
         assert!(
             converged_checked > 0,
             "expected some fully-converged shots on the small code"
         );
+        // The dirty branch must actually fire, else the residual⟺commit_clean check above is
+        // vacuous (a future p/rounds tweak could silently drain everything).
+        assert!(
+            dirty_shots > 0,
+            "expected some shot to discard lit commit-region bits — the residual metric would \
+             be vacuous otherwise; raise p or the seed budget if this regresses"
+        );
     }
 
-    /// Realistic W=6 dense-regime version of the aggregation invariant. `#[ignore]`: each stream
-    /// decode of the 4824-var window graph is ~115 s in the unoptimized debug profile (~100× the
-    /// release cost), so CI's `cargo test --workspace` (debug) would time out; the nightly
-    /// `--ignored` release run covers it. The small-graph live twin is
-    /// [`hw_small_stream_decode_is_deterministic_and_aggregates`].
+    /// Early-exit golden invariants on the SMALL code (LIVE, cheap in debug): the first-valid
+    /// early-exit trace differs from the best-kept trace on ≥1 slot within the seed budget (the
+    /// two goldens are genuinely distinct — the M6–M8 house pattern), and the early-exit decode
+    /// is deterministic. This is the only LIVE coverage of `with_early_exit`; the realistic gross
+    /// twin is the `#[ignore]`d [`hw_early_exit_differs_and_is_deterministic`].
+    #[test]
+    fn hw_small_early_exit_differs_and_is_deterministic() {
+        let (dem, dr, _dpr) = small_stream(6, 0.006);
+        let best = HwSlidingWindowBp::new(dem.clone(), dr.clone(), 3, 1);
+        let early = HwSlidingWindowBp::new(dem.clone(), dr, 3, 1).with_early_exit(true);
+        let mut differs = false;
+        for seed in 0..24u64 {
+            let syn = sample_one_shot(&dem, seed);
+            // Early-exit decode is a pure function of the shot.
+            let (ca, sa, ta) = early.decode_stream_trace(&syn);
+            let (cb, sb, tb) = early.decode_stream_trace(&syn);
+            assert_eq!(
+                (&ca, &sa, &ta),
+                (&cb, &sb, &tb),
+                "early-exit decode_stream_trace must be deterministic"
+            );
+            let (_c, _s, t_best) = best.decode_stream_trace(&syn);
+            if t_best != ta {
+                differs = true;
+                break; // divergence pinned; determinism already checked on every seed seen
+            }
+        }
+        assert!(
+            differs,
+            "first-valid (early-exit) and best-kept traces never differed on the small code — \
+             the two goldens would be redundant; raise p or the seed budget if this regresses"
+        );
+    }
+
+    /// Realistic W=6 dense-regime version of the aggregation invariant. Heavy: each stream decode
+    /// of the 4824-var gross window graph is ~115 s in the unoptimized debug profile (~100× the
+    /// release cost), so it is `#[ignore]`d out of CI's debug `cargo test --workspace` gate. Run
+    /// it manually with `cargo test -p aleph-qec --release -- --ignored`; the per-PR safety net is
+    /// the small-code live twin [`hw_small_stream_decode_invariants`] plus the committed RTL
+    /// co-sim vectors (`hw/bp_stream_vectors.txt`, regenerated by `make -C hw bpstream`).
     #[test]
     #[ignore]
     fn hw_trace_aggregates_to_stream_decode() {
@@ -978,9 +1026,11 @@ mod tests {
     /// and best-kept decisions must differ on at least one slot at p=0.005 within a few seeds,
     /// and the early-exit decode must itself stay a pure function of the shot.
     ///
-    /// `#[ignore]`: needs the DENSE p=0.005 W=6 regime (where divergence occurs — 25/280 slots at
-    /// the op point) and W=6 stream decodes are ~115 s each in the debug profile, so it runs in
-    /// the release nightly `--ignored` sweep, not the debug CI gate.
+    /// Heavy: the DENSE p=0.005 W=6 regime (where divergence is common — 25/280 slots at the op
+    /// point) with ~115 s-per-decode gross stream decodes, so it is `#[ignore]`d out of the debug
+    /// CI gate. Run it manually with `cargo test -p aleph-qec --release -- --ignored`; the per-PR
+    /// safety net is the small-code live twin
+    /// [`hw_small_early_exit_differs_and_is_deterministic`].
     #[test]
     #[ignore]
     fn hw_early_exit_differs_and_is_deterministic() {
@@ -1017,10 +1067,12 @@ mod tests {
     /// every slot `commit_clean`), and the dirty path is reachable — some nonconverged shot at
     /// p=0.005 leaves lit commit-region bits for the slide to discard (non-vacuous metric).
     ///
-    /// `#[ignore]`: the dense p=0.005 W=6 regime is required for both the converged AND the dirty
-    /// shot to appear in one seed set, and each W=6 stream decode is ~115 s in the debug profile
-    /// (~100× release) — 30 seeds would be ~1 h and time out CI's debug `cargo test --workspace`.
-    /// Runs in the release nightly `--ignored` sweep (~12 s there). At p=0.005 dirty-discard is
+    /// Heavy: the dense p=0.005 W=6 regime is required for both the converged AND the dirty shot
+    /// to appear in one seed set, and each W=6 stream decode is ~115 s in the debug profile
+    /// (~100× release) — 30 seeds is ~1 h in debug, so it is `#[ignore]`d out of CI's debug
+    /// `cargo test --workspace` gate. Run it manually with
+    /// `cargo test -p aleph-qec --release -- --ignored` (~12 s there); the per-PR safety net is
+    /// the small-code live twin [`hw_small_stream_decode_invariants`]. At p=0.005 dirty-discard is
     /// ~51 % and nonconvergence ~96 %, so 30 seeds reliably yield ≥1 converged and ≥1 dirty shot.
     #[test]
     #[ignore]
