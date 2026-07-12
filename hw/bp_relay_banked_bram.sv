@@ -22,7 +22,8 @@
 //       S_INIT   : pc = 0..GV,   ROM read at pc,           write at pc-1
 //       S_CHECK  : phase end pc==GC+4;  e_cm scatter gate pc>=5, write-group pc-5
 //       S_VAR    : phase end pc==GV+3;  m_cm/m_vm scatter gate pc>=4, write-group pc-4; ehat/ehat_w at pc-4
-//       S_EMIT   : ROM read at pc, accumulate/write at pc-1, phase end pc==GV (tail +1)
+//       S_EMIT   : constant-folded per M8 (pc=0..GV-1) — REVERTED from the ROM form (probe run 4: the obs
+//                  ROMs runtime-indexed BP_N-scale register arrays; see the ROM CONSUMER RULE below)
 //   * R5 (the overlapped-SAT parity + finalize) stays LUT wire taps — cheap constant-index `ehat` taps and
 //     XOR trees — UNCHANGED, still finalising at pc==GC-1 (re-verified against the co-sim waves). The
 //     `early_exit` path (first syndrome-valid decision -> S_EMIT) is likewise structurally unchanged; the
@@ -174,8 +175,6 @@ module bp_relay_banked_bram (
   localparam int BWV  = $clog2(BP_GV);               // m_vm row address width
   localparam int HBW  = $clog2(NHB);                 // half-bank index width (ROM-stored m_cm tap/scatter)
   localparam int EBW  = $clog2(NEB);                 // e_cm bank index width (ROM-stored operand select)
-  localparam int CW   = $clog2(BP_C);                // check index width (ROM-stored sbit source)
-  localparam int VW   = $clog2(BP_N);                // var index width (ROM-stored obs / corr target)
 
   /* verilator lint_off UNUSEDSIGNAL */
   // ================================================================== elaboration guards (verbatim from M8)
@@ -364,9 +363,18 @@ module bp_relay_banked_bram (
   // field of width FW occupies row bits [t*FW +: FW] (slot = check-slot j, (j,k) lane, var-slot i, or (i,d)
   // slot as noted per ROM). Fields are NOT merged across ROMs: one ROM per field keeps the +: slicing
   // trivial and each ROM independently BRAM-inferable (disclosed choice; same total bits either way).
-  // R3 — CHK gather selects (m_cm half-bank tap + syndrome-bit source), per check-group; slot = j or (j,k).
-  (* rom_style = "block" *) logic [W*CW-1:0]        chk_sbit_idx_rom  [GC];
-  (* rom_style = "block" *) logic [W-1:0]           chk_sbit_pres_rom [GC];
+  //
+  // ROM CONSUMER RULE (Task-4 probe run 4): a ROM output may feed (a) DATA paths (lambda/gamma/lam-seed,
+  // submodule operands) and (b) ADDRESSES / WRITE-ENABLES of the actual inferred memories (the LUTRAM
+  // m_cm/e_cm/m_vm bank cells) or selects over their OUTPUT buses (NHB/NEB-way muxes) — it must NEVER be
+  // a runtime index into a register array or wire bundle of BP_C/BP_N scale: Vivado does not fold
+  // runtime-indexed accesses into large register arrays (M9a ops lesson), it port-splits and explodes
+  // closure. The former CHK sbit-select ROM (s_reg[BP_C] index) and S_EMIT obs ROMs (ehat/best_e[BP_N]
+  // reads + corr_out[BP_N] write decode) violated this and are REVERTED to the LUT-core constant-folded
+  // `pc==g` form — those are C/N-scale sites that were cheap in the LUT core; the 169%-LUT whale was the
+  // E-scale edge fabric, which is exactly what stays ROM-ified below.
+  // R3 — CHK gather m_cm half-bank taps, per check-group; slot = (j,k). (The syndrome-bit SELECT is
+  // constant-folded per the consumer rule above, not a ROM.)
   (* rom_style = "block" *) logic [NEB*HBW-1:0]     chk_hbsel_rom     [GC];
   (* rom_style = "block" *) logic [NEB-1:0]         chk_epres_rom     [GC];
   // R4 + R2(read) — VAR gather (lambda / gamma / e_cm operand bank+port+row), per var-group[, leg];
@@ -386,10 +394,9 @@ module bp_relay_banked_bram (
   (* rom_style = "block" *) logic [NVB*MSG_BITS-1:0] scat_lam_rom  [GV];
   // R2(write) — e_cm write present mask, per check-group; slot = (j,k).
   (* rom_style = "block" *) logic [NEB-1:0]          ecm_wpres_rom [GC];
-  // R6 — S_EMIT observable (per-var present / index / obs-mask), per var-group; slot = i.
-  (* rom_style = "block" *) logic [V-1:0]            obs_pres_rom [GV];
-  (* rom_style = "block" *) logic [V*VW-1:0]         obs_var_rom  [GV];
-  (* rom_style = "block" *) logic [V*BP_OBS-1:0]     obs_mask_rom [GV];
+  // R6 (S_EMIT observable) is NOT a ROM: reverted to the LUT-core constant-folded form per the consumer
+  // rule above (it indexed ehat/best_e[BP_N] and write-decoded corr_out[BP_N] at runtime — the probe-run-4
+  // closure whale).
 
   // -------------------------------------------------------------------------- ROM fills (time-0 initial)
   // PURE LITERAL COPY from the emitter-baked packed-row tables (BP_ROM_*, Task-9 emitter) — ZERO content
@@ -401,11 +408,9 @@ module bp_relay_banked_bram (
   // packing-contract safety net (M7 discipline).
   initial begin : fill_roms
     for (int g = 0; g < GC; g++) begin
-      chk_sbit_idx_rom[g]  = BP_ROM_CHK_SBIT_IDX[g];
-      chk_sbit_pres_rom[g] = BP_ROM_CHK_SBIT_PRES[g];
-      chk_hbsel_rom[g]     = BP_ROM_CHK_HBSEL[g];
-      chk_epres_rom[g]     = BP_ROM_CHK_EPRES[g];
-      ecm_wpres_rom[g]     = BP_ROM_ECM_WPRES[g];
+      chk_hbsel_rom[g] = BP_ROM_CHK_HBSEL[g];
+      chk_epres_rom[g] = BP_ROM_CHK_EPRES[g];
+      ecm_wpres_rom[g] = BP_ROM_ECM_WPRES[g];
     end
     for (int g = 0; g < GV; g++) begin
       var_pres_rom[g]  = BP_ROM_VAR_PRES[g];
@@ -418,9 +423,6 @@ module bp_relay_banked_bram (
       scat_hb_rom[g]   = BP_ROM_SCAT_HB[g];
       scat_row_rom[g]  = BP_ROM_SCAT_ROW[g];
       scat_lam_rom[g]  = BP_ROM_SCAT_LAM[g];
-      obs_pres_rom[g]  = BP_ROM_OBS_PRES[g];
-      obs_var_rom[g]   = BP_ROM_OBS_VAR[g];
-      obs_mask_rom[g]  = BP_ROM_OBS_MASK[g];
     end
     for (int t = 0; t < BP_LEGS * GV; t++) var_gam_rom[t] = BP_ROM_VAR_GAM[t];
   end
@@ -434,17 +436,10 @@ module bp_relay_banked_bram (
   initial begin : rom_contract
     automatic int fails = 0;
     for (int g = 0; g < GC; g++) begin
-      automatic logic [W*CW-1:0]    x_idx;
-      automatic logic [W-1:0]       x_spres;
       automatic logic [NEB*HBW-1:0] x_hbsel;
       automatic logic [NEB-1:0]     x_epres;
-      x_idx = '0; x_spres = '0; x_hbsel = '0; x_epres = '0;
+      x_hbsel = '0; x_epres = '0;
       for (int j = 0; j < W; j++) begin
-        automatic int c = chk_at_bq(g, j);
-        if (c >= 0) begin
-          x_spres[j]        = 1'b1;
-          x_idx[j*CW +: CW] = CW'(c);
-        end
         for (int k = 0; k < BP_CHK_DEG; k++) begin
           automatic int e = edge_at_bq(g, j, k);
           if (e >= 0) begin
@@ -452,12 +447,6 @@ module bp_relay_banked_bram (
             x_hbsel[(j*BP_CHK_DEG + k)*HBW +: HBW]   = HBW'(BP_EDGE_HB[e]);
           end
         end
-      end
-      if (BP_ROM_CHK_SBIT_IDX[g] !== x_idx) begin
-        $display("bp_relay_banked_bram ROM-CONTRACT FAIL: CHK_SBIT_IDX row %0d", g); fails = fails + 1;
-      end
-      if (BP_ROM_CHK_SBIT_PRES[g] !== x_spres) begin
-        $display("bp_relay_banked_bram ROM-CONTRACT FAIL: CHK_SBIT_PRES row %0d", g); fails = fails + 1;
       end
       if (BP_ROM_CHK_HBSEL[g] !== x_hbsel) begin
         $display("bp_relay_banked_bram ROM-CONTRACT FAIL: CHK_HBSEL row %0d", g); fails = fails + 1;
@@ -481,19 +470,13 @@ module bp_relay_banked_bram (
       automatic logic [NVB*HBW-1:0]      x_shb;
       automatic logic [NVB*BWC-1:0]      x_srow;
       automatic logic [NVB*MSG_BITS-1:0] x_slam;
-      automatic logic [V-1:0]            x_opres;
-      automatic logic [V*VW-1:0]         x_ovar;
-      automatic logic [V*BP_OBS-1:0]     x_omask;
       x_pres = '0; x_lam = '0; x_epres = '0; x_ebsel = '0; x_eport = '0; x_erow = '0;
-      x_spres = '0; x_shb = '0; x_srow = '0; x_slam = '0; x_opres = '0; x_ovar = '0; x_omask = '0;
+      x_spres = '0; x_shb = '0; x_srow = '0; x_slam = '0;
       for (int i = 0; i < V; i++) begin
         automatic int v = var_at_bq(g, i);
         if (v >= 0) begin
           x_pres[i]                       = 1'b1;
           x_lam[i*MSG_BITS +: MSG_BITS]   = BP_LAMBDA[v][MSG_BITS-1:0];
-          x_opres[i]                      = 1'b1;
-          x_ovar[i*VW +: VW]              = VW'(v);
-          x_omask[i*BP_OBS +: BP_OBS]     = BP_OBS_MASK[v][BP_OBS-1:0];
         end
         for (int d = 0; d < BP_VAR_DEG; d++) begin
           automatic int e = vedge_at_bq(g, i, d);
@@ -540,15 +523,6 @@ module bp_relay_banked_bram (
       if (BP_ROM_SCAT_LAM[g]  !== x_slam)  begin
         $display("bp_relay_banked_bram ROM-CONTRACT FAIL: SCAT_LAM row %0d", g); fails = fails + 1;
       end
-      if (BP_ROM_OBS_PRES[g]  !== x_opres) begin
-        $display("bp_relay_banked_bram ROM-CONTRACT FAIL: OBS_PRES row %0d", g); fails = fails + 1;
-      end
-      if (BP_ROM_OBS_VAR[g]   !== x_ovar)  begin
-        $display("bp_relay_banked_bram ROM-CONTRACT FAIL: OBS_VAR row %0d", g); fails = fails + 1;
-      end
-      if (BP_ROM_OBS_MASK[g]  !== x_omask) begin
-        $display("bp_relay_banked_bram ROM-CONTRACT FAIL: OBS_MASK row %0d", g); fails = fails + 1;
-      end
       for (int l = 0; l < BP_LEGS; l++) begin
         automatic logic [V*MSG_BITS-1:0] x_gam;
         x_gam = '0;
@@ -565,15 +539,13 @@ module bp_relay_banked_bram (
     if (fails != 0)
       $fatal(1, "bp_relay_banked_bram: %0d ROM packing-contract violation(s) — emitter literal block and RTL layout disagree", fails);
     else
-      $display("bp_relay_banked_bram: ROM packing contract PASS (19 ROMs, GC=%0d GV=%0d)", GC, GV);
+      $display("bp_relay_banked_bram: ROM packing contract PASS (14 ROMs, GC=%0d GV=%0d)", GC, GV);
   end
 `endif
 
   // -------------------------------------------------------------------------- registered ROM row words
   // ONE sync read per ROM per cycle; the `_q` row register IS the (single) ROM output register — the same
   // pipeline stage the earlier per-field registered copies formed, no extra depth.
-  logic [W*CW-1:0]         chk_sbit_idx_q;
-  logic [W-1:0]            chk_sbit_pres_q;
   logic [NEB*HBW-1:0]      chk_hbsel_q;
   logic [NEB-1:0]          chk_epres_q;
   logic [V-1:0]            var_pres_q;
@@ -588,14 +560,9 @@ module bp_relay_banked_bram (
   logic [NVB*BWC-1:0]      scat_row_q;
   logic [NVB*MSG_BITS-1:0] scat_lam_q;
   logic [NEB-1:0]          ecm_wpres_q;
-  logic [V-1:0]            obs_pres_q;
-  logic [V*VW-1:0]         obs_var_q;
-  logic [V*BP_OBS-1:0]     obs_mask_q;
 
   // combinational per-slot field slices of the registered rows (the pre-rework consumer names, unchanged
   // downstream: gathers, scatters, S_EMIT all read these exactly as before)
-  logic [CW-1:0]        chk_sbit_idx_r  [W];
-  logic                 chk_sbit_pres_r [W];
   logic [HBW-1:0]       chk_hbsel_r     [NEB];
   logic                 chk_epres_r     [NEB];
   logic                 var_pres_r  [V];
@@ -610,13 +577,8 @@ module bp_relay_banked_bram (
   logic [BWC-1:0]       scat_row_r  [NVB];
   logic [MSG_BITS-1:0]  scat_lam_r  [NVB];
   logic                 ecm_wpres_r [NEB];
-  logic                 obs_pres_r  [V];
-  logic [VW-1:0]        obs_var_r   [V];
-  logic [BP_OBS-1:0]    obs_mask_r  [V];
   always_comb begin
     for (int j = 0; j < W; j++) begin
-      chk_sbit_idx_r[j]  = chk_sbit_idx_q[j*CW +: CW];
-      chk_sbit_pres_r[j] = chk_sbit_pres_q[j];
     end
     for (int b = 0; b < NEB; b++) begin
       chk_hbsel_r[b] = chk_hbsel_q[b*HBW +: HBW];
@@ -627,9 +589,6 @@ module bp_relay_banked_bram (
       var_pres_r[i] = var_pres_q[i];
       var_lam_r[i]  = var_lam_q[i*MSG_BITS +: MSG_BITS];
       var_gam_r[i]  = var_gam_q[i*MSG_BITS +: MSG_BITS];
-      obs_pres_r[i] = obs_pres_q[i];
-      obs_var_r[i]  = obs_var_q[i*VW +: VW];
-      obs_mask_r[i] = obs_mask_q[i*BP_OBS +: BP_OBS];
     end
     for (int b = 0; b < NVB; b++) begin
       var_epres_r[b] = var_epres_q[b];
@@ -649,13 +608,12 @@ module bp_relay_banked_bram (
   // addressed by the M8 WRITE cursor (INIT:pc / VAR:pc-3); their registered output aligns with the
   // +1-bumped write cursor (INIT:pc-1 / VAR:pc-4). All addresses clamped in-range (out-of-phase reads
   // are gated unused downstream).
-  int chk_rd, var_rd, obs_rd, gam_rd, scat_rd_i, scat_rd, ecmw_rd_i, ecmw_rd;
+  int chk_rd, var_rd, gam_rd, scat_rd_i, scat_rd, ecmw_rd_i, ecmw_rd;
   int wa_ecm_i, wa_mvm_i;
   logic ecm_we_gate, mvm_we_gate, mcm_we_gate, scat_is_init;
   always_comb begin
     chk_rd    = (pc >= 0 && pc < GC) ? pc : 0;
     var_rd    = (pc >= 0 && pc < GV) ? pc : 0;
-    obs_rd    = (pc >= 0 && pc < GV) ? pc : 0;
     gam_rd    = leg * GV + var_rd;                       // leg in [0,LEGS), var_rd in [0,GV)
     scat_rd_i = (state == S_INIT) ? pc : (pc - 3);
     scat_rd   = (scat_rd_i >= 0 && scat_rd_i < GV) ? scat_rd_i : 0;
@@ -676,8 +634,6 @@ module bp_relay_banked_bram (
   // ONE whole-row sync read per ROM per cycle (the BRAM-inference template); per-slot fields are sliced
   // combinationally from the `_q` row registers above.
   always_ff @(posedge clk) begin
-    chk_sbit_idx_q  <= chk_sbit_idx_rom[chk_rd];
-    chk_sbit_pres_q <= chk_sbit_pres_rom[chk_rd];
     chk_hbsel_q     <= chk_hbsel_rom[chk_rd];
     chk_epres_q     <= chk_epres_rom[chk_rd];
     ecm_wpres_q     <= ecm_wpres_rom[ecmw_rd];
@@ -692,9 +648,6 @@ module bp_relay_banked_bram (
     scat_hb_q       <= scat_hb_rom[scat_rd];
     scat_row_q      <= scat_row_rom[scat_rd];
     scat_lam_q      <= scat_lam_rom[scat_rd];
-    obs_pres_q      <= obs_pres_rom[obs_rd];
-    obs_var_q       <= obs_var_rom[obs_rd];
-    obs_mask_q      <= obs_mask_rom[obs_rd];
     mcm_ra_r <= BWC'(chk_rd);
     mvm_ra_r <= BWV'(var_rd);
   end
@@ -794,12 +747,23 @@ module bp_relay_banked_bram (
   // ===================================================================== W check_minsum slots
   generate
     for (genvar j = 0; j < W; j++) begin : gchk
+      logic                       sbit_sel;
       logic                       sbit_j;
       logic signed [MSG_BITS-1:0] m_in_j    [BP_CHK_DEG];
       logic                       present_j [BP_CHK_DEG];
+      // syndrome-bit select: LUT-core CONSTANT-FOLDED form (probe run 4 revert) — `chk_at_bq(g,j)` folds
+      // per group under `pc == g`, so s_reg[BP_C] is never runtime-indexed (Vivado port-splits/explodes on
+      // runtime indices into large register arrays; the SAT parity below uses the same shape). The fold
+      // has 0 ROM latency, so ONE register stage (sbit_sel -> sbit_j) re-aligns it with the ROM-fed
+      // gather data (group pc-1) — the global schedule is unchanged.
+      always_comb begin
+        sbit_sel = 1'b0;
+        for (int g = 0; g < GC; g++)
+          if (chk_at_bq(g, j) >= 0 && pc == g) sbit_sel = s_reg[chk_at_bq(g, j)];
+      end
+      always_ff @(posedge clk) sbit_j <= sbit_sel;    // ROM-latency twin stage (aligns with *_r ROM rows)
       // gather from the REGISTERED CHK select ROM (group = pc-1) tapping the REGISTERED-address m_cm reads.
       always_comb begin
-        sbit_j = chk_sbit_pres_r[j] ? s_reg[chk_sbit_idx_r[j]] : 1'b0;
         for (int k = 0; k < BP_CHK_DEG; k++) begin
           automatic int idx = j * BP_CHK_DEG + k;
           m_in_j[k]    = chk_epres_r[idx] ? qmcm[chk_hbsel_r[idx]] : '0;
@@ -1033,28 +997,32 @@ module bp_relay_banked_bram (
           lat <= lat + 32'd1;
         end
 
-        // ----------------------------------------------------------------- reduce chosen ehat -> obs (M9b)
-        // ROM read at pc; accumulate/write the group's slots at pc-1 (obs_*_r hold group pc-1). Per-slot
-        // observable term (own constant-folded group in the ROM) then a pure XOR reduction (associative).
+        // ----------------------------------------------------------------- reduce chosen ehat -> obs
+        // LUT-core CONSTANT-FOLDED form (probe run 4 revert): the ROM form runtime-indexed ehat/best_e
+        // [BP_N] and write-decoded corr_out[BP_N] — the closure whale. `var_at_bq(g,i)` folds per group
+        // under `pc == g` (M8's 12e split: per-slot term with its own constant-folded group mux, then a
+        // pure XOR reduction — associative, bit-exact). Phase is pc=0..GV-1 again (the +1 ROM tail is
+        // gone), so the decode is ONE cycle shorter than the ROM-form core; decisions are unchanged.
         S_EMIT: begin
           automatic logic [BP_OBS-1:0] base;
           automatic logic [BP_OBS-1:0] term [V];
           automatic logic [BP_OBS-1:0] acc;
-          base = (pc == 1) ? {BP_OBS{1'b0}} : obs_acc;   // group (pc-1)==0 <=> pc==1: fresh accumulation
+          automatic logic              bb;
+          base = (pc == 0) ? {BP_OBS{1'b0}} : obs_acc;
+          bb   = 1'b0;
           for (int i = 0; i < V; i++) term[i] = {BP_OBS{1'b0}};
-          if (pc >= 1) begin
-            for (int i = 0; i < V; i++)
-              if (obs_pres_r[i]) begin
-                automatic int   v  = int'(obs_var_r[i]);
-                automatic logic bb = found ? best_e[v] : ehat[v];
+          for (int i = 0; i < V; i++)
+            for (int g = 0; g < GV; g++)
+              if (var_at_bq(g, i) >= 0 && pc == g) begin
+                automatic int v = var_at_bq(g, i);
+                bb = found ? best_e[v] : ehat[v];
                 corr_out[v] <= bb;
-                if (bb) term[i] = obs_mask_r[i];
+                if (bb) term[i] = BP_OBS_MASK[v][BP_OBS-1:0];
               end
-            acc = base;
-            for (int i = 0; i < V; i++) acc = acc ^ term[i];
-            obs_acc <= acc;
-          end
-          if (pc == GV) begin pc <= '0; state <= S_DONE; end
+          acc = base;                              // pure XOR reduction over the per-slot term array
+          for (int i = 0; i < V; i++) acc = acc ^ term[i];
+          obs_acc <= acc;
+          if (pc == GV - 1) begin pc <= '0; state <= S_DONE; end
           else pc <= pc + 1;
           lat <= lat + 32'd1;
         end

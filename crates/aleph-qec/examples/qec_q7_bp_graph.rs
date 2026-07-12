@@ -1178,23 +1178,28 @@ fn emit_rom_table(name: &str, depth_expr: &str, rows: &[RomRow]) {
     );
 }
 
-/// M9b (Q7-04) Task-4 probe rescue: emit the 19 BRAM-ROM row tables of `hw/bp_relay_banked_bram.sv`
+/// M9b (Q7-04) Task-4 probe rescue: emit the 14 BRAM-ROM row tables of `hw/bp_relay_banked_bram.sv`
 /// as PACKED-ROW HEX LITERALS, so the RTL's ROM fills become pure literal copies with ZERO content
 /// computation at elaboration. Probe runs 2-3 showed Vivado's ELABORATION of the computed `initial`
 /// fills peaking ~50 GB RSS *independent of `rom_style`* — the cost was the fill computation, not the
 /// ROM mapping — so per the 12c house lesson ALL content computation moves here (the offline emitter)
 /// and the RTL only parses literals.
 ///
+/// Probe run 4 narrowed the residual whale to ROM outputs used as RUNTIME INDICES into BP_C/BP_N-scale
+/// register arrays (Vivado port-splits those instead of folding — M9a ops lesson), so the former
+/// sbit-select tables (`CHK_SBIT_IDX/PRES`, indexing `s_reg[BP_C]`) and the S_EMIT observable tables
+/// (`OBS_PRES/VAR/MASK`, indexing `ehat`/`best_e`/`corr_out[BP_N]`) are GONE — those sites reverted to
+/// the LUT core's constant-folded `pc==g` form in the RTL. A ROM here feeds only data paths, memory
+/// addresses/write-enables, or bank-output bus selects.
+///
 /// PACKING CONTRACT (must byte-match `bp_relay_banked_bram.sv`): slot `t`'s field of width `FW`
-/// occupies row bits `[t*FW +: FW]`, slots being check-slot `j`, `(j,k)` lane (`j*BP_CHK_DEG+k`),
-/// var-slot `i`, or `(i,d)` slot (`i*BP_VAR_DEG+d`); field widths are the RTL's `$clog2` localparams
-/// (`CW/VW/BWC/HBW/EBW`) recomputed here by the same ceil-log2. Empty slots are all-zero fields, and
-/// present/eport bits are 1-bit fields — exactly the old RTL fill expressions. The RTL's
-/// `rom_contract` elaboration guard (simulation-only) recomputes EVERY row the old way and `$fatal`s
-/// on any mismatch, so this emitter and the RTL slicing cannot silently disagree (M7 discipline).
+/// occupies row bits `[t*FW +: FW]`, slots being `(j,k)` lane (`j*BP_CHK_DEG+k`), var-slot `i`, or
+/// `(i,d)` slot (`i*BP_VAR_DEG+d`); field widths are the RTL's `$clog2` localparams (`BWC/HBW/EBW`)
+/// recomputed here by the same ceil-log2. Empty slots are all-zero fields, and present/eport bits are
+/// 1-bit fields — exactly the old RTL fill expressions. The RTL's `rom_contract` elaboration guard
+/// (simulation-only) recomputes EVERY row the old way and `$fatal`s on any mismatch, so this emitter
+/// and the RTL slicing cannot silently disagree (M7 discipline).
 fn print_rom_rows(view: &FixedHwView, b: &Banking) {
-    let bp_c = view.n_checks;
-    let bp_n = view.n_vars;
     let chk_deg = view
         .check_off
         .windows(2)
@@ -1219,32 +1224,23 @@ fn print_rom_rows(view: &FixedHwView, b: &Banking) {
             (usize::BITS - (n - 1).leading_zeros()) as usize
         }
     };
-    let cw = clog2(bp_c); // check index width (sbit source)
-    let vw = clog2(bp_n); // var index width (obs / corr target)
     let bwc = clog2(gc); // m_cm / e_cm row address width
     let hbw = clog2(nhb); // half-bank index width
     let ebw = clog2(neb); // e_cm bank index width
     let msg = view.msg_bits as usize;
-    let obsw = view.num_observables;
     let mask = |val: i64, width: usize| -> u64 { (val as u64) & ((1u64 << width) - 1) };
 
-    // ---- CHK-side rows (depth GC): gather selects + e_cm write present mask.
-    let mut chk_sbit_idx = Vec::with_capacity(gc);
-    let mut chk_sbit_pres = Vec::with_capacity(gc);
+    // ---- CHK-side rows (depth GC): gather half-bank taps + e_cm write present mask.
     let mut chk_hbsel = Vec::with_capacity(gc);
     let mut chk_epres = Vec::with_capacity(gc);
     let mut ecm_wpres = Vec::with_capacity(gc);
     for g in 0..gc {
-        let mut r_idx = RomRow::new(w * cw);
-        let mut r_spres = RomRow::new(w);
         let mut r_hbsel = RomRow::new(neb * hbw);
         let mut r_epres = RomRow::new(neb);
         for j in 0..w {
             let c = b.chk_at[g * w + j];
             if c >= 0 {
                 let c = c as usize;
-                r_spres.set(j, 1, 1);
-                r_idx.set(j * cw, cw, c as u64);
                 let deg = (view.check_off[c + 1] - view.check_off[c]) as usize;
                 for k in 0..chk_deg.min(deg) {
                     let e = view.check_edges[view.check_off[c] as usize + k] as usize;
@@ -1257,14 +1253,12 @@ fn print_rom_rows(view: &FixedHwView, b: &Banking) {
         // keeps them as two ROMs (different read addresses), so emit both.
         let mut r_wpres = RomRow::new(neb);
         r_wpres.bits.copy_from_slice(&r_epres.bits);
-        chk_sbit_idx.push(r_idx);
-        chk_sbit_pres.push(r_spres);
         chk_hbsel.push(r_hbsel);
         chk_epres.push(r_epres);
         ecm_wpres.push(r_wpres);
     }
 
-    // ---- VAR-side rows (depth GV, gamma depth LEGS*GV): gather + scatter + S_EMIT observable.
+    // ---- VAR-side rows (depth GV, gamma depth LEGS*GV): gather + scatter.
     let mut var_pres = Vec::with_capacity(gv);
     let mut var_lam = Vec::with_capacity(gv);
     let mut var_epres = Vec::with_capacity(gv);
@@ -1275,9 +1269,6 @@ fn print_rom_rows(view: &FixedHwView, b: &Banking) {
     let mut scat_hb = Vec::with_capacity(gv);
     let mut scat_row = Vec::with_capacity(gv);
     let mut scat_lam = Vec::with_capacity(gv);
-    let mut obs_pres = Vec::with_capacity(gv);
-    let mut obs_var = Vec::with_capacity(gv);
-    let mut obs_mask = Vec::with_capacity(gv);
     let mut var_gam: Vec<RomRow> = (0..view.legs * gv)
         .map(|_| RomRow::new(vcap * msg))
         .collect();
@@ -1292,18 +1283,12 @@ fn print_rom_rows(view: &FixedHwView, b: &Banking) {
         let mut r_shb = RomRow::new(nvb * hbw);
         let mut r_srow = RomRow::new(nvb * bwc);
         let mut r_slam = RomRow::new(nvb * msg);
-        let mut r_opres = RomRow::new(vcap);
-        let mut r_ovar = RomRow::new(vcap * vw);
-        let mut r_omask = RomRow::new(vcap * obsw);
         for i in 0..vcap {
             let var = b.var_at[g * vcap + i];
             if var >= 0 {
                 let var = var as usize;
                 r_pres.set(i, 1, 1);
                 r_lam.set(i * msg, msg, mask(view.lambda_q[var] as i64, msg));
-                r_opres.set(i, 1, 1);
-                r_ovar.set(i * vw, vw, var as u64);
-                r_omask.set(i * obsw, obsw, view.obs[var] & mask(-1, obsw));
                 for (l, gam_leg) in view.gamma_q.iter().enumerate() {
                     var_gam[l * gv + g].set(i * msg, msg, mask(gam_leg[var] as i64, msg));
                 }
@@ -1336,21 +1321,18 @@ fn print_rom_rows(view: &FixedHwView, b: &Banking) {
         scat_hb.push(r_shb);
         scat_row.push(r_srow);
         scat_lam.push(r_slam);
-        obs_pres.push(r_opres);
-        obs_var.push(r_ovar);
-        obs_mask.push(r_omask);
     }
 
     println!();
     println!(
         "// ---- M9b BRAM-ROM row literals for bp_relay_banked_bram (GENERATED; packing contract: \
-         slot t's width-FW field at row bits [t*FW +: FW], widths CW={cw} VW={vw} BWC={bwc} \
-         HBW={hbw} EBW={ebw} MSG={msg} OBS={obsw}). The core's `rom_contract` guard recomputes every \
-         row from the graph tables above and $fatal's on mismatch. Ignored by every other core. ----"
+         slot t's width-FW field at row bits [t*FW +: FW], widths BWC={bwc} HBW={hbw} EBW={ebw} \
+         MSG={msg}). Data / memory-address / bank-output-select consumers ONLY (probe run 4 rule: \
+         never a runtime index into a BP_C/BP_N-scale register array). The core's `rom_contract` \
+         guard recomputes every row from the graph tables above and $fatal's on mismatch. Ignored by \
+         every other core. ----"
     );
     println!("/* verilator lint_off UNUSEDPARAM */");
-    emit_rom_table("BP_ROM_CHK_SBIT_IDX", "BP_GC", &chk_sbit_idx);
-    emit_rom_table("BP_ROM_CHK_SBIT_PRES", "BP_GC", &chk_sbit_pres);
     emit_rom_table("BP_ROM_CHK_HBSEL", "BP_GC", &chk_hbsel);
     emit_rom_table("BP_ROM_CHK_EPRES", "BP_GC", &chk_epres);
     emit_rom_table("BP_ROM_ECM_WPRES", "BP_GC", &ecm_wpres);
@@ -1365,9 +1347,6 @@ fn print_rom_rows(view: &FixedHwView, b: &Banking) {
     emit_rom_table("BP_ROM_SCAT_HB", "BP_GV", &scat_hb);
     emit_rom_table("BP_ROM_SCAT_ROW", "BP_GV", &scat_row);
     emit_rom_table("BP_ROM_SCAT_LAM", "BP_GV", &scat_lam);
-    emit_rom_table("BP_ROM_OBS_PRES", "BP_GV", &obs_pres);
-    emit_rom_table("BP_ROM_OBS_VAR", "BP_GV", &obs_var);
-    emit_rom_table("BP_ROM_OBS_MASK", "BP_GV", &obs_mask);
     println!("/* verilator lint_on UNUSEDPARAM */");
 }
 
