@@ -1467,9 +1467,10 @@ Both files are committed; the co-sim gates each mode against its own file.
 The BRAM re-lag (+121 cyc, not the originally-projected +122 — one cycle recovered when the
 S_EMIT/CHK-sbit ROM reverts below removed a tail cycle) is the honest price of moving the E-fabric
 off LUT-constant taps onto sync-read ROMs: one extra register stage per launch/scatter, uniformly.
-It is unrelated to the window-vs-core jump — the window's 16 298 cyc is a **6.8×** larger schedule
-than the rounds=1 core's 2206 (the W=6 window graph is 5.1× the rounds=1 edge count, plus one
-extra CHK/VAR-fabric register stage from the BRAM core).
+It is unrelated to the window-vs-core jump — the window's 16 298 cyc is a **4.2×** larger schedule
+than the same-banking rounds=1 core (3871 cyc at 8/24; 7.4× against the 16/48 core's 2206, but the
+W=6 window graph only solves at 8/24) — the W=6 window graph is 5.1× the rounds=1 edge count, and
+the group counts (GC 18→54, GV 36→201 at 8/24) set the schedule length.
 
 **The honest framing (feeds M9c):** at 122 µs worst-case and ~37 µs mean, the window decoder is
 **far over** the ~C µs (2 µs) real-time budget a continuous round stream needs — exactly the
@@ -1477,6 +1478,14 @@ spec's own honest-expectations section anticipated. M9b's deliverable is not sub
 is the **architecture** (bit-exact schedule, robust AXI shell) plus the **honestly measured**
 worst/mean rate, which is the Q7-01 ASIC de-risk input and the M9c starting line, not a claimed
 real-time result.
+
+**M9c hand-off notes:** (1) runt frames (`slices < W`) are outside the verified envelope — the
+FSM's zero-pad warm path is coded and analytically correct but never exercised by co-sim (the op
+point always has 13 slices > W=6); keep frames ≥ W rounds or extend the golden first. (2) Which
+BRAM-core variant M9c carries forward (flat `bp_relay_banked_bram` vs modular `_m`) is decided by
+the Vivado A/B below; both are decision-identical and latency-identical in co-sim. (3) KV260
+synthesizability of the W=6 header remains **open** until the fit table below is filled — it is
+the single thing that can still ambush the silicon milestone.
 
 ## KV260 fit — Vivado synthesis in progress, honest status
 
