@@ -12,7 +12,7 @@ OBJ_DIR   := obj_dir
 VERILATOR ?= verilator
 CARGO     := cargo run --release -q -p aleph-qec --example
 
-.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi stream-axi-circuit cosim-stream cosim-stream-circuit cosim-stream-ler cosim-stream-ler-circuit cosim cosim-3d cosim-circuit cosim-circuit-3d bpcheck bprelay bpunroll bppartial bppartialfast bppipe bpfast bpaxi bpcirc bpaxiwide bpbram bpbramfast bpbramdp bpbramdpearly checkminsum varupdate unrollskel bpunrollpipe bpbanked-lint bpbanked bpaxibanked clean
+.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi stream-axi-circuit cosim-stream cosim-stream-circuit cosim-stream-ler cosim-stream-ler-circuit cosim cosim-3d cosim-circuit cosim-circuit-3d bpcheck bprelay bpunroll bppartial bppartialfast bppipe bpfast bpaxi bpcirc bpaxiwide bpbram bpbramfast bpbramdp bpbramdpearly checkminsum varupdate unrollskel bpunrollpipe bpbanked-lint bpbanked bpbankedbram-lint bpbankedbram bpstream-lint bpstream bpstreamaxi-lint bpstreamaxi bpaxibanked clean
 
 all: d3 rep surf
 
@@ -275,6 +275,107 @@ bpbanked:
 			check_minsum.sv var_update.sv bp_relay_banked.sv tb_bp_banked.cpp -o sim_bpbanked || exit 1; \
 		./obj_banked/sim_bpbanked bp_circ_vectors.txt || exit 1; \
 	done
+
+# Q7-04 M9b — BRAM-ified banked relay-BP core (`bp_relay_banked_bram`): Verilator LINT-ONLY elaboration.
+# Sibling of `bp_relay_banked` whose per-group constant decode fabrics are sync-read BRAM ROMs (+1 re-lag).
+# NOTE: named `bpbankedbram` (not `bpbram`, which is already the unrelated edge-serial M2-BRAM core above).
+bpbankedbram-lint:
+	cd .. && $(CARGO) qec_q7_bp_graph -- circgraph 1 0.003 8 24 > hw/bb_gross_tanner.svh
+	$(VERILATOR) --lint-only -Wall --top-module bp_relay_banked_bram \
+		check_minsum.sv var_update.sv bp_relay_banked_bram.sv
+
+# Q7-04 M9b — `bp_relay_banked_bram` FULL CO-SIM: drive the SAME 40-shot circuit-level golden through the
+# BRAM-ified banked core, asserting 40/40 DECISION-EQUAL (corr, obs, vflag) to the fixed-point golden — the
+# M8 banked core's `bp_relay_banked` twin with the constant fabrics moved to sync-read ROMs (latency grows,
+# decisions do not). Reuses `tb_bp_banked.cpp` UNCHANGED via Verilator `--prefix Vbp_relay_banked` (keeps the
+# TB's model class name while the top module is `bp_relay_banked_bram`). Builds+runs at BOTH 8/24 and 16/48
+# (the two bankings the M9b gate covers); 40/40 at each is the (W,V)-invariance check. Prints worst/mean lat.
+# The sweep ENDS on 16/48 so the TRACKED header `bb_gross_tanner.svh` is left at its committed at-rest
+# state after a run (the same reason `bpbanked` ends on 16/48) — `git status` stays clean.
+bpbankedbram:
+	cd .. && $(CARGO) qec_q7_bp_graph -- circvectors 1 0.003 40 2024 > hw/bp_circ_vectors.txt
+	@for wv in "8 24" "16 48"; do \
+		set -- $$wv; echo "== W=$$1 V=$$2 =="; \
+		(cd .. && $(CARGO) qec_q7_bp_graph -- circgraph 1 0.003 $$1 $$2 > hw/bb_gross_tanner.svh); \
+		rm -rf obj_bankedbram; \
+		$(VERILATOR) --cc --exe --build -Wall --Mdir obj_bankedbram --prefix Vbp_relay_banked \
+			--top-module bp_relay_banked_bram \
+			check_minsum.sv var_update.sv bp_relay_banked_bram.sv tb_bp_banked.cpp -o sim_bpbankedbram || exit 1; \
+		./obj_bankedbram/sim_bpbankedbram bp_circ_vectors.txt || exit 1; \
+	done
+
+# Q7-04 M9b — MODULAR BRAM-ified banked core (`bp_relay_banked_bram_m`): probe-run-5 12b variant — every
+# ROM + its sync-read register in a stamped `bp_rom_*_bqm` cell. LINT ONLY (mirror of bpbankedbram-lint).
+bpbankedbramm-lint:
+	cd .. && $(CARGO) qec_q7_bp_graph -- circgraph 1 0.003 8 24 > hw/bb_gross_tanner.svh
+	$(VERILATOR) --lint-only -Wall --top-module bp_relay_banked_bram_m \
+		check_minsum.sv var_update.sv bp_relay_banked_bram_m.sv
+
+# Q7-04 M9b — `bp_relay_banked_bram_m` FULL CO-SIM: same golden + gate as `bpbankedbram` (40/40
+# decision-equal at both bankings, rom_contract guard included; latency must MATCH the flat core's
+# 3871/2206 — the modularization is a pure hierarchy change). TB reused via --prefix. The flat
+# `bpbankedbram` stays the A/B control; bpstream/bpstreamaxi keep instantiating the flat core until the
+# Vivado A/B picks the production variant. Sweep ends on 16/48 (committed at-rest header).
+bpbankedbramm:
+	cd .. && $(CARGO) qec_q7_bp_graph -- circvectors 1 0.003 40 2024 > hw/bp_circ_vectors.txt
+	@for wv in "8 24" "16 48"; do \
+		set -- $$wv; echo "== W=$$1 V=$$2 =="; \
+		(cd .. && $(CARGO) qec_q7_bp_graph -- circgraph 1 0.003 $$1 $$2 > hw/bb_gross_tanner.svh); \
+		rm -rf obj_bankedbramm; \
+		$(VERILATOR) --cc --exe --build -Wall --Mdir obj_bankedbramm --prefix Vbp_relay_banked \
+			--top-module bp_relay_banked_bram_m \
+			check_minsum.sv var_update.sv bp_relay_banked_bram_m.sv tb_bp_banked.cpp -o sim_bpbankedbramm || exit 1; \
+		./obj_bankedbramm/sim_bpbankedbramm bp_circ_vectors.txt || exit 1; \
+	done
+
+# Q7-04 M9b — SLIDING-WINDOW STREAMING wrapper (`bp_streaming_decoder`) around the BRAM-ified banked core.
+# The COMMITTED W=6 C=2 window header `bb_stream_tanner.svh` is the source of truth (do NOT regenerate it);
+# it is staged as `bb_gross_tanner.svh` inside the scratch build dir (line-wrapped element-per-line only, so
+# the tracked file stays byte-identical while Verilator's per-line token limit is respected) so both the
+# wrapper and the core pick up the streaming graph + streaming metadata. Lint only (mirror of bpbankedbram-lint).
+bpstream-lint:
+	rm -rf _bpstreambuild && mkdir _bpstreambuild
+	cp bp_streaming_decoder.sv bp_relay_banked_bram.sv check_minsum.sv var_update.sv _bpstreambuild/
+	perl -pe 's/,/,\n/g if length($$_) > 8000' bb_stream_tanner.svh > _bpstreambuild/bb_gross_tanner.svh
+	cd _bpstreambuild && $(VERILATOR) --lint-only -Wall --top-module bp_streaming_decoder \
+		check_minsum.sv var_update.sv bp_relay_banked_bram.sv bp_streaming_decoder.sv
+
+# Q7-04 M9b — `bp_streaming_decoder` FULL CO-SIM vs the HW-schedule goldens (40 trials, 13 rounds -> 7
+# slots each). Drives the raw round stream through the sliding FSM and asserts the per-slot
+# {commit_corr[BP_N], out_obs, out_vflag, out_commit_clean} bit-exact, running TWICE with PER-MODE goldens
+# (the M6-M8 circvectors/circvectorsearly house pattern — early exit commits the FIRST valid leg, not the
+# best-kept one, so each mode has its own golden): early_exit=0 vs `bp_stream_vectors.txt` and
+# early_exit=1 vs `bp_stream_vectors_early.txt`. Prints per-window latency stats. 40/40 x2 is the gate.
+bpstream:
+	rm -rf _bpstreambuild && mkdir _bpstreambuild
+	cp bp_streaming_decoder.sv bp_relay_banked_bram.sv check_minsum.sv var_update.sv tb_bp_stream.cpp _bpstreambuild/
+	perl -pe 's/,/,\n/g if length($$_) > 8000' bb_stream_tanner.svh > _bpstreambuild/bb_gross_tanner.svh
+	cd _bpstreambuild && $(VERILATOR) --cc --exe --build -Wall --top-module bp_streaming_decoder \
+		check_minsum.sv var_update.sv bp_relay_banked_bram.sv bp_streaming_decoder.sv tb_bp_stream.cpp -o sim_bpstream
+	./_bpstreambuild/obj_dir/sim_bpstream bp_stream_vectors.txt bp_stream_vectors_early.txt
+
+# Q7-04 M9b (Task 6) — AXI4-Stream front-end (`bp_stream_win_core`) around `bp_streaming_decoder`: LINT
+# only. Mirror of bpstream-lint, staging the same committed W=6 C=2 window header.
+bpstreamaxi-lint:
+	rm -rf _bpstreamaxibuild && mkdir _bpstreamaxibuild
+	cp bp_stream_win_core.sv bp_streaming_decoder.sv bp_relay_banked_bram.sv check_minsum.sv var_update.sv _bpstreamaxibuild/
+	perl -pe 's/,/,\n/g if length($$_) > 8000' bb_stream_tanner.svh > _bpstreamaxibuild/bb_gross_tanner.svh
+	cd _bpstreamaxibuild && $(VERILATOR) --lint-only -Wall --top-module bp_stream_win_core \
+		check_minsum.sv var_update.sv bp_relay_banked_bram.sv bp_streaming_decoder.sv bp_stream_win_core.sv
+
+# Q7-04 M9b (Task 6) — `bp_stream_win_core` AXI front-end CO-SIM: wraps `bp_streaming_decoder` behind the
+# 3-beats/round AXI4-Stream framing and drives the SAME HW-schedule goldens as `bpstream` through it,
+# gating zero-stream, golden-equality, back-pressure invariance, frame independence, and the adversarial
+# drain stall (both early-exit modes). Unlike the UF `stream-axi` target, no -CFLAGS -D window params are
+# threaded to the TB: it reads T/SLICES/DPR/SLOTS/N/OBS from the golden file headers at runtime.
+bpstreamaxi:
+	rm -rf _bpstreamaxibuild && mkdir _bpstreamaxibuild
+	cp bp_stream_win_core.sv bp_streaming_decoder.sv bp_relay_banked_bram.sv check_minsum.sv var_update.sv tb_bp_stream_axi.cpp _bpstreamaxibuild/
+	perl -pe 's/,/,\n/g if length($$_) > 8000' bb_stream_tanner.svh > _bpstreamaxibuild/bb_gross_tanner.svh
+	cd _bpstreamaxibuild && $(VERILATOR) --cc --exe --build -Wall --top-module bp_stream_win_core \
+		check_minsum.sv var_update.sv bp_relay_banked_bram.sv bp_streaming_decoder.sv bp_stream_win_core.sv \
+		tb_bp_stream_axi.cpp -o sim_bpstreamaxi
+	./_bpstreamaxibuild/obj_dir/sim_bpstreamaxi bp_stream_vectors.txt bp_stream_vectors_early.txt
 
 d3:
 	cd .. && $(CARGO) qec_d3_lut_table > hw/surface_d3_lut.mem

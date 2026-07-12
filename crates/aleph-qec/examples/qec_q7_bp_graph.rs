@@ -19,9 +19,18 @@
 //! [`emit_win_graph`] for why one window stands in for every steady-state window):
 //!   cargo run --release -p aleph-qec --example qec_q7_bp_graph -- \
 //!       wingraph <rounds> <p> <W> <C> <bankW> <bankV> > hw/bb_win_tanner.svh
+//!
+//! M9b (Q7-04) streaming decoder header + golden vectors — the window graph/banking above plus the
+//! per-detector slide (`BP_SHIFT`) and per-var commit (`BP_VAR_COMMIT`) metadata the RTL streaming FSM
+//! needs to replay [`HwSlidingWindowBp`]'s baked-graph schedule, and the bit-exact co-sim vectors:
+//!   cargo run --release -p aleph-qec --example qec_q7_bp_graph -- \
+//!       streamgraph <rounds> <p> <W> <C> <bankW> <bankV> > hw/bb_stream_tanner.svh
+//!   cargo run --release -p aleph-qec --example qec_q7_bp_graph -- \
+//!       streamvectors <rounds> <p> <W> <C> <n> <seed> > hw/bp_stream_vectors.txt
 
 use aleph_qec::{
-    BBCode, CircuitNoise, DetectorErrorModel, FixedHwView, FixedRelayBp, SlidingWindowBp,
+    BBCode, CircuitNoise, DetectorErrorModel, FixedHwView, FixedRelayBp, HwSlidingWindowBp,
+    SlidingWindowBp,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -78,6 +87,7 @@ fn emit_circ_graph(rounds: usize, p: f64, bank_w: usize, bank_v: usize) {
     );
     let banking = solve_banking(view, bank_w, bank_v, BANK_SOLVE_SEED);
     print_banking(&banking);
+    print_rom_rows(&view, &banking);
     println!("`endif");
 }
 
@@ -128,7 +138,260 @@ fn emit_win_graph(rounds: usize, p: f64, w: usize, c: usize, bank_w: usize, bank
     );
     let banking = solve_banking(view, bank_w, bank_v, BANK_SOLVE_SEED);
     print_banking(&banking);
+    print_rom_rows(&view, &banking);
     println!("`endif");
+}
+
+/// M9b (Q7-04) **streaming decoder header**: the same interior-window Tanner graph + banking tables
+/// `emit_win_graph` emits (M9b's fit-de-risk probe), PLUS the streaming metadata the RTL streaming FSM
+/// needs to run [`HwSlidingWindowBp`]'s baked-graph schedule — the per-window-detector slide target
+/// (`BP_SHIFT`) and the per-window-var commit bit (`BP_VAR_COMMIT`). Unlike `emit_win_graph` (whose `C`
+/// is provenance-only), this mode's window graph AND metadata both key on `C`.
+///
+/// Usage:
+///   cargo run --release -p aleph-qec --example qec_q7_bp_graph -- \
+///       streamgraph <rounds> <p> <W> <C> <bankW> <bankV> > hw/bb_stream_tanner.svh
+fn emit_stream_graph(rounds: usize, p: f64, w: usize, c: usize, bank_w: usize, bank_v: usize) {
+    let code = BBCode::gross();
+    let dem = code
+        .circuit_level_dem(rounds, CircuitNoise::uniform(p))
+        .expect("circuit-level DEM");
+    let detector_rounds = code.memory_x_experiment(rounds).detector_rounds();
+    // HwSlidingWindowBp::new takes the detector-round vector by value; keep our own copy to derive
+    // the streaming metadata below (it also re-validates the round-major/uniform-dpr layout this
+    // whole M9b mode depends on — see the type's doc comment).
+    let hw = HwSlidingWindowBp::new(dem, detector_rounds.clone(), w, c);
+
+    let export = hw.window_export();
+    let fx = FixedRelayBp::with_budget(&export.dem, LEGS, ITERS, GAMMA, SEED, MSG_BITS, FRAC_BITS);
+    let view = fx.hw_view();
+    println!(
+        "// M9b streaming window: rounds={rounds}, p={p}, W={w}, C={c}, bankW={bank_w}, \
+         bankV={bank_v} — window checks={}, vars={}, edges={}",
+        view.n_checks, view.n_vars, view.n_edges
+    );
+    println!(
+        "// regenerate: cargo run --release -q -p aleph-qec --example qec_q7_bp_graph -- \
+         streamgraph {rounds} {p} {w} {c} {bank_w} {bank_v} > hw/bb_stream_tanner.svh"
+    );
+    print_graph(
+        &view,
+        &format!(
+            "Gross BB code [[144,12,12]] STREAMING WINDOW (rounds={rounds}, p={p}, W={w}, C={c})"
+        ),
+    );
+    let banking = solve_banking(view, bank_w, bank_v, BANK_SOLVE_SEED);
+    print_banking(&banking);
+    print_rom_rows(&view, &banking);
+
+    // --- Streaming metadata: the per-detector slide target and per-var commit bit the RTL FSM
+    // reads every slot. Derived from the SAME window export the graph/banking tables above came
+    // from, so a header regen can never see the graph and the metadata disagree.
+    let dpr = hw.dpr();
+    let bp_c = view.n_checks;
+    assert_eq!(
+        bp_c,
+        w * dpr,
+        "streamgraph: BP_C ({bp_c}) != BP_WIN_W*BP_DPR ({w}*{dpr}) — every window detector must be \
+         a check (a hyperedge check would break this)"
+    );
+    let load_lo = (w - c) * dpr;
+
+    // Relative round of each local window detector, computed from the ACTUAL global detector round
+    // (not a closed-form `l / dpr`) — the UF `window` emitter's `round_start` pattern — so a future
+    // non-uniform window layout fails this assert loudly instead of silently emitting a wrong shift.
+    let base_round = detector_rounds[export.globals[0]];
+    let rr: Vec<usize> = export
+        .globals
+        .iter()
+        .map(|&g| detector_rounds[g] - base_round)
+        .collect();
+    let mut round_start = vec![usize::MAX; w]; // first local index of each relative round
+    for (l, &r) in rr.iter().enumerate() {
+        if round_start[r] == usize::MAX {
+            round_start[r] = l;
+        }
+    }
+    // Slide-by-C map: a kept (rel round >= C) detector at (round r, position p within its round)
+    // carries to the detector at (round r-C, same position) — local index `round_start[r-C] + p`.
+    // Rounds < C are committed and dropped this slide (sentinel = BP_C).
+    let shift: Vec<usize> = (0..bp_c)
+        .map(|l| {
+            let r = rr[l];
+            if r >= c {
+                round_start[r - c] + (l - round_start[r])
+            } else {
+                bp_c // sentinel: committed-and-dropped
+            }
+        })
+        .collect();
+
+    // --- Inline asserts (house style: unconditional at generation time, like `verify_banking`).
+    // (1) Commit tiling: every real stream detector's round is covered by the C*num_slots budget
+    //     the slot schedule replays (this bounds every window var's in-window det rounds too, since
+    //     those are a subset of the full stream's detector rounds).
+    let num_slots = hw.num_slots();
+    for &r in &detector_rounds {
+        assert!(
+            r < c * num_slots,
+            "streamgraph: detector round {r} not covered by commit tiling (C={c} * \
+             num_slots={num_slots} = {})",
+            c * num_slots
+        );
+    }
+    // (2) Every window var has >= 1 in-window detector (compile_window drops the rest, but a future
+    //     refactor could reintroduce a degenerate all-truncated mechanism — catch it here).
+    for (v, e) in export.dem.errors.iter().enumerate() {
+        assert!(
+            !e.dets.is_empty(),
+            "streamgraph: window var {v} has no in-window detector"
+        );
+    }
+    // (3) SHIFT is injective on kept (non-sentinel) local detectors — two window detectors sliding
+    //     onto the same target index would silently corrupt the RTL's residual frame.
+    let mut seen_shift: HashSet<usize> = HashSet::new();
+    for (l, &sh) in shift.iter().enumerate() {
+        if sh != bp_c {
+            assert!(
+                seen_shift.insert(sh),
+                "streamgraph: BP_SHIFT not injective — det {l} collides with an earlier det at \
+                 target {sh}"
+            );
+        }
+    }
+
+    let shift_str = shift
+        .iter()
+        .map(|x| x.to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let commit_str = hw
+        .commit_mask()
+        .iter()
+        .map(|&cv| u8::from(cv).to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    println!("/* verilator lint_off UNUSEDPARAM */");
+    println!("localparam int BP_DPR      = {dpr};  // detectors per round");
+    println!("localparam int BP_WIN_W    = {w};  // window rounds");
+    println!("localparam int BP_WIN_C    = {c};  // commit rounds per slide");
+    println!(
+        "localparam int BP_LOAD_LO  = {load_lo};  // (BP_WIN_W-BP_WIN_C)*BP_DPR, reload region base"
+    );
+    println!(
+        "localparam int BP_SHIFT [BP_C]  = '{{{shift_str}}};  // det l -> l - BP_WIN_C*BP_DPR, \
+         sentinel BP_C if dropped"
+    );
+    println!(
+        "localparam bit BP_VAR_COMMIT [BP_N] = '{{{commit_str}}};  // 1 iff var has an in-window \
+         det at rel round < C"
+    );
+    println!("/* verilator lint_on UNUSEDPARAM */");
+    println!("`endif");
+}
+
+/// M9b (Q7-04) **streaming golden vectors**: `n` sampled multi-round shots, decoded slot-by-slot on
+/// [`HwSlidingWindowBp::decode_stream_trace`] (the hardware-schedule golden — see that type's doc
+/// comment), for the RTL streaming FSM co-sim gate. Round lines are the RAW stream detector bits: the
+/// RTL XORs commit toggles into its own frame, so the vectors must NOT be pre-toggled.
+///
+/// With `early` the golden decodes first-valid instead of best-kept (the RTL core's early-exit
+/// mode) — a genuinely different decision stream, so it gets its own vector file (M6–M8 house
+/// pattern, like `circvectorsearly`).
+///
+/// Usage:
+///   cargo run --release -p aleph-qec --example qec_q7_bp_graph -- \
+///       streamvectors <rounds> <p> <W> <C> <n> <seed> > hw/bp_stream_vectors.txt
+///   cargo run --release -p aleph-qec --example qec_q7_bp_graph -- \
+///       streamvectorsearly <rounds> <p> <W> <C> <n> <seed> > hw/bp_stream_vectors_early.txt
+fn emit_stream_vectors(
+    rounds: usize,
+    p: f64,
+    w: usize,
+    c: usize,
+    n: usize,
+    seed: u64,
+    early: bool,
+) {
+    use aleph_qec::sample_shots;
+    let code = BBCode::gross();
+    let dem = code
+        .circuit_level_dem(rounds, CircuitNoise::uniform(p))
+        .expect("circuit-level DEM");
+    let detector_rounds = code.memory_x_experiment(rounds).detector_rounds();
+    let hw = HwSlidingWindowBp::new(dem.clone(), detector_rounds, w, c).with_early_exit(early);
+
+    let dpr = hw.dpr();
+    let slices = rounds + 1; // detector rounds run 0..=rounds (BBMemoryExperiment::detector_rounds)
+    let slots = hw.num_slots();
+    let export = hw.window_export();
+    let bp_n = export.dem.errors.len();
+    let bp_obs = export.dem.observables;
+
+    let (syndromes, _truths) = sample_shots(&dem, n as u64, seed);
+
+    let (mode_name, mode_arg, out_file) = if early {
+        (
+            "early-exit (first-valid)",
+            "streamvectorsearly",
+            "hw/bp_stream_vectors_early.txt",
+        )
+    } else {
+        (
+            "full-decode (best-kept)",
+            "streamvectors",
+            "hw/bp_stream_vectors.txt",
+        )
+    };
+    println!(
+        "# streaming-window {mode_name} golden vectors (rounds={rounds}, p={p}, W={w}, C={c}) — \
+         GENERATED, do not edit."
+    );
+    println!(
+        "# regenerate: cargo run --release -q -p aleph-qec --example qec_q7_bp_graph -- \
+         {mode_arg} {rounds} {p} {w} {c} {n} {seed} > {out_file}"
+    );
+    println!(
+        "# format: header 'T SLICES DPR SLOTS BP_N BP_OBS'; per trial: SLICES 'r' lines (DPR bits, \
+         round-major, round 0 first, det 0 first) then SLOTS 'w' lines '<slot> <BP_N bits \
+         committed> <BP_OBS bits obs> <0|1 vflag> <0|1 commit_clean>'"
+    );
+    println!("{n} {slices} {dpr} {slots} {bp_n} {bp_obs}");
+
+    let total_dets = slices * dpr;
+    for syn in &syndromes {
+        let mut lit = vec![false; total_dets];
+        for &d in &syn.fired {
+            if (d as usize) < total_dets {
+                lit[d as usize] = true;
+            }
+        }
+        for r in 0..slices {
+            let bits: String = lit[r * dpr..(r + 1) * dpr]
+                .iter()
+                .map(|&b| if b { '1' } else { '0' })
+                .collect();
+            println!("r {bits}");
+        }
+
+        let (_corr, _stats, trace) = hw.decode_stream_trace(syn);
+        for (slot, t) in trace.iter().enumerate() {
+            let committed: String = t
+                .committed
+                .iter()
+                .map(|&b| char::from(b'0' + (b & 1)))
+                .collect();
+            let obs: String = (0..bp_obs)
+                .map(|o| char::from(b'0' + (((t.obs >> o) & 1) as u8)))
+                .collect();
+            println!(
+                "w {slot} {committed} {obs} {} {}",
+                u8::from(t.valid),
+                u8::from(t.commit_clean)
+            );
+        }
+    }
 }
 
 /// Print the flattened Tanner graph + fixed-point params as an `.svh` header. Works for any DEM (the
@@ -853,6 +1116,240 @@ fn print_banking(b: &Banking) {
     );
 }
 
+/// LSB-first packed bit row for the BRAM-ROM literal emission ([`print_rom_rows`]): the Rust twin of
+/// one SystemVerilog packed row word, written field-by-field with the same `[off +: width]` layout the
+/// RTL slices with.
+struct RomRow {
+    bits: Vec<bool>,
+}
+
+impl RomRow {
+    fn new(width: usize) -> Self {
+        assert!(
+            width > 0,
+            "RomRow: zero-width row (degenerate graph parameter)"
+        );
+        RomRow {
+            bits: vec![false; width],
+        }
+    }
+
+    /// Write `width` bits of `val` at bit offset `off`, LSB-first — mirrors SV `row[off +: width] = val`.
+    fn set(&mut self, off: usize, width: usize, val: u64) {
+        debug_assert!(
+            width == 64 || val < (1u64 << width),
+            "RomRow: value overflows field"
+        );
+        for i in 0..width {
+            self.bits[off + i] = (val >> i) & 1 == 1;
+        }
+    }
+
+    /// `<W>'h<hex>` SystemVerilog literal (MSB-first hex nibbles, exact `ceil(W/4)` digits).
+    fn lit(&self) -> String {
+        let w = self.bits.len();
+        let nnib = w.div_ceil(4);
+        let mut s = format!("{w}'h");
+        for nib in (0..nnib).rev() {
+            let mut val = 0u32;
+            for j in 0..4 {
+                let idx = nib * 4 + j;
+                if idx < w && self.bits[idx] {
+                    val |= 1 << j;
+                }
+            }
+            s.push(char::from_digit(val, 16).expect("nibble < 16"));
+        }
+        s
+    }
+}
+
+/// One `localparam logic [W-1:0] NAME [DEPTH] = '{ ... };` table, one hex row literal per line.
+fn emit_rom_table(name: &str, depth_expr: &str, rows: &[RomRow]) {
+    let wbits = rows[0].bits.len();
+    let body = rows
+        .iter()
+        .map(|r| format!("  {}", r.lit()))
+        .collect::<Vec<_>>()
+        .join(",\n");
+    println!(
+        "localparam logic [{}:0] {name} [{depth_expr}] = '{{\n{body}}};",
+        wbits - 1
+    );
+}
+
+/// M9b (Q7-04) Task-4 probe rescue: emit the 14 BRAM-ROM row tables of `hw/bp_relay_banked_bram.sv`
+/// as PACKED-ROW HEX LITERALS, so the RTL's ROM fills become pure literal copies with ZERO content
+/// computation at elaboration. Probe runs 2-3 showed Vivado's ELABORATION of the computed `initial`
+/// fills peaking ~50 GB RSS *independent of `rom_style`* — the cost was the fill computation, not the
+/// ROM mapping — so per the 12c house lesson ALL content computation moves here (the offline emitter)
+/// and the RTL only parses literals.
+///
+/// Probe run 4 narrowed the residual whale to ROM outputs used as RUNTIME INDICES into BP_C/BP_N-scale
+/// register arrays (Vivado port-splits those instead of folding — M9a ops lesson), so the former
+/// sbit-select tables (`CHK_SBIT_IDX/PRES`, indexing `s_reg[BP_C]`) and the S_EMIT observable tables
+/// (`OBS_PRES/VAR/MASK`, indexing `ehat`/`best_e`/`corr_out[BP_N]`) are GONE — those sites reverted to
+/// the LUT core's constant-folded `pc==g` form in the RTL. A ROM here feeds only data paths, memory
+/// addresses/write-enables, or bank-output bus selects.
+///
+/// PACKING CONTRACT (must byte-match `bp_relay_banked_bram.sv`): slot `t`'s field of width `FW`
+/// occupies row bits `[t*FW +: FW]`, slots being `(j,k)` lane (`j*BP_CHK_DEG+k`), var-slot `i`, or
+/// `(i,d)` slot (`i*BP_VAR_DEG+d`); field widths are the RTL's `$clog2` localparams (`BWC/HBW/EBW`)
+/// recomputed here by the same ceil-log2. Empty slots are all-zero fields, and present/eport bits are
+/// 1-bit fields — exactly the old RTL fill expressions. The RTL's `rom_contract` elaboration guard
+/// (simulation-only) recomputes EVERY row the old way and `$fatal`s on any mismatch, so this emitter
+/// and the RTL slicing cannot silently disagree (M7 discipline).
+fn print_rom_rows(view: &FixedHwView, b: &Banking) {
+    let chk_deg = view
+        .check_off
+        .windows(2)
+        .map(|w| w[1] - w[0])
+        .max()
+        .unwrap_or(0) as usize;
+    let var_deg = view
+        .var_off
+        .windows(2)
+        .map(|w| w[1] - w[0])
+        .max()
+        .unwrap_or(0) as usize;
+    let (w, vcap, gc, gv) = (b.w, b.v, b.gc, b.gv);
+    let neb = w * chk_deg; // e_cm banks   = (j,k) lanes
+    let nvb = vcap * var_deg; // m_vm banks = (i,d) slots
+    let nhb = 2 * neb; // m_cm half-banks
+                       // SystemVerilog `$clog2` twin (ceil(log2 n); 0 for n <= 1) — widths must match the RTL exactly.
+    let clog2 = |n: usize| -> usize {
+        if n <= 1 {
+            0
+        } else {
+            (usize::BITS - (n - 1).leading_zeros()) as usize
+        }
+    };
+    let bwc = clog2(gc); // m_cm / e_cm row address width
+    let hbw = clog2(nhb); // half-bank index width
+    let ebw = clog2(neb); // e_cm bank index width
+    let msg = view.msg_bits as usize;
+    let mask = |val: i64, width: usize| -> u64 { (val as u64) & ((1u64 << width) - 1) };
+
+    // ---- CHK-side rows (depth GC): gather half-bank taps + e_cm write present mask.
+    let mut chk_hbsel = Vec::with_capacity(gc);
+    let mut chk_epres = Vec::with_capacity(gc);
+    let mut ecm_wpres = Vec::with_capacity(gc);
+    for g in 0..gc {
+        let mut r_hbsel = RomRow::new(neb * hbw);
+        let mut r_epres = RomRow::new(neb);
+        for j in 0..w {
+            let c = b.chk_at[g * w + j];
+            if c >= 0 {
+                let c = c as usize;
+                let deg = (view.check_off[c + 1] - view.check_off[c]) as usize;
+                for k in 0..chk_deg.min(deg) {
+                    let e = view.check_edges[view.check_off[c] as usize + k] as usize;
+                    r_epres.set(j * chk_deg + k, 1, 1);
+                    r_hbsel.set((j * chk_deg + k) * hbw, hbw, b.edge_hb[e] as u64);
+                }
+            }
+        }
+        // ecm_wpres[g] is bit-identical to chk_epres[g] (both = "lane (j,k) has a real edge"); the RTL
+        // keeps them as two ROMs (different read addresses), so emit both.
+        let mut r_wpres = RomRow::new(neb);
+        r_wpres.bits.copy_from_slice(&r_epres.bits);
+        chk_hbsel.push(r_hbsel);
+        chk_epres.push(r_epres);
+        ecm_wpres.push(r_wpres);
+    }
+
+    // ---- VAR-side rows (depth GV, gamma depth LEGS*GV): gather + scatter.
+    let mut var_pres = Vec::with_capacity(gv);
+    let mut var_lam = Vec::with_capacity(gv);
+    let mut var_epres = Vec::with_capacity(gv);
+    let mut var_ebsel = Vec::with_capacity(gv);
+    let mut var_eport = Vec::with_capacity(gv);
+    let mut var_erow = Vec::with_capacity(gv);
+    let mut scat_pres = Vec::with_capacity(gv);
+    let mut scat_hb = Vec::with_capacity(gv);
+    let mut scat_row = Vec::with_capacity(gv);
+    let mut scat_lam = Vec::with_capacity(gv);
+    let mut var_gam: Vec<RomRow> = (0..view.legs * gv)
+        .map(|_| RomRow::new(vcap * msg))
+        .collect();
+    for g in 0..gv {
+        let mut r_pres = RomRow::new(vcap);
+        let mut r_lam = RomRow::new(vcap * msg);
+        let mut r_epres = RomRow::new(nvb);
+        let mut r_ebsel = RomRow::new(nvb * ebw);
+        let mut r_eport = RomRow::new(nvb);
+        let mut r_erow = RomRow::new(nvb * bwc);
+        let mut r_spres = RomRow::new(nvb);
+        let mut r_shb = RomRow::new(nvb * hbw);
+        let mut r_srow = RomRow::new(nvb * bwc);
+        let mut r_slam = RomRow::new(nvb * msg);
+        for i in 0..vcap {
+            let var = b.var_at[g * vcap + i];
+            if var >= 0 {
+                let var = var as usize;
+                r_pres.set(i, 1, 1);
+                r_lam.set(i * msg, msg, mask(view.lambda_q[var] as i64, msg));
+                for (l, gam_leg) in view.gamma_q.iter().enumerate() {
+                    var_gam[l * gv + g].set(i * msg, msg, mask(gam_leg[var] as i64, msg));
+                }
+                let deg = (view.var_off[var + 1] - view.var_off[var]) as usize;
+                for d in 0..var_deg.min(deg) {
+                    let e = view.var_off[var] as usize + d;
+                    let s = i * var_deg + d;
+                    r_epres.set(s, 1, 1);
+                    r_ebsel.set(s * ebw, ebw, b.edge_eb[e] as u64);
+                    r_eport.set(s, 1, u64::from(b.edge_eport[e] == 1));
+                    r_erow.set(s * bwc, bwc, b.edge_row[e] as u64);
+                    r_spres.set(s, 1, 1);
+                    r_shb.set(s * hbw, hbw, b.edge_hb[e] as u64);
+                    r_srow.set(s * bwc, bwc, b.edge_row[e] as u64);
+                    r_slam.set(
+                        s * msg,
+                        msg,
+                        mask(view.lambda_q[view.edge_var[e] as usize] as i64, msg),
+                    );
+                }
+            }
+        }
+        var_pres.push(r_pres);
+        var_lam.push(r_lam);
+        var_epres.push(r_epres);
+        var_ebsel.push(r_ebsel);
+        var_eport.push(r_eport);
+        var_erow.push(r_erow);
+        scat_pres.push(r_spres);
+        scat_hb.push(r_shb);
+        scat_row.push(r_srow);
+        scat_lam.push(r_slam);
+    }
+
+    println!();
+    println!(
+        "// ---- M9b BRAM-ROM row literals for bp_relay_banked_bram (GENERATED; packing contract: \
+         slot t's width-FW field at row bits [t*FW +: FW], widths BWC={bwc} HBW={hbw} EBW={ebw} \
+         MSG={msg}). Data / memory-address / bank-output-select consumers ONLY (probe run 4 rule: \
+         never a runtime index into a BP_C/BP_N-scale register array). The core's `rom_contract` \
+         guard recomputes every row from the graph tables above and $fatal's on mismatch. Ignored by \
+         every other core. ----"
+    );
+    println!("/* verilator lint_off UNUSEDPARAM */");
+    emit_rom_table("BP_ROM_CHK_HBSEL", "BP_GC", &chk_hbsel);
+    emit_rom_table("BP_ROM_CHK_EPRES", "BP_GC", &chk_epres);
+    emit_rom_table("BP_ROM_ECM_WPRES", "BP_GC", &ecm_wpres);
+    emit_rom_table("BP_ROM_VAR_PRES", "BP_GV", &var_pres);
+    emit_rom_table("BP_ROM_VAR_LAM", "BP_GV", &var_lam);
+    emit_rom_table("BP_ROM_VAR_GAM", "BP_LEGS*BP_GV", &var_gam);
+    emit_rom_table("BP_ROM_VAR_EPRES", "BP_GV", &var_epres);
+    emit_rom_table("BP_ROM_VAR_EBSEL", "BP_GV", &var_ebsel);
+    emit_rom_table("BP_ROM_VAR_EPORT", "BP_GV", &var_eport);
+    emit_rom_table("BP_ROM_VAR_EROW", "BP_GV", &var_erow);
+    emit_rom_table("BP_ROM_SCAT_PRES", "BP_GV", &scat_pres);
+    emit_rom_table("BP_ROM_SCAT_HB", "BP_GV", &scat_hb);
+    emit_rom_table("BP_ROM_SCAT_ROW", "BP_GV", &scat_row);
+    emit_rom_table("BP_ROM_SCAT_LAM", "BP_GV", &scat_lam);
+    println!("/* verilator lint_on UNUSEDPARAM */");
+}
+
 /// Full-decode golden vectors: `T` sampled syndromes with the chosen `ehat`, observable flips, and
 /// validity from `FixedRelayBp::decode_fixed_ehat` — for the M2 FSM testbench to match bit-for-bit.
 fn emit_dec_vectors() {
@@ -1040,10 +1537,28 @@ fn main() {
             let bank_v = args.get(7).and_then(|s| s.parse().ok()).unwrap_or(24usize);
             emit_win_graph(rounds, p, w, c, bank_w, bank_v);
         }
+        "streamgraph" => {
+            // streamgraph rounds p W C bankW bankV — same arg layout as wingraph (see above).
+            let w = args.get(4).and_then(|s| s.parse().ok()).unwrap_or(6usize);
+            let c = args.get(5).and_then(|s| s.parse().ok()).unwrap_or(2usize);
+            let bank_w = args.get(6).and_then(|s| s.parse().ok()).unwrap_or(8usize);
+            let bank_v = args.get(7).and_then(|s| s.parse().ok()).unwrap_or(24usize);
+            emit_stream_graph(rounds, p, w, c, bank_w, bank_v);
+        }
+        "streamvectors" | "streamvectorsearly" => {
+            // streamvectors[early] rounds p W C n seed — positions 4/5 are (W, C) like
+            // streamgraph/wingraph, so (n, seed) move to fresh positions 6/7 (not the generic
+            // 4/5 above).
+            let w = args.get(4).and_then(|s| s.parse().ok()).unwrap_or(6usize);
+            let c = args.get(5).and_then(|s| s.parse().ok()).unwrap_or(2usize);
+            let sn = args.get(6).and_then(|s| s.parse().ok()).unwrap_or(40usize);
+            let sseed = args.get(7).and_then(|s| s.parse().ok()).unwrap_or(7u64);
+            emit_stream_vectors(rounds, p, w, c, sn, sseed, mode == "streamvectorsearly");
+        }
         other => {
             eprintln!(
                 "unknown mode '{other}'; use graph|vectors|decvectors|circgraph|circvectors|\
-                 circvectorsearly|wingraph"
+                 circvectorsearly|wingraph|streamgraph|streamvectors|streamvectorsearly"
             );
             std::process::exit(2);
         }

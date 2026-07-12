@@ -45,6 +45,10 @@ _bpbramdpbuild/
 _bpbramdpearlybuild/
 bp_circ_vectors_early.txt
 obj_banked/
+obj_bankedbram/
+obj_bankedbramm/
 _bpaxibankedbuild/
+_bpstreambuild/
+_bpstreamaxibuild/
 obj_chkmin2/
 obj_chkmin3/

@@ -12,12 +12,20 @@
 //!   cargo run --release -p aleph-qec --example qec_q7_stream_sweep -- [rounds] [shots] [seed]
 //!   # defaults: rounds=12 shots=20000 seed=2024
 //!
+//! With `--hw` (M9b): instead of the (W, C, seam) grid, decode the same shot set with the batch
+//! `FixedRelayBp`, the exact-schedule `SlidingWindowBp`, and the hardware-schedule
+//! `HwSlidingWindowBp` at the frozen M9a verdict point (W=6, C=2, residual-only) and print a
+//! per-p LER table — the cost of the RTL's one-baked-graph + zero-pad schedule vs the exact one.
+//! `hw_resid_frac` is the fraction of shots that DISCARDED lit commit-region bits in some slide
+//! (`StreamStats::residual > 0` under the HW discard semantics — see `relay_window`'s module
+//! docs), not an end-of-stream frame count.
+//!
 //! Decision rule (spec § 4-M9a): pick the smallest (W, C, seam) whose LER stays within the batch
 //! CI at every p (or a documented, explicitly-accepted gap). Soft priors ship only on a clear win.
 
 use aleph_qec::{
-    sample_shots, BBCode, CircuitNoise, Correction, FixedRelayBp, LogicalErrorResult, SeamMode,
-    SlidingWindowBp,
+    sample_shots, BBCode, CircuitNoise, Correction, FixedRelayBp, HwSlidingWindowBp,
+    LogicalErrorResult, SeamMode, SlidingWindowBp,
 };
 use rayon::prelude::*;
 
@@ -42,9 +50,15 @@ fn mispredicted(pred: &Correction, truth: &[bool], observables: usize) -> bool {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    let rounds: usize = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(12);
-    let shots: u64 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(20_000);
-    let seed: u64 = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(2024);
+    let hw = args.iter().any(|a| a == "--hw");
+    let pos: Vec<&String> = args.iter().skip(1).filter(|a| *a != "--hw").collect();
+    let rounds: usize = pos.first().and_then(|s| s.parse().ok()).unwrap_or(12);
+    let shots: u64 = pos.get(1).and_then(|s| s.parse().ok()).unwrap_or(20_000);
+    let seed: u64 = pos.get(2).and_then(|s| s.parse().ok()).unwrap_or(2024);
+
+    if hw {
+        return hw_sweep(rounds, shots, seed);
+    }
 
     let code = BBCode::gross();
     eprintln!(
@@ -112,5 +126,97 @@ fn main() {
                 );
             }
         }
+    }
+}
+
+/// M9a verdict point the RTL bakes: W=6, C=2, residual-only.
+const HW_W: usize = 6;
+const HW_C: usize = 2;
+
+/// M9b `--hw` mode: batch vs exact-schedule vs hardware-schedule LER on identical shots.
+fn hw_sweep(rounds: usize, shots: u64, seed: u64) {
+    let code = BBCode::gross();
+    eprintln!(
+        "# gross [[144,12,12]] circuit-level rounds={rounds}, shots={shots}, seed={seed}, \
+         schedule={LEGS}x{ITERS}, word=Q{}.{}, hw W={HW_W} C={HW_C} residual-only",
+        MSG_BITS - 1 - FRAC_BITS,
+        FRAC_BITS
+    );
+    println!(
+        "p,ler_batch,ci_batch,ler_exact,ci_exact,ler_hw,ci_hw,hw_within_ci,\
+         hw_nonconv_frac,hw_resid_frac"
+    );
+
+    for &p in PS {
+        let dem = code
+            .circuit_level_dem(rounds, CircuitNoise::uniform(p))
+            .expect("circuit-level DEM");
+        let dr = code.memory_x_experiment(rounds).detector_rounds();
+        let (syndromes, truths) = sample_shots(&dem, shots, seed);
+
+        let batch = FixedRelayBp::with_budget(&dem, LEGS, ITERS, GAMMA, SEED, MSG_BITS, FRAC_BITS);
+        let batch_errs = syndromes
+            .par_iter()
+            .zip(&truths)
+            .filter(|(syn, truth)| mispredicted(&batch.decode_fixed(syn).0, truth, dem.observables))
+            .count() as u64;
+        let rb = LogicalErrorResult::new(shots, batch_errs);
+
+        let sw = SlidingWindowBp::new(dem.clone(), dr.clone(), HW_W, HW_C);
+        let sw_errs = syndromes
+            .par_iter()
+            .zip(&truths)
+            .filter(|(syn, truth)| mispredicted(&sw.decode_stream(syn).0, truth, dem.observables))
+            .count() as u64;
+        let rs = LogicalErrorResult::new(shots, sw_errs);
+
+        let hw = HwSlidingWindowBp::new(dem.clone(), dr, HW_W, HW_C);
+        let hw_results: Vec<_> = syndromes
+            .par_iter()
+            .map(|syn| hw.decode_stream(syn))
+            .collect();
+        let hw_errs = hw_results
+            .iter()
+            .zip(&truths)
+            .filter(|((corr, _), truth)| mispredicted(corr, truth, dem.observables))
+            .count() as u64;
+        let rh = LogicalErrorResult::new(shots, hw_errs);
+        let nonconv = hw_results
+            .iter()
+            .filter(|(_, s)| s.nonconverged > 0)
+            .count();
+        let resid = hw_results.iter().filter(|(_, s)| s.residual > 0).count();
+        // "Within CI" vs the exact schedule — the HW schedule's own reference.
+        let within = (rh.rate - rs.rate).abs() <= (rh.ci95 + rs.ci95);
+
+        println!(
+            "{p},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{},{:.4},{:.4}",
+            rb.rate,
+            rb.ci95,
+            rs.rate,
+            rs.ci95,
+            rh.rate,
+            rh.ci95,
+            within as u8,
+            nonconv as f64 / shots as f64,
+            resid as f64 / shots as f64
+        );
+        eprintln!(
+            "p={p}: batch {:.3e} ± {:.1e} | exact {:.3e} ± {:.1e} | hw {:.3e} ± {:.1e} {} | \
+             hw nonconv {:.2}% | hw discarded>0 {:.2}%",
+            rb.rate,
+            rb.ci95,
+            rs.rate,
+            rs.ci95,
+            rh.rate,
+            rh.ci95,
+            if within {
+                "[within CI of exact]"
+            } else {
+                "[DIFFERS from exact]"
+            },
+            nonconv as f64 / shots as f64 * 100.0,
+            resid as f64 / shots as f64 * 100.0
+        );
     }
 }
