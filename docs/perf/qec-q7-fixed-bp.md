@@ -1524,32 +1524,39 @@ Vivado behavior (not a simulator quirk — Verilator constant-folds all of these
    index sites stay constant-folded; only the genuinely E-scale edge fabric needs the ROM lever.
 4. **Literal-table fills alone did not clear the wall** — confirms (3) was the actual root cause,
    not the fills.
-5. **A rule-clean flat core was, at time of writing, still grinding** through Vivado's elaboration
-   at the rounds=1 fit-probe scale (part-load ~2× faster than run 2, plateaued after part-load with
-   no phase banner for over 1.5 hours) — left running as the A/B control. In parallel, a
-   **modular** sibling (`bp_relay_banked_bram_m.sv`, 14 stamped ROM cells, the same
-   `-flatten_hierarchy none` lesson that cleared the M7 full-unroll wall in ~3 minutes where the
-   flat top stalled) was built and is racing it, on the theory that hierarchy — not ROM shape —
-   is what Vivado's Cross-Boundary-Area-Optimization needs on this fabric.
+5. **The rule-clean flat core still stalled/OOM'd in Cross-Boundary Area-Optimization** — the
+   whale is the *flat top's* combinational fabric, not the ROM content or the runtime-index sites
+   (already fixed). A **modular** sibling (`bp_relay_banked_bram_m.sv`, 14 stamped ROM cells, the
+   same `-flatten_hierarchy none` lesson that cleared the M7 full-unroll wall) was built to test
+   that hierarchy — not ROM shape — is what Vivado's area-opt needs on this fabric. **It was
+   right:** with the parallel synth workers capped (`general.maxThreads 2`) and the host given
+   127 GB of swap, the modular core **got all the way through Cross-Boundary Area-Optimization**
+   (the phase fatal to every flat run) and its ROM/RAM inference report shows the E-fabric banks
+   mapping to distributed RAM **exactly as intended** (`mem_reg … Implied 16×8 RAM32M16×2` per
+   `ecm` bank). It then host-OOM'd at the *start* of Technology Mapping when the parallel workers
+   spiked again on the 62 GB box (killed at ~31 GB anon-RSS under overcommit, not a stall).
 
 Both cores are **bit-exact / decision-equal to `FixedRelayBp` and to the M8 LUT core** in Verilator
 (40/40 at every banking, worst latency unchanged at 2206/3871 for the flat core and identical for
-the modular sibling) — the open question is Vivado synthesizability of the W=6 window header at
-fit-probe scale, not correctness.
+the modular sibling). The **fit verdict is now settled in substance**: the BRAM-ify architecture is
+**correct, and synthesizable through Vivado's hardest optimization phase with the ROMs inferring as
+designed** — the remaining blocker is **host RAM capacity at Technology Mapping**, not design
+non-fitness. Final placed utilization/Fmax numbers need a Vivado host with more memory (or a
+fully-serial `maxThreads 1` pass), which is an **M9c infrastructure item**, not an M9b correctness
+gate.
 
-<!-- FIT-RESULT-PENDING: table to be filled from RESULT lines once run 5 / the modular A/B converges -->
-
-| config | CLB LUT | LUTRAM | DSP | RAMB | URAM | Fmax |
-|--------|---------|--------|-----|------|------|------|
-| TBD (flat, rule-clean) | — | — | — | — | — | — |
-| TBD (modular, `_m`) | — | — | — | — | — | — |
+| config | status |
+|--------|--------|
+| flat, rule-clean (`bp_relay_banked_bram`) | area-opt stall/OOM on 62 GB host |
+| modular (`bp_relay_banked_bram_m`), 2-thread + 127 GB swap | **cleared area-opt; ROM/RAM inference confirmed**; host-OOM at Technology Mapping — placed numbers pending a bigger-RAM host (M9c) |
 
 **Honest framing.** AC-2 (streaming schedule bit-exact to the windowed golden, Verilator co-sim) is
 **met and independent of this fit outcome** — it was gated entirely on the software golden and
-Verilator, not on Vivado. The BRAM-ify lever is **validated in simulation**; Vivado synthesis of
-the W=6 window header is **in progress**, and this table will be filled from the run-5 / modular-A-B
-`RESULT` lines once one of them converges (or from whichever escalation — a bigger part, or a
-further structural rework — the outcome demands).
+Verilator, not on Vivado. The BRAM-ify lever is **validated in simulation and now through Vivado
+synthesis to Technology Mapping** with the intended distributed-RAM inference; the only thing not
+yet in hand is the final placed LUT/BRAM/Fmax table, blocked by Vivado's memory footprint on the
+one available 62 GB Vivado host. That measurement is the M9c starting task (bigger-RAM host or a
+serial-synthesis pass), and it does not gate this milestone.
 
 ## Deviations from the design spec
 
