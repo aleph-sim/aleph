@@ -392,88 +392,182 @@ module bp_relay_banked_bram (
   (* rom_style = "block" *) logic [V*BP_OBS-1:0]     obs_mask_rom [GV];
 
   // -------------------------------------------------------------------------- ROM fills (time-0 initial)
-  // PURE DIRECT ARRAY INDEXING of the header localparams — no helper-function calls (Task-4 probe / house
-  // 12c lesson: Vivado materializes function evaluation in initial-block ROM fills pathologically). The
-  // `_bq` helper bodies (chk_at/var_at/edge_at/vedge_at) are inlined below; the empty-slot / short-degree
-  // guards are nested `if`s so no out-of-range header index is ever formed.
-  initial begin : fill_chk
-    for (int g = 0; g < GC; g++)
+  // PURE LITERAL COPY from the emitter-baked packed-row tables (BP_ROM_*, Task-9 emitter) — ZERO content
+  // computation at elaboration. Task-4 probe runs 2-3 showed Vivado's ELABORATION of computed initial
+  // fills peaking ~50 GB RSS *independent of rom_style* — the cost was the fill computation itself, not
+  // the ROM mapping — so per the 12c house lesson ALL content computation lives in the emitter, which
+  // bakes each row as one hex literal in this exact packing layout. The `rom_contract` guard below
+  // recomputes EVERY row the old way (simulation-only) and $fatal's on mismatch — the emitter/RTL
+  // packing-contract safety net (M7 discipline).
+  initial begin : fill_roms
+    for (int g = 0; g < GC; g++) begin
+      chk_sbit_idx_rom[g]  = BP_ROM_CHK_SBIT_IDX[g];
+      chk_sbit_pres_rom[g] = BP_ROM_CHK_SBIT_PRES[g];
+      chk_hbsel_rom[g]     = BP_ROM_CHK_HBSEL[g];
+      chk_epres_rom[g]     = BP_ROM_CHK_EPRES[g];
+      ecm_wpres_rom[g]     = BP_ROM_ECM_WPRES[g];
+    end
+    for (int g = 0; g < GV; g++) begin
+      var_pres_rom[g]  = BP_ROM_VAR_PRES[g];
+      var_lam_rom[g]   = BP_ROM_VAR_LAM[g];
+      var_epres_rom[g] = BP_ROM_VAR_EPRES[g];
+      var_ebsel_rom[g] = BP_ROM_VAR_EBSEL[g];
+      var_eport_rom[g] = BP_ROM_VAR_EPORT[g];
+      var_erow_rom[g]  = BP_ROM_VAR_EROW[g];
+      scat_pres_rom[g] = BP_ROM_SCAT_PRES[g];
+      scat_hb_rom[g]   = BP_ROM_SCAT_HB[g];
+      scat_row_rom[g]  = BP_ROM_SCAT_ROW[g];
+      scat_lam_rom[g]  = BP_ROM_SCAT_LAM[g];
+      obs_pres_rom[g]  = BP_ROM_OBS_PRES[g];
+      obs_var_rom[g]   = BP_ROM_OBS_VAR[g];
+      obs_mask_rom[g]  = BP_ROM_OBS_MASK[g];
+    end
+    for (int t = 0; t < BP_LEGS * GV; t++) var_gam_rom[t] = BP_ROM_VAR_GAM[t];
+  end
+
+  // ------------------------------------------------ ROM packing-contract guard (emitter <-> RTL, sim-only)
+  // Recomputes EVERY BP_ROM_* row from the graph tables using the OLD fill expressions (the pre-literal
+  // computed fills, via the `_bq` helpers) and asserts bit-equality with the emitter's literals. Any
+  // packing drift — field width, slot stride, bit order, or content — fails the co-sim gate LOUDLY at
+  // time-0 instead of silently mis-routing a bank. Fenced from synthesis like the elaboration guards.
+`ifndef SYNTHESIS
+  initial begin : rom_contract
+    automatic int fails = 0;
+    for (int g = 0; g < GC; g++) begin
+      automatic logic [W*CW-1:0]    x_idx;
+      automatic logic [W-1:0]       x_spres;
+      automatic logic [NEB*HBW-1:0] x_hbsel;
+      automatic logic [NEB-1:0]     x_epres;
+      x_idx = '0; x_spres = '0; x_hbsel = '0; x_epres = '0;
       for (int j = 0; j < W; j++) begin
-        automatic int c = BP_CHK_AT[g * BP_BANK_W + j];              // chk_at_bq, inlined
-        chk_sbit_pres_rom[g][j]         = (c >= 0);
-        chk_sbit_idx_rom[g][j*CW +: CW] = (c >= 0) ? CW'(c) : '0;
+        automatic int c = chk_at_bq(g, j);
+        if (c >= 0) begin
+          x_spres[j]        = 1'b1;
+          x_idx[j*CW +: CW] = CW'(c);
+        end
         for (int k = 0; k < BP_CHK_DEG; k++) begin
-          automatic int e;
-          e = -1;                                                    // edge_at_bq, inlined
-          if (c >= 0)
-            if (k < BP_CHECK_OFF[c + 1] - BP_CHECK_OFF[c]) e = BP_CHECK_EDGES[BP_CHECK_OFF[c] + k];
-          chk_epres_rom[g][j*BP_CHK_DEG + k]                 = (e >= 0);
-          chk_hbsel_rom[g][(j*BP_CHK_DEG + k)*HBW +: HBW]    = (e >= 0) ? HBW'(BP_EDGE_HB[e]) : '0;
+          automatic int e = edge_at_bq(g, j, k);
+          if (e >= 0) begin
+            x_epres[j*BP_CHK_DEG + k]                = 1'b1;
+            x_hbsel[(j*BP_CHK_DEG + k)*HBW +: HBW]   = HBW'(BP_EDGE_HB[e]);
+          end
         end
       end
-  end
-  initial begin : fill_var
-    for (int g = 0; g < GV; g++)
+      if (BP_ROM_CHK_SBIT_IDX[g] !== x_idx) begin
+        $display("bp_relay_banked_bram ROM-CONTRACT FAIL: CHK_SBIT_IDX row %0d", g); fails = fails + 1;
+      end
+      if (BP_ROM_CHK_SBIT_PRES[g] !== x_spres) begin
+        $display("bp_relay_banked_bram ROM-CONTRACT FAIL: CHK_SBIT_PRES row %0d", g); fails = fails + 1;
+      end
+      if (BP_ROM_CHK_HBSEL[g] !== x_hbsel) begin
+        $display("bp_relay_banked_bram ROM-CONTRACT FAIL: CHK_HBSEL row %0d", g); fails = fails + 1;
+      end
+      if (BP_ROM_CHK_EPRES[g] !== x_epres) begin
+        $display("bp_relay_banked_bram ROM-CONTRACT FAIL: CHK_EPRES row %0d", g); fails = fails + 1;
+      end
+      // ecm_wpres is the same "lane (j,k) has a real edge" mask as chk_epres (different read address).
+      if (BP_ROM_ECM_WPRES[g] !== x_epres) begin
+        $display("bp_relay_banked_bram ROM-CONTRACT FAIL: ECM_WPRES row %0d", g); fails = fails + 1;
+      end
+    end
+    for (int g = 0; g < GV; g++) begin
+      automatic logic [V-1:0]            x_pres;
+      automatic logic [V*MSG_BITS-1:0]   x_lam;
+      automatic logic [NVB-1:0]          x_epres;
+      automatic logic [NVB*EBW-1:0]      x_ebsel;
+      automatic logic [NVB-1:0]          x_eport;
+      automatic logic [NVB*BWC-1:0]      x_erow;
+      automatic logic [NVB-1:0]          x_spres;
+      automatic logic [NVB*HBW-1:0]      x_shb;
+      automatic logic [NVB*BWC-1:0]      x_srow;
+      automatic logic [NVB*MSG_BITS-1:0] x_slam;
+      automatic logic [V-1:0]            x_opres;
+      automatic logic [V*VW-1:0]         x_ovar;
+      automatic logic [V*BP_OBS-1:0]     x_omask;
+      x_pres = '0; x_lam = '0; x_epres = '0; x_ebsel = '0; x_eport = '0; x_erow = '0;
+      x_spres = '0; x_shb = '0; x_srow = '0; x_slam = '0; x_opres = '0; x_ovar = '0; x_omask = '0;
       for (int i = 0; i < V; i++) begin
-        automatic int v = BP_VAR_AT[g * BP_BANK_V + i];              // var_at_bq, inlined
-        var_pres_rom[g][i]                          = (v >= 0);
-        var_lam_rom[g][i*MSG_BITS +: MSG_BITS]      = (v >= 0) ? BP_LAMBDA[v][MSG_BITS-1:0] : '0;
-        for (int l = 0; l < BP_LEGS; l++)
-          var_gam_rom[l*GV + g][i*MSG_BITS +: MSG_BITS] =
-              (v >= 0) ? BP_GAMMA[l*BP_N + v][MSG_BITS-1:0] : '0;
+        automatic int v = var_at_bq(g, i);
+        if (v >= 0) begin
+          x_pres[i]                       = 1'b1;
+          x_lam[i*MSG_BITS +: MSG_BITS]   = BP_LAMBDA[v][MSG_BITS-1:0];
+          x_opres[i]                      = 1'b1;
+          x_ovar[i*VW +: VW]              = VW'(v);
+          x_omask[i*BP_OBS +: BP_OBS]     = BP_OBS_MASK[v][BP_OBS-1:0];
+        end
         for (int d = 0; d < BP_VAR_DEG; d++) begin
-          automatic int e;
-          e = -1;                                                    // vedge_at_bq, inlined
-          if (v >= 0)
-            if (d < BP_VAR_OFF[v + 1] - BP_VAR_OFF[v]) e = BP_VAR_OFF[v] + d;
-          var_epres_rom[g][i*BP_VAR_DEG + d]              = (e >= 0);
-          var_ebsel_rom[g][(i*BP_VAR_DEG + d)*EBW +: EBW] = (e >= 0) ? EBW'(BP_EDGE_EB[e]) : '0;
-          var_eport_rom[g][i*BP_VAR_DEG + d]              = (e >= 0) ? (BP_EDGE_EPORT[e] == 1) : 1'b0;
-          var_erow_rom[g][(i*BP_VAR_DEG + d)*BWC +: BWC]  = (e >= 0) ? BWC'(BP_EDGE_ROW[e]) : '0;
+          automatic int e = vedge_at_bq(g, i, d);
+          automatic int s = i*BP_VAR_DEG + d;
+          if (e >= 0) begin
+            x_epres[s]              = 1'b1;
+            x_ebsel[s*EBW +: EBW]   = EBW'(BP_EDGE_EB[e]);
+            x_eport[s]              = (BP_EDGE_EPORT[e] == 1);
+            x_erow[s*BWC +: BWC]    = BWC'(BP_EDGE_ROW[e]);
+            x_spres[s]              = 1'b1;
+            x_shb[s*HBW +: HBW]     = HBW'(BP_EDGE_HB[e]);
+            x_srow[s*BWC +: BWC]    = BWC'(BP_EDGE_ROW[e]);
+            x_slam[s*MSG_BITS +: MSG_BITS] = BP_LAMBDA[BP_EDGE_VAR[e]][MSG_BITS-1:0];
+          end
         end
       end
-  end
-  initial begin : fill_scat
-    for (int g = 0; g < GV; g++)
-      for (int i = 0; i < V; i++) begin
-        automatic int v = BP_VAR_AT[g * BP_BANK_V + i];              // var_at_bq, inlined
-        for (int d = 0; d < BP_VAR_DEG; d++) begin
-          automatic int e;
-          e = -1;                                                    // vedge_at_bq, inlined
-          if (v >= 0)
-            if (d < BP_VAR_OFF[v + 1] - BP_VAR_OFF[v]) e = BP_VAR_OFF[v] + d;
-          scat_pres_rom[g][i*BP_VAR_DEG + d]              = (e >= 0);
-          scat_hb_rom[g][(i*BP_VAR_DEG + d)*HBW +: HBW]   = (e >= 0) ? HBW'(BP_EDGE_HB[e]) : '0;
-          scat_row_rom[g][(i*BP_VAR_DEG + d)*BWC +: BWC]  = (e >= 0) ? BWC'(BP_EDGE_ROW[e]) : '0;
-          // m_cm S_INIT seed and m_vm S_INIT seed are the SAME lambda: BP_LAMBDA[BP_EDGE_VAR[e]] ==
-          // BP_LAMBDA[var_at(g,i)] for e = vedge_at(g,i,d). One ROM serves both scatters.
-          scat_lam_rom[g][(i*BP_VAR_DEG + d)*MSG_BITS +: MSG_BITS] =
-              (e >= 0) ? BP_LAMBDA[BP_EDGE_VAR[e]][MSG_BITS-1:0] : '0;
+      if (BP_ROM_VAR_PRES[g]  !== x_pres)  begin
+        $display("bp_relay_banked_bram ROM-CONTRACT FAIL: VAR_PRES row %0d", g); fails = fails + 1;
+      end
+      if (BP_ROM_VAR_LAM[g]   !== x_lam)   begin
+        $display("bp_relay_banked_bram ROM-CONTRACT FAIL: VAR_LAM row %0d", g); fails = fails + 1;
+      end
+      if (BP_ROM_VAR_EPRES[g] !== x_epres) begin
+        $display("bp_relay_banked_bram ROM-CONTRACT FAIL: VAR_EPRES row %0d", g); fails = fails + 1;
+      end
+      if (BP_ROM_VAR_EBSEL[g] !== x_ebsel) begin
+        $display("bp_relay_banked_bram ROM-CONTRACT FAIL: VAR_EBSEL row %0d", g); fails = fails + 1;
+      end
+      if (BP_ROM_VAR_EPORT[g] !== x_eport) begin
+        $display("bp_relay_banked_bram ROM-CONTRACT FAIL: VAR_EPORT row %0d", g); fails = fails + 1;
+      end
+      if (BP_ROM_VAR_EROW[g]  !== x_erow)  begin
+        $display("bp_relay_banked_bram ROM-CONTRACT FAIL: VAR_EROW row %0d", g); fails = fails + 1;
+      end
+      if (BP_ROM_SCAT_PRES[g] !== x_spres) begin
+        $display("bp_relay_banked_bram ROM-CONTRACT FAIL: SCAT_PRES row %0d", g); fails = fails + 1;
+      end
+      if (BP_ROM_SCAT_HB[g]   !== x_shb)   begin
+        $display("bp_relay_banked_bram ROM-CONTRACT FAIL: SCAT_HB row %0d", g); fails = fails + 1;
+      end
+      if (BP_ROM_SCAT_ROW[g]  !== x_srow)  begin
+        $display("bp_relay_banked_bram ROM-CONTRACT FAIL: SCAT_ROW row %0d", g); fails = fails + 1;
+      end
+      if (BP_ROM_SCAT_LAM[g]  !== x_slam)  begin
+        $display("bp_relay_banked_bram ROM-CONTRACT FAIL: SCAT_LAM row %0d", g); fails = fails + 1;
+      end
+      if (BP_ROM_OBS_PRES[g]  !== x_opres) begin
+        $display("bp_relay_banked_bram ROM-CONTRACT FAIL: OBS_PRES row %0d", g); fails = fails + 1;
+      end
+      if (BP_ROM_OBS_VAR[g]   !== x_ovar)  begin
+        $display("bp_relay_banked_bram ROM-CONTRACT FAIL: OBS_VAR row %0d", g); fails = fails + 1;
+      end
+      if (BP_ROM_OBS_MASK[g]  !== x_omask) begin
+        $display("bp_relay_banked_bram ROM-CONTRACT FAIL: OBS_MASK row %0d", g); fails = fails + 1;
+      end
+      for (int l = 0; l < BP_LEGS; l++) begin
+        automatic logic [V*MSG_BITS-1:0] x_gam;
+        x_gam = '0;
+        for (int i = 0; i < V; i++) begin
+          automatic int v = var_at_bq(g, i);
+          if (v >= 0) x_gam[i*MSG_BITS +: MSG_BITS] = BP_GAMMA[l*BP_N + v][MSG_BITS-1:0];
+        end
+        if (BP_ROM_VAR_GAM[l*GV + g] !== x_gam) begin
+          $display("bp_relay_banked_bram ROM-CONTRACT FAIL: VAR_GAM row (leg %0d, group %0d)", l, g);
+          fails = fails + 1;
         end
       end
+    end
+    if (fails != 0)
+      $fatal(1, "bp_relay_banked_bram: %0d ROM packing-contract violation(s) — emitter literal block and RTL layout disagree", fails);
+    else
+      $display("bp_relay_banked_bram: ROM packing contract PASS (19 ROMs, GC=%0d GV=%0d)", GC, GV);
   end
-  initial begin : fill_ecmw
-    for (int g = 0; g < GC; g++)
-      for (int j = 0; j < W; j++) begin
-        automatic int c = BP_CHK_AT[g * BP_BANK_W + j];              // chk_at_bq, inlined
-        for (int k = 0; k < BP_CHK_DEG; k++) begin
-          automatic int e;
-          e = -1;                                                    // edge_at_bq, inlined
-          if (c >= 0)
-            if (k < BP_CHECK_OFF[c + 1] - BP_CHECK_OFF[c]) e = BP_CHECK_EDGES[BP_CHECK_OFF[c] + k];
-          ecm_wpres_rom[g][j*BP_CHK_DEG + k] = (e >= 0);
-        end
-      end
-  end
-  initial begin : fill_obs
-    for (int g = 0; g < GV; g++)
-      for (int i = 0; i < V; i++) begin
-        automatic int v = BP_VAR_AT[g * BP_BANK_V + i];              // var_at_bq, inlined
-        obs_pres_rom[g][i]                        = (v >= 0);
-        obs_var_rom[g][i*VW +: VW]                = (v >= 0) ? VW'(v) : '0;
-        obs_mask_rom[g][i*BP_OBS +: BP_OBS]       = (v >= 0) ? BP_OBS_MASK[v][BP_OBS-1:0] : '0;
-      end
-  end
+`endif
 
   // -------------------------------------------------------------------------- registered ROM row words
   // ONE sync read per ROM per cycle; the `_q` row register IS the (single) ROM output register — the same
