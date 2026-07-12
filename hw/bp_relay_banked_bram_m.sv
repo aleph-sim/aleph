@@ -1,4 +1,15 @@
-// Q7-04 M9b — BRAM-ified sibling of the K-BANKED relay-BP core (`bp_relay_banked_bram`).
+// Q7-04 M9b — MODULAR BRAM-ified sibling (`bp_relay_banked_bram_m`) of `bp_relay_banked_bram`.
+//
+// PROBE-RUN-5 VARIANT (12b house lesson): identical decode/schedule to the flat literal core
+// `bp_relay_banked_bram.sv` (which stays intact as the A/B control), but every ROM + its sync-read row
+// register is wrapped in a DEDICATED STAMPED MODULE (`bp_rom_*_bqm`, 14 of them) so
+// `-flatten_hierarchy none` hands Vivado small repeated hierarchy units instead of one flat top — the
+// M7 post-mortem's fix (the 1008-instance skeleton cleared in ~3 min the same phases where flat tops
+// stalled). Each ROM cell reads its own BP_ROM_* literal localparam from the $unit header include and
+// exposes addr -> registered row (the SAME pipeline stage the flat core's _q register formed — zero
+// schedule change, decisions bit-exact, latency unchanged 2206/3871). Scatter/routing demuxes stay in
+// the TOP for now (ROM-cells-only scope keeps this diff mechanical; they are the next candidates if
+// the A/B says hierarchy is the lever). $unit names are suffixed `_bqm` for multi-top safety.
 //
 // SIBLING RELATIONSHIP (do not edit the M8 original `bp_relay_banked.sv`):
 //   This is a byte-for-byte DECISION-EQUAL twin of `bp_relay_banked` whose per-group CONSTANT decode
@@ -31,16 +42,16 @@
 //   The m_vm read-row(pc-1)/write-row(pc-4) disjointness argument keeps the SAME 3-cycle gap as M8
 //     (which reads row pc and writes row pc-3): both cursors shift by one, the gap is unchanged.
 //
-// CELLS: `bp_ecm_cell_bq` / `bp_mvm_cell_bq` become PURE PORT-DRIVEN memories (like the M7 `bp_mcm_cell`) —
+// CELLS: `bp_ecm_cell_bqm` / `bp_mvm_cell_bqm` become PURE PORT-DRIVEN memories (like the M7 `bp_mcm_cell`) —
 //   their write decode no longer calls `edge_at`/`vedge_at` internally (that self-scan is exactly the LUT
 //   scanner cloud this milestone removes); the TOP drives their write enable/address from the ROMs. Cell
 //   BOUNDARIES are preserved (the stamped-module structure is load-bearing for `-flatten_hierarchy none`).
 //
-// $unit-SCOPE NAMES are suffixed `_bq` (BB_*_bq geometry, *_bq helper functions) and the stamped cell
-//   modules `*_bq`, so this sibling is collision-safe in a future multi-top compilation unit alongside the
+// $unit-SCOPE NAMES are suffixed `_bqm` (BB_*_bqm geometry, *_bqm helper functions) and the stamped cell
+//   modules `*_bqm`, so this sibling is collision-safe in a future multi-top compilation unit alongside the
 //   M8 original (the Makefile targets build ONE top per scratch dir, so a collision cannot occur in the
 //   gate, but the suffix hardens it for free). The `ifndef SYNTHESIS` elaboration guards survive verbatim
-//   (they still scan the original localparam arrays; only the one `vedge_at`->`vedge_at_bq` call and the
+//   (they still scan the original localparam arrays; only the one `vedge_at`->`vedge_at_bqm` call and the
 //   $display module name are renamed — the guard LOGIC is byte-identical).
 
 `timescale 1ns / 1ps
@@ -49,39 +60,39 @@
 /* verilator lint_on UNUSEDPARAM */
 
 // ================================================================ $unit-scope geometry (shared by cells)
-localparam int BB_GC_bq   = BP_GC;                    // number of check groups (m_cm / e_cm rows)
-localparam int BB_GV_bq   = BP_GV;                    // number of var groups   (m_vm rows)
-localparam int BB_BWC_bq  = $clog2(BP_GC);            // m_cm / e_cm row address width
-localparam int BB_BWV_bq  = $clog2(BP_GV);            // m_vm row address width
+localparam int BB_GC_bqm   = BP_GC;                    // number of check groups (m_cm / e_cm rows)
+localparam int BB_GV_bqm   = BP_GV;                    // number of var groups   (m_vm rows)
+localparam int BB_BWC_bqm  = $clog2(BP_GC);            // m_cm / e_cm row address width
+localparam int BB_BWV_bqm  = $clog2(BP_GV);            // m_vm row address width
 
 /* verilator lint_off UNUSEDSIGNAL */
 // ============================================================ $unit elaboration helpers over header tables
-// Same bodies as the M8 core's `chk_at/var_at/...`, suffixed `_bq` so both siblings can share one $unit.
+// Same bodies as the M8 core's `chk_at/var_at/...`, suffixed `_bqm` so both siblings can share one $unit.
 // Called only with compile-time-constant args (genvar / cell params / group index gated by pc==g), and in
 // the ROM-fill `initial` blocks with loop-runtime args (procedural, evaluated once at time-0 — cheap, like
 // the elaboration guards below — NOT elaboration-time constant functions, which OOM-kill Verilator).
-function automatic int chk_at_bq(input int g, input int j);
+function automatic int chk_at_bqm(input int g, input int j);
   return BP_CHK_AT[g * BP_BANK_W + j];
 endfunction
-function automatic int var_at_bq(input int h, input int i);
+function automatic int var_at_bqm(input int h, input int i);
   return BP_VAR_AT[h * BP_BANK_V + i];
 endfunction
-function automatic int chk_deg_bq(input int c);
+function automatic int chk_deg_bqm(input int c);
   return BP_CHECK_OFF[c + 1] - BP_CHECK_OFF[c];
 endfunction
-function automatic int var_deg_bq(input int v);
+function automatic int var_deg_bqm(input int v);
   return BP_VAR_OFF[v + 1] - BP_VAR_OFF[v];
 endfunction
-function automatic int edge_at_bq(input int g, input int j, input int k);
-  automatic int c = chk_at_bq(g, j);
+function automatic int edge_at_bqm(input int g, input int j, input int k);
+  automatic int c = chk_at_bqm(g, j);
   if (c < 0) return -1;
-  if (k >= chk_deg_bq(c)) return -1;
+  if (k >= chk_deg_bqm(c)) return -1;
   return BP_CHECK_EDGES[BP_CHECK_OFF[c] + k];
 endfunction
-function automatic int vedge_at_bq(input int h, input int i, input int d);
-  automatic int v = var_at_bq(h, i);
+function automatic int vedge_at_bqm(input int h, input int i, input int d);
+  automatic int v = var_at_bqm(h, i);
   if (v < 0) return -1;
-  if (d >= var_deg_bq(v)) return -1;
+  if (d >= var_deg_bqm(v)) return -1;
   return BP_VAR_OFF[v] + d;
 endfunction
 /* verilator lint_on UNUSEDSIGNAL */
@@ -93,36 +104,36 @@ endfunction
 /* verilator lint_off UNUSEDPARAM */
 
 // --------------------------------------------------------------- m_cm half-bank: 1 sync write, 1 async read
-module bp_mcm_cell_bq #(
+module bp_mcm_cell_bqm #(
     parameter int B = 0                                  // half-bank id (identity only; wiring via ports)
 ) (
     input  logic                       clk,
     input  logic                       we,               // from the top's ROM-fed m_cm write scatter
-    input  logic [BB_BWC_bq-1:0]       wa,               // write row (= edge's CHECK group, from ROM)
+    input  logic [BB_BWC_bqm-1:0]       wa,               // write row (= edge's CHECK group, from ROM)
     input  logic signed [MSG_BITS-1:0] wd,               // write data (lambda in S_INIT, var m_out in S_VAR)
-    input  logic [BB_BWC_bq-1:0]       ra,               // read row (= registered pc)
+    input  logic [BB_BWC_bqm-1:0]       ra,               // read row (= registered pc)
     output logic signed [MSG_BITS-1:0] q
 );
-  logic signed [MSG_BITS-1:0] mem [BB_GC_bq];
+  logic signed [MSG_BITS-1:0] mem [BB_GC_bqm];
   always_ff @(posedge clk) if (we) mem[wa] <= wd;
   assign q = mem[ra];
 endmodule
 
 // --------------------------------------------------------------- e_cm bank: 1 sync write, 2 async reads
 // PORT-DRIVEN (M9b): write enable/row now come from the TOP (ECM_WR_ROM), not an internal `edge_at` scan.
-module bp_ecm_cell_bq #(
+module bp_ecm_cell_bqm #(
     parameter int B = 0                                  // bank id = check-slot j * CHK_DEG + lane k
 ) (
     input  logic                       clk,
     input  logic                       we,               // ECM_WR_ROM present bit & S_CHECK scatter gate
-    input  logic [BB_BWC_bq-1:0]       wa,               // write chk-group row (= pc-5, shared)
+    input  logic [BB_BWC_bqm-1:0]       wa,               // write chk-group row (= pc-5, shared)
     input  logic signed [MSG_BITS-1:0] wd,               // this bank's chk lane message (chk_e_out[JJ][KK])
-    input  logic [BB_BWC_bq-1:0]       ra,               // port-A read row (from ROM-fed e_cm read-addr)
-    input  logic [BB_BWC_bq-1:0]       rb,               // port-B read row
+    input  logic [BB_BWC_bqm-1:0]       ra,               // port-A read row (from ROM-fed e_cm read-addr)
+    input  logic [BB_BWC_bqm-1:0]       rb,               // port-B read row
     output logic signed [MSG_BITS-1:0] qa,
     output logic signed [MSG_BITS-1:0] qb
 );
-  logic signed [MSG_BITS-1:0] mem [BB_GC_bq];
+  logic signed [MSG_BITS-1:0] mem [BB_GC_bqm];
   always_ff @(posedge clk) if (we) mem[wa] <= wd;
   assign qa = mem[ra];
   assign qb = mem[rb];
@@ -130,25 +141,128 @@ endmodule
 
 // --------------------------------------------------------------- m_vm bank: 1 sync write, 1 async read
 // PORT-DRIVEN (M9b): write enable/row/data all from the TOP (SCATTER_ROM present + lambda), not a scan.
-module bp_mvm_cell_bq #(
+module bp_mvm_cell_bqm #(
     parameter int B = 0                                  // bank id = var-slot i * VAR_DEG + edge d
 ) (
     input  logic                       clk,
     input  logic                       we,               // SCATTER_ROM present bit & (init | var) gate
-    input  logic [BB_BWV_bq-1:0]       wa,               // write var-group row (S_INIT: pc-1, S_VAR: pc-4)
+    input  logic [BB_BWV_bqm-1:0]       wa,               // write var-group row (S_INIT: pc-1, S_VAR: pc-4)
     input  logic signed [MSG_BITS-1:0] wd,               // lambda (S_INIT) or var_m_out[II][DD] (S_VAR)
-    input  logic [BB_BWV_bq-1:0]       rg,               // read row (= registered pc)
+    input  logic [BB_BWV_bqm-1:0]       rg,               // read row (= registered pc)
     output logic signed [MSG_BITS-1:0] q
 );
-  logic signed [MSG_BITS-1:0] mem [BB_GV_bq];
+  logic signed [MSG_BITS-1:0] mem [BB_GV_bqm];
   always_ff @(posedge clk) if (we) mem[wa] <= wd;
   assign q = mem[rg];
 endmodule
 /* verilator lint_on UNUSEDPARAM */
 /* verilator lint_on DECLFILENAME */
 
+// ============================================================ $unit geometry for the stamped ROM cells
+// Row widths / depths / address widths of the 14 BP_ROM_* tables, derived from the header exactly like
+// the TOP's own localparams (same $clog2 expressions — the packing contract's widths).
+localparam int BQM_NEBW = BP_BANK_W * BP_CHK_DEG;                  // e_cm banks   = (j,k) lanes
+localparam int BQM_NVBW = BP_BANK_V * BP_VAR_DEG;                  // m_vm banks   = (i,d) slots
+localparam int BQM_HBW  = $clog2(2 * BQM_NEBW);                    // half-bank index width
+localparam int BQM_EBW  = $clog2(BQM_NEBW);                        // e_cm bank index width
+localparam int BQM_BWCW = $clog2(BP_GC);                           // m_cm/e_cm row address width
+localparam int BQM_AWC  = $clog2(BP_GC);                           // GC-depth ROM address width
+localparam int BQM_AWV  = $clog2(BP_GV);                           // GV-depth ROM address width
+localparam int BQM_AWG  = $clog2(BP_LEGS * BP_GV);                 // gamma ROM address width
+
+// ============================================================ STAMPED ROM CELLS (one module per ROM)
+// 12b lesson: a synthesis hierarchy boundary around every ROM + its output register, so Vivado's
+// area-opt/closure passes see 14 small units instead of one flat ROM cloud. Each cell is a pure
+// literal-copy ROM (zero elaboration compute, same as the flat core's fill_roms) + ONE sync read.
+/* verilator lint_off DECLFILENAME */
+module bp_rom_chk_hbsel_bqm (
+    input  logic clk, input logic [BQM_AWC-1:0] addr, output logic [BQM_NEBW*BQM_HBW-1:0] q);
+  (* rom_style = "block" *) logic [BQM_NEBW*BQM_HBW-1:0] rom [BP_GC];
+  initial for (int i = 0; i < BP_GC; i++) rom[i] = BP_ROM_CHK_HBSEL[i];
+  always_ff @(posedge clk) q <= rom[addr];
+endmodule
+module bp_rom_chk_epres_bqm (
+    input  logic clk, input logic [BQM_AWC-1:0] addr, output logic [BQM_NEBW-1:0] q);
+  (* rom_style = "block" *) logic [BQM_NEBW-1:0] rom [BP_GC];
+  initial for (int i = 0; i < BP_GC; i++) rom[i] = BP_ROM_CHK_EPRES[i];
+  always_ff @(posedge clk) q <= rom[addr];
+endmodule
+module bp_rom_ecm_wpres_bqm (
+    input  logic clk, input logic [BQM_AWC-1:0] addr, output logic [BQM_NEBW-1:0] q);
+  (* rom_style = "block" *) logic [BQM_NEBW-1:0] rom [BP_GC];
+  initial for (int i = 0; i < BP_GC; i++) rom[i] = BP_ROM_ECM_WPRES[i];
+  always_ff @(posedge clk) q <= rom[addr];
+endmodule
+module bp_rom_var_pres_bqm (
+    input  logic clk, input logic [BQM_AWV-1:0] addr, output logic [BP_BANK_V-1:0] q);
+  (* rom_style = "block" *) logic [BP_BANK_V-1:0] rom [BP_GV];
+  initial for (int i = 0; i < BP_GV; i++) rom[i] = BP_ROM_VAR_PRES[i];
+  always_ff @(posedge clk) q <= rom[addr];
+endmodule
+module bp_rom_var_lam_bqm (
+    input  logic clk, input logic [BQM_AWV-1:0] addr, output logic [BP_BANK_V*MSG_BITS-1:0] q);
+  (* rom_style = "block" *) logic [BP_BANK_V*MSG_BITS-1:0] rom [BP_GV];
+  initial for (int i = 0; i < BP_GV; i++) rom[i] = BP_ROM_VAR_LAM[i];
+  always_ff @(posedge clk) q <= rom[addr];
+endmodule
+module bp_rom_var_gam_bqm (
+    input  logic clk, input logic [BQM_AWG-1:0] addr, output logic [BP_BANK_V*MSG_BITS-1:0] q);
+  (* rom_style = "block" *) logic [BP_BANK_V*MSG_BITS-1:0] rom [BP_LEGS*BP_GV];
+  initial for (int i = 0; i < BP_LEGS*BP_GV; i++) rom[i] = BP_ROM_VAR_GAM[i];
+  always_ff @(posedge clk) q <= rom[addr];
+endmodule
+module bp_rom_var_epres_bqm (
+    input  logic clk, input logic [BQM_AWV-1:0] addr, output logic [BQM_NVBW-1:0] q);
+  (* rom_style = "block" *) logic [BQM_NVBW-1:0] rom [BP_GV];
+  initial for (int i = 0; i < BP_GV; i++) rom[i] = BP_ROM_VAR_EPRES[i];
+  always_ff @(posedge clk) q <= rom[addr];
+endmodule
+module bp_rom_var_ebsel_bqm (
+    input  logic clk, input logic [BQM_AWV-1:0] addr, output logic [BQM_NVBW*BQM_EBW-1:0] q);
+  (* rom_style = "block" *) logic [BQM_NVBW*BQM_EBW-1:0] rom [BP_GV];
+  initial for (int i = 0; i < BP_GV; i++) rom[i] = BP_ROM_VAR_EBSEL[i];
+  always_ff @(posedge clk) q <= rom[addr];
+endmodule
+module bp_rom_var_eport_bqm (
+    input  logic clk, input logic [BQM_AWV-1:0] addr, output logic [BQM_NVBW-1:0] q);
+  (* rom_style = "block" *) logic [BQM_NVBW-1:0] rom [BP_GV];
+  initial for (int i = 0; i < BP_GV; i++) rom[i] = BP_ROM_VAR_EPORT[i];
+  always_ff @(posedge clk) q <= rom[addr];
+endmodule
+module bp_rom_var_erow_bqm (
+    input  logic clk, input logic [BQM_AWV-1:0] addr, output logic [BQM_NVBW*BQM_BWCW-1:0] q);
+  (* rom_style = "block" *) logic [BQM_NVBW*BQM_BWCW-1:0] rom [BP_GV];
+  initial for (int i = 0; i < BP_GV; i++) rom[i] = BP_ROM_VAR_EROW[i];
+  always_ff @(posedge clk) q <= rom[addr];
+endmodule
+module bp_rom_scat_pres_bqm (
+    input  logic clk, input logic [BQM_AWV-1:0] addr, output logic [BQM_NVBW-1:0] q);
+  (* rom_style = "block" *) logic [BQM_NVBW-1:0] rom [BP_GV];
+  initial for (int i = 0; i < BP_GV; i++) rom[i] = BP_ROM_SCAT_PRES[i];
+  always_ff @(posedge clk) q <= rom[addr];
+endmodule
+module bp_rom_scat_hb_bqm (
+    input  logic clk, input logic [BQM_AWV-1:0] addr, output logic [BQM_NVBW*BQM_HBW-1:0] q);
+  (* rom_style = "block" *) logic [BQM_NVBW*BQM_HBW-1:0] rom [BP_GV];
+  initial for (int i = 0; i < BP_GV; i++) rom[i] = BP_ROM_SCAT_HB[i];
+  always_ff @(posedge clk) q <= rom[addr];
+endmodule
+module bp_rom_scat_row_bqm (
+    input  logic clk, input logic [BQM_AWV-1:0] addr, output logic [BQM_NVBW*BQM_BWCW-1:0] q);
+  (* rom_style = "block" *) logic [BQM_NVBW*BQM_BWCW-1:0] rom [BP_GV];
+  initial for (int i = 0; i < BP_GV; i++) rom[i] = BP_ROM_SCAT_ROW[i];
+  always_ff @(posedge clk) q <= rom[addr];
+endmodule
+module bp_rom_scat_lam_bqm (
+    input  logic clk, input logic [BQM_AWV-1:0] addr, output logic [BQM_NVBW*MSG_BITS-1:0] q);
+  (* rom_style = "block" *) logic [BQM_NVBW*MSG_BITS-1:0] rom [BP_GV];
+  initial for (int i = 0; i < BP_GV; i++) rom[i] = BP_ROM_SCAT_LAM[i];
+  always_ff @(posedge clk) q <= rom[addr];
+endmodule
+/* verilator lint_on DECLFILENAME */
+
 // ========================================================================================= TOP CORE
-module bp_relay_banked_bram (
+module bp_relay_banked_bram_m (
     input  logic                clk,
     input  logic                rst_n,
     input  logic                in_valid,
@@ -179,7 +293,7 @@ module bp_relay_banked_bram (
   /* verilator lint_off UNUSEDSIGNAL */
   // ================================================================== elaboration guards (verbatim from M8)
   // Enforce the offline (Task-9 emitter) split invariants at time-0. Byte-identical to `bp_relay_banked`
-  // except the one `vedge_at`->`vedge_at_bq` call and the $display module name; the guard LOGIC is unchanged.
+  // except the one `vedge_at`->`vedge_at_bqm` call and the $display module name; the guard LOGIC is unchanged.
 `ifndef SYNTHESIS
   initial begin : elab_guards
     automatic int fails = 0;
@@ -194,7 +308,7 @@ module bp_relay_banked_bram (
             j_scan = j;
           end
       if (BP_CHK_GRP[c] != g_scan || BP_CHK_SLOT[c] != j_scan) begin
-        $display("bp_relay_banked_bram GUARD(d1) FAIL: check %0d table grp/slot (%0d,%0d) != scan (%0d,%0d)",
+        $display("bp_relay_banked_bram_m GUARD(d1) FAIL: check %0d table grp/slot (%0d,%0d) != scan (%0d,%0d)",
                  c, BP_CHK_GRP[c], BP_CHK_SLOT[c], g_scan, j_scan);
         fails = fails + 1;
       end
@@ -210,7 +324,7 @@ module bp_relay_banked_bram (
             i_scan = i;
           end
       if (BP_VAR_GRP[v] != h_scan || BP_VAR_SLOT[v] != i_scan) begin
-        $display("bp_relay_banked_bram GUARD(d2) FAIL: var %0d table grp/slot (%0d,%0d) != scan (%0d,%0d)",
+        $display("bp_relay_banked_bram_m GUARD(d2) FAIL: var %0d table grp/slot (%0d,%0d) != scan (%0d,%0d)",
                  v, BP_VAR_GRP[v], BP_VAR_SLOT[v], h_scan, i_scan);
         fails = fails + 1;
       end
@@ -222,7 +336,7 @@ module bp_relay_banked_bram (
       automatic int hb  = 2 * eb + BP_EDGE_BETA[e];
       automatic int row = BP_CHK_GRP[c];
       if (BP_EDGE_EB[e] != eb || BP_EDGE_HB[e] != hb || BP_EDGE_ROW[e] != row) begin
-        $display("bp_relay_banked_bram GUARD(d3) FAIL: edge %0d EB/HB/ROW (%0d,%0d,%0d) != recompute (%0d,%0d,%0d)",
+        $display("bp_relay_banked_bram_m GUARD(d3) FAIL: edge %0d EB/HB/ROW (%0d,%0d,%0d) != recompute (%0d,%0d,%0d)",
                  e, BP_EDGE_EB[e], BP_EDGE_HB[e], BP_EDGE_ROW[e], eb, hb, row);
         fails = fails + 1;
       end
@@ -238,13 +352,13 @@ module bp_relay_banked_bram (
       for (int b = 0; b < NEB; b++) rcnt[b] = 0;
       for (int i = 0; i < V; i++)
         for (int d = 0; d < BP_VAR_DEG; d++) begin
-          automatic int e = vedge_at_bq(h, i, d);
+          automatic int e = vedge_at_bqm(h, i, d);
           if (e >= 0) begin
             automatic int hb = BP_EDGE_HB[e];
             automatic int eb = BP_EDGE_EB[e];
             // EPORT is the count of same-e_cm-bank readers of this group seen BEFORE e in (i,d) order.
             if (BP_EDGE_EPORT[e] != rcnt[eb]) begin
-              $display("bp_relay_banked_bram GUARD(eport) FAIL: var-group %0d edge %0d EPORT=%0d != readers-so-far %0d",
+              $display("bp_relay_banked_bram_m GUARD(eport) FAIL: var-group %0d edge %0d EPORT=%0d != readers-so-far %0d",
                        h, e, BP_EDGE_EPORT[e], rcnt[eb]);
               fails = fails + 1;
             end
@@ -255,32 +369,32 @@ module bp_relay_banked_bram (
       // (a) <=1 writer per (var-group, m_cm half-bank) — the single m_cm write port per half-bank.
       for (int b = 0; b < NHB; b++)
         if (wcnt[b] > 1) begin
-          $display("bp_relay_banked_bram GUARD(a) FAIL: var-group %0d m_cm half-bank %0d has %0d writers (>1)",
+          $display("bp_relay_banked_bram_m GUARD(a) FAIL: var-group %0d m_cm half-bank %0d has %0d writers (>1)",
                    h, b, wcnt[b]);
           fails = fails + 1;
         end
       // (b) <=2 readers per (var-group, e_cm bank) — the two async read ports per e_cm bank.
       for (int b = 0; b < NEB; b++)
         if (rcnt[b] > 2) begin
-          $display("bp_relay_banked_bram GUARD(b) FAIL: var-group %0d e_cm bank %0d has %0d readers (>2)",
+          $display("bp_relay_banked_bram_m GUARD(b) FAIL: var-group %0d e_cm bank %0d has %0d readers (>2)",
                    h, b, rcnt[b]);
           fails = fails + 1;
         end
     end
-    // (c) BP_EDGE_POS[e] is e's position in its check's CSR row (edge_at_bq / BP_EDGE_HB tap correctness).
+    // (c) BP_EDGE_POS[e] is e's position in its check's CSR row (edge_at_bqm / BP_EDGE_HB tap correctness).
     for (int e = 0; e < BP_E; e++) begin
       automatic int c   = BP_EDGE_CHK[e];
       automatic int idx = BP_CHECK_OFF[c] + BP_EDGE_POS[e];
       if (idx >= BP_CHECK_OFF[c + 1] || BP_CHECK_EDGES[idx] != e) begin
-        $display("bp_relay_banked_bram GUARD(c) FAIL: edge %0d (check %0d) EDGE_POS=%0d does not match CSR row",
+        $display("bp_relay_banked_bram_m GUARD(c) FAIL: edge %0d (check %0d) EDGE_POS=%0d does not match CSR row",
                  e, c, BP_EDGE_POS[e]);
         fails = fails + 1;
       end
     end
     if (fails != 0)
-      $fatal(1, "bp_relay_banked_bram: %0d elaboration-guard violation(s) — header/emitter split is unsafe", fails);
+      $fatal(1, "bp_relay_banked_bram_m: %0d elaboration-guard violation(s) — header/emitter split is unsafe", fails);
     else
-      $display("bp_relay_banked_bram: elaboration guards (a/b/c/d) PASS (GV=%0d NHB=%0d NEB=%0d BP_E=%0d)",
+      $display("bp_relay_banked_bram_m: elaboration guards (a/b/c/d) PASS (GV=%0d NHB=%0d NEB=%0d BP_E=%0d)",
                GV, NHB, NEB, BP_E);
   end
 `endif
@@ -373,63 +487,14 @@ module bp_relay_banked_bram (
   // reads + corr_out[BP_N] write decode) violated this and are REVERTED to the LUT-core constant-folded
   // `pc==g` form — those are C/N-scale sites that were cheap in the LUT core; the 169%-LUT whale was the
   // E-scale edge fabric, which is exactly what stays ROM-ified below.
-  // R3 — CHK gather m_cm half-bank taps, per check-group; slot = (j,k). (The syndrome-bit SELECT is
-  // constant-folded per the consumer rule above, not a ROM.)
-  (* rom_style = "block" *) logic [NEB*HBW-1:0]     chk_hbsel_rom     [GC];
-  (* rom_style = "block" *) logic [NEB-1:0]         chk_epres_rom     [GC];
-  // R4 + R2(read) — VAR gather (lambda / gamma / e_cm operand bank+port+row), per var-group[, leg];
-  // slot = i or (i,d). var_gam_rom row address = leg*GV + group.
-  (* rom_style = "block" *) logic [V-1:0]           var_pres_rom  [GV];
-  (* rom_style = "block" *) logic [V*MSG_BITS-1:0]  var_lam_rom   [GV];
-  (* rom_style = "block" *) logic [V*MSG_BITS-1:0]  var_gam_rom   [BP_LEGS*GV];
-  (* rom_style = "block" *) logic [NVB-1:0]         var_epres_rom [GV];
-  (* rom_style = "block" *) logic [NVB*EBW-1:0]     var_ebsel_rom [GV];
-  (* rom_style = "block" *) logic [NVB-1:0]         var_eport_rom [GV];   // 1 => port B (EPORT==1)
-  (* rom_style = "block" *) logic [NVB*BWC-1:0]     var_erow_rom  [GV];
-  // R1 — m_cm scatter (+ shared by the m_vm write): half-bank, check-group row, lambda-seed, present;
-  // per var-group, slot = (i,d).
-  (* rom_style = "block" *) logic [NVB-1:0]          scat_pres_rom [GV];
-  (* rom_style = "block" *) logic [NVB*HBW-1:0]      scat_hb_rom   [GV];
-  (* rom_style = "block" *) logic [NVB*BWC-1:0]      scat_row_rom  [GV];
-  (* rom_style = "block" *) logic [NVB*MSG_BITS-1:0] scat_lam_rom  [GV];
-  // R2(write) — e_cm write present mask, per check-group; slot = (j,k).
-  (* rom_style = "block" *) logic [NEB-1:0]          ecm_wpres_rom [GC];
-  // R6 (S_EMIT observable) is NOT a ROM: reverted to the LUT-core constant-folded form per the consumer
-  // rule above (it indexed ehat/best_e[BP_N] and write-decoded corr_out[BP_N] at runtime — the probe-run-4
-  // closure whale).
-
-  // -------------------------------------------------------------------------- ROM fills (time-0 initial)
-  // PURE LITERAL COPY from the emitter-baked packed-row tables (BP_ROM_*, Task-9 emitter) — ZERO content
-  // computation at elaboration. Task-4 probe runs 2-3 showed Vivado's ELABORATION of computed initial
-  // fills peaking ~50 GB RSS *independent of rom_style* — the cost was the fill computation itself, not
-  // the ROM mapping — so per the 12c house lesson ALL content computation lives in the emitter, which
-  // bakes each row as one hex literal in this exact packing layout. The `rom_contract` guard below
-  // recomputes EVERY row the old way (simulation-only) and $fatal's on mismatch — the emitter/RTL
-  // packing-contract safety net (M7 discipline).
-  initial begin : fill_roms
-    for (int g = 0; g < GC; g++) begin
-      chk_hbsel_rom[g] = BP_ROM_CHK_HBSEL[g];
-      chk_epres_rom[g] = BP_ROM_CHK_EPRES[g];
-      ecm_wpres_rom[g] = BP_ROM_ECM_WPRES[g];
-    end
-    for (int g = 0; g < GV; g++) begin
-      var_pres_rom[g]  = BP_ROM_VAR_PRES[g];
-      var_lam_rom[g]   = BP_ROM_VAR_LAM[g];
-      var_epres_rom[g] = BP_ROM_VAR_EPRES[g];
-      var_ebsel_rom[g] = BP_ROM_VAR_EBSEL[g];
-      var_eport_rom[g] = BP_ROM_VAR_EPORT[g];
-      var_erow_rom[g]  = BP_ROM_VAR_EROW[g];
-      scat_pres_rom[g] = BP_ROM_SCAT_PRES[g];
-      scat_hb_rom[g]   = BP_ROM_SCAT_HB[g];
-      scat_row_rom[g]  = BP_ROM_SCAT_ROW[g];
-      scat_lam_rom[g]  = BP_ROM_SCAT_LAM[g];
-    end
-    for (int t = 0; t < BP_LEGS * GV; t++) var_gam_rom[t] = BP_ROM_VAR_GAM[t];
-  end
+  // R3 (CHK gather half-bank taps), R4+R2(read) (VAR gather), R1 (m_cm/m_vm scatter), R2(write)
+  // (e_cm write masks): the ROMs themselves live in the 14 STAMPED `bp_rom_*_bqm` cells above (12b
+  // modularization — one hierarchy unit per ROM + its output register); instances below. R6 (S_EMIT
+  // observable) is NOT a ROM: constant-folded per the consumer rule above.
 
   // ------------------------------------------------ ROM packing-contract guard (emitter <-> RTL, sim-only)
   // Recomputes EVERY BP_ROM_* row from the graph tables using the OLD fill expressions (the pre-literal
-  // computed fills, via the `_bq` helpers) and asserts bit-equality with the emitter's literals. Any
+  // computed fills, via the `_bqm` helpers) and asserts bit-equality with the emitter's literals. Any
   // packing drift — field width, slot stride, bit order, or content — fails the co-sim gate LOUDLY at
   // time-0 instead of silently mis-routing a bank. Fenced from synthesis like the elaboration guards.
 `ifndef SYNTHESIS
@@ -441,7 +506,7 @@ module bp_relay_banked_bram (
       x_hbsel = '0; x_epres = '0;
       for (int j = 0; j < W; j++) begin
         for (int k = 0; k < BP_CHK_DEG; k++) begin
-          automatic int e = edge_at_bq(g, j, k);
+          automatic int e = edge_at_bqm(g, j, k);
           if (e >= 0) begin
             x_epres[j*BP_CHK_DEG + k]                = 1'b1;
             x_hbsel[(j*BP_CHK_DEG + k)*HBW +: HBW]   = HBW'(BP_EDGE_HB[e]);
@@ -449,14 +514,14 @@ module bp_relay_banked_bram (
         end
       end
       if (BP_ROM_CHK_HBSEL[g] !== x_hbsel) begin
-        $display("bp_relay_banked_bram ROM-CONTRACT FAIL: CHK_HBSEL row %0d", g); fails = fails + 1;
+        $display("bp_relay_banked_bram_m ROM-CONTRACT FAIL: CHK_HBSEL row %0d", g); fails = fails + 1;
       end
       if (BP_ROM_CHK_EPRES[g] !== x_epres) begin
-        $display("bp_relay_banked_bram ROM-CONTRACT FAIL: CHK_EPRES row %0d", g); fails = fails + 1;
+        $display("bp_relay_banked_bram_m ROM-CONTRACT FAIL: CHK_EPRES row %0d", g); fails = fails + 1;
       end
       // ecm_wpres is the same "lane (j,k) has a real edge" mask as chk_epres (different read address).
       if (BP_ROM_ECM_WPRES[g] !== x_epres) begin
-        $display("bp_relay_banked_bram ROM-CONTRACT FAIL: ECM_WPRES row %0d", g); fails = fails + 1;
+        $display("bp_relay_banked_bram_m ROM-CONTRACT FAIL: ECM_WPRES row %0d", g); fails = fails + 1;
       end
     end
     for (int g = 0; g < GV; g++) begin
@@ -473,13 +538,13 @@ module bp_relay_banked_bram (
       x_pres = '0; x_lam = '0; x_epres = '0; x_ebsel = '0; x_eport = '0; x_erow = '0;
       x_spres = '0; x_shb = '0; x_srow = '0; x_slam = '0;
       for (int i = 0; i < V; i++) begin
-        automatic int v = var_at_bq(g, i);
+        automatic int v = var_at_bqm(g, i);
         if (v >= 0) begin
           x_pres[i]                       = 1'b1;
           x_lam[i*MSG_BITS +: MSG_BITS]   = BP_LAMBDA[v][MSG_BITS-1:0];
         end
         for (int d = 0; d < BP_VAR_DEG; d++) begin
-          automatic int e = vedge_at_bq(g, i, d);
+          automatic int e = vedge_at_bqm(g, i, d);
           automatic int s = i*BP_VAR_DEG + d;
           if (e >= 0) begin
             x_epres[s]              = 1'b1;
@@ -494,58 +559,58 @@ module bp_relay_banked_bram (
         end
       end
       if (BP_ROM_VAR_PRES[g]  !== x_pres)  begin
-        $display("bp_relay_banked_bram ROM-CONTRACT FAIL: VAR_PRES row %0d", g); fails = fails + 1;
+        $display("bp_relay_banked_bram_m ROM-CONTRACT FAIL: VAR_PRES row %0d", g); fails = fails + 1;
       end
       if (BP_ROM_VAR_LAM[g]   !== x_lam)   begin
-        $display("bp_relay_banked_bram ROM-CONTRACT FAIL: VAR_LAM row %0d", g); fails = fails + 1;
+        $display("bp_relay_banked_bram_m ROM-CONTRACT FAIL: VAR_LAM row %0d", g); fails = fails + 1;
       end
       if (BP_ROM_VAR_EPRES[g] !== x_epres) begin
-        $display("bp_relay_banked_bram ROM-CONTRACT FAIL: VAR_EPRES row %0d", g); fails = fails + 1;
+        $display("bp_relay_banked_bram_m ROM-CONTRACT FAIL: VAR_EPRES row %0d", g); fails = fails + 1;
       end
       if (BP_ROM_VAR_EBSEL[g] !== x_ebsel) begin
-        $display("bp_relay_banked_bram ROM-CONTRACT FAIL: VAR_EBSEL row %0d", g); fails = fails + 1;
+        $display("bp_relay_banked_bram_m ROM-CONTRACT FAIL: VAR_EBSEL row %0d", g); fails = fails + 1;
       end
       if (BP_ROM_VAR_EPORT[g] !== x_eport) begin
-        $display("bp_relay_banked_bram ROM-CONTRACT FAIL: VAR_EPORT row %0d", g); fails = fails + 1;
+        $display("bp_relay_banked_bram_m ROM-CONTRACT FAIL: VAR_EPORT row %0d", g); fails = fails + 1;
       end
       if (BP_ROM_VAR_EROW[g]  !== x_erow)  begin
-        $display("bp_relay_banked_bram ROM-CONTRACT FAIL: VAR_EROW row %0d", g); fails = fails + 1;
+        $display("bp_relay_banked_bram_m ROM-CONTRACT FAIL: VAR_EROW row %0d", g); fails = fails + 1;
       end
       if (BP_ROM_SCAT_PRES[g] !== x_spres) begin
-        $display("bp_relay_banked_bram ROM-CONTRACT FAIL: SCAT_PRES row %0d", g); fails = fails + 1;
+        $display("bp_relay_banked_bram_m ROM-CONTRACT FAIL: SCAT_PRES row %0d", g); fails = fails + 1;
       end
       if (BP_ROM_SCAT_HB[g]   !== x_shb)   begin
-        $display("bp_relay_banked_bram ROM-CONTRACT FAIL: SCAT_HB row %0d", g); fails = fails + 1;
+        $display("bp_relay_banked_bram_m ROM-CONTRACT FAIL: SCAT_HB row %0d", g); fails = fails + 1;
       end
       if (BP_ROM_SCAT_ROW[g]  !== x_srow)  begin
-        $display("bp_relay_banked_bram ROM-CONTRACT FAIL: SCAT_ROW row %0d", g); fails = fails + 1;
+        $display("bp_relay_banked_bram_m ROM-CONTRACT FAIL: SCAT_ROW row %0d", g); fails = fails + 1;
       end
       if (BP_ROM_SCAT_LAM[g]  !== x_slam)  begin
-        $display("bp_relay_banked_bram ROM-CONTRACT FAIL: SCAT_LAM row %0d", g); fails = fails + 1;
+        $display("bp_relay_banked_bram_m ROM-CONTRACT FAIL: SCAT_LAM row %0d", g); fails = fails + 1;
       end
       for (int l = 0; l < BP_LEGS; l++) begin
         automatic logic [V*MSG_BITS-1:0] x_gam;
         x_gam = '0;
         for (int i = 0; i < V; i++) begin
-          automatic int v = var_at_bq(g, i);
+          automatic int v = var_at_bqm(g, i);
           if (v >= 0) x_gam[i*MSG_BITS +: MSG_BITS] = BP_GAMMA[l*BP_N + v][MSG_BITS-1:0];
         end
         if (BP_ROM_VAR_GAM[l*GV + g] !== x_gam) begin
-          $display("bp_relay_banked_bram ROM-CONTRACT FAIL: VAR_GAM row (leg %0d, group %0d)", l, g);
+          $display("bp_relay_banked_bram_m ROM-CONTRACT FAIL: VAR_GAM row (leg %0d, group %0d)", l, g);
           fails = fails + 1;
         end
       end
     end
     if (fails != 0)
-      $fatal(1, "bp_relay_banked_bram: %0d ROM packing-contract violation(s) — emitter literal block and RTL layout disagree", fails);
+      $fatal(1, "bp_relay_banked_bram_m: %0d ROM packing-contract violation(s) — emitter literal block and RTL layout disagree", fails);
     else
-      $display("bp_relay_banked_bram: ROM packing contract PASS (14 ROMs, GC=%0d GV=%0d)", GC, GV);
+      $display("bp_relay_banked_bram_m: ROM packing contract PASS (14 ROMs, GC=%0d GV=%0d)", GC, GV);
   end
 `endif
 
-  // -------------------------------------------------------------------------- registered ROM row words
-  // ONE sync read per ROM per cycle; the `_q` row register IS the (single) ROM output register — the same
-  // pipeline stage the earlier per-field registered copies formed, no extra depth.
+  // -------------------------------------------------------------------- ROM cell row-word outputs
+  // Driven by the stamped `bp_rom_*_bqm` cells below; each cell's registered read IS the (single) ROM
+  // output register — same pipeline stage as the flat core's `_q` registers, no extra depth.
   logic [NEB*HBW-1:0]      chk_hbsel_q;
   logic [NEB-1:0]          chk_epres_q;
   logic [V-1:0]            var_pres_q;
@@ -628,24 +693,26 @@ module bp_relay_banked_bram (
     mcm_we_gate  = ((state == S_INIT) && (pc >= 1)) || ((state == S_VAR) && (pc >= 4));
   end
 
-  // ------------------------------------------------------------------- sync ROM reads + read-addr registers
-  // ONE whole-row sync read per ROM per cycle (the BRAM-inference template); per-slot fields are sliced
-  // combinationally from the `_q` row registers above.
+  // ------------------------------------------------------- stamped ROM cells (sync read inside each cell)
+  // ONE whole-row sync read per ROM per cycle, INSIDE its own stamped cell (the cell's q register IS the
+  // flat core's `_q` row register — same pipeline stage, zero schedule change). Addresses are the same
+  // clamped cursors the flat core used, sized to each cell's address width.
+  bp_rom_chk_hbsel_bqm  u_rom_chk_hbsel  (.clk(clk), .addr(BQM_AWC'(chk_rd)),  .q(chk_hbsel_q));
+  bp_rom_chk_epres_bqm  u_rom_chk_epres  (.clk(clk), .addr(BQM_AWC'(chk_rd)),  .q(chk_epres_q));
+  bp_rom_ecm_wpres_bqm  u_rom_ecm_wpres  (.clk(clk), .addr(BQM_AWC'(ecmw_rd)), .q(ecm_wpres_q));
+  bp_rom_var_pres_bqm   u_rom_var_pres   (.clk(clk), .addr(BQM_AWV'(var_rd)),  .q(var_pres_q));
+  bp_rom_var_lam_bqm    u_rom_var_lam    (.clk(clk), .addr(BQM_AWV'(var_rd)),  .q(var_lam_q));
+  bp_rom_var_gam_bqm    u_rom_var_gam    (.clk(clk), .addr(BQM_AWG'(gam_rd)),  .q(var_gam_q));
+  bp_rom_var_epres_bqm  u_rom_var_epres  (.clk(clk), .addr(BQM_AWV'(var_rd)),  .q(var_epres_q));
+  bp_rom_var_ebsel_bqm  u_rom_var_ebsel  (.clk(clk), .addr(BQM_AWV'(var_rd)),  .q(var_ebsel_q));
+  bp_rom_var_eport_bqm  u_rom_var_eport  (.clk(clk), .addr(BQM_AWV'(var_rd)),  .q(var_eport_q));
+  bp_rom_var_erow_bqm   u_rom_var_erow   (.clk(clk), .addr(BQM_AWV'(var_rd)),  .q(var_erow_q));
+  bp_rom_scat_pres_bqm  u_rom_scat_pres  (.clk(clk), .addr(BQM_AWV'(scat_rd)), .q(scat_pres_q));
+  bp_rom_scat_hb_bqm    u_rom_scat_hb    (.clk(clk), .addr(BQM_AWV'(scat_rd)), .q(scat_hb_q));
+  bp_rom_scat_row_bqm   u_rom_scat_row   (.clk(clk), .addr(BQM_AWV'(scat_rd)), .q(scat_row_q));
+  bp_rom_scat_lam_bqm   u_rom_scat_lam   (.clk(clk), .addr(BQM_AWV'(scat_rd)), .q(scat_lam_q));
+
   always_ff @(posedge clk) begin
-    chk_hbsel_q     <= chk_hbsel_rom[chk_rd];
-    chk_epres_q     <= chk_epres_rom[chk_rd];
-    ecm_wpres_q     <= ecm_wpres_rom[ecmw_rd];
-    var_pres_q      <= var_pres_rom[var_rd];
-    var_lam_q       <= var_lam_rom[var_rd];
-    var_gam_q       <= var_gam_rom[gam_rd];
-    var_epres_q     <= var_epres_rom[var_rd];
-    var_ebsel_q     <= var_ebsel_rom[var_rd];
-    var_eport_q     <= var_eport_rom[var_rd];
-    var_erow_q      <= var_erow_rom[var_rd];
-    scat_pres_q     <= scat_pres_rom[scat_rd];
-    scat_hb_q       <= scat_hb_rom[scat_rd];
-    scat_row_q      <= scat_row_rom[scat_rd];
-    scat_lam_q      <= scat_lam_rom[scat_rd];
     mcm_ra_r <= BWC'(chk_rd);
     mvm_ra_r <= BWV'(var_rd);
   end
@@ -717,7 +784,7 @@ module bp_relay_banked_bram (
   // ===================================================================== m_cm half-bank cells
   generate
     for (genvar b = 0; b < NHB; b++) begin : gmcm
-      bp_mcm_cell_bq #(.B(b)) u_mcm (
+      bp_mcm_cell_bqm #(.B(b)) u_mcm (
           .clk(clk), .we(we_mcm[b]), .wa(wa_mcm[b]), .wd(wd_mcm[b]), .ra(mcm_ra_r), .q(qmcm[b])
       );
     end
@@ -726,7 +793,7 @@ module bp_relay_banked_bram (
   // ===================================================================== e_cm bank cells
   generate
     for (genvar b = 0; b < NEB; b++) begin : gecm
-      bp_ecm_cell_bq #(.B(b)) u_ecm (
+      bp_ecm_cell_bqm #(.B(b)) u_ecm (
           .clk(clk), .we(we_ecm[b]), .wa(wa_ecm), .wd(chk_e_flat[b]),
           .ra(ra_ecm[b]), .rb(rb_ecm[b]), .qa(qa_ecm[b]), .qb(qb_ecm[b])
       );
@@ -736,7 +803,7 @@ module bp_relay_banked_bram (
   // ===================================================================== m_vm bank cells
   generate
     for (genvar b = 0; b < NVB; b++) begin : gmvm
-      bp_mvm_cell_bq #(.B(b)) u_mvm (
+      bp_mvm_cell_bqm #(.B(b)) u_mvm (
           .clk(clk), .we(we_mvm[b]), .wa(wa_mvm), .wd(wd_mvm[b]), .rg(mvm_ra_r), .q(qmvm[b])
       );
     end
@@ -749,7 +816,7 @@ module bp_relay_banked_bram (
       logic                       sbit_j;
       logic signed [MSG_BITS-1:0] m_in_j    [BP_CHK_DEG];
       logic                       present_j [BP_CHK_DEG];
-      // syndrome-bit select: LUT-core CONSTANT-FOLDED form (probe run 4 revert) — `chk_at_bq(g,j)` folds
+      // syndrome-bit select: LUT-core CONSTANT-FOLDED form (probe run 4 revert) — `chk_at_bqm(g,j)` folds
       // per group under `pc == g`, so s_reg[BP_C] is never runtime-indexed (Vivado port-splits/explodes on
       // runtime indices into large register arrays; the SAT parity below uses the same shape). The fold
       // has 0 ROM latency, so ONE register stage (sbit_sel -> sbit_j) re-aligns it with the ROM-fed
@@ -757,7 +824,7 @@ module bp_relay_banked_bram (
       always_comb begin
         sbit_sel = 1'b0;
         for (int g = 0; g < GC; g++)
-          if (chk_at_bq(g, j) >= 0 && pc == g) sbit_sel = s_reg[chk_at_bq(g, j)];
+          if (chk_at_bqm(g, j) >= 0 && pc == g) sbit_sel = s_reg[chk_at_bqm(g, j)];
       end
       always_ff @(posedge clk) sbit_j <= sbit_sel;    // ROM-latency twin stage (aligns with *_r ROM rows)
       // gather from the REGISTERED CHK select ROM (group = pc-1) tapping the REGISTERED-address m_cm reads.
@@ -898,10 +965,10 @@ module bp_relay_banked_bram (
           if (pc < GC && sat_pending) begin
             for (int j = 0; j < W; j++)
               for (int g = 0; g < GC; g++)
-                if (chk_at_bq(g, j) >= 0 && pc == g) begin
-                  p = s_reg[chk_at_bq(g, j)];
+                if (chk_at_bqm(g, j) >= 0 && pc == g) begin
+                  p = s_reg[chk_at_bqm(g, j)];
                   for (int k = 0; k < BP_CHK_DEG; k++) begin
-                    automatic int e = edge_at_bq(g, j, k);
+                    automatic int e = edge_at_bqm(g, j, k);
                     if (e >= 0) p = p ^ ehat[BP_EDGE_VAR[e]];
                   end
                   if (p != 1'b0) grp_sat = 1'b0;
@@ -918,7 +985,7 @@ module bp_relay_banked_bram (
               end
             end
           end
-          // e_cm scatter of group pc-5 (M9b lag) handled by the ROM-fed per-bank bp_ecm_cell_bq write.
+          // e_cm scatter of group pc-5 (M9b lag) handled by the ROM-fed per-bank bp_ecm_cell_bqm write.
           if (early_exit && final_sat) begin
             pc <= '0; state <= S_EMIT;
           end else if (pc == GC + 4) begin              // M9b: was GC+3 (extra ROM-read plane +1)
@@ -939,15 +1006,15 @@ module bp_relay_banked_bram (
             for (int i = 0; i < V; i++) wterm[i] = 1'b0;
             for (int i = 0; i < V; i++)
               for (int g = 0; g < GV; g++)
-                if (var_at_bq(g, i) >= 0 && (pc - 4) == g) begin
-                  automatic int v = var_at_bq(g, i);
+                if (var_at_bqm(g, i) >= 0 && (pc - 4) == g) begin
+                  automatic int v = var_at_bqm(g, i);
                   ehat[v] <= var_ehat_out[i];
                   wterm[i] = var_ehat_out[i];
                 end
             for (int i = 0; i < V; i++) wsum = wsum + (wterm[i] ? 1 : 0);
             ehat_w <= ehat_w + WW'(wsum);
           end
-          // m_vm / m_cm writes of group pc-4 (M9b lag) handled by the bp_mvm_cell_bq + m_cm scatter comb.
+          // m_vm / m_cm writes of group pc-4 (M9b lag) handled by the bp_mvm_cell_bqm + m_cm scatter comb.
           if (pc == GV + 3) begin                       // M9b: was GV+2 (extra ROM-read plane +1)
             pc          <= '0;
             sat_pending <= 1'b1;
@@ -971,10 +1038,10 @@ module bp_relay_banked_bram (
           p         = 1'b0;
           for (int j = 0; j < W; j++)
             for (int g = 0; g < GC; g++)
-              if (chk_at_bq(g, j) >= 0 && pc == g) begin
-                p = s_reg[chk_at_bq(g, j)];
+              if (chk_at_bqm(g, j) >= 0 && pc == g) begin
+                p = s_reg[chk_at_bqm(g, j)];
                 for (int k = 0; k < BP_CHK_DEG; k++) begin
-                  automatic int e = edge_at_bq(g, j, k);
+                  automatic int e = edge_at_bqm(g, j, k);
                   if (e >= 0) p = p ^ ehat[BP_EDGE_VAR[e]];
                 end
                 if (p != 1'b0) grp_sat = 1'b0;
@@ -997,7 +1064,7 @@ module bp_relay_banked_bram (
 
         // ----------------------------------------------------------------- reduce chosen ehat -> obs
         // LUT-core CONSTANT-FOLDED form (probe run 4 revert): the ROM form runtime-indexed ehat/best_e
-        // [BP_N] and write-decoded corr_out[BP_N] — the closure whale. `var_at_bq(g,i)` folds per group
+        // [BP_N] and write-decoded corr_out[BP_N] — the closure whale. `var_at_bqm(g,i)` folds per group
         // under `pc == g` (M8's 12e split: per-slot term with its own constant-folded group mux, then a
         // pure XOR reduction — associative, bit-exact). Phase is pc=0..GV-1 again (the +1 ROM tail is
         // gone), so the decode is ONE cycle shorter than the ROM-form core; decisions are unchanged.
@@ -1011,8 +1078,8 @@ module bp_relay_banked_bram (
           for (int i = 0; i < V; i++) term[i] = {BP_OBS{1'b0}};
           for (int i = 0; i < V; i++)
             for (int g = 0; g < GV; g++)
-              if (var_at_bq(g, i) >= 0 && pc == g) begin
-                automatic int v = var_at_bq(g, i);
+              if (var_at_bqm(g, i) >= 0 && pc == g) begin
+                automatic int v = var_at_bqm(g, i);
                 bb = found ? best_e[v] : ehat[v];
                 corr_out[v] <= bb;
                 if (bb) term[i] = BP_OBS_MASK[v][BP_OBS-1:0];

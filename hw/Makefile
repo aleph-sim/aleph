@@ -304,6 +304,30 @@ bpbankedbram:
 		./obj_bankedbram/sim_bpbankedbram bp_circ_vectors.txt || exit 1; \
 	done
 
+# Q7-04 M9b — MODULAR BRAM-ified banked core (`bp_relay_banked_bram_m`): probe-run-5 12b variant — every
+# ROM + its sync-read register in a stamped `bp_rom_*_bqm` cell. LINT ONLY (mirror of bpbankedbram-lint).
+bpbankedbramm-lint:
+	cd .. && $(CARGO) qec_q7_bp_graph -- circgraph 1 0.003 8 24 > hw/bb_gross_tanner.svh
+	$(VERILATOR) --lint-only -Wall --top-module bp_relay_banked_bram_m \
+		check_minsum.sv var_update.sv bp_relay_banked_bram_m.sv
+
+# Q7-04 M9b — `bp_relay_banked_bram_m` FULL CO-SIM: same golden + gate as `bpbankedbram` (40/40
+# decision-equal at both bankings, rom_contract guard included; latency must MATCH the flat core's
+# 3871/2206 — the modularization is a pure hierarchy change). TB reused via --prefix. The flat
+# `bpbankedbram` stays the A/B control; bpstream/bpstreamaxi keep instantiating the flat core until the
+# Vivado A/B picks the production variant. Sweep ends on 16/48 (committed at-rest header).
+bpbankedbramm:
+	cd .. && $(CARGO) qec_q7_bp_graph -- circvectors 1 0.003 40 2024 > hw/bp_circ_vectors.txt
+	@for wv in "8 24" "16 48"; do \
+		set -- $$wv; echo "== W=$$1 V=$$2 =="; \
+		(cd .. && $(CARGO) qec_q7_bp_graph -- circgraph 1 0.003 $$1 $$2 > hw/bb_gross_tanner.svh); \
+		rm -rf obj_bankedbramm; \
+		$(VERILATOR) --cc --exe --build -Wall --Mdir obj_bankedbramm --prefix Vbp_relay_banked \
+			--top-module bp_relay_banked_bram_m \
+			check_minsum.sv var_update.sv bp_relay_banked_bram_m.sv tb_bp_banked.cpp -o sim_bpbankedbramm || exit 1; \
+		./obj_bankedbramm/sim_bpbankedbramm bp_circ_vectors.txt || exit 1; \
+	done
+
 # Q7-04 M9b — SLIDING-WINDOW STREAMING wrapper (`bp_streaming_decoder`) around the BRAM-ified banked core.
 # The COMMITTED W=6 C=2 window header `bb_stream_tanner.svh` is the source of truth (do NOT regenerate it);
 # it is staged as `bb_gross_tanner.svh` inside the scratch build dir (line-wrapped element-per-line only, so
