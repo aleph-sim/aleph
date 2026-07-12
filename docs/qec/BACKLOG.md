@@ -1383,9 +1383,12 @@ decode-load power for the shipped M8 overlay (full-schedule and early-exit sweep
 energy per decode.
 
 **Acceptance Criteria**
-- [ ] Scripted rail readout on the KV260 alongside the standard 40-vector run.
-- [ ] Reported: PL power idle/under-load, energy per decode (both modes), documented in
-      `docs/perf/qec-q7-fixed-bp.md`.
+- [x] Scripted rail readout on the KV260 alongside the standard 40-vector run.
+      (`hw/sw/bp_power_kv260.py`: INA260 `ina260_u14` SOM-rail sampler, idle/full/early/PS-poll.)
+- [x] Reported: PL power idle/under-load, energy per decode (both modes), documented in
+      `docs/perf/qec-q7-fixed-bp.md` § Q7-05. Idle 3.25 W → load 3.50 W (full) / 3.46 W (early);
+      energy/decode ≈86 µJ (full) / ≈67 µJ (early) SOM-total, PL-core ≲17/≲3 µJ (host-loop-dominated;
+      the +200 mW delta is the AXI-Lite poll, not the datapath → motivates Q7-06's batched interface).
 
 -----
 
