@@ -510,6 +510,11 @@ module bp_relay_banked_bram_m (
           if (e >= 0) begin
             x_epres[j*BP_CHK_DEG + k]                = 1'b1;
             x_hbsel[(j*BP_CHK_DEG + k)*HBW +: HBW]   = HBW'(BP_EDGE_HB[e]);
+            // M9c 2:1 beta-split invariant: HB(e) >> 1 must equal the tap id, else qmcm[idx*2+beta] is wrong.
+            if ((BP_EDGE_HB[e] >> 1) != (j*BP_CHK_DEG + k)) begin
+              $display("bp_relay_banked_bram_m BETA-SPLIT FAIL: g=%0d j=%0d k=%0d HB=%0d expected base %0d",
+                       g, j, k, BP_EDGE_HB[e], j*BP_CHK_DEG + k); fails = fails + 1;
+            end
           end
         end
       end
@@ -831,7 +836,12 @@ module bp_relay_banked_bram_m (
       always_comb begin
         for (int k = 0; k < BP_CHK_DEG; k++) begin
           automatic int idx = j * BP_CHK_DEG + k;
-          m_in_j[k]    = chk_epres_r[idx] ? qmcm[chk_hbsel_r[idx]] : '0;
+          // M9c: 2:1 beta-split. chk_hbsel_r[idx] == idx*2 + beta (HB = eb*2+beta, eb = idx), so the
+          // tap base idx*2 is a compile-time constant and only bit0 (beta) is runtime -> Vivado folds
+          // this to a 2:1 mux instead of an NHB-way crossbar. Invariant enforced in rom_contract below.
+          m_in_j[k]    = chk_epres_r[idx]
+                       ? (chk_hbsel_r[idx][0] ? qmcm[idx*2 + 1] : qmcm[idx*2])
+                       : '0;
           present_j[k] = chk_epres_r[idx];
         end
       end
