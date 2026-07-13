@@ -1558,6 +1558,54 @@ yet in hand is the final placed LUT/BRAM/Fmax table, blocked by Vivado's memory 
 one available 62 GB Vivado host. That measurement is the M9c starting task (bigger-RAM host or a
 serial-synthesis pass), and it does not gate this milestone.
 
+### M9c fit campaign on a 123 GB host — the "host-blocked" framing above is only half right
+
+The M9b note closes "host RAM at Technology Mapping, **not design non-fitness**." The M9c follow-up
+ran the exact modular core (`bp_relay_banked_bram_m`, xck26, 5 ns OOC) on a **bigger host** and the
+result revises that verdict: it is **both** a host-RAM wall **and** a genuine area problem.
+
+**Infra.** Stood up Vivado 2024.2 on the EPYC bench box (`root@195.154.249.85`, 123 GB RAM, 32
+cores, Ubuntu 26.04 / glibc 2.43) by rsyncing `/tools/Xilinx` off `openwebgui` (no fresh install,
+no license — Kria/`zynquplus` synthesises license-free). Two portability fixes: Vivado's bundled
+`libtinfo.so.5` isn't on the search path for the unknown-OS 26.04, so symlink the system
+`libtinfo.so.6 → .so.5` (+ the ncurses family); glibc 2.43 (newer than Vivado's supported 2.39) is
+backward-compatible and needed nothing. `vivado -mode batch` then runs clean. This box + a 128 GB
+`/data/swapfile` is now the heavy-synth host of record.
+
+**Run.** Parallel synthesis **deadlocks** here — `parallel_synth_helper` and its parent both sleep
+at 0 CPU (not hostname/IPv6-localhost; root cause unidentified), so the run used
+`general.maxThreads 1`. Serial, the core cleared **every logic-optimisation phase** — Synthesize,
+RTL Optimization Phase 2, Cross-Boundary & Area-Optimization, Timing Optimization — in **8 h 22 min**
+wall, then was **OOM-killed at the *start* of Technology Mapping**: `anon-rss 75.9 GB`, global OOM
+(`CONSTRAINT_NONE`) on the swap-less 123 GB box (buff/cache from the 8 h run left too little headroom
+for the ~76 GB techmap spike). synth_design is monolithic with no pre-techmap checkpoint, so the 8 h
+were lost. A 128 GB swapfile was added afterward to make a re-run survivable, but the *area* finding
+below made a 10–12 h re-run not worth it.
+
+**Why it OOMs — the pre-map RTL statistics (the real signal).** The dead run's RTL Component report
+shows the shape:
+
+| inferred (pre-map) | count | note |
+|---|---|---|
+| **2-input muxes** | **~1 166 000** (235 440 × 8-bit + 691 201 × 4-bit + …) | the runtime **gather/select** across the ~800 `gmcm` cells |
+| distributed RAM `RAM32M16` | **2 156** cells (16×8, LUTRAM) | per-cell `mem_reg` — the E-fabric mapped to LUT-as-memory **as intended** |
+| **Block RAM (RAMB)** | **0** | nothing reached true block RAM — the "BRAM-ify" is *distributed* RAM |
+
+**Estimate verdict (the basis for going to board without the placed number).** xck26 has **117 120
+LUTs**. A ~1.17 M-mux select network packs to roughly **150–290 k LUT6** even optimistically, plus
+the 2 156 LUTRAM cells — i.e. **~2–3× the KV260 LUT budget → the core as-BRAM-ified does not fit.**
+The distributed-RAM lever moved the *per-cell storage* off LUT logic but **left the cell-to-output
+gather runtime-indexed**, so it exploded into the mux network — the same "ROM/array runtime index →
+mux tree" whale as M9b step 3, one level up at the bank-gather. Net: the `_m` BRAM-ify **traded the
+M8 LUT core's 94 k clean LUTs (80 %, which fit and shipped) for 2 156 LUTRAM + a 1.17 M-mux gather
+that overflows the part.** This is consistent with the M9a pre-probe (W=6 window at 169 %/138 % LUT).
+
+So M9c's on-silicon sustained-rate (AC-3) is **blocked on an RTL fix, not on a measurement or a
+host**: the E-fabric bank-gather must become a *true* addressed read (block-RAM/URAM with a
+registered address, no runtime mux tree) before a streaming bitstream can route on KV260. The
+`bp_relay_banked_bram_m` core is bit-exact in Verilator but **not KV260-routable in its current
+shape**; the fit "estimate" is a **no-fit**, and it points at the exact structural change needed.
+
 ## Deviations from the design spec
 
 - **Uniform hardware schedule, not per-slot exact DEMs** — one baked interior window graph
