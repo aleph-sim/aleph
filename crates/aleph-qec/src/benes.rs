@@ -43,11 +43,11 @@ pub fn complete_partial(dest: &[Option<usize>], m: usize) -> Vec<usize> {
             out[i] = b;
         }
     }
-    let mut free: Vec<usize> = (0..m).filter(|&b| !used[b]).collect();
+    let mut free = (0..m).filter(|&b| !used[b]);
     for slot in out.iter_mut() {
         if *slot == usize::MAX {
             *slot = free
-                .pop()
+                .next()
                 .expect("free list underflow: dest not an injection");
         }
     }
@@ -278,6 +278,8 @@ mod tests {
         assert_eq!(full[0], 5);
         assert_eq!(full[1], 2);
         assert_eq!(full[2], 6);
+        // Unused outputs {0,1,3,4,7} must fill inputs 3..8 in ascending order.
+        assert_eq!(full, vec![5, 2, 6, 0, 1, 3, 4, 7]);
         assert_eq!(
             full.iter()
                 .copied()
