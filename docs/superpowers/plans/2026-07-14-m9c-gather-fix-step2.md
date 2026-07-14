@@ -45,6 +45,27 @@
 
 Sites 2 and 3 share **one** matching (var reads exactly the banks it addressed): the emitter computes it once and emits the read-network control as the routing for `bank→tap`, the addr-network control for `tap→bank` (same matching, opposite direction). Site 4 is an independent matching (var-slot → m_cm half-bank).
 
+> **⚠️ DESIGN UPDATE (post-Task-2, verified correct by review — SUPERSEDES the e_cm rows above for Tasks 3–5):**
+> e_cm banks are **dual-port (a/b)**. Within a var-group up to `BANK_CAP=2` edges legitimately share a
+> bank, disambiguated by `BP_EDGE_EPORT`. So sites 2 & 3 are **NOT a single permutation** — each is
+> **two independent per-port size-512 Beneš networks** (port 0 = qa/ra, port 1 = qb/rb). Task 2 already
+> emits the control accordingly: `BP_ROM_BENES_ECMADDR`/`_ECMRD` rows are **`BP_BENES_ECM_PORTS(=2) *
+> BP_BENES_ECM_COLS(=17) * (BP_BENES_ECM_M(=512)/2)` = 8704 bits**, with **port 0 packed low, port 1
+> packed high** (each port a full `ECM_COLS*(ECM_M/2)=4352`-bit control block). m_cm (site 4) is
+> **unchanged — one size-1024 network** (`hb=eb*2+beta` already injective; `BP_ROM_BENES_MCMWR` = 9728 bits).
+>
+> **Consequences for Tasks 3–5:**
+> - **Task 3:** the three fabric *module types* are unchanged and stay generic `#(N,W,PIPE)`; the e_cm
+>   read/addr payloads become **per-port** (read `W=MSG_BITS`, addr `W=BWC+1` valid+row — the `eport`
+>   bit is no longer carried, it's implicit in which network) not the `2*MSG_BITS`/`BWC+2` in the table.
+> - **Task 4 (site 2 read):** instantiate `bp_benes_ecm_read` **twice** — `u_benes_rd0` fed
+>   `qa_ecm`+`ctrl[4351:0]`, `u_benes_rd1` fed `qb_ecm`+`ctrl[8703:4352]`. Leaf:
+>   `e_in_i[d] = var_eport_r[idx] ? rd1_dout[idx] : rd0_dout[idx]`.
+> - **Task 5 (site 3 addr):** instantiate `bp_benes_ecm_addr` **twice** — port 0 → `ra_ecm`, port 1 →
+>   `rb_ecm`, each fed its half of `BP_ROM_BENES_ECMADDR`. Site 4 stays one `bp_benes_mcm_wr`.
+> - Slice the ROM halves with the emitted localparams (`BP_BENES_ECM_PORTS`, `BP_BENES_ECM_COLS`,
+>   `BP_BENES_ECM_M`) — never hard-code 4352/8703.
+
 ---
 
 ### Task 1: Beneš routing library (`crates/aleph-qec/src/benes.rs`) — pure, TDD
@@ -414,6 +435,10 @@ Claude-Session: https://claude.ai/code/session_01HNwUEvqsNoAqv1ykqHHNHn"
 
 ### Task 3: SystemVerilog Beneš fabrics + standalone unit test (`hw/bp_benes.sv`, `tb_bp_benes.cpp`)
 
+> **⚠️ Read the "DESIGN UPDATE (post-Task-2)" note above first.** The three fabric module *types* below are
+> correct and generic; only the e_cm read/addr **payload widths** change to per-port (read `W=MSG_BITS`,
+> addr `W=BWC+1`). The fabric modules themselves are unaffected — they stay `#(N,W,PIPE)` generic.
+
 **Files:**
 - Create: `hw/bp_benes.sv` — `bp_benes_switch` + `bp_benes_ecm_read` + `bp_benes_ecm_addr` + `bp_benes_mcm_wr`
 - Create: `hw/tb_bp_benes.cpp`
@@ -477,6 +502,12 @@ Claude-Session: https://claude.ai/code/session_01HNwUEvqsNoAqv1ykqHHNHn"
 
 ### Task 4: Wire site 2 (e_cm read-gather) into the core + pipeline-align — co-sim gate
 
+> **⚠️ Read the "DESIGN UPDATE (post-Task-2)" note above first — it SUPERSEDES the single-instance wiring in
+> this task.** Instantiate `bp_benes_ecm_read` **twice**: `u_benes_rd0` fed `qa_ecm` + the low ROM half
+> (`BP_ROM_BENES_ECMRD[g]` bits `[ECM_COLS*(ECM_M/2)-1 : 0]`), `u_benes_rd1` fed `qb_ecm` + the high half.
+> Each carries `W=MSG_BITS` (NOT the `2*MSG_BITS` pair). Leaf: `e_in_i[d] = var_eport_r[idx] ? rd1_dout[idx]
+> : rd0_dout[idx]`. Slice ROM halves via `BP_BENES_ECM_PORTS`/`BP_BENES_ECM_COLS`/`BP_BENES_ECM_M`.
+
 **Files:**
 - Modify: `hw/bp_relay_banked_bram_m.sv` — site 2 read (~L884-898), instantiate `bp_benes_ecm_read`, add alignment registers, `rom_contract` (already re-derived at emit time; add the fabric's ROM wiring)
 - Modify: `hw/Makefile` — add `bp_benes.sv` to `bpbankedbramm` + `bpbankedbramm-lint` compile lists
@@ -539,6 +570,12 @@ Claude-Session: https://claude.ai/code/session_01HNwUEvqsNoAqv1ykqHHNHn"
 ---
 
 ### Task 5: Wire sites 3 & 4 (scatters) into the core + pipeline-align — co-sim gate
+
+> **⚠️ Read the "DESIGN UPDATE (post-Task-2)" note above first — it SUPERSEDES the single-instance site-3
+> wiring.** Instantiate `bp_benes_ecm_addr` **twice**: port 0 (low ROM half of `BP_ROM_BENES_ECMADDR[g]`)
+> drives `ra_ecm`, port 1 (high half) drives `rb_ecm`. Each carries `W=BWC+1` (valid+row; the `eport` bit
+> is implicit in which network). Site 4 (`bp_benes_mcm_wr`) is UNCHANGED — one size-1024 network,
+> `W=1+BWC+MSG_BITS`. Slice ROM halves via `BP_BENES_ECM_PORTS`/`BP_BENES_ECM_COLS`/`BP_BENES_ECM_M`.
 
 **Files:**
 - Modify: `hw/bp_relay_banked_bram_m.sv` — site 3 (e_cm read-addr scatter, ~L748-764) + site 4 (m_cm write scatter, ~L725-746)
