@@ -1558,6 +1558,52 @@ yet in hand is the final placed LUT/BRAM/Fmax table, blocked by Vivado's memory 
 one available 62 GB Vivado host. That measurement is the M9c starting task (bigger-RAM host or a
 serial-synthesis pass), and it does not gate this milestone.
 
+## M9c — gather-crossbar fix (Beneš networks): fit verdict
+
+The M9b modular core (`bp_relay_banked_bram_m`) did not fit: a full serial `maxThreads 1` synth on a
+123 GB+128 GB-swap host (2026-07-13) placed it at **CLB LUTs = 2,232,451 = 1906 %** of the KV260's
+117,120, **entirely** from three runtime-indexed crossbars (`array[rom_value]` → giant muxes: F7/F8
+muxes at 238 %/231 %). The non-crossbar core fit fine (DSP 23 %, BRAM 22 %, FF 9 %). Root cause: ROM
+values used as register-array *indices* (spec `docs/superpowers/specs/2026-07-13-m9c-gather-crossbar-fix-design.md`).
+
+**Fix (Step 2):** replace all three crossbars with **ROM-configured Beneš permutation networks**
+(`hw/bp_benes.sv`; routing lib `crates/aleph-qec/src/benes.rs`; control ROMs emitted by
+`qec_q7_bp_graph.rs`). e_cm is dual-port so sites 2 & 3 use **two per-port size-512 networks** each;
+m_cm uses **one size-1024 network**. Fabrics pipeline control in lockstep with data (PIPE=3 e_cm,
+PIPE=4 m_cm). Bit-exact 40/40 vs `FixedRelayBp` at both bankings (8/24, 16/48); decode latency grew
+**2206 → 2810 cycles (+604, ~27 %)** because the gather/scatter sit inside the non-overlapped BP
+iteration loop (a known, accepted cost — latency-exactness would need a cross-phase-overlap FSM rework).
+
+**Result — serial OOC synth, `xck26`, 5 ns period (2026-07-14, ~25 min synth, peak 12 GB, 0 errors):**
+
+| metric | Step-1 crossbar | **Step-2 Beneš** | vs Step 1 |
+|--------|-----------------|------------------|-----------|
+| **CLB LUTs** | 2,232,451 (1906 %) | **239,750 (204.7 %)** | **9.3× fewer** |
+| LUT as Logic | 2,217,875 | 221,926 (189 %) | |
+| F7 / F8 Muxes | 139,754 / 67,712 (238 %/231 %) | **506 / 1 (0.9 %/0 %)** | crossbars eliminated |
+| CLB Registers | 20,140 (9 %) | 115,893 (49 %) | ctrl-pipeline FFs |
+| BRAM (RAMB36+18) | 64 (22 %) | 223 (77 %) | control ROMs in BRAM |
+| DSP48E2 | 288 (23 %) | 288 (23 %) | unchanged |
+| **Fmax** | — | **177.7 MHz** (WNS −0.628 ns) | misses 200 MHz by 11 % |
+
+**Verdict: NO-FIT, but a 9.3× LUT reduction — the approach works, the core is now 2.05× over (was
+19×).** The residual is the Beneš fabrics themselves (~159k LUTs = 66 % of total), padded to powers of
+two and sized for full permutations rather than the actual 288-writer partial injections:
+
+| fabric | N | LUTs |
+|--------|---|------|
+| `u_benes_wr` (m_cm write) | 1024 | **75,985** |
+| `u_benes_rd0`+`rd1` (e_cm read) | 512×2 | 51,456 |
+| `u_benes_ad0`+`ad1` (e_cm addr) | 512×2 | 31,474 |
+| real decoder (16×check + 48×var + glue) | — | ~65,000 (fits) |
+
+**Next levers (not yet done — a further design iteration):** size networks for the real 288→800 /
+288→400 *partial* permutations instead of padded 512/1024 (biggest win, esp. the 76k m_cm net);
+Waksman (switch-optimal) variant (~25 %); time-share the read/addr networks (they realise the same
+permutation and its inverse) to halve the four e_cm nets; trim payload widths. Fmax (177.7 MHz) is a
+secondary blocker (close; deeper pipelining or retiming). AC-3 (on-silicon sustained rate) stays
+blocked on reaching a routable fit.
+
 ## Deviations from the design spec
 
 - **Uniform hardware schedule, not per-slot exact DEMs** — one baked interior window graph
