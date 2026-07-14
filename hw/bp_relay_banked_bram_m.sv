@@ -327,6 +327,7 @@ module bp_relay_banked_bram_m (
   // m_cm write-scatter fabric (single N=512 network, 17 columns) into <=4 timing stages.
   localparam int BENES_PIPE_ECM = 3;
   localparam int BENES_ECM_LAT  = 2 * BENES_PIPE_ECM;
+  localparam int BENES_PIPE_MCM = 4;
 
   /* verilator lint_off UNUSEDSIGNAL */
   // ================================================================== elaboration guards (verbatim from M8)
@@ -757,8 +758,15 @@ module bp_relay_banked_bram_m (
     wa_mvm       = (wa_mvm_i >= 0 && wa_mvm_i < GV) ? BWV'(wa_mvm_i) : '0;
     scat_is_init = (state == S_INIT);
     ecm_we_gate  = (state == S_CHECK) && (pc >= 5);
-    mvm_we_gate  = ((state == S_INIT) && (pc >= 1)) || ((state == S_VAR) && (pc >= 10));
-    mcm_we_gate  = ((state == S_INIT) && (pc >= 1)) || ((state == S_VAR) && (pc >= 10));
+    // M9c site 4: the m_cm/m_vm write windows are now explicitly UPPER-bounded to the last real scatter
+    // group. Site 4 extends S_INIT/S_VAR by BENES_PIPE_MCM so the write-scatter fabric fully drains inside
+    // the phase; during those extra drain cycles the din-side gate must be low (scat_rd clamps to group 0,
+    // whose scat_pres would else re-issue a spurious write). m_vm is a direct (non-fabric) write, so its
+    // gate is the din window; m_cm uses the PIPE-delayed mcm_we_gate_d for the actual write-enable.
+    mvm_we_gate  = ((state == S_INIT) && (pc >= 1) && (pc <= GV)) ||
+                   ((state == S_VAR)  && (pc >= 10) && (pc <= GV + 9));
+    mcm_we_gate  = ((state == S_INIT) && (pc >= 1) && (pc <= GV)) ||
+                   ((state == S_VAR)  && (pc >= 10) && (pc <= GV + 9));
   end
 
   // ------------------------------------------------------- stamped ROM cells (sync read inside each cell)
@@ -788,26 +796,42 @@ module bp_relay_banked_bram_m (
     mvm_ra_r <= BWV'(var_rd);
   end
 
-  // ------------------------------------------------------------------- comb: m_cm write scatter (from ROM)
-  // For each present (i,d) of the registered scatter group: drive its half-bank's single write port. Row and
-  // half-bank from the ROM; data = lambda-seed (S_INIT) or the var-update output (S_VAR). Guard(a) => <=1
-  // writer per half-bank per group, so no scatter conflict.
+  // ===================================================================== M9c site 4: m_cm write-scatter Beneš
+  // Replaces the runtime-indexed we/wa/wd_mcm[scat_hb_r] write-scatter crossbar with a SINGLE Beneš network
+  // (no port split -- hb = eb*2+beta is injective). Each scatter slot s carries {valid=scat_pres_r[s],
+  // row=scat_row_r[s], data=(scat_is_init?scat_lam_r[s]:var_m_flat[s])}; the ROM control routes slot s to
+  // its half-bank scat_hb_r[s]. At output half-bank b: we_mcm[b]=valid & mcm_we_gate_d, wa_mcm[b]=row,
+  // wd_mcm[b]=data. Guard(a) => <=1 valid writer per half-bank per group, so no scatter conflict.
+  //
+  // PIPE=BENES_PIPE_MCM (4, Fmax-safe: the 17-column N=512 route in <=4 registered stages). The scatter din
+  // is captured at the same cycle the old combinational write fired (scat_*_r + var_m_flat already aligned
+  // by the S_VAR scat cursor), so the m_cm write now LANDS BENES_PIPE_MCM cycles later. The write enable is
+  // therefore the PIPE-delayed gate mcm_we_gate_d (a value snapshot -- it fires for exactly the same groups,
+  // 4 cycles on); the drain of the last groups' writes spills into the first BENES_PIPE_MCM cycles of the
+  // next phase (harmless: those half-banks are not re-read that early -- verified bit-exact by co-sim).
+  logic [BP_BENES_MCM_M-1:0][1+BWC+MSG_BITS-1:0] mcm_wr_din, mcm_wr_dout;
+  always_comb begin
+    for (int s = 0; s < BP_BENES_MCM_M; s++)
+      mcm_wr_din[s] = (s < NVB)
+          ? {scat_pres_r[s], scat_row_r[s],
+             unsigned'(scat_is_init ? signed'(scat_lam_r[s]) : var_m_flat[s])}
+          : '0;
+  end
+  bp_benes_mcm_wr #(.N(BP_BENES_MCM_M), .W(1+BWC+MSG_BITS), .PIPE(BENES_PIPE_MCM)) u_benes_wr (
+      .clk(clk), .din(mcm_wr_din), .ctrl(benes_mcmwr_q), .dout(mcm_wr_dout));
+  // PIPE-delayed write-enable gate: aligns the fabric's now-4-late write with its output valid bit.
+  logic mcm_we_gate_pipe [BENES_PIPE_MCM];
+  logic mcm_we_gate_d;
+  always_ff @(posedge clk) begin
+    mcm_we_gate_pipe[0] <= mcm_we_gate;
+    for (int s = 1; s < BENES_PIPE_MCM; s++) mcm_we_gate_pipe[s] <= mcm_we_gate_pipe[s-1];
+  end
+  assign mcm_we_gate_d = mcm_we_gate_pipe[BENES_PIPE_MCM-1];
   always_comb begin
     for (int b = 0; b < NHB; b++) begin
-      we_mcm[b] = 1'b0;
-      wa_mcm[b] = '0;
-      wd_mcm[b] = '0;
-    end
-    if (mcm_we_gate) begin
-      for (int i = 0; i < V; i++)
-        for (int d = 0; d < BP_VAR_DEG; d++) begin
-          automatic int idx = i * BP_VAR_DEG + d;
-          if (scat_pres_r[idx]) begin
-            we_mcm[scat_hb_r[idx]] = 1'b1;
-            wa_mcm[scat_hb_r[idx]] = scat_row_r[idx];
-            wd_mcm[scat_hb_r[idx]] = scat_is_init ? signed'(scat_lam_r[idx]) : var_m_out[i][d];
-          end
-        end
+      we_mcm[b] = mcm_we_gate_d & mcm_wr_dout[b][BWC+MSG_BITS];       // valid bit
+      wa_mcm[b] = mcm_wr_dout[b][MSG_BITS +: BWC];                    // row
+      wd_mcm[b] = signed'(mcm_wr_dout[b][MSG_BITS-1:0]);             // data
     end
   end
 
@@ -1118,7 +1142,9 @@ module bp_relay_banked_bram_m (
 
         // ----------------------------------- seed m_cm/m_vm with lambda (M9b: pc=0..GV, write at pc-1)
         S_INIT: begin
-          if (pc == GV) begin pc <= '0; state <= S_CHECK; end
+          // M9c site 4: extend by BENES_PIPE_MCM (GV -> GV+4) so the m_cm seed write-scatter fabric fully
+          // drains before S_CHECK reads m_cm (the write now lands PIPE=4 cycles after its din cycle).
+          if (pc == GV + 4) begin pc <= '0; state <= S_CHECK; end
           else pc <= pc + 1;
           lat <= lat + 32'd1;
         end
@@ -1183,8 +1209,10 @@ module bp_relay_banked_bram_m (
             for (int i = 0; i < V; i++) wsum = wsum + (wterm[i] ? 1 : 0);
             ehat_w <= ehat_w + WW'(wsum);
           end
-          // m_vm / m_cm writes of group pc-10 (M9c lag) handled by the bp_mvm_cell_bqm + m_cm scatter comb.
-          if (pc == GV + 9) begin                       // M9c site 3: was GV+6 (extra addr-fabric drain +3)
+          // m_vm / m_cm writes of group pc-10 (M9c lag) handled by the bp_mvm_cell_bqm + m_cm scatter fabric.
+          // M9c site 4: extend by BENES_PIPE_MCM (GV+9 -> GV+13) so the m_cm write-scatter fabric drains
+          // fully before the next S_CHECK reads m_cm.
+          if (pc == GV + 13) begin                      // M9c: site-3 GV+9 + site-4 fabric drain +4
             pc          <= '0;
             sat_pending <= 1'b1;
             if (iter == BP_ITERS - 1) begin
