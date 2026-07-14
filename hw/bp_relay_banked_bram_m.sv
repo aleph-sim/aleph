@@ -164,7 +164,6 @@ endmodule
 localparam int BQM_NEBW = BP_BANK_W * BP_CHK_DEG;                  // e_cm banks   = (j,k) lanes
 localparam int BQM_NVBW = BP_BANK_V * BP_VAR_DEG;                  // m_vm banks   = (i,d) slots
 localparam int BQM_HBW  = $clog2(2 * BQM_NEBW);                    // half-bank index width
-localparam int BQM_EBW  = $clog2(BQM_NEBW);                        // e_cm bank index width
 localparam int BQM_BWCW = $clog2(BP_GC);                           // m_cm/e_cm row address width
 localparam int BQM_AWC  = $clog2(BP_GC);                           // GC-depth ROM address width
 localparam int BQM_AWV  = $clog2(BP_GV);                           // GV-depth ROM address width
@@ -217,12 +216,6 @@ module bp_rom_var_epres_bqm (
   initial for (int i = 0; i < BP_GV; i++) rom[i] = BP_ROM_VAR_EPRES[i];
   always_ff @(posedge clk) q <= rom[addr];
 endmodule
-module bp_rom_var_ebsel_bqm (
-    input  logic clk, input logic [BQM_AWV-1:0] addr, output logic [BQM_NVBW*BQM_EBW-1:0] q);
-  (* rom_style = "block" *) logic [BQM_NVBW*BQM_EBW-1:0] rom [BP_GV];
-  initial for (int i = 0; i < BP_GV; i++) rom[i] = BP_ROM_VAR_EBSEL[i];
-  always_ff @(posedge clk) q <= rom[addr];
-endmodule
 module bp_rom_var_eport_bqm (
     input  logic clk, input logic [BQM_AWV-1:0] addr, output logic [BQM_NVBW-1:0] q);
   (* rom_style = "block" *) logic [BQM_NVBW-1:0] rom [BP_GV];
@@ -271,12 +264,6 @@ module bp_rom_benes_mcmwr_bqm (
   (* rom_style = "block" *)
   logic [BP_BENES_MCM_COLS*(BP_BENES_MCM_M/2)-1:0] rom [BP_GV];
   initial for (int i = 0; i < BP_GV; i++) rom[i] = BP_ROM_BENES_MCMWR[i];
-  always_ff @(posedge clk) q <= rom[addr];
-endmodule
-module bp_rom_scat_hb_bqm (
-    input  logic clk, input logic [BQM_AWV-1:0] addr, output logic [BQM_NVBW*BQM_HBW-1:0] q);
-  (* rom_style = "block" *) logic [BQM_NVBW*BQM_HBW-1:0] rom [BP_GV];
-  initial for (int i = 0; i < BP_GV; i++) rom[i] = BP_ROM_SCAT_HB[i];
   always_ff @(posedge clk) q <= rom[addr];
 endmodule
 module bp_rom_scat_row_bqm (
@@ -675,11 +662,9 @@ module bp_relay_banked_bram_m (
   logic [V*MSG_BITS-1:0]   var_lam_q;
   logic [V*MSG_BITS-1:0]   var_gam_q;
   logic [NVB-1:0]          var_epres_q;
-  logic [NVB*EBW-1:0]      var_ebsel_q;
   logic [NVB-1:0]          var_eport_q;
   logic [NVB*BWC-1:0]      var_erow_q;
   logic [NVB-1:0]          scat_pres_q;
-  logic [NVB*HBW-1:0]      scat_hb_q;
   logic [NVB*BWC-1:0]      scat_row_q;
   logic [NVB*MSG_BITS-1:0] scat_lam_q;
   logic [NEB-1:0]          ecm_wpres_q;
@@ -700,11 +685,9 @@ module bp_relay_banked_bram_m (
   logic [MSG_BITS-1:0]  var_lam_r   [V];
   logic [MSG_BITS-1:0]  var_gam_r   [V];
   logic                 var_epres_r [NVB];
-  logic [EBW-1:0]       var_ebsel_r [NVB];
   logic                 var_eport_r [NVB];
   logic [BWC-1:0]       var_erow_r  [NVB];
   logic                 scat_pres_r [NVB];
-  logic [HBW-1:0]       scat_hb_r   [NVB];
   logic [BWC-1:0]       scat_row_r  [NVB];
   logic [MSG_BITS-1:0]  scat_lam_r  [NVB];
   logic                 ecm_wpres_r [NEB];
@@ -721,11 +704,9 @@ module bp_relay_banked_bram_m (
     end
     for (int b = 0; b < NVB; b++) begin
       var_epres_r[b] = var_epres_q[b];
-      var_ebsel_r[b] = var_ebsel_q[b*EBW +: EBW];
       var_eport_r[b] = var_eport_q[b];
       var_erow_r[b]  = var_erow_q[b*BWC +: BWC];
       scat_pres_r[b] = scat_pres_q[b];
-      scat_hb_r[b]   = scat_hb_q[b*HBW +: HBW];
       scat_row_r[b]  = scat_row_q[b*BWC +: BWC];
       scat_lam_r[b]  = scat_lam_q[b*MSG_BITS +: MSG_BITS];
     end
@@ -780,11 +761,9 @@ module bp_relay_banked_bram_m (
   bp_rom_var_lam_bqm    u_rom_var_lam    (.clk(clk), .addr(BQM_AWV'(var_rd)),  .q(var_lam_q));
   bp_rom_var_gam_bqm    u_rom_var_gam    (.clk(clk), .addr(BQM_AWG'(gam_rd)),  .q(var_gam_q));
   bp_rom_var_epres_bqm  u_rom_var_epres  (.clk(clk), .addr(BQM_AWV'(var_rd)),  .q(var_epres_q));
-  bp_rom_var_ebsel_bqm  u_rom_var_ebsel  (.clk(clk), .addr(BQM_AWV'(var_rd)),  .q(var_ebsel_q));
   bp_rom_var_eport_bqm  u_rom_var_eport  (.clk(clk), .addr(BQM_AWV'(var_rd)),  .q(var_eport_q));
   bp_rom_var_erow_bqm   u_rom_var_erow   (.clk(clk), .addr(BQM_AWV'(var_rd)),  .q(var_erow_q));
   bp_rom_scat_pres_bqm  u_rom_scat_pres  (.clk(clk), .addr(BQM_AWV'(scat_rd)), .q(scat_pres_q));
-  bp_rom_scat_hb_bqm    u_rom_scat_hb    (.clk(clk), .addr(BQM_AWV'(scat_rd)), .q(scat_hb_q));
   bp_rom_scat_row_bqm   u_rom_scat_row   (.clk(clk), .addr(BQM_AWV'(scat_rd)), .q(scat_row_q));
   bp_rom_scat_lam_bqm   u_rom_scat_lam   (.clk(clk), .addr(BQM_AWV'(scat_rd)), .q(scat_lam_q));
   bp_rom_benes_ecmrd_bqm u_rom_benes_ecmrd (.clk(clk), .addr(BQM_AWV'(var_rd)), .q(benes_ecmrd_q));
