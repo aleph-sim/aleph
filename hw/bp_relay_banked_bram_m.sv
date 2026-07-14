@@ -253,6 +253,26 @@ module bp_rom_benes_ecmrd_bqm (
   initial for (int i = 0; i < BP_GV; i++) rom[i] = BP_ROM_BENES_ECMRD[i];
   always_ff @(posedge clk) q <= rom[addr];
 endmodule
+// M9c site 3: registered per-group Beneš e_cm read-ADDRESS scatter control ROM (both port halves in one
+// row). Same layout/addressing discipline as the read-gather ROM above (PORTS*COLS*(M/2), var read cursor).
+module bp_rom_benes_ecmaddr_bqm (
+    input  logic clk, input logic [BQM_AWV-1:0] addr,
+    output logic [BP_BENES_ECM_PORTS*BP_BENES_ECM_COLS*(BP_BENES_ECM_M/2)-1:0] q);
+  (* rom_style = "block" *)
+  logic [BP_BENES_ECM_PORTS*BP_BENES_ECM_COLS*(BP_BENES_ECM_M/2)-1:0] rom [BP_GV];
+  initial for (int i = 0; i < BP_GV; i++) rom[i] = BP_ROM_BENES_ECMADDR[i];
+  always_ff @(posedge clk) q <= rom[addr];
+endmodule
+// M9c site 4: registered per-group Beneš m_cm write-scatter control ROM (single network — hb=eb*2+beta
+// is injective, no port split). Row width = COLS*(M/2). Addressed by the scatter cursor (like scat_*).
+module bp_rom_benes_mcmwr_bqm (
+    input  logic clk, input logic [BQM_AWV-1:0] addr,
+    output logic [BP_BENES_MCM_COLS*(BP_BENES_MCM_M/2)-1:0] q);
+  (* rom_style = "block" *)
+  logic [BP_BENES_MCM_COLS*(BP_BENES_MCM_M/2)-1:0] rom [BP_GV];
+  initial for (int i = 0; i < BP_GV; i++) rom[i] = BP_ROM_BENES_MCMWR[i];
+  always_ff @(posedge clk) q <= rom[addr];
+endmodule
 module bp_rom_scat_hb_bqm (
     input  logic clk, input logic [BQM_AWV-1:0] addr, output logic [BQM_NVBW*BQM_HBW-1:0] q);
   (* rom_style = "block" *) logic [BQM_NVBW*BQM_HBW-1:0] rom [BP_GV];
@@ -301,6 +321,12 @@ module bp_relay_banked_bram_m (
   localparam int BWV  = $clog2(BP_GV);               // m_vm row address width
   localparam int HBW  = $clog2(NHB);                 // half-bank index width (ROM-stored m_cm tap/scatter)
   localparam int EBW  = $clog2(NEB);                 // e_cm bank index width (ROM-stored operand select)
+  // M9c Beneš pipeline depths. BENES_PIPE_ECM registers each e_cm fabric (site-2 read, site-3 addr) into
+  // <=3 timing stages; the two are in series on the e_cm operand path (addr -> async read -> read-gather)
+  // so the total e_cm latency is BENES_ECM_LAT = 2*BENES_PIPE_ECM. BENES_PIPE_MCM registers the site-4
+  // m_cm write-scatter fabric (single N=512 network, 17 columns) into <=4 timing stages.
+  localparam int BENES_PIPE_ECM = 3;
+  localparam int BENES_ECM_LAT  = 2 * BENES_PIPE_ECM;
 
   /* verilator lint_off UNUSEDSIGNAL */
   // ================================================================== elaboration guards (verbatim from M8)
@@ -442,6 +468,10 @@ module bp_relay_banked_bram_m (
   // so the var enable gets 3 more stages (en_var_r5) to fire var_update on the same cycle its now-3-late
   // gather-plane operands land. The check path is untouched (en_chk_rr).
   logic en_var_r3, en_var_r4, en_var_r5;
+  // M9c site 3: the addr scatter adds a SECOND PIPE=3 Beneš in series ahead of the site-2 read fabric
+  // (addr -> async e_cm read -> read-gather), so e_in emerges BENES_ECM_LAT(=6) cycles late instead of 3.
+  // en_var gains 3 more stages (en_var_r8) so var_update fires when its now-6-late operands land.
+  logic en_var_r6, en_var_r7, en_var_r8;
   always_ff @(posedge clk) begin
     en_chk_r  <= en_chk;
     en_var_r  <= en_var;
@@ -450,6 +480,9 @@ module bp_relay_banked_bram_m (
     en_var_r3 <= en_var_rr;
     en_var_r4 <= en_var_r3;
     en_var_r5 <= en_var_r4;
+    en_var_r6 <= en_var_r5;
+    en_var_r7 <= en_var_r6;
+    en_var_r8 <= en_var_r7;
   end
 
   // registered submodule outputs (STAGES clocks after their group launch)
@@ -652,6 +685,11 @@ module bp_relay_banked_bram_m (
   // M9c site 2: registered Beneš read-gather control (both port halves), pc-1-aligned like the ROMs above.
   localparam int BENES_ECM_CTRLW = BP_BENES_ECM_COLS * (BP_BENES_ECM_M / 2);   // per-port ctrl width
   logic [BP_BENES_ECM_PORTS*BENES_ECM_CTRLW-1:0] benes_ecmrd_q;
+  // M9c site 3: registered Beneš e_cm read-ADDRESS scatter control (both port halves), var-cursor aligned.
+  logic [BP_BENES_ECM_PORTS*BENES_ECM_CTRLW-1:0] benes_ecmaddr_q;
+  // M9c site 4: registered Beneš m_cm write-scatter control (single network).
+  localparam int BENES_MCM_CTRLW = BP_BENES_MCM_COLS * (BP_BENES_MCM_M / 2);
+  logic [BENES_MCM_CTRLW-1:0] benes_mcmwr_q;
 
   // combinational per-slot field slices of the registered rows (the pre-rework consumer names, unchanged
   // downstream: gathers, scatters, S_EMIT all read these exactly as before)
@@ -705,21 +743,22 @@ module bp_relay_banked_bram_m (
     chk_rd    = (pc >= 0 && pc < GC) ? pc : 0;
     var_rd    = (pc >= 0 && pc < GV) ? pc : 0;
     gam_rd    = leg * GV + var_rd;                       // leg in [0,LEGS), var_rd in [0,GV)
-    // M9c: S_VAR scatter cursor +3 (var_m_out now lands 3 cycles later via the PIPE=3 e_in path). S_INIT
-    // seeding and S_CHECK e_cm writes are on the un-delayed check path and keep their baseline offsets.
-    scat_rd_i = (state == S_INIT) ? pc : (pc - 6);
+    // M9c: S_VAR scatter cursor. Site-2 read fabric (+3) and site-3 addr fabric (+3) put var_m_out on the
+    // e_cm path 6 cycles late (BENES_ECM_LAT), so the S_VAR scatter cursor is pc-9 (M9b pc-3 + 6). S_INIT
+    // seeding and S_CHECK e_cm writes ride the un-delayed check path and keep their baseline offsets.
+    scat_rd_i = (state == S_INIT) ? pc : (pc - 9);
     scat_rd   = (scat_rd_i >= 0 && scat_rd_i < GV) ? scat_rd_i : 0;
     ecmw_rd_i = pc - 4;
     ecmw_rd   = (ecmw_rd_i >= 0 && ecmw_rd_i < GC) ? ecmw_rd_i : 0;
 
     wa_ecm_i     = pc - 5;
     wa_ecm       = (wa_ecm_i >= 0 && wa_ecm_i < GC) ? BWC'(wa_ecm_i) : '0;
-    wa_mvm_i     = (state == S_INIT) ? (pc - 1) : (pc - 7);
+    wa_mvm_i     = (state == S_INIT) ? (pc - 1) : (pc - 10);
     wa_mvm       = (wa_mvm_i >= 0 && wa_mvm_i < GV) ? BWV'(wa_mvm_i) : '0;
     scat_is_init = (state == S_INIT);
     ecm_we_gate  = (state == S_CHECK) && (pc >= 5);
-    mvm_we_gate  = ((state == S_INIT) && (pc >= 1)) || ((state == S_VAR) && (pc >= 7));
-    mcm_we_gate  = ((state == S_INIT) && (pc >= 1)) || ((state == S_VAR) && (pc >= 7));
+    mvm_we_gate  = ((state == S_INIT) && (pc >= 1)) || ((state == S_VAR) && (pc >= 10));
+    mcm_we_gate  = ((state == S_INIT) && (pc >= 1)) || ((state == S_VAR) && (pc >= 10));
   end
 
   // ------------------------------------------------------- stamped ROM cells (sync read inside each cell)
@@ -741,6 +780,8 @@ module bp_relay_banked_bram_m (
   bp_rom_scat_row_bqm   u_rom_scat_row   (.clk(clk), .addr(BQM_AWV'(scat_rd)), .q(scat_row_q));
   bp_rom_scat_lam_bqm   u_rom_scat_lam   (.clk(clk), .addr(BQM_AWV'(scat_rd)), .q(scat_lam_q));
   bp_rom_benes_ecmrd_bqm u_rom_benes_ecmrd (.clk(clk), .addr(BQM_AWV'(var_rd)), .q(benes_ecmrd_q));
+  bp_rom_benes_ecmaddr_bqm u_rom_benes_ecmaddr (.clk(clk), .addr(BQM_AWV'(var_rd)),  .q(benes_ecmaddr_q));
+  bp_rom_benes_mcmwr_bqm   u_rom_benes_mcmwr   (.clk(clk), .addr(BQM_AWV'(scat_rd)), .q(benes_mcmwr_q));
 
   always_ff @(posedge clk) begin
     mcm_ra_r <= BWC'(chk_rd);
@@ -770,21 +811,33 @@ module bp_relay_banked_bram_m (
     end
   end
 
-  // ------------------------------------------------------------------- comb: e_cm read addresses (from ROM)
+  // ===================================================================== M9c site 3: e_cm read-ADDR scatter Beneš
+  // Replaces the runtime-indexed ra_ecm[var_ebsel_r]/rb_ecm[var_ebsel_r] address-scatter crossbar with a
+  // PORT-SPLIT Beneš permutation fabric (like site 2, mirrored direction): each var-edge slot s carries
+  // {valid=var_epres_r[s], row=var_erow_r[s]} into BOTH networks; the ROM control routes port-0 taps to
+  // their ra bank (eport==0) and port-1 taps to their rb bank (eport==1) with the off-port taps parked in
+  // the >=NEB padding lanes we never read -- so the eport bit is IMPLICIT in which network validly lands a
+  // slot, never carried in the payload. At output bank b: valid ? rX_ecm[b]=row : rX_ecm[b]='0.
+  //
+  // PIPE=BENES_PIPE_ECM (3, Fmax-safe). This fabric sits AHEAD of the async e_cm read that feeds site-2's
+  // read fabric, so it pushes the whole e_cm operand path 3 more cycles late (total BENES_ECM_LAT=6): the
+  // site-2 ctrl ROM is delayed 3 (benes_ecmrd_q_d), the var-operand twins are 6 deep, and the S_VAR
+  // schedule is shifted +3 again (see FSM / cursor comb) to keep every var_update input group-aligned.
+  logic [BP_BENES_ECM_M-1:0][BWC:0] ecm_ad_din, ad0_dout, ad1_dout;   // W = BWC+1 = {valid, row}
+  always_comb begin
+    for (int s = 0; s < BP_BENES_ECM_M; s++)
+      ecm_ad_din[s] = (s < NVB) ? {var_epres_r[s], var_erow_r[s]} : '0;
+  end
+  bp_benes_ecm_addr #(.N(BP_BENES_ECM_M), .W(BWC+1), .PIPE(BENES_PIPE_ECM)) u_benes_ad0 (
+      .clk(clk), .din(ecm_ad_din),
+      .ctrl(benes_ecmaddr_q[0*BENES_ECM_CTRLW +: BENES_ECM_CTRLW]), .dout(ad0_dout));
+  bp_benes_ecm_addr #(.N(BP_BENES_ECM_M), .W(BWC+1), .PIPE(BENES_PIPE_ECM)) u_benes_ad1 (
+      .clk(clk), .din(ecm_ad_din),
+      .ctrl(benes_ecmaddr_q[1*BENES_ECM_CTRLW +: BENES_ECM_CTRLW]), .dout(ad1_dout));
   always_comb begin
     for (int b = 0; b < NEB; b++) begin
-      ra_ecm[b] = '0;
-      rb_ecm[b] = '0;
-    end
-    if (state == S_VAR) begin
-      for (int i = 0; i < V; i++)
-        for (int d = 0; d < BP_VAR_DEG; d++) begin
-          automatic int idx = i * BP_VAR_DEG + d;
-          if (var_epres_r[idx]) begin
-            if (var_eport_r[idx]) rb_ecm[var_ebsel_r[idx]] = var_erow_r[idx];
-            else                  ra_ecm[var_ebsel_r[idx]] = var_erow_r[idx];
-          end
-        end
+      ra_ecm[b] = ad0_dout[b][BWC] ? ad0_dout[b][BWC-1:0] : '0;   // port 0 -> port-A read row
+      rb_ecm[b] = ad1_dout[b][BWC] ? ad1_dout[b][BWC-1:0] : '0;   // port 1 -> port-B read row
     end
   end
 
@@ -913,7 +966,6 @@ module bp_relay_banked_bram_m (
   // so EVERY co-launched var_update operand is delayed 3 cycles (var_epres/eport/pres/lam/gam, qmvm) and
   // the S_VAR launch/consume schedule is shifted +3 (see FSM), keeping every var_update input aligned to
   // the same group and the decisions bit-exact.
-  localparam int BENES_PIPE_ECM = 3;
   logic [BP_BENES_ECM_M-1:0][MSG_BITS-1:0] rd0_din, rd0_dout, rd1_din, rd1_dout;
   always_comb begin
     for (int b = 0; b < BP_BENES_ECM_M; b++) begin
@@ -921,27 +973,36 @@ module bp_relay_banked_bram_m (
       rd1_din[b] = (b < NEB) ? unsigned'(qb_ecm[b]) : '0;
     end
   end
+  // M9c site 3: the addr fabric delays ra_ecm/rb_ecm (hence the async-read qa_ecm/qb_ecm feeding this
+  // fabric's din) by BENES_PIPE_ECM. Delay the site-2 read-gather ctrl ROM by the same amount so ctrl and
+  // din stay group-aligned at the read fabric input.
+  logic [BP_BENES_ECM_PORTS*BENES_ECM_CTRLW-1:0] benes_ecmrd_q_d [BENES_PIPE_ECM];
+  always_ff @(posedge clk) begin
+    benes_ecmrd_q_d[0] <= benes_ecmrd_q;
+    for (int s = 1; s < BENES_PIPE_ECM; s++) benes_ecmrd_q_d[s] <= benes_ecmrd_q_d[s-1];
+  end
   bp_benes_ecm_read #(.N(BP_BENES_ECM_M), .W(MSG_BITS), .PIPE(BENES_PIPE_ECM)) u_benes_rd0 (
       .clk(clk), .din(rd0_din),
-      .ctrl(benes_ecmrd_q[0*BENES_ECM_CTRLW +: BENES_ECM_CTRLW]), .dout(rd0_dout));
+      .ctrl(benes_ecmrd_q_d[BENES_PIPE_ECM-1][0*BENES_ECM_CTRLW +: BENES_ECM_CTRLW]), .dout(rd0_dout));
   bp_benes_ecm_read #(.N(BP_BENES_ECM_M), .W(MSG_BITS), .PIPE(BENES_PIPE_ECM)) u_benes_rd1 (
       .clk(clk), .din(rd1_din),
-      .ctrl(benes_ecmrd_q[1*BENES_ECM_CTRLW +: BENES_ECM_CTRLW]), .dout(rd1_dout));
+      .ctrl(benes_ecmrd_q_d[BENES_PIPE_ECM-1][1*BENES_ECM_CTRLW +: BENES_ECM_CTRLW]), .dout(rd1_dout));
 
   // ------------------------------------------------------- M9c: PIPE-deep var-operand alignment delay
-  // The Beneš e_in output is delayed BENES_PIPE_ECM cycles vs the group-pc-1 `_r` stage that feeds its
-  // din/ctrl. Every OTHER var_update operand co-launched with e_in (the epres gate, the eport leaf
-  // select, the m_vc read qmvm, and lam/gam/pres) is registered through an identical BENES_PIPE_ECM-deep
-  // shift so all inputs of a given var group arrive on the SAME cycle -> the gather comb, gather register
-  // plane and var_update below are byte-identical to baseline, only fed 3 cycles later. Free-running
-  // (like the M8 gather plane); the en_var_r5 fence and the +3 S_VAR schedule keep pre-launch snapshots
-  // out and re-time the launch/consume window. Deepest stage index = BENES_PIPE_ECM-1.
-  logic                       var_epres_d [BENES_PIPE_ECM][NVB];
-  logic                       var_eport_d [BENES_PIPE_ECM][NVB];
-  logic signed [MSG_BITS-1:0] qmvm_d      [BENES_PIPE_ECM][NVB];
-  logic                       var_pres_d  [BENES_PIPE_ECM][V];
-  logic [MSG_BITS-1:0]        var_lam_d   [BENES_PIPE_ECM][V];
-  logic [MSG_BITS-1:0]        var_gam_d   [BENES_PIPE_ECM][V];
+  // The Beneš e_in output is delayed BENES_ECM_LAT cycles vs the group-pc-1 `_r` stage that feeds the addr
+  // fabric din/ctrl (site-3 addr PIPE=3 -> async e_cm read -> site-2 read PIPE=3). Every OTHER var_update
+  // operand co-launched with e_in (the epres gate, the eport leaf select, the m_vc read qmvm, and
+  // lam/gam/pres) is registered through an identical BENES_ECM_LAT-deep shift so all inputs of a given var
+  // group arrive on the SAME cycle -> the gather comb, gather register plane and var_update below are
+  // byte-identical to baseline, only fed 6 cycles later. Free-running (like the M8 gather plane); the
+  // en_var_r8 fence and the +6 S_VAR schedule keep pre-launch snapshots out and re-time the launch/consume
+  // window. Deepest stage index = BENES_ECM_LAT-1.
+  logic                       var_epres_d [BENES_ECM_LAT][NVB];
+  logic                       var_eport_d [BENES_ECM_LAT][NVB];
+  logic signed [MSG_BITS-1:0] qmvm_d      [BENES_ECM_LAT][NVB];
+  logic                       var_pres_d  [BENES_ECM_LAT][V];
+  logic [MSG_BITS-1:0]        var_lam_d   [BENES_ECM_LAT][V];
+  logic [MSG_BITS-1:0]        var_gam_d   [BENES_ECM_LAT][V];
   always_ff @(posedge clk) begin
     for (int b = 0; b < NVB; b++) begin
       var_epres_d[0][b] <= var_epres_r[b];
@@ -953,7 +1014,7 @@ module bp_relay_banked_bram_m (
       var_lam_d[0][i]  <= var_lam_r[i];
       var_gam_d[0][i]  <= var_gam_r[i];
     end
-    for (int s = 1; s < BENES_PIPE_ECM; s++) begin
+    for (int s = 1; s < BENES_ECM_LAT; s++) begin
       for (int b = 0; b < NVB; b++) begin
         var_epres_d[s][b] <= var_epres_d[s-1][b];
         var_eport_d[s][b] <= var_eport_d[s-1][b];
@@ -977,16 +1038,16 @@ module bp_relay_banked_bram_m (
       // gather from the REGISTERED VAR select ROM (group = pc-1): e_cm operand (port-selected, ROM-addressed
       // async read) + the "old" m_vc from m_vm (registered-address read) + lambda/gamma from their ROMs.
       always_comb begin
-        // M9c: all operands read from the BENES_PIPE_ECM-delayed twins so they align with the PIPE=3
-        // Beneš e_in output (rd*_dout, itself 3 cycles behind the group-pc-1 din/ctrl feed).
-        lam_i = var_pres_d[BENES_PIPE_ECM-1][i] ? signed'(var_lam_d[BENES_PIPE_ECM-1][i]) : '0;
-        gam_i = var_pres_d[BENES_PIPE_ECM-1][i] ? signed'(var_gam_d[BENES_PIPE_ECM-1][i]) : '0;
+        // M9c: all operands read from the BENES_ECM_LAT-delayed twins so they align with the e_in output
+        // (rd*_dout, itself BENES_ECM_LAT=6 cycles behind the group-pc-1 addr-fabric din/ctrl feed).
+        lam_i = var_pres_d[BENES_ECM_LAT-1][i] ? signed'(var_lam_d[BENES_ECM_LAT-1][i]) : '0;
+        gam_i = var_pres_d[BENES_ECM_LAT-1][i] ? signed'(var_gam_d[BENES_ECM_LAT-1][i]) : '0;
         for (int d = 0; d < BP_VAR_DEG; d++) begin
           automatic int idx = i * BP_VAR_DEG + d;
-          if (var_epres_d[BENES_PIPE_ECM-1][idx]) begin
+          if (var_epres_d[BENES_ECM_LAT-1][idx]) begin
             // M9c: e_cm operand from the Beneš read-gather (dout[idx]), eport-selected between ports a/b.
-            e_in_i[d]    = var_eport_d[BENES_PIPE_ECM-1][idx] ? signed'(rd1_dout[idx]) : signed'(rd0_dout[idx]);
-            m_in_i[d]    = qmvm_d[BENES_PIPE_ECM-1][idx];
+            e_in_i[d]    = var_eport_d[BENES_ECM_LAT-1][idx] ? signed'(rd1_dout[idx]) : signed'(rd0_dout[idx]);
+            m_in_i[d]    = qmvm_d[BENES_ECM_LAT-1][idx];
             present_i[d] = 1'b1;
           end else begin
             e_in_i[d]    = '0;
@@ -1017,7 +1078,7 @@ module bp_relay_banked_bram_m (
           .MAXMAG(MAX_MAG)
       ) u_var (
           .clk     (clk),
-          .en      (en_var_r5),
+          .en      (en_var_r8),
           .lam     (lam_ir),
           .gam     (gam_ir),
           .e_in    (e_in_ir),
@@ -1110,11 +1171,11 @@ module bp_relay_banked_bram_m (
           automatic int   wsum;
           wsum = 0;
           if (pc == 0) ehat_w <= '0;
-          if (pc >= 7) begin                          // M9c: var scatter lag pc-7 (M9b pc-4 + PIPE=3)
+          if (pc >= 10) begin                         // M9c: var scatter lag pc-10 (M9b pc-4 + BENES_ECM_LAT-ish)
             for (int i = 0; i < V; i++) wterm[i] = 1'b0;
             for (int i = 0; i < V; i++)
               for (int g = 0; g < GV; g++)
-                if (var_at_bqm(g, i) >= 0 && (pc - 7) == g) begin
+                if (var_at_bqm(g, i) >= 0 && (pc - 10) == g) begin
                   automatic int v = var_at_bqm(g, i);
                   ehat[v] <= var_ehat_out[i];
                   wterm[i] = var_ehat_out[i];
@@ -1122,8 +1183,8 @@ module bp_relay_banked_bram_m (
             for (int i = 0; i < V; i++) wsum = wsum + (wterm[i] ? 1 : 0);
             ehat_w <= ehat_w + WW'(wsum);
           end
-          // m_vm / m_cm writes of group pc-7 (M9c lag) handled by the bp_mvm_cell_bqm + m_cm scatter comb.
-          if (pc == GV + 6) begin                       // M9c: was GV+3 (extra PIPE=3 Beneš drain +3)
+          // m_vm / m_cm writes of group pc-10 (M9c lag) handled by the bp_mvm_cell_bqm + m_cm scatter comb.
+          if (pc == GV + 9) begin                       // M9c site 3: was GV+6 (extra addr-fabric drain +3)
             pc          <= '0;
             sat_pending <= 1'b1;
             if (iter == BP_ITERS - 1) begin
