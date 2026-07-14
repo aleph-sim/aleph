@@ -29,8 +29,8 @@
 //!       streamvectors <rounds> <p> <W> <C> <n> <seed> > hw/bp_stream_vectors.txt
 
 use aleph_qec::{
-    BBCode, CircuitNoise, DetectorErrorModel, FixedHwView, FixedRelayBp, HwSlidingWindowBp,
-    SlidingWindowBp,
+    benes_apply, benes_columns, benes_control, complete_partial, BBCode, CircuitNoise,
+    DetectorErrorModel, FixedHwView, FixedRelayBp, HwSlidingWindowBp, SlidingWindowBp,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -1030,6 +1030,72 @@ fn verify_banking(hw: FixedHwView<'_>, b: &Banking) {
             "BP_EDGE_EPORT: var group {h} e_cm bank {eb} has two edges on port {port}"
         );
     }
+
+    // ---- M9c step 2 (Q7-04) gen-time guard: the Beneš control `print_rom_rows` emits for
+    // BP_ROM_BENES_ECMADDR/ECMRD/MCMWR must realise exactly the per-group tap<->bank matching it is
+    // built from. This is an INDEPENDENT re-derivation (not a call into `print_rom_rows`), in the same
+    // "recompute from a trusted primitive and compare" style as the eb/hb/row recompute above.
+    //
+    // e_cm is routed per PORT, not by raw `eb` alone: `eb = slot*BP_CHK_DEG+pos` only encodes (slot,
+    // position), not the row, so the SAME `eb` is legitimately reused by checks in different check-group
+    // rows — within one var group up to BANK_CAP=2 taps can therefore share an `eb` (confirmed
+    // empirically: ~16% of edges are port-1 at both the 16/48 and 8/24 probe configs), exactly what
+    // `BP_EDGE_EPORT` already disambiguates for the pre-M9c mux crossbar. A Beneš network needs an
+    // injective target, so — mirroring Step 1's beta-split for the m_cm CHK read — e_cm routes through
+    // one size-`ecm_m` network PER PORT (0, then 1). m_cm's `hb = eb*2+beta` is already injective per
+    // group (the half_seen check above), so site 4 needs only one network.
+    let var_deg_max = hw
+        .var_off
+        .windows(2)
+        .map(|w| (w[1] - w[0]) as usize)
+        .max()
+        .unwrap_or(0);
+    let neb = b.w * chk_deg_max;
+    let nhb = 2 * neb;
+    let ecm_m = neb.next_power_of_two();
+    let mcm_m = nhb.next_power_of_two();
+    for g in 0..b.gv {
+        // dest_ecm[port][s] = e_cm bank `eb` tap `s` (this group, this port) addresses/reads;
+        // dest_mcm[s] = m_cm half-bank `hb` tap `s` writes.
+        let mut dest_ecm = [vec![None; ecm_m], vec![None; ecm_m]];
+        let mut dest_mcm = vec![None; mcm_m];
+        for i in 0..b.v {
+            let var = b.var_at[g * b.v + i];
+            if var < 0 {
+                continue;
+            }
+            let var = var as usize;
+            let deg = (hw.var_off[var + 1] - hw.var_off[var]) as usize;
+            for d in 0..var_deg_max.min(deg) {
+                let e = hw.var_off[var] as usize + d;
+                let s = i * var_deg_max + d;
+                let port = b.edge_eport[e] as usize;
+                dest_ecm[port][s] = Some(b.edge_eb[e] as usize);
+                dest_mcm[s] = Some(b.edge_hb[e] as usize);
+            }
+        }
+        for (port, dest) in dest_ecm.iter().enumerate() {
+            let full = complete_partial(dest, ecm_m);
+            let ctrl = benes_control(&full);
+            let routed = benes_apply(&ctrl, &(0..ecm_m).collect::<Vec<_>>());
+            for (s, target) in dest.iter().enumerate() {
+                if let Some(eb) = target {
+                    assert_eq!(
+                        routed[*eb], s,
+                        "ECM addr route g={g} port={port} s={s} eb={eb}"
+                    );
+                }
+            }
+        }
+        let full_mcm = complete_partial(&dest_mcm, mcm_m);
+        let ctrl_mcm = benes_control(&full_mcm);
+        let routed_mcm = benes_apply(&ctrl_mcm, &(0..mcm_m).collect::<Vec<_>>());
+        for (s, target) in dest_mcm.iter().enumerate() {
+            if let Some(hb) = target {
+                assert_eq!(routed_mcm[*hb], s, "MCM route g={g} s={s} hb={hb}");
+            }
+        }
+    }
 }
 
 /// Print the [`Banking`] solve as `.svh` `localparam` tables — same `localparam int NAME [SIZE] =
@@ -1323,6 +1389,84 @@ fn print_rom_rows(view: &FixedHwView, b: &Banking) {
         scat_lam.push(r_slam);
     }
 
+    // ---- M9c step 2 (Q7-04): per-group Beneš routing for sites 2/3 (e_cm addr-scatter / read-gather)
+    // and site 4 (m_cm write) — the gather-crossbar fix (design spec; Step 1 did the analogous 2:1
+    // beta-split for the m_cm CHK read). e_cm's raw bank id `eb` (= slot*BP_CHK_DEG+pos) is reused
+    // across different check-group ROWS by construction (it only encodes (slot, position), not the
+    // row), so within one var group up to BANK_CAP=2 taps can share an `eb` — exactly what
+    // `BP_EDGE_EPORT` already disambiguates for the pre-M9c mux crossbar (empirically ~16% of edges are
+    // port-1 at both the 16/48 and 8/24 probe configs). A Beneš network needs an injective target, so
+    // e_cm routes through ONE size-`ecm_m` network PER PORT (0 then 1), packed low-half/high-half into
+    // one ROM row; m_cm's `hb = eb*2+beta` is already injective per group (verify_banking's half_seen
+    // check), so site 4 uses a single network. `verify_banking` re-derives this independently and
+    // asserts the control reproduces the matching (gen-time guard, both bankings).
+    let ecm_m = neb.next_power_of_two();
+    let mcm_m = nhb.next_power_of_two();
+    let ecm_cols = benes_columns(ecm_m);
+    let mcm_cols = benes_columns(mcm_m);
+    println!();
+    println!("localparam int BP_BENES_ECM_M    = {ecm_m};");
+    println!("localparam int BP_BENES_MCM_M    = {mcm_m};");
+    println!("localparam int BP_BENES_ECM_COLS = {ecm_cols};");
+    println!("localparam int BP_BENES_MCM_COLS = {mcm_cols};");
+
+    // LSB-first 1-bit-field packer for a `Vec<bool>` control vector — mirrors the 1-bit `set` calls
+    // above (e.g. `r_epres.set(..., 1, 1)`).
+    let pack_bits = |bits: &[bool]| -> RomRow {
+        let mut row = RomRow::new(bits.len());
+        for (i, &bit) in bits.iter().enumerate() {
+            row.set(i, 1, u64::from(bit));
+        }
+        row
+    };
+    let invert = |perm: &[usize]| -> Vec<usize> {
+        let mut inv = vec![0usize; perm.len()];
+        for (i, &o) in perm.iter().enumerate() {
+            inv[o] = i;
+        }
+        inv
+    };
+
+    let mut benes_ecmaddr = Vec::with_capacity(gv);
+    let mut benes_ecmrd = Vec::with_capacity(gv);
+    let mut benes_mcmwr = Vec::with_capacity(gv);
+    for g in 0..gv {
+        // dest_ecm[port][s] = e_cm bank `eb` tap `s` (this group, this port) addresses/reads;
+        // dest_mcm[s] = m_cm half-bank `hb` tap `s` writes. Mirrors the tap-iteration pattern
+        // (`i`/`d`/`s`/`e`) the var_ebsel/scat_hb build above already uses.
+        let mut dest_ecm = [vec![None; ecm_m], vec![None; ecm_m]];
+        let mut dest_mcm = vec![None; mcm_m];
+        for i in 0..vcap {
+            let var = b.var_at[g * vcap + i];
+            if var < 0 {
+                continue;
+            }
+            let var = var as usize;
+            let deg = (view.var_off[var + 1] - view.var_off[var]) as usize;
+            for d in 0..var_deg.min(deg) {
+                let e = view.var_off[var] as usize + d;
+                let s = i * var_deg + d;
+                let port = b.edge_eport[e] as usize;
+                dest_ecm[port][s] = Some(b.edge_eb[e] as usize);
+                dest_mcm[s] = Some(b.edge_hb[e] as usize);
+            }
+        }
+        // addr scatter (tap -> bank) and read gather (bank -> tap = inverse), one pair per port.
+        let mut ctrl_addr = Vec::with_capacity(2 * ecm_cols * (ecm_m / 2));
+        let mut ctrl_read = Vec::with_capacity(2 * ecm_cols * (ecm_m / 2));
+        for dest in &dest_ecm {
+            let full = complete_partial(dest, ecm_m);
+            ctrl_addr.extend(benes_control(&full));
+            ctrl_read.extend(benes_control(&invert(&full)));
+        }
+        let full_mcm = complete_partial(&dest_mcm, mcm_m);
+        let ctrl_mcm = benes_control(&full_mcm);
+
+        benes_ecmaddr.push(pack_bits(&ctrl_addr));
+        benes_ecmrd.push(pack_bits(&ctrl_read));
+        benes_mcmwr.push(pack_bits(&ctrl_mcm));
+    }
+
     println!();
     println!(
         "// ---- M9b BRAM-ROM row literals for bp_relay_banked_bram (GENERATED; packing contract: \
@@ -1347,6 +1491,12 @@ fn print_rom_rows(view: &FixedHwView, b: &Banking) {
     emit_rom_table("BP_ROM_SCAT_HB", "BP_GV", &scat_hb);
     emit_rom_table("BP_ROM_SCAT_ROW", "BP_GV", &scat_row);
     emit_rom_table("BP_ROM_SCAT_LAM", "BP_GV", &scat_lam);
+    // M9c step 2 Beneš control ROMs: ECMADDR/ECMRD rows pack port0 then port1, each
+    // BP_BENES_ECM_COLS*(BP_BENES_ECM_M/2) bits wide (packing contract above); MCMWR is one
+    // BP_BENES_MCM_COLS*(BP_BENES_MCM_M/2)-bit network, no port split.
+    emit_rom_table("BP_ROM_BENES_ECMADDR", "BP_GV", &benes_ecmaddr);
+    emit_rom_table("BP_ROM_BENES_ECMRD", "BP_GV", &benes_ecmrd);
+    emit_rom_table("BP_ROM_BENES_MCMWR", "BP_GV", &benes_mcmwr);
     println!("/* verilator lint_on UNUSEDPARAM */");
 }
 
