@@ -30,17 +30,18 @@
 //     address IS the ROM's registered output feeding the async-read cell) so DATA and SELECT still meet.
 //   * submodule `en` is delayed TWO cycles (en_chk_rr / en_var_rr) instead of one, matching the extra plane.
 //   * schedule constants, all bumped +1 from M8:
-//       S_INIT   : pc = 0..GV,   ROM read at pc,           write at pc-1
+//       S_INIT   : pc = 0..GV+4 (GV..GV+3 = BENES_PIPE_MCM write-scatter drain), ROM read at pc, write at pc-1
 //       S_CHECK  : phase end pc==GC+4;  e_cm scatter gate pc>=5, write-group pc-5
-//       S_VAR    : phase end pc==GV+3;  m_cm/m_vm scatter gate pc>=4, write-group pc-4; ehat/ehat_w at pc-4
+//       S_VAR    : phase end pc==GV+13 (M9c: site-3 GV+9 + site-4 drain +4);  m_cm/m_vm scatter gate pc>=10, write-group pc-10; ehat/ehat_w at pc-10
 //       S_EMIT   : constant-folded per M8 (pc=0..GV-1) — REVERTED from the ROM form (probe run 4: the obs
 //                  ROMs runtime-indexed BP_N-scale register arrays; see the ROM CONSUMER RULE below)
 //   * R5 (the overlapped-SAT parity + finalize) stays LUT wire taps — cheap constant-index `ehat` taps and
 //     XOR trees — UNCHANGED, still finalising at pc==GC-1 (re-verified against the co-sim waves). The
 //     `early_exit` path (first syndrome-valid decision -> S_EMIT) is likewise structurally unchanged; the
 //     golden gate drives early_exit=0.
-//   The m_vm read-row(pc-1)/write-row(pc-4) disjointness argument keeps the SAME 3-cycle gap as M8
-//     (which reads row pc and writes row pc-3): both cursors shift by one, the gap is unchanged.
+//   The m_vm read-row(pc-1)/write-row(pc-10) disjointness argument keeps a WIDER (9-cycle) gap than the M8
+//     baseline (which reads row pc and writes row pc-3): the write cursor shifted further (M9c site-3/4
+//     lag) while the read cursor did not, so the gap only grows and disjointness still holds.
 //
 // CELLS: `bp_ecm_cell_bqm` / `bp_mvm_cell_bqm` become PURE PORT-DRIVEN memories (like the M7 `bp_mcm_cell`) —
 //   their write decode no longer calls `edge_at`/`vedge_at` internally (that self-scan is exactly the LUT
@@ -146,7 +147,7 @@ module bp_mvm_cell_bqm #(
 ) (
     input  logic                       clk,
     input  logic                       we,               // SCATTER_ROM present bit & (init | var) gate
-    input  logic [BB_BWV_bqm-1:0]       wa,               // write var-group row (S_INIT: pc-1, S_VAR: pc-4)
+    input  logic [BB_BWV_bqm-1:0]       wa,               // write var-group row (S_INIT: pc-1, S_VAR: pc-10)
     input  logic signed [MSG_BITS-1:0] wd,               // lambda (S_INIT) or var_m_out[II][DD] (S_VAR)
     input  logic [BB_BWV_bqm-1:0]       rg,               // read row (= registered pc)
     output logic signed [MSG_BITS-1:0] q
@@ -311,7 +312,7 @@ module bp_relay_banked_bram_m (
   // M9c Beneš pipeline depths. BENES_PIPE_ECM registers each e_cm fabric (site-2 read, site-3 addr) into
   // <=3 timing stages; the two are in series on the e_cm operand path (addr -> async read -> read-gather)
   // so the total e_cm latency is BENES_ECM_LAT = 2*BENES_PIPE_ECM. BENES_PIPE_MCM registers the site-4
-  // m_cm write-scatter fabric (single N=512 network, 17 columns) into <=4 timing stages.
+  // m_cm write-scatter fabric (single N=1024 network, 19 columns) into <=4 timing stages.
   localparam int BENES_PIPE_ECM = 3;
   localparam int BENES_ECM_LAT  = 2 * BENES_PIPE_ECM;
   localparam int BENES_PIPE_MCM = 4;
@@ -500,7 +501,7 @@ module bp_relay_banked_bram_m (
   logic [BWC-1:0]             wa_ecm;                   // shared e_cm write row (= pc-5)
   logic                       we_mvm [NVB];
   logic signed [MSG_BITS-1:0] wd_mvm [NVB];
-  logic [BWV-1:0]             wa_mvm;                   // shared m_vm write row (S_INIT: pc-1, S_VAR: pc-4)
+  logic [BWV-1:0]             wa_mvm;                   // shared m_vm write row (S_INIT: pc-1, S_VAR: pc-10)
 
   // flattened submodule-output buses feeding the cells' write-data ports (thin glue)
   logic signed [MSG_BITS-1:0] chk_e_flat [NEB];
@@ -715,8 +716,8 @@ module bp_relay_banked_bram_m (
   // ------------------------------------------------------------------- shared comb: read/write cursors
   // Gather ROMs are addressed by the M8 GATHER cursor (pc); their registered output aligns with the
   // +1-delayed launch, and the message-read address is registered by 1 to meet it. Scatter ROMs are
-  // addressed by the M8 WRITE cursor (INIT:pc / VAR:pc-3); their registered output aligns with the
-  // +1-bumped write cursor (INIT:pc-1 / VAR:pc-4). All addresses clamped in-range (out-of-phase reads
+  // addressed by the WRITE cursor (INIT:pc / VAR:pc-9, M9c site-3 lag); their registered output aligns
+  // with the +1-bumped write cursor (INIT:pc-1 / VAR:pc-10). All addresses clamped in-range (out-of-phase reads
   // are gated unused downstream).
   int chk_rd, var_rd, gam_rd, scat_rd_i, scat_rd, ecmw_rd_i, ecmw_rd;
   int wa_ecm_i, wa_mvm_i;
@@ -782,7 +783,7 @@ module bp_relay_banked_bram_m (
   // its half-bank scat_hb_r[s]. At output half-bank b: we_mcm[b]=valid & mcm_we_gate_d, wa_mcm[b]=row,
   // wd_mcm[b]=data. Guard(a) => <=1 valid writer per half-bank per group, so no scatter conflict.
   //
-  // PIPE=BENES_PIPE_MCM (4, Fmax-safe: the 17-column N=512 route in <=4 registered stages). The scatter din
+  // PIPE=BENES_PIPE_MCM (4, Fmax-safe: the 19-column N=1024 route in <=4 registered stages). The scatter din
   // is captured at the same cycle the old combinational write fired (scat_*_r + var_m_flat already aligned
   // by the S_VAR scat cursor), so the m_cm write now LANDS BENES_PIPE_MCM cycles later. The write enable is
   // therefore the PIPE-delayed gate mcm_we_gate_d (a value snapshot -- it fires for exactly the same groups,
@@ -1119,7 +1120,8 @@ module bp_relay_banked_bram_m (
           end
         end
 
-        // ----------------------------------- seed m_cm/m_vm with lambda (M9b: pc=0..GV, write at pc-1)
+        // ----------------------------------- seed m_cm/m_vm with lambda (pc=0..GV+4, M9c: GV..GV+3 drain
+        // BENES_PIPE_MCM; write at pc-1)
         S_INIT: begin
           // M9c site 4: extend by BENES_PIPE_MCM (GV -> GV+4) so the m_cm seed write-scatter fabric fully
           // drains before S_CHECK reads m_cm (the write now lands PIPE=4 cycles after its din cycle).
@@ -1170,7 +1172,7 @@ module bp_relay_banked_bram_m (
           lat <= lat + 32'd1;
         end
 
-        // ------------------------------ launch var group `pc-1` + scatter group pc-4 (M9b)
+        // ------------------------------ launch var group `pc-1` + scatter group pc-10 (M9c)
         S_VAR: begin
           automatic logic wterm [V];
           automatic int   wsum;
