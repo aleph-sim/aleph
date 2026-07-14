@@ -52,3 +52,6 @@ _bpstreambuild/
 _bpstreamaxibuild/
 obj_chkmin2/
 obj_chkmin3/
+obj_benes_read/
+obj_benes_addr/
+obj_benes_wr/

@@ -12,7 +12,7 @@ OBJ_DIR   := obj_dir
 VERILATOR ?= verilator
 CARGO     := cargo run --release -q -p aleph-qec --example
 
-.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi stream-axi-circuit cosim-stream cosim-stream-circuit cosim-stream-ler cosim-stream-ler-circuit cosim cosim-3d cosim-circuit cosim-circuit-3d bpcheck bprelay bpunroll bppartial bppartialfast bppipe bpfast bpaxi bpcirc bpaxiwide bpbram bpbramfast bpbramdp bpbramdpearly checkminsum varupdate unrollskel bpunrollpipe bpbanked-lint bpbanked bpbankedbram-lint bpbankedbram bpstream-lint bpstream bpstreamaxi-lint bpstreamaxi bpaxibanked clean
+.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi stream-axi-circuit cosim-stream cosim-stream-circuit cosim-stream-ler cosim-stream-ler-circuit cosim cosim-3d cosim-circuit cosim-circuit-3d bpcheck bprelay bpunroll bppartial bppartialfast bppipe bpfast bpaxi bpcirc bpaxiwide bpbram bpbramfast bpbramdp bpbramdpearly checkminsum varupdate unrollskel bpunrollpipe bpbanked-lint bpbanked bpbankedbram-lint bpbankedbram bpstream-lint bpstream bpstreamaxi-lint bpstreamaxi bpaxibanked bpbenes clean
 
 all: d3 rep surf
 
@@ -327,6 +327,27 @@ bpbankedbramm:
 			check_minsum.sv var_update.sv bp_relay_banked_bram_m.sv tb_bp_banked.cpp -o sim_bpbankedbramm || exit 1; \
 		./obj_bankedbramm/sim_bpbankedbramm bp_circ_vectors.txt || exit 1; \
 	done
+
+# Q7-04 M9c Step 2.3 — standalone Beneš permutation-network fabrics (`bp_benes.sv`): three
+# site-specific tops (bp_benes_ecm_read / bp_benes_ecm_addr / bp_benes_mcm_wr) sharing the
+# `bp_benes_switch` leaf cell + the recursive `bp_benes_block` routing core, verified in isolation
+# against a direct C++ port of `benes_apply` (crates/aleph-qec/src/benes.rs) BEFORE the fabric is
+# wired into the core (Tasks 4/5). Widths are representative per-port payloads post the e_cm
+# port-split (read = MSG_BITS, addr = BWC+1, wr = 1+BWC+MSG_BITS at the 8/24 banking; the fabric
+# itself is payload-generic, these are just plausible sizes, not the split's exact production
+# values). 10000 random ctrl+din cases per fabric, streamed one per cycle; asserts dout bit-exact
+# vs the C++ reference exactly PIPE cycles after each case is applied.
+bpbenes:
+	rm -rf obj_benes_read obj_benes_addr obj_benes_wr
+	$(VERILATOR) --cc --exe --build -Wall --Mdir obj_benes_read --top-module bp_benes_ecm_read \
+		-GN=512 -GW=6 -GPIPE=3 -CFLAGS -DBENES_READ bp_benes.sv tb_bp_benes.cpp -o sim_benes_read
+	./obj_benes_read/sim_benes_read
+	$(VERILATOR) --cc --exe --build -Wall --Mdir obj_benes_addr --top-module bp_benes_ecm_addr \
+		-GN=512 -GW=5 -GPIPE=3 -CFLAGS -DBENES_ADDR bp_benes.sv tb_bp_benes.cpp -o sim_benes_addr
+	./obj_benes_addr/sim_benes_addr
+	$(VERILATOR) --cc --exe --build -Wall --Mdir obj_benes_wr --top-module bp_benes_mcm_wr \
+		-GN=1024 -GW=11 -GPIPE=4 -CFLAGS -DBENES_WR bp_benes.sv tb_bp_benes.cpp -o sim_benes_wr
+	./obj_benes_wr/sim_benes_wr
 
 # Q7-04 M9b — SLIDING-WINDOW STREAMING wrapper (`bp_streaming_decoder`) around the BRAM-ified banked core.
 # The COMMITTED W=6 C=2 window header `bb_stream_tanner.svh` is the source of truth (do NOT regenerate it);
