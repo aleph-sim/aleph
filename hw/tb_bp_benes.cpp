@@ -1,21 +1,21 @@
-// Q7-04 M9c Step 2.3 — standalone Verilator testbench for the three Beneš permutation-network
+// Q7-04 M9c Step 2.3b — standalone Verilator testbench for the three Beneš permutation-network
 // fabrics (`hw/bp_benes.sv`): bp_benes_ecm_read, bp_benes_ecm_addr, bp_benes_mcm_wr.
 //
 // This TB (a) reimplements `benes_apply`/`apply_block` from crates/aleph-qec/src/benes.rs
 // directly in C++ (`apply_block()` below — same (col0,row0,stride) recursion, same bar/cross
-// convention: ctrl bit false=straight/true=cross), (b) drives >=10000 random `ctrl`+`din` cases
-// per fabric, (c) asserts `dout` equals the C++ reference EXACTLY `PIPE` clocks after the
-// corresponding `din`/`ctrl` was applied. `ctrl` is a ROM-fed configuration input read LIVE
-// (combinationally) by every column of the recursion -- it is deliberately NOT itself pipelined
-// (only the data path is, per the "PIPE registers on din" spec), so each case's `ctrl`/`din` is
-// held stable for the full PIPE cycles that case's data takes to cross every column before the
-// next case is applied (an overlapped one-case-per-cycle stream would let a later case's `ctrl`
-// corrupt an earlier case's still-in-flight data on the un-registered column spans between
-// register boundaries -- this is not a limitation of the TB, it mirrors the real usage: a
-// control ROM holds one routing pattern stable while data streams through it). A dedicated
-// zero-flush + single-shot precision check (`check_latency_precision()`) additionally proves the
-// FIRST correct output appears at exactly cycle PIPE and not one cycle earlier, ruling out a
-// coincidental match.
+// convention: ctrl bit false=straight/true=cross), (b) STREAMS >=10000 random `ctrl`+`din` cases
+// per fabric -- a FRESH, independent case applied EVERY cycle, so many cases are in flight in the
+// pipeline simultaneously (initiation interval = 1) -- and (c) asserts `dout` equals the C++
+// reference EXACTLY `PIPE` clocks after the corresponding `din`/`ctrl` was applied, via a FIFO of
+// pending expected results (push one per cycle when applied, pop/check exactly PIPE cycles
+// later). This is the NEW contract as of Step 2.3b: `ctrl` is now pipelined internally in
+// lockstep with `din` (see the file banner in bp_benes.sv), so a later case's `ctrl` can no
+// longer corrupt an earlier case's still-in-flight data -- the exact overlapping-in-flight
+// scenario the old (pre-2.3b) TB deliberately avoided by holding `ctrl`/`din` stable for PIPE
+// cycles per case. That old hold-stable contract is gone; this TB proves the new one instead. A
+// dedicated zero-flush + single-shot precision check (`check_latency_precision()`) additionally
+// proves the FIRST correct output appears at exactly cycle PIPE (or, for PIPE=0, in the SAME
+// cycle, combinationally) and not one cycle earlier, ruling out a coincidental match.
 //
 // Structure mirrors hw/tb_var_update.cpp (generic module under Verilator, TB reimplements the
 // reference, >=10000 random cases) and hw/tb_uf_surface_scale.cpp's `cbit()`/`VlWide<>` idiom for
@@ -30,33 +30,45 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <deque>
 #include <random>
 #include <vector>
 
+// BENES_PIPE overrides the fabric's default PIPE (which must match the Verilator `-GPIPE=`
+// passed for the build). Used to exercise PIPE=0 (fully combinational) one-off builds without
+// touching the Makefile's production PIPE=3/3/4 defaults, e.g.:
+//   verilator ... -GPIPE=0 -CFLAGS -DBENES_READ -CFLAGS -DBENES_PIPE=0 bp_benes.sv tb_bp_benes.cpp
 #if defined(BENES_READ)
 #include "Vbp_benes_ecm_read.h"
 using VTop                    = Vbp_benes_ecm_read;
 static constexpr int N        = 512;
 static constexpr int W        = 6;
-static constexpr int PIPE     = 3;
+#ifndef BENES_PIPE
+#define BENES_PIPE 3
+#endif
 static constexpr const char *NAME = "bp_benes_ecm_read";
 #elif defined(BENES_ADDR)
 #include "Vbp_benes_ecm_addr.h"
 using VTop                    = Vbp_benes_ecm_addr;
 static constexpr int N        = 512;
 static constexpr int W        = 5;
-static constexpr int PIPE     = 3;
+#ifndef BENES_PIPE
+#define BENES_PIPE 3
+#endif
 static constexpr const char *NAME = "bp_benes_ecm_addr";
 #elif defined(BENES_WR)
 #include "Vbp_benes_mcm_wr.h"
 using VTop                    = Vbp_benes_mcm_wr;
 static constexpr int N        = 1024;
 static constexpr int W        = 11;
-static constexpr int PIPE     = 4;
+#ifndef BENES_PIPE
+#define BENES_PIPE 4
+#endif
 static constexpr const char *NAME = "bp_benes_mcm_wr";
 #else
 #error "define exactly one of BENES_READ / BENES_ADDR / BENES_WR"
 #endif
+static constexpr int PIPE = BENES_PIPE;
 
 #include "verilated.h"
 
@@ -189,6 +201,31 @@ static std::vector<uint32_t> read_dout() {
 // to the streaming loop's statistical one), since a linear PIPE-deep pipeline's output at cycle c
 // after a fresh application depends ONLY on whatever was applied c cycles ago.
 static bool check_latency_precision(std::mt19937 &rng) {
+  if (PIPE == 0) {
+    // Fully combinational: dout must equal the reference in the SAME cycle with no clock edge
+    // at all. The edge-counting loop below only makes sense for PIPE>=1 (it would degenerate to
+    // a no-op loop `for edges=1..0`), so check PIPE=0 explicitly here instead.
+    zero_wide(top->din);
+    zero_wide(top->ctrl);
+    top->eval();
+    randomize_masked(top->ctrl, rng, CTRL_BITS);
+    top->ctrl[0] |= 1u;
+    randomize_masked(top->din, rng, DIN_BITS);
+    top->din[0] |= 1u;
+    top->eval();
+
+    std::vector<uint8_t>  ctrl_bits = read_ctrl();
+    std::vector<uint32_t> din_vals  = read_din();
+    std::vector<uint32_t> expected  = benes_apply(ctrl_bits, din_vals);
+    std::vector<uint32_t> got       = read_dout();
+    if (got != expected) {
+      std::fprintf(stderr,
+                    "  latency check (PIPE=0): dout did not match the reference combinationally\n");
+      return false;
+    }
+    return true;
+  }
+
   // Flush: PIPE+2 cycles of all-zero din/ctrl so every register stage holds a known all-zero
   // case before we apply the distinguishing one.
   zero_wide(top->din);
@@ -282,39 +319,94 @@ int main(int argc, char **argv) {
   }
   std::printf("latency-precision check: OK (first correct output at exactly cycle PIPE=%d)\n", PIPE);
 
-  // Volume run: `ctrl` is a ROM-fed configuration input, read LIVE (combinationally) by every
-  // column in the recursion -- it is deliberately NOT itself pipelined (only the DATA path is,
-  // per the PIPE-registers-on-din spec). So each case's `ctrl`/`din` must stay stable for the
-  // full PIPE cycles it takes that case's data to cross every column, exactly like the real
-  // usage (a control ROM holds one routing pattern stable while data streams through it) --
-  // NOT a fully-overlapped one-case-per-cycle stream, which would let a later case's `ctrl`
-  // corrupt an earlier case's still-in-flight data on the un-registered column spans between
-  // register boundaries. Apply, hold for PIPE ticks, check -- repeated NCASES times.
+  // Volume run (Step 2.3b streaming contract): `ctrl` now travels WITH its own `din` through the
+  // pipeline (see bp_benes.sv file banner), so a FRESH, independent `(din,ctrl)` case may be
+  // applied EVERY cycle -- many cases are in flight simultaneously -- and each one's `dout` must
+  // appear EXACTLY `PIPE` cycles after it was applied, unperturbed by the cases applied before or
+  // after it. This is the exact overlapping-in-flight scenario the OLD (pre-2.3b) TB deliberately
+  // avoided (it held `ctrl`/`din` stable for PIPE cycles per case); this TB now proves the new,
+  // fully-pipelined contract instead.
+  //
+  // Implementation: a FIFO of pending expected results. At loop iteration `t` (t=0..NCASES-1) a
+  // fresh case is applied (combinationally visible via top->eval()) and its expected result is
+  // pushed with `ready_at = t + PIPE - 1` (see derivation below), then the clock is advanced by
+  // one tick. Because exactly one tick happens per iteration -- including the iteration that
+  // pushed the case -- the case pushed at iteration `t` has received `(current_t - t + 1)` ticks
+  // by the end of iteration `current_t`; setting that equal to PIPE gives
+  // `current_t = t + PIPE - 1` for PIPE>=1. `total_iters = NCASES + PIPE - 1` gives every pushed
+  // case's `ready_at` an iteration to be checked in (the last case, pushed at NCASES-1, has
+  // `ready_at = NCASES + PIPE - 2`, the final loop index). PIPE==0 has no clock delay at all, so
+  // it is handled as a fully separate (simpler) same-cycle check.
   int mismatches = 0, cases_checked = 0;
 
-  for (int t = 0; t < NCASES; ++t) {
-    randomize_masked(top->ctrl, rng, CTRL_BITS);
-    randomize_masked(top->din, rng, DIN_BITS);
-
-    std::vector<uint8_t>  ctrl_bits = read_ctrl();
-    std::vector<uint32_t> din_vals  = read_din();
-    std::vector<uint32_t> expected  = benes_apply(ctrl_bits, din_vals);
-
-    for (int e = 0; e < PIPE; ++e) tick();  // ctrl/din held constant across all PIPE edges
-
-    std::vector<uint32_t> got = read_dout();
-    ++cases_checked;
-    if (got != expected) {
-      ++mismatches;
-      if (mismatches <= 10) {
-        std::fprintf(stderr, "  case %d: mismatch (first differing lane): ", t);
-        for (int i = 0; i < N; ++i) {
-          if (got[i] != expected[i]) {
-            std::fprintf(stderr, "lane %d got=%u expected=%u\n", i, got[i], expected[i]);
-            break;
-          }
+  auto report_mismatch = [&](int case_idx, const std::vector<uint32_t> &got,
+                              const std::vector<uint32_t> &expected) {
+    ++mismatches;
+    if (mismatches <= 10) {
+      std::fprintf(stderr, "  case %d: mismatch (first differing lane): ", case_idx);
+      for (int i = 0; i < N; ++i) {
+        if (got[i] != expected[i]) {
+          std::fprintf(stderr, "lane %d got=%u expected=%u\n", i, got[i], expected[i]);
+          break;
         }
       }
+    }
+  };
+
+  if (PIPE == 0) {
+    // Fully combinational: no queue needed -- each case's result is visible on dout the SAME
+    // cycle it is applied, before any clock edge.
+    for (int t = 0; t < NCASES; ++t) {
+      randomize_masked(top->ctrl, rng, CTRL_BITS);
+      randomize_masked(top->din, rng, DIN_BITS);
+      top->eval();
+
+      std::vector<uint8_t>  ctrl_bits = read_ctrl();
+      std::vector<uint32_t> din_vals  = read_din();
+      std::vector<uint32_t> expected  = benes_apply(ctrl_bits, din_vals);
+      std::vector<uint32_t> got       = read_dout();
+      ++cases_checked;
+      if (got != expected) report_mismatch(t, got, expected);
+
+      tick();  // exercise clk every case anyway, mirroring normal streaming usage.
+    }
+  } else {
+    struct PendingCase {
+      int                    ready_at;
+      std::vector<uint32_t>  expected;
+    };
+    std::deque<PendingCase> pending;
+
+    const int total_iters = NCASES + PIPE - 1;
+    for (int t = 0; t < total_iters; ++t) {
+      if (t < NCASES) {
+        randomize_masked(top->ctrl, rng, CTRL_BITS);
+        randomize_masked(top->din, rng, DIN_BITS);
+        top->eval();
+
+        std::vector<uint8_t>  ctrl_bits = read_ctrl();
+        std::vector<uint32_t> din_vals  = read_din();
+        std::vector<uint32_t> expected  = benes_apply(ctrl_bits, din_vals);
+        pending.push_back({t + PIPE - 1, std::move(expected)});
+      }
+      // t >= NCASES: no new case applied (queue is draining); ctrl/din simply hold their last
+      // driven values, which is harmless since no NEW expected result depends on them.
+
+      tick();
+
+      if (!pending.empty() && pending.front().ready_at == t) {
+        std::vector<uint32_t> got = read_dout();
+        ++cases_checked;
+        if (got != pending.front().expected) {
+          report_mismatch(t - PIPE + 1, got, pending.front().expected);
+        }
+        pending.pop_front();
+      }
+    }
+
+    if (!pending.empty()) {
+      std::fprintf(stderr, "  %zu case(s) never drained from the pending queue\n", pending.size());
+      mismatches += (int)pending.size();
     }
   }
 
@@ -322,8 +414,10 @@ int main(int argc, char **argv) {
   delete top;
 
   if (mismatches == 0 && cases_checked == NCASES) {
-    std::printf("PASS: %s %d/%d cases bit-exact vs C++ benes_apply reference, latency==PIPE=%d\n", NAME,
-                cases_checked, NCASES, PIPE);
+    std::printf(
+        "PASS: %s %d/%d STREAMED (overlapping in-flight) cases bit-exact vs C++ benes_apply "
+        "reference, latency==PIPE=%d\n",
+        NAME, cases_checked, NCASES, PIPE);
     return 0;
   }
   std::printf("FAIL: %s %d/%d cases checked, %d mismatches\n", NAME, cases_checked, NCASES, mismatches);

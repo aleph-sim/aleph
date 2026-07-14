@@ -25,11 +25,22 @@
 // Ref: Beneš (1965); Lee, "On the Rearrangeability of 2(log2 N)-1 Stage Permutation Networks",
 // IEEE ToC C-34(5), 1985 (looping algorithm) — see benes.rs module doc for the full citation.
 //
-// TIMING CONTRACT: `ctrl` is read live (combinationally) by every switch column — it is NOT
-// pipelined. Hold `ctrl` stable for at least PIPE cycles after applying a `din` case, else the
-// next control pattern corrupts data still in flight on unregistered column spans. In the QEC
-// core, `ctrl` is driven by a per-group registered ROM held stable across the whole group
-// window, which satisfies this; a free-running/streaming ctrl update would NOT.
+// TIMING CONTRACT (Step 2.3b): `ctrl` now travels WITH its own `din` through the pipeline, so a
+// FRESH `(din, ctrl)` pair may be applied every cycle (initiation interval = 1) -- there is no
+// hold requirement. Feeding `(din_t, ctrl_t)` at cycle `t` produces `dout` at cycle `t+PIPE` equal
+// to `benes_apply(ctrl_t, din_t)`; overlapping in-flight cases never corrupt each other, because
+// each switch column reads a delayed COPY of `ctrl` rather than the live port. Concretely: the top
+// -level site modules (`bp_benes_ecm_read`/`_addr`, `bp_benes_mcm_wr`) register the whole `ctrl`
+// vector through a PIPE-deep shift chain (`ctrl_pipe[0..PIPE]`, `ctrl_pipe[0]` = the live port,
+// `ctrl_pipe[k]` = that same vector delayed by `k` cycles) and pass the WHOLE chain down through
+// the recursion unchanged. Column `c` (0-indexed in the flattened COLS_TOTAL column order) reads
+// `ctrl_pipe[stage(c)]`, where `stage(c) = floor(c*PIPE/COLS_TOTAL)` is EXACTLY the number of
+// data-pipeline registers upstream of that column -- the same telescoping sum that the `REG_AFTER*`
+// register-placement decisions below are built from, so `ctrl` and `din` always arrive at a given
+// column having crossed the identical number of registered boundaries. This replaces the old
+// "hold ctrl stable for >= PIPE cycles" contract, which the QEC core's control-ROM (whose output
+// changes every cycle -- a 1-cycle group window) could not meet. `PIPE=0` is unaffected: it stays
+// fully combinational, `dout` at cycle `t` for `din_t`/`ctrl_t` applied at cycle `t`.
 
 `ifndef BP_BENES_SV
 `define BP_BENES_SV
@@ -77,10 +88,13 @@ module bp_benes_block #(
     input  logic clk,
     /* verilator lint_on UNUSEDSIGNAL */
     input  logic [N-1:0][W-1:0]              din,
-    // TIMING CONTRACT: read live (combinationally) by every column below -- NOT pipelined. Hold
-    // stable for >= PIPE cycles after applying a `din` case, or the next pattern corrupts data
-    // still in flight on unregistered column spans (see file banner for the full contract).
-    input  logic [(2*$clog2(M)-1)*(M/2)-1:0] ctrl,
+    // ctrl_pipe[k] = the top-level fabric's `ctrl` input delayed by exactly k clock cycles
+    // (k=0..PIPE; ctrl_pipe[0] is the live, unregistered port). Built ONCE by the site-specific
+    // top module (see e.g. `bp_benes_ecm_read`) and threaded down through the recursion
+    // unmodified. Column `c` (this block's own COL0 for input switches, OUT_COL for output
+    // switches) reads `ctrl_pipe[stage(c)]` where `stage(c) = floor(c*PIPE/COLS_TOTAL)` is the
+    // number of data-pipeline register boundaries upstream of that column -- see file banner.
+    input  logic [(2*$clog2(M)-1)*(M/2)-1:0] ctrl_pipe [0:PIPE],
     output logic [N-1:0][W-1:0]              dout
 );
   localparam int STRIDE     = M / 2;
@@ -90,10 +104,11 @@ module bp_benes_block #(
     if (N == 2) begin : g_base
       localparam bit REG_AFTER =
           (((COL0 + 1) * PIPE) / COLS_TOTAL) != ((COL0 * PIPE) / COLS_TOTAL);
+      localparam int CTRL_STAGE = (COL0 * PIPE) / COLS_TOTAL;
 
       logic [1:0][W-1:0] dout_c;
       bp_benes_switch #(.W(W)) u_sw (
-          .sel  (ctrl[COL0*STRIDE + ROW0]),
+          .sel  (ctrl_pipe[CTRL_STAGE][COL0*STRIDE + ROW0]),
           .a_in (din[0]),
           .b_in (din[1]),
           .a_out(dout_c[0]),
@@ -113,6 +128,8 @@ module bp_benes_block #(
           (((COL0 + 1) * PIPE) / COLS_TOTAL) != ((COL0 * PIPE) / COLS_TOTAL);
       localparam bit REG_AFTER_OUT =
           (((OUT_COL + 1) * PIPE) / COLS_TOTAL) != ((OUT_COL * PIPE) / COLS_TOTAL);
+      localparam int CTRL_STAGE_IN  = (COL0 * PIPE) / COLS_TOTAL;
+      localparam int CTRL_STAGE_OUT = (OUT_COL * PIPE) / COLS_TOTAL;
 
       logic [HALF-1:0][W-1:0] upper_in_c, lower_in_c;
       logic [HALF-1:0][W-1:0] upper_in_r, lower_in_r;
@@ -122,7 +139,7 @@ module bp_benes_block #(
       genvar isw;
       for (isw = 0; isw < HALF; isw++) begin : g_in_sw
         bp_benes_switch #(.W(W)) u_sw_in (
-            .sel  (ctrl[COL0*STRIDE + ROW0 + isw]),
+            .sel  (ctrl_pipe[CTRL_STAGE_IN][COL0*STRIDE + ROW0 + isw]),
             .a_in (din[2*isw]),
             .b_in (din[2*isw+1]),
             .a_out(upper_in_c[isw]),
@@ -143,24 +160,24 @@ module bp_benes_block #(
       bp_benes_block #(
           .N(HALF), .W(W), .M(M), .PIPE(PIPE), .COL0(COL0 + 1), .ROW0(ROW0)
       ) u_up (
-          .clk (clk),
-          .din (upper_in_r),
-          .ctrl(ctrl),
-          .dout(upper_out)
+          .clk      (clk),
+          .din      (upper_in_r),
+          .ctrl_pipe(ctrl_pipe),
+          .dout     (upper_out)
       );
       bp_benes_block #(
           .N(HALF), .W(W), .M(M), .PIPE(PIPE), .COL0(COL0 + 1), .ROW0(ROW0 + HALF / 2)
       ) u_lo (
-          .clk (clk),
-          .din (lower_in_r),
-          .ctrl(ctrl),
-          .dout(lower_out)
+          .clk      (clk),
+          .din      (lower_in_r),
+          .ctrl_pipe(ctrl_pipe),
+          .dout     (lower_out)
       );
 
       genvar osw;
       for (osw = 0; osw < HALF; osw++) begin : g_out_sw
         bp_benes_switch #(.W(W)) u_sw_out (
-            .sel  (ctrl[OUT_COL*STRIDE + ROW0 + osw]),
+            .sel  (ctrl_pipe[CTRL_STAGE_OUT][OUT_COL*STRIDE + ROW0 + osw]),
             .a_in (upper_out[osw]),
             .b_in (lower_out[osw]),
             .a_out(dout_c[2*osw]),
@@ -194,13 +211,28 @@ module bp_benes_ecm_read #(
 ) (
     input  logic                             clk,
     input  logic [N-1:0][W-1:0]              din,
-    // TIMING CONTRACT: read live (combinationally), not pipelined -- hold stable for >= PIPE
-    // cycles after applying a `din` case (see `bp_benes_block`'s `ctrl` port / file banner).
+    // TIMING CONTRACT (Step 2.3b): `ctrl` travels WITH its own `din` -- a fresh (din,ctrl) pair
+    // may be applied every cycle, dout at t+PIPE == benes_apply(ctrl_t,din_t). No hold
+    // requirement (see file banner). Registered internally into `ctrl_pipe` below.
     input  logic [(2*$clog2(N)-1)*(N/2)-1:0] ctrl,
     output logic [N-1:0][W-1:0]              dout
 );
+  localparam int CTRL_W = (2 * $clog2(N) - 1) * (N / 2);
+
+  // ctrl_pipe[k] = `ctrl` delayed by k cycles (k=0..PIPE); ctrl_pipe[0] is the live port. Shared,
+  // unmodified, by the whole `bp_benes_block` recursion below -- see file banner / block's
+  // `ctrl_pipe` port comment for how each switch column picks its own delayed copy.
+  logic [CTRL_W-1:0] ctrl_pipe[0:PIPE];
+  assign ctrl_pipe[0] = ctrl;
+  genvar k;
+  generate
+    for (k = 1; k <= PIPE; k++) begin : g_ctrl_pipe
+      always_ff @(posedge clk) ctrl_pipe[k] <= ctrl_pipe[k-1];
+    end
+  endgenerate
+
   bp_benes_block #(.N(N), .W(W), .M(N), .PIPE(PIPE), .COL0(0), .ROW0(0)) u_core (
-      .clk (clk), .din(din), .ctrl(ctrl), .dout(dout)
+      .clk (clk), .din(din), .ctrl_pipe(ctrl_pipe), .dout(dout)
   );
 endmodule
 
@@ -211,13 +243,25 @@ module bp_benes_ecm_addr #(
 ) (
     input  logic                             clk,
     input  logic [N-1:0][W-1:0]              din,
-    // TIMING CONTRACT: read live (combinationally), not pipelined -- hold stable for >= PIPE
-    // cycles after applying a `din` case (see `bp_benes_block`'s `ctrl` port / file banner).
+    // TIMING CONTRACT (Step 2.3b): `ctrl` travels WITH its own `din` -- a fresh (din,ctrl) pair
+    // may be applied every cycle, dout at t+PIPE == benes_apply(ctrl_t,din_t). No hold
+    // requirement (see file banner). Registered internally into `ctrl_pipe` below.
     input  logic [(2*$clog2(N)-1)*(N/2)-1:0] ctrl,
     output logic [N-1:0][W-1:0]              dout
 );
+  localparam int CTRL_W = (2 * $clog2(N) - 1) * (N / 2);
+
+  logic [CTRL_W-1:0] ctrl_pipe[0:PIPE];
+  assign ctrl_pipe[0] = ctrl;
+  genvar k;
+  generate
+    for (k = 1; k <= PIPE; k++) begin : g_ctrl_pipe
+      always_ff @(posedge clk) ctrl_pipe[k] <= ctrl_pipe[k-1];
+    end
+  endgenerate
+
   bp_benes_block #(.N(N), .W(W), .M(N), .PIPE(PIPE), .COL0(0), .ROW0(0)) u_core (
-      .clk (clk), .din(din), .ctrl(ctrl), .dout(dout)
+      .clk (clk), .din(din), .ctrl_pipe(ctrl_pipe), .dout(dout)
   );
 endmodule
 
@@ -228,13 +272,25 @@ module bp_benes_mcm_wr #(
 ) (
     input  logic                             clk,
     input  logic [N-1:0][W-1:0]              din,
-    // TIMING CONTRACT: read live (combinationally), not pipelined -- hold stable for >= PIPE
-    // cycles after applying a `din` case (see `bp_benes_block`'s `ctrl` port / file banner).
+    // TIMING CONTRACT (Step 2.3b): `ctrl` travels WITH its own `din` -- a fresh (din,ctrl) pair
+    // may be applied every cycle, dout at t+PIPE == benes_apply(ctrl_t,din_t). No hold
+    // requirement (see file banner). Registered internally into `ctrl_pipe` below.
     input  logic [(2*$clog2(N)-1)*(N/2)-1:0] ctrl,
     output logic [N-1:0][W-1:0]              dout
 );
+  localparam int CTRL_W = (2 * $clog2(N) - 1) * (N / 2);
+
+  logic [CTRL_W-1:0] ctrl_pipe[0:PIPE];
+  assign ctrl_pipe[0] = ctrl;
+  genvar k;
+  generate
+    for (k = 1; k <= PIPE; k++) begin : g_ctrl_pipe
+      always_ff @(posedge clk) ctrl_pipe[k] <= ctrl_pipe[k-1];
+    end
+  endgenerate
+
   bp_benes_block #(.N(N), .W(W), .M(N), .PIPE(PIPE), .COL0(0), .ROW0(0)) u_core (
-      .clk (clk), .din(din), .ctrl(ctrl), .dout(dout)
+      .clk (clk), .din(din), .ctrl_pipe(ctrl_pipe), .dout(dout)
   );
 endmodule
 

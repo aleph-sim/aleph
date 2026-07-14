@@ -328,18 +328,20 @@ bpbankedbramm:
 		./obj_bankedbramm/sim_bpbankedbramm bp_circ_vectors.txt || exit 1; \
 	done
 
-# Q7-04 M9c Step 2.3 — standalone Beneš permutation-network fabrics (`bp_benes.sv`): three
+# Q7-04 M9c Step 2.3b — standalone Beneš permutation-network fabrics (`bp_benes.sv`): three
 # site-specific tops (bp_benes_ecm_read / bp_benes_ecm_addr / bp_benes_mcm_wr) sharing the
 # `bp_benes_switch` leaf cell + the recursive `bp_benes_block` routing core, verified in isolation
 # against a direct C++ port of `benes_apply` (crates/aleph-qec/src/benes.rs) BEFORE the fabric is
 # wired into the core (Tasks 4/5). Widths are representative per-port payloads post the e_cm
 # port-split (read = MSG_BITS, addr = BWC+1, wr = 1+BWC+MSG_BITS at the 8/24 banking; the fabric
 # itself is payload-generic, these are just plausible sizes, not the split's exact production
-# values). 10000 random ctrl+din cases per fabric; each case's ctrl/din is applied and HELD STABLE
-# for PIPE cycles before the next case is applied (NOT overlapped / streamed one per cycle -- ctrl
-# is read live/combinationally by every column, so a free-running stream would corrupt in-flight
-# data; see the TIMING CONTRACT note in bp_benes.sv). Asserts dout bit-exact vs the C++ reference
-# exactly PIPE cycles after each case is applied.
+# values). 10000 random ctrl+din cases per fabric, STREAMED: a FRESH, independent (din,ctrl) pair
+# is applied EVERY cycle (initiation interval = 1), with many cases in flight in the pipeline at
+# once -- `ctrl` is now pipelined internally in lockstep with `din` (see the TIMING CONTRACT note
+# in bp_benes.sv), so overlapping cases no longer corrupt each other; this replaces the old
+# hold-ctrl-stable-for-PIPE-cycles contract, which the QEC core's per-cycle-changing control ROM
+# could not meet. Asserts dout bit-exact vs the C++ reference exactly PIPE cycles after each case
+# is applied.
 bpbenes:
 	rm -rf obj_benes_read obj_benes_addr obj_benes_wr
 	$(VERILATOR) --cc --exe --build -Wall --Mdir obj_benes_read --top-module bp_benes_ecm_read \
