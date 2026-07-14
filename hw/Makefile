@@ -335,8 +335,11 @@ bpbankedbramm:
 # wired into the core (Tasks 4/5). Widths are representative per-port payloads post the e_cm
 # port-split (read = MSG_BITS, addr = BWC+1, wr = 1+BWC+MSG_BITS at the 8/24 banking; the fabric
 # itself is payload-generic, these are just plausible sizes, not the split's exact production
-# values). 10000 random ctrl+din cases per fabric, streamed one per cycle; asserts dout bit-exact
-# vs the C++ reference exactly PIPE cycles after each case is applied.
+# values). 10000 random ctrl+din cases per fabric; each case's ctrl/din is applied and HELD STABLE
+# for PIPE cycles before the next case is applied (NOT overlapped / streamed one per cycle -- ctrl
+# is read live/combinationally by every column, so a free-running stream would corrupt in-flight
+# data; see the TIMING CONTRACT note in bp_benes.sv). Asserts dout bit-exact vs the C++ reference
+# exactly PIPE cycles after each case is applied.
 bpbenes:
 	rm -rf obj_benes_read obj_benes_addr obj_benes_wr
 	$(VERILATOR) --cc --exe --build -Wall --Mdir obj_benes_read --top-module bp_benes_ecm_read \

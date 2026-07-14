@@ -232,6 +232,22 @@ static bool check_latency_precision(std::mt19937 &rng) {
                      PIPE);
         ok = false;
       }
+      // Not just "not yet equal to expected" -- assert it's the TRUE flushed value (all-zero,
+      // per the zero_wide(din)/zero_wide(ctrl) flush above), so a bug that emits some other
+      // wrong-but-different value a cycle early is caught too, not just a lucky early match.
+      bool all_zero_got = true;
+      for (auto v : got)
+        if (v != 0) {
+          all_zero_got = false;
+          break;
+        }
+      if (!all_zero_got) {
+        std::fprintf(stderr,
+                     "  latency check: dout NOT flushed-zero at edge %d (PIPE=%d) -- expected the "
+                     "still-flushed all-zero pipeline contents\n",
+                     edges, PIPE);
+        ok = false;
+      }
     } else {  // edges == PIPE
       if (!eq) {
         std::fprintf(stderr, "  latency check: dout did NOT match expected at edge PIPE=%d\n", PIPE);

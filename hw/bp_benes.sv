@@ -24,6 +24,12 @@
 //
 // Ref: Beneš (1965); Lee, "On the Rearrangeability of 2(log2 N)-1 Stage Permutation Networks",
 // IEEE ToC C-34(5), 1985 (looping algorithm) — see benes.rs module doc for the full citation.
+//
+// TIMING CONTRACT: `ctrl` is read live (combinationally) by every switch column — it is NOT
+// pipelined. Hold `ctrl` stable for at least PIPE cycles after applying a `din` case, else the
+// next control pattern corrupts data still in flight on unregistered column spans. In the QEC
+// core, `ctrl` is driven by a per-group registered ROM held stable across the whole group
+// window, which satisfies this; a free-running/streaming ctrl update would NOT.
 
 `ifndef BP_BENES_SV
 `define BP_BENES_SV
@@ -71,6 +77,9 @@ module bp_benes_block #(
     input  logic clk,
     /* verilator lint_on UNUSEDSIGNAL */
     input  logic [N-1:0][W-1:0]              din,
+    // TIMING CONTRACT: read live (combinationally) by every column below -- NOT pipelined. Hold
+    // stable for >= PIPE cycles after applying a `din` case, or the next pattern corrupts data
+    // still in flight on unregistered column spans (see file banner for the full contract).
     input  logic [(2*$clog2(M)-1)*(M/2)-1:0] ctrl,
     output logic [N-1:0][W-1:0]              dout
 );
@@ -185,6 +194,8 @@ module bp_benes_ecm_read #(
 ) (
     input  logic                             clk,
     input  logic [N-1:0][W-1:0]              din,
+    // TIMING CONTRACT: read live (combinationally), not pipelined -- hold stable for >= PIPE
+    // cycles after applying a `din` case (see `bp_benes_block`'s `ctrl` port / file banner).
     input  logic [(2*$clog2(N)-1)*(N/2)-1:0] ctrl,
     output logic [N-1:0][W-1:0]              dout
 );
@@ -200,6 +211,8 @@ module bp_benes_ecm_addr #(
 ) (
     input  logic                             clk,
     input  logic [N-1:0][W-1:0]              din,
+    // TIMING CONTRACT: read live (combinationally), not pipelined -- hold stable for >= PIPE
+    // cycles after applying a `din` case (see `bp_benes_block`'s `ctrl` port / file banner).
     input  logic [(2*$clog2(N)-1)*(N/2)-1:0] ctrl,
     output logic [N-1:0][W-1:0]              dout
 );
@@ -215,6 +228,8 @@ module bp_benes_mcm_wr #(
 ) (
     input  logic                             clk,
     input  logic [N-1:0][W-1:0]              din,
+    // TIMING CONTRACT: read live (combinationally), not pipelined -- hold stable for >= PIPE
+    // cycles after applying a `din` case (see `bp_benes_block`'s `ctrl` port / file banner).
     input  logic [(2*$clog2(N)-1)*(N/2)-1:0] ctrl,
     output logic [N-1:0][W-1:0]              dout
 );
