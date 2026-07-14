@@ -309,7 +309,7 @@ bpbankedbram:
 bpbankedbramm-lint:
 	cd .. && $(CARGO) qec_q7_bp_graph -- circgraph 1 0.003 8 24 > hw/bb_gross_tanner.svh
 	$(VERILATOR) --lint-only -Wall --top-module bp_relay_banked_bram_m \
-		check_minsum.sv var_update.sv bp_relay_banked_bram_m.sv
+		check_minsum.sv var_update.sv bp_benes.sv bp_relay_banked_bram_m.sv
 
 # Q7-04 M9b — `bp_relay_banked_bram_m` FULL CO-SIM: same golden + gate as `bpbankedbram` (40/40
 # decision-equal at both bankings, rom_contract guard included; latency must MATCH the flat core's
@@ -324,7 +324,7 @@ bpbankedbramm:
 		rm -rf obj_bankedbramm; \
 		$(VERILATOR) --cc --exe --build -Wall --Mdir obj_bankedbramm --prefix Vbp_relay_banked \
 			--top-module bp_relay_banked_bram_m \
-			check_minsum.sv var_update.sv bp_relay_banked_bram_m.sv tb_bp_banked.cpp -o sim_bpbankedbramm || exit 1; \
+			check_minsum.sv var_update.sv bp_benes.sv bp_relay_banked_bram_m.sv tb_bp_banked.cpp -o sim_bpbankedbramm || exit 1; \
 		./obj_bankedbramm/sim_bpbankedbramm bp_circ_vectors.txt || exit 1; \
 	done
 
