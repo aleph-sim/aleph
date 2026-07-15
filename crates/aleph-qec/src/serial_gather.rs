@@ -19,6 +19,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 /// Fixed BRAM storage + per-group conflict-free read schedule for the serial-gather core.
+#[derive(Debug)]
 pub struct SerialLayout {
     /// Number of physical BRAM banks / read ports.
     pub p: usize,
@@ -54,7 +55,9 @@ pub fn plan_serial(edges: &[(usize, usize)], groups: &[Vec<usize>], p: usize) ->
     // not the raw id value. Using rank rather than `logical_bank % p` means sparse/clustered
     // logical-bank numbering (e.g. every id a multiple of p) still spreads evenly across
     // physical banks instead of aliasing them all onto bank 0 — see the
-    // `naive_round_robin_would_collide` test for why raw-id folding is not safe to assume.
+    // `sparse_logical_bank_ids_fold_across_banks` test for why raw-id folding is not safe to
+    // assume (that test uses logical banks that are all multiples of p, where raw `lb % p`
+    // collapses everything onto bank 0 but rank-based folding spreads them).
     let mut logical_banks: Vec<usize> = edges.iter().map(|&(lb, _)| lb).collect();
     logical_banks.sort_unstable();
     logical_banks.dedup();
@@ -69,6 +72,8 @@ pub fn plan_serial(edges: &[(usize, usize)], groups: &[Vec<usize>], p: usize) ->
     let mut bank_of = vec![0usize; edges.len()];
     let mut addr_of = vec![0usize; edges.len()];
     let mut next_addr = vec![0usize; p];
+    // `_` = the edge's `row`: unused here because `addr_of` is a fresh running per-bank
+    // counter assigned by this loop, not the caller-supplied row value.
     for (e, &(lb, _)) in edges.iter().enumerate() {
         let bank = rank_of[&lb] % p;
         bank_of[e] = bank;
@@ -287,6 +292,36 @@ mod tests {
             "naive round-robin schedule must collide (taps 0,1 share bank 0 in step 0)",
         );
         assert!(err.contains("bank 0 read twice"), "unexpected error: {err}");
+    }
+
+    /// Logical banks `{0,2,4,6}` (all multiples of `p=2`): raw `lb % p` would alias all four
+    /// edges onto physical bank 0 (forcing `steps=4`, one edge at a time — defeating the whole
+    /// point of parallel gather). Rank-based folding — `rank(lb) % p`, where `rank` is the
+    /// sorted position of `lb` among the distinct logical-bank ids that actually appear — must
+    /// instead spread them across both physical banks (`rank(0,2,4,6) = 0,1,2,3` =>
+    /// `rank % 2 = 0,1,0,1`). Every other test in this module uses CONTIGUOUS logical-bank ids,
+    /// where `rank(lb) == lb`, so raw-id folding and rank folding are indistinguishable there —
+    /// this is the one test that actually exercises rank-based folding.
+    #[test]
+    fn sparse_logical_bank_ids_fold_across_banks() {
+        let edges: Vec<(usize, usize)> = vec![(0, 0), (2, 0), (4, 0), (6, 0)];
+        let groups = vec![vec![0usize, 1, 2, 3]];
+        let p = 2;
+
+        let layout = plan_serial(&edges, &groups, p);
+        verify_layout(&layout, &groups).expect("sparse-id layout must be conflict-free");
+
+        let distinct_banks: std::collections::BTreeSet<_> = layout.bank_of.iter().collect();
+        assert!(
+            distinct_banks.len() > 1,
+            "rank-based folding must spread multiples-of-p logical banks across >1 physical \
+             bank, got {:?}",
+            layout.bank_of
+        );
+        // Pin the exact rank-based assignment: if this regressed to raw `lb % p`, bank_of
+        // would collapse to all-0s and this assert (not just the distinct-banks one above)
+        // would catch it directly.
+        assert_eq!(layout.bank_of, vec![0, 1, 0, 1]);
     }
 
     /// Group edges deliberately chosen (all-even logical-bank ids, so all fold onto physical
