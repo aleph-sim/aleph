@@ -247,14 +247,16 @@ module bp_rom_benes_ecmrd_bqm (
   initial for (int i = 0; i < BP_GV; i++) rom[i] = BP_ROM_BENES_ECMRD[i];
   always_ff @(posedge clk) q <= rom[addr];
 endmodule
-// M9c site 3: registered per-group Beneš e_cm read-ADDRESS scatter control ROM (both port halves in one
-// row). Same layout/addressing discipline as the read-gather ROM above (PORTS*COLS*(M/2), var read cursor).
-module bp_rom_benes_ecmaddr_bqm (
-    input  logic clk, input logic [BQM_AWV-1:0] addr,
-    output logic [BP_BENES_ECM_PORTS*BP_BENES_ECM_COLS*(BP_BENES_ECM_M/2)-1:0] q);
-  (* rom_style = "block" *)
-  logic [BP_BENES_ECM_PORTS*BP_BENES_ECM_COLS*(BP_BENES_ECM_M/2)-1:0] rom [BP_GV];
-  initial for (int i = 0; i < BP_GV; i++) rom[i] = BP_ROM_BENES_ECMADDR[i];
+// M9c Step 4b: e_cm read-ADDRESS scatter is no longer a runtime Beneš route -- it is a pure function of
+// the group, precomputed at gen time into BP_ROM_ECM_READROW (see the Rust emitter guard). This ROM holds
+// the resolved read row per bank/port directly (row bit layout: bank `bk` port `p` at (bk*2+p)*BWC +: BWC,
+// 0 when no tap lands there), replacing `bp_rom_benes_ecmaddr_bqm` + the `u_benes_ad0/ad1` fabric below.
+module bp_rom_ecm_readrow_bqm (
+    input  logic clk,
+    input  logic [BQM_AWV-1:0] addr,
+    output logic [BP_ECM_READROW_W-1:0] q);
+  (* rom_style = "block" *) logic [BP_ECM_READROW_W-1:0] rom [BP_GV];
+  initial for (int i = 0; i < BP_GV; i++) rom[i] = BP_ROM_ECM_READROW[i];
   always_ff @(posedge clk) q <= rom[addr];
 endmodule
 // M9c site 4: registered per-group Beneš m_cm write-scatter control ROM (single network — hb=eb*2+beta
@@ -672,8 +674,9 @@ module bp_relay_banked_bram_m (
   // M9c site 2: registered Beneš read-gather control (both port halves), pc-1-aligned like the ROMs above.
   localparam int BENES_ECM_CTRLW = BP_BENES_ECM_COLS * (BP_BENES_ECM_M / 2);   // per-port ctrl width
   logic [BP_BENES_ECM_PORTS*BENES_ECM_CTRLW-1:0] benes_ecmrd_q;
-  // M9c site 3: registered Beneš e_cm read-ADDRESS scatter control (both port halves), var-cursor aligned.
-  logic [BP_BENES_ECM_PORTS*BENES_ECM_CTRLW-1:0] benes_ecmaddr_q;
+  // M9c Step 4b: registered e_cm resolved read-row data (both banks/ports in one row); replaces the
+  // site-3 Beneš addr-scatter control `benes_ecmaddr_q` (now a pure data ROM, see bp_rom_ecm_readrow_bqm).
+  logic [BP_ECM_READROW_W-1:0] ecm_readrow_q;
   // M9c site 4: registered Beneš m_cm write-scatter control (single network).
   localparam int BENES_MCM_CTRLW = BP_BENES_MCM_COLS * (BP_BENES_MCM_M / 2);
   logic [BENES_MCM_CTRLW-1:0] benes_mcmwr_q;
@@ -768,7 +771,7 @@ module bp_relay_banked_bram_m (
   bp_rom_scat_row_bqm   u_rom_scat_row   (.clk(clk), .addr(BQM_AWV'(scat_rd)), .q(scat_row_q));
   bp_rom_scat_lam_bqm   u_rom_scat_lam   (.clk(clk), .addr(BQM_AWV'(scat_rd)), .q(scat_lam_q));
   bp_rom_benes_ecmrd_bqm u_rom_benes_ecmrd (.clk(clk), .addr(BQM_AWV'(var_rd)), .q(benes_ecmrd_q));
-  bp_rom_benes_ecmaddr_bqm u_rom_benes_ecmaddr (.clk(clk), .addr(BQM_AWV'(var_rd)),  .q(benes_ecmaddr_q));
+  bp_rom_ecm_readrow_bqm u_rom_ecm_readrow (.clk(clk), .addr(BQM_AWV'(var_rd)), .q(ecm_readrow_q));
   bp_rom_benes_mcmwr_bqm   u_rom_benes_mcmwr   (.clk(clk), .addr(BQM_AWV'(scat_rd)), .q(benes_mcmwr_q));
 
   always_ff @(posedge clk) begin
@@ -815,33 +818,45 @@ module bp_relay_banked_bram_m (
     end
   end
 
-  // ===================================================================== M9c site 3: e_cm read-ADDR scatter Beneš
-  // Replaces the runtime-indexed ra_ecm[var_ebsel_r]/rb_ecm[var_ebsel_r] address-scatter crossbar with a
-  // PORT-SPLIT Beneš permutation fabric (like site 2, mirrored direction): each var-edge slot s carries
-  // {valid=var_epres_r[s], row=var_erow_r[s]} into BOTH networks; the ROM control routes port-0 taps to
-  // their ra bank (eport==0) and port-1 taps to their rb bank (eport==1) with the off-port taps parked in
-  // the >=NEB padding lanes we never read -- so the eport bit is IMPLICIT in which network validly lands a
-  // slot, never carried in the payload. At output bank b: valid ? rX_ecm[b]=row : rX_ecm[b]='0.
-  //
-  // PIPE=BENES_PIPE_ECM (3, Fmax-safe). This fabric sits AHEAD of the async e_cm read that feeds site-2's
-  // read fabric, so it pushes the whole e_cm operand path 3 more cycles late (total BENES_ECM_LAT=6): the
-  // site-2 ctrl ROM is delayed 3 (benes_ecmrd_q_d), the var-operand twins are 6 deep, and the S_VAR
-  // schedule is shifted +3 again (see FSM / cursor comb) to keep every var_update input group-aligned.
-  logic [BP_BENES_ECM_M-1:0][BWC:0] ecm_ad_din, ad0_dout, ad1_dout;   // W = BWC+1 = {valid, row}
-  always_comb begin
-    for (int s = 0; s < BP_BENES_ECM_M; s++)
-      ecm_ad_din[s] = (s < NVB) ? {var_epres_r[s], var_erow_r[s]} : '0;
-  end
-  bp_benes_ecm_addr #(.N(BP_BENES_ECM_M), .W(BWC+1), .PIPE(BENES_PIPE_ECM)) u_benes_ad0 (
-      .clk(clk), .din(ecm_ad_din),
-      .ctrl(benes_ecmaddr_q[0*BENES_ECM_CTRLW +: BENES_ECM_CTRLW]), .dout(ad0_dout));
-  bp_benes_ecm_addr #(.N(BP_BENES_ECM_M), .W(BWC+1), .PIPE(BENES_PIPE_ECM)) u_benes_ad1 (
-      .clk(clk), .din(ecm_ad_din),
-      .ctrl(benes_ecmaddr_q[1*BENES_ECM_CTRLW +: BENES_ECM_CTRLW]), .dout(ad1_dout));
+  // ===================================================================== M9c site 3: e_cm read-ADDR (readrow ROM)
+  // M9c Step 4b: e_cm read rows come straight from BP_ROM_ECM_READROW (the old ad0/ad1 Beneš fabric
+  // computed a static per-group permutation of ROM constants). Latency-match the removed fabric: the
+  // old `bp_benes_ecm_addr #(.PIPE(BENES_PIPE_ECM))` produced dout BENES_PIPE_ECM cycles after its din
+  // was valid, and its din (ecm_ad_din, driven combinationally off var_epres_r/var_erow_r) was valid on
+  // the SAME cycle `benes_ecmaddr_q`/`var_epres_q` land (both direct 1-cycle sync ROM reads off the same
+  // var_rd address). `ecm_readrow_q` is likewise a direct 1-cycle sync read off var_rd, so it lands on
+  // that identical cycle too -- meaning we need exactly BENES_PIPE_ECM registered stages after the comb
+  // unpack (not BENES_PIPE_ECM-1) for ra_ecm/rb_ecm to land on the same cycle the old fabric's outputs
+  // did. (Empirically confirmed: BENES_PIPE_ECM-1 stages under-delays by exactly one cycle and corrupts
+  // decode data, caught by the co-sim 40/40 gate -- see task-2 report.) Every downstream offset
+  // (benes_ecmrd_q_d depth, var-operand twins, S_VAR +3, BENES_ECM_LAT) is untouched.
+  logic [BQM_BWCW-1:0] ra_ecm_rom [BQM_NEBW];
+  logic [BQM_BWCW-1:0] rb_ecm_rom [BQM_NEBW];
   always_comb begin
     for (int b = 0; b < NEB; b++) begin
-      ra_ecm[b] = ad0_dout[b][BWC] ? ad0_dout[b][BWC-1:0] : '0;   // port 0 -> port-A read row
-      rb_ecm[b] = ad1_dout[b][BWC] ? ad1_dout[b][BWC-1:0] : '0;   // port 1 -> port-B read row
+      ra_ecm_rom[b] = ecm_readrow_q[(b*2 + 0)*BQM_BWCW +: BQM_BWCW];
+      rb_ecm_rom[b] = ecm_readrow_q[(b*2 + 1)*BQM_BWCW +: BQM_BWCW];
+    end
+  end
+  // BENES_PIPE_ECM pipeline stages (the ROM's own sync read lands on the same cycle the old fabric's
+  // combinational din did, so the full PIPE depth -- not PIPE-1 -- has to follow the comb unpack).
+  logic [BQM_BWCW-1:0] ra_ecm_d [BENES_PIPE_ECM][BQM_NEBW];
+  logic [BQM_BWCW-1:0] rb_ecm_d [BENES_PIPE_ECM][BQM_NEBW];
+  always_ff @(posedge clk) begin
+    for (int b = 0; b < NEB; b++) begin
+      ra_ecm_d[0][b] <= ra_ecm_rom[b];
+      rb_ecm_d[0][b] <= rb_ecm_rom[b];
+    end
+    for (int s = 1; s < BENES_PIPE_ECM; s++)
+      for (int b = 0; b < NEB; b++) begin
+        ra_ecm_d[s][b] <= ra_ecm_d[s-1][b];
+        rb_ecm_d[s][b] <= rb_ecm_d[s-1][b];
+      end
+  end
+  always_comb begin
+    for (int b = 0; b < NEB; b++) begin
+      ra_ecm[b] = ra_ecm_d[BENES_PIPE_ECM-1][b];
+      rb_ecm[b] = rb_ecm_d[BENES_PIPE_ECM-1][b];
     end
   end
 
