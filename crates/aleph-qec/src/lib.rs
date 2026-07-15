@@ -18,6 +18,7 @@
 //! external [`PyMatchingOracle`] (Q0-04); and the [`MatchingGraph`] that turns a graph-like DEM
 //! into the weighted detector-plus-boundary graph matching decoders consume (Q1-01).
 
+mod benes;
 mod bivariate_bicycle;
 mod blossom;
 mod bp;
@@ -34,11 +35,13 @@ mod parallel_window;
 mod pymatching;
 mod relay_bp;
 mod relay_window;
+mod serial_gather;
 mod sliding;
 mod surface;
 mod syndrome;
 mod union_find;
 
+pub use benes::{benes_apply, benes_columns, benes_control, complete_partial};
 pub use bivariate_bicycle::{BBCode, BBMemoryExperiment};
 pub use bp::{BpDecoder, BpSoft, TannerGraph, DEFAULT_MAX_ITER};
 pub use builder::{build_dem, AnnotatedCircuit, CircuitNoise, ErrorMechanism};
@@ -58,6 +61,7 @@ pub use relay_bp::{RelayBpDecoder, RelayBpOsdDecoder, DEFAULT_LEGS};
 pub use relay_window::{
     HwSlidingWindowBp, SeamMode, SlidingWindowBp, StreamStats, WindowBpExport, WindowTrace,
 };
+pub use serial_gather::{plan_serial, serial_steps, verify_layout, SerialLayout};
 pub use sliding::{SlidingWindowDecoder, WindowExport};
 pub use surface::{MemoryExperiment, SurfaceCode};
 pub use syndrome::{Correction, Syndrome};

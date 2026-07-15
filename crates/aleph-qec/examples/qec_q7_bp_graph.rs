@@ -27,10 +27,21 @@
 //!       streamgraph <rounds> <p> <W> <C> <bankW> <bankV> > hw/bb_stream_tanner.svh
 //!   cargo run --release -p aleph-qec --example qec_q7_bp_graph -- \
 //!       streamvectors <rounds> <p> <W> <C> <n> <seed> > hw/bp_stream_vectors.txt
+//!
+//! M9c (Q7-04) step 3.2 — serial-gather storage+schedule layouts: the same circuit-level graph +
+//! banking as `circgraph`, PLUS the conflict-free `P`-bank storage/read-schedule address ROMs
+//! (`plan_serial`/`verify_layout`, `aleph_qec::serial_gather`) the memory-based serial-gather core
+//! reads instead of the parallel Beneš crossbar (design spec
+//! `docs/superpowers/specs/2026-07-15-m9c-serial-gather-design.md`). Note `P` (the serialization
+//! factor / physical bank+port count) sits at position 3, ahead of the noise probability `p_err`
+//! (unlike `circgraph`/`wingraph`, where position 3 IS the noise probability):
+//!   cargo run --release -p aleph-qec --example qec_q7_bp_graph -- \
+//!       serialgraph <rounds> <P> <p_err> <bankW> <bankV> > hw/bb_serial_tanner.svh
 
 use aleph_qec::{
+    benes_apply, benes_columns, benes_control, complete_partial, plan_serial, verify_layout,
     BBCode, CircuitNoise, DetectorErrorModel, FixedHwView, FixedRelayBp, HwSlidingWindowBp,
-    SlidingWindowBp,
+    SerialLayout, SlidingWindowBp,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -288,6 +299,43 @@ fn emit_stream_graph(rounds: usize, p: f64, w: usize, c: usize, bank_w: usize, b
          det at rel round < C"
     );
     println!("/* verilator lint_on UNUSEDPARAM */");
+    println!("`endif");
+}
+
+/// M9c (Q7-04) step 3.2 — serial-gather storage+schedule header: the same circuit-level Tanner
+/// graph + `K`-banking `circgraph` emits, PLUS the conflict-free `P`-bank storage/read-schedule
+/// address ROMs ([`print_serial_gather_roms`]) the memory-based serial-gather core reads instead
+/// of the parallel Beneš crossbar `circgraph`/M9c-step-2 bakes (design spec
+/// `docs/superpowers/specs/2026-07-15-m9c-serial-gather-design.md`). `sg_p` is `P`, the
+/// serialization factor (physical bank + read-port count) passed to [`plan_serial`] — a gen-time
+/// choice, independent of `bank_w`/`bank_v` (the existing check/var banking capacities).
+///
+/// Usage:
+///   cargo run --release -p aleph-qec --example qec_q7_bp_graph -- \
+///       serialgraph <rounds> <P> <p_err> <bankW> <bankV> > hw/bb_serial_tanner.svh
+fn emit_serial_graph(rounds: usize, sg_p: usize, p_err: f64, bank_w: usize, bank_v: usize) {
+    let (_dem, fx) = build(Some((rounds, p_err)));
+    let view = fx.hw_view();
+    println!(
+        "// M9c serial-gather: rounds={rounds}, p_err={p_err}, P={sg_p}, bankW={bank_w}, \
+         bankV={bank_v} — checks={}, vars={}, edges={}",
+        view.n_checks, view.n_vars, view.n_edges
+    );
+    println!(
+        "// regenerate: cargo run --release -q -p aleph-qec --example qec_q7_bp_graph -- \
+         serialgraph {rounds} {sg_p} {p_err} {bank_w} {bank_v} > hw/bb_serial_tanner.svh"
+    );
+    print_graph(
+        &view,
+        &format!(
+            "Gross BB code [[144,12,12]] CIRCUIT-LEVEL SERIAL-GATHER (rounds={rounds}, \
+             p={p_err}, P={sg_p})"
+        ),
+    );
+    let banking = solve_banking(view, bank_w, bank_v, BANK_SOLVE_SEED);
+    print_banking(&banking);
+    print_rom_rows(&view, &banking);
+    print_serial_gather_roms(&view, &banking, sg_p);
     println!("`endif");
 }
 
@@ -866,6 +914,41 @@ fn solve_banking(hw: FixedHwView<'_>, bank_w: usize, bank_v: usize, seed: u64) -
 /// duplicate `(slot, position)` bank within one check group, a duplicate `(slot, position, β)`
 /// half-bank within one var group, or a `(slot, position)` bank hit more than `BANK_CAP` times within
 /// one var group.
+/// Per-var-group Beneš matchings: `dest_ecm[port][tap] = Some(e_cm bank)` (port 0/1, `tap = s = i *
+/// var_deg + d` over var slot `i` / edge position `d`), `dest_mcm[tap] = Some(m_cm half-bank)`. `None`
+/// = padding (a network tap beyond the group's real bank count — `ecm_m`/`mcm_m` are
+/// `next_power_of_two` of the true counts). Shared by [`print_rom_rows`] (the ROM emit) and
+/// [`verify_banking`] (the gen-time guard) so the guard proves the matching the emitted ROMs actually
+/// pack, not a hand-mirrored copy of it (see M9c step 2.2 task-2 review, Fix 1). Callers still own
+/// `complete_partial`/`benes_control`/apply — this only builds the raw partial matching.
+fn benes_group_matchings(
+    view: FixedHwView<'_>,
+    b: &Banking,
+    g: usize,
+    var_deg: usize,
+    ecm_m: usize,
+    mcm_m: usize,
+) -> ([Vec<Option<usize>>; 2], Vec<Option<usize>>) {
+    let mut dest_ecm = [vec![None; ecm_m], vec![None; ecm_m]];
+    let mut dest_mcm = vec![None; mcm_m];
+    for i in 0..b.v {
+        let var = b.var_at[g * b.v + i];
+        if var < 0 {
+            continue;
+        }
+        let var = var as usize;
+        let deg = (view.var_off[var + 1] - view.var_off[var]) as usize;
+        for d in 0..var_deg.min(deg) {
+            let e = view.var_off[var] as usize + d;
+            let s = i * var_deg + d;
+            let port = b.edge_eport[e] as usize;
+            dest_ecm[port][s] = Some(b.edge_eb[e] as usize);
+            dest_mcm[s] = Some(b.edge_hb[e] as usize);
+        }
+    }
+    (dest_ecm, dest_mcm)
+}
+
 fn verify_banking(hw: FixedHwView<'_>, b: &Banking) {
     let bp_c = hw.n_checks;
     let bp_n = hw.n_vars;
@@ -1029,6 +1112,61 @@ fn verify_banking(hw: FixedHwView<'_>, b: &Banking) {
             port_seen.insert((h, eb, port), ()).is_none(),
             "BP_EDGE_EPORT: var group {h} e_cm bank {eb} has two edges on port {port}"
         );
+    }
+
+    // ---- M9c step 2 (Q7-04) gen-time guard: the Beneš control `print_rom_rows` emits for
+    // BP_ROM_BENES_ECMADDR/ECMRD/MCMWR must realise exactly the per-group tap<->bank matching it is
+    // built from. `benes_group_matchings` is the SHARED matching-builder both this guard and
+    // `print_rom_rows` call (task-2 review Fix 1: two independent copies of this loop only proved
+    // self-consistency, not that the emit used the same construction) — what remains independent here
+    // is the completion/control/apply/assert pipeline below, in the same "recompute from a trusted
+    // primitive and compare" style as the eb/hb/row recompute above.
+    //
+    // e_cm is routed per PORT, not by raw `eb` alone: `eb = slot*BP_CHK_DEG+pos` only encodes (slot,
+    // position), not the row, so the SAME `eb` is legitimately reused by checks in different check-group
+    // rows — within one var group up to BANK_CAP=2 taps can therefore share an `eb` (confirmed
+    // empirically: ~16% of edges are port-1 at both the 16/48 and 8/24 probe configs), exactly what
+    // `BP_EDGE_EPORT` already disambiguates for the pre-M9c mux crossbar. A Beneš network needs an
+    // injective target, so — mirroring Step 1's beta-split for the m_cm CHK read — e_cm routes through
+    // one size-`ecm_m` network PER PORT (0, then 1). m_cm's `hb = eb*2+beta` is already injective per
+    // group (the half_seen check above), so site 4 needs only one network.
+    let var_deg_max = hw
+        .var_off
+        .windows(2)
+        .map(|w| (w[1] - w[0]) as usize)
+        .max()
+        .unwrap_or(0);
+    let neb = b.w * chk_deg_max;
+    let nhb = 2 * neb;
+    let ecm_m = neb.next_power_of_two();
+    let mcm_m = nhb.next_power_of_two();
+    for g in 0..b.gv {
+        // dest_ecm[port][s] = e_cm bank `eb` tap `s` (this group, this port) addresses/reads;
+        // dest_mcm[s] = m_cm half-bank `hb` tap `s` writes. Built by the SAME helper `print_rom_rows`
+        // uses to construct the emitted ROMs, so this guard proves the actual emit routes correctly
+        // (not just a hand-mirrored copy of the construction — see task-2 review Fix 1).
+        let (dest_ecm, dest_mcm) = benes_group_matchings(hw, b, g, var_deg_max, ecm_m, mcm_m);
+        for (port, dest) in dest_ecm.iter().enumerate() {
+            let full = complete_partial(dest, ecm_m);
+            let ctrl = benes_control(&full);
+            let routed = benes_apply(&ctrl, &(0..ecm_m).collect::<Vec<_>>());
+            for (s, target) in dest.iter().enumerate() {
+                if let Some(eb) = target {
+                    assert_eq!(
+                        routed[*eb], s,
+                        "ECM addr route g={g} port={port} s={s} eb={eb}"
+                    );
+                }
+            }
+        }
+        let full_mcm = complete_partial(&dest_mcm, mcm_m);
+        let ctrl_mcm = benes_control(&full_mcm);
+        let routed_mcm = benes_apply(&ctrl_mcm, &(0..mcm_m).collect::<Vec<_>>());
+        for (s, target) in dest_mcm.iter().enumerate() {
+            if let Some(hb) = target {
+                assert_eq!(routed_mcm[*hb], s, "MCM route g={g} s={s} hb={hb}");
+            }
+        }
     }
 }
 
@@ -1323,6 +1461,78 @@ fn print_rom_rows(view: &FixedHwView, b: &Banking) {
         scat_lam.push(r_slam);
     }
 
+    // ---- M9c step 2 (Q7-04): per-group Beneš routing for sites 2/3 (e_cm addr-scatter / read-gather)
+    // and site 4 (m_cm write) — the gather-crossbar fix (design spec; Step 1 did the analogous 2:1
+    // beta-split for the m_cm CHK read). e_cm's raw bank id `eb` (= slot*BP_CHK_DEG+pos) is reused
+    // across different check-group ROWS by construction (it only encodes (slot, position), not the
+    // row), so within one var group up to BANK_CAP=2 taps can share an `eb` — exactly what
+    // `BP_EDGE_EPORT` already disambiguates for the pre-M9c mux crossbar (empirically ~16% of edges are
+    // port-1 at both the 16/48 and 8/24 probe configs). A Beneš network needs an injective target, so
+    // e_cm routes through ONE size-`ecm_m` network PER PORT (0 then 1), packed low-half/high-half into
+    // one ROM row (hence BP_BENES_ECM_PORTS below); m_cm's `hb = eb*2+beta` is already injective per
+    // group (verify_banking's half_seen check), so site 4 uses a single network — no port-count
+    // localparam needed for MCMWR. `verify_banking` calls the same `benes_group_matchings` helper this
+    // fn does (task-2 review Fix 1) to build the per-group matching, then independently re-derives the
+    // control/apply/assert pipeline and checks the control reproduces the matching (gen-time guard,
+    // both bankings) — so the guard gates the matching this fn actually emits, not a hand-mirrored copy.
+    let ecm_m = neb.next_power_of_two();
+    let mcm_m = nhb.next_power_of_two();
+    let ecm_cols = benes_columns(ecm_m);
+    let mcm_cols = benes_columns(mcm_m);
+    println!();
+    println!("localparam int BP_BENES_ECM_M     = {ecm_m};");
+    println!("localparam int BP_BENES_MCM_M     = {mcm_m};");
+    println!("localparam int BP_BENES_ECM_COLS  = {ecm_cols};");
+    println!("localparam int BP_BENES_MCM_COLS  = {mcm_cols};");
+    // Row width for BP_ROM_BENES_ECMADDR/ECMRD is BP_BENES_ECM_PORTS * BP_BENES_ECM_COLS *
+    // (BP_BENES_ECM_M/2) bits (port0 packed low, port1 packed high — see the packing-contract comment
+    // above `emit_rom_table("BP_ROM_BENES_ECMADDR", ...)` below), so tasks 3-5 can derive the per-port
+    // slice offset mechanically instead of hardcoding the "x2". m_cm has no port split (single
+    // network), so there is no BP_BENES_MCM_PORTS.
+    println!("localparam int BP_BENES_ECM_PORTS = 2;");
+
+    // LSB-first 1-bit-field packer for a `Vec<bool>` control vector — mirrors the 1-bit `set` calls
+    // above (e.g. `r_epres.set(..., 1, 1)`).
+    let pack_bits = |bits: &[bool]| -> RomRow {
+        let mut row = RomRow::new(bits.len());
+        for (i, &bit) in bits.iter().enumerate() {
+            row.set(i, 1, u64::from(bit));
+        }
+        row
+    };
+    let invert = |perm: &[usize]| -> Vec<usize> {
+        let mut inv = vec![0usize; perm.len()];
+        for (i, &o) in perm.iter().enumerate() {
+            inv[o] = i;
+        }
+        inv
+    };
+
+    let mut benes_ecmaddr = Vec::with_capacity(gv);
+    let mut benes_ecmrd = Vec::with_capacity(gv);
+    let mut benes_mcmwr = Vec::with_capacity(gv);
+    for g in 0..gv {
+        // dest_ecm[port][s] = e_cm bank `eb` tap `s` (this group, this port) addresses/reads;
+        // dest_mcm[s] = m_cm half-bank `hb` tap `s` writes. Built by the shared
+        // `benes_group_matchings` helper (task-2 review Fix 1) — the SAME construction
+        // `verify_banking`'s gen-time guard calls, so the guard proves what this fn actually emits.
+        let (dest_ecm, dest_mcm) = benes_group_matchings(*view, b, g, var_deg, ecm_m, mcm_m);
+        // addr scatter (tap -> bank) and read gather (bank -> tap = inverse), one pair per port.
+        let mut ctrl_addr = Vec::with_capacity(2 * ecm_cols * (ecm_m / 2));
+        let mut ctrl_read = Vec::with_capacity(2 * ecm_cols * (ecm_m / 2));
+        for dest in &dest_ecm {
+            let full = complete_partial(dest, ecm_m);
+            ctrl_addr.extend(benes_control(&full));
+            ctrl_read.extend(benes_control(&invert(&full)));
+        }
+        let full_mcm = complete_partial(&dest_mcm, mcm_m);
+        let ctrl_mcm = benes_control(&full_mcm);
+
+        benes_ecmaddr.push(pack_bits(&ctrl_addr));
+        benes_ecmrd.push(pack_bits(&ctrl_read));
+        benes_mcmwr.push(pack_bits(&ctrl_mcm));
+    }
+
     println!();
     println!(
         "// ---- M9b BRAM-ROM row literals for bp_relay_banked_bram (GENERATED; packing contract: \
@@ -1347,7 +1557,264 @@ fn print_rom_rows(view: &FixedHwView, b: &Banking) {
     emit_rom_table("BP_ROM_SCAT_HB", "BP_GV", &scat_hb);
     emit_rom_table("BP_ROM_SCAT_ROW", "BP_GV", &scat_row);
     emit_rom_table("BP_ROM_SCAT_LAM", "BP_GV", &scat_lam);
+    // M9c step 2 Beneš control ROMs: ECMADDR/ECMRD rows pack port0 then port1, each
+    // BP_BENES_ECM_COLS*(BP_BENES_ECM_M/2) bits wide, total row width BP_BENES_ECM_PORTS *
+    // BP_BENES_ECM_COLS*(BP_BENES_ECM_M/2) (packing contract above); MCMWR is one
+    // BP_BENES_MCM_COLS*(BP_BENES_MCM_M/2)-bit network, no port split (no BP_BENES_MCM_PORTS).
+    emit_rom_table("BP_ROM_BENES_ECMADDR", "BP_GV", &benes_ecmaddr);
+    emit_rom_table("BP_ROM_BENES_ECMRD", "BP_GV", &benes_ecmrd);
+    emit_rom_table("BP_ROM_BENES_MCMWR", "BP_GV", &benes_mcmwr);
     println!("/* verilator lint_on UNUSEDPARAM */");
+}
+
+/// M9c step 3.2 (Q7-04): build the per-class (e_cm/m_cm/m_vm) conflict-free `P`-bank storage +
+/// read schedule with the pure solver ([`plan_serial`]), [`verify_layout`] each one as the
+/// gen-time guard (fails generation loudly on any collision — design spec § "Offline
+/// conflict-free banking"), and emit the resulting address ROMs + localparams.
+///
+/// Per class, `edges[e] = (logical_bank, row)` mirrors the SAME `(bank, row)` pair the parallel
+/// core already computed for that class's storage:
+/// - **e_cm** (var gathers check messages): `(edge_eb[e], edge_row[e])` — the `neb` (slot,
+///   position) lanes × `gc` check-group rows `print_rom_rows`'s `chk_hbsel`/`var_ebsel` already
+///   address.
+/// - **m_cm** (check gathers / var scatters): `(edge_hb[e], edge_row[e])` — the `nhb` half-banks
+///   × `gc` rows `chk_hbsel`/`scat_hb` already address.
+/// - **m_vm**: `(i*var_deg+d, g)` — the per-`(i,d)`-slot bank id (one physical BRAM per slot in
+///   the parallel core: `hw/bp_relay_banked_bram_m.sv` `NVB = BP_BANK_V*BP_VAR_DEG` banks,
+///   `BWV = clog2(BP_GV)` row width) × the var-group row `g`.
+///
+/// `groups[g]` is the SAME tap-ordered edge list `print_rom_rows`/`benes_group_matchings` already
+/// build for that class's gather — var-side `(i,d)` loop for e_cm/m_vm, check-side `(j,k)` loop
+/// for m_cm — so the serial schedule replays exactly the taps the unchanged
+/// `check_minsum`/`var_update` consumers expect, just spread over `STEPS` cycles instead of one
+/// (design spec § Architecture).
+///
+/// # Panics
+/// Via `verify_layout(...).expect(...)` if any class's schedule fails to verify (should not
+/// happen for a conflict-free `plan_serial` output — see its own panic conditions for the
+/// underlying infeasibility case), and via `plan_serial` itself if some group over-concentrates
+/// one physical bank beyond `steps` occurrences (a real banking/folding finding, not a bug to
+/// paper over — see the module's `overloaded_bank_panics` test).
+fn print_serial_gather_roms(view: &FixedHwView, b: &Banking, sg_p: usize) {
+    let chk_deg = view
+        .check_off
+        .windows(2)
+        .map(|w| w[1] - w[0])
+        .max()
+        .unwrap_or(0) as usize;
+    let var_deg = view
+        .var_off
+        .windows(2)
+        .map(|w| w[1] - w[0])
+        .max()
+        .unwrap_or(0) as usize;
+    let bp_e = view.n_edges;
+
+    // ---- e_cm: var-side (i,d) gather of check messages.
+    let ecm_edges: Vec<(usize, usize)> = b
+        .edge_eb
+        .iter()
+        .zip(&b.edge_row)
+        .map(|(&eb, &row)| (eb as usize, row as usize))
+        .collect();
+    let mut ecm_groups: Vec<Vec<usize>> = Vec::with_capacity(b.gv);
+    for g in 0..b.gv {
+        let mut group = Vec::new();
+        for i in 0..b.v {
+            let var = b.var_at[g * b.v + i];
+            if var < 0 {
+                continue;
+            }
+            let var = var as usize;
+            let deg = (view.var_off[var + 1] - view.var_off[var]) as usize;
+            for d in 0..var_deg.min(deg) {
+                group.push(view.var_off[var] as usize + d);
+            }
+        }
+        ecm_groups.push(group);
+    }
+
+    // ---- m_cm: check-side (j,k) gather of var messages.
+    let mcm_edges: Vec<(usize, usize)> = b
+        .edge_hb
+        .iter()
+        .zip(&b.edge_row)
+        .map(|(&hb, &row)| (hb as usize, row as usize))
+        .collect();
+    let mut mcm_groups: Vec<Vec<usize>> = Vec::with_capacity(b.gc);
+    for g in 0..b.gc {
+        let mut group = Vec::new();
+        for j in 0..b.w {
+            let c = b.chk_at[g * b.w + j];
+            if c < 0 {
+                continue;
+            }
+            let c = c as usize;
+            let deg = (view.check_off[c + 1] - view.check_off[c]) as usize;
+            for k in 0..chk_deg.min(deg) {
+                group.push(view.check_edges[view.check_off[c] as usize + k] as usize);
+            }
+        }
+        mcm_groups.push(group);
+    }
+
+    // ---- m_vm: var-side (i,d) slot store — one physical bank per (i,d) slot in the parallel
+    // core, addressed here by the slot id itself (`i*var_deg+d`) and the var-group row `g`.
+    let mut mvm_edges = vec![(0usize, 0usize); bp_e];
+    let mut mvm_groups: Vec<Vec<usize>> = Vec::with_capacity(b.gv);
+    for g in 0..b.gv {
+        let mut group = Vec::new();
+        for i in 0..b.v {
+            let var = b.var_at[g * b.v + i];
+            if var < 0 {
+                continue;
+            }
+            let var = var as usize;
+            let deg = (view.var_off[var + 1] - view.var_off[var]) as usize;
+            for d in 0..var_deg.min(deg) {
+                let e = view.var_off[var] as usize + d;
+                mvm_edges[e] = (i * var_deg + d, g);
+                group.push(e);
+            }
+        }
+        mvm_groups.push(group);
+    }
+
+    let ecm_layout = plan_serial(&ecm_edges, &ecm_groups, sg_p);
+    verify_layout(&ecm_layout, &ecm_groups)
+        .expect("serial-gather gen-time guard: e_cm layout failed to verify");
+    let mcm_layout = plan_serial(&mcm_edges, &mcm_groups, sg_p);
+    verify_layout(&mcm_layout, &mcm_groups)
+        .expect("serial-gather gen-time guard: m_cm layout failed to verify");
+    let mvm_layout = plan_serial(&mvm_edges, &mvm_groups, sg_p);
+    verify_layout(&mvm_layout, &mvm_groups)
+        .expect("serial-gather gen-time guard: m_vm layout failed to verify");
+
+    let depth_of =
+        |layout: &SerialLayout| -> usize { layout.addr_of.iter().max().map_or(0, |&m| m + 1) };
+
+    println!();
+    println!(
+        "// ---- M9c step 3.2 serial-gather address + residual-select ROMs (GENERATED; design spec \
+         § Architecture / § \"Offline conflict-free banking\" / § \"DESIGN CORRECTION\" residual \
+         output mux). Per class, BP_ROM_SG_<CLASS>_ADDR[g] packs, at bit offset \
+         (step*BP_SG_P+port)*addr_width for every (step,port) in group g's SAME tap order as the \
+         parallel core's gather loop, the intra-bank address `addr_of[edge]` of that tap — \
+         `buffer[step*BP_SG_P+port]` after BP_SG_STEPS_<CLASS> read cycles holds exactly the tap \
+         `verify_layout` proved collision-free at generation time. Unused (step,port) slots (group \
+         shorter than STEPS*P) are zero-padded. BP_ROM_SG_<CLASS>_SEL[g] packs, per TAP (in tap \
+         order, NOT (step,port) slot order), the (bank, step) pair `bp_gather_sel`'s per-tap \
+         `STEPS:1` mux needs to pick that tap's value back out of its fixed bank column and \
+         restore dense tap order for the unchanged check_minsum/var_update — `bank` is the tap's \
+         fixed storage bank (`bank_of[edge]`, static per tap) and `step` is the residual mux's \
+         select line (`sched[g][tap].0`). ----"
+    );
+    println!("localparam int BP_SG_P         = {sg_p};");
+    println!("localparam int BP_SG_STEPS_ECM = {};", ecm_layout.steps);
+    println!("localparam int BP_SG_STEPS_MCM = {};", mcm_layout.steps);
+    println!("localparam int BP_SG_STEPS_MVM = {};", mvm_layout.steps);
+    println!(
+        "localparam int BP_SG_ECM_DEPTH = {};",
+        depth_of(&ecm_layout)
+    );
+    println!(
+        "localparam int BP_SG_MCM_DEPTH = {};",
+        depth_of(&mcm_layout)
+    );
+    println!(
+        "localparam int BP_SG_MVM_DEPTH = {};",
+        depth_of(&mvm_layout)
+    );
+
+    emit_sg_addr_rom("BP_ROM_SG_ECM_ADDR", "BP_GV", &ecm_layout, &ecm_groups);
+    emit_sg_addr_rom("BP_ROM_SG_MCM_ADDR", "BP_GC", &mcm_layout, &mcm_groups);
+    emit_sg_addr_rom("BP_ROM_SG_MVM_ADDR", "BP_GV", &mvm_layout, &mvm_groups);
+
+    emit_sg_sel_rom("BP_ROM_SG_ECM_SEL", "BP_GV", &ecm_layout, &ecm_groups);
+    emit_sg_sel_rom("BP_ROM_SG_MCM_SEL", "BP_GC", &mcm_layout, &mcm_groups);
+    emit_sg_sel_rom("BP_ROM_SG_MVM_SEL", "BP_GV", &mvm_layout, &mvm_groups);
+}
+
+/// Emit one class's `BP_ROM_SG_<CLASS>_ADDR` table: row `g` packs, at bit offset
+/// `(step*p+port)*addr_width`, the intra-bank address `addr_of[edge]` of the tap `layout`
+/// schedules to `(step,port)` for group `g`'s `t`-th tap (`groups[g][t]`) — zero (padding) for
+/// `(step,port)` slots the group doesn't use. `addr_width = max(clog2(depth), 1)` so a
+/// degenerate single-address bank still gets a 1-bit field rather than the zero-width `RomRow`
+/// panics on.
+fn emit_sg_addr_rom(name: &str, depth_expr: &str, layout: &SerialLayout, groups: &[Vec<usize>]) {
+    let depth = layout.addr_of.iter().max().map_or(0, |&m| m + 1);
+    // SystemVerilog `$clog2` twin (ceil(log2 n); 0 for n <= 1) — same definition `print_rom_rows`
+    // uses for its field widths, duplicated locally per that function's own precedent.
+    let clog2 = |n: usize| -> usize {
+        if n <= 1 {
+            0
+        } else {
+            (usize::BITS - (n - 1).leading_zeros()) as usize
+        }
+    };
+    let addr_w = clog2(depth).max(1);
+    let row_w = layout.steps * layout.p * addr_w;
+
+    let rows: Vec<RomRow> = groups
+        .iter()
+        .enumerate()
+        .map(|(g, group)| {
+            let mut row = RomRow::new(row_w);
+            for (t, &edge) in group.iter().enumerate() {
+                let (step, port) = layout.sched[g][t];
+                let slot = step * layout.p + port;
+                row.set(slot * addr_w, addr_w, layout.addr_of[edge] as u64);
+            }
+            row
+        })
+        .collect();
+    emit_rom_table(name, depth_expr, &rows);
+}
+
+/// Emit one class's `BP_ROM_SG_<CLASS>_SEL` table — the residual-mux select ROM the "DESIGN
+/// CORRECTION" section added: row `g` packs, at bit offset `t*(step_w+bank_w)` for group `g`'s
+/// `t`-th tap (`groups[g][t]`, in TAP order — unlike `emit_sg_addr_rom`'s `(step,port)` slot
+/// order), that tap's `(step, bank)` pair from `layout.sched[g][t]` — `step` in the low
+/// `step_w` bits, `bank` in the next `bank_w` bits. `bp_gather_sel` uses `bank` to pick the
+/// fixed buffer column for that tap (static per tap — the same value every call, since an
+/// edge's storage bank never changes) and `step` as the `STEPS:1` mux select within that
+/// column, reconstructing dense tap order for the unchanged `check_minsum`/`var_update`. Row
+/// width is fixed at `max tap count across groups` so every row in the table is the same
+/// width (`emit_rom_table` requires it); groups shorter than that are zero-padded (step=0,
+/// bank=0 — never read, since the RTL only walks each group's own real tap count).
+fn emit_sg_sel_rom(name: &str, depth_expr: &str, layout: &SerialLayout, groups: &[Vec<usize>]) {
+    // SystemVerilog `$clog2` twin — see `emit_sg_addr_rom`'s copy for the shared definition.
+    let clog2 = |n: usize| -> usize {
+        if n <= 1 {
+            0
+        } else {
+            (usize::BITS - (n - 1).leading_zeros()) as usize
+        }
+    };
+    let step_w = clog2(layout.steps).max(1);
+    let bank_w = clog2(layout.p).max(1);
+    let sel_w = step_w + bank_w;
+    let max_taps = groups.iter().map(Vec::len).max().unwrap_or(0).max(1);
+    let row_w = max_taps * sel_w;
+
+    let rows: Vec<RomRow> = groups
+        .iter()
+        .enumerate()
+        .map(|(g, group)| {
+            let mut row = RomRow::new(row_w);
+            for (t, &edge) in group.iter().enumerate() {
+                let (step, bank) = layout.sched[g][t];
+                debug_assert_eq!(
+                    bank, layout.bank_of[edge],
+                    "sel rom: sched bank must match the tap's fixed storage bank"
+                );
+                row.set(t * sel_w, step_w, step as u64);
+                row.set(t * sel_w + step_w, bank_w, bank as u64);
+            }
+            row
+        })
+        .collect();
+    emit_rom_table(name, depth_expr, &rows);
 }
 
 /// Full-decode golden vectors: `T` sampled syndromes with the chosen `ehat`, observable flips, and
@@ -1555,10 +2022,22 @@ fn main() {
             let sseed = args.get(7).and_then(|s| s.parse().ok()).unwrap_or(7u64);
             emit_stream_vectors(rounds, p, w, c, sn, sseed, mode == "streamvectorsearly");
         }
+        "serialgraph" => {
+            // serialgraph rounds P p_err bankW bankV — P (the plan_serial serialization factor)
+            // sits at position 3, ahead of the noise probability p_err (unlike circgraph/wingraph,
+            // where position 3 IS the noise probability) — see design spec § "P (serialization
+            // factor)".
+            let sg_p = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(8usize);
+            let p_err = args.get(4).and_then(|s| s.parse().ok()).unwrap_or(0.003f64);
+            let bank_w = args.get(5).and_then(|s| s.parse().ok()).unwrap_or(16usize);
+            let bank_v = args.get(6).and_then(|s| s.parse().ok()).unwrap_or(48usize);
+            emit_serial_graph(rounds, sg_p, p_err, bank_w, bank_v);
+        }
         other => {
             eprintln!(
                 "unknown mode '{other}'; use graph|vectors|decvectors|circgraph|circvectors|\
-                 circvectorsearly|wingraph|streamgraph|streamvectors|streamvectorsearly"
+                 circvectorsearly|wingraph|streamgraph|streamvectors|streamvectorsearly|\
+                 serialgraph"
             );
             std::process::exit(2);
         }
