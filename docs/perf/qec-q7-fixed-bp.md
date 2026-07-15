@@ -1631,6 +1631,44 @@ M9c deliverable.** A single KV260 cannot hold this core at usable throughput; AC
 larger device. The serial solver/emitter are retained as reusable artifacts if a serial path is
 revisited on bigger silicon.
 
+### M9c Step 4 — e_cm read-addr fabric → BRAM ROM (measured)
+
+The Step-2 audit named the e_cm read-**address** scatter network (`u_benes_ad0/ad1`, 31,474 LUT) as
+a fabric that routes **no runtime data**: its input `{var_epres, var_erow}` and its Beneš control are
+both per-var-group ROM constants, so its output `ra_ecm/rb_ecm` is a pure function of the group. A
+31k-LUT rearrangeable permutation network was computing a fixed lookup. Step 4 replaces it with a
+sync-read BRAM data ROM `BP_ROM_ECM_READROW` holding the resolved read rows, latency-matched to the
+old `PIPE = BENES_PIPE_ECM` (3) so the decode is byte-identical (spec
+`docs/superpowers/specs/2026-07-15-m9c-ecm-addr-rom-design.md`, plan
+`docs/superpowers/plans/2026-07-15-m9c-ecm-addr-rom.md`). Bit-exact **40/40 vs `FixedRelayBp`** at
+both bankings; worst-case latency **unchanged** (2810 @ 8/24, 4475 @ 16/48). OOC synth on `xck26`
+(Vivado 2024.2, 16/48):
+
+| metric | Step-2 Beneš | **Step-4 addr→ROM** | Δ |
+|--------|--------------|---------------------|---|
+| **CLB LUTs** | 239,750 (204.7 %) | **206,931 (176.7 %)** | **−32,819 (−28 pts)** |
+| **Block RAM Tile** | 218.5 (151.7 %) | **164.5 (114.2 %)** | **−54 tiles (−37 pts)** |
+| CLB Registers | 115,893 (49.5 %) | 102,062 (43.6 %) | −13,831 |
+| Fmax (WNS) | 177.7 MHz (−0.628 ns) | 177.7 MHz (−0.628 ns) | unchanged |
+
+**Correction to the Step-2 resource framing (important).** The Step-2 note reported BRAM at "77 %",
+which was a RAMB18-slot count (223/288); the **binding** device metric is **Block RAM Tiles**, and
+the Step-2 core was at **218.5/144 = 151.7 % — over budget on BRAM as well as LUTs.** A KV260 fit is
+therefore a **two-constraint** problem (LUT ≤ 100 % **and** BRAM ≤ 100 %); the Beneš rewrite had
+traded one over-budget resource (LUT) for two. Step 4's BRAM drop is outsized (−54 tiles for a 31k-LUT
+fabric) because the removed addr **control** ROM was very **wide** (`BP_ROM_BENES_ECMADDR`, 8704 bits ×
+18) — BRAM tile count scales with ROM *width* (bits / ~72 per RAMB18), not total bits — while the new
+`BP_ROM_ECM_READROW` is narrow (3200 bits × 18). So eliminating the fabric shrank **both** blockers at
+once.
+
+**Verdict: still NO-FIT, but both constraints materially down** — LUT 204.7 → 176.7 %, BRAM 151.7 →
+114.2 %. The next lever (partial-permutation right-sizing of the m_cm write / e_cm read fabrics for the
+real ~288-writer injections rather than padded 1024/512) attacks the two widest survivors —
+`BP_ROM_BENES_MCMWR` (9728 bits) and `BP_ROM_BENES_ECMRD` (8704 bits) — which are now the dominant
+BRAM **and** LUT hogs, so it hits both blockers together. Waksman (~5 % at N=1024/512, doc's earlier
+"~25 %" was wrong for these sizes) and read/addr time-share stay deferred as marginal. AC-3 on-silicon
+remains blocked on reaching a routable two-constraint fit.
+
 ## Deviations from the design spec
 
 - **Uniform hardware schedule, not per-slot exact DEMs** — one baked interior window graph
