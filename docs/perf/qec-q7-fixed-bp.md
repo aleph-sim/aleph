@@ -1604,6 +1604,33 @@ permutation and its inverse) to halve the four e_cm nets; trim payload widths. F
 secondary blocker (close; deeper pipelining or retiming). AC-3 (on-silicon sustained rate) stays
 blocked on reaching a routable fit.
 
+### Step 3 (serial gather) — explored, area-probed, does not fit either ⇒ Beneš is the M9c deliverable
+
+To close the residual 2.05×, a **memory-based serial gather** was designed (spec
+`docs/superpowers/specs/2026-07-15-m9c-serial-gather-design.md`, plan `.../plans/2026-07-15-m9c-serial-gather.md`):
+store messages in P BRAM banks, read P/cycle over `ceil(N/P)` steps. The conflict-free slot solver
+(`crates/aleph-qec/src/serial_gather.rs`) and its emitter (`serialgraph` mode) were built and are
+committed. Two findings killed it for a KV260 fit:
+
+1. **Fully mux-free is infeasible** — an edge's storage bank cannot equal its tap-position in *both*
+   its write-group and read-group, so a dense-tap-order buffer (mux-free consumer read) can't exist;
+   and folding 400 logical banks onto P physical banks concentrates real groups (a 164-edge group put
+   >21 edges in one bank at P=8). The design fell back to a per-tap **`STEPS:1` residual select**.
+2. **The residual select is as expensive as the crossbar** — OOC probe on `xck26` (read-side, per
+   class): m_cm `STEPS:1` select = **54,045 LUT** at P=8 (STEPS=57), e_cm 20,736, m_vm 19,872 ⇒ ~95k
+   read-side alone; each class is both read and written, so ~190k + the ~65k real decoder ≈ **255k,
+   worse than Beneš's 240k**. Reordering N items by a per-item `STEPS:1` mux is O(N·STEPS) — the same
+   order as the crossbar it replaced. Only a **fully-serial (P=1–2, one BRAM)** gather is genuinely
+   mux-free and small, but at ~288 cycles/group it pushes the decode into hundreds of µs (~1000× the
+   ~1 µs budget) — not viable.
+
+**Conclusion:** this fully-parallel decoder's gather is a large permutation; every realization
+(crossbar 19×, Beneš 2.05×, serial+residual-mux ~2×+) exceeds the KV260, and the only fitting variant
+is far too slow. **The Step-2 Beneš core (9.3× LUT cut, bit-exact 40/40, synthesized) is the honest
+M9c deliverable.** A single KV260 cannot hold this core at usable throughput; AC-3 on-silicon needs a
+larger device. The serial solver/emitter are retained as reusable artifacts if a serial path is
+revisited on bigger silicon.
+
 ## Deviations from the design spec
 
 - **Uniform hardware schedule, not per-slot exact DEMs** — one baked interior window graph
