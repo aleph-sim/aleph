@@ -32,6 +32,31 @@ over `ceil(N/P)` cycles into an **in-order buffer**, then feed the *unchanged* p
 runtime-indexed register mux — the ROM feeds **BRAM address ports**, the bank-select and buffer
 position are **cycle-counter** driven (compile-time-sequenced constants).
 
+## ⚠️ DESIGN CORRECTION (2026-07-15, after Task-3.1/3.2 exposed it — SUPERSEDES the "fully mux-free" claim)
+
+A **fully** mux-free serial gather does **not exist** for this dual-access structure. The buffer being
+in dense tap order (so consumers read `buffer[i*VAR_DEG+d]` at a constant index) would require each
+edge's storage bank to equal its **tap-position-mod-P** — but every message is accessed in **two**
+groupings (written by a check-group, read by a var-group) with *different* tap positions, so no single
+storage bank satisfies both. Also, folding 400 logical banks onto P physical banks does **not** keep
+each group balanced: a real 164-edge group at P=8 concentrated > `ceil(164/8)=21` edges in one physical
+bank (the solver correctly panicked rather than emit a bad schedule).
+
+**Resolution (user decision):** keep a **small residual output mux**. The serial gather writes into a
+`P × STEPS` buffer indexed by **(bank, step)** — bank-select and step are counters (mux-free write) —
+and a per-tap **STEPS-way select** (ROM-fed step index, at the tap's fixed bank column) reorders into
+tap order for the unchanged `check_minsum`/`var_update`. This is **not** mux-free, but the residual
+select is **~STEPS-way (~21–30:1) per tap**, ~10× smaller than the eliminated 400/800-way crossbar, and
+serialized — expected to fit. Consequences that **override** the sections below:
+- **`serial_steps`/`plan_serial`:** `STEPS = max over groups of (max per physical bank of that group's
+  edge count)` — the *actual* bottleneck, **never panic** (always feasible). Folding still aims to
+  balance (minimise STEPS) for throughput, but correctness no longer depends on it.
+- **`SerialLayout.sched[g][tap] = (step, bank)`** for every tap (bank = the edge's storage bank); the
+  emitter emits, per group per tap, the **step index** for the residual select ROM (`BP_ROM_SG_*_SEL`),
+  plus the intra-bank read addresses as before.
+- **RTL:** add a `bp_gather_sel` stage — per tap, a `STEPS:1` mux over the buffer's step-slots at the
+  tap's fixed bank, selected by the step-index ROM → dense tap-order output.
+
 ## Architecture
 
 ```
