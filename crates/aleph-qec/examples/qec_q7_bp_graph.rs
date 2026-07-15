@@ -1484,9 +1484,9 @@ fn print_rom_rows(view: &FixedHwView, b: &Banking) {
     println!("localparam int BP_BENES_MCM_M     = {mcm_m};");
     println!("localparam int BP_BENES_ECM_COLS  = {ecm_cols};");
     println!("localparam int BP_BENES_MCM_COLS  = {mcm_cols};");
-    // Row width for BP_ROM_BENES_ECMADDR/ECMRD is BP_BENES_ECM_PORTS * BP_BENES_ECM_COLS *
+    // Row width for BP_ROM_BENES_ECMRD is BP_BENES_ECM_PORTS * BP_BENES_ECM_COLS *
     // (BP_BENES_ECM_M/2) bits (port0 packed low, port1 packed high — see the packing-contract comment
-    // above `emit_rom_table("BP_ROM_BENES_ECMADDR", ...)` below), so tasks 3-5 can derive the per-port
+    // above `emit_rom_table("BP_ROM_BENES_ECMRD", ...)` below), so tasks 3-5 can derive the per-port
     // slice offset mechanically instead of hardcoding the "x2". m_cm has no port split (single
     // network), so there is no BP_BENES_MCM_PORTS.
     println!("localparam int BP_BENES_ECM_PORTS = 2;");
@@ -1508,7 +1508,89 @@ fn print_rom_rows(view: &FixedHwView, b: &Banking) {
         inv
     };
 
-    let mut benes_ecmaddr = Vec::with_capacity(gv);
+    // M9c Step 4 (Q7-04): resolved e_cm read-address ROM. The addr Beneš fabric routed the static
+    // per-group {var_epres, var_erow} payload to e_cm banks; its output ra_ecm/rb_ecm is therefore a
+    // pure function of the group. Precompute it here: for var group g, bank b, port p, the read row is
+    // edge_row of the (unique, <=1-per-bank-per-port) tap that lands on (b, p), else 0. Consumes NO
+    // runtime data -> replaces the 512x2 network (`bp_benes_ecm_addr` x2) with this data ROM.
+    // Bit-exact note: the old fabric emitted 0 both for an absent tap AND for a present tap whose row
+    // is 0 (`valid ? row : '0`, and check-group 0 has row 0) -> storing bwc row bits (0 in both cases)
+    // reproduces it exactly; no valid bit is needed.
+    let mut benes_readrow = Vec::with_capacity(gv);
+    for g in 0..gv {
+        let mut r_readrow = RomRow::new(neb * 2 * bwc);
+        for i in 0..vcap {
+            let var = b.var_at[g * vcap + i];
+            if var < 0 {
+                continue;
+            }
+            let var = var as usize;
+            let deg = (view.var_off[var + 1] - view.var_off[var]) as usize;
+            for d in 0..var_deg.min(deg) {
+                let e = view.var_off[var] as usize + d;
+                let bank = b.edge_eb[e] as usize; // 0..neb
+                let port = b.edge_eport[e] as usize; // 0/1
+                let row = b.edge_row[e] as u64; // bwc bits
+                r_readrow.set((bank * 2 + port) * bwc, bwc, row);
+            }
+        }
+        benes_readrow.push(r_readrow);
+    }
+
+    // Gen-time guard: reproduce the readrow table via the addr Beneš permutation (complete_partial +
+    // benes_control + benes_apply) and assert bank-for-bank equality. This ties the data ROM to the
+    // SAME trusted permutation the pre-Step-4 fabric realised (benes.rs round-trip oracle), not a
+    // hand-mirrored map. Panics loudly on any divergence, both bankings.
+    // Small LSB-first reader over RomRow's `bits: Vec<bool>` (RomRow exposes `set` but no `get`).
+    let read_field = |row: &RomRow, lo: usize, width: usize| -> u64 {
+        let mut v = 0u64;
+        for i in 0..width {
+            if row.bits[lo + i] {
+                v |= 1u64 << i;
+            }
+        }
+        v
+    };
+    #[allow(clippy::needless_range_loop)] // g is the group index, used throughout the body
+    for g in 0..gv {
+        let (dest_ecm, _) = benes_group_matchings(*view, b, g, var_deg, ecm_m, mcm_m);
+        // Per-tap payload = row (0 when absent), matching the store.
+        let mut erow_of_tap = vec![0u64; ecm_m];
+        for i in 0..vcap {
+            let var = b.var_at[g * vcap + i];
+            if var < 0 {
+                continue;
+            }
+            let var = var as usize;
+            let deg = (view.var_off[var + 1] - view.var_off[var]) as usize;
+            for d in 0..var_deg.min(deg) {
+                let e = view.var_off[var] as usize + d;
+                erow_of_tap[i * var_deg + d] = b.edge_row[e] as u64;
+            }
+        }
+        for (port, dest) in dest_ecm.iter().enumerate() {
+            let full = complete_partial(dest, ecm_m);
+            let routed = benes_apply(&benes_control(&full), &(0..ecm_m).collect::<Vec<_>>());
+            // routed[out] = the input tap landing at output bank `out`.
+            #[allow(clippy::needless_range_loop)]
+            // bank is used to index both routed and the ROM field offset
+            for bank in 0..neb {
+                let tap = routed[bank];
+                let expect = if dest[tap].is_some() {
+                    erow_of_tap[tap]
+                } else {
+                    0
+                };
+                let got = read_field(&benes_readrow[g], (bank * 2 + port) * bwc, bwc);
+                assert_eq!(
+                    got, expect,
+                    "BP_ROM_ECM_READROW guard: group {g} bank {bank} port {port} \
+                     got {got} want {expect}"
+                );
+            }
+        }
+    }
+
     let mut benes_ecmrd = Vec::with_capacity(gv);
     let mut benes_mcmwr = Vec::with_capacity(gv);
     for g in 0..gv {
@@ -1517,18 +1599,17 @@ fn print_rom_rows(view: &FixedHwView, b: &Banking) {
         // `benes_group_matchings` helper (task-2 review Fix 1) — the SAME construction
         // `verify_banking`'s gen-time guard calls, so the guard proves what this fn actually emits.
         let (dest_ecm, dest_mcm) = benes_group_matchings(*view, b, g, var_deg, ecm_m, mcm_m);
-        // addr scatter (tap -> bank) and read gather (bank -> tap = inverse), one pair per port.
-        let mut ctrl_addr = Vec::with_capacity(2 * ecm_cols * (ecm_m / 2));
+        // read gather (bank -> tap = inverse), one per port. The addr scatter (tap -> bank) control is
+        // gone (M9c Step 4a): ra_ecm/rb_ecm is now the precomputed BP_ROM_ECM_READROW data ROM above,
+        // not a runtime Beneš route.
         let mut ctrl_read = Vec::with_capacity(2 * ecm_cols * (ecm_m / 2));
         for dest in &dest_ecm {
             let full = complete_partial(dest, ecm_m);
-            ctrl_addr.extend(benes_control(&full));
             ctrl_read.extend(benes_control(&invert(&full)));
         }
         let full_mcm = complete_partial(&dest_mcm, mcm_m);
         let ctrl_mcm = benes_control(&full_mcm);
 
-        benes_ecmaddr.push(pack_bits(&ctrl_addr));
         benes_ecmrd.push(pack_bits(&ctrl_read));
         benes_mcmwr.push(pack_bits(&ctrl_mcm));
     }
@@ -1557,11 +1638,16 @@ fn print_rom_rows(view: &FixedHwView, b: &Banking) {
     emit_rom_table("BP_ROM_SCAT_HB", "BP_GV", &scat_hb);
     emit_rom_table("BP_ROM_SCAT_ROW", "BP_GV", &scat_row);
     emit_rom_table("BP_ROM_SCAT_LAM", "BP_GV", &scat_lam);
-    // M9c step 2 Beneš control ROMs: ECMADDR/ECMRD rows pack port0 then port1, each
+    // M9c Step 4a: resolved e_cm read-address data ROM (see the builder/guard above) replaces the old
+    // BP_ROM_BENES_ECMADDR scatter network — ra_ecm/rb_ecm are a pure function of the group, not a
+    // runtime Beneš route. Row width NEB*2*BWC bits: bank `bk` port `p` field at (bk*2+p)*BWC +: BWC.
+    println!();
+    println!("localparam int BP_ECM_READROW_W = {};", neb * 2 * bwc);
+    emit_rom_table("BP_ROM_ECM_READROW", "BP_GV", &benes_readrow);
+    // M9c step 2 Beneš control ROM: ECMRD rows pack port0 then port1, each
     // BP_BENES_ECM_COLS*(BP_BENES_ECM_M/2) bits wide, total row width BP_BENES_ECM_PORTS *
     // BP_BENES_ECM_COLS*(BP_BENES_ECM_M/2) (packing contract above); MCMWR is one
     // BP_BENES_MCM_COLS*(BP_BENES_MCM_M/2)-bit network, no port split (no BP_BENES_MCM_PORTS).
-    emit_rom_table("BP_ROM_BENES_ECMADDR", "BP_GV", &benes_ecmaddr);
     emit_rom_table("BP_ROM_BENES_ECMRD", "BP_GV", &benes_ecmrd);
     emit_rom_table("BP_ROM_BENES_MCMWR", "BP_GV", &benes_mcmwr);
     println!("/* verilator lint_on UNUSEDPARAM */");
