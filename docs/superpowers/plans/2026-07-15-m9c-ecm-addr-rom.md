@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Execution corrections (post-merge, for the record):** (1) Task 2 Step 4's delay chain must be `BENES_PIPE_ECM` deep (=3), NOT `BENES_PIPE_ECM-1` — the ROM sync-read lands on the same cycle the old fabric's `din` did, so reaching `t+PIPE` needs the full PIPE stages (co-sim caught this: 39/40 -> 40/40; matches the file's own `benes_ecmrd_q_d` idiom). (2) The baseline worst-case latency pairing is **8/24 -> 4475, 16/48 -> 2810** (perf-doc: 2206/3871 + 604 uniform), the reverse of what an earlier draft stated. (3) BRAM was already over budget at 151.7%% (Block RAM Tiles, not the mis-stated 77%% RAMB18 count) — addr->ROM measured -54 tiles, so it helped both constraints.
+
 **Goal:** Replace the static e_cm read-address Beneš fabric (`u_benes_ad0/ad1`, 31,474 LUT) in `bp_relay_banked_bram_m.sv` with a sync-read BRAM data ROM of the resolved read rows, keeping the core bit-exact.
 
 **Architecture:** The addr fabric routes only per-group ROM constants (`{var_epres, var_erow}` under ROM control), so its output `ra_ecm/rb_ecm` is a pure function of the var-group. The emitter precomputes that lookup into `BP_ROM_ECM_READROW`; the RTL reads it and latency-matches to the old `BENES_PIPE_ECM` depth so every downstream schedule offset is untouched.
