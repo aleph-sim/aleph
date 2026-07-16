@@ -39,9 +39,10 @@
 //!       serialgraph <rounds> <P> <p_err> <bankW> <bankV> > hw/bb_serial_tanner.svh
 
 use aleph_qec::{
-    benes_apply, benes_columns, benes_control, complete_partial, plan_serial, verify_layout,
-    BBCode, CircuitNoise, DetectorErrorModel, FixedHwView, FixedRelayBp, HwSlidingWindowBp,
-    SerialLayout, SlidingWindowBp,
+    aswaksman_apply, aswaksman_control, aswaksman_switch_count, benes_apply, benes_columns,
+    benes_control, complete_partial, plan_serial, verify_layout, BBCode, CircuitNoise,
+    DetectorErrorModel, FixedHwView, FixedRelayBp, HwSlidingWindowBp, SerialLayout,
+    SlidingWindowBp,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -1114,22 +1115,24 @@ fn verify_banking(hw: FixedHwView<'_>, b: &Banking) {
         );
     }
 
-    // ---- M9c step 2 (Q7-04) gen-time guard: the Beneš control `print_rom_rows` emits for
-    // BP_ROM_BENES_ECMADDR/ECMRD/MCMWR must realise exactly the per-group tap<->bank matching it is
-    // built from. `benes_group_matchings` is the SHARED matching-builder both this guard and
-    // `print_rom_rows` call (task-2 review Fix 1: two independent copies of this loop only proved
-    // self-consistency, not that the emit used the same construction) — what remains independent here
-    // is the completion/control/apply/assert pipeline below, in the same "recompute from a trusted
-    // primitive and compare" style as the eb/hb/row recompute above.
+    // ---- M9c step 2 (Q7-04), right-sized to AS-Waksman at Step 5b (Q7-04): the AS-Waksman control
+    // `print_rom_rows` emits for BP_ROM_BENES_ECMRD/MCMWR must realise exactly the per-group
+    // tap<->bank matching it is built from. `benes_group_matchings` is the SHARED matching-builder
+    // both this guard and `print_rom_rows` call (task-2 review Fix 1: two independent copies of this
+    // loop only proved self-consistency, not that the emit used the same construction) — what remains
+    // independent here is the completion/control/apply/assert pipeline below, in the same "recompute
+    // from a trusted primitive and compare" style as the eb/hb/row recompute above.
     //
     // e_cm is routed per PORT, not by raw `eb` alone: `eb = slot*BP_CHK_DEG+pos` only encodes (slot,
     // position), not the row, so the SAME `eb` is legitimately reused by checks in different check-group
     // rows — within one var group up to BANK_CAP=2 taps can therefore share an `eb` (confirmed
     // empirically: ~16% of edges are port-1 at both the 16/48 and 8/24 probe configs), exactly what
-    // `BP_EDGE_EPORT` already disambiguates for the pre-M9c mux crossbar. A Beneš network needs an
-    // injective target, so — mirroring Step 1's beta-split for the m_cm CHK read — e_cm routes through
-    // one size-`ecm_m` network PER PORT (0, then 1). m_cm's `hb = eb*2+beta` is already injective per
-    // group (the half_seen check above), so site 4 needs only one network.
+    // `BP_EDGE_EPORT` already disambiguates for the pre-M9c mux crossbar. A rearrangeable network needs
+    // an injective target, so — mirroring Step 1's beta-split for the m_cm CHK read — e_cm routes
+    // through one size-`neb` AS-Waksman network PER PORT (0, then 1). m_cm's `hb = eb*2+beta` is
+    // already injective per group (the half_seen check above), so site 4 needs only one size-`nhb`
+    // network. AS-Waksman is sized to the REAL bank counts (neb/nhb), not the power-of-two-padded
+    // Beneš `ecm_m`/`mcm_m` `print_rom_rows` still uses for the untouched Step-4 READROW guard.
     let var_deg_max = hw
         .var_off
         .windows(2)
@@ -1138,18 +1141,16 @@ fn verify_banking(hw: FixedHwView<'_>, b: &Banking) {
         .unwrap_or(0);
     let neb = b.w * chk_deg_max;
     let nhb = 2 * neb;
-    let ecm_m = neb.next_power_of_two();
-    let mcm_m = nhb.next_power_of_two();
     for g in 0..b.gv {
         // dest_ecm[port][s] = e_cm bank `eb` tap `s` (this group, this port) addresses/reads;
         // dest_mcm[s] = m_cm half-bank `hb` tap `s` writes. Built by the SAME helper `print_rom_rows`
         // uses to construct the emitted ROMs, so this guard proves the actual emit routes correctly
         // (not just a hand-mirrored copy of the construction — see task-2 review Fix 1).
-        let (dest_ecm, dest_mcm) = benes_group_matchings(hw, b, g, var_deg_max, ecm_m, mcm_m);
+        let (dest_ecm, dest_mcm) = benes_group_matchings(hw, b, g, var_deg_max, neb, nhb);
         for (port, dest) in dest_ecm.iter().enumerate() {
-            let full = complete_partial(dest, ecm_m);
-            let ctrl = benes_control(&full);
-            let routed = benes_apply(&ctrl, &(0..ecm_m).collect::<Vec<_>>());
+            let full = complete_partial(dest, neb);
+            let ctrl = aswaksman_control(&full);
+            let routed = aswaksman_apply(&ctrl, &(0..neb).collect::<Vec<_>>());
             for (s, target) in dest.iter().enumerate() {
                 if let Some(eb) = target {
                     assert_eq!(
@@ -1159,9 +1160,9 @@ fn verify_banking(hw: FixedHwView<'_>, b: &Banking) {
                 }
             }
         }
-        let full_mcm = complete_partial(&dest_mcm, mcm_m);
-        let ctrl_mcm = benes_control(&full_mcm);
-        let routed_mcm = benes_apply(&ctrl_mcm, &(0..mcm_m).collect::<Vec<_>>());
+        let full_mcm = complete_partial(&dest_mcm, nhb);
+        let ctrl_mcm = aswaksman_control(&full_mcm);
+        let routed_mcm = aswaksman_apply(&ctrl_mcm, &(0..nhb).collect::<Vec<_>>());
         for (s, target) in dest_mcm.iter().enumerate() {
             if let Some(hb) = target {
                 assert_eq!(routed_mcm[*hb], s, "MCM route g={g} s={s} hb={hb}");
@@ -1484,12 +1485,25 @@ fn print_rom_rows(view: &FixedHwView, b: &Banking) {
     println!("localparam int BP_BENES_MCM_M     = {mcm_m};");
     println!("localparam int BP_BENES_ECM_COLS  = {ecm_cols};");
     println!("localparam int BP_BENES_MCM_COLS  = {mcm_cols};");
-    // Row width for BP_ROM_BENES_ECMRD is BP_BENES_ECM_PORTS * BP_BENES_ECM_COLS *
-    // (BP_BENES_ECM_M/2) bits (port0 packed low, port1 packed high — see the packing-contract comment
-    // above `emit_rom_table("BP_ROM_BENES_ECMRD", ...)` below), so tasks 3-5 can derive the per-port
-    // slice offset mechanically instead of hardcoding the "x2". m_cm has no port split (single
-    // network), so there is no BP_BENES_MCM_PORTS.
+    // As of M9c Step 5b (Q7-04), row width for BP_ROM_BENES_ECMRD is BP_BENES_ECM_PORTS *
+    // BP_ASW_ECM_SW bits (port0 packed low, port1 packed high — see the packing-contract comment above
+    // `emit_rom_table("BP_ROM_BENES_ECMRD", ...)` below); BP_ROM_BENES_MCMWR is BP_ASW_MCM_SW bits,
+    // single network (no port split, no BP_BENES_MCM_PORTS). BP_BENES_ECM_M/MCM_M/COLS above stay the
+    // power-of-two-padded Beneš sizing: the RTL (`hw/bp_relay_banked_bram_m.sv`) still instantiates
+    // `bp_benes_ecm_read`/`bp_benes_mcm_wr` at those widths (a later RTL task swaps the consumers to
+    // AS-Waksman). BP_ROM_BENES_MCMWR/ECMRD's row CONTENT below is narrowed to AS-Waksman at the REAL
+    // (unpadded) bank counts nhb/neb — the BRAM lever — sized by the new BP_ASW_* localparams.
     println!("localparam int BP_BENES_ECM_PORTS = 2;");
+    println!("localparam int BP_ASW_MCM_N   = {nhb};");
+    println!(
+        "localparam int BP_ASW_MCM_SW  = {};",
+        aswaksman_switch_count(nhb)
+    );
+    println!("localparam int BP_ASW_ECM_N   = {neb};");
+    println!(
+        "localparam int BP_ASW_ECM_SW  = {};",
+        aswaksman_switch_count(neb)
+    );
 
     // LSB-first 1-bit-field packer for a `Vec<bool>` control vector — mirrors the 1-bit `set` calls
     // above (e.g. `r_epres.set(..., 1, 1)`).
@@ -1591,6 +1605,11 @@ fn print_rom_rows(view: &FixedHwView, b: &Banking) {
         }
     }
 
+    // M9c Step 5b (Q7-04): m_cm write / e_cm read control now synthesise via AS-Waksman at the REAL
+    // (unpadded) bank counts nhb/neb instead of the power-of-two-padded Beneš mcm_m/ecm_m — this is
+    // the BRAM lever (narrower ROM rows: BP_ASW_MCM_SW/ECM_SW switches vs. the old
+    // BP_BENES_MCM_COLS*(BP_BENES_MCM_M/2) / BP_BENES_ECM_COLS*(BP_BENES_ECM_M/2) Beneš control width).
+    let asw_ecm_sw = aswaksman_switch_count(neb);
     let mut benes_ecmrd = Vec::with_capacity(gv);
     let mut benes_mcmwr = Vec::with_capacity(gv);
     for g in 0..gv {
@@ -1598,17 +1617,19 @@ fn print_rom_rows(view: &FixedHwView, b: &Banking) {
         // dest_mcm[s] = m_cm half-bank `hb` tap `s` writes. Built by the shared
         // `benes_group_matchings` helper (task-2 review Fix 1) — the SAME construction
         // `verify_banking`'s gen-time guard calls, so the guard proves what this fn actually emits.
-        let (dest_ecm, dest_mcm) = benes_group_matchings(*view, b, g, var_deg, ecm_m, mcm_m);
+        // Sized to neb/nhb (real, unpadded) — not ecm_m/mcm_m, which stay Beneš-padded for the
+        // untouched Step-4 READROW guard above.
+        let (dest_ecm, dest_mcm) = benes_group_matchings(*view, b, g, var_deg, neb, nhb);
         // read gather (bank -> tap = inverse), one per port. The addr scatter (tap -> bank) control is
         // gone (M9c Step 4a): ra_ecm/rb_ecm is now the precomputed BP_ROM_ECM_READROW data ROM above,
-        // not a runtime Beneš route.
-        let mut ctrl_read = Vec::with_capacity(2 * ecm_cols * (ecm_m / 2));
+        // not a runtime route.
+        let mut ctrl_read = Vec::with_capacity(2 * asw_ecm_sw);
         for dest in &dest_ecm {
-            let full = complete_partial(dest, ecm_m);
-            ctrl_read.extend(benes_control(&invert(&full)));
+            let full = complete_partial(dest, neb);
+            ctrl_read.extend(aswaksman_control(&invert(&full)));
         }
-        let full_mcm = complete_partial(&dest_mcm, mcm_m);
-        let ctrl_mcm = benes_control(&full_mcm);
+        let full_mcm = complete_partial(&dest_mcm, nhb);
+        let ctrl_mcm = aswaksman_control(&full_mcm);
 
         benes_ecmrd.push(pack_bits(&ctrl_read));
         benes_mcmwr.push(pack_bits(&ctrl_mcm));
@@ -1644,10 +1665,9 @@ fn print_rom_rows(view: &FixedHwView, b: &Banking) {
     println!();
     println!("localparam int BP_ECM_READROW_W = {};", neb * 2 * bwc);
     emit_rom_table("BP_ROM_ECM_READROW", "BP_GV", &benes_readrow);
-    // M9c step 2 Beneš control ROM: ECMRD rows pack port0 then port1, each
-    // BP_BENES_ECM_COLS*(BP_BENES_ECM_M/2) bits wide, total row width BP_BENES_ECM_PORTS *
-    // BP_BENES_ECM_COLS*(BP_BENES_ECM_M/2) (packing contract above); MCMWR is one
-    // BP_BENES_MCM_COLS*(BP_BENES_MCM_M/2)-bit network, no port split (no BP_BENES_MCM_PORTS).
+    // M9c Step 5b (Q7-04) AS-Waksman control ROM: ECMRD rows pack port0 then port1, each
+    // BP_ASW_ECM_SW bits wide, total row width BP_BENES_ECM_PORTS * BP_ASW_ECM_SW (packing contract
+    // above); MCMWR is one BP_ASW_MCM_SW-bit network, no port split (no BP_BENES_MCM_PORTS).
     emit_rom_table("BP_ROM_BENES_ECMRD", "BP_GV", &benes_ecmrd);
     emit_rom_table("BP_ROM_BENES_MCMWR", "BP_GV", &benes_mcmwr);
     println!("/* verilator lint_on UNUSEDPARAM */");
