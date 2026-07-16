@@ -18,6 +18,7 @@
 //! external [`PyMatchingOracle`] (Q0-04); and the [`MatchingGraph`] that turns a graph-like DEM
 //! into the weighted detector-plus-boundary graph matching decoders consume (Q1-01).
 
+mod aswaksman;
 mod benes;
 mod bivariate_bicycle;
 mod blossom;
@@ -41,6 +42,7 @@ mod surface;
 mod syndrome;
 mod union_find;
 
+pub use aswaksman::{aswaksman_apply, aswaksman_control, aswaksman_switch_count};
 pub use benes::{benes_apply, benes_columns, benes_control, complete_partial};
 pub use bivariate_bicycle::{BBCode, BBMemoryExperiment};
 pub use bp::{BpDecoder, BpSoft, TannerGraph, DEFAULT_MAX_ITER};

@@ -28,7 +28,6 @@ pub fn benes_columns(m: usize) -> usize {
 /// Panics if `dest` assigns two inputs to the same output (violates the
 /// ≤1-per-bank invariant the caller relies on).
 pub fn complete_partial(dest: &[Option<usize>], m: usize) -> Vec<usize> {
-    assert!(m.is_power_of_two());
     assert_eq!(dest.len(), m);
     let mut used = vec![false; m];
     let mut out = vec![usize::MAX; m];
@@ -294,5 +293,14 @@ mod tests {
     #[should_panic]
     fn duplicate_target_rejected() {
         complete_partial(&[Some(3), Some(3), None, None], 4);
+    }
+
+    #[test]
+    fn complete_partial_non_power_of_two() {
+        // m = 3 is not a power of two: unused output {1} fills the None input.
+        assert_eq!(
+            complete_partial(&[Some(2), None, Some(0)], 3),
+            vec![2, 1, 0]
+        );
     }
 }
