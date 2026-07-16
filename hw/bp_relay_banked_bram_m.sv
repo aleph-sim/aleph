@@ -239,11 +239,14 @@ endmodule
 // Row width = PORTS * COLS * (M/2) (never hard-coded: adapts to the per-banking M). Addressed by the
 // same var read-group cursor as the other var-gather ROMs so its output aligns to the pc-1 launch and
 // is held stable for that group's single-cycle window (satisfies the fabric's combinational ctrl-hold).
+// M9c Step 5d: row width is now BP_ASW_ECM_SW (AS-Waksman switch count at the REAL neb bank count)
+// per port, not the old power-of-two-padded Beneš COLS*(M/2) width -- the emitter narrowed the ROM
+// content to match (Task 2); this cell's declared width follows.
 module bp_rom_benes_ecmrd_bqm (
     input  logic clk, input logic [BQM_AWV-1:0] addr,
-    output logic [BP_BENES_ECM_PORTS*BP_BENES_ECM_COLS*(BP_BENES_ECM_M/2)-1:0] q);
+    output logic [BP_BENES_ECM_PORTS*BP_ASW_ECM_SW-1:0] q);
   (* rom_style = "block" *)
-  logic [BP_BENES_ECM_PORTS*BP_BENES_ECM_COLS*(BP_BENES_ECM_M/2)-1:0] rom [BP_GV];
+  logic [BP_BENES_ECM_PORTS*BP_ASW_ECM_SW-1:0] rom [BP_GV];
   initial for (int i = 0; i < BP_GV; i++) rom[i] = BP_ROM_BENES_ECMRD[i];
   always_ff @(posedge clk) q <= rom[addr];
 endmodule
@@ -261,11 +264,13 @@ module bp_rom_ecm_readrow_bqm (
 endmodule
 // M9c site 4: registered per-group Beneš m_cm write-scatter control ROM (single network — hb=eb*2+beta
 // is injective, no port split). Row width = COLS*(M/2). Addressed by the scatter cursor (like scat_*).
+// M9c Step 5d: row width is now BP_ASW_MCM_SW (AS-Waksman switch count at the REAL nhb half-bank
+// count), not the old power-of-two-padded Beneš COLS*(M/2) width.
 module bp_rom_benes_mcmwr_bqm (
     input  logic clk, input logic [BQM_AWV-1:0] addr,
-    output logic [BP_BENES_MCM_COLS*(BP_BENES_MCM_M/2)-1:0] q);
+    output logic [BP_ASW_MCM_SW-1:0] q);
   (* rom_style = "block" *)
-  logic [BP_BENES_MCM_COLS*(BP_BENES_MCM_M/2)-1:0] rom [BP_GV];
+  logic [BP_ASW_MCM_SW-1:0] rom [BP_GV];
   initial for (int i = 0; i < BP_GV; i++) rom[i] = BP_ROM_BENES_MCMWR[i];
   always_ff @(posedge clk) q <= rom[addr];
 endmodule
@@ -314,7 +319,8 @@ module bp_relay_banked_bram_m (
   // M9c Beneš pipeline depths. BENES_PIPE_ECM registers each e_cm fabric (site-2 read, site-3 addr) into
   // <=3 timing stages; the two are in series on the e_cm operand path (addr -> async read -> read-gather)
   // so the total e_cm latency is BENES_ECM_LAT = 2*BENES_PIPE_ECM. BENES_PIPE_MCM registers the site-4
-  // m_cm write-scatter fabric (single N=1024 network, 19 columns) into <=4 timing stages.
+  // m_cm write-scatter fabric (M9c Step 5d: AS-Waksman, single N=BP_ASW_MCM_N network) into <=4 timing
+  // stages.
   localparam int BENES_PIPE_ECM = 3;
   localparam int BENES_ECM_LAT  = 2 * BENES_PIPE_ECM;
   localparam int BENES_PIPE_MCM = 4;
@@ -671,14 +677,18 @@ module bp_relay_banked_bram_m (
   logic [NVB*BWC-1:0]      scat_row_q;
   logic [NVB*MSG_BITS-1:0] scat_lam_q;
   logic [NEB-1:0]          ecm_wpres_q;
-  // M9c site 2: registered Beneš read-gather control (both port halves), pc-1-aligned like the ROMs above.
-  localparam int BENES_ECM_CTRLW = BP_BENES_ECM_COLS * (BP_BENES_ECM_M / 2);   // per-port ctrl width
+  // M9c site 2: registered read-gather control (both port halves), pc-1-aligned like the ROMs above.
+  // M9c Step 5d: per-port ctrl width is now BP_ASW_ECM_SW (AS-Waksman, real neb count), not the old
+  // power-of-two-padded Beneš COLS*(M/2) width.
+  localparam int BENES_ECM_CTRLW = BP_ASW_ECM_SW;   // per-port ctrl width
   logic [BP_BENES_ECM_PORTS*BENES_ECM_CTRLW-1:0] benes_ecmrd_q;
   // M9c Step 4b: registered e_cm resolved read-row data (both banks/ports in one row); replaces the
   // site-3 Beneš addr-scatter control `benes_ecmaddr_q` (now a pure data ROM, see bp_rom_ecm_readrow_bqm).
   logic [BP_ECM_READROW_W-1:0] ecm_readrow_q;
-  // M9c site 4: registered Beneš m_cm write-scatter control (single network).
-  localparam int BENES_MCM_CTRLW = BP_BENES_MCM_COLS * (BP_BENES_MCM_M / 2);
+  // M9c site 4: registered m_cm write-scatter control (single network).
+  // M9c Step 5d: ctrl width is now BP_ASW_MCM_SW (AS-Waksman, real nhb count), not the old
+  // power-of-two-padded Beneš COLS*(M/2) width.
+  localparam int BENES_MCM_CTRLW = BP_ASW_MCM_SW;
   logic [BENES_MCM_CTRLW-1:0] benes_mcmwr_q;
 
   // combinational per-slot field slices of the registered rows (the pre-rework consumer names, unchanged
@@ -779,28 +789,33 @@ module bp_relay_banked_bram_m (
     mvm_ra_r <= BWV'(var_rd);
   end
 
-  // ===================================================================== M9c site 4: m_cm write-scatter Beneš
-  // Replaces the runtime-indexed we/wa/wd_mcm[scat_hb_r] write-scatter crossbar with a SINGLE Beneš network
-  // (no port split -- hb = eb*2+beta is injective). Each scatter slot s carries {valid=scat_pres_r[s],
-  // row=scat_row_r[s], data=(scat_is_init?scat_lam_r[s]:var_m_flat[s])}; the ROM control routes slot s to
-  // its half-bank scat_hb_r[s]. At output half-bank b: we_mcm[b]=valid & mcm_we_gate_d, wa_mcm[b]=row,
-  // wd_mcm[b]=data. Guard(a) => <=1 valid writer per half-bank per group, so no scatter conflict.
+  // ===================================================================== M9c site 4: m_cm write-scatter fabric
+  // M9c Step 5d: swapped from the power-of-two Beneš network to a SINGLE AS-Waksman network sized to the
+  // REAL half-bank count (N=BP_ASW_MCM_N; no port split -- hb = eb*2+beta is injective). Each scatter slot
+  // s carries {valid=scat_pres_r[s], row=scat_row_r[s], data=(scat_is_init?scat_lam_r[s]:var_m_flat[s])};
+  // the ROM control routes slot s to its half-bank scat_hb_r[s]. At output half-bank b: we_mcm[b]=valid &
+  // mcm_we_gate_d, wa_mcm[b]=row, wd_mcm[b]=data. Guard(a) => <=1 valid writer per half-bank per group, so
+  // no scatter conflict.
   //
-  // PIPE=BENES_PIPE_MCM (4, Fmax-safe: the 19-column N=1024 route in <=4 registered stages). The scatter din
+  // PIPE=BENES_PIPE_MCM (4, Fmax-safe: the AS-Waksman route in <=4 registered stages). The scatter din
   // is captured at the same cycle the old combinational write fired (scat_*_r + var_m_flat already aligned
   // by the S_VAR scat cursor), so the m_cm write now LANDS BENES_PIPE_MCM cycles later. The write enable is
   // therefore the PIPE-delayed gate mcm_we_gate_d (a value snapshot -- it fires for exactly the same groups,
   // 4 cycles on); the drain of the last groups' writes spills into the first BENES_PIPE_MCM cycles of the
   // next phase (harmless: those half-banks are not re-read that early -- verified bit-exact by co-sim).
-  logic [BP_BENES_MCM_M-1:0][1+BWC+MSG_BITS-1:0] mcm_wr_din, mcm_wr_dout;
+  // M9c Step 5d: N is now BP_ASW_MCM_N (= NHB, the real half-bank count) -- the AS-Waksman fabric is
+  // sized exactly to the domain, not the old power-of-two-padded BP_BENES_MCM_M(1024). din padding
+  // (lanes [NVB..BP_ASW_MCM_N) filled with 0) and the output consumers (we/wa/wd_mcm[0..NHB)) already
+  // matched the NHB(=800) domain before this swap, so only the din array bound moves 1024->800.
+  logic [BP_ASW_MCM_N-1:0][1+BWC+MSG_BITS-1:0] mcm_wr_din, mcm_wr_dout;
   always_comb begin
-    for (int s = 0; s < BP_BENES_MCM_M; s++)
+    for (int s = 0; s < BP_ASW_MCM_N; s++)
       mcm_wr_din[s] = (s < NVB)
           ? {scat_pres_r[s], scat_row_r[s],
              unsigned'(scat_is_init ? signed'(scat_lam_r[s]) : var_m_flat[s])}
           : '0;
   end
-  bp_benes_mcm_wr #(.N(BP_BENES_MCM_M), .W(1+BWC+MSG_BITS), .PIPE(BENES_PIPE_MCM)) u_benes_wr (
+  bp_asw_mcm_wr #(.N(BP_ASW_MCM_N), .W(1+BWC+MSG_BITS), .PIPE(BENES_PIPE_MCM)) u_asw_wr (
       .clk(clk), .din(mcm_wr_din), .ctrl(benes_mcmwr_q), .dout(mcm_wr_dout));
   // PIPE-delayed write-enable gate: aligns the fabric's now-4-late write with its output valid bit.
   logic mcm_we_gate_pipe [BENES_PIPE_MCM];
@@ -969,25 +984,29 @@ module bp_relay_banked_bram_m (
     end
   endgenerate
 
-  // ===================================================================== M9c site 2: e_cm read-gather Beneš
-  // Replaces the runtime-indexed qa_ecm[var_ebsel_r]/qb_ecm[var_ebsel_r] crossbar with a ROM-configured
-  // Beneš permutation fabric per e_cm port (a/b): rd0 routes qa_ecm, rd1 routes qb_ecm, both driven by the
-  // registered per-group control ROM (low/high halves). dout[idx] delivers the operand for var-edge slot
-  // idx = i*BP_VAR_DEG+d exactly where the old crossbar tapped qX_ecm[var_ebsel_r[idx]]; the leaf below
-  // eport-selects between the two ports, unchanged.
+  // ===================================================================== M9c site 2: e_cm read-gather fabric
+  // M9c Step 5d: swapped from the power-of-two Beneš network to a ROM-configured AS-Waksman permutation
+  // fabric (N=BP_ASW_ECM_N, the real neb bank count) per e_cm port (a/b): rd0 routes qa_ecm, rd1 routes
+  // qb_ecm, both driven by the registered per-group control ROM (low/high halves). dout[idx] delivers the
+  // operand for var-edge slot idx = i*BP_VAR_DEG+d exactly where the old crossbar tapped
+  // qX_ecm[var_ebsel_r[idx]]; the leaf below eport-selects between the two ports, unchanged.
   //
-  // PIPE=3 (Fmax-safe). The fabric now pipelines ctrl in LOCKSTEP with data (bp_benes.sv commit 1ec6d54
-  // TIMING CONTRACT): apply (din_t, ctrl_t) at cycle t -> dout at t+PIPE == benes_apply(ctrl_t, din_t),
-  // and a FRESH pair may be applied every cycle (II=1). So the per-cycle registered ROM output
-  // benes_ecmrd_q feeds ctrl directly with no hold requirement; the obsolete PIPE=0 "ctrl stable one
-  // cycle" concern is gone. The 3 registered column-boundaries break the BP_BENES_ECM_COLS(=17)-deep
-  // combinational route into <=3 stages for timing closure. The e_in operand now emerges 3 cycles later,
+  // PIPE=3 (Fmax-safe). The fabric pipelines ctrl in LOCKSTEP with data (bp_asw.sv, same TIMING CONTRACT
+  // as bp_benes.sv commit 1ec6d54): apply (din_t, ctrl_t) at cycle t -> dout at t+PIPE ==
+  // aswaksman_apply(ctrl_t, din_t), and a FRESH pair may be applied every cycle (II=1). So the per-cycle
+  // registered ROM output benes_ecmrd_q feeds ctrl directly with no hold requirement; the obsolete PIPE=0
+  // "ctrl stable one cycle" concern is gone. The 3 registered column-boundaries break the
+  // asw_cols(BP_ASW_ECM_N)-deep combinational route into <=3 stages for timing closure (same balanced
+  // column-budget guarantee as Beneš -- see bp_asw.sv's DEPTH-BALANCING banner). The e_in operand now
+  // emerges 3 cycles later,
   // so EVERY co-launched var_update operand is delayed 3 cycles (var_epres/eport/pres/lam/gam, qmvm) and
   // the S_VAR launch/consume schedule is shifted +3 (see FSM), keeping every var_update input aligned to
   // the same group and the decisions bit-exact.
-  logic [BP_BENES_ECM_M-1:0][MSG_BITS-1:0] rd0_din, rd0_dout, rd1_din, rd1_dout;
+  // M9c Step 5d: N is now BP_ASW_ECM_N (= NEB, the real e_cm bank count) -- the din padding bound moves
+  // 512->400 (the `b < NEB` guard is now always true since BP_ASW_ECM_N==NEB, kept for clarity/safety).
+  logic [BP_ASW_ECM_N-1:0][MSG_BITS-1:0] rd0_din, rd0_dout, rd1_din, rd1_dout;
   always_comb begin
-    for (int b = 0; b < BP_BENES_ECM_M; b++) begin
+    for (int b = 0; b < BP_ASW_ECM_N; b++) begin
       rd0_din[b] = (b < NEB) ? unsigned'(qa_ecm[b]) : '0;
       rd1_din[b] = (b < NEB) ? unsigned'(qb_ecm[b]) : '0;
     end
@@ -1000,10 +1019,10 @@ module bp_relay_banked_bram_m (
     benes_ecmrd_q_d[0] <= benes_ecmrd_q;
     for (int s = 1; s < BENES_PIPE_ECM; s++) benes_ecmrd_q_d[s] <= benes_ecmrd_q_d[s-1];
   end
-  bp_benes_ecm_read #(.N(BP_BENES_ECM_M), .W(MSG_BITS), .PIPE(BENES_PIPE_ECM)) u_benes_rd0 (
+  bp_asw_ecm_read #(.N(BP_ASW_ECM_N), .W(MSG_BITS), .PIPE(BENES_PIPE_ECM)) u_asw_rd0 (
       .clk(clk), .din(rd0_din),
       .ctrl(benes_ecmrd_q_d[BENES_PIPE_ECM-1][0*BENES_ECM_CTRLW +: BENES_ECM_CTRLW]), .dout(rd0_dout));
-  bp_benes_ecm_read #(.N(BP_BENES_ECM_M), .W(MSG_BITS), .PIPE(BENES_PIPE_ECM)) u_benes_rd1 (
+  bp_asw_ecm_read #(.N(BP_ASW_ECM_N), .W(MSG_BITS), .PIPE(BENES_PIPE_ECM)) u_asw_rd1 (
       .clk(clk), .din(rd1_din),
       .ctrl(benes_ecmrd_q_d[BENES_PIPE_ECM-1][1*BENES_ECM_CTRLW +: BENES_ECM_CTRLW]), .dout(rd1_dout));
 
