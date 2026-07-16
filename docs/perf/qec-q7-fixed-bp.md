@@ -1708,6 +1708,40 @@ AC-3 on-silicon needs a larger device. Follow-up if the campaign resumes: conver
 ROMs to `rom_style="block"` (moves LUT↔BRAM — only helps if LUT is the binding constraint at that
 point) and strip the dead `BP_ROM_VAR_EROW` chain.
 
+### M9c area campaign — terminal verdict (closed)
+
+The M9c campaign to fit the fully-parallel fixed-relay-BP gather onto a single KV260 (XCK26,
+117,120 LUTs / 144 BRAM tiles) is **closed as NOT ACHIEVABLE on this device**, on measured evidence
+across four independent realisations of the gather permutation:
+
+| realisation | CLB LUTs | % KV260 | BRAM tiles | note |
+|---|---|---|---|---|
+| Step-1 runtime crossbar | 2,232,451 | 1906 % | — | mux blow-up |
+| Step-2 Beneš | 239,750 | 204.7 % | 218.5 (151.7 %) | 9.3× cut; two-constraint over |
+| Step-4 + addr→ROM | 206,931 | 176.7 % | 164.5 (114.2 %) | static addr net → BRAM ROM |
+| **Step-5 + AS-Waksman** | **189,740** | **162.0 %** | **163 (113.2 %)** | switch-optimal right-size |
+| serial-gather (Step-3) | ~255k (est.) | ~218 % | — | residual-mux ≈ crossbar; explored, not built |
+
+**Why no single-KV260 fit exists (the reachability floor).** After every area lever, the residual is
+two **runtime-data** permutation fabrics — m_cm write + e_cm read — that carry live messages and so
+**cannot** be replaced by a ROM (unlike the static addr net, Step 4). Together they are ≈108 % of the
+KV260 in LUTs, and the non-fabric decoder + control floor is ≈68 %; their sum cannot be driven under
+100 % by right-sizing, which only trims the fabric constant. Both LUT (162 %) and BRAM (113 %) remain
+over, and BRAM ties to the same wide control tables. Three independent fabric families (crossbar,
+Beneš, serial+residual-mux) and two right-sizings (addr→ROM, AS-Waksman) all land ≥ 1.6× over — the
+gather is simply a large permutation and a fully-parallel realisation does not fit this part.
+
+**Deliverables retained:** the Step-2 Beneš core, the Step-4 addr-ROM, and the Step-5 AS-Waksman core
+(bit-exact 40/40, 4475/2810 latency, 177.7 MHz) are the honest, synthesised **practical floor** —
+162.0 % LUT / 113.2 % BRAM — plus reusable IP (`benes.rs`, `aswaksman.rs`, `serial_gather.rs`,
+`bp_benes.sv`, `bp_asw.sv`). **AC-3 (on-silicon sustained rate) needs a larger device.** The
+recommended non-capex path to close AC-3's intent is renting a cloud FPGA (AWS F1 / F2, Xilinx VU9P
+~1.1 M LUTs) by the hour to validate the AS-Waksman core on real silicon; buying hardware is not
+justified. Real-time on KV260 (#455) stays unmet on **latency** grounds independently (M9b: 122 µs
+worst vs 2 µs budget) — a separate, also-unreachable target on this device. No further area levers are
+planned; the remaining follow-ups (`rom_style="block"`, dead-`BP_ROM_VAR_EROW` strip) are marginal and
+do not change the verdict.
+
 ## Deviations from the design spec
 
 - **Uniform hardware schedule, not per-slot exact DEMs** — one baked interior window graph
