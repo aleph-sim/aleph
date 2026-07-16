@@ -1290,8 +1290,13 @@ Specify the decoder ASIC: which operations are ASIC vs FPGA vs CPU, target node,
 budget, cryogenic vs room-temperature placement, I/O to the QPU control stack.
 
 **Acceptance Criteria**
-- [ ] Architecture document with block diagram, budgets, and partitioning rationale.
-- [ ] Cost/timeline estimate for an MPW-shuttle prototype.
+- [x] Architecture document with block diagram, budgets, and partitioning rationale.
+      (`docs/qec/asic-architecture.md` § 3–5: window engine + banked relay-BP core diagram, the
+      64/192 @ ≥600 MHz real-time ladder, datapath-only ASIC / policy-outside partitioning; built
+      on the measured M0–M9c + Q7-05 + SKY130-probe inputs.)
+- [x] Cost/timeline estimate for an MPW-shuttle prototype.
+      (`docs/qec/asic-architecture.md` § 7: Tiny Tapeout / chipIgnite ~$10–15k / Europractice
+      22FDX / production-shuttle table with timelines; pre-Q7-03 exposure bounded at ~$15k.)
 
 **References**
 - Battistel et al. (real-time constraints); Riverlane Deltaflow architecture posts.
