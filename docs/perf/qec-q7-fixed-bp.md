@@ -1669,6 +1669,45 @@ BRAM **and** LUT hogs, so it hits both blockers together. Waksman (~5 % at N=102
 "~25 %" was wrong for these sizes) and read/addr time-share stay deferred as marginal. AC-3 on-silicon
 remains blocked on reaching a routable two-constraint fit.
 
+### M9c Step 5 — AS-Waksman right-sizing of the m_cm / e_cm fabrics (measured)
+
+The m_cm write (N=1024) and e_cm read (N=512×2) Beneš fabrics were padded power-of-two networks
+routing the real 288→800 / 288→400 partial injections. Step 5 replaces them with **AS-Waksman**
+(arbitrary-size Waksman) networks sized to the real N=800 / N=400 — switch-optimal for any N — so the
+switch count drops (m_cm 9728→6977, e_cm 4352→3089/port) with the same schedule and PIPE (spec
+`docs/superpowers/specs/2026-07-16-m9c-aswaksman-rightsize-design.md`, plan
+`.../plans/2026-07-16-m9c-aswaksman-rightsize.md`). New arbitrary-size routing lib
+`crates/aleph-qec/src/aswaksman.rs` (route+apply share one recursion, round-trip oracle) + depth-balanced
+RTL `hw/bp_asw.sv` (odd-N sub-blocks padded to a uniform column budget so PIPE latency stays uniform).
+Bit-exact **40/40 vs `FixedRelayBp`** at both bankings; latency **unchanged** (4475 / 2810). OOC synth
+(xck26, 16/48):
+
+| metric | Step-4 | **Step-5 AS-Waksman** | Δ |
+|--------|--------|-----------------------|---|
+| **CLB LUTs** | 206,931 (176.7 %) | **189,740 (162.0 %)** | **−17,191 (−14.7 pts)** |
+| Block RAM Tile | 164.5 (114.2 %) | 163 (113.2 %) | −1.5 (−1.0 pt) |
+| CLB Registers | 102,062 (43.6 %) | 98,470 (42.0 %) | −3,592 |
+| Fmax (WNS) | 177.7 MHz (−0.628 ns) | 177.7 MHz (−0.628 ns) | unchanged |
+
+**Outcome vs prediction — the lever hit LUT, not BRAM (the reverse of the design's stated primary
+justification).** The spec expected the narrower control ROMs to cut BRAM tiles and LUT to be roughly
+flat (an OOC probe had shown the 1024-Beneš fabric is already 2.8× tool-pruned in-context — 213k
+standalone → 76k — implying small right-sizing upside). Measured, **LUT fell 17k (−14.7 pts) and BRAM
+was essentially flat.** Two reasons: (1) the Beneš control ROMs synthesise as **LUTRAM / LUT-logic**,
+not block RAM (no `rom_style="block"`), so narrowing them cut LUT, not BRAM tiles; (2) AS-Waksman is a
+genuinely **smaller topology** (fewer switches → less fabric logic), so it beats even the
+padding-pruned Beneš — the probe under-predicted because it compared the *same* topology standalone vs
+in-context, not a smaller one. Net: a real LUT win, larger than the probe's pessimistic "single-digit %".
+
+**Verdict: still NO-FIT, both constraints over** — LUT 162.0 %, BRAM 113.2 %. Cumulative campaign from
+the Step-2 Beneš core: LUT 204.7 → 176.7 → 162.0 %, BRAM 151.7 → 114.2 → 113.2 %. BRAM is now the
+tighter *relative* blocker but LUT the larger *absolute* gap, and the fit-reachability math stands —
+the two runtime-data fabrics (~108 % of the KV260) plus the ~68 % non-fabric floor cannot be squeezed
+under 100 % by right-sizing alone. This is the practical floor of the area campaign on a single KV260;
+AC-3 on-silicon needs a larger device. Follow-up if the campaign resumes: convert the LUTRAM control
+ROMs to `rom_style="block"` (moves LUT↔BRAM — only helps if LUT is the binding constraint at that
+point) and strip the dead `BP_ROM_VAR_EROW` chain.
+
 ## Deviations from the design spec
 
 - **Uniform hardware schedule, not per-slot exact DEMs** — one baked interior window graph
