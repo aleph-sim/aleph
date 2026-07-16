@@ -1790,3 +1790,74 @@ make -C hw bpstreamaxi       # AXI shell, 5 gates x 2 modes incl. adversarial dr
   committed generated artifacts.
 - `m9b-hw-sweep-20k.csv` (EPYC 20k-shot `--hw` sweep; scratchpad-only, not committed to the repo,
   matching the M9a-sweep-CSV convention) — source of the batch/exact/hw LER table above.
+
+-----
+
+# Q7-05 — KV260 power / energy per decode (INA260, SOM-total)
+
+Measured on the **shipped M8 banked overlay** (`bp_kv260_banked.bit`, 16/48, IDCODE `0x4250_0003`,
+PL @ 133.332 MHz) — the same bitstream whose worst-case is 2 085 cyc = 15.64 µs and whose early-exit
+median is 113 cyc = 0.85 µs. The board was power-cycled before this run; a **health re-baseline**
+reproduced the M8 record bit-for-bit first: full-schedule **40/40, min=p50=max=2 085 cyc**; early-exit
+**40/40, min=79 p50=113 mean=154 p99=max=589 cyc** — identical to the M8 silicon record.
+
+## Method — why a delta, not an absolute PL number
+
+The Kria K26 SOM exposes **one** power monitor, an INA260 (`hwmon` name `ina260_u14`) on the **5 V SOM
+input rail**, so it reads *SOM-total* power (PS + PL + DDR + fan), not PL-only. There is no PL-domain
+shunt on this SOM. The honest observable is therefore a **delta**: PL programmed-but-idle vs PL under
+sustained decode load — the delta cancels the static PS/DDR/fan baseline and isolates the *dynamic*
+power a decode stream draws. Power is derived as `in1_input(mV) × curr1_input(mA)` (the current
+channel is 1 mA ≈ 5 mW resolution, finer than `power1_input`'s 10 mW quantum). Sampling is interleaved
+with the decode loop in the main thread (a batch of decodes, then one rail read), so no GIL-starved
+sampler thread can miss the load. A **PS-poll-only control** (MMIO reads, no `START`, PL quiescent)
+bounds the share of the delta owed to the host/AXI-Lite loop rather than the PL datapath.
+
+Energy per decode is duty-corrected: with the PL busy `t_hw = cycles/f` per decode but the host loop
+stretching wall-per-decode to `T/n`, the window-averaged dynamic power is
+`dP = P_load − P_idle = duty·(P_active − P_idle)`, so `E_decode = dP · (T/n)` **independent of duty**.
+
+## Results (two runs, 8–10 s idle + 20–25 s load each; reproducible to ±5 mW / ±1 µJ)
+
+| state | SOM power | ΔP over idle | notes |
+|---|---|---|---|
+| **idle** (PL programmed, quiescent) | **3.25 W** | — | 5.07 V × 0.64 A; AMS die temp ~31 °C |
+| **full-schedule** under load | **3.50 W** | **+249 mW** | 2 887 dec/s, wall/dec 346 µs, duty **4.5 %** |
+| **early-exit** under load | **3.46 W** | **+210 mW** | 3 140 dec/s, wall/dec 318 µs, duty **0.4 %** |
+| **PS-poll control** (MMIO reads, PL idle) | **3.45 W** | **+200 mW** | 140 k reads/s, no decode |
+
+**The delta is dominated by the AXI-Lite host loop, not the PL.** The read-only control alone draws
+**+200 mW** over idle — ~80 % of the +249 mW full-schedule delta. Subtracting it, the **PL decode
+datapath adds only ~48 mW (full) / ~10 mW (early)** at the SOM level. This is the same per-word-harness
+wall that Q7-06 targets (the AXI-Lite runner dominates, not the decode).
+
+## Energy per decode — two honest framings
+
+- **Operational (as-shipped, per-word AXI-Lite harness):** `dP · wall/dec` =
+  **≈ 86 µJ (full-schedule) / ≈ 67 µJ (early-exit)**. This is what the SOM spends to push one decode
+  through the current host harness — real, but harness-bound (duty 4.5 % / 0.4 %), and mostly the
+  AXI-Lite polling loop, not the decoder.
+- **PL-core dynamic (control-subtracted):** `dP_PL · wall/dec` = **≲ 17 µJ (full) / ≲ 3 µJ (early)**
+  (equivalently `P_active_PL·t_hw` with `P_active_PL ≈ 1 W` over the 15.64 µs busy window). Order-of-
+  magnitude only: it is a small difference of two ~200 mW numbers and the control's MMIO-read mix does
+  not exactly match the decode loop's, so treat ~17 µJ as an **upper bound** on the decode-core energy.
+
+## Verdict
+
+Idle SOM 3.25 W; a sustained relay-BP decode stream lifts it to 3.50 W (full) / 3.46 W (early). At the
+SOM level the decode datapath itself is nearly free (~48 mW / ~10 mW dynamic); the measurable cost is
+the AXI-Lite per-word host loop (+200 mW). Precise PL-core energy is **harness-limited** on this SOM —
+a **batched syndrome interface (Q7-06)** would both raise the PL duty far above 4.5 % and cut the
+per-decode host overhead, turning the ≲17 µJ upper bound into a tight number. AC met: PL idle/under-load
+power and energy per decode are reported for both modes.
+
+## Reproduce
+
+```bash
+# board (as root, pynq venv + XRT), from a dir with bp_m8.bit + bp_circ_pynq.py + bp_circ_vectors.txt:
+XILINX_XRT=/usr /usr/local/share/pynq-venv/bin/python3 hw/sw/bp_power_kv260.py \
+    bp_m8.bit bp_circ_vectors.txt --idle 10 --load 25
+```
+
+- `hw/sw/bp_power_kv260.py` — INA260 rail sampler + idle/full/early/PS-poll harness (this section).
+- `hw/sw/bp_circ_kv260.py`, `hw/sw/bp_circ_pynq.py` — M8 board runner + driver (health re-baseline).
