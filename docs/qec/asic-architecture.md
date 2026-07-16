@@ -53,7 +53,7 @@ statement.** The full streaming core is an unremarkable ~740 k-gate block even i
 ```
                        ┌─────────────────────────────────────────────────────────────┐
                        │                        DECODER ASIC                         │
-  syndome stream       │  ┌───────────┐   ┌──────────────────────────────────────┐   │
+  syndrome stream      │  ┌───────────┐   ┌──────────────────────────────────────┐   │
   (LVDS/DDR par.,      │  │  ingest   │   │  WINDOW ENGINE (M9b FSM:             │   │
   ~0.3 Gb/s/qubit) ────┼─▶│  + frame  │──▶│  WARM/RUN/WAIT/COMMIT/SLIDE/RELOAD)  │   │
                        │  │  align    │   │  W=6 slice buffer (SRAM)             │   │
@@ -68,7 +68,7 @@ statement.** The full streaming core is an unremarkable ~740 k-gate block even i
                        │  │         │        e_cm read fabric        │           │   │
                        │  │  msg regfiles (8b×9 class) · λ/γ tables · addr ROMs  │   │
                        │  │  early-exit syndrome check · leg/iter sequencer      │   │
-                       │  └──────────────────────────┬─────────────────────────  ┘   │
+                       │  └──────────────────────────┬───────────────────────────┘   │
                        │                             │                                │
   corrections /        │  ┌───────────┐   ┌──────────▼─────────┐   ┌─────────────┐   │
   valid flags   ◀──────┼──│  result   │◀──│ commit + residual  │   │ CSR + table │◀──┼── boot/config
