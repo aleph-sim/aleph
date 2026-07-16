@@ -12,7 +12,7 @@ OBJ_DIR   := obj_dir
 VERILATOR ?= verilator
 CARGO     := cargo run --release -q -p aleph-qec --example
 
-.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi stream-axi-circuit cosim-stream cosim-stream-circuit cosim-stream-ler cosim-stream-ler-circuit cosim cosim-3d cosim-circuit cosim-circuit-3d bpcheck bprelay bpunroll bppartial bppartialfast bppipe bpfast bpaxi bpcirc bpaxiwide bpbram bpbramfast bpbramdp bpbramdpearly checkminsum varupdate unrollskel bpunrollpipe bpbanked-lint bpbanked bpbankedbram-lint bpbankedbram bpstream-lint bpstream bpstreamaxi-lint bpstreamaxi bpaxibanked bpbenes clean
+.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi stream-axi-circuit cosim-stream cosim-stream-circuit cosim-stream-ler cosim-stream-ler-circuit cosim cosim-3d cosim-circuit cosim-circuit-3d bpcheck bprelay bpunroll bppartial bppartialfast bppipe bpfast bpaxi bpcirc bpaxiwide bpbram bpbramfast bpbramdp bpbramdpearly checkminsum varupdate unrollskel bpunrollpipe bpbanked-lint bpbanked bpbankedbram-lint bpbankedbram bpstream-lint bpstream bpstreamaxi-lint bpstreamaxi bpaxibanked bpbenes bpasw clean
 
 all: d3 rep surf
 
@@ -402,6 +402,22 @@ bpstreamaxi:
 		check_minsum.sv var_update.sv bp_relay_banked_bram.sv bp_streaming_decoder.sv bp_stream_win_core.sv \
 		tb_bp_stream_axi.cpp -o sim_bpstreamaxi
 	./_bpstreamaxibuild/obj_dir/sim_bpstreamaxi bp_stream_vectors.txt bp_stream_vectors_early.txt
+
+# Q7-04 M9c Step 5c — standalone ARBITRARY-SIZE (AS-)Waksman permutation-network fabrics
+# (`bp_asw.sv`): the two site tops (bp_asw_ecm_read N=400 / bp_asw_mcm_wr N=800) sharing the
+# `bp_asw_switch` leaf + recursive depth-balanced `bp_asw_block` core, verified in isolation against
+# an INDEPENDENT C++ port of `aswaksman_apply` (crates/aleph-qec/src/aswaksman.rs) BEFORE the fabric
+# is wired into the core. Sibling of `bpbenes`, but for arbitrary/odd N. 10000 random ctrl+din cases
+# per fabric, STREAMED (fresh (din,ctrl) every cycle, many in flight; ctrl pipelined in lockstep with
+# din), asserting dout bit-exact vs the C++ reference exactly PIPE cycles after each case is applied.
+bpasw:
+	rm -rf obj_asw_read obj_asw_wr
+	$(VERILATOR) --cc --exe --build -Wall --Mdir obj_asw_read --top-module bp_asw_ecm_read \
+		-GN=400 -GW=6 -GPIPE=4 -CFLAGS -DASW_READ bp_asw.sv tb_bp_asw.cpp -o sim_asw_read
+	./obj_asw_read/sim_asw_read
+	$(VERILATOR) --cc --exe --build -Wall --Mdir obj_asw_wr --top-module bp_asw_mcm_wr \
+		-GN=800 -GW=11 -GPIPE=5 -CFLAGS -DASW_WR bp_asw.sv tb_bp_asw.cpp -o sim_asw_wr
+	./obj_asw_wr/sim_asw_wr
 
 d3:
 	cd .. && $(CARGO) qec_d3_lut_table > hw/surface_d3_lut.mem
