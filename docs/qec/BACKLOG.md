@@ -1439,3 +1439,40 @@ path.
 - [ ] Non-convergence rate quantified per operating point.
 - [ ] Fallback policy chosen with data (incl. do-nothing-but-flag if rates are negligible); the
       LER impact of the chosen policy measured in software.
+
+-----
+
+### [Q7-08] Register-file/latch plan for the relay-BP message arrays (ASIC spec §8.2)
+
+**Labels:** `area:asic`, `type:feature`, `priority:medium`
+**Milestone:** Phase Q7
+**Depends on:** Q7-01
+
+**Description**
+The ASIC spec (D6/§8.2, `docs/qec/asic-architecture.md`) flags the message arrays as the one
+block where FPGA and ASIC implementations genuinely diverge. Measured evidence since: the
+flat-DFF elaboration (ORFS sky130hd) synthesizes to 5.28 mm² (87.3k enable-flops) but **fails
+global routing on met2 congestion at 30 % utilization** (96.6 % met2 usage, 304k overflow) —
+the mux trees to/from 1,272 tiny arrays are routing-hostile, so a real register-file plan is
+mandatory, not an optimization.
+
+RTL characterization (bp_relay_banked.sv cells): `bp_mcm_cell` 8b×9 1W+1R-async,
+`bp_ecm_cell` 8b×9 1W+2R-async (fabric-driven per-cell read rows), `bp_mvm_cell` 8b×18
+1W+1R-async. Key structural fact: **m_cm and m_vm read rows are the global pc cursor** (same
+row for every cell in a cycle) and writes share the group cursor with per-cell enables — i.e.
+both consolidate into wide byte-write-masked 1R1W arrays (SRAM/latch-array shape, one address
+decoder per bank instead of per cell). Only e_cm truly needs distributed/multi-ported cells.
+
+**Acceptance Criteria**
+- [ ] Per-cell-type implementation comparison measured through the sky130 probe flow: flat DFF
+      (baseline) vs latch array vs consolidated wide byte-masked array — area per bit and port
+      cost quantified.
+- [ ] Routability verdict: an ORFS micro-P&R of a consolidated bank block vs the equivalent
+      per-cell block (does consolidation clear the met2 wall?).
+- [ ] Design note (`docs/qec/regfile-plan.md`) with the chosen implementation per cell type
+      (m_cm / e_cm / m_vm), the RTL restructuring plan, and the impact estimate on the §5 area
+      budget — feeding the Q7-02 ASIC-RTL phase.
+
+**References**
+- `docs/perf/qec-q7-asic-sky130-probe.md` (memory shape histograms); ORFS run logs
+  (`/data/asicprobe/orfs_out`, EPYC box) for the met2 congestion evidence.
