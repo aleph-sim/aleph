@@ -84,6 +84,45 @@ permutation, the BRAM side was tile granularity.
    arrays (the dominant memory shape on both cores); then the same two passes on a commercial-node
    PDK under NDA when one is in reach.
 
+## OpenROAD P&R follow-up (sky130hd) — the § "next hardening steps" item 1, measured
+
+**Date:** 2026-07-18/19 · **Flow:** OpenROAD-flow-scripts docker (`openroad/orfs:latest`) on the
+EPYC box; M8 core pre-elaborated with the oss-cad-suite yosys+slang (`--unroll-limit`,
+`memory_map` — the message arrays as flat DFF register files, i.e. the spec's D6 *baseline*
+implementation), 10 ns clock, sky130hd.
+
+**Synthesis (ORFS yosys):** 5.28 mm² total standard-cell — validating the probe's ~4–5 mm²
+all-in estimate above. 98.8 k flops: 11,486 `dfxtp` + **87,274 `edfxtp`** (the enable-flops of
+the flop-mapped message arrays).
+
+**Place + CTS: clean.** Global/detail placement, resizing and clock-tree synthesis all
+converge; TritonCTS builds the 98,760-sink clock net with 11,728 buffers.
+
+**Global routing: fails at both tested utilizations.** The wall is met2 (the first vertical
+routing layer — the read/write mux trees of 1,272 tiny arrays):
+
+| CORE_UTILIZATION | wirelength | met2 usage | total overflow | verdict |
+|---|---|---|---|---|
+| 30 % | 86.1 M µm | **96.6 %** | 304,619 | GRT-0116 congestion fail |
+| 20 % | 119.2 M µm | **83.9 %** | 45,798 | GRT-0116 congestion fail |
+
+The 1.5× area increase buys a 6.6× overflow reduction — extrapolating, the flat-DFF netlist
+might route near ~12 % utilization, a ~44 mm² die for a 5.3 mm² netlist. That is not a tuning
+problem; it is a structural verdict: **flat-flop message arrays are route-infeasible on
+sky130hd**, and the placed-Fmax/area/power numbers this section was meant to produce must come
+from the restructured-memory core instead (Q7-08, issue #470 — where the first measured lever is
+already in: latch arrays are 2.54× denser than DFF at 15.1 µm²/bit, and the m_vm arrays
+consolidate mechanically into wide byte-masked banks because their read row is the global pc
+cursor).
+
+**Flow traps recorded** (cost a day of wall clock between them): ORFS `make` does not hash the
+design config — after changing `CORE_UTILIZATION` the stale floorplan/place/CTS artifacts under
+`WORK_HOME` are reused and only GRT re-runs (wipe `[2-6]_*` phase artifacts to actually re-place);
+ORFS synthesis silently ignores yosys `write_verilog` elaborated netlists ("contains processes")
+— feed it raw RTL, or pre-elaborate only when the frontend genuinely cannot (M8's slang
+unroll limit); and long jobs on this box need `setsid` or they die with the launching ssh
+session.
+
 ## Reproduce
 
 ```bash
