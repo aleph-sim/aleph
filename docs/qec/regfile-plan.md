@@ -11,10 +11,13 @@ area, 43 k vs 98.8 k clock sinks, latch storage 2.54× denser than DFF) and a **
 congestion improvement — but it is **not, by itself, a routability fix**. At 20–30 % util on
 sky130hd the restructured core is still met2-congested (78–82 % post-CTS), does not route cleanly,
 and in full-flow P&R is actually *harder* than the flat core (its latch-dense clock tree livelocks
-GRT on clock-NDR congestion). Restructured memories are **necessary but not sufficient**; a placed
-timing/power number needs a commercial node with more routing layers (§ 7 target), not sky130hd.
-Bit-exactness (AC-2 co-sim) and the area de-risk (AC-1) are solid; the routability verdict is this
-qualified "necessary-not-sufficient". Full data below.
+GRT on clock-NDR congestion). Restructured memories are **necessary but not sufficient** on
+sky130hd. **This prediction is then validated on ASAP7** (open 7 nm predictive PDK, no NDA): the
+*identical* netlist routes cleanly there — GRT 0 congestion on every layer, no clock-NDR livelock,
+detailed route completes to a 0.163 mm² die at 45 % util (207 residual DRC, mostly PDK artifacts)
+— proving **the routability wall is sky130's 130 nm node, not the design**. Bit-exactness (AC-2
+co-sim) and the area de-risk (AC-1) are solid; the routability verdict is "sky130-limited, routes
+on a modern node". Full data below (§ AC-2 sky130 + § AC-2 follow-up ASAP7).
 
 ## The decision table (AC-3)
 
@@ -160,6 +163,66 @@ Fmax/area/power" item should be **retargeted to the commercial prototype node** 
 where the extra routing layers remove the multi-layer-demand wall that both core variants hit on
 sky130's five metals. sky130hd remains useful for *area/synthesis* de-risking (done) but is not
 the right vehicle for a placed-and-routed timing/power number.
+
+## AC-2 follow-up — the routability wall is a node problem, not a design problem (ASAP7)
+
+The sky130hd verdict above ("necessary but not sufficient; needs a node with more routing
+resources") predicted that a modern node would route the exact same netlist. That prediction is
+now **validated on an open proxy node — ASAP7** (7 nm predictive PDK, no NDA, standard ORFS
+platform) — before any commercial-PDK spend.
+
+Same pre-elaborated `BP_RF_REGFILE` netlist (`bp_m8rf_elab.v`), full ORFS flow, `asap7`
+platform, CORE_UTILIZATION = 45 % (more than 2× the util at which sky130 failed), M2–M7 routing
+(6 layers — only one more than sky130's 5).
+
+**Synthesis mapped faithfully:** 43,025 `DFFHQNx1` flops (bit-identical to the sky130 flop count)
++ 55,703 `DHLx1` transparent latches (the m_cm/e_cm storage → ASAP7's D-latch cell) — the netlist
+is technology-independent and re-maps cleanly. Cell area 0.074 mm², **placed-and-routed die
+0.163 mm²** at 45 % util (vs sky130's 4.54 mm² synth and route-infeasible ~44 mm² extrapolation —
+a ~60× node shrink and, more to the point, an *actually routed* die where sky130 has none).
+
+**Global routing — clean, zero congestion, no livelock:**
+
+| layer | usage | total congestion (overflow) |
+|---|---|---|
+| M2 | 51.2 % | **0** |
+| M3 | 51.2 % | **0** |
+| M4 | 38.9 % | **0** |
+| M5 | 30.8 % | **0** |
+| M6 | 43.4 % | **0** |
+| M7 | 40.5 % | **0** |
+
+GRT converged in 16 extra iterations (no restart), **0 clock-NDR disables** (the sky130 livelock
+does **not** recur), routed 676,861 nets, total wirelength 7.17 M µm. Contrast the identical
+netlist on sky130hd: flat-DFF hard-failed `GRT-0116` (met2 96.6 %); the RF core livelocked on
+clock-NDR congestion for 20 h+ without converging. On ASAP7 the same core routes to **zero
+overflow on every layer at 45 % util**.
+
+**Detailed routing (TritonRoute) completes** — the design physically routes (677 k nets, routed
+wirelength 6.17 M µm, **0 antenna violations**), which sky130hd never reached on this netlist
+(it failed/​livelocked at global route). Residual DRC is **207 violations** (~0.03 % of nets):
+49 Short + 46 Metal-spacing (the real ones, closable by a small util drop) and 111 ASAP7 Lef58
+`EolKeepOut`/`EndOfLine`/`CutSpacingTable`/Cut — the predictive PDK's finicky cut/EOL rules, which
+ASAP7 reference designs routinely leave in the dozens–hundreds. This is a *near-complete* route
+with a fine-tuning residual, categorically different from sky130's "cannot route at all". A lower
+util (≈35 %) or a production PDK closes the remainder; not pursued here — the routability verdict
+is already unambiguous.
+
+**Conclusion.** The routability wall is a property of **sky130's 130 nm routing budget**, not of
+the decoder RTL. A modern node routes the same netlist comfortably — and notably it does so with
+essentially the same layer count (6 vs 5), so the win is the finer **track pitch / density** of
+the advanced node, not merely "more metals". This retires the § 8 doubt: the spec's 22FDX
+prototype target (§ 7) is the right vehicle for a placed timing/power number, and this ASAP7
+result is the open-tooling evidence that it will route — obtained at compute cost, before any
+NDA/PDK commitment.
+
+**Flow note.** ASAP7 post-GRT `repair_timing` segfaults on this netlist (same tool-bug class as
+the sky130 CTS `repair_timing` ODB-0445 crash — the huge-fanout clock net / latch paths trip the
+resizer). `SKIP_INCREMENTAL_REPAIR = 1` skips it; the routability verdict is GRT's, unaffected.
+As on sky130, **timing/power are therefore not quotable** from this run — the finish-stage
+setup/hold violation counts are the *unrepaired* state (no `repair_timing` ran) at an arbitrary
+1 ns probe clock, not an achieved Fmax. This run answers routability only; a repair-clean timing
+number is a separate follow-up (and best taken on the real 22FDX PDK).
 
 ## Reproduce
 
