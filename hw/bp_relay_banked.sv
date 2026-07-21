@@ -63,6 +63,23 @@
 // banked additions: (1) an S_INIT state seeding m_cm/m_vm with lambda; (2) an `early_exit` input (first
 // syndrome-valid decision jumps to S_EMIT); (3) a 32-bit `latency_cycles` output. W/V/GC/GV come from the
 // header, never module parameters, so header and RTL cannot desync.
+//
+// Q7-08 ASIC REGFILE RESTRUCTURING (`BP_RF_REGFILE`, opt-in define; default = the DFF baseline above):
+//   The SKY130 ORFS probe showed the flat-DFF message fabric is ROUTE-INFEASIBLE (GRT met2 overflow at 30%
+//   AND 20% core utilization — see docs/perf/qec-q7-asic-sky130-probe.md): every 8-bit message row carries
+//   its own private write-decoder AND read-mux wiring, and the resulting met2 demand exceeds the fabric at
+//   any sane density. `BP_RF_REGFILE` restructures ONLY the storage inside the cells, per access pattern:
+//   * m_vm: the VAR_DEG per-(i,d) banks of each var slot collapse into ONE wide byte-masked array
+//     (`bp_mvm_rf`, mem[GV] rows of VAR_DEG*MSG_BITS). All lanes ALREADY share the global write/read
+//     cursors (wg_var/mvm_ra); the per-cell present gate `vedge_at(h,II,DD)>=0` moves up into a per-lane
+//     write mask. One row decoder per slot instead of VAR_DEG private ones — area-neutral, routing win.
+//   * m_cm / e_cm: stay per-(half-)bank cells (m_cm's write row is per-cell from the scatter; e_cm has two
+//     fabric-driven read rows — nothing to share), but storage becomes a TRANSPARENT-LOW LATCH array
+//     (2.54x denser than DFF in sky130_fd_sc_hd: 15.1 vs 38.4 um^2/bit, measured on the 864-bit slice).
+//     Write-pulse discipline (latch opens during clk-low; wd/wa must be settled) is a known physical-design
+//     caveat, acceptable for area/routability evidence; reads and writes of these arrays happen in
+//     DIFFERENT FSM states, so the half-cycle-early latch write is invisible to the schedule (bit-exact).
+//   Values are BIT-EXACT to the DFF baseline in both styles; the co-sim gate runs both.
 
 `timescale 1ns / 1ps
 /* verilator lint_off UNUSEDPARAM */
@@ -145,7 +162,17 @@ module bp_mcm_cell #(
     output logic signed [MSG_BITS-1:0] q
 );
   logic signed [MSG_BITS-1:0] mem [BB_GC];
+`ifdef BP_RF_REGFILE
+  // Q7-08: transparent-low latch rows (sky130 dlxtp-class, 2.54x denser than DFF). we/wa/wd come from the
+  // top's scatter comb (registers + registered submodule outputs), settled well before the clk-low pulse.
+  // Blocking `=` (not `<=`): Verilator executes always_latch combinationally and would silently convert
+  // the non-blocking form anyway (COMBDLY); with a single writer per row the two are equivalent here.
+  always_latch
+    for (int i = 0; i < BB_GC; i++)
+      if (!clk && we && wa == BB_BWC'(i)) mem[i] = wd;
+`else
   always_ff @(posedge clk) if (we) mem[wa] <= wd;
+`endif
   assign q = mem[ra];
 endmodule
 /* verilator lint_on UNUSEDPARAM */
@@ -180,7 +207,16 @@ module bp_ecm_cell #(
           wa_b = BB_BWC'(g);
         end
   end
+`ifdef BP_RF_REGFILE
+  // Q7-08: latch-array storage (same rationale/discipline as bp_mcm_cell; we_b/wa_b are combs of the
+  // registered wg cursor, wd is a registered check_minsum output — all settled before the clk-low pulse).
+  // Blocking `=` for the same COMBDLY reason as bp_mcm_cell.
+  always_latch
+    for (int i = 0; i < BB_GC; i++)
+      if (!clk && we_b && wa_b == BB_BWC'(i)) mem[i] = wd;
+`else
   always_ff @(posedge clk) if (we_b) mem[wa_b] <= wd;
+`endif
   assign qa = mem[ra];
   assign qb = mem[rb];
 endmodule
@@ -219,6 +255,50 @@ module bp_mvm_cell #(
   always_ff @(posedge clk) if (we_b) mem[wa_b] <= wd_b;
   assign q = mem[rg];
 endmodule
+
+`ifdef BP_RF_REGFILE
+// ------------------------------------------- m_vm wide slot bank (Q7-08): VAR_DEG lanes, shared 1W1R rows
+// Replaces the VAR_DEG per-(i,d) `bp_mvm_cell` banks of var slot II with ONE wide byte-masked array. The
+// lanes ALREADY share the write cursor (wg) and read cursor (rg) every cycle — the only per-(i,d) term in
+// the old cells was the `vedge_at(h,II,DD)>=0` present gate, which moves up into the per-lane write mask.
+// One row decoder per slot instead of VAR_DEG private ones: area-neutral, the win is write/read wiring.
+module bp_mvm_rf #(
+    parameter int II = 0                                 // var slot i (lanes d = 0..VAR_DEG-1)
+) (
+    input  logic                       clk,
+    input  logic                       wr_init,          // S_INIT (lambda seed)
+    input  logic                       wr_var,           // S_VAR && pc>=3 (M8: scatter of group pc-3)
+    input  logic [BB_BWV-1:0]          wg,               // write var-group cursor (S_INIT: pc, S_VAR: pc-3)
+    input  logic signed [MSG_BITS-1:0] wd [BP_VAR_DEG],  // this slot's var messages (var_m_out[II])
+    input  logic [BB_BWV-1:0]          rg,               // read row (= pc, clamped)
+    output logic signed [MSG_BITS-1:0] q  [BP_VAR_DEG]
+);
+  logic [BP_VAR_DEG*MSG_BITS-1:0] mem [BB_GV];
+  logic [BP_VAR_DEG-1:0]          we_lane;
+  logic [BP_VAR_DEG*MSG_BITS-1:0] wd_row;
+  // per-lane write mask: lane d of row h is written iff the slot has a present edge d in group h (the old
+  // per-cell enable, hoisted). Data = var-update output, or lambda during the S_INIT seed.
+  always_comb begin
+    we_lane = '0;
+    for (int d = 0; d < BP_VAR_DEG; d++) wd_row[d*MSG_BITS+:MSG_BITS] = wd[d];
+    if (wr_init || wr_var)
+      for (int h = 0; h < BB_GV; h++)
+        if (wg == BB_BWV'(h))
+          for (int d = 0; d < BP_VAR_DEG; d++)
+            if (vedge_at(h, II, d) >= 0) begin
+              we_lane[d] = 1'b1;
+              if (wr_init) wd_row[d*MSG_BITS+:MSG_BITS] = BP_LAMBDA[var_at(h, II)][MSG_BITS-1:0];
+            end
+  end
+  // we_lane is only set when wg matched a row index < BB_GV, so mem[wg] is always in range when written.
+  always_ff @(posedge clk)
+    for (int d = 0; d < BP_VAR_DEG; d++)
+      if (we_lane[d]) mem[wg][d*MSG_BITS+:MSG_BITS] <= wd_row[d*MSG_BITS+:MSG_BITS];
+  for (genvar d = 0; d < BP_VAR_DEG; d++) begin : gq
+    assign q[d] = signed'(mem[rg][d*MSG_BITS+:MSG_BITS]);
+  end
+endmodule
+`endif
 /* verilator lint_on DECLFILENAME */
 
 // ========================================================================================= TOP CORE
@@ -548,6 +628,27 @@ module bp_relay_banked (
   endgenerate
 
   // ===================================================================== m_vm bank cells
+`ifdef BP_RF_REGFILE
+  // Q7-08: one wide byte-masked array per var slot (see bp_mvm_rf) instead of VAR_DEG per-(i,d) banks.
+  // qmvm keeps its flat (i*VAR_DEG+d) indexing so the gathers are untouched.
+  generate
+    for (genvar i = 0; i < V; i++) begin : gmvm
+      logic signed [MSG_BITS-1:0] q_i [BP_VAR_DEG];
+      bp_mvm_rf #(.II(i)) u_mvm (
+          .clk    (clk),
+          .wr_init(mvm_wr_init),
+          .wr_var (mvm_wr_var),
+          .wg     (wg_var),
+          .wd     (var_m_out[i]),
+          .rg     (mvm_ra),
+          .q      (q_i)
+      );
+      for (genvar d = 0; d < BP_VAR_DEG; d++) begin : gq
+        assign qmvm[i * BP_VAR_DEG + d] = q_i[d];
+      end
+    end
+  endgenerate
+`else
   generate
     for (genvar b = 0; b < NVB; b++) begin : gmvm
       bp_mvm_cell #(.B(b)) u_mvm (
@@ -561,6 +662,7 @@ module bp_relay_banked (
       );
     end
   endgenerate
+`endif
 
   // ===================================================================== W check_minsum slots
   generate

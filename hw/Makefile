@@ -12,7 +12,7 @@ OBJ_DIR   := obj_dir
 VERILATOR ?= verilator
 CARGO     := cargo run --release -q -p aleph-qec --example
 
-.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi stream-axi-circuit cosim-stream cosim-stream-circuit cosim-stream-ler cosim-stream-ler-circuit cosim cosim-3d cosim-circuit cosim-circuit-3d bpcheck bprelay bpunroll bppartial bppartialfast bppipe bpfast bpaxi bpcirc bpaxiwide bpbram bpbramfast bpbramdp bpbramdpearly checkminsum varupdate unrollskel bpunrollpipe bpbanked-lint bpbanked bpbankedbram-lint bpbankedbram bpstream-lint bpstream bpstreamaxi-lint bpstreamaxi bpaxibanked bpbenes bpasw clean
+.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi stream-axi-circuit cosim-stream cosim-stream-circuit cosim-stream-ler cosim-stream-ler-circuit cosim cosim-3d cosim-circuit cosim-circuit-3d bpcheck bprelay bpunroll bppartial bppartialfast bppipe bpfast bpaxi bpcirc bpaxiwide bpbram bpbramfast bpbramdp bpbramdpearly checkminsum varupdate unrollskel bpunrollpipe bpbanked-lint bpbanked bpbankedrf-lint bpbankedrf bpbankedbram-lint bpbankedbram bpstream-lint bpstream bpstreamaxi-lint bpstreamaxi bpaxibanked bpbenes bpasw clean
 
 all: d3 rep surf
 
@@ -274,6 +274,27 @@ bpbanked:
 		$(VERILATOR) --cc --exe --build -Wall --Mdir obj_banked --top-module bp_relay_banked \
 			check_minsum.sv var_update.sv bp_relay_banked.sv tb_bp_banked.cpp -o sim_bpbanked || exit 1; \
 		./obj_banked/sim_bpbanked bp_circ_vectors.txt || exit 1; \
+	done
+
+# Q7-08 — ASIC REGFILE-style banked core: the SAME bp_relay_banked source elaborated with -DBP_RF_REGFILE
+# (m_vm banks consolidated per var-slot into wide byte-masked arrays; m_cm/e_cm storage as transparent-low
+# latch arrays — the SKY130 route-feasibility restructuring). Same golden, same 40/40-at-three-(W,V) gate:
+# bit-exactness of the restructured memories vs the DFF baseline IS the acceptance criterion (#470 AC-2).
+bpbankedrf-lint:
+	cd .. && $(CARGO) qec_q7_bp_graph -- circgraph 1 0.003 8 24 > hw/bb_gross_tanner.svh
+	$(VERILATOR) --lint-only -Wall -DBP_RF_REGFILE --top-module bp_relay_banked \
+		check_minsum.sv var_update.sv bp_relay_banked.sv
+
+bpbankedrf:
+	cd .. && $(CARGO) qec_q7_bp_graph -- circvectors 1 0.003 40 2024 > hw/bp_circ_vectors.txt
+	@for wv in "8 24" "12 36" "16 48"; do \
+		set -- $$wv; echo "== W=$$1 V=$$2 (BP_RF_REGFILE) =="; \
+		(cd .. && $(CARGO) qec_q7_bp_graph -- circgraph 1 0.003 $$1 $$2 > hw/bb_gross_tanner.svh); \
+		rm -rf obj_bankedrf; \
+		$(VERILATOR) --cc --exe --build -Wall -DBP_RF_REGFILE --Mdir obj_bankedrf \
+			--top-module bp_relay_banked \
+			check_minsum.sv var_update.sv bp_relay_banked.sv tb_bp_banked.cpp -o sim_bpbankedrf || exit 1; \
+		./obj_bankedrf/sim_bpbankedrf bp_circ_vectors.txt || exit 1; \
 	done
 
 # Q7-04 M9b — BRAM-ified banked relay-BP core (`bp_relay_banked_bram`): Verilator LINT-ONLY elaboration.
