@@ -46,6 +46,7 @@ _bpbramdpearlybuild/
 bp_circ_vectors_early.txt
 obj_banked/
 obj_bankedrf/
+obj_bankedscale/
 obj_bankedbram/
 obj_bankedbramm/
 _bpaxibankedbuild/

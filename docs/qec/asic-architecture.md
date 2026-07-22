@@ -130,16 +130,57 @@ combined step):
 |---|---|---|---|---|---|
 | KV260 today, 16/48 | 133 MHz | 37 µs | 18.4 µs | 122 µs | 18× over budget (measured) |
 | ASIC 16/48 | 600 MHz | 8.2 µs | 4.1 µs | 27 µs | clock alone is not enough |
-| ASIC 64/192 (4× banks) | 600 MHz | 2.0 µs | **1.0 µs** | 6.8 µs | meets mean budget |
-| ASIC 144/864 (full-par) | 600 MHz | 0.9 µs | **0.45 µs** | 3.0 µs | margin + worst-case near budget |
+| ASIC 64/192 (4× banks) | 600 MHz | 2.0 µs | 1.0 µs † | 6.8 µs † | linear-banking; optimistic — see below |
+| ASIC 144/864 (full-par) | 600 MHz | 0.9 µs | 0.45 µs † | 3.0 µs † | linear-banking; optimistic — see below |
 
-**Spec target: 64/192-class banking at ≥ 600 MHz — mean-rate real-time at 1 µs/round, with the
-full-parallel variant as the worst-case-hardened stretch.** Worst-case-sustained real-time
-additionally needs either C↑ (M9a sweep showed the (W,C) grid; re-sweep at the chosen config) or
-the full-parallel core. 600 MHz is a plausible commercial-node target given the measured
-10-gate-level critical path (11.5 ns in 130 nm pre-P&R is fanout/wire-dominated, exactly what
-P&R + a real clock tree attack); it is **not yet a placed number** — OpenROAD P&R is the named
-next step (§ 8).
+† These two rows used the "banking scales cycles linearly" first-order assumption. **That
+assumption is now measured and does not hold** — see the qualification immediately below; the
+64/192 and 144/864 worst-case numbers are ~1.75× / ~2.1× better than reality.
+
+#### Banking-scaling qualification (measured, Q7-08 follow-up)
+
+The banked relay-BP core (`bp_relay_banked`, rounds=1 M8 vehicle) was regenerated and
+cycle-measured at five bank geometries via the 40-shot co-sim (worst-case full schedule, all
+LEGS·ITERS = 60 iterations; latency is the hardware invariant, identical for the DFF and
+`BP_RF_REGFILE` styles):
+
+| banking (W/V) | check groups GC | var groups GV | worst-case cycles | µs @ 600 MHz |
+|---|---|---|---|---|
+| 8/24 | 18 | 36 | 3750 | 6.25 |
+| 12/36 | 12 | 24 | 2640 | 4.40 |
+| 16/48 (shipped) | 9 | 18 | 2085 | 3.48 |
+| 32/96 | 5 | 9 | 1283 | 2.14 |
+| 64/192 | 3 | 5 | **913** | **1.52** |
+
+The counts fit an **exact** closed form: `cycles = 60·(GC+GV) + 60·7 + (2·GV+GC+1)`. The middle
+term is the killer: **`60·7 = 420` cycles of per-iteration pipeline tail** (the M8 CHK phase runs
+`pc = 0..GC+3` and VAR runs `pc = 0..GV+2` — 7 drain cycles per iteration that exist regardless of
+banking). Only the `60·(GC+GV)` "useful work" term shrinks with banking; the 420-cycle tail is
+**banking-invariant**, so scaling is sublinear and floored:
+
+- **4× banking (16/48 → 64/192) delivers 2.28× fewer cycles, not 4×** (2085 → 913). The pipeline
+  tail is 20 % of the 16/48 cycle budget but **47 %** of the 64/192 budget.
+- **Hard floor:** even full-parallel 144/864 (GC = GV = 1) is `60·9 + 4 = 544` cycles = **0.91 µs
+  @ 600 MHz** for the worst-case schedule — it cannot go lower without changing LEGS, ITERS, or the
+  pipeline depth. The ladder's 0.45 µs full-parallel figure is unreachable by banking.
+
+**Consequence for the target.** Worst-case-schedule real-time at 64/192 @ 600 MHz is **≈ 1.5 µs**,
+not the ~0.87 µs a linear 4× implies; even the full-parallel stretch bottoms out at ~0.91 µs. The
+**1 µs/round worst-case budget is therefore not met by banking alone.** The dominant remaining
+lever is no longer banking but **ITERS** — the 420-cycle floor is `LEGS·ITERS·7`, so halving the
+BP iteration budget halves the floor. The minimum tolerable ITERS at a target LER is exactly what
+**Q7-06's silicon-accelerated LER campaign qualifies** — so Q7-06 is now on the critical path to
+the latency budget, not just the reliability budget. (The *early-exit mean* column may still scale
+better than worst-case, since early exit cuts effective iterations; but that too is set by the
+Q7-06 syndrome-distribution data, not assumable.) A secondary lever is a shallower submodule
+pipeline (fewer than the M8 +2/+1 drain cycles), which trades Fmax.
+
+**Spec target (revised): 64/192-class banking at ≥ 600 MHz reaches ~1.5 µs worst-case / ~1 µs
+early-mean per round — the 1 µs *worst-case* budget additionally requires an ITERS reduction
+(Q7-06-qualified) or accepting the early-exit mean.** 600 MHz is a plausible commercial-node
+target given the measured 10-gate-level critical path (11.5 ns in 130 nm pre-P&R is
+fanout/wire-dominated); it is **not yet a placed number** — and the sky130hd P&R attempt (§ 8,
+Q7-08) showed the placed number needs a commercial node (routes clean on ASAP7, not sky130).
 
 ### Area (per node; scaling from the measured 130 nm netlist by published node density ratios — indicative)
 

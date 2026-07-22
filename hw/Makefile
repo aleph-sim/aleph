@@ -12,7 +12,7 @@ OBJ_DIR   := obj_dir
 VERILATOR ?= verilator
 CARGO     := cargo run --release -q -p aleph-qec --example
 
-.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi stream-axi-circuit cosim-stream cosim-stream-circuit cosim-stream-ler cosim-stream-ler-circuit cosim cosim-3d cosim-circuit cosim-circuit-3d bpcheck bprelay bpunroll bppartial bppartialfast bppipe bpfast bpaxi bpcirc bpaxiwide bpbram bpbramfast bpbramdp bpbramdpearly checkminsum varupdate unrollskel bpunrollpipe bpbanked-lint bpbanked bpbankedrf-lint bpbankedrf bpbankedbram-lint bpbankedbram bpstream-lint bpstream bpstreamaxi-lint bpstreamaxi bpaxibanked bpbenes bpasw clean
+.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi stream-axi-circuit cosim-stream cosim-stream-circuit cosim-stream-ler cosim-stream-ler-circuit cosim cosim-3d cosim-circuit cosim-circuit-3d bpcheck bprelay bpunroll bppartial bppartialfast bppipe bpfast bpaxi bpcirc bpaxiwide bpbram bpbramfast bpbramdp bpbramdpearly checkminsum varupdate unrollskel bpunrollpipe bpbanked-lint bpbanked bpbankedrf-lint bpbankedrf bpbankedscale bpbankedbram-lint bpbankedbram bpstream-lint bpstream bpstreamaxi-lint bpstreamaxi bpaxibanked bpbenes bpasw clean
 
 all: d3 rep surf
 
@@ -274,6 +274,22 @@ bpbanked:
 		$(VERILATOR) --cc --exe --build -Wall --Mdir obj_banked --top-module bp_relay_banked \
 			check_minsum.sv var_update.sv bp_relay_banked.sv tb_bp_banked.cpp -o sim_bpbanked || exit 1; \
 		./obj_banked/sim_bpbanked bp_circ_vectors.txt || exit 1; \
+	done
+
+# Q7 banking-scaling qualification (asic-architecture.md § 5): sweep the banked core across five
+# (W,V) geometries and print worst-case cycles per config. Confirms the closed form
+# cycles = 60·(GC+GV) + 60·7 + (2·GV+GC+1): the 60·7 = 420-cycle per-iteration pipeline tail is
+# banking-invariant, so 4× banking (16/48→64/192) yields 2.28× not 4×, floored at ~544 cycles
+# (full-parallel). 64/192 builds 64 check_minsum + 192 var_update units — a large but buildable sim.
+bpbankedscale:
+	cd .. && $(CARGO) qec_q7_bp_graph -- circvectors 1 0.003 40 2024 > hw/bp_circ_vectors.txt
+	@for wv in "8 24" "12 36" "16 48" "32 96" "64 192"; do \
+		set -- $$wv; echo "== W=$$1 V=$$2 =="; \
+		(cd .. && $(CARGO) qec_q7_bp_graph -- circgraph 1 0.003 $$1 $$2 > hw/bb_gross_tanner.svh); \
+		rm -rf obj_bankedscale; \
+		$(VERILATOR) --cc --exe --build -Wall --Mdir obj_bankedscale --top-module bp_relay_banked \
+			check_minsum.sv var_update.sv bp_relay_banked.sv tb_bp_banked.cpp -o sim_bscale || exit 1; \
+		./obj_bankedscale/sim_bscale bp_circ_vectors.txt || exit 1; \
 	done
 
 # Q7-08 — ASIC REGFILE-style banked core: the SAME bp_relay_banked source elaborated with -DBP_RF_REGFILE
