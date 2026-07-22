@@ -204,9 +204,16 @@ wirelength 6.17 M µm, **0 antenna violations**), which sky130hd never reached o
 49 Short + 46 Metal-spacing (the real ones, closable by a small util drop) and 111 ASAP7 Lef58
 `EolKeepOut`/`EndOfLine`/`CutSpacingTable`/Cut — the predictive PDK's finicky cut/EOL rules, which
 ASAP7 reference designs routinely leave in the dozens–hundreds. This is a *near-complete* route
-with a fine-tuning residual, categorically different from sky130's "cannot route at all". A lower
-util (≈35 %) or a production PDK closes the remainder; not pursued here — the routability verdict
-is already unambiguous.
+with a fine-tuning residual, categorically different from sky130's "cannot route at all".
+
+*Util sweep (45 % → 35 %) confirms the split.* Re-running at 35 % util (die 0.210 mm², GRT still
+0 congestion / 0 NDR, M2 usage 43.9 %) drops total DRC 207 → **155** and, tellingly, **halves the
+real routing shorts (49 → 24)** while the ASAP7 Lef58 model artifacts only partly recede
+(EolKeepOut 79→51, EndOfLine 18→11, CutSpacingTable 14→6). So the *real* DRCs are congestion-
+dependent and fall with util as expected; the stubborn residual is the predictive PDK's rule-deck,
+not the design. ASAP7 will not reach a true zero — its own reference designs don't — so a
+tape-out-clean DRC sign-off belongs on a production PDK, not this proxy. The ASAP7 experiment is
+closed here: it proved routability (its purpose); DRC-clean sign-off is a 22FDX (§ 7) step.
 
 **Conclusion.** The routability wall is a property of **sky130's 130 nm routing budget**, not of
 the decoder RTL. A modern node routes the same netlist comfortably — and notably it does so with
