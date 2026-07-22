@@ -644,7 +644,10 @@ mod tests {
                 Syndrome::from_bits(&v)
             })
             .collect();
-        let serial: Vec<_> = syns.iter().map(|s| dec.decode(s).observable_flips).collect();
+        let serial: Vec<_> = syns
+            .iter()
+            .map(|s| dec.decode(s).observable_flips)
+            .collect();
         let batch = dec.decode_batch(&syns).expect("batch decode");
         assert_eq!(batch.len(), serial.len());
         for (i, (b, s)) in batch.iter().zip(&serial).enumerate() {
