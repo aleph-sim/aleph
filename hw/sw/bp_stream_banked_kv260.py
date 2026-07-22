@@ -118,42 +118,68 @@ def main(argv):
     NS = (C + 31) // 32
     print("[info] %d checks / %d vars / %d obs ; %d golden tests ; NS=%d words/exp" % (C, N, OBS, len(tests), NS))
 
+    # Program the PL. Preferred path is Overlay(): it registers the device so pynq.allocate() (CMA) works
+    # AND exposes pynq's AXI-DMA driver. On Kria-PYNQ 3.0.1 a design with no PL DRAM banks can trip the
+    # stub-xclbinutil bug (Overlay raises FileNotFoundError on t.xclbin); fall back to Bitstream().download()
+    # + a raw MMIO DMA engine. (allocate() may still need a device in the fallback; handled at first use.)
     print("[board] programming PL with %s ..." % bitfile)
-    Bitstream(bitfile).download()
-    dma = MMIO(base, 0x1000)
+    ol = None
+    pynq_dma = None
+    try:
+        from pynq import Overlay
+        ol = Overlay(bitfile)
+        dma_name = next((k for k in ol.ip_dict if "dma" in k.lower()), None)
+        if dma_name is not None:
+            pynq_dma = getattr(ol, dma_name)
+            print("[board] Overlay OK; using pynq DMA driver '%s'" % dma_name)
+        else:
+            print("[board] Overlay OK but no DMA IP found; using raw MMIO at 0x%08x" % base)
+    except Exception as e:  # noqa: BLE001 — Kria xclbin-stub bug surfaces as FileNotFoundError here
+        print("[board] Overlay() failed (%s: %s); falling back to Bitstream().download() + raw MMIO"
+              % (type(e).__name__, e))
+        Bitstream(bitfile).download()
+
+    dma_mmio = None if pynq_dma is not None else MMIO(base, 0x1000)
 
     def reset_dma():
-        # RS=0 then RS=1 on both channels; writing LENGTH later actually starts a transfer.
-        dma.write(MM2S_DMACR, 0)
-        dma.write(S2MM_DMACR, 0)
-        dma.write(MM2S_DMACR, DMACR_RS)
-        dma.write(S2MM_DMACR, DMACR_RS)
+        dma_mmio.write(MM2S_DMACR, 0)
+        dma_mmio.write(S2MM_DMACR, 0)
+        dma_mmio.write(MM2S_DMACR, DMACR_RS)
+        dma_mmio.write(S2MM_DMACR, DMACR_RS)
 
     def run_batch(in_buf, out_buf, n_exp):
         """One batched transfer: MM2S sends n_exp*NS words, S2MM receives n_exp words. Returns elapsed s."""
+        if pynq_dma is not None:
+            in_buf.flush()
+            t0 = time.perf_counter()
+            pynq_dma.recvchannel.transfer(out_buf[:n_exp])
+            pynq_dma.sendchannel.transfer(in_buf[:n_exp * NS])
+            pynq_dma.sendchannel.wait()
+            pynq_dma.recvchannel.wait()
+            dt = time.perf_counter() - t0
+            out_buf.invalidate()
+            return dt
+        # raw-MMIO path
         in_buf.flush()
         reset_dma()
         t0 = time.perf_counter()
-        # arm S2MM (receive) first so it is ready when results stream out
-        dma.write(S2MM_DA, out_buf.physical_address & 0xFFFFFFFF)
-        dma.write(S2MM_DA_MSB, (out_buf.physical_address >> 32) & 0xFFFFFFFF)
-        dma.write(S2MM_LENGTH, n_exp * 4)
-        # start MM2S (send)
-        dma.write(MM2S_SA, in_buf.physical_address & 0xFFFFFFFF)
-        dma.write(MM2S_SA_MSB, (in_buf.physical_address >> 32) & 0xFFFFFFFF)
-        dma.write(MM2S_LENGTH, n_exp * NS * 4)
-        # wait for both channels idle
+        dma_mmio.write(S2MM_DA, out_buf.physical_address & 0xFFFFFFFF)
+        dma_mmio.write(S2MM_DA_MSB, (out_buf.physical_address >> 32) & 0xFFFFFFFF)
+        dma_mmio.write(S2MM_LENGTH, n_exp * 4)
+        dma_mmio.write(MM2S_SA, in_buf.physical_address & 0xFFFFFFFF)
+        dma_mmio.write(MM2S_SA_MSB, (in_buf.physical_address >> 32) & 0xFFFFFFFF)
+        dma_mmio.write(MM2S_LENGTH, n_exp * NS * 4)
         g = 0
-        while not (dma.read(MM2S_DMASR) & DMASR_IDLE) and g < 100_000_000:
+        while not (dma_mmio.read(MM2S_DMASR) & DMASR_IDLE) and g < 100_000_000:
             g += 1
         g = 0
-        while not (dma.read(S2MM_DMASR) & DMASR_IDLE) and g < 100_000_000:
+        while not (dma_mmio.read(S2MM_DMASR) & DMASR_IDLE) and g < 100_000_000:
             g += 1
         dt = time.perf_counter() - t0
         out_buf.invalidate()
-        if not (dma.read(MM2S_DMASR) & DMASR_IDLE) or not (dma.read(S2MM_DMASR) & DMASR_IDLE):
+        if not (dma_mmio.read(MM2S_DMASR) & DMASR_IDLE) or not (dma_mmio.read(S2MM_DMASR) & DMASR_IDLE):
             raise RuntimeError("DMA channel did not go idle (MM2S_SR=0x%08x S2MM_SR=0x%08x)"
-                               % (dma.read(MM2S_DMASR), dma.read(S2MM_DMASR)))
+                               % (dma_mmio.read(MM2S_DMASR), dma_mmio.read(S2MM_DMASR)))
         return dt
 
     obs_mask = (1 << OBS) - 1
