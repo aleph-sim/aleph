@@ -56,10 +56,15 @@ apply_bd_automation -rule xilinx.com:bd_rule:zynq_ultra_ps_e \
 # One AXI-Lite master (M_AXI_HPM0_FPD, DMA control), one HP slave (S_AXI_HP0_FPD, DMA <-> DDR), one PL
 # clock at the requested FCLK. PS DDR/MIO is irrelevant for a PL overlay on a booted Linux (PYNQ programs
 # only the PL); it exists to generate the AXI address map + the .hwh PYNQ needs.
+# On zynq_ultra_ps_e the HP slave ports are named S_AXI_GP* (SAXIGP2 == the S_AXI_HP0_FPD interface),
+# NOT S_AXI_HP0 — there is no PSU__USE__S_AXI_HP0 flag in Vivado 2024.2. Enabling PSU__USE__S_AXI_GP2
+# creates the S_AXI_HP0_FPD port (+ saxihp0_fpd_aclk); PSU__USE__M_AXI_GP0 creates M_AXI_HPM0_FPD
+# (+ maxihpm0_fpd_aclk). 64-bit HP is ample for one 32-bit DMA stream pair; sc_hp adapts the width.
 set_property -dict [list \
   CONFIG.PSU__USE__M_AXI_GP0 {1} \
   CONFIG.PSU__USE__M_AXI_GP2 {0} \
-  CONFIG.PSU__USE__S_AXI_HP0 {1} \
+  CONFIG.PSU__USE__S_AXI_GP2 {1} \
+  CONFIG.PSU__SAXIGP2__DATA_WIDTH {64} \
   CONFIG.PSU__FPGA_PL0_ENABLE {1} \
   CONFIG.PSU__CRL_APB__PL0_REF_CTRL__FREQMHZ [format %d $fclk_mhz]] [get_bd_cells ps]
 
