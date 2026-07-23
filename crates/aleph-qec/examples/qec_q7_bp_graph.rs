@@ -2103,7 +2103,11 @@ fn emit_sil_vectors(rounds: usize, p: f64, n: usize, seed: u64, prefix: &str, ea
         "# AC-2 sil vectors: n={n} p={p} rounds={rounds} seed={seed} mode={} NS={ns} BP_C={n_checks} BP_OBS={n_obs}",
         if early { "early" } else { "full" }
     );
-    eprintln!("# wrote {syn_path} ({} bytes) + {ref_path} ({} bytes)", n * ns * 4, n * 4);
+    eprintln!(
+        "# wrote {syn_path} ({} bytes) + {ref_path} ({} bytes)",
+        n * ns * 4,
+        n * 4
+    );
     println!("p={p} n={n} sw_ler={sw_ler:.6} sw_ci95={ci:.6} sw_errors={sw_errors} NS={ns} BP_OBS={n_obs}");
 }
 
