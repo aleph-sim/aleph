@@ -1,7 +1,8 @@
 # Q7-06 AC-1 — batched AXI-DMA decoder path (on-silicon results)
 
-**Status:** RTL + KV260 bitstream built and validated on-silicon. Full-schedule overlay done; early-exit
-overlay (the product mode) is the ≥100× vehicle. Part of #457.
+**Status: AC-1 throughput target MET.** RTL + both KV260 overlays (full-schedule and early-exit) built
+and validated on-silicon; the early-exit overlay reaches **163×** the per-word harness throughput
+(≥100× cleared). Part of #457.
 
 ## What AC-1 is
 
@@ -41,25 +42,29 @@ circuit golden as one batch (bit-exact gate), then benches experiments/sec.
   golden. Confirmed at batch sizes n = 1, 2, 4, 40 and 20 000. The same `bp_relay_banked` core in the M8
   AXI-Lite overlay also passes 40/40, cross-checking the core independent of the DMA path.
 
-## Throughput (100 MHz, full-schedule overlay)
+## Throughput (KV260, 100 MHz, measured on-silicon)
 
-| path | mode | exp/s | µs/exp | note |
+| path | mode | exp/s | µs/exp | speedup vs per-word (same mode) |
 |---|---|---|---|---|
-| per-word AXI-Lite (`bp_circ_kv260.py`, `bp_m8.bit`) | full | 3 018 | 331 | Python+MMIO bound (~94 % harness overhead) |
-| per-word AXI-Lite | early | 3 392 | 295 | still harness-bound |
-| **batched DMA (`bp_stream_banked_kv260.py`)** | full | **43 380** | **23.1** | **14.4×**; now hardware-decode-bound (2085 cyc = 20.85 µs) |
+| per-word AXI-Lite (`bp_circ_kv260.py`, `bp_m8.bit`) | full | 3 018 | 331 | 1× (Python+MMIO bound, ~94 % harness overhead) |
+| per-word AXI-Lite | early | 3 392 | 295 | 1× (still harness-bound) |
+| batched DMA (`bp_stream_banked_kv260.py`) | full | 43 380 | 23.1 | **14.4×** — hardware-decode-bound (2085 cyc = 20.85 µs) |
+| **batched DMA** | **early** | **553 000** | **1.81** | **163× — ≥100× MET** (183× vs per-word full) |
 
-**Reading of the 14.4×.** Batching removed ~99 % of the per-experiment Python/MMIO harness overhead — the
-batched path's 23 µs/exp is essentially the raw 2085-cycle full-schedule decode latency (20.85 µs), not
-harness time. The full-schedule number is therefore **decode-latency-bound**, and 1/20.85 µs ≈ 48 k exp/s
-is the hard ceiling for a single, non-pipelined-across-experiments core at full schedule. The ≥100×
-target is unreachable in full-schedule mode for that reason — the harness was never the *only* bottleneck
-when each decode itself costs 20.85 µs.
+**Reading it.** Batching removes ~99 % of the per-experiment Python/MMIO harness overhead in both modes;
+the batched path's µs/exp then equals the raw hardware decode latency (23 µs ≈ the 2085-cycle full
+schedule; 1.81 µs ≈ the ~153-cycle early-exit mean). So the *mode* sets the throughput ceiling once the
+harness is out of the way:
 
-**Where ≥100× lives: early-exit (the product mode, spec D4).** Early-exit mean decode is ~153 cycles ≈
-1.5 µs (M8 measured), ~14× shorter than full schedule, lifting the batched ceiling to ~500 k exp/s — well
-past 100× over the per-word early-exit baseline (3 392 exp/s). The early-exit overlay is built from the
-same tcl with arg 6 = 1; on-silicon early-exit throughput is measured against this baseline to close AC-1.
+- **Full schedule is decode-latency-bound at 14.4×** — 1/20.85 µs ≈ 48 k exp/s is the hard ceiling for a
+  single, non-pipelined-across-experiments core; ≥100× is unreachable there because each decode itself
+  costs 20.85 µs (the harness was never the *only* bottleneck at full schedule).
+- **Early-exit (the product mode, spec D4) clears ≥100× with margin: 553 k exp/s = 163×** over the
+  per-word early-exit baseline. This is the AC-1 result — batching converts the per-word runner's
+  harness-bound rate into a hardware-decode-bound rate, and in the deployment mode that is a 163× gain.
+
+Correctness on the early-exit overlay is 40/40 vs the *full-schedule* golden (the two agree on obs for all
+40 sub-threshold shots); a strict early-exit gate would use the first-valid golden (`circvectorsearly`).
 
 ## Reproduce
 
