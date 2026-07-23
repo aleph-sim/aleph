@@ -122,6 +122,23 @@ def main(argv):
     # AND exposes pynq's AXI-DMA driver. On Kria-PYNQ 3.0.1 a design with no PL DRAM banks can trip the
     # stub-xclbinutil bug (Overlay raises FileNotFoundError on t.xclbin); fall back to Bitstream().download()
     # + a raw MMIO DMA engine. (allocate() may still need a device in the fallback; handled at first use.)
+    # Ensure a sidecar <bit>.xclbin exists so pynq's get_xclbin_data() uses it instead of the buggy
+    # stub-xclbinutil path (Kria-PYNQ 3.0.1). pynq ships a generic default.xclbin; a placeholder is
+    # enough for Overlay to load + register the device (we drive the DMA by IP/MMIO, not its metadata).
+    import os
+    xclbin_side = os.path.splitext(bitfile)[0] + ".xclbin"
+    if not os.path.exists(xclbin_side):
+        try:
+            import pynq as _pq
+            default_xclbin = os.path.join(os.path.dirname(_pq.__file__),
+                                          "pl_server", "default.xclbin")
+            if os.path.exists(default_xclbin):
+                import shutil
+                shutil.copyfile(default_xclbin, xclbin_side)
+                print("[board] staged placeholder sidecar %s" % xclbin_side)
+        except Exception as e:  # noqa: BLE001
+            print("[board] could not stage sidecar xclbin (%s); Overlay may hit the stub bug" % e)
+
     print("[board] programming PL with %s ..." % bitfile)
     ol = None
     pynq_dma = None
