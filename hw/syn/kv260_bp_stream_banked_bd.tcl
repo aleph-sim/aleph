@@ -26,8 +26,12 @@ set proj_dir [expr {$argc >= 1 ? [lindex $argv 0] : "kv260bpstream"}]
 set out_dir  [expr {$argc >= 2 ? [lindex $argv 1] : "out_stream"}]
 set fclk_mhz [expr {$argc >= 3 ? [lindex $argv 2] : 100}]
 set bdonly   [expr {$argc >= 4 && [lindex $argv 3] eq "bdonly"}]
-# optional 5th arg: impl_1 strategy (e.g. Performance_Explore); empty = defaults
-set strategy [expr {$argc >= 5 ? [lindex $argv 4] : ""}]
+# optional 5th arg: impl_1 strategy (e.g. Performance_Explore); "" or "default" = flow defaults
+# (Vivado -tclargs drops empty {} args, so pass the literal "default" as a placeholder before arg 6).
+set strategy [expr {($argc >= 5 && [lindex $argv 4] ne "default") ? [lindex $argv 4] : ""}]
+# optional 6th arg: early_exit constant (0 = full schedule [default], 1 = stop at first valid decision =
+# the product/deployment mode, D4). Baked as the xlconstant feeding bp_0/early_exit for this overlay.
+set early_exit [expr {$argc >= 6 ? [lindex $argv 5] : 0}]
 set hw [file normalize [file join [file dirname [info script]] ..]]
 file mkdir $out_dir
 
@@ -82,9 +86,9 @@ set_property -dict [list \
 
 # ---- batched decoder datapath ----
 create_bd_cell -type module -reference bp_stream_banked bp_0
-# early_exit tied off to 0 (full schedule) for the AC-1/AC-2 build; rebuild with 1 for early-exit mode.
+# early_exit tied to the build-time constant (arg 6): 0 = full schedule, 1 = early-exit (product mode).
 create_bd_cell -type ip -vlnv xilinx.com:ip:xlconstant ee0
-set_property -dict [list CONFIG.CONST_WIDTH {1} CONFIG.CONST_VAL {0}] [get_bd_cells ee0]
+set_property -dict [list CONFIG.CONST_WIDTH {1} CONFIG.CONST_VAL [format %d $early_exit]] [get_bd_cells ee0]
 
 # ---- reset + smartconnects ----
 create_bd_cell -type ip -vlnv xilinx.com:ip:proc_sys_reset rst0
