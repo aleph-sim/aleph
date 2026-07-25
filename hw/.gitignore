@@ -59,3 +59,5 @@ obj_benes_addr/
 obj_benes_wr/
 obj_asw_read/
 obj_asw_wr/
+obj_bankedhw/
+bp_circ_hw_vectors.txt

@@ -12,7 +12,7 @@ OBJ_DIR   := obj_dir
 VERILATOR ?= verilator
 CARGO     := cargo run --release -q -p aleph-qec --example
 
-.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi stream-axi-circuit cosim-stream cosim-stream-circuit cosim-stream-ler cosim-stream-ler-circuit cosim cosim-3d cosim-circuit cosim-circuit-3d bpcheck bprelay bpunroll bppartial bppartialfast bppipe bpfast bpaxi bpcirc bpaxiwide bpbram bpbramfast bpbramdp bpbramdpearly checkminsum varupdate unrollskel bpunrollpipe bpbanked-lint bpbanked bpbankedrf-lint bpbankedrf bpbankedscale bpbankedbram-lint bpbankedbram bpstream-lint bpstream bpstreamaxi-lint bpstreamaxi bpaxibanked bpbenes bpasw clean
+.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi stream-axi-circuit cosim-stream cosim-stream-circuit cosim-stream-ler cosim-stream-ler-circuit cosim cosim-3d cosim-circuit cosim-circuit-3d bpcheck bprelay bpunroll bppartial bppartialfast bppipe bpfast bpaxi bpcirc bpaxiwide bpbram bpbramfast bpbramdp bpbramdpearly checkminsum varupdate unrollskel bpunrollpipe bpbanked-lint bpbanked bpbanked-highweight bpbankedrf-lint bpbankedrf bpbankedscale bpbankedbram-lint bpbankedbram bpstream-lint bpstream bpstreamaxi-lint bpstreamaxi bpaxibanked bpbenes bpasw clean
 
 all: d3 rep surf
 
@@ -297,6 +297,23 @@ bpbanked:
 			check_minsum.sv var_update.sv bp_relay_banked.sv tb_bp_banked.cpp -o sim_bpbanked || exit 1; \
 		./obj_banked/sim_bpbanked bp_circ_vectors.txt || exit 1; \
 	done
+
+# Q7-06 AC-2 (#478) — HIGH-WEIGHT co-sim gate. Every other banked-core gate drives 40 shots at p=0.003,
+# where the decoder converges early and the trajectory is easy; high-weight syndromes were never
+# exercised in simulation at all. That is the coverage hole that let #478 reach silicon: the 10^6-shot
+# campaign compared a bitstream baking λ(p=0.003) against a golden decoded at λ(p=0.005/0.007) — two
+# different decoders — and the resulting "RTL divergence" (0 at p=0.003, growing with |p − 0.003|) was
+# read as a core bug. This target reproduces that pairing honestly: header at p=0.003 (what the shipped
+# bitstream bakes) + 2000 shots SAMPLED at p=0.007 whose golden is decoded with the SAME λ(0.003) — the
+# explicit `decoder_p` trailing arg of `circvectors`. 2000/2000 bit-identical IS the gate; dropping the
+# trailing 0.003 reproduces the campaign's ~10% mismatch, which is the negative control.
+bpbanked-highweight:
+	cd .. && $(CARGO) qec_q7_bp_graph -- circgraph 1 0.003 16 48 > hw/bb_gross_tanner.svh
+	cd .. && $(CARGO) qec_q7_bp_graph -- circvectors 1 0.007 2000 2024 0.003 > hw/bp_circ_hw_vectors.txt
+	rm -rf obj_bankedhw
+	$(VERILATOR) --cc --exe --build -Wall --Mdir obj_bankedhw --top-module bp_relay_banked \
+		check_minsum.sv var_update.sv bp_relay_banked.sv tb_bp_banked.cpp -o sim_bpbankedhw
+	./obj_bankedhw/sim_bpbankedhw bp_circ_hw_vectors.txt
 
 # Q7 banking-scaling qualification (asic-architecture.md § 5): sweep the banked core across five
 # (W,V) geometries and print worst-case cycles per config. Confirms the closed form
