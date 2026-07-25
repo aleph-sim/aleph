@@ -1,10 +1,11 @@
-# Q7-06 AC-1 — batched AXI-DMA decoder path (on-silicon results)
+# Q7-06 — batched AXI-DMA decoder path + on-silicon LER qualification
 
-**Status: AC-1 throughput target MET** (163× per-word harness throughput, ≥100× cleared) on both KV260
-overlays. **AC-2 (10⁶-shot LER) ran and surfaced a real synth-vs-sim divergence in the banked core** on
-high-weight syndromes — bit-exact at p=0.003, RTL LER ~7–13 % worse at p≥0.005; isolated to
-`bp_relay_banked` (not the DMA wrapper, not timing, not the RTL-as-simulated), so AC-2's within-CI gate
-is not yet met and root-cause is scoped follow-up. Part of #457.
+**Status: both ACs MET.** AC-1 throughput target MET (163× per-word harness throughput, ≥100× cleared)
+on both KV260 overlays. **AC-2 MET**: 10⁶ shots × 3 circuit-level rates, **0 divergence at every point**
+— the silicon decoder is bit-exact to the software `FixedRelayBp` golden, not merely within CI. The
+first run of AC-2 reported a growing divergence at p ≥ 0.005 and it was read as a synth-vs-sim bug in
+the banked core; it was in fact the campaign comparing a bitstream baking λ(p=0.003) against a golden
+decoded at λ(p=0.005)/λ(p=0.007) — two different decoders (#478, fixed). Closes #457.
 
 ## What AC-1 is
 
@@ -68,20 +69,27 @@ harness is out of the way:
 Correctness on the early-exit overlay is 40/40 vs the *full-schedule* golden (the two agree on obs for all
 40 sub-threshold shots); a strict early-exit gate would use the first-valid golden (`circvectorsearly`).
 
-## AC-2 — 10⁶-shot on-silicon LER campaign (a harness bug, since root-caused)
+## AC-2 — 10⁶-shot on-silicon LER campaign — **MET**
 
 The campaign streams real DEM shots through the batched overlay and compares the RTL logical-error rate
 to the software `FixedRelayBp` golden. Harness: the `silvectors` emitter (binary `.syn`/`.ref`) +
-`hw/sw/bp_stream_banked_ler_kv260.py`. Run at **10⁶ shots × 3 circuit-level rates** (rounds=1 vehicle):
+`hw/sw/bp_stream_banked_ler_kv260.py`. Run at **10⁶ shots × 3 circuit-level rates** (rounds=1 vehicle),
+each against a bitstream whose header bakes that point's priors:
 
 | point | n | sw LER | RTL LER | \|diff\| | comb 95% CI | divergence (rtl≠sw) | verdict |
 |---|---|---|---|---|---|---|---|
-| p=0.003 | 10⁶ | 8.32e-4 | 8.32e-4 | 0 | 1.1e-4 | **0 / 10⁶** | PASS |
-| p=0.005 | 10⁶ | 7.05e-3 | 7.53e-3 | 4.8e-4 | 3.3e-4 | 7 067 / 10⁶ | FAIL |
-| p=0.007 | 10⁶ | 2.88e-2 | 3.26e-2 | 3.8e-3 | 6.8e-4 | 30 703 / 10⁶ | FAIL |
+| p=0.003 | 10⁶ | 8.3200e-4 | 8.3200e-4 | 0 | 1.13e-4 | **0 / 10⁶** | PASS |
+| p=0.005 | 10⁶ | 7.0520e-3 | 7.0520e-3 | 0 | 3.28e-4 | **0 / 10⁶** | PASS |
+| p=0.007 | 10⁶ | 2.8774e-2 | 2.8774e-2 | 0 | 6.55e-4 | **0 / 10⁶** | PASS |
 
-**The p ≥ 0.005 rows above are not a decoder result** — they compare **two different decoders**, and the
-table is kept only as the record of what the campaign measured before that was understood.
+Not merely within CI — **bit-exact on all 3 × 10⁶ shots** (`rtl_err == sw_err` exactly at every point),
+23.09 µs/shot at the full schedule. Both ACs are now met, so **#457 closes**.
+
+### The first run of this campaign, and why it read as a decoder bug
+
+The same three points originally reported 0 / 7 067 / 30 703 divergences (RTL LER ~7–13 % *worse* at
+p ≥ 0.005, growing with the rate), and that was written up as a synthesis-vs-simulation logic bug in
+`bp_relay_banked`. It was not a decoder result at all: those runs compared **two different decoders**.
 
 **Root cause (#478): the golden's priors did not match the bitstream's.** `FixedRelayBp` derives its
 per-variable prior `λ_v` from the DEM's error probabilities, and the RTL bakes those priors into
@@ -116,11 +124,18 @@ investigation suspected — synthesis fidelity, DSP widening of the `var_update`
   `silvectors` now take an explicit trailing `decoder_p` and stamp `decoder-p=` into the emitted header,
   so a golden can no longer be silently paired with an RTL header built at another `p`.
 
-**Re-running AC-2.** The gate needs the two sides configured alike, which is either one bitstream per
-rate (matched priors at each point — the LER optimum, and the route taken) or one bitstream with goldens
-emitted at its header's `p` (`silvectors 1 <p> 1000000 2024 p00X 0.003`), which is also the more
-realistic deployment metric: real silicon bakes its priors and then meets whatever physical rate the
-device sees.
+**How AC-2 was re-run.** The gate needs both sides configured alike. Two ways to get there:
+
+* **one bitstream per rate** — matched priors at each point, so each row is that decoder's own LER
+  optimum. This is the route taken above: the p=0.005 and p=0.007 overlays were rebuilt from headers
+  emitted at their own `p` (`circgraph 1 <p> 16 48`), both closing timing at 100 MHz (WNS 1.096 ns and
+  1.031 ns, hold met), and the existing p=0.003 overlay served its own point. The campaign vectors
+  needed no regeneration — `silvectors 1 <p> ...` already decodes at that same `p`, which is exactly
+  what a bitstream built at `p` wants.
+* **one bitstream, goldens emitted at its header's `p`** (`silvectors 1 <p> 1000000 2024 p00X 0.003`) —
+  cheaper (no re-synthesis) and the more realistic deployment metric, since real silicon bakes its
+  priors once and then meets whatever physical rate the device sees. Measures prior-mismatch robustness
+  rather than the per-point LER optimum.
 
 ## Reproduce
 
@@ -140,6 +155,15 @@ cargo run --release -p aleph-qec --example qec_q7_bp_graph -- enrichprobe 1 hw/b
 
 `hw/bp_enrich_p007.{syn,ref,rtl}` are the 24 shots themselves (syndrome words, `true_obs`+`sw_obs`, and
 the observable this silicon produced), kept in-tree so the reproduction above needs no board.
+
+```
+# matched-prior overlay for a given rate (the AC-2 route): header at p, then the normal build
+cargo run --release -p aleph-qec --example qec_q7_bp_graph -- circgraph 1 <p> 16 48 > hw/bb_gross_tanner.svh
+cd hw && vivado -mode batch -source syn/kv260_bp_stream_banked_bd.tcl -tclargs <proj> <out> 100
+# then, per point (one bitstream each):
+sudo env XILINX_XRT=/usr /usr/local/share/pynq-venv/bin/python3 \
+     bp_stream_banked_ler_kv260.py bp_p00X.bit ac2/p00X
+```
 
 ```
 # build (EPYC + Vivado 2024.2), full then early-exit:
