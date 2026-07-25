@@ -224,6 +224,28 @@ bpaxibanked:
 		bp_axi_wrap_banked.sv bp_relay_banked.sv check_minsum.sv var_update.sv tb_bp_axi_banked.cpp -o sim_bpaxibanked
 	./_bpaxibankedbuild/obj_dir/sim_bpaxibanked bp_circ_vectors.txt
 
+# Q7-06 (AC-1) — AXI4-Stream BATCH front-end (`bp_stream_banked_core`) around `bp_relay_banked`: LINT only.
+# Stages the 16/48 banked circuit-level header, then elaborates the shell + core + submodules. Catches
+# width/UNDRIVEN/framing mistakes cheaply before the co-sim.
+bpstreambanked-lint:
+	cd .. && $(CARGO) qec_q7_bp_graph -- circgraph 1 0.003 16 48 > hw/bb_gross_tanner.svh
+	$(VERILATOR) --lint-only -Wall --top-module bp_stream_banked_core \
+		check_minsum.sv var_update.sv bp_relay_banked.sv bp_stream_banked_core.sv
+
+# Q7-06 (AC-1) — `bp_stream_banked_core` AXI-Stream batch shell FULL CO-SIM: drive the SAME 40-shot
+# circuit-level golden (`bp_circ_vectors.txt`, bit-exact source shared with bpbanked/bpaxibanked) through
+# the shell as ONE batched transfer, asserting per-experiment {obs,vflag} golden-equality, exact tlast
+# framing, and back-pressure invariance (see tb_bp_stream_banked.cpp). 40/40 is the gate. The (W,V) bank
+# geometry is baked into the header (16/48 shipped) — regen for other geometries.
+bpstreambanked:
+	cd .. && $(CARGO) qec_q7_bp_graph -- circgraph   1 0.003 16 48   > hw/bb_gross_tanner.svh
+	cd .. && $(CARGO) qec_q7_bp_graph -- circvectors 1 0.003 40 2024 > hw/bp_circ_vectors.txt
+	rm -rf _bpstreambankedbuild && mkdir _bpstreambankedbuild
+	cp bp_stream_banked_core.sv bp_relay_banked.sv check_minsum.sv var_update.sv tb_bp_stream_banked.cpp bb_gross_tanner.svh _bpstreambankedbuild/
+	cd _bpstreambankedbuild && $(VERILATOR) --cc --exe --build -Wall -Wno-fatal --top-module bp_stream_banked_core \
+		bp_stream_banked_core.sv bp_relay_banked.sv check_minsum.sv var_update.sv tb_bp_stream_banked.cpp -o sim_bpstreambanked
+	./_bpstreambankedbuild/obj_dir/sim_bpstreambanked bp_circ_vectors.txt
+
 unrollskel:
 	cd .. && $(CARGO) qec_q7_bp_graph -- circgraph 1 0.003 > hw/bb_gross_tanner.svh
 	$(VERILATOR) --lint-only -Wall --top-module bp_unroll_skeleton \

@@ -2033,6 +2033,84 @@ fn emit_circ_vectors(rounds: usize, p: f64, n: usize, seed: u64, early: bool) {
     }
 }
 
+/// Q7-06 AC-2 **silicon MC vectors** — binary, for the 10^6-shot on-board LER campaign. Text vectors
+/// (`circvectors`) are ~150 bytes/shot and don't scale to 10^6. This writes two compact blobs from the
+/// SAME real DEM shots the software harness uses:
+///   `<prefix>.syn` — raw DMA input: `NS = ceil(BP_C/32)` little-endian u32 syndrome words per shot,
+///                    contiguous (exactly what the batched driver streams through MM2S, no repacking).
+///   `<prefix>.ref` — two u16 per shot: `true_obs` (the sampled logical flip) then `sw_obs` (the
+///                    `FixedRelayBp` predicted flip). The driver computes software LER = mean(sw_obs !=
+///                    true_obs), RTL LER = mean(rtl_obs != true_obs), and divergence = mean(rtl_obs !=
+///                    sw_obs); AC-2 asks RTL LER within Monte-Carlo CI of software LER.
+/// The software decode uses the parallel `decode_batch`, so 10^6 shots is tractable.
+fn emit_sil_vectors(rounds: usize, p: f64, n: usize, seed: u64, prefix: &str, early: bool) {
+    use aleph_qec::{sample_shots, Decoder};
+    use std::io::Write;
+    let (dem, fx) = build(Some((rounds, p)));
+    let fx = fx.with_early_exit(early);
+    let n_checks = dem.detectors;
+    let n_obs = dem.observables;
+    let ns = n_checks.div_ceil(32);
+    assert!(n_obs <= 16, "sil vectors pack obs into a u16; got {n_obs}");
+
+    let (syndromes, truths) = sample_shots(&dem, n as u64, seed);
+    // Parallel software decode (the RTL golden): predictions[i].observable_flips is sw_obs.
+    let predictions = fx.decode_batch(&syndromes).expect("decode_batch");
+
+    let syn_path = format!("{prefix}.syn");
+    let ref_path = format!("{prefix}.ref");
+    let mut syn_f = std::io::BufWriter::new(std::fs::File::create(&syn_path).expect("create .syn"));
+    let mut ref_f = std::io::BufWriter::new(std::fs::File::create(&ref_path).expect("create .ref"));
+
+    let mut sw_errors: u64 = 0;
+    for (i, syn) in syndromes.iter().enumerate() {
+        // pack syndrome bits -> NS little-endian u32 words (bit c -> word c/32, bit c%32)
+        let mut words = vec![0u32; ns];
+        for &d in &syn.fired {
+            let d = d as usize;
+            if d < n_checks {
+                words[d / 32] |= 1u32 << (d % 32);
+            }
+        }
+        for w in &words {
+            syn_f.write_all(&w.to_le_bytes()).expect("write syn");
+        }
+        // true obs and sw obs -> u16 each
+        let mut true_obs = 0u16;
+        for (o, &b) in truths[i].iter().enumerate() {
+            if b {
+                true_obs |= 1u16 << o;
+            }
+        }
+        let mut sw_obs = 0u16;
+        for (o, &b) in predictions[i].observable_flips.iter().enumerate() {
+            if b {
+                sw_obs |= 1u16 << o;
+            }
+        }
+        if sw_obs != true_obs {
+            sw_errors += 1;
+        }
+        ref_f.write_all(&true_obs.to_le_bytes()).expect("write ref");
+        ref_f.write_all(&sw_obs.to_le_bytes()).expect("write ref");
+    }
+    syn_f.flush().ok();
+    ref_f.flush().ok();
+    let sw_ler = sw_errors as f64 / n as f64;
+    let ci = 1.96 * (sw_ler * (1.0 - sw_ler) / n as f64).sqrt();
+    // Metadata to stdout (the .syn/.ref are binary on disk).
+    eprintln!(
+        "# AC-2 sil vectors: n={n} p={p} rounds={rounds} seed={seed} mode={} NS={ns} BP_C={n_checks} BP_OBS={n_obs}",
+        if early { "early" } else { "full" }
+    );
+    eprintln!(
+        "# wrote {syn_path} ({} bytes) + {ref_path} ({} bytes)",
+        n * ns * 4,
+        n * 4
+    );
+    println!("p={p} n={n} sw_ler={sw_ler:.6} sw_ci95={ci:.6} sw_errors={sw_errors} NS={ns} BP_OBS={n_obs}");
+}
+
 fn emit_vectors() {
     let dem = BBCode::gross().code_capacity_dem(0.03);
     let fx = FixedRelayBp::with_budget(&dem, LEGS, ITERS, GAMMA, SEED, MSG_BITS, FRAC_BITS);
@@ -2101,6 +2179,11 @@ fn main() {
         }
         "circvectors" => emit_circ_vectors(rounds, p, n, seed, false),
         "circvectorsearly" => emit_circ_vectors(rounds, p, n, seed, true),
+        "silvectors" | "silvectorsearly" => {
+            // silvectors[early] rounds p n seed prefix — binary AC-2 vectors to <prefix>.syn/.ref.
+            let prefix = args.get(6).map(String::as_str).unwrap_or("sil");
+            emit_sil_vectors(rounds, p, n, seed, prefix, mode == "silvectorsearly");
+        }
         "wingraph" => {
             // wingraph rounds p W C bankW bankV — positions 4/5 are (W, C) here (not bankW/bankV
             // like circgraph's 4/5), so bankW/bankV move to fresh positions 6/7.
@@ -2142,7 +2225,7 @@ fn main() {
         other => {
             eprintln!(
                 "unknown mode '{other}'; use graph|vectors|decvectors|circgraph|circvectors|\
-                 circvectorsearly|wingraph|streamgraph|streamvectors|streamvectorsearly|\
+                 circvectorsearly|silvectors|silvectorsearly|wingraph|streamgraph|streamvectors|streamvectorsearly|\
                  serialgraph"
             );
             std::process::exit(2);
