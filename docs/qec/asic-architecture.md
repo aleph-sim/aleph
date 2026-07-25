@@ -182,6 +182,48 @@ target given the measured 10-gate-level critical path (11.5 ns in 130 nm pre-P&R
 fanout/wire-dominated); it is **not yet a placed number** — and the sky130hd P&R attempt (§ 8,
 Q7-08) showed the placed number needs a commercial node (routes clean on ASAP7, not sky130).
 
+#### Iteration-budget qualification on the circuit-level DEM (Q7-06 software precursor)
+
+The banking qualification named **ITERS** as the dominant remaining latency lever once banking is
+maxed. This quantifies it at the *real* operating point. The earlier `qec_q7_budget` sweep ran on the
+**code-capacity** DEM (one perfect round, independent Z, p≈0.05) — the wrong point for a latency claim.
+`qec_q7_circuit_budget` re-runs the `(legs, iters)` budget study on the **circuit-level** DEM (depth-7
+syndrome extraction, depolarizing CNOT/idle/init/measure noise, gross code, rounds = d = 12) in the
+**sub-threshold** regime, at the shipped 6-leg Q5.3 hardware word (100 000 shots/point; the harness
+decodes fixed-point relay-BP in parallel per P5.9-class batch). For each schedule it asks: is the LER
+still within Monte-Carlo CI of the full 6×10 schedule, and what worst-case latency does it cost at
+64/192 and 144/864 (via the banking model above)?
+
+The smallest ITERS whose LER stays within CI of the full 6×10 schedule is **operating-point-dependent**:
+
+| circuit-level p | LER (full 6×10) | min ITERS within CI | sweeps | worst-case @ 64/192 | @ 144/864 |
+|---|---|---|---|---|---|
+| 0.001 | 8.2 × 10⁻⁴ | **6** (of 10) | 36 | **0.92 µs** | 0.55 µs |
+| 0.002 | 8.4 × 10⁻³ | **8** | 48 | 1.22 µs | 0.73 µs |
+| 0.003 | 4.4 × 10⁻² | **10** (none cuttable) | 60 | 1.52 µs | 0.91 µs |
+
+At 100 k shots the CI is tight enough that at p = 0.003, iters = 8 already departs the baseline
+(1.09× LER), so no iteration can be shed within strict CI — the full 6×10 is required. At p = 0.001
+the schedule tolerates a cut to 6 iterations (36 sweeps) with no statistically-resolvable LER cost.
+
+**Refined conclusion (replaces the earlier indicative code-capacity estimate).** The old sketch —
+"worst-case 1 µs needs full-parallel 144/864, not 64/192" — holds and is now grounded in circuit-DEM
+data, with the mechanism made precise:
+
+- **144/864 full-parallel meets the 1 µs worst-case budget at full reliability** — 0.91 µs at the full
+  6×10 schedule, *no* ITERS reduction, at every p measured. This is the clean way to the 1 µs
+  worst-case target; it is the floor established above, and the circuit-DEM LER confirms the full
+  schedule is affordable there.
+- **64/192 reaches ≤1 µs only by trading LER.** Its full-schedule worst case is 1.52 µs; dropping to
+  iters ≤ 6 (36 sweeps → 0.92 µs) buys sub-1 µs but costs ≈ 1.2–1.4× LER at p ≥ 0.002 (outside strict
+  CI). Within strict CI, 64/192 does **not** meet the 1 µs worst case at the p = 0.003 operating point.
+- The **early-exit mean** (not worst-case) remains a separate, softer lever; its scaling is set by the
+  on-silicon syndrome distribution the Q7-06 board campaign (AC-2) will measure, not assumable here.
+
+Net: the spec target stands as **144/864-class banking at ≥ 600 MHz for a full-reliability 1 µs
+worst-case round**, with 64/192 a lower-area option that meets 1 µs only under a modest, quantified LER
+penalty. Reproduce: `cargo run --release -p aleph-qec --example qec_q7_circuit_budget -- 100000`.
+
 ### Area (per node; scaling from the measured 130 nm netlist by published node density ratios — indicative)
 
 | node | streaming core logic | + mems/regfiles (est.) | note |

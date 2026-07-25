@@ -483,6 +483,18 @@ impl Decoder for FixedRelayBp {
     fn decode(&self, syndrome: &Syndrome) -> Correction {
         self.decode_fixed(syndrome).0
     }
+
+    /// Parallel batch decode. [`decode`](Self::decode) is a pure function of `(&self, syndrome)`, so
+    /// an order-preserving `par_iter` is bit-identical to the serial trait default (see the
+    /// `decode_batch_parallel_matches_serial` test) while using every core. The Monte-Carlo harness
+    /// ([`run_dem_experiment`](crate::run_dem_experiment)) decodes through this method, so overriding
+    /// it here is what makes a large fixed-point relay-BP sweep scale past one core — the trait
+    /// default loops `decode` serially, which for this compute-bound decoder pins the harness to a
+    /// single thread even though sampling is already parallel.
+    fn decode_batch(&self, syndromes: &[Syndrome]) -> crate::error::Result<Vec<Correction>> {
+        use rayon::prelude::*;
+        Ok(syndromes.par_iter().map(|s| self.decode(s)).collect())
+    }
 }
 
 /// **Fixed-point relay-BP + OSD-0 tail** — the hardware golden decoder with a software OSD-0 escape
@@ -613,6 +625,34 @@ mod tests {
             a.decode(&syn).observable_flips,
             b.decode(&syn).observable_flips
         );
+    }
+
+    /// The parallel `decode_batch` override is bit-identical to looping `decode` serially — the
+    /// Monte-Carlo harness relies on this equivalence (it decodes through `decode_batch`); the
+    /// override only distributes the same pure per-syndrome decodes across cores.
+    #[test]
+    fn decode_batch_parallel_matches_serial() {
+        let dem = BBCode::gross().code_capacity_dem(0.05);
+        let dec = FixedRelayBp::new(&dem, 8, 3);
+        let mut z = 0x1357_9BDFu64;
+        let syns: Vec<Syndrome> = (0..200)
+            .map(|_| {
+                let mut v = vec![false; dem.detectors];
+                for b in v.iter_mut() {
+                    *b = (splitmix(&mut z) & 1) == 1;
+                }
+                Syndrome::from_bits(&v)
+            })
+            .collect();
+        let serial: Vec<_> = syns
+            .iter()
+            .map(|s| dec.decode(s).observable_flips)
+            .collect();
+        let batch = dec.decode_batch(&syns).expect("batch decode");
+        assert_eq!(batch.len(), serial.len());
+        for (i, (b, s)) in batch.iter().zip(&serial).enumerate() {
+            assert_eq!(&b.observable_flips, s, "batch decode mismatch at shot {i}");
+        }
     }
 
     /// Whenever the fixed decoder reports a valid decision, that decision reproduces the syndrome
