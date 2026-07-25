@@ -20,7 +20,10 @@
 //!   # block defaults:  rounds=1  shots=1000000 seed=2024 out_prefix=q7-07
 //!   # window defaults: rounds=12 shots=20000   seed=2024
 
-use aleph_qec::{sample_shots, BBCode, CircuitNoise, FixedRelayBp, LogicalErrorResult, Syndrome};
+use aleph_qec::{
+    sample_shots, BBCode, CircuitNoise, FixedRelayBp, HwSlidingWindowBp, LogicalErrorResult,
+    Syndrome,
+};
 use rayon::prelude::*;
 
 const MSG_BITS: u32 = 8;
@@ -74,6 +77,15 @@ fn main() {
                 std::process::exit(2)
             });
             run_candidates(&path);
+        }
+        Some("window") => {
+            let rounds = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(12usize);
+            let shots = args
+                .get(2)
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(20_000u64);
+            let seed = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(2024u64);
+            run_window(rounds, shots, seed);
         }
         other => {
             eprintln!("unknown subcommand {other:?}");
@@ -389,4 +401,95 @@ fn mcnemar(base: &[bool], cand: &[bool], name: &str, order: usize, restricted: b
             "not significant"
         }
     );
+}
+
+/// M9b's frozen streaming configuration.
+const WINDOW_W: usize = 6;
+const WINDOW_C: usize = 2;
+/// Circuit-level rates M9b characterised the window path at.
+const WINDOW_PS: &[f64] = &[0.001, 0.003, 0.005];
+
+/// The window path's non-convergence flag counts *windows*, not shots — a stream over `rounds`
+/// rounds decodes many windows per shot, so "at least one bad window in this shot" (M9b's 12/67/96%
+/// headline) overstates the per-decode problem. Both normalisations are reported here, alongside
+/// `commit_clean`/`residual` — the discarded-bits signal M9b argues is the sharper health metric,
+/// since most non-converged windows still drain their commit region cleanly.
+fn run_window(rounds: usize, shots: u64, seed: u64) {
+    let code = BBCode::gross();
+    eprintln!(
+        "# Q7-07 window path: gross rounds={rounds} shots={shots} seed={seed} W={WINDOW_W} C={WINDOW_C}"
+    );
+    println!("p,shots,windows,r_per_window,r_per_shot,ler,ler_ci95,p_err_given_nonconv_shot,p_err_given_conv_shot,attributable,dirty_commit_frac,resid_frac");
+
+    for &p in WINDOW_PS {
+        let dem = code
+            .circuit_level_dem(rounds, CircuitNoise::uniform(p))
+            .expect("circuit-level DEM");
+        let dr = code.memory_x_experiment(rounds).detector_rounds();
+        let hw = HwSlidingWindowBp::new(dem.clone(), dr, WINDOW_W, WINDOW_C);
+        let (syndromes, truths) = sample_shots(&dem, shots, seed);
+
+        let rows: Vec<(usize, usize, bool, bool, usize)> = syndromes
+            .par_iter()
+            .zip(&truths)
+            .map(|(syn, truth)| {
+                let (corr, stats, trace) = hw.decode_stream_trace(syn);
+                let dirty = trace.iter().filter(|t| !t.commit_clean).count();
+                (
+                    stats.windows,
+                    stats.nonconverged,
+                    mispredicted(&corr.observable_flips, truth, dem.observables),
+                    dirty > 0,
+                    stats.residual,
+                )
+            })
+            .collect();
+
+        let windows: u64 = rows.iter().map(|r| r.0 as u64).sum();
+        let nonconv_w: u64 = rows.iter().map(|r| r.1 as u64).sum();
+        let nonconv_shots = rows.iter().filter(|r| r.1 > 0).count() as u64;
+        let errs = rows.iter().filter(|r| r.2).count() as u64;
+        let err_nonconv = rows.iter().filter(|r| r.2 && r.1 > 0).count() as u64;
+        let dirty_shots = rows.iter().filter(|r| r.3).count() as u64;
+        let resid_shots = rows.iter().filter(|r| r.4 > 0).count() as u64;
+        let ler = LogicalErrorResult::new(shots, errs);
+        let conv_shots = shots - nonconv_shots;
+
+        println!(
+            "{p},{shots},{windows},{:.8},{:.6},{:.8},{:.8},{:.6},{:.6},{:.6},{:.6},{:.6}",
+            nonconv_w as f64 / windows.max(1) as f64,
+            nonconv_shots as f64 / shots as f64,
+            ler.rate,
+            ler.ci95,
+            if nonconv_shots > 0 {
+                err_nonconv as f64 / nonconv_shots as f64
+            } else {
+                f64::NAN
+            },
+            if conv_shots > 0 {
+                (errs - err_nonconv) as f64 / conv_shots as f64
+            } else {
+                f64::NAN
+            },
+            if errs > 0 {
+                err_nonconv as f64 / errs as f64
+            } else {
+                f64::NAN
+            },
+            dirty_shots as f64 / shots as f64,
+            resid_shots as f64 / shots as f64
+        );
+        eprintln!(
+            "p={p}: per-window r={:.4} | per-shot r={:.4} | LER={:.3e} | A={:.4} | dirty-commit {:.4}",
+            nonconv_w as f64 / windows.max(1) as f64,
+            nonconv_shots as f64 / shots as f64,
+            ler.rate,
+            if errs > 0 {
+                err_nonconv as f64 / errs as f64
+            } else {
+                f64::NAN
+            },
+            dirty_shots as f64 / shots as f64
+        );
+    }
 }
