@@ -20,7 +20,7 @@
 //!   # block defaults:  rounds=1  shots=1000000 seed=2024 out_prefix=q7-07
 //!   # window defaults: rounds=12 shots=20000   seed=2024
 
-use aleph_qec::{sample_shots, BBCode, CircuitNoise, FixedRelayBp, LogicalErrorResult};
+use aleph_qec::{sample_shots, BBCode, CircuitNoise, FixedRelayBp, LogicalErrorResult, Syndrome};
 use rayon::prelude::*;
 
 const MSG_BITS: u32 = 8;
@@ -68,6 +68,13 @@ fn main() {
             let prefix = args.get(4).cloned().unwrap_or_else(|| "q7-07".to_string());
             run_block(rounds, shots, seed, &prefix);
         }
+        Some("candidates") => {
+            let path = args.get(1).cloned().unwrap_or_else(|| {
+                eprintln!("candidates: needs a corpus file");
+                std::process::exit(2)
+            });
+            run_candidates(&path);
+        }
         other => {
             eprintln!("unknown subcommand {other:?}");
             eprintln!("usage: qec_q7_nonconv -- block|window|candidates ...");
@@ -94,7 +101,7 @@ fn run_block(rounds: usize, shots: u64, seed: u64, prefix: &str) {
 
         let mut c = Counts::default();
         let mut iters_hist: Vec<u32> = Vec::new();
-        let mut corpus: Vec<(Vec<u32>, Vec<bool>, u64)> = Vec::new();
+        let mut corpus: Vec<(Vec<u32>, Vec<bool>)> = Vec::new();
 
         let mut done: u64 = 0;
         let mut chunk_idx: u64 = 0;
@@ -124,7 +131,7 @@ fn run_block(rounds: usize, shots: u64, seed: u64, prefix: &str) {
                         c.err_nonconv += 1;
                     }
                     if corpus.len() < CORPUS_TARGET {
-                        corpus.push((syndromes[i].fired.clone(), truths[i].clone(), cs));
+                        corpus.push((syndromes[i].fired.clone(), truths[i].clone()));
                     }
                 }
             }
@@ -201,7 +208,7 @@ fn write_corpus(
     p: f64,
     shots: u64,
     seed: u64,
-    corpus: &[(Vec<u32>, Vec<bool>, u64)],
+    corpus: &[(Vec<u32>, Vec<bool>)],
 ) {
     use std::io::Write;
     let path = format!("{prefix}-p{:03.0}.corpus", p * 1000.0);
@@ -213,10 +220,173 @@ fn write_corpus(
     )
     .expect("write corpus");
     writeln!(f, "# dets;truth").expect("write corpus");
-    for (dets, truth, _cs) in corpus {
+    for (dets, truth) in corpus {
         let d: Vec<String> = dets.iter().map(|x| x.to_string()).collect();
         let t: Vec<String> = truth.iter().map(|&b| u8::from(b).to_string()).collect();
         writeln!(f, "{};{}", d.join(" "), t.join(" ")).expect("write corpus");
     }
     eprintln!("# wrote {path} ({} retained shots)", corpus.len());
+}
+
+struct Corpus {
+    rounds: usize,
+    p: f64,
+    shots: u64,
+    entries: Vec<(Vec<u32>, Vec<bool>)>,
+}
+
+fn read_corpus(path: &str) -> Corpus {
+    let text = std::fs::read_to_string(path).expect("read corpus");
+    let mut rounds = 1usize;
+    let mut p = 0.0f64;
+    let mut shots = 0u64;
+    let mut retained = 0usize;
+    let mut entries = Vec::new();
+    for line in text.lines() {
+        if let Some(rest) = line.strip_prefix("# mode=") {
+            for kv in rest.split_whitespace() {
+                let Some((k, v)) = kv.split_once('=') else {
+                    continue;
+                };
+                match k {
+                    "rounds" => rounds = v.parse().expect("rounds"),
+                    "p" => p = v.parse().expect("p"),
+                    "shots" => shots = v.parse().expect("shots"),
+                    "retained" => retained = v.parse().expect("retained"),
+                    _ => {}
+                }
+            }
+            continue;
+        }
+        if line.starts_with('#') || line.trim().is_empty() {
+            continue;
+        }
+        let (d, t) = line.split_once(';').expect("corpus row");
+        let dets: Vec<u32> = d
+            .split_whitespace()
+            .map(|x| x.parse().expect("det"))
+            .collect();
+        let truth: Vec<bool> = t.split_whitespace().map(|x| x == "1").collect();
+        entries.push((dets, truth));
+    }
+    assert_eq!(entries.len(), retained, "corpus header/row count disagree");
+    Corpus {
+        rounds,
+        p,
+        shots,
+        entries,
+    }
+}
+
+fn run_candidates(path: &str) {
+    let corpus = read_corpus(path);
+    let code = BBCode::gross();
+    let dem = code
+        .circuit_level_dem(corpus.rounds, CircuitNoise::uniform(corpus.p))
+        .expect("circuit-level DEM");
+    let fx = FixedRelayBp::with_budget(&dem, LEGS, ITERS, GAMMA, SEED, MSG_BITS, FRAC_BITS);
+    let n = corpus.entries.len();
+    let n_dets = dem.detectors;
+
+    eprintln!(
+        "# Q7-07 candidates on {path}: p={} rounds={} corpus={n} (from {} shots)",
+        corpus.p, corpus.rounds, corpus.shots
+    );
+    println!("p,candidate,order,restricted,corpus,errors,p_err_given_nonconv,solves_per_shot,us_per_shot");
+
+    // Baseline: what the RTL emits today — the best-kept decision, syndrome-violating and all.
+    let base_err: Vec<bool> = corpus
+        .entries
+        .par_iter()
+        .map(|(dets, truth)| {
+            let syn = Syndrome::new(n_dets, dets.clone());
+            let (_e, flips, _v) = fx.decode_fixed_ehat(&syn);
+            mispredicted(&flips, truth, dem.observables)
+        })
+        .collect();
+    report_candidate(corpus.p, "baseline", 0, false, &base_err, 0.0, 0.0);
+
+    // The corpus is retained *because* each shot failed to converge under this exact operating
+    // point; if re-decoding it here says otherwise, the corpus and the decoder have drifted apart
+    // (different DEM, different budget) and every downstream number would be meaningless.
+    let still_nonconv = corpus
+        .entries
+        .par_iter()
+        .filter(|(dets, _)| !fx.decode_fixed_ehat(&Syndrome::new(n_dets, dets.clone())).2)
+        .count();
+    assert_eq!(
+        still_nonconv, n,
+        "corpus round-trip broken: {still_nonconv}/{n} shots still non-converged"
+    );
+
+    for (order, restricted) in [(0, false), (2, false), (4, false), (2, true), (4, true)] {
+        let osd = aleph_qec::OsdDecoder::new(&dem)
+            .with_order(order)
+            .with_residual_restricted(restricted);
+        let t0 = std::time::Instant::now();
+        let errs: Vec<bool> = corpus
+            .entries
+            .par_iter()
+            .map(|(dets, truth)| {
+                let syn = Syndrome::new(n_dets, dets.clone());
+                let soft = fx.decode_fixed_soft(&syn);
+                let corr = osd.correction_from_soft(&syn, &soft);
+                mispredicted(&corr.observable_flips, truth, dem.observables)
+            })
+            .collect();
+        let us = 1e6 * t0.elapsed().as_secs_f64() / n as f64;
+        let name = if restricted { "osd-resid" } else { "osd" };
+        report_candidate(
+            corpus.p,
+            name,
+            order,
+            restricted,
+            &errs,
+            (1u64 << order) as f64,
+            us,
+        );
+        // Paired McNemar against the baseline: the candidates decode the SAME shots, so the
+        // unpaired difference of two rates throws away most of the power.
+        mcnemar(&base_err, &errs, name, order, restricted);
+    }
+}
+
+fn report_candidate(
+    p: f64,
+    name: &str,
+    order: usize,
+    restricted: bool,
+    errs: &[bool],
+    solves: f64,
+    us: f64,
+) {
+    let e = errs.iter().filter(|&&x| x).count();
+    println!(
+        "{p},{name},{order},{},{},{e},{:.6},{solves},{us:.1}",
+        u8::from(restricted),
+        errs.len(),
+        e as f64 / errs.len().max(1) as f64
+    );
+}
+
+/// McNemar's paired test on the corpus: `b` = baseline wrong & candidate right, `c` = the reverse.
+/// Reports the two discordant counts and the χ² statistic (1 dof, continuity-corrected).
+fn mcnemar(base: &[bool], cand: &[bool], name: &str, order: usize, restricted: bool) {
+    let b = base.iter().zip(cand).filter(|(&x, &y)| x && !y).count();
+    let c = base.iter().zip(cand).filter(|(&x, &y)| !x && y).count();
+    let chi2 = if b + c == 0 {
+        0.0
+    } else {
+        let d = (b as f64 - c as f64).abs() - 1.0;
+        (d.max(0.0)).powi(2) / (b + c) as f64
+    };
+    eprintln!(
+        "  {name}-{order}{}: rescued {b}, broke {c}, chi2={chi2:.2} ({})",
+        if restricted { "-resid" } else { "" },
+        if chi2 > 3.84 {
+            "significant at 0.05"
+        } else {
+            "not significant"
+        }
+    );
 }
