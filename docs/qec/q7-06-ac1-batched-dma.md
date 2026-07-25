@@ -68,7 +68,7 @@ harness is out of the way:
 Correctness on the early-exit overlay is 40/40 vs the *full-schedule* golden (the two agree on obs for all
 40 sub-threshold shots); a strict early-exit gate would use the first-valid golden (`circvectorsearly`).
 
-## AC-2 — 10⁶-shot on-silicon LER campaign (a real divergence found)
+## AC-2 — 10⁶-shot on-silicon LER campaign (a harness bug, since root-caused)
 
 The campaign streams real DEM shots through the batched overlay and compares the RTL logical-error rate
 to the software `FixedRelayBp` golden. Harness: the `silvectors` emitter (binary `.syn`/`.ref`) +
@@ -80,43 +80,66 @@ to the software `FixedRelayBp` golden. Harness: the `silvectors` emitter (binary
 | p=0.005 | 10⁶ | 7.05e-3 | 7.53e-3 | 4.8e-4 | 3.3e-4 | 7 067 / 10⁶ | FAIL |
 | p=0.007 | 10⁶ | 2.88e-2 | 3.26e-2 | 3.8e-3 | 6.8e-4 | 30 703 / 10⁶ | FAIL |
 
-**AC-2 is not met at p ≥ 0.005**: the silicon RTL is bit-exact to the software golden on low-weight
-syndromes but diverges on high-weight ones (RTL LER ~7–13 % worse), and the divergence fraction grows
-with the physical error rate. Every prior co-sim used a p=0.003 golden, so this is the first test that
-exercised high-weight syndromes — and it surfaced a real divergence.
+**The p ≥ 0.005 rows above are not a decoder result** — they compare **two different decoders**, and the
+table is kept only as the record of what the campaign measured before that was understood.
 
-**Root-cause characterization** (four isolating experiments — the finding, not a guess):
+**Root cause (#478): the golden's priors did not match the bitstream's.** `FixedRelayBp` derives its
+per-variable prior `λ_v` from the DEM's error probabilities, and the RTL bakes those priors into
+`BP_LAMBDA` at header-generation time. The shipped overlay's header comes from `circgraph 1 0.003 16 48`
+→ **λ(p=0.003)**. The campaign's golden came from `silvectors 1 <p> ...`, which built its decoder from a
+DEM at that same `<p>` → **λ(p=0.005) / λ(p=0.007)**. Same Tanner graph, different priors ⇒ a different
+message trajectory on syndromes hard enough for the trajectory to decide the outcome. Hence exactly the
+observed pattern: 0 divergence at p=0.003 (priors agree), growing monotonically with |p − 0.003|,
+deterministic, frequency-flat, and identically present in RTL, funcsim and silicon.
 
-1. **Core, not the DMA wrapper.** The same `bp_relay_banked` core in the M8 per-word AXI-Lite overlay
-   (`bp_m8.bit`, no DMA path) diverges from software identically (200 / 30 000 on the p=0.005 subset).
-   The AC-1 batched path is faithful; the divergence is upstream of it.
-2. **Not the RTL design.** A Verilator co-sim of `bp_relay_banked` against the software golden at p=0.005
-   is **2000 / 2000 bit-identical** — the RTL *as simulated* matches software even on high-weight shots.
-3. **Not timing.** Re-running the p=0.005 subset at 100 / 77 / 50 / 25 MHz (PYNQ `Clocks.fclk0_mhz`)
-   gives an **identical** divergence count at every clock. A setup violation would shrink as the clock
-   slows; this is flat → not a timing path (consistent with the +1.08 ns WNS being real).
-4. **Deterministic.** Two full 10⁶-shot runs give bit-identical error/divergence counts.
+Two independent reproductions:
 
-Together these point to a **synthesis-vs-simulation logic mismatch** in `bp_relay_banked`: Vivado
-synthesizes it into hardware that computes a different result than Verilator simulates the same RTL,
-deterministically, only when operand magnitudes are large — i.e. most likely in the **fixed-point
-saturation / accumulator-width handling**, which high-weight syndromes (more simultaneously-firing
-checks → larger accumulated magnitudes) exercise at its edges while p=0.003 never does.
+1. **The 24 enriched on-silicon-diverging shots** (dumped by `hw/sw/bp_stream_banked_enrich_kv260.py`),
+   re-decoded at a sweep of decoder-`p` — `qec_q7_bp_graph -- enrichprobe 1 <prefix>`:
+   **24/24 match silicon at p=0.003**, 6/24 at p=0.005, 0/24 at p=0.007 — at the default keep-best
+   selection and the shipped ITERS=10, with no schedule variant needed.
+2. **Off-board Verilator co-sim on 2000 shots sampled at p=0.007** against the shipped p=0.003 header
+   (`make -C hw bpbanked-highweight`): golden decoded at λ(0.007) → **210/2000 mismatch** (the campaign
+   divergence, reproduced off-board for the first time); golden decoded at λ(0.003) → **PASS 2000/2000
+   bit-identical**, worst latency 2085 cycles.
 
-**Follow-up (own issue):** audit the banked core's accumulator/saturation widths against the
-`FixedRelayBp` reference arithmetic; reproduce with a **post-synth gate-level** sim on the high-weight
-vectors (Verilator RTL sim cannot see it); fix; re-run the campaign. This is a pre-existing M7/M8 banked-
-core issue exposed by the campaign, independent of the Q7-06 AC-1 batched-DMA work. The AC-2 harness
-(`silvectors` + the LER driver) is in place and ready to re-verify once the core is fixed.
+**The banked core is correct**, including on the highest-weight syndromes. Everything the earlier
+investigation suspected — synthesis fidelity, DSP widening of the `var_update` MACC, marginal hold, the
+16-bit blend wrap, final-ê selection, banking gather/scatter, the M8 register plane, `m_cm`/`m_vm` drift
+— was ruled out or rendered moot.
+
+**What the campaign actually exposed** is a coverage hole plus a harness footgun:
+
+* Every simulation gate drove 40 shots at p=0.003, so high-weight syndromes had never been simulated.
+  `make -C hw bpbanked-highweight` is now that gate (2000 shots at p=0.007, 2000/2000 required).
+* The vector emitters conflated the **sampling** rate with the **decoder** rate. `circvectors` and
+  `silvectors` now take an explicit trailing `decoder_p` and stamp `decoder-p=` into the emitted header,
+  so a golden can no longer be silently paired with an RTL header built at another `p`.
+
+**Re-running AC-2.** The gate needs the two sides configured alike, which is either one bitstream per
+rate (matched priors at each point — the LER optimum, and the route taken) or one bitstream with goldens
+emitted at its header's `p` (`silvectors 1 <p> 1000000 2024 p00X 0.003`), which is also the more
+realistic deployment metric: real silicon bakes its priors and then meets whatever physical rate the
+device sees.
 
 ## Reproduce
 
 ```
-# AC-2 vectors (per point) + campaign:
-cargo run --release -p aleph-qec --example qec_q7_bp_graph -- silvectors 1 <p> 1000000 2024 <prefix>
+# AC-2 vectors (per point) + campaign. The trailing decoder_p is the p the TARGET BITSTREAM's header
+# was generated at; omit it only when the bitstream was built at the same p as the shots (#478).
+cargo run --release -p aleph-qec --example qec_q7_bp_graph -- silvectors 1 <p> 1000000 2024 <prefix> [decoder_p]
 sudo env XILINX_XRT=/usr /usr/local/share/pynq-venv/bin/python3 \
      bp_stream_banked_ler_kv260.py bp_kv260_stream_banked.bit p003 p005 p007
 ```
+
+```
+# #478 checks, off-board:
+make -C hw bpbanked-highweight                                          # 2000 high-weight shots, 2000/2000
+cargo run --release -p aleph-qec --example qec_q7_bp_graph -- enrichprobe 1 hw/bp_enrich_p007
+```
+
+`hw/bp_enrich_p007.{syn,ref,rtl}` are the 24 shots themselves (syndrome words, `true_obs`+`sw_obs`, and
+the observable this silicon produced), kept in-tree so the reproduction above needs no board.
 
 ```
 # build (EPYC + Vivado 2024.2), full then early-exit:

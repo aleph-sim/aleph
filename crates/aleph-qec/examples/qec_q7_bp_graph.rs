@@ -75,6 +75,29 @@ fn build(circuit: Option<(usize, f64)>) -> (DetectorErrorModel, FixedRelayBp) {
     (dem, fx)
 }
 
+/// Sampling DEM at `p` **plus** a decoder whose priors `λ` come from `graph_p` (default: `p`).
+///
+/// The RTL bakes `BP_LAMBDA` from whatever `p` its header was emitted at (`circgraph rounds p ...`),
+/// so a golden decoded at a *different* `p` is a different decoder — same Tanner graph, different
+/// priors, different message trajectory on hard syndromes. #478: the AC-2 campaign sampled shots at
+/// p=0.005/0.007 but the bitstream baked λ(0.003), and the resulting "RTL divergence" (0 at p=0.003,
+/// growing with |p − 0.003|) was entirely this mismatch. Keeping the two `p`s explicit is what makes
+/// it impossible to reintroduce silently: pass the header's `p` as `graph_p` when the vectors are for
+/// a bitstream built at a different rate than the one being sampled.
+fn build_split(rounds: usize, p: f64, graph_p: Option<f64>) -> (DetectorErrorModel, FixedRelayBp) {
+    let (dem, fx) = build(Some((rounds, p)));
+    let Some(gp) = graph_p else { return (dem, fx) };
+    let (gdem, gfx) = build(Some((rounds, gp)));
+    // Uniform circuit noise only rescales the error probabilities: the graph must be identical, or
+    // the golden's edge/check indexing would not line up with the RTL's baked tables at all.
+    assert_eq!(
+        (gdem.detectors, gdem.errors.len(), gdem.observables),
+        (dem.detectors, dem.errors.len(), dem.observables),
+        "decoder-p {gp} and sampling-p {p} must yield the same Tanner graph"
+    );
+    (dem, gfx)
+}
+
 fn emit_graph() {
     let (_dem, fx) = build(None);
     print_graph(&fx.hw_view(), "Gross BB code [[144,12,12]] code capacity");
@@ -1996,9 +2019,16 @@ fn emit_dec_vectors() {
 /// gate-noise syndromes, not synthetic low-weight errors), with the golden `ehat`/obs/validity from the
 /// same `FixedRelayBp` the RTL implements. The M2 sequential decoder (graph-generic) decodes these
 /// bit-for-bit in Verilator — the sim↔RTL co-sim proving the decoder generalises past code capacity.
-fn emit_circ_vectors(rounds: usize, p: f64, n: usize, seed: u64, early: bool) {
+fn emit_circ_vectors(
+    rounds: usize,
+    p: f64,
+    n: usize,
+    seed: u64,
+    early: bool,
+    graph_p: Option<f64>,
+) {
     use aleph_qec::sample_shots;
-    let (dem, fx) = build(Some((rounds, p)));
+    let (dem, fx) = build_split(rounds, p, graph_p);
     let fx = fx.with_early_exit(early);
     let n_checks = dem.detectors;
     let n_vars = dem.errors.len();
@@ -2011,8 +2041,11 @@ fn emit_circ_vectors(rounds: usize, p: f64, n: usize, seed: u64, early: bool) {
     } else {
         "circvectors"
     };
-    println!("# CIRCUIT-LEVEL {mode} golden vectors (depth-7, rounds={rounds}, p={p}) — GENERATED, do not edit.");
-    println!("# regenerate: cargo run -p aleph-qec --example qec_q7_bp_graph -- {modearg} {rounds} {p} {n} {seed} > hw/bp_circ_vectors.txt");
+    // The decoder-p is part of the golden's identity (#478): vectors sampled at p but decoded with
+    // λ(graph_p) are only valid against an RTL header emitted at that same graph_p.
+    let gp = graph_p.unwrap_or(p);
+    println!("# CIRCUIT-LEVEL {mode} golden vectors (depth-7, rounds={rounds}, p={p}, decoder-p={gp}) — GENERATED, do not edit.");
+    println!("# regenerate: cargo run -p aleph-qec --example qec_q7_bp_graph -- {modearg} {rounds} {p} {n} {seed} {gp} > hw/bp_circ_vectors.txt");
     println!("# format: header 'T BP_N BP_C BP_OBS'; per test: 's'(BP_C bits) 'h'(BP_N bits ehat) 'o'(BP_OBS bits) 'v'(valid)");
     println!("{} {n_vars} {n_checks} {n_obs}", syndromes.len());
     for syn in &syndromes {
@@ -2043,10 +2076,92 @@ fn emit_circ_vectors(rounds: usize, p: f64, n: usize, seed: u64, early: bool) {
 ///                    true_obs), RTL LER = mean(rtl_obs != true_obs), and divergence = mean(rtl_obs !=
 ///                    sw_obs); AC-2 asks RTL LER within Monte-Carlo CI of software LER.
 /// The software decode uses the parallel `decode_batch`, so 10^6 shots is tractable.
-fn emit_sil_vectors(rounds: usize, p: f64, n: usize, seed: u64, prefix: &str, early: bool) {
+/// **#478 reproducer** — decode the enriched on-silicon-*diverging* shots (`<prefix>.syn` +
+/// `<prefix>.rtl`, dumped from the board by `hw/sw/bp_stream_banked_enrich_kv260.py`) with decoders
+/// built at a sweep of **decoder-`p`** values, and report how many reproduce the silicon observable.
+///
+/// This is what root-caused #478. The RTL bakes `BP_LAMBDA` from the `p` its header was emitted at, so
+/// the decoder-`p` — *not* the rate the shots were sampled at — is what has to match the bitstream. The
+/// campaign's `p=0.007` golden against a `λ(0.003)` bitstream reproduces silicon on 0/24 of these shots;
+/// the same shots at `p=0.003` reproduce it on **24/24**. A future regression shows up as the sweep's
+/// best row no longer sitting at the bitstream's header `p`.
+fn enrich_probe(rounds: usize, prefix: &str, decoder_ps: &[f64]) {
+    use aleph_qec::{Decoder, Syndrome};
+    let (dem, _) = build(Some((rounds, decoder_ps[0])));
+    let n_checks = dem.detectors;
+    let ns = n_checks.div_ceil(32);
+
+    let syn_bytes = std::fs::read(format!("{prefix}.syn")).expect("read .syn");
+    let rtl_bytes = std::fs::read(format!("{prefix}.rtl")).expect("read .rtl");
+    let words: Vec<u32> = syn_bytes
+        .chunks_exact(4)
+        .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+        .collect();
+    let rtl: Vec<u16> = rtl_bytes
+        .chunks_exact(2)
+        .map(|b| u16::from_le_bytes([b[0], b[1]]))
+        .collect();
+    let k = words.len() / ns;
+    assert!(k > 0 && rtl.len() >= k, "empty or truncated enrich set");
+
+    let syndromes: Vec<Syndrome> = (0..k)
+        .map(|i| {
+            let fired = (0..n_checks)
+                .filter(|&c| (words[i * ns + c / 32] >> (c % 32)) & 1 == 1)
+                .map(|c| c as u32)
+                .collect();
+            Syndrome::new(n_checks, fired)
+        })
+        .collect();
+
+    let obs_of = |flips: &[bool]| -> u16 {
+        flips
+            .iter()
+            .enumerate()
+            .filter(|(_, &b)| b)
+            .fold(0u16, |o, (j, _)| o | 1u16 << j)
+    };
+
+    println!("# {k} enriched on-silicon-diverging shots from `{prefix}`");
+    let mut best = (0usize, f64::NAN);
+    for &dp in decoder_ps {
+        let (_dem, fx) = build(Some((rounds, dp)));
+        let pred = fx.decode_batch(&syndromes).expect("decode");
+        let eq = (0..k)
+            .filter(|&i| obs_of(&pred[i].observable_flips) == rtl[i])
+            .count();
+        println!("decoder-p={dp:<7} : matches_silicon={eq}/{k}");
+        if eq > best.0 {
+            best = (eq, dp);
+        }
+    }
+    if best.0 == k {
+        println!(
+            "VERDICT: decoder-p={} reproduces silicon on all {k} shots -> the bitstream bakes λ({}) \
+             and any golden decoded at another p is a DIFFERENT decoder (#478)",
+            best.1, best.1
+        );
+    } else {
+        println!(
+            "VERDICT: best is {}/{k} at decoder-p={} -> priors alone do NOT explain these shots; \
+             the divergence is elsewhere in the datapath",
+            best.0, best.1
+        );
+    }
+}
+
+fn emit_sil_vectors(
+    rounds: usize,
+    p: f64,
+    n: usize,
+    seed: u64,
+    prefix: &str,
+    early: bool,
+    graph_p: Option<f64>,
+) {
     use aleph_qec::{sample_shots, Decoder};
     use std::io::Write;
-    let (dem, fx) = build(Some((rounds, p)));
+    let (dem, fx) = build_split(rounds, p, graph_p);
     let fx = fx.with_early_exit(early);
     let n_checks = dem.detectors;
     let n_obs = dem.observables;
@@ -2100,7 +2215,8 @@ fn emit_sil_vectors(rounds: usize, p: f64, n: usize, seed: u64, prefix: &str, ea
     let ci = 1.96 * (sw_ler * (1.0 - sw_ler) / n as f64).sqrt();
     // Metadata to stdout (the .syn/.ref are binary on disk).
     eprintln!(
-        "# AC-2 sil vectors: n={n} p={p} rounds={rounds} seed={seed} mode={} NS={ns} BP_C={n_checks} BP_OBS={n_obs}",
+        "# AC-2 sil vectors: n={n} p={p} decoder-p={} rounds={rounds} seed={seed} mode={} NS={ns} BP_C={n_checks} BP_OBS={n_obs}",
+        graph_p.unwrap_or(p),
         if early { "early" } else { "full" }
     );
     eprintln!(
@@ -2177,12 +2293,51 @@ fn main() {
             let bank_v = args.get(5).and_then(|s| s.parse().ok()).unwrap_or(24usize);
             emit_circ_graph(rounds, p, bank_w, bank_v);
         }
-        "circvectors" => emit_circ_vectors(rounds, p, n, seed, false),
-        "circvectorsearly" => emit_circ_vectors(rounds, p, n, seed, true),
+        // circvectors[early] rounds p n seed [decoder_p] — `decoder_p` (#478) is the p whose λ the
+        // target RTL header bakes; omit it when the header was emitted at the same p as the shots.
+        "circvectors" => emit_circ_vectors(
+            rounds,
+            p,
+            n,
+            seed,
+            false,
+            args.get(6).and_then(|s| s.parse().ok()),
+        ),
+        "circvectorsearly" => emit_circ_vectors(
+            rounds,
+            p,
+            n,
+            seed,
+            true,
+            args.get(6).and_then(|s| s.parse().ok()),
+        ),
         "silvectors" | "silvectorsearly" => {
-            // silvectors[early] rounds p n seed prefix — binary AC-2 vectors to <prefix>.syn/.ref.
+            // silvectors[early] rounds p n seed prefix [decoder_p] — binary AC-2 vectors to
+            // <prefix>.syn/.ref.
             let prefix = args.get(6).map(String::as_str).unwrap_or("sil");
-            emit_sil_vectors(rounds, p, n, seed, prefix, mode == "silvectorsearly");
+            emit_sil_vectors(
+                rounds,
+                p,
+                n,
+                seed,
+                prefix,
+                mode == "silvectorsearly",
+                args.get(7).and_then(|s| s.parse().ok()),
+            );
+        }
+        "enrichprobe" => {
+            // enrichprobe rounds <enrich_prefix> [decoder_p_csv] — #478: which decoder-p reproduces
+            // the silicon obs on the enriched diverging shots? (Answer: the one the header bakes.)
+            let prefix = args.get(3).map(String::as_str).unwrap_or("enrich");
+            let ps: Vec<f64> = args
+                .get(4)
+                .map(String::as_str)
+                .unwrap_or("0.003,0.005,0.007")
+                .split(',')
+                .filter_map(|s| s.trim().parse().ok())
+                .collect();
+            assert!(!ps.is_empty(), "decoder_p_csv parsed to no values");
+            enrich_probe(rounds, prefix, &ps);
         }
         "wingraph" => {
             // wingraph rounds p W C bankW bankV — positions 4/5 are (W, C) here (not bankW/bankV
@@ -2225,8 +2380,8 @@ fn main() {
         other => {
             eprintln!(
                 "unknown mode '{other}'; use graph|vectors|decvectors|circgraph|circvectors|\
-                 circvectorsearly|silvectors|silvectorsearly|wingraph|streamgraph|streamvectors|streamvectorsearly|\
-                 serialgraph"
+                 circvectorsearly|silvectors|silvectorsearly|enrichprobe|wingraph|streamgraph|streamvectors|\
+                 streamvectorsearly|serialgraph"
             );
             std::process::exit(2);
         }
