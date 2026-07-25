@@ -134,6 +134,32 @@ impl OsdDecoder {
             .collect()
     }
 
+    /// The `residual_restricted` sweep-pool restriction: `None` when the flag is off (no
+    /// filtering); otherwise the variable indices touching an unsatisfied check under `bp_hard`,
+    /// via `residual` → `det_vars`. Split out of `osd_solve` (rather than inlined) so tests can
+    /// exercise the restriction directly — the reliability ordering and Gauss–Jordan pivoting
+    /// around it are large and not the part a `residual`/`det_vars` bug would hide in.
+    ///
+    /// The sweep costs `2^w` regardless of pool size, so narrowing the pool raises the
+    /// *effective* order — the `w` columns actually explored are the ones that can repair the
+    /// residual, rather than the globally least-reliable ones anywhere in the code.
+    fn sweep_restriction(
+        &self,
+        syndrome: &Syndrome,
+        bp_hard: &[u8],
+    ) -> Option<std::collections::HashSet<usize>> {
+        if !self.residual_restricted {
+            return None;
+        }
+        let resid = self.residual(syndrome, bp_hard);
+        Some(
+            resid
+                .iter()
+                .flat_map(|&c| self.det_vars[c as usize].iter().map(|&v| v as usize))
+                .collect(),
+        )
+    }
+
     /// Decode, returning the correction and whether the **OSD** post-processor ran (`false` ⇒ BP
     /// converged on its own).
     pub fn decode_osd(&self, syndrome: &Syndrome) -> (Correction, bool) {
@@ -245,22 +271,7 @@ impl OsdDecoder {
 
         // OSD combination sweep over the `w` least-reliable non-pivot columns. `order` is descending
         // reliability, so the least-reliable non-pivots are at the tail of `nonpivot`.
-        //
-        // Sweep pool: non-pivot columns, optionally narrowed to those touching an unsatisfied
-        // check. The sweep costs 2^w regardless of pool size, so narrowing the pool raises the
-        // *effective* order — the w columns actually explored are the ones that can repair the
-        // residual, rather than the globally least-reliable ones anywhere in the code.
-        let restrict: Option<std::collections::HashSet<usize>> = if self.residual_restricted {
-            let resid = self.residual(syndrome, bp_hard);
-            Some(
-                resid
-                    .iter()
-                    .flat_map(|&c| self.det_vars[c as usize].iter().map(|&v| v as usize))
-                    .collect(),
-            )
-        } else {
-            None
-        };
+        let restrict = self.sweep_restriction(syndrome, bp_hard);
         let nonpivot: Vec<usize> = order
             .iter()
             .copied()
@@ -489,5 +500,103 @@ mod tests {
                 restricted.decode_osd(syn).0.observable_flips
             );
         }
+    }
+
+    /// `residual()` against a hand-computed answer on a small, fully-legible DEM (4 variables, 3
+    /// detectors: v0=D0, v1=D0∧D1, v2=D1∧D2, v3=D2 — read straight off the DEM text below). Covers
+    /// both boundary cases the review asked for: a syndrome-satisfying `ehat` gives the empty set,
+    /// and flipping one variable against an empty syndrome lights exactly the checks it touches.
+    /// This checks `residual()` directly, independent of the Gauss-Jordan/sweep machinery — a
+    /// `residual()` that returned the empty set or every check regardless of input would fail here.
+    #[test]
+    fn test_residual_hand_computed_on_small_dem() {
+        let dem = crate::DetectorErrorModel::parse(
+            "error(0.1) D0 L0\nerror(0.1) D0 D1\nerror(0.1) D1 D2\nerror(0.1) D2\n",
+        )
+        .unwrap();
+        let d = OsdDecoder::new(&dem);
+
+        // No error, no syndrome: trivially satisfied.
+        let empty_syn = Syndrome::new(3, vec![]);
+        assert_eq!(d.residual(&empty_syn, &[0, 0, 0, 0]), Vec::<u32>::new());
+
+        // Flipping exactly v1 (touches D0, D1) against an empty syndrome lights exactly D0 and D1.
+        assert_eq!(d.residual(&empty_syn, &[0, 1, 0, 0]), vec![0, 1]);
+
+        // Boundary case: a syndrome-satisfying ehat (v1 alone explains D0+D1 firing) gives the
+        // empty set — this is the OSD validity contract residual() must express.
+        let matching_syn = Syndrome::new(3, vec![0, 1]);
+        assert_eq!(d.residual(&matching_syn, &[0, 1, 0, 0]), Vec::<u32>::new());
+
+        // A mismatched syndrome (only D0 fired, but v1 also touches D1) leaves D1 unexplained.
+        let partial_syn = Syndrome::new(3, vec![0]);
+        assert_eq!(d.residual(&partial_syn, &[0, 1, 0, 0]), vec![1]);
+    }
+
+    /// `det_vars` must be the exact transpose of `var_dets` in both directions — the residual
+    /// restriction's whole correctness rests on this incidence structure being right, and nothing
+    /// upstream would catch a wrong transpose (a garbled but still-`Vec<Vec<u32>>`-shaped
+    /// `det_vars` would not panic; it would just silently mis-target the sweep pool).
+    #[test]
+    fn test_det_vars_is_transpose_of_var_dets() {
+        let dem = crate::BBCode::gross().code_capacity_dem(0.05);
+        let d = OsdDecoder::new(&dem);
+        for (v, dets) in d.var_dets.iter().enumerate() {
+            for &c in dets {
+                assert!(
+                    d.det_vars[c as usize].contains(&(v as u32)),
+                    "var {v} touches check {c} but det_vars[{c}] does not list it back"
+                );
+            }
+        }
+        for (c, vars) in d.det_vars.iter().enumerate() {
+            for &v in vars {
+                assert!(
+                    d.var_dets[v as usize].contains(&(c as u32)),
+                    "det_vars[{c}] lists var {v} but var_dets[{v}] does not list check {c} back"
+                );
+            }
+        }
+        let fwd: usize = d.var_dets.iter().map(Vec::len).sum();
+        let rev: usize = d.det_vars.iter().map(Vec::len).sum();
+        assert_eq!(fwd, rev, "edge count must match in both directions");
+    }
+
+    /// The restriction must actually narrow the sweep pool on a real non-converged shot — the
+    /// review's core worry: a `residual()` that always returns every check (or `det_vars` that maps
+    /// every check back to every variable) would satisfy every other test here while making the
+    /// "restriction" a no-op. Exercises the private `sweep_restriction` helper directly (this test
+    /// module already reaches ancestor-private items, e.g. `osd_correction_reproduces_syndrome`
+    /// above calls the private `bp.decode_bp_soft`/`osd_solve`), rather than widening the public API.
+    #[test]
+    fn test_restriction_pool_is_a_strict_subset_on_a_nonconverged_shot() {
+        let dem = crate::BBCode::gross().code_capacity_dem(0.06); // high p: BP often fails to converge
+        let d = OsdDecoder::new(&dem)
+            .with_order(4)
+            .with_residual_restricted(true);
+        let (syndromes, _truths) = crate::sample_shots(&dem, 300, 42);
+        let mut checked = false;
+        for syn in &syndromes {
+            let soft = d.bp.decode_bp_soft(syn);
+            if soft.converged {
+                continue;
+            }
+            let pool = d
+                .sweep_restriction(syn, &soft.ehat)
+                .expect("residual_restricted is on, so the pool must be Some");
+            assert!(
+                !pool.is_empty(),
+                "a genuinely non-converged shot should have a nonempty residual"
+            );
+            assert!(
+                pool.len() < d.n_vars,
+                "restriction did not narrow the pool below all {} variables — a residual() bug \
+                 (e.g. returning every check) would look exactly like this",
+                d.n_vars
+            );
+            checked = true;
+            break;
+        }
+        assert!(checked, "test did not find a non-converged shot to check");
     }
 }
