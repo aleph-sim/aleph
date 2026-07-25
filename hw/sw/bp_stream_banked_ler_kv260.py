@@ -145,18 +145,20 @@ def main(argv):
         comb = ci95(rtl_ler, n) + ci95(sw_ler, n)
         diff = abs(rtl_ler - sw_ler)
         within = diff <= comb + 1e-12
-        if not within:
+        # The row verdict is the whole Q7-07 gate, not just the LER-CI half: a run with
+        # valid_mismatch != 0 fails even when the LER lands inside the combined CI, and the
+        # row is what gets transcribed into reports.
+        row_pass = within and valid_mismatch == 0
+        if not row_pass:
             all_pass = False
         print("  %-8s %9d  %.4e  %.4e  %.3e  %.3e  %6d/%-8d  %s"
-              % (prefix, n, sw_ler, rtl_ler, diff, comb, div, n, "PASS" if within else "FAIL"))
+              % (prefix, n, sw_ler, rtl_ler, diff, comb, div, n, "PASS" if row_pass else "FAIL"))
         print("           (%.2f s, %.2f us/shot; rtl_err=%d sw_err=%d)" % (dt, 1e6 * dt / n, rtl_err, sw_err))
         print("           (valid: rtl_nonconv=%d (%.4f%%), sw_nonconv=%d, mismatch=%d; "
               "cycles mean=%.1f max=%d)"
               % (rtl_nonconv, 100.0 * rtl_nonconv / n,
                  int(np.count_nonzero(sw_valid == 0)), valid_mismatch,
                  float(rtl_cycles.mean()), int(rtl_cycles.max())))
-        if valid_mismatch:
-            all_pass = False
 
     del ib, ob
     print("\nAC-2 RESULT:", "PASS (RTL LER within CI of software golden; valid_flag matches at every point)"

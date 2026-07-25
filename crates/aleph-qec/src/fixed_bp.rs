@@ -798,14 +798,26 @@ mod tests {
     fn test_osd_tail_does_not_run_on_converged_shots() {
         // The tail-rate is the cost metric for the Q7-07 policy, so the gate must be explicit in
         // the caller, not an internal short-circuit of OsdDecoder we happen to inherit.
-        let dem = crate::BBCode::gross().code_capacity_dem(0.01);
+        // p=0.05, not 0.01: at 0.01 every one of the 300 shots converges, so `!converged` is
+        // never true and the OSD branch this test names is never entered. 0.05 is the same
+        // operating point `test_three_validity_apis_agree` uses non-vacuously; the counter below
+        // fails the test if that ever stops holding.
+        let dem = crate::BBCode::gross().code_capacity_dem(0.05);
         let osd = FixedRelayBpOsd::new(&dem, 8, 3, 0);
         let (syndromes, _truths) = crate::sample_shots(&dem, 300, 3);
+        let mut nonconv = 0usize;
         for syn in &syndromes {
             let converged = osd.fixed().decode_fixed(syn).1;
+            if !converged {
+                nonconv += 1;
+            }
             let (_corr, tail_ran) = osd.decode_fixed_osd(syn);
             assert_eq!(tail_ran, !converged);
         }
+        assert!(
+            nonconv > 0,
+            "vacuous: 0/300 shots non-converged, so the tail-ran branch was never exercised"
+        );
     }
 
     #[test]
