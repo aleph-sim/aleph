@@ -34,6 +34,7 @@ mod mwpm;
 mod osd;
 mod parallel_window;
 mod pymatching;
+mod refvec;
 mod relay_bp;
 mod relay_window;
 mod serial_gather;
@@ -59,6 +60,7 @@ pub use mwpm::MwpmDecoder;
 pub use osd::OsdDecoder;
 pub use parallel_window::{ParallelWindowDecoder, WindowPlan};
 pub use pymatching::PyMatchingOracle;
+pub use refvec::{read_ref, write_ref, RefRecord};
 pub use relay_bp::{RelayBpDecoder, RelayBpOsdDecoder, DEFAULT_LEGS};
 pub use relay_window::{
     HwSlidingWindowBp, SeamMode, SlidingWindowBp, StreamStats, WindowBpExport, WindowTrace,

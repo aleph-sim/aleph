@@ -2159,7 +2159,7 @@ fn emit_sil_vectors(
     early: bool,
     graph_p: Option<f64>,
 ) {
-    use aleph_qec::{sample_shots, Decoder};
+    use aleph_qec::sample_shots;
     use std::io::Write;
     let (dem, fx) = build_split(rounds, p, graph_p);
     let fx = fx.with_early_exit(early);
@@ -2169,8 +2169,19 @@ fn emit_sil_vectors(
     assert!(n_obs <= 16, "sil vectors pack obs into a u16; got {n_obs}");
 
     let (syndromes, truths) = sample_shots(&dem, n as u64, seed);
-    // Parallel software decode (the RTL golden): predictions[i].observable_flips is sw_obs.
-    let predictions = fx.decode_batch(&syndromes).expect("decode_batch");
+    // Per-shot: observable flips + validity (one decode) and the first-valid iteration index (a
+    // second pass — `iters_to_valid` reports where an early-exit stop *would* land regardless of
+    // the mode flag, so it cannot be folded into the first). Emitting is a one-off; the campaign
+    // is the expensive half.
+    use rayon::prelude::*;
+    let records: Vec<(Vec<bool>, bool, u32)> = syndromes
+        .par_iter()
+        .map(|s| {
+            let (_ehat, flips, valid) = fx.decode_fixed_ehat(s);
+            let (_conv, iters) = fx.iters_to_valid(s);
+            (flips, valid, iters)
+        })
+        .collect();
 
     let syn_path = format!("{prefix}.syn");
     let ref_path = format!("{prefix}.ref");
@@ -2178,6 +2189,8 @@ fn emit_sil_vectors(
     let mut ref_f = std::io::BufWriter::new(std::fs::File::create(&ref_path).expect("create .ref"));
 
     let mut sw_errors: u64 = 0;
+    let mut sw_nonconv: u64 = 0;
+    let mut ref_recs: Vec<aleph_qec::RefRecord> = Vec::with_capacity(n);
     for (i, syn) in syndromes.iter().enumerate() {
         // pack syndrome bits -> NS little-endian u32 words (bit c -> word c/32, bit c%32)
         let mut words = vec![0u32; ns];
@@ -2198,7 +2211,7 @@ fn emit_sil_vectors(
             }
         }
         let mut sw_obs = 0u16;
-        for (o, &b) in predictions[i].observable_flips.iter().enumerate() {
+        for (o, &b) in records[i].0.iter().enumerate() {
             if b {
                 sw_obs |= 1u16 << o;
             }
@@ -2206,9 +2219,17 @@ fn emit_sil_vectors(
         if sw_obs != true_obs {
             sw_errors += 1;
         }
-        ref_f.write_all(&true_obs.to_le_bytes()).expect("write ref");
-        ref_f.write_all(&sw_obs.to_le_bytes()).expect("write ref");
+        if !records[i].1 {
+            sw_nonconv += 1;
+        }
+        ref_recs.push(aleph_qec::RefRecord {
+            true_obs,
+            sw_obs,
+            valid: records[i].1,
+            iters: records[i].2.min(0x7FFF) as u16,
+        });
     }
+    aleph_qec::write_ref(&mut ref_f, &ref_recs).expect("write ref");
     syn_f.flush().ok();
     ref_f.flush().ok();
     let sw_ler = sw_errors as f64 / n as f64;
@@ -2222,9 +2243,9 @@ fn emit_sil_vectors(
     eprintln!(
         "# wrote {syn_path} ({} bytes) + {ref_path} ({} bytes)",
         n * ns * 4,
-        n * 4
+        8 + n * 6
     );
-    println!("p={p} n={n} sw_ler={sw_ler:.6} sw_ci95={ci:.6} sw_errors={sw_errors} NS={ns} BP_OBS={n_obs}");
+    println!("p={p} n={n} sw_ler={sw_ler:.6} sw_ci95={ci:.6} sw_errors={sw_errors} NS={ns} BP_OBS={n_obs} sw_nonconv={sw_nonconv}");
 }
 
 fn emit_vectors() {
