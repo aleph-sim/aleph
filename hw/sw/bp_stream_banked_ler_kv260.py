@@ -4,17 +4,20 @@
 # Streams a large set of REAL DEM shots (binary <prefix>.syn = NS little-endian u32 syndrome words per
 # shot) through the batched AXI-DMA decoder overlay, collects the RTL's per-shot observable-flip
 # prediction, and compares logical-error rates against the software FixedRelayBp golden carried in
-# <prefix>.ref (u16 true_obs, u16 sw_obs per shot). Reports, per physical-error point:
+# <prefix>.ref (aleph_qec::refvec v2: true_obs, sw_obs, valid+iters per shot). Reports, per
+# physical-error point:
 #   RTL LER   = mean(rtl_obs != true_obs)   -- the silicon decoder's logical-error rate
 #   SW  LER   = mean(sw_obs  != true_obs)   -- the software golden's rate (the reference)
 #   |diff|    within combined 95% CI ?      -- AC-2 acceptance (RTL LER within CI of software golden)
 #   divergence= mean(rtl_obs != sw_obs)     -- direct bit-exactness check (should be ~0)
+#   valid_mismatch = count(rtl_valid != sw_valid)  -- Q7-07 gate, must be 0
 # across the >=3 points given on the command line.
 #
 # The syndromes stream as one contiguous DMA input (no per-shot Python repacking); results come back one
 # u16-in-u32 status word per shot. Chunked to keep each DMA buffer within the CMA pool.
 #
-# Usage (root, pynq venv + XRT, from a dir with the FULL-SCHEDULE .bit + the <prefix>.syn/.ref files):
+# Usage (root, pynq venv + XRT, from a dir with the FULL-SCHEDULE .bit + the <prefix>.syn/.ref files;
+# <prefix>.ref must be v2 -- generate with `qec_q7_bp_graph -- silvectors ...`):
 #   sudo env XILINX_XRT=/usr /usr/local/share/pynq-venv/bin/python3 \
 #        bp_stream_banked_ler_kv260.py bp_kv260_stream_banked.bit p003 p005 p007 [--chunk 100000] [--obs 12] [--ns 5]
 
@@ -96,26 +99,43 @@ def main(argv):
         ob.invalidate()
         if not ((dma.read(MM2S_DMASR) & 2) and (dma.read(S2MM_DMASR) & 2)):
             raise RuntimeError("DMA stall MM2S=0x%08x S2MM=0x%08x" % (dma.read(MM2S_DMASR), dma.read(S2MM_DMASR)))
-        return (np.asarray(ob[:n]) >> 20) & obs_mask  # rtl_obs per shot
+        return np.asarray(ob[:n]).copy()  # full status word: [31:20]=obs, [19]=valid, [15:0]=cycles
 
     print("  point        n        sw_ler       rtl_ler       |diff|     comb_ci   divergence  verdict")
     all_pass = True
     for prefix in prefixes:
         syn = np.fromfile(prefix + ".syn", dtype=np.uint32)
-        ref = np.fromfile(prefix + ".ref", dtype=np.uint16)
+        # .ref v2 (aleph_qec::refvec): header [magic, version, words_per_shot, 0] then
+        # [true_obs, sw_obs, meta] per shot, meta = (valid << 15) | iters.
+        ref = np.fromfile(prefix + ".ref", dtype="<u2")
         n = syn.size // NS
-        assert ref.size == 2 * n, "%s.ref size mismatch (%d vs %d)" % (prefix, ref.size, 2 * n)
-        true_obs = ref[0::2].astype(np.uint32)
-        sw_obs = ref[1::2].astype(np.uint32)
+        if ref.size < 4 or ref[0] != 0xA1E7:
+            raise SystemExit(
+                "%s.ref is a legacy v1 file (no header). Regenerate it: "
+                "qec_q7_bp_graph -- silvectors <rounds> <p> <n> <seed> %s <decoder_p>"
+                % (prefix, prefix))
+        if ref[1] != 2 or ref[2] != 3:
+            raise SystemExit("%s.ref: unsupported version/width %d/%d" % (prefix, ref[1], ref[2]))
+        body = ref[4:]
+        assert body.size == 3 * n, "%s.ref size mismatch (%d vs %d)" % (prefix, body.size, 3 * n)
+        true_obs = body[0::3].astype(np.uint32)
+        sw_obs = body[1::3].astype(np.uint32)
+        sw_valid = (body[2::3] >> 15).astype(np.uint32)
 
-        rtl_obs = np.empty(n, dtype=np.uint32)
+        status = np.empty(n, dtype=np.uint32)
         t0 = time.perf_counter()
         off = 0
         while off < n:
             m = min(chunk, n - off)
-            rtl_obs[off:off + m] = run_chunk(syn[off * NS:(off + m) * NS], m)
+            status[off:off + m] = run_chunk(syn[off * NS:(off + m) * NS], m)
             off += m
         dt = time.perf_counter() - t0
+
+        rtl_obs = (status >> 20) & obs_mask
+        rtl_valid = (status >> 19) & 1
+        rtl_cycles = status & 0xFFFF
+        valid_mismatch = int(np.count_nonzero(rtl_valid != sw_valid))
+        rtl_nonconv = int(np.count_nonzero(rtl_valid == 0))
 
         rtl_err = int(np.count_nonzero(rtl_obs != true_obs))
         sw_err = int(np.count_nonzero(sw_obs != true_obs))
@@ -130,9 +150,16 @@ def main(argv):
         print("  %-8s %9d  %.4e  %.4e  %.3e  %.3e  %6d/%-8d  %s"
               % (prefix, n, sw_ler, rtl_ler, diff, comb, div, n, "PASS" if within else "FAIL"))
         print("           (%.2f s, %.2f us/shot; rtl_err=%d sw_err=%d)" % (dt, 1e6 * dt / n, rtl_err, sw_err))
+        print("           (valid: rtl_nonconv=%d (%.4f%%), sw_nonconv=%d, mismatch=%d; "
+              "cycles mean=%.1f max=%d)"
+              % (rtl_nonconv, 100.0 * rtl_nonconv / n,
+                 int(np.count_nonzero(sw_valid == 0)), valid_mismatch,
+                 float(rtl_cycles.mean()), int(rtl_cycles.max())))
+        if valid_mismatch:
+            all_pass = False
 
     del ib, ob
-    print("\nAC-2 RESULT:", "PASS (RTL LER within CI of software golden at every point)"
+    print("\nAC-2 RESULT:", "PASS (RTL LER within CI of software golden; valid_flag matches at every point)"
           if all_pass else "FAIL (see rows)")
     return 0 if all_pass else 1
 
