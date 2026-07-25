@@ -22,9 +22,23 @@ From `docs/qec/BACKLOG.md` § Q7-07:
 ## Why the measurement is conditional, not a straight A/B
 
 The natural reading of AC-2 — run the campaign with and without a fallback and compare LER — is
-statistically hopeless. At p=0.003 the campaign LER is 8.32e-4 ± 5.65e-5 at 10⁶ shots
-(`qec-q7-nonconv-block.csv`) while `r` is 1.17e-3. A fallback acts on ~0.1 % of shots, so its effect
-on overall LER sits well under the campaign CI; resolving it directly needs ~10⁸ shots per arm.
+*possible*, but it is the weakest instrument available, and the design's original justification for
+avoiding it ("the effect sits well under the campaign CI") is **refuted by this ticket's own data**
+and is corrected here. A fallback acts only on the `valid=0` shots, `r(p)` = 1.17e-3 of the stream at
+p=0.003 (`qec-q7-nonconv-block.csv`); every other shot is bit-identical in both arms and contributes
+nothing but variance, so a direct A/B spends ~`1/r` ≈ 856 shots to buy one informative one. The
+conditional design measures the same difference on the informative shots alone — ~10³× the
+statistical power per shot — and pairs them (McNemar), removing the shot-to-shot variance as well.
+
+Because `A ≈ 1` (below), those 0.1 % of shots carry essentially the *whole* LER, so the large
+regressions are **not** under the CI: at p=0.003 the propagated osd-0 LER is 1.164e-3 against a
+baseline 8.320e-4 — Δ = 3.32e-4 at SE = 4.47e-5, i.e. **7.4σ** — which a two-arm A/B at 10⁶ shots per
+arm would have caught outright. Where the conditional design earns its keep is the **margin**, and the
+margin is where the decision actually lives: the best candidate, osd-resid-4 at p=0.003, moves LER
+from 8.320e-4 to 8.939e-4 — Δ = 6.19e-5 at SE = 4.15e-5, **1.5σ**, indistinguishable from noise in a
+direct A/B at this campaign size. The paired conditional test calls that same candidate at χ² = 9.49,
+significant; matching that confidence directly would take ~4× the shots in each of the 15
+candidate × point arms, against the 18 000 decodes the conditional design actually spent.
 
 So Q7-07 measures in three levels and propagates analytically
 (`crates/aleph-qec/examples/qec_q7_nonconv.rs`):
@@ -101,22 +115,31 @@ Source: `qec-q7-nonconv-block.csv`, columns `p_err_given_nonconv`, `p_err_given_
 
 | p | P(err \| valid=0) | P(err \| valid=1) | **A(p)** | LER floor a perfect oracle could reach |
 |---|---|---|---|---|
-| 0.003 | 0.7123 | **0.0** (0 / 998 832) | **1.0000** | **0** |
+| 0.003 | 0.7123 | **0** observed (0 / 998 832) — **≤ 3.0e-6** at 95 % | **1.0000** observed — **≥ 0.9964** | **≤ 3.0e-6** |
 | 0.005 | 0.8300 | 1.916e-5 | **0.9973** | 1.90e-5 |
 | 0.007 | 0.8794 | 1.178e-4 | **0.9960** | 1.14e-4 |
 
+The p=0.003 row is a **zero count, not a measured zero**, and is quoted with its interval
+accordingly. Zero events in 998 832 trials bounds the rate by the rule of three: `P(err | valid=1)
+≤ 3 / 998 832 = 3.0e-6` at 95 % confidence, hence `A(0.003) ≥ 832 / (832 + 3) = 0.9964` and an oracle
+floor of `≤ 3.0e-6` rather than exactly 0. Nothing downstream moves: 3.0e-6 is still 280× below the
+8.32e-4 campaign LER at that point, and `A ≥ 0.9964` is still the same ceiling story as the other two
+rows.
+
 Stated in words, the ticket's central result:
 
-> **At p = 0.003, A = 100.0 %.** Every one of the 832 logical errors in 10⁶ shots was a shot the
-> decoder had already flagged `valid=0`. The converged-and-wrong population was *empty*: 998 832
-> converged shots, zero logical errors. At p = 0.005 and 0.007 the picture is the same to within a
-> fifth of a percent (A = 99.73 % / 99.60 %).
+> **At p = 0.003, A = 100.0 % as observed (≥ 99.64 % at 95 % confidence).** Every one of the 832
+> logical errors in 10⁶ shots was a shot the decoder had already flagged `valid=0`. The
+> converged-and-wrong population was *empty as sampled*: 998 832 converged shots, zero logical
+> errors, which bounds its rate at ≤ 3.0e-6. At p = 0.005 and 0.007 the picture is the same to within
+> a fifth of a percent (A = 99.73 % / 99.60 %).
 
 Two consequences, and they point opposite ways.
 
 **The optimistic reading.** `valid_flag` is an almost perfect error detector on this decoder. A
-converged relay-BP decision is essentially never wrong: `P(err | valid=1)` is 0, 1.9e-5, 1.2e-4 at the
-three points — two to three orders of magnitude below the campaign LER. That makes `valid_flag` a
+converged relay-BP decision is essentially never wrong: `P(err | valid=1)` is ≤3.0e-6 (0 observed in
+998 832, rule-of-three bound), 1.9e-5, 1.2e-4 at the three points — two to three orders of magnitude
+below the campaign LER at every point, bound included. That makes `valid_flag` a
 genuinely useful *heralding* signal, not just telemetry, and it is worth exporting for that reason
 alone (it already is — `hw/bp_relay_banked.sv:968`, status word bit 19).
 
@@ -134,31 +157,53 @@ McNemar is paired (b = baseline wrong & candidate right, c = the reverse), 1 dof
 continuity-corrected; χ² > 3.84 is significant at 0.05.
 Source: `docs/perf/data/qec-q7-nonconv-candidates.csv`.
 
-| p | candidate | solves/shot | errors / 1000 | P(err\|v=0) | rescued | broke | χ² | verdict |
+Every cell below is the **corpus** measurement (n = 1000 per point), including the baseline row —
+`errors / 1000` and `P(err|v=0)` are the same 1000 shots, and it is these corpus conditional rates
+that the ΔLER propagation below consumes. The full-population `P(err|v=0)` from
+`qec-q7-nonconv-block.csv` is a *different* estimator of the same quantity and is reported separately
+under the table.
+
+| p | candidate | solves/shot | errors / 1000 | P(err\|v=0), corpus | rescued | broke | χ² | verdict |
 |---|---|---|---|---|---|---|---|---|
-| 0.003 | **baseline** (flag only) | 0 | **712** | 0.7123 | — | — | — | reference |
+| 0.003 | **baseline** (flag only) | 0 | **712** | 0.712 | — | — | — | reference |
 | 0.003 | osd-0 | 1 | 996 | 0.996 | 3 | 287 | 276.17 | **worse**, significant |
 | 0.003 | osd-2 | 4 | 943 | 0.943 | 28 | 259 | 184.32 | **worse**, significant |
 | 0.003 | osd-4 | 16 | 772 | 0.772 | 108 | 168 | 12.61 | **worse**, significant |
 | 0.003 | osd-resid-2 | 4 | 939 | 0.939 | 29 | 256 | 179.21 | **worse**, significant |
 | 0.003 | osd-resid-4 | 16 | 765 | 0.765 | 116 | 169 | 9.49 | **worse**, significant |
-| 0.005 | **baseline** | 0 | **826** | 0.8300 | — | — | — | reference |
+| 0.005 | **baseline** | 0 | **826** | 0.826 | — | — | — | reference |
 | 0.005 | osd-0 | 1 | 996 | 0.996 | 4 | 174 | 160.46 | **worse**, significant |
 | 0.005 | osd-2 | 4 | 968 | 0.968 | 17 | 159 | 112.96 | **worse**, significant |
 | 0.005 | osd-4 | 16 | 891 | 0.891 | 62 | 127 | 21.67 | **worse**, significant |
 | 0.005 | osd-resid-2 | 4 | 962 | 0.962 | 18 | 154 | 105.96 | **worse**, significant |
 | 0.005 | osd-resid-4 | 16 | 871 | 0.871 | 75 | 120 | 9.93 | **worse**, significant |
-| 0.007 | **baseline** | 0 | **865** | 0.8794 | — | — | — | reference |
+| 0.007 | **baseline** | 0 | **865** | 0.865 | — | — | — | reference |
 | 0.007 | osd-0 | 1 | 996 | 0.996 | 2 | 133 | 125.19 | **worse**, significant |
 | 0.007 | osd-2 | 4 | 974 | 0.974 | 13 | 122 | 86.40 | **worse**, significant |
 | 0.007 | osd-4 | 16 | 929 | 0.929 | 42 | 106 | 26.82 | **worse**, significant |
 | 0.007 | osd-resid-2 | 4 | 971 | 0.971 | 14 | 120 | 82.28 | **worse**, significant |
 | 0.007 | osd-resid-4 | 16 | 925 | 0.925 | 44 | 104 | 23.52 | **worse**, significant |
 
-(The 1000-shot corpus baseline error counts differ slightly from `P(err|v=0)` measured over the full
-non-converged population — 712/1000 vs 0.7123 at p=0.003, 826/1000 vs 0.8300 at p=0.005 — because the
-corpus is the first 1000 retained shots, not all 1168 / 8473 / 32591. The agreement to three digits
-says the corpus is unbiased.)
+**Corpus vs population baseline, and why the corpus is unbiased.** The corpus baseline conditional
+rate differs from `P(err|v=0)` measured over the *whole* non-converged population
+(`qec-q7-nonconv-block.csv`), because the corpus is the first 1000 retained shots, not all
+1168 / 8473 / 32591:
+
+| p | corpus `P(err\|v=0)` (n = 1000) | population `P(err\|v=0)` | gap | non-converged population |
+|---|---|---|---|---|
+| 0.003 | 0.712 | 0.712329 | 0.03 pp | 1 168 |
+| 0.005 | 0.826 | 0.830048 | 0.40 pp | 8 473 |
+| 0.007 | 0.865 | 0.879384 | **1.44 pp** | 32 591 |
+
+The corpus is nevertheless an unbiased sample, and the reason is **structural, not empirical** — it
+does not rest on the three gaps above being small, and indeed the p=0.007 gap is not small. The shots
+are i.i.d. draws from a single `sample_shots` stream; `par_iter().collect()` preserves stream order;
+and retention is serial and in order, the first 1000 shots for which `!valid`
+(`crates/aleph-qec/examples/qec_q7_nonconv.rs:145-147`). Retention order therefore carries no
+information about the shot, so "the first 1000 retained" *is* a uniform random sample of the
+non-converged population. Consistently, the largest gap — 1.44 pp at p=0.007 — is ~1.4σ (SE ≈ 0.010
+at n = 1000, with the finite-population correction for N = 32 591), i.e. exactly what chance
+predicts.
 
 **Every candidate loses, at every operating point, significantly.** Not one row has χ² in the
 candidate's favour. The direction is uniform: the best candidate, residual-restricted OSD-4, rescues
@@ -214,6 +259,17 @@ The budget-relevant measurement is the same run pinned to one thread
 | osd-resid-2 | 1629.4 | 1629× over |
 | osd-resid-4 | 1643.7 | 1644× over |
 
+**What the timed region contains.** These figures time the *whole* PS-side fallback path — a full
+software relay-BP re-decode of the shot followed by the OSD tail — not the tail alone. That is
+visible in the table itself: 16× the solve count (osd-0 → osd-4) buys only +11 % time
+(1460.4 → 1626.6 µs), so the shared re-decode dominates and the marginal OSD tail is ~180 µs. The
+re-decode is not an artefact of lazy measurement but a **consequence of this branch's no-RTL-change
+constraint**: the RTL exports only `{obs, valid_flag, cycles}` (status word), with no soft LLRs or
+posteriors, so a real PS-side tail has no BP state to start from and would genuinely have to re-run
+BP in software first. Exporting posteriors is an RTL change, and out of scope here. Either way the
+verdict is unchanged: ~180 µs of marginal tail is still 180× the 1 µs/round budget, and no candidate
+won on LER in the first place.
+
 For scale: the whole early-exit hardware decode is **1.81 µs/shot** on silicon (Q7-06 AC-1), and
 Q7-01 targets 1 µs/round. A PS-side OSD tail costs ~1.6 ms *per shot it fires on*, on a 3 GHz-class
 x86 core — the KV260's 1.33 GHz Cortex-A53 would be several times slower again. Real-time QEC is
@@ -252,9 +308,16 @@ AC-2 RESULT: PASS (RTL LER within CI of software golden; valid_flag matches at e
 ```
 
 **Gate met: `mismatch=0`.** The hardware flag is not merely statistically consistent with the golden
-— it is identical on every one of 100 000 shots. That is the licence for the whole software analysis
-above. (The 0.857 % on-silicon rate at p=0.005 sits just under the 0.847 % ± 0.018 % campaign figure,
-as expected for a different 10⁵ sample.)
+— it is identical on every one of 100 000 shots. Scope that licence honestly: it is **one overlay, one
+operating point (p=0.005), 10⁵ shots, block path only**. What it establishes is that the block-path
+`valid_flag` this policy is chosen on is the silicon's flag, at the point where it was checked — which
+is the load-bearing claim, since the policy is chosen on the block path (§ *AC-1 — non-convergence
+rate, window path*). It does
+**not** extend to the window path, which has no silicon counterpart at all here, nor to p=0.003 /
+0.007, where the licence remains the Q7-06 AC-2 observable-level bit-exactness at all three rates plus
+the off-board `bpbanked-highweight` gate that compares `valid_flag` in co-simulation. (The 0.857 %
+on-silicon rate at p=0.005 sits just over the 0.847 % ± 0.018 % campaign figure — inside the CI, as
+expected for a different 10⁵ sample.)
 
 ## The verdict, and the gap in the pre-registered rule
 
@@ -288,10 +351,13 @@ the constraint, and the ceiling is not what rejects the fallbacks. **Measured LE
 as `hw/bp_relay_banked.sv:968`/`:956` and `FixedRelayBp::decode_fixed` already do. No RTL change, no
 PS-side tail, no re-synthesis. `valid_flag` ships as a **heralding and telemetry** signal:
 
-- **Heralding.** `P(err | valid=1)` is 0 / 1.9e-5 / 1.2e-4 at p = 0.003 / 0.005 / 0.007. A converged
-  decode is right essentially always, so a consumer that can afford to discard or escalate flagged
-  shots gets a post-selected LER two to three orders of magnitude below the raw campaign LER. That is
-  a far larger win than any fallback measured here, and it is available for free.
+- **Heralding.** `P(err | valid=1)` is ≤3.0e-6 / 1.9e-5 / 1.2e-4 at p = 0.003 / 0.005 / 0.007 — the
+  first is a 95 % rule-of-three bound on 0 errors in 998 832 converged shots, not a measured zero. A
+  converged decode is right essentially always — no worse than ~1 error per 3×10⁵ converged decodes
+  at p=0.003 with 95 % confidence, and measured at 1.9e-5 / 1.2e-4 above it — so a consumer that
+  can afford to discard or escalate flagged shots gets a post-selected LER two to three orders of
+  magnitude below the raw campaign LER. That is a far larger win than any fallback measured here,
+  and it is available for free.
 - **Telemetry.** `r(p)` is monotone and steep in p (1.17e-3 → 8.47e-3 → 3.26e-2 over a 2.3× range in
   physical error rate), which makes the flag rate a sensitive live estimator of the device's actual
   operating point — useful for detecting prior mismatch, the exact failure mode that caused #478.

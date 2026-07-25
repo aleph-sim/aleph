@@ -3,9 +3,12 @@
 //! Relay-BP occasionally emits a hard decision violating the syndrome; the RTL flags it
 //! (`valid_flag`, `hw/bp_relay_banked.sv:968`) and emits it anyway. This measures what that costs.
 //!
-//! A direct A/B on campaign LER is statistically hopeless — at p=0.003 the LER CI is ±1.13e-4 at
-//! 10⁶ shots while the non-convergence rate is order 0.1 %, so a fallback's effect sits orders of
-//! magnitude under the noise floor. So the measurement is conditional:
+//! A direct A/B on campaign LER is possible but weak: a fallback only ever touches the ~0.1 % of
+//! shots with `valid = 0`, and every other shot is identical in both arms, so a direct A/B pays
+//! ~1/r ≈ 856 shots (at p=0.003) per informative one. It does resolve the *large* regressions at
+//! 10⁶ shots/arm — measured, osd-0 at p=0.003 is 7.4σ — but not the marginal candidates the policy
+//! decision turns on (osd-resid-4 at p=0.003 is 1.5σ). So the measurement is conditional and
+//! paired, which is ~10³× the power per shot:
 //!
 //!   L1  r(p) = P(valid = 0), with CI.
 //!   L2  A(p) = (# logical errors with valid=0) / (# logical errors) — the HARD CEILING on any
