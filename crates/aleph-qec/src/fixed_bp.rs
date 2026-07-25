@@ -807,4 +807,22 @@ mod tests {
             assert_eq!(tail_ran, !converged);
         }
     }
+
+    #[test]
+    fn test_three_validity_apis_agree() {
+        // Q7-07 reads validity through four entry points — the campaign uses `decode_fixed_ehat`,
+        // the candidate ladder uses `decode_fixed_soft`, the emitted `.ref` v2 carries
+        // `iters_to_valid`, and the board driver compares against all of it. If they ever drift,
+        // every number in the policy report silently means something different per table.
+        let dem = crate::BBCode::gross().code_capacity_dem(0.05);
+        let fx = FixedRelayBp::new(&dem, 8, 3);
+        let (syndromes, _truths) = crate::sample_shots(&dem, 300, 5);
+        for syn in &syndromes {
+            let a = fx.decode_fixed(syn).1;
+            let b = fx.decode_fixed_ehat(syn).2;
+            let c = fx.decode_fixed_soft(syn).converged;
+            let d = fx.iters_to_valid(syn).0;
+            assert_eq!((a, b, c), (b, c, d), "validity APIs disagree");
+        }
+    }
 }
