@@ -304,7 +304,7 @@ fn run_candidates(path: &str) {
         "# Q7-07 candidates on {path}: p={} rounds={} corpus={n} (from {} shots)",
         corpus.p, corpus.rounds, corpus.shots
     );
-    println!("p,candidate,order,restricted,corpus,errors,p_err_given_nonconv,solves_per_shot,us_per_shot");
+    println!("p,candidate,order,restricted,corpus,errors,p_err_given_nonconv,solves_per_shot,us_per_shot,mcnemar_rescued,mcnemar_broke,mcnemar_chi2");
 
     // Baseline: what the RTL emits today — the best-kept decision, syndrome-violating and all.
     let base_err: Vec<bool> = corpus
@@ -316,7 +316,16 @@ fn run_candidates(path: &str) {
             mispredicted(&flips, truth, dem.observables)
         })
         .collect();
-    report_candidate(corpus.p, "baseline", 0, false, &base_err, 0.0, 0.0);
+    report_candidate(
+        corpus.p,
+        "baseline",
+        0,
+        false,
+        &base_err,
+        0.0,
+        0.0,
+        (0, 0, 0.0),
+    );
 
     // The corpus is retained *because* each shot failed to converge under this exact operating
     // point; if re-decoding it here says otherwise, the corpus and the decoder have drifted apart
@@ -348,6 +357,9 @@ fn run_candidates(path: &str) {
             .collect();
         let us = 1e6 * t0.elapsed().as_secs_f64() / n as f64;
         let name = if restricted { "osd-resid" } else { "osd" };
+        // Paired McNemar against the baseline: the candidates decode the SAME shots, so the
+        // unpaired difference of two rates throws away most of the power.
+        let mc = mcnemar(&base_err, &errs, name, order, restricted);
         report_candidate(
             corpus.p,
             name,
@@ -356,13 +368,12 @@ fn run_candidates(path: &str) {
             &errs,
             (1u64 << order) as f64,
             us,
+            mc,
         );
-        // Paired McNemar against the baseline: the candidates decode the SAME shots, so the
-        // unpaired difference of two rates throws away most of the power.
-        mcnemar(&base_err, &errs, name, order, restricted);
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn report_candidate(
     p: f64,
     name: &str,
@@ -371,19 +382,29 @@ fn report_candidate(
     errs: &[bool],
     solves: f64,
     us: f64,
+    mc: (usize, usize, f64),
 ) {
     let e = errs.iter().filter(|&&x| x).count();
     println!(
-        "{p},{name},{order},{},{},{e},{:.6},{solves},{us:.1}",
+        "{p},{name},{order},{},{},{e},{:.6},{solves},{us:.1},{},{},{:.2}",
         u8::from(restricted),
         errs.len(),
-        e as f64 / errs.len().max(1) as f64
+        e as f64 / errs.len().max(1) as f64,
+        mc.0,
+        mc.1,
+        mc.2
     );
 }
 
 /// McNemar's paired test on the corpus: `b` = baseline wrong & candidate right, `c` = the reverse.
 /// Reports the two discordant counts and the χ² statistic (1 dof, continuity-corrected).
-fn mcnemar(base: &[bool], cand: &[bool], name: &str, order: usize, restricted: bool) {
+fn mcnemar(
+    base: &[bool],
+    cand: &[bool],
+    name: &str,
+    order: usize,
+    restricted: bool,
+) -> (usize, usize, f64) {
     let b = base.iter().zip(cand).filter(|(&x, &y)| x && !y).count();
     let c = base.iter().zip(cand).filter(|(&x, &y)| !x && y).count();
     let chi2 = if b + c == 0 {
@@ -401,6 +422,7 @@ fn mcnemar(base: &[bool], cand: &[bool], name: &str, order: usize, restricted: b
             "not significant"
         }
     );
+    (b, c, chi2)
 }
 
 /// M9b's frozen streaming configuration.
