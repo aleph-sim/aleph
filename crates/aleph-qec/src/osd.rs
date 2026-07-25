@@ -44,8 +44,15 @@ pub struct OsdDecoder {
     /// Parity-check **column** of each variable: the checks (detectors) it touches, matching BP's
     /// parity-reduced Tanner incidences exactly so reliabilities line up with columns.
     var_dets: Vec<Vec<u32>>,
+    /// Check **rows**: the variables each detector touches. The transpose of `var_dets`, built
+    /// once so the residual (unsatisfied-check) support can be computed per shot without a scan.
+    det_vars: Vec<Vec<u32>>,
     /// OSD combination-sweep order (`0` = OSD-0).
     order: usize,
+    /// Restrict the combination sweep to variables touching an unsatisfied check (Q7-07's
+    /// "OSD-lite on the residual"). Same `2^order` solve budget, aimed at the columns that can
+    /// actually repair the violated checks.
+    residual_restricted: bool,
 }
 
 impl OsdDecoder {
@@ -69,12 +76,20 @@ impl OsdDecoder {
             })
             .collect();
         let num_detectors = t.num_detectors;
+        let mut det_vars: Vec<Vec<u32>> = vec![Vec::new(); num_detectors];
+        for (v, dets) in var_dets.iter().enumerate() {
+            for &c in dets {
+                det_vars[c as usize].push(v as u32);
+            }
+        }
         Self {
             bp,
             num_detectors,
             n_vars,
             var_dets,
+            det_vars,
             order,
+            residual_restricted: false,
         }
     }
 
@@ -85,15 +100,58 @@ impl OsdDecoder {
         self
     }
 
+    /// Restrict the OSD combination sweep to variables in the support of the **unsatisfied**
+    /// checks. No effect at `order == 0` (there is no sweep). Q7-07 candidate 3.
+    pub fn with_residual_restricted(mut self, on: bool) -> Self {
+        self.residual_restricted = on;
+        self
+    }
+
+    /// Whether `ehat` (a per-variable error decision, one bit per variable) reproduces `syndrome`
+    /// under this decoder's parity checks. Exposed for tests and for the Q7-07 campaign's per-shot
+    /// validity accounting.
+    pub fn check_satisfied(&self, syndrome: &Syndrome, ehat: &[u8]) -> bool {
+        self.residual(syndrome, ehat).is_empty()
+    }
+
+    /// The detectors whose parity under `ehat` disagrees with `syndrome` — the residual.
+    fn residual(&self, syndrome: &Syndrome, ehat: &[u8]) -> Vec<u32> {
+        let mut parity = vec![false; self.num_detectors];
+        for (v, dets) in self.var_dets.iter().enumerate() {
+            if ehat.get(v).copied().unwrap_or(0) == 1 {
+                for &c in dets {
+                    parity[c as usize] ^= true;
+                }
+            }
+        }
+        for &d in &syndrome.fired {
+            if (d as usize) < self.num_detectors {
+                parity[d as usize] ^= true;
+            }
+        }
+        (0..self.num_detectors as u32)
+            .filter(|&c| parity[c as usize])
+            .collect()
+    }
+
     /// Decode, returning the correction and whether the **OSD** post-processor ran (`false` ⇒ BP
     /// converged on its own).
     pub fn decode_osd(&self, syndrome: &Syndrome) -> (Correction, bool) {
+        let (ehat, ran) = self.decode_osd_ehat(syndrome);
+        (self.bp.correction_of(&ehat), ran)
+    }
+
+    /// Like [`decode_osd`](Self::decode_osd) but exposes the per-variable error decision `ê`
+    /// instead of the projected observable flips — the pairing [`FixedRelayBp::decode_fixed`] /
+    /// [`FixedRelayBp::decode_fixed_ehat`](crate::FixedRelayBp::decode_fixed_ehat) already uses.
+    /// `check_satisfied` needs `ê`, not `Correction` (which only carries observable flips).
+    pub fn decode_osd_ehat(&self, syndrome: &Syndrome) -> (Vec<u8>, bool) {
         let soft = self.bp.decode_bp_soft(syndrome);
         if soft.converged {
-            return (self.bp.correction_of(&soft.ehat), false);
+            return (soft.ehat, false);
         }
         let ehat = self.osd_solve(syndrome, &soft.ehat, &soft.llr);
-        (self.bp.correction_of(&ehat), true)
+        (ehat, true)
     }
 
     /// Run the OSD post-processor on **externally supplied** soft information (e.g. from relay-BP,
@@ -187,10 +245,27 @@ impl OsdDecoder {
 
         // OSD combination sweep over the `w` least-reliable non-pivot columns. `order` is descending
         // reliability, so the least-reliable non-pivots are at the tail of `nonpivot`.
+        //
+        // Sweep pool: non-pivot columns, optionally narrowed to those touching an unsatisfied
+        // check. The sweep costs 2^w regardless of pool size, so narrowing the pool raises the
+        // *effective* order — the w columns actually explored are the ones that can repair the
+        // residual, rather than the globally least-reliable ones anywhere in the code.
+        let restrict: Option<std::collections::HashSet<usize>> = if self.residual_restricted {
+            let resid = self.residual(syndrome, bp_hard);
+            Some(
+                resid
+                    .iter()
+                    .flat_map(|&c| self.det_vars[c as usize].iter().map(|&v| v as usize))
+                    .collect(),
+            )
+        } else {
+            None
+        };
         let nonpivot: Vec<usize> = order
             .iter()
             .copied()
             .filter(|&v| row_for_col[v] == usize::MAX)
+            .filter(|v| restrict.as_ref().is_none_or(|s| s.contains(v)))
             .collect();
         let w = self.order.min(nonpivot.len()).min(20);
         if w == 0 {
@@ -366,6 +441,53 @@ mod tests {
             let (_corr, _ran) = osd.decode_osd(&syn);
             // Validity via the public path: decode then recompute is covered above; here just ensure
             // no panic and the decoder runs at sweep order 6.
+        }
+    }
+
+    #[test]
+    fn test_residual_restricted_is_opt_in_and_chains() {
+        let dem = crate::BBCode::gross().code_capacity_dem(0.05);
+        let d = OsdDecoder::new(&dem).with_order(4);
+        assert!(!d.residual_restricted);
+        let d = d.with_residual_restricted(true);
+        assert!(d.residual_restricted);
+        assert_eq!(d.order, 4);
+    }
+
+    #[test]
+    fn test_residual_restricted_still_satisfies_the_syndrome() {
+        // OSD's contract is a syndrome-consistent decode. Restricting which columns the
+        // combination sweep explores must not break it: the pivots are still solved for H e = s,
+        // only the sweep pool shrinks.
+        let dem = crate::BBCode::gross().code_capacity_dem(0.05);
+        let d = OsdDecoder::new(&dem)
+            .with_order(4)
+            .with_residual_restricted(true);
+        let (syndromes, _truths) = crate::sample_shots(&dem, 200, 7);
+        for syn in &syndromes {
+            let (ehat, _ran) = d.decode_osd_ehat(syn);
+            assert!(
+                d.check_satisfied(syn, &ehat),
+                "residual-restricted OSD returned a syndrome-violating decode"
+            );
+        }
+    }
+
+    #[test]
+    fn test_residual_restricted_matches_plain_when_all_vars_are_in_the_residual() {
+        // Order 0 has no sweep at all, so the restriction is a no-op there — a guard against the
+        // flag accidentally changing the OSD-0 path, which is the reference candidate.
+        let dem = crate::BBCode::gross().code_capacity_dem(0.05);
+        let plain = OsdDecoder::new(&dem).with_order(0);
+        let restricted = OsdDecoder::new(&dem)
+            .with_order(0)
+            .with_residual_restricted(true);
+        let (syndromes, _truths) = crate::sample_shots(&dem, 100, 11);
+        for syn in &syndromes {
+            assert_eq!(
+                plain.decode_osd(syn).0.observable_flips,
+                restricted.decode_osd(syn).0.observable_flips
+            );
         }
     }
 }
