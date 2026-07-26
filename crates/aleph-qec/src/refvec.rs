@@ -19,6 +19,8 @@ pub const REF_VERSION: u16 = 2;
 pub const REF_WORDS_PER_SHOT: u16 = 3;
 
 const HEADER_WORDS: usize = 4;
+/// `REF_WORDS_PER_SHOT` as a `usize`, for use as a const-generic chunk width.
+const WORDS_PER_SHOT: usize = REF_WORDS_PER_SHOT as usize;
 
 /// One shot's software-golden record.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -61,9 +63,12 @@ pub fn read_ref<R: Read>(r: &mut R) -> std::io::Result<Vec<RefRecord>> {
     if bytes.len() % 2 != 0 {
         return Err(invalid("ref: odd byte length, not a u16 stream"));
     }
+    // Odd lengths are rejected above, so `as_chunks` leaves no remainder here.
     let words: Vec<u16> = bytes
-        .chunks_exact(2)
-        .map(|c| u16::from_le_bytes([c[0], c[1]]))
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|c| u16::from_le_bytes(*c))
         .collect();
     if words.len() < HEADER_WORDS {
         return Err(invalid("ref: shorter than the header"));
@@ -80,11 +85,13 @@ pub fn read_ref<R: Read>(r: &mut R) -> std::io::Result<Vec<RefRecord>> {
         return Err(invalid("ref: unexpected words-per-shot"));
     }
     let payload = &words[HEADER_WORDS..];
-    if !payload.len().is_multiple_of(REF_WORDS_PER_SHOT as usize) {
+    // `as_chunks` hands back the trailing partial record, which is exactly the truncation signal.
+    let (records, tail) = payload.as_chunks::<WORDS_PER_SHOT>();
+    if !tail.is_empty() {
         return Err(invalid("ref: truncated payload"));
     }
-    Ok(payload
-        .chunks_exact(REF_WORDS_PER_SHOT as usize)
+    Ok(records
+        .iter()
         .map(|c| RefRecord {
             true_obs: c[0],
             sw_obs: c[1],
@@ -156,6 +163,17 @@ mod tests {
         write_ref(&mut buf, &sample()).expect("write");
         buf[2..4].copy_from_slice(&99u16.to_le_bytes());
         let err = read_ref(&mut buf.as_slice()).expect_err("bad version must be rejected");
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn test_payload_truncated_by_whole_words_is_rejected() {
+        // Dropping one whole u16 keeps the byte length even, so this is the only case that
+        // reaches the partial-record check rather than the odd-byte guard below it.
+        let mut buf = Vec::new();
+        write_ref(&mut buf, &sample()).expect("write");
+        buf.truncate(buf.len() - 2);
+        let err = read_ref(&mut buf.as_slice()).expect_err("partial record must be rejected");
         assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
     }
 
