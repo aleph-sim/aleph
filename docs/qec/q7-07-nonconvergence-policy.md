@@ -7,7 +7,8 @@ impact measured: it is the *only* affordable option, because every candidate fal
 makes LER **worse**, by +5.4 % to +39.9 % depending on point and candidate. Closes #458.
 
 The headline number is not the rate. It is the **attributable fraction**
-`A(p) = 0.9960 – 1.0000`: at the shipped block operating points, essentially **every logical error is a
+`A(p) = 0.9960 – 1.0000` (observed; the 1.0000 is a zero-count estimate — `≥ 0.9964` at 95 %): at the
+shipped block operating points, essentially **every logical error is a
 non-converged shot**. Non-convergence is not a tail nuisance — it *is* the error budget. And nothing
 in the affordable candidate ladder can collect any of it.
 
@@ -199,7 +200,7 @@ The corpus is nevertheless an unbiased sample, and the reason is **structural, n
 does not rest on the three gaps above being small, and indeed the p=0.007 gap is not small. The shots
 are i.i.d. draws from a single `sample_shots` stream; `par_iter().collect()` preserves stream order;
 and retention is serial and in order, the first 1000 shots for which `!valid`
-(`crates/aleph-qec/examples/qec_q7_nonconv.rs:145-147`). Retention order therefore carries no
+(`crates/aleph-qec/examples/qec_q7_nonconv.rs:143-151`). Retention order therefore carries no
 information about the shot, so "the first 1000 retained" *is* a uniform random sample of the
 non-converged population. Consistently, the largest gap — 1.44 pp at p=0.007 — is ~1.4σ (SE ≈ 0.010
 at n = 1000, with the finite-population correction for N = 32 591), i.e. exactly what chance
