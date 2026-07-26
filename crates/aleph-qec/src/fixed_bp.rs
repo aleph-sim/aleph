@@ -465,7 +465,10 @@ impl FixedRelayBp {
         true
     }
 
-    fn correction_of(&self, ehat: &[u8]) -> Correction {
+    /// Project a per-variable error decision `ê` to the observable flips it implies (`obs` is the
+    /// per-variable observable-flip bitmask). The natural companion to
+    /// [`decode_fixed_ehat`](Self::decode_fixed_ehat), which already exposes `ê`.
+    pub fn correction_of(&self, ehat: &[u8]) -> Correction {
         let mut mask = 0u64;
         for (v, &e) in ehat.iter().enumerate() {
             if e == 1 {
@@ -540,8 +543,13 @@ impl FixedRelayBpOsd {
     /// fraction of `true`s is the slow-path tail-rate).
     pub fn decode_fixed_osd(&self, syndrome: &Syndrome) -> (Correction, bool) {
         let soft = self.fixed.decode_fixed_soft(syndrome);
-        let tail_ran = !soft.converged;
-        (self.osd.correction_from_soft(syndrome, &soft), tail_ran)
+        // Gate the tail here, explicitly. `OsdDecoder::correction_from_soft` also short-circuits
+        // on `converged`, but the Q7-07 policy measurement costs the tail by how often this branch
+        // is taken — that must not depend on a callee's internal behaviour.
+        if soft.converged {
+            return (self.fixed.correction_of(&soft.ehat), false);
+        }
+        (self.osd.correction_from_soft(syndrome, &soft), true)
     }
 
     /// The fixed relay-BP front-end (e.g. for its `(msg_bits, frac_bits)` width).
@@ -784,5 +792,49 @@ mod tests {
         // A hostile override (all strongly "fired") flips the hard decision inputs.
         let forced = dec.clone().with_lambda_q(vec![-127; 3]);
         assert_eq!(forced.lambda_q(), &[-127, -127, -127]);
+    }
+
+    #[test]
+    fn test_osd_tail_does_not_run_on_converged_shots() {
+        // The tail-rate is the cost metric for the Q7-07 policy, so the gate must be explicit in
+        // the caller, not an internal short-circuit of OsdDecoder we happen to inherit.
+        // p=0.05, not 0.01: at 0.01 every one of the 300 shots converges, so `!converged` is
+        // never true and the OSD branch this test names is never entered. 0.05 is the same
+        // operating point `test_three_validity_apis_agree` uses non-vacuously; the counter below
+        // fails the test if that ever stops holding.
+        let dem = crate::BBCode::gross().code_capacity_dem(0.05);
+        let osd = FixedRelayBpOsd::new(&dem, 8, 3, 0);
+        let (syndromes, _truths) = crate::sample_shots(&dem, 300, 3);
+        let mut nonconv = 0usize;
+        for syn in &syndromes {
+            let converged = osd.fixed().decode_fixed(syn).1;
+            if !converged {
+                nonconv += 1;
+            }
+            let (_corr, tail_ran) = osd.decode_fixed_osd(syn);
+            assert_eq!(tail_ran, !converged);
+        }
+        assert!(
+            nonconv > 0,
+            "vacuous: 0/300 shots non-converged, so the tail-ran branch was never exercised"
+        );
+    }
+
+    #[test]
+    fn test_three_validity_apis_agree() {
+        // Q7-07 reads validity through four entry points — the campaign uses `decode_fixed_ehat`,
+        // the candidate ladder uses `decode_fixed_soft`, the emitted `.ref` v2 carries
+        // `iters_to_valid`, and the board driver compares against all of it. If they ever drift,
+        // every number in the policy report silently means something different per table.
+        let dem = crate::BBCode::gross().code_capacity_dem(0.05);
+        let fx = FixedRelayBp::new(&dem, 8, 3);
+        let (syndromes, _truths) = crate::sample_shots(&dem, 300, 5);
+        for syn in &syndromes {
+            let a = fx.decode_fixed(syn).1;
+            let b = fx.decode_fixed_ehat(syn).2;
+            let c = fx.decode_fixed_soft(syn).converged;
+            let d = fx.iters_to_valid(syn).0;
+            assert_eq!((a, b, c), (b, c, d), "validity APIs disagree");
+        }
     }
 }

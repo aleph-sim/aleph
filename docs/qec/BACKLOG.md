@@ -1436,9 +1436,19 @@ fallbacks in software first, and specify (implement only if the rate demands it)
 path.
 
 **Acceptance Criteria**
-- [ ] Non-convergence rate quantified per operating point.
-- [ ] Fallback policy chosen with data (incl. do-nothing-but-flag if rates are negligible); the
+- [x] Non-convergence rate quantified per operating point.
+- [x] Fallback policy chosen with data (incl. do-nothing-but-flag if rates are negligible); the
       LER impact of the chosen policy measured in software.
+
+**Result:** both ACs MET — `docs/qec/q7-07-nonconvergence-policy.md`. Block path `r` =
+1.17e-3 / 8.47e-3 / 3.26e-2 at p = 0.003 / 0.005 / 0.007 (10⁶ shots each); window path 1.83e-2 /
+1.57e-1 / 4.24e-1 per window. Attributable fraction `A` = 1.0000 / 0.9973 / 0.9960 — essentially
+every logical error is a flagged shot, and `P(err|valid=1)` is 0 / 1.9e-5 / 1.2e-4. Every OSD
+candidate (0, 2, 4, residual-restricted 2, 4) is **significantly worse** than the baseline at every
+point (+5.4 % to +39.9 % LER) and costs ~1.6 ms/shot single-threaded, ~1600× the 1 µs/round budget.
+Policy: **do-nothing-but-flag**, with `valid_flag` shipped as a heralding + telemetry signal. On
+silicon: `valid_mismatch = 0` on 10⁵ shots vs the software golden (KV260 `bp_p005.bit`). No RTL
+change.
 
 -----
 

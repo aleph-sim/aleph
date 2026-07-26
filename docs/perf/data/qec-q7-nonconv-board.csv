@@ -1,0 +1,6 @@
+# Q7-07 on-silicon valid_flag confirmation, KV260 (bp_p005.bit, matched-prior p=0.005 overlay),
+# driver hw/sw/bp_stream_banked_ler_kv260.py, vectors p005v2 (.ref v2), 2026-07-25.
+# Transcribed verbatim from the driver's stdout (board run log kept at hw/sw/, see the doc's
+# reproduce section for the exact command).
+overlay,prefix,n,sw_ler,rtl_ler,abs_diff,comb_ci95,obs_divergence,rtl_nonconv,sw_nonconv,valid_mismatch,us_per_shot,cycles_mean,cycles_max,verdict
+bp_p005.bit,p005v2,100000,7.1200e-03,7.1200e-03,0.000e+00,1.042e-03,0,857,857,0,23.10,2085.0,2085,PASS
