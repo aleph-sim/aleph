@@ -275,10 +275,26 @@ cd /data/asicprobe && setsid nohup ./run_clkstruct.sh </dev/null >/dev/null 2>&1
 Expected output in `/data/asicprobe/clk_struct.log`: `DISTINCT_LATCH_CLK_NETS`, `DISTINCT_DFF_CLK_NETS`,
 `LATCH_NET_SINK_TOP20`, `LATCH_SINKS_TOTAL`.
 
-- [ ] **Step 2: Record how many distinct gated-clock nets exist**
+- [x] **Step 2: Record how many distinct gated-clock nets exist**
 
 If the count is small (< ~2000), the SDC route in Task A2 is viable. If it is very large, skip A2 and
 go straight to A3 (re-synthesis with ICG cells enabled).
+
+**Result (2026-07-26):**
+
+| | latches | flops |
+|---|---|---|
+| cells | 55,703 | 43,025 |
+| **distinct clock nets** | **15,951** | 2,321 |
+| sinks per net | ~3.5 (max 25) | ~18 |
+
+**15,951 gated-clock domains is an order of magnitude past the viability threshold this task set for
+itself.** Declaring that many generated clocks would make STA unusable, so **Task A2 is dead as
+written** and is superseded by A3. The structure is fine-grained per-register write enables — roughly
+3.5 latches per enable — which is also why re-synthesis with ICG cells would insert ~16 k clock-gating
+cells rather than a handful. If the clock tree is ever attacked directly, the cheaper lever is an RTL
+change that coarsens the enable granularity (one enable per bank rather than per register), not a
+tooling flag.
 
 - [ ] **Step 3: Commit the finding**
 
@@ -322,26 +338,44 @@ Two independent hypotheses; test the cheap one first, one variable at a time.
 - Create: `/data/asicprobe/repair_h1_crpr.tcl`
 - Create: `/data/asicprobe/repair_h2_placement.tcl`
 
-- [ ] **Step 1: H1 — disable CRPR, the exact function that crashed**
+- [x] **Step 1: H1 — disable CRPR, the exact function that crashed**
 
-```tcl
-read_db /work/orfs_out_m8rf_asap7/results/asap7/bp_relay_banked/base/5_1_grt.odb
-set_crpr_enabled false
-estimate_parasitics -global_routing
-repair_timing -setup_margin 0 -hold_margin 0 -repair_tns 100 -verbose
-```
+**H1 is not testable: `set_crpr_enabled` does not exist in this build.** `info commands` returns
+nothing for it in OpenROAD `26Q3-528-g20d2d5c16e`. CRPR is not exposed as a user-settable toggle, so
+the crashing code path cannot be switched off from Tcl. Abandoned without spending a run on it.
 
-Expected if H1 holds: the run completes instead of dying in `pruneCrprArrivals`.
-
-- [ ] **Step 2: If H1 fails, H2 — avoid the GRT incremental path entirely**
+- [x] **Step 2: H2 — avoid the GRT incremental path entirely**
 
 ```tcl
 read_db /work/orfs_out_m8rf_asap7/results/asap7/bp_relay_banked/base/4_1_cts.odb
+read_sdc .../4_cts.sdc
+set_propagated_clock [all_clocks]
+source $plat/setRC.tcl          # else RSZ-0089: no resistance value for any corner
 estimate_parasitics -placement
 repair_timing -setup_margin 0 -hold_margin 0 -repair_tns 100 -verbose
 ```
 
 The crash is reached through `updateDirtyRoutes`; placement-based parasitics never call it.
+
+**Result (2026-07-26): H2 holds — `repair_timing` runs at the CTS stage without crashing.** It entered
+its iteration loop and reported the endpoint table, where the GRT-stage run died after ~1 h at
+iteration 30. Two things follow:
+
+1. The `SKIP_CTS_REPAIR_TIMING = 1` in `orfs/m8rf_asap7/config.mk` was set on the *assumption* that the
+   sky130 ODB-0445 CTS crash also applied to ASAP7. **That assumption was never tested and is wrong.**
+   The flow has been skipping a repair stage that works.
+2. Only `SKIP_INCREMENTAL_REPAIR` is genuinely required. The fix for the flow is to unset
+   `SKIP_CTS_REPAIR_TIMING` and re-run from CTS.
+
+A standalone run also needs the platform's `setRC.tcl` — ORFS supplies layer/wire RC via `SET_RC_TCL`,
+which a bare `openroad` invocation does not pick up, and without it the resizer aborts with RSZ-0089
+before doing any work.
+
+Pre-repair timing at the CTS stage, for comparison with the 686.13 MHz post-route figure:
+`fmax = 681.23 MHz` (period_min 1467.94 ps), WNS −507.25 ps with the ODB's own parasitics; after
+`setRC` + placement estimation the honest starting point is WNS −1057.2 ps over 52,817 violating
+endpoints. **The near-identical CTS and post-route Fmax is itself a finding: routing is not what limits
+this design — the clock structure is, and it is already fully formed at CTS.**
 
 - [ ] **Step 3: If both fail, report upstream and stop**
 
@@ -611,8 +645,15 @@ users cannot serve as Track S's demand gate. F1–F3 are prerequisites for the a
   none of them are enforced automatically. An open hardware project whose hardware is not tested in CI
   does not earn trust.
 
-- [ ] **Task F3: Shrink `hw/`.** It is **2.8 GB**, including `_bp*build` directories. Move artefacts to
-  releases; a multi-gigabyte clone deters every casual evaluator.
+- [ ] **Task F3: Document the Q7 hardware in `hw/README.md`.** ~~Shrink `hw/`~~ — **withdrawn, the
+  premise was wrong.** `hw/` is 2.8 GB *on disk*, but that is entirely `_bp*build/` Verilator output,
+  already covered by `hw/.gitignore:52`. Tracked content is **6.4 MB across 165 files**, and the whole
+  repository packs to **7.17 MiB**. A fresh clone is small; nothing needs shrinking.
+
+  The real documentation gap is different and worse: `hw/README.md` is **entirely Q6-centric** — surface
+  code, Union-Find, the Arty/KV260 bring-up — and contains **no section at all** on relay-BP, the banked
+  M8 core, the streaming core, or anything else from Q7-02 onward. The directory's own front page does
+  not mention the design this whole program is about. Fix that before pointing outsiders at the repo.
 
 - [ ] **Task F4: Ship "decoder-in-a-box".** Pre-built KV260 bitstream, Python driver, one command,
   one page of documentation. This is the artefact most people will actually use.
