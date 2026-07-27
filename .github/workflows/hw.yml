@@ -41,6 +41,11 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  # Minimum that compiles this RTL; see the Verilator step below. Bump in step
+  # with the bench box so CI and manual runs never disagree.
+  VERILATOR_VERSION: "5.032"
+
 jobs:
   cosim:
     name: RTL co-simulation (fast gates)
@@ -63,11 +68,38 @@ jobs:
       # golden vectors, so the Rust dep tree is on the critical path here.
       - uses: Swatinem/rust-cache@v2
 
-      - name: Install Verilator
+      # The RTL requires Verilator >= 5.03x. Ubuntu 24.04 ships 5.020, which
+      # rejects this design outright with four %Error-BLKLOOPINIT ("Unsupported:
+      # Delayed assignment to array inside for loops") on bp_relay_decoder.sv
+      # lines 84/87/88/185 -- a construct 5.032 and 5.050 both accept. Rewriting
+      # verified RTL to satisfy an older tool is a bad trade, so the tool is
+      # pinned instead. 5.032 is also exactly what the bench box runs, so CI and
+      # the box agree by construction.
+      - name: Cache Verilator ${{ env.VERILATOR_VERSION }}
+        id: verilator-cache
+        uses: actions/cache@v4
+        with:
+          path: /opt/verilator
+          key: verilator-${{ env.VERILATOR_VERSION }}-${{ runner.os }}
+
+      - name: Build Verilator ${{ env.VERILATOR_VERSION }}
+        if: steps.verilator-cache.outputs.cache-hit != 'true'
         run: |
           sudo apt-get update
-          sudo apt-get install -y verilator
-          verilator --version
+          sudo apt-get install -y git help2man perl python3 make autoconf g++ flex bison ccache \
+                                  libfl2 libfl-dev zlib1g zlib1g-dev
+          git clone --depth 1 --branch "v${VERILATOR_VERSION}" \
+            https://github.com/verilator/verilator /tmp/verilator
+          cd /tmp/verilator
+          autoconf
+          ./configure --prefix=/opt/verilator
+          make -j"$(nproc)"
+          sudo make install
+
+      - name: Put Verilator on PATH and check the version
+        run: |
+          echo /opt/verilator/bin >> "$GITHUB_PATH"
+          /opt/verilator/bin/verilator --version
 
       # Fastest first: a broken golden model or a broken graph emitter fails
       # here in seconds instead of six minutes into the banked core.
