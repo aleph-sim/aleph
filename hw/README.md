@@ -149,3 +149,21 @@ timing-met, LER unchanged. Out-of-order lifts per-engine efficiency (K=8: 82 % �
 its reorder buffer is O(K²) area — OOO K=8 ≈ in-order K=16 in LUTs, and OOO K=16 fails to route; so on
 this small part more engines beat reordering. This is the Q6-03 FPGA throughput figure; see
 `docs/perf/qec-q6-fpga.md` for the full table and verdict.
+
+## Licence — Apache-2.0, not MIT
+
+**Everything under `hw/` is licensed under Apache-2.0** ([`hw/LICENSE`](LICENSE)), unlike the Rust
+crates in this repository, which stay MIT ([`../LICENSE`](../LICENSE)).
+
+The difference is deliberate and it is about patents, not about openness. MIT grants copyright
+permission but says nothing about patents, which is a routine blocker for anyone whose legal team has
+to approve pulling RTL into a chip they will fabricate — the exact use we want to enable. Apache-2.0
+carries an explicit patent grant (§3) and a defensive termination clause, which is why it is the
+standard choice for open silicon (OpenTitan and most RISC-V cores use it).
+
+Copyright © 2026 Ruslan Malymon and the aleph contributors. `hw/LICENSE` is the canonical Apache-2.0
+text, unmodified (SHA-256 `cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30`); the
+copyright statement lives here rather than being pasted into the licence template.
+
+If you are integrating this RTL and the licence is still an obstacle, open an issue — the point of the
+project is that the design gets used.

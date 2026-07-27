@@ -241,4 +241,8 @@ Open a PR titled `[playbook] Update {AlgorithmName}: {reason}`.
 
 ## License
 
-MIT — see [`LICENSE`](LICENSE).
+MIT — see [`LICENSE`](LICENSE) — **except `hw/`**, which is Apache-2.0
+(see [`hw/LICENSE`](hw/LICENSE) and the rationale in [`hw/README.md`](hw/README.md#licence--apache-20-not-mit)).
+
+The split is about patents: MIT carries no patent grant, which blocks organisations that would
+otherwise fabricate the decoder RTL. Apache-2.0 grants one explicitly.
