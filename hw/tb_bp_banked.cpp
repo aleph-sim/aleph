@@ -19,10 +19,19 @@
 #include <sstream>
 #include <string>
 
+// Q7-02 B0 (Option B): the same circuit-level golden also drives the M4 spatially-unrolled core.
+// Both cores present the same syndrome-in / corr_out+obs_flip+valid_flag contract, so the compare
+// logic below is shared verbatim rather than forked into a second testbench -- the point of the
+// exercise is that the two cores are bit-identical on the same vectors, and a duplicated harness
+// would weaken exactly that claim.
+#ifdef UNROLLED_CORE
+#include "Vbp_relay_unrolled.h"
+using Dut = Vbp_relay_unrolled;
+#else
 #include "Vbp_relay_banked.h"
-#include "verilated.h"
-
 using Dut = Vbp_relay_banked;
+#endif
+#include "verilated.h"
 
 static Dut *top;
 
@@ -59,7 +68,9 @@ int main(int argc, char **argv) {
   // Reset (synchronous).
   top->rst_n = 0;
   top->in_valid = 0;
+#ifndef UNROLLED_CORE
   top->early_exit = 0;  // full best-kept decode for the golden runs
+#endif  // the unrolled core has no early_exit port: it always runs the full best-kept schedule
   for (int i = 0; i < 4; ++i) tick();
   top->rst_n = 1;
   tick();
