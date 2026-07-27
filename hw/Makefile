@@ -17,7 +17,7 @@ OBJ_DIR   := obj_dir
 VERILATOR ?= verilator
 CARGO     := cargo run --release -q -p aleph-qec --example
 
-.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi stream-axi-circuit cosim-stream cosim-stream-circuit cosim-stream-ler cosim-stream-ler-circuit cosim cosim-3d cosim-circuit cosim-circuit-3d bpcheck bprelay bpunroll bppartial bppartialfast bppipe bpfast bpaxi bpcirc bpaxiwide bpbram bpbramfast bpbramdp bpbramdpearly checkminsum varupdate unrollskel bpunrollpipe bpbanked-lint bpbanked bpbanked-highweight bpbankedrf-lint bpbankedrf bpbankedscale bpbankedbram-lint bpbankedbram bpstream-lint bpstream bpstreamaxi-lint bpstreamaxi bpaxibanked bpbenes bpasw clean
+.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi stream-axi-circuit cosim-stream cosim-stream-circuit cosim-stream-ler cosim-stream-ler-circuit cosim cosim-3d cosim-circuit cosim-circuit-3d bpcheck bprelay bpunroll bppartial bppartialfast bppipe bpfast bpaxi bpcirc bpaxiwide bpbram bpbramfast bpbramdp bpbramdpearly checkminsum varupdate unrollskel bpunrollpipe bpbanked-lint bpbanked bpbanked-highweight bpbankedrf-lint bpbankedrf bpbankedscale bpbankedbram-lint bpbankedbram bpstream-lint bpstream bpstreamaxi-lint bpstreamaxi bpaxibanked bpbenes bpasw bpunrollcirc clean
 
 all: d3 rep surf
 
@@ -423,6 +423,25 @@ bpbankedbramm:
 # hold-ctrl-stable-for-PIPE-cycles contract, which the QEC core's per-cycle-changing control ROM
 # could not meet. Asserts dout bit-exact vs the C++ reference exactly PIPE cycles after each case
 # is applied.
+# Q7-02 B0 / Option B — the M4 SPATIALLY-UNROLLED core against the CIRCUIT-LEVEL DEM golden.
+#
+# Task B1 established that the banked core cannot be built full-parallel at all: circgraph panics on
+# every GC=1 geometry, so the 544-cycle "hard floor" in asic-architecture.md section 5 is arithmetic
+# that was never realised. This target takes the other road the spec hints at (":89 full-parallel
+# (M4-style)"): bp_relay_unrolled.sv already evaluates ALL checks in one cycle and ALL variables in
+# the next, so its cycle count is 3 per sweep REGARDLESS of graph size -- BP_LEGS*BP_ITERS*3 + 1 =
+# 6*10*3 + 1 = 181 cycles. Graph size lands on area, not on latency, which is precisely the property
+# banking was invented to avoid needing.
+#
+# It reuses tb_bp_banked.cpp (-DUNROLLED_CORE) so the unrolled core faces the exact same golden and
+# the exact same compare logic as the banked core -- that is the claim being tested.
+bpunrollcirc:
+	cd .. && $(CARGO) qec_q7_bp_graph -- circvectors 1 0.003 40 2024 > hw/bp_circ_vectors.txt
+	cd .. && $(CARGO) qec_q7_bp_graph -- circgraph 1 0.003 16 48 > hw/bb_gross_tanner.svh
+	$(VERILATOR) --cc --exe --build -Wall --Mdir obj_unrollcirc --top-module bp_relay_unrolled \
+		-CFLAGS -DUNROLLED_CORE bp_relay_unrolled.sv tb_bp_banked.cpp -o sim_bpunrollcirc
+	./obj_unrollcirc/sim_bpunrollcirc bp_circ_vectors.txt
+
 bpbenes:
 	rm -rf obj_benes_read obj_benes_addr obj_benes_wr
 	$(VERILATOR) --cc --exe --build -Wall --Mdir obj_benes_read --top-module bp_benes_ecm_read \
