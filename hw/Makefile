@@ -6,7 +6,12 @@
 #   make surf       # Q6-02: d=3 surface-code Union-Find decoder (2-D graph)
 #   make clean
 #
-# Requires: verilator (brew install verilator) and the Rust workspace (for the reference tables).
+# Requires: verilator >= 5.050 (brew install verilator) and the Rust workspace (for the reference
+# tables). The version floor is real, not cosmetic: Verilator 5.020 -- still what Ubuntu 24.04 ships --
+# rejects bp_relay_decoder.sv with %Error-BLKLOOPINIT ("Delayed assignment to array inside for loops")
+# at lines 84/87/88/185, so anything built on that release cannot run the M2 gate or anything after it.
+# 5.032 clears that but rejects the banked core with 85 %Warning-LATCH at bp_relay_banked.sv:729
+# (fatal under -Wall below). 5.050 is the version every target in this file is verified green under.
 
 OBJ_DIR   := obj_dir
 VERILATOR ?= verilator

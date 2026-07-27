@@ -1,0 +1,142 @@
+name: Hardware
+
+# Q7 / Track O F2: the RTL co-simulation gates were written during M0-M9c and
+# then never enforced automatically -- `hw/Makefile` carries 58 targets and not
+# one of them ran in CI. An open hardware project whose hardware is untested in
+# CI does not earn trust, so this workflow makes the fast bit-exactness gates
+# blocking on every change to the RTL or to the golden model that feeds it.
+#
+# Scope is deliberately the FAST subset. Measured wall-clock on an M-series
+# laptop with a warm cargo target dir:
+#   varupdate     3.0 s   10000/10000 var_update outputs vs bp_relay_fast
+#   bprelay       4.9 s   65 full decodes vs FixedRelayBp
+#   checkminsum   6.4 s   10000/10000 check_minsum (LATENCY=3) outputs
+#   bpcheck      12.7 s   110592 check-update outputs over 256 vectors
+#   bpbanked    359   s   40 full decodes through the M8 banked core (2085 cyc)
+# The heavy campaigns (bpbanked-highweight 2000 cases, bpbankedscale over five
+# geometries, bpbenes/bpasw at 10000 cases each, the streaming core) are not
+# here: their runtimes have not been measured on a CI runner yet, and guessing
+# would produce exactly the flaky-timeout situation that left bench.yml
+# disabled. They belong in a scheduled job, added once measured.
+#
+# Runs on a GitHub-hosted runner on purpose. The self-hosted box is the
+# benchmark machine and already carries the Rust suite; bench.yml is disabled
+# today precisely because that runner hits its timeout. Verilator builds are
+# CPU-heavy and have no business competing with a measurement box.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "hw/**"
+      - "crates/aleph-qec/**"
+      - ".github/workflows/hw.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # The one version under which all five gates are demonstrably green. See the
+  # Verilator step below: 5.020 cannot compile the design at all, and 5.032
+  # rejects the banked core on 85 LATCH warnings that 5.050 does not emit.
+  VERILATOR_VERSION: "5.050"
+
+jobs:
+  cosim:
+    name: RTL co-simulation (fast gates)
+    # No trusted-PR guard: this is a GitHub-hosted runner, like test-macos in
+    # ci.yml. The guard in the Rust jobs exists to keep fork code off the
+    # self-hosted machine.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+
+      # The co-sim targets shell out to `cargo run --release -p aleph-qec
+      # --example qec_q7_bp_graph` to regenerate the Tanner graph and the
+      # golden vectors, so the Rust dep tree is on the critical path here.
+      - uses: Swatinem/rust-cache@v2
+
+      # Verilator version is load-bearing here, in both directions:
+      #
+      #   5.020 (Ubuntu 24.04's apt package) cannot compile the design at all --
+      #     four %Error-BLKLOOPINIT "Delayed assignment to array inside for
+      #     loops" on bp_relay_decoder.sv:84/87/88/185.
+      #   5.032 (the bench box) compiles that fine but rejects the banked core:
+      #     85 %Warning-LATCH at bp_relay_banked.sv:729, "Latch inferred ... not
+      #     all control paths of combinational always assign a value", fatal
+      #     under the Makefile's -Wall.
+      #   5.050 compiles and passes all five gates.
+      #
+      # So 5.050 is pinned: the version the gates are actually verified under.
+      # The 85 LATCH warnings are NOT suppressed and NOT dismissed -- an
+      # always_comb block that infers latches is a genuine design smell, and the
+      # fact that a newer Verilator stopped reporting it does not make it
+      # absent. bp_relay_banked went to silicon and is bit-exact over 1e6 shots,
+      # so it is not a functional bug, but it is tracked as its own item rather
+      # than hidden behind a version pin.
+      - name: Cache Verilator ${{ env.VERILATOR_VERSION }}
+        id: verilator-cache
+        uses: actions/cache@v4
+        with:
+          path: /opt/verilator
+          key: verilator-${{ env.VERILATOR_VERSION }}-${{ runner.os }}
+
+      - name: Build Verilator ${{ env.VERILATOR_VERSION }}
+        if: steps.verilator-cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git help2man perl python3 make autoconf g++ flex bison ccache \
+                                  libfl2 libfl-dev zlib1g zlib1g-dev
+          git clone --depth 1 --branch "v${VERILATOR_VERSION}" \
+            https://github.com/verilator/verilator /tmp/verilator
+          cd /tmp/verilator
+          autoconf
+          ./configure --prefix=/opt/verilator
+          make -j"$(nproc)"
+          sudo make install
+
+      - name: Put Verilator on PATH and check the version
+        run: |
+          echo /opt/verilator/bin >> "$GITHUB_PATH"
+          /opt/verilator/bin/verilator --version
+
+      # Fastest first: a broken golden model or a broken graph emitter fails
+      # here in seconds instead of six minutes into the banked core.
+      - name: var_update datapath vs golden
+        run: make -C hw varupdate
+
+      - name: check_minsum datapath vs golden
+        run: make -C hw checkminsum
+
+      - name: Combinational check-update vs golden (M1)
+        run: make -C hw bpcheck
+
+      - name: Sequential relay-BP decoder vs golden (M2)
+        run: make -C hw bprelay
+
+      # The M8 banked core is the design that went to silicon on the KV260 and
+      # the one the ASIC work targets. It is the gate that actually matters.
+      - name: Banked relay-BP core vs golden (M8)
+        run: make -C hw bpbanked
+
+      # The targets above regenerate `hw/bb_gross_tanner.svh`,
+      # `hw/bp_check_vectors.txt` and `hw/bp_dec_vectors.txt` from the Rust
+      # generator. Those files are committed, so any divergence means the
+      # committed artefacts no longer match the model that is supposed to
+      # produce them -- a silent-drift class we would otherwise only discover
+      # by hand. Verified clean at the time this workflow was added.
+      - name: Committed generated artefacts match the generator
+        run: git diff --exit-code -- hw/
