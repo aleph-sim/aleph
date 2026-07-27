@@ -516,6 +516,64 @@ defect, not a deliberate restriction.
 
 - [ ] **Step 3: Commit**
 
+### Task B0 RESULT (2026-07-27): Option B decodes in 181 cycles but does not fit, and is slow
+
+Option B was chosen and executed. Both halves of the answer are now measured, and they point in
+opposite directions.
+
+**The good half.** `bp_relay_unrolled.sv` needed no RTL change at all: it lints clean at circuit-DEM
+scale and, driven by the same golden and the same compare logic as the banked core
+(`make -C hw bpunrollcirc`), passes **40/40 bit-identical at 181 cycles** — against 913 for the banked
+core at 64/192 and 544 for the 144/864 configuration that cannot be generated. It spends 3 cycles per
+sweep regardless of graph size and carries none of the banked core's banking-invariant 7-cycle tail.
+
+**The bad half — OOC synthesis, `hw/syn/ooc_unrolled.tcl`, xck26-sfvc784-2LV-c, period 5.0 ns:**
+
+```
+RESULT cellLUT=1117790 FF=50112 CARRY8=46811 DSP=9 period=5.00 WNS=-27.524 Fmax=30.7MHz
+```
+
+| resource | used | available on KV260 | utilisation |
+|---|---|---|---|
+| **CLB LUTs** | **981,402** | 117,120 | **838 %** |
+| CLB registers | 50,106 | 234,240 | 21 % |
+| CARRY8 | 46,811 | 14,640 | 320 % |
+| F7 / F8 muxes | 143,590 / 62,941 | 58,560 / 29,280 | 245 % / 215 % |
+
+Two independent disqualifications, either of which alone would be fatal:
+
+1. **It needs 8.4× the entire KV260's LUTs.** Registers sit at 21 %, so this is not a storage problem —
+   the *combinational* logic explodes. That is the cost of evaluating 144 checks and 864 variables in
+   one cycle each.
+2. **Fmax is 30.7 MHz**, against the ~200 MHz that 181 cycles needs for sub-microsecond. WNS is
+   −27.5 ns at a 5 ns target, i.e. a ~32.5 ns combinational path. Even given infinite area, 181 cycles
+   at 30.7 MHz is **5.9 µs**.
+
+**Verdict: sub-microsecond is not reachable by either road today.** The banked road is blocked by
+cycles (its pipeline tail is banking-invariant, and its full-parallel geometry does not generate); the
+unrolled road is blocked by area and Fmax simultaneously. This is not a tuning gap — 838 % is an order
+of magnitude, not a directive-tweak.
+
+It also retrospectively explains why the banked core exists at all. Banking is not an optimisation
+bolted onto a working full-parallel design; it is the thing that made the design implementable. M3
+diagnosed M2's runtime cursor mux as the wall and M4 removed it — and hit a larger wall behind it.
+
+**Where the real design space is.** Latency is `cycles / Fmax`, and the two roads sit at opposite
+extremes of a curve neither of them optimises:
+
+| core | cycles | Fmax | latency | fits KV260 |
+|---|---|---|---|---|
+| banked 16/48 | 2085 | 133.3 MHz (measured on silicon) | 15.64 µs | yes |
+| unrolled | 181 | 30.7 MHz (OOC synth) | 5.9 µs | **no — 838 %** |
+
+The unroll buys 2.65× in latency for 8.4× the area, and cannot be built. The interesting configurations
+are in between, and the RTL for them **already exists**: `bp_relay_unroll_pipe.sv` is the M7 partial-unroll
+core, parameterised by `NGROUP`, and `hw/syn/ooc_core.tcl` already probes exactly it for fit and Fmax.
+
+**Next experiment (supersedes B2 as written): sweep `NGROUP` and minimise `cycles / Fmax`, subject to
+fitting.** That is a cheap OOC sweep on hardware already available, and it is the measurement that
+should have preceded any silicon costing.
+
 ### Task B0 (NEW, prerequisite for B2): make a full-parallel configuration exist at all
 
 Discovered by B1. Until one of these lands, there is no sub-microsecond design to place, route or cost,
