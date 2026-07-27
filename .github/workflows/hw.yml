@@ -92,7 +92,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /opt/verilator
-          key: verilator-${{ env.VERILATOR_VERSION }}-${{ runner.os }}
+          key: verilator-${{ env.VERILATOR_VERSION }}-noccache-${{ runner.os }}
 
       - name: Build Verilator ${{ env.VERILATOR_VERSION }}
         if: steps.verilator-cache.outputs.cache-hit != 'true'
@@ -104,13 +104,25 @@ jobs:
             https://github.com/verilator/verilator /tmp/verilator
           cd /tmp/verilator
           autoconf
-          ./configure --prefix=/opt/verilator
+          # --disable-ccache is not cosmetic. Without it, configure detects the
+          # ccache that came in with the build dependencies above and bakes
+          # "ccache g++" into every generated Vxxx.mk. On a cache HIT this build
+          # step is skipped, so ccache is never installed -- and the restored
+          # Verilator then fails every compile with
+          #     make[1]: ccache: No such file or directory
+          # The gate therefore passes on first run and breaks on every run after,
+          # which is exactly how it behaved before this fix.
+          ./configure --prefix=/opt/verilator --disable-ccache
           make -j"$(nproc)"
           sudo make install
 
       - name: Put Verilator on PATH and check the version
         run: |
           echo /opt/verilator/bin >> "$GITHUB_PATH"
+          # Second line of defence: Verilator honours OBJCACHE at runtime, so an
+          # empty value neutralises any baked-in ccache reference even if a stale
+          # cache entry is ever restored.
+          echo "OBJCACHE=" >> "$GITHUB_ENV"
           /opt/verilator/bin/verilator --version
 
       # Fastest first: a broken golden model or a broken graph emitter fails
