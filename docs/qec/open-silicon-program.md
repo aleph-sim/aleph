@@ -88,6 +88,25 @@ The full-parallel configuration — the only one that reaches the latency floor 
 affordable FPGA**. That is the entire technical justification for silicon, and it is a measured fact,
 not an aspiration.
 
+> **Correction (2026-07-26, from Task B1 — read this before quoting any number above).** The 144/864
+> rows are **arithmetic from the cycle model, not a built design**. That configuration *cannot
+> currently be generated at all*: `qec_q7_bp_graph -- circgraph` panics on every GC = 1 geometry (see
+> Task B1). What is actually buildable today, and what the honest table looks like:
+>
+> | Config | Cycles | @600 MHz | @686 MHz (our measured ASAP7 Fmax) | @1 GHz |
+> |---|---|---|---|---|
+> | 64/192 — generates, in the `bpbankedscale` sweep | 913 | 1.52 µs | 1.33 µs | 0.91 µs |
+> | 144/864 — **does not generate** | 544 | 0.91 µs | 0.79 µs | 0.54 µs |
+>
+> **On today's evidence sub-microsecond is not reachable**, because both levers are blocked at once:
+> the full-parallel configuration does not build (Task B0), and the clock cannot currently exceed
+> ~686 MHz because of the gated-clock structure — `repair_timing`, once unblocked, moved WNS from
+> −1057 ps to ~−960 ps and then stalled with all 52,817 violating endpoints intact.
+>
+> This is Phase B doing its job: the finding cost about €0 and a day, instead of €45 k spent taping out
+> a configuration that does not exist. It does, however, change the positioning honestly — against
+> Riverlane's published <1 µs we are at 1.33–1.52 µs until B0 lands.
+
 ### 1.3 Named user segments, honestly ranked
 
 1. **Superconducting-qubit QEC groups without an NVIDIA budget.** Round time ~1 µs, so they genuinely
@@ -137,7 +156,8 @@ claim.
 | **P** | P2 | Appliance v2 — large-FPGA build, sub-2 µs | €0 (bitstream only) | Published bitstream + utilisation/Fmax on a real large part |
 | **P** | P3 | Appliance v3 — ASIC module on a carrier board | €5–15 k | Module BOM under €200 at 100 units, schematic and layout open |
 | **S** | A | Trustworthy ASIC numbers (#322) | €0 (compute) | Post-route Fmax ≥ 600 MHz with timing repair actually run, **and** a gate-level-sim-derived power number |
-| **S** | B | Full-parallel proof on rented FPGA | ~€100–500 | 64/192 **and** 144/864 pass bit-exact co-sim; P&R on a real large part under 90 % utilisation with a quoted Fmax |
+| **S** | **B0** | **Make a full-parallel config exist** (found necessary by B1) | €0 | A GC = 1 geometry generates and passes bit-exact co-sim — today none does |
+| **S** | B | Full-parallel proof on rented FPGA | ~€100–500 | 64/192 **and** the B0 full-parallel config pass bit-exact co-sim; P&R on a real large part under 90 % utilisation with a quoted Fmax |
 | **S** | **C** | **Demand gate — measured, not surveyed** | €0 | **≥ 5 labs have deployed appliance v1/v2 on their own hardware; ≥ 2 named as early adopters for silicon** |
 | **S** | D | Fully-open 130 nm shuttle (flow rehearsal) | €0–20 k | Working silicon back, co-sim vectors pass on it, measured power published |
 | **S** | E | 28 nm part | €45–93 k fab | Dies distributed; measured sub-µs on silicon published |
@@ -463,21 +483,60 @@ building and we find out for ~€300 instead of ~€45 000.
 **Files:**
 - Modify: `hw/Makefile` (extend the existing `bpbankedscale` geometry list)
 
-- [ ] **Step 1: Add both geometries to the scale sweep**
+- [x] **Step 1: Add both geometries to the scale sweep**
 
-`bpbankedscale` already covers 5 geometries; 8/24, 16/48, 32/96 and 64/192 have cycle counts
-3750 / 2085 / 1283 / 913 respectively.
+**64/192 was already there** — `bpbankedscale` sweeps `8 24`, `12 36`, `16 48`, `32 96`, `64 192`.
+Only the full-parallel geometry was missing.
 
-- [ ] **Step 2: Run and confirm bit-exactness**
+- [x] **Step 2: Run and confirm bit-exactness**
 
-```bash
-make -C hw bpbankedscale
-```
+**Result (2026-07-26): the full-parallel geometry does not exist. It cannot even be generated.**
 
-Expected: pass at every geometry, matching the model
-`cycles = LEGS·ITERS·(GC+GV+7) + (2·GV+GC+1)`.
+`qec_q7_bp_graph -- circgraph 1 0.003 <W> <V>` panics for every full-parallel or ratio-6 geometry:
+
+| W / V | groups (GC = ⌈144/W⌉, GV = ⌈864/V⌉) | result |
+|---|---|---|
+| 16/48, 64/192, 72/216 | GC ≥ 2 | generates |
+| 48/288, 72/432 | GC ≥ 2, V = 6W | **panic** at `qec_q7_bp_graph.rs:969`, `len = 25·W` |
+| 144/432 | **GC = 1** | **panic** at `:1290` — `RomRow: zero-width row (degenerate graph parameter)` |
+| **144/864** — the full-parallel target | **GC = GV = 1** | **panic** at `:969`, `len is 3600 but the index is 3600` |
+
+`bank_w`/`bank_v` are unvalidated positional arguments, so nothing rejects these inputs — and
+144/864 is exactly the configuration `asic-architecture.md` §5 line 163 names as the hard floor
+("even full-parallel 144/864 (GC = GV = 1) is 60·9 + 4 = 544 cycles").
+
+**Root cause of the `:969` family.** `benes_group_matchings` allocates
+`dest_ecm`/`dest_mcm` sized by its `ecm_m`/`mcm_m` parameters, then indexes them by *tap*
+`s = i·var_deg + d`, which ranges over `v·var_deg`. Two of the three call sites (`:1172`, `:1645`,
+both on the AS-Waksman path added in M9c / PR #466) pass the **real bank counts** `neb`/`nhb` for
+those parameters, not a tap count. Bank count and tap count are different quantities that happen to
+satisfy `neb ≥ taps` for the qualified geometries and stop doing so outside them. The third call site
+(`:1593`) passes the power-of-two-padded `ecm_m`/`mcm_m` and is unaffected. This is a latent sizing
+defect, not a deliberate restriction.
 
 - [ ] **Step 3: Commit**
+
+### Task B0 (NEW, prerequisite for B2): make a full-parallel configuration exist at all
+
+Discovered by B1. Until one of these lands, there is no sub-microsecond design to place, route or cost,
+and Phase E has nothing to tape out.
+
+- [ ] **Option A — fix the generator.** Give `benes_group_matchings` a tap count rather than a bank
+  count at `:1172` and `:1645` (or size the vectors to `max(neb, v·var_deg)`), then handle the
+  zero-width ROM row at `:1290` for the GC = 1 case. Add the failing geometries to `bpbankedscale`
+  so the regression is permanent.
+
+- [ ] **Option B — qualify the M4 unrolled core instead.** `hw/bp_relay_unrolled.sv` already exists
+  and already computes all checks and variables per cycle — and `asic-architecture.md:89` calls
+  full-parallel "M4-style", which suggests this, not a 144/864 banked instance, was always the
+  intended realisation. Its `bpunroll` target runs against the **code-capacity** graph (`graph` /
+  `decvectors`), not the circuit-level DEM (`circgraph` / `circvectors`) the silicon path uses, so
+  qualifying it means porting it to the circuit-level flow and re-running the bit-exactness gate.
+
+- [ ] **Decide between them before doing either.** Option A gets a full-parallel *banked* core, which
+  keeps one RTL and one regression suite. Option B may be closer to the intended architecture but
+  forks the verification effort. Whichever wins, the deliverable is the same: a generated,
+  co-simulated, bit-exact full-parallel configuration with a measured cycle count.
 
 ### Task B2: Synthesise and place-and-route on a large FPGA
 
@@ -703,7 +762,8 @@ rather than quietly ignored — the replacement trigger is Phase C's gate.
 
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
-| 144/864 does not fit / does not close timing | Medium | Kills the sub-µs claim | Phase B finds out for ~€300; fall back to 64/192 at 1.52 µs |
+| ~~144/864 does not fit / does not close timing~~ **MATERIALISED, worse than feared: it does not generate** | — | Sub-µs claim suspended | Task B0 added as a hard prerequisite. Found for ~€0 before any FPGA rental, let alone silicon |
+| Sub-µs unreachable even after B0, because Fmax is capped ~686 MHz | **High** | 64/192 lands at 1.33 µs, not sub-µs; Riverlane already ships <1 µs | Needs the clock-structure work (A1: 15,951 gated-clock nets), which is an RTL enable-granularity change, not a tooling flag. Decide whether that is in scope before Phase E |
 | No sign-off EDA access at 28 nm | **High** | Blocks Phase E entirely | Phase E Task E1 is a gate, not a step; EuroCDP and academic partnership are the routes; Phase D proves the flow at 130 nm regardless |
 | First silicon dead on arrival | Medium (30–50 % is normal) | €45–95 k lost | Phase D rehearsal on a free/cheap shuttle; conservative interface design; on-chip observability |
 | Demand does not materialise (Phase C fails) | Medium | Silicon stops; product and open corpus continue | A legitimate outcome, not a failure — budget redirects into Tracks O and P |
