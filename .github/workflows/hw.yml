@@ -132,11 +132,27 @@ jobs:
       - name: Banked relay-BP core vs golden (M8)
         run: make -C hw bpbanked
 
+      # The M4 spatially-unrolled core on the same circuit-level golden. 6 s, and
+      # it is the configuration the sub-microsecond case now rests on (181 cycles
+      # vs the banked core's 913 at 64/192), so it is worth gating from day one.
+      - name: Unrolled relay-BP core vs golden, circuit-level DEM (M4)
+        run: make -C hw bpunrollcirc
+
       # The targets above regenerate `hw/bb_gross_tanner.svh`,
       # `hw/bp_check_vectors.txt` and `hw/bp_dec_vectors.txt` from the Rust
       # generator. Those files are committed, so any divergence means the
       # committed artefacts no longer match the model that is supposed to
       # produce them -- a silent-drift class we would otherwise only discover
-      # by hand. Verified clean at the time this workflow was added.
+      # by hand.
+      #
+      # ORDER IS LOAD-BEARING and this check silently depends on it. The
+      # committed bb_gross_tanner.svh is the CIRCUIT-LEVEL DEM graph
+      # (BP_C=144, BP_N=864, BP_E=2952, 443 lines), emitted by `circgraph`.
+      # bpcheck and bprelay regenerate it with `graph` instead, which is the
+      # much smaller code-capacity graph (72/144/432, 24 lines) -- so if this
+      # step ran straight after them it would fail on a difference that is
+      # expected, not a regression. It passes because the last two targets
+      # (bpbanked, bpunrollcirc) both re-emit the circgraph version. Keep a
+      # circgraph-emitting target last, or replace this with a per-file check.
       - name: Committed generated artefacts match the generator
         run: git diff --exit-code -- hw/
