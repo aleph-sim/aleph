@@ -53,7 +53,7 @@ it against the banked core's 2085.
 |---|---|---|---|---|---|---|---|
 | 48 | 1,042,940 | **890 %** | 420,002 / 198,526 | 1,680 (11 %) | 53,552 (23 %) | 17.3 MHz | 352 µs |
 | 24 | 1,433,697 | **1224 %** | *(see report)* | 3,168 (22 %) | 57,084 (24 %) | 16.8 MHz | 189 µs |
-| 16 | *running* | | | | | | |
+| 16 | 1,726,227 | **1474 %** | *(see report)* | 4,596 (31 %) | 60,935 (26 %) | 16.5 MHz | 133 µs |
 
 Two things are already clear, and both are bad:
 
@@ -85,15 +85,25 @@ So the area decomposes into a fixed crossbar plus arithmetic that scales as `1/N
 LUT(NGROUP)  ≈  FLOOR  +  A / NGROUP
 ```
 
-Fitting the two measured points gives **FLOOR ≈ 652,000 LUTs** (557 % of the KV260) and `A ≈ 1.88e7`.
+Fitting the first two measured points gave **FLOOR ≈ 652,000 LUTs** and `A ≈ 1.88e7`, and the prediction
+recorded in commit `9d2325d` — **before** the third run returned — was that `NGROUP = 16` would land near
+**1.82 M CLB LUTs** with Fmax still ~17 MHz.
 
-**Prediction, recorded before the run finished:** `NGROUP = 16` should land near **1.82 M CLB LUTs**, with
-Fmax still ~17 MHz. If instead it comes in near 1.04 M or below, the fixed-floor model is wrong and the
-sweep must continue down the ladder.
+**It landed at 1,726,227 LUTs at 16.5 MHz — 5 % below the prediction.** The model survives its test.
+Refitting all three points by least squares:
 
-If the model holds, the consequence is that **the feasible set is empty**: no `NGROUP` fits, because the
-`NGROUP`-free floor alone is 5.6× the whole device — and buying closer to that floor costs cycles
-linearly, with Fmax pinned at 17 MHz by the very logic that constitutes the floor.
+```
+LUT(NGROUP)  =  717,668  +  16,398,888 / NGROUP        (residuals +1.6 %, −2.3 %, +0.9 %)
+```
+
+so the `NGROUP`-invariant floor is **~718,000 LUTs = 613 % of the KV260, before a single check or
+variable is stamped.**
+
+That closes the question the sweep was asked: **the feasible set is empty.** No `NGROUP` fits, and not by
+a near miss — the asymptote as `NGROUP → ∞` is 6.1× the device, while approaching it costs cycles
+linearly and leaves Fmax pinned at ~17 MHz by the very logic that constitutes the floor. Extrapolating
+the other way, the values that would actually be interesting for latency are absurd: `NGROUP = 8` is
+~2400 % and `NGROUP = 4` is ~4100 %.
 
 This is the same wall the M9c fit note (PR #463) hit from the other side — a ~1.17 M-mux runtime gather —
 and it is the reason the banked core exists. Banking replaces this crossbar with index-addressed LUTRAM

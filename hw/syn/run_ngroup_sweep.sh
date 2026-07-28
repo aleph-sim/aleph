@@ -13,10 +13,11 @@ cd "$(dirname "$0")"
 export PATH=/tools/Xilinx/Vivado/2024.2/bin:$PATH
 
 PERIOD=5.0                     # same 5.0 ns target the Task-B0 M4 probe used, so Fmax is comparable
-NG_LIST=(48 24 16 12 10 8 6 4)  # literal on purpose: edit here, no env/argv indirection to mis-quote
+NG_LIST=(144 72)                # floor probe: at these the stamped arithmetic is negligible, so what
+                                # is left IS the NGROUP-invariant crossbar. Downward tail (12..4) was
+                                # cut after 48/24/16 confirmed area grows as NGROUP shrinks.
 
-: >sweep_summary.txt
-echo "SWEEP period=$PERIOD groups=${NG_LIST[*]}" >>sweep_summary.txt
+echo "SWEEP period=$PERIOD groups=${NG_LIST[*]}" >>sweep_summary.txt   # append: never drop earlier points
 for g in "${NG_LIST[@]}"; do
   echo "== NGROUP=$g started $(date -u +%FT%TZ)" >>sweep_summary.txt
   vivado -mode batch -source ooc_core.tcl -tclargs "$PERIOD" "$g" >"ooc_ng$g.log" 2>&1
