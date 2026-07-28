@@ -596,6 +596,48 @@ and Phase E has nothing to tape out.
   forks the verification effort. Whichever wins, the deliverable is the same: a generated,
   co-simulated, bit-exact full-parallel configuration with a measured cycle count.
 
+### Task B2 RESULT (2026-07-28): the `NGROUP` knob has no feasible setting, and the banked core dominates it outright
+
+The B0 verdict ended by naming the next experiment: sweep `NGROUP` on `bp_relay_unroll_pipe` and minimise
+`cycles / Fmax` subject to fitting. That sweep has been run — five points synthesised out-of-context on
+the KV260 part, same flow and 5.0 ns period as B0. Full report: `docs/perf/q7-02-ngroup-sweep.md`.
+
+**There is no feasible setting.** Every point is over the device budget *and* slower than the banked core
+that already ships:
+
+| NGROUP | cycles | CLB LUTs | % of KV260 | Fmax | latency |
+|---|---|---|---|---|---|
+| 144 | 17,808 | 703,698 | 601 % | 17.5 MHz | 1017.6 µs |
+| 72 | 9,024 | 858,952 | 733 % | 17.4 MHz | 518.6 µs |
+| 48 | 6,096 | 1,042,940 | 890 % | 17.3 MHz | 352.4 µs |
+| 24 | 3,168 | 1,433,697 | 1224 % | 16.8 MHz | 188.6 µs |
+| 16 | 2,192 | 1,726,227 | 1474 % | 16.5 MHz | 132.8 µs |
+| **banked 16/48** | **2,085** | **fits** | — | **133.3 MHz** | **15.64 µs** |
+
+Cycles are exactly `122 · NGROUP + 240` and every value is bit-exact against the golden (40/40), so the
+knob is a pure latency knob as designed — it just does not buy anything. Three findings:
+
+1. **Area moves the wrong way**: shrinking `NGROUP` makes the core bigger, so the cheapest member has the
+   worst cycle count.
+2. **Fmax is flat at 16.5–17.5 MHz across a 9× span of `NGROUP`** — a 9× change in stamped arithmetic
+   barely moves the critical path, because the critical path is not the arithmetic.
+3. **The best member is 8.5× slower than the banked core at 14.7× the device's LUTs.** The banked core
+   wins on both axes simultaneously; there is no trade to make.
+
+The cause is structural, not a tuning gap. Each slot gathers across `NGROUP` groups and there are
+`BP_C/NGROUP` slots, so the product cancels and the crossbar is `NGROUP`-invariant by construction. Area
+fits `615,985 + 18,415,474/NGROUP` (residuals within 5.7 %), and the floor was then **measured, not
+extrapolated**: at `NGROUP = 144`, with one check slot and six variable slots stamped, the core still
+needs **703,698 LUTs = 601 % of the whole device**. The crossbar is simultaneously the area floor and the
+critical path.
+
+**Consequences for this plan.** B0 closed the fully-unrolled road; B2 now closes the partially-unrolled
+road at every knob setting. Sub-µs is not reachable by *any* degree of unrolling layered on a flat
+message-register array — the remaining attack surface is the message store and its access pattern, which
+is precisely what banking already attacks. Step 4 of the task below should be read in that light: the
+question is no longer "which unroll degree do we place on a large FPGA", it is whether a *banked*
+full-parallel geometry can be made to generate at all (Task B0 Option A, still open).
+
 ### Task B2: Synthesise and place-and-route on a large FPGA
 
 **Files:**

@@ -26,7 +26,9 @@ set fmax   [expr {1000.0/($period - $wns)}]
 # authoritative CLB LUT count from the util report
 set fh [open util_core.rpt r]; set t [read $fh]; close $fh
 set clut -1
-regexp {(?:CLB|Slice) LUTs\s*\|\s*([0-9]+)} $t -> clut
+# the OOC utilization report writes the row as "CLB LUTs*" (the star flags the OOC caveat) — the
+# earlier probe's pattern missed the star and silently reported CLBLUT=-1.
+regexp {(?:CLB|Slice) LUTs\*?\s*\|\s*([0-9]+)} $t -> clut
 
 puts [format "RESULT CLBLUT=%s cellLUT=%d FF=%d CARRY8=%d DSP=%d period=%.2f WNS=%.3f Fmax=%.1fMHz" \
   $clut $lut $ff $carry $dsp $period $wns $fmax]
