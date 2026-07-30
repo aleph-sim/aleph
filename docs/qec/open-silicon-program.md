@@ -47,10 +47,10 @@ Two facts, established 2026-07-26, that cannot both be satisfied:
 
 1. **Open PDKs stop at 130 nm.** SKY130, GF180MCU and IHP SG13G2 are the complete set. There is no
    open 28 nm or 22 nm PDK. At 130 nm this core runs ~90–150 MHz.
-2. **Sub-microsecond decoding needs an ASIC clock.** The measured cycle model
-   (`cycles = LEGS·ITERS·(GC+GV+7) + (2·GV+GC+1)`, `docs/qec/asic-architecture.md` §5) floors at
-   **544 cycles** for the full-parallel 144/864 configuration. 544 cycles is 0.91 µs only at 600 MHz
-   and 4.09 µs at the KV260's 133 MHz.
+2. **Sub-microsecond decoding needs an ASIC clock.** The cycle model
+   (`cycles = LEGS·ITERS·(GC+GV+7) + (2·GV+GC)`, `docs/qec/asic-architecture.md` §5) floors at
+   **543 cycles** for the full-parallel 144/864 configuration — measured, not modelled, since Task B0
+   Option A (2026-07-30). 543 cycles is 0.91 µs only at 600 MHz and 4.07 µs at the KV260's 133 MHz.
 
 Therefore: **a fully-open-flow chip cannot be faster than the $300 FPGA we already have, and a chip that
 beats it cannot have a fully-open flow.** The program resolves this by splitting "open" into two claims
@@ -80,9 +80,9 @@ It is, until you need sub-µs. Measured, on our own hardware:
 | Platform | Config | Cycles | Clock | Worst-case latency |
 |---|---|---|---|---|
 | KV260 (~$300) — **shipped, measured** | 16/48 banked | 2085 | 133.332 MHz | **15.64 µs** (0.85 µs median early-exit) |
-| KV260 | 144/864 full-parallel | 544 | — | **does not fit** (M9c: LUT 162 %, BRAM 113 %) |
-| Large FPGA ($10–30 k), projected | 144/864 | 544 | ~200–300 MHz | 1.8–2.7 µs |
-| **28 nm ASIC, projected** | 144/864 | 544 | 600 MHz–1 GHz | **0.54–0.91 µs** |
+| KV260 | 144/864 full-parallel | 543 | — | **does not fit** (M9c: LUT 162 %, BRAM 113 %) |
+| Large FPGA ($10–30 k), projected | 144/864 | 543 | ~200–300 MHz | 1.8–2.7 µs |
+| **28 nm ASIC, projected** | 144/864 | 543 | 600 MHz–1 GHz | **0.54–0.91 µs** |
 
 The full-parallel configuration — the only one that reaches the latency floor — **does not fit in an
 affordable FPGA**. That is the entire technical justification for silicon, and it is a measured fact,
@@ -106,6 +106,21 @@ not an aspiration.
 > This is Phase B doing its job: the finding cost about €0 and a day, instead of €45 k spent taping out
 > a configuration that does not exist. It does, however, change the positioning honestly — against
 > Riverlane's published <1 µs we are at 1.33–1.52 µs until B0 lands.
+
+> **Correction 2 (2026-07-30, from Task B0 Option A — supersedes the "does not generate" half of the
+> block above).** B0 landed. **144/864 now generates, elaborates, and is bit-exact at 543 cycles**,
+> 40/40 against the golden on `bp_relay_banked` (`bpbankedscale`; see the Task B0 Option A RESULT
+> section below). The generator defect was three defects, all fixed. So of the two levers named above:
+>
+> - **"The full-parallel configuration does not build" is no longer true** as a *generation* claim. It
+>   remains unanswered as a *fit* claim — whether a 144/864 instance can be placed and clocked on any
+>   FPGA, and at what Fmax, is Task B2 and is being measured now.
+> - **"The clock cannot currently exceed ~686 MHz" still stands**, unchanged. Phase A owns it.
+>
+> The cycle-model rows in the table above are therefore no longer arithmetic-only for 144/864 — 543 is
+> measured. Every microsecond figure derived from it still is a projection, because it divides a
+> measured cycle count by an unmeasured clock. Sub-microsecond remains **unproven**, now for one
+> reason instead of two.
 
 ### 1.3 Named user segments, honestly ranked
 
@@ -710,6 +725,22 @@ full-parallel geometry can be made to generate at all (Task B0 Option A, still o
 - Create: `hw/syn/f1_144x864.tcl`
 - Create: `docs/perf/q7-02-fullparallel-fpga.md`
 
+- [ ] **Step 0: Probe the banking curve out-of-context first — it is free** *(added 2026-07-30, running)*
+
+Do not rent anything before knowing the LUT count. `hw/syn/ooc_banked.tcl` already produces fit + Fmax
+for `bp_relay_banked` out-of-context on hardware we own, and OOC results are load- and
+placement-independent, so they answer "could a large FPGA hold this at all" for €0. A VU9P has
+~1.18 M LUTs against the KV260's ~117 k, so the raw CLB-LUT count *is* the rent/do-not-rent decision.
+
+Run ascending — **16/48 → 48/288 → 144/432 → 144/864**, serially, one geometry per staging dir
+(`check_minsum.sv`, `var_update.sv`, `bp_relay_banked.sv`, plus that geometry's `bb_gross_tanner.svh`),
+at the same 5.0 ns period the B0/B2 probes used so Fmax is comparable. Ascending matters: the growth
+curve survives even if the last point exhausts the box, and 144/864 is unmeasured — the fully-unrolled
+B0 probe peaked at 47.9 GB.
+
+Proceed to Step 1 only if 144/864 lands within a plausible multiple of a large part. If it is another
+838 %-class result, the honest move is Step 4's fallback without spending anything.
+
 - [ ] **Step 1: Rent the part**
 
 AWS F1 (VU9P) with the FPGA Developer AMI carries Vivado licences for the part; the alternative is a
@@ -928,7 +959,8 @@ rather than quietly ignored — the replacement trigger is Phase C's gate.
 
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
-| ~~144/864 does not fit / does not close timing~~ **MATERIALISED, worse than feared: it does not generate** | — | Sub-µs claim suspended | Task B0 added as a hard prerequisite. Found for ~€0 before any FPGA rental, let alone silicon |
+| ~~144/864 does not generate~~ **RETIRED 2026-07-30**: B0 Option A fixed the three generator defects; 144/864 is bit-exact at 543 cycles | — | — | Cost ~€0 to find and ~€0 to fix, before any FPGA rental let alone silicon |
+| **144/864 does not fit / does not close timing** — the original risk, still open | **High** (B0 measured the unrolled core at 838 % of the KV260 and B2 measured every `NGROUP` at 601–1474 %; this family's area is crossbar-dominated) | Sub-µs claim stays suspended; fallback is 64/192 at 913 cycles = 1.52 µs @600 MHz, a useful chip but not a sub-µs one | Task B2: free OOC probe of the banked core across 16/48 → 144/864 first, and rent the large part only if the LUT count leaves a large FPGA plausible |
 | Sub-µs unreachable even after B0, because Fmax is capped ~686 MHz | **High** | 64/192 lands at 1.33 µs, not sub-µs; Riverlane already ships <1 µs | Needs the clock-structure work (A1: 15,951 gated-clock nets), which is an RTL enable-granularity change, not a tooling flag. Decide whether that is in scope before Phase E |
 | No sign-off EDA access at 28 nm | **High** | Blocks Phase E entirely | Phase E Task E1 is a gate, not a step; EuroCDP and academic partnership are the routes; Phase D proves the flow at 130 nm regardless |
 | First silicon dead on arrival | Medium (30–50 % is normal) | €45–95 k lost | Phase D rehearsal on a free/cheap shuttle; conservative interface design; on-chip observability |
