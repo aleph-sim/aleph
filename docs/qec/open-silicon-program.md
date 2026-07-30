@@ -752,6 +752,10 @@ Sub-µs remains off the FPGA road entirely — 543 cycles in 1 µs needs 543 MHz
 
 - [ ] **Step 1: Rent the build instance** *(rewritten 2026-07-30 — the original text is obsolete)*
 
+**Step-by-step runbook: `docs/qec/b2-aws-build-runbook.md`** — CLI-first, with the vCPU-quota trap that
+blocks a new account, a five-minute licence smoke test to run before committing hours, and the
+shut-it-down checklist.
+
 Two corrections to what this step used to say:
 
 - **AWS F1 is end-of-life** (end of 2025, closed to new users). Its replacement is **F2**, carrying the
