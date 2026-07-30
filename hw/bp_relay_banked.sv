@@ -91,8 +91,14 @@
 // the same header-derived geometry.
 localparam int BB_GC   = BP_GC;                       // number of check groups (m_cm / e_cm rows)
 localparam int BB_GV   = BP_GV;                       // number of var groups   (m_vm rows)
-localparam int BB_BWC  = $clog2(BP_GC);               // m_cm / e_cm row address width
-localparam int BB_BWV  = $clog2(BP_GV);               // m_vm row address width
+// Q7-02 Task B0 Option A: row-address widths are FLOORED AT 1 bit. `$clog2(1) == 0`, and a zero-width
+// vector (`logic [-1:0]`) is illegal SV — which is what made every single-group geometry unelaboratable,
+// including the full-parallel 144/864 target (GC = GV = 1). The stored address is then always 0, so the
+// floor costs one always-zero bit at GC/GV = 1 and is a no-op for every multi-group geometry. Mirrored
+// by `row_addr_width` in the emitter (crates/aleph-qec/examples/qec_q7_bp_graph.rs), which sizes the
+// matching BP_ROM_* row fields.
+localparam int BB_BWC  = (BP_GC <= 1) ? 1 : $clog2(BP_GC);   // m_cm / e_cm row address width
+localparam int BB_BWV  = (BP_GV <= 1) ? 1 : $clog2(BP_GV);   // m_vm row address width
 
 /* verilator lint_off UNUSEDSIGNAL */
 // ============================================================ $unit elaboration helpers over header tables
@@ -325,8 +331,8 @@ module bp_relay_banked (
   localparam int NHB  = 2 * BP_BANK_W * BP_CHK_DEG;  // m_cm half-banks
   localparam int NEB  = BP_BANK_W * BP_CHK_DEG;      // e_cm banks
   localparam int NVB  = BP_BANK_V * BP_VAR_DEG;      // m_vm banks
-  localparam int BWC  = $clog2(BP_GC);               // m_cm / e_cm row address width
-  localparam int BWV  = $clog2(BP_GV);               // m_vm row address width
+  localparam int BWC  = BB_BWC;                      // m_cm / e_cm row address width (1-bit floor)
+  localparam int BWV  = BB_BWV;                      // m_vm row address width (1-bit floor)
 
   /* verilator lint_off UNUSEDSIGNAL */
   // ================================================================== elaboration guards (Task-10 review)

@@ -44,6 +44,10 @@
 //   $display module name are renamed — the guard LOGIC is byte-identical).
 
 `timescale 1ns / 1ps
+// Q7-02 B0 Option A: the header's BP_ROM_* literal block is `ifdef-gated so cores that never read it
+// (bp_relay_banked, every non-banked core) do not have to parse rows that cross Verilator's 65536-bit
+// number limit at the single-group geometries. This core DOES read it — opt in before the `include.
+`define BP_BRAM_ROMS
 /* verilator lint_off UNUSEDPARAM */
 `include "bb_gross_tanner.svh"
 /* verilator lint_on UNUSEDPARAM */
