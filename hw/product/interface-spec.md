@@ -111,11 +111,14 @@ Latency is `cycles / f_clk`. Cycles depend on the core and its configuration, no
 | banked | 16/48 | 2085 | measured, `bpbankedscale` |
 | banked | 32/96 | 1283 | measured |
 | banked | 64/192 | 913 | measured |
-| banked | 144/864 (full-parallel) | 544 | **model only — does not generate**, see Task B1 |
-| **unrolled (M4)** | full-parallel | **181** | measured, `bpunrollcirc`, bit-exact |
+| banked | 144/864 (full-parallel) | **543** | measured, `bpbankedscale`, bit-exact 40/40 |
+| unrolled (M4) | full-parallel | 181 | measured, `bpunrollcirc`, bit-exact — but **does not fit**: 838 % of the KV260's LUTs at 30.7 MHz |
 
-Exact model for the banked core: `cycles = LEGS·ITERS·(GC+GV+7) + (2·GV+GC+1)`. The `LEGS·ITERS·7`
-per-iteration pipeline tail is **banking-invariant**, which is why 4× banking buys 2.28×, not 4×.
+Exact model for the banked core: `cycles = LEGS·ITERS·(GC+GV+7) + (2·GV+GC)`. It reproduces all four
+banked rows above exactly. (It was published with a spurious `+1` until the 144/864 measurement made
+the off-by-one visible at every geometry; `docs/qec/asic-architecture.md` §5 records that.) The
+`LEGS·ITERS·7` per-iteration pipeline tail is **banking-invariant**, which is why 4× banking buys
+2.28×, not 4×.
 
 The unrolled core has no such tail: it spends 3 cycles per sweep regardless of graph size, so
 `cycles = LEGS·ITERS·3 + 1`.
