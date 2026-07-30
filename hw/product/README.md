@@ -14,20 +14,23 @@ deploy in an afternoon. That gap is the whole point of this directory — see "W
 | version | hardware | config | worst-case latency | already real-time for |
 |---|---|---|---|---|
 | **v1** | Kria KV260, ~$300 | banked 16/48 | **15.64 µs** (0.85 µs median, early exit) | neutral atoms, trapped ions — round times 100 µs–ms |
-| v2 | large FPGA ($10–30 k) | banked 144/864, 543 cycles | **unknown — clock not yet measured** | unknown until v2 is built |
+| v2 | large FPGA ($10–30 k) | banked 144/864, 543 cycles | **~4.7 µs projected** (synthesis-only, calibrated) | most platforms except the fastest superconducting loops |
 | v3 | ASIC module | banked 144/864, 543 cycles | 0.79–0.91 µs projected at 600–686 MHz | superconducting, ~1 µs rounds |
 
 v1 is the important row: **for two of the four qubit modalities this is finished and merely
 undistributed.** If your syndrome rounds are 100 µs apart, a $300 board already decodes them in real
 time, today, with the numbers above measured on silicon rather than projected.
 
-v2 and v3 are **not built systems**, and only their cycle count is measured. 543 cycles for the
-full-parallel banked 144/864 configuration is bit-exact against the golden model at 40/40
-(`bpbankedscale`, 2026-07-30) — but the *clock* that turns cycles into microseconds is measured for
-neither. v3's range comes from the one ASIC-node number we have, 686 MHz on ASAP7, which itself
-carries an unresolved gated-clock caveat (`docs/perf/q7-02-asap7-timing.md`). v2's cell is blank on
-purpose: whether 144/864 even fits a large FPGA, and at what frequency, is being measured now and is
-not yet known.
+v2 and v3 are **not built systems**. 543 cycles for the full-parallel banked 144/864 configuration is
+bit-exact against the golden model at 40/40 (`bpbankedscale`, 2026-07-30), but the *clock* that turns
+cycles into microseconds is not measured for either row.
+
+v2's ~4.7 µs is the least-bad kind of projection: out-of-context synthesis put 144/864 at 154 MHz, and
+the same sweep contains 16/48 — a design we have actually routed and run on silicon — which lets us
+measure that the tool overstates achieved Fmax by 1.33× on this core. De-rating by that gives ~115 MHz.
+It is still synthesis, with no placement behind it, on a part nobody has built this design on
+(`docs/perf/q7-02-fullparallel-fpga.md`). v3's range comes from the one ASIC-node number we have,
+686 MHz on ASAP7, which carries an unresolved gated-clock caveat (`docs/perf/q7-02-asap7-timing.md`).
 
 **Do not quote the v2/v3 rows as capability.** An earlier revision of this file projected v2/v3 from
 the fully-unrolled core at 181 cycles and 200–300 MHz. That was wrong: the unrolled core was

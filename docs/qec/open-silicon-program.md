@@ -725,30 +725,62 @@ full-parallel geometry can be made to generate at all (Task B0 Option A, still o
 - Create: `hw/syn/f1_144x864.tcl`
 - Create: `docs/perf/q7-02-fullparallel-fpga.md`
 
-- [ ] **Step 0: Probe the banking curve out-of-context first — it is free** *(added 2026-07-30, running)*
+- [x] **Step 0: Probe the banking curve out-of-context first — it is free** — **DONE 2026-07-30, verdict: proceed**
 
-Do not rent anything before knowing the LUT count. `hw/syn/ooc_banked.tcl` already produces fit + Fmax
-for `bp_relay_banked` out-of-context on hardware we own, and OOC results are load- and
-placement-independent, so they answer "could a large FPGA hold this at all" for €0. A VU9P has
-~1.18 M LUTs against the KV260's ~117 k, so the raw CLB-LUT count *is* the rent/do-not-rent decision.
+Full report: `docs/perf/q7-02-fullparallel-fpga.md`. Four geometries out-of-context on the KV260 part
+at 5.0 ns, ascending and serial; the whole sweep took 70 minutes and peaked at 9.1 GB.
 
-Run ascending — **16/48 → 48/288 → 144/432 → 144/864**, serially, one geometry per staging dir
-(`check_minsum.sv`, `var_update.sv`, `bp_relay_banked.sv`, plus that geometry's `bb_gross_tanner.svh`),
-at the same 5.0 ns period the B0/B2 probes used so Fmax is comparable. Ascending matters: the growth
-curve survives even if the last point exhausts the box, and 144/864 is unmeasured — the fully-unrolled
-B0 probe peaked at 47.9 GB.
+| W/V | GC/GV | cycles | CLB LUTs | % KV260 | Fmax |
+|---|---|---|---|---|---|
+| 16/48 *(ships)* | 9/18 | 2085 | 94,182 | 80.4 % | 177.7 MHz |
+| 48/288 | 3/3 | 789 | 291,098 | 248.6 % | 155.8 MHz |
+| 144/432 | 1/2 | 605 | 490,944 | 419.2 % | 164.3 MHz |
+| **144/864** | **1/1** | **543** | **803,518** | **686.1 %** | **154.0 MHz** |
 
-Proceed to Step 1 only if 144/864 lands within a plausible multiple of a large part. If it is another
-838 %-class result, the honest move is Step 4's fallback without spending anything.
+Two findings:
 
-- [ ] **Step 1: Rent the part**
+1. **Banking preserves the clock.** Fmax falls only 13 % across an 8.5× area growth, against the
+   unrolled core's 30.7 MHz and the `NGROUP` family's flat 16.5–17.5 MHz. The banked core's critical
+   path is deep arithmetic (25 levels, check min-sum → `ehat_w`), not a fabric-wide crossbar.
+2. **144/864 is 61.6 % of a VU47P**, the part AWS rents today — inside Step 4's 90 % gate, with every
+   non-LUT resource nearly empty. Against 838 % (unrolled) and 601–1474 % (`NGROUP`), this is the
+   first configuration in the program that looks buildable.
 
-AWS F1 (VU9P) with the FPGA Developer AMI carries Vivado licences for the part; the alternative is a
-borrowed Alveo/VPK120. Budget ~€100–500 of instance time.
+**Calibrated, not just estimated:** 16/48 is in this sweep *and* on silicon, so OOC's 1.33× optimism is
+measured. De-rating 144/864 the same way gives **~115 MHz → ~4.7 µs**, against the shipped 15.64 µs.
+Sub-µs remains off the FPGA road entirely — 543 cycles in 1 µs needs 543 MHz.
+
+- [ ] **Step 1: Rent the build instance** *(rewritten 2026-07-30 — the original text is obsolete)*
+
+Two corrections to what this step used to say:
+
+- **AWS F1 is end-of-life** (end of 2025, closed to new users). Its replacement is **F2**, carrying the
+  **Virtex UltraScale+ HBM VU47P**. Target that part; do not create `hw/syn/f1_144x864.tcl`.
+- **No FPGA instance is needed.** Steps 2–3 want utilisation and Fmax, i.e. synthesis and
+  implementation — not a running image. AWS's own dev-kit documentation says builds do not require an
+  F-family instance and recommends ≥ 4 vCPU / ≥ 32 GiB, x86 only.
+
+Rent **z1d.2xlarge** (8 vCPU, 64 GiB, ~$0.744/h — highest sustained clock, and Vivado P&R is largely
+single-threaded) with the **FPGA Developer AMI**, ~100 GB gp3, ~40 instance-hours for both configs plus
+retries. **Budget $30–60, not €100–500.**
+
+**The licence is the only reason AWS is involved.** Vivado ML Standard (free) does not support Virtex
+UltraScale+; Enterprise is ~$4,395 node-locked; the AWS AMI bundles a licence valid on EC2 for AWS's
+parts only. Vultr/Hetzner/our own EPYC box are all adequate *machines* — the EPYC box just ran Step 0
+for €0 and exceeds AWS's recommended build spec — and all are blocked on the licence alone. If a
+licence is ever obtained by another route (purchase, or the AMD University Program / Europractice
+academic route this program already contemplates for 28 nm sign-off), every future large-part build
+including the Track P2 appliance-v2 bitstream runs on hardware we own at zero marginal cost. Price that
+deliberately against Track P2 rather than renting by reflex.
 
 - [ ] **Step 2: Run synthesis and implementation for 64/192, then 144/864**
 
 - [ ] **Step 3: Record utilisation and achieved Fmax for both**
+
+Three things Step 0 could not settle and Step 1 must: post-route utilisation and Fmax (OOC nets are all
+`unplaced`, and 61 % of the critical path is estimate); whether the **fanout-7941** `pc_reg[2]` control
+net survives placement or needs replication; and the **SLR partitioning cost** — VU47P is a multi-die
+SSI part and an 800k-LUT monolithic design will be split across super logic regions.
 
 - [ ] **Step 4: Decide**
 
@@ -960,7 +992,7 @@ rather than quietly ignored — the replacement trigger is Phase C's gate.
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
 | ~~144/864 does not generate~~ **RETIRED 2026-07-30**: B0 Option A fixed the three generator defects; 144/864 is bit-exact at 543 cycles | — | — | Cost ~€0 to find and ~€0 to fix, before any FPGA rental let alone silicon |
-| **144/864 does not fit / does not close timing** — the original risk, still open | **High** (B0 measured the unrolled core at 838 % of the KV260 and B2 measured every `NGROUP` at 601–1474 %; this family's area is crossbar-dominated) | Sub-µs claim stays suspended; fallback is 64/192 at 913 cycles = 1.52 µs @600 MHz, a useful chip but not a sub-µs one | Task B2: free OOC probe of the banked core across 16/48 → 144/864 first, and rent the large part only if the LUT count leaves a large FPGA plausible |
+| **144/864 does not fit / does not close timing** — the original risk, still open | **Medium**, downgraded from High on 2026-07-30: B2 Step 0 measured the *banked* core at **61.6 % of a VU47P** with Fmax falling only 13 % across an 8.5× area growth. The 838 % / 601–1474 % figures that justified "High" were the unrolled and `NGROUP` families, not this one. Residual risk is post-route, not fit: SLR partitioning, a fanout-7941 control net, and OOC's measured 1.33× optimism | Sub-µs claim stays suspended regardless — no FPGA reaches the 543 MHz that 543 cycles needs. Fallback is 64/192 at 913 cycles = 1.52 µs @600 MHz, a useful chip but not a sub-µs one | Step 0 done for €0; Step 1 is now a ~$40 build instance rather than a €100–500 FPGA rental |
 | Sub-µs unreachable even after B0, because Fmax is capped ~686 MHz | **High** | 64/192 lands at 1.33 µs, not sub-µs; Riverlane already ships <1 µs | Needs the clock-structure work (A1: 15,951 gated-clock nets), which is an RTL enable-granularity change, not a tooling flag. Decide whether that is in scope before Phase E |
 | No sign-off EDA access at 28 nm | **High** | Blocks Phase E entirely | Phase E Task E1 is a gate, not a step; EuroCDP and academic partnership are the routes; Phase D proves the flow at 130 nm regardless |
 | First silicon dead on arrival | Medium (30–50 % is normal) | €45–95 k lost | Phase D rehearsal on a free/cheap shuttle; conservative interface design; on-chip observability |
