@@ -514,7 +514,11 @@ satisfy `neb ≥ taps` for the qualified geometries and stop doing so outside th
 (`:1593`) passes the power-of-two-padded `ecm_m`/`mcm_m` and is unaffected. This is a latent sizing
 defect, not a deliberate restriction.
 
-- [ ] **Step 3: Commit**
+**Superseded (2026-07-30):** every row of the table above now generates and co-simulates bit-exactly —
+see "Task B0 Option A RESULT" below. The root cause named here was correct but incomplete: two further
+defects sat behind it, both only reachable once the sizing was fixed.
+
+- [x] **Step 3: Commit**
 
 ### Task B0 RESULT (2026-07-27): Option B decodes in 181 cycles but does not fit, and is slow
 
@@ -579,10 +583,10 @@ should have preceded any silicon costing.
 Discovered by B1. Until one of these lands, there is no sub-microsecond design to place, route or cost,
 and Phase E has nothing to tape out.
 
-- [ ] **Option A — fix the generator.** Give `benes_group_matchings` a tap count rather than a bank
+- [x] **Option A — fix the generator.** Give `benes_group_matchings` a tap count rather than a bank
   count at `:1172` and `:1645` (or size the vectors to `max(neb, v·var_deg)`), then handle the
   zero-width ROM row at `:1290` for the GC = 1 case. Add the failing geometries to `bpbankedscale`
-  so the regression is permanent.
+  so the regression is permanent. **Done — see the result section below.**
 
 - [ ] **Option B — qualify the M4 unrolled core instead.** `hw/bp_relay_unrolled.sv` already exists
   and already computes all checks and variables per cycle — and `asic-architecture.md:89` calls
@@ -591,10 +595,72 @@ and Phase E has nothing to tape out.
   `decvectors`), not the circuit-level DEM (`circgraph` / `circvectors`) the silicon path uses, so
   qualifying it means porting it to the circuit-level flow and re-running the bit-exactness gate.
 
-- [ ] **Decide between them before doing either.** Option A gets a full-parallel *banked* core, which
+- [x] **Decide between them before doing either.** Option A gets a full-parallel *banked* core, which
   keeps one RTL and one regression suite. Option B may be closer to the intended architecture but
   forks the verification effort. Whichever wins, the deliverable is the same: a generated,
   co-simulated, bit-exact full-parallel configuration with a measured cycle count.
+  **Option A was chosen** — one RTL, one golden, one regression suite, and B2 had by then shown the
+  unrolled family to be uncompetitive at every knob setting, so forking verification onto it bought
+  nothing.
+
+### Task B0 Option A RESULT (2026-07-30): the full-parallel configuration exists, and it decodes in 543 cycles
+
+The deliverable the task asked for is met: **144/864 generates, elaborates, and is bit-exact at 543
+cycles.** `bp_relay_banked` at the full-parallel geometry passes the same 40-shot circuit-level golden
+every other geometry passes, 40/40 bit-identical, worst = mean = 543 cycles.
+
+| W / V | GC / GV | cycles | co-sim | note |
+|---|---|---|---|---|
+| 8 / 24 | 18 / 36 | 3750 | 40/40 | regression — unchanged |
+| 16 / 48 | 9 / 18 | 2085 | 40/40 | regression — unchanged, the silicon geometry |
+| 48 / 288 | 3 / 3 | 789 | 40/40 | **new** — was a generator panic (ratio-6) |
+| 144 / 432 | 1 / 2 | 605 | 40/40 | **new** — was a generator panic (GC = 1) |
+| **144 / 864** | **1 / 1** | **543** | **40/40** | **new — the full-parallel target** |
+
+543 against the `asic-architecture.md` § 5 prediction of 544. The closed form there reads exactly one
+cycle high at every measured point (2086/2085 at 16/48, 3751/3750 at 8/24, 790/789 at 48/288,
+606/605 at 144/432), so 543 is the model's answer, not a surprise. § 5 has been corrected in place.
+
+**Three defects, not one.** B1 named the first; the other two only surfaced once it was fixed.
+
+1. **Routing-network sizing.** `benes_group_matchings` allocated its `dest_ecm`/`dest_mcm` vectors by
+   *bank* count and indexed them by *tap* (`s = i·var_deg + d`). A rearrangeable network is square, so
+   its lane count must cover both endpoints; passing only the bank count worked by accident while
+   `neb = 25W ≥ nvb = 6V`, i.e. for every `V = 3W` geometry, and broke for every ratio-6 one. Fixed by
+   `asw_network_sizes(neb, nhb, nvb) = (max(neb,nvb), max(nhb,nvb))`, one helper feeding all three
+   consumers (the gen-time guard, the emitted control ROMs, the `BP_ASW_*_N` localparams) so they
+   cannot drift. **The RTL needed no change for this**: `bp_relay_banked_bram_m.sv` already 0-pads its
+   `din` lanes past the real bank count and reads `dout` only at real indices.
+2. **Zero-width row address.** `$clog2(1) = 0`, so at GC = 1 (and GV = 1) the row-address field
+   collapsed — a zero-width `RomRow` in the emitter and an illegal `logic [-1:0]` in the RTL. Floored
+   at 1 bit in both, `row_addr_width` mirroring `BB_BWC`/`BB_BWV`. The bit is always zero; multi-group
+   geometries are unaffected.
+3. **A tool wall nobody had hit.** At single-group geometries a BRAM-core ROM row carries a whole group
+   in one literal, and several cross **Verilator's 65536-bit number limit** (144/432:
+   `BP_ROM_BENES_ECMRD` = 78210 bits; 144/864: `BP_ROM_SCAT_HB` 67392, `BP_ROM_BENES_MCMWR` 85409).
+   `bp_relay_banked` reads none of those tables but had to *parse* them, so it could not elaborate. The
+   block is now `` `ifdef BP_BRAM_ROMS ``-gated and the two BRAM cores opt in ahead of their `include`.
+
+**Regression safety.** At all five previously-qualified geometries (8/24, 12/36, 16/48, 32/96, 64/192)
+the emitted header is **byte-identical** to before the fix apart from the two `ifdef` guard lines —
+`max(neb, nvb) = neb` and `clog2(GC) ≥ 1` are both no-ops there. 8/24 and 16/48 were re-co-simulated to
+confirm it: same cycle counts, 40/40. The shipped 16/48 bitstream's header is unchanged.
+
+**What this does and does not settle.** It settles that the configuration `asic-architecture.md` § 5
+rests its whole silicon case on is real and correct, and what it costs in cycles. It settles nothing
+about whether it can be built: 543 cycles at the silicon-measured 133.3 MHz would be 4.1 µs, and sub-µs
+needs ~600 MHz on a core whose smaller siblings already congest. **Fit and Fmax for 144/864 remain
+Task B2**, and B0/B2 have already shown that this core family's area is dominated by a crossbar that
+does not shrink. The honest reading is that B0 Option A removes an *excuse* — "we cannot even generate
+it" — not the wall.
+
+**Not done here:** 144/864 was co-simulated on `bp_relay_banked` only. That core uses the mux crossbar,
+not the AS-Waksman fabric, so the widened network is checked at the new geometries by the generator's
+own round-trip guard (`complete_partial` → `aswaksman_control` → `aswaksman_apply`, asserting every tap
+lands on its bank) and by construction in the RTL, but **not by an RTL simulation**. The two BRAM cores
+take the same `ifdef` opt-in and the same width floors, and their existing 8/24 and 16/48 gates still
+pass, but neither was built at a single-group geometry — at 144/864 their fabric would be a 5184-lane
+network with 59201 switches per port, which is not a design anyone should synthesise.
 
 ### Task B2 RESULT (2026-07-28): the `NGROUP` knob has no feasible setting, and the banked core dominates it outright
 

@@ -663,6 +663,14 @@ fn solve_banking(hw: FixedHwView<'_>, bank_w: usize, bank_v: usize, seed: u64) -
     let bp_n = hw.n_vars;
     let bp_c = hw.n_checks;
     let bp_e = hw.n_edges;
+    // `bank_w`/`bank_v` arrive as unvalidated positional CLI args. Q7-02 Task B1 found that nothing
+    // rejected a nonsense geometry — the run got as far as an index-out-of-bounds deep inside the
+    // routing emit, which reads as an emitter bug rather than as bad input. Reject at the door instead.
+    // Over-wide banks (`bank_w > bp_c`) are allowed and clamp to one group: 144/864 IS the target.
+    assert!(
+        bank_w > 0 && bank_v > 0,
+        "banking geometry: bank_w ({bank_w}) and bank_v ({bank_v}) must both be >= 1"
+    );
     let gc = bp_c.div_ceil(bank_w);
     let gv = bp_n.div_ceil(bank_v);
 
@@ -940,21 +948,35 @@ fn solve_banking(hw: FixedHwView<'_>, bank_w: usize, bank_v: usize, seed: u64) -
 /// one var group.
 /// Per-var-group Beneš matchings: `dest_ecm[port][tap] = Some(e_cm bank)` (port 0/1, `tap = s = i *
 /// var_deg + d` over var slot `i` / edge position `d`), `dest_mcm[tap] = Some(m_cm half-bank)`. `None`
-/// = padding (a network tap beyond the group's real bank count — `ecm_m`/`mcm_m` are
-/// `next_power_of_two` of the true counts). Shared by [`print_rom_rows`] (the ROM emit) and
-/// [`verify_banking`] (the gen-time guard) so the guard proves the matching the emitted ROMs actually
-/// pack, not a hand-mirrored copy of it (see M9c step 2.2 task-2 review, Fix 1). Callers still own
+/// = an unused network lane. Shared by [`print_rom_rows`] (the ROM emit) and [`verify_banking`] (the
+/// gen-time guard) so the guard proves the matching the emitted ROMs actually pack, not a
+/// hand-mirrored copy of it (see M9c step 2.2 task-2 review, Fix 1). Callers still own
 /// `complete_partial`/`benes_control`/apply — this only builds the raw partial matching.
+///
+/// `n_ecm`/`n_mcm` are the **network sizes**, and a rearrangeable network is square: its lane count
+/// must cover BOTH endpoints of the matching — the bank space it routes from (`neb` e_cm banks /
+/// `nhb` m_cm half-banks) and the tap space `nvb = BANK_V * var_deg` it routes to. Q7-02 Task B0
+/// Option A: callers used to pass the bank count alone, which silently worked only while
+/// `neb >= nvb` — true for every `V = 3W` geometry (`25W >= 18W`) and false for every ratio-6 one
+/// (`25W < 36W`), so 48/288 and the full-parallel 144/864 target panicked here on the tap index
+/// instead of generating. Both endpoints are asserted below rather than left to a `Vec` bounds check.
 fn benes_group_matchings(
     view: FixedHwView<'_>,
     b: &Banking,
     g: usize,
     var_deg: usize,
-    ecm_m: usize,
-    mcm_m: usize,
+    n_ecm: usize,
+    n_mcm: usize,
 ) -> ([Vec<Option<usize>>; 2], Vec<Option<usize>>) {
-    let mut dest_ecm = [vec![None; ecm_m], vec![None; ecm_m]];
-    let mut dest_mcm = vec![None; mcm_m];
+    let n_taps = b.v * var_deg;
+    assert!(
+        n_taps <= n_ecm && n_taps <= n_mcm,
+        "benes_group_matchings: network sizes (ecm {n_ecm}, mcm {n_mcm}) must cover the \
+         {n_taps}-tap space (BANK_V {} * VAR_DEG {var_deg})",
+        b.v
+    );
+    let mut dest_ecm = [vec![None; n_ecm], vec![None; n_ecm]];
+    let mut dest_mcm = vec![None; n_mcm];
     for i in 0..b.v {
         let var = b.var_at[g * b.v + i];
         if var < 0 {
@@ -971,6 +993,39 @@ fn benes_group_matchings(
         }
     }
     (dest_ecm, dest_mcm)
+}
+
+/// AS-Waksman network sizes for the per-var-group e_cm read gather (`.0`) and m_cm write scatter
+/// (`.1`), from the e_cm bank count `neb`, the m_cm half-bank count `nhb` and the tap count
+/// `nvb = BANK_V * VAR_DEG`. A rearrangeable network is square, so each is the max of the two
+/// endpoint spaces it connects (Q7-02 Task B0 Option A). Single source of truth for
+/// [`verify_banking`]'s gen-time guard, the control ROMs [`print_rom_rows`] emits, and the
+/// `BP_ASW_ECM_N`/`BP_ASW_MCM_N` localparams the RTL instantiates `bp_asw` from — three consumers
+/// that must not drift. The RTL already 0-pads its `din` lanes past the real bank count and reads
+/// `dout` only at real tap/bank indices (`bp_relay_banked_bram_m.sv` `rd0_din`/`mcm_wr_din`), so a
+/// network wider than the bank space needs no RTL change.
+fn asw_network_sizes(neb: usize, nhb: usize, nvb: usize) -> (usize, usize) {
+    (neb.max(nvb), nhb.max(nvb))
+}
+
+/// SystemVerilog `$clog2` twin (ceil(log2 n); 0 for n <= 1) — emitted field widths must match the
+/// RTL's `$clog2` localparams exactly.
+fn clog2(n: usize) -> usize {
+    if n <= 1 {
+        0
+    } else {
+        (usize::BITS - (n - 1).leading_zeros()) as usize
+    }
+}
+
+/// Row-address width for a table of `rows` rows, floored at 1 bit. `$clog2(1) == 0`, and a
+/// zero-width field is both an illegal SV vector (`logic [-1:0]`) and a zero-width [`RomRow`]. The
+/// single-group geometries (GC = 1 at 144/W, GV = 1 at 864/V) are exactly the full-parallel target,
+/// so Q7-02 Task B0 Option A floors the width here and mirrors the floor in the RTL's `BWC`/`BWV`
+/// localparams. The stored value is always 0 in that case, so the extra bit costs one always-zero
+/// address bit and changes nothing for any multi-group geometry.
+fn row_addr_width(rows: usize) -> usize {
+    clog2(rows).max(1)
 }
 
 fn verify_banking(hw: FixedHwView<'_>, b: &Banking) {
@@ -1154,8 +1209,9 @@ fn verify_banking(hw: FixedHwView<'_>, b: &Banking) {
     // an injective target, so — mirroring Step 1's beta-split for the m_cm CHK read — e_cm routes
     // through one size-`neb` AS-Waksman network PER PORT (0, then 1). m_cm's `hb = eb*2+beta` is
     // already injective per group (the half_seen check above), so site 4 needs only one size-`nhb`
-    // network. AS-Waksman is sized to the REAL bank counts (neb/nhb), not the power-of-two-padded
-    // Beneš `ecm_m`/`mcm_m` `print_rom_rows` still uses for the untouched Step-4 READROW guard.
+    // network. AS-Waksman is sized by `asw_network_sizes` — the REAL bank counts (neb/nhb) widened to
+    // the tap space when the geometry needs it (B0 Option A) — not the power-of-two-padded Beneš
+    // `ecm_m`/`mcm_m` `print_rom_rows` still uses for the untouched Step-4 READROW guard.
     let var_deg_max = hw
         .var_off
         .windows(2)
@@ -1164,16 +1220,18 @@ fn verify_banking(hw: FixedHwView<'_>, b: &Banking) {
         .unwrap_or(0);
     let neb = b.w * chk_deg_max;
     let nhb = 2 * neb;
+    let nvb = b.v * var_deg_max;
+    let (n_ecm, n_mcm) = asw_network_sizes(neb, nhb, nvb);
     for g in 0..b.gv {
         // dest_ecm[port][s] = e_cm bank `eb` tap `s` (this group, this port) addresses/reads;
         // dest_mcm[s] = m_cm half-bank `hb` tap `s` writes. Built by the SAME helper `print_rom_rows`
         // uses to construct the emitted ROMs, so this guard proves the actual emit routes correctly
         // (not just a hand-mirrored copy of the construction — see task-2 review Fix 1).
-        let (dest_ecm, dest_mcm) = benes_group_matchings(hw, b, g, var_deg_max, neb, nhb);
+        let (dest_ecm, dest_mcm) = benes_group_matchings(hw, b, g, var_deg_max, n_ecm, n_mcm);
         for (port, dest) in dest_ecm.iter().enumerate() {
-            let full = complete_partial(dest, neb);
+            let full = complete_partial(dest, n_ecm);
             let ctrl = aswaksman_control(&full);
-            let routed = aswaksman_apply(&ctrl, &(0..neb).collect::<Vec<_>>());
+            let routed = aswaksman_apply(&ctrl, &(0..n_ecm).collect::<Vec<_>>());
             for (s, target) in dest.iter().enumerate() {
                 if let Some(eb) = target {
                     assert_eq!(
@@ -1183,9 +1241,9 @@ fn verify_banking(hw: FixedHwView<'_>, b: &Banking) {
                 }
             }
         }
-        let full_mcm = complete_partial(&dest_mcm, nhb);
+        let full_mcm = complete_partial(&dest_mcm, n_mcm);
         let ctrl_mcm = aswaksman_control(&full_mcm);
-        let routed_mcm = aswaksman_apply(&ctrl_mcm, &(0..nhb).collect::<Vec<_>>());
+        let routed_mcm = aswaksman_apply(&ctrl_mcm, &(0..n_mcm).collect::<Vec<_>>());
         for (s, target) in dest_mcm.iter().enumerate() {
             if let Some(hb) = target {
                 assert_eq!(routed_mcm[*hb], s, "MCM route g={g} s={s} hb={hb}");
@@ -1378,15 +1436,7 @@ fn print_rom_rows(view: &FixedHwView, b: &Banking) {
     let neb = w * chk_deg; // e_cm banks   = (j,k) lanes
     let nvb = vcap * var_deg; // m_vm banks = (i,d) slots
     let nhb = 2 * neb; // m_cm half-banks
-                       // SystemVerilog `$clog2` twin (ceil(log2 n); 0 for n <= 1) — widths must match the RTL exactly.
-    let clog2 = |n: usize| -> usize {
-        if n <= 1 {
-            0
-        } else {
-            (usize::BITS - (n - 1).leading_zeros()) as usize
-        }
-    };
-    let bwc = clog2(gc); // m_cm / e_cm row address width
+    let bwc = row_addr_width(gc); // m_cm / e_cm row address width (floored at 1 bit — see the fn)
     let hbw = clog2(nhb); // half-bank index width
     let ebw = clog2(neb); // e_cm bank index width
     let msg = view.msg_bits as usize;
@@ -1499,8 +1549,12 @@ fn print_rom_rows(view: &FixedHwView, b: &Banking) {
     // fn does (task-2 review Fix 1) to build the per-group matching, then independently re-derives the
     // control/apply/assert pipeline and checks the control reproduces the matching (gen-time guard,
     // both bankings) — so the guard gates the matching this fn actually emits, not a hand-mirrored copy.
-    let ecm_m = neb.next_power_of_two();
-    let mcm_m = nhb.next_power_of_two();
+    // B0 Option A: both the padded-Beneš sizes (READROW guard) and the real AS-Waksman sizes (emitted
+    // control) start from `asw_network_sizes`, so a geometry whose tap space `nvb` exceeds its bank
+    // space widens every consumer together instead of overrunning the bank-sized vectors.
+    let (n_ecm, n_mcm) = asw_network_sizes(neb, nhb, nvb);
+    let ecm_m = n_ecm.next_power_of_two();
+    let mcm_m = n_mcm.next_power_of_two();
     let ecm_cols = benes_columns(ecm_m);
     let mcm_cols = benes_columns(mcm_m);
     println!();
@@ -1517,15 +1571,15 @@ fn print_rom_rows(view: &FixedHwView, b: &Banking) {
     // AS-Waksman). BP_ROM_BENES_MCMWR/ECMRD's row CONTENT below is narrowed to AS-Waksman at the REAL
     // (unpadded) bank counts nhb/neb — the BRAM lever — sized by the new BP_ASW_* localparams.
     println!("localparam int BP_BENES_ECM_PORTS = 2;");
-    println!("localparam int BP_ASW_MCM_N   = {nhb};");
+    println!("localparam int BP_ASW_MCM_N   = {n_mcm};");
     println!(
         "localparam int BP_ASW_MCM_SW  = {};",
-        aswaksman_switch_count(nhb)
+        aswaksman_switch_count(n_mcm)
     );
-    println!("localparam int BP_ASW_ECM_N   = {neb};");
+    println!("localparam int BP_ASW_ECM_N   = {n_ecm};");
     println!(
         "localparam int BP_ASW_ECM_SW  = {};",
-        aswaksman_switch_count(neb)
+        aswaksman_switch_count(n_ecm)
     );
 
     // LSB-first 1-bit-field packer for a `Vec<bool>` control vector — mirrors the 1-bit `set` calls
@@ -1632,7 +1686,7 @@ fn print_rom_rows(view: &FixedHwView, b: &Banking) {
     // (unpadded) bank counts nhb/neb instead of the power-of-two-padded Beneš mcm_m/ecm_m — this is
     // the BRAM lever (narrower ROM rows: BP_ASW_MCM_SW/ECM_SW switches vs. the old
     // BP_BENES_MCM_COLS*(BP_BENES_MCM_M/2) / BP_BENES_ECM_COLS*(BP_BENES_ECM_M/2) Beneš control width).
-    let asw_ecm_sw = aswaksman_switch_count(neb);
+    let asw_ecm_sw = aswaksman_switch_count(n_ecm);
     let mut benes_ecmrd = Vec::with_capacity(gv);
     let mut benes_mcmwr = Vec::with_capacity(gv);
     for g in 0..gv {
@@ -1640,18 +1694,19 @@ fn print_rom_rows(view: &FixedHwView, b: &Banking) {
         // dest_mcm[s] = m_cm half-bank `hb` tap `s` writes. Built by the shared
         // `benes_group_matchings` helper (task-2 review Fix 1) — the SAME construction
         // `verify_banking`'s gen-time guard calls, so the guard proves what this fn actually emits.
-        // Sized to neb/nhb (real, unpadded) — not ecm_m/mcm_m, which stay Beneš-padded for the
-        // untouched Step-4 READROW guard above.
-        let (dest_ecm, dest_mcm) = benes_group_matchings(*view, b, g, var_deg, neb, nhb);
+        // Sized by `asw_network_sizes` (real, unpadded bank counts, widened to the tap space where
+        // the geometry needs it) — not ecm_m/mcm_m, which stay Beneš-padded for the untouched Step-4
+        // READROW guard above.
+        let (dest_ecm, dest_mcm) = benes_group_matchings(*view, b, g, var_deg, n_ecm, n_mcm);
         // read gather (bank -> tap = inverse), one per port. The addr scatter (tap -> bank) control is
         // gone (M9c Step 4a): ra_ecm/rb_ecm is now the precomputed BP_ROM_ECM_READROW data ROM above,
         // not a runtime route.
         let mut ctrl_read = Vec::with_capacity(2 * asw_ecm_sw);
         for dest in &dest_ecm {
-            let full = complete_partial(dest, neb);
+            let full = complete_partial(dest, n_ecm);
             ctrl_read.extend(aswaksman_control(&invert(&full)));
         }
-        let full_mcm = complete_partial(&dest_mcm, nhb);
+        let full_mcm = complete_partial(&dest_mcm, n_mcm);
         let ctrl_mcm = aswaksman_control(&full_mcm);
 
         benes_ecmrd.push(pack_bits(&ctrl_read));
@@ -1667,6 +1722,13 @@ fn print_rom_rows(view: &FixedHwView, b: &Banking) {
          guard recomputes every row from the graph tables above and $fatal's on mismatch. Ignored by \
          every other core. ----"
     );
+    // Q7-02 Task B0 Option A: the block is `ifdef`-gated so cores that do not consume it do not have
+    // to PARSE it. At the single-group geometries these rows carry a whole group in one literal and
+    // several cross Verilator's 65536-bit number limit (144/432: BP_ROM_BENES_ECMRD is 78210 bits;
+    // 144/864: BP_ROM_SCAT_HB 67392, BP_ROM_BENES_MCMWR 85409) — a hard tool wall that stopped
+    // `bp_relay_banked`, which references none of these tables, from elaborating at all. The two BRAM
+    // cores `define BP_BRAM_ROMS` ahead of their `include, so their view of the header is unchanged.
+    println!("`ifdef BP_BRAM_ROMS");
     println!("/* verilator lint_off UNUSEDPARAM */");
     emit_rom_table("BP_ROM_CHK_HBSEL", "BP_GC", &chk_hbsel);
     emit_rom_table("BP_ROM_CHK_EPRES", "BP_GC", &chk_epres);
@@ -1694,6 +1756,7 @@ fn print_rom_rows(view: &FixedHwView, b: &Banking) {
     emit_rom_table("BP_ROM_BENES_ECMRD", "BP_GV", &benes_ecmrd);
     emit_rom_table("BP_ROM_BENES_MCMWR", "BP_GV", &benes_mcmwr);
     println!("/* verilator lint_on UNUSEDPARAM */");
+    println!("`endif // BP_BRAM_ROMS");
 }
 
 /// M9c step 3.2 (Q7-04): build the per-class (e_cm/m_cm/m_vm) conflict-free `P`-bank storage +

@@ -163,6 +163,11 @@ banking). Only the `60·(GC+GV)` "useful work" term shrinks with banking; the 42
 - **Hard floor:** even full-parallel 144/864 (GC = GV = 1) is `60·9 + 4 = 544` cycles = **0.91 µs
   @ 600 MHz** for the worst-case schedule — it cannot go lower without changing LEGS, ITERS, or the
   pipeline depth. The ladder's 0.45 µs full-parallel figure is unreachable by banking.
+  **Now measured, not modelled (Q7-02 Task B0 Option A, 2026-07-30): 543 cycles**, 40/40 bit-identical
+  to the golden on `bp_relay_banked` at 144/864. The closed form above reads exactly one cycle high at
+  every measured point (544 vs 543 here, 2086 vs 2085 at 16/48, 914 vs 913 at 64/192, 3751 vs 3750 at
+  8/24), so treat it as `… + (2·GV+GC)` rather than `… + (2·GV+GC+1)`. The floor is a *cycle-count*
+  result only: whether a 144/864 instance can be placed and clocked anywhere is Task B2, still open.
 
 **Consequence for the target.** Worst-case-schedule real-time at 64/192 @ 600 MHz is **≈ 1.5 µs**,
 not the ~0.87 µs a linear 4× implies; even the full-parallel stretch bottoms out at ~0.91 µs. The
