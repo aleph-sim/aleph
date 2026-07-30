@@ -271,13 +271,18 @@ what Step 0 measured. Step 1 exists to go further, so the run script must add `o
 `place_design`, `route_design` and report **post-route** utilisation and timing. That is the whole
 point of renting the box; a second OOC number would tell us nothing we do not already have.
 
-Change the part to `xcvu47p-…` and drive it with something that self-terminates:
+Change the part to `xcvu47p-…` and drive it with something that self-terminates.
+
+**Source the tool before `set -u`, not after.** Vivado's `settings64.sh` chains into Vitis's, which
+dereferences an unset `PYTHONPATH`; under `set -u` that kills the whole script before it runs a single
+command. Because the script is detached you see no error at all — just an output directory that never
+appears, which reads exactly like "the job is still starting up".
 
 ```bash
 cat > /scratch/run.sh <<'EOF'
 #!/bin/bash
-set -u
-source /opt/Xilinx/2025.2/Vivado/settings64.sh   # note the layout: VERSION/Vivado, not Vivado/VERSION
+source /opt/Xilinx/2025.2/Vivado/settings64.sh   # layout is VERSION/Vivado, NOT Vivado/VERSION
+set -u                                           # AFTER the source, never before
 cd /scratch
 for g in 64x192 144x864; do          # smaller first: the fallback config must land even if the big one dies
   ( cd "$g" && vivado -mode batch -source ../impl_vu47p.tcl -tclargs 5.0 "$g" >"impl_$g.log" 2>&1 )
