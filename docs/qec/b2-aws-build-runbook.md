@@ -217,7 +217,8 @@ df -h /scratch
 want to know in five minutes, not after a twelve-hour place-and-route dies at the end.
 
 ```bash
-source /opt/Xilinx/Vivado/*/settings64.sh     # confirm the path with: ls -d /opt/Xilinx/Vivado/*
+source /opt/Xilinx/2025.2/Vivado/settings64.sh   # layout is VERSION/Vivado, NOT Vivado/VERSION
+vivado -version                                 # if the path is wrong: sudo find / -xdev -name settings64.sh
 cd /scratch && mkdir lic && cd lic
 cat > t.v <<'EOF'
 module t(input clk, input a, input b, output reg y);
@@ -276,7 +277,7 @@ Change the part to `xcvu47p-…` and drive it with something that self-terminate
 cat > /scratch/run.sh <<'EOF'
 #!/bin/bash
 set -u
-source /opt/Xilinx/Vivado/*/settings64.sh
+source /opt/Xilinx/2025.2/Vivado/settings64.sh   # note the layout: VERSION/Vivado, not Vivado/VERSION
 cd /scratch
 for g in 64x192 144x864; do          # smaller first: the fallback config must land even if the big one dies
   ( cd "$g" && vivado -mode batch -source ../impl_vu47p.tcl -tclargs 5.0 "$g" >"impl_$g.log" 2>&1 )
