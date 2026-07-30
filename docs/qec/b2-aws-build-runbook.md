@@ -108,6 +108,26 @@ export AMI=ami-xxxxxxxxxxxx   # whatever the query above returned
 
 ## 4. Key pair and security group
 
+A security group cannot exist outside a VPC, and not every account has a **default VPC** in every
+region any more — if it was deleted, or the account is new or organisation-managed, you get
+`VPCIdNotSpecified` here rather than anywhere more informative. Check first:
+
+```bash
+aws configure get region     # and check $AWS_DEFAULT_REGION — the env var wins over this
+aws ec2 describe-vpcs --query 'Vpcs[].[VpcId,IsDefault,CidrBlock]' --output table
+```
+
+If nothing is `True`, recreate the default VPC — one command, and it brings subnets in every AZ, an
+internet gateway and routes with it:
+
+```bash
+aws ec2 create-default-vpc --query 'Vpc.VpcId' --output text
+```
+
+If you must use a non-default VPC instead, pass `--vpc-id` below *and* add `--subnet-id` plus
+`--associate-public-ip-address` to `run-instances` — without a default VPC nothing is chosen for you,
+and an instance with no public IP is an instance you cannot reach.
+
 ```bash
 aws ec2 create-key-pair --key-name b2build \
   --query KeyMaterial --output text > ~/.ssh/b2build.pem
@@ -126,6 +146,18 @@ The `/32` matters. An SSH port open to `0.0.0.0/0` is found by scanners within m
 
 ## 5. Launch
 
+Check what the AMI's root device is actually called and how big its snapshot is — both feed the next
+command, and getting either wrong fails in a way that is easy to misread:
+
+```bash
+aws ec2 describe-images --image-ids "$AMI" \
+  --query 'Images[0].[RootDeviceName,BlockDeviceMappings[0].Ebs.VolumeSize]' --output text
+```
+
+The FPGA Developer AMI's root snapshot is **120 GB** — Vivado is large — so anything smaller is
+rejected with `InvalidBlockDeviceMapping`. Ask for 150 to leave room for checkpoints and reports; gp3
+is about $0.08/GB-month, so the extra 30 GB for a couple of days costs cents.
+
 ```bash
 aws ec2 run-instances \
   --image-id "$AMI" \
@@ -133,7 +165,7 @@ aws ec2 run-instances \
   --key-name b2build \
   --security-group-ids "$SG" \
   --block-device-mappings '[{"DeviceName":"/dev/sda1",
-      "Ebs":{"VolumeSize":100,"VolumeType":"gp3","DeleteOnTermination":true}}]' \
+      "Ebs":{"VolumeSize":150,"VolumeType":"gp3","DeleteOnTermination":true}}]' \
   --instance-initiated-shutdown-behavior terminate \
   --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=b2build}]' \
   --query 'Instances[0].InstanceId' --output text
@@ -141,7 +173,7 @@ aws ec2 run-instances \
 
 Two flags earn their place:
 
-- `DeleteOnTermination: true` — otherwise the 100 GB volume outlives the instance and bills quietly
+- `DeleteOnTermination: true` — otherwise the 150 GB volume outlives the instance and bills quietly
   forever. This is the single most common way to keep paying AWS for something you thought you deleted.
 - `--instance-initiated-shutdown-behavior terminate` — lets the build script end with `sudo shutdown -h
   now` and destroy the box by itself. Use it (§7). It is the only reliable defence against forgetting.
@@ -272,19 +304,25 @@ tables should be empty.
 ## 9. Gotchas, in the order they will bite
 
 1. **`VcpuLimitExceeded` on launch** — §1. New accounts get 5 vCPUs; you need 8.
-2. **`OptInRequired` on launch** — you skipped §2, or subscribed in a different account than the one
+2. **`VPCIdNotSpecified` on the security group** — no default VPC in this region. §4.
+3. **`InvalidBlockDeviceMapping … smaller than snapshot`** — the AMI's root snapshot is 120 GB. Ask for
+   150. §5.
+4. **A `DeviceName` that does not match the AMI's root device** fails *silently* in the worst way: AWS
+   creates a second volume and leaves root at its default size. Confirm it with `describe-images`
+   rather than trusting the `/dev/sda1` in this document.
+5. **`OptInRequired` on launch** — you skipped §2, or subscribed in a different account than the one
    your CLI credentials belong to.
-3. **The EBS volume outliving the instance** — always `DeleteOnTermination: true`.
-4. **zsh does not word-split.** The `for wv in "64 192"; set -- $wv` idiom in §7 gives `$1="64 192"`
+6. **The EBS volume outliving the instance** — always `DeleteOnTermination: true`.
+7. **zsh does not word-split.** The `for wv in "64 192"; set -- $wv` idiom in §7 gives `$1="64 192"`
    and `$2=""` under zsh, and silently generates the *default* geometry. Run that loop under bash. This
    has already cost this project a debugging session.
-5. **Vivado version drift.** The AMI ships 2025.2; Step 0 ran 2024.2. Report them as separate
+8. **Vivado version drift.** The AMI ships 2025.2; Step 0 ran 2024.2. Report them as separate
    measurements, never as a before/after.
-6. **Speed grade.** A `-3` part will flatter Fmax against a `-2`. Record which one you used, in the
+9. **Speed grade.** A `-3` part will flatter Fmax against a `-2`. Record which one you used, in the
    report, next to the number.
-7. **SLR partitioning.** VU47P is a multi-die part. An 800k-LUT monolithic design will be split across
+10. **SLR partitioning.** VU47P is a multi-die part. An 800k-LUT monolithic design will be split across
    super logic regions and the crossings are expensive. If post-route Fmax collapses against the OOC
    estimate, this is the first suspect — check the SLR-crossing count before concluding the design is
    slow.
-8. **Do not create `hw/syn/f1_144x864.tcl`.** The program document asks for it; F1 is end-of-life and
+11. **Do not create `hw/syn/f1_144x864.tcl`.** The program document asks for it; F1 is end-of-life and
    VU9P is not rentable. Name it for the part you actually used.
