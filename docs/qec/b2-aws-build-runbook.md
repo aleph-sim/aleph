@@ -187,13 +187,26 @@ export IP=$(aws ec2 describe-instances --instance-ids "$IID" \
 ssh -i ~/.ssh/b2build.pem ubuntu@"$IP"      # 'rocky@' on the Rocky Linux AMI
 ```
 
-`z1d.2xlarge` carries a ~300 GB NVMe instance store. It is free, fast, and wiped on termination —
-exactly right for Vivado scratch. Put the run directory there and keep only reports on EBS:
+`z1d.2xlarge` carries a ~300 GB NVMe instance store. It is free, fast, and wiped on stop or
+termination — exactly right for Vivado scratch. Put the run directory there and keep only reports on
+EBS.
+
+**Identify it by model, not by device number.** The AMI ships its own ~10 GB EBS data volume mounted at
+`~/src/project_data`, so the instance store is usually `nvme2n1`, not `nvme1n1`. `mkfs` on the wrong
+device is unrecoverable, so check before you type it:
 
 ```bash
-lsblk                                    # find the NVMe device, typically nvme1n1
-sudo mkfs.ext4 /dev/nvme1n1 && sudo mkdir -p /scratch && sudo mount /dev/nvme1n1 /scratch
-sudo chown $USER /scratch
+lsblk -o NAME,SIZE,MODEL,MOUNTPOINTS
+```
+
+The instance store reports `Amazon EC2 NVMe Instance Storage`; anything reporting `Amazon Elastic Block
+Store` is EBS and must be left alone.
+
+```bash
+sudo mkfs.ext4 -F /dev/nvme2n1           # whichever device the MODEL column identified
+sudo mkdir -p /scratch && sudo mount /dev/nvme2n1 /scratch
+sudo chown "$USER:$USER" /scratch
+df -h /scratch
 ```
 
 -----
@@ -223,7 +236,14 @@ vivado -mode batch -source t.tcl 2>&1 | tail -20
 and re-read §6.3 of the Step 0 report, because the plan changes.
 
 > The exact part suffix (`-fsvh2892-2-e`) is a guess at the package and speed grade. If Vivado rejects
-> it, list what it does have: `puts [get_parts -filter {DEVICE =~ *vu47p*}]`, and use one of those.
+> it, list what the install actually has and pick from that:
+>
+> ```bash
+> vivado -mode batch -source /dev/stdin <<'EOF'
+> puts [join [lsort -unique [get_parts -filter {DEVICE =~ *vu47p*}]] \n]
+> EOF
+> ```
+>
 > Prefer the speed grade F2 actually ships; a `-3` part would flatter the Fmax number.
 
 -----
