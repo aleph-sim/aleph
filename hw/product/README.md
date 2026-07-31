@@ -71,20 +71,32 @@ hardware costs $300 rather than $30,000.
 - **RTL and simulation:** this repository. `make -C hw bpbanked` runs the banked core against the
   golden in about six minutes and needs only Verilator ≥ 5.050 and a Rust toolchain.
 - **Bitstream:** not yet published as a release artefact — see below.
-- **Driver:** `hw/sw/bp_stream_banked_kv260.py` (PYNQ) is the working starting point.
+- **On a board:** `sudo ./deploy.sh`, run on a KV260 with Kria-PYNQ. It fetches the published release,
+  checks every artefact against its SHA-256, programs the PL and requires 40/40 bit-exact against the
+  golden before declaring success. It needs no Rust toolchain and installs nothing outside
+  `/opt/aleph-decoder`. **Until the release in item 1 below exists there is nothing for it to fetch.**
+- **Driver:** `hw/sw/bp_stream_banked_kv260.py` (PYNQ) — what `deploy.sh` runs, and the starting point
+  for your own integration.
 
 ## What is still missing before v1 can be called shipped
 
 Honest list, in the order it blocks people:
 
 1. **A published bitstream.** The working images live on the development board, not in a release.
-   Nobody outside can deploy without rebuilding from RTL, which needs Vivado and hours.
-2. **`deploy.sh`** — one command from a bare KV260 to a running self-test. Today the steps are spread
-   across `hw/sw/` scripts and institutional memory.
-3. **A fresh-board test.** The deployment has never been walked through by someone who did not build
-   it. Until that happens the claim "deployable in an afternoon" is untested, and the number of
-   external deployments — which is the gate for everything downstream on the silicon track — cannot
-   honestly be counted.
+   Nobody outside can deploy without rebuilding from RTL, which needs Vivado and hours. The procedure
+   for publishing one is written (`RELEASING.md`); it has not been run.
+2. ~~**`deploy.sh`**~~ — **written** (`deploy.sh`): preflight, fetch, checksum, program the PL, decode
+   the 40-shot golden as a hard 40/40 gate, report latency. **It has never been executed**, because
+   there is nothing published for it to fetch. Treat it as unproven code until item 1 and item 3 land.
+3. **A deployment walked through end to end.** Two different claims, and only the weaker one is
+   currently reachable:
+   - *the procedure is complete* — wipe the development board, deploy using only `deploy.sh`. This
+     catches every step that exists only in somebody's memory, and it is planned.
+   - *a stranger can deploy it* — someone who has never seen this repository does it unaided. **This
+     needs a second board or a second person, and we have neither.**
+
+   Only the second is what the plan's Task P1 Step 4 asks for. The count of external deployments gates
+   every silicon decision downstream, so the difference is recorded rather than blurred.
 4. **A support policy.** What is answered, how fast, what "stable" means. One page, not yet written.
 
 Items 1–3 are the difference between a repository and a product, and they are cheap. They are not done
