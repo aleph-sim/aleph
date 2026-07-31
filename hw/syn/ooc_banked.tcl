@@ -28,9 +28,12 @@ set uram   [llength [get_cells -hier -filter {REF_NAME == URAM288}]]
 set wns    [get_property SLACK [lindex [get_timing_paths -max_paths 1 -nworst 1 -setup] 0]]
 set fmax   [expr {1000.0/($period - $wns)}]
 # authoritative counts from the util report: CLB LUTs + LUT-as-memory (the LUTRAM banks)
+# The row label carries a trailing '*' (footnote marker) — `CLB LUTs*` — and the older
+# `LUTs\s*\|` pattern silently failed on it and reported -1 for the whole B2 Step 0 sweep.
+# Match anything up to the column separator instead. Same trap as ooc_core.tcl.
 set fh [open util_banked.rpt r]; set t [read $fh]; close $fh
 set clut -1; set lutram -1
-regexp {(?:CLB|Slice) LUTs\s*\|\s*([0-9]+)} $t -> clut
+regexp {(?:CLB|Slice) LUTs[^|]*\|\s*([0-9]+)} $t -> clut
 regexp {LUT as Memory\s*\|\s*([0-9]+)} $t -> lutram
 
 puts [format "RESULT %s CLBLUT=%s LUTRAM=%s cellLUT=%d FF=%d CARRY8=%d DSP=%d RAMB=%d URAM=%d period=%.2f WNS=%.3f Fmax=%.1fMHz" \

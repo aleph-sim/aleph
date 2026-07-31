@@ -14,25 +14,36 @@ deploy in an afternoon. That gap is the whole point of this directory — see "W
 | version | hardware | config | worst-case latency | already real-time for |
 |---|---|---|---|---|
 | **v1** | Kria KV260, ~$300 | banked 16/48 | **15.64 µs** (0.85 µs median, early exit) | neutral atoms, trapped ions — round times 100 µs–ms |
-| v2 | large FPGA ($10–30 k) | banked 144/864, 543 cycles | **unknown — clock not yet measured** | unknown until v2 is built |
-| v3 | ASIC module | banked 144/864, 543 cycles | 0.79–0.91 µs projected at 600–686 MHz | superconducting, ~1 µs rounds |
+| v2 | large FPGA ($10–30 k) | banked **64/192**, 913 cycles | **6.07 µs — implemented and measured** | most platforms except the fastest superconducting loops |
+| v3 | ASIC module | banked 144/864, 543 cycles | 0.79–0.91 µs **projected, and now in doubt** — see below | superconducting, ~1 µs rounds |
 
 v1 is the important row: **for two of the four qubit modalities this is finished and merely
 undistributed.** If your syndrome rounds are 100 µs apart, a $300 board already decodes them in real
 time, today, with the numbers above measured on silicon rather than projected.
 
-v2 and v3 are **not built systems**, and only their cycle count is measured. 543 cycles for the
-full-parallel banked 144/864 configuration is bit-exact against the golden model at 40/40
-(`bpbankedscale`, 2026-07-30) — but the *clock* that turns cycles into microseconds is measured for
-neither. v3's range comes from the one ASIC-node number we have, 686 MHz on ASAP7, which itself
-carries an unresolved gated-clock caveat (`docs/perf/q7-02-asap7-timing.md`). v2's cell is blank on
-purpose: whether 144/864 even fits a large FPGA, and at what frequency, is being measured now and is
-not yet known.
+**v2's number is measured, not projected.** 64/192 was placed and routed on an AMD Virtex UltraScale+
+HBM VU47P — the part in AWS's F2 instances — at **150.4 MHz using 19 % of the device**, giving 6.07 µs
+for its 913 cycles (`docs/perf/q7-02-fullparallel-fpga.md`). What is *not* built is a board: this is an
+implementation result on a rented part, not a product you can buy today.
 
-**Do not quote the v2/v3 rows as capability.** An earlier revision of this file projected v2/v3 from
-the fully-unrolled core at 181 cycles and 200–300 MHz. That was wrong: the unrolled core was
-subsequently synthesised and needs **838 % of the KV260's LUTs at 30.7 MHz** — it does not fit and is
-not fast, so 181 cycles buys nothing. The rows above are the surviving configuration.
+v2 deliberately ships **64/192 rather than the full-parallel 144/864**, and the reason is worth stating
+because it is counter-intuitive. 144/864 also fits — 76.3 % of the same device — but it routes at only
+97.3 MHz, so its 543 cycles come out at 5.58 µs. Fewer cycles, proportionally worse clock: **1.09×
+faster for 4× the area.** 64/192 gives 92 % of the latency in a quarter of the part, leaving the rest
+free for a host interface.
+
+**v3 remains a projection**, and a weaker one than it looks. Its range comes from the one ASIC-node
+frequency this project has measured — 686 MHz on ASAP7, itself carrying an unresolved gated-clock
+caveat (`docs/perf/q7-02-asap7-timing.md`) — and that was measured on the **16/48** geometry, not on
+144/864. The FPGA result above is direct evidence that this core's clock *falls* with geometry size. If
+that carries into silicon even partially, v3 is not sub-microsecond. Treat the v3 row as an open
+question, not a roadmap commitment.
+
+**Do not quote the v3 row as capability.** An earlier revision of this file projected v2/v3 from the
+fully-unrolled core at 181 cycles and 200–300 MHz. That was wrong: the unrolled core was subsequently
+synthesised and needs **838 % of the KV260's LUTs at 30.7 MHz** — it does not fit and is not fast, so
+181 cycles buys nothing. The rows above are the surviving configuration, and v2 has since been
+implemented rather than projected.
 
 ## What is actually proven
 
