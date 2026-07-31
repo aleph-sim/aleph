@@ -777,22 +777,49 @@ academic route this program already contemplates for 28 nm sign-off), every futu
 including the Track P2 appliance-v2 bitstream runs on hardware we own at zero marginal cost. Price that
 deliberately against Track P2 rather than renting by reflex.
 
-- [ ] **Step 2: Run synthesis and implementation for 64/192, then 144/864**
+- [x] **Steps 2–3: implementation and numbers** — **DONE 2026-07-31**
 
-- [ ] **Step 3: Record utilisation and achieved Fmax for both**
+`z1d.2xlarge` + FPGA Developer AMI (Vivado 2025.2), part `xcvu47p-fsvh2892-2-e`, full
+synth→opt→place→phys_opt→route via `hw/syn/impl_vu47p.tcl`. **7.3 instance-hours, ~$5.50.**
 
-Three things Step 0 could not settle and Step 1 must: post-route utilisation and Fmax (OOC nets are all
-`unplaced`, and 61 % of the critical path is estimate); whether the **fanout-7941** `pc_reg[2]` control
-net survives placement or needs replication; and the **SLR partitioning cost** — VU47P is a multi-die
-SSI part and an 800k-LUT monolithic design will be split across super logic regions.
+| | cycles | CLB LUTs | % VU47P | Fmax (post-route) | latency |
+|---|---|---|---|---|---|
+| 64/192 | 913 | 247,434 | **19.0 %** | 150.4 MHz | **6.07 µs** |
+| 144/864 | 543 | 994,700 | **76.3 %** | 97.3 MHz | **5.58 µs** |
+| *(shipped 16/48, KV260)* | 2085 | — | — | 133.3 MHz | 15.64 µs |
 
-- [ ] **Step 4: Decide**
+**The fit gate passes and the latency case does not.** 1.68× fewer cycles bought 1.55× less clock —
+net **1.09× for 4.0× the area**. Full report: `docs/perf/q7-02-fullparallel-fpga.md` §8–13.
 
-If 144/864 fits a large FPGA under 90 % utilisation, its ASIC area estimate is trustworthy.
-If it does not fit even there, revise the target configuration to 64/192 (913 cycles, 1.52 µs at
-600 MHz) and re-cost — still a useful chip, no longer a sub-µs one.
+The clock wall is not logic depth. The critical path has **8 logic levels and 92.7 % routing**, running
+from the `pc_reg[1]` control counter to a min-sum cell indexed 5562 — one register driving thousands of
+loads across three SLRs, with Laguna crossing tiles inside level-5/6 congestion windows. That is the
+fanout risk Step 0 named, on the same net. It was a default-directive run: `MAX_FANOUT`, per-bank
+replication, SLR floorplanning and aggressive `phys_opt` are all **untried**, so 97.3 MHz is a floor
+for this design rather than its ceiling.
 
-- [ ] **Step 5: Commit both results**
+Step 0's projections were optimistic in both directions that matter — 61.6 % vs 76.3 % measured, and
+~4.7 µs vs 5.58 µs. Cross-part LUT extrapolation is worth about ±25 %, not the precision implied.
+
+- [x] **Step 4: Decide** — **DECIDED 2026-07-31**
+
+1. **The ASIC area estimate is trustworthy** in the sense this step intended: 144/864 places and routes
+   under 90 % on a rentable part.
+2. **Track P2's appliance v2 ships 64/192, not 144/864** — 92 % of the latency in a quarter of the
+   device, leaving room for a host interface, and a 65-minute build instead of six hours.
+3. **The sub-µs assumption is now an evidenced risk.** The program has been quoting 543 cycles ÷
+   600–1000 MHz as if the clock were geometry-independent. It is not: the full-parallel geometry lost a
+   third of its clock to distribution effects that scale with size. The one ASIC-node number we own —
+   686 MHz on ASAP7 — was measured on **16/48**, not on this geometry. If even half the penalty
+   transferred, 543 cycles at ~450 MHz is 1.2 µs and sub-µs is gone.
+4. Therefore **Task B3 (144/864 through the ASIC flow) is now the decisive measurement of the silicon
+   track**, ahead of any further FPGA work. It is also free — OpenROAD on our own box.
+
+- [ ] **Step 5 (optional, ~$4): one follow-up FPGA run with the control registers replicated**, to
+  separate "this design is slow" from "these were the default settings". Cheap, and it is the only open
+  question the FPGA road still has.
+
+- [x] **Step 5: Commit both results** — this document and `docs/perf/q7-02-fullparallel-fpga.md`.
 
 ### Task B3: Re-derive the 28 nm area and fab cost from real synthesis
 
@@ -996,7 +1023,9 @@ rather than quietly ignored — the replacement trigger is Phase C's gate.
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
 | ~~144/864 does not generate~~ **RETIRED 2026-07-30**: B0 Option A fixed the three generator defects; 144/864 is bit-exact at 543 cycles | — | — | Cost ~€0 to find and ~€0 to fix, before any FPGA rental let alone silicon |
-| **144/864 does not fit / does not close timing** — the original risk, still open | **Medium**, downgraded from High on 2026-07-30: B2 Step 0 measured the *banked* core at **61.6 % of a VU47P** with Fmax falling only 13 % across an 8.5× area growth. The 838 % / 601–1474 % figures that justified "High" were the unrolled and `NGROUP` families, not this one. Residual risk is post-route, not fit: SLR partitioning, a fanout-7941 control net, and OOC's measured 1.33× optimism | Sub-µs claim stays suspended regardless — no FPGA reaches the 543 MHz that 543 cycles needs. Fallback is 64/192 at 913 cycles = 1.52 µs @600 MHz, a useful chip but not a sub-µs one | Step 0 done for €0; Step 1 is now a ~$40 build instance rather than a €100–500 FPGA rental |
+| ~~144/864 does not fit~~ **RETIRED 2026-07-31**: it places and routes at **76.3 % of a VU47P**, under the 90 % gate | — | — | Settled for $5.50 of instance time |
+| **The clock is geometry-dependent, and the sub-µs case assumed it was not** — *new, and now the top risk* | **High.** Measured: going 64/192 → 144/864 on the same part cost **150.4 → 97.3 MHz**, a third of the clock, to control-net distribution across three SLRs. The 686 MHz ASAP7 figure the silicon case rests on was measured on **16/48**, a geometry 8.5× smaller | If even half that penalty transfers to 28 nm, 543 cycles at ~450 MHz is **1.2 µs** and sub-microsecond is gone — which removes the entire technical justification for the chip | **Task B3: run 144/864 through the ASIC flow.** Free, on our own box, and now the decisive measurement of the track. Separately, the FPGA penalty is partly an artefact of fixed interconnect and Laguna crossings that an ASIC does not have — do not assume it transfers, but do not assume it does not |
+| **The 97.3 MHz may be the defaults rather than the design** | Medium | If replication recovers the clock, the FPGA appliance-v2 story improves; if it does not, the control-distribution problem is structural and follows the design into silicon | One ~$4 follow-up run with `MAX_FANOUT` / per-bank replication on the `pc` counter. Untried: this was a default-directive run with no floorplanning |
 | Sub-µs unreachable even after B0, because Fmax is capped ~686 MHz | **High** | 64/192 lands at 1.33 µs, not sub-µs; Riverlane already ships <1 µs | Needs the clock-structure work (A1: 15,951 gated-clock nets), which is an RTL enable-granularity change, not a tooling flag. Decide whether that is in scope before Phase E |
 | No sign-off EDA access at 28 nm | **High** | Blocks Phase E entirely | Phase E Task E1 is a gate, not a step; EuroCDP and academic partnership are the routes; Phase D proves the flow at 130 nm regardless |
 | First silicon dead on arrival | Medium (30–50 % is normal) | €45–95 k lost | Phase D rehearsal on a free/cheap shuttle; conservative interface design; on-chip observability |

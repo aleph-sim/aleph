@@ -168,21 +168,159 @@ So:
 The rent-now / buy-later split is therefore: **rent a build instance for ~$40 to answer Task B2**, and
 treat the licence purchase as a separate decision driven by Track P2, not by this measurement.
 
-## 7. Verdict
+## 7. Step 0 verdict
 
-**Step 0 says proceed to Step 1.** The rule written into the task was that another 838 %-class result
-would mean falling back to 64/192 without spending anything. This is not that result: 61.6 % of a
-rentable part, a clock that barely degrades across an 8.5× area growth, and a calibrated 4.7 µs against
-the shipped 15.64 µs.
+**Proceed to Step 1.** The rule written into the task was that another 838 %-class result would mean
+falling back to 64/192 without spending anything. This is not that result: 61.6 % of a rentable part, a
+clock that barely degrades across an 8.5× area growth, and a calibrated 4.7 µs against the shipped
+15.64 µs.
 
-What Step 1 must still establish, and this document explicitly does not:
+What Step 1 must still establish, and Step 0 explicitly does not: **post-route** utilisation and Fmax on
+VU47P including SLR cost; whether the fanout-7941 control net survives placement; and the same numbers
+for 64/192 as the fallback. And what no FPGA result can establish: sub-microsecond. That needs 543 MHz
+on 543 cycles, and it lives on the ASIC road or nowhere.
 
-- **post-route** utilisation and Fmax on VU47P, including SLR partitioning cost;
-- whether the fanout-7941 control net survives placement or needs replication;
-- the same two numbers for 64/192, as the fallback configuration.
+-----
 
-And what no FPGA result can establish: sub-microsecond. That needs 543 MHz on 543 cycles, and it lives
-on the ASIC road or nowhere.
+# Step 1 result, 2026-07-31 — it fits, and the clock collapses
+
+Both configurations were implemented end to end on the real part. **The fit gate passes and the latency
+case for going full-parallel does not.**
+
+## 8. What was run
+
+AWS EC2 `z1d.2xlarge` with the FPGA Developer AMI (Vivado **2025.2**), part
+**`xcvu47p-fsvh2892-2-e`** — the AMD Virtex UltraScale+ HBM device in AWS's F2 instances. Full flow:
+`synth_design → opt_design → place_design → phys_opt_design → route_design`, then post-route
+utilisation, timing and congestion. Script: `hw/syn/impl_vu47p.tcl`. Clock target 5.0 ns, default
+directives, **no floorplanning and no fanout constraints** — remember that when reading the Fmax.
+
+The instance lived 7.3 hours and cost about **$5.50**, against the $30–60 budgeted in §6.2 and the
+€100–500 the program document originally assumed.
+
+| | synth | opt | place | phys_opt | route | total |
+|---|---|---|---|---|---|---|
+| 64/192 | 9 min | 1.5 min | 30 min | 6 min | 18 min | **65 min** |
+| 144/864 | 60 min | 6 min | **170 min** | 14 min | 80 min | **5 h 40 min** |
+
+## 9. Results
+
+| | cycles | CLB LUTs | % VU47P | CLB regs | CARRY8 | DSP | BRAM | Fmax (post-route) | **latency** |
+|---|---|---|---|---|---|---|---|---|---|
+| 64/192 | 913 | 247,434 | **19.0 %** | 60,561 | 10,893 | 593 | 0 | **150.4 MHz** | **6.07 µs** |
+| 144/864 | 543 | 994,700 | **76.3 %** | 245,464 | 39,668 | 2,952 | 0 | **97.3 MHz** | **5.58 µs** |
+| *(shipped 16/48, KV260)* | 2085 | — | — | — | — | — | — | 133.3 MHz | 15.64 µs |
+
+**Post-route utilisation barely moves off post-synthesis** — 64/192 grew 244,941 → 247,434 (+1.0 %) and
+144/864 actually *shrank*, 1,000,035 → 994,700. On this part, post-synthesis utilisation is a reliable
+predictor of the final number.
+
+### The fit gate passes
+
+76.3 % is inside Step 4's 90 % criterion. **A 144/864 instance places and routes on a rentable FPGA**,
+which is the thing Task B2 existed to find out and which no previous configuration in this program
+managed. Memory is not a constraint anywhere: BRAM and LUTRAM are at zero and registers at 9.4 %. The
+design is pure combinational logic and LUTs are the only resource that matters.
+
+### The latency case for full-parallel does not pass
+
+| | cycles | Fmax | latency |
+|---|---|---|---|
+| 64/192 | 913 | 150.4 MHz | 6.07 µs |
+| 144/864 | 543 | 97.3 MHz | 5.58 µs |
+
+**1.68× fewer cycles, 1.55× slower clock, net 1.09× — for 4.0× the area.** On this part, with this
+flow, the full-parallel configuration is not worth building: 64/192 delivers 92 % of the latency in a
+quarter of the device, leaving room for a host interface, and it implements in 65 minutes rather than
+six hours.
+
+## 10. Why the clock collapsed — and it is not what the area suggests
+
+The obvious story would be "the design got bigger, so the logic got deeper". The timing report says the
+opposite:
+
+```
+Slack (VIOLATED):     -5.273ns
+Source:               pc_reg[1]/C
+Destination:          gmcm[5562].u_mcm/mem_reg[6]/D
+Data Path Delay:      10.251ns  (logic 0.750ns (7.3%)  route 9.501ns (92.7%))
+Logic Levels:         8  (CARRY8=1 LUT3=1 LUT5=1 LUT6=5)
+```
+
+**Eight logic levels, and 92.7 % of the path is wire.** Logic contributes 0.75 ns of a 10.25 ns path.
+For comparison the Step 0 out-of-context estimate had *25* logic levels and 61 % routing — the
+implemented design is logically **shallower** and still three times slower.
+
+The path is a small control counter, `pc_reg[1]`, reaching a min-sum cell with index 5562. That is one
+register driving thousands of loads scattered across a die large enough to need three super logic
+regions. The congestion report agrees: congested windows at **level 5–6** with 57–91 % LUT occupancy,
+and `LAG_LAG` tiles — the Laguna registers that implement SLR crossings — appear inside them.
+
+So the wall is **control-net distribution**, not computation. This is exactly the risk Step 0 named
+(fanout 7941 on `pc_reg[2]`) and it materialised on the same net.
+
+### 97.3 MHz is a floor for this design, not its ceiling
+
+This was a default-directive run. Every standard mitigation for precisely this failure mode is
+untried:
+
+- `MAX_FANOUT` on the `pc` counter, or explicit per-bank replication in RTL — the textbook fix for one
+  register feeding thousands of loads;
+- SLR-aware floorplanning (a Pblock per bank group) so that crossings are chosen rather than left to
+  the placer;
+- `phys_opt_design` with aggressive directives, and higher-effort place/route;
+- constraining at an achievable period rather than at 5.0 ns, which the tool missed by 5.3 ns.
+
+None of these were attempted. A follow-up run that only replicates the control registers could
+plausibly recover a large part of the 35 % clock loss, and it is cheap — about $4 of instance time.
+
+## 11. Where Step 0's projections were wrong
+
+Stated plainly, because both errors were in the flattering direction:
+
+| | Step 0 projected | Step 1 measured | error |
+|---|---|---|---|
+| 144/864 utilisation | 61.6 % of VU47P | **76.3 %** | 15 points optimistic |
+| 144/864 latency | ~4.7 µs | **5.58 µs** | 19 % optimistic |
+
+The utilisation miss has two confounded causes that one run cannot separate: Step 0 synthesised on the
+KV260's Zynq UltraScale+ part with Vivado **2024.2**, and Step 1 used Virtex UltraScale+ HBM with
+**2025.2**. The same RTL produced 803,518 CLB LUTs there and 1,000,035 here, 24 % more. Cross-part
+LUT-count extrapolation is therefore worth about ±25 %, and should be quoted that way in future.
+
+The latency miss follows from the 1.33× de-rate calibrated on 16/48 being too gentle for a design that
+is eight times larger and spans three dies. The calibration method was sound; it simply cannot see a
+congestion regime that the calibration point never entered.
+
+## 12. What this means for the ASIC — carefully
+
+**Do not read the 35 % clock collapse as an ASIC prediction.** Its causes are specifically FPGA: fixed
+interconnect with finite routing tracks, and hard SLR boundaries crossed through Laguna registers. An
+ASIC has neither. Custom routing, buffer-tree insertion and clock-tree synthesis handle a
+high-fanout control net far better than an FPGA fabric does.
+
+**But do read it as a warning about an assumption the silicon case rests on.** The only ASIC-node
+frequency this project has ever measured — 686 MHz on ASAP7 — was measured on the **16/48** geometry,
+not on 144/864. The program has been quoting 543 cycles ÷ 600–1000 MHz as though the clock were
+geometry-independent. This result is direct evidence that it is not: on real implementation, the
+full-parallel geometry lost a third of its clock to distribution effects that scale with design size.
+
+If even half that penalty transferred to 28 nm, 543 cycles at ~450 MHz would be **1.2 µs** and
+sub-microsecond would be gone. That is now a measured risk rather than a hypothetical one, and it makes
+**Task B3 — running 144/864 through the ASIC flow — the decisive measurement of the whole silicon
+track**, ahead of any further FPGA work.
+
+## 13. Step 1 verdict
+
+1. **Fit: PASS.** 76.3 % post-route on a rentable part, under the 90 % gate. Task B2 Step 4's condition
+   is met, so the ASIC *area* estimate is trustworthy in the sense the plan intended.
+2. **Full-parallel on FPGA: not worth it.** 1.09× latency for 4.0× area. Track P2's appliance v2 should
+   ship **64/192**: 6.07 µs at 19 % of the device, with the rest free for a host interface.
+3. **The clock wall is control-net distribution, and it is unaddressed.** One cheap follow-up run with
+   register replication would tell us whether 97.3 MHz is the design or the defaults.
+4. **Sub-microsecond is untouched by all of this** and now looks harder, not easier. It needs 543 MHz on
+   543 cycles; no FPGA is close, and the ASIC number it depends on was measured on a geometry eight
+   times smaller than the one being sold.
 
 -----
 
