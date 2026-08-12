@@ -15,7 +15,7 @@ deploy in an afternoon. That gap is the whole point of this directory — see "W
 |---|---|---|---|---|
 | **v1** | Kria KV260, ~$300 | banked 16/48 | **15.64 µs** (0.85 µs median, early exit) | neutral atoms, trapped ions — round times 100 µs–ms |
 | v2 | large FPGA ($10–30 k) | banked **64/192**, 913 cycles | **6.07 µs — implemented and measured** | most platforms except the fastest superconducting loops |
-| v3 | ASIC module | banked 144/864, 543 cycles | 0.79–0.91 µs **projected, and now in doubt** — see below | superconducting, ~1 µs rounds |
+| v3 | ASIC module | banked 144/864, 543 cycles | **0.88 µs at ASAP7 7 nm predictive** — see the node caveat below | superconducting, ~1 µs rounds |
 
 v1 is the important row: **for two of the four qubit modalities this is finished and merely
 undistributed.** If your syndrome rounds are 100 µs apart, a $300 board already decodes them in real
@@ -32,12 +32,24 @@ because it is counter-intuitive. 144/864 also fits — 76.3 % of the same device
 faster for 4× the area.** 64/192 gives 92 % of the latency in a quarter of the part, leaving the rest
 free for a host interface.
 
-**v3 remains a projection**, and a weaker one than it looks. Its range comes from the one ASIC-node
-frequency this project has measured — 686 MHz on ASAP7, itself carrying an unresolved gated-clock
-caveat (`docs/perf/q7-02-asap7-timing.md`) — and that was measured on the **16/48** geometry, not on
-144/864. The FPGA result above is direct evidence that this core's clock *falls* with geometry size. If
-that carries into silicon even partially, v3 is not sub-microsecond. Treat the v3 row as an open
-question, not a roadmap commitment.
+**v3's 0.88 µs is a real place-and-route result on the wrong node.** The full-parallel 144/864
+configuration was implemented end to end on ASAP7 — 543 cycles at 614.59 MHz, 0.869 mm², **zero DRC
+violations** (`docs/perf/q7-02-b3-asap7-fullparallel.md`). It is not arithmetic and not an
+extrapolation.
+
+But **ASAP7 is a predictive academic 7 nm PDK, and the chip this project can actually afford is
+28 nm.** Nothing here measures that gap, and 0.88 µs has only 12 % of margin: a node penalty of 1.2×
+gives 1.06 µs and the sub-microsecond claim is gone. So the honest statement is *"sub-microsecond at
+7 nm predictive"*, and anyone quoting v3 should quote it that way.
+
+Two further caveats on v3, both real: the run skipped timing repair (`repair_timing` segfaults on this
+netlist), leaving 35,616 hold violations that slowing the clock does not fix; and there is no 28 nm PDK
+access yet, which is a funding-and-agreements gate rather than an engineering step.
+
+One thing the FPGA result predicted wrongly, recorded because it was load-bearing: on FPGA this core
+lost 35 % of its clock going full-parallel, which looked like evidence that the geometry itself was the
+problem. On an ASIC the same step costs 10 %. The FPGA penalty was fixed routing tracks and multi-die
+crossings, not the design.
 
 **Do not quote the v3 row as capability.** An earlier revision of this file projected v2/v3 from the
 fully-unrolled core at 181 cycles and 200–300 MHz. That was wrong: the unrolled core was subsequently
