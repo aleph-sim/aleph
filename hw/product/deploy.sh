@@ -62,8 +62,10 @@ if [ -r /proc/device-tree/model ]; then
 fi
 
 [ -x "$PYNQ_PY" ] || die "no PYNQ python at $PYNQ_PY.
-       This script expects a Kria-PYNQ image (tested on 3.0.1). Install it from
-       https://github.com/Xilinx/Kria-PYNQ, or set PYNQ_PY=/path/to/python3 if yours lives elsewhere."
+       This board is not brought up yet. See hw/product/BRINGUP.md -- it is four steps, and three of
+       them are traps the upstream instructions do not warn about (Ubuntu 22.04 not 24.04; the stock
+       image ships no C compiler; pin Kria-PYNQ to v3.0).
+       If your PYNQ lives elsewhere, set PYNQ_PY=/path/to/python3."
 ok "pynq python: $PYNQ_PY"
 
 "$PYNQ_PY" - <<'PY' >/dev/null 2>&1 || die "the PYNQ python cannot import pynq/numpy. Reinstall Kria-PYNQ."

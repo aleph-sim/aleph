@@ -71,10 +71,13 @@ hardware costs $300 rather than $30,000.
 - **RTL and simulation:** this repository. `make -C hw bpbanked` runs the banked core against the
   golden in about six minutes and needs only Verilator ≥ 5.050 and a Rust toolchain.
 - **Bitstream:** not yet published as a release artefact — see below.
-- **On a board:** `sudo ./deploy.sh`, run on a KV260 with Kria-PYNQ. It fetches the published release,
-  checks every artefact against its SHA-256, programs the PL and requires 40/40 bit-exact against the
-  golden before declaring success. It needs no Rust toolchain and installs nothing outside
-  `/opt/aleph-decoder`. **Until the release in item 1 below exists there is nothing for it to fetch.**
+- **On a board:** first bring the board up — **`BRINGUP.md`**, which is Ubuntu 22.04 (*not* 24.04),
+  a firmware check, a build toolchain the stock image lacks, and Kria-PYNQ pinned to v3.0. Each of
+  those four is a wall someone hits if they follow the upstream instructions instead. Then
+  `sudo ./deploy.sh`: it fetches the published release, checks every artefact against its SHA-256,
+  programs the PL and requires 40/40 bit-exact against the golden before declaring success. It needs no
+  Rust toolchain and installs nothing outside `/opt/aleph-decoder`. **Until the release in item 1 below
+  exists there is nothing for it to fetch.**
 - **Driver:** `hw/sw/bp_stream_banked_kv260.py` (PYNQ) — what `deploy.sh` runs, and the starting point
   for your own integration.
 
@@ -88,8 +91,13 @@ Honest list, in the order it blocks people:
 2. ~~**`deploy.sh`**~~ — **written** (`deploy.sh`): preflight, fetch, checksum, program the PL, decode
    the 40-shot golden as a hard 40/40 gate, report latency. **It has never been executed**, because
    there is nothing published for it to fetch. Treat it as unproven code until item 1 and item 3 land.
-3. **A deployment walked through end to end.** Two different claims, and only the weaker one is
-   currently reachable:
+3. **A deployment walked through end to end.** In progress on a spare card, and already earning its
+   keep: three separate blockers turned up before `deploy.sh` was even reached, all now written into
+   `BRINGUP.md` — the download page defaults to an Ubuntu release Kria-PYNQ cannot install on, the
+   stock image has no C compiler for two dependencies that lack aarch64 wheels, and the firmware step
+   every guide insists on is usually unnecessary and is the only step that can brick the board.
+
+   Two different claims, and only the weaker one is currently reachable:
    - *the procedure is complete* — wipe the development board, deploy using only `deploy.sh`. This
      catches every step that exists only in somebody's memory, and it is planned.
    - *a stranger can deploy it* — someone who has never seen this repository does it unaided. **This
