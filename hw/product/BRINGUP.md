@@ -1,6 +1,6 @@
 # Board bring-up — before `deploy.sh`
 
-`deploy.sh` starts from a KV260 that already runs Kria-PYNQ. Getting to *that* is two steps it cannot
+`deploy.sh` starts from a KV260 that already runs Kria-PYNQ. Getting to *that* is several steps it cannot
 do for you, and both have a trap that the upstream instructions do not mention. Everything here was
 found by wiping a card and following the official docs, in that order, and hitting each wall in turn.
 
@@ -41,11 +41,29 @@ Anything ≥ 2022.1 means you are done — skip the update. **Firmware lives in 
 on the SD card**, so it survives reflashing and card swaps: if the board has ever booted 22.04, its
 firmware is already new enough.
 
-## 3. Install the build toolchain **before** Kria-PYNQ
+## 3. Wait out the first-boot upgrade
+
+A freshly flashed image starts `unattended-upgrades`, which on 22.04 pulls roughly **200 packages** —
+`dpkg`, `systemd`, `perl` and `libc-bin` among them — and on an SD card that takes **hours**. It holds
+the dpkg lock the entire time, so every `apt` command you try meanwhile simply refuses to run, and the
+refusal reads like a broken installer rather than a busy machine.
+
+```bash
+# finished when this prints nothing
+pgrep -af /usr/bin/unattended-upgrade
+```
+
+**Do not kill it.** It is upgrading dpkg and systemd themselves; interrupting it mid-transaction is how
+you get a system that cannot install anything again. If you must script around it, let apt do the
+waiting — `apt-get -o DPkg::Lock::Timeout=3600 install ...` — rather than polling for the lock
+yourself.
+
+## 4. Install the build toolchain **before** Kria-PYNQ
 
 ```bash
 sudo apt update
 sudo apt install -y build-essential python3-dev portaudio19-dev libcairo2-dev pkg-config
+sudo apt install -y libboost-dev
 ```
 
 > **The trap.** The stock Kria Ubuntu image ships **no C compiler**, and `install.sh` does not install
@@ -62,7 +80,28 @@ sudo apt install -y build-essential python3-dev portaudio19-dev libcairo2-dev pk
 > the headers those two need. Neither package is used by the decoder — they are dependencies of the
 > Jupyter demo stack that Kria-PYNQ installs wholesale — but the install is all-or-nothing.
 
-## 4. Install Kria-PYNQ, pinned to v3.0
+> **The second trap, further in.** With the compiler present the build gets as far as **PYNQ itself**
+> and then dies on a missing Boost header:
+>
+> ```
+> displayport.cpp:19:10: fatal error: boost/scope_exit.hpp: No such file or directory
+> error: command '/usr/bin/make' failed with exit code 2
+> ```
+>
+> `libboost-dev` fixes it, and it is a **separate `apt install` line above on purpose**: apt is
+> transactional, so one unsatisfiable package fails the whole command and takes the packages you
+> actually needed down with it. We lost a cycle to exactly that — bundling a speculative `libdrm-dev`
+> alongside `libboost-dev` produced `pkgProblemResolver::Resolve generated breaks`, and *nothing*
+> installed, including the Boost header PYNQ was waiting for. Install the minimum; add anything else
+> one line at a time.
+
+**Sanity check before continuing** — all four must be present:
+
+```bash
+command -v gcc && ls /usr/include/portaudio.h /usr/include/boost/scope_exit.hpp && pkg-config --modversion cairo
+```
+
+## 5. Install Kria-PYNQ, pinned to v3.0
 
 ```bash
 git clone https://github.com/Xilinx/Kria-PYNQ.git
@@ -82,7 +121,7 @@ Verify before continuing:
 /usr/local/share/pynq-venv/bin/python3 -c "import pynq; print(pynq.__version__)"   # expect 3.0.1
 ```
 
-## 5. Now run `deploy.sh`
+## 6. Now run `deploy.sh`
 
 ```bash
 sudo ./deploy.sh

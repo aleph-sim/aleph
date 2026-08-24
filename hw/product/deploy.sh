@@ -62,9 +62,10 @@ if [ -r /proc/device-tree/model ]; then
 fi
 
 [ -x "$PYNQ_PY" ] || die "no PYNQ python at $PYNQ_PY.
-       This board is not brought up yet. See hw/product/BRINGUP.md -- it is four steps, and three of
-       them are traps the upstream instructions do not warn about (Ubuntu 22.04 not 24.04; the stock
-       image ships no C compiler; pin Kria-PYNQ to v3.0).
+       This board is not brought up yet. See hw/product/BRINGUP.md -- six steps, most of them traps
+       the upstream instructions do not warn about (Ubuntu 22.04 not 24.04; a multi-hour first-boot
+       upgrade that holds the dpkg lock; no C compiler and no Boost headers in the stock image;
+       pin Kria-PYNQ to v3.0).
        If your PYNQ lives elsewhere, set PYNQ_PY=/path/to/python3."
 ok "pynq python: $PYNQ_PY"
 
