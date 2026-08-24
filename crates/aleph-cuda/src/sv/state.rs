@@ -72,8 +72,10 @@ impl CudaSvState {
     /// `HasAmplitudes` oracle hook and interop go through this.
     pub fn amplitudes_vec(&self) -> Vec<Complex<f64>> {
         let host = self.to_host();
-        host.chunks_exact(2)
-            .map(|c| Complex::new(c[0], c[1]))
+        host.as_chunks::<2>()
+            .0
+            .iter()
+            .map(|&[re, im]| Complex::new(re, im))
             .collect()
     }
 }
