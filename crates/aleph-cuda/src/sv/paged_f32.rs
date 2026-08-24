@@ -52,8 +52,10 @@ impl PagedSvStateF32 {
     /// large `n` use [`Self::norm_sqr`], which streams the pinned buffer in place.
     pub fn amplitudes_vec(&self) -> Vec<Complex> {
         let host = self.host.as_slice().expect("pinned host sync");
-        host.chunks_exact(2)
-            .map(|c| Complex::new(c[0] as f64, c[1] as f64))
+        host.as_chunks::<2>()
+            .0
+            .iter()
+            .map(|&[re, im]| Complex::new(re as f64, im as f64))
             .collect()
     }
 
@@ -62,8 +64,10 @@ impl PagedSvStateF32 {
     /// circuit).
     pub fn norm_sqr(&self) -> f64 {
         let host = self.host.as_slice().expect("pinned host sync");
-        host.chunks_exact(2)
-            .map(|c| (c[0] as f64) * (c[0] as f64) + (c[1] as f64) * (c[1] as f64))
+        host.as_chunks::<2>()
+            .0
+            .iter()
+            .map(|&[re, im]| (re as f64) * (re as f64) + (im as f64) * (im as f64))
             .sum()
     }
 }

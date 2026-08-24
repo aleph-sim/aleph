@@ -2157,12 +2157,18 @@ fn enrich_probe(rounds: usize, prefix: &str, decoder_ps: &[f64]) {
     let syn_bytes = std::fs::read(format!("{prefix}.syn")).expect("read .syn");
     let rtl_bytes = std::fs::read(format!("{prefix}.rtl")).expect("read .rtl");
     let words: Vec<u32> = syn_bytes
-        .chunks_exact(4)
-        .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .copied()
+        .map(u32::from_le_bytes)
         .collect();
     let rtl: Vec<u16> = rtl_bytes
-        .chunks_exact(2)
-        .map(|b| u16::from_le_bytes([b[0], b[1]]))
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .copied()
+        .map(u16::from_le_bytes)
         .collect();
     let k = words.len() / ns;
     assert!(k > 0 && rtl.len() >= k, "empty or truncated enrich set");
