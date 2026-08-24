@@ -838,13 +838,36 @@ Current estimate, from log-interpolating our own two ORFS data points (4.54 mm²
 Pricing basis: TSMC 28 nm HPC+ RF mini@sic, €10,609 for the first mm² plus €919 per additional 0.1 mm²,
 1 mm² minimum, registration 3 months ahead.
 
-- [ ] **Step 1: Replace the interpolation with the Phase B synthesis-derived cell count**
+- [x] **Steps 1–3** — **DONE 2026-08-01.** Full report: `docs/perf/q7-02-b3-asap7-fullparallel.md`.
 
-- [ ] **Step 2: State the uncertainty band explicitly** — a two-point node interpolation is worth about
-  ±2×; at the pessimistic end 144/864 is ~10 mm² ≈ €93 k, which is still inside budget but leaves no
-  room for tooling.
+144/864 was run through the same ASAP7 flow and knobs as the 16/48 baseline, ~20 h, `rc = 0`:
 
-- [ ] **Step 3: Commit**
+| | 16/48 | **144/864** | ratio |
+|---|---|---|---|
+| cycles | 2085 | **543** | 0.26× |
+| Design area @ 50 % util | 81,090 µm² | **434,450 µm²** | 5.36× |
+| die | 0.162 mm² | **0.869 mm²** | 5.36× |
+| **fmax** | **686.13 MHz** | **614.59 MHz** | **0.896×** |
+| **latency** | 3.04 µs | **0.88 µs** | 3.44× |
+| DRC | 0 | **0** | clean both |
+
+**543 cycles ÷ 614.59 MHz = 0.88 µs — sub-microsecond, measured, DRC-clean.**
+
+**The geometry penalty is largely an FPGA artefact.** The same pair of steps cost **−35.3 %** of the
+clock on VU47P and only **−10.4 %** on ASAP7: an ASIC has no fixed routing tracks and no Laguna SLR
+crossings, and its buffer trees absorb the high-fanout control net that dominated the FPGA critical
+path. The top risk entered after B2 Step 1 is substantially retired.
+
+**Fab cost:** the 7 nm point for 144/864 is now measured rather than interpolated. Scaling the measured
+5.36× onto the 16/48 28 nm estimate gives **~4.3 mm² ≈ €45 k**, consistent with the table above. This
+narrows the *geometry* half of the ±2× band, not the *node* half — which is now the whole problem:
+
+- [ ] **Step 4 (NEW, and now the decisive open question of the silicon track): establish what 28 nm
+  does to this design.** ASAP7 is predictive 7 nm; Phase E targets TSMC 28 nm, and nothing in this
+  repository measures the gap. 0.88 µs carries only 12 % margin, so **a 20 % node penalty erases the
+  sub-µs claim** (1.2× slower → 1.06 µs; 1.5× → 1.33 µs). Sub-microsecond is supported by measurement
+  on a proxy node, not established on the target one. Until this is answered, quote 0.88 µs as
+  "ASAP7 7 nm predictive", never as "the chip".
 
 ---
 
@@ -1024,7 +1047,9 @@ rather than quietly ignored — the replacement trigger is Phase C's gate.
 |---|---|---|---|
 | ~~144/864 does not generate~~ **RETIRED 2026-07-30**: B0 Option A fixed the three generator defects; 144/864 is bit-exact at 543 cycles | — | — | Cost ~€0 to find and ~€0 to fix, before any FPGA rental let alone silicon |
 | ~~144/864 does not fit~~ **RETIRED 2026-07-31**: it places and routes at **76.3 % of a VU47P**, under the 90 % gate | — | — | Settled for $5.50 of instance time |
-| **The clock is geometry-dependent, and the sub-µs case assumed it was not** — *new, and now the top risk* | **High.** Measured: going 64/192 → 144/864 on the same part cost **150.4 → 97.3 MHz**, a third of the clock, to control-net distribution across three SLRs. The 686 MHz ASAP7 figure the silicon case rests on was measured on **16/48**, a geometry 8.5× smaller | If even half that penalty transfers to 28 nm, 543 cycles at ~450 MHz is **1.2 µs** and sub-microsecond is gone — which removes the entire technical justification for the chip | **Task B3: run 144/864 through the ASIC flow.** Free, on our own box, and now the decisive measurement of the track. Separately, the FPGA penalty is partly an artefact of fixed interconnect and Laguna crossings that an ASIC does not have — do not assume it transfers, but do not assume it does not |
+| ~~The clock is geometry-dependent~~ **LARGELY RETIRED 2026-08-01 by Task B3**: on ASAP7 the same geometry step costs **−10.4 %**, not the FPGA's −35.3 %. 543 cycles at 614.59 MHz = **0.88 µs**, DRC-clean | Low | — | The FPGA penalty was mostly fixed interconnect and Laguna SLR crossings, which an ASIC does not have. Cost €0 to settle |
+| **The node: 0.88 µs is measured on ASAP7 7 nm predictive, and the target is TSMC 28 nm** — *new top risk* | **High.** Nothing in this repository measures the 7 nm → 28 nm gap, and the margin is only 12 %: a **1.2× node penalty gives 1.06 µs** and the sub-µs claim is gone. 1.5× gives 1.33 µs | Sub-microsecond is the entire technical justification for the chip over a large FPGA. Losing it does not stop the product — it stops the *chip* | Task B3 Step 4. Until answered, every public figure must read "ASAP7 7 nm predictive", never "the chip". A 28 nm PDK is Phase E Task E1, which is a gate rather than a step, so this may not be answerable before that gate |
+| **Neither ASAP7 run is sign-off clean** — 35,616 hold violations at 144/864, 44,704 at 16/48 | **High** for tape-out, none for the reports | Hold violations are not fixed by slowing the clock. A tape-out on this netlist would fail | `repair_timing` segfaults on this netlist class — Phase A Task A3. That task is therefore on the critical path to silicon, not merely to a tidy report |
 | **The 97.3 MHz may be the defaults rather than the design** | Medium | If replication recovers the clock, the FPGA appliance-v2 story improves; if it does not, the control-distribution problem is structural and follows the design into silicon | One ~$4 follow-up run with `MAX_FANOUT` / per-bank replication on the `pc` counter. Untried: this was a default-directive run with no floorplanning |
 | Sub-µs unreachable even after B0, because Fmax is capped ~686 MHz | **High** | 64/192 lands at 1.33 µs, not sub-µs; Riverlane already ships <1 µs | Needs the clock-structure work (A1: 15,951 gated-clock nets), which is an RTL enable-granularity change, not a tooling flag. Decide whether that is in scope before Phase E |
 | No sign-off EDA access at 28 nm | **High** | Blocks Phase E entirely | Phase E Task E1 is a gate, not a step; EuroCDP and academic partnership are the routes; Phase D proves the flow at 130 nm regardless |
