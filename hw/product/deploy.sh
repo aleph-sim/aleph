@@ -29,6 +29,10 @@ BASE_ADDR="${BASE_ADDR:-0xA0000000}"
 # a full debugging campaign (issue #478) before the mismatch was traced to the prior, not the core.
 # So the prior travels in the filename and is asserted here rather than left implicit.
 BITSTREAM="${BITSTREAM:-bp_kv260_stream_banked_p003.bit}"
+# PYNQ builds its IP map from the hardware-handoff file, and finds it by basename next to the .bit.
+# Without it the overlay loads but the DMA is invisible, the driver falls back to a hardcoded base,
+# and every DMA status register reads 0x00000000 -- which looks like dead hardware, not a missing file.
+HWH="${BITSTREAM%.bit}.hwh"
 PRIOR="0.003"
 GEOMETRY="16/48 banked, gross bivariate-bicycle [[144,12,12]]"
 
@@ -95,13 +99,14 @@ fetch() {
   curl -fsSL --retry 3 -o "$f.part" "$url" \
     || die "could not download $f from $url
        If this board has no internet, copy the four release files into $INSTALL_DIR by hand
-       and re-run: $BITSTREAM $VECTORS $DRIVER $SUMS"
+       and re-run: $BITSTREAM $HWH $VECTORS $DRIVER $SUMS"
   mv "$f.part" "$f"
   ok "$f (downloaded)"
 }
 
 fetch "$SUMS"
 fetch "$BITSTREAM"
+fetch "$HWH"
 fetch "$VECTORS"
 fetch "$DRIVER"
 
@@ -110,7 +115,7 @@ fetch "$DRIVER"
 say "Verifying checksums"
 
 # Check only the files we actually fetched: the release may carry more than the self-test needs.
-for f in "$BITSTREAM" "$VECTORS" "$DRIVER"; do
+for f in "$BITSTREAM" "$HWH" "$VECTORS" "$DRIVER"; do
   grep -F " $f" "$SUMS" > ".sum.$f" 2>/dev/null || die "$f is not listed in $SUMS.
        Either the release is malformed or \$BITSTREAM does not match this release."
   sha256sum -c ".sum.$f" >/dev/null 2>&1 \
@@ -128,7 +133,9 @@ printf '    geometry: %s\n    noise prior baked into this bitstream: p = %s\n\n'
 
 LOG="$INSTALL_DIR/selftest.log"
 set +e
-env XILINX_XRT=/usr "$PYNQ_PY" "$DRIVER" "$BITSTREAM" "$VECTORS" --base "$BASE_ADDR" 2>&1 | tee "$LOG"
+# -u: stdout is a pipe into tee, so Python would block-buffer and the self-test would sit silent
+# for several minutes before printing anything at once. Silence here is indistinguishable from a hang.
+env XILINX_XRT=/usr "$PYNQ_PY" -u "$DRIVER" "$BITSTREAM" "$VECTORS" --base "$BASE_ADDR" 2>&1 | tee "$LOG"
 rc=${PIPESTATUS[0]}
 set -e
 

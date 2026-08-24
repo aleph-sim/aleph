@@ -17,12 +17,29 @@ on every push (`.github/workflows/hw.yml`).
 | file | what it is |
 |---|---|
 | `bp_kv260_stream_banked_p003.bit` | the PL image: banked 16/48 core, batched AXI-DMA front end, noise prior p = 0.003 |
+| `bp_kv260_stream_banked_p003.hwh` | the hardware handoff — **not optional**, see below |
 | `bp_circ_vectors.txt` | the 40-shot circuit-level golden — the same one the co-simulation gates on |
 | `bp_stream_banked_kv260.py` | the self-test / batch driver |
 | `SHA256SUMS` | checksums for all of the above; `deploy.sh` refuses to run anything that fails it |
 
 `deploy.sh` is *not* a release artefact — users get it from the repository, because it is the thing that
 fetches and verifies the release.
+
+### The `.hwh` ships with the `.bit`, and its basename must match
+
+PYNQ builds its IP map from the hardware-handoff file, which it locates **by basename beside the
+`.bit`**. Ship the bitstream alone and the overlay still loads — it just contains no IP. The driver
+then falls back to a hardcoded base address and every DMA status register reads `0x00000000`, so the
+failure presents as
+
+```
+[board] Overlay OK but no DMA IP found; using raw MMIO at 0xa0000000
+RuntimeError: DMA channel did not go idle (MM2S_SR=0x00000000 S2MM_SR=0x00000000)
+```
+
+which reads like broken hardware rather than a missing file. This cost a debugging cycle on the first
+walkthrough. If you rename the bitstream — and you should, to carry the prior — **rename the `.hwh` to
+match**.
 
 ### The noise prior belongs in the filename
 
@@ -54,10 +71,12 @@ bitstream whose name does not say what p it was built at.
 
    ```bash
    mkdir -p /tmp/appliance-v1 && cd /tmp/appliance-v1
-   cp /path/to/bp_kv260_stream_banked_p003.bit .
+   cp /path/to/bp_kv260_stream_banked.bit  bp_kv260_stream_banked_p003.bit
+   cp /path/to/bp_kv260_stream_banked.hwh  bp_kv260_stream_banked_p003.hwh   # basename must match
    cp ~/GitHub/aleph/hw/bp_circ_vectors.txt .
    cp ~/GitHub/aleph/hw/sw/bp_stream_banked_kv260.py .
-   sha256sum bp_kv260_stream_banked_p003.bit bp_circ_vectors.txt bp_stream_banked_kv260.py > SHA256SUMS
+   sha256sum bp_kv260_stream_banked_p003.bit bp_kv260_stream_banked_p003.hwh \
+             bp_circ_vectors.txt bp_stream_banked_kv260.py > SHA256SUMS
    ```
 
 4. **Create the release as a draft**, so nothing is public until a deployment has been walked through:
@@ -68,7 +87,8 @@ bitstream whose name does not say what p it was built at.
      --target <the-commit-sha> \
      --title "Decoder appliance v1 — KV260, banked 16/48, p=0.003" \
      --notes-file notes.md \
-     bp_kv260_stream_banked_p003.bit bp_circ_vectors.txt bp_stream_banked_kv260.py SHA256SUMS
+     bp_kv260_stream_banked_p003.bit bp_kv260_stream_banked_p003.hwh \
+     bp_circ_vectors.txt bp_stream_banked_kv260.py SHA256SUMS
    ```
 
 5. **Deploy from the draft onto a board that has been wiped**, using only `deploy.sh` and the README.

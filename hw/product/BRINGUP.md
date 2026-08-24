@@ -115,11 +115,39 @@ workaround written specifically against PYNQ 3.0.1 — `pynq.Overlay()` fails on
 banks, so the PL is programmed with `pynq.Bitstream().download()` and the DMA engine driven directly
 over MMIO. That has not been tested on any other PYNQ version.
 
-Verify before continuing:
+Verify before continuing — **from `/`, not from the clone**, because `~/Kria-PYNQ` contains a directory
+named `pynq` that shadows the real module and makes a failed install look half-working:
 
 ```bash
-/usr/local/share/pynq-venv/bin/python3 -c "import pynq; print(pynq.__version__)"   # expect 3.0.1
+cd / && /usr/local/share/pynq-venv/bin/python3 -c \
+  "import pynq, importlib.metadata as m; print(m.version('pynq'))"   # expect 3.0.1
 ```
+
+`install.sh` may still exit non-zero after this succeeds. On our run it failed on `pynq_helloworld`,
+a demo-notebook package with nothing to do with the decoder, *after* PYNQ itself was installed
+correctly. Trust the version check over the exit code, and check the tail of the log to see what
+actually failed before dismissing it.
+
+The installer is also **interactive** — `jupyter_core` asks whether to overwrite the default notebook
+config. Run it in a terminal and answer. If you must run it detached, feed it answers (`yes | bash
+install.sh -b KV260`); with no stdin at all it dies with `EOFError`.
+
+## 5a. Pin numpy below 2
+
+```bash
+sudo /usr/local/share/pynq-venv/bin/python3 -m pip install "numpy<2"
+```
+
+> **The trap that survives installation.** Kria-PYNQ's 2022 requirements do not pin numpy, so pip
+> resolves **numpy 2.x** today. PYNQ 3.0.1 predates it, and its `PynqBuffer` sets an attribute on an
+> ndarray subclass in a way numpy 2 forbids. Nothing fails at install time. It fails the first time you
+> allocate a DMA buffer:
+>
+> ```
+> AttributeError: attribute 'device' of 'numpy.ndarray' objects is not writable
+> ```
+>
+> `numpy<2` resolves to 1.26.4 and the decoder works. This is the last wall, and the quietest.
 
 ## 6. Now run `deploy.sh`
 

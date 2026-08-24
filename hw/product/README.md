@@ -100,18 +100,22 @@ Honest list, in the order it blocks people:
 1. **A published bitstream.** The working images live on the development board, not in a release.
    Nobody outside can deploy without rebuilding from RTL, which needs Vivado and hours. The procedure
    for publishing one is written (`RELEASING.md`); it has not been run.
-2. ~~**`deploy.sh`**~~ — **written** (`deploy.sh`): preflight, fetch, checksum, program the PL, decode
-   the 40-shot golden as a hard 40/40 gate, report latency. **It has never been executed**, because
-   there is nothing published for it to fetch. Treat it as unproven code until item 1 and item 3 land.
-3. **A deployment walked through end to end.** In progress on a spare card, and already earning its
-   keep: three separate blockers turned up before `deploy.sh` was even reached, all now written into
-   `BRINGUP.md` — the download page defaults to an Ubuntu release Kria-PYNQ cannot install on, the
-   stock image has no C compiler for two dependencies that lack aarch64 wheels, and the firmware step
-   every guide insists on is usually unnecessary and is the only step that can brick the board.
+2. ~~**`deploy.sh`**~~ — **written and now executed end to end.** On 2026-08-24 it took a freshly
+   flashed card to a verified decoder: preflight, artefact fetch, SHA-256 check, PL programming, and
+   `CORRECTNESS: PASS (40/40 batched decodes match golden on KV260 silicon)` at 4.34e4 decodes/s. The
+   fetch path is still unexercised — the files were placed locally, because item 1 has not happened.
+3. **A deployment walked through end to end.** **Done on a spare card, 2026-08-24**, and it earned its
+   keep: **eight** blockers, none of them in our code, all now written into `BRINGUP.md` and
+   `RELEASING.md`. The download page defaults to an Ubuntu release Kria-PYNQ cannot install on; a
+   multi-hour first-boot upgrade holds the dpkg lock; the stock image has no C compiler and no Boost
+   headers; the firmware step every guide insists on is usually unnecessary and is the only one that
+   can brick the board; the installer is interactive and exits non-zero over an unrelated demo package;
+   pip resolves a numpy that breaks PYNQ at runtime rather than at install time; and shipping the
+   `.bit` without its `.hwh` presents as dead DMA hardware rather than a missing file.
 
    Two different claims, and only the weaker one is currently reachable:
-   - *the procedure is complete* — wipe the development board, deploy using only `deploy.sh`. This
-     catches every step that exists only in somebody's memory, and it is planned.
+   - *the procedure is complete* — **achieved.** A fresh card, deployed using only these documents,
+     reaching a 40/40 self-test. Every step that existed only in somebody's memory is now written down.
    - *a stranger can deploy it* — someone who has never seen this repository does it unaided. **This
      needs a second board or a second person, and we have neither.**
 
