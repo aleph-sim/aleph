@@ -121,16 +121,20 @@ impl CudaSvStateF32 {
     /// comparison. Allocates a `2^n` host buffer — small-`n` use only.
     pub fn amplitudes_vec(&self) -> Vec<Complex> {
         let host = self.amps.to_vec(&self.ctx).expect("device->host f32 copy");
-        host.chunks_exact(2)
-            .map(|c| Complex::new(c[0] as f64, c[1] as f64))
+        host.as_chunks::<2>()
+            .0
+            .iter()
+            .map(|&[re, im]| Complex::new(re as f64, im as f64))
             .collect()
     }
 
     /// `Σ |amp|²` (f64 accumulation), a large-`n` sanity check.
     pub fn norm_sqr(&self) -> f64 {
         let host = self.amps.to_vec(&self.ctx).expect("device->host f32 copy");
-        host.chunks_exact(2)
-            .map(|c| (c[0] as f64) * (c[0] as f64) + (c[1] as f64) * (c[1] as f64))
+        host.as_chunks::<2>()
+            .0
+            .iter()
+            .map(|&[re, im]| (re as f64) * (re as f64) + (im as f64) * (im as f64))
             .sum()
     }
 }
