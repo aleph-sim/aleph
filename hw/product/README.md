@@ -83,20 +83,44 @@ hardware costs $300 rather than $30,000.
 - **RTL and simulation:** this repository. `make -C hw bpbanked` runs the banked core against the
   golden in about six minutes and needs only Verilator ≥ 5.050 and a Rust toolchain.
 - **Bitstream:** not yet published as a release artefact — see below.
-- **Driver:** `hw/sw/bp_stream_banked_kv260.py` (PYNQ) is the working starting point.
+- **On a board:** first bring the board up — **`BRINGUP.md`**, which is Ubuntu 22.04 (*not* 24.04),
+  a firmware check, a build toolchain the stock image lacks, and Kria-PYNQ pinned to v3.0. Each of
+  those four is a wall someone hits if they follow the upstream instructions instead. Then
+  `sudo ./deploy.sh`: it fetches the published release, checks every artefact against its SHA-256,
+  programs the PL and requires 40/40 bit-exact against the golden before declaring success. It needs no
+  Rust toolchain and installs nothing outside `/opt/aleph-decoder`. **Until the release in item 1 below
+  exists there is nothing for it to fetch.**
+- **Driver:** `hw/sw/bp_stream_banked_kv260.py` (PYNQ) — what `deploy.sh` runs, and the starting point
+  for your own integration.
 
 ## What is still missing before v1 can be called shipped
 
 Honest list, in the order it blocks people:
 
 1. **A published bitstream.** The working images live on the development board, not in a release.
-   Nobody outside can deploy without rebuilding from RTL, which needs Vivado and hours.
-2. **`deploy.sh`** — one command from a bare KV260 to a running self-test. Today the steps are spread
-   across `hw/sw/` scripts and institutional memory.
-3. **A fresh-board test.** The deployment has never been walked through by someone who did not build
-   it. Until that happens the claim "deployable in an afternoon" is untested, and the number of
-   external deployments — which is the gate for everything downstream on the silicon track — cannot
-   honestly be counted.
+   Nobody outside can deploy without rebuilding from RTL, which needs Vivado and hours. The procedure
+   for publishing one is written (`RELEASING.md`); it has not been run.
+2. ~~**`deploy.sh`**~~ — **written and now executed end to end.** On 2026-08-24 it took a freshly
+   flashed card to a verified decoder: preflight, artefact fetch, SHA-256 check, PL programming, and
+   `CORRECTNESS: PASS (40/40 batched decodes match golden on KV260 silicon)` at 4.34e4 decodes/s. The
+   fetch path is still unexercised — the files were placed locally, because item 1 has not happened.
+3. **A deployment walked through end to end.** **Done on a spare card, 2026-08-24**, and it earned its
+   keep: **eight** blockers, none of them in our code, all now written into `BRINGUP.md` and
+   `RELEASING.md`. The download page defaults to an Ubuntu release Kria-PYNQ cannot install on; a
+   multi-hour first-boot upgrade holds the dpkg lock; the stock image has no C compiler and no Boost
+   headers; the firmware step every guide insists on is usually unnecessary and is the only one that
+   can brick the board; the installer is interactive and exits non-zero over an unrelated demo package;
+   pip resolves a numpy that breaks PYNQ at runtime rather than at install time; and shipping the
+   `.bit` without its `.hwh` presents as dead DMA hardware rather than a missing file.
+
+   Two different claims, and only the weaker one is currently reachable:
+   - *the procedure is complete* — **achieved.** A fresh card, deployed using only these documents,
+     reaching a 40/40 self-test. Every step that existed only in somebody's memory is now written down.
+   - *a stranger can deploy it* — someone who has never seen this repository does it unaided. **This
+     needs a second board or a second person, and we have neither.**
+
+   Only the second is what the plan's Task P1 Step 4 asks for. The count of external deployments gates
+   every silicon decision downstream, so the difference is recorded rather than blurred.
 4. **A support policy.** What is answered, how fast, what "stable" means. One page, not yet written.
 
 Items 1–3 are the difference between a repository and a product, and they are cheap. They are not done
