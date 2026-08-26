@@ -79,11 +79,14 @@ bitstream whose name does not say what p it was built at.
              bp_circ_vectors.txt bp_stream_banked_kv260.py > SHA256SUMS
    ```
 
-4. **Create the release as a draft**, so nothing is public until a deployment has been walked through:
+4. **Create the release as a pre-release** — *not* a draft. `deploy.sh` fetches assets by their
+   public `releases/download/` URL with plain `curl`, and draft assets are only reachable through the
+   authenticated API; a draft would make step 5 impossible without hand-copying, which defeats it.
+   The pre-release flag is what keeps it out of "latest" until step 6:
 
    ```bash
    gh release create appliance-v1 \
-     --draft \
+     --prerelease \
      --target <the-commit-sha> \
      --title "Decoder appliance v1 — KV260, banked 16/48, p=0.003" \
      --notes-file notes.md \
@@ -91,10 +94,11 @@ bitstream whose name does not say what p it was built at.
      bp_circ_vectors.txt bp_stream_banked_kv260.py SHA256SUMS
    ```
 
-5. **Deploy from the draft onto a board that has been wiped**, using only `deploy.sh` and the README.
+5. **Deploy from the pre-release onto a board whose `/opt/aleph-decoder` has been removed**, using only `deploy.sh` and the README.
    Anything you have to fix by hand is a bug in the script, not a step to remember. Fix it and repeat.
 
-6. **Publish**, and record in `hw/product/README.md` what was verified and by whom.
+6. **Promote** (`gh release edit appliance-v1 --prerelease=false`), and record in `hw/product/README.md`
+   what was verified and by whom.
 
 -----
 

@@ -82,14 +82,13 @@ hardware costs $300 rather than $30,000.
 
 - **RTL and simulation:** this repository. `make -C hw bpbanked` runs the banked core against the
   golden in about six minutes and needs only Verilator ≥ 5.050 and a Rust toolchain.
-- **Bitstream:** not yet published as a release artefact — see below.
+- **Bitstream:** [`appliance-v1`](https://github.com/aleph-sim/aleph/releases/tag/appliance-v1) (pre-release) — `deploy.sh` fetches it.
 - **On a board:** first bring the board up — **`BRINGUP.md`**, which is Ubuntu 22.04 (*not* 24.04),
   a firmware check, a build toolchain the stock image lacks, and Kria-PYNQ pinned to v3.0. Each of
   those four is a wall someone hits if they follow the upstream instructions instead. Then
   `sudo ./deploy.sh`: it fetches the published release, checks every artefact against its SHA-256,
   programs the PL and requires 40/40 bit-exact against the golden before declaring success. It needs no
-  Rust toolchain and installs nothing outside `/opt/aleph-decoder`. **Until the release in item 1 below
-  exists there is nothing for it to fetch.**
+  Rust toolchain and installs nothing outside `/opt/aleph-decoder`. Verified end to end against the published release on 2026-08-26.
 - **Driver:** `hw/sw/bp_stream_banked_kv260.py` (PYNQ) — what `deploy.sh` runs, and the starting point
   for your own integration.
 
@@ -97,13 +96,15 @@ hardware costs $300 rather than $30,000.
 
 Honest list, in the order it blocks people:
 
-1. **A published bitstream.** The working images live on the development board, not in a release.
-   Nobody outside can deploy without rebuilding from RTL, which needs Vivado and hours. The procedure
-   for publishing one is written (`RELEASING.md`); it has not been run.
-2. ~~**`deploy.sh`**~~ — **written and now executed end to end.** On 2026-08-24 it took a freshly
-   flashed card to a verified decoder: preflight, artefact fetch, SHA-256 check, PL programming, and
-   `CORRECTNESS: PASS (40/40 batched decodes match golden on KV260 silicon)` at 4.34e4 decodes/s. The
-   fetch path is still unexercised — the files were placed locally, because item 1 has not happened.
+1. ~~**A published bitstream.**~~ — **published 2026-08-26** as pre-release
+   [`appliance-v1`](https://github.com/aleph-sim/aleph/releases/tag/appliance-v1): `.bit` + `.hwh`,
+   golden vectors, driver, `SHA256SUMS`; source commit `99d02a2`, `make -C hw bpbanked` re-run on it
+   (PASS, 40/40, worst 2085 cycles). Pre-release rather than draft on purpose: `deploy.sh` fetches by
+   public URL, and draft assets are not reachable that way (`RELEASING.md` step 4).
+2. ~~**`deploy.sh`**~~ — **executed end to end, including the fetch path.** 2026-08-24, spare card,
+   artefacts placed by hand: `CORRECTNESS: PASS (40/40 ...)` at 4.34e4 decodes/s. 2026-08-26, second
+   wiped card, `/opt/aleph-decoder` absent: every artefact `(downloaded)` from the release, checksums
+   verified, PL programmed, 40/40 at the same throughput.
 3. **A deployment walked through end to end.** **Done on a spare card, 2026-08-24**, and it earned its
    keep: **nine** blockers (the ninth on the 2026-08-25 second reflash), none of them in our code,
    all now written into `BRINGUP.md` and `RELEASING.md`. The download page defaults to an Ubuntu release Kria-PYNQ cannot install on; a
