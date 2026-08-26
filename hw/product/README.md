@@ -105,13 +105,15 @@ Honest list, in the order it blocks people:
    `CORRECTNESS: PASS (40/40 batched decodes match golden on KV260 silicon)` at 4.34e4 decodes/s. The
    fetch path is still unexercised — the files were placed locally, because item 1 has not happened.
 3. **A deployment walked through end to end.** **Done on a spare card, 2026-08-24**, and it earned its
-   keep: **eight** blockers, none of them in our code, all now written into `BRINGUP.md` and
-   `RELEASING.md`. The download page defaults to an Ubuntu release Kria-PYNQ cannot install on; a
+   keep: **nine** blockers (the ninth on the 2026-08-25 second reflash), none of them in our code,
+   all now written into `BRINGUP.md` and `RELEASING.md`. The download page defaults to an Ubuntu release Kria-PYNQ cannot install on; a
    multi-hour first-boot upgrade holds the dpkg lock; the stock image has no C compiler and no Boost
    headers; the firmware step every guide insists on is usually unnecessary and is the only one that
    can brick the board; the installer is interactive and exits non-zero over an unrelated demo package;
-   pip resolves a numpy that breaks PYNQ at runtime rather than at install time; and shipping the
-   `.bit` without its `.hwh` presents as dead DMA hardware rather than a missing file.
+   pip resolves a numpy that breaks PYNQ mid-install and at runtime; pip's isolated build environment
+   pulls a `wheel` that demands a `packaging` newer than jammy ships, so PyAudio fails before it
+   compiles — both now held by one `PIP_CONSTRAINT` file rather than patched after the fact; and
+   shipping the `.bit` without its `.hwh` presents as dead DMA hardware rather than a missing file.
 
    Two different claims, and only the weaker one is currently reachable:
    - *the procedure is complete* — **achieved.** A fresh card, deployed using only these documents,

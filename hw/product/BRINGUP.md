@@ -101,26 +101,76 @@ sudo apt install -y libboost-dev
 command -v gcc && ls /usr/include/portaudio.h /usr/include/boost/scope_exit.hpp && pkg-config --modversion cairo
 ```
 
-## 5. Install Kria-PYNQ, pinned to v3.0
+## 5. Install Kria-PYNQ, pinned to v3.0 — under a pip constraint file
 
 ```bash
+sudo tee /etc/pip-constraints.txt <<'EOF'
+numpy<2
+wheel<0.45
+EOF
+
 git clone https://github.com/Xilinx/Kria-PYNQ.git
 cd Kria-PYNQ
 git checkout v3.0
-sudo bash install.sh -b KV260      # ~25 minutes
+sudo env PIP_CONSTRAINT=/etc/pip-constraints.txt bash install.sh -b KV260      # ~25 minutes
 ```
+
+**`sudo env`, not plain `sudo`** — `sudo` drops environment variables, and without `PIP_CONSTRAINT`
+reaching every `pip` call inside `install.sh` neither pin below takes effect.
 
 **Pin the tag.** `main` moves and would give a different PYNQ version. The decoder driver carries a
 workaround written specifically against PYNQ 3.0.1 — `pynq.Overlay()` fails on designs with no PL DRAM
 banks, so the PL is programmed with `pynq.Bitstream().download()` and the DMA engine driven directly
 over MMIO. That has not been tested on any other PYNQ version.
 
+**Why a constraint file, and why these two pins.** Kria-PYNQ's 2022 requirements pin almost nothing,
+so `install.sh` resolves against *today's* PyPI, and two of today's packages break it. Both were hit
+on the 2026-08-25 reflash, and both were first fixed the wrong way — patched *after* the failure —
+before it became clear that only something governing every `pip` invocation of the run can hold:
+
+> **`wheel<0.45`.** PyAudio has no aarch64 wheel and builds from source in a pip *isolated build
+> environment*. pip populates that environment with the newest `wheel`, and `wheel` ≥ 0.45 (Nov 2024)
+> requires `packaging>=24`; the isolated environment cannot see the venv but *can* see the system
+> `/usr/lib/python3/dist-packages`, where jammy ships `packaging 21.3`. Result, before a single line
+> compiles:
+>
+> ```
+> pkg_resources.VersionConflict: (packaging 21.3 (/usr/lib/python3/dist-packages), Requirement.parse('packaging>=24.0'))
+> error: metadata-generation-failed
+> ```
+>
+> Installing a newer `packaging` into the venv does **nothing** — the build environment never sees the
+> venv. (Installing it into the *system* Python works, but reaches across `apt`'s territory.)
+> `PIP_CONSTRAINT` is the one pip setting honoured inside isolated build environments, so the pin
+> goes there.
+
+> **`numpy<2`.** PYNQ 3.0.1 predates numpy 2, and its `PynqBuffer` sets an attribute on an ndarray
+> subclass in a way numpy 2 forbids. An earlier revision of this page said to downgrade numpy *after*
+> `install.sh`; that is too late — `install.sh` itself imports numpy partway through and dies with
+> numpy's own *"downgrade to 'numpy<2' or try to upgrade the affected module"* banner. And even when
+> the installer survives, the first DMA buffer allocation fails:
+>
+> ```
+> AttributeError: attribute 'device' of 'numpy.ndarray' objects is not writable
+> ```
+>
+> With the constraint in force every step resolves numpy 1.26.4, and nothing later in the run can
+> upgrade it back.
+
+**If you already ran `install.sh` once without the constraint** (a venv with numpy 2 exists), repair it
+before re-running — the installer does not recreate the venv:
+
+```bash
+sudo /usr/local/share/pynq-venv/bin/python3 -m pip install "numpy<2" "packaging>=24"
+```
+
 Verify before continuing — **from `/`, not from the clone**, because `~/Kria-PYNQ` contains a directory
 named `pynq` that shadows the real module and makes a failed install look half-working:
 
 ```bash
 cd / && /usr/local/share/pynq-venv/bin/python3 -c \
-  "import pynq, importlib.metadata as m; print(m.version('pynq'))"   # expect 3.0.1
+  "import pynq, numpy, importlib.metadata as m; print(m.version('pynq'), numpy.__version__)"
+# expect: 3.0.1 1.26.4
 ```
 
 `install.sh` may still exit non-zero after this succeeds. On our run it failed on `pynq_helloworld`,
@@ -129,25 +179,9 @@ correctly. Trust the version check over the exit code, and check the tail of the
 actually failed before dismissing it.
 
 The installer is also **interactive** — `jupyter_core` asks whether to overwrite the default notebook
-config. Run it in a terminal and answer. If you must run it detached, feed it answers (`yes | bash
-install.sh -b KV260`); with no stdin at all it dies with `EOFError`.
-
-## 5a. Pin numpy below 2
-
-```bash
-sudo /usr/local/share/pynq-venv/bin/python3 -m pip install "numpy<2"
-```
-
-> **The trap that survives installation.** Kria-PYNQ's 2022 requirements do not pin numpy, so pip
-> resolves **numpy 2.x** today. PYNQ 3.0.1 predates it, and its `PynqBuffer` sets an attribute on an
-> ndarray subclass in a way numpy 2 forbids. Nothing fails at install time. It fails the first time you
-> allocate a DMA buffer:
->
-> ```
-> AttributeError: attribute 'device' of 'numpy.ndarray' objects is not writable
-> ```
->
-> `numpy<2` resolves to 1.26.4 and the decoder works. This is the last wall, and the quietest.
+config. Run it in a terminal and answer. If you must run it detached, feed it answers (`yes | sudo env
+PIP_CONSTRAINT=/etc/pip-constraints.txt bash install.sh -b KV260`); with no stdin at all it dies with
+`EOFError`.
 
 ## 6. Now run `deploy.sh`
 
