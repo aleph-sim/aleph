@@ -155,7 +155,10 @@ before it became clear that only something governing every `pip` invocation of t
 > ```
 >
 > With the constraint in force every step resolves numpy 1.26.4, and nothing later in the run can
-> upgrade it back.
+> upgrade it back. Verified 2026-08-26: a second wiped card, this procedure, `3.0.1 1.26.4` at the
+> check below. (Budget a slow link: `opencv-python` is 50 MB and the board's PyPI download timed out
+> once mid-file; re-running the same command resumes from pip's cache. `PIP_DEFAULT_TIMEOUT=300`
+> alongside `PIP_CONSTRAINT` helps.)
 
 **If you already ran `install.sh` once without the constraint** (a venv with numpy 2 exists), repair it
 before re-running — the installer does not recreate the venv:
