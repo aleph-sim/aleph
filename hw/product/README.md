@@ -82,7 +82,7 @@ hardware costs $300 rather than $30,000.
 
 - **RTL and simulation:** this repository. `make -C hw bpbanked` runs the banked core against the
   golden in about six minutes and needs only Verilator ≥ 5.050 and a Rust toolchain.
-- **Bitstream:** [`appliance-v1`](https://github.com/aleph-sim/aleph/releases/tag/appliance-v1) (pre-release) — `deploy.sh` fetches it.
+- **Bitstream:** [`appliance-v1`](https://github.com/aleph-sim/aleph/releases/tag/appliance-v1) — `deploy.sh` fetches it.
 - **On a board:** first bring the board up — **`BRINGUP.md`**, which is Ubuntu 22.04 (*not* 24.04),
   a firmware check, a build toolchain the stock image lacks, and Kria-PYNQ pinned to v3.0. Each of
   those four is a wall someone hits if they follow the upstream instructions instead. Then
@@ -100,7 +100,9 @@ Honest list, in the order it blocks people:
    [`appliance-v1`](https://github.com/aleph-sim/aleph/releases/tag/appliance-v1): `.bit` + `.hwh`,
    golden vectors, driver, `SHA256SUMS`; source commit `99d02a2`, `make -C hw bpbanked` re-run on it
    (PASS, 40/40, worst 2085 cycles). Pre-release rather than draft on purpose: `deploy.sh` fetches by
-   public URL, and draft assets are not reachable that way (`RELEASING.md` step 4).
+   public URL, and draft assets are not reachable that way (`RELEASING.md` step 4). **Promoted to a
+   full release 2026-08-27** by the maintainer after the three-card verification below (`RELEASING.md`
+   step 6); the "stranger" criterion in item 3 was *not* the bar for this — see there.
 2. ~~**`deploy.sh`**~~ — **executed end to end, including the fetch path.** 2026-08-24, spare card,
    artefacts placed by hand: `CORRECTNESS: PASS (40/40 ...)` at 4.34e4 decodes/s. 2026-08-26, second
    wiped card, `/opt/aleph-decoder` absent: every artefact `(downloaded)` from the release, checksums
@@ -120,7 +122,14 @@ Honest list, in the order it blocks people:
    - *the procedure is complete* — **achieved.** A fresh card, deployed using only these documents,
      reaching a 40/40 self-test. Every step that existed only in somebody's memory is now written down.
    - *a stranger can deploy it* — someone who has never seen this repository does it unaided. **This
-     needs a second board or a second person, and we have neither.**
+     needs a second board or a second person, and we have neither.** The nearest thing so far:
+     2026-08-27, a **third** wiped card, the author working *stranger-mode* — only these documents and
+     the release page, no memory of earlier runs allowed. Reached 40/40 at 4.34e4 decodes/s, and hit
+     **four gaps, all in the documents, none in the code**, each now fixed: no download URL for the
+     22.04 image; the `pynq_helloworld` failure was described but not quoted, so it was not recognised;
+     `BRINGUP.md` §6 never said how `deploy.sh` gets onto the board; and `curl` leaves it
+     non-executable, so `sudo ./deploy.sh` said *command not found*. That is the author, not a
+     stranger, so this item stays open.
 
    Only the second is what the plan's Task P1 Step 4 asks for. The count of external deployments gates
    every silicon decision downstream, so the difference is recorded rather than blurred.

@@ -18,8 +18,11 @@ been validated against:
 
 ## 1. Flash Ubuntu **22.04**, not 24.04
 
-Get *Certified Ubuntu for Xilinx Devices* for the KV260 and write it to the card with Raspberry Pi
-Imager, balenaEtcher or `dd`. Default login is `ubuntu` / `ubuntu`.
+Get *Certified Ubuntu for Xilinx Devices* for the KV260 from <https://ubuntu.com/download/amd-xilinx> —
+pick the **22.04 LTS** entry for the *Kria KV260*, not the 24.04 one at the top; the file is named
+`iot-limerick-kria-classic-desktop-2204-*.img.xz` (as of 2026-08-27 the direct link is
+<https://people.canonical.com/~platform/images/xilinx/kria-ubuntu-22.04/iot-limerick-kria-classic-desktop-2204-20240304-165.img.xz>). Write it to the card with Raspberry Pi Imager,
+balenaEtcher or `dd`. Default login is `ubuntu` / `ubuntu`.
 
 > **The trap.** Canonical's download page serves **24.04** by default now, and 24.04 boots fine on the
 > KV260 — so the mistake is invisible until much later. But **Kria-PYNQ has exactly two tags, v1.0 and
@@ -176,10 +179,25 @@ cd / && /usr/local/share/pynq-venv/bin/python3 -c \
 # expect: 3.0.1 1.26.4
 ```
 
-`install.sh` may still exit non-zero after this succeeds. On our run it failed on `pynq_helloworld`,
-a demo-notebook package with nothing to do with the decoder, *after* PYNQ itself was installed
-correctly. Trust the version check over the exit code, and check the tail of the log to see what
-actually failed before dismissing it.
+### `install.sh` exits non-zero on `pynq_helloworld` — that is expected
+
+On every run so far the installer's **last** step fails like this, *after* PYNQ itself is installed
+correctly:
+
+```
+KV260 notebooks
+Collecting pynq_helloworld
+  Using cached pynq_helloworld-3.0.0.tar.gz (4.1 MB)
+  Preparing metadata (pyproject.toml) ... error
+      ...
+      error: invalid command 'bdist_wheel'
+error: metadata-generation-failed
+```
+
+`pynq_helloworld` is a demo-notebook package with nothing to do with the decoder. If the version check
+above prints `3.0.1 1.26.4`, ignore the exit code and go to step 6. (The 2026-08-27 stranger-mode run
+stalled here for want of this paragraph: the error text was not quoted, so it did not look like "the
+known one".) If the version check fails, read the tail of the log — something *earlier* broke.
 
 The installer is also **interactive** — `jupyter_core` asks whether to overwrite the default notebook
 config. Run it in a terminal and answer. If you must run it detached, feed it answers (`yes | sudo env
@@ -188,9 +206,16 @@ PIP_CONSTRAINT=/etc/pip-constraints.txt bash install.sh -b KV260`); with no stdi
 
 ## 6. Now run `deploy.sh`
 
+`deploy.sh` is not on the board yet — it lives in this repository at `hw/product/deploy.sh`. Fetch it
+and run it with `bash` (`curl` does not set the execute bit, so `./deploy.sh` says *command not found*):
+
 ```bash
-sudo ./deploy.sh
+curl -fsSLO https://raw.githubusercontent.com/aleph-sim/aleph/main/hw/product/deploy.sh
+sudo bash deploy.sh
 ```
+
+It fetches the five release artefacts into `/opt/aleph-decoder`, verifies their SHA-256, programs the
+PL and must end with `CORRECTNESS: PASS (40/40 ...)`.
 
 -----
 
