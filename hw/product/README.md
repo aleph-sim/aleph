@@ -120,7 +120,14 @@ Honest list, in the order it blocks people:
    - *the procedure is complete* — **achieved.** A fresh card, deployed using only these documents,
      reaching a 40/40 self-test. Every step that existed only in somebody's memory is now written down.
    - *a stranger can deploy it* — someone who has never seen this repository does it unaided. **This
-     needs a second board or a second person, and we have neither.**
+     needs a second board or a second person, and we have neither.** The nearest thing so far:
+     2026-08-27, a **third** wiped card, the author working *stranger-mode* — only these documents and
+     the release page, no memory of earlier runs allowed. Reached 40/40 at 4.34e4 decodes/s, and hit
+     **four gaps, all in the documents, none in the code**, each now fixed: no download URL for the
+     22.04 image; the `pynq_helloworld` failure was described but not quoted, so it was not recognised;
+     `BRINGUP.md` §6 never said how `deploy.sh` gets onto the board; and `curl` leaves it
+     non-executable, so `sudo ./deploy.sh` said *command not found*. That is the author, not a
+     stranger, so this item stays open.
 
    Only the second is what the plan's Task P1 Step 4 asks for. The count of external deployments gates
    every silicon decision downstream, so the difference is recorded rather than blurred.
