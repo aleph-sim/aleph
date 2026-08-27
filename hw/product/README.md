@@ -91,6 +91,8 @@ hardware costs $300 rather than $30,000.
   Rust toolchain and installs nothing outside `/opt/aleph-decoder`. Verified end to end against the published release on 2026-08-26.
 - **Driver:** `hw/sw/bp_stream_banked_kv260.py` (PYNQ) — what `deploy.sh` runs, and the starting point
   for your own integration.
+- **When it does not work, or does:** `SUPPORT.md` — what is supported, what to send, and the
+  Deployment report issue template.
 
 ## What is still missing before v1 can be called shipped
 
@@ -133,10 +135,14 @@ Honest list, in the order it blocks people:
 
    Only the second is what the plan's Task P1 Step 4 asks for. The count of external deployments gates
    every silicon decision downstream, so the difference is recorded rather than blurred.
-4. **A support policy.** What is answered, how fast, what "stable" means. One page, not yet written.
+4. ~~**A support policy.**~~ — **`SUPPORT.md`**, one page (2026-08-27): exactly one supported
+   configuration, "stable" = the 40/40 self-test plus the frozen surface of `interface-spec.md` §6,
+   everything through GitHub Issues, best-effort with a 5-working-day first-reply target and no SLA,
+   and the exact commands to paste into a report. Plus a **Deployment report** issue template, so
+   external runs — the count item 3 is waiting on — have somewhere to land.
 
-Items 1–3 are the difference between a repository and a product, and they are cheap. They are not done
-yet, and this file says so rather than implying otherwise.
+Items 1, 2 and 4 are done; item 3's weaker claim is done and its stronger one — a stranger — is not,
+and this file says so rather than implying otherwise.
 
 ## Licence
 
