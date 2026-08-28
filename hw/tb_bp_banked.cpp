@@ -13,6 +13,7 @@
 // and `latency_cycles` is 32-bit (uint32_t). Golden format + compare logic are unchanged.
 
 #include <cstdint>
+#include <cstdlib>
 #include <cstdio>
 #include <fstream>
 #include <map>
@@ -32,14 +33,32 @@ using Dut = Vbp_relay_unrolled;
 using Dut = Vbp_relay_banked;
 #endif
 #include "verilated.h"
+#ifdef BP_TRACE
+// Q7-02 Task A4: optional VCD window for gate-level switching-activity power. Compiled only with
+// -DBP_TRACE (the `bpgate-asap7` target); the co-simulation harness above is byte-identical without it.
+// +trace=<file> +tfrom=<cycle> +tto=<cycle> dump the clock cycles in [tfrom, tto) of the whole run.
+#include "verilated_vcd_c.h"
+static VerilatedVcdC *tfp = nullptr;
+static uint64_t sim_cycle = 0, tfrom = 0, tto = 0;
+static VerilatedContext *ctx = nullptr;
+#endif
 
 static Dut *top;
 
 static void tick() {
   top->clk = 0;
   top->eval();
+#ifdef BP_TRACE
+  ctx->timeInc(500);  // 1 ns period: matches the SDC target so OpenSTA activity is per-clock
+  if (tfp && sim_cycle >= tfrom && sim_cycle < tto) tfp->dump(ctx->time());
+#endif
   top->clk = 1;
   top->eval();
+#ifdef BP_TRACE
+  ctx->timeInc(500);
+  if (tfp && sim_cycle >= tfrom && sim_cycle < tto) tfp->dump(ctx->time());
+  ++sim_cycle;
+#endif
 }
 
 int main(int argc, char **argv) {
@@ -65,6 +84,30 @@ int main(int argc, char **argv) {
   }
 
   top = new Dut;
+#ifdef BP_TRACE
+  ctx = top->contextp();
+  {
+    // commandArgsPlusMatch returns the whole matching argument; take everything after its '='.
+    auto plus = [&](const char *key) -> std::string {
+      const char *m = ctx->commandArgsPlusMatch(key);
+      std::string v = m ? m : "";
+      size_t eq = v.find('=');
+      return eq == std::string::npos ? std::string() : v.substr(eq + 1);
+    };
+    std::string tf = plus("trace=");
+    if (!tf.empty()) {
+      std::string a = plus("tfrom="), b = plus("tto=");
+      tfrom = a.empty() ? 0 : std::strtoull(a.c_str(), nullptr, 10);
+      tto = b.empty() ? ~0ULL : std::strtoull(b.c_str(), nullptr, 10);
+      ctx->traceEverOn(true);
+      tfp = new VerilatedVcdC;
+      top->trace(tfp, 99);
+      tfp->open(tf.c_str());
+      std::fprintf(stderr, "trace: %s cycles [%llu, %llu)\n", tf.c_str(), (unsigned long long)tfrom,
+                   (unsigned long long)tto);
+    }
+  }
+#endif
   // Reset (synchronous).
   top->rst_n = 0;
   top->in_valid = 0;
@@ -97,7 +140,15 @@ int main(int argc, char **argv) {
     }
 
     // Drive the syndrome and pulse in_valid for one cycle.
+#ifdef BP_GATE_PORTS
+    // Gate netlists (yosys/OpenROAD write_verilog) expose the unpacked-array ports as packed vectors,
+    // which Verilator hands over as 32-bit words: address bit c as word c>>5, bit c&31.
+    for (int w = 0; w < (C + 31) / 32; ++w) top->syndrome_in[w] = 0;
+    for (int c = 0; c < C; ++c)
+      if (c < (int)s_str.size() && s_str[c] == '1') top->syndrome_in[c >> 5] |= 1u << (c & 31);
+#else
     for (int c = 0; c < C; ++c) top->syndrome_in[c] = (c < (int)s_str.size() && s_str[c] == '1');
+#endif
     top->in_valid = 1;
     tick();
     top->in_valid = 0;
@@ -116,15 +167,29 @@ int main(int argc, char **argv) {
     int local = 0;
     for (int v = 0; v < N; ++v) {
       int want = (v < (int)h_str.size() && h_str[v] == '1') ? 1 : 0;
-      if ((int)top->corr_out[v] != want) ++local;
+#ifdef BP_GATE_PORTS
+      int got = (top->corr_out[v >> 5] >> (v & 31)) & 1;
+#else
+      int got = (int)top->corr_out[v];
+#endif
+      if (got != want) {
+        if (mism < 2 && local < 16) std::fprintf(stderr, "    corr_out[%d]: got %d want %d\n", v, got, want);
+        ++local;
+      }
     }
     uint32_t obs = top->obs_flip;
     for (int o = 0; o < OBS; ++o) {
       int want = (o < (int)o_str.size() && o_str[o] == '1') ? 1 : 0;
-      if ((int)((obs >> o) & 1) != want) ++local;
+      if ((int)((obs >> o) & 1) != want) {
+        if (mism < 2) std::fprintf(stderr, "    obs_flip[%d]: got %d want %d\n", o, (int)((obs >> o) & 1), want);
+        ++local;
+      }
     }
     int vwant = (!v_str.empty() && v_str[0] == '1') ? 1 : 0;
-    if ((int)top->valid_flag != vwant) ++local;
+    if ((int)top->valid_flag != vwant) {
+      if (mism < 2) std::fprintf(stderr, "    valid_flag: got %d want %d\n", (int)top->valid_flag, vwant);
+      ++local;
+    }
 
     uint32_t lat = top->latency_cycles;
     if (lat > worst_lat) worst_lat = lat;
@@ -136,7 +201,24 @@ int main(int argc, char **argv) {
     }
   }
 
+#ifdef BP_TRACE
+  // +idle=<cycles>: keep clocking with in_valid=0 after the last decode, so a second trace window can
+  // capture the idle regime (the decoder parked in its wait state) for the power comparison.
+  {
+    const char *ia = ctx->commandArgsPlusMatch("idle=");
+    std::string iv = ia ? ia : "";
+    size_t eq = iv.find('=');
+    uint64_t idle = eq == std::string::npos ? 0 : std::strtoull(iv.c_str() + eq + 1, nullptr, 10);
+    std::fprintf(stderr, "idle window: %llu cycles from cycle %llu\n", (unsigned long long)idle,
+                 (unsigned long long)sim_cycle);
+    for (uint64_t k = 0; k < idle; ++k) tick();
+  }
+#endif
   top->final();
+#ifdef BP_TRACE
+  if (tfp) { tfp->close(); delete tfp; }
+  std::printf("total cycles simulated: %llu\n", (unsigned long long)sim_cycle);
+#endif
   delete top;
 
   std::printf("latency distribution (cycles -> shots):");

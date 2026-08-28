@@ -435,21 +435,21 @@ unchanged" — never tested).
 `/OpenROAD-flow-scripts/flow/platforms/asap7/verilog/stdcell/*.v`, and the existing co-sim vectors
 (`hw/bp_dec_vectors.txt`, `hw/bp_circ_vectors.txt`).
 
-- [ ] **Step 1: Compile the netlist with Verilator, zero-delay functional mode**
+- [x] **Step 1: Compile the netlist with Verilator, zero-delay functional mode**
 
 Toggle counts do not need timing annotation. `specify` blocks are ignored by default.
 
-- [ ] **Step 2: Drive one representative decode window and dump VCD**
+- [x] **Step 2: Drive one representative decode window and dump VCD**
 
 Use ~300 cycles of steady-state BP iteration rather than the full 2085-cycle window — a full-window VCD
 over 654 k cells is tens of GB. Dump a second, separate stretch covering the idle/early-exit regime.
 
-- [ ] **Step 3: Verify the gate-level netlist reproduces the golden output**
+- [x] **Step 3: Verify the gate-level netlist reproduces the golden output**
 
 This is the co-simulation gate, not an optional extra. Expected: bit-exact match on the same vectors
 the RTL passes.
 
-- [ ] **Step 4: Feed the VCD to OpenSTA and report power**
+- [x] **Step 4: Feed the VCD to OpenSTA and report power**
 
 ```tcl
 read_power_activities -vcd /work/gate_window.vcd
@@ -459,13 +459,33 @@ report_power
 Baseline to beat for honesty, not for pride: ORFS default-activity power was **0.655926 W**
 (internal 0.339 W, switching 0.317 W, leakage 6.4e-5 W) with a PSM worst IR drop of 33.9 mV (4.40 %).
 
-- [ ] **Step 5: Convert to energy per window and compare with the §5 budget**
+- [x] **Step 5: Convert to energy per window and compare with the §5 budget**
 
 `E = P × cycles / f`. Note in the write-up that energy is roughly **banking-invariant** while latency is
 not, and that a 28 nm part will draw several times the 7 nm figure — the §5 "≤1 µJ per window" budget
 almost certainly needs restating at the real target node.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
+
+### Task A4 RESULT (2026-08-28): power measured, and the first gate-level co-sim fails on hold
+
+Full write-up: `docs/perf/q7-02-asap7-timing.md` §4, §4b. In-repo: `make -C hw bpgate-asap7`,
+`hw/asap7_latch.v`, `hw/tb_bp_gate_asap7.sv`, `hw/sw/gate_vectors.py`, `-DBP_TRACE`/`-DBP_GATE_PORTS`
+in `hw/tb_bp_banked.cpp`.
+
+- **Power with real activity: 0.149 W at the 1 GHz SDC (steady BP), 0.138 W idle, 0.31 µJ per
+  2085-cycle window** — 2 128 987 pins annotated from a gate-level VCD, 0 unannotated. The ORFS
+  default-activity 0.656 W was 4.4× too high. **93 % of the real power is clock tree + sequential
+  internal** (no ICG on this platform); the datapath is ~10 mW. Inside the §5 ≤ 1 µJ budget at 7 nm.
+- **Gate-level co-simulation exists and does not pass:** 40/40 decodes run the exact 2085-cycle
+  schedule but 8–15 of 877 output fields differ and `valid_flag = 0`. STA explains it: **44 704 hold
+  violations, worst −746 ps, 43 802 of them on latch-register-file D pins** — the 1.37 ns latch clock
+  insertion (Task A1) closes the latches ~0.9 ns after the flops launch. Hold repair by buffering
+  fails (`DPL-0038`, needs ~1 M buffers). The 144/864 netlist has the same defect (35 616, −1487 ps).
+  **No netlist from this flow is functionally sign-off-able until the latch clock structure is fixed**
+  (Task A2 / enable granularity) — that fix is now item E2's first line.
+- The "Post-route Fmax ≥ 600 MHz with timing repair actually run" half of the Phase A exit is
+  therefore **not met**, and cannot be met by repair alone; the power half is met.
 
 ### Task A5: Close #322 with the honest note
 
@@ -474,14 +494,14 @@ almost certainly needs restating at the real target node.
 - Modify: `docs/qec/asic-architecture.md` §8 open items
 - Create: `docs/perf/q7-02-asap7-timing.md` (final form)
 
-- [ ] **Step 1: Write the closure note**
+- [x] **Step 1: Write the closure note** — `docs/perf/q7-02-asap7-timing.md` §7 (2026-08-28)
 
 It must state, without softening: gate-level co-sim now exists (A4) or does not; the streaming core
 never fit silicon (M9c: LUT 162 %, BRAM 113 %); runt frames (`slices < W`) remain uncovered by co-sim;
 64/192 and 144/864 were cycle-counted in Verilator before Phase B, not synthesised; and none of the
 hardware gates run in CI.
 
-- [ ] **Step 2: Open the PR with `Closes #322`**
+- [x] **Step 2: Open the PR with `Closes #322`**
 
 Use the issue number, not the PR number — P0-06/07/08/11 all merged with the wrong reference.
 
@@ -954,7 +974,9 @@ the one deliverable that is reproducible by anyone on Earth with no NDA.
   the Chips JU **EuroCDP** platform, which has a framework agreement with Siemens EDA explicitly aimed
   at lowering EDA cost for SMEs and start-ups; a commercial broker as the expensive fallback.
 
-- [ ] **Task E2:** Harden the design for a real PDK — memory strategy in particular. The Q7-08 latch
+- [ ] **Task E2:** Harden the design for a real PDK — **first: the latch-register-file clock
+  structure (Task A4 result: 43 802 hold violations, un-gated 1.37 ns latch clock; needs a real ICG
+  or a re-timed write pulse — no netlist is sign-off-able before this)**; then memory strategy. The Q7-08 latch
   regfile avoids a memory-compiler licence, which is a real cost saving; verify it survives at 28 nm
   or budget for an SRAM compiler.
 
