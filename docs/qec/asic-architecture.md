@@ -260,7 +260,10 @@ low-pin-count BGA/QFN. This confirms D5: nothing here requires cryo placement or
 ## 6. Verification & qualification plan (carried over, already in flight)
 
 - Bit-exactness: the M0→M9b chain (software golden ↔ RTL co-sim, per-mode goldens) is the
-  regression harness; it retargets to gate-level simulation unchanged.
+  regression harness; it retargets to gate-level simulation unchanged — **verified 2026-08-28 on the
+  ASAP7 routed netlist (`make -C hw bpgate-asap7`): the harness retargets, the netlist fails, because
+  of 43 802 unrepaired hold violations on the latch register file
+  (`docs/perf/q7-02-asap7-timing.md` §4b).**
 - **Q7-06 (silicon-accelerated LER campaign) is the pre-freeze gate**: ≥10⁶ shots per operating
   point across a (p, legs, iters) grid on the FPGA prototype, LER within the golden's
   statistical band, *before* any tape-out netlist freeze.
@@ -295,8 +298,10 @@ figure applies only to the post-gate production program (step 3 onward + team + 
 
 ## 8. Open items (tracked, in dependency order)
 
-1. **OpenROAD P&R pass** (sky130hd, M8 core then streaming core): placed Fmax, routed area,
-   power with real switching activity. Replaces the two "est." columns in § 5.
+1. ~~OpenROAD P&R pass~~ — done on ASAP7 (`docs/perf/q7-02-asap7-timing.md`): die 0.163 mm²,
+   Fmax 528–686 MHz setup-only, **0.149 W / 0.31 µJ per window with real activity**. Open instead:
+   **hold closure of the latch register file** (43 802 violations, clock-structure fix, not
+   buffering) — the gate to any sign-off-able netlist.
 2. **Register-file/latch plan** for the 8b×9/8b×18 message arrays (D6) — the one block where
    FPGA and ASIC implementations genuinely diverge.
 3. **Banking scale-up qualification** (64/192 per § 5): regenerate tables, re-run the M7-style

@@ -435,21 +435,21 @@ unchanged" — never tested).
 `/OpenROAD-flow-scripts/flow/platforms/asap7/verilog/stdcell/*.v`, and the existing co-sim vectors
 (`hw/bp_dec_vectors.txt`, `hw/bp_circ_vectors.txt`).
 
-- [ ] **Step 1: Compile the netlist with Verilator, zero-delay functional mode**
+- [x] **Step 1: Compile the netlist with Verilator, zero-delay functional mode**
 
 Toggle counts do not need timing annotation. `specify` blocks are ignored by default.
 
-- [ ] **Step 2: Drive one representative decode window and dump VCD**
+- [x] **Step 2: Drive one representative decode window and dump VCD**
 
 Use ~300 cycles of steady-state BP iteration rather than the full 2085-cycle window — a full-window VCD
 over 654 k cells is tens of GB. Dump a second, separate stretch covering the idle/early-exit regime.
 
-- [ ] **Step 3: Verify the gate-level netlist reproduces the golden output**
+- [x] **Step 3: Verify the gate-level netlist reproduces the golden output**
 
 This is the co-simulation gate, not an optional extra. Expected: bit-exact match on the same vectors
 the RTL passes.
 
-- [ ] **Step 4: Feed the VCD to OpenSTA and report power**
+- [x] **Step 4: Feed the VCD to OpenSTA and report power**
 
 ```tcl
 read_power_activities -vcd /work/gate_window.vcd
@@ -459,13 +459,33 @@ report_power
 Baseline to beat for honesty, not for pride: ORFS default-activity power was **0.655926 W**
 (internal 0.339 W, switching 0.317 W, leakage 6.4e-5 W) with a PSM worst IR drop of 33.9 mV (4.40 %).
 
-- [ ] **Step 5: Convert to energy per window and compare with the §5 budget**
+- [x] **Step 5: Convert to energy per window and compare with the §5 budget**
 
 `E = P × cycles / f`. Note in the write-up that energy is roughly **banking-invariant** while latency is
 not, and that a 28 nm part will draw several times the 7 nm figure — the §5 "≤1 µJ per window" budget
 almost certainly needs restating at the real target node.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
+
+### Task A4 RESULT (2026-08-28): power measured, and the first gate-level co-sim fails on hold
+
+Full write-up: `docs/perf/q7-02-asap7-timing.md` §4, §4b. In-repo: `make -C hw bpgate-asap7`,
+`hw/asap7_latch.v`, `hw/tb_bp_gate_asap7.sv`, `hw/sw/gate_vectors.py`, `-DBP_TRACE`/`-DBP_GATE_PORTS`
+in `hw/tb_bp_banked.cpp`.
+
+- **Power with real activity: 0.149 W at the 1 GHz SDC (steady BP), 0.138 W idle, 0.31 µJ per
+  2085-cycle window** — 2 128 987 pins annotated from a gate-level VCD, 0 unannotated. The ORFS
+  default-activity 0.656 W was 4.4× too high. **93 % of the real power is clock tree + sequential
+  internal** (no ICG on this platform); the datapath is ~10 mW. Inside the §5 ≤ 1 µJ budget at 7 nm.
+- **Gate-level co-simulation exists and does not pass:** 40/40 decodes run the exact 2085-cycle
+  schedule but 8–15 of 877 output fields differ and `valid_flag = 0`. STA explains it: **44 704 hold
+  violations, worst −746 ps, 43 802 of them on latch-register-file D pins** — the 1.37 ns latch clock
+  insertion (Task A1) closes the latches ~0.9 ns after the flops launch. Hold repair by buffering
+  fails (`DPL-0038`, needs ~1 M buffers). The 144/864 netlist has the same defect (35 616, −1487 ps).
+  **No netlist from this flow is functionally sign-off-able until the latch clock structure is fixed**
+  (Task A2 / enable granularity) — that fix is now item E2's first line.
+- The "Post-route Fmax ≥ 600 MHz with timing repair actually run" half of the Phase A exit is
+  therefore **not met**, and cannot be met by repair alone; the power half is met.
 
 ### Task A5: Close #322 with the honest note
 
@@ -474,14 +494,14 @@ almost certainly needs restating at the real target node.
 - Modify: `docs/qec/asic-architecture.md` §8 open items
 - Create: `docs/perf/q7-02-asap7-timing.md` (final form)
 
-- [ ] **Step 1: Write the closure note**
+- [x] **Step 1: Write the closure note** — `docs/perf/q7-02-asap7-timing.md` §7 (2026-08-28)
 
 It must state, without softening: gate-level co-sim now exists (A4) or does not; the streaming core
 never fit silicon (M9c: LUT 162 %, BRAM 113 %); runt frames (`slices < W`) remain uncovered by co-sim;
 64/192 and 144/864 were cycle-counted in Verilator before Phase B, not synthesised; and none of the
 hardware gates run in CI.
 
-- [ ] **Step 2: Open the PR with `Closes #322`**
+- [x] **Step 2: Open the PR with `Closes #322`**
 
 Use the issue number, not the PR number — P0-06/07/08/11 all merged with the wrong reference.
 
@@ -954,7 +974,9 @@ the one deliverable that is reproducible by anyone on Earth with no NDA.
   the Chips JU **EuroCDP** platform, which has a framework agreement with Siemens EDA explicitly aimed
   at lowering EDA cost for SMEs and start-ups; a commercial broker as the expensive fallback.
 
-- [ ] **Task E2:** Harden the design for a real PDK — memory strategy in particular. The Q7-08 latch
+- [ ] **Task E2:** Harden the design for a real PDK — **first: the latch-register-file clock
+  structure (Task A4 result: 43 802 hold violations, un-gated 1.37 ns latch clock; needs a real ICG
+  or a re-timed write pulse — no netlist is sign-off-able before this)**; then memory strategy. The Q7-08 latch
   regfile avoids a memory-compiler licence, which is a real cost saving; verify it survives at 28 nm
   or budget for an SRAM compiler.
 
@@ -1049,7 +1071,7 @@ rather than quietly ignored — the replacement trigger is Phase C's gate.
 | ~~144/864 does not fit~~ **RETIRED 2026-07-31**: it places and routes at **76.3 % of a VU47P**, under the 90 % gate | — | — | Settled for $5.50 of instance time |
 | ~~The clock is geometry-dependent~~ **LARGELY RETIRED 2026-08-01 by Task B3**: on ASAP7 the same geometry step costs **−10.4 %**, not the FPGA's −35.3 %. 543 cycles at 614.59 MHz = **0.88 µs**, DRC-clean | Low | — | The FPGA penalty was mostly fixed interconnect and Laguna SLR crossings, which an ASIC does not have. Cost €0 to settle |
 | **The node: 0.88 µs is measured on ASAP7 7 nm predictive, and the target is TSMC 28 nm** — *new top risk* | **High.** Nothing in this repository measures the 7 nm → 28 nm gap, and the margin is only 12 %: a **1.2× node penalty gives 1.06 µs** and the sub-µs claim is gone. 1.5× gives 1.33 µs | Sub-microsecond is the entire technical justification for the chip over a large FPGA. Losing it does not stop the product — it stops the *chip* | Task B3 Step 4. Until answered, every public figure must read "ASAP7 7 nm predictive", never "the chip". A 28 nm PDK is Phase E Task E1, which is a gate rather than a step, so this may not be answerable before that gate |
-| **Neither ASAP7 run is sign-off clean** — 35,616 hold violations at 144/864, 44,704 at 16/48 | **High** for tape-out, none for the reports | Hold violations are not fixed by slowing the clock. A tape-out on this netlist would fail | `repair_timing` segfaults on this netlist class — Phase A Task A3. That task is therefore on the critical path to silicon, not merely to a tidy report |
+| **Neither ASAP7 run is sign-off clean** — 35,616 hold violations at 144/864, 44,704 at 16/48. **CONFIRMED FUNCTIONALLY 2026-08-28 (Task A4):** the first gate-level co-sim of the 16/48 netlist fails 40/40 (8–15 output fields per decode), and 43,802 of the violations sit on latch-register-file D pins — the un-gated 1.37 ns latch clock closes ~0.9 ns after the flops launch | **High** for tape-out, none for the reports | Hold violations are not fixed by slowing the clock. A tape-out on this netlist would fail — now demonstrated, not inferred | ~~`repair_timing` … Task A3~~ **Repair cannot fix it**: `repair_timing -hold` needs ~1 M delay buffers and dies at `DPL-0038`. The fix is the latch clock structure (Task A2 / enable granularity), moved to the first line of E2. On the critical path to silicon |
 | **The 97.3 MHz may be the defaults rather than the design** | Medium | If replication recovers the clock, the FPGA appliance-v2 story improves; if it does not, the control-distribution problem is structural and follows the design into silicon | One ~$4 follow-up run with `MAX_FANOUT` / per-bank replication on the `pc` counter. Untried: this was a default-directive run with no floorplanning |
 | Sub-µs unreachable even after B0, because Fmax is capped ~686 MHz | **High** | 64/192 lands at 1.33 µs, not sub-µs; Riverlane already ships <1 µs | Needs the clock-structure work (A1: 15,951 gated-clock nets), which is an RTL enable-granularity change, not a tooling flag. Decide whether that is in scope before Phase E |
 | No sign-off EDA access at 28 nm | **High** | Blocks Phase E entirely | Phase E Task E1 is a gate, not a step; EuroCDP and academic partnership are the routes; Phase D proves the flow at 130 nm regardless |

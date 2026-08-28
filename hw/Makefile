@@ -17,7 +17,7 @@ OBJ_DIR   := obj_dir
 VERILATOR ?= verilator
 CARGO     := cargo run --release -q -p aleph-qec --example
 
-.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi stream-axi-circuit cosim-stream cosim-stream-circuit cosim-stream-ler cosim-stream-ler-circuit cosim cosim-3d cosim-circuit cosim-circuit-3d bpcheck bprelay bpunroll bppartial bppartialfast bppipe bpfast bpaxi bpcirc bpaxiwide bpbram bpbramfast bpbramdp bpbramdpearly checkminsum varupdate unrollskel bpunrollpipe bpbanked-lint bpbanked bpbanked-highweight bpbankedrf-lint bpbankedrf bpbankedscale bpbankedbram-lint bpbankedbram bpstream-lint bpstream bpstreamaxi-lint bpstreamaxi bpaxibanked bpbenes bpasw bpunrollcirc clean
+.PHONY: all d3 rep surf surf-d5 surf-d7 surf-3d surf-window stream stream-axi stream-axi-circuit cosim-stream cosim-stream-circuit cosim-stream-ler cosim-stream-ler-circuit cosim cosim-3d cosim-circuit cosim-circuit-3d bpcheck bprelay bpunroll bppartial bppartialfast bppipe bpfast bpaxi bpcirc bpaxiwide bpbram bpbramfast bpbramdp bpbramdpearly checkminsum varupdate unrollskel bpunrollpipe bpbanked-lint bpbanked bpbanked-highweight bpbankedrf-lint bpbankedrf bpgate-asap7 bpbankedscale bpbankedbram-lint bpbankedbram bpstream-lint bpstream bpstreamaxi-lint bpstreamaxi bpaxibanked bpbenes bpasw bpunrollcirc clean
 
 all: d3 rep surf
 
@@ -367,6 +367,31 @@ bpbankedrf:
 			check_minsum.sv var_update.sv bp_relay_banked.sv tb_bp_banked.cpp -o sim_bpbankedrf || exit 1; \
 		./obj_bankedrf/sim_bpbankedrf bp_circ_vectors.txt || exit 1; \
 	done
+
+# Q7-02 Task A4 — GATE-LEVEL co-simulation of the ASAP7 routed netlist (OpenROAD `6_final.v`) against the
+# same circuit-level golden the RTL passes, plus optional VCD windows for switching-activity power.
+# Verilator cannot compile the ASAP7 vendor models (UDP tables), so: the combinational model files are
+# used with their `primitive…endprimitive` blocks stripped (they are only guarded definitions, never
+# instantiated), DFFHQNx* come from ORFS's own dff.v, and DHLx1 from asap7_latch.v (this repo).
+# Gate netlists expose the RTL's unpacked-array ports as packed vectors — hence -DBP_GATE_PORTS.
+# Inputs (override on the command line):
+#   ASAP7_NETLIST  routed netlist         ASAP7_STDCELL  dir with asap7sc7p5t_*_RVT_TT_*.v + dff.v
+# Verilator 5.032: ~25 min and 95 GB peak RSS on the 16/48 netlist (640 k cells); the 144/864 one does not fit.
+# Trace windows: ./obj_gate/sim_bpgate bp_circ_vectors.txt +trace=win.vcd +tfrom=1000 +tto=1300 [+idle=400]
+ASAP7_NETLIST ?= /data/asicprobe/orfs_out_m8rf_asap7/results/asap7/bp_relay_banked/base/6_final.v
+ASAP7_STDCELL ?= /data/asicprobe/gate
+bpgate-asap7:
+	rm -rf obj_gate && mkdir -p obj_gate
+	@for f in AO OA INVBUF SIMPLE; do \
+		sed "/^primitive/,/^endprimitive/d" $(ASAP7_STDCELL)/asap7sc7p5t_$${f}_RVT_TT_*.v > obj_gate/cells_$$f.v; \
+	done
+	OPT_FAST="-O1" $(VERILATOR) --cc --exe --build -j 32 --top-module bp_relay_banked \
+		-Wno-fatal -Wno-lint -Wno-style -Wno-MULTIDRIVEN -Wno-UNOPTFLAT --x-initial 0 --x-assign 0 --no-timing \
+		--output-split 20000 --output-split-cfuncs 20000 --trace --trace-underscore --threads 8 \
+		-CFLAGS "-DBP_TRACE -DBP_GATE_PORTS" --Mdir obj_gate \
+		obj_gate/cells_AO.v obj_gate/cells_OA.v obj_gate/cells_INVBUF.v obj_gate/cells_SIMPLE.v \
+		$(ASAP7_STDCELL)/dff.v asap7_latch.v $(ASAP7_NETLIST) tb_bp_banked.cpp -o sim_bpgate
+	./obj_gate/sim_bpgate bp_circ_vectors.txt
 
 # Q7-04 M9b — BRAM-ified banked relay-BP core (`bp_relay_banked_bram`): Verilator LINT-ONLY elaboration.
 # Sibling of `bp_relay_banked` whose per-group constant decode fabrics are sync-read BRAM ROMs (+1 re-lag).

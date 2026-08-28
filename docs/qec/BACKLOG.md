@@ -1315,8 +1315,12 @@ Synthesizable RTL of the core decode datapath, verified in simulation and (where
 FPGA as an ASIC prototype, targeting the spec's latency/power.
 
 **Acceptance Criteria**
-- [ ] RTL passes full co-simulation against the software decoder golden model.
-- [ ] Synthesis reports meet (or quantify the gap to) the Q7-01 budgets.
+- [x] RTL passes full co-simulation against the software decoder golden model. *(Met: ~25 Verilator
+  gates in CI, 10⁶×3 shots bit-exact on KV260 silicon. Gate-level co-sim of the ASAP7 netlist exists
+  and fails on hold — a flow defect, see `docs/perf/q7-02-asap7-timing.md` §4b/§7.)*
+- [x] Synthesis reports meet (or quantify the gap to) the Q7-01 budgets. *(Quantified, not met:
+  area met; Fmax 528–686 MHz setup-only with hold unclosed; power 0.149 W / 0.31 µJ per window with
+  real activity — `docs/perf/q7-02-asap7-timing.md` §7.)*
 
 -----
 
