@@ -248,9 +248,10 @@ power (§4 item 2) *and* correctness.
 vendor UDP sequential models (`hw/tb_bp_gate_asap7.sv`, Verilog-2001 I/O because Icarus's SV string
 support crashes its backend on this design): the full 2085-cycle schedule runs, but the datapath is X
 from cycle 0 — the vendor latch model drives its UDP through `delayed_*` nets that only `$setuphold`
-in the `specify` block connects, and with timing checks disabled they float; patched models still
-leave X sources that were being localised (`xprobe.vcd`) when this note was written. Left as an open
-item; it does not change the STA verdict.
+in the `specify` block connects, and with timing checks disabled they float; with those wired
+directly and an `initial q = 0` added to the UDP, an 8-cycle probe (`xprobe.vcd`) still shows
+676 493 of 677 307 signals at X from t = 0 — Icarus does not honour the UDP initial, and 55 703
+uninitialised latches flood the datapath. Stopped there; it does not change the STA verdict.
 
 **What the co-simulation *does* establish.** The netlist's control path, schedule, bank
 gather/scatter and I/O contract are exact through synthesis, placement, CTS and routing — the 2085
