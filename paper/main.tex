@@ -1,0 +1,42 @@
+% Q7 Track O / Task F5 — arXiv preprint. Build: make (tectonic).
+\documentclass[10pt,twocolumn]{article}
+\usepackage[margin=0.75in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{siunitx}
+\usepackage{xcolor}
+\usepackage[hidelinks]{hyperref}
+\usepackage{microtype}
+\usepackage[numbers,sort&compress]{natbib}
+\graphicspath{{figs/}}
+\sisetup{range-phrase=--,range-units=single}
+\newcommand{\aleph}{\textsf{aleph}}
+\newcommand{\gross}{$[[144,12,12]]$}
+
+\title{A sub-microsecond relay-BP decoder for the $[[144,12,12]]$ gross code:\\
+from a fixed-point golden model to FPGA silicon and a 7\,nm predictive ASIC}
+\author{Ruslan Malymon}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\input{sections/abstract}
+\end{abstract}
+
+\input{sections/01-intro}
+\input{sections/02-decoder}
+\input{sections/03-architecture}
+\input{sections/04-silicon}
+\input{sections/05-scaling}
+\input{sections/06-limitations}
+\input{sections/07-reproducibility}
+
+\bibliographystyle{unsrtnat}
+\bibliography{refs}
+
+\appendix
+\input{sections/A-provenance}
+\end{document}
