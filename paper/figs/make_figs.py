@@ -233,27 +233,30 @@ def fig_latency():
     geoms = ["16/48", "64/192", "144/864"]
     targets = ["KV260", "VU47P", "ASAP7"]
     tcol = {"KV260": C_BLUE, "VU47P": C_ORANGE, "ASAP7": C_GREEN}
-    bw = 0.92  # slot pitch; a 7 pt "133.3 MHz" label (~33 pt) must clear the neighbouring bar
+    # Explicit bar slots: unit pitch inside a group, 1.5 between groups, so a
+    # 7 pt three-line label centred over its own bar clears every neighbour.
+    slots = {("KV260", "16/48"): 0.0, ("ASAP7", "16/48"): 1.0,
+             ("VU47P", "64/192"): 2.5,
+             ("VU47P", "144/864"): 4.0, ("ASAP7", "144/864"): 5.0}
+    gcenter = {"16/48": 0.5, "64/192": 2.5, "144/864": 4.5}
     fig, ax = plt.subplots(figsize=(W, 2.7))
     seen = set()
-    for gi, g in enumerate(geoms):
-        present = [x for x in LATENCY if x[1] == g]
-        n = len(present)
-        for k, (t, _, cyc, mhz, us, _) in enumerate(present):
-            x = gi + (k - (n - 1) / 2) * bw
-            ax.bar(x, us, width=bw - 0.2, color=tcol[t], edgecolor="white", linewidth=0.5,
-                   label=None if t in seen else t, zorder=3)
-            seen.add(t)
-            ax.text(x, us * 1.10, f"{us:.2f} µs\n{cyc} cyc\n{mhz:.1f} MHz", ha="center", va="bottom",
-                    fontsize=7, linespacing=1.0, color="#333333", zorder=4)
+    for t, g, cyc, mhz, us, _ in LATENCY:
+        x = slots[(t, g)]
+        ax.bar(x, us, width=0.7, color=tcol[t], edgecolor="white", linewidth=0.5,
+               label=None if t in seen else t, zorder=3)
+        seen.add(t)
+        ax.text(x, us * 1.10, f"{us:.2f} µs\n{cyc} cyc\n{mhz:.1f} MHz", ha="center", va="bottom",
+                fontsize=7, linespacing=1.0, color="#333333", zorder=4)
     ax.axhline(1.0, color=C_GRAY, lw=0.7, ls=":", zorder=0)
     ax.set_yscale("log")
     ax.set_ylim(0.3, 60)
-    ax.set_xlim(-0.98, 2.98)
-    ax.set_xticks(range(len(geoms)))
+    ax.set_xlim(-0.6, 5.6)
+    ax.set_xticks([gcenter[g] for g in geoms])
     ax.set_xticklabels(geoms)
     ax.set_xlabel("decoder geometry (parallel units)")
     ax.set_ylabel("decode latency (µs)")
+    ax.grid(axis="x", visible=False)
     hs, ls = ax.get_legend_handles_labels()
     order = [ls.index(t) for t in targets if t in ls]
     ax.legend([hs[i] for i in order], [ls[i] for i in order], loc="lower center", ncol=3,
