@@ -1,1 +1,287 @@
-% 03-architecture — to be written
+% 03-architecture — Hardware architecture ladder (M2 → M8), gather fabrics (M9c), register file (Q7-08).
+% Every figure carries a "% src:" comment naming the docs/ file and heading it was taken from.
+\section{Hardware architecture}
+\label{sec:architecture}
+
+The decoder RTL was reached by a ladder of six synthesised variants, each
+bit-exact against the same fixed-point golden model
+(\S\ref{sec:decoder}) and each measured out-of-context (OOC) on the
+target part before the next step was chosen. Table~\ref{tab:ladder}
+summarises the ladder; the rest of this section explains what each step
+learned. Two graph sizes appear: M2--M5 decode the code-capacity Tanner
+graph of \gross{} (72~checks, 144~variables, 432~edges),
+% src: docs/perf/qec-q7-fixed-bp.md M3 "Critical path — the cursor mux, not the multiply"
+while M6 onward decode the circuit-level detector-error-model graph
+($C=144$ checks, $N=864$ variables, $E=2952$ edges, maximum check degree~25).
+% src: docs/perf/qec-q7-fixed-bp.md M6
+
+\begin{table*}[t]
+\centering
+\footnotesize
+\caption{Architecture ladder. Cycles are the full-schedule (no early exit)
+worst case; fabric is the post-synthesis LUT count and share of the Xilinx
+Kria KV260 (XCK26, 117\,120 LUTs). Clocks are OOC for M2--M5 and M9c,
+the timing-met board clock for M6--M8.}
+\label{tab:ladder}
+\begin{tabular}{@{}llrrll@{}}
+\toprule
+Variant & Graph & Cycles & Fabric (LUT) & Clock / latency & Verdict \\
+\midrule
+M2 sequential FSM & code cap. & 28\,944 & 24\,119 (21\,\%) & 67.8\,MHz / 427\,\si{\micro\second} & cursor mux is the wall \\
+% src: docs/perf/qec-q7-fixed-bp.md M2 "Honest latency headline"; M3 "Result"
+M4 spatial unroll & code cap. & 301 & 94\,194 (80\,\%) & 95.2\,MHz / 3.16\,\si{\micro\second} & mux gone; arithmetic depth \\
+% src: docs/perf/qec-q7-fixed-bp.md M4 "Result — the idx-mux wall is gone"
+M5 SAT-overlap (6$\times$10) & code cap. & 122 & 93\,487 (79.8\,\%) & 95.9\,MHz / 1.272\,\si{\micro\second} & 1.48$\times$ free; route-bound \\
+% src: docs/perf/qec-q7-fixed-bp.md M5-followup "Result — 6×10 schedule, KV260 OOC P&R"
+M6 edge-serial BRAM & circuit & 672\,000 & 8\,509 (7.3\,\%) & 100\,MHz / 6.72\,ms & unroll fails to synthesise \\
+% src: docs/perf/qec-q7-fixed-bp.md M6
+M7 banked 12/36 & circuit & 2\,460 & 88.0\,k (75\,\%) & 75\,MHz / 32.8\,\si{\micro\second} & on silicon, 40/40 \\
+% src: docs/perf/qec-q7-fixed-bp.md M7 "OOC probe sweep"; "Board + silicon"
+M8 banked 16/48 & circuit & 2\,085 & 102.8\,k (88\,\%) & 133.332\,MHz / 15.64\,\si{\micro\second} & on silicon, 40/40 \\
+% src: docs/perf/qec-q7-fixed-bp.md M8 "OOC probes"; "Board ladder + silicon"
+M9c full-parallel gather & circuit, streaming & 4\,475 & 189\,740 (162\,\%) & 177.7\,MHz OOC & no fit on one KV260 \\
+% src: docs/perf/qec-q7-fixed-bp.md M9c "Step 5 — AS-Waksman"; "area campaign — terminal verdict"
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\subsection*{M2: sequential FSM}
+The first synthesisable decoder time-multiplexes the relay-BP update into
+a clocked FSM that touches one check ($\le 6$ edges) or one variable
+($\le 3$ edges) per cycle, so combinational depth is bounded and independent
+of graph size. One iteration is a 72-cycle check pass, a 144-cycle
+variable pass (the only multiply: the memory blend
+$(1-\gamma)\cdot\mathrm{computed}+\gamma\cdot m_{\mathrm{old}}$) and a
+72-cycle satisfaction pass; the $4\times 25$ schedule plus a 144-cycle emit
+gives a worst case of 28\,944 cycles per decode.
+% src: docs/perf/qec-q7-fixed-bp.md M2 "What"; "Honest latency headline"
+
+\subsection*{M3: out-of-context synthesis verdict}
+The FSM fits both parts with no DSP and no BRAM, but at 28.3\,MHz on the
+Zybo (1023\,\si{\micro\second}) and 67.8\,MHz on the KV260
+(427\,\si{\micro\second}) it is two to three orders of magnitude off
+real time.
+% src: docs/perf/qec-q7-fixed-bp.md M3 "Result"
+The binding path is not the multiply---the per-variable
+$\gamma$ constants fold into LUTs and DSP usage is zero---but the runtime
+check cursor: reading \texttt{BP\_CHECK\_OFF[idx]} then the edge list
+synthesises to a 72-way select in front of the min-sum whose result fans
+out through a 432-way write decode (net fan-outs of 586 and 626; 44 logic
+levels and 74\,\% routing delay on the Zybo).
+% src: docs/perf/qec-q7-fixed-bp.md M3 "Critical path — the cursor mux, not the multiply"
+The lesson that shaped everything after it: on a constant-degree graph,
+a runtime index into a message array is a mux tree the size of the array.
+
+\subsection*{M4: spatial unroll}
+Wiring each check's six edges and each variable's three edges as
+compile-time constants deletes the cursor entirely and lets a whole BP layer
+evaluate in one cycle: 301 cycles at $4\times 25$, 96$\times$ fewer than M2.
+On the KV260 the unrolled datapath needs 94\,194 LUTs (80\,\%) and closes
+at 95.2\,MHz, 3.16\,\si{\micro\second}---135$\times$ faster than M3; on the
+Zybo it is 172.6\,\% of the part and does not fit.
+% src: docs/perf/qec-q7-fixed-bp.md M4 "Result — the idx-mux wall is gone"
+The new critical path is real arithmetic (the variable-update blend, 25
+logic levels through five CARRY8 chains) plus routing congestion at 80\,\%
+utilisation.
+% src: docs/perf/qec-q7-fixed-bp.md M4 "Result"
+A synthesis caveat is worth recording: with every index constant, Vivado
+constant-propagated the 100-iteration message recurrence to a bogus fixed
+point and deleted the datapath, leaving a 158-flop shell that ``closed
+timing'' at $\sim$485\,MHz; the registers had to be anchored with
+\texttt{dont\_touch}, and post-synthesis flop counts are now checked against
+elaboration on every variant.
+% src: docs/perf/qec-q7-fixed-bp.md M4 "Two synthesis gotchas the unroll exposed"
+
+\subsection*{M5: the two microarchitectural levers, measured}
+Adopting the LER-optimal $6\times 10$ schedule (\S\ref{sec:decoder}) cut
+the cycle count to 181 and latency to 1.89\,\si{\micro\second} at
+96.0\,MHz.
+% src: docs/perf/qec-q7-fixed-bp.md M5 step 2 "Result — 1.68× faster than M4"
+Two further levers were then tried on the KV260. \emph{SAT-overlap}
+folds the syndrome check into the following check pass, since the two read
+disjoint registers: 2 cycles per iteration instead of 3, 122 cycles,
+1.272\,\si{\micro\second} at 95.9\,MHz on 93\,487 LUTs---a 1.48$\times$
+win at unchanged clock and area.
+% src: docs/perf/qec-q7-fixed-bp.md M5-followup "SAT-overlap (bp_relay_fast) — the win"
+\emph{Pipelining the min-sum} is the measured negative result: splitting
+the check pass raised the clock only 96.0$\to$111.3\,MHz (1.16$\times$)
+against a 1.33$\times$ cycle penalty, for 2.165\,\si{\micro\second}, a 15\,\%
+regression, while pushing utilisation to 85.5\,\% and worsening congestion.
+% src: docs/perf/qec-q7-fixed-bp.md M5-followup "Min-sum pipeline (bp_relay_pipe) — the measured negative result"
+The wall at this point is routing at $\sim$80\,\% utilisation, not logic
+depth; removing work helps, adding registers does not.
+% src: docs/perf/qec-q7-fixed-bp.md M5-followup "Verdict"
+
+\subsection*{M6: the circuit-level graph does not unroll}
+On the circuit-level graph (degree up to 25) neither the full unroll nor a
+CHK12/VAR24 partial unroll synthesises on the KV260: Vivado's
+cross-boundary area optimisation ran out of memory at $\sim$43\,GB or stalled
+without progress. Only BRAM-resident edge-serial cores fit (5.5--7.3\,\%
+LUT), and the two-edges-per-cycle variant gives 672\,000 cycles,
+6.72\,ms at 100\,MHz on silicon.
+% src: docs/perf/qec-q7-fixed-bp.md M6
+
+\subsection*{M7: $K$-banked relay-BP}
+The design space was a trilemma, all corners measured: the full spatial
+unroll (144 check + 864 variable submodules) is 453\,k LUTs, 386\,\% of the
+KV260; a partial unroll with a runtime group gather from flop arrays stalls
+area optimisation on $O(E)$ operand muxes---the M3 cursor-mux wall again;
+the banked LUTRAM store synthesises at 88\,k LUTs (75\,\%).
+% src: docs/perf/qec-q7-fixed-bp.md M7 "The design space is a trilemma"
+In the banked core, $W$ checks and $V$ variables update per cycle. Messages
+live in hundreds of small distributed-RAM banks in \emph{check-major}
+order: edge $e$ is stored at half-bank
+$(\mathrm{slot}(\mathrm{check}(e))\cdot 25+\mathrm{pos}(e))\cdot 2+\beta(e)$
+in the row of its check group, so check-phase accesses are hardwired
+(broadcast row, 2:1 $\beta$ muxes) and the only scattered access is the
+variable phase. An offline solve in the graph emitter (slot assignment,
+cap-2 variable grouping, $\beta$ assignment; K\H{o}nig edge colouring as the
+existence fallback) guarantees at most one write per \texttt{m\_cm}
+half-bank and two reads per \texttt{e\_cm} bank per cycle. Three stores
+result---\texttt{m\_cm} (variable$\to$check, check-major, $\beta$-split),
+\texttt{e\_cm} (check$\to$variable, two read ports) and \texttt{m\_vm}
+(a variable-major shadow that makes the old-message read mux-free)---all
+distributed RAM, zero BRAM tiles, about 7\,k LUTs for the message fabric.
+% src: docs/perf/qec-q7-fixed-bp.md M7 "The banked design (bp_relay_banked, spec amendment 2)"
+Because banking never touches the logical in-check edge order (the
+min-sum tie-breaks) or the wrap-add order, the $(W,V)$ geometry is a pure
+scheduling change: the same golden vectors pass at 8/24, 12/36 and 16/48.
+% src: docs/perf/qec-q7-fixed-bp.md M7 "The banked design"
+Getting it through synthesis took a hunt: the flat top churned for
+$\sim$8\,h into a 386\,k-LUT netlist at 24\,MHz; the culprit was a
+$\gamma$ table indexed by a runtime 32-bit leg counter, expanded at each of
+$\sim$864 gather sites into a 5184:1 ROM mux plus 32-bit index arithmetic.
+Constant-folding over the leg (a 6:1 mux) brought it to 71\,k LUTs, and
+replacing serial minimum and XOR reductions with tournament trees lifted
+the clock 26$\to$93\,MHz, every step re-proved bit-exact.
+% src: docs/perf/qec-q7-fixed-bp.md M7 "What it took to synthesize"
+At 12/36 the core is 2\,460 cycles; the board build closes at 75\,MHz, and
+on the KV260 the full schedule is 32.8\,\si{\micro\second} fixed while
+early exit gives a mean of 2.5\,\si{\micro\second} (median 1.9, p99 9.3),
+40/40 shots bit-exact in both modes---205$\times$ M6 worst case.
+% src: docs/perf/qec-q7-fixed-bp.md M7 "Board + silicon"
+
+\subsection*{M8: the KV260 squeeze}
+M7's unregistered bank-read$\to$gather$\to$min-sum path is broken by a
+register plane on the gather outputs and a third \texttt{check\_minsum}
+stage (+3 cycles per iteration), and the 16/48 geometry---originally
+rejected on a DSP count that was 9$\times$ inflated by a counter matching
+DSP sub-primitives---turns out to time better than 12/36. Cycle counts
+become 3\,750 / 2\,640 / 2\,085 at 8/24 / 12/36 / 16/48; OOC 16/48 is
+102.8\,k LUTs (88\,\%), 164 DSPs (13\,\%), 177.7\,MHz.
+% src: docs/perf/qec-q7-fixed-bp.md M7 "Correction (M8)"; M8 "Levers"; "OOC probes"
+The board build meets timing at 133.332\,MHz (the PS clock grid), and on
+silicon the full schedule is 15.64\,\si{\micro\second}, early exit
+mean 1.15\,\si{\micro\second}, median 0.85\,\si{\micro\second},
+p99 4.4\,\si{\micro\second}, 40/40 bit-exact. LUT utilisation at 88\,\% is
+the ceiling for wider geometries on this part.
+% src: docs/perf/qec-q7-fixed-bp.md M8 "Board ladder + silicon"; "Levers left on the table"
+
+\subsection*{Constant-geometry gather and scatter}
+The fully parallel streaming core (M9b, \S\ref{sec:silicon}) exposed the
+mux wall in its purest form. Its first version indexed register arrays with
+ROM-held values; a serial synthesis on a 123\,GB host placed it at
+2\,232\,451 LUTs, 1906\,\% of the KV260, entirely from three runtime-indexed
+crossbars (F7/F8 muxes at 238\,\%/231\,\%), while the non-crossbar core fit.
+% src: docs/perf/qec-q7-fixed-bp.md M9c "gather-crossbar fix (Beneš networks): fit verdict"
+The gather is a large fixed permutation, so it was replaced by
+ROM-configured Bene\v{s} networks (one size-1024 network for the
+\texttt{m\_cm} write, two size-512 networks per port for the dual-port
+\texttt{e\_cm} read), with control pipelined in lockstep with data: 239\,750
+LUTs, 9.3$\times$ fewer, 177.7\,MHz, latency 2\,206$\to$2\,810 cycles
+because the fabrics sit inside the non-overlapped iteration loop.
+% src: docs/perf/qec-q7-fixed-bp.md M9c "Fix (Step 2)"; "Result — serial OOC synth"
+A memory-based serial gather ($P$ BRAM banks read over $\lceil N/P\rceil$
+steps) was designed and area-probed and does not help: an edge cannot occupy
+the same bank position in both its write group and its read group, so a
+per-tap residual select remains, and that select is $O(N\cdot\mathrm{STEPS})$---the
+same order as the crossbar (about 255\,k LUTs estimated, worse than
+Bene\v{s}); only a fully serial $P\le 2$ gather is mux-free and it costs
+hundreds of microseconds.
+% src: docs/perf/qec-q7-fixed-bp.md M9c "Step 3 (serial gather)"; docs/superpowers/specs/2026-07-15-m9c-serial-gather-design.md "DESIGN CORRECTION"
+Two right-sizings followed. The \texttt{e\_cm} read-address network routed
+no runtime data (both its input and its control are per-group constants),
+so it became a sync-read BRAM ROM: $-32\,819$ LUTs and $-54$ BRAM tiles,
+which also exposed that the Bene\v{s} core had been over budget on BRAM
+tiles (151.7\,\%) as well as LUTs.
+% src: docs/perf/qec-q7-fixed-bp.md M9c "Step 4 — e_cm read-addr fabric → BRAM ROM"
+The remaining power-of-two-padded fabrics were replaced by arbitrary-size
+Waksman networks \citep{waksman1968permutation,beauquier2002aswaksman} sized to the real dimensions ($N=800$ and $N=400$ for the
+288-tap partial injections), switch-optimal at
+$\lceil N\log_2 N\rceil-N+1$ switches (\texttt{m\_cm} 9728$\to$6977,
+\texttt{e\_cm} 4352$\to$3089 per port): a further $-17\,191$ LUTs.
+% src: docs/perf/qec-q7-fixed-bp.md M9c "Step 5 — AS-Waksman right-sizing"; docs/superpowers/specs/2026-07-16-m9c-aswaksman-rightsize-design.md "Approach — AS-Waksman"
+The campaign closes at 189\,740 LUTs (162.0\,\%) and 163 BRAM tiles
+(113.2\,\%), bit-exact 40/40 at both bankings, latency 4\,475 / 2\,810
+cycles. The floor is structural: the two runtime-data fabrics that cannot
+become ROMs are $\approx$108\,\% of the KV260 and the non-fabric decoder is
+$\approx$68\,\%, so no right-sizing brings the sum under 100\,\%; a
+fully parallel gather for this graph needs a larger device.
+% src: docs/perf/qec-q7-fixed-bp.md M9c "area campaign — terminal verdict (closed)"
+The same fixed fabrics (\texttt{bp\_asw.sv}, \texttt{bp\_benes.sv}) are the
+ones the ASIC architecture carries, with bank permutations loaded at boot
+rather than baked, so one die serves a code family while the fabric
+geometry stays fixed.
+% src: docs/qec/asic-architecture.md §3 "Design decisions" D2
+
+\subsection*{ASIC register-file restructuring}
+On an ASIC the dominant storage shape is the 8\,b$\times$9 and
+8\,b$\times$18 message array, more than 1\,200 instances, which the
+architecture maps to flop or latch register files rather than SRAM macros.
+% src: docs/qec/asic-architecture.md §3 D6
+A flat-flop elaboration of the M8 core synthesised to 5.28\,mm$^2$ on
+sky130hd (OpenROAD flow~\citep{openroad}) but failed global routing on
+met2 at both 30\,\% and 20\,\% utilisation. Q7-08 restructured the three
+cell types according to their access patterns: the 164 \texttt{m\_vm} cells
+share both cursors across the lanes of a variable slot and consolidate into
+48 wide byte-masked arrays ($\mathrm{VAR\_DEG}\times 8$\,b $\times$ 18 rows,
+one row decoder per slot); the $\sim$740 \texttt{m\_cm} cells have a
+per-cell write row and the $\sim$370 \texttt{e\_cm} cells two fabric-driven
+read rows, so both become transparent-low latch arrays---consolidating them
+would rebuild the runtime-index mux that M7 removed. Latch storage measured
+15.1\,\si{\micro\metre\squared}/bit against 38.4 for flops (2.54$\times$
+denser), and the restructured core is 4.54\,mm$^2$ ($-14\,\%$) with 43\,k
+clock sinks instead of 98.8\,k; the latch write is safe because
+\texttt{m\_cm}/\texttt{e\_cm} reads and writes occur in different FSM
+states.
+% src: docs/qec/regfile-plan.md "The decision table (AC-3)"; "AC-1"; "AC-2 — ORFS P&R routability verdict"
+Routability, however, did not follow: at 20\,\% utilisation the datapath
+alone is only marginally better (met2 congestion $-30\,\%$, overflow
+$-12\,\%$, met2 usage $\sim$75\,\% either way), post-CTS both cores sit at
+78--82\,\% met2, and the latch-dense clock tree livelocks global routing on
+clock non-default rules for over 20\,h.
+% src: docs/qec/regfile-plan.md "AC-2 — ORFS P&R routability verdict (sky130hd)"
+The identical netlist (43\,025 flops, 55\,703 D-latches) on the 7\,nm
+predictive ASAP7 platform~\citep{clark2016asap7} at 45\,\% utilisation
+global-routes with zero overflow on every layer M2--M7, no clock-rule
+disables, and completes detailed routing to a 0.163\,mm$^2$ die with 207
+residual DRC violations, mostly predictive-PDK end-of-line and cut-spacing
+artefacts (155 at 35\,\%). The routing wall is the 130\,nm node's track
+density, not the design; timing and power are not quotable from these
+runs because \texttt{repair\_timing} was skipped, and are taken up in
+\S\ref{sec:scaling}.
+% src: docs/qec/regfile-plan.md "AC-2 follow-up — the routability wall is a node problem, not a design problem (ASAP7)"
+
+\subsection*{Co-simulation harness}
+Every variant in Table~\ref{tab:ladder} is driven by the same Verilator
+testbench and the same golden vectors emitted by the Rust fixed-point model,
+so a change is accepted only if the chosen error, observable flips and
+validity flag are bit-identical to software. The code-capacity cores pass
+65/65 decodes (the empty syndrome, every single-variable error and 40 random
+low-weight syndromes);
+% src: docs/perf/qec-q7-fixed-bp.md M2 "Verification"
+the circuit-level cores pass 40 circuit shots at $p=0.003$ in both exit
+modes, and the banked core passes them at all three geometries, in both the
+flop and the latch/register-file storage style, with identical worst-case
+cycle counts---the $(W,V)$-invariance gate.
+% src: docs/perf/qec-q7-fixed-bp.md M7 "The banked design"; docs/qec/regfile-plan.md "AC-2 — the real-core prototype"
+Because 40 shots at $p=0.003$ never exercised high-weight syndromes, a
+separate gate decodes 2\,000 shots at $p=0.007$ and requires 2\,000/2\,000
+agreement; the same gate reproduced off-board a campaign divergence that
+turned out to be a prior mismatch between bitstream and golden rather than
+an RTL defect.
+% src: docs/qec/q7-06-ac1-batched-dma.md (bpbanked-highweight gate); docs/perf/q7-02-asap7-timing.md
+The gates run on macOS and on the EPYC CI host, through the AXI wrapper,
+and on silicon, so the number that reaches the board has already matched
+the golden at every layer below it.
+% src: docs/perf/qec-q7-fixed-bp.md M7 "The banked design"

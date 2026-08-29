@@ -1,1 +1,217 @@
-% 02-decoder — to be written
+% 02-decoder — §2 The decoder.
+% Every number below is annotated with the docs/ file and section it comes from.
+\section{The decoder}
+\label{sec:decoder}
+
+\subsection*{Code and error models}
+
+The target is the gross code, the \gross{} bivariate-bicycle (BB) code of
+Bravyi et al.~\citep{bravyi2024gross}: a CSS code over the group algebra of
+$\mathbb{Z}_\ell\times\mathbb{Z}_m$ with $H_X=[A\,|\,B]$,
+$H_Z=[B^{\mathsf T}\,|\,A^{\mathsf T}]$ for two commuting three-term
+polynomials in the cyclic shifts $x,y$.
+% src: docs/perf/qec-q5-gross.md "What and why" (ℓ, m, A, B) and "Results" table
+The gross code is $\ell=12$, $m=6$, $A=x^3+y+y^2$, $B=y^3+x+x^2$: $n=144$,
+$k=12$, $d=12$ (distance cited from~\citep{bravyi2024gross}; $n$, $k$
+recomputed from GF(2) ranks), 72 $X$-checks and 72 $Z$-checks, every check of
+weight~6 and every qubit of degree~3. Each error lights three checks, so the
+syndrome graph is a hypergraph: matching decoders do not apply and belief
+propagation (BP) is required.
+
+Two detector error models (DEMs) feed the same decoder through a Tanner graph.
+% src: docs/perf/qec-q5-gross.md "Results" (72 / 12 / 144, 432 edges)
+The \emph{code-capacity} DEM (one perfect round, independent $Z$ error per
+qubit) has 72 detectors, 12 observables, 144 mechanisms and $144\times3=432$
+Tanner edges; its regular graph is what the unrolled RTL of
+\S\ref{sec:architecture} bakes in, and it is the model of the fixed-point and
+schedule studies below.
+% src: docs/perf/qec-q5-circuit-dem.md "The depth-7 syndrome circuit" and "The noise model"
+The \emph{circuit-level} DEM lays down the depth-7 syndrome-extraction
+schedule of Bravyi et al.\ in a memory-$X$ experiment, with the $Z$-checks
+measured at round~6 before that round's $X$-CNOTs so that no hook error
+corrupts a stabiliser, and projects the circuit-level depolarising model (CNOT,
+idle, preparation and measurement faults at rate $p$) to the $Z$ sector.
+% src: docs/perf/qec-q5-circuit-dem.md "Correctness — Stim oracle"
+It is verified edge-for-edge against Stim~\citep{gidney2021stim}: on the
+$[[72,12,6]]$ member of the family at rounds $\in\{1,2,3\}$ with non-uniform
+rates every edge probability agrees to below $10^{-9}$, and a clean Stim build
+certifies the schedule is non-disturbing.
+% src: docs/perf/qec-q5-circuit-dem.md "DEM structure" table
+At $\mathrm{rounds}=d=12$ the gross-code circuit DEM has 936 detectors, 12
+observables and 8784 mechanisms, about $13\times$ the detectors and $60\times$
+the mechanisms of the code-capacity model.
+
+\subsection*{Relay-BP min-sum}
+
+% src: docs/perf/qec-q7-fixed-bp.md "M0" What and why (relay-BP vs BP+OSD rationale)
+BP alone is degeneracy-limited on qLDPC codes: it oscillates or converges to a
+valid but wrong-coset solution. The usual remedy, BP followed by
+ordered-statistics decoding (BP-OSD)~\citep{panteleev2021bposd}, adds a
+data-dependent GF(2) Gauss--Jordan elimination of unbounded latency. Relay-BP
+\citep{muller2025relaybp} stays inside message passing: several \emph{legs} of
+normalised min-sum BP, each reseeding a per-variable disordered memory
+coefficient $\gamma_v$ and relaying the previous leg's messages, keeping the
+lowest-weight syndrome-consistent solution seen. In our software comparison it
+beat BP-OSD at every $p$ while dropping the elimination entirely, so it is the
+hardware decoder.
+% src: docs/perf/qec-q5-bposd.md "What and why" (α=1 fails 29 %, α=0.875 fails 2.3 % at p=0.04)
+The check update is normalised min-sum with $\alpha=0.875$; plain $\alpha=1$
+over-converged to wrong cosets on 29\,\% of shots at $p=0.04$ (code capacity),
+against 2.3\,\% at $\alpha=0.875$. The (legs, iterations per leg) schedule is
+fixed, so the worst-case latency is a constant.
+
+\subsection*{Fixed-point word}
+
+The bit-accurate golden model \texttt{FixedRelayBp} quantises the arithmetic
+and is, by construction, the RTL specification.
+% src: docs/perf/qec-q7-fixed-bp.md "M0" Fixed-point scheme
+A value is stored as signed $\mathrm{round}(x\cdot2^F)$ saturated to
+$\pm(2^{W-1}-1)$, with $W$ message bits and $F$ fractional bits. Since
+$\alpha=7/8$, normalisation is $\mathrm{mag}-(\mathrm{mag}\gg3)$ and the whole
+check update is compare/min/sign with no multiplier. The only multiply is the
+relay blend $(1-\gamma_v)\cdot\mathrm{computed}+\gamma_v\cdot
+m_{\mathrm{old}}$ with $\gamma_v$ a per-variable ROM constant, i.e.\ a
+fixed-coefficient multiply. The blend truncates by arithmetic shift (floor),
+the cheapest RTL rounding, and the golden adopts the same rule so software and
+silicon agree bit for bit.
+
+% src: docs/perf/qec-q7-fixed-bp.md "M0" Result — message width sweep (20 000 shots, seed 2024)
+Table~\ref{tab:width} sweeps $(W,F)$ against the \texttt{f64} decoder on the
+code-capacity model, 20\,000 shots per point. Every cell is within the
+Monte-Carlo CI of \texttt{f64}, but $(8,3)$, Q5.3 with range $\pm15.9$ and
+step $0.125$, tracks it most tightly and is the only 8-bit word that
+reproduces the \texttt{f64} rate exactly at the $p=0.02$ floor
+($1.0\times10^{-4}$).
+% src: docs/perf/qec-q7-fixed-bp.md "M0" Verdict (λ(0.02)≈3.9, λ(0.01)≈4.6)
+It beats the finer $(8,4)$ there on dynamic range: at low $p$ the priors are
+largest ($\lambda(0.02)\approx3.9$, $\lambda(0.01)\approx4.6$) and messages
+accumulate, so the integer range matters more than a fractional bit. Below 8
+bits, $(6,2)$ and $(7,3)$ bias high by $2$--$2.5\times$ at the floor, where
+accuracy matters most: 8 bits is the floor, not a margin. The truncating blend
+acts as mild extra damping, which is why Q5.3 sits slightly below \texttt{f64}
+($0.95$--$0.97\times$) at higher $p$.
+% src: docs/perf/qec-q7-fixed-bp.md "M0" Silicon sizing at (8,3)
+At Q5.3 the message RAM ($432$ edges $\times2\times8$\,b) is 864\,B, about
+$8\times$ smaller than at \texttt{f64}.
+
+\begin{table}[t]
+\centering
+\caption{Message-width sweep, code-capacity gross code: logical error rate of
+the fixed-point relay-BP decoder as a ratio to the \texttt{f64} decoder
+(1.00 = identical), 20\,000 shots per point, seed 2024.
+% src: docs/perf/data/qec-q7-fixed-bp.csv (f64_rate column)
+The \texttt{f64} rates are $1.00\times10^{-4}$, $2.00\times10^{-3}$,
+$1.27\times10^{-2}$ and $4.35\times10^{-2}$ at $p=0.02$, $0.03$, $0.04$,
+$0.05$. Every cell is within the Monte-Carlo 95\,\% CI of the \texttt{f64}
+rate. Q5.3 is the word carried to RTL.}
+\label{tab:width}
+% src: docs/perf/data/qec-q7-fixed-bp.csv (columns rate, ratio_to_f64) and
+% src: docs/perf/qec-q7-fixed-bp.md "M0" Result table (range / step column)
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}llcccc@{}}
+\toprule
+$(W,F)$ & range / step & $p{=}0.02$ & $0.03$ & $0.04$ & $0.05$ \\
+\midrule
+$(6,2)$  & $\pm7.75$ / $0.25$   & 2.00 & 1.20 & 1.06 & 0.97 \\
+$(7,3)$  & $\pm7.88$ / $0.125$  & 2.50 & 1.18 & 1.04 & 0.99 \\
+$(8,3)$ Q5.3 & $\pm15.9$ / $0.125$ & \textbf{1.00} & \textbf{0.97} & \textbf{0.95} & \textbf{0.96} \\
+$(8,4)$  & $\pm7.94$ / $0.0625$ & 1.50 & 1.18 & 0.98 & 0.99 \\
+$(10,4)$ & $\pm31.9$ / $0.0625$ & 1.00 & 0.97 & 0.97 & 0.98 \\
+$(12,6)$ & $\pm31.9$ / $0.016$  & 1.00 & 0.95 & 0.99 & 0.99 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection*{Leg/iteration schedule}
+
+% src: docs/perf/qec-q7-fixed-bp.md "M5 (step 1)" Why (cycles = legs·iters·3+1; 4×25 = 301 cyc = 3.16 µs at 95.2 MHz)
+In the unrolled RTL a worst-case decode takes
+$3\cdot\mathrm{legs}\cdot\mathrm{iters}+1$ cycles, so the schedule is the
+dominant latency term: the software default $4\times25$ costs 301 cycles,
+\SI{3.16}{\micro\second} at the \SI{95.2}{\mega\hertz} of the first KV260
+build.
+% src: docs/perf/qec-q7-fixed-bp.md "M5 (step 1)" Result (80 000 shots)
+We swept (legs, iters) at the Q5.3 word on the code-capacity model, 80\,000
+shots per point, against the full $4\times25$ decoder (Fig.~\ref{fig:schedule}).
+First, at a fixed sweep budget the split matters more than the total: the
+60-sweep schedules $6\times10$, $5\times12$, $4\times15$ and $3\times20$ all
+cost 181 cycles (\SI{1.90}{\micro\second}), but at the discriminating $p=0.05$
+only $6\times10$ stays within CI of the baseline ($1.057\times$, against
+$1.065\times$, $1.067\times$ and $1.073\times$). Relay-BP's strength is
+leg-to-leg disorder diversity, and iterations within a leg have diminishing
+returns once BP has settled, so cycles are best spent on many short legs.
+Second, the schedule alone cannot reach sub-microsecond latency: the only
+sub-\si{\micro\second} schedule, $2\times15$ (91 cycles,
+\SI{0.96}{\micro\second}), costs $1.295\times$ LER and is outside CI at every
+$p$.
+% src: docs/perf/qec-q7-fixed-bp.md "M5 step 2" Changes and Result table
+Adopting $6\times10$ (a six-leg $\gamma$ ROM, legs 0--3 keeping their seeds)
+and narrowing the blend accumulator from 32 to 16 bits (bit-exact, since
+$|\mathrm{blend}|\lesssim5600$) cut the worst case from 301 to 181 cycles; the
+KV260 build closed at \SI{96.0}{\mega\hertz}, \SI{1.89}{\micro\second},
+$1.68\times$ faster than $4\times25$ at $1.06\times$ LER; the gain is almost
+entirely the cycle cut.
+
+\begin{figure}[t]
+\centering
+% src: docs/perf/data/qec-q7-budget.csv (latency_us, ratio_to_base, within_ci per (legs, iters, p))
+\includegraphics[width=\columnwidth]{schedule.pdf}
+\caption{Leg/iteration budget sweep at the Q5.3 word (code-capacity gross
+code, 80\,000 shots per point). Each point is one (legs, iters) schedule:
+worst-case RTL latency at \SI{95.2}{\mega\hertz}
+($3\cdot\mathrm{legs}\cdot\mathrm{iters}+1$ cycles) against logical error
+rate as a ratio to the full $4\times25$ schedule, at
+$p\in\{0.03,0.04,0.05\}$. Filled markers are within the Monte-Carlo CI of the
+baseline. The 181-cycle schedules differ only in the split; $6\times10$ is
+the one adopted.}
+\label{fig:schedule}
+\end{figure}
+
+\subsection*{Circuit-level decoding}
+
+% src: docs/perf/qec-q7-fixed-bp.md "M5-followup — circuit-level DEM" Software (rounds=6, 4×25, Q5.3)
+The same fixed-point decoder handles gate-noise syndromes. On the depth-7
+circuit-level DEM at $\mathrm{rounds}=6$ with the $4\times25$ schedule, plain
+Q5.3 relay-BP tracks the float decoder and its LER falls with $p$ below a
+per-cycle threshold of about 0.3\,\%: $4\times10^{-3}$ at $p=0.002$,
+$2\times10^{-2}$ at $p=0.003$, $6.5\times10^{-2}$ at $p=0.004$.
+% src: docs/perf/qec-q5-circuit-dem.md "Results" per-cycle table and "Honest positioning"
+This agrees with the software study, where the per-cycle rate of the $d=12$
+code crossed below the $d=6$ member at $p\approx0.0025$--$0.003$; Bravyi et
+al.\ report about 0.7\,\% for the same code, and since the DEM is Stim-exact
+the remaining $2$--$2.5\times$ is decoder strength, not the model.
+% src: docs/perf/qec-q7-fixed-bp.md "M5-followup — circuit-level DEM" RTL co-sim
+The circuit-level graph is irregular: at $\mathrm{rounds}=1$ it has 864
+variables, 144 checks and 2952 edges with maximum check degree 25, against a
+uniform 6 at code capacity. The parametric sequential RTL decoder
+(\S\ref{sec:architecture}) decodes 40 sampled DEM shots over this graph
+bit-identically to the golden with no RTL change, only a regenerated Tanner
+header.
+
+\subsection*{No OSD tail (negative result)}
+
+Relay-BP occasionally leaves a hard decision with $H\hat e\ne s$. We built the
+classic fix, an OSD tail on the fixed-point posterior LLRs
+(\texttt{FixedRelayBpOsd}), as a slow path on the processor side gated by the
+RTL's \texttt{valid\_flag}, and measured whether it earns its place.
+% src: docs/perf/qec-q7-fixed-bp.md "M5-followup — the OSD-0 tail" Result, code capacity (20 000 shots)
+At code capacity (20\,000 shots) OSD-0 is LER-neutral at every $p$ within CI
+while the tail rate grows from 0.15\,\% to 8.6\,\% over $p=0.03\to0.06$: the
+residual failures are mostly uncorrectable (weight above $d/2$), so a valid
+OSD decode is a near coin-flip between cosets.
+% src: docs/perf/qec-q7-fixed-bp.md "M5-followup — the OSD-0 tail" Result, circuit-level table (rounds=6, 3000 shots)
+At circuit level ($\mathrm{rounds}=6$, 3000 shots) OSD-0 is worse than no tail
+in both fixed and float arithmetic: at $p=0.002$ the plain fixed/float LER
+$4.0\times10^{-3}$/$3.3\times10^{-3}$ rises to
+$6.7\times10^{-3}$/$5.7\times10^{-3}$, and at $p=0.003$
+$2.0\times10^{-2}$/$1.9\times10^{-2}$ rises to
+$2.7\times10^{-2}$/$2.8\times10^{-2}$; replacing an invalid guess by a valid
+but often wrong-coset decode loses more shots than it rescues. Order 4 is
+about break-even, and the beneficial regime is order 12
+($1.7\times10^{-3}$/$1.3\times10^{-3}$ and
+$1.3\times10^{-2}$/$1.5\times10^{-2}$), i.e.\ $2^{12}=4096$
+reliability-ordered GF(2) re-solves per failed shot: exactly the
+data-dependent, variable-latency work the hardware track set out to avoid.
+Fixed Q5.3 tracks float at every order, so the word is not the limiter; the
+order is. The decoder therefore ships as pure relay-BP with no OSD tail.

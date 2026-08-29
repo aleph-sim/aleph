@@ -4,6 +4,7 @@
 \usepackage{amsmath,amssymb}
 \usepackage{graphicx}
 \usepackage{booktabs}
+\usepackage{array}
 \usepackage{siunitx}
 \usepackage{xcolor}
 \usepackage[hidelinks]{hyperref}
@@ -11,7 +12,7 @@
 \usepackage[numbers,sort&compress]{natbib}
 \graphicspath{{figs/}}
 \sisetup{range-phrase=--,range-units=single}
-\newcommand{\aleph}{\textsf{aleph}}
+\newcommand{\alephsim}{\textsf{aleph}}
 \newcommand{\gross}{$[[144,12,12]]$}
 
 \title{A sub-microsecond relay-BP decoder for the $[[144,12,12]]$ gross code:\\
@@ -38,5 +39,6 @@ from a fixed-point golden model to FPGA silicon and a 7\,nm predictive ASIC}
 \bibliography{refs}
 
 \appendix
+\onecolumn
 \input{sections/A-provenance}
 \end{document}

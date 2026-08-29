@@ -1,1 +1,36 @@
-% 01-intro — to be written
+\section{Introduction}
+
+Quantum low-density parity-check (qLDPC) codes promise fault-tolerant memory at a fraction of the
+surface code's qubit overhead \citep{bravyi2024gross}, and belief-propagation decoders --- in
+particular relay-BP \citep{muller2025relaybp} --- have been shown, in software, to reach the logical
+error rates that make such codes useful without an ordered-statistics tail. Whether that translates
+into a decoder that keeps up with a quantum processor is a hardware question: the decode of one
+syndrome window must complete in about a microsecond for superconducting platforms, and in the
+tens to hundreds of microseconds for ions and neutral atoms, on a budget of area and power that a
+control system can absorb.
+
+This paper documents one end-to-end answer, built in the open and measured at every step. The
+contributions, in the order the work was done:
+
+\begin{enumerate}
+  \item A fixed-point relay-BP golden model for the \gross{} gross code that is the RTL specification:
+        an 8-bit Q5.3 message word and a $6\times10$ schedule, each chosen by a sweep against the
+        floating-point decoder on circuit-level noise (\S\ref{sec:decoder}).
+  \item A ladder of synthesizable cores from a sequential FSM to a $K$-banked, constant-geometry
+        design whose gather/scatter is a fixed permutation network and whose message storage is a
+        latch register file, with a co-simulation harness that drives every variant --- and the
+        routed ASIC netlist --- with the same golden vectors (\S\ref{sec:architecture}).
+  \item Silicon results on a \$300 Kria KV260: \SI{15.64}{\micro\second} worst-case,
+        \SI{0.85}{\micro\second} median, bit-exact over $3\times10^6$ shots, and the finding that the
+        convergence flag heralds essentially every logical error (\S\ref{sec:silicon}).
+  \item The full-parallel geometry on a rented Virtex UltraScale+ and on ASAP7 through OpenROAD:
+        543 cycles, \SI{0.88}{\micro\second} at 7\,nm predictive, with the first power figure derived
+        from gate-level switching activity rather than default toggle rates (\S\ref{sec:scaling}).
+  \item The negative results that shaped the design and that a tape-out would have to face: no OSD
+        tail, no feasible \texttt{NGROUP} setting, a streaming core that does not fit, and a
+        latch-clock hold failure that repair cannot buffer away (\S\ref{sec:limitations}).
+\end{enumerate}
+
+Every number in this paper is copied from a dated report in the public repository
+\citep{alephrepo}; Appendix~\ref{app:prov} maps each to its source file. Nothing measured on ASAP7
+is called ``the chip'': it is a 7\,nm \emph{predictive} kit, and the target node is not.

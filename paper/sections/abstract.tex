@@ -1,1 +1,19 @@
-% abstract — to be written
+We report a complete hardware implementation path for real-time decoding of the \gross{} gross
+bivariate-bicycle code with relay belief propagation (relay-BP): a fixed-point golden model,
+a family of banked FPGA cores, silicon campaigns, and a placed-and-routed design on a 7\,nm
+predictive PDK. An 8-bit (Q5.3) min-sum message word reproduces the floating-point logical error
+rate within statistical error, and a $6\times10$ leg/iteration schedule is chosen from a budget
+sweep. The shipped Kria KV260 build (16/48 banking) decodes a circuit-level detector-error-model
+window in \SI{15.64}{\micro\second} worst case and \SI{0.85}{\micro\second} median with early exit
+at \SI{133.3}{\mega\hertz}, and is bit-exact against the software golden over $10^6$ shots at each of
+three operating points. The decoder's convergence flag heralds nearly every logical error:
+$P(\text{error}\mid\text{converged}) \le 3\times10^{-6}$, so the logical error rate is, to within
+statistics, the non-convergence rate, and every post-processing fallback we tried was worse than
+flagging alone. The full-parallel 144/864 geometry decodes in 543 cycles; it places and routes at
+\SI{76.3}{\percent} of a Virtex UltraScale+ VU47P at \SI{97.3}{\mega\hertz} (\SI{5.58}{\micro\second})
+and, through OpenROAD on ASAP7, at \SI{614.6}{\mega\hertz} (\SI{0.88}{\micro\second}). Gate-level
+simulation of the routed 16/48 netlist gives a real-activity power of \SI{0.149}{\watt} at \SI{1}{\giga\hertz},
+\SI{0.31}{\micro\joule} per decode window, \SI{93}{\percent} of it in the clock tree and register
+clocking. The same simulation exposes an unrepaired hold failure on the latch register file that
+makes every setup-only frequency figure provisional; we report it rather than hide it. All RTL,
+goldens, campaign data and a one-command KV260 deployment are open source.

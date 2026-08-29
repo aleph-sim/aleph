@@ -1,1 +1,23 @@
-% A-provenance — to be written
+\section{Provenance of every number}
+\label{app:prov}
+
+Each numeric claim in the text carries, in the \LaTeX{} source, a comment naming the repository
+file and heading it was copied from. This table lists those files per section (headings
+abbreviated); the reports themselves are in \texttt{docs/} of the repository \citep{alephrepo}
+at the commit tagged \texttt{preprint-v1}; the section headings quoted in each comment locate the
+exact table or paragraph.
+
+\begin{footnotesize}
+\begin{tabular}{@{}p{0.16\textwidth}>{\raggedright\arraybackslash}p{0.80\textwidth}@{}}
+\toprule
+Section & Source files (\texttt{docs/} unless noted) \\
+\midrule
+\S2 The decoder & \texttt{perf/qec-q5-gross.md}; \texttt{perf/qec-q5-circuit-dem.md}; \texttt{perf/qec-q7-fixed-bp.md}; \texttt{perf/qec-q5-bposd.md}; \texttt{perf/data/qec-q7-fixed-bp.csv}; \texttt{perf/data/qec-q7-budget.csv} \\[2pt]
+\S3 Hardware architecture & \texttt{perf/qec-q7-fixed-bp.md}; \texttt{superpowers/specs/2026-07-15-m9c-serial-gather-design.md}; \texttt{superpowers/specs/2026-07-16-m9c-aswaksman-rightsize-design.md}; \texttt{qec/asic-architecture.md}; \texttt{qec/regfile-plan.md}; \texttt{qec/q7-06-ac1-batched-dma.md}; \texttt{perf/q7-02-asap7-timing.md} \\[2pt]
+\S4 Results on FPGA silicon & \texttt{perf/qec-q7-fixed-bp.md}; \texttt{hw/product/README.md}; \texttt{hw/product/interface-spec.md}; \texttt{qec/q7-06-ac1-batched-dma.md}; \texttt{qec/q7-07-nonconvergence-policy.md}; \texttt{superpowers/specs/2026-07-25-q7-07-nonconvergence-policy-design.md} \\[2pt]
+\S5 Scaling and predictive ASIC & \texttt{perf/q7-02-ngroup-sweep.md}; \texttt{qec/asic-architecture.md}; \texttt{qec/open-silicon-program.md}; \texttt{perf/q7-02-fullparallel-fpga.md}; \texttt{qec/b2-aws-build-runbook.md}; \texttt{perf/q7-02-b3-asap7-fullparallel.md}; \texttt{perf/q7-02-asap7-timing.md} \\[2pt]
+\S6 Limitations & \texttt{perf/q7-02-asap7-timing.md}; \texttt{qec/open-silicon-program.md}; \texttt{perf/q7-02-b3-asap7-fullparallel.md}; \texttt{perf/qec-q7-fixed-bp.md}; \texttt{perf/q7-02-ngroup-sweep.md} \\[2pt]
+\S7 Reproducibility & \texttt{hw/product/README.md} \\[2pt]
+\bottomrule
+\end{tabular}
+\end{footnotesize}
