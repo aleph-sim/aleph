@@ -1,0 +1,52 @@
+\section{Limitations and negative results}
+\label{sec:limitations}
+
+We list these with the same weight as the positive results; several redirected the design.
+
+\paragraph{Hold on the latch register file.}
+% src: docs/perf/q7-02-asap7-timing.md §4b, §7
+The routed 16/48 ASAP7 netlist has 44\,704 hold violations (worst \SI{-745.9}{\pico\second}), 43\,802
+of them on the D pins of the latch register file: the latch write pulse is derived from
+\texttt{we \& \textasciitilde{}clk} and realised as a clock-tree sub-network with \SI{1.37}{\nano\second}
+insertion delay against \SI{0.47}{\nano\second} for the flip-flops, so the latches close about
+\SI{0.9}{\nano\second} after the flops launch new data. The first gate-level co-simulation of the
+netlist reproduces the consequence: the 2085-cycle schedule runs exactly on all 40 golden shots, but
+8--15 of 877 output fields differ and the decode does not converge. Hold is independent of clock
+period, and \texttt{repair\_timing -hold} would need on the order of $10^6$ delay buffers
+(\texttt{DPL-0038}); the fix is an integrated clock-gating cell or a re-timed write pulse, which the
+ASAP7 platform's \texttt{DONT\_USE ICG*} setting precluded here. Until it is made, every frequency
+in \S\ref{sec:scaling} is a setup-only datapath figure, and the same un-gated clock is why
+\SI{93}{\percent} of the measured power is register clocking. The 144/864 netlist carries the same
+defect (35\,616 violations, worst \SI{-1486.9}{\pico\second}).
+
+\paragraph{7\,nm predictive is not a target node.}
+% src: docs/qec/open-silicon-program.md risk register; docs/perf/q7-02-b3-asap7-fullparallel.md §3.1
+ASAP7 \citep{clark2016asap7} is a research kit. The margin between \SI{0.88}{\micro\second} and the
+microsecond is \SI{12}{\percent}; a $1.2\times$ node penalty at 28\,nm would erase it. Nothing in this
+work measures that gap, and a 28\,nm PDK is a gate we have not passed.
+
+\paragraph{The streaming core does not fit.}
+% src: docs/qec/open-silicon-program.md §1.2; memory of M9c verdict in docs/perf/qec-q7-fixed-bp.md
+A windowed streaming variant with a runtime-addressed gather reached \SI{162}{\percent} of the KV260's
+LUTs and \SI{113}{\percent} of its BRAM by estimate and exhausted \SI{123}{\giga\byte} of host memory
+in technology mapping. It is bit-exact in simulation only; the fixed-permutation gather of
+\S\ref{sec:architecture} is the answer to it, not a refinement of it.
+
+\paragraph{No OSD tail; no \texttt{NGROUP}.}
+% src: docs/perf/qec-q7-fixed-bp.md "OSD-0 tail"; docs/perf/q7-02-ngroup-sweep.md
+An OSD-0 post-processor did not reduce the logical error rate at the operating points measured, and
+the order-12 sweep that would has no place in a microsecond budget. A grouped partial-unroll knob
+(\texttt{NGROUP}) has no setting that both fits and is faster than the banked core.
+
+\paragraph{Uncovered corners.}
+% src: docs/perf/q7-02-asap7-timing.md §7
+Runt frames (fewer slices than the window) take a zero-pad path that no co-simulation vector
+exercises; the 64/192 and 144/864 geometries have been cycle-counted and synthesised but not run on
+hardware we own; and the gate-level co-simulation used behavioural replacements for two sequential
+cells because the vendor UDP models cannot be compiled by Verilator (an event-driven arbitration with
+the vendor models was attempted and remained X-contaminated).
+
+\paragraph{One author, one lab.}
+All measurements were made by the author on the author's hardware. The deployment procedure has been
+executed on three wiped boards, but not yet by a third party; the repository invites and documents
+exactly that.

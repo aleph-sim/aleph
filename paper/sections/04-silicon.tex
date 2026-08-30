@@ -1,0 +1,252 @@
+% 04-silicon — Results on FPGA silicon.
+% Every number below is quoted from an existing report; each is tagged with a
+% "% src:" comment naming the file and heading it comes from. Nothing here is
+% a new measurement.
+
+\section{Results on FPGA silicon}
+\label{sec:silicon}
+
+All silicon results in this section are from one board, an AMD Kria KV260
+(Zynq UltraScale+, xck26), running the banked relay-BP core of
+Section~3 in its 16/48 configuration, i.e.\ 16 check groups and 48
+variable groups updated per cycle. The board is the \$300-class part the
+appliance ships on; nothing here is projected from a larger device.
+
+\subsection*{The shipped build}
+
+% src: docs/perf/qec-q7-fixed-bp.md "Q7-02 M8 — squeeze the KV260" / "Board ladder + silicon"
+The 16/48 build closes timing at a PS-granted clock of \SI{133.332}{\MHz}
+(\texttt{TIMING\_MET}, WNS \SI{0.000}{\ns}); the two earlier attempts at
+\SI{150}{\MHz} missed by \SI{-0.238}{\ns} (default strategy) and
+\SI{-0.147}{\ns} (\texttt{Performance\_Explore}). The out-of-context probe
+at a \SI{5}{\ns} target used \SI{102.8}{k} LUTs (88\,\% of the part) and 164
+DSPs (13\,\%). The full best-kept schedule of 6 legs $\times$ 10 iterations
+takes a fixed 2\,085 cycles, so the worst-case decode latency is
+\SI{15.64}{\micro\second}, with min = p50 = mean = p99 = max.
+% src: docs/perf/qec-q7-fixed-bp.md "Q7-02 M8" / "Board ladder + silicon"
+With early exit enabled (stop at the first syndrome-satisfying decision),
+the same silicon on the same 40 circuit-level shots at $p = 0.003$ gives
+min 79, p50 113, mean 153, p99 = max 589 cycles, i.e.\
+\SI{0.59}{\micro\second} minimum, \SI{0.85}{\micro\second} median,
+\SI{1.15}{\micro\second} mean and \SI{4.4}{\micro\second} worst on that
+sample. The median decode is therefore sub-microsecond on the shipped board;
+the worst case is not, and early exit does not change the worst case.
+% src: docs/perf/qec-q7-fixed-bp.md "Q7-02 M8" / "Board ladder + silicon"
+Both modes are bit-exact against the software golden on all 40 shots
+(40/40), and the wrapper identifies itself with IDCODE \texttt{0x4250\_0003}.
+% src: docs/perf/qec-q7-fixed-bp.md "Q7-02 M8" / "Board ladder + silicon" (silicon ladder)
+For scale, the same board's worst case went \SI{6.72}{\ms} (edge-serial
+BRAM core, M6) $\rightarrow$ \SI{32.8}{\micro\second} (first banked core,
+M7) $\rightarrow$ \SI{15.64}{\micro\second} (this build): $2.1\times$ over
+M7 and $430\times$ over M6.
+
+% src: hw/product/README.md "Versions"; hw/product/interface-spec.md "5. Latency"
+This is the configuration published as \texttt{appliance-v1}: the released
+bitstream, its \texttt{.hwh}, the golden vectors and a driver, installed by a
+script that requires the 40/40 self-test to pass before declaring success
+(Section~7).
+
+\subsection*{Batched path and the matched-prior campaign}
+
+% src: docs/qec/q7-06-ac1-batched-dma.md "What AC-1 is"; "Throughput (KV260, 100 MHz, measured on-silicon)"
+The AXI4-Lite register interface is a per-decode round trip through the
+processing system, and the processor dominates it: the per-word Python/MMIO
+runner reaches 3\,018 experiments/s at the full schedule and 3\,392/s with
+early exit (331 and \SI{295}{\micro\second} per experiment, roughly
+94\,\% harness overhead). An AXI4-Stream batch shell around the same core,
+fed by AXI-DMA from PS DDR, streams a whole batch of independent
+syndrome$\rightarrow$result experiments through one transfer; the per-experiment
+output is a 32-bit status word carrying the 12 observable flips, the
+\texttt{valid\_flag} (bit 19) and the latency in cycles.
+% src: docs/qec/q7-06-ac1-batched-dma.md "Throughput (KV260, 100 MHz, measured on-silicon)"
+On silicon (batched overlay at \SI{100}{\MHz}) this gives 43\,380
+experiments/s at the full schedule (\SI{23.1}{\micro\second} each, $14.4\times$,
+now bound by the 2\,085-cycle decode itself) and 553\,000/s with early exit
+(\SI{1.81}{\micro\second} each, $163\times$ the per-word early-exit rate),
+clearing the $\geq 100\times$ target. Batching removes the harness, after
+which the decode mode alone sets the ceiling.
+% src: docs/qec/q7-06-ac1-batched-dma.md "Verification"
+The batched path matches the golden 40/40 at batch sizes 1, 2, 4, 40 and
+20\,000, and the same core in the AXI4-Lite overlay also passes 40/40, which
+cross-checks the core independently of the DMA path.
+
+% src: docs/qec/q7-06-ac1-batched-dma.md "AC-2 — 10⁶-shot on-silicon LER campaign — MET"
+The batched path made a large on-silicon logical-error-rate (LER) campaign
+affordable. Circuit-level shots (one round, seed 2024) were sampled at three
+physical error rates and decoded both by the software fixed-point golden and
+by the board, $10^{6}$ shots per point, each point against a bitstream whose
+header bakes that point's priors. Table~\ref{tab:campaign} gives the result:
+the RTL LER equals the software LER at every point and the per-shot
+divergence count is 0 in $3\times10^{6}$ shots. The silicon is bit-exact to
+the golden, not merely within its confidence interval, at
+\SI{23.09}{\micro\second} per shot at the full schedule.
+
+\begin{table}[t]
+\centering
+\caption{On-silicon campaign, KV260, banked 16/48, circuit-level noise,
+one round, $10^{6}$ shots at every point, one matched-prior bitstream per
+point. LER is the logical error rate (software golden and RTL are identical to the
+digit); mism.\ counts shots whose RTL observable differs from the golden's;
+$r$ is the non-convergence rate $P(\texttt{valid\_flag}=0)$ with its Wald
+95\,\% interval.}
+\label{tab:campaign}
+% src: docs/qec/q7-06-ac1-batched-dma.md "AC-2 — 10⁶-shot on-silicon LER campaign — MET" (LER, mismatches, CI)
+% src: docs/qec/q7-07-nonconvergence-policy.md "AC-1 — non-convergence rate, block path (primary)" (r and its CI)
+\footnotesize
+\begin{tabular}{@{}lrlll@{}}
+\toprule
+$p$ & mism. & LER & $r$ & 95\,\% CI \\
+\midrule
+0.003 & 0 & \num{8.3200e-4} & \num{1.1680e-3} & $\pm$\num{6.70e-5} \\
+0.005 & 0 & \num{7.0520e-3} & \num{8.4730e-3} & $\pm$\num{1.80e-4} \\
+0.007 & 0 & \num{2.8774e-2} & \num{3.2591e-2} & $\pm$\num{3.48e-4} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% src: docs/qec/q7-06-ac1-batched-dma.md "The first run of this campaign, and why it read as a decoder bug"
+\paragraph{A methodological finding.}
+The first run of this campaign reported 0, 7\,067 and 30\,703 divergences at
+the three points, with the RTL LER 7--13\,\% worse than software at
+$p \geq 0.005$ and the gap growing with $p$, and it was initially written up
+as a synthesis-versus-simulation bug in the banked core. It was not. The
+shipped overlay's header had been generated at $p = 0.003$, so the RTL baked
+the per-variable priors $\lambda(p{=}0.003)$; the campaign's golden was built
+from a detector-error model at the sampling rate, so it decoded with
+$\lambda(p{=}0.005)$ and $\lambda(p{=}0.007)$. Same Tanner graph, different
+priors, hence a different message trajectory on exactly those syndromes hard
+enough for the trajectory to decide the outcome---which is why the pattern
+was deterministic, zero at $p = 0.003$, monotone in $|p - 0.003|$, and
+identical in RTL simulation, functional simulation and silicon. Two
+reproductions confirmed it: the 24 diverging shots captured from the board
+re-decode 24/24 to the silicon's answer in software at $p = 0.003$ (6/24 at
+0.005, 0/24 at 0.007), and off-board co-simulation of 2\,000 shots sampled at
+$p = 0.007$ against the $p = 0.003$ header mismatches 210/2000 with a golden
+at $\lambda(0.007)$ and 0/2000 with a golden at $\lambda(0.003)$.
+% src: docs/qec/q7-06-ac1-batched-dma.md "What the campaign actually exposed"
+The general lesson is that a bit-exactness claim for a decoder with baked-in
+priors is only meaningful when the golden's priors are the bitstream's; the
+vector emitters now take the decoder's $p$ as an explicit argument and stamp
+it into the file header, and a 2\,000-shot high-weight gate at $p = 0.007$
+joined the regression suite because every earlier simulation gate had driven
+40 shots at $p = 0.003$ and never exercised heavy syndromes.
+
+\subsection*{Non-convergence: \texttt{valid\_flag} as a herald}
+
+% src: docs/qec/q7-07-nonconvergence-policy.md "AC-1 — non-convergence rate, block path (primary)"
+Relay-BP either finds a syndrome-satisfying decision within its budget or
+emits its best-kept decision with \texttt{valid\_flag} $= 0$. The
+non-convergence rate $r(p)$, measured in software over the same $10^{6}$
+shots per point (the LER column reproduces the silicon campaign exactly:
+same sampler, seed and decoder), is the last column of
+Table~\ref{tab:campaign}; the median iteration to first validity is 2, 4
+and 6 at the three points, which is what makes early exit worth $163\times$.
+% src: docs/qec/q7-07-nonconvergence-policy.md "The ceiling — A(p), and what it forbids"
+Splitting the logical errors by the flag gives the central result of this
+section (Figure~\ref{fig:herald}). At $p = 0.003$, all 832 logical errors in
+$10^{6}$ shots were shots the decoder had already flagged; the converged
+population, 998\,832 shots, contained zero logical errors, which bounds
+$P(\mathrm{err}\mid\texttt{valid}{=}1) \leq 3.0\times10^{-6}$ at 95\,\%
+confidence (rule of three). At $p = 0.005$ and $0.007$ the conditional error
+rate of a converged decode is $1.916\times10^{-5}$ and $1.178\times10^{-4}$.
+The attributable fraction $A(p)$, the share of logical errors that carry
+\texttt{valid\_flag} $= 0$, is 1.0000 (observed; $\geq 0.9964$ at 95\,\%),
+0.9973 and 0.9960. In words: the decoder's LER is essentially its
+non-convergence rate, and a converged decision is essentially never wrong.
+A converged decode is two to three orders of magnitude more reliable than
+the raw LER at every point, so a consumer that can discard or escalate
+flagged shots obtains a post-selected LER of that order for free.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{herald}
+\caption{Logical error rate and non-convergence rate
+$r(p)=P(\texttt{valid\_flag}=0)$ per physical error rate $p$, block path,
+$10^{6}$ shots per point. The two curves nearly coincide because almost every
+logical error is a non-converged shot: the attributable fraction $A(p)$ is
+1.0000 / 0.9973 / 0.9960 at $p = 0.003$ / 0.005 / 0.007, and the error rate
+conditioned on convergence is $\leq 3.0\times10^{-6}$ (zero observed in
+998\,832 converged shots), $1.9\times10^{-5}$ and $1.2\times10^{-4}$.}
+% src: docs/qec/q7-07-nonconvergence-policy.md "The ceiling — A(p), and what it forbids"
+\label{fig:herald}
+\end{figure}
+
+% src: docs/superpowers/specs/2026-07-25-q7-07-nonconvergence-policy-design.md "Pre-registered decision rule"
+% src: docs/qec/q7-07-nonconvergence-policy.md "The verdict, and the gap in the pre-registered rule"
+Because $A \approx 1$, an oracle fallback acting only on flagged shots could
+in principle remove the whole LER, so a fallback cannot be dismissed by
+arithmetic; the decision rule, fixed before the data were seen, required a
+candidate to show a significant paired rescue on the non-converged subset
+and fit the latency budget.
+% src: docs/qec/q7-07-nonconvergence-policy.md "AC-2 — candidate evaluation on the retained corpora"; "LER impact of every candidate, propagated"
+We retained 1\,000 non-converged shots per point as a fixed corpus and
+re-decoded each with five ordered-statistics-decoding (OSD) candidates:
+OSD-0, OSD-2, OSD-4, and residual-restricted OSD-2 and OSD-4 (1, 4, 16, 4
+and 16 solves per shot). Every candidate is worse than the baseline at every
+point, and significantly so under a paired McNemar test (every $\chi^2 >
+3.84$; the best row, residual OSD-4 at $p = 0.003$, rescues 116 shots and
+breaks 169, $\chi^2 = 9.49$). Propagated as $\Delta\mathrm{LER} =
+r(p)\,[P(\mathrm{err}\mid v{=}0) - P(\mathrm{err}\mid v{=}0,\mathrm{fallback})]$,
+the candidates raise LER by between $+5.4\,\%$ and $+39.9\,\%$; OSD-0 turns
+a 71\,\% conditional error rate into 99.6\,\%. The reason is that the BP
+posteriors that order OSD's reliable basis are exactly the ones that just
+failed to converge: forcing $H\hat{e} = s$ lands the solution in the wrong
+logical class.
+% src: docs/qec/q7-07-nonconvergence-policy.md "Latency, and a caveat about the parallel timing column"
+The candidates also fail on latency: single-threaded on an EPYC 8124P, a
+processor-side tail costs \SIrange{1460}{1644}{\micro\second} per shot it
+fires on (including the software re-decode the flag-only RTL export forces),
+against a \SI{1}{\micro\second}-per-round budget; a tail that fires on
+0.12\,\% of shots still sets the worst case.
+% src: docs/qec/q7-07-nonconvergence-policy.md "Chosen policy"
+The chosen policy is therefore \emph{do-nothing-but-flag}: emit the best-kept
+decision, export \texttt{valid\_flag}, no RTL change. Its LER impact is zero
+by construction. This is reached for the opposite reason to the one the
+rule's first branch anticipated (``non-convergence is negligible''):
+non-convergence is nearly the entire error budget, and nothing affordable
+recovers any of it. The two directions that could---more relay legs on a
+flagged shot, or escalation to a host for non-real-time use---are outside
+this work.
+
+% src: docs/qec/q7-07-nonconvergence-policy.md "Board confirmation — the flag itself is bit-exact on silicon"
+Finally, the flag the policy rests on is the silicon's flag. On the
+matched-prior $p = 0.005$ overlay, $10^{5}$ fresh shots gave identical LER
+in software and hardware ($7.1200\times10^{-3}$, 712 errors each), 0/100\,000
+observable divergences, and 857 non-converged shots (0.857\,\%) on both
+sides with \texttt{valid\_mismatch} $= 0$. This is one overlay, one operating
+point and the block path only; at the other two points the licence remains
+the observable-level bit-exactness of Table~\ref{tab:campaign} plus the
+off-board co-simulation gate, which compares the flag.
+
+\subsection*{Power}
+
+% src: docs/perf/qec-q7-fixed-bp.md "Q7-05 — KV260 power / energy per decode (INA260, SOM-total)" / "Method"
+The Kria K26 SOM exposes a single INA260 monitor on its \SI{5}{\volt} input
+rail, so the only observable is SOM-total power (PS, PL, DDR and fan); there
+is no PL-domain shunt. The measurement is therefore a delta between the PL
+programmed-but-idle and the PL under a sustained decode stream, with a
+processor-poll-only control (MMIO reads, no decode) to bound the share of the
+delta owed to the host loop.
+% src: docs/perf/qec-q7-fixed-bp.md "Q7-05" / "Results (two runs ...)"
+On the shipped 16/48 overlay at \SI{133.332}{\MHz}, idle SOM power is
+\SI{3.25}{\watt} (\SI{5.07}{\volt} $\times$ \SI{0.64}{\ampere}); a
+full-schedule decode stream through the AXI4-Lite runner lifts it to
+\SI{3.50}{\watt} ($+\SI{249}{\milli\watt}$, 2\,887 decodes/s, PL duty
+4.5\,\%), early exit to \SI{3.46}{\watt} ($+\SI{210}{\milli\watt}$, duty
+0.4\,\%), and the poll-only control alone to \SI{3.45}{\watt}
+($+\SI{200}{\milli\watt}$). Two runs reproduce to $\pm\SI{5}{\milli\watt}$.
+The host loop is thus about 80\,\% of the load delta; the decode datapath
+adds only $\sim$\SI{48}{\milli\watt} (full) and $\sim$\SI{10}{\milli\watt}
+(early exit) at the SOM level.
+% src: docs/perf/qec-q7-fixed-bp.md "Q7-05" / "Energy per decode — two honest framings"
+Energy per decode follows in two framings. As shipped through the per-word
+harness, $\Delta P \cdot$ wall-per-decode is $\approx\SI{86}{\micro\joule}$
+(full schedule) and $\approx\SI{67}{\micro\joule}$ (early exit); this is real
+but harness-bound. Subtracting the control gives a PL-core dynamic energy of
+$\lesssim\SI{17}{\micro\joule}$ (full) and $\lesssim\SI{3}{\micro\joule}$
+(early exit), equivalent to about \SI{1}{\watt} of active PL power over the
+\SI{15.64}{\micro\second} busy window. These are order-of-magnitude upper
+bounds: they are a small difference of two $\sim$\SI{200}{\milli\watt}
+numbers, and the control's read mix does not exactly match the decode
+loop's. The batched DMA path raises the PL duty well above 4.5\,\% and would
+turn the bound into a tight number; that re-measurement has not been done.

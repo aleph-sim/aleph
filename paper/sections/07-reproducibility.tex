@@ -1,0 +1,16 @@
+\section{Reproducibility and availability}
+\label{sec:repro}
+
+% src: hw/product/README.md, hw/product/deploy.sh, .github/workflows/hw.yml, hw/Makefile
+The repository \citep{alephrepo} (Rust crates under MIT, \texttt{hw/} under Apache-2.0 for its patent
+grant) contains the golden model, every RTL variant in this paper, the Verilator co-simulation gates
+(run in CI on every pull request), the OpenROAD configurations, and the reports the numbers are
+copied from. \texttt{hw/product/deploy.sh} fetches the released KV260 bitstream and driver, programs a
+board over SSH, and runs the 40-shot golden on silicon; it has been run end to end on three wiped
+boards. A support policy (\texttt{hw/product/SUPPORT.md}) states what is supported and how to report a
+deployment.
+
+The campaign data behind every table and figure --- the message-width and schedule sweeps, the
+silicon LER campaigns and the ASAP7 timing and power reports --- and the appliance-v1 bitstream are
+archived on Zenodo under DOI \texttt{10.5281/zenodo.XXXXXXX}. % DOI: filled in by PR 2 after the deposit
+Appendix~\ref{app:prov} lists, for every number in the text, the file and section it was taken from.

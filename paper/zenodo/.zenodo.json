@@ -1,0 +1,11 @@
+{
+  "title": "Data and appliance-v1 artefacts for: A sub-microsecond relay-BP decoder for the [[144,12,12]] gross code",
+  "upload_type": "dataset",
+  "creators": [{"name": "Malymon, Ruslan"}],
+  "description": "Campaign data behind every table and figure of the preprint (message-width sweep, leg/iteration budget sweep, on-silicon logical-error-rate campaigns, non-convergence/heralding data, ASAP7 timing and power reports) plus the appliance-v1 Kria KV260 bitstream, hardware handoff, driver and golden vectors released at https://github.com/aleph-sim/aleph/releases/tag/appliance-v1. See MANIFEST.txt for a per-file description and SHA256SUMS for integrity.",
+  "license": "CC-BY-4.0",
+  "keywords": ["quantum error correction", "qLDPC", "gross code", "belief propagation", "FPGA", "ASIC", "real-time decoding"],
+  "related_identifiers": [
+    {"relation": "isSupplementTo", "identifier": "https://github.com/aleph-sim/aleph", "resource_type": "software"}
+  ]
+}

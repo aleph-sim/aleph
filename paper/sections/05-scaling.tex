@@ -1,0 +1,257 @@
+% 05-scaling — Scaling to the full-parallel geometry and a predictive ASIC.
+% Every number carries a `% src:` comment naming the docs/ report and heading it was read from.
+% Nothing here is a new measurement; nothing predictive is called "the chip".
+
+\section{Scaling to the full-parallel geometry and a predictive ASIC}
+\label{sec:scaling}
+
+The shipped 16/48 core (\S\ref{sec:silicon}) decodes a worst-case window in 2085
+cycles, \SI{15.64}{\micro\second} at the KV260's \SI{133.3}{\mega\hertz}.
+% src: docs/perf/q7-02-ngroup-sweep.md "What this measures and why"
+Latency is cycles divided by clock, so the two questions this section answers
+are how far the cycle count can be pushed down by widening the core, and how
+far the clock can be pushed up by leaving the FPGA. Both were measured rather
+than modelled, and two of the three answers came out worse than the plan
+assumed. We report them in the order they were obtained.
+
+\subsection*{The banking family is the only implementable one}
+
+Two architectures span the design space between the banked core and a fully
+unrolled one. \texttt{bp\_relay\_unroll\_pipe} stamps $1/\mathit{NGROUP}$ of
+the check and variable slots and time-multiplexes each across $\mathit{NGROUP}$
+groups per BP phase. Its cycle count is exactly affine,
+$\mathrm{cycles}(\mathit{NGROUP}) = 122\cdot\mathit{NGROUP}+240$, and the
+co-simulation is 40/40 bit-identical to the golden at every setting measured.
+% src: docs/perf/q7-02-ngroup-sweep.md "The cycle half: closed form, bit-exact everywhere"
+The knob nevertheless has no feasible setting. Five values were synthesised
+out-of-context on the KV260 part at a \SI{5.0}{\nano\second} target: every one
+is over the device budget \emph{and} slower than the banked core. The cheapest
+member, $\mathit{NGROUP}=144$ with one check slot and six variable slots
+stamped, still needs 703\,698 LUTs (601\,\% of the device) at
+\SI{17.5}{\mega\hertz}; the fastest, $\mathit{NGROUP}=16$, reaches
+\SI{132.8}{\micro\second} at 1474\,\% of the device, 8.5$\times$ slower than
+the shipped core. F$_{\max}$ is flat at 16.5--\SI{17.5}{\mega\hertz} across a
+9$\times$ span of the knob.
+% src: docs/perf/q7-02-ngroup-sweep.md "The area/Fmax half: measured"
+The reason is structural: each slot gathers across $\mathit{NGROUP}$ groups and
+there are $\texttt{BP\_C}/\mathit{NGROUP}$ slots, so the mux volume is
+$\mathit{NGROUP}$-invariant by construction and the crossbar is simultaneously
+the area floor and the critical path. Least squares gives
+$\mathrm{LUT} = 615\,985 + 18\,415\,474/\mathit{NGROUP}$ within 5.7\,\%.
+% src: docs/perf/q7-02-ngroup-sweep.md "Why: the crossbar is NGROUP-invariant by construction"
+Banking, which replaces the flat register array plus crossbar with
+index-addressed banks, is therefore not an optimisation of a working parallel
+design but the thing that makes it implementable.
+% src: docs/perf/q7-02-ngroup-sweep.md "Consequences"
+
+Within the banked family the plan had assumed cycles scale linearly with bank
+count. Cycle-measuring five geometries showed that they do not. The counts fit
+the exact closed form
+\begin{equation}
+  \mathrm{cycles} = 60\,(G_C+G_V) + 420 + (2G_V + G_C),
+  \label{eq:cycles}
+\end{equation}
+where $G_C,G_V$ are the check and variable group counts and the constant
+$420 = 60\cdot 7$ is a per-iteration pipeline tail (seven drain cycles in each
+of the $\mathrm{LEGS}\cdot\mathrm{ITERS}=60$ iterations) that exists regardless
+of banking. Only the first term shrinks with banking, so 4$\times$ banking
+(16/48 $\to$ 64/192) yields 2.28$\times$ fewer cycles, 2085 $\to$ 913, and the
+tail grows from 20\,\% to 47\,\% of the budget.
+% src: docs/qec/asic-architecture.md "Banking-scaling qualification (measured, Q7-08 follow-up)"
+The floor is the full-parallel geometry, $G_C=G_V=1$: 543 cycles. This
+configuration could not be generated when the qualification was written; three
+generator defects (routing-network lanes sized by bank count rather than tap
+count, a zero-width row address at $\lceil\log_2 1\rceil=0$, and ROM literals
+beyond Verilator's 65\,536-bit limit) were fixed in Task~B0 Option~A, after
+which 48/288, 144/432 and 144/864 all pass the 40-shot golden 40/40 at 789, 605
+and 543 cycles, with the header for every previously qualified geometry
+byte-identical apart from two guard lines.
+% src: docs/qec/open-silicon-program.md "Task B0 Option A RESULT (2026-07-30)"
+Since the 420-cycle tail is $\mathrm{LEGS}\cdot\mathrm{ITERS}\cdot 7$, the
+dominant remaining latency lever once banking is exhausted is the iteration
+budget, ITERS, which is set by the decoder's LER at the operating point rather
+than by the hardware.
+% src: docs/qec/asic-architecture.md "Banking-scaling qualification (measured, Q7-08 follow-up)"
+
+\subsection*{A large FPGA: it fits, and the clock collapses}
+
+Both 64/192 and 144/864 were implemented end to end (synthesis, opt, place,
+phys\_opt, route) on the AMD Virtex UltraScale+ HBM \texttt{xcvu47p-fsvh2892-2-e}
+of AWS's F2 instances, with Vivado 2025.2 on a \texttt{z1d.2xlarge} build
+instance, at a \SI{5.0}{\nano\second} target, default directives, no
+floorplanning and no fanout constraints. The instance lived 7.3 hours and cost
+about \$5.50; 64/192 implemented in 65 minutes, 144/864 in 5\,h\,40\,min.
+% src: docs/perf/q7-02-fullparallel-fpga.md "8. What was run"
+No FPGA instance was rented: the build only needs the Vivado Enterprise licence
+that the FPGA Developer AMI bundles, and a bitstream is never loaded.
+% src: docs/qec/b2-aws-build-runbook.md "What you are renting and why"
+Table~\ref{tab:fpga} gives the post-route result.
+
+\begin{table}[t]
+  \centering
+  \footnotesize
+  \caption{Post-route implementation of two banked geometries on the VU47P
+    (Vivado 2025.2, \SI{5.0}{\nano\second} target, default directives). The
+    shipped KV260 row is the silicon measurement of \S\ref{sec:silicon}.}
+  \label{tab:fpga}
+  \begin{tabular}{@{}lrrrrr@{}}
+    \toprule
+    Geometry & Cycles & LUTs & Util. & F$_{\max}$ & Latency \\
+             &        &      & (\%)  & (MHz)      & (\si{\micro\second}) \\
+    \midrule
+    64/192   & 913  & 247\,434 & 19.0 & 150.4 & 6.07 \\
+    144/864  & 543  & 994\,700 & 76.3 & 97.3  & 5.58 \\
+    \addlinespace
+    16/48, KV260 & 2085 & --- & --- & 133.3 & 15.64 \\
+    \bottomrule
+  \end{tabular}
+  % src: docs/perf/q7-02-fullparallel-fpga.md "9. Results"
+\end{table}
+
+The fit gate passes: 76.3\,\% is under the 90\,\% criterion, BRAM and LUTRAM
+are at zero and registers at 9.4\,\%, so LUTs are the only resource that
+matters. The latency case for full-parallel on FPGA does not pass:
+1.68$\times$ fewer cycles at a 1.55$\times$ slower clock is a net 1.09$\times$
+for 4.0$\times$ the area. 64/192 delivers 92\,\% of the latency in a quarter of
+the device.
+% src: docs/perf/q7-02-fullparallel-fpga.md "9. Results"
+The clock loss is not logic depth. The worst path has eight logic levels and a
+\SI{10.251}{\nano\second} data-path delay of which \SI{0.750}{\nano\second}
+(7.3\,\%) is logic and \SI{9.501}{\nano\second} (92.7\,\%) is routing: a
+control counter, \texttt{pc\_reg[1]}, reaching a min-sum cell across a die large
+enough to need three super logic regions, with Laguna SLR-crossing tiles inside
+the congested windows. It is the fanout-7941 control net the out-of-context
+probe had flagged, and every standard mitigation (\texttt{MAX\_FANOUT}, per-bank
+replication, SLR-aware floorplanning) is untried, so \SI{97.3}{\mega\hertz} is
+a floor for this design rather than its ceiling.
+% src: docs/perf/q7-02-fullparallel-fpga.md "10. Why the clock collapsed"
+Two calibration lessons are worth carrying forward. The same RTL synthesised to
+803\,518 CLB LUTs on the KV260 part with Vivado 2024.2 and to 1\,000\,035 on the
+VU47P with 2025.2, 24\,\% more, so cross-part LUT extrapolation is worth about
+$\pm25\,\%$; and post-route utilisation moved less than 1\,\% off
+post-synthesis on this part.
+% src: docs/perf/q7-02-fullparallel-fpga.md "11. Where Step 0's projections were wrong"
+% src: docs/perf/q7-02-fullparallel-fpga.md "9. Results"
+Sub-microsecond needs \SI{543}{\mega\hertz} on 543 cycles; nothing in this
+family on any FPGA is within a factor of three of that.
+% src: docs/perf/q7-02-fullparallel-fpga.md "4. Calibration"
+
+\subsection*{7\,nm predictive: the geometry penalty is mostly an FPGA artefact}
+
+The FPGA result raised a specific risk: the only ASIC-node clock this project
+had measured, \SI{686.13}{\mega\hertz}, came from the 16/48 geometry, and the
+program had been quoting 543 cycles against it as if the clock were
+geometry-independent.
+% src: docs/perf/q7-02-fullparallel-fpga.md "12. What this means for the ASIC"
+Both geometries were therefore run through OpenROAD-flow-scripts
+\citep{openroad} on the ASAP7 predictive 7\,nm platform \citep{clark2016asap7},
+with the Q7-08 latch register file, identical knobs
+(\texttt{CORE\_UTILIZATION}=45, \texttt{PLACE\_DENSITY}=0.55, SDC period
+\SI{1000}{\pico\second}, timing repair skipped because \texttt{repair\_timing}
+segfaults on this netlist class), and RC-extracted post-route timing. The
+144/864 run took about 20 hours on an EPYC box and completed with $rc=0$.
+% src: docs/perf/q7-02-b3-asap7-fullparallel.md "1. What was run"
+Table~\ref{tab:asap7} summarises both.
+
+\begin{table}[t]
+  \centering
+  \small
+  \caption{ASAP7 7\,nm predictive, post-route, same flow and knobs for both
+    geometries. F$_{\max}$ is \texttt{report\_clock\_min\_period}, setup-only,
+    on a netlist whose hold violations are unrepaired (\S\ref{sec:limitations}).
+    Power is from a gate-level VCD of the 16/48 netlist at the
+    \SI{1}{\giga\hertz} SDC; it was not measured at 144/864.}
+  \label{tab:asap7}
+  \begin{tabular}{@{}lrr@{}}
+    \toprule
+    & 16/48 & 144/864 \\
+    \midrule
+    Cycles (worst case)                & 2085   & 543 \\
+    Design area at 50\,\% util. (\si{\micro\metre\squared}) & 81\,090 & 434\,450 \\
+    Die (\si{\milli\metre\squared})    & 0.163  & 0.869 \\
+    F$_{\max}$, setup-only (MHz)       & 686.13 & 614.59 \\
+    WNS at \SI{1000}{\pico\second} (ps) & $-622.73$ & $-1117.97$ \\
+    Latency (\si{\micro\second})       & 3.04   & 0.88 \\
+    DRC violations                     & 0      & 0 \\
+    Hold violations (unrepaired)       & 44\,704 & 35\,616 \\
+    \addlinespace
+    Power, steady BP (W)               & 0.149  & --- \\
+    Power, idle, clock running (W)     & 0.138  & --- \\
+    Energy per 2085-cycle window (\si{\micro\joule}) & 0.31 & --- \\
+    \bottomrule
+  \end{tabular}
+  % src: docs/perf/q7-02-b3-asap7-fullparallel.md "2. Results, against the 16/48 baseline"
+  % src: docs/perf/q7-02-asap7-timing.md "7. Closure note" (0.163 mm^2 die)
+  % src: docs/perf/q7-02-b3-asap7-fullparallel.md "3.2 Neither run had timing repair" (hold counts)
+  % src: docs/perf/q7-02-asap7-timing.md "4. Power" (power rows)
+\end{table}
+
+The clock is geometry-dependent on the ASIC too, but only mildly: the step from
+the small to the full-parallel geometry costs $-10.4\,\%$ on ASAP7 against
+$-35.3\,\%$ on the VU47P. An ASIC has neither fixed routing tracks nor SLR
+boundaries, and its buffer trees absorb the high-fanout control net that
+dominated the FPGA path; roughly a third of the penalty transferred. Area scales
+sub-linearly, 5.36$\times$ for 8.5$\times$ the logic, where the FPGA paid
+8.53$\times$ in CLB LUTs; of the placer's $+11.18\,\%$ over the raw netlist,
+routability inflation was $+1.28\,\%$ and timing-driven growth $+9.90\,\%$.
+% src: docs/perf/q7-02-b3-asap7-fullparallel.md "2. Results" ("The geometry penalty", "Area scales sub-linearly")
+The headline, $543\ \text{cycles} / \SI{614.59}{\mega\hertz} =
+\SI{0.88}{\micro\second}$, is a sub-microsecond worst-case window on a 7\,nm
+predictive node, DRC-clean, at \SI{0.869}{\milli\metre\squared}.
+% src: docs/perf/q7-02-b3-asap7-fullparallel.md "4. Verdict"
+Figure~\ref{fig:latency} places it against the FPGA points.
+
+We state the two qualifications here rather than only in
+\S\ref{sec:limitations}. First, every F$_{\max}$ in Table~\ref{tab:asap7} is a
+\emph{setup-only} figure: hold was never repaired, the 16/48 netlist carries
+44\,704 hold violations (worst \SI{-745.9}{\pico\second}, 98\,\% on the D pins
+of the latch register file) and the 144/864 netlist 35\,616 (worst
+\SI{-1486.9}{\pico\second}). Hold does not scale with the clock period, so
+these netlists would not decode correctly at any frequency; the first
+gate-level co-simulation of the 16/48 netlist fails 40/40 in exactly the way
+STA predicts, and \SI{686}{\mega\hertz} is the speed of the datapath, not of a
+working part. A separately repaired but unrouted run gave
+\SI{527.66}{\mega\hertz}, so the defensible 16/48 band is
+528--\SI{686}{\mega\hertz}.
+% src: docs/perf/q7-02-asap7-timing.md "1. Headline: the Fmax number straddles the budget"
+% src: docs/perf/q7-02-asap7-timing.md "4b. Gate-level co-simulation"
+Second, ASAP7 is a proxy: the margin below \SI{1}{\micro\second} is 12\,\%, a
+1.2$\times$ node penalty gives \SI{1.06}{\micro\second}, and nothing in this
+work measures the gap to a production node.
+% src: docs/qec/open-silicon-program.md "4. Risk register" ("The node")
+
+\subsection*{Power with real switching activity}
+
+The default-activity power ORFS reports, \SI{0.656}{\watt}, is not a decoder
+number. The routed 16/48 netlist (639\,322 cells, among them 55\,703 latches
+and 43\,025 flops) was compiled with Verilator against the ASAP7 behavioural
+cell models and driven by the same testbench and 40 golden vectors the RTL
+passes; two 300-cycle VCD windows, one inside a steady-state BP iteration and
+one with the decoder parked, were fed to OpenSTA with the extracted SPEF,
+annotating 2\,128\,987 pin activities with none left unannotated.
+% src: docs/perf/q7-02-asap7-timing.md "4. Power — measured with real switching activity (Task A4)"
+At the \SI{1}{\giga\hertz} SDC the core draws \SI{0.149}{\watt} during BP and
+\SI{0.138}{\watt} idle; the default activity was 4.4$\times$ too high, almost
+entirely in the combinational group (\SI{0.466}{\watt} $\to$
+\SI{0.0115}{\watt}). Ninety-three per cent of the real power is clock tree
+plus sequential internal: the ASAP7 platform marks integrated clock-gating
+cells \texttt{DONT\_USE}, so every register toggles its clock pin every cycle
+and the datapath itself is about \SI{10}{\milli\watt}. Energy per worst-case
+window is \SI{149}{\pico\joule} per cycle $\times$ 2085 cycles $=$
+\SI{0.31}{\micro\joule}, clock-independent to first order and inside the
+\SI{1}{\micro\joule} budget with 3$\times$ margin, at 7\,nm predictive; the
+activity comes from the not-quite-bit-exact simulation of the previous
+paragraph, and absolute watts on a predictive NLDM library should be read as
+$\pm30\,\%$.
+% src: docs/perf/q7-02-asap7-timing.md "4. Power — measured with real switching activity (Task A4)"
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{latency.pdf}
+  \caption{Worst-case decode latency against banking geometry on the three
+    platforms measured: KV260 silicon (16/48), VU47P post-route (64/192,
+    144/864) and ASAP7 7\,nm predictive post-route (16/48, 144/864). ASAP7
+    points are setup-only clocks on hold-unrepaired netlists. Data as in
+    Tables~\ref{tab:fpga} and~\ref{tab:asap7}.}
+  \label{fig:latency}
+\end{figure}
