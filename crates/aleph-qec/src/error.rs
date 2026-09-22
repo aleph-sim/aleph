@@ -13,17 +13,6 @@ pub enum Error {
         msg: String,
     },
 
-    /// A DEM instruction that the Q0-01 flat-DEM subset does not yet support
-    /// (`repeat` blocks and `shift_detectors`). Full support lands with Q0-03, when we
-    /// consume Stim-emitted DEMs directly.
-    #[error("unsupported DEM instruction at line {line}: `{what}` (Q0-01 supports flat error/detector/logical_observable only)")]
-    UnsupportedDem {
-        /// 1-based line number in the input.
-        line: usize,
-        /// The instruction keyword that is not supported.
-        what: String,
-    },
-
     /// Error propagation through the stabilizer engine failed (e.g. a
     /// non-Clifford gate in a circuit handed to the DEM builder).
     #[error("stabilizer propagation failed: {0}")]

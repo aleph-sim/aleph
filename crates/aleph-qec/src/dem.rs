@@ -8,11 +8,9 @@
 //!
 //! Format reference: <https://github.com/quantumlib/Stim/blob/main/doc/file_format_dem.md>
 //!
-//! **Q0-01 subset.** We parse/emit *flat* DEMs: `error`, `detector`, and
-//! `logical_observable` instructions. `repeat` blocks and `shift_detectors` are rejected
-//! with [`Error::UnsupportedDem`]; they are handled when we start consuming Stim output
-//! directly (Q0-03). The `^` separable-component marker inside an `error` is accepted and
-//! its components are merged (a decoder's decomposition hint is not needed at this layer).
+//! Supported instructions: `error` (with `^` separable components), `detector`,
+//! `logical_observable`, `shift_detectors`, and (nested) `repeat` blocks, which are unrolled
+//! into a flat model. `detector_separator` is rejected.
 
 use crate::error::{Error, Result};
 
@@ -38,6 +36,16 @@ impl DemError {
         obs.sort_unstable();
         DemError { prob, dets, obs }
     }
+
+    /// Build from `^`-separated parts (Task 1: parts are merged).
+    fn from_parts(prob: f64, parts: Vec<(Vec<u32>, Vec<u32>)>) -> Self {
+        let (mut dets, mut obs) = (Vec::new(), Vec::new());
+        for (d, o) in parts {
+            dets.extend(d);
+            obs.extend(o);
+        }
+        DemError::new(prob, dets, obs)
+    }
 }
 
 /// A Detector Error Model: a count of detectors and observables plus the list of error
@@ -59,83 +67,20 @@ impl DetectorErrorModel {
     /// `error`, `detector`, or `logical_observable` instruction.
     ///
     /// # Errors
-    /// Returns [`Error::DemParse`] on malformed input and [`Error::UnsupportedDem`] on
-    /// `repeat`/`shift_detectors` (see the module docs).
+    /// Returns [`Error::DemParse`] on malformed input.
     pub fn parse(text: &str) -> Result<Self> {
-        let mut errors = Vec::new();
-        // -1 sentinel so "no index seen" maps to a count of 0.
-        let mut max_det: i64 = -1;
-        let mut max_obs: i64 = -1;
-
-        for (i, raw) in text.lines().enumerate() {
-            let line_no = i + 1;
-            let line = strip_comment(raw).trim();
-            if line.is_empty() {
-                continue;
-            }
-
-            if let Some(rest) = line.strip_prefix("error") {
-                let (arg, targets) = split_paren_arg(rest);
-                let prob_str = arg.ok_or_else(|| Error::DemParse {
-                    line: line_no,
-                    msg: "`error` requires a probability in parentheses".into(),
-                })?;
-                let prob = prob_str
-                    .trim()
-                    .parse::<f64>()
-                    .map_err(|e| Error::DemParse {
-                        line: line_no,
-                        msg: format!("invalid probability `{prob_str}`: {e}"),
-                    })?;
-                let (mut dets, mut obs) = (Vec::new(), Vec::new());
-                for tok in targets.split_whitespace() {
-                    if tok == "^" {
-                        continue; // separable-component marker; merge components
-                    }
-                    match parse_target(tok, line_no)? {
-                        Target::Det(d) => {
-                            max_det = max_det.max(d as i64);
-                            dets.push(d);
-                        }
-                        Target::Obs(o) => {
-                            max_obs = max_obs.max(o as i64);
-                            obs.push(o);
-                        }
-                    }
-                }
-                errors.push(DemError::new(prob, dets, obs));
-            } else if let Some(rest) = line.strip_prefix("detector") {
-                // Optional `(coords)` then a single `D<n>` target; coords are ignored here.
-                let (_coords, targets) = split_paren_arg(rest);
-                for tok in targets.split_whitespace() {
-                    if let Target::Det(d) = parse_target(tok, line_no)? {
-                        max_det = max_det.max(d as i64);
-                    }
-                }
-            } else if let Some(rest) = line.strip_prefix("logical_observable") {
-                for tok in rest.split_whitespace() {
-                    if let Target::Obs(o) = parse_target(tok, line_no)? {
-                        max_obs = max_obs.max(o as i64);
-                    }
-                }
-            } else if line.starts_with("repeat") || line.starts_with("shift_detectors") {
-                let what = line.split_whitespace().next().unwrap_or(line).to_string();
-                return Err(Error::UnsupportedDem {
-                    line: line_no,
-                    what,
-                });
-            } else {
-                return Err(Error::DemParse {
-                    line: line_no,
-                    msg: format!("unknown instruction: `{line}`"),
-                });
-            }
-        }
-
+        let mut lines = text
+            .lines()
+            .enumerate()
+            .map(|(i, raw)| (i + 1, strip_comment(raw).trim()))
+            .filter(|(_, l)| !l.is_empty());
+        let program = parse_block(&mut lines, None)?;
+        let mut st = ExecState::default();
+        exec_block(&program, &mut st)?;
         Ok(DetectorErrorModel {
-            detectors: (max_det + 1) as usize,
-            observables: (max_obs + 1) as usize,
-            errors,
+            detectors: (st.max_det + 1) as usize,
+            observables: (st.max_obs + 1) as usize,
+            errors: st.errors,
         })
     }
 
@@ -221,6 +166,200 @@ fn split_paren_arg(s: &str) -> (Option<&str>, &str) {
     (None, s)
 }
 
+/// One parsed DEM instruction; `repeat` bodies are kept as a tree and unrolled by [`exec_block`].
+enum Instr {
+    /// `error(p) …` — targets relative to the current detector offset; one entry per `^` part.
+    Error {
+        line: usize,
+        prob: f64,
+        parts: Vec<(Vec<u32>, Vec<u32>)>,
+    },
+    /// `detector(…) D…` — declares detectors (coords ignored).
+    Detector { line: usize, dets: Vec<u32> },
+    /// `logical_observable L…`.
+    Observable(Vec<u32>),
+    /// `shift_detectors(…) k`.
+    Shift(u64),
+    /// `repeat n { … }`.
+    Repeat(u64, Vec<Instr>),
+}
+
+#[derive(Debug)]
+struct ExecState {
+    offset: u64,
+    max_det: i64,
+    max_obs: i64,
+    errors: Vec<DemError>,
+}
+
+impl Default for ExecState {
+    fn default() -> Self {
+        ExecState {
+            offset: 0,
+            max_det: -1,
+            max_obs: -1,
+            errors: Vec::new(),
+        }
+    }
+}
+
+/// Parse instructions until the matching `}` (when `open` is `Some(line of the repeat)`) or EOF.
+fn parse_block<'a>(
+    lines: &mut impl Iterator<Item = (usize, &'a str)>,
+    open: Option<usize>,
+) -> Result<Vec<Instr>> {
+    let mut out = Vec::new();
+    while let Some((line_no, line)) = lines.next() {
+        if line == "}" {
+            return match open {
+                Some(_) => Ok(out),
+                None => Err(Error::DemParse {
+                    line: line_no,
+                    msg: "unmatched `}`".into(),
+                }),
+            };
+        }
+        out.push(parse_instr(line_no, line, lines)?);
+    }
+    match open {
+        Some(l) => Err(Error::DemParse {
+            line: l,
+            msg: "unclosed `repeat` block".into(),
+        }),
+        None => Ok(out),
+    }
+}
+
+fn parse_instr<'a>(
+    line_no: usize,
+    line: &str,
+    lines: &mut impl Iterator<Item = (usize, &'a str)>,
+) -> Result<Instr> {
+    let bad = |msg: String| Error::DemParse { line: line_no, msg };
+    // `detector_separator` must be checked before the `detector` prefix match.
+    if line.starts_with("detector_separator") {
+        return Err(bad("`detector_separator` is not supported".into()));
+    }
+    if let Some(rest) = line.strip_prefix("repeat") {
+        let rest = rest.trim();
+        let body = rest
+            .strip_suffix('{')
+            .ok_or_else(|| bad("`repeat` must end with `{`".into()))?;
+        let n = body
+            .trim()
+            .parse::<u64>()
+            .map_err(|e| bad(format!("invalid repeat count `{}`: {e}", body.trim())))?;
+        return Ok(Instr::Repeat(n, parse_block(lines, Some(line_no))?));
+    }
+    if let Some(rest) = line.strip_prefix("shift_detectors") {
+        let (_coords, k) = split_paren_arg(rest);
+        let k = k
+            .trim()
+            .parse::<u64>()
+            .map_err(|e| bad(format!("invalid shift `{}`: {e}", k.trim())))?;
+        return Ok(Instr::Shift(k));
+    }
+    if let Some(rest) = line.strip_prefix("error") {
+        let (arg, targets) = split_paren_arg(rest);
+        let prob_str =
+            arg.ok_or_else(|| bad("`error` requires a probability in parentheses".into()))?;
+        let prob = prob_str
+            .trim()
+            .parse::<f64>()
+            .map_err(|e| bad(format!("invalid probability `{prob_str}`: {e}")))?;
+        let mut parts = vec![(Vec::new(), Vec::new())];
+        for tok in targets.split_whitespace() {
+            if tok == "^" {
+                parts.push((Vec::new(), Vec::new()));
+                continue;
+            }
+            // `parts` is never empty: it starts with one entry and only grows.
+            let last = parts.len() - 1;
+            match parse_target(tok, line_no)? {
+                Target::Det(d) => parts[last].0.push(d),
+                Target::Obs(o) => parts[last].1.push(o),
+            }
+        }
+        return Ok(Instr::Error {
+            line: line_no,
+            prob,
+            parts,
+        });
+    }
+    if let Some(rest) = line.strip_prefix("detector") {
+        let (_coords, targets) = split_paren_arg(rest);
+        let mut dets = Vec::new();
+        for tok in targets.split_whitespace() {
+            if let Target::Det(d) = parse_target(tok, line_no)? {
+                dets.push(d);
+            }
+        }
+        return Ok(Instr::Detector {
+            line: line_no,
+            dets,
+        });
+    }
+    if let Some(rest) = line.strip_prefix("logical_observable") {
+        let mut obs = Vec::new();
+        for tok in rest.split_whitespace() {
+            if let Target::Obs(o) = parse_target(tok, line_no)? {
+                obs.push(o);
+            }
+        }
+        return Ok(Instr::Observable(obs));
+    }
+    Err(bad(format!("unknown instruction: `{line}`")))
+}
+
+/// Apply the running detector offset, rejecting indices that leave `u32`.
+fn shifted(d: u32, offset: u64, line: usize) -> Result<u32> {
+    u32::try_from(d as u64 + offset).map_err(|_| Error::DemParse {
+        line,
+        msg: format!("detector D{d} shifted by {offset} exceeds u32"),
+    })
+}
+
+fn exec_block(block: &[Instr], st: &mut ExecState) -> Result<()> {
+    for ins in block {
+        match ins {
+            Instr::Error { line, prob, parts } => {
+                let mut abs = Vec::with_capacity(parts.len());
+                for (ds, os) in parts {
+                    let mut dets = Vec::with_capacity(ds.len());
+                    for &d in ds {
+                        let d = shifted(d, st.offset, *line)?;
+                        st.max_det = st.max_det.max(d as i64);
+                        dets.push(d);
+                    }
+                    for &o in os {
+                        st.max_obs = st.max_obs.max(o as i64);
+                    }
+                    abs.push((dets, os.clone()));
+                }
+                st.errors.push(DemError::from_parts(*prob, abs));
+            }
+            Instr::Detector { line, dets } => {
+                for &d in dets {
+                    let d = shifted(d, st.offset, *line)?;
+                    st.max_det = st.max_det.max(d as i64);
+                }
+            }
+            Instr::Observable(obs) => {
+                for &o in obs {
+                    st.max_obs = st.max_obs.max(o as i64);
+                }
+            }
+            Instr::Shift(k) => st.offset += k,
+            Instr::Repeat(n, body) => {
+                for _ in 0..*n {
+                    exec_block(body, st)?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -260,9 +399,84 @@ detector(3, 0, 0) D1
     }
 
     #[test]
-    fn rejects_unsupported_repeat() {
-        let err = DetectorErrorModel::parse("repeat 5 {\n").unwrap_err();
-        assert!(matches!(err, Error::UnsupportedDem { what, .. } if what == "repeat"));
+    fn repeat_unrolls_with_shift() {
+        let text = "\
+error(0.1) D0
+repeat 3 {
+    error(0.2) D0 D1
+    shift_detectors 1
+}
+error(0.3) D0 L0
+";
+        let m = DetectorErrorModel::parse(text).unwrap();
+        let got: Vec<(f64, Vec<u32>, Vec<u32>)> = m
+            .errors
+            .iter()
+            .map(|e| (e.prob, e.dets.clone(), e.obs.clone()))
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                (0.1, vec![0], vec![]),
+                (0.2, vec![0, 1], vec![]),
+                (0.2, vec![1, 2], vec![]),
+                (0.2, vec![2, 3], vec![]),
+                (0.3, vec![3], vec![0]), // offset persists after the block
+            ]
+        );
+        assert_eq!(m.detectors, 4);
+        assert_eq!(m.observables, 1);
+    }
+
+    #[test]
+    fn nested_repeat_and_zero_count() {
+        let text = "\
+repeat 2 {
+    repeat 2 {
+        error(0.1) D0
+        shift_detectors(0, 0, 1) 1
+    }
+}
+repeat 0 {
+    error(0.5) D99
+}
+";
+        let m = DetectorErrorModel::parse(text).unwrap();
+        let dets: Vec<Vec<u32>> = m.errors.iter().map(|e| e.dets.clone()).collect();
+        assert_eq!(dets, vec![vec![0], vec![1], vec![2], vec![3]]);
+        assert_eq!(m.detectors, 4); // D99 never executed
+    }
+
+    #[test]
+    fn detector_declaration_is_shifted() {
+        let m = DetectorErrorModel::parse("shift_detectors 5\ndetector(1, 2) D2\n").unwrap();
+        assert_eq!(m.detectors, 8);
+    }
+
+    #[test]
+    fn repeat_errors_are_reported() {
+        for bad in [
+            "repeat 2 {\nerror(0.1) D0\n", // unclosed
+            "}\n",                         // unmatched close
+            "repeat x {\n}\n",             // bad count
+            "repeat 2\n}\n",               // missing brace
+            "shift_detectors q\n",         // bad shift
+            "detector_separator 1\n",      // unsupported instruction
+        ] {
+            assert!(
+                matches!(DetectorErrorModel::parse(bad), Err(Error::DemParse { .. })),
+                "should reject: {bad:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn shifted_index_overflow_is_an_error() {
+        let text = format!("shift_detectors {}\nerror(0.1) D1\n", u32::MAX);
+        assert!(matches!(
+            DetectorErrorModel::parse(&text),
+            Err(Error::DemParse { .. })
+        ));
     }
 
     #[test]
