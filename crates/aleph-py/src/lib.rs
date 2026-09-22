@@ -5,6 +5,11 @@
 //! `python` feature so the default workspace build needs no Python
 //! interpreter.
 
+/// Batch-decode core over `aleph-qec`: builds named decoders from a DEM and decodes shot
+/// batches in parallel with rayon. Kept free of the `python` cfg so `cargo test -p aleph-py`
+/// exercises it without a Python interpreter; Task 5 wraps it in pyo3.
+pub mod qec_core;
+
 #[cfg(feature = "python")]
 mod circuit;
 
