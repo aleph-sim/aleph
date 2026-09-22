@@ -190,11 +190,13 @@ dependencies = [
  "aleph-metal",
  "aleph-mps",
  "aleph-parser",
+ "aleph-qec",
  "aleph-stab",
  "aleph-sv",
  "numpy",
  "pyo3",
  "rand 0.8.6",
+ "rayon",
  "smallvec",
 ]
 

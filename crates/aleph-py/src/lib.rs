@@ -30,7 +30,8 @@ mod module {
     }
 
     #[pymodule]
-    fn aleph(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    #[pyo3(name = "_native")]
+    fn native(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m.add("__version__", env!("CARGO_PKG_VERSION"))?;
         m.add_function(wrap_pyfunction!(version, m)?)?;
         m.add_class::<crate::circuit::PyCircuit>()?;
