@@ -150,8 +150,8 @@ sinter.collect(tasks=..., decoders=["aleph-relay-bp"],
 - `compile_decoder_for_dem(*, dem)` → `CompiledAlephDecoder(sinter.CompiledDecoder)` wrapping a
   `qec.Decoder`; `decode_shots_bit_packed(*, bit_packed_detection_event_data)` forwards to
   `decode_batch_bit_packed`.
-- `decoders(**params_by_name)` returns `{"aleph-<name>": AlephSinterDecoder(name)}` for every name in
-  the table.
+- `decoders(params=None)` returns `{"aleph-<name>": AlephSinterDecoder(name, **params.get(name, {}))}` for
+  every name in the table (`params` is a dict keyed by decoder name, since names contain `-`).
 - `import aleph.sinter` without sinter installed raises `ImportError` pointing at
   `pip install aleph-sim[sinter]`; `import aleph` / `aleph.qec` never import sinter or stim.
 
@@ -159,13 +159,15 @@ sinter.collect(tasks=..., decoders=["aleph-relay-bp"],
 
 - **Rust:** §1.3 unit + proptests; `cargo test -p aleph-qec`.
 - **Python differential** (`scripts/python/test_qec.py`, runs whenever stim is installed): on stim
-  surface-code memory circuits (d=3, 5; `decompose_errors=True`) and a BB-code DEM built in-repo,
+  surface-code memory circuits (d=3, 5; `decompose_errors=True`) and a stim `color_code:memory_xyz`
+  DEM (hyperedges, `decompose_errors=False`; matching decoders must raise `ValueError` on it),
   `decode_batch` equals `decode` shot-by-shot and equals `decode_batch_bit_packed` after packing;
   results are deterministic across two runs; parse of compressed DEM equals parse of `flattened()`.
-- **Oracle quality** (same file, skipped unless stim + sinter + pymatching present): `sinter.collect`
-  logical error rate of `aleph-mwpm` vs `pymatching` on a d=5 surface code at p=0.005 — agreement
-  within combined 95% CI. `aleph-bp-osd` vs `ldpc`'s BP-OSD on the BB code if `ldpc` installs, same
-  criterion; otherwise skipped with a message.
+- **Oracle quality** (same file, skipped unless pymatching present): on the *same* 20 000 sampled shots
+  of a d=5 surface code at p=0.005, `aleph` `mwpm` logical-error count vs `pymatching.decode_batch`
+  count — `|a − p| ≤ max(5, 0.1·p)` (both are exact MWPM; differences come only from ties).
+  `bp-osd` vs `ldpc`'s sinter BP-OSD on the color code if `ldpc` imports: aleph errors
+  `≤ 1.5·ldpc + 10`; otherwise skipped with a message.
 - **Pickle / multiprocessing:** round-trip every adapter; one `sinter.collect(num_workers=2)` run.
 - **Existing suite:** `scripts/python/test_aleph.py` passes unchanged (proves the `_native` rename is
   transparent).
