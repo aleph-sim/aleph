@@ -82,7 +82,8 @@ impl MatchingGraph {
     /// between detectors, parallel edges are merged (see the module docs), and mechanisms with no
     /// detector endpoints (undetectable / purely-logical noise) are dropped — they cannot
     /// participate in any matching. Within a mechanism, a detector or observable listed an even
-    /// number of times cancels (Stim parity semantics).
+    /// number of times cancels (Stim parity semantics). Mechanisms with `^` components contribute
+    /// one edge per component.
     ///
     /// # Errors
     /// Returns [`Error::NonGraphlike`] if any mechanism flips three or more detectors.
@@ -104,27 +105,37 @@ impl MatchingGraph {
                 continue;
             }
 
-            let dets = odd_parity(&e.dets);
-            let obs = odd_parity(&e.obs);
-
-            let (a, b) = match dets.len() {
-                // No detector endpoints: undetectable noise (may flip an observable but can never
-                // be matched). Drop it.
-                0 => continue,
-                1 => (dets[0] as NodeId, boundary),
-                2 => (dets[0] as NodeId, dets[1] as NodeId),
-                n => return Err(Error::NonGraphlike { dets: n }),
-            };
-            // `odd_parity` yields distinct, ascending detectors and `boundary` is the largest
-            // index, so `a < b` already holds; assert the invariant rather than re-sort.
-            debug_assert!(a < b, "endpoints must be distinct and ordered");
-
-            let key = (a, b, obs);
-            if let Some(p) = merged.get_mut(&key) {
-                *p = xor_combine(*p, e.prob);
+            let single = [(e.dets.clone(), e.obs.clone())];
+            let parts: &[(Vec<u32>, Vec<u32>)] = if e.components.is_empty() {
+                &single
             } else {
-                merged.insert(key.clone(), e.prob);
-                order.push(key);
+                &e.components
+            };
+            // A decomposed (`^`) mechanism contributes one edge per part, each at the
+            // mechanism's probability — the decomposition stim emits for matching decoders.
+            for (pd, po) in parts {
+                let dets = odd_parity(pd);
+                let obs = odd_parity(po);
+
+                let (a, b) = match dets.len() {
+                    // No detector endpoints: undetectable noise (may flip an observable but can
+                    // never be matched). Drop this part.
+                    0 => continue,
+                    1 => (dets[0] as NodeId, boundary),
+                    2 => (dets[0] as NodeId, dets[1] as NodeId),
+                    n => return Err(Error::NonGraphlike { dets: n }),
+                };
+                // `odd_parity` yields distinct, ascending detectors and `boundary` is the largest
+                // index, so `a < b` already holds; assert the invariant rather than re-sort.
+                debug_assert!(a < b, "endpoints must be distinct and ordered");
+
+                let key = (a, b, obs);
+                if let Some(p) = merged.get_mut(&key) {
+                    *p = xor_combine(*p, e.prob);
+                } else {
+                    merged.insert(key.clone(), e.prob);
+                    order.push(key);
+                }
             }
         }
 
@@ -334,11 +345,13 @@ mod tests {
                     prob: 0.1,
                     dets: vec![0, 0],
                     obs: vec![],
+                    components: vec![],
                 },
                 DemError {
                     prob: 0.1,
                     dets: vec![1, 1, 2],
                     obs: vec![],
+                    components: vec![],
                 },
             ],
         };
@@ -358,16 +371,19 @@ mod tests {
                     prob: 0.0,
                     dets: vec![0],
                     obs: vec![],
+                    components: vec![],
                 },
                 DemError {
                     prob: 1.0,
                     dets: vec![1],
                     obs: vec![],
+                    components: vec![],
                 },
                 DemError {
                     prob: 0.1,
                     dets: vec![0, 1],
                     obs: vec![],
+                    components: vec![],
                 },
             ],
         };
@@ -429,6 +445,29 @@ mod tests {
                 "d={d}: expected an observable-flipping edge"
             );
         }
+    }
+
+    #[test]
+    fn decomposed_hyperedge_becomes_component_edges() {
+        let dem = DetectorErrorModel::parse("error(0.1) D0 D1 ^ D2 D3 L0\n").unwrap();
+        let g = MatchingGraph::from_dem(&dem).unwrap();
+        let mut ends: Vec<(NodeId, NodeId, Vec<u32>)> = g
+            .edges()
+            .iter()
+            .map(|e| (e.a, e.b, e.observables.clone()))
+            .collect();
+        ends.sort();
+        assert_eq!(ends, vec![(0, 1, vec![]), (2, 3, vec![0])]);
+        assert!(g.edges().iter().all(|e| (e.prob - 0.1).abs() < 1e-12));
+    }
+
+    #[test]
+    fn component_with_three_detectors_is_still_rejected() {
+        let dem = DetectorErrorModel::parse("error(0.1) D0 D1 D2 ^ D3\n").unwrap();
+        assert!(matches!(
+            MatchingGraph::from_dem(&dem),
+            Err(Error::NonGraphlike { dets: 3 })
+        ));
     }
 
     // ---- Property tests -------------------------------------------------------------------

@@ -23,28 +23,48 @@ use crate::error::{Error, Result};
 pub struct DemError {
     /// Probability of this mechanism firing, in `[0, 1]`.
     pub prob: f64,
-    /// Detector indices flipped by this mechanism (sorted ascending).
+    /// Detector indices flipped by this mechanism (sorted ascending; all `^` parts merged).
     pub dets: Vec<u32>,
-    /// Logical observable indices flipped by this mechanism (sorted ascending).
+    /// Logical observable indices flipped by this mechanism (sorted ascending; parts merged).
     pub obs: Vec<u32>,
+    /// The `^`-separated `(dets, obs)` parts as written, each sorted; **empty** when the
+    /// mechanism had a single part. Matching decoders build one edge per part (stim's
+    /// `decompose_errors` hint); BP-family decoders use the merged `dets`/`obs`.
+    pub components: Vec<(Vec<u32>, Vec<u32>)>,
 }
 
 impl DemError {
-    /// Build a mechanism, normalising target order so equality is order-independent.
+    /// Build a single-part mechanism, normalising target order so equality is order-independent.
     pub fn new(prob: f64, mut dets: Vec<u32>, mut obs: Vec<u32>) -> Self {
         dets.sort_unstable();
         obs.sort_unstable();
-        DemError { prob, dets, obs }
+        DemError {
+            prob,
+            dets,
+            obs,
+            components: Vec::new(),
+        }
     }
 
-    /// Build from `^`-separated parts (Task 1: parts are merged).
-    fn from_parts(prob: f64, parts: Vec<(Vec<u32>, Vec<u32>)>) -> Self {
-        let (mut dets, mut obs) = (Vec::new(), Vec::new());
-        for (d, o) in parts {
-            dets.extend(d);
-            obs.extend(o);
+    /// Build a mechanism from `^`-separated parts. One part is identical to [`DemError::new`].
+    pub fn with_components(prob: f64, parts: Vec<(Vec<u32>, Vec<u32>)>) -> Self {
+        if parts.len() <= 1 {
+            let (d, o) = parts.into_iter().next().unwrap_or_default();
+            return DemError::new(prob, d, o);
         }
-        DemError::new(prob, dets, obs)
+        let mut merged = DemError::new(prob, Vec::new(), Vec::new());
+        let mut components = Vec::with_capacity(parts.len());
+        for (mut d, mut o) in parts {
+            d.sort_unstable();
+            o.sort_unstable();
+            merged.dets.extend_from_slice(&d);
+            merged.obs.extend_from_slice(&o);
+            components.push((d, o));
+        }
+        merged.dets.sort_unstable();
+        merged.obs.sort_unstable();
+        merged.components = components;
+        merged
     }
 }
 
@@ -98,15 +118,26 @@ impl DetectorErrorModel {
             out.push_str("error(");
             out.push_str(&e.prob.to_string());
             out.push(')');
-            for &d in &e.dets {
-                out.push_str(" D");
-                out.push_str(&d.to_string());
-                used_det = used_det.max(d as usize + 1);
-            }
-            for &o in &e.obs {
-                out.push_str(" L");
-                out.push_str(&o.to_string());
-                used_obs = used_obs.max(o as usize + 1);
+            let single = [(e.dets.clone(), e.obs.clone())];
+            let parts: &[(Vec<u32>, Vec<u32>)] = if e.components.is_empty() {
+                &single
+            } else {
+                &e.components
+            };
+            for (k, (ds, os)) in parts.iter().enumerate() {
+                if k > 0 {
+                    out.push_str(" ^");
+                }
+                for &d in ds {
+                    out.push_str(" D");
+                    out.push_str(&d.to_string());
+                    used_det = used_det.max(d as usize + 1);
+                }
+                for &o in os {
+                    out.push_str(" L");
+                    out.push_str(&o.to_string());
+                    used_obs = used_obs.max(o as usize + 1);
+                }
             }
             out.push('\n');
         }
@@ -167,6 +198,7 @@ fn split_paren_arg(s: &str) -> (Option<&str>, &str) {
 }
 
 /// One parsed DEM instruction; `repeat` bodies are kept as a tree and unrolled by [`exec_block`].
+#[derive(Debug)]
 enum Instr {
     /// `error(p) …` — targets relative to the current detector offset; one entry per `^` part.
     Error {
@@ -336,7 +368,7 @@ fn exec_block(block: &[Instr], st: &mut ExecState) -> Result<()> {
                     }
                     abs.push((dets, os.clone()));
                 }
-                st.errors.push(DemError::from_parts(*prob, abs));
+                st.errors.push(DemError::with_components(*prob, abs));
             }
             Instr::Detector { line, dets } => {
                 for &d in dets {
@@ -386,9 +418,26 @@ detector(3, 0, 0) D1
     }
 
     #[test]
-    fn accepts_separable_component_marker() {
-        let m = DetectorErrorModel::parse("error(0.1) D0 ^ D1 L0\n").expect("parse");
-        assert_eq!(m.errors[0], DemError::new(0.1, vec![0, 1], vec![0]));
+    fn separable_components_are_preserved() {
+        let m = DetectorErrorModel::parse("error(0.1) D2 D0 ^ D1 L0\n").expect("parse");
+        let e = &m.errors[0];
+        assert_eq!(e.dets, vec![0, 1, 2]);
+        assert_eq!(e.obs, vec![0]);
+        assert_eq!(e.components, vec![(vec![0, 2], vec![]), (vec![1], vec![0])]);
+        assert_eq!(
+            *e,
+            DemError::with_components(0.1, vec![(vec![2, 0], vec![]), (vec![1], vec![0])])
+        );
+        let text = m.to_dem_string();
+        assert!(text.contains(" ^ "), "{text}");
+        assert_eq!(DetectorErrorModel::parse(&text).unwrap(), m);
+    }
+
+    #[test]
+    fn single_part_has_no_components() {
+        let e = DemError::with_components(0.1, vec![(vec![1, 0], vec![])]);
+        assert_eq!(e, DemError::new(0.1, vec![0, 1], vec![]));
+        assert!(e.components.is_empty());
     }
 
     #[test]
@@ -525,17 +574,21 @@ repeat 0 {
     }
 
     fn arb_error(detectors: usize, observables: usize) -> impl Strategy<Value = DemError> {
-        let dets = if detectors == 0 {
-            Just(Vec::new()).boxed()
-        } else {
-            prop::collection::vec(0u32..detectors as u32, 0..4).boxed()
+        let part = move || {
+            let dets = if detectors == 0 {
+                Just(Vec::new()).boxed()
+            } else {
+                prop::collection::vec(0u32..detectors as u32, 0..3).boxed()
+            };
+            let obs = if observables == 0 {
+                Just(Vec::new()).boxed()
+            } else {
+                prop::collection::vec(0u32..observables as u32, 0..2).boxed()
+            };
+            (dets, obs)
         };
-        let obs = if observables == 0 {
-            Just(Vec::new()).boxed()
-        } else {
-            prop::collection::vec(0u32..observables as u32, 0..2).boxed()
-        };
-        (0.0001f64..0.5, dets, obs).prop_map(|(p, d, o)| DemError::new(p, d, o))
+        (0.0001f64..0.5, prop::collection::vec(part(), 1..4))
+            .prop_map(|(p, parts)| DemError::with_components(p, parts))
     }
 
     proptest! {
