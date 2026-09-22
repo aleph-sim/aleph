@@ -6,3 +6,4 @@ submodules (``aleph.qec``, ``aleph.sinter``).
 """
 from ._native import *  # noqa: F401,F403
 from ._native import __version__  # noqa: F401  (dunders are not covered by *)
+from . import qec  # noqa: E402,F401  (replaces the native `qec` attribute with the Python module)

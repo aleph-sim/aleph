@@ -23,6 +23,9 @@ mod run;
 mod noise;
 
 #[cfg(feature = "python")]
+mod qec;
+
+#[cfg(feature = "python")]
 mod module {
     use pyo3::prelude::*;
 
@@ -53,6 +56,7 @@ mod module {
         m.add_function(wrap_pyfunction!(crate::noise::bit_flip_error, m)?)?;
         m.add_function(wrap_pyfunction!(crate::noise::phase_flip_error, m)?)?;
         m.add_function(wrap_pyfunction!(crate::noise::pauli_error, m)?)?;
+        crate::qec::register(m)?;
         Ok(())
     }
 }
