@@ -176,7 +176,12 @@ pub fn build_dem(
 
     let errors = edges
         .into_iter()
-        .map(|((dets, obs), prob)| DemError { prob, dets, obs })
+        .map(|((dets, obs), prob)| DemError {
+            prob,
+            dets,
+            obs,
+            components: Vec::new(),
+        })
         .collect();
     Ok(DetectorErrorModel {
         detectors: ac.detectors.len(),

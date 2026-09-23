@@ -5,14 +5,17 @@ build-backend = "maturin"
 [project]
 name = "aleph-sim"
 dynamic = ["version"]
-description = "High-performance quantum circuit simulator in Rust: state-vector, MPS, and stabilizer backends"
+description = "High-performance quantum circuit simulator in Rust: state-vector, MPS, and stabilizer backends, plus QEC decoders for stim/sinter"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.10"
 license = { text = "MIT" }
 classifiers = [
     "Development Status :: 3 - Alpha",
     "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Programming Language :: Rust",
     "Topic :: Scientific/Engineering :: Physics",
 ]
@@ -21,10 +24,15 @@ classifiers = [
 # builds against.
 dependencies = ["numpy>=1.23"]
 
+[project.optional-dependencies]
+# `aleph.sinter` adapters; stim is what produces the DEMs sinter hands us.
+sinter = ["stim>=1.13", "sinter>=1.13"]
+
 [project.urls]
 Repository = "https://github.com/aleph-sim/aleph"
 Benchmarks = "https://github.com/aleph-sim/aleph/blob/main/docs/perf/parity.md"
 
 [tool.maturin]
 features = ["python"]
-module-name = "aleph"
+module-name = "aleph._native"
+python-source = "python"

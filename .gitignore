@@ -12,6 +12,10 @@ Cargo.lock.bak
 __pycache__/
 *.pyc
 .venv/
+# `maturin develop` (mixed layout) copies the built extension into
+# crates/aleph-py/python/aleph/ — never a source file, never committed.
+crates/aleph-py/python/aleph/*.so
+crates/aleph-py/python/aleph/*.pyd
 
 # Criterion benchmark output
 /target/criterion/

@@ -163,4 +163,4 @@ regression guard on an oracle-equipped box.
 [`build_dem`]: ../../crates/aleph-qec/src/builder.rs
 [`Decoder::decode`]: ../../crates/aleph-qec/src/decoder.rs
 [`mwpm_pymatching_oracle.rs`]: ../../crates/aleph-qec/tests/mwpm_pymatching_oracle.rs
-[#331]: https://github.com/ruslan-splynx/aleph/issues/331
+[#331]: https://github.com/aleph-sim/aleph/issues/331

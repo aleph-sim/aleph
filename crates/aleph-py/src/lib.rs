@@ -5,6 +5,11 @@
 //! `python` feature so the default workspace build needs no Python
 //! interpreter.
 
+/// Batch-decode core over `aleph-qec`: builds named decoders from a DEM and decodes shot
+/// batches in parallel with rayon. Kept free of the `python` cfg so `cargo test -p aleph-py`
+/// exercises it without a Python interpreter; Task 5 wraps it in pyo3.
+pub mod qec_core;
+
 #[cfg(feature = "python")]
 mod circuit;
 
@@ -16,6 +21,9 @@ mod run;
 
 #[cfg(feature = "python")]
 mod noise;
+
+#[cfg(feature = "python")]
+mod qec;
 
 #[cfg(feature = "python")]
 mod module {
@@ -30,7 +38,8 @@ mod module {
     }
 
     #[pymodule]
-    fn aleph(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    #[pyo3(name = "_native")]
+    fn native(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m.add("__version__", env!("CARGO_PKG_VERSION"))?;
         m.add_function(wrap_pyfunction!(version, m)?)?;
         m.add_class::<crate::circuit::PyCircuit>()?;
@@ -47,6 +56,7 @@ mod module {
         m.add_function(wrap_pyfunction!(crate::noise::bit_flip_error, m)?)?;
         m.add_function(wrap_pyfunction!(crate::noise::phase_flip_error, m)?)?;
         m.add_function(wrap_pyfunction!(crate::noise::pauli_error, m)?)?;
+        crate::qec::register(m)?;
         Ok(())
     }
 }

@@ -100,12 +100,16 @@ jobs:
         run: cargo build -p aleph-cuda --features cuda
 
   test-python:
-    name: test python
+    name: test python ${{ matrix.python }}
     # Trusted-PR guard mirrors the Rust jobs (see header). The job itself runs
     # on a GitHub-hosted runner — it must NOT add load to the self-hosted box.
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.12"]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -117,7 +121,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python }}
       - run: pip install maturin
       # `features = ["python"]` comes from `[tool.maturin]` in pyproject.toml.
       # build + pip-install (not `maturin develop`, which needs an active
@@ -126,6 +130,10 @@ jobs:
         run: maturin build --release -m crates/aleph-py/Cargo.toml --out dist
       - name: Install the wheel
         run: pip install dist/*.whl
+      # stim/sinter/pymatching drive the aleph.qec differential + oracle tests
+      # (scripts/python/test_qec.py, test_sinter.py); without them those skip.
+      - name: Install QEC test deps
+        run: pip install stim sinter pymatching
       # The suite import-guards on `aleph`, so a build/install failure surfaces
       # here as a hard error rather than silently-skipped tests.
       - name: Run binding tests

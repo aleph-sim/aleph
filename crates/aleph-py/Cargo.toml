@@ -33,8 +33,11 @@ aleph-sv      = { path = "../aleph-sv" }
 aleph-mps     = { path = "../aleph-mps" }
 aleph-parser  = { path = "../aleph-parser" }
 aleph-stab    = { path = "../aleph-stab" }
+aleph-qec     = { path = "../aleph-qec" }
 smallvec      = { workspace = true }
-pyo3 = { version = "0.22", features = ["extension-module", "abi3-py312"], optional = true }
+# Parallel batch decode in `qec_core` (decoders are `Sync`).
+rayon         = { workspace = true }
+pyo3 = { version = "0.22", features = ["extension-module", "abi3-py310"], optional = true }
 # Returns the state vector to Python as a contiguous numpy complex128 array
 # (P4-11), avoiding 2^n boxed PyComplex objects. Version tracks the pyo3 0.22
 # line — rust-numpy 0.22 is the matching release.
