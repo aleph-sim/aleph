@@ -232,7 +232,7 @@ enum Instr {
     /// `logical_observable L…`.
     Observable(Vec<u32>),
     /// `shift_detectors(…) k`.
-    Shift(u64),
+    Shift { line: usize, k: u64 },
     /// `repeat n { … }`.
     Repeat(u64, Vec<Instr>),
 }
@@ -310,7 +310,7 @@ fn parse_instr<'a>(
             .trim()
             .parse::<u64>()
             .map_err(|e| bad(format!("invalid shift `{}`: {e}", k.trim())))?;
-        return Ok(Instr::Shift(k));
+        return Ok(Instr::Shift { line: line_no, k });
     }
     if let Some(rest) = line.strip_prefix("error") {
         let (arg, targets) = split_paren_arg(rest);
@@ -320,6 +320,13 @@ fn parse_instr<'a>(
             .trim()
             .parse::<f64>()
             .map_err(|e| bad(format!("invalid probability `{prob_str}`: {e}")))?;
+        // Explicit finiteness check first: NaN slips through range comparisons (ADR 0006).
+        if !prob.is_finite() || !(0.0..=1.0).contains(&prob) {
+            return Err(bad(format!(
+                "probability must be finite and in [0, 1], got `{}`",
+                prob_str.trim()
+            )));
+        }
         let mut parts = vec![(Vec::new(), Vec::new())];
         for tok in targets.split_whitespace() {
             if tok == "^" {
@@ -366,10 +373,13 @@ fn parse_instr<'a>(
 
 /// Apply the running detector offset, rejecting indices that leave `u32`.
 fn shifted(d: u32, offset: u64, line: usize) -> Result<u32> {
-    u32::try_from(d as u64 + offset).map_err(|_| Error::DemParse {
-        line,
-        msg: format!("detector D{d} shifted by {offset} exceeds u32"),
-    })
+    (d as u64)
+        .checked_add(offset)
+        .and_then(|abs| u32::try_from(abs).ok())
+        .ok_or_else(|| Error::DemParse {
+            line,
+            msg: format!("detector D{d} shifted by {offset} exceeds u32"),
+        })
 }
 
 fn exec_block(block: &[Instr], st: &mut ExecState) -> Result<()> {
@@ -402,7 +412,12 @@ fn exec_block(block: &[Instr], st: &mut ExecState) -> Result<()> {
                     st.max_obs = st.max_obs.max(o as i64);
                 }
             }
-            Instr::Shift(k) => st.offset += k,
+            Instr::Shift { line, k } => {
+                st.offset = st.offset.checked_add(*k).ok_or_else(|| Error::DemParse {
+                    line: *line,
+                    msg: format!("detector offset {} + {k} overflows u64", st.offset),
+                })?;
+            }
             Instr::Repeat(n, body) => {
                 for _ in 0..*n {
                     exec_block(body, st)?;
@@ -564,6 +579,40 @@ repeat 0 {
             DetectorErrorModel::parse(&text),
             Err(Error::DemParse { .. })
         ));
+    }
+
+    #[test]
+    fn detector_offset_u64_overflow_is_an_error() {
+        // The running offset itself must not wrap (debug panic / release wrap).
+        for text in [
+            "shift_detectors 18446744073709551615\nshift_detectors 1\n",
+            "shift_detectors 18446744073709551615\nerror(0.1) D5\n",
+        ] {
+            assert!(
+                matches!(
+                    DetectorErrorModel::parse(text),
+                    Err(Error::DemParse { line: 2, .. })
+                ),
+                "{text:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn probability_must_be_finite_and_in_unit_interval() {
+        for p in ["nan", "inf", "-inf", "-0.5", "1.5"] {
+            let text = format!("error({p}) D0\n");
+            assert!(
+                matches!(
+                    DetectorErrorModel::parse(&text),
+                    Err(Error::DemParse { line: 1, .. })
+                ),
+                "p = {p}"
+            );
+        }
+        for p in ["0", "1", "0.5"] {
+            assert!(DetectorErrorModel::parse(&format!("error({p}) D0\n")).is_ok());
+        }
     }
 
     #[test]
