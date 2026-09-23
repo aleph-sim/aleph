@@ -78,6 +78,14 @@ fn finite(name: &str, v: Option<f64>, default: f64) -> Result<f64, String> {
 impl AnyDecoder {
     /// Build decoder `name` for `dem`. Errors are human-readable (surfaced as `ValueError`).
     pub fn build(dem: &DetectorErrorModel, name: &str, p: &DecoderParams) -> Result<Self, String> {
+        // Every decoder packs its prediction into a u64 observable mask; past 64 the extra
+        // observables would be dropped (BP/UF) or aliased (MWPM shift wrap), silently.
+        if dem.observables > 64 {
+            return Err(format!(
+                "aleph decoders support at most 64 logical observables, got {}",
+                dem.observables
+            ));
+        }
         let max_iter = p.max_iter.unwrap_or(DEFAULT_MAX_ITER);
         let relay = || -> Result<RelayBpDecoder, String> {
             let alpha = finite("alpha", p.alpha, RELAY_ALPHA)?;
@@ -269,6 +277,20 @@ error(0.1) D2
     fn unknown_name_lists_valid_ones() {
         let err = AnyDecoder::build(&dem(), "nope", &DecoderParams::default()).unwrap_err();
         assert!(err.contains("relay-bp") && err.contains("mwpm"), "{err}");
+    }
+
+    #[test]
+    fn more_than_64_observables_is_rejected() {
+        // Every decoder packs observables into a u64; L64 would be silently lost/aliased.
+        let ok = DetectorErrorModel::parse("error(0.1) D0 L63\n").unwrap();
+        assert_eq!(ok.observables, 64);
+        let wide = DetectorErrorModel::parse("error(0.1) D0 L64\n").unwrap();
+        assert_eq!(wide.observables, 65);
+        for (name, _) in DECODER_NAMES {
+            assert!(AnyDecoder::build(&ok, name, &DecoderParams::default()).is_ok());
+            let err = AnyDecoder::build(&wide, name, &DecoderParams::default()).unwrap_err();
+            assert!(err.contains("at most 64") && err.contains("65"), "{err}");
+        }
     }
 
     #[test]

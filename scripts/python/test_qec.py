@@ -48,6 +48,23 @@ def color(d, p):
     )
 
 
+def xor_reduce_dem_text(text):
+    """Replace every `error(p) A ^ B ...` line of a flat DEM by its parity-reduced targets."""
+    out = []
+    for line in text.splitlines():
+        s = line.strip()
+        if s.startswith("error") and "^" in s:
+            head, _, targets = s.partition(")")
+            counts = {}
+            for tok in targets.split():
+                if tok != "^":
+                    counts[tok] = counts.get(tok, 0) + 1
+            kept = [t for t, c in counts.items() if c % 2 == 1]
+            s = head + ") " + " ".join(kept)
+        out.append(s)
+    return "\n".join(out) + "\n"
+
+
 @unittest.skipUnless(HAVE_ALEPH, "aleph not installed")
 class TestApi(unittest.TestCase):
     DEM = "error(0.1) D0 L0\nerror(0.1) D0 D1\nerror(0.1) D1\n"
@@ -70,6 +87,10 @@ class TestApi(unittest.TestCase):
             qec.Decoder(dem, "mwpm", osd_order=2)
         with self.assertRaises(ValueError):
             qec.Decoder(dem, "bp", alpha=float("nan"))
+        wide = qec.DetectorErrorModel("error(0.1) D0 L64\n")  # 65 observables
+        for name in ALL:
+            with self.assertRaisesRegex(ValueError, "at most 64"):
+                qec.Decoder(wide, name)
         dec = qec.Decoder(dem, "mwpm")
         with self.assertRaises(ValueError):
             dec.decode_batch(np.zeros((4, 3), dtype=bool))  # wrong detector count
@@ -119,6 +140,21 @@ class TestStimDems(unittest.TestCase):
                     np.unpackbits(pk, axis=1, bitorder="little", count=batch.shape[1]).astype(bool),
                     batch,
                 )
+
+    def test_bp_family_uses_parity_reduced_view(self):
+        # Spec §1.2: BP-family decoders see each `^` mechanism as the symmetric difference
+        # of its parts, so a decomposed DEM must decode exactly like its XOR-reduced twin.
+        circ = surface(5, 0.005)
+        sdem = circ.detector_error_model(decompose_errors=True)
+        self.assertIn("^", str(sdem.flattened()))
+        reduced = qec.DetectorErrorModel(xor_reduce_dem_text(str(sdem.flattened())))
+        decomposed = qec.DetectorErrorModel(sdem)
+        dets, obs = circ.compile_detector_sampler(seed=5).sample(5000, separate_observables=True)
+        for name in ("bp", "bp-osd", "relay-bp", "relay-bp-osd"):
+            with self.subTest(name=name):
+                a = qec.Decoder(decomposed, name).decode_batch(dets)
+                b = qec.Decoder(reduced, name).decode_batch(dets)
+                np.testing.assert_array_equal(a, b)
 
     def test_hypergraph_dem(self):
         circ = color(3, 0.003)
