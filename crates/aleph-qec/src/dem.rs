@@ -23,13 +23,15 @@ use crate::error::{Error, Result};
 pub struct DemError {
     /// Probability of this mechanism firing, in `[0, 1]`.
     pub prob: f64,
-    /// Detector indices flipped by this mechanism (sorted ascending; all `^` parts merged).
+    /// Detector indices flipped by this mechanism (sorted ascending; for `^` mechanisms the
+    /// symmetric difference of the parts, i.e. indices flipped an odd number of times).
     pub dets: Vec<u32>,
-    /// Logical observable indices flipped by this mechanism (sorted ascending; parts merged).
+    /// Logical observable indices flipped by this mechanism (sorted ascending; parts
+    /// parity-reduced like `dets`).
     pub obs: Vec<u32>,
     /// The `^`-separated `(dets, obs)` parts as written, each sorted; **empty** when the
     /// mechanism had a single part. Matching decoders build one edge per part (stim's
-    /// `decompose_errors` hint); BP-family decoders use the merged `dets`/`obs`.
+    /// `decompose_errors` hint); BP-family decoders use the parity-reduced `dets`/`obs`.
     pub components: Vec<(Vec<u32>, Vec<u32>)>,
 }
 
@@ -61,11 +63,30 @@ impl DemError {
             merged.obs.extend_from_slice(&o);
             components.push((d, o));
         }
-        merged.dets.sort_unstable();
-        merged.obs.sort_unstable();
+        parity_reduce(&mut merged.dets);
+        parity_reduce(&mut merged.obs);
         merged.components = components;
         merged
     }
+}
+
+/// Sort `v` and keep only the indices that occur an odd number of times: flipping a
+/// detector or observable twice is no flip, so the merged view is the symmetric difference.
+fn parity_reduce(v: &mut Vec<u32>) {
+    v.sort_unstable();
+    let mut out = Vec::with_capacity(v.len());
+    let mut i = 0;
+    while i < v.len() {
+        let mut j = i;
+        while j < v.len() && v[j] == v[i] {
+            j += 1;
+        }
+        if (j - i) % 2 == 1 {
+            out.push(v[i]);
+        }
+        i = j;
+    }
+    *v = out;
 }
 
 /// A Detector Error Model: a count of detectors and observables plus the list of error
@@ -438,6 +459,23 @@ detector(3, 0, 0) D1
         let e = DemError::with_components(0.1, vec![(vec![1, 0], vec![])]);
         assert_eq!(e, DemError::new(0.1, vec![0, 1], vec![]));
         assert!(e.components.is_empty());
+    }
+
+    #[test]
+    fn merged_view_is_parity_reduced() {
+        // Spec §1.2: merged dets/obs are the symmetric difference of the parts.
+        let m = DetectorErrorModel::parse("error(0.1) D0 L0 ^ D1 L0\n").unwrap();
+        let e = &m.errors[0];
+        assert_eq!(e.dets, vec![0, 1]);
+        assert!(e.obs.is_empty(), "L0 flipped twice cancels: {:?}", e.obs);
+        assert_eq!(e.components, vec![(vec![0], vec![0]), (vec![1], vec![0])]);
+
+        let m = DetectorErrorModel::parse("error(0.1) D0 D1 ^ D1 D2\n").unwrap();
+        assert_eq!(m.errors[0].dets, vec![0, 2]);
+        assert!(m.errors[0].obs.is_empty());
+        // Round-trip still holds: components are emitted, reparse rebuilds the same view.
+        let text = m.to_dem_string();
+        assert_eq!(DetectorErrorModel::parse(&text).unwrap(), m);
     }
 
     #[test]
