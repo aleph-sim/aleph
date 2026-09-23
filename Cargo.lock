@@ -13,7 +13,7 @@ dependencies = [
 
 [[package]]
 name = "aleph-backend"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "aleph-core",
  "aleph-ir",
@@ -27,7 +27,7 @@ dependencies = [
 
 [[package]]
 name = "aleph-benches"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "aleph-backend",
  "aleph-core",
@@ -43,7 +43,7 @@ dependencies = [
 
 [[package]]
 name = "aleph-cli"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "aleph-backend",
  "aleph-core",
@@ -66,7 +66,7 @@ dependencies = [
 
 [[package]]
 name = "aleph-core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "criterion",
  "num-complex",
@@ -78,7 +78,7 @@ dependencies = [
 
 [[package]]
 name = "aleph-cuda"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "aleph-backend",
  "aleph-core",
@@ -95,7 +95,7 @@ dependencies = [
 
 [[package]]
 name = "aleph-ir"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "aleph-core",
  "aleph-test",
@@ -107,7 +107,7 @@ dependencies = [
 
 [[package]]
 name = "aleph-metal"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "aleph-backend",
  "aleph-benches",
@@ -130,7 +130,7 @@ dependencies = [
 
 [[package]]
 name = "aleph-mps"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "aleph-backend",
  "aleph-benches",
@@ -150,7 +150,7 @@ dependencies = [
 
 [[package]]
 name = "aleph-oracle"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "aleph-backend",
  "aleph-core",
@@ -167,7 +167,7 @@ dependencies = [
 
 [[package]]
 name = "aleph-parser"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "aleph-core",
  "aleph-ir",
@@ -181,7 +181,7 @@ dependencies = [
 
 [[package]]
 name = "aleph-py"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "aleph-backend",
  "aleph-core",
@@ -202,7 +202,7 @@ dependencies = [
 
 [[package]]
 name = "aleph-qec"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "aleph-core",
  "aleph-ir",
@@ -215,7 +215,7 @@ dependencies = [
 
 [[package]]
 name = "aleph-stab"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "aleph-backend",
  "aleph-core",
@@ -231,7 +231,7 @@ dependencies = [
 
 [[package]]
 name = "aleph-sv"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "aleph-backend",
  "aleph-core",
@@ -251,7 +251,7 @@ dependencies = [
 
 [[package]]
 name = "aleph-test"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "aleph-core",
  "aleph-ir",
