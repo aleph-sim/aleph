@@ -9,15 +9,20 @@ All notable changes to this project are documented in this file, in
 
 - **`aleph.qec` — QEC decoders from Python.** `DetectorErrorModel` +
   `Decoder` bindings over stim Detector Error Models, with GIL-free batch
-  decode (dense rows and stim bit-packed rows) via named decoders: `mwpm`,
-  `union-find-weighted`, `bp-osd`, `relay-bp`, `relay-bp-osd`.
-- **`aleph.sinter` — picklable sinter adapters.** One adapter class per aleph
-  decoder, usable directly in `sinter.collect(..., custom_decoders=aleph.sinter.decoders())`.
+  decode (dense rows and stim bit-packed rows) via seven named decoders:
+  `mwpm`, `union-find`, `union-find-weighted`, `bp`, `bp-osd`, `relay-bp`,
+  `relay-bp-osd`. Decoders support at most 64 logical observables; a larger
+  model raises `ValueError` rather than silently dropping observables.
+- **`aleph.sinter` — picklable sinter adapters.** One adapter class,
+  `AlephSinterDecoder`; `aleph.sinter.decoders()` returns one instance per
+  decoder name, usable directly in
+  `sinter.collect(..., custom_decoders=aleph.sinter.decoders())`.
 - **DEM parser: `repeat` / `shift_detectors` / `^`.** `repeat` blocks
   (including nested) are unrolled and `shift_detectors(...)` offsets are
-  applied during parsing; `^` (`error(p1) ^ error(p2)`) hyperedge
-  decomposition is kept rather than flattened, so the matching decoder builds
-  one edge per connected component instead of a fully expanded hyperedge.
+  applied during parsing (an offset overflow is a parse error). In
+  `error(p) D0 D1 ^ D2 D3`, the components are preserved: matching decoders
+  add one edge per component, and BP-family decoders use the parity-reduced
+  merged view (indices flipped an odd number of times).
 - **Noise models v1 (Phase 4.6).** A `NoiseModel` / `QuantumError` /
   `ReadoutError` API (`depolarizing_error`, `amplitude_damping_error`,
   `phase_damping_error`, `pauli_error`, `bit_flip_error`, `phase_flip_error`,
@@ -69,6 +74,8 @@ All notable changes to this project are documented in this file, in
 - **Extension module renamed to `aleph._native`.** `import aleph` is
   unchanged; only the compiled-extension internal module name moved (mixed
   maturin layout).
+- **DEM parser rejects invalid probabilities.** `error(p)` with a non-finite
+  `p` or `p` outside `[0, 1]` is now a parse error instead of being accepted.
 
 ## [0.2.0] — 2026-06-12
 
