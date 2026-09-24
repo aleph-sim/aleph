@@ -133,6 +133,7 @@ impl std::fmt::Debug for SparseMatcher {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use proptest::prelude::*;
     use std::cmp::Reverse;
     use std::collections::BinaryHeap;
 
@@ -329,8 +330,6 @@ pub(crate) mod tests {
         assert_eq!(sparse(&g, &d), dense_optimum(&g, &d));
     }
 
-    use proptest::prelude::*;
-
     /// Random connected sparse graph: `n` nodes on a random spanning tree plus `extra` random
     /// edges, integer weights in `1..=wmax`, each node a boundary edge with probability 1/3,
     /// and a random defect subset.
@@ -390,13 +389,12 @@ pub(crate) mod tests {
             // boundary within reach (the spanning tree makes the graph connected).
             let has_boundary = (0..g.num_nodes() as u32).any(|u| g.boundary(u).is_some());
             prop_assume!(defects.len() % 2 == 0 || has_boundary);
-            let (so, sw) = SparseMatcher::new(g.clone()).decode(&defects);
-            let (dobs, dw) = dense_optimum(&g, &defects);
+            let (_, sw) = SparseMatcher::new(g.clone()).decode(&defects);
+            let (_, dw) = dense_optimum(&g, &defects);
             prop_assert_eq!(sw, dw, "weight differs: sparse {} dense {}", sw, dw);
-            // Ties (equal weight, different parity) are legitimate; count them loosely.
-            if so != dobs {
-                prop_assert!(sw == dw);
-            }
+            // Corrections may differ from the dense oracle only on genuine ties (equal-weight
+            // matchings in different homology classes); weight equality above is the invariant,
+            // and there is no tie-aware oracle to assert on the correction itself.
         }
     }
 
