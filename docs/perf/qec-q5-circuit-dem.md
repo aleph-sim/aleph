@@ -80,45 +80,62 @@ in detectors and ~60× in mechanisms — a genuine space-time hypergraph.
 
 ## Results — logical error rate (Q5-04 baseline + Q5-05 decoder)
 
+> **Re-measured 2026-09-24 (#503, #505).** The first version of this section was measured with an OSD
+> whose columns were ordered by `|LLR|` instead of posterior LLR, which made OSD far weaker (and on
+> some DEMs worse than BP). It reported BP+OSD at 2.7e-2 and relay-BP+OSD at 1.0e-3 at p=0.002, and a
+> ~0.3 % threshold. The numbers below are from the fixed decoder; the grid is extended to p=0.008
+> (EPYC 8124P, `docs/perf/data/qec-q5-circuit-dem-ext.{csv,log}`) because the crossing moved above the
+> original 0.3 % grid edge.
+
 1000 shots/point, normalised min-sum (α=0.875), OSD combination-sweep order 12, `rounds = d`,
 uniform noise. **Q5-05** added `RelayBpOsdDecoder` — relay-BP's (Q5-03) disordered-memory soft
 output fed into OSD's combination sweep (Q5-02) — the strongest decoder in this crate.
 
-**Gross code (d=12): BP vs BP+OSD vs relay-BP+OSD.** relay-BP+OSD is **5–27× below BP+OSD**:
+**Gross code (d=12): BP vs BP+OSD vs relay-BP+OSD.** Both OSD decoders clear every shot up to
+p=0.002; they tie at 0.003, and from p=0.004 relay-BP+OSD is 1.15–1.6× below BP+OSD:
 
 | p | BP | BP+OSD | **relay-BP+OSD** |
 |------|------|--------|------------------|
 | 0.0005 | 2.0e-3 | 0 | **0** |
-| 0.001  | 1.9e-2 | 4.0e-3 | **0** |
-| 0.0015 | 3.7e-2 | 1.1e-2 | **2.0e-3** |
-| 0.002  | 5.9e-2 | 2.7e-2 | **1.0e-3** |
-| 0.003  | 1.6e-1 | 1.0e-1 | **4.3e-2** |
+| 0.001  | 1.9e-2 | 0 | **0** |
+| 0.0015 | 3.7e-2 | 0 | **0** |
+| 0.002  | 5.9e-2 | 0 | **0** |
+| 0.003  | 1.56e-1 | 2.0e-3 | **2.0e-3** |
+| 0.004  | 2.82e-1 | 1.9e-2 | **1.4e-2** |
+| 0.005  | 5.19e-1 | 1.06e-1 | **6.5e-2** |
+| 0.006  | 7.48e-1 | 2.91e-1 | **2.23e-1** |
+| 0.007  | 9.23e-1 | 5.65e-1 | **4.59e-1** |
+| 0.008  | 9.81e-1 | 8.29e-1 | **7.20e-1** |
 
-**Code-size comparison (relay-BP+OSD), [[72,12,6]] vs [[144,12,12]], per-cycle metric.** The fair
-threshold metric is the logical rate **per cycle** (`p_L / rounds`): a d=12 memory runs 12 rounds vs
-d=6's 6, so the larger code is exposed ~2× longer. The threshold is where the d=12 per-cycle curve
-crosses below d=6's.
+**Code-size comparison (relay-BP+OSD), [[72,12,6]] vs [[144,12,12]], per-round metric.** A d=12
+memory runs 12 rounds vs d=6's 6, so the fair comparison is the logical error rate **per round**,
+`ε = 1 − (1 − p_L)^(1/rounds)`. (The first version used the linearisation `p_L / rounds`, which is
+fine at small `p_L` but understates the per-round rate as `p_L` grows — here it would still call
+d=12 the winner at p=0.008, where the exact per-round rates are equal.)
 
-| p | d=6 per-cycle | d=12 per-cycle | larger code |
-|------|---------------|----------------|-------------|
-| 0.0015 | 1.7e-4 | 1.7e-4 | tie |
-| 0.002  | 3.3e-4 | **8.3e-5** | **wins** |
-| 0.003  | 2.8e-3 | 3.6e-3 | loses |
+| p | d=6 `p_L` | d=12 `p_L` | d=6 per-round | d=12 per-round | larger code |
+|------|-----------|------------|---------------|----------------|-------------|
+| 0.0015 | 1.0e-3 | 0 | 1.7e-4 | 0 | **wins** |
+| 0.002  | 2.0e-3 | 0 | 3.3e-4 | 0 | **wins** |
+| 0.003  | 1.2e-2 | 2.0e-3 | 2.0e-3 | **1.7e-4** | **wins** |
+| 0.004  | 4.5e-2 | 1.4e-2 | 7.6e-3 | **1.2e-3** | **wins** |
+| 0.005  | 9.9e-2 | 6.5e-2 | 1.7e-2 | **5.6e-3** | **wins** |
+| 0.006  | 2.03e-1 | 2.23e-1 | 3.7e-2 | **2.1e-2** | **wins** |
+| 0.007  | 3.03e-1 | 4.59e-1 | 5.8e-2 | **5.0e-2** | **wins** |
+| 0.008  | 4.69e-1 | 7.20e-1 | 1.00e-1 | 1.01e-1 | tie |
 
-The crossing sits at **p ≈ 0.0025–0.003** → a circuit-level threshold of **~0.3%** with relay-BP+OSD,
-up from **~0.1%** with plain BP+OSD on the per-shot metric (two compounding effects: a stronger
-decoder, and the correct per-cycle accounting). Statistics are thin at 1000 shots near the floor
-(rates are ≲ their 95% CIs there) — the crossing is indicative, not a precision threshold.
+The crossing sits at **p ≈ 0.007–0.008** → a circuit-level threshold of **~0.7–0.8 %** with
+relay-BP+OSD. Statistics are 1000 shots per point, so this is not a precise location: the d=12
+advantage is clear through p=0.006, marginal at p=0.007 (the 95 % per-round intervals overlap), and
+gone at p=0.008.
 
 ### Honest positioning vs the literature
 
-Bravyi et al. report a circuit-level threshold near **~0.7%** for the gross code. Our **DEM is exact**
-(Stim-verified), so the remaining **~2–2.5× gap** (vs the earlier ~5–7×) is **decoder strength**, not
-the model: published numbers use higher-order / combination-sweep OSD with larger sweeps, more BP
-iterations, and ambiguity clustering. relay-BP+OSD here uses order 12 (`2^12` sweep) for tractable
-runtime; pushing the order, iteration budget, and shot count further is straightforward decoder
-tuning on the *same* DEM and harness. Q5-04 delivered the correct circuit-level DEM; Q5-05 delivers
-the strongest decoder against it and the correct threshold methodology.
+Bravyi et al. report a circuit-level threshold near **~0.7%** for the gross code. With the OSD
+ordering fixed, relay-BP+OSD on our Stim-verified DEM lands **at that level** (~0.7–0.8 % by the
+two-distance per-round crossing), where the first version of this report found ~0.3 % and attributed
+the gap to decoder tuning. The remaining caveats are methodological: two distances, 1000 shots per
+point, uniform (not SI1000) noise, and a crossing estimate rather than a finite-size-scaling fit.
 
 ## Build cost
 

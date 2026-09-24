@@ -1,8 +1,9 @@
-//! Q5-03 relay-BP oracle tests: relay-BP decodes the gross code well at low p and beats the Q5-02
-//! BP+OSD baseline below the error floor. Hermetic.
+//! Q5-03 relay-BP oracle tests: relay-BP decodes the gross code well at low p and beats plain BP
+//! below the error floor; relay-BP+OSD beats BP+OSD at circuit level. Hermetic.
 
 use aleph_qec::{
-    run_dem_experiment, BBCode, CircuitNoise, OsdDecoder, RelayBpDecoder, RelayBpOsdDecoder,
+    run_dem_experiment, BBCode, BpDecoder, CircuitNoise, OsdDecoder, RelayBpDecoder,
+    RelayBpOsdDecoder, DEFAULT_MAX_ITER,
 };
 
 fn bb(l: usize) -> BBCode {
@@ -22,21 +23,25 @@ fn relay_bp_decodes_gross_at_low_p() {
     );
 }
 
-/// relay-BP beats BP+OSD below the error floor: at p=0.03 its logical rate is lower with CI
-/// separation. This is the Q5-03 improvement-vs-Q5-02 acceptance, made hermetic.
+/// relay-BP beats plain (normalised min-sum) BP below the error floor: at p=0.03 its logical rate
+/// is lower with CI separation — the message-passing improvement Q5-03 set out to make.
+///
+/// This test used to assert relay-BP beats BP+OSD here. That held only against the OSD with the
+/// inverted column order (#503); the corrected BP+OSD is level with relay-BP at code capacity
+/// (`docs/perf/qec-q5-qldpc.md`), so no CI-separated ordering exists between them at this point.
 #[test]
 #[ignore = "Monte-Carlo (~2 min); nightly"]
-fn relay_bp_beats_bposd_below_floor() {
+fn relay_bp_beats_plain_bp_below_floor() {
     let dem = BBCode::gross().code_capacity_dem(0.03);
     let relay = RelayBpDecoder::new(&dem);
-    let bposd = OsdDecoder::with_params(&dem, aleph_qec::DEFAULT_MAX_ITER, 0.875, 10);
+    let bp = BpDecoder::with_params(&dem, DEFAULT_MAX_ITER, 0.875);
     let rr = run_dem_experiment(&dem, 40_000, &relay, 4).expect("relay");
-    let ro = run_dem_experiment(&dem, 40_000, &bposd, 4).expect("bposd");
+    let rb = run_dem_experiment(&dem, 40_000, &bp, 4).expect("bp");
     assert!(
-        rr.rate + rr.ci95 < ro.rate - ro.ci95,
-        "relay-BP ({:.4}) must beat BP+OSD ({:.4}) below the floor with CI separation",
+        rr.rate + rr.ci95 < rb.rate - rb.ci95,
+        "relay-BP ({:.4}) must beat plain BP ({:.4}) below the floor with CI separation",
         rr.rate,
-        ro.rate
+        rb.rate
     );
 }
 
@@ -67,7 +72,7 @@ fn relay_bp_osd_beats_bposd_circuit_level() {
         .circuit_level_dem(6, CircuitNoise::uniform(0.003))
         .expect("circuit-level dem");
     let ro = RelayBpOsdDecoder::new(&dem, 40);
-    let bposd = OsdDecoder::with_params(&dem, aleph_qec::DEFAULT_MAX_ITER, 0.875, 40);
+    let bposd = OsdDecoder::with_params(&dem, DEFAULT_MAX_ITER, 0.875, 40);
     let rr = run_dem_experiment(&dem, 20_000, &ro, 4).expect("relay+osd");
     let rb = run_dem_experiment(&dem, 20_000, &bposd, 4).expect("bposd");
     assert!(

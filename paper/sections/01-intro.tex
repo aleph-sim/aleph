@@ -26,9 +26,10 @@ contributions, in the order the work was done:
   \item The full-parallel geometry on a rented Virtex UltraScale+ and on ASAP7 through OpenROAD:
         543 cycles, \SI{0.88}{\micro\second} at 7\,nm predictive, with the first power figure derived
         from gate-level switching activity rather than default toggle rates (\S\ref{sec:scaling}).
-  \item The negative results that shaped the design and that a tape-out would have to face: no OSD
-        tail, no feasible \texttt{NGROUP} setting, a streaming core that does not fit, and a
-        latch-clock hold failure that repair cannot buffer away (\S\ref{sec:limitations}).
+  \item The negative results that shaped the design and that a tape-out would have to face: an OSD
+        tail that recovers most of the logical error rate but not within the real-time budget, no
+        feasible \texttt{NGROUP} setting, a streaming core that does not fit, and a latch-clock hold
+        failure that repair cannot buffer away (\S\ref{sec:limitations}).
 \end{enumerate}
 
 Every number in this paper is copied from a dated report in the public repository

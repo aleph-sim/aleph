@@ -15,8 +15,9 @@
 //!
 //! Usage:
 //! ```text
-//! cargo run --release -p aleph-qec --example qec_q5_circuit_dem -- [shots] [osd_order] [seed]
-//! # defaults: shots=1000 osd_order=20 seed=2024
+//! cargo run --release -p aleph-qec --example qec_q5_circuit_dem -- [shots] [osd_order] [seed] [ps]
+//! # defaults: shots=1000 osd_order=20 seed=2024 ps=0.0005,0.001,0.0015,0.002,0.003
+//! # ps: comma-separated physical rates, e.g. 0.004,0.005,0.006,0.007 to extend the threshold grid
 //! ```
 
 use aleph_qec::{
@@ -36,6 +37,13 @@ fn main() {
     let shots: u64 = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(1_000);
     let order: usize = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(20);
     let seed: u64 = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(2024);
+    let ps: Vec<f64> = match args.get(4) {
+        Some(list) => list
+            .split(',')
+            .map(|x| x.trim().parse().expect("ps: comma-separated floats"))
+            .collect(),
+        None => PS.to_vec(),
+    };
 
     eprintln!(
         "# Q5-04 circuit-level DEM (depth-7 syndrome extraction), uniform noise, α={ALPHA}, osd_order={order}"
@@ -56,7 +64,7 @@ fn main() {
     }
     println!("# gross [[144,12,12]], rounds=12: logical rate vs p (BP / BP+OSD / relay-BP+OSD)");
     println!("p,shots,bp_rate,bp_ci,bposd_rate,bposd_ci,relayosd_rate,relayosd_ci");
-    for &p in &PS {
+    for &p in &ps {
         let dem = gross
             .circuit_level_dem(12, CircuitNoise::uniform(p))
             .unwrap();
@@ -88,7 +96,7 @@ fn main() {
     println!("l,n,d,p,shots,logical_rate,ci95,per_cycle_rate");
     for &(l, d) in &[(6usize, 6usize), (12, 12)] {
         let code = bb(l);
-        for &p in &PS {
+        for &p in &ps {
             let dem = code.circuit_level_dem(d, CircuitNoise::uniform(p)).unwrap();
             let ro = RelayBpOsdDecoder::new(&dem, order);
             let r = run_dem_experiment(&dem, shots, &ro, seed).unwrap();

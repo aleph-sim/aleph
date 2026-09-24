@@ -172,7 +172,7 @@ conditioned on convergence is $\leq 3.0\times10^{-6}$ (zero observed in
 \end{figure}
 
 % src: docs/superpowers/specs/2026-07-25-q7-07-nonconvergence-policy-design.md "Pre-registered decision rule"
-% src: docs/qec/q7-07-nonconvergence-policy.md "The verdict, and the gap in the pre-registered rule"
+% src: docs/qec/q7-07-nonconvergence-policy.md "The verdict under the pre-registered rule"
 Because $A \approx 1$, an oracle fallback acting only on flagged shots could
 in principle remove the whole LER, so a fallback cannot be dismissed by
 arithmetic; the decision rule, fixed before the data were seen, required a
@@ -182,31 +182,33 @@ and fit the latency budget.
 We retained 1\,000 non-converged shots per point as a fixed corpus and
 re-decoded each with five ordered-statistics-decoding (OSD) candidates:
 OSD-0, OSD-2, OSD-4, and residual-restricted OSD-2 and OSD-4 (1, 4, 16, 4
-and 16 solves per shot). Every candidate is worse than the baseline at every
-point, and significantly so under a paired McNemar test (every $\chi^2 >
-3.84$; the best row, residual OSD-4 at $p = 0.003$, rescues 116 shots and
-breaks 169, $\chi^2 = 9.49$). Propagated as $\Delta\mathrm{LER} =
+and 16 solves per shot). Every candidate beats the baseline at every point,
+by a wide margin under a paired McNemar test (every $\chi^2 > 660$): OSD-0
+turns the conditional error rate of 71\,\% / 83\,\% / 87\,\% at
+$p = 0.003$ / 0.005 / 0.007 into 3.0\,\% / 9.5\,\% / 19\,\%, and the higher
+orders give identical counts, so OSD-0 is the whole ladder. Propagated as
+$\Delta\mathrm{LER} =
 r(p)\,[P(\mathrm{err}\mid v{=}0) - P(\mathrm{err}\mid v{=}0,\mathrm{fallback})]$,
-the candidates raise LER by between $+5.4\,\%$ and $+39.9\,\%$; OSD-0 turns
-a 71\,\% conditional error rate into 99.6\,\%. The reason is that the BP
-posteriors that order OSD's reliable basis are exactly the ones that just
-failed to converge: forcing $H\hat{e} = s$ lands the solution in the wrong
-logical class.
+running OSD-0 on flagged shots lowers LER by 96\,\% / 88\,\% / 76\,\%
+($8.3\times10^{-4} \to 3.5\times10^{-5}$ at $p = 0.003$). (An earlier
+version of this measurement, with OSD's columns ordered by $|\mathrm{LLR}|$
+instead of posterior LLR, found every candidate worse than baseline; the
+numbers here are from the corrected decoder.)
 % src: docs/qec/q7-07-nonconvergence-policy.md "Latency, and a caveat about the parallel timing column"
-The candidates also fail on latency: single-threaded on an EPYC 8124P, a
-processor-side tail costs \SIrange{1460}{1644}{\micro\second} per shot it
+The candidates fail on latency: single-threaded on an EPYC 8124P, a
+processor-side tail costs \SIrange{1475}{1646}{\micro\second} per shot it
 fires on (including the software re-decode the flag-only RTL export forces),
 against a \SI{1}{\micro\second}-per-round budget; a tail that fires on
 0.12\,\% of shots still sets the worst case.
 % src: docs/qec/q7-07-nonconvergence-policy.md "Chosen policy"
-The chosen policy is therefore \emph{do-nothing-but-flag}: emit the best-kept
-decision, export \texttt{valid\_flag}, no RTL change. Its LER impact is zero
-by construction. This is reached for the opposite reason to the one the
-rule's first branch anticipated (``non-convergence is negligible''):
-non-convergence is nearly the entire error budget, and nothing affordable
-recovers any of it. The two directions that could---more relay legs on a
-flagged shot, or escalation to a host for non-real-time use---are outside
-this work.
+Under the pre-registered rule this is the \emph{rejected-on-latency} branch.
+The real-time policy is therefore \emph{do-nothing-but-flag}: emit the
+best-kept decision, export \texttt{valid\_flag}, no RTL change. Off the
+real-time path the flag is worth far more than telemetry: escalating the
+0.12--3.3\,\% of flagged shots to a host running OSD-0 recovers most of the
+LER. Bringing that tail within the real-time budget---by exporting the
+posteriors to skip the re-decode, or a fixed-latency OSD-0 engine---is
+outside this work.
 
 % src: docs/qec/q7-07-nonconvergence-policy.md "Board confirmation — the flag itself is bit-exact on silicon"
 Finally, the flag the policy rests on is the silicon's flag. On the

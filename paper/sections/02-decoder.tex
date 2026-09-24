@@ -43,7 +43,7 @@ the mechanisms of the code-capacity model.
 
 \subsection*{Relay-BP min-sum}
 
-% src: docs/perf/qec-q7-fixed-bp.md "M0" What and why (relay-BP vs BP+OSD rationale)
+% src: docs/perf/qec-q7-fixed-bp.md "M0" What and why (relay-BP vs BP+OSD rationale); docs/perf/qec-q5-qldpc.md Results (re-measured after #503)
 BP alone is degeneracy-limited on qLDPC codes: it oscillates or converges to a
 valid but wrong-coset solution. The usual remedy, BP followed by
 ordered-statistics decoding (BP-OSD)~\citep{panteleev2021bposd}, adds a
@@ -51,9 +51,11 @@ data-dependent GF(2) Gauss--Jordan elimination of unbounded latency. Relay-BP
 \citep{muller2025relaybp} stays inside message passing: several \emph{legs} of
 normalised min-sum BP, each reseeding a per-variable disordered memory
 coefficient $\gamma_v$ and relaying the previous leg's messages, keeping the
-lowest-weight syndrome-consistent solution seen. In our software comparison it
-beat BP-OSD at every $p$ while dropping the elimination entirely, so it is the
-hardware decoder.
+lowest-weight syndrome-consistent solution seen. In our software comparison
+(gross code, code capacity) it beat BP-OSD at low $p$ ($3.3\times$ at
+$p=0.02$, no failures in 40\,000 shots at $p=0.01$), tied at $p=0.04$ and
+trailed by 7--9\,\% above it, while dropping the elimination entirely, so it
+is the hardware decoder.
 % src: docs/perf/qec-q5-bposd.md "What and why" (α=1 fails 29 %, α=0.875 fails 2.3 % at p=0.04)
 The check update is normalised min-sum with $\alpha=0.875$; plain $\alpha=1$
 over-converged to wrong cosets on 29\,\% of shots at $p=0.04$ (code capacity),
@@ -189,29 +191,28 @@ uniform 6 at code capacity. The parametric sequential RTL decoder
 bit-identically to the golden with no RTL change, only a regenerated Tanner
 header.
 
-\subsection*{No OSD tail (negative result)}
+\subsection*{An OSD tail off the real-time path}
 
 Relay-BP occasionally leaves a hard decision with $H\hat e\ne s$. We built the
 classic fix, an OSD tail on the fixed-point posterior LLRs
 (\texttt{FixedRelayBpOsd}), as a slow path on the processor side gated by the
-RTL's \texttt{valid\_flag}, and measured whether it earns its place.
-% src: docs/perf/qec-q7-fixed-bp.md "M5-followup — the OSD-0 tail" Result, code capacity (20 000 shots)
-At code capacity (20\,000 shots) OSD-0 is LER-neutral at every $p$ within CI
-while the tail rate grows from 0.15\,\% to 8.6\,\% over $p=0.03\to0.06$: the
-residual failures are mostly uncorrectable (weight above $d/2$), so a valid
-OSD decode is a near coin-flip between cosets.
+RTL's \texttt{valid\_flag}, and measured whether it earns its place. (An
+earlier version of this measurement ordered OSD's columns by $|\mathrm{LLR}|$
+rather than by posterior LLR, which made OSD worse than no tail; the numbers
+below are from the corrected decoder.)
 % src: docs/perf/qec-q7-fixed-bp.md "M5-followup — the OSD-0 tail" Result, circuit-level table (rounds=6, 3000 shots)
-At circuit level ($\mathrm{rounds}=6$, 3000 shots) OSD-0 is worse than no tail
-in both fixed and float arithmetic: at $p=0.002$ the plain fixed/float LER
-$4.0\times10^{-3}$/$3.3\times10^{-3}$ rises to
-$6.7\times10^{-3}$/$5.7\times10^{-3}$, and at $p=0.003$
-$2.0\times10^{-2}$/$1.9\times10^{-2}$ rises to
-$2.7\times10^{-2}$/$2.8\times10^{-2}$; replacing an invalid guess by a valid
-but often wrong-coset decode loses more shots than it rescues. Order 4 is
-about break-even, and the beneficial regime is order 12
-($1.7\times10^{-3}$/$1.3\times10^{-3}$ and
-$1.3\times10^{-2}$/$1.5\times10^{-2}$), i.e.\ $2^{12}=4096$
-reliability-ordered GF(2) re-solves per failed shot: exactly the
-data-dependent, variable-latency work the hardware track set out to avoid.
-Fixed Q5.3 tracks float at every order, so the word is not the limiter; the
-order is. The decoder therefore ships as pure relay-BP with no OSD tail.
+At circuit level ($\mathrm{rounds}=6$, 3000 shots) OSD-0 leaves no logical
+error in the 3000 shots at $p\le0.002$ (plain fixed relay-BP:
+$4.0\times10^{-3}$ at $p=0.002$), cuts $2.0\times10^{-2}$ to $6.7\times10^{-4}$ at $p=0.003$
+($30\times$) and $6.5\times10^{-2}$ to $7.0\times10^{-3}$ at $p=0.004$
+($9\times$), while running on only the 0.1--8.5\,\% of shots that relay-BP
+fails to converge. Orders 4 and 12 give identical counts on these shots, so the
+single GF(2) solve of OSD-0 captures the whole gain; fixed Q5.3 tracks float
+at every order.
+% src: docs/perf/qec-q7-fixed-bp.md "M5-followup — the OSD-0 tail" Result, code capacity (20 000 shots)
+At code capacity (20\,000 shots) the gain is smaller, $1.1$--$1.4\times$ over
+$p=0.03\to0.06$.
+The elimination is still data-dependent and variable-latency, so it stays off
+the fixed-latency datapath: the decoder ships as pure relay-BP in hardware, with
+OSD-0 as the processor-side escape for flagged shots where the latency budget
+allows it (\S\ref{sec:silicon}).

@@ -1,0 +1,17 @@
+# Q5-04 circuit-level DEM (depth-7 syndrome extraction), uniform noise, α=0.875, osd_order=12
+# gross circuit-level DEM (d=12 rounds): 936 detectors, 12 observables, 8784 mechanisms
+  p=0.004: BP=2.820e-1  BP+OSD=1.900e-2  relay-BP+OSD=1.400e-2
+  p=0.005: BP=5.190e-1  BP+OSD=1.060e-1  relay-BP+OSD=6.500e-2
+  p=0.006: BP=7.480e-1  BP+OSD=2.910e-1  relay-BP+OSD=2.230e-1
+  p=0.007: BP=9.230e-1  BP+OSD=5.650e-1  relay-BP+OSD=4.590e-1
+  p=0.008: BP=9.810e-1  BP+OSD=8.290e-1  relay-BP+OSD=7.200e-1
+  ℓ=6 d=6 n=72 p=0.004: 4.5000e-2 ± 1.3e-2  (per-cycle 7.5000e-3)
+  ℓ=6 d=6 n=72 p=0.005: 9.9000e-2 ± 1.9e-2  (per-cycle 1.6500e-2)
+  ℓ=6 d=6 n=72 p=0.006: 2.0300e-1 ± 2.5e-2  (per-cycle 3.3833e-2)
+  ℓ=6 d=6 n=72 p=0.007: 3.0300e-1 ± 2.8e-2  (per-cycle 5.0500e-2)
+  ℓ=6 d=6 n=72 p=0.008: 4.6900e-1 ± 3.1e-2  (per-cycle 7.8167e-2)
+  ℓ=12 d=12 n=144 p=0.004: 1.4000e-2 ± 7.3e-3  (per-cycle 1.1667e-3)
+  ℓ=12 d=12 n=144 p=0.005: 6.5000e-2 ± 1.5e-2  (per-cycle 5.4167e-3)
+  ℓ=12 d=12 n=144 p=0.006: 2.2300e-1 ± 2.6e-2  (per-cycle 1.8583e-2)
+  ℓ=12 d=12 n=144 p=0.007: 4.5900e-1 ± 3.1e-2  (per-cycle 3.8250e-2)
+  ℓ=12 d=12 n=144 p=0.008: 7.2000e-1 ± 2.8e-2  (per-cycle 6.0000e-2)
