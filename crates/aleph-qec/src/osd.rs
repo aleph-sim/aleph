@@ -10,19 +10,23 @@
 //!
 //! Run BP. If it converges (`H ê = s`), return `ê` — it is already valid. Otherwise:
 //!
-//! 1. Order the variables (error mechanisms) by BP **reliability** `|posterior LLR|`, *descending* —
-//!    most-reliable first.
+//! 1. Order the variables (error mechanisms) by BP's **posterior LLR**, *ascending* (sign-aware) —
+//!    most-likely-in-error first (Panteleev–Kalachev, arXiv:1904.02703). This is the syndrome-
+//!    decoding form of the "most-reliable basis": the information set is the columns BP most
+//!    believes carry the error, *not* the ones with the largest `|LLR|`. Ordering by `|LLR|` puts
+//!    the columns BP is most sure are error-free (large positive LLR) into the basis, so the solve
+//!    explains the syndrome with exactly those columns — worse than BP alone on circuit-level DEMs
+//!    (#503: d=5 surface code, p=0.005: 547 errors vs BP 473; sign-aware order: 117).
 //! 2. Gauss–Jordan-reduce the parity-check matrix `H` over GF(2), greedily taking pivot columns in
-//!    that order. The pivots are the most-reliable independent columns — the "most-reliable basis"
-//!    (Fossorier–Lin) — and span the column space (rank `r`), so the system is solvable.
-//! 3. **OSD-0**: keep BP's hard decision `ê` on the (less-reliable) non-pivot columns and solve each
-//!    pivot variable from its now-isolated reduced row so that `H e = s`. Keeping `ê` rather than
-//!    zeroing the non-pivots makes OSD *refine* BP instead of discarding it — zeroing lands in the
-//!    wrong logical coset far more often.
+//!    that order. The pivots span the column space (rank `r`), so the system is solvable.
+//! 3. **OSD-0**: keep BP's hard decision `ê` on the non-pivot columns and solve each pivot variable
+//!    from its now-isolated reduced row so that `H e = s`. Under the sign-aware order the non-pivots
+//!    are overwhelmingly the columns BP holds at zero, so this coincides with the textbook
+//!    zeroed-non-pivot OSD-0 in practice (identical LER in the #503 measurement).
 //! 4. **OSD combination sweep (order `w`)**: additionally try every nonzero flip pattern on the `w`
-//!    least-reliable *non-pivot* columns, re-solving the pivots for each, and keep the candidate of
-//!    least soft weight `Σ_{e_v=1} L_v` (the log-likelihood cost; favourable where BP already leans
-//!    toward an error). `w = 0` is plain OSD-0.
+//!    most-likely *non-pivot* columns (the head of the non-pivot order), re-solving the pivots for
+//!    each, and keep the candidate of least soft weight `Σ_{e_v=1} L_v` (the log-likelihood cost;
+//!    favourable where BP already leans toward an error). `w = 0` is plain OSD-0.
 //!
 //! BP uses **normalised** min-sum (`α = 0.875` by default): plain `α = 1` min-sum over-converges to
 //! valid-but-wrong-coset solutions on degenerate codes, so BP reports success and OSD never runs —
@@ -94,7 +98,7 @@ impl OsdDecoder {
     }
 
     /// Set the OSD combination-sweep order (`0` = OSD-0; higher searches `2^order` flip patterns on
-    /// the least-reliable non-pivot columns).
+    /// the most-likely non-pivot columns).
     pub fn with_order(mut self, order: usize) -> Self {
         self.order = order;
         self
@@ -142,7 +146,7 @@ impl OsdDecoder {
     ///
     /// The sweep costs `2^w` regardless of pool size, so narrowing the pool raises the
     /// *effective* order — the `w` columns actually explored are the ones that can repair the
-    /// residual, rather than the globally least-reliable ones anywhere in the code.
+    /// residual, rather than the globally most-likely non-pivots anywhere in the code.
     fn sweep_restriction(
         &self,
         syndrome: &Syndrome,
@@ -183,7 +187,7 @@ impl OsdDecoder {
     /// Run the OSD post-processor on **externally supplied** soft information (e.g. from relay-BP,
     /// Q5-03) instead of this decoder's own BP. If `soft.converged`, the valid hard decision is
     /// returned directly; otherwise the OSD combination sweep refines it using `soft.llr` for the
-    /// most-reliable basis. This is how [`RelayBpOsdDecoder`](crate::RelayBpOsdDecoder) couples a
+    /// pivot basis. This is how [`RelayBpOsdDecoder`](crate::RelayBpOsdDecoder) couples a
     /// stronger BP front-end to OSD.
     pub fn correction_from_soft(&self, syndrome: &Syndrome, soft: &crate::BpSoft) -> Correction {
         if soft.converged {
@@ -201,14 +205,19 @@ impl OsdDecoder {
         let n = self.n_vars;
         let words = (n + 1).div_ceil(64); // variables 0..n, augmented syndrome bit at index n
 
-        // Reliability-DESCENDING variable order (most reliable first). OSD takes the most-reliable
-        // independent columns as the pivot basis (the "most-reliable basis"); the least-reliable
-        // columns become the non-pivots the combination sweep explores. NaN-safe.
+        // Posterior-LLR-ASCENDING variable order (most likely in error first). OSD takes the
+        // most-likely independent columns as the pivot basis; the rest become the non-pivots the
+        // combination sweep explores. A NaN LLR carries no information, so it sorts last (treated
+        // as +∞, "surely error-free") rather than poisoning the comparison.
+        let key = |v: usize| {
+            if llr[v].is_nan() {
+                f64::INFINITY
+            } else {
+                llr[v]
+            }
+        };
         let mut order: Vec<usize> = (0..n).collect();
-        order.sort_by(|&a, &b| {
-            let (ra, rb) = (llr[a].abs(), llr[b].abs());
-            rb.partial_cmp(&ra).unwrap_or(std::cmp::Ordering::Equal)
-        });
+        order.sort_by(|&a, &b| key(a).total_cmp(&key(b)));
 
         // Check rows over variables, augmented with the syndrome bit.
         let mut rows = vec![vec![0u64; words]; m];
@@ -223,7 +232,7 @@ impl OsdDecoder {
             }
         }
 
-        // Gauss-Jordan, choosing pivot columns in reliability order; full elimination isolates each
+        // Gauss-Jordan, choosing pivot columns in that order; full elimination isolates each
         // pivot column to a single row.
         let mut row_for_col = vec![usize::MAX; n];
         let mut used_row = vec![false; m];
@@ -269,8 +278,8 @@ impl OsdDecoder {
             return e0;
         }
 
-        // OSD combination sweep over the `w` least-reliable non-pivot columns. `order` is descending
-        // reliability, so the least-reliable non-pivots are at the tail of `nonpivot`.
+        // OSD combination sweep over the `w` most-likely non-pivot columns. `order` is ascending
+        // LLR, so those are at the head of `nonpivot`.
         let restrict = self.sweep_restriction(syndrome, bp_hard);
         let nonpivot: Vec<usize> = order
             .iter()
@@ -282,7 +291,7 @@ impl OsdDecoder {
         if w == 0 {
             return e0;
         }
-        let sweep = &nonpivot[nonpivot.len() - w..];
+        let sweep = &nonpivot[..w];
 
         // For each pivot row: its pivot variable, the base bit (aug XOR ê over non-pivots, already
         // baked into `e0`), and which sweep columns it contains.

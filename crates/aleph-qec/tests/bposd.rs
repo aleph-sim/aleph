@@ -2,7 +2,9 @@
 //! low physical rate, and the larger code suppresses errors more below threshold (the prerequisite
 //! for a threshold crossing). Hermetic and fast.
 
-use aleph_qec::{run_dem_experiment, BBCode, OsdDecoder};
+use aleph_qec::{
+    run_dem_experiment, BBCode, BpDecoder, CircuitNoise, OsdDecoder, SurfaceCode, DEFAULT_MAX_ITER,
+};
 
 fn bb(l: usize) -> BBCode {
     BBCode::new(l, 6, &[(3, 0), (0, 1), (0, 2)], &[(0, 3), (1, 0), (2, 0)])
@@ -59,5 +61,28 @@ fn combination_sweep_does_not_regress() {
         "OSD order-12 ({:.4}) must not regress vs OSD-0 ({:.4})",
         r12.rate,
         r0.rate
+    );
+}
+
+/// #503 regression: OSD must *help* BP on a circuit-level DEM, not hurt it. OSD only runs on the
+/// shots BP fails to converge on, so on the same shot stream BP+OSD can only differ from BP there.
+/// With the most-likely-error (sign-aware) column order the OSD-0 tail cuts the d=5 surface-code
+/// LER several-fold; the old `|LLR|`-descending order made it *worse* than BP (it pivoted on the
+/// columns BP was most sure were error-free, forcing the solve to explain the syndrome with them).
+#[test]
+fn osd_beats_plain_bp_on_circuit_level_surface_code() {
+    let dem = SurfaceCode::new(5)
+        .memory_z_experiment(5)
+        .circuit_level_dem(CircuitNoise::uniform(0.005))
+        .expect("dem");
+    let bp = BpDecoder::with_params(&dem, DEFAULT_MAX_ITER, 0.875);
+    let osd = OsdDecoder::new(&dem);
+    let rb = run_dem_experiment(&dem, 4_000, &bp, 7).expect("bp");
+    let ro = run_dem_experiment(&dem, 4_000, &osd, 7).expect("osd");
+    assert!(
+        2 * ro.logical_errors < rb.logical_errors,
+        "BP+OSD ({} errors) must be well below plain BP ({} errors) on the same 4000 shots",
+        ro.logical_errors,
+        rb.logical_errors
     );
 }
