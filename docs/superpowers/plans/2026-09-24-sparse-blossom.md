@@ -1003,7 +1003,8 @@ impl State {
                     } else {
                         self.grow(g, a, b, e);
                     }
-                } else if ta == tb {
+                } else if self.root_of(a) == self.root_of(b) {
+                    // `Region.tree` is a tree-NODE id; "same tree" means the same root.
                     self.blossom(g, a, b, e);
                 } else {
                     debug_assert_eq!(self.trees[tb as usize].outer, b);
