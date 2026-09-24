@@ -86,7 +86,8 @@ aleph relay-bp-osd is slow enough that 20,000 would take >60s — every other
 row is 20,000). Every aleph decoder is measured on all 10 cores and on one
 thread (`RAYON_NUM_THREADS=1`); pymatching's `decode_batch` runs on one
 thread. `mwpm` rows below are post-[Sparse Blossom](https://github.com/aleph-sim/aleph/blob/main/docs/perf/q1-03b-sparse-blossom.md)
-(best of two runs per cell; every other row is a single run):
+(best of two runs per cell; `pymatching` rows are also best of two, from
+this same session; every other row is a single run from the Task 8 session):
 
 | DEM | decoder | threads | shots | shots/s |
 |---|---|---:|---:|---:|
@@ -125,7 +126,10 @@ sparse/dense ratio *grows* with distance because the new matcher's cost
 scales with the defect count rather than `O(D²)`. **On the whole machine,
 `mwpm` now wins outright at both distances: 1.94× pymatching's one thread at
 d=5 (2,925,616 vs. 1,510,493 shots/s) and 2.62× at d=9 (552,252 vs.
-211,187).**
+211,187).** The d=9 10-thread number itself also rose across the fix below
+(431,448 → 552,252, +28%), so part of that 2.62× reflects the rise rather
+than a pure ratio-vs-pymatching improvement; the cause of the d=9 rise is
+unconfirmed (see below).
 
 An earlier build of this rewrite regressed multi-thread throughput at small
 distances: 10-core `mwpm` at d=5 measured 743,079 and 914,767 shots/s across
@@ -144,8 +148,16 @@ a unique id at construction, and `decode` finds-or-allocates its `State` in
 the *calling thread's own* `Vec`, so the hot path never takes a lock. That
 took 10-core `mwpm` at d=5 from 914,767 to 2,925,616 shots/s (best of two
 runs on an idle box) — above the old dense matcher's level — while
-single-thread throughput and the already-unaffected d=9 cell held steady
-within noise.
+single-thread throughput at both distances held steady within noise
+(d=5: 654,255 → 637,482; d=9: 100,976 → 101,399). The d=9 *10-thread* number
+also rose (431,448 → 552,252, +28%), even though d=9's ~10 µs decodes were
+never expected to be lock-bound (see the "Thread-local state cache" section
+of [the perf record](https://github.com/aleph-sim/aleph/blob/main/docs/perf/q1-03b-sparse-blossom.md))
+— this may be the
+same fix (removing the mutex's cache-line ping-pong helps even when it isn't
+the dominant cost) or may just be run-to-run variance on a shared dev box;
+it was not re-measured against the pre-fix build under controlled conditions,
+so it's reported honestly rather than folded into the fix's headline claim.
 
 `decode_batch_bit_packed` releases the GIL and splits shots across cores, so
 this is what a single-process caller sees; a sinter run with many workers

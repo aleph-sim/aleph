@@ -29,6 +29,11 @@ const CACHE_CAP: usize = 8;
 thread_local! {
     /// One `State` arena per `(decoder id, thread)`, reused across `decode` calls on that
     /// thread. Linear search: with `CACHE_CAP` this small, a `Vec` beats a `HashMap`.
+    ///
+    /// Lifetime: a dropped `SparseMatcher`'s entry is *not* reclaimed proactively — it just
+    /// sits here until evicted (FIFO by insertion order, i.e. oldest-inserted first, not an
+    /// LRU) or the thread exits. Worst case per thread is `CACHE_CAP` live `State`s, even if
+    /// only one decoder is still in use.
     static CACHE: RefCell<Vec<(u64, State)>> = const { RefCell::new(Vec::new()) };
 }
 
@@ -118,27 +123,35 @@ impl SparseMatcher {
 
     /// `defects` must be ascending. Returns `(observable mask, weight)`.
     pub(crate) fn decode(&self, defects: &[u32]) -> (u64, i64) {
-        CACHE.with(|cache| {
-            // `State::run` (called below) never touches `CACHE` — it's plain arithmetic over its
-            // own arenas — so this borrow can never re-enter and `try_borrow_mut` can't actually
-            // fail on this path. It's a defensive fallback (a fresh, uncached `State`) rather
-            // than an `unwrap`, per the no-panic-in-library-code rule.
-            if let Ok(mut cache) = cache.try_borrow_mut() {
-                if let Some((_, st)) = cache.iter_mut().find(|(id, _)| *id == self.id) {
-                    return st.run(&self.graph, defects);
+        // `CACHE.try_with` (rather than `.with`) keeps this panic-free even if `decode` is
+        // somehow reached while this thread's locals are being torn down (e.g. called from
+        // another TLS destructor at thread exit) — `.with` panics in that case, `try_with`
+        // returns `Err` instead. `State::run` (called below) never touches `CACHE` — it's
+        // plain arithmetic over its own arenas — so the inner `try_borrow_mut` can never
+        // re-enter and can't actually fail on this path either. Both fallbacks compute a
+        // fresh, uncached `State` rather than panicking, per the no-panic-in-library-code rule.
+        CACHE
+            .try_with(|cache| {
+                if let Ok(mut cache) = cache.try_borrow_mut() {
+                    if let Some((_, st)) = cache.iter_mut().find(|(id, _)| *id == self.id) {
+                        return st.run(&self.graph, defects);
+                    }
+                    if cache.len() >= CACHE_CAP {
+                        cache.remove(0); // evict the oldest entry
+                    }
+                    let mut st = State::new(self.graph.num_nodes());
+                    let out = st.run(&self.graph, defects);
+                    cache.push((self.id, st));
+                    out
+                } else {
+                    let mut st = State::new(self.graph.num_nodes());
+                    st.run(&self.graph, defects)
                 }
-                if cache.len() >= CACHE_CAP {
-                    cache.remove(0); // evict the oldest entry
-                }
-                let mut st = State::new(self.graph.num_nodes());
-                let out = st.run(&self.graph, defects);
-                cache.push((self.id, st));
-                out
-            } else {
+            })
+            .unwrap_or_else(|_| {
                 let mut st = State::new(self.graph.num_nodes());
                 st.run(&self.graph, defects)
-            }
-        })
+            })
     }
 }
 

@@ -39,12 +39,12 @@ integers. The new engine lives in `crates/aleph-qec/src/sparse_blossom/`:
 - `matcher.rs` — the alternating-tree operations (augment, blossom, grow, boundary-augment,
   shatter) and final-matching resolution (§3.6 of the design doc).
 
-`crates/aleph-qec/src/mwpm.rs` was restructured to match: `MwpmDecoder` now holds the compiled
-sparse graph plus a `SparseMatcher` id into a thread-local `State` cache (so `decode(&self)` stays
-callable from `rayon`, as the Python batch path needs, with no lock on the hot path — a
-`Mutex<Vec<State>>` pool was tried first but re-contended badly at small-distance decode times;
-see "Thread-local state cache" below), and `decode_sparse` is the method `Decoder::decode`
-calls. The `O(D²)` all-pairs Dijkstra table that both oracle paths need (`decode_dense`, the Q1-02
+`crates/aleph-qec/src/mwpm.rs` was restructured to match: `MwpmDecoder` now holds a
+`SparseMatcher` (the compiled graph plus a cache id into a thread-local `State` cache, so
+`decode(&self)` stays callable from `rayon`, as the Python batch path needs, with no lock on the
+hot path — a `Mutex<Vec<State>>` pool was tried first but re-contended badly at small-distance
+decode times; see [Thread-local state cache](#thread-local-state-cache) below), and
+`decode_sparse` is the method `Decoder::decode` calls. The `O(D²)` all-pairs Dijkstra table that both oracle paths need (`decode_dense`, the Q1-02
 ground truth, and `decode_local`, the Q1-03 savings-reformulation oracle) is no longer built in
 `MwpmDecoder::new` — it moved behind `dense: OnceLock<DenseTables>`, built lazily on first oracle
 call, so the production path never pays for it and the reachable distance is no longer capped by
@@ -180,6 +180,38 @@ closing the remaining ~2.5× gap needs a real profiler pass, not another blind m
   specific event kind (arrival vs collision vs blossom formation) dominates the 46 µs, rather than
   guessing from allocation-site inspection.
 
+## Thread-local state cache
+
+`decode(&self)` is called from `rayon` (the Python batch path, `run_dem_experiment`), so
+`SparseMatcher` needs per-shot scratch (`State`) without a `&mut self`. The first implementation
+used a process-wide `Mutex<Vec<State>>` pool, locked twice per decode (pop before, push after).
+`scripts/python/bench_qec.py` (10 logical CPUs, Apple Silicon Mac) caught a multi-thread
+regression from that pool at small distances:
+
+| cell | before (Mutex pool) | after (thread-local cache) |
+|---|---:|---:|
+| d=5, 10 threads | 914,767 shots/s | 2,925,616 shots/s |
+| d=5, 1 thread | 654,255 shots/s | 637,482 shots/s |
+| d=9, 10 threads | 431,448 shots/s | 552,252 shots/s |
+| d=9, 1 thread | 100,976 shots/s | 101,399 shots/s |
+
+(best of two runs per cell, idle box; full context and the pymatching/union-find cross-check rows
+are in `crates/aleph-py/README.md`.) Root cause: at d=5 each decode is ~1.5 µs, so ten rayon
+threads contending on one mutex dominated the actual matching work; at d=9 (~10 µs/decode) the
+matching itself was large enough that the lock wasn't the bottleneck, which is consistent with
+d=5's 10-thread throughput falling *below* its 1-thread number pre-fix while d=9 scaled normally.
+(The d=9 10-thread number also rose in the after-measurement, 431,448 → 552,252; that rise is
+outside what mutex contention at d=9's decode granularity would predict, so it's reported as
+unconfirmed — likely fix-adjacent cache-line effects or plain run-to-run variance on a shared dev
+box, not re-isolated under controlled conditions.)
+
+The fix (`crates/aleph-qec/src/sparse_blossom/mod.rs`) replaces the mutex pool with a
+`thread_local!` cache: each `SparseMatcher` gets a unique `id: u64` from a `static
+AtomicU64` counter at construction (a `Clone` gets a fresh id, since it calls the same
+constructor), and `decode` finds-or-allocates its `State` in the *calling thread's own*
+`RefCell<Vec<(id, State)>>` — no lock, no cross-thread contention, one arena reused per
+(decoder, thread) pair across calls.
+
 ## Reproduce
 
 ```bash
@@ -189,7 +221,7 @@ export PATH=/opt/homebrew/opt/rustup/bin:$PATH   # or your platform's rustup shi
 # (uptime load ≈ 0, and no competing cargo bench/bencher/Runner.Worker process):
 RUSTFLAGS="-C target-cpu=native" cargo bench -p aleph-benches --bench mwpm_decode
 
-# Differential vs decode_dense + circuit-level DEMs + pool determinism (release):
+# Differential vs decode_dense + circuit-level DEMs + state-cache determinism (release):
 cargo test --release -p aleph-qec mwpm::tests
 
 # Exhaustive proptest oracle vs all-pairs blossom (3000 cases):
