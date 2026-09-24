@@ -306,7 +306,6 @@ impl MwpmDecoder {
     ///
     /// Test-only: superseded in production by [`decode_sparse`](Self::decode_sparse); kept as a
     /// second oracle for the differential tests.
-    #[cfg(test)]
     fn decode_local(&self, syndrome: &Syndrome) -> (Correction, i64) {
         let defects = self.defects_of(syndrome);
         let n = defects.len();
@@ -345,12 +344,21 @@ impl MwpmDecoder {
         (Correction::new(flips), weight)
     }
 
+    /// Bench-only door into [`decode_local`](Self::decode_local) (the Q1-03 localized-matching
+    /// oracle, superseded in production by [`decode_sparse`](Self::decode_sparse)). Not part of
+    /// the public API — hidden from docs; exists only so `benches/benches/mwpm_decode.rs` can
+    /// compare the localized oracle's throughput against the dense and sparse paths.
+    #[doc(hidden)]
+    pub fn decode_local_pub(&self, syndrome: &Syndrome) -> Correction {
+        self.decode_local(syndrome).0
+    }
+
     /// Positive-savings candidate edges for the defects (savings = `b_i + b_j − dist(i,j)`),
     /// capped to each defect's `locality_k` most beneficial neighbours. `b[i]` is defect `i`'s
     /// boundary distance.
     ///
-    /// Test-only: the only caller, [`decode_local`](Self::decode_local), is test-only too.
-    #[cfg(test)]
+    /// Test/bench-only: callers are [`decode_local`](Self::decode_local) (a differential-test
+    /// oracle) and the profiling test.
     fn local_savings_edges(&self, defects: &[usize], b: &[i64]) -> Vec<(usize, usize, i64)> {
         let n = defects.len();
         let t = self.tables();
