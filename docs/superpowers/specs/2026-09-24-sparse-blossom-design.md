@@ -199,8 +199,9 @@ crates/aleph-qec/src/sparse_blossom/
   flooder.rs    §3.3: scheduling, arrival/collision/boundary/release, degenerate implosion
   matcher.rs    §3.4: augment, blossom, grow, boundary, shatter; final resolution (§3.6)
 crates/aleph-qec/src/mwpm.rs
-  MwpmDecoder gains `sparse: SparseMatcher` (compiled graph + a Mutex<Vec<State>> pool so
-  `decode(&self)` stays usable from rayon); dense tables move behind a OnceLock; `decode` → sparse;
+  MwpmDecoder gains `sparse: SparseMatcher` (compiled graph + a per-decoder id into a thread-local
+  State cache so `decode(&self)` stays usable from rayon with no lock on the hot path); dense
+  tables move behind a OnceLock; `decode` → sparse;
   `decode_dense` / `decode_local` become the oracles. The all-pairs Dijkstra moves with them.
 benches/benches/mwpm_decode.rs   adds "sparse", extends d to {7,9,11,13,15,17}
 docs/perf/q1-03b-sparse-blossom.md   the perf record (before/after, profile, verdict)
@@ -210,10 +211,15 @@ Parallel edges between the same pair with different observable sets: the compile
 the minimum-weight one per pair (first by edge index on ties), which is what the all-pairs
 Dijkstra implicitly did.
 
-**State pool.** `decode(&self)` is called from `rayon` (`run_dem_experiment`, the Python batch
-path). A `Mutex<Vec<Box<State>>>` pool hands each call a state (allocating one on first use per
-thread-ish); pop/push is nanoseconds against a ~20 µs decode. States are sized to `D` nodes and
-reset by walking the touched list, so per-shot cost is independent of `D`.
+**Thread-local state cache.** `decode(&self)` is called from `rayon` (`run_dem_experiment`, the
+Python batch path). A first pass used a `Mutex<Vec<Box<State>>>` pool (pop before, push after);
+that re-contended badly once decode itself got down to ~1.5 µs at small distances (d=5), where the
+lock's own overhead started to dominate the decode and multi-thread throughput fell *below*
+single-thread. Replaced with a thread-local `Vec<(decoder id, State)>`: each `SparseMatcher` gets
+a unique id at construction, and `decode` finds-or-allocates its entry in the calling thread's
+cache — no lock, no cross-thread contention, one arena per (decoder, thread) pair reused across
+calls. States are sized to `D` nodes and reset by walking the touched list, so per-shot cost is
+independent of `D`.
 
 **Integer types.** Node ids `u32`; region/tree ids `u32` arena indices; times and radii `i64`.
 `INF`-free: unreachable pairs simply never collide.
@@ -257,7 +263,7 @@ carries the criterion numbers for dense / local / sparse at every distance.
    — LER within CI at all distances and per-shot corrections ≥ 99 % equal in the sparse regime.
 5. **Threshold regression** (`mwpm_threshold.rs`): unchanged.
 6. **Property**: decoding the same syndrome twice, and across two threads, yields identical
-   output (pool state is fully reset).
+   output (each thread's cached state is fully reset per shot).
 
 ## 8. Out of scope
 

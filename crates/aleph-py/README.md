@@ -90,22 +90,22 @@ thread. `mwpm` rows below are post-[Sparse Blossom](https://github.com/aleph-sim
 
 | DEM | decoder | threads | shots | shots/s |
 |---|---|---:|---:|---:|
-| surface d=5 | aleph mwpm | 10 | 20,000 | 914,767 |
-| surface d=5 | aleph mwpm | 1 | 20,000 | 654,255 |
+| surface d=5 | aleph mwpm | 10 | 20,000 | 2,925,616 |
+| surface d=5 | aleph mwpm | 1 | 20,000 | 637,482 |
 | surface d=5 | aleph union-find-weighted | 10 | 20,000 | 2,912,569 |
 | surface d=5 | aleph union-find-weighted | 1 | 20,000 | 567,173 |
 | surface d=5 | aleph bp-osd | 10 | 20,000 | 19,154 |
 | surface d=5 | aleph bp-osd | 1 | 20,000 | 3,005 |
 | surface d=5 | aleph relay-bp-osd | 10 | 20,000 | 4,635 |
 | surface d=5 | aleph relay-bp-osd | 1 | 20,000 | 792 |
-| surface d=5 | pymatching | 1 | 20,000 | 1,539,142 |
-| surface d=9 | aleph mwpm | 10 | 5,000 | 431,448 |
-| surface d=9 | aleph mwpm | 1 | 5,000 | 100,976 |
+| surface d=5 | pymatching | 1 | 20,000 | 1,510,493 |
+| surface d=9 | aleph mwpm | 10 | 5,000 | 552,252 |
+| surface d=9 | aleph mwpm | 1 | 5,000 | 101,399 |
 | surface d=9 | aleph union-find-weighted | 10 | 5,000 | 409,647 |
 | surface d=9 | aleph union-find-weighted | 1 | 5,000 | 82,500 |
 | surface d=9 | aleph relay-bp-osd | 10 | 5,000 | 339 |
 | surface d=9 | aleph relay-bp-osd | 1 | 5,000 | 60 |
-| surface d=9 | pymatching | 1 | 5,000 | 214,667 |
+| surface d=9 | pymatching | 1 | 5,000 | 211,187 |
 | color d=5 | aleph bp-osd | 10 | 20,000 | 27,962 |
 | color d=5 | aleph bp-osd | 1 | 20,000 | 4,702 |
 | color d=5 | aleph relay-bp | 10 | 20,000 | 6,115 |
@@ -117,30 +117,36 @@ thread. `mwpm` rows below are post-[Sparse Blossom](https://github.com/aleph-sim
 rewrite](https://github.com/aleph-sim/aleph/blob/main/docs/perf/q1-03b-sparse-blossom.md)
 (closing [#331](https://github.com/aleph-sim/aleph/issues/331)) narrows the
 gap sharply at the distance where it matters.** Single-threaded, `mwpm`
-reaches 0.43× pymatching's throughput at d=5 (was 0.49× with the old
+reaches 0.42× pymatching's throughput at d=5 (was 0.49× with the old
 dense-blossom matcher — essentially unchanged, small syndromes are dominated
-by per-shot fixed costs) and **0.47× at d=9 (was 0.16×, a ~2.9× improvement)**
+by per-shot fixed costs) and **0.48× at d=9 (was 0.16×, a ~3× improvement)**
 — consistent with the criterion benchmark in the perf record, where the
 sparse/dense ratio *grows* with distance because the new matcher's cost
-scales with the defect count rather than `O(D²)`. `union-find-weighted` (an
-unrelated decoder, unaffected by this rewrite) is 0.37× and 0.38×, roughly
-where it was before, included as a stable cross-check that these are real
-algorithm effects and not machine noise. **On the whole machine, the honest
-result is mixed: `mwpm` now wins clearly at d=9 (2.01× pymatching's one
-thread, up from 0.99× before) but no longer wins at d=5 (0.59×, down from
-1.46× before).** The d=5 regression reproduced across two full runs (10-core
-`mwpm` at d=5: 743,079 and 914,767 shots/s — noisy, but both well under the
-old 2,196,645), while `union-find-weighted` at the same cell stayed flat
-(2,516,185 / 2,912,569 vs. the old 2,476,563), which rules out a machine-load
-explanation. The likely cause is architectural, not yet profiled down: unlike
-the old per-thread-cheap dense blossom, the sparse matcher's per-shot state is
-drawn from one process-wide `Mutex<Vec<State>>` pool
-(`crates/aleph-qec/src/sparse_blossom/mod.rs`), locked twice per decode: at
-d=5 (~9.5 defects) each decode is fast enough that ten rayon threads
-contending on that single mutex plausibly dominates the actual matching work,
-whereas at d=9 (~56 defects) the matching itself is large enough that the
-lock is no longer the bottleneck. Sharding the pool (e.g. thread-local or
-per-rayon-worker) is a candidate follow-up, not attempted here.
+scales with the defect count rather than `O(D²)`. **On the whole machine,
+`mwpm` now wins outright at both distances: 1.94× pymatching's one thread at
+d=5 (2,925,616 vs. 1,510,493 shots/s) and 2.62× at d=9 (552,252 vs.
+211,187).**
+
+An earlier build of this rewrite regressed multi-thread throughput at small
+distances: 10-core `mwpm` at d=5 measured 743,079 and 914,767 shots/s across
+two full runs, well under the old dense-blossom matcher's 2,196,645, while
+`union-find-weighted` (an unrelated decoder, measured in the same runs)
+stayed flat (2,516,185 / 2,912,569 vs. its own old 2,476,563), ruling out a
+machine-load explanation. The cause: the sparse matcher's per-shot scratch
+state came from one process-wide `Mutex<Vec<State>>` pool
+(`crates/aleph-qec/src/sparse_blossom/mod.rs`), locked twice per decode. At
+d=5 (~9.5 defects, ~1.5 µs/decode) ten rayon threads contending on that
+single mutex dominated the actual matching work; at d=9 (~56 defects, ~10 µs
+decode) the matching itself was large enough that the lock wasn't the
+bottleneck, which is why only the small-distance cell regressed. The fix
+replaced the mutex pool with a thread-local cache: each `SparseMatcher` gets
+a unique id at construction, and `decode` finds-or-allocates its `State` in
+the *calling thread's own* `Vec`, so the hot path never takes a lock. That
+took 10-core `mwpm` at d=5 from 914,767 to 2,925,616 shots/s (best of two
+runs on an idle box) — above the old dense matcher's level — while
+single-thread throughput and the already-unaffected d=9 cell held steady
+within noise.
+
 `decode_batch_bit_packed` releases the GIL and splits shots across cores, so
 this is what a single-process caller sees; a sinter run with many workers
 already uses the cores and gets the per-core ratio instead.

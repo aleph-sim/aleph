@@ -40,8 +40,10 @@ integers. The new engine lives in `crates/aleph-qec/src/sparse_blossom/`:
   shatter) and final-matching resolution (§3.6 of the design doc).
 
 `crates/aleph-qec/src/mwpm.rs` was restructured to match: `MwpmDecoder` now holds the compiled
-sparse graph plus a `Mutex<Vec<State>>` state pool (so `decode(&self)` stays callable from
-`rayon`, as the Python batch path needs), and `decode_sparse` is the method `Decoder::decode`
+sparse graph plus a `SparseMatcher` id into a thread-local `State` cache (so `decode(&self)` stays
+callable from `rayon`, as the Python batch path needs, with no lock on the hot path — a
+`Mutex<Vec<State>>` pool was tried first but re-contended badly at small-distance decode times;
+see "Thread-local state cache" below), and `decode_sparse` is the method `Decoder::decode`
 calls. The `O(D²)` all-pairs Dijkstra table that both oracle paths need (`decode_dense`, the Q1-02
 ground truth, and `decode_local`, the Q1-03 savings-reformulation oracle) is no longer built in
 `MwpmDecoder::new` — it moved behind `dense: OnceLock<DenseTables>`, built lazily on first oracle
@@ -128,8 +130,9 @@ prediction from the design doc's Approach A borne out.
   unchanged, still passes — the sparse path reproduces the same threshold behaviour as the dense
   decoder it replaced.
 - **Determinism:** decoding the same syndrome twice, and the same syndrome across serial vs
-  rayon-parallel `decode_sparse` calls, yields bit-identical output — the `Mutex<Vec<State>>` pool
-  is fully reset per shot and race-free.
+  rayon-parallel `decode_sparse` calls, yields bit-identical output — each thread's cached `State`
+  is fully reset per shot and, being thread-local, race-free by construction (no shared mutable
+  state to race on).
 
 ## Profile
 

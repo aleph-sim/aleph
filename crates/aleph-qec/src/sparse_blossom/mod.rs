@@ -12,10 +12,25 @@ pub(crate) mod graph;
 pub(crate) mod matcher;
 pub(crate) mod state;
 
-use std::sync::Mutex;
+use std::cell::RefCell;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 pub(crate) use graph::{CompiledGraph, WEIGHT_SCALE};
 use state::*;
+
+/// Per-decoder id source: each `SparseMatcher` (including every `Clone`) gets a fresh id so
+/// per-thread cache entries never collide across decoders that happen to run on the same thread.
+static NEXT_ID: AtomicU64 = AtomicU64::new(0);
+
+/// A thread keeps at most this many decoders' `State`s cached; a program that creates many
+/// short-lived decoders on one thread should not leak arenas without bound.
+const CACHE_CAP: usize = 8;
+
+thread_local! {
+    /// One `State` arena per `(decoder id, thread)`, reused across `decode` calls on that
+    /// thread. Linear search: with `CACHE_CAP` this small, a `Vec` beats a `HashMap`.
+    static CACHE: RefCell<Vec<(u64, State)>> = const { RefCell::new(Vec::new()) };
+}
 
 impl State {
     /// Decode one syndrome: `(observable mask, total weight in undoubled units)`.
@@ -82,32 +97,48 @@ impl State {
     }
 }
 
-/// Crate-facing sparse matcher: a compiled graph plus a pool of reusable per-shot states so
-/// `decode(&self)` works from `rayon` without a lock held during the decode.
+/// Crate-facing sparse matcher: a compiled graph plus an id into the thread-local `CACHE`, so
+/// `decode(&self)` works from `rayon` without any lock — each thread keeps its own `State` per
+/// decoder id, reused across calls on that thread. A global `Mutex<Vec<State>>` pool was tried
+/// first but re-contends on every `pop`/`push`; at the ~1.5 µs decode times of small distances
+/// (e.g. d=5) that contention dominated the decode itself and collapsed multi-thread throughput
+/// below the single-thread number.
 pub(crate) struct SparseMatcher {
     graph: CompiledGraph,
-    pool: Mutex<Vec<State>>,
+    id: u64,
 }
 
 impl SparseMatcher {
     pub(crate) fn new(graph: CompiledGraph) -> Self {
         SparseMatcher {
             graph,
-            pool: Mutex::new(Vec::new()),
+            id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
         }
     }
 
     /// `defects` must be ascending. Returns `(observable mask, weight)`.
     pub(crate) fn decode(&self, defects: &[u32]) -> (u64, i64) {
-        let mut st = self
-            .pool
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .pop()
-            .unwrap_or_else(|| State::new(self.graph.num_nodes()));
-        let out = st.run(&self.graph, defects);
-        self.pool.lock().unwrap_or_else(|p| p.into_inner()).push(st);
-        out
+        CACHE.with(|cache| {
+            // `State::run` (called below) never touches `CACHE` — it's plain arithmetic over its
+            // own arenas — so this borrow can never re-enter and `try_borrow_mut` can't actually
+            // fail on this path. It's a defensive fallback (a fresh, uncached `State`) rather
+            // than an `unwrap`, per the no-panic-in-library-code rule.
+            if let Ok(mut cache) = cache.try_borrow_mut() {
+                if let Some((_, st)) = cache.iter_mut().find(|(id, _)| *id == self.id) {
+                    return st.run(&self.graph, defects);
+                }
+                if cache.len() >= CACHE_CAP {
+                    cache.remove(0); // evict the oldest entry
+                }
+                let mut st = State::new(self.graph.num_nodes());
+                let out = st.run(&self.graph, defects);
+                cache.push((self.id, st));
+                out
+            } else {
+                let mut st = State::new(self.graph.num_nodes());
+                st.run(&self.graph, defects)
+            }
+        })
     }
 }
 
