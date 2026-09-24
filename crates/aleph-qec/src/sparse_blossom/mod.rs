@@ -307,4 +307,117 @@ pub(crate) mod tests {
             assert_eq!(sparse(&g, d), dense_optimum(&g, d), "defects {d:?}");
         }
     }
+
+    #[test]
+    fn blossom_shatter_pairs_the_remaining_cycle() {
+        // Same triangle {0,1,2} (w=4) as `blossom_is_shattered_when_it_becomes_inner`, but the
+        // parent edge (0,4) and the outer edge (0,3) both land on child 0: the tree path through
+        // the blossom is a single child, so shattering must match the *other* two children (1,2)
+        // along the remaining cycle instead of leaving one of them exposed.
+        let g = CompiledGraph::from_int_edges(
+            5,
+            &[
+                (0, 1, 4, 1),
+                (1, 2, 4, 2),
+                (0, 2, 4, 4),
+                (0, 3, 20, 8),
+                (0, 4, 30, 16),
+            ],
+            &[(3, 40, 32)],
+        );
+        let d = [0, 1, 2, 3, 4];
+        assert_eq!(sparse(&g, &d), dense_optimum(&g, &d));
+    }
+
+    use proptest::prelude::*;
+
+    /// Random connected sparse graph: `n` nodes on a random spanning tree plus `extra` random
+    /// edges, integer weights in `1..=wmax`, each node a boundary edge with probability 1/3,
+    /// and a random defect subset.
+    fn graph_strategy() -> impl Strategy<Value = (CompiledGraph, Vec<u32>)> {
+        (2usize..=12, 0usize..=10, 1i64..=9, any::<u64>()).prop_map(|(n, extra, wmax, seed)| {
+            let mut z = seed;
+            let mut next = move || {
+                z ^= z << 13;
+                z ^= z >> 7;
+                z ^= z << 17;
+                z
+            };
+            let mut edges = Vec::new();
+            for v in 1..n as u32 {
+                let u = (next() % v as u64) as u32;
+                edges.push((
+                    u,
+                    v,
+                    1 + (next() % wmax as u64) as i64,
+                    1u64 << (next() % 8),
+                ));
+            }
+            for _ in 0..extra {
+                let u = (next() % n as u64) as u32;
+                let v = (next() % n as u64) as u32;
+                if u != v {
+                    edges.push((
+                        u.min(v),
+                        u.max(v),
+                        1 + (next() % wmax as u64) as i64,
+                        1u64 << (next() % 8),
+                    ));
+                }
+            }
+            // Two sequential closures (`filter` then `map`) can't both hold `&mut next` live at
+            // once, so pick-then-build in one pass instead of chaining adapters.
+            let mut boundary: Vec<(u32, i64, u64)> = Vec::new();
+            for u in 0..n as u32 {
+                if next() % 3 == 0 {
+                    boundary.push((
+                        u,
+                        1 + (next() % (2 * wmax) as u64) as i64,
+                        1u64 << (8 + next() % 8),
+                    ));
+                }
+            }
+            let defects: Vec<u32> = (0..n as u32).filter(|_| next() % 2 == 0).collect();
+            (CompiledGraph::from_int_edges(n, &edges, &boundary), defects)
+        })
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(3000))]
+        #[test]
+        fn sparse_reaches_the_dense_optimum_weight((g, defects) in graph_strategy()) {
+            // Guarantee a perfect matching exists: even defect count, or every node has a
+            // boundary within reach (the spanning tree makes the graph connected).
+            let has_boundary = (0..g.num_nodes() as u32).any(|u| g.boundary(u).is_some());
+            prop_assume!(defects.len() % 2 == 0 || has_boundary);
+            let (so, sw) = SparseMatcher::new(g.clone()).decode(&defects);
+            let (dobs, dw) = dense_optimum(&g, &defects);
+            prop_assert_eq!(sw, dw, "weight differs: sparse {} dense {}", sw, dw);
+            // Ties (equal weight, different parity) are legitimate; count them loosely.
+            if so != dobs {
+                prop_assert!(sw == dw);
+            }
+        }
+    }
+
+    #[test]
+    fn repeated_decodes_reuse_state_identically() {
+        let g = CompiledGraph::from_int_edges(
+            5,
+            &[
+                (0, 1, 4, 1),
+                (1, 2, 4, 2),
+                (0, 2, 4, 4),
+                (0, 3, 20, 8),
+                (1, 4, 30, 16),
+            ],
+            &[(3, 40, 32)],
+        );
+        let m = SparseMatcher::new(g);
+        let first = m.decode(&[0, 1, 2, 3, 4]);
+        for _ in 0..50 {
+            assert_eq!(m.decode(&[0, 1, 2, 3, 4]), first);
+            assert_eq!(m.decode(&[1, 2]), (2, 4));
+        }
+    }
 }
