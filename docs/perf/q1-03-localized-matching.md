@@ -1,8 +1,11 @@
 # Q1-03 — Localized MWPM matching (savings reformulation)
 
-**Status:** partial. Delivers an exact, weight-identical speedup of the Q1-02 MWPM decoder;
-does **not** yet reach the issue's ≥10× target, which needs a Sparse-Blossom rewrite (see
-"Remaining gap"). Tracked as a follow-up.
+**Status:** superseded. Delivers an exact, weight-identical speedup of the Q1-02 MWPM decoder;
+does **not** reach the issue's ≥10× target on its own (see "Remaining gap" below) — that target
+is met by the Sparse-Blossom rewrite, [Q1-03b](q1-03b-sparse-blossom.md), which replaced this
+localized-matching path as `MwpmDecoder`'s production `decode`. This localized matcher (the
+"savings reformulation") is kept in the codebase as a second correctness oracle
+(`MwpmDecoder::decode_local`, test-only), not as the default decode path.
 
 ## What changed
 
@@ -30,7 +33,8 @@ Two exact, correctness-preserving levers over the Q1-02 dense decoder
    path in `assign_label` that skips a per-stage `blossom_leaves` allocation. This benefits both
    the dense reference path and the localized path.
 
-Both paths are kept: `decode_dense` (Q1-02 reference) and `decode` (Q1-03 localized, default).
+`decode_dense` (Q1-02 reference) and `decode_local` (Q1-03, test/bench oracle) are kept; `decode`
+is now Sparse Blossom (Q1-03b, see `q1-03b-sparse-blossom.md`).
 
 ## Results
 

@@ -39,6 +39,7 @@ mod relay_bp;
 mod relay_window;
 mod serial_gather;
 mod sliding;
+mod sparse_blossom;
 mod surface;
 mod syndrome;
 mod union_find;
