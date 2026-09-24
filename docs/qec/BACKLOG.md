@@ -1448,9 +1448,12 @@ path.
 1.17e-3 / 8.47e-3 / 3.26e-2 at p = 0.003 / 0.005 / 0.007 (10⁶ shots each); window path 1.83e-2 /
 1.57e-1 / 4.24e-1 per window. Attributable fraction `A` = 1.0000 / 0.9973 / 0.9960 — essentially
 every logical error is a flagged shot, and `P(err|valid=1)` is 0 / 1.9e-5 / 1.2e-4. Every OSD
-candidate (0, 2, 4, residual-restricted 2, 4) is **significantly worse** than the baseline at every
-point (+5.4 % to +39.9 % LER) and costs ~1.6 ms/shot single-threaded, ~1600× the 1 µs/round budget.
-Policy: **do-nothing-but-flag**, with `valid_flag` shipped as a heralding + telemetry signal. On
+candidate (0, 2, 4, residual-restricted 2, 4) is **significantly better** than the baseline at every
+point (LER −96 / −88 / −76 %; all orders identical, so OSD-0 suffices) but costs ~1.5 ms/shot
+single-threaded, ~1500× the 1 µs/round budget → rejected-on-latency. Policy: **do-nothing-but-flag**
+in real time, with `valid_flag` shipped as a heralding + telemetry signal and host-side OSD-0
+escalation recommended off the real-time path. (Re-measured 2026-09-24 after the OSD ordering fix,
+#503/#505; the first result, "every candidate significantly worse", was an artefact of that bug.) On
 silicon: `valid_mismatch = 0` on 10⁵ shots vs the software golden (KV260 `bp_p005.bit`). No RTL
 change.
 
