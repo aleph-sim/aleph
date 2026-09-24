@@ -33,7 +33,10 @@ thread_local! {
     /// Lifetime: a dropped `SparseMatcher`'s entry is *not* reclaimed proactively — it just
     /// sits here until evicted (FIFO by insertion order, i.e. oldest-inserted first, not an
     /// LRU) or the thread exits. Worst case per thread is `CACHE_CAP` live `State`s, even if
-    /// only one decoder is still in use.
+    /// only one decoder is still in use. Because eviction is FIFO rather than LRU, a thread that
+    /// round-robins more than `CACHE_CAP` live decoders never gets a cache hit for any of them —
+    /// every `decode` call evicts the oldest entry and allocates a fresh `State` instead of
+    /// reusing one.
     static CACHE: RefCell<Vec<(u64, State)>> = const { RefCell::new(Vec::new()) };
 }
 
@@ -123,6 +126,15 @@ impl SparseMatcher {
 
     /// `defects` must be ascending. Returns `(observable mask, weight)`.
     pub(crate) fn decode(&self, defects: &[u32]) -> (u64, i64) {
+        self.decode_with_stats(defects).0
+    }
+
+    /// Same as `decode`, but also returns the sparse matcher's per-shot event statistics
+    /// (`State::stats`, reset every call inside `State::run`'s `self.reset()`). `decode` is a
+    /// thin wrapper around this that drops the `Stats` half, so there is one cache-lookup/
+    /// eviction code path to keep in sync; profiling tests (`mwpm::tests::profile_local_phases_d11`)
+    /// call this directly to report average events/pushes per shot.
+    pub(crate) fn decode_with_stats(&self, defects: &[u32]) -> ((u64, i64), Stats) {
         // `CACHE.try_with` (rather than `.with`) keeps this panic-free even if `decode` is
         // somehow reached while this thread's locals are being torn down (e.g. called from
         // another TLS destructor at thread exit) — `.with` panics in that case, `try_with`
@@ -134,23 +146,29 @@ impl SparseMatcher {
             .try_with(|cache| {
                 if let Ok(mut cache) = cache.try_borrow_mut() {
                     if let Some((_, st)) = cache.iter_mut().find(|(id, _)| *id == self.id) {
-                        return st.run(&self.graph, defects);
+                        let out = st.run(&self.graph, defects);
+                        return (out, st.stats);
                     }
                     if cache.len() >= CACHE_CAP {
                         cache.remove(0); // evict the oldest entry
                     }
                     let mut st = State::new(self.graph.num_nodes());
                     let out = st.run(&self.graph, defects);
+                    let stats = st.stats;
                     cache.push((self.id, st));
-                    out
+                    (out, stats)
                 } else {
                     let mut st = State::new(self.graph.num_nodes());
-                    st.run(&self.graph, defects)
+                    let out = st.run(&self.graph, defects);
+                    let stats = st.stats;
+                    (out, stats)
                 }
             })
             .unwrap_or_else(|_| {
                 let mut st = State::new(self.graph.num_nodes());
-                st.run(&self.graph, defects)
+                let out = st.run(&self.graph, defects);
+                let stats = st.stats;
+                (out, stats)
             })
     }
 }
@@ -276,8 +294,9 @@ pub(crate) mod tests {
 
     #[test]
     fn equilateral_triangle_with_boundary() {
-        // Three mutually equidistant defects tie at t=2; one pair augments, the third grows the
-        // tree, the inner region implodes, the blossom grows to the boundary at node 2.
+        // Three mutually equidistant defects tie at t=2: one pair augments, the third grows its
+        // tree, and outer-outer collisions form a blossom that grows to the boundary at node 2 —
+        // two ordinary outer-outer blossoms, not a degenerate implosion.
         let g = CompiledGraph::from_int_edges(
             3,
             &[(0, 1, 4, 1), (1, 2, 4, 2), (0, 2, 4, 4)],
@@ -291,7 +310,9 @@ pub(crate) mod tests {
     #[test]
     fn blossom_is_shattered_when_it_becomes_inner() {
         // Triangle {0,1,2} (w=4) forms a blossom, matches defect 3 (w(0,3)=20), is grabbed by
-        // defect 4 (w(1,4)=30) and shrinks to zero while 3 grows to its boundary (40).
+        // defect 4 (w(1,4)=30) and shrinks to zero while 3 grows to its boundary (40). This is
+        // also the spec §7.1 "degenerate implosion" case: after the shatter, the inner leaf
+        // regions shrink to radius 0 and implode into a nested blossom.
         let g = CompiledGraph::from_int_edges(
             5,
             &[

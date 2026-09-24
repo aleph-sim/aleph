@@ -354,6 +354,11 @@ impl State {
             self.reschedule_region(g, y);
             i += 2;
         }
+        // `b` itself is now dead: its children were reparented above and it owns nothing (no
+        // shell, no tree slot). Reset it explicitly rather than leaving stale radius/tree state
+        // behind, so a debug print or a future reuse of this slot sees an inert region.
+        self.regions[b as usize].radius = Varying::frozen(0);
+        self.regions[b as usize].tree = NONE;
     }
 
     fn child_index_of(&self, children: &[(RegionId, CEdge)], defect: NodeId) -> usize {

@@ -80,7 +80,7 @@ count — so the win compounds exactly where it matters: dense is skipped past d
 because it is already ~800 ms/iteration there and would run minutes per iteration at d=15/17,
 while sparse stays at 20–56 ms/256 syndromes (7.2–12.8 Kelem/s) through d=17. The `local` arm
 (the Q1-03 savings-reformulation oracle) is kept in the sweep for a three-way comparison; sparse
-beats it too, by 1.8–5.4× (growing with d), which is the "eliminate the per-stage restart"
+beats it too, by 1.8× at d=7 up to ~35× at d=17 (6.0× at d=11), which is the "eliminate the per-stage restart"
 prediction from the design doc's Approach A borne out.
 
 ## Correctness

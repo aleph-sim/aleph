@@ -33,7 +33,8 @@ Two exact, correctness-preserving levers over the Q1-02 dense decoder
    path in `assign_label` that skips a per-stage `blossom_leaves` allocation. This benefits both
    the dense reference path and the localized path.
 
-Both paths are kept: `decode_dense` (Q1-02 reference) and `decode` (Q1-03 localized, default).
+`decode_dense` (Q1-02 reference) and `decode_local` (Q1-03, test/bench oracle) are kept; `decode`
+is now Sparse Blossom (Q1-03b, see `q1-03b-sparse-blossom.md`).
 
 ## Results
 

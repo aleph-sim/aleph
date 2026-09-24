@@ -10,9 +10,11 @@ All notable changes to this project are documented in this file, in
 - **MWPM decoder now uses Sparse Blossom.** `aleph.qec`'s `"mwpm"` decoder (and
   `MwpmDecoder::decode` in Rust) runs a from-scratch, local event-driven
   region-growing implementation of Sparse Blossom (Higgott & Gidney,
-  arXiv:2303.15933) instead of the Q1-03 dense-localized blossom, 21.4× faster
-  than the Q1-02 dense oracle at d=11 (`docs/perf/q1-03b-sparse-blossom.md`,
-  closes [#331](https://github.com/aleph-sim/aleph/issues/331)). The public
+  arXiv:2303.15933) instead of the Q1-03 dense-localized blossom, 21.4×
+  faster than the Q1-02 dense oracle and 6.0× faster than the Q1-03 local
+  path (the path v0.3.0 users were on) at d=11
+  (`docs/perf/q1-03b-sparse-blossom.md`, closes
+  [#331](https://github.com/aleph-sim/aleph/issues/331)). The public
   API (`MwpmDecoder::new`/`from_graph`/`decode`/`decode_dense`/`with_locality_k`,
   the Python decoder name `"mwpm"`) is unchanged, and corrections are
   weight-identical to the previous decoder on every shot of a 100,500-shot

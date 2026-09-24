@@ -24,10 +24,6 @@ pub(crate) struct Edge {
 #[derive(Clone, Debug)]
 pub(crate) struct CompiledGraph {
     num_nodes: usize,
-    /// Read only by the `#[cfg(test)]` accessor below (asserted on directly in this module's
-    /// tests); the matcher itself never needs the observable count, only the per-edge mask.
-    #[allow(dead_code)]
-    num_observables: usize,
     offsets: Vec<u32>,
     adj: Vec<Edge>,
     /// Boundary edge per node: `(doubled weight, obs)`; weight `i64::MAX` when absent.
@@ -60,7 +56,7 @@ impl CompiledGraph {
             .filter(|e| e.b == boundary)
             .map(|e| (e.a as u32, scaled(e.weight), obs_mask(&e.observables)))
             .collect();
-        Self::build(g.num_detectors(), g.num_observables(), &edges, &bnd)
+        Self::build(g.num_detectors(), &edges, &bnd)
     }
 
     /// Test constructor from raw integer weights (doubled internally).
@@ -72,12 +68,11 @@ impl CompiledGraph {
     ) -> Self {
         let e: Vec<_> = edges.iter().map(|&(a, b, w, o)| (a, b, 2 * w, o)).collect();
         let b: Vec<_> = boundary.iter().map(|&(a, w, o)| (a, 2 * w, o)).collect();
-        Self::build(num_nodes, 64, &e, &b)
+        Self::build(num_nodes, &e, &b)
     }
 
     fn build(
         num_nodes: usize,
-        num_observables: usize,
         edges: &[(u32, u32, i64, u64)],
         boundary: &[(u32, i64, u64)],
     ) -> Self {
@@ -108,7 +103,6 @@ impl CompiledGraph {
         }
         CompiledGraph {
             num_nodes,
-            num_observables,
             offsets,
             adj,
             boundary_w,
@@ -118,13 +112,6 @@ impl CompiledGraph {
 
     pub(crate) fn num_nodes(&self) -> usize {
         self.num_nodes
-    }
-
-    /// Test-only: `num_observables` isn't consumed by the matcher itself (the observable mask is
-    /// carried per-edge), only asserted on directly in this module's tests.
-    #[cfg(test)]
-    pub(crate) fn num_observables(&self) -> usize {
-        self.num_observables
     }
 
     #[inline]
@@ -167,7 +154,6 @@ mod tests {
         assert_eq!(g.edges(1), &[Edge { v: 0, w, obs: 0b10 }]);
         assert!(g.edges(2).is_empty());
         assert_eq!(g.num_nodes(), 3);
-        assert_eq!(g.num_observables(), 2);
     }
 
     #[test]

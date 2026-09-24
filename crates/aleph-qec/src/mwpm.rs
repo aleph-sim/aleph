@@ -854,6 +854,28 @@ mod tests {
         }
         let sparse_us_per_shot = t2.elapsed().as_micros() / shots as u128;
         eprintln!("d=11 over {shots} shots: sparse={sparse_us_per_shot}us/shot");
+
+        // Also print the sparse matcher's per-shot event-queue statistics (`State::stats`,
+        // reset every shot inside `State::run`) to see what's actually driving that budget:
+        // total priority-queue events handled and heap pushes issued.
+        let (mut tot_events, mut tot_pushes) = (0u64, 0u64);
+        let mut stat_shots = 0usize;
+        for s in &synds {
+            let defects = dec.defects_of(s);
+            if defects.is_empty() {
+                continue;
+            }
+            let d32: Vec<u32> = defects.iter().map(|&d| d as u32).collect();
+            let (_, stats) = dec.sparse.decode_with_stats(&d32);
+            tot_events += stats.events;
+            tot_pushes += stats.pushes;
+            stat_shots += 1;
+        }
+        eprintln!(
+            "d=11 over {shots} shots: avg events={:.1}/shot, avg heap-pushes={:.1}/shot ({stat_shots} nonempty)",
+            tot_events as f64 / stat_shots as f64,
+            tot_pushes as f64 / stat_shots as f64,
+        );
     }
 
     #[test]
