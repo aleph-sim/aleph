@@ -72,7 +72,12 @@ impl State {
                 self.handle(g, ev);
             }
         }
-        // `active_trees > 0` here means an odd component with no boundary: best effort.
+        // `active_trees > 0` here means an odd component with no boundary: best effort. Dissolve
+        // whatever tree structure remains so `resolve` sees ordinary matches everywhere except
+        // each leftover tree's one exposed root.
+        if self.active_trees > 0 {
+            self.dissolve_leftover_trees(g);
+        }
         let (obs, w) = self.resolve();
         (obs, w / 2)
     }
@@ -227,5 +232,79 @@ pub(crate) mod tests {
     fn empty_syndrome_is_zero() {
         let g = CompiledGraph::from_int_edges(2, &[(0, 1, 3, 0)], &[]);
         assert_eq!(sparse(&g, &[]), (0, 0));
+    }
+
+    #[test]
+    fn equilateral_triangle_with_boundary() {
+        // Three mutually equidistant defects tie at t=2; one pair augments, the third grows the
+        // tree, the inner region implodes, the blossom grows to the boundary at node 2.
+        let g = CompiledGraph::from_int_edges(
+            3,
+            &[(0, 1, 4, 1), (1, 2, 4, 2), (0, 2, 4, 4)],
+            &[(2, 10, 8)],
+        );
+        let d = [0, 1, 2];
+        assert_eq!(sparse(&g, &d), dense_optimum(&g, &d));
+        assert_eq!(sparse(&g, &d).1, 14);
+    }
+
+    #[test]
+    fn blossom_is_shattered_when_it_becomes_inner() {
+        // Triangle {0,1,2} (w=4) forms a blossom, matches defect 3 (w(0,3)=20), is grabbed by
+        // defect 4 (w(1,4)=30) and shrinks to zero while 3 grows to its boundary (40).
+        let g = CompiledGraph::from_int_edges(
+            5,
+            &[
+                (0, 1, 4, 1),
+                (1, 2, 4, 2),
+                (0, 2, 4, 4),
+                (0, 3, 20, 8),
+                (1, 4, 30, 16),
+            ],
+            &[(3, 40, 32)],
+        );
+        let d = [0, 1, 2, 3, 4];
+        assert_eq!(sparse(&g, &d), dense_optimum(&g, &d));
+        assert_eq!(sparse(&g, &d).1, 74);
+    }
+
+    #[test]
+    fn zero_weight_edge_matches_at_time_zero() {
+        let g = CompiledGraph::from_int_edges(3, &[(0, 1, 0, 1), (1, 2, 3, 2)], &[(2, 5, 4)]);
+        assert_eq!(sparse(&g, &[0, 1]), (1, 0));
+        assert_eq!(sparse(&g, &[0, 1, 2]), dense_optimum(&g, &[0, 1, 2]));
+    }
+
+    #[test]
+    fn odd_component_without_boundary_is_best_effort() {
+        let g = CompiledGraph::from_int_edges(3, &[(0, 1, 2, 1), (1, 2, 2, 2)], &[]);
+        let (obs, w) = sparse(&g, &[0, 1, 2]);
+        // One pair matched (weight 2), one defect left over; no panic, no hang.
+        assert_eq!(w, 2);
+        assert!(obs == 1 || obs == 2);
+    }
+
+    #[test]
+    fn pentagon_with_chord_forms_and_uses_a_blossom() {
+        // 5-cycle of weight 2 edges plus a boundary far from node 0: dense oracle decides.
+        let g = CompiledGraph::from_int_edges(
+            5,
+            &[
+                (0, 1, 2, 1),
+                (1, 2, 2, 2),
+                (2, 3, 2, 4),
+                (3, 4, 2, 8),
+                (4, 0, 2, 16),
+            ],
+            &[(0, 9, 32)],
+        );
+        for d in [
+            &[0u32, 1, 2, 3, 4][..],
+            &[0, 1, 2][..],
+            &[1, 2, 3, 4][..],
+            &[0, 2, 4][..],
+        ] {
+            assert_eq!(sparse(&g, d), dense_optimum(&g, d), "defects {d:?}");
+        }
     }
 }
