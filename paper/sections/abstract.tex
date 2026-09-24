@@ -8,8 +8,9 @@ window in \SI{15.64}{\micro\second} worst case and \SI{0.85}{\micro\second} medi
 at \SI{133.3}{\mega\hertz}, and is bit-exact against the software golden over $10^6$ shots at each of
 three operating points. The decoder's convergence flag heralds nearly every logical error:
 $P(\text{error}\mid\text{converged}) \le 3\times10^{-6}$, so the logical error rate is, to within
-statistics, the non-convergence rate, and every post-processing fallback we tried was worse than
-flagging alone. The full-parallel 144/864 geometry decodes in 543 cycles; it places and routes at
+statistics, the non-convergence rate. Ordered-statistics decoding (OSD-0) on the flagged shots cuts
+the logical error rate 4--24$\times$, but at $\approx$\SI{1.5}{\milli\second} per flagged shot it is a
+host-side escalation, not a real-time fallback. The full-parallel 144/864 geometry decodes in 543 cycles; it places and routes at
 \SI{76.3}{\percent} of a Virtex UltraScale+ VU47P at \SI{97.3}{\mega\hertz} (\SI{5.58}{\micro\second})
 and, through OpenROAD on ASAP7, at \SI{614.6}{\mega\hertz} (\SI{0.88}{\micro\second}). Gate-level
 simulation of the routed 16/48 netlist gives a real-activity power of \SI{0.149}{\watt} at \SI{1}{\giga\hertz},

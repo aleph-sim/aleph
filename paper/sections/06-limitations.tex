@@ -32,10 +32,12 @@ LUTs and \SI{113}{\percent} of its BRAM by estimate and exhausted \SI{123}{\giga
 in technology mapping. It is bit-exact in simulation only; the fixed-permutation gather of
 \S\ref{sec:architecture} is the answer to it, not a refinement of it.
 
-\paragraph{No OSD tail; no \texttt{NGROUP}.}
-% src: docs/perf/qec-q7-fixed-bp.md "OSD-0 tail"; docs/perf/q7-02-ngroup-sweep.md
-An OSD-0 post-processor did not reduce the logical error rate at the operating points measured, and
-the order-12 sweep that would has no place in a microsecond budget. A grouped partial-unroll knob
+\paragraph{No real-time OSD tail; no \texttt{NGROUP}.}
+% src: docs/perf/qec-q7-fixed-bp.md "OSD-0 tail"; docs/qec/q7-07-nonconvergence-policy.md "Latency, and a caveat about the parallel timing column"; docs/perf/q7-02-ngroup-sweep.md
+An OSD-0 post-processor on the flagged shots removes 76--96\,\% of the logical error rate at the
+operating points measured, but costs about \SI{1.5}{\milli\second} per flagged shot on a processor,
+three orders of magnitude over the per-round budget; it is a host-side escalation, not a real-time
+fallback, until the posteriors are exported or OSD-0 gets a fixed-latency engine. A grouped partial-unroll knob
 (\texttt{NGROUP}) has no setting that both fits and is faster than the banked core.
 
 \paragraph{Uncovered corners.}
