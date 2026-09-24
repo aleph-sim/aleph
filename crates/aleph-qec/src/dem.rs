@@ -89,6 +89,26 @@ fn parity_reduce(v: &mut Vec<u32>) {
     *v = out;
 }
 
+/// `from_check_matrices` helper: every index in `idx` is `< limit` and appears once.
+fn check_column(col: usize, what: &str, idx: &[u32], limit: usize) -> Result<()> {
+    let mut sorted = idx.to_vec();
+    sorted.sort_unstable();
+    if let Some(w) = sorted.windows(2).find(|w| w[0] == w[1]) {
+        return Err(Error::CheckMatrix(format!(
+            "column {col}: duplicate {what} index {}",
+            w[0]
+        )));
+    }
+    if let Some(&i) = sorted.last() {
+        if i as usize >= limit {
+            return Err(Error::CheckMatrix(format!(
+                "column {col}: {what} {i} out of range (model has {limit})"
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// A Detector Error Model: a count of detectors and observables plus the list of error
 /// mechanisms over them.
 #[derive(Clone, Debug, PartialEq, Default)]
@@ -122,6 +142,52 @@ impl DetectorErrorModel {
             detectors: (st.max_det + 1) as usize,
             observables: (st.max_obs + 1) as usize,
             errors: st.errors,
+        })
+    }
+
+    /// Build a model from column lists of a parity-check matrix `H` (`detectors × E`), an
+    /// observable matrix `O` (`observables × E`) and a per-column prior: column `j` becomes one
+    /// single-part mechanism with probability `probs[j]`, detectors `h_cols[j]` and observables
+    /// `o_cols[j]`. This is the input a `cudaq-qec` decoder receives (`H`, `O`, `error_rate_vec`).
+    ///
+    /// # Errors
+    /// [`Error::CheckMatrix`] if the three slices differ in length, an index is out of range or
+    /// repeated within a column, or a probability is not finite or not in `[0, 1]`;
+    /// [`Error::TooManyObservables`] if `observables > 64`.
+    pub fn from_check_matrices(
+        detectors: usize,
+        observables: usize,
+        h_cols: &[Vec<u32>],
+        o_cols: &[Vec<u32>],
+        probs: &[f64],
+    ) -> Result<Self> {
+        if h_cols.len() != probs.len() || o_cols.len() != probs.len() {
+            return Err(Error::CheckMatrix(format!(
+                "column count mismatch: H has {} columns, O has {}, error_rate_vec has {}",
+                h_cols.len(),
+                o_cols.len(),
+                probs.len()
+            )));
+        }
+        if observables > 64 {
+            return Err(Error::TooManyObservables { observables });
+        }
+        let mut errors = Vec::with_capacity(probs.len());
+        for (j, ((h, o), &p)) in h_cols.iter().zip(o_cols).zip(probs).enumerate() {
+            // Explicit is_finite first: NaN passes every range comparison (ADR 0006).
+            if !p.is_finite() || !(0.0..=1.0).contains(&p) {
+                return Err(Error::CheckMatrix(format!(
+                    "column {j}: probability {p} is not a finite number in [0, 1]"
+                )));
+            }
+            check_column(j, "detector", h, detectors)?;
+            check_column(j, "observable", o, observables)?;
+            errors.push(DemError::new(p, h.clone(), o.clone()));
+        }
+        Ok(DetectorErrorModel {
+            detectors,
+            observables,
+            errors,
         })
     }
 
@@ -687,5 +753,77 @@ repeat 0 {
             let reparsed = DetectorErrorModel::parse(&text).expect("reparse");
             prop_assert_eq!(reparsed, m);
         }
+    }
+
+    #[test]
+    fn from_check_matrices_builds_one_mechanism_per_column() {
+        let dem = DetectorErrorModel::from_check_matrices(
+            3,
+            1,
+            &[vec![0], vec![1, 0], vec![2, 1], vec![2]],
+            &[vec![0], vec![], vec![], vec![]],
+            &[0.1, 0.2, 0.3, 0.4],
+        )
+        .unwrap();
+        assert_eq!(
+            (dem.detectors, dem.observables, dem.errors.len()),
+            (3, 1, 4)
+        );
+        assert_eq!(dem.errors[1], DemError::new(0.2, vec![0, 1], vec![]));
+        assert_eq!(dem.errors[0].obs, vec![0]);
+        // Round-trips through the text form.
+        assert_eq!(
+            DetectorErrorModel::parse(&dem.to_dem_string()).unwrap(),
+            dem
+        );
+    }
+
+    #[test]
+    fn from_check_matrices_rejects_length_mismatch() {
+        let e = DetectorErrorModel::from_check_matrices(1, 0, &[vec![0]], &[], &[0.1]).unwrap_err();
+        assert!(matches!(e, Error::CheckMatrix(_)), "{e}");
+    }
+
+    #[test]
+    fn rejects_non_finite_probability() {
+        for p in [f64::NAN, f64::INFINITY, -0.1, 1.5] {
+            let e = DetectorErrorModel::from_check_matrices(1, 0, &[vec![0]], &[vec![]], &[p])
+                .unwrap_err();
+            assert!(e.to_string().contains("column 0"), "{p}: {e}");
+        }
+        // 0 and 1 are legal DEM probabilities.
+        assert!(
+            DetectorErrorModel::from_check_matrices(1, 0, &[vec![0]], &[vec![]], &[0.0]).is_ok()
+        );
+        assert!(
+            DetectorErrorModel::from_check_matrices(1, 0, &[vec![0]], &[vec![]], &[1.0]).is_ok()
+        );
+    }
+
+    #[test]
+    fn rejects_duplicate_index() {
+        let e = DetectorErrorModel::from_check_matrices(2, 0, &[vec![1, 1]], &[vec![]], &[0.1])
+            .unwrap_err();
+        assert!(e.to_string().contains("duplicate"), "{e}");
+    }
+
+    #[test]
+    fn rejects_out_of_range_index() {
+        let e = DetectorErrorModel::from_check_matrices(2, 1, &[vec![2]], &[vec![]], &[0.1])
+            .unwrap_err();
+        assert!(e.to_string().contains("detector 2"), "{e}");
+        let e = DetectorErrorModel::from_check_matrices(2, 1, &[vec![0]], &[vec![1]], &[0.1])
+            .unwrap_err();
+        assert!(e.to_string().contains("observable 1"), "{e}");
+    }
+
+    #[test]
+    fn rejects_more_than_64_observables() {
+        let e = DetectorErrorModel::from_check_matrices(1, 65, &[vec![0]], &[vec![]], &[0.1])
+            .unwrap_err();
+        assert!(
+            matches!(e, Error::TooManyObservables { observables: 65 }),
+            "{e}"
+        );
     }
 }

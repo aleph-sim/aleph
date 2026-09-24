@@ -32,6 +32,19 @@ pub enum Error {
         /// Number of detectors the offending mechanism flips.
         dets: usize,
     },
+
+    /// A check-matrix (`H`/`O`/priors) input to
+    /// [`DetectorErrorModel::from_check_matrices`](crate::DetectorErrorModel::from_check_matrices)
+    /// is malformed (length mismatch, bad index, duplicate index, bad probability).
+    #[error("invalid check matrices: {0}")]
+    CheckMatrix(String),
+
+    /// More logical observables than the decoders' `u64` observable masks can hold.
+    #[error("aleph decoders support at most 64 logical observables, got {observables}")]
+    TooManyObservables {
+        /// Number of observables requested.
+        observables: usize,
+    },
 }
 
 impl From<aleph_stab::StabError> for Error {
