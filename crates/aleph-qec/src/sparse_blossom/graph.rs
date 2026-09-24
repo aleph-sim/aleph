@@ -24,6 +24,9 @@ pub(crate) struct Edge {
 #[derive(Clone, Debug)]
 pub(crate) struct CompiledGraph {
     num_nodes: usize,
+    /// Read only by the `#[cfg(test)]` accessor below (asserted on directly in this module's
+    /// tests); the matcher itself never needs the observable count, only the per-edge mask.
+    #[allow(dead_code)]
     num_observables: usize,
     offsets: Vec<u32>,
     adj: Vec<Edge>,
@@ -117,6 +120,9 @@ impl CompiledGraph {
         self.num_nodes
     }
 
+    /// Test-only: `num_observables` isn't consumed by the matcher itself (the observable mask is
+    /// carried per-edge), only asserted on directly in this module's tests.
+    #[cfg(test)]
     pub(crate) fn num_observables(&self) -> usize {
         self.num_observables
     }

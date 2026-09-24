@@ -39,7 +39,6 @@ mod relay_bp;
 mod relay_window;
 mod serial_gather;
 mod sliding;
-#[allow(dead_code)]
 mod sparse_blossom;
 mod surface;
 mod syndrome;

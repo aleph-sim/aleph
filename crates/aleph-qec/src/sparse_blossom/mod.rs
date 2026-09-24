@@ -14,7 +14,6 @@ pub(crate) mod state;
 
 use std::sync::Mutex;
 
-#[allow(unused_imports)]
 pub(crate) use graph::{CompiledGraph, WEIGHT_SCALE};
 use state::*;
 
@@ -96,10 +95,6 @@ impl SparseMatcher {
             graph,
             pool: Mutex::new(Vec::new()),
         }
-    }
-
-    pub(crate) fn graph(&self) -> &CompiledGraph {
-        &self.graph
     }
 
     /// `defects` must be ascending. Returns `(observable mask, weight)`.

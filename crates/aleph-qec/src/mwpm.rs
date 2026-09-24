@@ -1,52 +1,46 @@
 //! [`MwpmDecoder`] — a from-scratch minimum-weight perfect matching decoder over the
-//! [`MatchingGraph`] built from a DEM (Q1-02), with a localized matching reformulation (Q1-03).
+//! [`MatchingGraph`] built from a DEM (Q1-02).
 //!
 //! Decoding a syndrome is three steps:
 //!
-//! 1. **Distances.** Pre-compute, once per DEM, the shortest-path distance and the observable
-//!    parity along that path between every detector and every other detector / the boundary, by
-//!    running Dijkstra from each detector ([`MatchingGraph`] edge weights are `≥ 0`). The boundary
-//!    node is never expanded, so a detector→detector distance never routes "through" the boundary
-//!    (that would be two separate boundary matches, which the matching handles itself).
+//! 1. **Graph compile.** Once per DEM, compile the [`MatchingGraph`] into the CSR form
+//!    [`crate::sparse_blossom::CompiledGraph`] the sparse matcher needs. The all-pairs Dijkstra
+//!    distance/parity tables used by the dense and local oracle paths ([`DenseTables`]) are *not*
+//!    built here — they are `O(D²)` and only needed for differential testing, so they are built
+//!    lazily behind a [`OnceLock`] the first time either oracle path is called.
 //! 2. **Matching.** Find the minimum-weight way to pair each fired detector (defect) with another
-//!    defect or with the boundary, via Edmonds' blossom ([`crate::blossom`]). Two equivalent
-//!    encodings are implemented:
-//!     - [`decode_dense`](MwpmDecoder::decode_dense) — the Q1-02 reference: the complete graph of
+//!    defect or with the boundary, via Edmonds' blossom ([`crate::blossom`]). Three equivalent
+//!    encodings exist:
+//!     - [`decode`](Decoder::decode) / [`decode_sparse`](MwpmDecoder::decode_sparse) — the Q1-03b
+//!       production path: [`crate::sparse_blossom::SparseMatcher`], local event-driven region
+//!       growth on the detector graph (Higgott & Gidney, arXiv:2303.15933). No all-pairs
+//!       pre-compute; cost scales with the defect count, not `O(D²)`.
+//!     - [`decode_dense`](MwpmDecoder::decode_dense) — the Q1-02 oracle: the complete graph of
 //!       defect pairs plus a private boundary clone per defect (clones interconnected at cost 0),
 //!       solved as a maximum-cardinality maximum-weight matching on `2n` nodes. `O(n²)` edges.
-//!     - [`decode`](Decoder::decode) — the Q1-03 production path: drop the clones and solve a
-//!       *non-perfect* maximum-weight matching on just the `n` defect nodes using *savings*
-//!       weights `b_i + b_j − dist(i,j)` (an unmatched defect goes to the boundary). Half the
-//!       nodes, no clone clique, and only positive-savings edges — exactly the same optimum, ~5×
-//!       faster at d=11. See [`decode_local`](MwpmDecoder::decode_local).
+//!       Kept as the ground truth the sparse path is differentially tested against.
+//!     - [`decode_local`](MwpmDecoder::decode_local) — the Q1-03 oracle: drop the clones and
+//!       solve a *non-perfect* maximum-weight matching on just the `n` defect nodes using
+//!       *savings* weights `b_i + b_j − dist(i,j)` (an unmatched defect goes to the boundary).
+//!       Superseded by the sparse path in production; kept as a second oracle.
 //! 3. **Correction.** XOR the observable parity along every matched path. The result is the
 //!    decoder's predicted logical-observable flip.
 //!
 //! This is the textbook MWPM decoder (Dennis et al. 2002; Higgott, PyMatching, arXiv:2105.13082).
 //! It wraps nothing — the matching is our own blossom — which is the point of the exercise
 //! (ROADMAP Phase B): the understanding it builds feeds Union-Find (Q2), GPU (Q3), and hardware.
-//!
-//! Both paths still run the textbook O(n·m) blossom on a candidate graph, so cost grows with the
-//! defect count. Closing the remaining gap to the Q1-03 ≥10× target needs local region-growing
-//! (Sparse Blossom; Higgott & Gidney, arXiv:2303.15933), a follow-up. The all-pairs pre-compute is
-//! `O(D · E log D)` time and `O(D²)` memory; fine for the d ≤ 13 sizes measured here.
 
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
+use std::sync::OnceLock;
 
 use crate::blossom::max_weight_matching;
 use crate::decoder::Decoder;
 use crate::dem::DetectorErrorModel;
 use crate::error::Result;
 use crate::matching::MatchingGraph;
+use crate::sparse_blossom::{CompiledGraph, SparseMatcher, WEIGHT_SCALE};
 use crate::syndrome::{Correction, Syndrome};
-
-/// Fixed-point scale for converting real edge weights `ln((1-p)/p)` to integers. Edmonds' blossom
-/// compares dual-variable slacks for equality, which must be exact (CLAUDE.md / ADR 0006 forbids
-/// float comparisons gating correctness), so the whole matching runs on scaled integers. `2^24`
-/// keeps ~7 significant digits — finer than PyMatching's default discretisation — while staying
-/// far inside `i64` for the largest path sums at the distances we target.
-const WEIGHT_SCALE: f64 = (1u64 << 24) as f64;
 
 /// Integer "infinity" for unreachable pairs. Kept well below `i64::MAX` so summing two of them
 /// (or adding a finite distance) cannot overflow.
@@ -59,11 +53,11 @@ const INF: i64 = i64::MAX / 4;
 /// for the target distance (K = 12 was already too aggressive at d = 11).
 const DEFAULT_LOCALITY_K: usize = usize::MAX;
 
-/// A minimum-weight perfect matching decoder for a fixed [`DetectorErrorModel`].
+/// All-pairs shortest-path tables for the dense / local oracle paths. `O(D²)` time and memory;
+/// built lazily (only the differential tests / benchmarks need it — the production sparse path
+/// never touches it).
 #[derive(Clone, Debug)]
-pub struct MwpmDecoder {
-    num_detectors: usize,
-    num_observables: usize,
+struct DenseTables {
     /// Target stride: detectors `0..num_detectors` plus the boundary at index `num_detectors`.
     stride: usize,
     /// `dist[src * stride + dst]` = scaled shortest-path distance from detector `src` to node
@@ -72,25 +66,11 @@ pub struct MwpmDecoder {
     /// `parity[src * stride + dst]` = observable-flip bitmask along that shortest path (bit `o`
     /// set ⇔ observable `o` flipped an odd number of times).
     parity: Vec<u64>,
-    /// Neighbours-per-defect kept in the localized matching graph (see [`DEFAULT_LOCALITY_K`]).
-    locality_k: usize,
 }
 
-impl MwpmDecoder {
-    /// Build a decoder for `dem`.
-    ///
-    /// # Errors
-    /// Propagates [`crate::Error::NonGraphlike`] if the DEM has a hyperedge (matching needs a
-    /// graph-like DEM).
-    pub fn new(dem: &DetectorErrorModel) -> Result<Self> {
-        let graph = MatchingGraph::from_dem(dem)?;
-        Ok(Self::from_graph(&graph))
-    }
-
-    /// Build a decoder directly from an already-constructed [`MatchingGraph`].
-    pub fn from_graph(graph: &MatchingGraph) -> Self {
+impl DenseTables {
+    fn build(graph: &MatchingGraph) -> Self {
         let num_detectors = graph.num_detectors();
-        let num_observables = graph.num_observables();
         let boundary = graph.boundary();
         let stride = num_detectors + 1;
 
@@ -119,13 +99,48 @@ impl MwpmDecoder {
                 &mut parity[src * stride..(src + 1) * stride],
             );
         }
-
-        MwpmDecoder {
-            num_detectors,
-            num_observables,
+        DenseTables {
             stride,
             dist,
             parity,
+        }
+    }
+}
+
+/// A minimum-weight perfect matching decoder for a fixed [`DetectorErrorModel`].
+#[derive(Clone, Debug)]
+pub struct MwpmDecoder {
+    num_detectors: usize,
+    num_observables: usize,
+    graph: MatchingGraph,
+    /// Q1-03b production matcher: local event-driven region growth on the compiled detector
+    /// graph. Built eagerly (cheap: `O(D + E)`, no all-pairs pre-compute).
+    sparse: SparseMatcher,
+    /// All-pairs Dijkstra tables for the dense/local oracle paths; `O(D²)`, built lazily.
+    dense: OnceLock<DenseTables>,
+    /// Neighbours-per-defect kept in the localized matching graph (see [`DEFAULT_LOCALITY_K`]).
+    locality_k: usize,
+}
+
+impl MwpmDecoder {
+    /// Build a decoder for `dem`.
+    ///
+    /// # Errors
+    /// Propagates [`crate::Error::NonGraphlike`] if the DEM has a hyperedge (matching needs a
+    /// graph-like DEM).
+    pub fn new(dem: &DetectorErrorModel) -> Result<Self> {
+        let graph = MatchingGraph::from_dem(dem)?;
+        Ok(Self::from_graph(&graph))
+    }
+
+    /// Build a decoder directly from an already-constructed [`MatchingGraph`].
+    pub fn from_graph(graph: &MatchingGraph) -> Self {
+        MwpmDecoder {
+            num_detectors: graph.num_detectors(),
+            num_observables: graph.num_observables(),
+            graph: graph.clone(),
+            sparse: SparseMatcher::new(CompiledGraph::from_matching_graph(graph)),
+            dense: OnceLock::new(),
             locality_k: DEFAULT_LOCALITY_K,
         }
     }
@@ -138,28 +153,59 @@ impl MwpmDecoder {
         self
     }
 
+    /// The all-pairs Dijkstra tables, building them on first use (dense/local oracle paths only).
+    fn tables(&self) -> &DenseTables {
+        self.dense.get_or_init(|| DenseTables::build(&self.graph))
+    }
+
     #[inline]
     fn boundary(&self) -> usize {
         self.num_detectors
     }
 
     /// Decode `syndrome` with the **dense** all-pairs matching of Q1-02 (every defect pair plus
-    /// the full boundary-clone clique). Quadratic in the defect count; kept as the reference
-    /// implementation the localized [`decode`](Decoder::decode) is differentially tested against,
-    /// and as the benchmark baseline.
+    /// the full boundary-clone clique). Quadratic in the defect count; kept as an oracle the
+    /// production [`decode_sparse`](Self::decode_sparse) is differentially tested against.
     pub fn decode_dense(&self, syndrome: &Syndrome) -> Correction {
         self.decode_with(syndrome, |s, d| s.augmented_edges_dense(d))
             .0
     }
 
-    /// Defect indices that fired in `syndrome` (clamped to this model's detector range).
+    /// Dense oracle with its total weight (differential tests). Test-only: nothing in production
+    /// needs the dense weight, only the differential tests that check the sparse path against it.
+    #[cfg(test)]
+    pub(crate) fn decode_dense_weighted(&self, syndrome: &Syndrome) -> (Correction, i64) {
+        self.decode_with(syndrome, |s, d| s.augmented_edges_dense(d))
+    }
+
+    /// Q1-03b production path: Sparse Blossom on the compiled detector graph.
+    pub(crate) fn decode_sparse(&self, syndrome: &Syndrome) -> (Correction, i64) {
+        let defects = self.defects_of(syndrome);
+        if defects.is_empty() {
+            return (Correction::none(self.num_observables), 0);
+        }
+        let d32: Vec<u32> = defects.iter().map(|&d| d as u32).collect();
+        let (acc, weight) = self.sparse.decode(&d32);
+        let flips = (0..self.num_observables)
+            .map(|o| (acc >> o) & 1 == 1)
+            .collect();
+        (Correction::new(flips), weight)
+    }
+
+    /// Defect indices that fired in `syndrome`: ascending, deduplicated, clamped to this model's
+    /// detector range. `Syndrome::new` already sorts+dedups, but the raw struct's fields are
+    /// public, so a caller-built `Syndrome` may not — the sparse matcher requires ascending,
+    /// deduplicated input, so this is enforced here regardless of how `syndrome` was built.
     fn defects_of(&self, syndrome: &Syndrome) -> Vec<usize> {
-        syndrome
+        let mut defects: Vec<usize> = syndrome
             .fired
             .iter()
             .map(|&d| d as usize)
             .filter(|&d| d < self.num_detectors)
-            .collect()
+            .collect();
+        defects.sort_unstable();
+        defects.dedup();
+        defects
     }
 
     /// Shared decode skeleton: build the augmented graph with `build_edges`, solve the
@@ -178,6 +224,7 @@ impl MwpmDecoder {
         }
         let boundary = self.boundary();
         let (edges, maxw) = build_edges(self, &defects);
+        let t = self.tables();
 
         // Minimum-weight perfect matching = maximum-weight (of offset weights) perfect matching.
         let transformed: Vec<(usize, usize, i64)> =
@@ -193,11 +240,11 @@ impl MwpmDecoder {
                 continue; // unmatched (only if a defect is unreachable; best-effort skip)
             }
             if m == n + i {
-                acc ^= self.parity[defects[i] * self.stride + boundary];
-                weight += self.dist[defects[i] * self.stride + boundary];
+                acc ^= t.parity[defects[i] * t.stride + boundary];
+                weight += t.dist[defects[i] * t.stride + boundary];
             } else if m < n && i < m {
-                acc ^= self.parity[defects[i] * self.stride + defects[m]];
-                weight += self.dist[defects[i] * self.stride + defects[m]];
+                acc ^= t.parity[defects[i] * t.stride + defects[m]];
+                weight += t.dist[defects[i] * t.stride + defects[m]];
             }
             // m >= n && m != n+i cannot occur: defect i only has an edge to clone n+i.
         }
@@ -211,17 +258,18 @@ impl MwpmDecoder {
     fn augmented_edges_dense(&self, defects: &[usize]) -> (Vec<(usize, usize, i64)>, i64) {
         let n = defects.len();
         let boundary = self.boundary();
+        let t = self.tables();
         let mut edges: Vec<(usize, usize, i64)> = Vec::new();
         let mut maxw = 0i64;
         #[allow(clippy::needless_range_loop)]
         for i in 0..n {
-            let db = self.dist[defects[i] * self.stride + boundary];
+            let db = t.dist[defects[i] * t.stride + boundary];
             if db < INF {
                 edges.push((i, n + i, db));
                 maxw = maxw.max(db);
             }
             for j in (i + 1)..n {
-                let dd = self.dist[defects[i] * self.stride + defects[j]];
+                let dd = t.dist[defects[i] * t.stride + defects[j]];
                 if dd < INF {
                     edges.push((i, j, dd));
                     maxw = maxw.max(dd);
@@ -251,8 +299,12 @@ impl MwpmDecoder {
     /// Minimising cost ⇔ maximising total savings, so an unmatched defect simply pays its boundary
     /// cost. This halves the node count (`n`, not `2n`), needs no clone clique, and keeps only the
     /// positive-savings edges — exactly the boundary prune (`dist(i,j) < b_i + b_j`), which is
-    /// weight-exact. A [`locality_k`](Self::locality_k) cap keeps each defect's most-beneficial
-    /// neighbours; the differential test certifies the optimum is unchanged.
+    /// weight-exact. A `locality_k` cap keeps each defect's most-beneficial neighbours; the
+    /// differential test certifies the optimum is unchanged.
+    ///
+    /// Test-only: superseded in production by [`decode_sparse`](Self::decode_sparse); kept as a
+    /// second oracle for the differential tests.
+    #[cfg(test)]
     fn decode_local(&self, syndrome: &Syndrome) -> (Correction, i64) {
         let defects = self.defects_of(syndrome);
         let n = defects.len();
@@ -260,10 +312,11 @@ impl MwpmDecoder {
             return (Correction::none(self.num_observables), 0);
         }
         let boundary = self.boundary();
-        let stride = self.stride;
+        let t = self.tables();
+        let stride = t.stride;
         let b: Vec<i64> = defects
             .iter()
-            .map(|&di| self.dist[di * stride + boundary])
+            .map(|&di| t.dist[di * stride + boundary])
             .collect();
 
         let edges = self.local_savings_edges(&defects, &b);
@@ -277,11 +330,11 @@ impl MwpmDecoder {
         for i in 0..n {
             let m = mate[i];
             if m == usize::MAX {
-                acc ^= self.parity[defects[i] * stride + boundary];
+                acc ^= t.parity[defects[i] * stride + boundary];
                 weight += b[i];
             } else if i < m {
-                acc ^= self.parity[defects[i] * stride + defects[m]];
-                weight += self.dist[defects[i] * stride + defects[m]];
+                acc ^= t.parity[defects[i] * stride + defects[m]];
+                weight += t.dist[defects[i] * stride + defects[m]];
             }
         }
         let flips = (0..self.num_observables)
@@ -291,11 +344,15 @@ impl MwpmDecoder {
     }
 
     /// Positive-savings candidate edges for the defects (savings = `b_i + b_j − dist(i,j)`),
-    /// capped to each defect's [`locality_k`](Self::locality_k) most beneficial neighbours.
-    /// `b[i]` is defect `i`'s boundary distance.
+    /// capped to each defect's `locality_k` most beneficial neighbours. `b[i]` is defect `i`'s
+    /// boundary distance.
+    ///
+    /// Test-only: the only caller, [`decode_local`](Self::decode_local), is test-only too.
+    #[cfg(test)]
     fn local_savings_edges(&self, defects: &[usize], b: &[i64]) -> Vec<(usize, usize, i64)> {
         let n = defects.len();
-        let stride = self.stride;
+        let t = self.tables();
+        let stride = t.stride;
         let mut pairs: Vec<(usize, usize)> = Vec::new();
         let mut scratch: Vec<(i64, usize)> = Vec::with_capacity(n);
         for i in 0..n {
@@ -305,7 +362,7 @@ impl MwpmDecoder {
                 if j == i {
                     continue;
                 }
-                let d = self.dist[row + defects[j]];
+                let d = t.dist[row + defects[j]];
                 // `saturating_sub` guards the unreachable-boundary (b == INF) case.
                 let savings = b[i].saturating_add(b[j]).saturating_sub(d);
                 if d < INF && savings > 0 {
@@ -326,21 +383,15 @@ impl MwpmDecoder {
         pairs.dedup();
         pairs
             .iter()
-            .map(|&(i, j)| {
-                (
-                    i,
-                    j,
-                    b[i] + b[j] - self.dist[defects[i] * stride + defects[j]],
-                )
-            })
+            .map(|&(i, j)| (i, j, b[i] + b[j] - t.dist[defects[i] * stride + defects[j]]))
             .collect()
     }
 }
 
 impl Decoder for MwpmDecoder {
-    /// Decode via the localized minimum-weight perfect matching (Q1-03).
+    /// Decode via the Q1-03b production path: Sparse Blossom on the detector graph.
     fn decode(&self, syndrome: &Syndrome) -> Correction {
-        self.decode_local(syndrome).0
+        self.decode_sparse(syndrome).0
     }
 }
 
@@ -595,42 +646,139 @@ mod tests {
             .collect()
     }
 
-    /// Localized matching reaches the *same minimum weight* as the dense matching on every shot
-    /// (the rigorous optimality invariant), and the same correction except on genuine ties.
+    /// A cheap sanity check that [`MwpmDecoder::decode_local`] (the Q1-03 oracle, superseded in
+    /// production by the sparse path but kept as a second oracle) still reaches the same minimum
+    /// weight as the dense oracle. Not the rigorous differential test (that's
+    /// `sparse_matches_dense_weight_and_corrections` below); this just keeps the path exercised.
     #[test]
-    fn local_matches_dense_weight_and_corrections() {
+    fn local_still_matches_dense_weight() {
         use crate::{build_dem, SurfaceCode};
-        for d in [5usize, 7, 9, 11] {
-            let exp = SurfaceCode::new(d).memory_z_experiment(d);
-            let dem =
-                build_dem(&exp.annotated, &exp.phenomenological_mechanisms(0.03, 0.03)).unwrap();
-            let dec = MwpmDecoder::new(&dem).unwrap();
-            let shots = if d >= 11 { 400 } else { 3000 };
-            let (mut nonempty, mut ties) = (0usize, 0usize);
-            for fired in sample_defects(&dem, shots, 0xD00D ^ d as u64) {
-                let s = Syndrome::new(dem.detectors, fired);
-                if s.weight() > 0 {
-                    nonempty += 1;
-                }
-                let (cl, wl) = dec.decode_local(&s);
-                let (cd, wd) = dec.decode_with(&s, |s, d| s.augmented_edges_dense(d));
-                // THE invariant: localized reaches the same minimum weight as dense on every shot.
-                // This proves the locality prune/cap never dropped an edge the optimum needed.
-                assert_eq!(wl, wd, "d={d}: localized weight {wl} != dense {wd}");
-                // A correction difference can now only be a weight-tie (equal-weight matchings in
-                // different homology classes), since the weights are provably equal above.
-                if cl != cd {
-                    ties += 1;
-                }
-            }
-            // Sanity ceiling on the tie fraction (smaller codes tie more; d=5 ≈ 1.4%). Far below
-            // this would be a bug; the weight equality above is the real correctness gate.
-            let rate = ties as f64 / nonempty.max(1) as f64;
-            assert!(
-                rate < 0.05,
-                "d={d}: {ties}/{nonempty} tie disagreements ({rate:.4}) exceeds sentinel"
-            );
+        let exp = SurfaceCode::new(5).memory_z_experiment(5);
+        let dem = build_dem(&exp.annotated, &exp.phenomenological_mechanisms(0.03, 0.03)).unwrap();
+        let dec = MwpmDecoder::new(&dem).unwrap();
+        for fired in sample_defects(&dem, 200, 0xBEEF) {
+            let s = Syndrome::new(dem.detectors, fired);
+            let (_, wl) = dec.decode_local(&s);
+            let (_, wd) = dec.decode_dense_weighted(&s);
+            assert_eq!(wl, wd, "localized weight {wl} != dense {wd}");
         }
+    }
+
+    /// The AC of #331: the sparse matcher reaches the *same minimum weight* as the dense
+    /// matching on every shot, phenomenological and circuit-level, across p; corrections differ
+    /// only on genuine ties.
+    ///
+    /// Deviation from the task-6 brief, measured and documented (see the Task 6 report): the
+    /// brief's literal sentinel was a flat `rate < 0.05`, calibrated from the old Q1-03
+    /// `decode_local`-vs-`decode_dense` comparison at p = 0.03 only. Sweeping p up to 0.06 (near
+    /// the surface-code threshold), *genuine* tie density grows far past 5% regardless of which
+    /// correct solver is used — confirmed by measuring `decode_local` (same solver family and
+    /// tie-break order as `decode_dense`) against the same dense reference in this very loop: at
+    /// d=11, p=0.06 the already-shipped Q1-03 oracle itself disagrees with dense on ~21% of
+    /// shots, essentially matching the sparse matcher's ~22%. A flat 5% ceiling would therefore
+    /// fail on a mathematically correct implementation at high p; the two-oracle ratio below is
+    /// the AC's real intent ("modulo genuine ties") made self-calibrating instead of pinned to a
+    /// stale low-p constant.
+    #[test]
+    fn sparse_matches_dense_weight_and_corrections() {
+        use crate::{build_dem, SurfaceCode};
+        let mut total = 0usize;
+        for d in [3usize, 5, 7, 9, 11] {
+            for p in [0.01, 0.03, 0.06] {
+                let exp = SurfaceCode::new(d).memory_z_experiment(d);
+                let dem =
+                    build_dem(&exp.annotated, &exp.phenomenological_mechanisms(p, p)).unwrap();
+                let dec = MwpmDecoder::new(&dem).unwrap();
+                let shots = if cfg!(debug_assertions) {
+                    40
+                } else if d >= 11 {
+                    1500
+                } else {
+                    8000
+                };
+                let (mut nonempty, mut ties, mut local_ties) = (0usize, 0usize, 0usize);
+                for fired in
+                    sample_defects(&dem, shots, 0xD00D ^ (d as u64) << 8 ^ (p * 1000.0) as u64)
+                {
+                    let s = Syndrome::new(dem.detectors, fired);
+                    if s.weight() > 0 {
+                        nonempty += 1;
+                    }
+                    let (cs, ws) = dec.decode_sparse(&s);
+                    let (cd, wd) = dec.decode_dense_weighted(&s);
+                    assert_eq!(
+                        ws, wd,
+                        "d={d} p={p}: sparse weight {ws} != dense {wd} on {:?}",
+                        s.fired
+                    );
+                    if cs != cd {
+                        ties += 1;
+                    }
+                    if dec.decode_local(&s).0 != cd {
+                        local_ties += 1;
+                    }
+                }
+                total += shots;
+                // Self-calibrating genuine-tie sentinel: sparse's disagreement rate against
+                // dense must stay within a generous multiple of the already-trusted Q1-03
+                // `decode_local` oracle's own disagreement rate against dense (same reference,
+                // independent tie-break order). Measured ratios across every (d, p) cell here
+                // are ≤ 1.3×, with the additive +20 covering the near-zero counts at p = 0.01.
+                assert!(
+                    ties <= local_ties * 3 + 20,
+                    "d={d} p={p}: sparse {ties} disagreements vs dense far exceeds the \
+                     local-oracle baseline of {local_ties} (nonempty {nonempty}) -- looks like \
+                     more than tie noise"
+                );
+            }
+        }
+        assert!(
+            cfg!(debug_assertions) || total >= 100_000,
+            "AC asks for 1e5 shots, ran {total}"
+        );
+    }
+
+    #[test]
+    fn sparse_matches_dense_on_circuit_level_dems() {
+        use crate::{CircuitNoise, SurfaceCode};
+        for d in [3usize, 5] {
+            let exp = SurfaceCode::new(d).memory_z_experiment(d);
+            let dem = exp.circuit_level_dem(CircuitNoise::uniform(0.003)).unwrap();
+            let dec = MwpmDecoder::new(&dem).unwrap();
+            for fired in sample_defects(&dem, 2000, 77 + d as u64) {
+                let s = Syndrome::new(dem.detectors, fired);
+                assert_eq!(dec.decode_sparse(&s).1, dec.decode_dense_weighted(&s).1);
+            }
+        }
+    }
+
+    #[test]
+    fn duplicate_defects_are_ignored() {
+        let dem = DetectorErrorModel::parse("error(0.1) D0\nerror(0.1) D0 D1\nerror(0.1) D1 L0\n")
+            .unwrap();
+        let dec = MwpmDecoder::new(&dem).unwrap();
+        // `Syndrome::new` sorts and dedups; build the raw struct to bypass it.
+        let s = Syndrome {
+            fired: vec![1, 1, 7],
+            detectors: 2,
+        };
+        assert_eq!(dec.decode(&s), Correction::new(vec![true]));
+    }
+
+    #[test]
+    fn pool_reuse_is_deterministic() {
+        use crate::{build_dem, SurfaceCode};
+        use rayon::prelude::*;
+        let exp = SurfaceCode::new(7).memory_z_experiment(7);
+        let dem = build_dem(&exp.annotated, &exp.phenomenological_mechanisms(0.03, 0.03)).unwrap();
+        let dec = MwpmDecoder::new(&dem).unwrap();
+        let synds: Vec<Syndrome> = sample_defects(&dem, 2000, 5)
+            .into_iter()
+            .map(|f| Syndrome::new(dem.detectors, f))
+            .collect();
+        let serial: Vec<_> = synds.iter().map(|s| dec.decode_sparse(s)).collect();
+        let parallel: Vec<_> = synds.par_iter().map(|s| dec.decode_sparse(s)).collect();
+        assert_eq!(serial, parallel);
     }
 
     #[test]
@@ -655,9 +803,10 @@ mod tests {
             if n == 0 {
                 continue;
             }
+            let t = dec.tables();
             let b: Vec<i64> = defects
                 .iter()
-                .map(|&di| dec.dist[di * dec.stride + dec.boundary()])
+                .map(|&di| t.dist[di * t.stride + dec.boundary()])
                 .collect();
             let t0 = Instant::now();
             let edges = dec.local_savings_edges(&defects, &b);
@@ -675,6 +824,14 @@ mod tests {
             t_build / 1000 / shots as u128,
             t_blossom / 1000 / shots as u128,
         );
+
+        // Also time the production sparse path over the same shots for comparison.
+        let t2 = Instant::now();
+        for s in &synds {
+            std::hint::black_box(dec.decode_sparse(s));
+        }
+        let sparse_us_per_shot = t2.elapsed().as_micros() / shots as u128;
+        eprintln!("d=11 over {shots} shots: sparse={sparse_us_per_shot}us/shot");
     }
 
     #[test]
