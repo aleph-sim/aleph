@@ -8,6 +8,7 @@
 //! resolves the final matching. [`SparseMatcher`] is the crate-facing entry point.
 
 pub(crate) mod graph;
+pub(crate) mod state;
 
 #[allow(unused_imports)]
 pub(crate) use graph::{CompiledGraph, WEIGHT_SCALE};
