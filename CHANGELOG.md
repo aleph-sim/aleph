@@ -77,6 +77,15 @@ All notable changes to this project are documented in this file, in
 - **DEM parser rejects invalid probabilities.** `error(p)` with a non-finite
   `p` or `p` outside `[0, 1]` is now a parse error instead of being accepted.
 
+### Fixed
+
+- **BP-OSD was worse than plain BP** (#503). OSD ordered columns by `|LLR|`
+  instead of by posterior LLR (most-likely-error first), so it solved the
+  syndrome with the columns BP was surest were error-free. With the
+  Panteleev–Kalachev order, circuit-level surface code d=5 at p=0.005
+  (20,000 shots) goes from 547 logical errors (BP alone: 473) to 117, level
+  with MWPM (116). Affects `bp-osd`, `relay-bp-osd` and every OSD order.
+
 ## [0.2.0] — 2026-06-12
 
 CPU parity release; see `docs/perf/parity.md`.
