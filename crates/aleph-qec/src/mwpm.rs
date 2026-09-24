@@ -147,7 +147,9 @@ impl MwpmDecoder {
 
     /// Override the neighbours-per-defect cap of the localized matcher (default
     /// [`DEFAULT_LOCALITY_K`]). Larger values approach the dense matching (and its cost); smaller
-    /// values are faster but risk missing a far optimal edge. Mainly for benchmarking/tuning.
+    /// values are faster but risk missing a far optimal edge. Only affects the test-only Q1-03
+    /// `decode_local` oracle — the production sparse path used by [`Decoder::decode`] never
+    /// consults it. Mainly for benchmarking/tuning the oracle.
     pub fn with_locality_k(mut self, k: usize) -> Self {
         self.locality_k = k.max(1);
         self
@@ -165,7 +167,7 @@ impl MwpmDecoder {
 
     /// Decode `syndrome` with the **dense** all-pairs matching of Q1-02 (every defect pair plus
     /// the full boundary-clone clique). Quadratic in the defect count; kept as an oracle the
-    /// production [`decode_sparse`](Self::decode_sparse) is differentially tested against.
+    /// production sparse path ([`Decoder::decode`]) is differentially tested against.
     pub fn decode_dense(&self, syndrome: &Syndrome) -> Correction {
         self.decode_with(syndrome, |s, d| s.augmented_edges_dense(d))
             .0
@@ -723,9 +725,10 @@ mod tests {
                 // dense must stay within a generous multiple of the already-trusted Q1-03
                 // `decode_local` oracle's own disagreement rate against dense (same reference,
                 // independent tie-break order). Measured ratios across every (d, p) cell here
-                // are ≤ 1.3×, with the additive +20 covering the near-zero counts at p = 0.01.
+                // are ≤ 1.3×, with the additive +20 covering the near-zero counts at p = 0.01;
+                // the sampling is deterministically seeded, so this cannot flake.
                 assert!(
-                    ties <= local_ties * 3 + 20,
+                    ties <= local_ties * 2 + 20,
                     "d={d} p={p}: sparse {ties} disagreements vs dense far exceeds the \
                      local-oracle baseline of {local_ties} (nonempty {nonempty}) -- looks like \
                      more than tie noise"
@@ -741,13 +744,20 @@ mod tests {
     #[test]
     fn sparse_matches_dense_on_circuit_level_dems() {
         use crate::{CircuitNoise, SurfaceCode};
-        for d in [3usize, 5] {
+        for d in [3usize, 5, 7] {
             let exp = SurfaceCode::new(d).memory_z_experiment(d);
             let dem = exp.circuit_level_dem(CircuitNoise::uniform(0.003)).unwrap();
             let dec = MwpmDecoder::new(&dem).unwrap();
-            for fired in sample_defects(&dem, 2000, 77 + d as u64) {
+            let shots = if d >= 7 { 1000 } else { 2000 };
+            for fired in sample_defects(&dem, shots, 77 + d as u64) {
                 let s = Syndrome::new(dem.detectors, fired);
-                assert_eq!(dec.decode_sparse(&s).1, dec.decode_dense_weighted(&s).1);
+                let (_, ws) = dec.decode_sparse(&s);
+                let (_, wd) = dec.decode_dense_weighted(&s);
+                assert_eq!(
+                    ws, wd,
+                    "circuit d={d}: sparse weight {ws} != dense {wd} on {:?}",
+                    s.fired
+                );
             }
         }
     }
@@ -777,6 +787,10 @@ mod tests {
             .map(|f| Syndrome::new(dem.detectors, f))
             .collect();
         let serial: Vec<_> = synds.iter().map(|s| dec.decode_sparse(s)).collect();
+        // Same syndrome twice (spec §7.6): decoding again must reproduce the first pass exactly
+        // -- the pool's reused `State` is fully reset between decodes, not just between threads.
+        let serial_again: Vec<_> = synds.iter().map(|s| dec.decode_sparse(s)).collect();
+        assert_eq!(serial, serial_again);
         let parallel: Vec<_> = synds.par_iter().map(|s| dec.decode_sparse(s)).collect();
         assert_eq!(serial, parallel);
     }
