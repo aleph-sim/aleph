@@ -23,7 +23,13 @@ impl State {
                     } else {
                         self.grow(g, a, b, e);
                     }
-                } else if ta == tb {
+                } else if self.root_of(a) == self.root_of(b) {
+                    // `tree` is a per-tree-node id (set per node in `grow`, per root in `run`),
+                    // so two distinct outer regions of the same tree always carry different
+                    // `tree` values — "same tree" has to compare roots, not tree-node ids. This
+                    // is also the branch a degenerate implosion (`shrink_step`'s
+                    // `HitRegion { a: parent outer, b: child outer }`) takes: the parent and
+                    // child outer are always in the same tree.
                     self.blossom(g, a, b, e);
                 } else {
                     debug_assert_eq!(self.trees[tb as usize].outer, b);
@@ -98,8 +104,9 @@ impl State {
         self.flip_path_to_root(a);
         let ra = self.root_of(a);
         if b_in_tree {
-            self.flip_path_to_root(b);
             let rb = self.root_of(b);
+            debug_assert_ne!(ra, rb, "augment: a and b must be in different trees");
+            self.flip_path_to_root(b);
             self.dissolve_tree(g, rb);
         }
         self.dissolve_tree(g, ra);

@@ -21,6 +21,10 @@ use state::*;
 impl State {
     /// Decode one syndrome: `(observable mask, total weight in undoubled units)`.
     pub(crate) fn run(&mut self, g: &CompiledGraph, defects: &[u32]) -> (u64, i64) {
+        debug_assert!(
+            defects.windows(2).all(|w| w[0] <= w[1]),
+            "defects must be ascending"
+        );
         self.reset();
         let mut last = NONE;
         for &d in defects {
