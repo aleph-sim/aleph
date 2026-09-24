@@ -1,9 +1,9 @@
 //! Q7-02 M5-followup — the **OSD-0 tail** for the fixed-point relay-BP hardware decoder.
 //!
 //! Relay-BP on a degenerate qLDPC code occasionally leaves a hard decision that does not satisfy
-//! `H ê = s` (a guaranteed failure). [`FixedRelayBpOsd`] adds an **OSD-0** software escape (Fossorier–
-//! Lin, reliability-ordered GF(2) most-reliable-basis) that turns exactly those failure shots into a
-//! guaranteed syndrome-consistent low-weight error, leaving relay-BP's valid decisions untouched.
+//! `H ê = s` (a guaranteed failure). [`FixedRelayBpOsd`] adds an **OSD-0** software escape
+//! (Panteleev–Kalachev: posterior-LLR-ordered GF(2) solve) that turns exactly those failure shots into
+//! a guaranteed syndrome-consistent low-weight error, leaving relay-BP's valid decisions untouched.
 //!
 //! OSD-0's Gauss–Jordan is data-dependent and variable-latency — deliberately NOT on the RTL datapath
 //! (the reason Q7-02 chose relay-BP over BP+OSD). So it could only ever be a **rare slow-path escape**:
@@ -12,11 +12,9 @@
 //! of shots the PS pays for) and the **LER delta**, sweeping the OSD **order** at both **code-capacity**
 //! and **circuit-level** (depth-7 syndrome extraction, gate noise).
 //!
-//! **Finding (see `docs/perf/qec-q7-fixed-bp.md`):** OSD-**0** does *not* cut LER — neutral at code
-//! capacity, slightly *worse* circuit-level (a valid but wrong-coset decode beats BP's invalid guess
-//! less often than it loses). The LER win needs a large combination sweep (order ≈ 12, `2^12` GF(2)
-//! solves/shot), and the fixed Q5.3 tail tracks the float tail at every order — so quantisation is not
-//! the limiter, the OSD order is. Net: no hardware-tractable OSD tail helps → Q7-02 ships pure relay-BP.
+//! **Finding (see `docs/perf/qec-q7-fixed-bp.md`, re-measured after #503):** OSD-0 cuts circuit-level
+//! LER 9–30× (every error removed at p ≤ 0.002), and 1.1–1.4× at code capacity; orders 4 and 12 add
+//! little. The fixed Q5.3 tail tracks the float tail at every order, so quantisation is not the limiter.
 //!
 //! Usage:
 //! ```text
@@ -139,10 +137,4 @@ fn main() {
             verdict(fl_plain.rate, fl_osd.rate, fl_plain.ci95 + fl_osd.ci95),
         );
     }
-
-    eprintln!("# Finding: OSD-0 (order 0) does NOT cut LER — neutral at code capacity, worse circuit-level.");
-    eprintln!(
-        "# The win needs a large combination sweep (order ~12 = 2^12 GF(2) solves/shot); and FIXED"
-    );
-    eprintln!("# Q5.3 tracks FLOAT at every order, so quantisation is not the limiter — the OSD order is.");
 }

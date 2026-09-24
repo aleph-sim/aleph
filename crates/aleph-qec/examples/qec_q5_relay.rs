@@ -6,7 +6,8 @@
 //!   * relay-BP (Q5-03): disordered-memory BP with relayed legs + keep-best-valid.
 //!
 //! relay-BP targets the BP **error floor** — the (near-`p`-independent) failures from symmetric
-//! trapping sets — which is exactly where it most outperforms BP and BP+OSD.
+//! trapping sets — which is where it most outperforms plain BP. Against the (corrected, #503) BP+OSD
+//! it leads at low `p`, ties near `p = 0.04` and trails slightly above (`docs/perf/qec-q5-qldpc.md`).
 //!
 //! Usage:
 //! ```text
@@ -53,9 +54,4 @@ fn main() {
             rb.rate, ro.rate, rr.rate, rr.ci95
         );
     }
-
-    eprintln!(
-        "# relay-BP lowers the error floor most at low p (where BP/BP+OSD failures are degenerate \
-         trapping sets): it beats BP+OSD ~1.5-2× and effectively clears the floor at p≤0.02."
-    );
 }
