@@ -1026,7 +1026,7 @@ users cannot serve as Track S's demand gate. F1–F3 are prerequisites for the a
   result. `docs/perf/qec-q7-fixed-bp.md` is already a 1863-line master record. Mint a Zenodo DOI for
   the campaign CSVs so the data is citable.
 
-- [x] **Task F6 (done 2026-09-24, PR #<n>): Write a CUDA-Q QEC decoder plugin.** NVQLink is where every
+- [x] **Task F6 (done 2026-09-24, PR #517): Write a CUDA-Q QEC decoder plugin.** NVQLink is where every
   real-time QEC integrator already is; a plugin lets them A/B our decoder against the GPU path on their
   own hardware. Using the competitor's platform as our distribution channel is the cheapest reach
   available. Shipped as the Python plugin `aleph.cudaq` (`docs/perf/f6-cudaq-plugin.md`); the native
