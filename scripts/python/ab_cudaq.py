@@ -11,7 +11,6 @@ Workload S: stim surface_code:rotated_memory_x d in {5, 9}, rounds=d, p=0.003, d
 Every decoder in a workload sees the identical (H, O, error_rate_vec) and the identical
 syndrome/observable arrays. LER = shots with any wrong observable / shots, 95% Wilson CI.
 """
-import argparse
 import math
 import os
 import platform
@@ -99,6 +98,13 @@ def run_decoder(name, H, O, rates, dets, obs, params, threads=None):
     r = np.asarray(br.result)
     if r.ndim == 1:
         r = r.reshape(len(rows), -1)
+    # Tripwire: the branch below assumes O.shape[0] (observables) and O.shape[1] (mechanisms)
+    # are distinguishable widths. Every workload in this harness has far fewer observables than
+    # mechanisms, but if that ever stopped holding, silently picking the wrong branch would
+    # compare the wrong axis without either branch raising — fail loud instead.
+    assert O.shape[0] != O.shape[1], (
+        f"{name}: ambiguous result basis (O has {O.shape[0]} observables == {O.shape[1]} "
+        "mechanisms; width alone can't tell errors-space from observables-space apart)")
     if r.shape[1] == O.shape[0]:
         pred = (r > 0.5).astype(np.uint8)
     elif r.shape[1] == O.shape[1]:
@@ -166,8 +172,14 @@ def workload_g():
             ("relay+OSD-12", "aleph-relay-bp-osd", ALEPH_OSD),
             ("relay, no OSD", "aleph-relay-bp", {}),
         ]:
-            print(row(w, name, cfg_name, os.cpu_count(), shots, run_decoder(name, H, O, rates, dets, obs, params)))
-            print(row(w, name, cfg_name, 1, n1, run_decoder(name, H, O, rates, dets[:n1], obs[:n1], params, threads=1)))
+            try:
+                print(row(w, name, cfg_name, os.cpu_count(), shots, run_decoder(name, H, O, rates, dets, obs, params)))
+            except Exception as e:  # report, never drop — same pattern as the NVIDIA rows below
+                print(f"| {w} | {name} | {cfg_name} | {os.cpu_count()} | {shots:,} | ERROR: {str(e)[:120]} | | |")
+            try:
+                print(row(w, name, cfg_name, 1, n1, run_decoder(name, H, O, rates, dets[:n1], obs[:n1], params, threads=1)))
+            except Exception as e:
+                print(f"| {w} | {name} | {cfg_name} | 1 | {n1:,} | ERROR: {str(e)[:120]} | | |")
         nv_batch = min(NV_BATCH, shots)
         for cfg_name, params in [
             ("relay+OSD-12", {**NV_RELAY, "use_osd": True, "osd_order": 12, "osd_method": 1, "bp_batch_size": nv_batch}),
@@ -196,8 +208,14 @@ def workload_s():
         dets, obs = dets.astype(np.uint8), obs.astype(np.uint8)
         w = f"surface d={d}"
         for name in ["aleph-mwpm", "aleph-union-find-weighted"]:
-            print(row(w, name, "-", os.cpu_count(), shots, run_decoder(name, H, O, rates, dets, obs, {})))
-            print(row(w, name, "-", 1, shots, run_decoder(name, H, O, rates, dets, obs, {}, threads=1)))
+            try:
+                print(row(w, name, "-", os.cpu_count(), shots, run_decoder(name, H, O, rates, dets, obs, {})))
+            except Exception as e:  # report, never drop — same pattern as the NVIDIA rows below
+                print(f"| {w} | {name} | - | {os.cpu_count()} | {shots:,} | ERROR: {str(e)[:120]} | | |")
+            try:
+                print(row(w, name, "-", 1, shots, run_decoder(name, H, O, rates, dets, obs, {}, threads=1)))
+            except Exception as e:
+                print(f"| {w} | {name} | - | 1 | {shots:,} | ERROR: {str(e)[:120]} | | |")
         # nv-fusion-decoder is constructed from raw (H, O) rather than DEM text, so it has no
         # detector coordinates to derive a temporal layout from and needs one supplied explicitly
         # (docs/sphinx/api/qec/nv_fusion_decoder_api.rst: "detector_round ... Takes highest

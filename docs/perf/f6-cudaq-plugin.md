@@ -123,9 +123,10 @@ monolithic MWPM).
 
 ## Adaptations made while getting the harness to run cleanly
 
-The brief's draft script needed five fixes before both tables printed with no `ERROR:` rows;
-none of them changes what is measured, only how the same measurement is obtained or how large a
-sample it runs on.
+The brief's draft script needed five fixes before both tables printed with no `ERROR:` rows (1-5
+below); none of them changes what is measured, only how the same measurement is obtained or how
+large a sample it runs on. Two more (6-7) were added in review round 1 and do not change any
+number either.
 
 1. **Unbuffered stdout (`-u`).** Python fully block-buffers stdout when it is not a tty, so a
    redirected run's progress is invisible until it exits — indistinguishable from a hang when a
@@ -167,7 +168,16 @@ sample it runs on.
    `output="observables"` is separately required — the same doc states "supplying O ... does not
    select observable output" for this decoder (unlike `nv-qldpc-decoder`/`pymatching`, whose
    output basis is not user-selectable and is observable-space unconditionally once `O` is given).
-6. **Gross-workload shot counts, to fit an honest full run in well under an hour** (permitted by
+6. **Result-basis tripwire + uniform error handling (fix round 1, no data change).** Added an
+   `assert O.shape[0] != O.shape[1]` at the point Adaptation 4's basis-detection branches, so an
+   `O` with equal observable/mechanism counts (none of this harness's workloads has one, but a
+   future one could) fails loudly instead of silently picking a branch; and wrapped the aleph rows
+   in the same try/except → `ERROR:` row pattern the NVIDIA rows already had, so an aleph-side
+   failure is reported instead of crashing the whole run. Neither changes any number in the
+   Results tables below — confirmed by a `--quick` re-run (both tables, zero `ERROR:` rows,
+   matching the earlier `--quick` run's LERs); **the full-run tables in this record are from the
+   original run, not re-collected**, since nothing that affects their numbers changed.
+7. **Gross-workload shot counts, to fit an honest full run in well under an hour** (permitted by
    the brief: "reduce that cell's shots and say so in the record — never drop a cell silently"):
    - **20,000 shots at every p** (not 100,000 at p ≤ 0.001 as first planned). Measured on the box,
      `aleph-relay-bp-osd` at `RAYON_NUM_THREADS=1` runs ~60-75 shots/s (one core doing 4-leg
@@ -186,7 +196,7 @@ sample it runs on.
      their own (wider-CI) LER is still reported, on the reduced sample the `shots` column names,
      rather than dropped or hidden.
 
-With these six fixes, `--quick` (2,000/2,000-shot batches) reproducibly prints both tables with
+With these seven fixes, `--quick` (2,000/2,000-shot batches) reproducibly prints both tables with
 no `ERROR:` rows on this box in well under 5 minutes.
 
 ## Results
@@ -244,30 +254,49 @@ ran concurrently).
   and NVIDIA's `nv-qldpc-decoder` relay mode (up to 60 legs, stopping after 5 convergences,
   γ = 0.125/[−0.24, 0.66], the settings NVIDIA measured and published for this exact code) explore
   a very different amount of the relay schedule per shot, and it shows: at p=0.003, no-OSD LER is
-  4.57e-2 (aleph) vs 1.5e-4 (NVIDIA) — a ~300x gap — and the OSD rows are 2.15e-3 vs 1.5e-4 (~14x).
-  This is not a bug; it is the expected consequence of comparing a 4-leg schedule against a
-  60-leg-budget one, and it is exactly what follow-up #<pending> (an `iters_per_leg`/early-exit
-  knob for aleph's `RelayBpDecoder`) would let this table control for. Neither side was tuned
-  against the other beyond its own documented defaults, per the honesty rule.
-- **CPU vs GPU throughput is stated, not ranked.** aleph decoders run on the CPU (20 cores, and
-  again pinned to 1 thread via `RAYON_NUM_THREADS=1` in a child process, or a 2,000-shot prefix
-  for the two Workload G cells named in "Adaptations" above); `nv-qldpc-decoder`, `nv-fusion-decoder`
-  and `pymatching` (via cudaq-qec) run on the GPU / cudaq-qec's own path. Different hardware, no
-  claimed winner on shots/s: `nv-qldpc-decoder`'s 400-2,003 shots/s and aleph's 20-core 500-587
-  shots/s are reported side by side, not ranked, and the same goes for `pymatching`'s 657k-96k
-  shots/s (1 thread) and `aleph-mwpm`'s 172k-26k (20 cores) — both fast enough that most of a
-  20,000-shot batch's wall time in this table is warm-up/Python overhead, not the matcher itself.
+  4.57e-2 (aleph) vs 1.5e-4 (NVIDIA) — 0.0457/0.00015 ≈ **305x** — and the OSD rows are 2.15e-3 vs
+  1.5e-4, ≈ **14.3x**. This is not a bug; it is the expected consequence of comparing a 4-leg
+  schedule against a 60-leg-budget one, and it is exactly what follow-up #<pending> (an
+  `iters_per_leg`/early-exit knob for aleph's `RelayBpDecoder`) would let this table control for.
+  Neither side was tuned against the other beyond its own documented defaults, per the honesty
+  rule.
+- **Only `nv-qldpc-decoder` is a GPU decoder; `pymatching` and `nv-fusion-decoder` are both CPU,
+  on the same box as aleph — their throughput is a same-machine comparison and is stated plainly,
+  not hedged as cross-hardware.** Checked directly rather than assumed: `pymatching.cpp`
+  (`libs/qec/lib/decoders/plugins/pymatching/pymatching.cpp` in NVIDIA/cudaqx) has no CUDA/GPU
+  code at all — it is a thin wrapper around the CPU PyMatching library (confirmed independently:
+  its compiled `.so` links `libcudart.so.13` only transitively, through the shared
+  `libcudaq-qec-decoders.so` every plugin links, not because it calls into any GPU kernel).
+  `nv-fusion-decoder`'s own docs (`docs/sphinx/api/qec/nv_fusion_decoder_api.rst`) describe it as
+  "a multi-threaded... decoder" whose "thread count is set by `num_threads`... That pool
+  parallelizes the blocks and fuses *within* one shot" — CPU threads, no GPU mentioned anywhere in
+  that document. `nv-qldpc-decoder`'s `.so`, by contrast, contains real GPU implementation
+  classes (`cudaq::qec::bp_decoder_impl_dense_gpu<double>`, found via `strings` on the compiled
+  plugin) — it is the one genuine cross-hardware comparison in this record, and only there does
+  "no claimed winner on shots/s" apply (Workload G: `nv-qldpc-decoder`'s 400-2,003 shots/s vs
+  aleph's CPU 500-587 shots/s, reported side by side).
+  For the two CPU-vs-CPU pairs in Workload S, the ratios: `pymatching` (1 thread) vs `aleph-mwpm`
+  (1 thread) is **657,571 / 114,247 ≈ 5.8x** at d=5 and **95,587 / 16,820 ≈ 5.7x** at d=9;
+  `nv-fusion-decoder` (20 threads) vs `aleph-mwpm`/`aleph-union-find-weighted` (20 threads) is
+  **333,743 / 171,927 ≈ 1.9x** at d=5 and **61,069 / 25,673 ≈ 2.4x** at d=9. The `pymatching` gap
+  is fully decomposed in "Where the plugin path's time goes" below — most of it is not the matcher
+  being slower, it is aleph's Python plugin wrapper. The `nv-fusion-decoder` gap was not
+  decomposed the same way this round (R7 only measured the single-thread `aleph-mwpm` case); the
+  same kind of explanation (a native C++ cudaq-qec plugin vs aleph's pure-Python one, follow-up
+  #<pending>, spec §10.1) plausibly applies there too, but that is not a measured claim.
 - **`ERROR:` / non-converged cells.** No `ERROR:` rows in the final run (five configuration bugs
-  surfaced by earlier `--quick` attempts, all fixed — see "Adaptations" above). Non-convergence:
-  aleph's no-OSD relay-BP has a non-trivial non-converged count that grows with p (31/20,000 at
-  p=0.001 up to 1,261/20,000 at p=0.003, 4-16%) — expected, since it is BP-family with no
-  correction fallback and only 4 relay legs; every one of those shots still gets a best-effort
-  `ehat` (converged=False, not dropped), which is exactly what the elevated no-OSD LER reflects.
-  `nv-qldpc-decoder`'s non-conv is 0 at p≤0.002 and 1/20,000 at p=0.003, consistent with its much
-  larger relay budget. `aleph-relay-bp-osd`'s non-conv is 0 everywhere (OSD's combination sweep
-  always returns a candidate). All matching decoders (`aleph-mwpm`, `aleph-union-find-weighted`,
-  `pymatching`, `nv-fusion-decoder`) show non-conv=0 throughout, as expected for exact/near-exact
-  MWPM on these small distances.
+  surfaced by earlier `--quick` attempts, all fixed — see "Adaptations" above; two more
+  error-handling fixes were added in review round 1 without changing any table value). Non-
+  convergence: aleph's no-OSD relay-BP has a non-trivial non-converged count that grows with p —
+  31/20,000 = **0.16%** at p=0.001, 242/20,000 = **1.2%** at p=0.002, 1,261/20,000 = **6.3%** at
+  p=0.003 — expected, since it is BP-family with no correction fallback and only 4 relay legs;
+  every one of those shots still gets a best-effort `ehat` (converged=False, not dropped), which
+  is exactly what the elevated no-OSD LER reflects. `nv-qldpc-decoder`'s non-conv is 0 at p≤0.002
+  and 1/20,000 (0.005%) at p=0.003, consistent with its much larger relay budget.
+  `aleph-relay-bp-osd`'s non-conv is 0 everywhere (OSD's combination sweep always returns a
+  candidate). All matching decoders (`aleph-mwpm`, `aleph-union-find-weighted`, `pymatching`,
+  `nv-fusion-decoder`) show non-conv=0 throughout, as expected for exact/near-exact MWPM on these
+  small distances.
 - **Sanity check (must hold or the harness has a bug): MET.** `aleph-mwpm` and `pymatching` decode
   the identical graphlike `(H, O, error_rate_vec)` and syndromes; their LER is **exactly equal**
   at both distances (d=5: 3.80e-03 vs 3.80e-03; d=9: 8.00e-04 vs 8.00e-04) — not just within the
@@ -278,8 +307,8 @@ ran concurrently).
   is decoding correctly against an independent, widely-used reference.
 - **aleph and NVIDIA relay LER are NOT consistently the same order of magnitude — NOT MET,
   and expected.** At p=0.001 the OSD rows agree (both 0/20,000) and the no-OSD rows are within a
-  reasonable factor (7.0e-4 vs an upper CI bound of 1.9e-4, roughly 4x); but at p=0.002-0.003 the
-  gap widens sharply (up to ~300x on no-OSD at p=0.003, detailed above). This traces directly to
+  reasonable factor (7.0e-4 vs an upper CI bound of 1.9e-4, ≈ 3.7x); but at p=0.002-0.003 the gap
+  widens sharply (up to ≈305x on no-OSD at p=0.003, detailed above). This traces directly to
   the leg-count/stopping-criterion disparity discussed in the relay-BP bullet above, not to a
   harness bug: both decoders see the identical DEM, syndromes, and `error_rate_vec`, and the
   `aleph-mwpm`/`pymatching` cross-check on the same code path (dem_to_matrices → decode_batch →
@@ -287,8 +316,54 @@ ran concurrently).
   investigated further, since spec §8 explicitly anticipates non-equivalent relay-BP
   parameterisations and asks for the gap to be shown, not closed.
 
+## Where the plugin path's time goes
+
+Controller ruling R7: the `pymatching`-vs-`aleph-mwpm` gap above (≈5.8x at d=5, `pymatching`
+faster) needed explaining rather than left as a bare number. Measured directly on the box, same
+machine, same inputs (surface d=5, `RAYON_NUM_THREADS=1` for the whole process, the harness's own
+20,000-shot batch, best-of-3 after a 200-shot warm-up, one Python process so nothing here crosses
+a machine or process boundary):
+
+| step | shots/s | time / 20,000 shots |
+|---|---:|---:|
+| (a) native `aleph.qec.Decoder(...).decode_batch(dets_bool)` — matcher only, dense bool in/out | 530,945 | 37.7 ms |
+| (a') native `.decode_batch_bit_packed(...)` — what `scripts/python/bench_qec.py` itself measures | 593,811 | 33.7 ms |
+| (b) native `.decode_batch_errors(dets_bool)` — adds the per-shot matched-pair path retrace | 346,591 | 57.7 ms |
+| (c) plugin `cq.get_decoder("aleph-mwpm", ...).decode_batch(dets.astype(float64).tolist())` | 113,784 | 175.8 ms |
+| `dets.astype(np.float64).tolist()` alone (part of what (c) pays, not (a)/(b)) | — | 41.4 ms |
+
+Ratios: a/b ≈ **1.53x** (retrace cost), b/c ≈ **3.05x** (marshalling + wrapper cost), a/c ≈
+**4.67x**, a'/c ≈ **5.22x** — in the same ballpark as the ≈5.8x seen in the Results table for the
+full pymatching-vs-plugin comparison (the small remaining difference is run-to-run noise: shots/s
+here varied about ±10% across repeated invocations of this same script).
+
+**The matcher itself is unchanged and is not the story here.** (a)/(a') — aleph's Sparse Blossom
+MWPM with no retrace and no Python marshalling — run at 531k-594k shots/s on this box,
+single-threaded; `pymatching`'s own single-threaded 657,571 shots/s is only **657,571 / 593,811 ≈
+1.11x** faster than aleph's own fastest native path, not ≈5.8x. Essentially the entire headline
+gap in the Results table is downstream of the matcher: aleph's plugin (`aleph.cudaq`, still a
+pure-Python wrapper — the native C++ plugin is follow-up #<pending> below) pays (1) the per-shot
+retrace `decode_batch_errors` does instead of `decode_batch`'s direct observable decode (~1.53x, a
+real, inherent cost of producing a per-mechanism error estimate rather than an observable-only one
+— see the follow-up added below), and (2) round-tripping through Python lists (cudaq hands the plugin a
+list of floats; `_to_bits` converts it back to a numpy array, compares `> 0.5`, and casts to
+`uint8` — the mirror image of the `dets.astype(float64).tolist()` conversion measured above, which
+alone accounts for ~35% of the b→c gap) plus the `ehat.astype(np.float64)` copy and
+`BatchDecoderResult` construction cudaq-qec expects back (the remaining ~65% of that gap, not
+isolated further here). None of this is a machine-difference artifact — every number in the table
+above came from one script, one process, one box, run back to back; there is no Mac comparison
+figure for this exact workload to invoke, and none was needed to explain the gap.
+
 ## Follow-ups
 
-- #<pending> — native C++ plugin (`libaleph-cudaq.so`) for the realtime / NVQLink path (spec §10.1).
+- #<pending> — native C++ plugin (`libaleph-cudaq.so`) for the realtime / NVQLink path (spec
+  §10.1) — per "Where the plugin path's time goes" above, this would also remove most of the
+  ≈3x Python-marshalling overhead measured on the `aleph-mwpm` plugin path.
 - #<pending> — `iters_per_leg` / early-exit knob for the f64 `RelayBpDecoder` so the A/B can match
   the ASIC's 6×10 schedule exactly (spec §10.2).
+- #<pending> — `decode_batch_errors`'s per-shot path retrace measured ≈1.53x slower than
+  `decode_batch`'s direct observable decode on MWPM at d=5 (531k vs 347k shots/s, single-threaded,
+  see "Where the plugin path's time goes"); audit whether that gap is inherent to retracing every
+  matched pair for a per-mechanism error estimate, or has slack worth closing, since every
+  cudaq-qec decoder call in this harness (and hence every aleph plugin decoder) goes through
+  `decode_batch_errors`, not `decode_batch`.
