@@ -245,8 +245,22 @@ git commit -m "[product] Appliance v1: one-command KV260 deploy, bitstream in re
 
 Depends on Phase B, which produces exactly this artefact as a by-product.
 
-- [ ] **Step 1: Publish the 144/864 bitstream and constraints for the part Phase B used**
-- [ ] **Step 2: State the achieved Fmax and utilisation, and the resulting latency, in the release notes**
+**Re-scoped 2026-09-25** (`docs/perf/p2-appliance-v2.md`). Phase B's VU47P runs were the bare core out of
+context, so there was no bitstream to publish. Every large part (Virtex US+, RFSoC, Alveo) also needs a
+paid Vivado licence. v2 is therefore split in two:
+
+- **v2 = ZCU104 (ZU7EV)**, the largest part the free toolchain builds and the same family as the KV260.
+  The host interface is unchanged.
+- **v2-large = AWS F2 (VU47P)** as a public AFI, built on AWS's licensed AMI.
+
+- [x] **Step 1 (ZCU104): bitstream built.** 36/144, 1036 cycles, 125 MHz timing met (WNS +0.041 ns),
+  76.4 % LUT, **8.29 µs** worst case. Built with the ZCU104 board preset, so the `.hwh`'s PL0 divisors
+  produce 125 MHz on the real board. A no-preset build would have run the core at 187.5 MHz there.
+  Not yet run on a board.
+- [x] **Step 2: Fmax, utilisation and latency stated** in `docs/perf/p2-appliance-v2.md`, and in the
+  `appliance-v2` release notes when it is published.
+- [ ] **Step 1b (F2): public AFI of 64/192 on the VU47P.** Needs an AWS F2 Custom Logic wrapper (OCL
+  AXI-Lite, 125–150 MHz via AWS_CLK_GEN), the `L-74FC7D96` quota and an f2.6xlarge test.
 - [ ] **Step 3: Do not buy these boards for other people.** Publish; let the labs that own them use them.
 
 ### Task P3: Appliance v3 — the ASIC module

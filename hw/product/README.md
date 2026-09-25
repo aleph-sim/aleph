@@ -13,20 +13,34 @@ deploy in an afternoon. That gap is the whole point of this directory — see "W
 
 | version | hardware | config | worst-case latency | already real-time for |
 |---|---|---|---|---|
-| **v1** | Kria KV260, ~$300 | banked 16/48 | **15.64 µs** (0.85 µs median, early exit) | neutral atoms, trapped ions — round times 100 µs–ms |
-| v2 | large FPGA ($10–30 k) | banked **64/192**, 913 cycles | **6.07 µs — implemented and measured** | most platforms except the fastest superconducting loops |
+| **v1** | Kria KV260, ~$300 | banked 16/48, 2085 cycles | **15.64 µs** (0.85 µs median, early exit)¹ | neutral atoms, trapped ions — round times 100 µs–ms |
+| **v2** | AMD ZCU104 eval kit | banked **36/144**, 1036 cycles | **8.29 µs at 125 MHz — built and timing-closed, not yet run on a board** | as v1, with 2× the headroom |
+| v2-large | Virtex US+ VU47P (AWS F2) | banked **64/192**, 913 cycles | **6.07 µs — implemented and measured (core only)** | most platforms except the fastest superconducting loops |
 | v3 | ASIC module | banked 144/864, 543 cycles | **0.88 µs at ASAP7 7 nm predictive** — see the node caveat below | superconducting, ~1 µs rounds |
+
+¹ 15.64 µs is the AXI-Lite overlay at 133.332 MHz. The batched-DMA image that `deploy.sh` installs
+runs the same 2085 cycles at ~90.9 MHz, i.e. ~22.9 µs: PYNQ applies the image's PL0 divisors to the
+board's ~1000 MHz IOPLL. The driver prints the latency the board actually delivers
+(`docs/perf/p2-appliance-v2.md` §3).
 
 v1 is the important row: **for two of the four qubit modalities this is finished and merely
 undistributed.** If your syndrome rounds are 100 µs apart, a $300 board already decodes them in real
 time, today, with the numbers above measured on silicon rather than projected.
 
-**v2's number is measured, not projected.** 64/192 was placed and routed on an AMD Virtex UltraScale+
-HBM VU47P — the part in AWS's F2 instances — at **150.4 MHz using 19 % of the device**, giving 6.07 µs
-for its 913 cycles (`docs/perf/q7-02-fullparallel-fpga.md`). What is *not* built is a board: this is an
-implementation result on a rented part, not a product you can buy today.
+**v2 is a real bitstream for a board you can buy** (`docs/perf/p2-appliance-v2.md`). The ZCU104's ZU7EV is
+the largest part the free Vivado edition builds. It is the same Zynq UltraScale+ family as the KV260, so
+the block design, the driver and the host interface carry over unchanged. 36/144 is the largest
+geometry that routes on it: 76.4 % of the LUTs, timing met at 125 MHz, 1036 cycles, 40/40 bit-exact in
+co-simulation. **Nobody on the project owns a ZCU104, so it has not yet decoded on silicon.** The first
+`deploy.sh` run on one is the test, and it will not report success without 40/40.
 
-v2 deliberately ships **64/192 rather than the full-parallel 144/864**, and the reason is worth stating
+**v2-large is measured, not projected, but it is not a product.** 64/192 was placed and routed on an AMD
+Virtex UltraScale+ HBM VU47P — the part in AWS's F2 instances — at **150.4 MHz using 19 % of the
+device**, giving 6.07 µs for its 913 cycles (`docs/perf/q7-02-fullparallel-fpga.md`). That was the bare
+core, out of context, and every large part needs a paid Vivado licence. A public AWS F2 image (AFI) is
+the planned way to make it runnable by anyone.
+
+v2-large deliberately uses **64/192 rather than the full-parallel 144/864**, and the reason is worth stating
 because it is counter-intuitive. 144/864 also fits — 76.3 % of the same device — but it routes at only
 97.3 MHz, so its 543 cycles come out at 5.58 µs. Fewer cycles, proportionally worse clock: **1.09×
 faster for 4× the area.** 64/192 gives 92 % of the latency in a quarter of the part, leaving the rest
@@ -82,7 +96,8 @@ hardware costs $300 rather than $30,000.
 
 - **RTL and simulation:** this repository. `make -C hw bpbanked` runs the banked core against the
   golden in about six minutes and needs only Verilator ≥ 5.050 and a Rust toolchain.
-- **Bitstream:** [`appliance-v1`](https://github.com/aleph-sim/aleph/releases/tag/appliance-v1) — `deploy.sh` fetches it.
+- **Bitstream:** [`appliance-v1`](https://github.com/aleph-sim/aleph/releases/tag/appliance-v1) (KV260) and
+  `appliance-v2` (ZCU104). `deploy.sh` reads the board model and fetches the matching one.
 - **On a board:** first bring the board up — **`BRINGUP.md`**, which is Ubuntu 22.04 (*not* 24.04),
   a firmware check, a build toolchain the stock image lacks, and Kria-PYNQ pinned to v3.0. Each of
   those four is a wall someone hits if they follow the upstream instructions instead. Then
