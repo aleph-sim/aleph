@@ -184,12 +184,16 @@ impl OsdDecoder {
         (ehat, true)
     }
 
-    /// Per-column error estimate `ê` and a convergence flag. OSD always returns a solution of
-    /// `H ê = s` (BP's if it converged, otherwise the OSD solve), so the flag is always `true`;
-    /// it exists so every decoder has the same `(ê, converged)` shape.
+    /// Per-column error estimate `ê` and whether it satisfies the syndrome (`H ê = s`). BP's own
+    /// convergence already guarantees this; the OSD solve is exact for every *pivoted* check row
+    /// by construction, but a check row the Gauss-Jordan elimination never pivots (e.g. one
+    /// linearly dependent on the others, or with no informative column) is not re-verified —
+    /// checked explicitly here rather than assumed `true`, so every decoder's `(ê, converged)`
+    /// flag means the same thing.
     pub fn decode_errors(&self, syndrome: &Syndrome) -> (Vec<u8>, bool) {
         let (ehat, _osd_ran) = self.decode_osd_ehat(syndrome);
-        (ehat, true)
+        let ok = self.check_satisfied(syndrome, &ehat);
+        (ehat, ok)
     }
 
     /// [`correction_from_soft`](Self::correction_from_soft) without the observable projection:

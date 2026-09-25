@@ -156,6 +156,11 @@ pub struct PyDecoder {
     detectors: usize,
     observables: usize,
     errors: usize,
+    /// Whether any mechanism of the source DEM has `^`-decomposed parts (see
+    /// `MatchingEdge::column`'s docs in `aleph-qec`). Guards `decode_batch_errors` for the
+    /// matching decoders, whose per-column estimate is exact only when every mechanism is a
+    /// single part.
+    has_components: bool,
 }
 
 #[pymethods]
@@ -169,12 +174,14 @@ impl PyDecoder {
     ) -> PyResult<Self> {
         let p = parse_params(name, params)?;
         let dec = AnyDecoder::build(&dem.inner, name, &p).map_err(value_err)?;
+        let has_components = dem.inner.errors.iter().any(|e| !e.components.is_empty());
         Ok(PyDecoder {
             dec,
             name: name.to_string(),
             detectors: dem.inner.detectors,
             observables: dem.inner.observables,
             errors: dem.inner.errors.len(),
+            has_components,
         })
     }
 
@@ -232,12 +239,28 @@ impl PyDecoder {
     /// Decode `[shots, num_detectors]` bool/uint8 -> `(errors uint8 [shots, num_errors],
     /// converged bool [shots])`: the per-column error estimate every decoder can produce (what a
     /// cudaq-qec decoder returns). GIL released; shots decode in parallel.
+    ///
+    /// Raises `ValueError` for `mwpm`/`union-find`/`union-find-weighted` on a DEM with
+    /// `^`-decomposed mechanisms: their per-column estimate is per mechanism, not per part, so
+    /// `H ê = s` would not hold (split the parts first, e.g. via `aleph.cudaq.dem_to_matrices`).
     #[allow(clippy::type_complexity)]
     fn decode_batch_errors<'py>(
         &self,
         py: Python<'py>,
         dets: &Bound<'py, PyAny>,
     ) -> PyResult<(Bound<'py, PyArray2<u8>>, Bound<'py, PyArray1<bool>>)> {
+        if self.has_components
+            && matches!(
+                self.name.as_str(),
+                "mwpm" | "union-find" | "union-find-weighted"
+            )
+        {
+            return Err(value_err(
+                "decode_batch_errors: this DEM has ^-decomposed mechanisms; a matching \
+                 decoder's per-column estimate needs one column per part — rebuild the model \
+                 with aleph.cudaq.dem_to_matrices(dem) + aleph.qec.dem_from_matrices(H, O, rates)",
+            ));
+        }
         let (shots, bits) = to_bytes(dets, 2, self.detectors, "decode_batch_errors")?;
         let (d, e) = (self.detectors, self.errors);
         let dec = &self.dec;

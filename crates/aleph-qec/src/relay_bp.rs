@@ -291,13 +291,17 @@ impl RelayBpOsdDecoder {
     }
 
     /// Per-column error estimate `ê`: relay-BP's if it converged, else the OSD refinement of its
-    /// soft output. Always satisfies `H ê = s`, so the flag is always `true`.
+    /// soft output, and whether that estimate satisfies the syndrome (`H ê = s`). Relay-BP's own
+    /// convergence already guarantees this; the OSD refinement is checked explicitly (see
+    /// [`OsdDecoder::decode_errors`]'s docs for why it is not unconditionally `true`).
     pub fn decode_errors(&self, syndrome: &Syndrome) -> (Vec<u8>, bool) {
         let soft = self.relay.decode_soft(syndrome);
         if soft.converged {
             return (soft.ehat, true);
         }
-        (self.osd.ehat_from_soft(syndrome, &soft), true)
+        let ehat = self.osd.ehat_from_soft(syndrome, &soft);
+        let ok = self.osd.check_satisfied(syndrome, &ehat);
+        (ehat, ok)
     }
 }
 

@@ -205,7 +205,9 @@ impl MwpmDecoder {
     ///   there is left unmatched, so `H ê` misses that detector;
     /// - mechanisms with p > 0.5 have negative weight `ln((1-p)/p)` and are never retraced
     ///   through (a negative edge makes the shortest-path search ill-posed): a pair whose path
-    ///   needs one is left unmarked unless a non-negative path within the same bound exists.
+    ///   needs one is left unmarked unless a non-negative path within the same bound exists;
+    /// - on a DEM with `^`-decomposed mechanisms the estimate is per mechanism, not per part, and
+    ///   `H ê = s` does not hold — split the parts into separate mechanisms first.
     pub fn decode_errors(&self, syndrome: &Syndrome) -> Vec<u8> {
         let mut ehat = vec![0u8; self.graph.num_columns()];
         let defects = self.defects_of(syndrome);

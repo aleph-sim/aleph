@@ -67,7 +67,9 @@ pub struct MatchingEdge {
     /// For a mechanism with `^` parts, this edge came from *one* part, so the marked column
     /// stands for that part only: `O·ê` over the whole (parity-reduced) column is not meaningful
     /// for such a column. Callers that need per-part columns split the DEM first (as the Python
-    /// plugin does).
+    /// plugin does). Two edges of one `^` mechanism may share this value — every part is recorded
+    /// against the same mechanism index `j`, so a per-column error estimate cannot tell which part
+    /// fired from `column` alone.
     pub column: u32,
 }
 

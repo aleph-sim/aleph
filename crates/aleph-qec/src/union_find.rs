@@ -286,6 +286,9 @@ impl UnionFindDecoder {
     /// peeled correction contains the edge whose representative column is `j`. Satisfies
     /// `H ê = s` on every detector with an incident edge, and `O ê` equals
     /// [`decode`](Decoder::decode)'s flips — exact on `^`-free DEMs.
+    ///
+    /// On a DEM with `^`-decomposed mechanisms the estimate is per mechanism, not per part, and
+    /// `H ê = s` does not hold — split the parts into separate mechanisms first.
     pub fn decode_errors(&self, syndrome: &Syndrome) -> Vec<u8> {
         let (_, edges) = self.decode_edges(syndrome);
         let mut ehat = vec![0u8; self.num_columns];
@@ -961,38 +964,42 @@ mod tests {
         use crate::{build_dem, SurfaceCode};
         let exp = SurfaceCode::new(5).memory_z_experiment(5);
         let dem = build_dem(&exp.annotated, &exp.phenomenological_mechanisms(0.03, 0.03)).unwrap();
-        let dec = UnionFindDecoder::new_weighted(&dem).unwrap();
-        let mut rng = 0x1234_5678u64;
-        for _ in 0..300 {
-            let mut det = vec![false; dem.detectors];
-            for e in &dem.errors {
-                rng ^= rng << 13;
-                rng ^= rng >> 7;
-                rng ^= rng << 17;
-                if ((rng >> 40) as f64 / (1u64 << 24) as f64) < e.prob {
-                    for &d in &e.dets {
-                        det[d as usize] ^= true;
+        for dec in [
+            UnionFindDecoder::new(&dem).unwrap(),
+            UnionFindDecoder::new_weighted(&dem).unwrap(),
+        ] {
+            let mut rng = 0x1234_5678u64;
+            for _ in 0..300 {
+                let mut det = vec![false; dem.detectors];
+                for e in &dem.errors {
+                    rng ^= rng << 13;
+                    rng ^= rng >> 7;
+                    rng ^= rng << 17;
+                    if ((rng >> 40) as f64 / (1u64 << 24) as f64) < e.prob {
+                        for &d in &e.dets {
+                            det[d as usize] ^= true;
+                        }
                     }
                 }
-            }
-            let s = Syndrome::from_bits(&det);
-            let ehat = dec.decode_errors(&s);
-            assert_eq!(ehat.len(), dem.errors.len());
-            // H ê = s and O ê = the decoder's own correction.
-            let mut hs = vec![false; dem.detectors];
-            let mut os = vec![false; dem.observables];
-            for (j, &b) in ehat.iter().enumerate() {
-                if b == 1 {
-                    for &d in &dem.errors[j].dets {
-                        hs[d as usize] ^= true;
-                    }
-                    for &o in &dem.errors[j].obs {
-                        os[o as usize] ^= true;
+                let s = Syndrome::from_bits(&det);
+                let ehat = dec.decode_errors(&s);
+                assert_eq!(ehat.len(), dem.errors.len());
+                // H ê = s and O ê = the decoder's own correction.
+                let mut hs = vec![false; dem.detectors];
+                let mut os = vec![false; dem.observables];
+                for (j, &b) in ehat.iter().enumerate() {
+                    if b == 1 {
+                        for &d in &dem.errors[j].dets {
+                            hs[d as usize] ^= true;
+                        }
+                        for &o in &dem.errors[j].obs {
+                            os[o as usize] ^= true;
+                        }
                     }
                 }
+                assert_eq!(hs, det, "H ê != s");
+                assert_eq!(os, dec.decode(&s).observable_flips, "O ê != correction");
             }
-            assert_eq!(hs, det, "H ê != s");
-            assert_eq!(os, dec.decode(&s).observable_flips, "O ê != correction");
         }
     }
 }
