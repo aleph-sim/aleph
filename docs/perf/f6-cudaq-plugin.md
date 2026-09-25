@@ -262,7 +262,9 @@ ran concurrently).
   rule.
 - **Only `nv-qldpc-decoder` is a GPU decoder; `pymatching` and `nv-fusion-decoder` are both CPU,
   on the same box as aleph — their throughput is a same-machine comparison and is stated plainly,
-  not hedged as cross-hardware.** Checked directly rather than assumed: `pymatching.cpp`
+  not hedged as cross-hardware.** (The `pymatching` rows' `threads` column reads `1`: that is
+  PyMatching's own single-threaded default, not a cap the harness imposes — `cudaq_qec`'s
+  `pymatching` decoder takes no thread-count parameter.) Checked directly rather than assumed: `pymatching.cpp`
   (`libs/qec/lib/decoders/plugins/pymatching/pymatching.cpp` in NVIDIA/cudaqx) has no CUDA/GPU
   code at all — it is a thin wrapper around the CPU PyMatching library (confirmed independently:
   its compiled `.so` links `libcudart.so.13` only transitively, through the shared
@@ -336,6 +338,17 @@ Ratios: a/b ≈ **1.53x** (retrace cost), b/c ≈ **3.05x** (marshalling + wrapp
 **4.67x**, a'/c ≈ **5.22x** — in the same ballpark as the ≈5.8x seen in the Results table for the
 full pymatching-vs-plugin comparison (the small remaining difference is run-to-run noise: shots/s
 here varied about ±10% across repeated invocations of this same script).
+
+`RAYON_NUM_THREADS=1 python scripts/python/ab_cudaq.py --decompose` reproduces this table (numbers
+will vary run to run by the same noise noted above; this is the harness, not a one-off script).
+One difference from the original measurement: after the CRITICAL `^`-decomposed-DEM fix,
+`decode_batch_errors` raises on the raw decomposed DEM for `mwpm`, so the harness measures (a)/(b)
+against the *split* model (`aleph.cudaq.dem_to_matrices` + `aleph.qec.dem_from_matrices`) instead
+— exactly the model the plugin path (c) already decodes against, so all three columns stay
+comparable, but (b)'s absolute rate differs slightly from the number above (more error columns to
+retrace after splitting `^` parts). A confirming run on the box: 522,011 / 589,022 / 284,296 /
+113,468 shots/s for (a)/(a')/(b)/(c), a/c ≈ 4.60x, a'/c ≈ 5.19x — the same ballpark as this
+section's original numbers.
 
 **The matcher itself is unchanged and is not the story here.** (a)/(a') — aleph's Sparse Blossom
 MWPM with no retrace and no Python marshalling — run at 531k-594k shots/s on this box,

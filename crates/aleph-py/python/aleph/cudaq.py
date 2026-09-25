@@ -23,6 +23,7 @@ import cudaq_qec as _qec  # the only cudaq import in aleph; ImportError means "i
 import numpy as np
 
 import aleph.qec as _aq
+from aleph.qec import dem_to_matrices  # re-exported: aleph.cudaq.dem_to_matrices (no cudaq dep)
 
 NAMES = tuple(_aq.decoder_names())
 
@@ -32,6 +33,8 @@ __all__ = ["NAMES", "DECODERS", "dem_to_matrices"]
 
 
 def _rates(n, error_rate_vec, error_rate):
+    if error_rate_vec is not None and error_rate is not None:
+        raise ValueError("pass either error_rate_vec or error_rate, not both")
     if error_rate_vec is not None:
         r = np.asarray(error_rate_vec, dtype=np.float64).ravel()
         if r.shape[0] != n:
@@ -99,8 +102,9 @@ def _make(name):
 
         def decode_batch(self, syndromes):
             ehat, conv = self._inner.decode_batch_errors(_to_bits(syndromes, self._width))
-            if ehat.shape[0] == 0:
-                ehat = np.zeros((0, 0), dtype=np.float64)   # cudaq's documented empty-batch shape
+            # `ehat` is already `(0, E)` for an empty batch (Step-0 probe: cudaq's own
+            # `(O @ err.T)` breaks on a `(0, 0)` result), so it is returned as-is rather than
+            # overridden to `(0, 0)`.
             return _qec.BatchDecoderResult(result=ehat.astype(np.float64), converged=conv,
                                            opt_results=None, batch_opt_results=None)
 
@@ -109,36 +113,3 @@ def _make(name):
 
 
 DECODERS = {name: _make(name) for name in NAMES}
-
-
-def dem_to_matrices(dem):
-    """Stim DEM (``stim.DetectorErrorModel``, DEM text, or ``aleph.qec.DetectorErrorModel``) ->
-    ``(H, O, error_rate_vec)`` with every ``^``-separated part of a mechanism as its own column,
-    so matching decoders can take the result as ``H``. ``H`` is ``uint8 (detectors, E)``, ``O``
-    is ``uint8 (observables, E)``, ``error_rate_vec`` is ``float64 (E,)``.
-    """
-    adem = dem if isinstance(dem, _aq.DetectorErrorModel) else _aq.DetectorErrorModel(dem)
-    cols = []  # (prob, dets, obs)
-    for line in adem.to_dem_string().splitlines():
-        s = line.strip()
-        if not s.startswith("error("):
-            continue
-        head, _, targets = s.partition(")")
-        p = float(head[len("error("):])
-        for part in targets.split("^"):
-            dets = [int(t[1:]) for t in part.split() if t[0] == "D"]
-            obs = [int(t[1:]) for t in part.split() if t[0] == "L"]
-            cols.append((p, dets, obs))
-    D, L, E = adem.num_detectors, adem.num_observables, len(cols)
-    H = np.zeros((D, E), dtype=np.uint8)
-    O = np.zeros((L, E), dtype=np.uint8)
-    rates = np.empty(E, dtype=np.float64)
-    for j, (p, dets, obs) in enumerate(cols):
-        # Fancy-index augmented assignment (`H[dets, j] ^= 1`) gathers, XORs once, then
-        # scatters — a target repeated within one `^`-part would silently NOT cancel (it
-        # would just be set), unlike Stim's actual semantics (repeat = no flip). The
-        # unbuffered ufunc form accumulates in place over duplicate indices.
-        np.bitwise_xor.at(H[:, j], dets, 1)
-        np.bitwise_xor.at(O[:, j], obs, 1)
-        rates[j] = p
-    return H, O, rates

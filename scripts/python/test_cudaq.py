@@ -60,7 +60,8 @@ class TestRegistration(unittest.TestCase):
     def test_decode_batch_empty(self):
         d = cq.get_decoder("aleph-bp", H, O=O, error_rate_vec=RATES)
         br = d.decode_batch([])
-        self.assertEqual(br.result.shape[0], 0)
+        # (0, E), not (0, 0): cudaq's own `(O @ err.T)` breaks on a (0, 0) result (Step-0 probe).
+        self.assertEqual(br.result.shape, (0, 3))
         self.assertEqual(br.converged.shape, (0,))
 
     def test_soft_syndrome_thresholds(self):
@@ -74,6 +75,10 @@ class TestRegistration(unittest.TestCase):
         self.assertEqual(len(d.decode([0.0, 1.0]).result), 3)
         with self.assertRaisesRegex(ValueError, "error_rate"):
             cq.get_decoder("aleph-relay-bp", H, O=O)
+
+    def test_both_error_rate_forms_rejected(self):
+        with self.assertRaisesRegex(ValueError, "not both"):
+            cq.get_decoder("aleph-relay-bp", H, O=O, error_rate_vec=RATES, error_rate=0.1)
 
     def test_unknown_param_and_wrong_width(self):
         with self.assertRaisesRegex(ValueError, "osd_order"):

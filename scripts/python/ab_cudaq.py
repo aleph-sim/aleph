@@ -4,6 +4,11 @@ Run on the GPU box only:
   /root/cqvenv/bin/python scripts/python/ab_cudaq.py [--quick]
 Prints Markdown tables; paste into docs/perf/f6-cudaq-plugin.md with the header block.
 
+`--decompose` runs a different, smaller mode instead of the A/B workloads: the "Where the
+plugin path's time goes" cost breakdown in docs/perf/f6-cudaq-plugin.md (surface d=5, single
+process/thread). Reproduce it with:
+  RAYON_NUM_THREADS=1 /root/cqvenv/bin/python scripts/python/ab_cudaq.py --decompose
+
 Workload G: gross [[144,12,12]] circuit-level DEM (aleph.qec.gross_code_dem), rounds=12,
   p in {0.001, 0.002, 0.003}; aleph-relay-bp(-osd) vs nv-qldpc-decoder in relay mode (+/-OSD).
 Workload S: stim surface_code:rotated_memory_x d in {5, 9}, rounds=d, p=0.003, decomposed;
@@ -27,6 +32,7 @@ import aleph.qec as aq
 import aleph.cudaq as ac
 
 QUICK = "--quick" in sys.argv
+DECOMPOSE = "--decompose" in sys.argv
 SEED = 20260924
 
 # NVIDIA relay-BP mode for the [[144,12,12]] gross code: the "canonical Relay BP settings for
@@ -101,10 +107,12 @@ def run_decoder(name, H, O, rates, dets, obs, params, threads=None):
     # Tripwire: the branch below assumes O.shape[0] (observables) and O.shape[1] (mechanisms)
     # are distinguishable widths. Every workload in this harness has far fewer observables than
     # mechanisms, but if that ever stopped holding, silently picking the wrong branch would
-    # compare the wrong axis without either branch raising — fail loud instead.
-    assert O.shape[0] != O.shape[1], (
-        f"{name}: ambiguous result basis (O has {O.shape[0]} observables == {O.shape[1]} "
-        "mechanisms; width alone can't tell errors-space from observables-space apart)")
+    # compare the wrong axis without either branch raising — fail loud instead. A `raise`, not a
+    # bare `assert`, so this check survives a `python -O` run too.
+    if O.shape[0] == O.shape[1]:
+        raise RuntimeError(
+            f"{name}: ambiguous result basis (O has {O.shape[0]} observables == {O.shape[1]} "
+            "mechanisms; width alone can't tell errors-space from observables-space apart)")
     if r.shape[1] == O.shape[0]:
         pred = (r > 0.5).astype(np.uint8)
     elif r.shape[1] == O.shape[1]:
@@ -236,11 +244,77 @@ def workload_s():
                 print(f"| {w} | {name} | defaults | | {shots:,} | ERROR: {str(e)[:120]} | | |")
 
 
+def decompose_breakdown():
+    """R7 cost breakdown: where the `aleph-mwpm` plugin path's time goes, vs the native
+    `aleph.qec` API, same machine, same inputs (surface d=5, the same 20,000-shot batch other
+    workloads use). Reproduces the "Where the plugin path's time goes" table in
+    docs/perf/f6-cudaq-plugin.md — run with `RAYON_NUM_THREADS=1` for a single-process,
+    single-thread comparison, matching how that table's numbers were measured.
+    """
+    print("\n### Plugin-path cost breakdown (surface d=5, single-threaded)\n")
+    shots = 2000 if QUICK else 20_000
+    circ = surface(5)
+    dem_stim = circ.detector_error_model(decompose_errors=True)
+    dets, _obs = circ.compile_detector_sampler(seed=SEED).sample(shots, separate_observables=True)
+    dets = dets.astype(np.uint8)
+
+    def best_of_3(fn, warmup_arg, full_arg):
+        fn(warmup_arg)
+        best = 0.0
+        for _ in range(3):
+            t = time.perf_counter()
+            fn(full_arg)
+            best = max(best, shots / (time.perf_counter() - t))
+        return best
+
+    # Build the *split* (one column per `^` part) model via the same `dem_to_matrices` +
+    # `dem_from_matrices` round trip `aleph.cudaq`'s plugin decoder uses internally, rather than
+    # `aq.DetectorErrorModel(dem_stim)` directly: since the CRITICAL `^`-decomposed-DEM fix,
+    # `decode_batch_errors` raises `ValueError` on `mwpm` for a DEM whose mechanisms still have
+    # `^` parts (its per-column estimate would silently violate H ehat = s on ~23% of shots
+    # otherwise). Measuring the split model is also the fairer comparison: it is exactly the
+    # model the plugin path (c) below already decodes against, so (a)/(b) and (c) use the same
+    # error-column count throughout.
+    H, O, rates = ac.dem_to_matrices(dem_stim)
+    split_dem = aq.dem_from_matrices(H, O, rates)
+    dec = aq.Decoder(split_dem, "mwpm")
+    rate_a = best_of_3(dec.decode_batch, dets[:200], dets)
+
+    packed, _ = circ.compile_detector_sampler(seed=SEED).sample(shots, separate_observables=True, bit_packed=True)
+    rate_a_packed = best_of_3(dec.decode_batch_bit_packed, packed[:200], packed)
+
+    rate_b = best_of_3(dec.decode_batch_errors, dets[:200], dets)
+
+    pdec = cq.get_decoder("aleph-mwpm", H, O=O, error_rate_vec=rates.tolist())
+    rows_full = dets.astype(np.float64).tolist()
+    rate_c = best_of_3(pdec.decode_batch, rows_full[:200], rows_full)
+
+    times = []
+    for _ in range(3):
+        t = time.perf_counter()
+        _ = dets.astype(np.float64).tolist()
+        times.append(time.perf_counter() - t)
+    t_tolist = min(times)
+
+    print(f"| step | shots/s | time / {shots:,} shots |")
+    print("|---|---:|---:|")
+    print(f"| (a) native `decode_batch` (dense bool) | {rate_a:,.0f} | {shots / rate_a * 1000:.1f} ms |")
+    print(f"| (a') native `decode_batch_bit_packed` | {rate_a_packed:,.0f} | {shots / rate_a_packed * 1000:.1f} ms |")
+    print(f"| (b) native `decode_batch_errors` | {rate_b:,.0f} | {shots / rate_b * 1000:.1f} ms |")
+    print(f"| (c) plugin `decode_batch` (list in) | {rate_c:,.0f} | {shots / rate_c * 1000:.1f} ms |")
+    print(f"| `dets.astype(float64).tolist()` alone | {shots / t_tolist:,.0f} (equiv.) | {t_tolist * 1000:.2f} ms |")
+    print(f"\na/b (retrace cost) = {rate_a / rate_b:.2f}x, b/c (marshalling cost) = {rate_b / rate_c:.2f}x, "
+          f"a/c (total plugin overhead) = {rate_a / rate_c:.2f}x, a'/c = {rate_a_packed / rate_c:.2f}x")
+
+
 if __name__ == "__main__":
     import cudaq
     print(f"aleph {aleph.version()}, cudaq-qec {cq.__version__}, cudaq {cudaq.__version__}, stim {stim.__version__}, "
           f"numpy {np.__version__}, {platform.platform()}, {os.cpu_count()} CPUs, python {platform.python_version()}")
     print(subprocess.run(["bash", "-c", "uptime; nvidia-smi --query-gpu=name,driver_version --format=csv,noheader 2>/dev/null || cat /proc/driver/nvidia/version | head -1"],
                          capture_output=True, text=True).stdout.strip())
-    workload_g()
-    workload_s()
+    if DECOMPOSE:
+        decompose_breakdown()
+    else:
+        workload_g()
+        workload_s()
