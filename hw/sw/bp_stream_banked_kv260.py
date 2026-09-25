@@ -21,7 +21,16 @@
 # Usage (as root, pynq venv + XRT, from a dir holding the .bit + vectors):
 #   sudo env XILINX_XRT=/usr /usr/local/share/pynq-venv/bin/python3 \
 #        bp_stream_banked_kv260.py bp_kv260_stream_banked.bit bp_circ_vectors.txt \
-#        [--base 0xA0000000] [--clk 100e6] [--bench-batch 100000] [--bench-reps 20]
+#        [--base 0xA0000000] [--clk 100e6] [--max-mhz F] [--bench-batch 100000] [--bench-reps 20]
+#
+# Board-agnostic despite the name: the same overlay and driver serve appliance v1 (KV260, 16/48) and
+# v2 (ZCU104, 36/144); both are Zynq UltraScale+ with the DMA at HPM0_FPD. --max-mhz makes the
+# driver read back the PL0 clock PYNQ actually programmed and refuse to decode if it is FASTER than
+# the clock the bitstream closed timing at (slower is safe, merely slower). The guard exists because
+# PYNQ copies only PL0's divisors out of the .hwh, forces the source to IOPLL and applies them to the
+# *board's* IOPLL: divisors computed against a different PLL run at another clock with no error
+# anywhere. A no-preset ZU7EV build would have landed at 187.5 MHz on a ZCU104 instead of the 131 MHz
+# it closed timing at; the v1 KV260 image, built for 96.97 MHz, really runs at ~90.9 MHz.
 
 import sys
 import time
@@ -94,6 +103,7 @@ def main(argv):
     vecfile = next((a for a in argv[1:] if a.endswith(".txt")), "bp_circ_vectors.txt")
     base = 0xA0000000
     clk = 100_000_000
+    max_mhz = None
     bench_batch = 100_000
     bench_reps = 20
     it = iter(argv[1:])
@@ -102,13 +112,15 @@ def main(argv):
             base = int(next(it), 0)
         elif a == "--clk":
             clk = int(float(next(it)))
+        elif a == "--max-mhz":
+            max_mhz = float(next(it))
         elif a == "--bench-batch":
             bench_batch = int(next(it))
         elif a == "--bench-reps":
             bench_reps = int(next(it))
     if not bitfile:
         print("usage: bp_stream_banked_kv260.py <design.bit> <bp_circ_vectors.txt> "
-              "[--base 0xADDR] [--clk 100e6] [--bench-batch N] [--bench-reps R]")
+              "[--base 0xADDR] [--clk 100e6] [--max-mhz F] [--bench-batch N] [--bench-reps R]")
         return 2
 
     T, N, C, OBS, tests = load_vectors(vecfile)
@@ -155,6 +167,26 @@ def main(argv):
         print("[board] Overlay() failed (%s: %s); falling back to Bitstream().download() + raw MMIO"
               % (type(e).__name__, e))
         Bitstream(bitfile).download()
+
+    # What PL0 really runs at, read back from the clock registers PYNQ just programmed.
+    try:
+        from pynq import Clocks
+        pl_mhz = float(Clocks.fclk0_mhz)
+        print("[board] PL0 clock: %.3f MHz" % pl_mhz)
+    except Exception as e:  # noqa: BLE001
+        pl_mhz = None
+        print("[board] could not read the PL0 clock (%s)" % e)
+    if max_mhz is not None:
+        if pl_mhz is None:
+            print("FAIL: --max-mhz %.3f given but the PL0 clock could not be read" % max_mhz)
+            return 1
+        if pl_mhz > max_mhz * 1.001:
+            print("FAIL: PL0 runs at %.3f MHz, above the %.3f MHz this bitstream closed timing at. The "
+                  "board's PS clocks differ from the ones the bitstream was built against and the core "
+                  "would decode unreliably, so nothing was decoded." % (pl_mhz, max_mhz))
+            return 1
+    if pl_mhz is not None:
+        clk = int(pl_mhz * 1e6)
 
     dma_mmio = None if pynq_dma is not None else MMIO(base, 0x1000)
 
@@ -211,8 +243,10 @@ def main(argv):
     run_batch(in_buf, out_buf, len(tests))
 
     mism = 0
+    lats = []
     for t, (_, want_obs, want_v) in enumerate(tests):
         word = int(out_buf[t])
+        lats.append(word & 0xFFFF)
         got_obs = (word >> 20) & obs_mask
         got_v = (word >> 19) & 1
         if got_obs != (want_obs & obs_mask) or got_v != want_v:
@@ -222,8 +256,11 @@ def main(argv):
             mism += 1
     del in_buf, out_buf
     ok = (mism == 0)
-    print("CORRECTNESS: %s (%d/%d batched decodes match golden on KV260 silicon)"
+    print("CORRECTNESS: %s (%d/%d batched decodes match golden on this board)"
           % ("PASS" if ok else "FAIL", len(tests) - mism, len(tests)))
+    # Per-decode latency as counted by the core itself (status word bits [15:0]), not host timing.
+    print("LATENCY: worst %d cycles, mean %.1f cycles = worst %.2f us at %.3f MHz"
+          % (max(lats), sum(lats) / len(lats), max(lats) / (clk / 1e6), clk / 1e6))
     if not ok:
         return 1
 
