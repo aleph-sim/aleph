@@ -115,8 +115,9 @@ obvious next clock lever. It is an RTL change that moves the cycle count, so it 
 - **Verilator** RTL: 40/40 bit-exact against the fixed-point golden, 1036 cycles every shot.
 - **xsim RTL**: 20/20 shots of the Q7-06 p = 0.003 campaign vectors match the software decoder
   (`net == sw`, 0 divergences).
-- **xsim post-synthesis netlist**: the same 20 shots through the ZU7EV funcsim netlist of the core. This
-  is the check that caught Q7-06's synthesis-vs-simulation question: _RESULT PENDING_.
+- **xsim post-synthesis netlist**: the same 20 shots through the ZU7EV funcsim netlist of the core,
+  **20/20, 0 divergences** (`net == sw`; 39 CPU-minutes). This harness is the one Q7-06 built to settle
+  its synthesis-vs-simulation question (#478).
 - **Not done:** any run on a ZCU104. The release says so.
 
 ## 6. Reproduce
