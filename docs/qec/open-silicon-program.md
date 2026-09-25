@@ -1000,16 +1000,16 @@ This track is not a fallback and not a finishing touch. It is the precondition f
 users at all: an undiscoverable, unlicensed, untested repository ships to nobody, and a product with no
 users cannot serve as Track S's demand gate. F1–F3 are prerequisites for the appliance v1 release.
 
-- [ ] **Task F1: Re-licence `hw/`.** The repo is MIT, which has **no explicit patent grant** — a blocker
-  for anyone whose lawyers must approve pulling RTL into a chip. Move `hw/` to **Apache-2.0** or
-  **CERN-OHL-P v2**; keep the Rust crates MIT or dual MIT/Apache-2.0 as is idiomatic in that ecosystem.
+- [x] **Task F1 (done, PR #483): Re-licence `hw/`.** The repo was MIT only, which has **no explicit patent
+  grant** — a blocker for anyone whose lawyers must approve pulling RTL into a chip. `hw/` is now
+  **Apache-2.0** (`hw/LICENSE`); the Rust crates stay MIT.
 
-- [ ] **Task F2: Put the hardware gates in CI.** `.github/workflows/` currently contains only
-  `bench.yml`, `ci.yml` and `release.yml` — no `verilator`, no `make -C hw`. 58 make targets exist and
-  none of them are enforced automatically. An open hardware project whose hardware is not tested in CI
-  does not earn trust.
+- [x] **Task F2 (done, PR #484): Put the hardware gates in CI.** Before it, `.github/workflows/` had only
+  `bench.yml`, `ci.yml` and `release.yml` — 58 `make -C hw` targets and none enforced. `hw.yml` now runs
+  the RTL co-simulation gates on a pinned Verilator 5.050. An open hardware project whose hardware is not
+  tested in CI does not earn trust.
 
-- [ ] **Task F3: Document the Q7 hardware in `hw/README.md`.** ~~Shrink `hw/`~~ — **withdrawn, the
+- [x] **Task F3 (done 2026-09-24, PR #509): Document the Q7 hardware in `hw/README.md`.** ~~Shrink `hw/`~~ — **withdrawn, the
   premise was wrong.** `hw/` is 2.8 GB *on disk*, but that is entirely `_bp*build/` Verilator output,
   already covered by `hw/.gitignore:52`. Tracked content is **6.4 MB across 165 files**, and the whole
   repository packs to **7.17 MiB**. A fresh clone is small; nothing needs shrinking.
@@ -1019,21 +1019,24 @@ users cannot serve as Track S's demand gate. F1–F3 are prerequisites for the a
   M8 core, the streaming core, or anything else from Q7-02 onward. The directory's own front page does
   not mention the design this whole program is about. Fix that before pointing outsiders at the repo.
 
-- [ ] **Task F4: Ship "decoder-in-a-box".** Pre-built KV260 bitstream, Python driver, one command,
+- [x] **Task F4 (done, Track P1 `appliance-v1` release, PRs #494/#497): Ship "decoder-in-a-box".** Pre-built KV260 bitstream, Python driver, one command,
   one page of documentation. This is the artefact most people will actually use.
 
-- [ ] **Task F5: Publish the paper.** The M0→M9c ladder plus silicon campaigns plus the Q7-07 heralding
+- [ ] **Task F5 (draft merged, PR #501; Zenodo DOI + arXiv submission outstanding): Publish the paper.** The M0→M9c ladder plus silicon campaigns plus the Q7-07 heralding
   result. `docs/perf/qec-q7-fixed-bp.md` is already a 1863-line master record. Mint a Zenodo DOI for
   the campaign CSVs so the data is citable.
 
-- [x] **Task F6 (done 2026-09-24, PR #517): Write a CUDA-Q QEC decoder plugin.** NVQLink is where every
+- [x] **Task F6 (done 2026-09-25, PR #517): Write a CUDA-Q QEC decoder plugin.** NVQLink is where every
   real-time QEC integrator already is; a plugin lets them A/B our decoder against the GPU path on their
   own hardware. Using the competitor's platform as our distribution channel is the cheapest reach
   available. Shipped as the Python plugin `aleph.cudaq` (`docs/perf/f6-cudaq-plugin.md`); the native
   `.so` plugin for the realtime path is issue #513.
 
 - [ ] **Task F7: Register in the community indexes** — Error Correction Zoo decoder list,
-  `qosf/awesome-quantum-software`.
+  `qosf/awesome-quantum-software`. 2026-09-25: awesome-quantum-software entry submitted
+  (qosf/awesome-quantum-software#190; simulators > Rust and a new QEC > Rust subheading); repo description,
+  homepage and topics updated. The Error Correction Zoo entry waits for F5: its `decoders:` fields cite
+  papers, so it needs the preprint on arXiv or under a DOI first.
 
 - [ ] **Task F8: Apply for aligned funding.** Unitary Foundation microgrants ($4 k, worldwide, open
   quantum projects). NGI Zero Commons (NLnet, €21.6 M committed across 2026–27, **submissions currently
