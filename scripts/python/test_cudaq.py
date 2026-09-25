@@ -100,6 +100,34 @@ class TestRegistration(unittest.TestCase):
         d = cq.get_decoder("aleph-union-find", sp.csr_matrix(H), O=sp.csr_matrix(O), error_rate_vec=RATES)
         self.assertEqual(d.get_block_size(), 3)
 
+    def test_dem_to_matrices_cancels_duplicate_targets(self):
+        # A target listed twice within one mechanism/part is Stim's "no flip" (parity), not a
+        # second flip. Needs no stim: dem_to_matrices accepts a raw DEM string directly.
+        Hm, Om, rates = ac.dem_to_matrices("error(0.1) D0 D0 D1 L0 L0\n")
+        np.testing.assert_array_equal(Hm[:, 0], [0, 1])
+        self.assertEqual(Om.shape, (1, 1))
+        self.assertEqual(Om[0, 0], 0)
+        np.testing.assert_array_equal(rates, [0.1])
+
+    def test_dem_to_matrices_splits_hat(self):
+        Hm, Om, rates = ac.dem_to_matrices("error(0.2) D0 ^ D1 L0\n")
+        self.assertEqual(Hm.shape[1], 2)
+        np.testing.assert_array_equal(Hm[:, 0], [1, 0])
+        np.testing.assert_array_equal(Hm[:, 1], [0, 1])
+        np.testing.assert_array_equal(Om[0], [0, 1])
+        np.testing.assert_array_equal(rates, [0.2, 0.2])
+
+    def test_nan_priors_rejected(self):
+        with self.assertRaisesRegex(ValueError, "finite"):
+            cq.get_decoder("aleph-mwpm", H, O=O, error_rate=float("nan"))
+        with self.assertRaisesRegex(ValueError, r"\[1\]"):
+            cq.get_decoder("aleph-mwpm", H, O=O, error_rate_vec=[0.1, float("nan"), 0.1])
+
+    def test_decode_empty_syndrome_raises(self):
+        d = cq.get_decoder("aleph-mwpm", H, O=O, error_rate_vec=RATES)
+        with self.assertRaisesRegex(ValueError, "2"):
+            d.decode([])
+
 
 @unittest.skipUnless(HAVE and HAVE_STIM, "needs cudaq_qec + aleph + stim")
 class TestStimDem(unittest.TestCase):

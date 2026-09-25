@@ -15,9 +15,9 @@ cudaq's own decoders. Matching decoders need a graph-like ``H`` (every column ha
 ones): cudaq keeps ``^``-decomposed hyperedges of a Stim DEM as one column, so pass
 ``dem_to_matrices(dem)`` instead of the DEM string for ``aleph-mwpm`` / ``aleph-union-find*``.
 Matching decoders (``aleph-mwpm``, ``aleph-union-find``, ``aleph-union-find-weighted``) also
-require every ``error_rate_vec`` entry to be <= 0.5 (matching on a negative-weight edge is
-undefined here); BP-family decoders (``aleph-bp``, ``aleph-bp-osd``, ``aleph-relay-bp``,
-``aleph-relay-bp-osd``) have no such restriction.
+require every prior (``error_rate_vec`` entry, or the scalar ``error_rate``) to be <= 0.5
+(matching on a negative-weight edge is undefined here); BP-family decoders (``aleph-bp``,
+``aleph-bp-osd``, ``aleph-relay-bp``, ``aleph-relay-bp-osd``) have no such restriction.
 """
 import cudaq_qec as _qec  # the only cudaq import in aleph; ImportError means "install the extra"
 import numpy as np
@@ -41,7 +41,10 @@ def _rates(n, error_rate_vec, error_rate):
             raise ValueError(f"error_rate_vec[{int(bad[0])}] = {r[bad[0]]!r} is not finite")
         return r
     if error_rate is not None:
-        return np.full(n, float(error_rate))
+        v = float(error_rate)
+        if not np.isfinite(v):
+            raise ValueError(f"error_rate must be a finite number, got {v!r}")
+        return np.full(n, v)
     raise ValueError("aleph decoders need a prior per column: pass error_rate_vec=[...] "
                      "(cudaq fills it in from a DEM string) or a scalar error_rate=")
 
@@ -69,9 +72,8 @@ def _make(name):
                 j = int(np.argmax(rates))
                 if rates[j] > 0.5:
                     raise ValueError(
-                        f"aleph-{name}: error_rate_vec entries must be <= 0.5 for a matching "
-                        f"decoder (got {rates[j]:.3g} at column {j}); clamp or use a BP-family "
-                        "decoder")
+                        f"aleph-{name}: priors must be <= 0.5 for a matching decoder "
+                        f"(max {rates[j]:.3g} at column {j}); clamp or use a BP-family decoder")
             try:
                 dem = _aq.dem_from_matrices(H, O, rates)
                 self._inner = _aq.Decoder(dem, name, **params)
@@ -85,6 +87,8 @@ def _make(name):
             self._width = H.shape[0]
 
         def decode(self, syndrome):
+            if len(syndrome) != self._width:
+                raise ValueError(f"syndrome width {len(syndrome)} != {self._width} detectors")
             ehat, conv = self._inner.decode_batch_errors(_to_bits(syndrome, self._width))
             r = _qec.DecoderResult()
             r.converged = bool(conv[0])
@@ -129,7 +133,11 @@ def dem_to_matrices(dem):
     O = np.zeros((L, E), dtype=np.uint8)
     rates = np.empty(E, dtype=np.float64)
     for j, (p, dets, obs) in enumerate(cols):
-        H[dets, j] ^= 1
-        O[obs, j] ^= 1
+        # Fancy-index augmented assignment (`H[dets, j] ^= 1`) gathers, XORs once, then
+        # scatters — a target repeated within one `^`-part would silently NOT cancel (it
+        # would just be set), unlike Stim's actual semantics (repeat = no flip). The
+        # unbuffered ufunc form accumulates in place over duplicate indices.
+        np.bitwise_xor.at(H[:, j], dets, 1)
+        np.bitwise_xor.at(O[:, j], obs, 1)
         rates[j] = p
     return H, O, rates
