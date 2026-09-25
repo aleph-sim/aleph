@@ -18,9 +18,13 @@
 #   vivado -mode batch -source syn/kv260_bp_stream_banked_bd.tcl -tclargs <proj_dir> <out_dir> [fclk_mhz] [bdonly]
 # `bdonly` as the 4th arg assembles + validates the block design then stops (fast pre-flight, no impl).
 
-set part    xck26-sfvc784-2LV-c
+# The part defaults to the KV260's xck26. Track P2 (appliance v2) reuses this block design unchanged on the
+# ZCU104's ZU7EV -- same zynq_ultra_ps_e, same DMA plumbing, so the host interface stays identical
+# (interface-spec.md) -- by setting BP_PART / BP_OUTNAME in the environment, e.g.
+#   BP_PART=xczu7ev-ffvc1156-2-e BP_OUTNAME=bp_zcu104_stream_banked vivado -mode batch -source ...
+set part    [expr {[info exists ::env(BP_PART)]    ? $::env(BP_PART)    : "xck26-sfvc784-2LV-c"}]
 set bdname  bp_stream_bank_bd
-set outname bp_kv260_stream_banked
+set outname [expr {[info exists ::env(BP_OUTNAME)] ? $::env(BP_OUTNAME) : "bp_kv260_stream_banked"}]
 
 set proj_dir [expr {$argc >= 1 ? [lindex $argv 0] : "kv260bpstream"}]
 set out_dir  [expr {$argc >= 2 ? [lindex $argv 1] : "out_stream"}]
@@ -36,6 +40,13 @@ set hw [file normalize [file join [file dirname [info script]] ..]]
 file mkdir $out_dir
 
 create_project -force bp_kv260_stream_banked $proj_dir -part $part
+# BP_BOARD (e.g. xilinx.com:zcu104:part0:1.1) applies that board's PS preset. It matters for the PL clock:
+# PYNQ copies only PL0's DIVISOR0/DIVISOR1 out of the .hwh and forces the source to IOPLL, so the frequency
+# the core really runs at is the *board's* IOPLL divided by *our* divisors. Without the preset the PS model
+# runs IOPLL/RPLL at other rates than the board, and the divisors are wrong for it: on a ZCU104 (IOPLL
+# ~1500 MHz) a no-preset 133 MHz build's 8x1 divisors land at 187.5 MHz, far past timing closure.
+set board [expr {[info exists ::env(BP_BOARD)] ? $::env(BP_BOARD) : ""}]
+if {$board ne ""} { set_property board_part $board [current_project] }
 
 add_files -norecurse [list \
   [file join $hw check_minsum.sv] \
@@ -55,7 +66,7 @@ create_bd_design $bdname
 set ps_vlnv [lindex [lsort [get_ipdefs -all *:ip:zynq_ultra_ps_e:*]] end]
 create_bd_cell -type ip -vlnv $ps_vlnv ps
 apply_bd_automation -rule xilinx.com:bd_rule:zynq_ultra_ps_e \
-  -config {make_external "FIXED_IO, DDR" apply_board_preset "0" Master "Disable" Slave "Disable"} \
+  -config [list make_external "FIXED_IO, DDR" apply_board_preset [expr {$board ne "" ? "1" : "0"}] Master "Disable" Slave "Disable"] \
   [get_bd_cells ps]
 # One AXI-Lite master (M_AXI_HPM0_FPD, DMA control), one HP slave (S_AXI_HP0_FPD, DMA <-> DDR), one PL
 # clock at the requested FCLK. PS DDR/MIO is irrelevant for a PL overlay on a booted Linux (PYNQ programs
@@ -66,6 +77,7 @@ apply_bd_automation -rule xilinx.com:bd_rule:zynq_ultra_ps_e \
 # (+ maxihpm0_fpd_aclk). 64-bit HP is ample for one 32-bit DMA stream pair; sc_hp adapts the width.
 set_property -dict [list \
   CONFIG.PSU__USE__M_AXI_GP0 {1} \
+  CONFIG.PSU__USE__M_AXI_GP1 {0} \
   CONFIG.PSU__USE__M_AXI_GP2 {0} \
   CONFIG.PSU__USE__S_AXI_GP2 {1} \
   CONFIG.PSU__SAXIGP2__DATA_WIDTH {64} \
@@ -134,6 +146,13 @@ regenerate_bd_layout
 validate_bd_design
 save_bd_design
 
+set ps [get_bd_cells ps]
+puts [format "PLCLK IOPLL_DLL_REF=%s PL0_ACT=%s PL0_DIV0=%s PL0_DIV1=%s PL0_SRC=%s" \
+  [get_property CONFIG.PSU__CRL_APB__DLL_REF_CTRL__ACT_FREQMHZ $ps] \
+  [get_property CONFIG.PSU__CRL_APB__PL0_REF_CTRL__ACT_FREQMHZ $ps] \
+  [get_property CONFIG.PSU__CRL_APB__PL0_REF_CTRL__DIVISOR0 $ps] \
+  [get_property CONFIG.PSU__CRL_APB__PL0_REF_CTRL__DIVISOR1 $ps] \
+  [get_property CONFIG.PSU__CRL_APB__PL0_REF_CTRL__SRCSEL $ps]]
 if {$bdonly} { puts "BD_OK vlnv=$ps_vlnv"; return }
 
 make_wrapper -files [get_files ${bdname}.bd] -top
