@@ -186,6 +186,12 @@ pub(crate) struct State {
     /// Reusable scratch for subtree walks.
     pub scratch: Vec<NodeId>,
     pub stats: Stats,
+    /// Path-retrace scratch (`retrace.rs`): tentative distance per node, `(predecessor node,
+    /// column)` per node, the nodes touched since the last reset, and the Dijkstra heap.
+    pub rt_dist: Vec<i64>,
+    pub rt_pred: Vec<(NodeId, u32)>,
+    pub rt_touched: Vec<NodeId>,
+    pub rt_heap: BinaryHeap<Reverse<(i64, NodeId)>>,
 }
 
 impl State {
@@ -201,6 +207,10 @@ impl State {
             active_trees: 0,
             scratch: Vec::new(),
             stats: Stats::default(),
+            rt_dist: vec![i64::MAX; num_nodes],
+            rt_pred: vec![(NONE, 0); num_nodes],
+            rt_touched: Vec::new(),
+            rt_heap: BinaryHeap::new(),
         }
     }
 

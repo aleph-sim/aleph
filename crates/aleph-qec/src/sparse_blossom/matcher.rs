@@ -386,21 +386,20 @@ impl State {
     /// A top-level region left unmatched by `dissolve_leftover_trees`: a bare leaf contributes
     /// nothing, but an exposed blossom's odd cycle still needs pairing down to one exposed child
     /// (picked arbitrarily as `children[0]`, recursing the same way for a nested blossom there).
-    fn resolve_exposed(&self, r: RegionId, obs: &mut u64, w: &mut i64) {
+    fn resolve_exposed(&self, r: RegionId, f: &mut impl FnMut(&CEdge)) {
         let reg = &self.regions[r as usize];
         if !reg.is_blossom() {
             return;
         }
-        self.resolve_exposed(reg.children[0].0, obs, w);
+        self.resolve_exposed(reg.children[0].0, f);
         let k = reg.children.len();
         let mut i = 1;
         while i + 1 < k {
             let (x, e) = reg.children[i];
             let (y, _) = reg.children[i + 1];
-            *obs ^= e.obs;
-            *w += e.weight;
-            self.descend(x, e.from, obs, w);
-            self.descend(y, e.to, obs, w);
+            f(&e);
+            self.descend(x, e.from, f);
+            self.descend(y, e.to, f);
             i += 2;
         }
     }
@@ -408,32 +407,39 @@ impl State {
     /// Turn top-level matches into `(obs, doubled weight)`; blossoms are resolved recursively.
     pub(crate) fn resolve(&self) -> (u64, i64) {
         let (mut obs, mut w) = (0u64, 0i64);
+        self.resolve_with(&mut |e: &CEdge| {
+            obs ^= e.obs;
+            w += e.weight;
+        });
+        (obs, w)
+    }
+
+    /// Visit every matched defect-to-defect edge of the final matching (`e.to == BOUNDARY` for a
+    /// boundary match), top-level matches first, blossoms resolved recursively.
+    pub(crate) fn resolve_with(&self, f: &mut impl FnMut(&CEdge)) {
         for r in 0..self.regions.len() as RegionId {
             let reg = &self.regions[r as usize];
             if reg.blossom_parent != NONE {
                 continue;
             }
             if reg.matched_to == NONE {
-                self.resolve_exposed(r, &mut obs, &mut w);
+                self.resolve_exposed(r, f);
                 continue;
             }
             let e = reg.match_edge;
             if reg.matched_to == BOUNDARY {
-                obs ^= e.obs;
-                w += e.weight;
-                self.descend(r, e.from, &mut obs, &mut w);
+                f(&e);
+                self.descend(r, e.from, f);
             } else if r < reg.matched_to {
-                obs ^= e.obs;
-                w += e.weight;
-                self.descend(r, e.from, &mut obs, &mut w);
-                self.descend(reg.matched_to, e.to, &mut obs, &mut w);
+                f(&e);
+                self.descend(r, e.from, f);
+                self.descend(reg.matched_to, e.to, f);
             }
         }
-        (obs, w)
     }
 
     /// Inside blossom `r`, `defect` is the endpoint of the outside match; pair up the rest.
-    fn descend(&self, r: RegionId, defect: NodeId, obs: &mut u64, w: &mut i64) {
+    fn descend(&self, r: RegionId, defect: NodeId, f: &mut impl FnMut(&CEdge)) {
         let reg = &self.regions[r as usize];
         if !reg.is_blossom() {
             return;
@@ -444,13 +450,12 @@ impl State {
         while i != idx {
             let (x, e) = reg.children[i];
             let (y, _) = reg.children[(i + 1) % k];
-            *obs ^= e.obs;
-            *w += e.weight;
-            self.descend(x, e.from, obs, w);
-            self.descend(y, e.to, obs, w);
+            f(&e);
+            self.descend(x, e.from, f);
+            self.descend(y, e.to, f);
             i = (i + 2) % k;
         }
-        self.descend(reg.children[idx].0, defect, obs, w);
+        self.descend(reg.children[idx].0, defect, f);
     }
 
     /// Index of the child of blossom `b` that contains `defect`.
