@@ -170,6 +170,12 @@ impl RelayBpDecoder {
         }
     }
 
+    /// Per-column error estimate `ê` and whether any relay leg found a valid solution.
+    pub fn decode_errors(&self, syndrome: &Syndrome) -> (Vec<u8>, bool) {
+        let soft = self.decode_soft(syndrome);
+        (soft.ehat, soft.converged)
+    }
+
     /// Min-sum check → variable update (identical to [`BpDecoder`]'s; see Q3-02).
     fn check_update(&self, m_vc: &[f64], e_cv: &mut [f64], s: &[u8]) {
         for (c, w) in self.check_off.windows(2).enumerate() {
@@ -283,6 +289,16 @@ impl RelayBpOsdDecoder {
         let soft = self.relay.decode_soft(syndrome);
         self.osd.correction_from_soft(syndrome, &soft)
     }
+
+    /// Per-column error estimate `ê`: relay-BP's if it converged, else the OSD refinement of its
+    /// soft output. Always satisfies `H ê = s`, so the flag is always `true`.
+    pub fn decode_errors(&self, syndrome: &Syndrome) -> (Vec<u8>, bool) {
+        let soft = self.relay.decode_soft(syndrome);
+        if soft.converged {
+            return (soft.ehat, true);
+        }
+        (self.osd.ehat_from_soft(syndrome, &soft), true)
+    }
 }
 
 impl Decoder for RelayBpOsdDecoder {
@@ -351,5 +367,50 @@ mod tests {
             a.decode(&syn).observable_flips,
             b.decode(&syn).observable_flips
         );
+    }
+
+    #[test]
+    fn decode_errors_agrees_with_decode_and_satisfies_syndrome_when_converged() {
+        use crate::{BBCode, BpDecoder, Decoder, OsdDecoder};
+        let dem = BBCode::gross().code_capacity_dem(0.01);
+        let (relay, osd, bp, relay_osd) = (
+            RelayBpDecoder::new(&dem),
+            OsdDecoder::new(&dem),
+            BpDecoder::new(&dem),
+            RelayBpOsdDecoder::new(&dem, 0),
+        );
+        let (syns, _) = crate::sample_shots(&dem, 200, 7);
+        let check = |name: &str, s: &Syndrome, ehat: &[u8], conv: bool, flips: &[bool]| {
+            assert_eq!(ehat.len(), dem.errors.len(), "{name}");
+            let mut hs = vec![false; dem.detectors];
+            let mut os = vec![false; dem.observables];
+            for (j, &b) in ehat.iter().enumerate() {
+                if b == 1 {
+                    for &d in &dem.errors[j].dets {
+                        hs[d as usize] ^= true;
+                    }
+                    for &o in &dem.errors[j].obs {
+                        os[o as usize] ^= true;
+                    }
+                }
+            }
+            if conv {
+                let want: Vec<bool> = (0..dem.detectors as u32).map(|d| s.is_fired(d)).collect();
+                assert_eq!(hs, want, "{name}: converged but H ê != s");
+            }
+            assert_eq!(os, flips, "{name}: O ê != decode()");
+        };
+        for s in &syns {
+            let (e, c) = bp.decode_errors(s);
+            check("bp", s, &e, c, &bp.decode(s).observable_flips);
+            let (e, c) = osd.decode_errors(s);
+            assert!(c);
+            check("osd", s, &e, c, &osd.decode(s).observable_flips);
+            let (e, c) = relay.decode_errors(s);
+            check("relay", s, &e, c, &relay.decode(s).observable_flips);
+            let (e, c) = relay_osd.decode_errors(s);
+            assert!(c);
+            check("relay-osd", s, &e, c, &relay_osd.decode(s).observable_flips);
+        }
     }
 }

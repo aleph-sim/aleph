@@ -184,17 +184,30 @@ impl OsdDecoder {
         (ehat, true)
     }
 
+    /// Per-column error estimate `ê` and a convergence flag. OSD always returns a solution of
+    /// `H ê = s` (BP's if it converged, otherwise the OSD solve), so the flag is always `true`;
+    /// it exists so every decoder has the same `(ê, converged)` shape.
+    pub fn decode_errors(&self, syndrome: &Syndrome) -> (Vec<u8>, bool) {
+        let (ehat, _osd_ran) = self.decode_osd_ehat(syndrome);
+        (ehat, true)
+    }
+
+    /// [`correction_from_soft`](Self::correction_from_soft) without the observable projection:
+    /// the per-column decision itself.
+    pub fn ehat_from_soft(&self, syndrome: &Syndrome, soft: &crate::BpSoft) -> Vec<u8> {
+        if soft.converged {
+            return soft.ehat.clone();
+        }
+        self.osd_solve(syndrome, &soft.ehat, &soft.llr)
+    }
+
     /// Run the OSD post-processor on **externally supplied** soft information (e.g. from relay-BP,
     /// Q5-03) instead of this decoder's own BP. If `soft.converged`, the valid hard decision is
     /// returned directly; otherwise the OSD combination sweep refines it using `soft.llr` for the
     /// pivot basis. This is how [`RelayBpOsdDecoder`](crate::RelayBpOsdDecoder) couples a
     /// stronger BP front-end to OSD.
     pub fn correction_from_soft(&self, syndrome: &Syndrome, soft: &crate::BpSoft) -> Correction {
-        if soft.converged {
-            return self.bp.correction_of(&soft.ehat);
-        }
-        let ehat = self.osd_solve(syndrome, &soft.ehat, &soft.llr);
-        self.bp.correction_of(&ehat)
+        self.bp.correction_of(&self.ehat_from_soft(syndrome, soft))
     }
 
     /// OSD solve: see the module docs. `bp_hard` is BP's hard decision (kept on non-pivot columns so
