@@ -381,14 +381,14 @@ unchanged in cost; the new `decode_errors`/`from_check_matrices` surface is addi
   plugin path.
 - [#514](https://github.com/aleph-sim/aleph/issues/514) — `iters_per_leg` / early-exit knob for
   the f64 `RelayBpDecoder` so the A/B can match the ASIC's 6×10 schedule exactly (spec §10.2).
+- [#515](https://github.com/aleph-sim/aleph/issues/515) — MWPM/Union-Find behaviour for priors
+  > 0.5 (negative edge weights) is inconsistent across the stack (`aleph.cudaq` rejects them for
+  matching decoders, Rust `MatchingGraph::from_dem` accepts them, the Sparse Blossom retrace skips
+  negative-weight edges, and the flooder trips a `debug_assert` in debug builds); decide
+  reject-vs-clamp at construction, consistently.
 - [#516](https://github.com/aleph-sim/aleph/issues/516) — `decode_batch_errors`'s per-shot path
   retrace measured ≈1.53x slower than `decode_batch`'s direct observable decode on MWPM at d=5
   (531k vs 347k shots/s, single-threaded, see "Where the plugin path's time goes"); audit whether
   that gap is inherent to retracing every matched pair for a per-mechanism error estimate, or has
   slack worth closing, since every cudaq-qec decoder call in this harness (and hence every aleph
   plugin decoder) goes through `decode_batch_errors`, not `decode_batch`.
-- [#515](https://github.com/aleph-sim/aleph/issues/515) — MWPM/Union-Find behaviour for priors
-  > 0.5 (negative edge weights) is inconsistent across the stack (`aleph.cudaq` rejects them for
-  matching decoders, Rust `MatchingGraph::from_dem` accepts them, the Sparse Blossom retrace skips
-  negative-weight edges, and the flooder trips a `debug_assert` in debug builds); decide
-  reject-vs-clamp at construction, consistently.

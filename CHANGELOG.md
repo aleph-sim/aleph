@@ -18,7 +18,7 @@ All notable changes to this project are documented in this file, in
   decoder (Sparse Blossom retraces matched pairs to edges). A/B vs
   `nv-qldpc-decoder` / `pymatching` / `nv-fusion-decoder`:
   `docs/perf/f6-cudaq-plugin.md`. Rust-side guard for > 64 observables
-  (closes #512).
+  (closes [#512](https://github.com/aleph-sim/aleph/issues/512)).
 
 ### Changed
 

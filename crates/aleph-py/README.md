@@ -207,7 +207,10 @@ error estimates like cudaq's own decoders, so `O @ ê` gives the observable flip
 Matching decoders need a graph-like `H` (≤ 2 ones per column). cudaq's DEM
 parser keeps a `^`-decomposed hyperedge as one column, so for `aleph-mwpm` /
 `aleph-union-find*` pass `dem_to_matrices(dem)` rather than the DEM string
-(the BP family takes either). For the gross [[144,12,12]] code, which cudaq has
+(the BP family takes either). Matching decoders also require every prior to be
+≤ 0.5 — a mechanism with p > 0.5 has a negative matching weight, which
+`aleph-mwpm` / `aleph-union-find*` reject with a `ValueError` (see #515);
+BP-family decoders accept any prior in [0, 1]. For the gross [[144,12,12]] code, which cudaq has
 no built-in for, `aleph.qec.gross_code_dem(rounds, p)` gives the circuit-level
 model. A/B numbers against NVIDIA's decoders: `docs/perf/f6-cudaq-plugin.md`.
 
