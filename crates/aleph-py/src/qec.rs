@@ -242,7 +242,7 @@ impl PyDecoder {
     ///
     /// Raises `ValueError` for `mwpm`/`union-find`/`union-find-weighted` on a DEM with
     /// `^`-decomposed mechanisms: their per-column estimate is per mechanism, not per part, so
-    /// `H ê = s` would not hold (split the parts first, e.g. via `aleph.cudaq.dem_to_matrices`).
+    /// `H ê = s` would not hold (split the parts first via `aleph.qec.dem_to_matrices` + `aleph.qec.dem_from_matrices`).
     #[allow(clippy::type_complexity)]
     fn decode_batch_errors<'py>(
         &self,
@@ -258,7 +258,7 @@ impl PyDecoder {
             return Err(value_err(
                 "decode_batch_errors: this DEM has ^-decomposed mechanisms; a matching \
                  decoder's per-column estimate needs one column per part — rebuild the model \
-                 with aleph.cudaq.dem_to_matrices(dem) + aleph.qec.dem_from_matrices(H, O, rates)",
+                 with aleph.qec.dem_to_matrices(dem) + aleph.qec.dem_from_matrices(H, O, rates)",
             ));
         }
         let (shots, bits) = to_bytes(dets, 2, self.detectors, "decode_batch_errors")?;

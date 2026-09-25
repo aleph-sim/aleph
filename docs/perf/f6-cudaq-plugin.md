@@ -339,16 +339,25 @@ Ratios: a/b ≈ **1.53x** (retrace cost), b/c ≈ **3.05x** (marshalling + wrapp
 full pymatching-vs-plugin comparison (the small remaining difference is run-to-run noise: shots/s
 here varied about ±10% across repeated invocations of this same script).
 
-`RAYON_NUM_THREADS=1 python scripts/python/ab_cudaq.py --decompose` reproduces this table (numbers
-will vary run to run by the same noise noted above; this is the harness, not a one-off script).
-One difference from the original measurement: after the CRITICAL `^`-decomposed-DEM fix,
-`decode_batch_errors` raises on the raw decomposed DEM for `mwpm`, so the harness measures (a)/(b)
-against the *split* model (`aleph.cudaq.dem_to_matrices` + `aleph.qec.dem_from_matrices`) instead
-— exactly the model the plugin path (c) already decodes against, so all three columns stay
-comparable, but (b)'s absolute rate differs slightly from the number above (more error columns to
-retrace after splitting `^` parts). A confirming run on the box: 522,011 / 589,022 / 284,296 /
-113,468 shots/s for (a)/(a')/(b)/(c), a/c ≈ 4.60x, a'/c ≈ 5.19x — the same ballpark as this
-section's original numbers.
+`RAYON_NUM_THREADS=1 python scripts/python/ab_cudaq.py --decompose` is the checked-in source of
+this table (numbers vary run to run by the ±10% noted above). **One correction to the (b) row:**
+the table above was measured before the `^`-decomposed-DEM guard landed, i.e. (b) called
+`decode_batch_errors` on the *raw* stim DEM — the path that fix showed returns an invalid
+per-column estimate for matching decoders (H·ê ≠ s on ~23% of shots). The harness now measures
+(a)/(b) against the *split* model (`aleph.qec.dem_to_matrices` + `aleph.qec.dem_from_matrices`),
+which is exactly the model the plugin path (c) decodes against. The confirming run on the same box:
+
+| step | shots/s | time / 20,000 shots |
+|---|---:|---:|
+| (a) native `decode_batch` (split model) | 522,011 | 38.3 ms |
+| (a') native `decode_batch_bit_packed` (split model) | 589,022 | 34.0 ms |
+| (b) native `decode_batch_errors` (split model, valid ê) | 284,296 | 70.3 ms |
+| (c) plugin `decode_batch(list)` | 113,468 | 176.3 ms |
+
+Honest ratios are therefore **a/b ≈ 1.84x** (retrace, on the valid path — more columns to mark
+after splitting `^` parts) and **b/c ≈ 2.51x** (marshalling + wrapper), with the totals unchanged:
+a/c ≈ 4.60x, a'/c ≈ 5.19x. The 1.53x / 3.05x split quoted from the first table under-counts the
+retrace and over-counts the marshalling; the conclusions below use the corrected 1.84x / 2.51x.
 
 **The matcher itself is unchanged and is not the story here.** (a)/(a') — aleph's Sparse Blossom
 MWPM with no retrace and no Python marshalling — run at 531k-594k shots/s on this box,
@@ -356,7 +365,7 @@ single-threaded; `pymatching`'s own single-threaded 657,571 shots/s is only **65
 1.11x** faster than aleph's own fastest native path, not ≈5.8x. Essentially the entire headline
 gap in the Results table is downstream of the matcher: aleph's plugin (`aleph.cudaq`, still a
 pure-Python wrapper — the native C++ plugin is follow-up #513 below) pays (1) the per-shot
-retrace `decode_batch_errors` does instead of `decode_batch`'s direct observable decode (~1.53x, a
+retrace `decode_batch_errors` does instead of `decode_batch`'s direct observable decode (~1.84x, a
 real, inherent cost of producing a per-mechanism error estimate rather than an observable-only one
 — see the follow-up added below), and (2) round-tripping through Python lists (cudaq hands the plugin a
 list of floats; `_to_bits` converts it back to a numpy array, compares `> 0.5`, and casts to
@@ -400,8 +409,8 @@ unchanged in cost; the new `decode_errors`/`from_check_matrices` surface is addi
   negative-weight edges, and the flooder trips a `debug_assert` in debug builds); decide
   reject-vs-clamp at construction, consistently.
 - [#516](https://github.com/aleph-sim/aleph/issues/516) — `decode_batch_errors`'s per-shot path
-  retrace measured ≈1.53x slower than `decode_batch`'s direct observable decode on MWPM at d=5
-  (531k vs 347k shots/s, single-threaded, see "Where the plugin path's time goes"); audit whether
+  retrace measured ≈1.84x slower than `decode_batch`'s direct observable decode on MWPM at d=5
+  (522k vs 284k shots/s on the split model, single-threaded, see "Where the plugin path's time goes"); audit whether
   that gap is inherent to retracing every matched pair for a per-mechanism error estimate, or has
   slack worth closing, since every cudaq-qec decoder call in this harness (and hence every aleph
   plugin decoder) goes through `decode_batch_errors`, not `decode_batch`.
