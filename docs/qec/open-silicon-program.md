@@ -1034,7 +1034,8 @@ users cannot serve as Track S's demand gate. F1–F3 are prerequisites for the a
 
 - [ ] **Task F7: Register in the community indexes** — Error Correction Zoo decoder list,
   `qosf/awesome-quantum-software`. 2026-09-25: awesome-quantum-software entry submitted
-  (qosf/awesome-quantum-software#190; simulators > Rust and a new QEC > Rust subheading); repo description,
+  (qosf/awesome-quantum-software#190; one entry under a new Quantum error correction > Rust subheading, at
+  the maintainer's request to avoid a duplicate simulators entry); repo description,
   homepage and topics updated. The Error Correction Zoo entry waits for F5: its `decoders:` fields cite
   papers, so it needs the preprint on arXiv or under a DOI first.
 
