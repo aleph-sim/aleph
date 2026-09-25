@@ -5,6 +5,10 @@
 //! the result is deterministic; on a genuine tie the retraced path may differ from the path the
 //! region growth took, which is why `decode_errors`' observable parity can differ from
 //! `decode`'s — never its weight, never `H ê = s`.
+//!
+//! Negative edges (mechanisms with p > 0.5) are not relaxed: an undirected negative edge is a
+//! negative 2-cycle, on which a Dijkstra never terminates. A pair whose path needs one is left
+//! unmarked (or retraced along a non-negative path, if one fits the bound).
 
 use std::cmp::Reverse;
 
@@ -15,6 +19,12 @@ impl State {
     /// XOR the edges of a shortest path realising `e` (`e.from` → `e.to`, or `e.from` → any
     /// boundary edge when `e.to == BOUNDARY`) into `ehat` by representative column.
     pub(crate) fn retrace(&mut self, g: &CompiledGraph, e: &CEdge, ehat: &mut [u8]) {
+        // Sized lazily so `decode`-only `State`s never allocate retrace scratch.
+        let n = g.num_nodes();
+        if self.rt_dist.len() < n {
+            self.rt_dist.resize(n, i64::MAX);
+            self.rt_pred.resize(n, (NONE, 0));
+        }
         for &u in &self.rt_touched {
             self.rt_dist[u as usize] = i64::MAX;
             self.rt_pred[u as usize] = (NONE, 0);
@@ -40,14 +50,18 @@ impl State {
                     }
                 }
             } else if u == e.to {
-                debug_assert_eq!(
-                    d, e.weight,
-                    "retrace reached the mate at the wrong distance"
+                debug_assert!(
+                    d == e.weight || g.has_negative_weight(),
+                    "retrace reached the mate at distance {d}, not the tight {}",
+                    e.weight
                 );
                 end = Some((u, None));
                 break;
             }
             for (k, ne) in g.edges(u).iter().enumerate() {
+                if ne.w < 0 {
+                    continue; // negative 2-cycle: see the module doc
+                }
                 let nd = d + ne.w;
                 if nd > e.weight {
                     continue; // bounded: nothing past the tight length can be on the path
@@ -64,10 +78,11 @@ impl State {
             }
         }
 
-        // Tightness guarantees `end`; the fallback keeps library code panic-free if it ever
-        // isn't (a bug upstream, caught by the debug assertion in tests).
+        // On a non-negative graph tightness guarantees `end`; the fallback keeps library code
+        // panic-free when it isn't reached (a skipped negative edge, or a bug upstream — the
+        // latter caught by the debug assertion in tests).
         debug_assert!(
-            end.is_some(),
+            end.is_some() || g.has_negative_weight(),
             "retrace did not reach the mate within the tight weight"
         );
         let Some((mut v, bcol)) = end else { return };

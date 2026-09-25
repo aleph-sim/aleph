@@ -37,6 +37,8 @@ pub(crate) struct CompiledGraph {
     boundary_obs: Vec<u64>,
     /// Representative DEM column of each node's boundary edge (unused when absent).
     boundary_col: Vec<u32>,
+    /// Some edge or boundary edge has negative weight (a mechanism with p > 0.5).
+    has_negative_weight: bool,
 }
 
 impl CompiledGraph {
@@ -130,6 +132,7 @@ impl CompiledGraph {
                 boundary_col[a] = c;
             }
         }
+        let has_negative_weight = adj.iter().any(|e| e.w < 0) || boundary_w.iter().any(|&w| w < 0);
         CompiledGraph {
             num_nodes,
             offsets,
@@ -138,11 +141,17 @@ impl CompiledGraph {
             boundary_w,
             boundary_obs,
             boundary_col,
+            has_negative_weight,
         }
     }
 
     pub(crate) fn num_nodes(&self) -> usize {
         self.num_nodes
+    }
+
+    /// Whether any edge (or boundary edge) weight is negative, i.e. came from p > 0.5.
+    pub(crate) fn has_negative_weight(&self) -> bool {
+        self.has_negative_weight
     }
 
     #[inline]

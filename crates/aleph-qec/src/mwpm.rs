@@ -197,8 +197,15 @@ impl MwpmDecoder {
     /// Decode `syndrome` and return the error estimate over DEM columns (`ehat[j] == 1` ⇔ the
     /// mechanism `j` is in the correction), the output a `cudaq-qec` decoder returns. The matched
     /// pairs are the same as [`decode`](Decoder::decode)'s; each pair's path is retraced by a
-    /// bounded shortest-path search, so `H ê = s` and the total weight always agree with
-    /// `decode`, while the observable parity may differ on a genuine tie (equal-weight paths).
+    /// bounded shortest-path search, so `H ê = s` and the total weight agree with `decode`, while
+    /// the observable parity may differ on a genuine tie (equal-weight paths).
+    ///
+    /// Exceptions:
+    /// - an odd component with no boundary has no perfect matching; like `decode`, one defect
+    ///   there is left unmatched, so `H ê` misses that detector;
+    /// - mechanisms with p > 0.5 have negative weight `ln((1-p)/p)` and are never retraced
+    ///   through (a negative edge makes the shortest-path search ill-posed): a pair whose path
+    ///   needs one is left unmarked unless a non-negative path within the same bound exists.
     pub fn decode_errors(&self, syndrome: &Syndrome) -> Vec<u8> {
         let mut ehat = vec![0u8; self.graph.num_columns()];
         let defects = self.defects_of(syndrome);
@@ -852,8 +859,10 @@ mod tests {
                         local_ties += 1;
                     }
                 }
+                // Measured: 0 disagreements in every release cell (local baseline 0–1403), so
+                // the additive slack only covers the near-zero p = 0.01 counts.
                 assert!(
-                    ties <= local_ties * 2 + 20,
+                    ties <= local_ties * 2 + 2,
                     "d={d} p={p}: {ties} O·ê disagreements vs local-oracle baseline {local_ties}"
                 );
             }

@@ -58,8 +58,10 @@ impl State {
         ehat: &mut [u8],
     ) -> (u64, i64) {
         self.run_to_matching(g, defects);
-        // Collected first: `retrace` needs `&mut self` while `resolve_with` borrows `&self`.
-        let mut matched: Vec<CEdge> = Vec::new();
+        // Collected first: `retrace` needs `&mut self` while `resolve_with` borrows `&self`. The
+        // buffer is `State` scratch, taken out for the loop and put back, so no per-shot alloc.
+        let mut matched = std::mem::take(&mut self.rt_matched);
+        matched.clear();
         self.resolve_with(&mut |e: &CEdge| matched.push(*e));
         let (mut obs, mut w) = (0u64, 0i64);
         for e in &matched {
@@ -67,6 +69,7 @@ impl State {
             w += e.weight;
             self.retrace(g, e, ehat);
         }
+        self.rt_matched = matched;
         (obs, w / 2)
     }
 
@@ -562,6 +565,35 @@ pub(crate) mod tests {
         let (obs, w) = m.decode_errors(&[2], &mut ehat);
         assert_eq!((obs, w), (4 ^ 8, 7));
         assert_eq!(ehat, vec![0, 0, 1, 1]);
+    }
+
+    #[test]
+    fn decode_errors_terminates_on_negative_weight_edges() {
+        // A p > 0.5 mechanism has weight ln((1-p)/p) < 0, and a negative undirected edge is a
+        // negative 2-cycle for Dijkstra: `retrace` must skip it rather than relax it forever.
+        // `decode` is untouched by this (same `(obs, w)` from both entry points).
+        let g = CompiledGraph::from_int_edges(
+            4,
+            &[(0, 1, -1, 1), (0, 2, 1, 2), (1, 3, 1, 4), (2, 3, 5, 8)],
+            &[],
+        );
+        let m = SparseMatcher::new(g);
+        let d = [0u32, 1, 2, 3];
+        // 0–2 and 1–3 (w 1+1); the retrace from 0 used to loop 0 ↔ 1 over the -1 edge forever.
+        assert_eq!(m.decode(&d), (2 ^ 4, 2));
+        let mut ehat = vec![0u8; 4];
+        assert_eq!(m.decode_errors(&d, &mut ehat), (2 ^ 4, 2));
+        // Non-negative shortest paths exist here, so the correction is still the matched paths.
+        assert_eq!(ehat, vec![0, 1, 1, 0]);
+
+        // Here 0–1 is matched *across* the -1 edge: its retrace skips that edge, finds nothing
+        // within the (negative) bound and falls back to leaving the pair unmarked; 2–3 is intact.
+        let g = CompiledGraph::from_int_edges(4, &[(0, 1, -1, 1), (0, 2, 1, 2), (2, 3, 5, 4)], &[]);
+        let m = SparseMatcher::new(g);
+        assert_eq!(m.decode(&d), (1 ^ 4, 4));
+        let mut ehat = vec![0u8; 3];
+        assert_eq!(m.decode_errors(&d, &mut ehat), (1 ^ 4, 4));
+        assert_eq!(ehat, vec![0, 0, 1]);
     }
 
     #[test]
