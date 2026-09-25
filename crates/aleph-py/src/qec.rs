@@ -5,7 +5,9 @@
 
 use crate::qec_core::{self, AnyDecoder, DecoderParams, DECODER_NAMES};
 use aleph_qec::DetectorErrorModel;
-use numpy::{PyArray1, PyArray2, PyArrayMethods, PyReadonlyArrayDyn, PyUntypedArrayMethods};
+use numpy::{
+    PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1, PyReadonlyArrayDyn, PyUntypedArrayMethods,
+};
 use pyo3::exceptions::{PyOSError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
@@ -153,6 +155,7 @@ pub struct PyDecoder {
     name: String,
     detectors: usize,
     observables: usize,
+    errors: usize,
 }
 
 #[pymethods]
@@ -171,7 +174,14 @@ impl PyDecoder {
             name: name.to_string(),
             detectors: dem.inner.detectors,
             observables: dem.inner.observables,
+            errors: dem.inner.errors.len(),
         })
+    }
+
+    /// Number of error mechanisms (DEM columns) in a `decode_batch_errors` row.
+    #[getter]
+    fn num_errors(&self) -> usize {
+        self.errors
     }
 
     /// Decode one shot: `[num_detectors]` bool/uint8 -> `[num_observables]` bool.
@@ -219,6 +229,24 @@ impl PyDecoder {
         PyArray1::from_vec_bound(py, out).reshape([shots, qec_core::packed_len(o)])
     }
 
+    /// Decode `[shots, num_detectors]` bool/uint8 -> `(errors uint8 [shots, num_errors],
+    /// converged bool [shots])`: the per-column error estimate every decoder can produce (what a
+    /// cudaq-qec decoder returns). GIL released; shots decode in parallel.
+    #[allow(clippy::type_complexity)]
+    fn decode_batch_errors<'py>(
+        &self,
+        py: Python<'py>,
+        dets: &Bound<'py, PyAny>,
+    ) -> PyResult<(Bound<'py, PyArray2<u8>>, Bound<'py, PyArray1<bool>>)> {
+        let (shots, bits) = to_bytes(dets, 2, self.detectors, "decode_batch_errors")?;
+        let (d, e) = (self.detectors, self.errors);
+        let dec = &self.dec;
+        let (out, conv) =
+            py.allow_threads(|| qec_core::decode_errors_rows(dec, &bits, shots, d, e));
+        let errors = PyArray1::from_vec_bound(py, out).reshape([shots, e])?;
+        Ok((errors, PyArray1::from_vec_bound(py, conv)))
+    }
+
     fn __repr__(&self) -> String {
         format!(
             "Decoder({:?}, detectors={}, observables={})",
@@ -227,11 +255,68 @@ impl PyDecoder {
     }
 }
 
+/// CSC column lists → DEM (see `aleph.qec.dem_from_matrices` for the user-facing wrapper).
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn _dem_from_csc(
+    detectors: usize,
+    observables: usize,
+    h_indptr: PyReadonlyArray1<'_, i64>,
+    h_indices: PyReadonlyArray1<'_, i64>,
+    o_indptr: PyReadonlyArray1<'_, i64>,
+    o_indices: PyReadonlyArray1<'_, i64>,
+    probs: PyReadonlyArray1<'_, f64>,
+) -> PyResult<PyDem> {
+    fn cols(indptr: &[i64], indices: &[i64], what: &str) -> PyResult<Vec<Vec<u32>>> {
+        let mut out = Vec::with_capacity(indptr.len().saturating_sub(1));
+        for w in indptr.windows(2) {
+            let (a, b) = (w[0], w[1]);
+            if a < 0 || b < a || b as usize > indices.len() {
+                return Err(value_err(format!("{what}: malformed CSC indptr")));
+            }
+            let col: Result<Vec<u32>, _> = indices[a as usize..b as usize]
+                .iter()
+                .map(|&i| {
+                    u32::try_from(i).map_err(|_| value_err(format!("{what}: negative index {i}")))
+                })
+                .collect();
+            out.push(col?);
+        }
+        Ok(out)
+    }
+    let h = cols(h_indptr.as_slice()?, h_indices.as_slice()?, "H")?;
+    let o = cols(o_indptr.as_slice()?, o_indices.as_slice()?, "O")?;
+    DetectorErrorModel::from_check_matrices(detectors, observables, &h, &o, probs.as_slice()?)
+        .map(|inner| PyDem { inner })
+        .map_err(|e| value_err(e.to_string()))
+}
+
+/// The gross [[144,12,12]] bivariate-bicycle code's circuit-level DEM (`Z` sector of a memory-X
+/// experiment, depth-7 syndrome extraction) under uniform circuit noise `p`; the model behind
+/// `docs/perf/qec-q5-circuit-dem.md`.
+#[pyfunction]
+fn gross_code_dem(rounds: usize, p: f64) -> PyResult<PyDem> {
+    if rounds == 0 {
+        return Err(value_err("rounds must be >= 1"));
+    }
+    if !p.is_finite() || !(0.0..1.0).contains(&p) {
+        return Err(value_err(format!(
+            "p must be a finite number in [0, 1), got {p}"
+        )));
+    }
+    aleph_qec::BBCode::gross()
+        .circuit_level_dem(rounds, aleph_qec::CircuitNoise::uniform(p))
+        .map(|inner| PyDem { inner })
+        .map_err(|e| value_err(e.to_string()))
+}
+
 /// Register the `qec` submodule on the native module.
 pub fn register(parent: &Bound<'_, PyModule>) -> PyResult<()> {
     let m = PyModule::new_bound(parent.py(), "qec")?;
     m.add_class::<PyDem>()?;
     m.add_class::<PyDecoder>()?;
     m.add_function(wrap_pyfunction!(decoder_names, &m)?)?;
+    m.add_function(wrap_pyfunction!(_dem_from_csc, &m)?)?;
+    m.add_function(wrap_pyfunction!(gross_code_dem, &m)?)?;
     parent.add_submodule(&m)
 }

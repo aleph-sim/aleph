@@ -110,6 +110,61 @@ class TestApi(unittest.TestCase):
         self.assertEqual((packed.dtype, packed.shape), (np.uint8, (3, 1)))
         self.assertEqual(packed[:, 0].tolist(), [1, 0, 0])
 
+    def test_dem_from_matrices_accepts_dense_int64_and_sparse(self):
+        H = np.array([[1, 1, 0], [0, 1, 1]], dtype=np.int64)
+        O = np.array([[1, 0, 0]], dtype=np.int64)
+        dem = qec.dem_from_matrices(H, O, [0.1, 0.2, 0.3])
+        self.assertEqual((dem.num_detectors, dem.num_observables, dem.num_errors), (2, 1, 3))
+        self.assertEqual(dem.to_dem_string(), qec.DetectorErrorModel("error(0.1) D0 L0\nerror(0.2) D0 D1\nerror(0.3) D1\n").to_dem_string())
+        try:
+            import scipy.sparse as sp
+        except ImportError:
+            return
+        coo = sp.coo_matrix(([1, 1, 1, 0, 1], ([0, 0, 1, 1, 1], [0, 1, 1, 2, 2])), shape=(2, 3))  # explicit zero + duplicate at (1,2)
+        dem2 = qec.dem_from_matrices(coo, sp.csr_matrix(O), np.array([0.1, 0.2, 0.3]))
+        self.assertEqual(dem2.to_dem_string(), dem.to_dem_string())
+        self.assertEqual(qec.dem_from_matrices(H, None, [0.1, 0.2, 0.3]).num_observables, 0)
+
+    def test_dem_from_matrices_rejects_bad_input(self):
+        H = np.array([[1, 1, 0], [0, 1, 1]], dtype=np.uint8)
+        with self.assertRaisesRegex(ValueError, "error_rate_vec"):
+            qec.dem_from_matrices(H)
+        with self.assertRaisesRegex(ValueError, "3 columns"):
+            qec.dem_from_matrices(H, None, [0.1, 0.2])
+        with self.assertRaisesRegex(ValueError, "column 1"):
+            qec.dem_from_matrices(H, None, [0.1, float("nan"), 0.3])
+        with self.assertRaisesRegex(ValueError, "at most 64"):
+            qec.dem_from_matrices(H, np.ones((65, 3), dtype=np.uint8), [0.1, 0.2, 0.3])
+
+    def test_decode_batch_errors(self):
+        dem = qec.DetectorErrorModel(self.DEM)  # D0 L0 | D0 D1 | D1
+        for name in ALL:
+            dec = qec.Decoder(dem, name)
+            self.assertEqual(dec.num_errors, 3)
+            dets = np.array([[1, 0], [0, 0], [1, 1], [0, 1]], dtype=bool)
+            ehat, conv = dec.decode_batch_errors(dets)
+            self.assertEqual((ehat.dtype, ehat.shape, conv.dtype, conv.shape), (np.uint8, (4, 3), np.bool_, (4,)))
+            # H ê = s (all converge on this tiny model) and O ê = decode_batch.
+            H = np.array([[1, 1, 0], [0, 1, 1]], dtype=np.uint8)
+            self.assertTrue(conv.all(), name)
+            np.testing.assert_array_equal((ehat @ H.T) % 2, dets.astype(np.uint8), name)
+            O = np.array([[1, 0, 0]], dtype=np.uint8)
+            np.testing.assert_array_equal(((ehat @ O.T) % 2).astype(bool), dec.decode_batch(dets), name)
+
+    def test_decode_batch_errors_empty_batch(self):
+        dec = qec.Decoder(qec.DetectorErrorModel(self.DEM), "mwpm")
+        ehat, conv = dec.decode_batch_errors(np.zeros((0, 2), dtype=bool))
+        self.assertEqual((ehat.shape, conv.shape), ((0, 3), (0,)))
+
+    def test_gross_code_dem(self):
+        dem = qec.gross_code_dem(2, 0.003)
+        self.assertEqual(dem.num_observables, 12)
+        self.assertGreater(dem.num_detectors, 100)
+        with self.assertRaises(ValueError):
+            qec.gross_code_dem(0, 0.003)
+        with self.assertRaises(ValueError):
+            qec.gross_code_dem(2, float("nan"))
+
 
 @unittest.skipUnless(HAVE_ALEPH and HAVE_STIM, "needs aleph + stim")
 class TestStimDems(unittest.TestCase):
