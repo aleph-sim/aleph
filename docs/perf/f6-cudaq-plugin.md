@@ -256,7 +256,7 @@ ran concurrently).
   a very different amount of the relay schedule per shot, and it shows: at p=0.003, no-OSD LER is
   4.57e-2 (aleph) vs 1.5e-4 (NVIDIA) — 0.0457/0.00015 ≈ **305x** — and the OSD rows are 2.15e-3 vs
   1.5e-4, ≈ **14.3x**. This is not a bug; it is the expected consequence of comparing a 4-leg
-  schedule against a 60-leg-budget one, and it is exactly what follow-up #<pending> (an
+  schedule against a 60-leg-budget one, and it is exactly what follow-up #514 (an
   `iters_per_leg`/early-exit knob for aleph's `RelayBpDecoder`) would let this table control for.
   Neither side was tuned against the other beyond its own documented defaults, per the honesty
   rule.
@@ -283,7 +283,7 @@ ran concurrently).
   being slower, it is aleph's Python plugin wrapper. The `nv-fusion-decoder` gap was not
   decomposed the same way this round (R7 only measured the single-thread `aleph-mwpm` case); the
   same kind of explanation (a native C++ cudaq-qec plugin vs aleph's pure-Python one, follow-up
-  #<pending>, spec §10.1) plausibly applies there too, but that is not a measured claim.
+  #513, spec §10.1) plausibly applies there too, but that is not a measured claim.
 - **`ERROR:` / non-converged cells.** No `ERROR:` rows in the final run (five configuration bugs
   surfaced by earlier `--quick` attempts, all fixed — see "Adaptations" above; two more
   error-handling fixes were added in review round 1 without changing any table value). Non-
@@ -342,7 +342,7 @@ MWPM with no retrace and no Python marshalling — run at 531k-594k shots/s on t
 single-threaded; `pymatching`'s own single-threaded 657,571 shots/s is only **657,571 / 593,811 ≈
 1.11x** faster than aleph's own fastest native path, not ≈5.8x. Essentially the entire headline
 gap in the Results table is downstream of the matcher: aleph's plugin (`aleph.cudaq`, still a
-pure-Python wrapper — the native C++ plugin is follow-up #<pending> below) pays (1) the per-shot
+pure-Python wrapper — the native C++ plugin is follow-up #513 below) pays (1) the per-shot
 retrace `decode_batch_errors` does instead of `decode_batch`'s direct observable decode (~1.53x, a
 real, inherent cost of producing a per-mechanism error estimate rather than an observable-only one
 — see the follow-up added below), and (2) round-tripping through Python lists (cudaq hands the plugin a
@@ -354,16 +354,41 @@ isolated further here). None of this is a machine-difference artifact — every 
 above came from one script, one process, one box, run back to back; there is no Mac comparison
 figure for this exact workload to invoke, and none was needed to explain the gap.
 
+## `decode()` unchanged
+
+Controller ruling R9: CLAUDE.md requires before/after numbers whenever a hot path is touched, and
+this task's Rust changes add `from_check_matrices` + `decode_errors` alongside every decoder's
+existing `decode` — the production `MwpmDecoder::decode` path itself is not supposed to have
+changed cost. Measured on the same idle GPU box as the rest of this record
+(`export PATH=/root/.cargo/bin:$PATH && cargo bench -p aleph-benches --bench mwpm_decode --
+"sparse/d11"`, `RUSTFLAGS="-C target-cpu=native"`), one criterion sample each, `origin/main`
+(`9418a03`) vs this branch (`599d1b5`) checked out into separate trees on the box:
+
+| tree | commit | sparse/d=11 time (ms / 256 syndromes) | throughput |
+|---|---|---:|---:|
+| main | `9418a03` | 15.191 | 16.852 Kelem/s |
+| branch (`f6-cudaq-plugin`) | `599d1b5` | 15.068 | 16.989 Kelem/s |
+
+Branch/main = **0.992×** (0.8% faster, within run-to-run noise) — well inside the 5% regression
+threshold this ruling set as a stop condition. `MwpmDecoder::decode` (the `sparse` arm) is
+unchanged in cost; the new `decode_errors`/`from_check_matrices` surface is additive.
+
 ## Follow-ups
 
-- #<pending> — native C++ plugin (`libaleph-cudaq.so`) for the realtime / NVQLink path (spec
-  §10.1) — per "Where the plugin path's time goes" above, this would also remove most of the
-  ≈3x Python-marshalling overhead measured on the `aleph-mwpm` plugin path.
-- #<pending> — `iters_per_leg` / early-exit knob for the f64 `RelayBpDecoder` so the A/B can match
-  the ASIC's 6×10 schedule exactly (spec §10.2).
-- #<pending> — `decode_batch_errors`'s per-shot path retrace measured ≈1.53x slower than
-  `decode_batch`'s direct observable decode on MWPM at d=5 (531k vs 347k shots/s, single-threaded,
-  see "Where the plugin path's time goes"); audit whether that gap is inherent to retracing every
-  matched pair for a per-mechanism error estimate, or has slack worth closing, since every
-  cudaq-qec decoder call in this harness (and hence every aleph plugin decoder) goes through
-  `decode_batch_errors`, not `decode_batch`.
+- [#513](https://github.com/aleph-sim/aleph/issues/513) — native C++ plugin (`libaleph-cudaq.so`)
+  for the realtime / NVQLink path (spec §10.1) — per "Where the plugin path's time goes" above,
+  this would also remove most of the ≈3x Python-marshalling overhead measured on the `aleph-mwpm`
+  plugin path.
+- [#514](https://github.com/aleph-sim/aleph/issues/514) — `iters_per_leg` / early-exit knob for
+  the f64 `RelayBpDecoder` so the A/B can match the ASIC's 6×10 schedule exactly (spec §10.2).
+- [#516](https://github.com/aleph-sim/aleph/issues/516) — `decode_batch_errors`'s per-shot path
+  retrace measured ≈1.53x slower than `decode_batch`'s direct observable decode on MWPM at d=5
+  (531k vs 347k shots/s, single-threaded, see "Where the plugin path's time goes"); audit whether
+  that gap is inherent to retracing every matched pair for a per-mechanism error estimate, or has
+  slack worth closing, since every cudaq-qec decoder call in this harness (and hence every aleph
+  plugin decoder) goes through `decode_batch_errors`, not `decode_batch`.
+- [#515](https://github.com/aleph-sim/aleph/issues/515) — MWPM/Union-Find behaviour for priors
+  > 0.5 (negative edge weights) is inconsistent across the stack (`aleph.cudaq` rejects them for
+  matching decoders, Rust `MatchingGraph::from_dem` accepts them, the Sparse Blossom retrace skips
+  negative-weight edges, and the flooder trips a `debug_assert` in debug builds); decide
+  reject-vs-clamp at construction, consistently.
