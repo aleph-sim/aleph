@@ -405,3 +405,7 @@ unchanged in cost; the new `decode_errors`/`from_check_matrices` surface is addi
   that gap is inherent to retracing every matched pair for a per-mechanism error estimate, or has
   slack worth closing, since every cudaq-qec decoder call in this harness (and hence every aleph
   plugin decoder) goes through `decode_batch_errors`, not `decode_batch`.
+- [#518](https://github.com/aleph-sim/aleph/issues/518) — CRITICAL fix-wave follow-up:
+  `DetectorErrorModel::split_components()` so `MwpmDecoder`/`UnionFindDecoder::decode_errors` (and
+  hence `PyDecoder::decode_batch_errors`) are exact on a `^`-decomposed DEM without the caller
+  doing the `dem_to_matrices`/`dem_from_matrices` round trip the current guard requires.
