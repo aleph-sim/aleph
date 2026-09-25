@@ -27,6 +27,9 @@ dependencies = ["numpy>=1.23"]
 [project.optional-dependencies]
 # `aleph.sinter` adapters; stim is what produces the DEMs sinter hands us.
 sinter = ["stim>=1.13", "sinter>=1.13"]
+# `aleph.cudaq`: aleph decoders registered inside NVIDIA CUDA-Q QEC. The meta-package picks
+# the cu12/cu13 wheel; scipy is what cudaq hands us as a sparse H.
+cudaq = ["cudaq-qec>=0.8,<0.9", "scipy>=1.10"]
 
 [project.urls]
 Repository = "https://github.com/aleph-sim/aleph"
