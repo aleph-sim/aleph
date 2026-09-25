@@ -87,9 +87,10 @@ def _make(name):
             self._width = H.shape[0]
 
         def decode(self, syndrome):
-            if len(syndrome) != self._width:
-                raise ValueError(f"syndrome width {len(syndrome)} != {self._width} detectors")
-            ehat, conv = self._inner.decode_batch_errors(_to_bits(syndrome, self._width))
+            a = np.asarray(syndrome, dtype=np.float64)
+            if a.size != self._width:
+                raise ValueError(f"syndrome width {a.size} != {self._width} detectors")
+            ehat, conv = self._inner.decode_batch_errors(_to_bits(a.reshape(1, -1), self._width))
             r = _qec.DecoderResult()
             r.converged = bool(conv[0])
             r.result = ehat[0].astype(np.float64).tolist()

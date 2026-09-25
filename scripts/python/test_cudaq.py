@@ -128,6 +128,13 @@ class TestRegistration(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "2"):
             d.decode([])
 
+    def test_decode_accepts_single_row_2d(self):
+        d = cq.get_decoder("aleph-mwpm", H, O=O, error_rate_vec=RATES)
+        # r.result comes back as a numpy array (not the Python list AlephDecoder.decode
+        # assigned), so compare with assert_array_equal rather than assertEqual.
+        np.testing.assert_array_equal(
+            d.decode(np.array([[1.0, 0.0]])).result, d.decode([1.0, 0.0]).result)
+
 
 @unittest.skipUnless(HAVE and HAVE_STIM, "needs cudaq_qec + aleph + stim")
 class TestStimDem(unittest.TestCase):
