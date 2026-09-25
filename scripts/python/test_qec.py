@@ -110,6 +110,80 @@ class TestApi(unittest.TestCase):
         self.assertEqual((packed.dtype, packed.shape), (np.uint8, (3, 1)))
         self.assertEqual(packed[:, 0].tolist(), [1, 0, 0])
 
+    def test_dem_from_matrices_accepts_dense_int64_and_sparse(self):
+        H = np.array([[1, 1, 0], [0, 1, 1]], dtype=np.int64)
+        O = np.array([[1, 0, 0]], dtype=np.int64)
+        dem = qec.dem_from_matrices(H, O, [0.1, 0.2, 0.3])
+        self.assertEqual((dem.num_detectors, dem.num_observables, dem.num_errors), (2, 1, 3))
+        self.assertEqual(dem.to_dem_string(), qec.DetectorErrorModel("error(0.1) D0 L0\nerror(0.2) D0 D1\nerror(0.3) D1\n").to_dem_string())
+        try:
+            import scipy.sparse as sp
+        except ImportError:
+            return
+        coo = sp.coo_matrix(([1, 1, 1, 0, 1], ([0, 0, 1, 1, 1], [0, 1, 1, 2, 2])), shape=(2, 3))  # explicit zero + duplicate at (1,2)
+        dem2 = qec.dem_from_matrices(coo, sp.csr_matrix(O), np.array([0.1, 0.2, 0.3]))
+        self.assertEqual(dem2.to_dem_string(), dem.to_dem_string())
+        self.assertEqual(qec.dem_from_matrices(H, None, [0.1, 0.2, 0.3]).num_observables, 0)
+
+        # `_csc` must not mutate an already-CSC input in place: `sp.csc_matrix(m)` returns `m`
+        # itself when `m` is already CSC, so a naive `sum_duplicates()`/`eliminate_zeros()` on
+        # that return value would canonicalise the caller's own matrix. Build a non-canonical CSC
+        # directly (duplicate row 1 in column 2, one of the duplicates an explicit zero) so the
+        # in-place mutation would be visible if it happened.
+        csc = sp.csc_matrix(
+            (np.array([1, 1, 1, 0, 1], dtype=np.int64),
+             np.array([0, 0, 1, 1, 1], dtype=np.int64),
+             np.array([0, 1, 3, 5], dtype=np.int64)),
+            shape=(2, 3),
+        )
+        indices_before, data_before, indptr_before = (
+            csc.indices.copy(), csc.data.copy(), csc.indptr.copy())
+        dem3 = qec.dem_from_matrices(csc, O, np.array([0.1, 0.2, 0.3]))
+        self.assertEqual(dem3.to_dem_string(), dem.to_dem_string())
+        np.testing.assert_array_equal(csc.indices, indices_before)
+        np.testing.assert_array_equal(csc.data, data_before)
+        np.testing.assert_array_equal(csc.indptr, indptr_before)
+
+    def test_dem_from_matrices_rejects_bad_input(self):
+        H = np.array([[1, 1, 0], [0, 1, 1]], dtype=np.uint8)
+        with self.assertRaisesRegex(ValueError, "error_rate_vec"):
+            qec.dem_from_matrices(H)
+        with self.assertRaisesRegex(ValueError, "3 columns"):
+            qec.dem_from_matrices(H, None, [0.1, 0.2])
+        with self.assertRaisesRegex(ValueError, "column 1"):
+            qec.dem_from_matrices(H, None, [0.1, float("nan"), 0.3])
+        with self.assertRaisesRegex(ValueError, "at most 64"):
+            qec.dem_from_matrices(H, np.ones((65, 3), dtype=np.uint8), [0.1, 0.2, 0.3])
+
+    def test_decode_batch_errors(self):
+        dem = qec.DetectorErrorModel(self.DEM)  # D0 L0 | D0 D1 | D1
+        for name in ALL:
+            dec = qec.Decoder(dem, name)
+            self.assertEqual(dec.num_errors, 3)
+            dets = np.array([[1, 0], [0, 0], [1, 1], [0, 1]], dtype=bool)
+            ehat, conv = dec.decode_batch_errors(dets)
+            self.assertEqual((ehat.dtype, ehat.shape, conv.dtype, conv.shape), (np.uint8, (4, 3), np.bool_, (4,)))
+            # H ê = s (all converge on this tiny model) and O ê = decode_batch.
+            H = np.array([[1, 1, 0], [0, 1, 1]], dtype=np.uint8)
+            self.assertTrue(conv.all(), name)
+            np.testing.assert_array_equal((ehat @ H.T) % 2, dets.astype(np.uint8), name)
+            O = np.array([[1, 0, 0]], dtype=np.uint8)
+            np.testing.assert_array_equal(((ehat @ O.T) % 2).astype(bool), dec.decode_batch(dets), name)
+
+    def test_decode_batch_errors_empty_batch(self):
+        dec = qec.Decoder(qec.DetectorErrorModel(self.DEM), "mwpm")
+        ehat, conv = dec.decode_batch_errors(np.zeros((0, 2), dtype=bool))
+        self.assertEqual((ehat.shape, conv.shape), ((0, 3), (0,)))
+
+    def test_gross_code_dem(self):
+        dem = qec.gross_code_dem(2, 0.003)
+        self.assertEqual(dem.num_observables, 12)
+        self.assertGreater(dem.num_detectors, 100)
+        with self.assertRaises(ValueError):
+            qec.gross_code_dem(0, 0.003)
+        with self.assertRaises(ValueError):
+            qec.gross_code_dem(2, float("nan"))
+
 
 @unittest.skipUnless(HAVE_ALEPH and HAVE_STIM, "needs aleph + stim")
 class TestStimDems(unittest.TestCase):
@@ -155,6 +229,47 @@ class TestStimDems(unittest.TestCase):
                 a = qec.Decoder(decomposed, name).decode_batch(dets)
                 b = qec.Decoder(reduced, name).decode_batch(dets)
                 np.testing.assert_array_equal(a, b)
+
+    def test_matching_decode_batch_errors_rejects_decomposed_dem(self):
+        # CRITICAL finding: a `^`-decomposed mechanism's parts become separate matching edges
+        # that share one representative column (`MatchingEdge::column` = mechanism index), whose
+        # `dets` is the parity-reduced union -- so a matching decoder's per-column estimate would
+        # violate H ehat = s on a real fraction of shots. `decode_batch_errors` must refuse rather
+        # than return that silently-wrong estimate.
+        circ = surface(3, 0.003)
+        sdem = circ.detector_error_model(decompose_errors=True)
+        self.assertIn("^", str(sdem.flattened()))
+        dem = qec.DetectorErrorModel(sdem)
+        dets, _obs = circ.compile_detector_sampler(seed=9).sample(2000, separate_observables=True)
+        dets = dets.astype(np.uint8)
+
+        for name in ("mwpm", "union-find", "union-find-weighted"):
+            with self.subTest(name=name):
+                dec = qec.Decoder(dem, name)
+                with self.assertRaisesRegex(ValueError, r"\^|decomposed"):
+                    dec.decode_batch_errors(dets)
+
+        # BP-family decoders are unaffected: their columns are the parity-reduced mechanisms
+        # (one variable per DEM error, `^` parts XORed together), so `decode_batch_errors` neither
+        # raises nor breaks H ehat = s on a converged shot. Build the reference H from the
+        # XOR-reduced (no `^` left) DEM text via `aleph.qec.dem_to_matrices`: with no `^` to
+        # split, its columns line up 1:1, in order, with `dem`'s own mechanisms.
+        reduced = qec.DetectorErrorModel(xor_reduce_dem_text(dem.to_dem_string()))
+        H, _o, _rates = qec.dem_to_matrices(reduced)
+        self.assertEqual(H.shape, (dem.num_detectors, dem.num_errors))
+        bp = qec.Decoder(dem, "bp")
+        ehat, conv = bp.decode_batch_errors(dets)  # must not raise
+        self.assertTrue(conv.any(), "expected at least one converged shot")
+        np.testing.assert_array_equal(
+            (ehat[conv] @ H.T) % 2, dets[conv], "bp: H ehat != s on a converged shot")
+
+        # The Rust guard's suggested fix works: split the `^` parts into separate mechanisms via
+        # dem_to_matrices + dem_from_matrices, and the matching decoder is exact again.
+        H2, O2, rates2 = qec.dem_to_matrices(dem)
+        dem2 = qec.dem_from_matrices(H2, O2, rates2)
+        ehat2, conv2 = qec.Decoder(dem2, "mwpm").decode_batch_errors(dets)
+        self.assertTrue(conv2.all())
+        np.testing.assert_array_equal((ehat2 @ H2.T) % 2, dets)
 
     def test_hypergraph_dem(self):
         circ = color(3, 0.003)

@@ -20,15 +20,25 @@ pub(crate) struct Edge {
     pub obs: u64,
 }
 
+/// One endpoint's view of an input edge while building the CSR: `(neighbour, doubled weight,
+/// input edge index, obs, column)`.
+type HalfEdge = (u32, i64, usize, u64, u32);
+
 /// CSR detector graph plus a per-node boundary edge.
 #[derive(Clone, Debug)]
 pub(crate) struct CompiledGraph {
     num_nodes: usize,
     offsets: Vec<u32>,
     adj: Vec<Edge>,
+    /// Representative DEM column of `adj[k]` (parallel to `adj`).
+    adj_col: Vec<u32>,
     /// Boundary edge per node: `(doubled weight, obs)`; weight `i64::MAX` when absent.
     boundary_w: Vec<i64>,
     boundary_obs: Vec<u64>,
+    /// Representative DEM column of each node's boundary edge (unused when absent).
+    boundary_col: Vec<u32>,
+    /// Some edge or boundary edge has negative weight (a mechanism with p > 0.5).
+    has_negative_weight: bool,
 }
 
 impl CompiledGraph {
@@ -37,7 +47,7 @@ impl CompiledGraph {
     pub(crate) fn from_matching_graph(g: &MatchingGraph) -> Self {
         let scaled = |w: f64| 2 * (w * WEIGHT_SCALE).round() as i64;
         let boundary = g.boundary();
-        let edges: Vec<(u32, u32, i64, u64)> = g
+        let edges: Vec<(u32, u32, i64, u64, u32)> = g
             .edges()
             .iter()
             .filter(|e| e.b != boundary)
@@ -47,71 +57,101 @@ impl CompiledGraph {
                     e.b as u32,
                     scaled(e.weight),
                     obs_mask(&e.observables),
+                    e.column,
                 )
             })
             .collect();
-        let bnd: Vec<(u32, i64, u64)> = g
+        let bnd: Vec<(u32, i64, u64, u32)> = g
             .edges()
             .iter()
             .filter(|e| e.b == boundary)
-            .map(|e| (e.a as u32, scaled(e.weight), obs_mask(&e.observables)))
+            .map(|e| {
+                (
+                    e.a as u32,
+                    scaled(e.weight),
+                    obs_mask(&e.observables),
+                    e.column,
+                )
+            })
             .collect();
         Self::build(g.num_detectors(), &edges, &bnd)
     }
 
-    /// Test constructor from raw integer weights (doubled internally).
+    /// Test constructor from raw integer weights (doubled internally). Columns are numbered by
+    /// position: edge `k` is column `k`, boundary entry `k` is column `edges.len() + k`.
     #[cfg(test)]
     pub(crate) fn from_int_edges(
         num_nodes: usize,
         edges: &[(u32, u32, i64, u64)],
         boundary: &[(u32, i64, u64)],
     ) -> Self {
-        let e: Vec<_> = edges.iter().map(|&(a, b, w, o)| (a, b, 2 * w, o)).collect();
-        let b: Vec<_> = boundary.iter().map(|&(a, w, o)| (a, 2 * w, o)).collect();
+        let e: Vec<_> = edges
+            .iter()
+            .enumerate()
+            .map(|(k, &(a, b, w, o))| (a, b, 2 * w, o, k as u32))
+            .collect();
+        let b: Vec<_> = boundary
+            .iter()
+            .enumerate()
+            .map(|(k, &(a, w, o))| (a, 2 * w, o, (edges.len() + k) as u32))
+            .collect();
         Self::build(num_nodes, &e, &b)
     }
 
     fn build(
         num_nodes: usize,
-        edges: &[(u32, u32, i64, u64)],
-        boundary: &[(u32, i64, u64)],
+        edges: &[(u32, u32, i64, u64, u32)],
+        boundary: &[(u32, i64, u64, u32)],
     ) -> Self {
-        // Per node: (neighbour, weight, edge index, obs) sorted so the lightest parallel edge
-        // comes first, then dedup by neighbour.
-        let mut per: Vec<Vec<(u32, i64, usize, u64)>> = vec![Vec::new(); num_nodes];
-        for (k, &(a, b, w, o)) in edges.iter().enumerate() {
-            per[a as usize].push((b, w, k, o));
-            per[b as usize].push((a, w, k, o));
+        // Per node: (neighbour, weight, edge index, obs, column) sorted so the lightest parallel
+        // edge comes first, then dedup by neighbour.
+        let mut per: Vec<Vec<HalfEdge>> = vec![Vec::new(); num_nodes];
+        for (k, &(a, b, w, o, c)) in edges.iter().enumerate() {
+            per[a as usize].push((b, w, k, o, c));
+            per[b as usize].push((a, w, k, o, c));
         }
         let mut offsets = Vec::with_capacity(num_nodes + 1);
         let mut adj = Vec::new();
+        let mut adj_col = Vec::new();
         offsets.push(0u32);
         for list in per.iter_mut() {
-            list.sort_unstable_by_key(|&(v, w, k, _)| (v, w, k));
+            list.sort_unstable_by_key(|&(v, w, k, _, _)| (v, w, k));
             list.dedup_by_key(|x| x.0);
-            adj.extend(list.iter().map(|&(v, w, _, obs)| Edge { v, w, obs }));
+            adj.extend(list.iter().map(|&(v, w, _, obs, _)| Edge { v, w, obs }));
+            adj_col.extend(list.iter().map(|x| x.4));
             offsets.push(adj.len() as u32);
         }
         let mut boundary_w = vec![i64::MAX; num_nodes];
         let mut boundary_obs = vec![0u64; num_nodes];
-        for &(a, w, o) in boundary {
+        let mut boundary_col = vec![0u32; num_nodes];
+        for &(a, w, o, c) in boundary {
             let a = a as usize;
             if w < boundary_w[a] {
                 boundary_w[a] = w;
                 boundary_obs[a] = o;
+                boundary_col[a] = c;
             }
         }
+        let has_negative_weight = adj.iter().any(|e| e.w < 0) || boundary_w.iter().any(|&w| w < 0);
         CompiledGraph {
             num_nodes,
             offsets,
             adj,
+            adj_col,
             boundary_w,
             boundary_obs,
+            boundary_col,
+            has_negative_weight,
         }
     }
 
     pub(crate) fn num_nodes(&self) -> usize {
         self.num_nodes
+    }
+
+    /// Whether any edge (or boundary edge) weight is negative, i.e. came from p > 0.5.
+    pub(crate) fn has_negative_weight(&self) -> bool {
+        self.has_negative_weight
     }
 
     #[inline]
@@ -120,10 +160,23 @@ impl CompiledGraph {
         &self.adj[self.offsets[u] as usize..self.offsets[u + 1] as usize]
     }
 
+    /// Representative columns of `edges(u)`, parallel to it.
+    #[inline]
+    pub(crate) fn edge_cols(&self, u: u32) -> &[u32] {
+        let u = u as usize;
+        &self.adj_col[self.offsets[u] as usize..self.offsets[u + 1] as usize]
+    }
+
     #[inline]
     pub(crate) fn boundary(&self, u: u32) -> Option<(i64, u64)> {
         let w = self.boundary_w[u as usize];
         (w != i64::MAX).then_some((w, self.boundary_obs[u as usize]))
+    }
+
+    /// Representative column of `u`'s boundary edge (meaningful only when `boundary(u)` is `Some`).
+    #[inline]
+    pub(crate) fn boundary_col(&self, u: u32) -> u32 {
+        self.boundary_col[u as usize]
     }
 }
 

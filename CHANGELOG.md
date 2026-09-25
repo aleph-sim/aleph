@@ -5,6 +5,21 @@ All notable changes to this project are documented in this file, in
 
 ## [Unreleased]
 
+### Added
+
+- **`aleph.cudaq` — aleph decoders inside CUDA-Q QEC.** `pip install
+  "aleph-sim[cudaq]"` + `import aleph.cudaq` registers all seven decoders as
+  `cudaq_qec` decoders (`aleph-mwpm` … `aleph-relay-bp-osd`) with cudaq's
+  `H`/`O`/`error_rate_vec` contract and per-column error output; `dem_to_matrices`
+  splits `^` parts for the matching decoders. Supporting API:
+  `aleph.qec.dem_from_matrices`, `Decoder.decode_batch_errors`,
+  `Decoder.num_errors`, `aleph.qec.gross_code_dem`; in Rust,
+  `DetectorErrorModel::from_check_matrices` and `decode_errors` on every
+  decoder (Sparse Blossom retraces matched pairs to edges). A/B vs
+  `nv-qldpc-decoder` / `pymatching` / `nv-fusion-decoder`:
+  `docs/perf/f6-cudaq-plugin.md`. Rust-side guard for > 64 observables
+  (closes [#512](https://github.com/aleph-sim/aleph/issues/512)).
+
 ### Changed
 
 - **MWPM decoder now uses Sparse Blossom.** `aleph.qec`'s `"mwpm"` decoder (and

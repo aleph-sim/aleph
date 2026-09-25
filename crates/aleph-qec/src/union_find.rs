@@ -112,6 +112,10 @@ pub struct UnionFindDecoder {
     edge_obs: Vec<u64>,
     /// Integer growth length of each edge (`weight`-proportional); used only in weighted mode.
     edge_len: Vec<u32>,
+    /// Representative DEM column of each edge (`MatchingEdge::column`).
+    edge_col: Vec<u32>,
+    /// Number of DEM columns (`decode_errors` output length).
+    num_columns: usize,
     /// Whether cluster growth is weighted (Q2-02) or unweighted/isotropic (Q2-01).
     weighted: bool,
 }
@@ -171,6 +175,7 @@ impl UnionFindDecoder {
                 }
             })
             .collect();
+        let edge_col: Vec<u32> = edges.iter().map(|e| e.column).collect();
 
         // Flatten the adjacency lists into CSR. The index `v` is intrinsic here — `adj_off` is a
         // running prefix sum and `adj_edges` is scattered at per-node offsets — so the range loops
@@ -202,6 +207,8 @@ impl UnionFindDecoder {
             edge_b,
             edge_obs,
             edge_len,
+            edge_col,
+            num_columns: graph.num_columns(),
             weighted: false,
         }
     }
@@ -273,6 +280,22 @@ impl UnionFindDecoder {
             }
             self.peel(&mut sc, &defects)
         })
+    }
+
+    /// Decode `syndrome` and return the error estimate over DEM columns: `ehat[j] == 1` ⇔ the
+    /// peeled correction contains the edge whose representative column is `j`. Satisfies
+    /// `H ê = s` on every detector with an incident edge, and `O ê` equals
+    /// [`decode`](Decoder::decode)'s flips — exact on `^`-free DEMs.
+    ///
+    /// On a DEM with `^`-decomposed mechanisms the estimate is per mechanism, not per part, and
+    /// `H ê = s` does not hold — split the parts into separate mechanisms first.
+    pub fn decode_errors(&self, syndrome: &Syndrome) -> Vec<u8> {
+        let (_, edges) = self.decode_edges(syndrome);
+        let mut ehat = vec![0u8; self.num_columns];
+        for e in edges {
+            ehat[self.edge_col[e] as usize] ^= 1;
+        }
+        ehat
     }
 
     /// Like [`decode_edges`](Self::decode_edges) but also returns the wall-clock time spent in the
@@ -933,6 +956,50 @@ mod tests {
                 we.decode(&s),
                 "equal weights: weighted and unweighted corrections must match"
             );
+        }
+    }
+
+    #[test]
+    fn decode_errors_satisfies_syndrome_and_reproduces_flips() {
+        use crate::{build_dem, SurfaceCode};
+        let exp = SurfaceCode::new(5).memory_z_experiment(5);
+        let dem = build_dem(&exp.annotated, &exp.phenomenological_mechanisms(0.03, 0.03)).unwrap();
+        for dec in [
+            UnionFindDecoder::new(&dem).unwrap(),
+            UnionFindDecoder::new_weighted(&dem).unwrap(),
+        ] {
+            let mut rng = 0x1234_5678u64;
+            for _ in 0..300 {
+                let mut det = vec![false; dem.detectors];
+                for e in &dem.errors {
+                    rng ^= rng << 13;
+                    rng ^= rng >> 7;
+                    rng ^= rng << 17;
+                    if ((rng >> 40) as f64 / (1u64 << 24) as f64) < e.prob {
+                        for &d in &e.dets {
+                            det[d as usize] ^= true;
+                        }
+                    }
+                }
+                let s = Syndrome::from_bits(&det);
+                let ehat = dec.decode_errors(&s);
+                assert_eq!(ehat.len(), dem.errors.len());
+                // H ê = s and O ê = the decoder's own correction.
+                let mut hs = vec![false; dem.detectors];
+                let mut os = vec![false; dem.observables];
+                for (j, &b) in ehat.iter().enumerate() {
+                    if b == 1 {
+                        for &d in &dem.errors[j].dets {
+                            hs[d as usize] ^= true;
+                        }
+                        for &o in &dem.errors[j].obs {
+                            os[o as usize] ^= true;
+                        }
+                    }
+                }
+                assert_eq!(hs, det, "H ê != s");
+                assert_eq!(os, dec.decode(&s).observable_flips, "O ê != correction");
+            }
         }
     }
 }

@@ -59,6 +59,18 @@ pub struct MatchingEdge {
     pub weight: f64,
     /// Logical observables flipped when this edge is part of the error (sorted ascending).
     pub observables: Vec<u32>,
+    /// Index into the source DEM's `errors` of the first mechanism (first `^` part) that produced
+    /// this edge's `(a, b, observables)` key — the *representative column* a per-column error
+    /// estimate marks when this edge is in the correction. Its observable set equals
+    /// `observables` by construction.
+    ///
+    /// For a mechanism with `^` parts, this edge came from *one* part, so the marked column
+    /// stands for that part only: `O·ê` over the whole (parity-reduced) column is not meaningful
+    /// for such a column. Callers that need per-part columns split the DEM first (as the Python
+    /// plugin does). Two edges of one `^` mechanism may share this value — every part is recorded
+    /// against the same mechanism index `j`, so a per-column error estimate cannot tell which part
+    /// fired from `column` alone.
+    pub column: u32,
 }
 
 /// A weighted matching graph over detectors plus a virtual boundary node.
@@ -69,6 +81,8 @@ pub struct MatchingEdge {
 pub struct MatchingGraph {
     num_detectors: usize,
     num_observables: usize,
+    /// Number of mechanisms (columns) in the source DEM; `MatchingEdge::column < num_columns`.
+    num_columns: usize,
     edges: Vec<MatchingEdge>,
     /// `adjacency[n]` = indices into [`edges`](Self::edges) incident to node `n`. Length is
     /// `num_detectors + 1` (the trailing entry is the boundary node).
@@ -92,11 +106,12 @@ impl MatchingGraph {
 
         // Accumulate parallel edges' probabilities, keyed by (endpoints, observable set). A
         // separate `order` vector keeps edge order deterministic (first-seen) rather than
-        // HashMap iteration order.
-        let mut merged: HashMap<(NodeId, NodeId, Vec<u32>), f64> = HashMap::new();
-        let mut order: Vec<(NodeId, NodeId, Vec<u32>)> = Vec::new();
+        // HashMap iteration order, alongside the representative DEM column (`MatchingEdge::column`).
+        type EdgeKey = (NodeId, NodeId, Vec<u32>);
+        let mut merged: HashMap<EdgeKey, f64> = HashMap::new();
+        let mut order: Vec<(EdgeKey, u32)> = Vec::new();
 
-        for e in &dem.errors {
+        for (j, e) in dem.errors.iter().enumerate() {
             // A non-positive (or NaN) probability never fires; `!(p > 0.0)` is true for NaN, so
             // this also rejects NaN per the IEEE-754 discipline in CLAUDE.md / ADR 0006. A
             // probability of 1.0 (or more) is a deterministic fault with `ln(0) = -inf` weight,
@@ -134,14 +149,14 @@ impl MatchingGraph {
                     *p = xor_combine(*p, e.prob);
                 } else {
                     merged.insert(key.clone(), e.prob);
-                    order.push(key);
+                    order.push((key, j as u32));
                 }
             }
         }
 
         let mut edges = Vec::with_capacity(order.len());
         let mut adjacency = vec![Vec::new(); dem.detectors + 1];
-        for key in order {
+        for (key, column) in order {
             let prob = merged[&key];
             let (a, b, observables) = key;
             let idx = edges.len();
@@ -153,12 +168,14 @@ impl MatchingGraph {
                 prob,
                 weight: edge_weight(prob),
                 observables,
+                column,
             });
         }
 
         Ok(MatchingGraph {
             num_detectors: dem.detectors,
             num_observables: dem.observables,
+            num_columns: dem.errors.len(),
             edges,
             adjacency,
         })
@@ -172,6 +189,11 @@ impl MatchingGraph {
     /// Number of logical observables the edges may flip.
     pub fn num_observables(&self) -> usize {
         self.num_observables
+    }
+
+    /// Number of mechanisms (columns) in the DEM this graph was built from.
+    pub fn num_columns(&self) -> usize {
+        self.num_columns
     }
 
     /// Total node count: detectors plus the one boundary node.
@@ -420,6 +442,39 @@ mod tests {
         assert_eq!(g.incident(0), &[0, 1]);
         assert_eq!(g.incident(1), &[1, 2]);
         assert_eq!(g.incident(2), &[0, 2]);
+    }
+
+    #[test]
+    fn edge_column_is_the_first_mechanism_with_that_key() {
+        // Column 0 and 2 are parallel (same endpoints, same observables) → one edge, column 0.
+        // Column 1 has the same endpoints but a different observable → its own edge, column 1.
+        // Column 3 is a `^` mechanism: part 0 → boundary edge D2 (column 3), part 1 → edge D0 D1 L0
+        //   which is parallel to column 1 → merged into column 1's edge.
+        let dem = DetectorErrorModel::parse(
+            "error(0.1) D0 D1\nerror(0.1) D0 D1 L0\nerror(0.2) D0 D1\nerror(0.05) D2 ^ D0 D1 L0\n",
+        )
+        .unwrap();
+        let g = MatchingGraph::from_dem(&dem).unwrap();
+        assert_eq!(g.num_columns(), 4);
+        let cols: Vec<(NodeId, NodeId, Vec<u32>, u32)> = g
+            .edges()
+            .iter()
+            .map(|e| (e.a, e.b, e.observables.clone(), e.column))
+            .collect();
+        assert_eq!(
+            cols,
+            vec![(0, 1, vec![], 0), (0, 1, vec![0], 1), (2, 3, vec![], 3)]
+        );
+        // The representative column's observables (from its originating part) equal the edge's.
+        for e in g.edges() {
+            let m = &dem.errors[e.column as usize];
+            let obs = if m.components.is_empty() {
+                m.obs.clone()
+            } else {
+                m.components[0].1.clone()
+            };
+            assert_eq!(obs, e.observables);
+        }
     }
 
     #[test]

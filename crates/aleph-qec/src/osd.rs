@@ -184,17 +184,34 @@ impl OsdDecoder {
         (ehat, true)
     }
 
+    /// Per-column error estimate `ê` and whether it satisfies the syndrome (`H ê = s`). BP's own
+    /// convergence already guarantees this; the OSD solve is exact for every *pivoted* check row
+    /// by construction, but a check row the Gauss-Jordan elimination never pivots (e.g. one
+    /// linearly dependent on the others, or with no informative column) is not re-verified —
+    /// checked explicitly here rather than assumed `true`, so every decoder's `(ê, converged)`
+    /// flag means the same thing.
+    pub fn decode_errors(&self, syndrome: &Syndrome) -> (Vec<u8>, bool) {
+        let (ehat, _osd_ran) = self.decode_osd_ehat(syndrome);
+        let ok = self.check_satisfied(syndrome, &ehat);
+        (ehat, ok)
+    }
+
+    /// [`correction_from_soft`](Self::correction_from_soft) without the observable projection:
+    /// the per-column decision itself.
+    pub fn ehat_from_soft(&self, syndrome: &Syndrome, soft: &crate::BpSoft) -> Vec<u8> {
+        if soft.converged {
+            return soft.ehat.clone();
+        }
+        self.osd_solve(syndrome, &soft.ehat, &soft.llr)
+    }
+
     /// Run the OSD post-processor on **externally supplied** soft information (e.g. from relay-BP,
     /// Q5-03) instead of this decoder's own BP. If `soft.converged`, the valid hard decision is
     /// returned directly; otherwise the OSD combination sweep refines it using `soft.llr` for the
     /// pivot basis. This is how [`RelayBpOsdDecoder`](crate::RelayBpOsdDecoder) couples a
     /// stronger BP front-end to OSD.
     pub fn correction_from_soft(&self, syndrome: &Syndrome, soft: &crate::BpSoft) -> Correction {
-        if soft.converged {
-            return self.bp.correction_of(&soft.ehat);
-        }
-        let ehat = self.osd_solve(syndrome, &soft.ehat, &soft.llr);
-        self.bp.correction_of(&ehat)
+        self.bp.correction_of(&self.ehat_from_soft(syndrome, soft))
     }
 
     /// OSD solve: see the module docs. `bp_hard` is BP's hard decision (kept on non-pivot columns so

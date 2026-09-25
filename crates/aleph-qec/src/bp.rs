@@ -236,6 +236,13 @@ impl BpDecoder {
         }
     }
 
+    /// Per-column error estimate `ê` and whether BP converged (`H ê = s` held within the
+    /// iteration cap). The output a `cudaq-qec` decoder returns.
+    pub fn decode_errors(&self, syndrome: &Syndrome) -> (Vec<u8>, bool) {
+        let soft = self.decode_bp_soft(syndrome);
+        (soft.ehat, soft.converged)
+    }
+
     /// Map a hard error decision (one bit per variable) to a logical [`Correction`] via the
     /// variables' observable masks.
     pub(crate) fn correction_of(&self, ehat: &[u8]) -> Correction {

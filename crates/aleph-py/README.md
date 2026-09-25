@@ -172,6 +172,48 @@ the one-shot matching decoders — expected, since each shot runs multiple BP
 iterations (and, for `-osd`, a post-processing ordered-statistics step)
 rather than a single matching pass.
 
+## Using aleph decoders from CUDA-Q QEC
+
+`aleph.cudaq` registers every aleph decoder inside NVIDIA's `cudaq_qec`, so a
+CUDA-Q / NVQLink workflow can A/B them against `nv-qldpc-decoder`,
+`nv-fusion-decoder` or `pymatching` without leaving its harness:
+
+```bash
+pip install "aleph-sim[cudaq]"      # pulls cudaq-qec (cu12/cu13 auto-selected) and scipy
+```
+
+```python
+import numpy as np, stim, cudaq_qec as qec
+import aleph.qec, aleph.cudaq                       # the import registers aleph-* decoders
+
+circ = stim.Circuit.generated("surface_code:rotated_memory_x", distance=5, rounds=5,
+                              after_clifford_depolarization=0.003)
+H, O, rates = aleph.cudaq.dem_to_matrices(circ.detector_error_model(decompose_errors=True))
+dets, obs = circ.compile_detector_sampler().sample(10_000, separate_observables=True)
+
+dec = qec.get_decoder("aleph-mwpm", H, O=O, error_rate_vec=rates)    # or "aleph-relay-bp-osd", ...
+res = dec.decode_batch(dets.astype(float).tolist())
+pred = ((res.result > 0.5).astype(np.uint8) @ O.T) % 2
+print("logical error rate:", (pred != obs).any(axis=1).mean())
+```
+
+Names: `aleph-mwpm`, `aleph-union-find`, `aleph-union-find-weighted`, `aleph-bp`,
+`aleph-bp-osd`, `aleph-relay-bp`, `aleph-relay-bp-osd`. Keyword parameters are
+those of `aleph.qec.Decoder` (`legs`, `alpha`, `gamma_min`, `gamma_max`, `seed`,
+`osd_order`, `max_iter`); priors come from `error_rate_vec` (cudaq fills it in
+when you pass a DEM string) or a scalar `error_rate`. Results are per-column
+error estimates like cudaq's own decoders, so `O @ ê` gives the observable flips.
+
+Matching decoders need a graph-like `H` (≤ 2 ones per column). cudaq's DEM
+parser keeps a `^`-decomposed hyperedge as one column, so for `aleph-mwpm` /
+`aleph-union-find*` pass `dem_to_matrices(dem)` rather than the DEM string
+(the BP family takes either). Matching decoders also require every prior to be
+≤ 0.5 — a mechanism with p > 0.5 has a negative matching weight, which
+`aleph-mwpm` / `aleph-union-find*` reject with a `ValueError` (see #515);
+BP-family decoders accept any prior in [0, 1]. For the gross [[144,12,12]] code, which cudaq has
+no built-in for, `aleph.qec.gross_code_dem(rounds, p)` gives the circuit-level
+model. A/B numbers against NVIDIA's decoders: `docs/perf/f6-cudaq-plugin.md`.
+
 ## Links
 
 - Repository: <https://github.com/aleph-sim/aleph>

@@ -5,11 +5,13 @@
 //! Module map: [`graph`] compiles the [`crate::MatchingGraph`] into a CSR with doubled integer
 //! weights; [`state`] holds the per-shot mutable arenas and the event heap; [`flooder`] grows and
 //! shrinks regions and detects collisions; [`matcher`] runs the alternating-tree operations and
-//! resolves the final matching. [`SparseMatcher`] is the crate-facing entry point.
+//! resolves the final matching; [`retrace`] recovers each matched pair's path for the
+//! per-column error output. [`SparseMatcher`] is the crate-facing entry point.
 
 pub(crate) mod flooder;
 pub(crate) mod graph;
 pub(crate) mod matcher;
+pub(crate) mod retrace;
 pub(crate) mod state;
 
 use std::cell::RefCell;
@@ -43,6 +45,37 @@ thread_local! {
 impl State {
     /// Decode one syndrome: `(observable mask, total weight in undoubled units)`.
     pub(crate) fn run(&mut self, g: &CompiledGraph, defects: &[u32]) -> (u64, i64) {
+        self.run_to_matching(g, defects);
+        let (obs, w) = self.resolve();
+        (obs, w / 2)
+    }
+
+    /// Like `run`, but also XORs every matched path's edges into `ehat` by column.
+    pub(crate) fn run_edges(
+        &mut self,
+        g: &CompiledGraph,
+        defects: &[u32],
+        ehat: &mut [u8],
+    ) -> (u64, i64) {
+        self.run_to_matching(g, defects);
+        // Collected first: `retrace` needs `&mut self` while `resolve_with` borrows `&self`. The
+        // buffer is `State` scratch, taken out for the loop and put back, so no per-shot alloc.
+        let mut matched = std::mem::take(&mut self.rt_matched);
+        matched.clear();
+        self.resolve_with(&mut |e: &CEdge| matched.push(*e));
+        let (mut obs, mut w) = (0u64, 0i64);
+        for e in &matched {
+            obs ^= e.obs;
+            w += e.weight;
+            self.retrace(g, e, ehat);
+        }
+        self.rt_matched = matched;
+        (obs, w / 2)
+    }
+
+    /// Everything `run` does up to (not including) `resolve`: seed one region per defect, drain
+    /// the event queue, and dissolve any leftover tree.
+    fn run_to_matching(&mut self, g: &CompiledGraph, defects: &[u32]) {
         debug_assert!(
             defects.windows(2).all(|w| w[0] <= w[1]),
             "defects must be ascending"
@@ -100,8 +133,6 @@ impl State {
         if self.active_trees > 0 {
             self.dissolve_leftover_trees(g);
         }
-        let (obs, w) = self.resolve();
-        (obs, w / 2)
     }
 }
 
@@ -131,45 +162,57 @@ impl SparseMatcher {
 
     /// Same as `decode`, but also returns the sparse matcher's per-shot event statistics
     /// (`State::stats`, reset every call inside `State::run`'s `self.reset()`). `decode` is a
-    /// thin wrapper around this that drops the `Stats` half, so there is one cache-lookup/
-    /// eviction code path to keep in sync; profiling tests (`mwpm::tests::profile_local_phases_d11`)
-    /// call this directly to report average events/pushes per shot.
+    /// thin wrapper around this that drops the `Stats` half (the cache lookup/eviction lives in
+    /// `with_state`, shared with `decode_errors`); profiling tests
+    /// (`mwpm::tests::profile_local_phases_d11`) call this directly to report average
+    /// events/pushes per shot.
     pub(crate) fn decode_with_stats(&self, defects: &[u32]) -> ((u64, i64), Stats) {
-        // `CACHE.try_with` (rather than `.with`) keeps this panic-free even if `decode` is
-        // somehow reached while this thread's locals are being torn down (e.g. called from
-        // another TLS destructor at thread exit) — `.with` panics in that case, `try_with`
-        // returns `Err` instead. `State::run` (called below) never touches `CACHE` — it's
-        // plain arithmetic over its own arenas — so the inner `try_borrow_mut` can never
-        // re-enter and can't actually fail on this path either. Both fallbacks compute a
-        // fresh, uncached `State` rather than panicking, per the no-panic-in-library-code rule.
+        self.with_state(|st| {
+            let out = st.run(&self.graph, defects);
+            (out, st.stats)
+        })
+    }
+
+    /// `decode`, plus the matched paths XORed into `ehat` by representative DEM column (`ehat`
+    /// must cover every column of the graph). Same matching, same `(obs, weight)` as `decode`.
+    pub(crate) fn decode_errors(&self, defects: &[u32], ehat: &mut [u8]) -> (u64, i64) {
+        self.with_state(|st| st.run_edges(&self.graph, defects, ehat))
+    }
+
+    /// Run `f` on this thread's cached `State` for this decoder (allocating and caching one on
+    /// first use; evicting FIFO past `CACHE_CAP`). Falls back to an uncached `State` if the
+    /// thread-local is unavailable — never panics.
+    ///
+    /// `CACHE.try_with` (rather than `.with`) keeps this panic-free even if a decode is somehow
+    /// reached while this thread's locals are being torn down (e.g. called from another TLS
+    /// destructor at thread exit) — `.with` panics in that case, `try_with` returns `Err`
+    /// instead. `f` (a `State::run*` call) never touches `CACHE` — it's plain arithmetic over its
+    /// own arenas — so the inner `try_borrow_mut` can never re-enter and can't actually fail on
+    /// this path either. Both fallbacks compute on a fresh, uncached `State` rather than
+    /// panicking, per the no-panic-in-library-code rule.
+    fn with_state<R>(&self, mut f: impl FnMut(&mut State) -> R) -> R {
+        // `FnMut`, not `FnOnce`: the cached path and the TLS-teardown fallback below each need
+        // `f`, and only one of them ever runs; two sequential `&mut` borrows express that
+        // without an `Option::take` dance.
+        let n = self.graph.num_nodes();
         CACHE
             .try_with(|cache| {
                 if let Ok(mut cache) = cache.try_borrow_mut() {
                     if let Some((_, st)) = cache.iter_mut().find(|(id, _)| *id == self.id) {
-                        let out = st.run(&self.graph, defects);
-                        return (out, st.stats);
+                        return f(st);
                     }
                     if cache.len() >= CACHE_CAP {
                         cache.remove(0); // evict the oldest entry
                     }
-                    let mut st = State::new(self.graph.num_nodes());
-                    let out = st.run(&self.graph, defects);
-                    let stats = st.stats;
+                    let mut st = State::new(n);
+                    let out = f(&mut st);
                     cache.push((self.id, st));
-                    (out, stats)
+                    out
                 } else {
-                    let mut st = State::new(self.graph.num_nodes());
-                    let out = st.run(&self.graph, defects);
-                    let stats = st.stats;
-                    (out, stats)
+                    f(&mut State::new(n))
                 }
             })
-            .unwrap_or_else(|_| {
-                let mut st = State::new(self.graph.num_nodes());
-                let out = st.run(&self.graph, defects);
-                let stats = st.stats;
-                (out, stats)
-            })
+            .unwrap_or_else(|_| f(&mut State::new(n)))
     }
 }
 
@@ -456,6 +499,101 @@ pub(crate) mod tests {
             // matchings in different homology classes); weight equality above is the invariant,
             // and there is no tie-aware oracle to assert on the correction itself.
         }
+
+        #[test]
+        fn decode_errors_is_weight_and_syndrome_exact((g, defects) in graph_strategy()) {
+            let has_boundary = (0..g.num_nodes() as u32).any(|u| g.boundary(u).is_some());
+            prop_assume!(defects.len() % 2 == 0 || has_boundary);
+            let m = SparseMatcher::new(g.clone());
+            let (_, w) = m.decode(&defects);
+            let mut ehat = vec![0u8; num_cols(&g)];
+            let (_, we) = m.decode_errors(&defects, &mut ehat);
+            prop_assert_eq!(we, w);
+            // Σ weight of marked columns == matching weight, and parity at every node == defect.
+            let mut sum = 0i64;
+            let mut parity = vec![0u8; g.num_nodes()];
+            for u in 0..g.num_nodes() as u32 {
+                for (e, &c) in g.edges(u).iter().zip(g.edge_cols(u)) {
+                    if u < e.v && ehat[c as usize] == 1 {
+                        sum += e.w;
+                        parity[u as usize] ^= 1;
+                        parity[e.v as usize] ^= 1;
+                    }
+                }
+                if let Some((wb, _)) = g.boundary(u) {
+                    if ehat[g.boundary_col(u) as usize] == 1 {
+                        sum += wb;
+                        parity[u as usize] ^= 1;
+                    }
+                }
+            }
+            prop_assert_eq!(sum / 2, w, "marked-edge weight != matching weight");
+            for u in 0..g.num_nodes() as u32 {
+                prop_assert_eq!(parity[u as usize] == 1, defects.contains(&u), "node {} parity", u);
+            }
+        }
+    }
+
+    /// Column count of a `from_int_edges` graph (edges `0..E`, then boundary entries): one past
+    /// the largest column any retained edge or boundary edge carries.
+    fn num_cols(g: &CompiledGraph) -> usize {
+        let nodes = 0..g.num_nodes() as u32;
+        let edge = nodes
+            .clone()
+            .flat_map(|u| g.edge_cols(u).iter().map(|&c| c + 1));
+        let bnd = nodes
+            .filter(|&u| g.boundary(u).is_some())
+            .map(|u| g.boundary_col(u) + 1);
+        edge.chain(bnd).max().unwrap_or(0) as usize
+    }
+
+    #[test]
+    fn decode_errors_marks_the_matched_paths() {
+        // Chain 0-1-2-3 (columns 0,1,2), boundary at 3 (column 3 via from_int_edges numbering:
+        // boundary columns follow the edge columns).
+        let g = CompiledGraph::from_int_edges(
+            4,
+            &[(0, 1, 2, 1), (1, 2, 2, 2), (2, 3, 2, 4)],
+            &[(3, 5, 8)],
+        );
+        let m = SparseMatcher::new(g);
+        let mut ehat = vec![0u8; 4];
+        let (obs, w) = m.decode_errors(&[0, 2], &mut ehat);
+        assert_eq!((obs, w), (3, 4));
+        assert_eq!(ehat, vec![1, 1, 0, 0]);
+        let mut ehat = vec![0u8; 4];
+        let (obs, w) = m.decode_errors(&[2], &mut ehat);
+        assert_eq!((obs, w), (4 ^ 8, 7));
+        assert_eq!(ehat, vec![0, 0, 1, 1]);
+    }
+
+    #[test]
+    fn decode_errors_terminates_on_negative_weight_edges() {
+        // A p > 0.5 mechanism has weight ln((1-p)/p) < 0, and a negative undirected edge is a
+        // negative 2-cycle for Dijkstra: `retrace` must skip it rather than relax it forever.
+        // `decode` is untouched by this (same `(obs, w)` from both entry points).
+        let g = CompiledGraph::from_int_edges(
+            4,
+            &[(0, 1, -1, 1), (0, 2, 1, 2), (1, 3, 1, 4), (2, 3, 5, 8)],
+            &[],
+        );
+        let m = SparseMatcher::new(g);
+        let d = [0u32, 1, 2, 3];
+        // 0–2 and 1–3 (w 1+1); the retrace from 0 used to loop 0 ↔ 1 over the -1 edge forever.
+        assert_eq!(m.decode(&d), (2 ^ 4, 2));
+        let mut ehat = vec![0u8; 4];
+        assert_eq!(m.decode_errors(&d, &mut ehat), (2 ^ 4, 2));
+        // Non-negative shortest paths exist here, so the correction is still the matched paths.
+        assert_eq!(ehat, vec![0, 1, 1, 0]);
+
+        // Here 0–1 is matched *across* the -1 edge: its retrace skips that edge, finds nothing
+        // within the (negative) bound and falls back to leaving the pair unmarked; 2–3 is intact.
+        let g = CompiledGraph::from_int_edges(4, &[(0, 1, -1, 1), (0, 2, 1, 2), (2, 3, 5, 4)], &[]);
+        let m = SparseMatcher::new(g);
+        assert_eq!(m.decode(&d), (1 ^ 4, 4));
+        let mut ehat = vec![0u8; 3];
+        assert_eq!(m.decode_errors(&d, &mut ehat), (1 ^ 4, 4));
+        assert_eq!(ehat, vec![0, 0, 1]);
     }
 
     #[test]

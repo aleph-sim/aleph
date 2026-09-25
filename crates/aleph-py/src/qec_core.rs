@@ -150,6 +150,18 @@ impl AnyDecoder {
             AnyDecoder::RelayOsd(d) => d.as_ref(),
         }
     }
+
+    /// Per-column error estimate and convergence flag (see the crate docs of each decoder).
+    pub fn decode_errors(&self, s: &Syndrome) -> (Vec<u8>, bool) {
+        match self {
+            AnyDecoder::Mwpm(d) => (d.decode_errors(s), true),
+            AnyDecoder::UnionFind(d) => (d.decode_errors(s), true),
+            AnyDecoder::Bp(d) => d.decode_errors(s),
+            AnyDecoder::BpOsd(d) => d.decode_errors(s),
+            AnyDecoder::Relay(d) => d.decode_errors(s),
+            AnyDecoder::RelayOsd(d) => d.decode_errors(s),
+        }
+    }
 }
 
 /// Bytes needed for `bits` bit-packed values.
@@ -244,6 +256,41 @@ pub fn decode_packed(
             }
         });
     out
+}
+
+/// Decode dense 0/1 rows `[shots × detectors]` to per-column error rows `[shots × errors]` plus a
+/// converged flag per shot.
+pub fn decode_errors_rows(
+    dec: &AnyDecoder,
+    bits: &[u8],
+    shots: usize,
+    detectors: usize,
+    errors: usize,
+) -> (Vec<u8>, Vec<bool>) {
+    let mut out = vec![0u8; shots * errors];
+    let mut conv = vec![false; shots];
+    if shots == 0 || errors == 0 {
+        // `par_chunks_mut(0)` panics; an empty row also carries nothing to write.
+        if errors == 0 {
+            conv.iter_mut().for_each(|c| *c = true);
+        }
+        return (out, conv);
+    }
+    let rows: Vec<(&mut [u8], &mut bool)> = out.chunks_mut(errors).zip(conv.iter_mut()).collect();
+    rows.into_par_iter().enumerate().for_each(|(i, (o, c))| {
+        let fired = if detectors == 0 {
+            Vec::new()
+        } else {
+            let row = &bits[i * detectors..(i + 1) * detectors];
+            (0..detectors as u32)
+                .filter(|&d| row[d as usize] != 0)
+                .collect()
+        };
+        let (ehat, ok) = dec.decode_errors(&Syndrome { detectors, fired });
+        o.copy_from_slice(&ehat);
+        *c = ok;
+    });
+    (out, conv)
 }
 
 #[cfg(test)]
@@ -354,6 +401,42 @@ error(0.1) D2
                 assert_eq!((pk[s] >> o) & 1, rows[s * 2 + o], "shot {s} obs {o}");
             }
         }
+    }
+
+    #[test]
+    fn decode_errors_rows_matches_decode_rows_through_o() {
+        let dem = DetectorErrorModel::parse(DEM).unwrap();
+        for name in [
+            "mwpm",
+            "union-find",
+            "bp",
+            "bp-osd",
+            "relay-bp",
+            "relay-bp-osd",
+        ] {
+            let dec = AnyDecoder::build(&dem, name, &DecoderParams::default()).unwrap();
+            let bits = [1u8, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1]; // 4 shots × 3 detectors
+            let flips = decode_rows(dec.get(), &bits, 4, 3, 1);
+            let (ehat, conv) = decode_errors_rows(&dec, &bits, 4, 3, dem.errors.len());
+            assert_eq!(conv, vec![true; 4], "{name}");
+            for shot in 0..4 {
+                let row = &ehat[shot * 4..(shot + 1) * 4];
+                let o: u8 = row
+                    .iter()
+                    .zip(&dem.errors)
+                    .map(|(&b, e)| b & (e.obs.contains(&0) as u8))
+                    .fold(0, |a, b| a ^ b);
+                assert_eq!(o, flips[shot], "{name} shot {shot}");
+            }
+        }
+        let (e, c) = decode_errors_rows(
+            &AnyDecoder::build(&dem, "mwpm", &DecoderParams::default()).unwrap(),
+            &[],
+            0,
+            3,
+            4,
+        );
+        assert!(e.is_empty() && c.is_empty());
     }
 
     #[test]

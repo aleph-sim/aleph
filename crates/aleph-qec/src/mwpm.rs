@@ -194,6 +194,42 @@ impl MwpmDecoder {
         (Correction::new(flips), weight)
     }
 
+    /// Decode `syndrome` and return the error estimate over DEM columns (`ehat[j] == 1` ⇔ the
+    /// mechanism `j` is in the correction), the output a `cudaq-qec` decoder returns. The matched
+    /// pairs are the same as [`decode`](Decoder::decode)'s; each pair's path is retraced by a
+    /// bounded shortest-path search, so `H ê = s` and the total weight agree with `decode`, while
+    /// the observable parity may differ on a genuine tie (equal-weight paths).
+    ///
+    /// Exceptions:
+    /// - an odd component with no boundary has no perfect matching; like `decode`, one defect
+    ///   there is left unmatched, so `H ê` misses that detector;
+    /// - mechanisms with p > 0.5 have negative weight `ln((1-p)/p)` and are never retraced
+    ///   through (a negative edge makes the shortest-path search ill-posed): a pair whose path
+    ///   needs one is left unmarked unless a non-negative path within the same bound exists;
+    /// - on a DEM with `^`-decomposed mechanisms the estimate is per mechanism, not per part, and
+    ///   `H ê = s` does not hold — split the parts into separate mechanisms first.
+    pub fn decode_errors(&self, syndrome: &Syndrome) -> Vec<u8> {
+        let mut ehat = vec![0u8; self.graph.num_columns()];
+        let defects = self.defects_of(syndrome);
+        if !defects.is_empty() {
+            let d32: Vec<u32> = defects.iter().map(|&d| d as u32).collect();
+            self.sparse.decode_errors(&d32, &mut ehat);
+        }
+        ehat
+    }
+
+    /// Test/bench helper: the scaled weight of the edges an `ehat` marks (undoubled units, so it
+    /// compares with `decode_sparse`'s weight). Columns past the end of `ehat` count as unmarked.
+    #[doc(hidden)]
+    pub fn ehat_weight(&self, ehat: &[u8]) -> i64 {
+        self.graph
+            .edges()
+            .iter()
+            .filter(|e| ehat.get(e.column as usize) == Some(&1))
+            .map(|e| (e.weight * WEIGHT_SCALE).round() as i64)
+            .sum()
+    }
+
     /// Defect indices that fired in `syndrome`: ascending, deduplicated, clamped to this model's
     /// detector range. `Syndrome::new` already sorts+dedups, but the raw struct's fields are
     /// public, so a caller-built `Syndrome` may not — the sparse matcher requires ascending,
@@ -765,6 +801,71 @@ mod tests {
                     ws, wd,
                     "circuit d={d}: sparse weight {ws} != dense {wd} on {:?}",
                     s.fired
+                );
+            }
+        }
+    }
+
+    /// `decode_errors` invariants on the same phenomenological shot set as the #331 differential:
+    /// H ê = s and Σw(ê) = matching weight on every shot; O ê disagrees with `decode` only at a
+    /// genuine-tie rate bounded by the `decode_local` sentinel.
+    #[test]
+    fn decode_errors_invariants_on_phenomenological_shots() {
+        use crate::{build_dem, SurfaceCode};
+        for d in [3usize, 5, 7, 9, 11] {
+            for p in [0.01, 0.03, 0.06] {
+                let exp = SurfaceCode::new(d).memory_z_experiment(d);
+                let dem =
+                    build_dem(&exp.annotated, &exp.phenomenological_mechanisms(p, p)).unwrap();
+                let dec = MwpmDecoder::new(&dem).unwrap();
+                let shots = if cfg!(debug_assertions) {
+                    40
+                } else if d >= 11 {
+                    1500
+                } else {
+                    8000
+                };
+                let (mut ties, mut local_ties) = (0usize, 0usize);
+                for fired in
+                    sample_defects(&dem, shots, 0xE44 ^ (d as u64) << 8 ^ (p * 1000.0) as u64)
+                {
+                    let s = Syndrome::new(dem.detectors, fired);
+                    let (cs, ws) = dec.decode_sparse(&s);
+                    let ehat = dec.decode_errors(&s);
+                    assert_eq!(ehat.len(), dem.errors.len());
+                    assert_eq!(
+                        dec.ehat_weight(&ehat),
+                        ws,
+                        "d={d} p={p}: Σw(ê) != weight on {:?}",
+                        s.fired
+                    );
+                    let mut hs = vec![false; dem.detectors];
+                    let mut os = vec![false; dem.observables];
+                    for (j, &b) in ehat.iter().enumerate() {
+                        if b == 1 {
+                            for &x in &dem.errors[j].dets {
+                                hs[x as usize] ^= true;
+                            }
+                            for &o in &dem.errors[j].obs {
+                                os[o as usize] ^= true;
+                            }
+                        }
+                    }
+                    let want: Vec<bool> =
+                        (0..dem.detectors as u32).map(|x| s.is_fired(x)).collect();
+                    assert_eq!(hs, want, "d={d} p={p}: H ê != s on {:?}", s.fired);
+                    if os != cs.observable_flips {
+                        ties += 1;
+                    }
+                    if dec.decode_local(&s).0 != dec.decode_dense_weighted(&s).0 {
+                        local_ties += 1;
+                    }
+                }
+                // Measured: 0 disagreements in every release cell (local baseline 0–1403), so
+                // the additive slack only covers the near-zero p = 0.01 counts.
+                assert!(
+                    ties <= local_ties * 2 + 2,
+                    "d={d} p={p}: {ties} O·ê disagreements vs local-oracle baseline {local_ties}"
                 );
             }
         }
