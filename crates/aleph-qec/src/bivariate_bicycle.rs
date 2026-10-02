@@ -338,8 +338,8 @@ impl BBCode {
                 let round_start = inst.len();
                 let mut data_touched = vec![false; n];
                 if let Some(d) = SX[t] {
-                    for c in 0..lm {
-                        let tgt = self.xchk_nbrs[c][d] as u32;
+                    for (c, nbrs) in self.xchk_nbrs.iter().enumerate().take(lm) {
+                        let tgt = nbrs[d] as u32;
                         inst.push(Instruction::Gate(GateInstance::new(
                             Gate::Cnot,
                             vec![xanc(c), tgt],
@@ -349,8 +349,8 @@ impl BBCode {
                     }
                 }
                 if let Some(d) = SZ[t] {
-                    for c in 0..lm {
-                        let ctrl = self.zchk_nbrs[c][d] as u32;
+                    for (c, nbrs) in self.zchk_nbrs.iter().enumerate().take(lm) {
+                        let ctrl = nbrs[d] as u32;
                         inst.push(Instruction::Gate(GateInstance::new(
                             Gate::Cnot,
                             vec![ctrl, zanc(c)],
