@@ -80,8 +80,14 @@ the DMA image `deploy.sh` installs.
 
 To stop this class of bug reaching a user, the driver now reads back the PL0 clock PYNQ programmed and
 prints it. With `--max-mhz` it refuses to decode if the clock is faster than the closure clock.
-`deploy.sh` passes `--max-mhz 125` on a ZCU104. On a KV260 the guard only reports for now: it has not
-been run on that board yet.
+`deploy.sh` passes `--max-mhz 125` on a ZCU104 and `--max-mhz 96.969` on a KV260.
+
+**Measured on a KV260 (revB, Kria-PYNQ 3.0.1, 2026-10-02)** with this branch's `deploy.sh` and driver
+over the published `appliance-v1` bitstream, `.hwh` and vectors (all three checked against the release
+SHA-256 list): `PL0 clock: 90.908 MHz`, `CORRECTNESS: PASS (40/40)`, `LATENCY: worst 2085 cycles,
+mean 2085.0 = worst 22.94 µs at 90.908 MHz`, batched throughput 4.340e4 exp/s (23.04 µs/exp). The
+predicted ~90.9 MHz holds to the third digit. With the guard on, the same run passes; with `--max-mhz 85`
+the driver prints the FAIL message and exits 1 without decoding.
 
 ## 4. The shipped build
 

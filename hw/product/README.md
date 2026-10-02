@@ -19,7 +19,7 @@ deploy in an afternoon. That gap is the whole point of this directory — see "W
 | v3 | ASIC module | banked 144/864, 543 cycles | **0.88 µs at ASAP7 7 nm predictive** — see the node caveat below | superconducting, ~1 µs rounds |
 
 ¹ 15.64 µs is the AXI-Lite overlay at 133.332 MHz. The batched-DMA image that `deploy.sh` installs
-runs the same 2085 cycles at ~90.9 MHz, i.e. ~22.9 µs: PYNQ applies the image's PL0 divisors to the
+runs the same 2085 cycles at 90.908 MHz (measured on a KV260), i.e. 22.94 µs: PYNQ applies the image's PL0 divisors to the
 board's ~1000 MHz IOPLL. The driver prints the latency the board actually delivers
 (`docs/perf/p2-appliance-v2.md` §3).
 

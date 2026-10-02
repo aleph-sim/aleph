@@ -66,9 +66,9 @@ case "$MODEL" in
   *KV260*|*Kria*)
     BOARD="KV260"; DEF_RELEASE="appliance-v1"; DEF_BIT="bp_kv260_stream_banked_p003.bit"
     GEOMETRY="16/48 banked, gross bivariate-bicycle [[144,12,12]]"
-    # v1 closed timing at 96.969 MHz and deploys have measured ~90.9 MHz, but the clock guard has not
-    # yet been run on a KV260, so it only reports here; set PL_MHZ=96.969 once it has.
-    WORST="2085 cycles (this image clocks ~90.9 MHz, ~22.9 us)"; PL_MHZ="" ;;
+    # v1 closed timing at 96.969 MHz; on a KV260 PYNQ programs PL0 to 90.908 MHz (measured by this
+    # guard on a revB board, 2026-10-02), so the guard passes with margin.
+    WORST="2085 cycles (this image clocks ~90.9 MHz, ~22.9 us)"; PL_MHZ="96.969" ;;
   *)
     [ -n "${BITSTREAM:-}" ] || die "board reports \"${MODEL:-unknown}\"; the appliance ships builds for a
        Kria KV260 (appliance-v1) and a ZCU104 (appliance-v2) only. A bitstream is tied to its FPGA part
