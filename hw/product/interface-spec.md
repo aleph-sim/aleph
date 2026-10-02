@@ -1,7 +1,7 @@
 # Decoder appliance — interface specification (v1 draft)
 
 This is the contract between the decoder and whatever drives it. It is the most important document on
-the product track: a lab that integrates against v1 must not have to rewrite when v2 (large FPGA) or
+the product track: a lab that integrates against v1 must not have to rewrite when v2 (ZCU104, then a large FPGA) or
 v3 (ASIC module) arrives, so the surface described here is meant to outlive all three.
 
 **Status: v1 documents what is BUILT and MEASURED. Anything not yet built is marked "not implemented"
@@ -110,6 +110,10 @@ Latency is `cycles / f_clk`. Cycles depend on the core and its configuration, no
 |---|---|---|---|
 | banked | 16/48 | 2085 | measured, `bpbankedscale` |
 | banked | 32/96 | 1283 | measured |
+| banked | **36/144** (appliance v2, ZCU104) | **1036** | measured, `bpbankedscale`, bit-exact 40/40 |
+| banked | 48/144 | 975 | measured, bit-exact 40/40 |
+| banked | 48/192 | 913 | measured, bit-exact 40/40 — same cycles as 64/192 (GC = 3 either way), fewer lanes |
+| banked | 48/216 | 851 | measured, bit-exact 40/40 |
 | banked | 64/192 | 913 | measured |
 | banked | 144/864 (full-parallel) | **543** | measured, `bpbankedscale`, bit-exact 40/40 |
 | unrolled (M4) | full-parallel | 181 | measured, `bpunrollcirc`, bit-exact — but **does not fit**: 838 % of the KV260's LUTs at 30.7 MHz |
@@ -130,7 +134,7 @@ early exit.**
 
 ## 6. Stability promise
 
-Across v1 (KV260) → v2 (large FPGA) → v3 (ASIC module):
+Across v1 (KV260) → v2 (ZCU104; large FPGA) → v3 (ASIC module):
 
 - The **register map in §2 will not change meaning.** New registers may be added at unused offsets.
 - **IDCODE changes whenever the map changes.** Check it; do not assume.

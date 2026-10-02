@@ -320,13 +320,13 @@ bpbanked-highweight:
 		check_minsum.sv var_update.sv bp_relay_banked.sv tb_bp_banked.cpp -o sim_bpbankedhw
 	./obj_bankedhw/sim_bpbankedhw bp_circ_hw_vectors.txt
 
-# Q7 banking-scaling qualification (asic-architecture.md § 5): sweep the banked core across eight
+# Q7 banking-scaling qualification (asic-architecture.md § 5): sweep the banked core across nine
 # (W,V) geometries and print worst-case cycles per config. Confirms the closed form
 # cycles = 60·(GC+GV) + 60·7 + (2·GV+GC): the 60·7 = 420-cycle per-iteration pipeline tail is
 # banking-invariant, so 4× banking (16/48→64/192) yields 2.28× not 4×, floored at 543 cycles
 # (full-parallel, MEASURED). The trailing term was written `(2·GV+GC+1)` until Q7-02 B0 Option A
 # measured all eight points and found it 1 high at every one. 64/192 builds 64 check_minsum + 192
-# var_update units — a large but buildable sim.
+# var_update units — a large but buildable sim. 36/144 is the appliance-v2 (ZCU104) geometry, 1036 cycles.
 #
 # The last three geometries are the ones Q7-02 Task B1 found could not be GENERATED at all and Task B0
 # Option A fixed; they are here so the fix cannot silently rot. Each covers a distinct defect:
@@ -338,7 +338,7 @@ bpbanked-highweight:
 # so expect this target to take the better part of an hour. No hardware gate runs in CI.
 bpbankedscale:
 	cd .. && $(CARGO) qec_q7_bp_graph -- circvectors 1 0.003 40 2024 > hw/bp_circ_vectors.txt
-	@for wv in "8 24" "12 36" "16 48" "32 96" "64 192" "48 288" "144 432" "144 864"; do \
+	@for wv in "8 24" "12 36" "16 48" "32 96" "36 144" "64 192" "48 288" "144 432" "144 864"; do \
 		set -- $$wv; echo "== W=$$1 V=$$2 =="; \
 		(cd .. && $(CARGO) qec_q7_bp_graph -- circgraph 1 0.003 $$1 $$2 > hw/bb_gross_tanner.svh); \
 		rm -rf obj_bankedscale; \

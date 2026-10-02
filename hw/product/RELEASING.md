@@ -18,6 +18,7 @@ on every push (`.github/workflows/hw.yml`).
 |---|---|
 | `bp_kv260_stream_banked_p003.bit` | the PL image: banked 16/48 core, batched AXI-DMA front end, noise prior p = 0.003 |
 | `bp_kv260_stream_banked_p003.hwh` | the hardware handoff — **not optional**, see below |
+| *(v2)* `bp_zcu104_stream_banked_p003.bit` / `.hwh` | the ZCU104 image: banked 36/144, same DMA front end, p = 0.003, PL0 = 125 MHz — **built with `BP_BOARD=xilinx.com:zcu104:part0:1.1`**, or the divisors in the `.hwh` do not produce 125 MHz on the board (`docs/perf/p2-appliance-v2.md` §3) |
 | `bp_circ_vectors.txt` | the 40-shot circuit-level golden — the same one the co-simulation gates on |
 | `bp_stream_banked_kv260.py` | the self-test / batch driver |
 | `SHA256SUMS` | checksums for all of the above; `deploy.sh` refuses to run anything that fails it |
