@@ -325,14 +325,10 @@ mod tests {
             let hl = a.thin_svd().unwrap();
             let svd = jacobi_thin_svd(a.as_ref()).expect("converged");
             let k = m.min(n);
-            for t in 0..k {
+            for (t, &sig) in svd.sigma.iter().enumerate().take(k) {
                 let f = hl.S()[t].re;
-                let d = (f - svd.sigma[t]).abs();
-                assert!(
-                    d < 1e-10,
-                    "σ[{t}] jacobi {} vs faer {f} (Δ={d:.2e})",
-                    svd.sigma[t]
-                );
+                let d = (f - sig).abs();
+                assert!(d < 1e-10, "σ[{t}] jacobi {sig} vs faer {f} (Δ={d:.2e})");
             }
         }
     }

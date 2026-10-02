@@ -164,9 +164,9 @@ impl MetalMpsState {
         let mut out = vec![Complex::<f64>::new(0.0, 0.0); amps.len()];
         for (site_idx, amp) in amps.iter().enumerate() {
             let mut qubit_idx = 0usize;
-            for s in 0..n {
+            for (s, &q) in self.qubit_of_site.iter().enumerate().take(n) {
                 if (site_idx >> s) & 1 == 1 {
-                    qubit_idx |= 1 << (self.qubit_of_site[s] as usize);
+                    qubit_idx |= 1 << (q as usize);
                 }
             }
             out[qubit_idx] = *amp;
