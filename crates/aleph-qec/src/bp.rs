@@ -406,9 +406,8 @@ mod tests {
         let n = 12;
         let dem = repetition_dem(n, 0.05);
         let bp = BpDecoder::new(&dem);
-        for bit in 0..n {
+        for (bit, e) in dem.errors.iter().enumerate().take(n) {
             // The syndrome that error `bit` produces.
-            let e = &dem.errors[bit];
             let s = Syndrome::new(n - 1, e.dets.clone());
             let (corr, conv) = bp.decode_bp(&s);
             assert!(
