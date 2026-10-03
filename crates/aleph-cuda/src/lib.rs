@@ -27,6 +27,8 @@ mod pool;
 mod cuquantum;
 // GPU-safe gate fusion (P5.9-01): feed the IR fusion passes into the GPU path.
 #[cfg(all(target_os = "linux", feature = "cuda"))]
+mod dist;
+#[cfg(all(target_os = "linux", feature = "cuda"))]
 mod fusion;
 // GPU stabilizer (CHP tableau) Clifford backend (P5-07). Pure `cuda`, no
 // cuStateVec — independent of the dense/SV path.
@@ -45,6 +47,8 @@ pub use buffer::{device_alloc_count, device_dtoh_bytes, DeviceBuffer};
 pub use context::CudaContext;
 #[cfg(all(target_os = "linux", feature = "cuquantum"))]
 pub use cuquantum::CuStateVecBackend;
+#[cfg(all(target_os = "linux", feature = "cuda"))]
+pub use dist::{DeviceSv, DistSvError, Exchange, LocalExchange};
 #[cfg(all(target_os = "linux", feature = "cuda"))]
 pub use fusion::{
     fuse_for_gpu, fuse_for_gpu_tf32, fuse_for_gpu_with, MAX_FUSE_QUBITS, MAX_FUSE_QUBITS_TF32,
