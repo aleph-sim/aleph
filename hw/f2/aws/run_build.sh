@@ -13,13 +13,15 @@ source /opt/Xilinx/2025.2/Vivado/settings64.sh 2>/dev/null || true
 set -u
 
 staged="${1:?usage: run_build.sh <staged_cl_dir> <mhz>...}"; shift
+clocks=("$@")
+set --   # a sourced script sees the caller's positional args; hdk_setup.sh rejects ours as options
 cd /scratch
 [ -d aws-fpga ] || git clone -q --depth 1 -b f2 https://github.com/aws/aws-fpga.git
 cd aws-fpga
 # hdk_setup.sh downloads the shell DCPs and checks the Vivado version; it must be sourced, in bash.
 source hdk_setup.sh > /scratch/hdk_setup.log 2>&1 || { echo "hdk_setup FAILED" >> /scratch/summary.txt; exit 1; }
 
-for mhz in "$@"; do
+for mhz in "${clocks[@]}"; do
   (
     name=cl_aleph_bp
     dir="/scratch/cl_$mhz/$name"        # CL name must match the top module; separate parents per clock

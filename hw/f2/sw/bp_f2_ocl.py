@@ -13,10 +13,10 @@ prints is the core's own cycle count (result word bits [15:0]), so the PCIe roun
 Exit status 0 only on a full bit-exact pass.
 """
 
+import ctypes
 import glob
 import mmap
 import os
-import struct
 import sys
 import time
 
@@ -73,17 +73,28 @@ def find_bar0(slot):
 
 
 class Ocl:
+    """32-bit MMIO on OCL BAR0.
+
+    Every access MUST be a single aligned 32-bit load/store. struct.pack_into / unpack_from on an mmap
+    let Python copy the 4 bytes in pieces, and on an F2 instance that reaches the CL as several narrower
+    AXI-Lite transactions: one PUSH became 3 FIFO words and one POP read popped more than one result
+    (measured: 5 struct writes -> 3 results; 5 ctypes uint32 writes -> 1). ctypes.c_uint32 at the mapped
+    address compiles to one 32-bit access.
+    """
+
     def __init__(self, dev):
         path = dev + "/resource0"
         size = os.path.getsize(path)
         self.fd = os.open(path, os.O_RDWR | os.O_SYNC)
         self.mm = mmap.mmap(self.fd, size, mmap.MAP_SHARED, mmap.PROT_READ | mmap.PROT_WRITE)
+        self._buf = (ctypes.c_char * 0x100).from_buffer(self.mm)
+        self.base = ctypes.addressof(self._buf)
 
     def rd(self, off):
-        return struct.unpack_from("<I", self.mm, off)[0]
+        return ctypes.c_uint32.from_address(self.base + off).value
 
     def wr(self, off, val):
-        struct.pack_into("<I", self.mm, off, val & 0xFFFFFFFF)
+        ctypes.c_uint32.from_address(self.base + off).value = val & 0xFFFFFFFF
 
 
 def wait_ready(ocl, timeout=2.0):
