@@ -73,3 +73,54 @@ fn device_sv_alloc_copy_roundtrip_f32() {
     let r0 = be.alloc_rank(4, 0).unwrap();
     assert!((be.download(&r0).unwrap()[0] - Complex::new(1.0, 0.0)).norm() < 1e-7);
 }
+
+use aleph_cuda::{Exchange, LocalExchange};
+use aleph_ir::dist::DistLayout;
+
+fn rank_data(l: DistLayout) -> Vec<Vec<Complex<f64>>> {
+    let size = 1usize << l.m();
+    (0..l.ranks() as usize)
+        .map(|r| {
+            (0..size)
+                .map(|i| Complex::new((r * size + i) as f64, 0.5 * i as f64 - r as f64))
+                .collect()
+        })
+        .collect()
+}
+
+#[test]
+fn local_exchange_matches_cpu_reference() {
+    let Some(mut be) = gpu64() else { return };
+    for (n, g) in [(9u32, 2u32), (10, 3)] {
+        let l = DistLayout::new(n, g).unwrap();
+        let m = l.m();
+        let orders: Vec<Vec<u32>> = vec![
+            vec![m],
+            vec![m + 1],
+            vec![m, m + 1],
+            vec![m + 1, m],
+            if g == 3 {
+                vec![m + 2, m, m + 1]
+            } else {
+                vec![m + 1, m]
+            },
+        ];
+        for bits in orders {
+            for scratch in [4usize, 1 << 20] {
+                let host = rank_data(l);
+                let mut want = host.clone();
+                aleph_sv::dist_ref::exchange_cpu(&mut want, l, &bits);
+                let mut ranks: Vec<_> = host.iter().map(|v| be.upload(m, v).unwrap()).collect();
+                let mut x = LocalExchange::<CudaSvBackend>::with_scratch_amps(scratch);
+                x.exchange(&mut be, &mut ranks, l, &bits).unwrap();
+                for (r, st) in ranks.iter().enumerate() {
+                    let got = be.download(st).unwrap();
+                    assert_eq!(
+                        got, want[r],
+                        "n={n} g={g} bits={bits:?} scratch={scratch} rank {r}"
+                    );
+                }
+            }
+        }
+    }
+}
