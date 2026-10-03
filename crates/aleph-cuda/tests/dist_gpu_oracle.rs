@@ -218,6 +218,17 @@ fn all_diag_on_globals(n: u32) -> Circuit {
         .unwrap();
     c.add_gate(GateInstance::new(Gate::Toffoli, vec![top, top - 1, 0]))
         .unwrap();
+    // Externally controlled diagonals touching globals: at g >= 1 the first
+    // specialises to a `Unitary1qDiag` on q1 *with* local control q0; at g >= 2
+    // the second leaves only a scalar phase gated on local control q0.
+    c.add_gate(GateInstance::controlled(Gate::Cz, vec![1, top], vec![0]))
+        .unwrap();
+    c.add_gate(GateInstance::controlled(
+        Gate::Cz,
+        vec![top - 1, top],
+        vec![0],
+    ))
+    .unwrap();
     c
 }
 
@@ -290,4 +301,42 @@ fn dist_matches_single_gpu_at_n20() {
             .fold(0.0, f64::max);
         assert!(worst < 1e-10, "g={g} worst {worst}");
     }
+}
+
+#[test]
+fn dist_rejects_rank_slice_over_qubit_cap() {
+    // m = 5 against a 4-qubit cap: must be TooManyQubits, not an allocation.
+    let Some(be) = gpu64() else { return };
+    let mut d = DistSvBackend::new(be.with_qubit_cap(4), LocalExchange::new());
+    assert!(d.run(&ghz(6), 1, Router::Lookahead).is_err());
+    // m = 64 would overflow `1 << m` (debug panic / release tiny buffer).
+    let Some(be) = gpu64() else { return };
+    let mut d = DistSvBackend::new(be, LocalExchange::new());
+    assert!(d.run(&ghz(64), 0, Router::Naive).is_err());
+}
+
+#[test]
+fn device_sv_rejects_oversized_slices() {
+    let Some(mut be) = gpu64() else { return };
+    assert!(be.alloc_rank(64, 1).is_err());
+    assert!(be.alloc_rank(63, 0).is_err());
+    let Some(mut be32) = gpu32() else { return };
+    assert!(be32.alloc_rank(64, 1).is_err());
+    assert!(be32.upload(64, &[]).is_err());
+}
+
+#[test]
+fn local_exchange_rejects_duplicate_bits() {
+    let Some(mut be) = gpu64() else { return };
+    let l = DistLayout::new(8, 2).unwrap();
+    let m = l.m();
+    let mut ranks: Vec<_> = rank_data(l)
+        .iter()
+        .map(|v| be.upload(m, v).unwrap())
+        .collect();
+    let mut x = LocalExchange::<CudaSvBackend>::new();
+    assert!(x.exchange(&mut be, &mut ranks, l, &[m, m]).is_err());
+    assert!(x
+        .exchange(&mut be, &mut ranks, l, &[m + 1, m, m + 1])
+        .is_err());
 }

@@ -18,6 +18,10 @@ pub use exchange::{Exchange, LocalExchange};
 /// [`Backend`]: rank-slice allocation, device-to-device amplitude copies, and
 /// host transfer for readout / tests.
 pub trait DeviceSv: Backend {
+    /// Largest rank slice, in qubits, this backend accepts. `alloc_rank` and
+    /// `upload` reject a larger `m` with `TooManyQubits` (spec §4: the
+    /// per-rank state must fit the device).
+    fn max_qubits(&self) -> u32;
     /// A rank slice of `m` qubits: |0…0⟩ if `rank == 0`, all-zero otherwise.
     fn alloc_rank(&mut self, m: u32, rank: u32) -> Result<Self::State, BackendError>;
     /// Copy `len` amplitudes `src[src_off..]` → `dst[dst_off..]` on the device.

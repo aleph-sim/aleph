@@ -175,6 +175,11 @@ impl CudaSvBackend {
         self
     }
 
+    /// The current qubit cap (the distributed layer bounds rank slices by it).
+    pub(crate) fn qubit_cap(&self) -> u32 {
+        self.qubit_cap
+    }
+
     /// Enable (default) or disable routing diagonal gates to the custom
     /// `apply_diag` kernels (P5-06). Disabling forces the dense `apply_1q` /
     /// `apply_kq` path — the baseline arm of the P5-06 A/B benchmark.

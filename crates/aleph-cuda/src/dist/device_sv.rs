@@ -9,6 +9,22 @@ use super::DeviceSv;
 use crate::sv::to_backend_err;
 use crate::{CudaSvBackend, CudaSvBackendF32, CudaSvState, CudaSvStateF32, DeviceBuffer};
 
+/// `2usize << m` (scalar count of an m-qubit slice) must not overflow.
+const MAX_SHIFT_QUBITS: u32 = usize::BITS - 2;
+
+/// Reject `m` above the backend cap (and above what `usize` can address)
+/// before any `1 << m` is formed.
+fn check_qubits(m: u32, cap: u32) -> Result<(), BackendError> {
+    let limit = cap.min(MAX_SHIFT_QUBITS);
+    if m > limit {
+        return Err(BackendError::TooManyQubits {
+            requested: m,
+            limit,
+        });
+    }
+    Ok(())
+}
+
 fn range_err() -> BackendError {
     BackendError::InvalidState {
         reason: "dist: amplitude copy out of range",
@@ -16,7 +32,12 @@ fn range_err() -> BackendError {
 }
 
 impl DeviceSv for CudaSvBackend {
+    fn max_qubits(&self) -> u32 {
+        self.qubit_cap()
+    }
+
     fn alloc_rank(&mut self, m: u32, rank: u32) -> Result<CudaSvState, BackendError> {
+        check_qubits(m, self.qubit_cap())?;
         let ctx = self.ctx();
         if rank == 0 {
             return CudaSvState::allocate(&ctx, m).map_err(to_backend_err);
@@ -59,6 +80,7 @@ impl DeviceSv for CudaSvBackend {
     }
 
     fn upload(&mut self, m: u32, amps: &[Complex<f64>]) -> Result<CudaSvState, BackendError> {
+        check_qubits(m, self.qubit_cap())?;
         if amps.len() != 1usize << m {
             return Err(range_err());
         }
@@ -75,7 +97,12 @@ impl DeviceSv for CudaSvBackend {
 }
 
 impl DeviceSv for CudaSvBackendF32 {
+    fn max_qubits(&self) -> u32 {
+        self.qubit_cap()
+    }
+
     fn alloc_rank(&mut self, m: u32, rank: u32) -> Result<CudaSvStateF32, BackendError> {
+        check_qubits(m, self.qubit_cap())?;
         let ctx = self.ctx();
         if rank == 0 {
             return CudaSvStateF32::allocate(&ctx, m).map_err(to_backend_err);
@@ -118,6 +145,7 @@ impl DeviceSv for CudaSvBackendF32 {
     }
 
     fn upload(&mut self, m: u32, amps: &[Complex<f64>]) -> Result<CudaSvStateF32, BackendError> {
+        check_qubits(m, self.qubit_cap())?;
         if amps.len() != 1usize << m {
             return Err(range_err());
         }

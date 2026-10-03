@@ -239,6 +239,11 @@ impl CudaSvBackendF32 {
         self
     }
 
+    /// The current qubit cap (the distributed layer bounds rank slices by it).
+    pub(crate) fn qubit_cap(&self) -> u32 {
+        self.qubit_cap
+    }
+
     /// Enable (default) or disable routing plain CNOTs to `apply_cnot_f32`.
     pub fn with_custom_2q(mut self, on: bool) -> Self {
         self.custom_2q = on;

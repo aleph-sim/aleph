@@ -17,14 +17,18 @@ Refs #55. Design: `docs/superpowers/specs/2026-10-03-multi-gpu-sv-design.md` §3
   chunk pair is swapped exactly once, in place: A → scratch, B → A, scratch → B.
   - The work goes in pieces of at most `scratch_amps` (default 2^24 amplitudes = 256 MiB FP64).
   - There is no double buffer, so the reach of a rank slice is not halved.
-- **Readout** gathers to the host in logical order via `final_map`. `norm_sqr` is a host sum of per-rank downloads
-  (v1, spec §3.4).
+- **Readout** gathers to the host in logical order via `final_map`.
+  - **This deviates from spec §3.4.** `norm_sqr` downloads every full rank slice and sums on the host. §3.4 asks for a
+    device-side per-rank reduction followed by a host sum of `R` scalars.
+  - §3.4's single-qubit probability is not implemented yet.
+  - Both are P6-01a follow-ups. They do not affect the correctness results below, and `norm_sqr` is not in the timed
+    region of the bench.
 - `NcclExchange` (real multiple GPUs, one process) is P6-01b. The `Exchange<B>` trait is shaped so that PR only adds an
   implementation and a per-device `Vec<B>`.
 
 ## Correctness (RTX 4000 SFF Ada)
 
-`crates/aleph-cuda/tests/dist_gpu_oracle.rs`, 6 tests, all green:
+`crates/aleph-cuda/tests/dist_gpu_oracle.rs`, 9 tests, all green:
 
 - `device_sv_alloc_copy_roundtrip_f64` and `…_f32`: rank-0 vs other-rank initial state, offset copies, and the
   upload/download round trip.
@@ -36,17 +40,26 @@ Refs #55. Design: `docs/superpowers/specs/2026-10-03-multi-gpu-sv-design.md` §3
 - `dist_f64_matches_oracle_all_layouts_routers_fusion`: against `NaiveSvBackend` at 1e-10 per amplitude, and norm 1
   at 1e-10.
   - Circuits: GHZ-10, QFT-10 (controlled phases on global qubits), brickwall-10 d=6, Grover-8 (QASM fixture), and an
-    all-diagonal case on the top qubit (Rz, CZ, CRz, CCZ, controlled-T, Toffoli).
+    all-diagonal case on the top qubit (Rz, CZ, CRz, CCZ, controlled-T, Toffoli). The all-diagonal case also has two
+    externally controlled CZs touching globals: one specialises to a controlled `Unitary1qDiag`, the other to a
+    scalar phase gated on a local control.
   - Swept over g = 0..3 × {Naive, Lookahead} × fuse {off, on}, with an 8-amplitude scratch.
 - `dist_f32_matches_oracle`: the same circuits, FP32, g = 1..3, Lookahead, at 1e-5.
 - `dist_matches_single_gpu_at_n20`: brickwall-20 d=8 at g = 1..3 with the default scratch, against single-GPU
   `CudaSvBackend` at 1e-10.
 
+- `dist_rejects_rank_slice_over_qubit_cap`, `device_sv_rejects_oversized_slices` and
+  `local_exchange_rejects_duplicate_bits` check that bad input returns an error instead of panicking:
+  - a rank slice over the backend's qubit cap, or one whose size `1 << m` would overflow (m = 63/64), gives
+    `TooManyQubits`;
+  - repeated exchange bits are rejected.
+
 Mutation checks prove the tests bite:
 - In `LocalExchange`, redirecting the middle copy's destination (`a0 + off` → `b0 + off`) fails
   `dist_f64_matches_oracle_all_layouts_routers_fusion`.
 - Dropping the last piece of each chunk (`while off + piece < chunk`) fails `local_exchange_matches_cpu_reference`.
-- Both mutations were reverted, and the suite went back to green.
+- Dropping the controls of the `Unitary1qDiag` that `specialize` emits fails the all-diagonal case (`diag10`, g=1).
+- All three mutations were reverted, and the suite went back to green.
 
 ## Overhead vs single GPU (one card, so exchange = D2D copy)
 
@@ -78,10 +91,15 @@ Communication of the plans (Lookahead router):
 
 ## Reading
 
-- **QFT is faster distributed than on one card (0.84–0.91×).** The likely cause (not profiled): `specialize` evaluates
-  every controlled phase whose control is a global qubit per rank. Where the control bit is 0 it drops the gate, and
-  where it is 1 it becomes a 1-qubit diagonal. The ranks together do less amplitude work than the single-GPU pass over
-  the full vector, and QFT needs only 2 exchanges.
+- **QFT is faster distributed than on one card (0.84–0.91×), but the two arms do different work.** Not profiled; the
+  most likely cause is the 14 trailing `Swap`s of `qft(28)`.
+  - In the single-GPU arm each swap is a full-state pass. The swap pairs are disjoint, so `FuseKq` at width 3 cannot
+    merge them.
+  - The planner absorbs every user `Swap` as an O(1) relabel.
+  - Estimate: ~69 passes in total, so ~43 ms per pass. Removing 14 passes and adding 2 exchanges lands at about the
+    measured 2.48 s.
+  - `specialize` dropping controlled phases whose global control is 0 may contribute a little.
+  - Either way, this is a swap-relabel saving the single-GPU path could also take, not a gain from distribution.
 - **The brickwall pays 1.3–2.3×.** The likely sources (not profiled) are 10–11 exchanges, each a full D2D chunk swap (3 copies per moved
   pair), and from fusion being cut at every exchange boundary: 11–12 separately fused local segments instead of one
   fused circuit.

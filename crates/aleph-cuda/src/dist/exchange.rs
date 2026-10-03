@@ -46,16 +46,31 @@ pub(crate) fn chunk_pairs(l: DistLayout, global_bits: &[u32]) -> Vec<((u32, u32)
     out
 }
 
-/// Disjoint `&mut` to two different ranks.
-fn two_mut<T>(v: &mut [T], a: usize, b: usize) -> (&mut T, &mut T) {
-    debug_assert_ne!(a, b);
+/// Disjoint `&mut` to two different ranks (`None` if equal or out of range).
+fn two_mut<T>(v: &mut [T], a: usize, b: usize) -> Option<(&mut T, &mut T)> {
+    if a == b || a.max(b) >= v.len() {
+        return None;
+    }
     if a < b {
         let (lo, hi) = v.split_at_mut(b);
-        (&mut lo[a], &mut hi[0])
+        Some((&mut lo[a], &mut hi[0]))
     } else {
         let (lo, hi) = v.split_at_mut(a);
-        (&mut hi[0], &mut lo[b])
+        Some((&mut hi[0], &mut lo[b]))
     }
+}
+
+/// Every bit global, in range, and no bit named twice (a repeat would make
+/// `chunk_pairs` pair a rank with itself or visit a chunk twice).
+fn valid_bits(l: DistLayout, global_bits: &[u32]) -> bool {
+    let mut seen = 0u64;
+    for &b in global_bits {
+        if b >= u64::BITS || !l.is_global(b) || b >= l.n || seen & (1u64 << b) != 0 {
+            return false;
+        }
+        seen |= 1u64 << b;
+    }
+    true
 }
 
 /// All ranks on one device: chunk swaps are device-to-device copies through a
@@ -103,7 +118,7 @@ impl<B: DeviceSv> Exchange<B> for LocalExchange<B> {
     ) -> Result<(), BackendError> {
         let m = l.m();
         let k = global_bits.len() as u32;
-        if k == 0 || k > m || global_bits.iter().any(|&b| !l.is_global(b) || b >= l.n) {
+        if k == 0 || k > m || !valid_bits(l, global_bits) || ranks.len() != l.ranks() as usize {
             return Err(BackendError::InvalidState {
                 reason: "dist: bad exchange bits",
             });
@@ -123,7 +138,11 @@ impl<B: DeviceSv> Exchange<B> for LocalExchange<B> {
         };
         for ((ra, ca), (rb, cb)) in chunk_pairs(l, global_bits) {
             let (a0, b0) = (ca as usize * chunk, cb as usize * chunk);
-            let (sa, sb) = two_mut(ranks, ra as usize, rb as usize);
+            let Some((sa, sb)) = two_mut(ranks, ra as usize, rb as usize) else {
+                return Err(BackendError::InvalidState {
+                    reason: "dist: exchange paired a rank with itself",
+                });
+            };
             let mut off = 0;
             while off < chunk {
                 be.copy_amps(sa, a0 + off, scr, 0, piece)?;
