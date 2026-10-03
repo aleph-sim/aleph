@@ -1,4 +1,4 @@
-//! Prints P6-02 communication counts (naive router) for the report.
+//! Prints P6-02/P6-03 communication counts (naive vs lookahead router).
 //! Run from the workspace root:
 //! `cargo run --release -p aleph-sv --example dist_comm_counts`
 
@@ -71,21 +71,24 @@ fn main() {
         ("random-30 d=20", brickwall(30, 20)),
         ("Grover-20 (5 iters)", grover()),
     ];
-    println!("| circuit | gates | g | exchanges | amps moved / rank | × slice | local swaps | relabels |");
+    println!(
+        "| circuit | g | naive exch | naive × slice | lookahead exch | lookahead × slice | reduction | la local swaps |"
+    );
     println!("|---|---|---|---|---|---|---|---|");
     for (name, c) in &cases {
         for g in [2u32, 3] {
             let l = DistLayout::new(c.num_qubits(), g).unwrap();
-            let p = plan(c, l, Router::Naive).unwrap();
-            let s = p.stats;
-            let slices = s.amps_moved_per_rank as f64 / (1u64 << l.m()) as f64;
+            let slice = (1u64 << l.m()) as f64;
+            let n = plan(c, l, Router::Naive).unwrap().stats;
+            let a = plan(c, l, Router::Lookahead).unwrap().stats;
+            let ns = n.amps_moved_per_rank as f64 / slice;
+            let la = a.amps_moved_per_rank as f64 / slice;
             println!(
-                "| {name} | {} | {g} | {} | {} | {slices:.1} | {} | {} |",
-                c.instructions().len(),
-                s.exchanges,
-                s.amps_moved_per_rank,
-                s.local_swaps,
-                s.relabels
+                "| {name} | {g} | {} | {ns:.1} | {} | {la:.1} | {:.2}× | {} |",
+                n.exchanges,
+                a.exchanges,
+                ns / la.max(f64::MIN_POSITIVE),
+                a.local_swaps
             );
         }
     }
