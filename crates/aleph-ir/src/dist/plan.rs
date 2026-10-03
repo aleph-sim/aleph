@@ -110,6 +110,9 @@ pub fn plan(circuit: &Circuit, layout: DistLayout, router: Router) -> Result<Dis
                     let a = map.l2p[g.qubits[0] as usize];
                     let b = map.l2p[g.qubits[1] as usize];
                     map.swap_phys(a, b);
+                    if let Some(nu) = next_use.as_mut() {
+                        nu.relabel(g.qubits[0], g.qubits[1]);
+                    }
                     stats.relabels += 1;
                     continue;
                 }
@@ -495,13 +498,24 @@ mod tests {
 
     #[test]
     fn lookahead_never_evicts_required() {
-        // Iswap on logical (3, 5) at n=6, g=2: 3 sits in a top slot, 5 is global.
+        // Iswap on logical (3, 5) at n=6, g=2 (m=4): 3 sits in a top slot, 5 is
+        // global, and the later H(4) makes a k=2 prefetch worthwhile, so the
+        // top-2 slots must be cleared without evicting 3.
         let mut c = Circuit::new(6, 0);
-        c.h(4).unwrap(); // logical 4 (global) is needed first and again later
         c.add_gate(GateInstance::new(Gate::Iswap, vec![3, 5]))
             .unwrap();
         c.h(4).unwrap();
         let p = plan(&c, DistLayout::new(6, 2).unwrap(), Router::Lookahead).unwrap();
+        assert!(p.stats.local_swaps >= 1, "{:?}", p.stats);
+        let first = p
+            .steps
+            .iter()
+            .find_map(|s| match s {
+                DistStep::Exchange { global_bits } => Some(global_bits.len()),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(first, 2, "expected a k=2 prefetching exchange");
         let isw = p
             .steps
             .iter()
@@ -518,15 +532,77 @@ mod tests {
     }
 
     #[test]
-    fn lookahead_tight_m_no_prefetch() {
-        // n=4, g=2, m=2: an Iswap needs both local slots, so no room to prefetch.
+    fn lookahead_tight_m_caps_prefetch() {
+        // n=4, g=2, m=2: an Iswap needs both local slots, so no victim is free
+        // for a prefetch even though H(3) follows; k must be exactly 1.
         let mut c = Circuit::new(4, 0);
-        c.h(3).unwrap();
         c.add_gate(GateInstance::new(Gate::Iswap, vec![0, 2]))
             .unwrap();
         c.h(3).unwrap();
         let p = plan(&c, DistLayout::new(4, 2).unwrap(), Router::Lookahead).unwrap();
-        assert!(p.stats.exchanges >= 1);
+        let ks: Vec<usize> = p
+            .steps
+            .iter()
+            .filter_map(|s| match s {
+                DistStep::Exchange { global_bits } => Some(global_bits.len()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(ks.first(), Some(&1), "{ks:?}");
+    }
+
+    /// Deterministic random circuits mixing relabel `Swap`s with exchange-forcing gates.
+    fn rand_circ(n: u32, len: usize, seed: u64) -> Circuit {
+        let mut s = seed;
+        let mut next = || {
+            s = s
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            s >> 33
+        };
+        let mut c = Circuit::new(n, 0);
+        for _ in 0..len {
+            let a = (next() % u64::from(n)) as u32;
+            let mut b = (next() % u64::from(n)) as u32;
+            if b == a {
+                b = (a + 1) % n;
+            }
+            match next() % 7 {
+                0 => drop(c.h(a).unwrap()),
+                1 => drop(c.rx(0.3, a).unwrap()),
+                2 => drop(c.cnot(a, b).unwrap()),
+                3 => drop(
+                    c.add_gate(GateInstance::new(Gate::Iswap, vec![a, b]))
+                        .unwrap(),
+                ),
+                4 => drop(c.swap(a, b).unwrap()),
+                5 => drop(c.rz(0.7, a).unwrap()),
+                _ => drop(c.cz(a, b).unwrap()),
+            }
+        }
+        c
+    }
+
+    #[test]
+    fn lookahead_bounded_regression_with_relabels() {
+        // Next use must follow *data* across relabel Swaps; keyed by label it
+        // mispredicts and lookahead moved up to 4.5x more than naive here.
+        let mut worst = 0.0f64;
+        for n in [6u32, 8, 10, 12] {
+            for g in 1..=3u32 {
+                for seed in 0..100u64 {
+                    let c = rand_circ(n, 30, seed * 7919 + u64::from(n));
+                    let l = DistLayout::new(n, g).unwrap();
+                    let a = plan(&c, l, Router::Lookahead).unwrap().stats;
+                    let b = plan(&c, l, Router::Naive).unwrap().stats;
+                    if b.amps_moved_per_rank > 0 {
+                        worst =
+                            worst.max(a.amps_moved_per_rank as f64 / b.amps_moved_per_rank as f64);
+                    }
+                }
+            }
+        }
+        assert!(worst <= 1.3, "worst lookahead/naive traffic ratio {worst}");
     }
 
     #[test]

@@ -439,3 +439,28 @@ fn lookahead_moves_less_on_brickwall() {
         "{a:?} vs {n:?}"
     );
 }
+
+#[test]
+fn tight_m_prefetch_cap_oracle() {
+    for (n, g) in [(4u32, 2u32), (5, 3), (3, 1)] {
+        let mut c = h_layer(n);
+        c.add_gate(GateInstance::new(Gate::Iswap, vec![0, n - 2]))
+            .unwrap();
+        c.h(n - 1).unwrap();
+        c.add_gate(GateInstance::new(Gate::Iswap, vec![n - 1, 1]))
+            .unwrap();
+        c.rx(0.4, n - 2).unwrap();
+        c.h(0).unwrap();
+        check(&c, g, "tight-m");
+    }
+}
+
+#[test]
+fn required_qubit_in_top_slot_k2_oracle() {
+    let mut c = h_layer(6);
+    c.add_gate(GateInstance::new(Gate::Iswap, vec![3, 5]))
+        .unwrap();
+    c.h(4).unwrap();
+    c.rx(0.2, 3).unwrap();
+    check(&c, 2, "req-top-k2");
+}
