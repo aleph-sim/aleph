@@ -7,6 +7,7 @@
 pub mod noise;
 
 mod backend;
+pub mod dist_ref;
 mod fp32_backend;
 mod fp32_measure;
 mod fp32_state;
