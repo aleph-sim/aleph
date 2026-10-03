@@ -72,7 +72,7 @@ fn brickwall(n: u32, depth: usize, seed: u64) -> Circuit {
         s = s
             .wrapping_mul(6364136223846793005)
             .wrapping_add(1442695040888963407);
-        ((s >> 11) as f64) / ((1u64 << 53) as f64) * 6.283
+        ((s >> 11) as f64) / ((1u64 << 53) as f64) * std::f64::consts::TAU
     };
     for d in 0..depth {
         for q in 0..n {
