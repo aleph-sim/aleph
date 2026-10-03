@@ -181,7 +181,10 @@ This was one rebuild for the three follow-ups above. The decoder core and the cl
   - At 64/192 and 150 MHz and at 16/48 and 125 MHz: the new checks pass (VERSION / SLOTS, a
     partial-strobe PUSH pushes nothing, peek is stable, a wrong-seq ack pops nothing), then 40/40
     golden over OCL with peek/ack.
-  - The PCIS phase of this gate was still running when the hardware result below came in.
+  - Then the PCIS phase: the same 40 vectors as slot stores (every third split in two) read back from
+    the ring, 40/40, counters exact, then 5/5 after a soft reset back to OCL mode. **PASS at both
+    geometries** (64/192: worst 913 cycles at 150.02 MHz; 16/48: 2085 cycles at 125 MHz). The 64/192 run
+    took ~6 h of wall clock.
 
 ### Build
 
