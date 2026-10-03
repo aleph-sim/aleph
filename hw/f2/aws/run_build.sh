@@ -5,7 +5,8 @@
 #
 # For each requested decoder clock (125 and/or 150) this copies the staged CL into its own aws-fpga
 # example dir and runs the HDK flow in parallel, so two clocks cost one wall-clock build. Results land in
-# /scratch/result_<mhz>/ (DCP tarball, timing/utilisation reports, log tail) and /scratch/summary.txt.
+# /scratch/result_<mhz>/ (DCP tarball, timing reports, utilisation/clock/CDC reports from the routed
+# checkpoint via build/scripts/aleph_reports.tcl, log tail) and /scratch/summary.txt.
 # It does NOT shut the instance down: copy the results off first, then terminate from outside.
 #
 # Source the tools before `set -u` (Vivado's settings chain dereferences unset variables).
@@ -41,8 +42,14 @@ for mhz in "${clocks[@]}"; do
     cp -r "$dir"/build/reports "$out/" 2>/dev/null
     tail -40 "$dir"/build/scripts/*.vivado.log > "$out/vivado_tail.log" 2>/dev/null
     violated=$(ls "$dir"/build/checkpoints/ 2>/dev/null | grep -c VIOLATED)
+    # Utilisation, clock and CDC reports from the routed checkpoint (the flow itself writes timing only).
+    dcp=$(ls "$dir"/build/checkpoints/*.post_route*.dcp 2>/dev/null | head -1)
+    if [ -n "$dcp" ]; then
+      ( cd "$out" && vivado -mode batch -nojournal -log reports_vivado.log \
+          -source "$dir/build/scripts/aleph_reports.tcl" -tclargs "$dcp" "$out/reports" > /dev/null 2>&1 )
+    fi
     echo "$mhz rc=$rc minutes=$(( ($(date +%s) - start) / 60 )) violated=$violated tar=$(ls "$out"/*.tar 2>/dev/null)" \
-      >> /scratch/summary.txt
+      "util=$(ls "$out"/reports/util_cl.rpt 2>/dev/null)" >> /scratch/summary.txt
   ) &
 done
 wait
