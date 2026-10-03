@@ -23,17 +23,14 @@ fn assert_close(a: &[Complex], b: &[Complex], what: &str) {
 }
 
 fn check(c: &Circuit, g: u32, what: &str) {
-    let p = plan(
-        c,
-        DistLayout::new(c.num_qubits(), g).unwrap(),
-        Router::Naive,
-    )
-    .unwrap();
-    assert_close(
-        &run_dist(&p).unwrap(),
-        &reference(c),
-        &format!("{what} g={g}"),
-    );
+    for router in [Router::Naive, Router::Lookahead] {
+        let p = plan(c, DistLayout::new(c.num_qubits(), g).unwrap(), router).unwrap();
+        assert_close(
+            &run_dist(&p).unwrap(),
+            &reference(c),
+            &format!("{what} g={g} {router:?}"),
+        );
+    }
 }
 
 fn ghz(n: u32) -> Circuit {
@@ -189,9 +186,10 @@ proptest! {
     fn prop_random_circuits_match(
         c in aleph_test::circuit::arb_circuit_full(6, 2, 40),
         g in 0u32..=3,
+        router in prop_oneof![Just(Router::Naive), Just(Router::Lookahead)],
     ) {
         let c = unitary_only(&c);
-        let p = plan(&c, DistLayout::new(6, g).unwrap(), Router::Naive).unwrap();
+        let p = plan(&c, DistLayout::new(6, g).unwrap(), router).unwrap();
         let got = run_dist(&p).unwrap();
         let want = reference(&c);
         for (x, y) in got.iter().zip(&want) {
@@ -364,16 +362,80 @@ proptest! {
     fn prop_all_gate_families_with_controls(
         gates in prop::collection::vec(arb_any_gate(6), 1..30),
         g in 0u32..=2,
+        router in prop_oneof![Just(Router::Naive), Just(Router::Lookahead)],
     ) {
         let mut c = h_layer(6);
         for gi in gates {
             c.add_gate(gi).unwrap();
         }
-        let p = plan(&c, DistLayout::new(6, g).unwrap(), Router::Naive).unwrap();
+        let p = plan(&c, DistLayout::new(6, g).unwrap(), router).unwrap();
         let got = run_dist(&p).unwrap();
         let want = reference(&c);
         for (x, y) in got.iter().zip(&want) {
             prop_assert!((x - y).norm() < TOL);
         }
     }
+}
+
+#[test]
+fn exchange_cpu_multi_bit_is_product_of_swaps() {
+    use aleph_sv::dist_ref::exchange_cpu;
+    for (n, g, bits) in [
+        (5u32, 2u32, vec![3u32, 4]),
+        (5, 2, vec![4, 3]),
+        (6, 3, vec![5, 3, 4]),
+    ] {
+        let l = DistLayout::new(n, g).unwrap();
+        let m = l.m();
+        let size = 1usize << m;
+        let mut ranks: Vec<Vec<Complex>> = (0..l.ranks() as usize)
+            .map(|r| {
+                (0..size)
+                    .map(|i| Complex::new((r * size + i) as f64, 0.0))
+                    .collect()
+            })
+            .collect();
+        let full: Vec<Complex> = ranks.concat();
+        exchange_cpu(&mut ranks, l, &bits);
+        let got: Vec<Complex> = ranks.concat();
+        let k = bits.len() as u32;
+        for (x, want) in full.iter().enumerate() {
+            // destination of index x: swap bit bits[j] with bit m-k+j for all j
+            let mut y = x;
+            for (j, &gb) in bits.iter().enumerate() {
+                let lb = m - k + j as u32;
+                let (a, b) = ((x >> gb) & 1, (x >> lb) & 1);
+                y = (y & !(1 << gb) & !(1 << lb)) | (b << gb) | (a << lb);
+            }
+            assert_eq!(got[y], *want, "n={n} bits={bits:?} x={x}");
+        }
+    }
+}
+
+#[test]
+fn mid_circuit_relabel_then_lookahead() {
+    let mut c = brickwall(8, 3, 11);
+    c.swap(1, 7).unwrap();
+    c.swap(6, 2).unwrap();
+    let tail = brickwall(8, 3, 12);
+    for i in tail.instructions() {
+        if let Instruction::Gate(g) = i {
+            c.add_gate(g.clone()).unwrap();
+        }
+    }
+    for g in 1..=3 {
+        check(&c, g, "relabel-mid");
+    }
+}
+
+#[test]
+fn lookahead_moves_less_on_brickwall() {
+    let c = brickwall(12, 10, 3);
+    let l = DistLayout::new(12, 2).unwrap();
+    let n = plan(&c, l, Router::Naive).unwrap().stats;
+    let a = plan(&c, l, Router::Lookahead).unwrap().stats;
+    assert!(
+        a.amps_moved_per_rank < n.amps_moved_per_rank,
+        "{a:?} vs {n:?}"
+    );
 }
