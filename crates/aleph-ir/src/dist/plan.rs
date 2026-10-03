@@ -6,6 +6,7 @@
 use aleph_core::{Gate, GateInstance};
 use smallvec::{smallvec, SmallVec};
 
+use super::next_use::NextUse;
 use super::{CommStats, DistError, DistLayout, DistPlan, DistStep, Router};
 use crate::{Circuit, DiagonalPhase, Instruction, PhaseTerm};
 
@@ -64,7 +65,6 @@ impl Map {
 /// `Local` instructions in the result use physical qubit indices; run them
 /// through [`super::specialize`] per rank.
 pub fn plan(circuit: &Circuit, layout: DistLayout, router: Router) -> Result<DistPlan, DistError> {
-    let Router::Naive = router;
     if circuit.num_qubits() != layout.n {
         return Err(DistError::QubitCountMismatch {
             circuit: circuit.num_qubits(),
@@ -76,8 +76,12 @@ pub fn plan(circuit: &Circuit, layout: DistLayout, router: Router) -> Result<Dis
     let mut steps: Vec<DistStep> = Vec::new();
     let mut cur: Vec<Instruction> = Vec::new();
     let mut stats = CommStats::default();
+    let mut next_use = match router {
+        Router::Naive => None,
+        Router::Lookahead => Some(NextUse::build(circuit)),
+    };
 
-    for instr in circuit.instructions() {
+    for (idx, instr) in circuit.instructions().iter().enumerate() {
         match instr {
             Instruction::Barrier(_) => {}
             Instruction::Measure { .. } => return Err(DistError::Unsupported { kind: "measure" }),
@@ -113,36 +117,29 @@ pub fn plan(circuit: &Circuit, layout: DistLayout, router: Router) -> Result<Dis
                 if req.len() > m as usize {
                     return Err(DistError::TooFewLocalQubits { need: req.len(), m });
                 }
-                for &q in &req {
-                    if !layout.is_global(map.l2p[q as usize]) {
-                        continue;
+                match next_use.as_mut() {
+                    None => {
+                        for &q in &req {
+                            if layout.is_global(map.l2p[q as usize]) {
+                                exchange_naive(
+                                    q, &req, layout, &mut map, &mut cur, &mut steps, &mut stats,
+                                )?;
+                            }
+                        }
                     }
-                    let top = m - 1;
-                    // Never evict a qubit this same gate needs local.
-                    if req.contains(&map.p2l[top as usize]) {
-                        let free = (0..top)
-                            .rev()
-                            .find(|&p| !req.contains(&map.p2l[p as usize]))
-                            .ok_or(DistError::TooFewLocalQubits { need: req.len(), m })?;
-                        cur.push(Instruction::Gate(GateInstance::new(
-                            Gate::Swap,
-                            vec![top, free],
-                        )));
-                        map.swap_phys(top, free);
-                        stats.local_swaps += 1;
+                    Some(nu) => {
+                        let missing: SmallVec<[u32; 4]> = req
+                            .iter()
+                            .copied()
+                            .filter(|&q| layout.is_global(map.l2p[q as usize]))
+                            .collect();
+                        if !missing.is_empty() {
+                            exchange_lookahead(
+                                idx, &missing, &req, layout, nu, &mut map, &mut cur, &mut steps,
+                                &mut stats,
+                            )?;
+                        }
                     }
-                    if !cur.is_empty() {
-                        steps.push(DistStep::Local(std::mem::take(&mut cur)));
-                    }
-                    let gbit = map.l2p[q as usize];
-                    steps.push(DistStep::Exchange {
-                        global_bits: smallvec![gbit],
-                    });
-                    map.swap_phys(gbit, top);
-                    stats.exchanges += 1;
-                    // Saturate: n=64 with g=1 moves 2^62 amps per exchange.
-                    stats.amps_moved_per_rank =
-                        stats.amps_moved_per_rank.saturating_add(1u64 << (m - 1));
                 }
                 cur.push(Instruction::Gate(GateInstance {
                     gate: g.gate.clone(),
@@ -164,6 +161,143 @@ pub fn plan(circuit: &Circuit, layout: DistLayout, router: Router) -> Result<Dis
         final_map: map.l2p,
         stats,
     })
+}
+
+/// P6-02 naive exchange: bring logical `q` in by swapping it with the top
+/// local slot, after moving a required occupant of that slot down.
+#[allow(clippy::too_many_arguments)]
+fn exchange_naive(
+    q: u32,
+    req: &[u32],
+    layout: DistLayout,
+    map: &mut Map,
+    cur: &mut Vec<Instruction>,
+    steps: &mut Vec<DistStep>,
+    stats: &mut CommStats,
+) -> Result<(), DistError> {
+    let m = layout.m();
+    let top = m - 1;
+    // Never evict a qubit this same gate needs local.
+    if req.contains(&map.p2l[top as usize]) {
+        let free = (0..top)
+            .rev()
+            .find(|&p| !req.contains(&map.p2l[p as usize]))
+            .ok_or(DistError::TooFewLocalQubits { need: req.len(), m })?;
+        cur.push(Instruction::Gate(GateInstance::new(
+            Gate::Swap,
+            vec![top, free],
+        )));
+        map.swap_phys(top, free);
+        stats.local_swaps += 1;
+    }
+    if !cur.is_empty() {
+        steps.push(DistStep::Local(std::mem::take(cur)));
+    }
+    let gbit = map.l2p[q as usize];
+    steps.push(DistStep::Exchange {
+        global_bits: smallvec![gbit],
+    });
+    map.swap_phys(gbit, top);
+    stats.exchanges += 1;
+    // Saturate: n=64 with g=1 moves 2^62 amps per exchange.
+    stats.amps_moved_per_rank = stats.amps_moved_per_rank.saturating_add(1u64 << (m - 1));
+    Ok(())
+}
+
+/// P6-03 lookahead exchange: one k-bit exchange for all `missing` qubits plus
+/// prefetches, evicting the local qubits whose next use is farthest away.
+///
+/// A k-bit exchange moves `(1 - 2^-k)` of a slice, vs `k/2` for k separate
+/// single-bit exchanges, so batching pays whenever the prefetched qubit is
+/// needed before the victim it displaces (Belady's farthest-next-use rule).
+#[allow(clippy::too_many_arguments)]
+fn exchange_lookahead(
+    idx: usize,
+    missing: &[u32],
+    req: &[u32],
+    layout: DistLayout,
+    nu: &mut NextUse,
+    map: &mut Map,
+    cur: &mut Vec<Instruction>,
+    steps: &mut Vec<DistStep>,
+    stats: &mut CommStats,
+) -> Result<(), DistError> {
+    let m = layout.m();
+    let after = idx + 1;
+    // Victim candidates: local logical qubits the current gate does not need,
+    // farthest next use first; ties prefer higher physical slots (already near
+    // the top, so fewer local swaps).
+    let locals: Vec<u32> = (0..m)
+        .map(|p| map.p2l[p as usize])
+        .filter(|l| !req.contains(l))
+        .collect();
+    let mut victims: Vec<(usize, u32, u32)> = locals
+        .into_iter()
+        .map(|l| (nu.next(l, after), map.l2p[l as usize], l))
+        .collect();
+    victims.sort_by(|a, b| b.0.cmp(&a.0).then(b.1.cmp(&a.1)));
+    if victims.len() < missing.len() {
+        return Err(DistError::TooFewLocalQubits { need: req.len(), m });
+    }
+    let mut bring: SmallVec<[u32; 4]> = missing.iter().copied().collect();
+    // Prefetch: other global qubits, soonest next use first, while each is
+    // needed before the victim it would displace.
+    let globals: Vec<u32> = (m..layout.n)
+        .map(|p| map.p2l[p as usize])
+        .filter(|l| !bring.contains(l))
+        .collect();
+    let mut cands: Vec<(usize, u32)> = globals
+        .into_iter()
+        .map(|l| (nu.next(l, after), l))
+        .filter(|&(t, _)| t != usize::MAX)
+        .collect();
+    cands.sort_unstable();
+    for (t, l) in cands {
+        if bring.len() >= layout.g as usize || bring.len() >= victims.len() {
+            break;
+        }
+        if t < victims[bring.len()].0 {
+            bring.push(l);
+        } else {
+            break;
+        }
+    }
+    let k = bring.len() as u32;
+    let chosen: SmallVec<[u32; 4]> = victims[..k as usize].iter().map(|v| v.2).collect();
+    // Place the chosen victims in the top-k local slots (m-k..m).
+    let top_lo = m - k;
+    let mut free_slots: SmallVec<[u32; 4]> = (top_lo..m)
+        .filter(|&p| !chosen.contains(&map.p2l[p as usize]))
+        .collect();
+    for &v in &chosen {
+        let vp = map.l2p[v as usize];
+        if vp >= top_lo {
+            continue;
+        }
+        let Some(slot) = free_slots.pop() else {
+            return Err(DistError::Unsupported {
+                kind: "internal: no free top slot",
+            });
+        };
+        cur.push(Instruction::Gate(GateInstance::new(
+            Gate::Swap,
+            vec![slot, vp],
+        )));
+        map.swap_phys(slot, vp);
+        stats.local_swaps += 1;
+    }
+    if !cur.is_empty() {
+        steps.push(DistStep::Local(std::mem::take(cur)));
+    }
+    let global_bits: SmallVec<[u32; 4]> = bring.iter().map(|&l| map.l2p[l as usize]).collect();
+    for (j, &gb) in global_bits.iter().enumerate() {
+        map.swap_phys(gb, top_lo + j as u32);
+    }
+    steps.push(DistStep::Exchange { global_bits });
+    stats.exchanges += 1;
+    let moved = ((1u64 << k) - 1) << (m - k);
+    stats.amps_moved_per_rank = stats.amps_moved_per_rank.saturating_add(moved);
+    Ok(())
 }
 
 #[cfg(test)]
@@ -270,6 +404,129 @@ mod tests {
             r,
             Err(DistError::TooFewLocalQubits { need: 2, m: 1 })
         ));
+    }
+
+    fn brick(n: u32, depth: usize) -> Circuit {
+        let mut c = Circuit::new(n, 0);
+        for d in 0..depth {
+            for q in 0..n {
+                c.rx(0.3 + f64::from(q), q).unwrap();
+            }
+            let mut q = (d % 2) as u32;
+            while q + 1 < n {
+                c.cnot(q, q + 1).unwrap();
+                q += 2;
+            }
+        }
+        c
+    }
+
+    fn ghz(n: u32) -> Circuit {
+        let mut c = Circuit::new(n, 0);
+        c.h(0).unwrap();
+        for q in 0..n - 1 {
+            c.cnot(q, q + 1).unwrap();
+        }
+        c
+    }
+
+    fn qft(n: u32) -> Circuit {
+        let mut c = Circuit::new(n, 0);
+        for j in (0..n).rev() {
+            c.h(j).unwrap();
+            for k in (0..j).rev() {
+                c.add_gate(GateInstance::controlled(
+                    Gate::Phase(Param::Concrete(0.1 * f64::from(j - k))),
+                    vec![j],
+                    vec![k],
+                ))
+                .unwrap();
+            }
+        }
+        for q in 0..n / 2 {
+            c.swap(q, n - 1 - q).unwrap();
+        }
+        c
+    }
+
+    fn is_iswap(i: &Instruction) -> bool {
+        matches!(i, Instruction::Gate(g) if matches!(g.gate, Gate::Iswap))
+    }
+
+    #[test]
+    fn lookahead_batches_exchanges_on_brickwall() {
+        let c = brick(16, 12);
+        let l = DistLayout::new(16, 2).unwrap();
+        let naive = plan(&c, l, Router::Naive).unwrap().stats;
+        let la = plan(&c, l, Router::Lookahead).unwrap();
+        // every exchange is k <= g bits wide and uses distinct global bits
+        for s in &la.steps {
+            if let DistStep::Exchange { global_bits } = s {
+                assert!(!global_bits.is_empty() && global_bits.len() <= 2);
+                assert!(global_bits.iter().all(|&b| b >= l.m()));
+                let mut v = global_bits.to_vec();
+                v.sort_unstable();
+                v.dedup();
+                assert_eq!(v.len(), global_bits.len());
+            }
+        }
+        assert!(
+            la.stats.amps_moved_per_rank * 2 <= naive.amps_moved_per_rank,
+            "lookahead {:?} vs naive {:?}",
+            la.stats,
+            naive
+        );
+    }
+
+    #[test]
+    fn lookahead_no_worse_on_ghz_qft() {
+        for c in [ghz(16), qft(16)] {
+            for g in [1u32, 2, 3] {
+                let l = DistLayout::new(16, g).unwrap();
+                let n = plan(&c, l, Router::Naive).unwrap().stats;
+                let a = plan(&c, l, Router::Lookahead).unwrap().stats;
+                assert!(
+                    a.amps_moved_per_rank <= n.amps_moved_per_rank,
+                    "g={g}: {a:?} vs {n:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn lookahead_never_evicts_required() {
+        // Iswap on logical (3, 5) at n=6, g=2: 3 sits in a top slot, 5 is global.
+        let mut c = Circuit::new(6, 0);
+        c.h(4).unwrap(); // logical 4 (global) is needed first and again later
+        c.add_gate(GateInstance::new(Gate::Iswap, vec![3, 5]))
+            .unwrap();
+        c.h(4).unwrap();
+        let p = plan(&c, DistLayout::new(6, 2).unwrap(), Router::Lookahead).unwrap();
+        let isw = p
+            .steps
+            .iter()
+            .filter_map(|s| match s {
+                DistStep::Local(v) => v.iter().find(|i| is_iswap(i)),
+                _ => None,
+            })
+            .next()
+            .unwrap();
+        let Instruction::Gate(isw) = isw else {
+            panic!()
+        };
+        assert!(isw.qubits.iter().all(|&p| p < 4), "{:?}", isw.qubits);
+    }
+
+    #[test]
+    fn lookahead_tight_m_no_prefetch() {
+        // n=4, g=2, m=2: an Iswap needs both local slots, so no room to prefetch.
+        let mut c = Circuit::new(4, 0);
+        c.h(3).unwrap();
+        c.add_gate(GateInstance::new(Gate::Iswap, vec![0, 2]))
+            .unwrap();
+        c.h(3).unwrap();
+        let p = plan(&c, DistLayout::new(4, 2).unwrap(), Router::Lookahead).unwrap();
+        assert!(p.stats.exchanges >= 1);
     }
 
     #[test]

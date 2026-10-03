@@ -15,6 +15,7 @@ use smallvec::SmallVec;
 
 use crate::Instruction;
 
+mod next_use;
 mod plan;
 mod specialize;
 
@@ -101,6 +102,10 @@ pub struct DistPlan {
 pub enum Router {
     /// One global qubit per exchange, on demand, evicting the top local slot.
     Naive,
+    /// Up to `g` global qubits per exchange: everything the current gate
+    /// needs plus prefetched qubits needed before their victim's next use;
+    /// victims chosen by farthest next use (Belady). P6-03.
+    Lookahead,
 }
 
 #[derive(Debug, thiserror::Error, PartialEq)]
