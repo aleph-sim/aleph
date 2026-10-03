@@ -6,7 +6,7 @@ p = 0.003, wrapped as an F2 Custom Logic. Measured on an f2.6xlarge: **2040/2040
 
 | image | interface | AGFI | decoder clock | status |
 |---|---|---|---|---|
-| 150 MHz v2 | v2: OCL + PCIS batch | `agfi-073cc3dc45ee25cd8` | 150 MHz, timing met (WNS +0.004 ns) | private |
+| 150 MHz v2 | v2: OCL + PCIS batch | `agfi-073cc3dc45ee25cd8` | 150 MHz, timing met (WNS +0.004 ns) | **public**, us-east-1 |
 | 125 MHz v2 | v2: OCL + PCIS batch | `agfi-050f06c5308709a6d` | 125 MHz, timing met (WNS +0.169 ns) | private (margin build) |
 | 150 MHz | v1: OCL only | `agfi-0155529c6b08a03d0` | 150 MHz, timing met (WNS +0.031 ns) | **public**, us-east-1 |
 | 125 MHz | v1: OCL only | `agfi-0fe0762a0ce11104c` | 125 MHz, timing met (WNS +0.136 ns) | private (margin build) |
@@ -20,10 +20,11 @@ On any F2 instance:
 
 ```bash
 git clone -b f2 https://github.com/aws/aws-fpga.git && cd aws-fpga && source sdk_setup.sh && cd -
-sudo fpga-load-local-image -S 0 -I agfi-0155529c6b08a03d0
+sudo fpga-load-local-image -S 0 -I agfi-073cc3dc45ee25cd8
 # the 40-shot golden: from the appliance-v1/-v2 release, or regenerate it
 curl -fsSLO https://github.com/aleph-sim/aleph/releases/download/appliance-v2/bp_circ_vectors.txt
-sudo python3 hw/f2/sw/bp_f2_ocl.py bp_circ_vectors.txt --max-mhz 150
+sudo python3 hw/f2/sw/bp_f2_ocl.py bp_circ_vectors.txt --max-mhz 150           # OCL
+sudo python3 hw/f2/sw/bp_f2_ocl.py bp_circ_vectors.txt --max-mhz 150 --pcis    # batched
 ```
 
 The driver needs nothing but Python 3 and root. It mmaps the device's `resource0` (and `resource4` /

@@ -9,7 +9,7 @@
 > **Update 2026-10-03 (§7): interface v2.** A rebuild hardens the OCL interface and adds a batched
 > host path over PCIS. On the FPGA it reaches **160,000 decodes/s (6.23 µs per decode)**, which is
 > 98 % of what the core can do on its own (6.09 µs). Over OCL the same image does 88,000/s. It also
-> gives the utilisation of the integrated design.
+> gives the utilisation of the integrated design. The v2 image is public: `agfi-073cc3dc45ee25cd8`.
 
 ## 1. What was built
 
@@ -189,7 +189,7 @@ Same flow and directives as §3: one z1d.6xlarge, both clocks in parallel.
 
 | clock | WNS (setup) | WHS (hold) | build time | AFI | AGFI |
 |---|---|---|---|---|---|
-| 150 MHz | **+0.004 ns** | +0.010 ns | 190 min | `afi-078824ae6a563c721` | `agfi-073cc3dc45ee25cd8` (private) |
+| 150 MHz | **+0.004 ns** | +0.010 ns | 190 min | `afi-078824ae6a563c721` | `agfi-073cc3dc45ee25cd8` (**public**) |
 | 125 MHz | +0.169 ns | +0.010 ns | 100 min | `afi-03c9f8dd6777f3a2c` | `agfi-050f06c5308709a6d` (private) |
 
 - **150 MHz closed with 4 ps to spare** (v1: 31 ps). On the way, the router passed through −0.41 ns
