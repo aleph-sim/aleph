@@ -290,9 +290,8 @@ use aleph_backend::BackendError;
 use aleph_core::Complex;
 
 use super::DeviceSv;
-use crate::sv::backend::to_backend_err;
-use crate::sv::fp32::{CudaSvBackendF32, CudaSvStateF32};
-use crate::{CudaSvBackend, CudaSvState, DeviceBuffer};
+use crate::sv::to_backend_err;
+use crate::{CudaSvBackend, CudaSvBackendF32, CudaSvState, CudaSvStateF32, DeviceBuffer};
 
 fn range_err() -> BackendError {
     BackendError::InvalidState { reason: "dist: amplitude copy out of range" }
@@ -394,7 +393,20 @@ impl DeviceSv for CudaSvBackendF32 {
 }
 ```
 
-Adaptation notes. Check each against the real code; any divergence goes in the ledger as a `Ruling:`.
+**Verified on the box (2026-10-03):**
+- `sv::backend` and `sv::fp32` are **private** modules (`sv/mod.rs:7,12`). Add `pub(crate) use backend::to_backend_err;`
+  to `crates/aleph-cuda/src/sv/mod.rs`. `CudaSvBackendF32`/`CudaSvStateF32` are already re-exported publicly.
+- `CudaSvBackendF32::ctx()` exists (`fp32.rs:285`, `pub(crate)`).
+- cudarc 0.19.8 `CudaStream::memcpy_dtod<T, Src: DevicePtr<T>, Dst: DevicePtrMut<T>>(self: &Arc<Self>, src: &Src,
+  dst: &mut Dst) -> Result<(), DriverError>` (`core.rs:1657`). It **asserts** `dst.len() >= src.len()` (it panics), so
+  the range check in `copy_amps` is load-bearing; keep it.
+- Box: `ssh root@openwebgui.splynx.com`; `source ~/.cargo/env`; rustc 1.96; CUDA 13.0; driver 580.178.04; tree at
+  `/root/aleph-p6`.
+  - A resident `text-embeddings-router` holds 1.3 GiB of GPU memory. Check `nvidia-smi` utilization is 0 % before
+    timing.
+  - NCCL is **not** installed (needed only for P6-01b).
+
+Remaining adaptation notes. Check each against the real code; any divergence goes in the ledger as a `Ruling:`.
 - **Module visibility.** If `sv::backend` / `sv::fp32` are private modules, import through what `sv/mod.rs` exposes. If
   `to_backend_err` is not reachable from `crate::dist`, make it `pub(crate)` at its definition. Do not copy it.
 - **FP32 context accessor.** If `CudaSvBackendF32` has no `ctx()` accessor, add a `pub(crate) fn ctx(&self) ->
