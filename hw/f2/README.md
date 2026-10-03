@@ -4,10 +4,15 @@ Banked 64/192 relay-BP decoder for the gross bivariate-bicycle code `[[144,12,12
 p = 0.003, wrapped as an F2 Custom Logic. Measured on an f2.6xlarge: **2040/2040 bit-exact, 913 cycles =
 6.09 µs worst case at 150 MHz.** Results and caveats are in `docs/perf/p2-f2-afi.md`.
 
-| image | AGFI | decoder clock | status |
-|---|---|---|---|
-| 150 MHz | `agfi-0155529c6b08a03d0` | 150 MHz, timing met (WNS +0.031 ns) | **public**, us-east-1 |
-| 125 MHz | `agfi-0fe0762a0ce11104c` | 125 MHz, timing met (WNS +0.136 ns) | private (margin build) |
+| image | interface | AGFI | decoder clock | status |
+|---|---|---|---|---|
+| 150 MHz v2 | v2: OCL + PCIS batch | `agfi-073cc3dc45ee25cd8` | 150 MHz, timing met (WNS +0.004 ns) | private |
+| 125 MHz v2 | v2: OCL + PCIS batch | `agfi-050f06c5308709a6d` | 125 MHz, timing met (WNS +0.169 ns) | private (margin build) |
+| 150 MHz | v1: OCL only | `agfi-0155529c6b08a03d0` | 150 MHz, timing met (WNS +0.031 ns) | **public**, us-east-1 |
+| 125 MHz | v1: OCL only | `agfi-0fe0762a0ce11104c` | 125 MHz, timing met (WNS +0.136 ns) | private (margin build) |
+
+On v2, `--pcis` reaches 160,000 decodes/s (6.23 µs per decode, 98 % of the core's own rate), against
+88,000/s over OCL (`docs/perf/p2-f2-afi.md` §7).
 
 ## Run it
 
