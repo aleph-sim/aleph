@@ -259,8 +259,9 @@ paid Vivado licence. v2 is therefore split in two:
   Not yet run on a board.
 - [x] **Step 2: Fmax, utilisation and latency stated** in `docs/perf/p2-appliance-v2.md`, and in the
   `appliance-v2` release notes when it is published.
-- [ ] **Step 1b (F2): public AFI of 64/192 on the VU47P.** Needs an AWS F2 Custom Logic wrapper (OCL
-  AXI-Lite, 125–150 MHz via AWS_CLK_GEN), the `L-74FC7D96` quota and an f2.6xlarge test.
+- [x] **Step 1b (F2): public AFI of 64/192 on the VU47P.** `agfi-0155529c6b08a03d0` (public), with the
+  CL's own MMCM at 150 MHz rather than AWS_CLK_GEN. On an f2.6xlarge it decoded 2040/2040 bit-exact,
+  913 cycles = **6.09 µs** (`docs/perf/p2-f2-afi.md`, `hw/f2/`).
 - [ ] **Step 3: Do not buy these boards for other people.** Publish; let the labs that own them use them.
 
 ### Task P3: Appliance v3 — the ASIC module
