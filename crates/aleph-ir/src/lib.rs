@@ -22,5 +22,6 @@ pub use tiled_block::TiledBlock;
 pub mod ansatz;
 #[cfg(any(test, feature = "bench-fixtures"))]
 pub mod bench_fixtures;
+pub mod dist;
 pub mod passes;
 pub use ansatz::{build_hea, build_qaoa, maxcut_pauli_sum, AnsatzError};

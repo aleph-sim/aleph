@@ -82,8 +82,9 @@ pub fn specialize(instr: &Instruction, layout: DistLayout, rank: u32) -> Option<
 - `Router::Lookahead`: chooses which local qubits to evict by the Belady rule (the one whose next use is farthest
   away). It brings in up to `g` needed global qubits in one exchange, picking the set that covers the most upcoming
   non-free gates. This is #57.
-- After routing, each `Local` segment is fused by the **existing** passes (cancellation, `Fuse1q/2q/Kq`,
-  `FuseDiagonalRuns`) in physical index space. `TiledBlock` is produced by the backend later and never enters the plan.
+- Fusion runs **per rank, after `specialize`**, on the resulting `m`-qubit instruction list, using the existing
+  passes. Fusing in physical `n`-qubit space would merge a local gate with a free global-qubit diagonal into a dense
+  block on a global qubit, which then could not be specialised. Per-rank fusion lands with the GPU backend (PR 3).
 - `Measure`/`Reset` return `IrError::Unsupported` in v1. `Barrier` is dropped.
 
 ### 3.2 CPU reference executor (`aleph-sv` test support)
