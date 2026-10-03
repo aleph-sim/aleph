@@ -14,7 +14,7 @@ xvlog -sv -d TB_DIV_F=$DIV -d TB_KHZ=$KHZ -i ../design \
   "$V/data/ip/xpm/xpm_cdc/hdl/xpm_cdc.sv" "$V/data/ip/xpm/xpm_memory/hdl/xpm_memory.sv" \
   "$V/data/ip/xpm/xpm_fifo/hdl/xpm_fifo.sv" \
   ../design/check_minsum.sv ../design/var_update.sv ../design/bp_relay_banked.sv \
-  ../design/bp_stream_banked_core.sv ../design/aleph_bp_ocl.sv ../verif/tb_aleph_bp_ocl.sv > xvlog.log
+  ../design/bp_stream_banked_core.sv ../design/aleph_pcis_ring.sv ../design/aleph_bp_ocl.sv ../verif/tb_aleph_bp_ocl.sv > xvlog.log
 xvlog "$V/data/verilog/src/glbl.v" >> xvlog.log
 xelab -L unisims_ver -debug off -timescale 1ns/1ps tb_aleph_bp_ocl glbl -s tb > xelab.log
 xsim tb -R --testplusarg "VEC=$vec" | tee xsim.log

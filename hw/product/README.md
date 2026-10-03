@@ -35,11 +35,12 @@ co-simulation. **Nobody on the project owns a ZCU104, so it has not yet decoded 
 `deploy.sh` run on one is the test, and it will not report success without 40/40.
 
 **v2-large runs on an FPGA anyone can rent.** 64/192 is published as a public AWS F2 image,
-`agfi-0155529c6b08a03d0` (`hw/f2/README.md`), on the AMD Virtex UltraScale+ HBM VU47P. On an
-f2.6xlarge it decoded **2040/2040 golden syndromes bit-exactly at 150 MHz, 913 cycles = 6.09 µs** worst
-case (`docs/perf/p2-f2-afi.md`). Phase B's out-of-context projection was 6.07 µs. The host talks to it
-over OCL AXI-Lite (the F2 small shell gives no DMA), so the host loop costs ~15 µs per decode on top. The
-decoder's own latency is counted in hardware and excludes it. An f2.6xlarge rents for about $2/hour,
+`agfi-073cc3dc45ee25cd8` (interface v2, `hw/f2/README.md`), on the AMD Virtex UltraScale+ HBM VU47P. On
+an f2.6xlarge it decodes **bit-exactly at 150 MHz, 913 cycles = 6.09 µs** worst case
+(`docs/perf/p2-f2-afi.md`). Phase B's out-of-context projection was 6.07 µs. The F2 small shell gives no
+DMA, so the host has two paths. Batched over PCIS, it reaches **160,000 decodes/s**, 98 % of what the
+core can do. Over OCL AXI-Lite it does 88,000/s. The decoder's own latency is counted in hardware and
+includes no host time. The first image, `agfi-0155529c6b08a03d0` (OCL only), stays public. An f2.6xlarge rents for about $2/hour,
 and nobody needs a paid Vivado licence to use the image.
 
 v2-large deliberately uses **64/192 rather than the full-parallel 144/864**, and the reason is worth stating

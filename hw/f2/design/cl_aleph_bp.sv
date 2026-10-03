@@ -1,7 +1,7 @@
 // P2 appliance v2-large — AWS F2 Custom Logic top: banked relay-BP decoder behind OCL BAR0.
 //
-// Everything except OCL is tied off: no DDR (sh_ddr with DDR_PRESENT=0, which the shell requires to be
-// instantiated), no HBM, no PCIS/PCIM, no SDA, no interrupts. The decoder lives in `aleph_bp_ocl`; this
+// Everything except OCL (registers, per-word path) and PCIS (batched path) is tied off: no DDR (sh_ddr with
+// DDR_PRESENT=0, which the shell requires to be instantiated), no HBM, no PCIM, no SDA, no interrupts. The decoder lives in `aleph_bp_ocl`; this
 // file only adapts it to the shell's port list (`cl_ports.vh`, AWS F2 HDK).
 
 module cl_aleph_bp #(
@@ -41,8 +41,36 @@ module cl_aleph_bp #(
       .s_rdata   (cl_ocl_rdata),
       .s_rresp   (cl_ocl_rresp),
       .s_rvalid  (cl_ocl_rvalid),
-      .s_rready  (ocl_cl_rready)
+      .s_rready  (ocl_cl_rready),
+      // PCIS: burst type, cache/prot/qos/lock and user bits carry nothing this slave needs
+      .p_awaddr  (sh_cl_dma_pcis_awaddr),
+      .p_awid    (sh_cl_dma_pcis_awid),
+      .p_awsize  (sh_cl_dma_pcis_awsize),
+      .p_awvalid (sh_cl_dma_pcis_awvalid),
+      .p_awready (cl_sh_dma_pcis_awready),
+      .p_wdata   (sh_cl_dma_pcis_wdata),
+      .p_wstrb   (sh_cl_dma_pcis_wstrb),
+      .p_wlast   (sh_cl_dma_pcis_wlast),
+      .p_wvalid  (sh_cl_dma_pcis_wvalid),
+      .p_wready  (cl_sh_dma_pcis_wready),
+      .p_bid     (cl_sh_dma_pcis_bid),
+      .p_bresp   (cl_sh_dma_pcis_bresp),
+      .p_bvalid  (cl_sh_dma_pcis_bvalid),
+      .p_bready  (sh_cl_dma_pcis_bready),
+      .p_araddr  (sh_cl_dma_pcis_araddr),
+      .p_arid    (sh_cl_dma_pcis_arid),
+      .p_arlen   (sh_cl_dma_pcis_arlen),
+      .p_arsize  (sh_cl_dma_pcis_arsize),
+      .p_arvalid (sh_cl_dma_pcis_arvalid),
+      .p_arready (cl_sh_dma_pcis_arready),
+      .p_rid     (cl_sh_dma_pcis_rid),
+      .p_rdata   (cl_sh_dma_pcis_rdata),
+      .p_rresp   (cl_sh_dma_pcis_rresp),
+      .p_rlast   (cl_sh_dma_pcis_rlast),
+      .p_rvalid  (cl_sh_dma_pcis_rvalid),
+      .p_rready  (sh_cl_dma_pcis_rready)
   );
+  assign cl_sh_dma_pcis_ruser = '0;
 
   // ---------------------------------------------------------------- globals
   always_comb begin
@@ -69,15 +97,6 @@ module cl_aleph_bp #(
     cl_sh_pcim_arprot  = '0; cl_sh_pcim_arqos   = '0; cl_sh_pcim_aruser  = '0;
     cl_sh_pcim_bready  = '0;
     cl_sh_pcim_rready  = '0;
-  end
-
-  // ---------------------------------------------------------------- PCIS (unused slave: never ready)
-  always_comb begin
-    cl_sh_dma_pcis_awready = '0; cl_sh_dma_pcis_wready  = '0;
-    cl_sh_dma_pcis_bid     = '0; cl_sh_dma_pcis_bresp   = '0; cl_sh_dma_pcis_bvalid = '0;
-    cl_sh_dma_pcis_arready = '0;
-    cl_sh_dma_pcis_rid     = '0; cl_sh_dma_pcis_rdata   = '0; cl_sh_dma_pcis_rresp  = '0;
-    cl_sh_dma_pcis_rlast   = '0; cl_sh_dma_pcis_ruser   = '0; cl_sh_dma_pcis_rvalid = '0;
   end
 
   // ---------------------------------------------------------------- SDA (unused slave)
