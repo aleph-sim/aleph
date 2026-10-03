@@ -199,3 +199,181 @@ proptest! {
         }
     }
 }
+
+fn h_layer(n: u32) -> Circuit {
+    let mut c = Circuit::new(n, 0);
+    for q in 0..n {
+        c.h(q).unwrap();
+        c.t(q).unwrap();
+    }
+    c
+}
+
+/// Review focus 2: a two-target gate on {top local slot, global} (and both
+/// global, and second exchange hitting the first-brought qubit), checked on
+/// amplitudes rather than stats.
+#[test]
+fn iswap_and_controlled_iswap_on_top_slot_and_globals() {
+    for &(a, b) in &[(3u32, 5u32), (5, 3), (4, 5), (5, 4), (3, 4)] {
+        let mut c = h_layer(6);
+        c.add_gate(GateInstance::new(Gate::Iswap, vec![a, b]))
+            .unwrap();
+        c.add_gate(GateInstance::controlled(
+            Gate::Iswap,
+            vec![b, a],
+            vec![0u32],
+        ))
+        .unwrap();
+        let u2 = match Gate::CRx(Param::Concrete(0.8)).matrix().unwrap() {
+            aleph_core::GateMatrix::M4x4(m) => m,
+            _ => unreachable!(),
+        };
+        c.add_gate(GateInstance::new(Gate::Unitary2q(Box::new(u2)), vec![a, b]))
+            .unwrap();
+        check(&c, 2, &format!("iswap({a},{b})"));
+    }
+}
+
+/// Every diagonal gate kind with a global qubit in every operand position.
+#[test]
+fn every_diagonal_gate_on_global_positions() {
+    let p = |x| Param::Concrete(x);
+    let d1 = Gate::Unitary1qDiag(Box::new([
+        Complex::from_polar(1.0, 0.4),
+        Complex::from_polar(1.0, -1.3),
+    ]));
+    let one_q = [
+        Gate::Z,
+        Gate::S,
+        Gate::Sdg,
+        Gate::T,
+        Gate::Tdg,
+        Gate::Rz(p(0.9)),
+        Gate::Phase(p(-0.6)),
+        d1,
+    ];
+    for g1 in one_q {
+        for q in [4u32, 5] {
+            let mut c = h_layer(6);
+            c.add_gate(GateInstance::new(g1.clone(), vec![q])).unwrap();
+            c.add_gate(GateInstance::controlled(g1.clone(), vec![q], vec![1u32]))
+                .unwrap();
+            c.add_gate(GateInstance::controlled(g1.clone(), vec![1], vec![q]))
+                .unwrap();
+            check(&c, 2, &format!("{g1:?} on {q}"));
+        }
+    }
+    for g2 in [Gate::Cz, Gate::CRz(p(1.1))] {
+        for qs in [[0u32, 5], [5, 0], [4, 5], [5, 4]] {
+            let mut c = h_layer(6);
+            c.add_gate(GateInstance::new(g2.clone(), qs.to_vec()))
+                .unwrap();
+            c.add_gate(GateInstance::controlled(
+                g2.clone(),
+                qs.to_vec(),
+                vec![2u32],
+            ))
+            .unwrap();
+            check(&c, 2, &format!("{g2:?} on {qs:?}"));
+        }
+    }
+    for qs in [[0u32, 1, 5], [5, 0, 1], [4, 5, 0], [4, 1, 5], [3, 4, 5]] {
+        let mut c = h_layer(6);
+        c.add_gate(GateInstance::new(Gate::Ccz, qs.to_vec()))
+            .unwrap();
+        check(&c, 3, &format!("Ccz on {qs:?}"));
+        check(&c, 2, &format!("Ccz on {qs:?}"));
+    }
+}
+
+#[test]
+fn grover_n8_matches() {
+    let src = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../scripts/qiskit-baseline/circuits/grover_n8_iters13.qasm"
+    ))
+    .unwrap();
+    let c = unitary_only(&aleph_parser::parse(&src).unwrap());
+    for g in 0..=3 {
+        check(&c, g, "grover8");
+    }
+}
+
+/// One random gate from every family the planner/specialize distinguish,
+/// with 0–2 external controls.
+fn arb_any_gate(n: u32) -> impl Strategy<Value = GateInstance> {
+    (
+        0usize..17,
+        Just((0..n).collect::<Vec<u32>>()).prop_shuffle(),
+        0usize..=2,
+        -3.0f64..3.0,
+        -3.0f64..3.0,
+        -3.0f64..3.0,
+    )
+        .prop_map(|(kind, perm, nctrl, a, b, t)| {
+            let p = Param::Concrete;
+            let (gate, arity) = match kind {
+                0 => (Gate::H, 1),
+                1 => (Gate::Y, 1),
+                2 => (Gate::Rx(p(a)), 1),
+                3 => (Gate::U3(p(a), p(b), p(t)), 1),
+                4 => (Gate::Rz(p(a)), 1),
+                5 => {
+                    let m = match Gate::U3(p(a), p(b), p(t)).matrix().unwrap() {
+                        aleph_core::GateMatrix::M2x2(m) => m,
+                        _ => unreachable!(),
+                    };
+                    (Gate::Unitary1q(Box::new(m)), 1)
+                }
+                6 => (
+                    Gate::Unitary1qDiag(Box::new([
+                        Complex::from_polar(1.0, a),
+                        Complex::from_polar(1.0, b),
+                    ])),
+                    1,
+                ),
+                7 => (Gate::Cnot, 2),
+                8 => (Gate::CRx(p(a)), 2),
+                9 => (Gate::CRy(p(b)), 2),
+                10 => (Gate::CRz(p(t)), 2),
+                11 => (Gate::Iswap, 2),
+                12 => (Gate::IswapDg, 2),
+                13 => (Gate::Swap, 2),
+                14 => {
+                    let m = match Gate::CRy(p(a)).matrix().unwrap() {
+                        aleph_core::GateMatrix::M4x4(m) => m,
+                        _ => unreachable!(),
+                    };
+                    (Gate::Unitary2q(Box::new(m)), 2)
+                }
+                15 => (Gate::Toffoli, 3),
+                _ => (Gate::Ccz, 3),
+            };
+            let nctrl = nctrl.min(perm.len() - arity);
+            GateInstance::controlled(
+                gate,
+                perm[..arity].to_vec(),
+                perm[arity..arity + nctrl].to_vec(),
+            )
+        })
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(96))]
+    #[test]
+    fn prop_all_gate_families_with_controls(
+        gates in prop::collection::vec(arb_any_gate(6), 1..30),
+        g in 0u32..=2,
+    ) {
+        let mut c = h_layer(6);
+        for gi in gates {
+            c.add_gate(gi).unwrap();
+        }
+        let p = plan(&c, DistLayout::new(6, g).unwrap(), Router::Naive).unwrap();
+        let got = run_dist(&p).unwrap();
+        let want = reference(&c);
+        for (x, y) in got.iter().zip(&want) {
+            prop_assert!((x - y).norm() < TOL);
+        }
+    }
+}

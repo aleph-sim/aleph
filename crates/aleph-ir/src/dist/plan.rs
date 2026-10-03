@@ -140,7 +140,9 @@ pub fn plan(circuit: &Circuit, layout: DistLayout, router: Router) -> Result<Dis
                     });
                     map.swap_phys(gbit, top);
                     stats.exchanges += 1;
-                    stats.amps_moved_per_rank += 1u64 << (m - 1);
+                    // Saturate: n=64 with g=1 moves 2^62 amps per exchange.
+                    stats.amps_moved_per_rank =
+                        stats.amps_moved_per_rank.saturating_add(1u64 << (m - 1));
                 }
                 cur.push(Instruction::Gate(GateInstance {
                     gate: g.gate.clone(),
@@ -268,6 +270,19 @@ mod tests {
             r,
             Err(DistError::TooFewLocalQubits { need: 2, m: 1 })
         ));
+    }
+
+    #[test]
+    fn huge_slice_traffic_saturates_instead_of_overflowing() {
+        // n=64, g=1 -> m=63: each exchange moves 2^62 amps; six of them overflow u64.
+        let mut c = Circuit::new(64, 0);
+        for _ in 0..3 {
+            c.h(63).unwrap();
+            c.h(62).unwrap();
+        }
+        let p = plan(&c, DistLayout::new(64, 1).unwrap(), Router::Naive).unwrap();
+        assert!(p.stats.exchanges >= 4);
+        assert_eq!(p.stats.amps_moved_per_rank, u64::MAX);
     }
 
     #[test]

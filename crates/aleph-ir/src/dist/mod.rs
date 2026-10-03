@@ -21,6 +21,9 @@ mod specialize;
 pub use plan::{plan, required_local};
 pub use specialize::specialize;
 
+/// Largest supported `g`: rank indices are `u32`, so `2^g` ranks must fit.
+pub const MAX_GLOBAL_QUBITS: u32 = 31;
+
 /// Global/local split of an `n`-qubit state over `2^g` ranks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DistLayout {
@@ -29,9 +32,9 @@ pub struct DistLayout {
 }
 
 impl DistLayout {
-    /// Validate `1 <= n <= 64` and `g < n`.
+    /// Validate `1 <= n <= 64`, `g < n` and `g <= 31` (ranks are `u32`).
     pub fn new(n: u32, g: u32) -> Result<Self, DistError> {
-        if n == 0 || n > 64 || g >= n {
+        if n == 0 || n > 64 || g >= n || g > MAX_GLOBAL_QUBITS {
             return Err(DistError::BadLayout { n, g });
         }
         Ok(Self { n, g })
@@ -102,7 +105,7 @@ pub enum Router {
 
 #[derive(Debug, thiserror::Error, PartialEq)]
 pub enum DistError {
-    #[error("bad layout: n={n}, g={g} (need 1 <= n <= 64, g < n)")]
+    #[error("bad layout: n={n}, g={g} (need 1 <= n <= 64, g < n, g <= 31)")]
     BadLayout { n: u32, g: u32 },
     #[error("circuit has {circuit} qubits but layout has n={layout}")]
     QubitCountMismatch { circuit: u32, layout: u32 },
@@ -153,5 +156,11 @@ mod tests {
             DistLayout::new(0, 0),
             Err(DistError::BadLayout { .. })
         ));
+        // rank is u32: more than 31 global qubits would overflow rank arithmetic
+        assert!(matches!(
+            DistLayout::new(64, 40),
+            Err(DistError::BadLayout { .. })
+        ));
+        assert!(DistLayout::new(64, 31).is_ok());
     }
 }

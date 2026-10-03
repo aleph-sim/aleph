@@ -31,16 +31,25 @@ done by the contiguous-chunk algorithm) against `NaiveSvBackend` at **1e-10**. I
 - global-control Toffoli, a controlled-H with a global external control, and CCZ;
 - a rank-dependent `Rz`/`CZ` on the top qubit;
 - a trailing local↔global `Swap` relabel;
-- a 64-case proptest over arbitrary unitary circuits (n=6, g=0..3).
+- Iswap, controlled Iswap and a dense `Unitary2q` on {top local slot, global} and on two globals, checked on amplitudes;
+- every diagonal gate kind (Z/S/Sdg/T/Tdg/Rz/Phase/`Unitary1qDiag`/Cz/CRz/Ccz) with a global qubit in every operand
+  position, with and without controls;
+- Grover-8 (13 iterations) for g = 0..3;
+- a 64-case proptest over arbitrary unitary circuits (n=6, g=0..3);
+- a 96-case proptest over every gate family the planner distinguishes (incl. CRx/CRy/CRz, Iswap/IswapDg, U3,
+  `Unitary1q`/`Unitary2q`, Toffoli, Ccz) with 0–2 random external controls (n=6, g=0..2).
 
 Two mutation checks show the oracle has teeth:
 
 - Dropping the last exchange of a plan is detected by `mutation_dropping_an_exchange_breaks_oracle`. Dropping the
   *first* one is not a valid mutation: it acts on `|0…0⟩`, where swapping two `|0⟩` qubits is the identity.
-- Inverting `DistLayout::rank_bit` by hand fails 7 of the 8 oracle tests. This was a manual check and is not committed.
+- Inverting `DistLayout::rank_bit` by hand fails 7 of the 8 original oracle tests. Flipping the matrix bit order in
+  `diag_reduce` (MSB↔LSB) by hand is caught only by the diagonal-gate table and the all-families proptest. Both were
+  manual checks and are not committed.
 
 `specialize` has 10 unit tests in `crates/aleph-ir/src/dist/specialize.rs`. Among them, `DiagonalPhase` is checked
-against the full-index `phase_at` for every rank and local index. The planner has 8 unit tests in `plan.rs`.
+against the full-index `phase_at` for every rank and local index. The planner has 9 unit tests in `plan.rs`, including saturation of the traffic counter at n=64. `DistLayout` rejects
+`g > 31` (ranks are `u32`).
 
 ## Communication count (naive router)
 
