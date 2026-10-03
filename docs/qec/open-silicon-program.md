@@ -1054,7 +1054,9 @@ users cannot serve as Track S's demand gate. F1–F3 are prerequisites for the a
   (qosf/awesome-quantum-software#190; one entry under a new Quantum error correction > Rust subheading, at
   the maintainer's request to avoid a duplicate simulators entry); repo description,
   homepage and topics updated. The Error Correction Zoo entry waits for F5: its `decoders:` fields cite
-  papers, so it needs the preprint on arXiv or under a DOI first.
+  papers, so it needs the preprint on arXiv or under a DOI first. 2026-10-03: #190 is mergeable and has no
+  outstanding review comments; the list's maintainers merge in batches (last batch 2026-09-24), so it
+  waits on them.
 
 - [ ] **Task F8: Apply for aligned funding.** Unitary Foundation microgrants ($4 k, worldwide, open
   quantum projects). NGI Zero Commons (NLnet, €21.6 M committed across 2026–27, **submissions currently
