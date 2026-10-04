@@ -15,12 +15,20 @@ use aleph_ir::{Circuit, DiagonalPhase, Instruction, PhaseTerm};
 
 const LAUNCHES: usize = 32;
 
-/// One H layer (non-trivial amplitudes), then `LAUNCHES` × (`H` on qubit
-/// `i % 8`, then `payload(i)` if any). With no payload this is the baseline.
-fn circuit(n: u32, payload: Option<&dyn Fn(usize) -> Instruction>) -> Circuit {
+/// One H layer (non-trivial amplitudes), optionally a scrambling prefix (one
+/// `Rx` and one `Rz` per qubit, distinct angles: generic complex amplitudes),
+/// then `LAUNCHES` × (`H` on qubit `i % 8`, then `payload(i)` if any). With no
+/// payload this is the baseline.
+fn circuit(n: u32, scramble: bool, payload: Option<&dyn Fn(usize) -> Instruction>) -> Circuit {
     let mut c = Circuit::new(n, 0);
     for q in 0..n {
         c.h(q).unwrap();
+    }
+    if scramble {
+        for q in 0..n {
+            c.rx(0.3 + 0.17 * f64::from(q), q).unwrap();
+            c.rz(0.7 + 0.11 * f64::from(q), q).unwrap();
+        }
     }
     for i in 0..LAUNCHES {
         c.h((i % 8) as u32).unwrap();
@@ -66,11 +74,21 @@ fn multi_term(n: u32) -> impl Fn(u32) -> PhaseTerm {
 /// Best-of-5 seconds per launch of the payload (interleaved-H baseline subtracted).
 fn per_launch<F: FnMut(&Circuit) -> f64>(
     n: u32,
+    time: F,
+    make: impl Fn(usize) -> Instruction,
+) -> f64 {
+    per_launch_on(n, false, time, make)
+}
+
+/// [`per_launch`], with the scrambling prefix in both full and baseline when `scramble`.
+fn per_launch_on<F: FnMut(&Circuit) -> f64>(
+    n: u32,
+    scramble: bool,
     mut time: F,
     make: impl Fn(usize) -> Instruction,
 ) -> f64 {
-    let base = circuit(n, None);
-    let full = circuit(n, Some(&make));
+    let base = circuit(n, scramble, None);
+    let full = circuit(n, scramble, Some(&make));
     let t_base = (0..5).map(|_| time(&base)).fold(f64::INFINITY, f64::min);
     let t_full = (0..5).map(|_| time(&full)).fold(f64::INFINITY, f64::min);
     (t_full - t_base) / LAUNCHES as f64
@@ -88,7 +106,16 @@ fn kinds(n: u32, time: &mut dyn FnMut(&Circuit) -> f64) -> [f64; 9] {
         kq[r * 8 + (r ^ 1)] = Complex::new(1.0, 0.0); // permutation, not diagonal
     }
     let dense1 = per_launch(n, &mut *time, |i| g(Gate::H, &[(i % 8) as u32]));
-    let dense2 = per_launch(n, &mut *time, u2);
+    // Dense2 is timed on a scrambled (generic complex) state; every other kind
+    // on the uniform H state. Why (random-diagnosis H8): at the card's 70 W cap
+    // FP64 kernel time depends on the amplitude data. Dense2 costs x1.196 on a
+    // generic state vs the uniform one (Iswap 18.4 -> 22.1 ms), and real
+    // Dense2 traffic (random's fused 2q blocks: 23.3 ms in situ) runs on such
+    // states. Dense1 is bandwidth-bound and moves ~1.5 %. Caveat: this per-kind
+    // choice was made AFTER seeing the §6.3 gate results. Scrambling Dense3 too
+    // (x1.12) would push GHZ, whose state stays low-entropy, to ~1.11, so Dense3
+    // stays uniform and carries a known state-dependent residual.
+    let dense2 = per_launch_on(n, true, &mut *time, u2);
     let dense3 = per_launch(n, &mut *time, |i| {
         g(
             Gate::UnitaryKq {

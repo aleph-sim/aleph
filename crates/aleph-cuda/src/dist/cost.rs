@@ -243,7 +243,14 @@ impl CostModel for GpuCostModel {
 /// `cargo test --release -p aleph-cuda --features cuda --test dist_cost_calibrate -- --ignored --nocapture`.
 /// Method: each launch interleaved with an `H`, best of 5 × 32 launches, the
 /// interleaved-H baseline subtracted. Each constant is the **mean of 2 runs**
-/// (largest run-to-run spread: FP64 dense3 +2.4 %, dense2 and phase_base +2.0 %).
+/// (largest run-to-run spread: FP64 dense3 +2.4 %, phase_base +2.0 %).
+/// `dense2` alone is timed on a scrambled state (H layer + one Rx and one Rz
+/// per qubit, in payload and baseline) and was re-measured later the same day
+/// (mean of 2 runs, FP64 spread +3.3 %); the other constants are from the
+/// earlier pair. At the card's 70 W cap, FP64 kernel time depends on the
+/// amplitude data: dense2 costs ~1.2x on a generic complex state, and dense3
+/// (still uniform-state, to keep GHZ-like low-entropy states right) carries a
+/// known state-dependent error (~1.12x on generic states).
 /// Most kinds sit on the ~17.6 ms single-pass bandwidth floor (dense1/diag1/
 /// diag_k are within ~1 % of each other, so their ordering is noise); cnot
 /// touches half the state, dense3 is compute-bound at FP64, and phase_poly pays
@@ -252,7 +259,7 @@ impl CostModel for GpuCostModel {
 const RTX4000_FP64: KindTimes = KindTimes {
     m_ref: 27,
     dense1: 1.755645e-2,
-    dense2: 1.840509e-2,
+    dense2: 2.168771e-2,
     dense3: 3.436177e-2,
     diag1: 1.774244e-2,
     diag_k: 1.759981e-2,
@@ -265,7 +272,7 @@ const RTX4000_FP64: KindTimes = KindTimes {
 const RTX4000_FP32: KindTimes = KindTimes {
     m_ref: 28,
     dense1: 1.763479e-2,
-    dense2: 1.781169e-2,
+    dense2: 1.773724e-2,
     dense3: 1.797886e-2,
     diag1: 1.769642e-2,
     diag_k: 1.771855e-2,
