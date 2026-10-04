@@ -532,15 +532,20 @@ proptest! {
     fn prop_every_dag_order_is_equivalent(
         gates in prop::collection::vec(arb_any_gate(6), 1..40),
         dp in arb_dp(6),
-        dp_at in 0usize..40,
+        dp_at in 0usize..1000,
         seed in any::<u64>(),
     ) {
         let mut c = h_layer(6);
+        let at = dp_at % (gates.len() + 1);
+        let n_gates = gates.len();
         for (k, gi) in gates.into_iter().enumerate() {
-            if k == dp_at {
+            if k == at {
                 c.add_instruction(dp.clone()).unwrap();
             }
             c.add_gate(gi).unwrap();
+        }
+        if at == n_gates {
+            c.add_instruction(dp.clone()).unwrap();
         }
         let want = reference(&c);
         for k in 0..8u64 {
@@ -566,4 +571,34 @@ fn reordering_non_commuting_cnots_is_detectable() {
     swapped.cnot(0, 1).unwrap();
     let (a, b) = (reference(&c), reference(&swapped));
     assert!(a.iter().zip(&b).any(|(x, y)| (x - y).norm() > 1e-6));
+}
+
+/// Guards against an over-serialising DAG: commuting neighbours must be
+/// allowed to reorder, and every sampled order must stay state-equivalent.
+#[test]
+fn dag_allows_commuting_reorders() {
+    let mut c = Circuit::new(3, 0);
+    c.rz(0.1, 0).unwrap();
+    c.cz(0, 1).unwrap();
+    c.rz(0.2, 1).unwrap();
+    c.cnot(0, 2).unwrap();
+    c.cnot(1, 2).unwrap();
+    c.h(2).unwrap();
+    let dag = Dag::build(&c).unwrap();
+    assert!(
+        dag.initial_ready().len() > 1,
+        "commuting heads must be ready together"
+    );
+    let orig: Vec<String> = c.instructions().iter().map(|i| format!("{i:?}")).collect();
+    let want = reference(&c);
+    let mut reordered = false;
+    for seed in 0..32u64 {
+        let o = random_topo(&c, seed);
+        let seq: Vec<String> = o.instructions().iter().map(|i| format!("{i:?}")).collect();
+        reordered |= seq != orig;
+        for (x, y) in reference(&o).iter().zip(&want) {
+            assert!((x - y).norm() < TOL);
+        }
+    }
+    assert!(reordered, "DAG never reordered anything");
 }
