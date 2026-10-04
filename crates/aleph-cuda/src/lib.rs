@@ -47,6 +47,8 @@ pub use buffer::{device_alloc_count, device_dtoh_bytes, DeviceBuffer};
 pub use context::{device_count, CudaContext};
 #[cfg(all(target_os = "linux", feature = "cuquantum"))]
 pub use cuquantum::CuStateVecBackend;
+#[cfg(all(target_os = "linux", feature = "nccl"))]
+pub use dist::NcclExchange;
 #[cfg(all(target_os = "linux", feature = "cuda"))]
 pub use dist::{DeviceSv, DistSvBackend, DistSvError, DistSvState, Exchange, LocalExchange};
 #[cfg(all(target_os = "linux", feature = "cuda"))]

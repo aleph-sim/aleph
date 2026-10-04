@@ -16,9 +16,15 @@ use cudarc::driver::{CudaStream, CudaView, CudaViewMut, DeviceRepr};
 
 mod device_sv;
 mod exchange;
+#[cfg(feature = "nccl")]
+mod nccl;
+#[cfg_attr(not(feature = "nccl"), allow(dead_code))] // only NcclExchange schedules
+mod schedule;
 
 use exchange::rank_device;
 pub use exchange::{Exchange, LocalExchange};
+#[cfg(feature = "nccl")]
+pub use nccl::NcclExchange;
 
 /// What the distributed layer needs from a single-device SV backend beyond
 /// [`Backend`]: rank-slice allocation, device-to-device amplitude copies, and
