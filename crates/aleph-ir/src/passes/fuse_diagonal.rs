@@ -63,15 +63,18 @@ impl Pass for FuseDiagonalRuns {
     }
 }
 
-/// A run member is a diagonal gate or a bare `Cnot` (no external controls).
-/// Everything else (measure, reset, barrier, non-diagonal gate, a
-/// controlled-Cnot, an existing `DiagonalPhase`) is a hard fence.
+/// A run member is a diagonal gate, a bare `Cnot` (no external controls),
+/// or an existing `DiagonalPhase` (absorbed term-by-term — the distributed
+/// `specialize` emits rank phases as `DiagonalPhase`, #534). Everything else
+/// (measure, reset, barrier, non-diagonal gate, a controlled-Cnot) is a
+/// hard fence.
 fn is_run_member(inst: &Instruction) -> bool {
     match inst {
         Instruction::Gate(g) => {
             g.gate.is_diagonal()
                 || (matches!(g.gate, aleph_core::Gate::Cnot) && g.controls.is_empty())
         }
+        Instruction::DiagonalPhase(_) => true,
         _ => false,
     }
 }
@@ -89,6 +92,33 @@ fn fuse_run(run: &[Instruction], n: u32) -> Option<DiagonalPhase> {
     for inst in run {
         let g = match inst {
             Instruction::Gate(g) => g,
+            Instruction::DiagonalPhase(dp) => {
+                let in_range = |m: u64| n >= 64 || m >> n == 0;
+                if dp.n_qubits != n
+                    || !dp
+                        .terms
+                        .iter()
+                        .all(|t| t.conds.iter().all(|&m| in_range(m)))
+                {
+                    return None;
+                }
+                // A cond is a parity over the *current* bits; the current bit
+                // b is `parity(perm.image(b) & x)` in the run-start basis, so
+                // the cond's mask maps to the XOR of its bits' images.
+                for t in &dp.terms {
+                    let conds: SmallVec<[u64; 2]> =
+                        t.conds.iter().map(|&m| perm.image_of_mask(m)).collect();
+                    for &m in &conds {
+                        support |= m;
+                    }
+                    terms.push(PhaseTerm {
+                        conds,
+                        angle: t.angle,
+                    });
+                }
+                diag_gate_count += 1;
+                continue;
+            }
             _ => return None,
         };
         if matches!(g.gate, aleph_core::Gate::Cnot) {
@@ -178,6 +208,17 @@ impl Perm {
     /// Mask for the image of input bit `b` under the current permutation.
     pub(crate) fn image(&self, b: u32) -> u64 {
         self.row[b as usize]
+    }
+    /// Image of the parity `parity(mask & x_current)`: XOR of the images
+    /// of `mask`'s bits.
+    pub(crate) fn image_of_mask(&self, mask: u64) -> u64 {
+        let mut out = 0u64;
+        let mut m = mask;
+        while m != 0 {
+            out ^= self.row[m.trailing_zeros() as usize];
+            m &= m - 1;
+        }
+        out
     }
     pub(crate) fn is_identity(&self) -> bool {
         self.row.iter().enumerate().all(|(i, &m)| m == 1u64 << i)
@@ -469,6 +510,86 @@ mod pass_tests {
             )),
             "controlled-Cnot must be re-emitted, not absorbed"
         );
+    }
+
+    fn dp(n: u32, terms: &[(&[u64], f64)]) -> Instruction {
+        Instruction::DiagonalPhase(Box::new(DiagonalPhase {
+            n_qubits: n,
+            terms: terms
+                .iter()
+                .map(|(c, a)| crate::PhaseTerm {
+                    conds: c.iter().copied().collect(),
+                    angle: *a,
+                })
+                .collect(),
+        }))
+    }
+
+    fn assert_phases(c: &Circuit, want: impl Fn(u64) -> f64) {
+        assert_eq!(c.len(), 1, "{:?}", c.instructions());
+        let Instruction::DiagonalPhase(d) = &c.instructions()[0] else {
+            panic!("{:?}", c.instructions()[0])
+        };
+        for x in 0..(1u64 << d.n_qubits) {
+            let e = (d.phase_at(x) - want(x)).rem_euclid(2.0 * PI);
+            assert!(e < 1e-12 || 2.0 * PI - e < 1e-12, "x={x:b}");
+        }
+    }
+
+    #[test]
+    fn existing_diagonal_phase_joins_the_run() {
+        // #534: Rz; DiagonalPhase(rank phase + parity cond); Cz → one op.
+        let mut c = Circuit::new(3, 0);
+        c.rz(0.4, 0).unwrap();
+        c.instructions.push(dp(
+            3,
+            &[(&[], 0.7), (&[0b110], -0.3), (&[0b001, 0b100], 1.1)],
+        ));
+        c.add_gate(aleph_core::GateInstance::new(
+            aleph_core::Gate::Cz,
+            smallvec![1u32, 2u32],
+        ))
+        .unwrap();
+        FuseDiagonalRuns.run(&mut c).unwrap();
+        let b = |x: u64, i: u32| (x >> i) & 1 == 1;
+        assert_phases(&c, |x| {
+            let mut p = if b(x, 0) { 0.2 } else { -0.2 } + 0.7;
+            if b(x, 1) ^ b(x, 2) {
+                p -= 0.3;
+            }
+            if b(x, 0) && b(x, 2) {
+                p += 1.1;
+            }
+            if b(x, 1) && b(x, 2) {
+                p += PI;
+            }
+            p
+        });
+    }
+
+    #[test]
+    fn diagonal_phase_inside_cx_sandwich_maps_through_perm() {
+        // cx(0,1); DP[bit 1]; cx(0,1); T(0): inside, bit 1 holds x0^x1.
+        let mut c = Circuit::new(2, 0);
+        c.cnot(0, 1).unwrap();
+        c.instructions.push(dp(2, &[(&[0b10], 0.9)]));
+        c.cnot(0, 1).unwrap();
+        c.t(0).unwrap();
+        FuseDiagonalRuns.run(&mut c).unwrap();
+        assert_phases(&c, |x| {
+            let par = ((x & 1) ^ ((x >> 1) & 1)) == 1;
+            (if par { 0.9 } else { 0.0 }) + if x & 1 == 1 { PI / 4.0 } else { 0.0 }
+        });
+    }
+
+    #[test]
+    fn diagonal_phase_of_other_width_is_left_alone() {
+        let mut c = Circuit::new(2, 0);
+        c.t(0).unwrap();
+        c.instructions.push(dp(3, &[(&[0b100], 0.5)]));
+        c.t(1).unwrap();
+        FuseDiagonalRuns.run(&mut c).unwrap();
+        assert_eq!(c.len(), 3);
     }
 
     #[test]
