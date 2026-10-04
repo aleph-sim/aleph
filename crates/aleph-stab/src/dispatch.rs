@@ -76,6 +76,7 @@ fn gate_name(g: &Gate) -> &'static str {
         Gate::Unitary1q(_) => "Unitary1q",
         Gate::Unitary1qDiag(_) => "Unitary1qDiag",
         Gate::Unitary2q(_) => "Unitary2q",
+        Gate::Unitary2qDiag(_) => "Unitary2qDiag",
         Gate::UnitaryKq { .. } => "UnitaryKq",
     }
 }

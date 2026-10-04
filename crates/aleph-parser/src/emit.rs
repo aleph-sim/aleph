@@ -99,6 +99,7 @@ fn emit_gate(out: &mut String, g: &GateInstance) -> Result<(), EmitError> {
         | g @ Gate::Unitary1q(_)
         | g @ Gate::Unitary1qDiag(_)
         | g @ Gate::Unitary2q(_)
+        | g @ Gate::Unitary2qDiag(_)
         | g @ Gate::UnitaryKq { .. } => return Err(EmitError::UnsupportedGate { name: g.name() }),
         Gate::Toffoli => ("ccx", vec![]),
         Gate::Ccz => ("ccz", vec![]),

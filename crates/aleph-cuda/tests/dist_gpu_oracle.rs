@@ -363,6 +363,26 @@ fn rank_pass_count_counts_rank_zero_instructions() {
     assert_eq!(db.rank_pass_count(&p).unwrap(), 6);
 }
 
+/// #529: a diagonal that keeps two local qubits must stay diagonal after
+/// `specialize`, so the fused rank program is one phase-polynomial pass.
+#[test]
+fn specialized_2local_diagonals_fuse_to_one_pass() {
+    use aleph_core::{Gate, GateInstance};
+    use aleph_cuda::{DistSvBackend, LocalExchange};
+    use aleph_ir::dist::{DistLayout, Router};
+    let Some(be) = gpu64() else { return };
+    let db = DistSvBackend::new(be, LocalExchange::new());
+    let mut c = aleph_ir::Circuit::new(6, 0);
+    for q in 0..4 {
+        c.add_gate(GateInstance::new(Gate::Ccz, vec![q, q + 1, 5]))
+            .unwrap();
+        c.add_gate(GateInstance::new(Gate::Cz, vec![q, q + 1]))
+            .unwrap();
+    }
+    let p = aleph_ir::dist::plan(&c, DistLayout::new(6, 1).unwrap(), Router::Naive).unwrap();
+    assert_eq!(db.rank_pass_count(&p).unwrap(), 1);
+}
+
 /// `Exchange` is public: a device count that is not a power of two (or
 /// exceeds the rank count) must be an error, never an index panic.
 #[test]

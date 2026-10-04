@@ -105,6 +105,13 @@ pub enum Gate {
     /// Box wrapper keeps the enum size unchanged (parity with
     /// `Unitary1q`/`Unitary2q`).
     Unitary1qDiag(Box<[Complex; 2]>),
+
+    /// 2-qubit diagonal unitary `diag(d0, d1, d2, d3)`, MSB-first in the
+    /// operand list like `Unitary2q` (`qubits[0]` is the high bit of the
+    /// row index). Emitted by the distributed `specialize` pass when a
+    /// diagonal gate keeps two local qubits; keeping `is_diagonal()` true
+    /// lets `FuseDiagonalRuns` absorb it instead of fencing the run (#529).
+    Unitary2qDiag(Box<[Complex; 4]>),
 }
 
 impl Gate {
@@ -136,7 +143,8 @@ impl Gate {
             | Gate::CRx(_)
             | Gate::CRy(_)
             | Gate::CRz(_)
-            | Gate::Unitary2q(_) => 2,
+            | Gate::Unitary2q(_)
+            | Gate::Unitary2qDiag(_) => 2,
 
             Gate::Toffoli | Gate::Ccz => 3,
 
@@ -173,6 +181,7 @@ impl Gate {
             Gate::Unitary1q(_) => "Unitary1q",
             Gate::Unitary1qDiag(_) => "Unitary1qDiag",
             Gate::Unitary2q(_) => "Unitary2q",
+            Gate::Unitary2qDiag(_) => "Unitary2qDiag",
             Gate::UnitaryKq { .. } => "UnitaryKq",
         }
     }
@@ -374,6 +383,13 @@ impl Gate {
                 Ok(GateMatrix::M2x2([[d[0], zero], [zero, d[1]]]))
             }
             Gate::Unitary2q(m) => Ok(GateMatrix::M4x4(**m)),
+            Gate::Unitary2qDiag(d) => {
+                let mut m = [[Complex::new(0.0, 0.0); 4]; 4];
+                for (i, row) in m.iter_mut().enumerate() {
+                    row[i] = d[i];
+                }
+                Ok(GateMatrix::M4x4(m))
+            }
             // UnitaryKq with k > 3 has no fixed-size GateMatrix variant (the
             // enum stops at 8×8 / 3-qubit). k ≤ 3 could technically be
             // represented, but backends bypass GateMatrix for UnitaryKq
@@ -405,7 +421,8 @@ impl Gate {
             | Gate::CRz(_)
             | Gate::Cz
             | Gate::Ccz
-            | Gate::Unitary1qDiag(_) => true,
+            | Gate::Unitary1qDiag(_)
+            | Gate::Unitary2qDiag(_) => true,
 
             Gate::H
             | Gate::X
@@ -464,6 +481,7 @@ impl Gate {
             | Gate::Unitary1q(_)
             | Gate::Unitary1qDiag(_)
             | Gate::Unitary2q(_)
+            | Gate::Unitary2qDiag(_)
             | Gate::UnitaryKq { .. } => false,
         }
     }
@@ -518,6 +536,7 @@ impl Gate {
             Gate::Unitary1q(m) => Gate::Unitary1q(Box::new(conj_transpose_2(m))),
             Gate::Unitary1qDiag(d) => Gate::Unitary1qDiag(Box::new([d[0].conj(), d[1].conj()])),
             Gate::Unitary2q(m) => Gate::Unitary2q(Box::new(conj_transpose_4(m))),
+            Gate::Unitary2qDiag(d) => Gate::Unitary2qDiag(Box::new(d.map(|z| z.conj()))),
             Gate::UnitaryKq { k, data } => {
                 let dim = 1usize << *k;
                 let mut out = vec![Complex::new(0.0, 0.0); data.len()];
@@ -1202,6 +1221,7 @@ mod tests {
             Gate::Unitary1q(Box::new([[Complex::new(0.0, 0.0); 2]; 2])),
             Gate::Unitary1qDiag(Box::new([Complex::new(1.0, 0.0), Complex::new(1.0, 0.0)])),
             Gate::Unitary2q(Box::new([[Complex::new(0.0, 0.0); 4]; 4])),
+            Gate::Unitary2qDiag(Box::new([Complex::new(1.0, 0.0); 4])),
         ];
         for g in &non_cliff {
             assert!(!g.is_clifford(), "{g:?} should not be Clifford");
@@ -1223,6 +1243,7 @@ mod tests {
             Gate::Cz,
             Gate::Ccz,
             Gate::Unitary1qDiag(Box::new([Complex::new(1.0, 0.0), Complex::new(0.0, 1.0)])),
+            Gate::Unitary2qDiag(Box::new([Complex::new(0.0, 1.0); 4])),
         ];
         for g in &diag_gates {
             assert!(g.is_diagonal(), "{g:?} should be diagonal");
@@ -1275,6 +1296,35 @@ mod tests {
         assert_eq!(m[1][1], d1);
         assert_eq!(m[0][1], Complex::new(0.0, 0.0));
         assert_eq!(m[1][0], Complex::new(0.0, 0.0));
+    }
+
+    #[test]
+    fn unitary_2q_diag_shape_matrix_and_inverse() {
+        use crate::Complex;
+        let d = [
+            Complex::new(1.0, 0.0),
+            Complex::new(0.6, 0.8),
+            Complex::new(0.0, -1.0),
+            Complex::new(-0.6, 0.8),
+        ];
+        let g = Gate::Unitary2qDiag(Box::new(d));
+        assert_eq!(g.arity(), 2);
+        assert_eq!(g.name(), "Unitary2qDiag");
+        let crate::gate::GateMatrix::M4x4(m) = g.matrix().unwrap() else {
+            panic!("expected M4x4")
+        };
+        for (i, row) in m.iter().enumerate() {
+            for (j, z) in row.iter().enumerate() {
+                let want = if i == j { d[i] } else { Complex::new(0.0, 0.0) };
+                assert_eq!(*z, want, "m[{i}][{j}]");
+            }
+        }
+        let Gate::Unitary2qDiag(inv) = g.inverse() else {
+            panic!("inverse changed variant")
+        };
+        for k in 0..4 {
+            assert_eq!(inv[k], d[k].conj());
+        }
     }
 
     #[test]
