@@ -2,7 +2,7 @@
 
 use aleph_backend::run;
 use aleph_core::{Complex, Gate, GateInstance, Param};
-use aleph_ir::dist::{plan, plan_from, Dag, DistLayout, DistStep, Router};
+use aleph_ir::dist::{initial_placement, plan, plan_from, Dag, DistLayout, DistStep, Router};
 use aleph_ir::{Circuit, DiagonalPhase, Instruction, PhaseTerm};
 use aleph_sv::dist_ref::run_dist;
 use aleph_sv::NaiveSvBackend;
@@ -618,4 +618,40 @@ fn dag_allows_commuting_reorders() {
         }
     }
     assert!(reordered, "DAG never reordered anything");
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(64))]
+    #[test]
+    fn prop_initial_placement_matches(
+        gates in prop::collection::vec(arb_any_gate(6), 1..30),
+        dp in arb_dp(6),
+        dp_at in 0usize..1000,
+        g in 0u32..=3,
+        router in prop_oneof![
+            Just(Router::Naive),
+            Just(Router::Lookahead),
+            (1u32..=3).prop_map(|max_k| Router::Reorder { max_k }),
+        ],
+    ) {
+        let mut c = h_layer(6);
+        let at = dp_at % (gates.len() + 1);
+        let n_gates = gates.len();
+        for (k, gi) in gates.into_iter().enumerate() {
+            if k == at {
+                c.add_instruction(dp.clone()).unwrap();
+            }
+            c.add_gate(gi).unwrap();
+        }
+        if at == n_gates {
+            c.add_instruction(dp.clone()).unwrap();
+        }
+        let l = DistLayout::new(6, g).unwrap();
+        let p = plan_from(&c, l, router, &initial_placement(&c, l)).unwrap();
+        let got = run_dist(&p).unwrap();
+        let want = reference(&c);
+        for (x, y) in got.iter().zip(&want) {
+            prop_assert!((x - y).norm() < TOL);
+        }
+    }
 }

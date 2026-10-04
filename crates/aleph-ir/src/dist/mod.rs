@@ -17,11 +17,13 @@ use crate::Instruction;
 
 pub mod dag;
 mod next_use;
+mod placement;
 mod plan;
 mod schedule;
 mod specialize;
 
 pub use dag::{Act, Dag};
+pub use placement::initial_placement;
 pub use plan::{plan, plan_from, required_local};
 pub use specialize::specialize;
 
