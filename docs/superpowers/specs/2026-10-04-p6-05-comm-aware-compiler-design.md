@@ -155,6 +155,15 @@ puts these qubits in physical slots `m..n`, and the rest in order in `0..m`.
     dispatch code and pins each with a unit test mapping instruction → kind. The expected set is: dense block k=1/2/3,
     numerically diagonal (`apply_diag`), `DiagonalPhase` (`apply_phase_poly`; per-pass plus per-term), `apply_cnot`,
     and 2q permutation (`Swap`). If the dispatch has a kind outside this set, it gets its own weight.
+  - *PR 2 correction (verified against the dispatch code):* the shipped set is `Dense1/2/3`, `Diag1`, `DiagK`, `Cnot`,
+    `PhasePoly`.
+    - There is no `Swap` kind: `Swap` is not diagonal and goes to dense k=2 `apply_kq_tiled`, so it costs as `Dense2`.
+    - Diagonals split into `Diag1` (`apply_diag_1q`, no scratch upload) and `DiagK` (`apply_diag`, k=2/3).
+    - No layer kind: the dist path applies instructions one at a time (`apply_one`), never `apply_1q_multi`.
+    - `UnitaryKq` is tested before the diagonal check, so it is always dense; k=4/5 (TF32) is unreachable because
+      `fuse_for_gpu` caps fusion at 3.
+    - `PhasePoly` costs `(t_phase_base + t_phase_term · n_terms) · 2^(m − m_ref)`.
+  - `local_segment` returns `Result<f64, DistError>` (specialisation can fail; library code must not panic).
 - **`exchange(k, m)`:** `(1 − 2^−k) · 2^m · amp_bytes / bw_by_k[k−1]`.
   - `LinkModel::aws_g6_fp64()` = [7.16e9, 4.35e9] B/s. For k > 2 it extrapolates the two-bit value, and the extrapolation
     is documented.
@@ -169,6 +178,13 @@ puts these qubits in physical slots `m..n`, and the rest in order in `0..m`.
 On every workload in §8 at n=28, D∈{2,4}, FP64, the model's compute term `Σ local_segment` for the Lookahead plan must
 be within **±10 %** of measured `T_onecard(R=D)/D`. Measured `T_onecard` includes on-card exchange copies; the gate
 subtracts those, using the measured `LocalExchange` copy time for the plan's exchanges.
+
+*PR 2 correction:* one card runs every rank, so the gate compares the model's compute summed over **all ranks**
+(`Σ_steps Σ_r rank_segment(step, r)`) against measured `T_onecard − T_exchange`, not one rank against `T_onecard/D`. The
+exchange copy time is measured by running the same plan with every `Local` step emptied (an exchange-only plan) through
+`DistSvBackend::run_plan`; no timing hook is needed and allocation cancels in the subtraction. The representative-rank
+estimate `compile` uses, `R · cost(R−1)`, is reported alongside but not gated (an upper bound by design). Bench:
+`crates/aleph-cuda/tests/dist_cost_gate.rs`.
 
 If the gate fails, the per-kind model is revised and re-checked before going further, and the finding is recorded in
 the report. Shipping an optimizer that aims at a wrong objective is not acceptable.

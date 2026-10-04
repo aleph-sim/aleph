@@ -83,3 +83,101 @@ divided by this row's (> 1 = less traffic).
   fusion, and that is measured in PR 3. `compile` keeps Lookahead as a candidate, so a row where reorder moves more
   data is not a regression of the final compiler.
 - No GPU timing is claimed here; these are planning-level counts only.
+
+## 2. Calibrated GPU cost model (PR 2)
+
+Hardware: RTX 4000 SFF Ada (sm_89, 20 GiB), one card. Date: 2026-10-04.
+
+### 2.1 Calibration
+
+`cargo test --release -p aleph-cuda --features cuda --test dist_cost_calibrate -- --ignored --nocapture`
+
+Each kind is timed as the best of 5 over 32 launches on a `2^m_ref` state, with an H-layer baseline subtracted. The
+values are seconds per launch at `m_ref` and scale by `2^(m − m_ref)`. They are committed in
+`crates/aleph-cuda/src/dist/cost.rs` (run 2 of two calibration runs).
+
+| kind | kernel | FP64 (m_ref = 27) | FP32 (m_ref = 28) |
+|---|---|---|---|
+| `dense1` | `apply_1q` | 1.756583e-2 | 1.762976e-2 |
+| `dense2` | `apply_kq_tiled` k=2 | 2.113696e-2 | 1.767234e-2 |
+| `dense3` | `apply_kq_tiled` k=3 | 3.630713e-2 | 1.715475e-2 |
+| `diag1` | `apply_diag_1q` | 1.773637e-2 | 1.764512e-2 |
+| `diag_k` | `apply_diag` k=2/3 | 1.772850e-2 | 1.760776e-2 |
+| `cnot` | `apply_cnot` | 1.071684e-2 | 1.297517e-2 |
+| `phase_base` | `apply_phase_poly` (per launch) | 2.331010e-2 | 4.622262e-2 |
+| `phase_term` | `apply_phase_poly` (per term) | 6.563838e-4 | 1.289533e-3 |
+
+Notes:
+- Run-to-run spread between the two calibration runs exceeded 5 % on three FP64 kinds: `dense2` +8.4 %, `dense3`
+  +5.1 %, `phase_base` +5.2 % (FP32 `phase_base` +1.9 %).
+- `phase_base` includes the per-launch device allocation and upload of the phase terms.
+- `dense1`, `diag1` and `diag_k` are within ~1 % of each other (the single-pass bandwidth floor), so their ordering is
+  noise.
+
+### 2.2 Model accuracy gate (spec §6.3)
+
+`cargo test --release -p aleph-cuda --features cuda --test dist_cost_gate -- --ignored --nocapture`
+
+n=28, FP64, `Router::Lookahead`, all D ranks on one card with `LocalExchange`, best of 3.
+- **measured compute** = `T(plan) − T(exchange-only plan)`, where the exchange-only plan is the same plan with every
+  `Local` step emptied.
+- **model all-ranks** = `Σ_steps Σ_r rank_segment(step, r)` (the gated quantity).
+- **R·model(R−1)** = the representative-rank estimate `compile` will use (reported, not gated).
+
+Two runs on an idle box (load ≤ 0.71 and decaying, GPU util 0 %, 1339 MiB resident before each). Run 2:
+
+| circuit | D | measured compute (s) | model all-ranks (s) | ratio | R·model(R−1) (s) | ratio |
+|---|---|---|---|---|---|---|
+| QFT | 2 | 2.353 | 2.710 | 1.152 | 2.733 | 1.161 |
+| QFT | 4 | 2.352 | 2.717 | 1.156 | 2.729 | 1.160 |
+| GHZ | 2 | 0.920 | 0.962 | 1.045 | 0.979 | 1.064 |
+| GHZ | 4 | 0.878 | 0.925 | 1.053 | 0.935 | 1.065 |
+| random d=10 | 2 | 7.029 | 6.690 | 0.952 | 6.690 | 0.952 |
+| random d=10 | 4 | 8.130 | 7.731 | 0.951 | 7.907 | 0.973 |
+| QAOA p=2 | 2 | 3.288 | 3.275 | 0.996 | 3.343 | 1.017 |
+| QAOA p=2 | 4 | 3.320 | 3.301 | 0.994 | 3.352 | 1.010 |
+| CCZ ladder d=4 | 2 | 1.060 | 1.066 | 1.005 | 1.066 | 1.005 |
+| CCZ ladder d=4 | 4 | 1.057 | 1.063 | 1.006 | 1.063 | 1.006 |
+
+Worst |model/measured − 1| = **15.6 %** (run 2), **16.6 %** (run 1). Run 1's all-ranks ratios: QFT 1.164 / 1.166,
+GHZ 1.059 / 1.071, random 0.958 / 0.960, QAOA 0.999 / 0.999, CCZ 1.012 / 1.008 (D=2 / D=4).
+
+**Gate FAILED** in both runs: the two QFT cells exceed +10 %. The other eight cells are within ±7.1 % in both runs.
+
+Model all-ranks compute by kind (s; identical in both runs, since the model is deterministic):
+
+| circuit | D | dense1 | dense2 | dense3 | diag1 | cnot | phase | exchange-only plan (s, run 2) |
+|---|---|---|---|---|---|---|---|---|
+| QFT | 2 | 0.984 | 0.042 | 0 | 0.018 | 0 | 1.666 | 0.070 |
+| QFT | 4 | 0.984 | 0.085 | 0 | 0.044 | 0 | 1.605 | 0.097 |
+| GHZ | 2 | 0.018 | 0 | 0.944 | 0 | 0 | 0 | 0.043 |
+| GHZ | 4 | 0 | 0.021 | 0.871 | 0 | 0.032 | 0 | 0.056 |
+| random d=10 | 2 | 1.300 | 4.566 | 0.654 | 0 | 0.171 | 0 | 0.283 |
+| random d=10 | 4 | 2.319 | 4.523 | 0.654 | 0 | 0.236 | 0 | 0.456 |
+| QAOA p=2 | 2 | 2.881 | 0.042 | 0 | 0.071 | 0 | 0.281 | 0.150 |
+| QAOA p=2 | 4 | 2.670 | 0.296 | 0 | 0.053 | 0 | 0.282 | 0.216 |
+| CCZ ladder d=4 | 2 | 0.984 | 0 | 0 | 0 | 0 | 0.082 | 0.043 |
+| CCZ ladder d=4 | 4 | 0.984 | 0 | 0 | 0 | 0 | 0.079 | 0.056 |
+
+`diag_k` is 0 on every cell and is omitted.
+
+### 2.3 Reading
+
+- **The gate fails on QFT only.** The model over-predicts QFT compute by 15.2–16.6 % (0.357–0.386 s on 2.33–2.35 s
+  measured) at both D, in both runs. Per spec §6.3 the per-kind model must be revised and re-checked before `compile`
+  lands; that revision is not part of this section.
+- **QFT is the only cell where `PhasePoly` dominates.** It is 1.666 of 2.710 s (61 %) at D=2 and 1.605 of 2.717 s (59 %)
+  at D=4. The QFT excess (0.357–0.386 s) equals 21–24 % of that phase term. `phase_base` moved +5.2 % between the two
+  calibration runs, and it includes a per-launch allocation and upload.
+  The phase kernel is therefore the first suspect, but this run does not isolate it.
+- **The other cells are dominated by one dense kind each**, and the model holds there:
+  - random d=10: `dense2` (4.566 of 6.690 s at D=2, 68 %); under-predicted by 4.0–4.9 %.
+  - GHZ: `dense3` (0.944 of 0.962 s at D=2, 0.871 of 0.925 s at D=4); over-predicted by 4.5–7.1 %.
+  - QAOA p=2: `dense1` (2.881 of 3.275 s at D=2, 2.670 of 3.301 s at D=4); within 0.6 %.
+  - CCZ ladder d=4: `dense1` (0.984 of ~1.065 s); within 1.2 %.
+- **Near the ±10 % edge:** GHZ at D=4, at +7.1 % in run 1 (+5.3 % in run 2). The next largest error is random d=10 at
+  −4.9 % (run 2, D=4).
+- **The representative-rank estimate over-predicts the all-ranks model by 0–2.3 %.** `R·model(R−1)` / model all-ranks
+  is 1.000 (random D=2, CCZ both D) up to 1.023 (random D=4: 7.907 vs 7.731 s). Against measured compute it lands at
+  0.952–1.161 (run 2), so it inherits the QFT failure and slightly widens it (1.160–1.161 vs 1.152–1.156).
+- The exchange-only plan costs 0.043–0.456 s (run 2) on one card. That is on-card copy time, not interconnect time.
