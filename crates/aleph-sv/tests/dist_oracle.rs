@@ -23,7 +23,12 @@ fn assert_close(a: &[Complex], b: &[Complex], what: &str) {
 }
 
 fn check(c: &Circuit, g: u32, what: &str) {
-    for router in [Router::Naive, Router::Lookahead] {
+    for router in [
+        Router::Naive,
+        Router::Lookahead,
+        Router::Reorder { max_k: 1 },
+        Router::Reorder { max_k: 3 },
+    ] {
         let p = plan(c, DistLayout::new(c.num_qubits(), g).unwrap(), router).unwrap();
         assert_close(
             &run_dist(&p).unwrap(),
@@ -186,7 +191,11 @@ proptest! {
     fn prop_random_circuits_match(
         c in aleph_test::circuit::arb_circuit_full(6, 2, 40),
         g in 0u32..=3,
-        router in prop_oneof![Just(Router::Naive), Just(Router::Lookahead)],
+        router in prop_oneof![
+            Just(Router::Naive),
+            Just(Router::Lookahead),
+            (1u32..=3).prop_map(|max_k| Router::Reorder { max_k }),
+        ],
     ) {
         let c = unitary_only(&c);
         let p = plan(&c, DistLayout::new(6, g).unwrap(), router).unwrap();
@@ -362,7 +371,11 @@ proptest! {
     fn prop_all_gate_families_with_controls(
         gates in prop::collection::vec(arb_any_gate(6), 1..30),
         g in 0u32..=2,
-        router in prop_oneof![Just(Router::Naive), Just(Router::Lookahead)],
+        router in prop_oneof![
+            Just(Router::Naive),
+            Just(Router::Lookahead),
+            (1u32..=3).prop_map(|max_k| Router::Reorder { max_k }),
+        ],
     ) {
         let mut c = h_layer(6);
         for gi in gates {
@@ -472,7 +485,11 @@ proptest! {
         gates in prop::collection::vec(arb_any_gate(6), 1..30),
         g in 0u32..=2,
         init in Just((0..6u32).collect::<Vec<u32>>()).prop_shuffle(),
-        router in prop_oneof![Just(Router::Naive), Just(Router::Lookahead)],
+        router in prop_oneof![
+            Just(Router::Naive),
+            Just(Router::Lookahead),
+            (1u32..=3).prop_map(|max_k| Router::Reorder { max_k }),
+        ],
     ) {
         let mut c = h_layer(6);
         for gi in gates {

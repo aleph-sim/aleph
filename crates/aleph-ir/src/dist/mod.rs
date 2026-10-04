@@ -18,6 +18,7 @@ use crate::Instruction;
 pub mod dag;
 mod next_use;
 mod plan;
+mod schedule;
 mod specialize;
 
 pub use dag::{Act, Dag};
@@ -112,6 +113,11 @@ pub enum Router {
     /// needs plus prefetched qubits needed before their victim's next use;
     /// victims chosen by farthest next use (Belady). P6-03.
     Lookahead,
+    /// P6-05: reorder within commutation (see [`dag`]): run every gate that
+    /// is runnable locally, exchange only when every ready gate is blocked.
+    /// `max_k` caps the bits per exchange beyond what the blocked gate itself
+    /// needs (clamped to `1..=max(g, 1)`).
+    Reorder { max_k: u32 },
 }
 
 #[derive(Debug, thiserror::Error, PartialEq)]

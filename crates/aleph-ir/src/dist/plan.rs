@@ -123,7 +123,10 @@ pub fn plan_from(
         return Err(DistError::BadPlacement);
     }
     let map = Map::from_l2p(init)?;
-    plan_in_order(circuit, layout, router, map)
+    match router {
+        Router::Reorder { max_k } => super::schedule::schedule(circuit, layout, max_k, map),
+        Router::Naive | Router::Lookahead => plan_in_order(circuit, layout, router, map),
+    }
 }
 
 fn plan_in_order(
@@ -139,6 +142,7 @@ fn plan_in_order(
     let mut next_use = match router {
         Router::Naive => None,
         Router::Lookahead => Some(NextUse::build(circuit)),
+        Router::Reorder { .. } => None,
     };
 
     for (idx, instr) in circuit.instructions().iter().enumerate() {
