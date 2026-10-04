@@ -74,8 +74,10 @@ impl DeviceSv for CudaSvBackend {
     fn download(&mut self, st: &CudaSvState) -> Result<Vec<Complex<f64>>, BackendError> {
         let host = st.amps.to_vec(&st.ctx).map_err(to_backend_err)?;
         Ok(host
-            .chunks_exact(2)
-            .map(|p| Complex::new(p[0], p[1]))
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|&[re, im]| Complex::new(re, im))
             .collect())
     }
 
@@ -139,8 +141,10 @@ impl DeviceSv for CudaSvBackendF32 {
     fn download(&mut self, st: &CudaSvStateF32) -> Result<Vec<Complex<f64>>, BackendError> {
         let host = st.amps.to_vec(&st.ctx).map_err(to_backend_err)?;
         Ok(host
-            .chunks_exact(2)
-            .map(|p| Complex::new(f64::from(p[0]), f64::from(p[1])))
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|&[re, im]| Complex::new(f64::from(re), f64::from(im)))
             .collect())
     }
 
