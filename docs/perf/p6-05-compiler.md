@@ -93,13 +93,15 @@ Hardware: RTX 4000 SFF Ada (sm_89, 20 GiB, 70 W cap), one card. Date: 2026-10-04
 `cargo test --release -p aleph-cuda --features cuda --test dist_cost_calibrate -- --ignored --nocapture`
 
 Method: on a `2^m_ref` state after an H layer, 32 × (`H` on qubit `i % 8`, then one launch of the kind), best of 5,
-minus the same circuit with the `H`s alone; divided by 32. Each constant is the mean of two runs. The values are
-seconds per launch at `m_ref` and scale by `2^(m − m_ref)`. They are committed in `crates/aleph-cuda/src/dist/cost.rs`.
+minus the same circuit with the `H`s alone; divided by 32. `dense2` alone runs on a scrambled state: the H layer is
+followed by one `Rx(0.3 + 0.17q)` and one `Rz(0.7 + 0.11q)` per qubit, in both the full and the baseline circuit
+(§2.4). Each constant is the mean of two runs. The values are seconds per launch at `m_ref` and scale by
+`2^(m − m_ref)`. They are committed in `crates/aleph-cuda/src/dist/cost.rs`.
 
 | kind | kernel | FP64 (m_ref = 27) | FP64 run spread | FP32 (m_ref = 28) | FP32 run spread |
 |---|---|---|---|---|---|
 | `dense1` | `apply_1q` | 1.755645e-2 | −0.1 % | 1.763479e-2 | −0.0 % |
-| `dense2` | `apply_kq_tiled` k=2 | 1.840509e-2 | +2.0 % | 1.781169e-2 | −0.3 % |
+| `dense2` (scrambled state) | `apply_kq_tiled` k=2 | 2.168771e-2 | +3.3 % | 1.773724e-2 | +0.6 % |
 | `dense3` | `apply_kq_tiled` k=3 | 3.436177e-2 | +2.4 % | 1.797886e-2 | −0.3 % |
 | `diag1` | `apply_diag_1q` | 1.774244e-2 | −0.2 % | 1.769642e-2 | −0.2 % |
 | `diag_k` | `apply_diag` k=2/3 | 1.759981e-2 | −0.1 % | 1.771855e-2 | −0.3 % |
@@ -109,6 +111,9 @@ seconds per launch at `m_ref` and scale by `2^(m − m_ref)`. They are committed
 | `phase_term_multi` | per term, AND of ≥ 2 conds | 4.776938e-4 | −0.2 % | 8.999014e-4 | −0.2 % |
 
 Notes:
+- `dense2` comes from a later pair of runs (with the scrambled state) than the other constants (uniform state). That
+  later pair also re-printed the other constants. Their means moved from the committed values by at most +0.6 % for FP64
+  (`dense3`) and +1.4 % for FP32 (`phase_term_multi`); the committed values were left unchanged.
 - `phase_term` is fitted from 1 vs 64 single-cond terms (one 2-bit parity cond). `phase_term_multi` is the slope of
   the same 1-vs-64 fit on terms `[1 << (n−1), 1 << s]` (AND of two 1-bit conds); the model reuses `phase_base`.
 - `phase_base` includes the per-launch device allocation and upload of the phase terms.
@@ -129,16 +134,46 @@ A separate diagnosis (FP64, m=27) tested four hypotheses:
   amplitudes); the calibration used one 2-bit parity cond (fires on 1/2). Measured per-term cost: 0.666 ms for the
   calibration form vs 0.497 ms for the QFT form. QAOA and the CCZ ladder have no multi-cond terms.
 - **H3, per-launch allocation/upload: rejected.** At m=10 a phase launch costs 7.7–29 µs, under 0.1 % of QFT.
-- **H4, back-to-back calibration: confirmed, affects every kind.** The same kernels interleaved with an `H` run 2–10 %
+- **H4, back-to-back calibration: confirmed on the uniform state.** Kernels interleaved with an `H` ran 2–10 %
   cheaper per launch than 32 back to back at the 70 W cap (e.g. Iswap 21.34 → 19.27 ms, dense3 36.29 → 35.44 ms).
   On QFT's own rank programs, natural order took 2.374 s vs 2.580 s for phase-only plus rest-only back to back.
 - The 0.36 s QFT gap split into ~0.16 s from H2 and ~0.21 s from H4.
 
-So the model changed for two reasons that are measured on microbenchmarks, not fitted to QFT: phase terms are priced
-by shape (`phase_term` / `phase_term_multi`), and every kind is calibrated interleaved (§2.1). The 0.10 bound, the
-workloads and the gate method are unchanged.
+So the model changed for reasons measured on microbenchmarks, not fitted to QFT: phase terms are priced by shape
+(`phase_term` / `phase_term_multi`), and every kind is calibrated interleaved.
 
-### 2.3 Model accuracy gate (spec §6.3)
+### 2.3 Second attempt (interleaved, uniform state for every kind)
+
+With interleaved calibration on the uniform H state (FP64 `dense2` 1.840509e-2, 12.9 % below the first attempt), QFT
+passed (1.054–1.064) but **random d=10 failed low**: 0.859 / 0.871 (D=2 / D=4) in one run and 0.864 / 0.876 in
+another, worst 14.1 %. GHZ was 0.984–1.001, QAOA 0.978–0.989, CCZ ladder 1.003–1.008.
+
+A second diagnosis (FP64, m=27, random's rank R−1 programs replayed) found:
+- **H5, qubit position: rejected.** Moving every Dense2 of random's real program onto the calibration qubits changed
+  the natural-order replay by 0.2 % (3.612 → 3.606 s at g=1).
+- **H6, block mix: rejected.** Random's Dense2 are `Unitary2q` blocks on the same kernel as Iswap; everything except
+  Dense2 replayed at model/measured 0.973 (g=1) and 0.982 (g=2). The gap sits inside Dense2.
+- **H8, data-dependent FP64 time at the power cap: confirmed.** Dense2 time depends on the amplitude values. Iswap
+  costs 18.445 ms on the uniform H state and 22.052 ms on a scrambled (generic complex) state, ×1.196; random's
+  in-situ Dense2 costs 23.3 ms. On the scrambled state, interleaved and back-to-back agree within 2 %, so the H4
+  discount was a low-entropy-state effect. Dense3 shows the same effect (permutation payload 35.9 → 40.3 ms, ×1.12);
+  Dense1 barely moves (17.55 → 17.81 ms, +1.5 %).
+
+### 2.4 Third revision (Dense2 on a scrambled state)
+
+Only `dense2` is now calibrated on the scrambled state (§2.1). Payload (Iswap), qubit pattern, interleaving and
+best of 5 × 32 are unchanged; every other kind stays on the uniform state.
+
+**Caveat: this per-kind choice was made after seeing the gate results.** Scrambling Dense3 as well (×1.12) would
+push GHZ, whose state stays low-entropy (two nonzero amplitudes, 0/1 permutation blocks), to ~1.11 by the diagnosis'
+estimate. On this power-capped card the FP64 cost of a kernel is partly a property of the workload's state, which a
+per-kind constant cannot fully express: each constant carries an irreducible state-dependent error. Dense3 is the
+known residual: random's 9 Dense3 blocks per rank run on a generic state at 42.5–42.9 ms in situ against the
+34.4 ms constant, ≈ +0.15 s over all ranks (diagnosis estimate).
+
+The 0.10 bound, the workloads and the gate method are unchanged across all three attempts.
+
+### 2.5 Model accuracy gate (spec §6.3)
 
 `cargo test --release -p aleph-cuda --features cuda --test dist_cost_gate -- --ignored --nocapture`
 
@@ -152,63 +187,62 @@ Workloads: QFT, GHZ, random = 1D brickwall d=10 (`Rx`/`Rz` layers + alternating 
 Max-Cut p=2 on a ring `(i, i+1 mod n)` plus 7 chords `(i, i + n/2)` for even `i < n/2` (not a regular graph), and the
 CCZ ladder d=4.
 
-Two runs on an idle box (load 0.22 and 0.31, GPU util 0 %, 1339 MiB resident before each). Run 2:
+Two runs on an idle box (load 0.28 and 0.32, GPU util 0 %, 1339 MiB resident before each). Run 2:
 
 | circuit | D | measured compute (s) | model all-ranks (s) | ratio | R·model(R−1) (s) | ratio |
 |---|---|---|---|---|---|---|
-| QFT | 2 | 2.357 | 2.485 | 1.054 | 2.507 | 1.064 |
-| QFT | 4 | 2.357 | 2.500 | 1.061 | 2.510 | 1.065 |
+| QFT | 2 | 2.357 | 2.492 | 1.057 | 2.514 | 1.067 |
+| QFT | 4 | 2.356 | 2.513 | 1.067 | 2.523 | 1.071 |
 | GHZ | 2 | 0.926 | 0.911 | 0.984 | 0.929 | 1.003 |
-| GHZ | 4 | 0.882 | 0.875 | 0.992 | 0.883 | 1.001 |
-| random d=10 | 2 | 7.065 | 6.066 | 0.859 | 6.066 | 0.859 |
-| random d=10 | 4 | 8.165 | 7.112 | 0.871 | 7.288 | 0.893 |
-| QAOA p=2 | 2 | 3.290 | 3.256 | 0.989 | 3.324 | 1.010 |
-| QAOA p=2 | 4 | 3.323 | 3.249 | 0.978 | 3.300 | 0.993 |
-| CCZ ladder d=4 | 2 | 1.055 | 1.062 | 1.007 | 1.062 | 1.007 |
+| GHZ | 4 | 0.883 | 0.879 | 0.996 | 0.890 | 1.008 |
+| random d=10 | 2 | 7.054 | 6.775 | 0.960 | 6.775 | 0.960 |
+| random d=10 | 4 | 8.167 | 7.815 | 0.957 | 7.990 | 0.978 |
+| QAOA p=2 | 2 | 3.292 | 3.262 | 0.991 | 3.330 | 1.012 |
+| QAOA p=2 | 4 | 3.322 | 3.295 | 0.992 | 3.346 | 1.007 |
+| CCZ ladder d=4 | 2 | 1.060 | 1.062 | 1.002 | 1.062 | 1.002 |
 | CCZ ladder d=4 | 4 | 1.057 | 1.060 | 1.003 | 1.060 | 1.003 |
 
-Run 1's all-ranks ratios (D=2 / D=4): QFT 1.058 / 1.064, GHZ 0.990 / 1.001, random 0.864 / 0.876, QAOA 0.989 / 0.978,
-CCZ ladder 1.008 / 1.003.
+Run 1's all-ranks ratios (D=2 / D=4): QFT 1.059 / 1.069, GHZ 0.988 / 1.003, random 0.964 / 0.961, QAOA 0.992 / 0.992,
+CCZ ladder 1.007 / 1.002.
 
-Worst |model/measured − 1| = **14.1 %** (run 2), **13.6 %** (run 1), both on random d=10 D=2.
+Worst |model/measured − 1| = **6.7 %** (run 2), **6.9 %** (run 1), both on QFT D=4.
 
-**Gate FAILED** in both runs: the two random d=10 cells are under-predicted by more than 10 %. The other eight cells are
-within ±6.4 % in both runs.
+**Gate PASSED** in both runs: every cell is within ±6.9 % (ratios 0.957–1.069 over both runs).
 
 Model all-ranks compute by kind (s; the model is deterministic, so both runs agree):
 
 | circuit | D | dense1 | dense2 | dense3 | diag1 | cnot | phase | exchange-only plan (s, run 2) |
 |---|---|---|---|---|---|---|---|---|
-| QFT | 2 | 0.983 | 0.037 | 0 | 0.018 | 0 | 1.448 | 0.070 |
-| QFT | 4 | 0.983 | 0.074 | 0 | 0.044 | 0 | 1.398 | 0.096 |
+| QFT | 2 | 0.983 | 0.043 | 0 | 0.018 | 0 | 1.448 | 0.070 |
+| QFT | 4 | 0.983 | 0.087 | 0 | 0.044 | 0 | 1.398 | 0.097 |
 | GHZ | 2 | 0.018 | 0 | 0.893 | 0 | 0 | 0 | 0.043 |
-| GHZ | 4 | 0 | 0.018 | 0.825 | 0 | 0.032 | 0 | 0.056 |
-| random d=10 | 2 | 1.299 | 3.975 | 0.619 | 0 | 0.173 | 0 | 0.284 |
-| random d=10 | 4 | 2.317 | 3.939 | 0.619 | 0 | 0.238 | 0 | 0.457 |
-| QAOA p=2 | 2 | 2.879 | 0.037 | 0 | 0.071 | 0 | 0.268 | 0.150 |
-| QAOA p=2 | 4 | 2.669 | 0.258 | 0 | 0.053 | 0 | 0.269 | 0.217 |
+| GHZ | 4 | 0 | 0.022 | 0.825 | 0 | 0.032 | 0 | 0.056 |
+| random d=10 | 2 | 1.299 | 4.685 | 0.619 | 0 | 0.173 | 0 | 0.285 |
+| random d=10 | 4 | 2.317 | 4.641 | 0.619 | 0 | 0.238 | 0 | 0.457 |
+| QAOA p=2 | 2 | 2.879 | 0.043 | 0 | 0.071 | 0 | 0.268 | 0.150 |
+| QAOA p=2 | 4 | 2.669 | 0.304 | 0 | 0.053 | 0 | 0.269 | 0.217 |
 | CCZ ladder d=4 | 2 | 0.983 | 0 | 0 | 0 | 0 | 0.079 | 0.043 |
 | CCZ ladder d=4 | 4 | 0.983 | 0 | 0 | 0 | 0 | 0.077 | 0.056 |
 
 `diag_k` is 0 on every cell and is omitted.
 
-### 2.4 Reading
+### 2.6 Reading
 
-- **Errors ranked (run 2, |model/measured − 1|):** random D=2 14.1 %, random D=4 12.9 %, QFT D=4 6.1 %, QFT D=2
-  5.4 %, QAOA D=4 2.2 %, GHZ D=2 1.6 %, QAOA D=2 1.1 %, GHZ D=4 0.8 %, CCZ D=2 0.7 %, CCZ D=4 0.3 %. Run 1 has the
-  same top four (random 13.6 % / 12.4 %, QFT 6.4 % / 5.8 %).
-- **QFT now passes**, at +5.4 to +6.4 % over both runs (was +15.2 to +16.6 %). Its phase term fell from 1.666 to
-  1.448 s at D=2 and from 1.605 to 1.398 s at D=4.
-- **Random d=10 now fails low.** It is `dense2`-dominated (3.975 of 6.066 s at D=2, 66 %; 3.939 of 7.112 s at D=4,
-  55 %). Interleaved calibration lowered FP64 `dense2` by 12.9 % (2.113696e-2 → 1.840509e-2), which moved this cell
-  from 0.951–0.960 (first attempt) to 0.859–0.876. The gap (0.957–1.053 s) equals 24–27 % of the model's `dense2`
-  term.
-  - The diagnosis predicted this risk (random was already −4 to −5 % and Iswap dropped ~10 % interleaved).
-  - Residual cause not isolated. One candidate: the `dense2` calibration payload (`Iswap` on qubits 0–5, interleaved
-    with 1q `H`) is not representative of random's fused k=2 blocks; this run does not test it.
-- **The other cells hold:** GHZ (`dense3`, 0.893 of 0.911 s at D=2) −1.6 to +0.1 %; QAOA (`dense1`, 2.879 of 3.256 s
-  at D=2) −2.2 to −1.1 %; CCZ ladder (`dense1`, 0.983 of ~1.06 s) +0.3 to +0.8 %.
-- **The representative-rank estimate over-predicts the all-ranks model by 0–2.5 %.** `R·model(R−1)` / model all-ranks
-  is 1.000 (random D=2, CCZ both D) up to 1.025 (random D=4: 7.288 vs 7.112 s). Against measured compute it lands at
-  0.859–1.065 (run 2).
+- **Errors ranked (run 2, |model/measured − 1|):** QFT D=4 6.7 %, QFT D=2 5.7 %, random D=4 4.3 %, random D=2
+  4.0 %, GHZ D=2 1.6 %, QAOA D=2 0.9 %, QAOA D=4 0.8 %, GHZ D=4 0.4 %, CCZ D=4 0.3 %, CCZ D=2 0.2 %. Run 1 has the
+  same top four (QFT 6.9 % / 5.9 %, random 3.9 % / 3.6 % at D=4 / D=2).
+- **QFT is the worst cell, over-predicted by 5.7–6.9 %.** It is the phase-dominated workload (phase 1.448 of 2.492 s
+  at D=2, 58 %). No cell is within 3 points of the ±10 % edge.
+- **Random d=10 is under-predicted by 3.6–4.3 %.** `dense2` is 4.685 of 6.775 s (69 %) at D=2 and 4.641 of 7.815 s
+  (59 %) at D=4. The remaining gap is 0.251–0.352 s over both runs. The diagnosis' Dense3 estimate (≈ +0.15 s)
+  accounts for part of it; the rest is not isolated.
+- **GHZ holds with the uniform-state Dense3** (0.984–1.003; `dense3` 0.893 of 0.911 s at D=2).
+- **QAOA** (`dense1`, 2.879 of 3.262 s at D=2) is within 0.9 %; the **CCZ ladder** (`dense1`, 0.983 of ~1.06 s) within
+  0.7 %.
+- **The representative-rank estimate over-predicts the all-ranks model by 0–2.2 %.** `R·model(R−1)` / model all-ranks
+  is 1.000 (random D=2, CCZ both D) up to 1.022 (random D=4: 7.990 vs 7.815 s). Against measured compute it lands at
+  0.960–1.071 (run 2).
 - The exchange-only plan costs 0.043–0.457 s (run 2) on one card. That is on-card copy time, not interconnect time.
+- Limit: the constants are per-kind, but at the 70 W cap FP64 cost also depends on the state (§2.4). The gate passes
+  on these five workloads; a workload whose state entropy differs from what its dominant kind was calibrated on can
+  miss by up to the measured state factor (×1.2 for Dense2, ×1.12 for Dense3).

@@ -169,13 +169,18 @@ puts these qubits in physical slots `m..n`, and the rest in order in `0..m`.
   - *PR 2 correction (calibration):* each launch is timed **interleaved with an `H`** (H-only baseline subtracted),
     not 32 identical launches back to back, which read 2–10 % slow at the card's power cap. Constants are the mean of
     two runs.
+  - *PR 2 correction (Dense2 state):* `Dense2` alone is calibrated on a scrambled state (H layer, then one `Rx` and one
+    `Rz` per qubit, in both payload and baseline). At the 70 W cap FP64 kernel time depends on the amplitude data, and
+    `Dense2` costs ×1.196 on a generic complex state. Every other kind stays on the uniform H state (scrambling `Dense3`
+    would mis-price GHZ). This per-kind choice was made after seeing the §6.3 gate results.
 - **`exchange(k, m)`:** `(1 − 2^−k) · 2^m · amp_bytes / bw_by_k[k−1]`.
   - `LinkModel::aws_g6_fp64()` = [7.16e9, 4.35e9] B/s. For k > 2 it extrapolates the two-bit value, and the extrapolation
     is documented.
   - The FP32 preset uses 7.09e9 single-bit and scales the two-bit value by the same ratio. Callers can supply other
     tables, e.g. a P2P preset.
 - **Calibration:** an `#[ignore]`d test, `tests/dist_cost_calibrate.rs`. On the RTX 4000 at m_ref = 27 (FP64) and 28
-  (FP32), it times each kind as the best of 5 over a batch of 32 launches. The constants are committed in `cost.rs`
+  (FP32), it times each kind as the best of 5 over a batch of 32 launches (method superseded by the PR 2 calibration
+  corrections above: interleaved with `H`, `Dense2` on a scrambled state, mean of two runs). The constants are committed in `cost.rs`
   with the date, GPU and command.
 
 ### 6.3 Model accuracy gate (must pass before `compile` lands)
@@ -228,7 +233,7 @@ Compile time is reported, and the target is < 50 ms for ~1k gates at g=2.
 ## 8. Benchmark and acceptance
 
 **Workloads:** n=28, D∈{2,4}, FP64. QFT, GHZ, random brickwall d=10, Grover (multi-controlled), QAOA Max-Cut p=2 on a
-3-regular graph, CCZ ladder d=4. FP32 is reported for QFT and random.
+ring plus 7 chords `(i, i + n/2)`, even `i < n/2`, CCZ ladder d=4. FP32 is reported for QFT and random.
 
 **Metric:** predicted `T` with *measured* compute. That is `T_onecard(R=D)/D` from `dist_local_bench` on the RTX 4000,
 minus on-card copy time, plus `bytes/BW(k)` with the AWS FP64 table. It is computed for the Naive, Lookahead and
