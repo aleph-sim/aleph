@@ -57,6 +57,10 @@ jobs:
       # CUDA SDK on the runner; the actual GPU test runs on the RTX 4000 box.
       - name: clippy aleph-cuda (cuda feature)
         run: cargo clippy -p aleph-cuda --features cuda --all-targets -- -D warnings
+      # P6-01b: the NCCL exchange (cudarc `nccl`, dlopened like the rest of
+      # cudarc), so it lints without libnccl on the runner.
+      - name: clippy aleph-cuda (nccl feature)
+        run: cargo clippy -p aleph-cuda --features nccl --all-targets -- -D warnings
 
   test-linux:
     name: test linux ${{ matrix.toolchain }}
@@ -98,6 +102,9 @@ jobs:
       - name: build aleph-cuda (cuda feature)
         if: matrix.toolchain == 'stable'
         run: cargo build -p aleph-cuda --features cuda
+      - name: build aleph-cuda (nccl feature)
+        if: matrix.toolchain == 'stable'
+        run: cargo build -p aleph-cuda --features nccl
 
   test-python:
     name: test python ${{ matrix.python }}
