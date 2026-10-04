@@ -14,6 +14,7 @@ use std::sync::Arc;
 use aleph_core::Complex;
 use cudarc::driver::{CudaStream, CudaView, CudaViewMut, DeviceRepr};
 
+pub mod cost;
 mod device_sv;
 mod exchange;
 #[cfg(feature = "nccl")]
@@ -81,7 +82,9 @@ pub enum DistSvError {
     #[error(transparent)]
     Backend(#[from] BackendError),
 }
-use aleph_ir::dist::{plan as dist_plan, specialize, DistLayout, DistPlan, DistStep, Router};
+use aleph_ir::dist::{
+    plan as dist_plan, specialize, DistError, DistLayout, DistPlan, DistStep, Router,
+};
 use aleph_ir::{Circuit, Instruction};
 
 /// A distributed state: `2^g` rank slices plus the plan's final
@@ -204,29 +207,14 @@ impl<B: DeviceSv, X: Exchange<B>> DistSvBackend<B, X> {
         Ok(n)
     }
 
-    /// Rank `r`'s `m`-qubit program for one `Local` step: specialised, then
-    /// (optionally) fused — fusion runs *after* `specialize` so it never sees
-    /// a global qubit (spec §3.1).
+    /// Rank `r`'s `m`-qubit program for one `Local` step (see [`rank_circuit`]).
     fn rank_program(
         &self,
         instrs: &[Instruction],
         l: DistLayout,
         r: u32,
     ) -> Result<Circuit, DistSvError> {
-        let mut c = Circuit::new(l.m(), 0);
-        for i in instrs {
-            if let Some(s) = specialize(i, l, r)? {
-                c.add_instruction(s)
-                    .map_err(|_| BackendError::InvalidState {
-                        reason: "dist: specialised instruction rejected by Circuit",
-                    })?;
-            }
-        }
-        Ok(if self.fuse {
-            crate::fuse_for_gpu(&c)
-        } else {
-            c
-        })
+        Ok(rank_circuit(instrs, l, r, self.fuse)?)
     }
 
     /// Full state in **logical** qubit order (host gather; tests / small n).
@@ -331,4 +319,25 @@ fn apply_one<B: DeviceSv>(
         }
     }
     Ok(())
+}
+
+/// Rank `r`'s `m`-qubit program for one `Local` step: specialised, then
+/// (optionally) fused — fusion runs *after* `specialize` so it never sees a
+/// global qubit (spec §3.1). Shared by execution and the cost model, so the
+/// model prices exactly what runs.
+pub(crate) fn rank_circuit(
+    instrs: &[Instruction],
+    l: DistLayout,
+    r: u32,
+    fuse: bool,
+) -> Result<Circuit, DistError> {
+    let mut c = Circuit::new(l.m(), 0);
+    for i in instrs {
+        if let Some(s) = specialize(i, l, r)? {
+            c.add_instruction(s).map_err(|_| DistError::Unsupported {
+                kind: "internal: specialised instruction rejected by Circuit",
+            })?;
+        }
+    }
+    Ok(if fuse { crate::fuse_for_gpu(&c) } else { c })
 }

@@ -50,6 +50,8 @@ pub use context::{device_count, CudaContext};
 pub use cudarc::nccl::safe::NcclType;
 #[cfg(all(target_os = "linux", feature = "cuquantum"))]
 pub use cuquantum::CuStateVecBackend;
+#[cfg(all(target_os = "linux", feature = "cuda"))]
+pub use dist::cost::{classify, KernelKind};
 #[cfg(all(target_os = "linux", feature = "nccl"))]
 pub use dist::NcclExchange;
 #[cfg(all(target_os = "linux", feature = "cuda"))]
