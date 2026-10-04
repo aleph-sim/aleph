@@ -3,6 +3,8 @@
 //! received into scratch slots, then copied back into the rank slices. The
 //! scratch is the only extra memory, so a rank slice keeps its full reach.
 
+use super::exchange::ChunkPair;
+
 /// One piece of a chunk-pair swap: rank `ra`'s amplitudes `[a_off, a_off+len)`
 /// trade places with rank `rb`'s `[b_off, b_off+len)`. `b`'s half lands in
 /// scratch slot `slot_a` on device `da`, `a`'s half in `slot_b` on device `db`.
@@ -24,7 +26,7 @@ pub(crate) struct Piece {
 /// scratch amplitudes. `cap` is a power of two >= 2; the `cap/2` piece lets a
 /// same-device pair (both halves on one device) fit an empty round.
 pub(crate) fn schedule(
-    pairs: &[((u32, u32), (u32, u32))],
+    pairs: &[ChunkPair],
     chunk: usize,
     cap: usize,
     dev_of: impl Fn(u32) -> usize,

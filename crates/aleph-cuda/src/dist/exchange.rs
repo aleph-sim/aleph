@@ -35,8 +35,11 @@ pub(crate) fn rank_device(r: u32, ranks: u32, devs: usize) -> usize {
     r as usize / per
 }
 
+/// `((rank, chunk), (rank', chunk'))`: two chunks that trade places.
+pub(crate) type ChunkPair = ((u32, u32), (u32, u32));
+
 /// Every unordered moved chunk pair `((r, c), (r', c'))` once, `(r,c) < (r',c')`.
-pub(crate) fn chunk_pairs(l: DistLayout, global_bits: &[u32]) -> Vec<((u32, u32), (u32, u32))> {
+pub(crate) fn chunk_pairs(l: DistLayout, global_bits: &[u32]) -> Vec<ChunkPair> {
     let m = l.m();
     let k = global_bits.len() as u32;
     let mut out = Vec::new();
