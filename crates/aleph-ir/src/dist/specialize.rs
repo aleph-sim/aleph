@@ -168,18 +168,13 @@ fn diag_reduce(
             qubits: local,
             controls: ctrl,
         }),
-        2 => {
-            let z = Complex::new(0.0, 0.0);
-            let mut m = [[z; 4]; 4];
-            for (k, row) in m.iter_mut().enumerate() {
-                row[k] = dl[k];
-            }
-            Instruction::Gate(GateInstance {
-                gate: Gate::Unitary2q(Box::new(m)),
-                qubits: local,
-                controls: ctrl,
-            })
-        }
+        // A diagonal variant, not a dense `Unitary2q`: `FuseDiagonalRuns`
+        // only absorbs gates with `is_diagonal()` (#529).
+        2 => Instruction::Gate(GateInstance {
+            gate: Gate::Unitary2qDiag(Box::new([dl[0], dl[1], dl[2], dl[3]])),
+            qubits: local,
+            controls: ctrl,
+        }),
         _ => {
             return Err(DistError::Unsupported {
                 kind: "diagonal gate on >2 local qubits with a global qubit",
@@ -239,7 +234,7 @@ fn specialize_dp(dp: &DiagonalPhase, l: DistLayout, rank: u32) -> Option<Instruc
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{DiagonalPhase, PhaseTerm};
+    use crate::{Circuit, DiagonalPhase, PhaseTerm};
     use aleph_core::{Complex, Gate, GateInstance, Param};
     use smallvec::smallvec;
 
@@ -402,6 +397,63 @@ mod tests {
                     "rank {rank} local {local}: {want} vs {got}"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn ccz_one_global_becomes_local_diag2q() {
+        // Ccz(0, 2, 1): phys 2 is rank bit 0. Rank bit 1 leaves CZ on
+        // (0, 1); rank bit 0 leaves the identity, both as `Unitary2qDiag`.
+        let i = gate(Gate::Ccz, &[0, 2, 1]);
+        for (rank, last) in [(0b01u32, -1.0), (0b10, 1.0)] {
+            let Instruction::Gate(g) = specialize(&i, lay(), rank).unwrap().unwrap() else {
+                panic!("expected gate")
+            };
+            let Gate::Unitary2qDiag(d) = &g.gate else {
+                panic!("{:?}", g.gate)
+            };
+            assert!(g.gate.is_diagonal());
+            assert_eq!(g.qubits.as_slice(), &[0, 1]);
+            for (k, z) in d.iter().enumerate() {
+                let want = if k == 3 { last } else { 1.0 };
+                assert!(
+                    (z - Complex::new(want, 0.0)).norm() < 1e-12,
+                    "rank {rank} d[{k}]"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn specialized_diag2q_joins_a_diagonal_run() {
+        // #529: before, the 2-local reduction was a dense `Unitary2q`, which
+        // fenced `FuseDiagonalRuns`; now Ccz + Cz + Rz fuse into one pass.
+        use crate::passes::{FuseDiagonalRuns, Pass};
+        let src = [
+            gate(Gate::Ccz, &[0, 2, 1]),
+            gate(Gate::Cz, &[0, 1]),
+            gate(Gate::Rz(Param::Concrete(0.3)), &[1]),
+        ];
+        let rank = 0b01;
+        let mut c = Circuit::new(2, 0);
+        for i in &src {
+            c.instructions
+                .push(specialize(i, lay(), rank).unwrap().unwrap());
+        }
+        FuseDiagonalRuns.run(&mut c).unwrap();
+        assert_eq!(c.instructions.len(), 1, "{:?}", c.instructions);
+        let Instruction::DiagonalPhase(dp) = &c.instructions[0] else {
+            panic!("{:?}", c.instructions[0])
+        };
+        // Ccz⊗Cz cancel on this rank, leaving Rz(0.3) on local q1 (bit 1).
+        for x in 0..4u64 {
+            let want = if x & 0b10 != 0 { 0.15 } else { -0.15 };
+            let got = dp.phase_at(x);
+            let d = (got - want).rem_euclid(2.0 * std::f64::consts::PI);
+            assert!(
+                d.min(2.0 * std::f64::consts::PI - d) < 1e-12,
+                "x={x}: {got} vs {want}"
+            );
         }
     }
 

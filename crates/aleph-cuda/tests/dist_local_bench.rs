@@ -51,6 +51,25 @@ fn brickwall(n: u32, depth: usize) -> Circuit {
     c
 }
 
+/// All-diagonal ladder whose `Ccz`s each touch the top qubit, so at g = 1
+/// every one specialises to a 2-local diagonal (#529).
+fn ccz_ladder(n: u32, depth: usize) -> Circuit {
+    let mut c = Circuit::new(n, 0);
+    for q in 0..n {
+        c.h(q).unwrap();
+    }
+    for d in 0..depth {
+        for q in 0..n - 2 {
+            c.add_gate(GateInstance::new(Gate::Ccz, vec![q, q + 1, n - 1]))
+                .unwrap();
+            c.add_gate(GateInstance::new(Gate::Cz, vec![q, q + 1]))
+                .unwrap();
+            c.rz(0.1 * (d as f64 + 1.0), q).unwrap();
+        }
+    }
+    c
+}
+
 /// Untimed: the plan's communication for `c` at `g` (explains the overhead).
 fn comm(label: &str, c: &Circuit, g: u32) {
     let p = plan(
@@ -101,10 +120,19 @@ fn dist_local_overhead() {
     let mut d = DistSvBackend::new(be, LocalExchange::new());
     println!("| precision | circuit | n | single-GPU (s) | R=2 (s) | R=4 (s) | R=2 / single | R=4 / single |");
     println!("|---|---|---|---|---|---|---|---|");
-    for (name, c) in [("QFT", qft(28)), ("random d=10", brickwall(28, 10))] {
+    for (name, c) in [
+        ("QFT", qft(28)),
+        ("random d=10", brickwall(28, 10)),
+        ("CCZ ladder d=4", ccz_ladder(28, 4)),
+    ] {
         let fused = fuse_for_gpu(&c);
         for g in [1u32, 2] {
             comm(name, &c, g);
+            let p = plan(&c, DistLayout::new(28, g).unwrap(), Router::Lookahead).unwrap();
+            println!(
+                "passes: {name} g={g} rank0={}",
+                d.rank_pass_count(&p).unwrap()
+            );
         }
         let t1 = best_of(&sync, 3, || run(&mut single, &fused).unwrap());
         let mut ts = Vec::new();
