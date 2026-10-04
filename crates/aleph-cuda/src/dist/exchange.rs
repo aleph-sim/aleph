@@ -74,6 +74,13 @@ pub(crate) fn two_mut<T>(v: &mut [T], a: usize, b: usize) -> Option<(&mut T, &mu
     }
 }
 
+/// `n_dev` devices can hold `ranks` ranks in contiguous blocks: a power of
+/// two, at least one, at most one device per rank (else `rank_device` would
+/// index past the device list).
+pub(crate) fn valid_devices(n_dev: usize, ranks: u32) -> bool {
+    n_dev.is_power_of_two() && n_dev as u64 <= u64::from(ranks)
+}
+
 /// Every bit global, in range, and no bit named twice (a repeat would make
 /// `chunk_pairs` pair a rank with itself or visit a chunk twice).
 pub(crate) fn valid_bits(l: DistLayout, global_bits: &[u32]) -> bool {
@@ -137,7 +144,7 @@ impl<B: DeviceSv> Exchange<B> for LocalExchange<B> {
             || k > m
             || !valid_bits(l, global_bits)
             || ranks.len() != l.ranks() as usize
-            || devs.is_empty()
+            || !valid_devices(devs.len(), l.ranks())
         {
             return Err(BackendError::InvalidState {
                 reason: "dist: bad exchange bits",

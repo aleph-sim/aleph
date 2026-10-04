@@ -16,7 +16,7 @@ use cudarc::driver::CudaViewMut;
 use cudarc::nccl::result::NcclError;
 use cudarc::nccl::safe::{group_end, group_start, Comm, NcclType};
 
-use super::exchange::{chunk_pairs, rank_device, two_mut, valid_bits, Exchange};
+use super::exchange::{chunk_pairs, rank_device, two_mut, valid_bits, valid_devices, Exchange};
 use super::schedule::{schedule, Piece};
 use super::DeviceSv;
 
@@ -148,6 +148,7 @@ where
             || !valid_bits(l, global_bits)
             || ranks.len() != l.ranks() as usize
             || devs.len() != self.comms.len()
+            || !valid_devices(devs.len(), l.ranks())
         {
             return Err(BackendError::InvalidState {
                 reason: "dist: bad exchange bits",
