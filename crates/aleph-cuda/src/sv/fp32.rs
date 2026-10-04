@@ -191,17 +191,23 @@ impl CudaSvBackendF32 {
     /// via NVRTC. Returns [`Error::NoDevice`] on a GPU-less host so callers can
     /// skip cleanly.
     pub fn new() -> Result<Self, Error> {
-        Self::build(StdRng::from_entropy())
+        Self::build(StdRng::from_entropy(), 0)
     }
 
     /// Construct with an explicit seed; measurement/sampling are reproducible
     /// across processes for a given seed.
     pub fn with_seed(seed: u64) -> Result<Self, Error> {
-        Self::build(StdRng::seed_from_u64(seed))
+        Self::build(StdRng::seed_from_u64(seed), 0)
     }
 
-    fn build(rng: StdRng) -> Result<Self, Error> {
-        let ctx = CudaContext::new(0)?;
+    /// Construct on device `ordinal` (entropy-seeded). A missing ordinal is
+    /// [`Error::NoDevice`]. The multi-GPU `DistSvBackend` builds one per device.
+    pub fn on_device(ordinal: usize) -> Result<Self, Error> {
+        Self::build(StdRng::from_entropy(), ordinal)
+    }
+
+    fn build(rng: StdRng, ordinal: usize) -> Result<Self, Error> {
+        let ctx = CudaContext::new(ordinal)?;
         let ptx = compile_ptx(SV_F32_SRC).map_err(|e| Error::Compile(e.to_string()))?;
         let module = ctx.raw().load_module(ptx)?;
         // Separate module: TF32 WMMA needs sm_89 + the CUDA mma.h include path.

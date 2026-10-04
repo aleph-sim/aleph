@@ -340,3 +340,18 @@ fn local_exchange_rejects_duplicate_bits() {
         .exchange(&mut be, &mut ranks, l, &[m + 1, m, m + 1])
         .is_err());
 }
+
+#[test]
+fn backends_open_on_explicit_ordinal() {
+    let Ok(n) = aleph_cuda::device_count() else {
+        return;
+    };
+    if n == 0 {
+        return;
+    }
+    assert!(CudaSvBackend::on_device(0).is_ok());
+    assert!(CudaSvBackendF32::on_device(0).is_ok());
+    // One past the last device: an error, never a panic.
+    assert!(CudaSvBackend::on_device(n).is_err());
+    assert!(CudaSvBackendF32::on_device(n).is_err());
+}

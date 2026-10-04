@@ -44,7 +44,7 @@ mod sv;
 #[cfg(all(target_os = "linux", feature = "cuda"))]
 pub use buffer::{device_alloc_count, device_dtoh_bytes, DeviceBuffer};
 #[cfg(all(target_os = "linux", feature = "cuda"))]
-pub use context::CudaContext;
+pub use context::{device_count, CudaContext};
 #[cfg(all(target_os = "linux", feature = "cuquantum"))]
 pub use cuquantum::CuStateVecBackend;
 #[cfg(all(target_os = "linux", feature = "cuda"))]

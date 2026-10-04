@@ -125,6 +125,14 @@ impl CudaContext {
 /// Map a context-creation `DriverError` to [`Error::NoDevice`] when it means
 /// "there is no such GPU", so a GPU-less host skips gracefully instead of
 /// treating it as a hard failure. Other codes stay [`Error::Driver`].
+/// Number of CUDA devices the driver reports (0 on a GPU-less host).
+pub fn device_count() -> Result<usize, Error> {
+    match RawContext::device_count() {
+        Ok(n) => Ok(usize::try_from(n).unwrap_or(0)),
+        Err(e) => Err(classify_init_error(e, 0)),
+    }
+}
+
 fn classify_init_error(e: cudarc::driver::DriverError, ordinal: usize) -> Error {
     use cudarc::driver::sys::CUresult;
     match e.0 {
