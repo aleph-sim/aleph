@@ -15,11 +15,16 @@ use smallvec::SmallVec;
 
 use crate::Instruction;
 
+mod dag;
 mod next_use;
+mod placement;
 mod plan;
+mod schedule;
 mod specialize;
 
-pub use plan::{plan, required_local};
+pub use dag::Dag;
+pub use placement::initial_placement;
+pub use plan::{plan, plan_from, required_local};
 pub use specialize::specialize;
 
 /// Largest supported `g`: rank indices are `u32`, so `2^g` ranks must fit.
@@ -88,6 +93,10 @@ pub struct CommStats {
 }
 
 /// A complete distributed execution plan.
+///
+/// Every plan assumes the |0…0⟩ initial state. It is invariant under qubit
+/// permutations, so a plan may start from a non-identity map (see
+/// [`plan_from`]) at no cost.
 #[derive(Debug, Clone)]
 pub struct DistPlan {
     pub layout: DistLayout,
@@ -106,6 +115,12 @@ pub enum Router {
     /// needs plus prefetched qubits needed before their victim's next use;
     /// victims chosen by farthest next use (Belady). P6-03.
     Lookahead,
+    /// P6-05: reorder within commutation (see [`Dag`]): run every gate that
+    /// is runnable locally, exchange only when every ready gate is blocked.
+    /// `max_k` caps the exchange width (clamped to `1..=max(g, 1)`); a blocked
+    /// gate that needs more global qubits than `max_k` still gets all of them
+    /// in one exchange.
+    Reorder { max_k: u32 },
 }
 
 #[derive(Debug, thiserror::Error, PartialEq)]
@@ -118,6 +133,8 @@ pub enum DistError {
     Unsupported { kind: &'static str },
     #[error("gate needs {need} local qubits but only m={m} are local")]
     TooFewLocalQubits { need: usize, m: u32 },
+    #[error("initial placement is not a permutation of 0..n")]
+    BadPlacement,
     #[error("non-diagonal target on global qubit {qubit} reached specialize (planner bug)")]
     GlobalTarget { qubit: u32 },
     #[error(transparent)]

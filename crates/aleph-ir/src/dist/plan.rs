@@ -27,28 +27,38 @@ pub fn required_local(g: &GateInstance) -> SmallVec<[u32; 4]> {
 }
 
 /// Bidirectional logical↔physical qubit map.
-struct Map {
-    l2p: Vec<u32>,
-    p2l: Vec<u32>,
+pub(crate) struct Map {
+    pub(crate) l2p: Vec<u32>,
+    pub(crate) p2l: Vec<u32>,
 }
 
 impl Map {
-    fn new(n: u32) -> Self {
-        Self {
-            l2p: (0..n).collect(),
-            p2l: (0..n).collect(),
+    /// Map from `l2p[logical] = physical`; must be a permutation of `0..len`.
+    pub(crate) fn from_l2p(l2p: &[u32]) -> Result<Self, DistError> {
+        let n = l2p.len();
+        let mut p2l = vec![u32::MAX; n];
+        for (l, &p) in l2p.iter().enumerate() {
+            let slot = p2l.get_mut(p as usize).ok_or(DistError::BadPlacement)?;
+            if *slot != u32::MAX {
+                return Err(DistError::BadPlacement);
+            }
+            *slot = l as u32;
         }
+        Ok(Self {
+            l2p: l2p.to_vec(),
+            p2l,
+        })
     }
 
     /// Swap the logical occupants of physical slots `a` and `b`.
-    fn swap_phys(&mut self, a: u32, b: u32) {
+    pub(crate) fn swap_phys(&mut self, a: u32, b: u32) {
         let (la, lb) = (self.p2l[a as usize], self.p2l[b as usize]);
         self.p2l.swap(a as usize, b as usize);
         self.l2p[la as usize] = b;
         self.l2p[lb as usize] = a;
     }
 
-    fn remap_mask(&self, mask: u64) -> u64 {
+    pub(crate) fn remap_mask(&self, mask: u64) -> u64 {
         let mut out = 0u64;
         let mut m = mask;
         while m != 0 {
@@ -60,25 +70,79 @@ impl Map {
     }
 }
 
+/// Lower a logical `Gate` / `DiagonalPhase` onto physical qubits; `None` for
+/// anything else (the callers handle barriers, relabels and errors).
+pub(crate) fn to_physical(instr: &Instruction, map: &Map, n: u32) -> Option<Instruction> {
+    match instr {
+        Instruction::Gate(g) => Some(Instruction::Gate(GateInstance {
+            gate: g.gate.clone(),
+            qubits: g.qubits.iter().map(|&l| map.l2p[l as usize]).collect(),
+            controls: g.controls.iter().map(|&l| map.l2p[l as usize]).collect(),
+        })),
+        Instruction::DiagonalPhase(dp) => {
+            Some(Instruction::DiagonalPhase(Box::new(DiagonalPhase {
+                n_qubits: n,
+                terms: dp
+                    .terms
+                    .iter()
+                    .map(|t| PhaseTerm {
+                        conds: t.conds.iter().map(|&c| map.remap_mask(c)).collect(),
+                        angle: t.angle,
+                    })
+                    .collect(),
+            })))
+        }
+        _ => None,
+    }
+}
+
 /// Build a distributed plan for `circuit` under `layout`.
 ///
 /// `Local` instructions in the result use physical qubit indices; run them
 /// through [`super::specialize`] per rank.
 pub fn plan(circuit: &Circuit, layout: DistLayout, router: Router) -> Result<DistPlan, DistError> {
+    let id: Vec<u32> = (0..layout.n).collect();
+    plan_from(circuit, layout, router, &id)
+}
+
+/// Like [`plan`], starting from `init[logical] = physical` instead of the
+/// identity. Free, because every plan starts from |0…0⟩ (see [`DistPlan`]).
+pub fn plan_from(
+    circuit: &Circuit,
+    layout: DistLayout,
+    router: Router,
+    init: &[u32],
+) -> Result<DistPlan, DistError> {
     if circuit.num_qubits() != layout.n {
         return Err(DistError::QubitCountMismatch {
             circuit: circuit.num_qubits(),
             layout: layout.n,
         });
     }
+    if init.len() != layout.n as usize {
+        return Err(DistError::BadPlacement);
+    }
+    let map = Map::from_l2p(init)?;
+    match router {
+        Router::Reorder { max_k } => super::schedule::schedule(circuit, layout, max_k, map),
+        Router::Naive | Router::Lookahead => plan_in_order(circuit, layout, router, map),
+    }
+}
+
+fn plan_in_order(
+    circuit: &Circuit,
+    layout: DistLayout,
+    router: Router,
+    mut map: Map,
+) -> Result<DistPlan, DistError> {
     let m = layout.m();
-    let mut map = Map::new(layout.n);
     let mut steps: Vec<DistStep> = Vec::new();
     let mut cur: Vec<Instruction> = Vec::new();
     let mut stats = CommStats::default();
     let mut next_use = match router {
         Router::Naive => None,
         Router::Lookahead => Some(NextUse::build(circuit)),
+        Router::Reorder { .. } => None,
     };
 
     for (idx, instr) in circuit.instructions().iter().enumerate() {
@@ -91,20 +155,7 @@ pub fn plan(circuit: &Circuit, layout: DistLayout, router: Router) -> Result<Dis
                     kind: "tiled_block",
                 })
             }
-            Instruction::DiagonalPhase(dp) => {
-                let terms = dp
-                    .terms
-                    .iter()
-                    .map(|t| PhaseTerm {
-                        conds: t.conds.iter().map(|&c| map.remap_mask(c)).collect(),
-                        angle: t.angle,
-                    })
-                    .collect();
-                cur.push(Instruction::DiagonalPhase(Box::new(DiagonalPhase {
-                    n_qubits: layout.n,
-                    terms,
-                })));
-            }
+            Instruction::DiagonalPhase(_) => cur.extend(to_physical(instr, &map, layout.n)),
             Instruction::Gate(g) => {
                 if matches!(g.gate, Gate::Swap) && g.controls.is_empty() {
                     let a = map.l2p[g.qubits[0] as usize];
@@ -144,11 +195,7 @@ pub fn plan(circuit: &Circuit, layout: DistLayout, router: Router) -> Result<Dis
                         }
                     }
                 }
-                cur.push(Instruction::Gate(GateInstance {
-                    gate: g.gate.clone(),
-                    qubits: g.qubits.iter().map(|&l| map.l2p[l as usize]).collect(),
-                    controls: g.controls.iter().map(|&l| map.l2p[l as usize]).collect(),
-                }));
+                cur.extend(to_physical(instr, &map, layout.n));
             }
         }
     }
@@ -265,14 +312,35 @@ fn exchange_lookahead(
             break;
         }
     }
+    let chosen: SmallVec<[u32; 4]> = victims[..bring.len()].iter().map(|v| v.2).collect();
+    emit_exchange(&bring, &chosen, layout, map, cur, steps, stats)
+}
+
+/// Bring logical `bring` in by evicting logical `victims` (same length): park
+/// the victims in the top `k` local slots with local `Swap`s, then swap those
+/// slots with the bring-in qubits' global bits — the contiguity contract of
+/// [`DistStep::Exchange`].
+pub(crate) fn emit_exchange(
+    bring: &[u32],
+    victims: &[u32],
+    layout: DistLayout,
+    map: &mut Map,
+    cur: &mut Vec<Instruction>,
+    steps: &mut Vec<DistStep>,
+    stats: &mut CommStats,
+) -> Result<(), DistError> {
+    let m = layout.m();
     let k = bring.len() as u32;
-    let chosen: SmallVec<[u32; 4]> = victims[..k as usize].iter().map(|v| v.2).collect();
-    // Place the chosen victims in the top-k local slots (m-k..m).
+    if k == 0 || victims.len() != bring.len() || k > m {
+        return Err(DistError::Unsupported {
+            kind: "internal: bad exchange shape",
+        });
+    }
     let top_lo = m - k;
     let mut free_slots: SmallVec<[u32; 4]> = (top_lo..m)
-        .filter(|&p| !chosen.contains(&map.p2l[p as usize]))
+        .filter(|&p| !victims.contains(&map.p2l[p as usize]))
         .collect();
-    for &v in &chosen {
+    for &v in victims {
         let vp = map.l2p[v as usize];
         if vp >= top_lo {
             continue;
@@ -646,5 +714,43 @@ mod tests {
             ),
             Err(DistError::QubitCountMismatch { .. })
         ));
+    }
+
+    #[test]
+    fn plan_from_identity_equals_plan() {
+        let c = brick(8, 6);
+        let l = DistLayout::new(8, 2).unwrap();
+        let id: Vec<u32> = (0..8).collect();
+        for r in [Router::Naive, Router::Lookahead] {
+            let a = plan(&c, l, r).unwrap();
+            let b = plan_from(&c, l, r, &id).unwrap();
+            assert_eq!(a.stats, b.stats);
+            assert_eq!(a.final_map, b.final_map);
+            assert_eq!(a.steps.len(), b.steps.len());
+            assert_eq!(format!("{:?}", a.steps), format!("{:?}", b.steps));
+        }
+    }
+
+    #[test]
+    fn plan_from_rejects_non_permutations() {
+        let c = brick(4, 1);
+        let l = DistLayout::new(4, 1).unwrap();
+        for bad in [vec![0u32, 1, 2], vec![0, 1, 2, 2], vec![0, 1, 2, 4]] {
+            assert_eq!(
+                plan_from(&c, l, Router::Naive, &bad).unwrap_err(),
+                DistError::BadPlacement
+            );
+        }
+    }
+
+    #[test]
+    fn plan_from_starts_at_the_given_map() {
+        // logical 0 starts global (physical 3): an H on it needs one exchange.
+        let mut c = Circuit::new(4, 0);
+        c.h(0).unwrap();
+        let l = DistLayout::new(4, 1).unwrap();
+        let p = plan_from(&c, l, Router::Naive, &[3, 0, 1, 2]).unwrap();
+        assert_eq!(p.stats.exchanges, 1);
+        assert!(p.final_map[0] < 3);
     }
 }

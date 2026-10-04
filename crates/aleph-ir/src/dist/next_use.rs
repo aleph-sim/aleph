@@ -57,6 +57,18 @@ impl NextUse {
         }
         p.get(*c).copied().unwrap_or(usize::MAX)
     }
+
+    /// Smallest not-yet-`done` index at which the data now under label `q`
+    /// must be local; `usize::MAX` if none. Used by the reordering scheduler,
+    /// where "next" means next *unscheduled*, not next in circuit order.
+    pub(crate) fn next_unscheduled(&mut self, q: u32, done: &[bool]) -> usize {
+        let t = self.track[q as usize] as usize;
+        let (p, c) = (&self.pos[t], &mut self.cursor[t]);
+        while *c < p.len() && done[p[*c]] {
+            *c += 1;
+        }
+        p.get(*c).copied().unwrap_or(usize::MAX)
+    }
 }
 
 #[cfg(test)]

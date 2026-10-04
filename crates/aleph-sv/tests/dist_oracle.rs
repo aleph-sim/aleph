@@ -2,8 +2,8 @@
 
 use aleph_backend::run;
 use aleph_core::{Complex, Gate, GateInstance, Param};
-use aleph_ir::dist::{plan, DistLayout, DistStep, Router};
-use aleph_ir::{Circuit, Instruction};
+use aleph_ir::dist::{initial_placement, plan, plan_from, Dag, DistLayout, DistStep, Router};
+use aleph_ir::{Circuit, DiagonalPhase, Instruction, PhaseTerm};
 use aleph_sv::dist_ref::run_dist;
 use aleph_sv::NaiveSvBackend;
 use proptest::prelude::*;
@@ -23,7 +23,12 @@ fn assert_close(a: &[Complex], b: &[Complex], what: &str) {
 }
 
 fn check(c: &Circuit, g: u32, what: &str) {
-    for router in [Router::Naive, Router::Lookahead] {
+    for router in [
+        Router::Naive,
+        Router::Lookahead,
+        Router::Reorder { max_k: 1 },
+        Router::Reorder { max_k: 3 },
+    ] {
         let p = plan(c, DistLayout::new(c.num_qubits(), g).unwrap(), router).unwrap();
         assert_close(
             &run_dist(&p).unwrap(),
@@ -173,8 +178,14 @@ fn mutation_dropping_an_exchange_breaks_oracle() {
 fn unitary_only(c: &Circuit) -> Circuit {
     let mut out = Circuit::new(c.num_qubits(), 0);
     for i in c.instructions() {
-        if let Instruction::Gate(g) = i {
-            out.add_gate(g.clone()).unwrap();
+        match i {
+            Instruction::Gate(g) => {
+                out.add_gate(g.clone()).unwrap();
+            }
+            Instruction::Barrier(_) => {
+                out.add_instruction(i.clone()).unwrap();
+            }
+            _ => {}
         }
     }
     out
@@ -186,7 +197,11 @@ proptest! {
     fn prop_random_circuits_match(
         c in aleph_test::circuit::arb_circuit_full(6, 2, 40),
         g in 0u32..=3,
-        router in prop_oneof![Just(Router::Naive), Just(Router::Lookahead)],
+        router in prop_oneof![
+            Just(Router::Naive),
+            Just(Router::Lookahead),
+            (1u32..=3).prop_map(|max_k| Router::Reorder { max_k }),
+        ],
     ) {
         let c = unitary_only(&c);
         let p = plan(&c, DistLayout::new(6, g).unwrap(), router).unwrap();
@@ -301,7 +316,7 @@ fn grover_n8_matches() {
 /// with 0–2 external controls.
 fn arb_any_gate(n: u32) -> impl Strategy<Value = GateInstance> {
     (
-        0usize..17,
+        0usize..19,
         Just((0..n).collect::<Vec<u32>>()).prop_shuffle(),
         0usize..=2,
         -3.0f64..3.0,
@@ -345,6 +360,8 @@ fn arb_any_gate(n: u32) -> impl Strategy<Value = GateInstance> {
                     (Gate::Unitary2q(Box::new(m)), 2)
                 }
                 15 => (Gate::Toffoli, 3),
+                16 => (Gate::X, 1),
+                17 => (Gate::Cz, 2),
                 _ => (Gate::Ccz, 3),
             };
             let nctrl = nctrl.min(perm.len() - arity);
@@ -362,7 +379,11 @@ proptest! {
     fn prop_all_gate_families_with_controls(
         gates in prop::collection::vec(arb_any_gate(6), 1..30),
         g in 0u32..=2,
-        router in prop_oneof![Just(Router::Naive), Just(Router::Lookahead)],
+        router in prop_oneof![
+            Just(Router::Naive),
+            Just(Router::Lookahead),
+            (1u32..=3).prop_map(|max_k| Router::Reorder { max_k }),
+        ],
     ) {
         let mut c = h_layer(6);
         for gi in gates {
@@ -463,4 +484,182 @@ fn required_qubit_in_top_slot_k2_oracle() {
     c.h(4).unwrap();
     c.rx(0.2, 3).unwrap();
     check(&c, 2, "req-top-k2");
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(64))]
+    #[test]
+    fn prop_any_initial_map_matches(
+        gates in prop::collection::vec(arb_any_gate(6), 1..30),
+        g in 0u32..=2,
+        init in Just((0..6u32).collect::<Vec<u32>>()).prop_shuffle(),
+        router in prop_oneof![
+            Just(Router::Naive),
+            Just(Router::Lookahead),
+            (1u32..=3).prop_map(|max_k| Router::Reorder { max_k }),
+        ],
+    ) {
+        let mut c = h_layer(6);
+        for gi in gates {
+            c.add_gate(gi).unwrap();
+        }
+        let p = plan_from(&c, DistLayout::new(6, g).unwrap(), router, &init).unwrap();
+        let got = run_dist(&p).unwrap();
+        let want = reference(&c);
+        for (x, y) in got.iter().zip(&want) {
+            prop_assert!((x - y).norm() < TOL);
+        }
+    }
+}
+
+/// `c` re-emitted in a pseudo-random topological order of its DAG.
+fn random_topo(c: &Circuit, seed: u64) -> Circuit {
+    let mut dag = Dag::build(c).unwrap();
+    let mut ready = dag.initial_ready();
+    let mut out = Circuit::new(c.num_qubits(), 0);
+    let mut s = seed | 1;
+    while !ready.is_empty() {
+        s = s
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        let i = ready.swap_remove((s >> 33) as usize % ready.len());
+        out.add_instruction(c.instructions()[i].clone()).unwrap();
+        dag.complete(i, &mut ready).unwrap();
+    }
+    assert_eq!(out.len(), c.len(), "DAG must schedule every instruction");
+    out
+}
+
+fn arb_dp(n: u32) -> impl Strategy<Value = Instruction> {
+    prop::collection::vec(
+        (prop::collection::vec(1u64..(1u64 << n), 1..3), -3.0f64..3.0),
+        1..4,
+    )
+    .prop_map(move |terms| {
+        Instruction::DiagonalPhase(Box::new(DiagonalPhase {
+            n_qubits: n,
+            terms: terms
+                .into_iter()
+                .map(|(conds, angle)| PhaseTerm {
+                    conds: conds.into_iter().collect(),
+                    angle,
+                })
+                .collect(),
+        }))
+    })
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(128))]
+    /// Spec §7: any order the DAG allows is the same operator; random orders
+    /// test the DAG itself, not one scheduler's choice.
+    #[test]
+    fn prop_every_dag_order_is_equivalent(
+        gates in prop::collection::vec(arb_any_gate(6), 1..40),
+        dp in arb_dp(6),
+        dp_at in 0usize..1000,
+        seed in any::<u64>(),
+    ) {
+        let mut c = h_layer(6);
+        let at = dp_at % (gates.len() + 1);
+        let n_gates = gates.len();
+        for (k, gi) in gates.into_iter().enumerate() {
+            if k == at {
+                c.add_instruction(dp.clone()).unwrap();
+            }
+            c.add_gate(gi).unwrap();
+        }
+        if at == n_gates {
+            c.add_instruction(dp.clone()).unwrap();
+        }
+        let want = reference(&c);
+        for k in 0..8u64 {
+            let got = reference(&random_topo(&c, seed ^ (k.wrapping_mul(0x9E37_79B9))));
+            for (x, y) in got.iter().zip(&want) {
+                prop_assert!((x - y).norm() < TOL);
+            }
+        }
+    }
+}
+
+/// Mutation check: an unsound DAG (here, treating CNOT target as Z) would be
+/// caught. Swapping the two CNOTs of `cx(0,1); cx(1,0)` changes the state.
+#[test]
+fn reordering_non_commuting_cnots_is_detectable() {
+    let mut c = h_layer(2);
+    c.rx(0.7, 0).unwrap();
+    c.cnot(0, 1).unwrap();
+    c.cnot(1, 0).unwrap();
+    let mut swapped = h_layer(2);
+    swapped.rx(0.7, 0).unwrap();
+    swapped.cnot(1, 0).unwrap();
+    swapped.cnot(0, 1).unwrap();
+    let (a, b) = (reference(&c), reference(&swapped));
+    assert!(a.iter().zip(&b).any(|(x, y)| (x - y).norm() > 1e-6));
+}
+
+/// Guards against an over-serialising DAG: commuting neighbours must be
+/// allowed to reorder, and every sampled order must stay state-equivalent.
+#[test]
+fn dag_allows_commuting_reorders() {
+    let mut c = Circuit::new(3, 0);
+    c.rz(0.1, 0).unwrap();
+    c.cz(0, 1).unwrap();
+    c.rz(0.2, 1).unwrap();
+    c.cnot(0, 2).unwrap();
+    c.cnot(1, 2).unwrap();
+    c.h(2).unwrap();
+    let dag = Dag::build(&c).unwrap();
+    assert!(
+        dag.initial_ready().len() > 1,
+        "commuting heads must be ready together"
+    );
+    let orig: Vec<String> = c.instructions().iter().map(|i| format!("{i:?}")).collect();
+    let want = reference(&c);
+    let mut reordered = false;
+    for seed in 0..32u64 {
+        let o = random_topo(&c, seed);
+        let seq: Vec<String> = o.instructions().iter().map(|i| format!("{i:?}")).collect();
+        reordered |= seq != orig;
+        for (x, y) in reference(&o).iter().zip(&want) {
+            assert!((x - y).norm() < TOL);
+        }
+    }
+    assert!(reordered, "DAG never reordered anything");
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(64))]
+    #[test]
+    fn prop_initial_placement_matches(
+        gates in prop::collection::vec(arb_any_gate(6), 1..30),
+        dp in arb_dp(6),
+        dp_at in 0usize..1000,
+        g in 0u32..=3,
+        router in prop_oneof![
+            Just(Router::Naive),
+            Just(Router::Lookahead),
+            (1u32..=3).prop_map(|max_k| Router::Reorder { max_k }),
+        ],
+    ) {
+        let mut c = h_layer(6);
+        let at = dp_at % (gates.len() + 1);
+        let n_gates = gates.len();
+        for (k, gi) in gates.into_iter().enumerate() {
+            if k == at {
+                c.add_instruction(dp.clone()).unwrap();
+            }
+            c.add_gate(gi).unwrap();
+        }
+        if at == n_gates {
+            c.add_instruction(dp.clone()).unwrap();
+        }
+        let l = DistLayout::new(6, g).unwrap();
+        let p = plan_from(&c, l, router, &initial_placement(&c, l).unwrap()).unwrap();
+        let got = run_dist(&p).unwrap();
+        let want = reference(&c);
+        for (x, y) in got.iter().zip(&want) {
+            prop_assert!((x - y).norm() < TOL);
+        }
+    }
 }
