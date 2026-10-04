@@ -22,3 +22,6 @@ crates/aleph-py/python/aleph/*.pyd
 
 # Claude Code harness state
 /.claude/
+
+# P6 AWS session state + logs (scripts/aws/p6-multi-gpu-session.sh)
+/results/p6-aws/
