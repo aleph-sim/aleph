@@ -23,6 +23,7 @@ pub(crate) mod readout;
 mod readout_f32;
 mod state;
 
+pub(crate) use backend::to_backend_err;
 pub use backend::CudaSvBackend;
 pub use fp32::{CudaSvBackendF32, CudaSvStateF32, MAX_CUDA_QUBITS_F32};
 pub use paged::{paged_pass_counts, PagedSvState};

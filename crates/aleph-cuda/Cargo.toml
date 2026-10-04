@@ -83,4 +83,5 @@ aleph-oracle  = { path = "../aleph-oracle" }
 aleph-sv      = { path = "../aleph-sv" }
 aleph-stab    = { path = "../aleph-stab" }
 aleph-qec     = { path = "../aleph-qec" }
+aleph-parser  = { path = "../aleph-parser" }
 rand          = { workspace = true }
