@@ -222,29 +222,36 @@ impl CostModel for GpuCostModel {
     }
 }
 
-/// Bootstrap: bandwidth-only estimate (2^27 amps × 16 B × 2 passes / 360 GB/s ≈ 12 ms per full pass).
-/// Replaced by measured values in Task 4.
+/// Measured per-launch seconds per kernel kind on the RTX 4000 SFF Ada (20 GiB).
+///
+/// Calibrated 2026-10-04 with
+/// `cargo test --release -p aleph-cuda --features cuda --test dist_cost_calibrate -- --ignored --nocapture`
+/// (best of 5 x 32 launches, H-layer baseline subtracted). Most kinds sit on the
+/// ~17.6 ms single-pass bandwidth floor (dense1/diag1/diag_k are within ~1 % of
+/// each other, so their ordering is noise); cnot touches half the state, dense3
+/// is compute-bound at FP64, and phase_poly pays a per-term cost.
 const RTX4000_FP64: KindTimes = KindTimes {
     m_ref: 27,
-    dense1: 0.012,
-    dense2: 0.012,
-    dense3: 0.012,
-    diag1: 0.012,
-    diag_k: 0.012,
-    cnot: 0.006,
-    phase_base: 0.012,
-    phase_term: 0.0,
+    dense1: 1.756583e-2,
+    dense2: 2.113696e-2,
+    dense3: 3.630713e-2,
+    diag1: 1.773637e-2,
+    diag_k: 1.772850e-2,
+    cnot: 1.071684e-2,
+    phase_base: 2.331010e-2,
+    phase_term: 6.563838e-4,
 };
+/// FP32 counterpart (same provenance as [`RTX4000_FP64`], state size 2^28).
 const RTX4000_FP32: KindTimes = KindTimes {
     m_ref: 28,
-    dense1: 0.012,
-    dense2: 0.012,
-    dense3: 0.012,
-    diag1: 0.012,
-    diag_k: 0.012,
-    cnot: 0.006,
-    phase_base: 0.012,
-    phase_term: 0.0,
+    dense1: 1.762976e-2,
+    dense2: 1.767234e-2,
+    dense3: 1.715475e-2,
+    diag1: 1.764512e-2,
+    diag_k: 1.760776e-2,
+    cnot: 1.297517e-2,
+    phase_base: 4.622262e-2,
+    phase_term: 1.289533e-3,
 };
 
 #[cfg(test)]
