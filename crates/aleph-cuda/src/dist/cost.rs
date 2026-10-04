@@ -3,7 +3,7 @@
 //! each instruction is priced as the kernel it actually launches.
 
 use aleph_core::Gate;
-use aleph_ir::dist::DistError;
+use aleph_ir::dist::{CostModel, DistError, DistLayout};
 use aleph_ir::Instruction;
 
 use crate::common::diagonal_of;
@@ -78,6 +78,174 @@ pub fn classify(instr: &Instruction) -> Result<KernelKind, DistError> {
         _ => KernelKind::Dense3,
     })
 }
+
+/// Calibrated seconds per kernel launch at a `2^m_ref` slice (Task 4 fills
+/// the presets). Every kind is bandwidth-bound, so time scales by `2^(m − m_ref)`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct KindTimes {
+    /// Slice size (qubits) the per-kind times were measured at.
+    pub m_ref: u32,
+    /// `Dense1` seconds at `m_ref`.
+    pub dense1: f64,
+    /// `Dense2` seconds at `m_ref`.
+    pub dense2: f64,
+    /// `Dense3` seconds at `m_ref`.
+    pub dense3: f64,
+    /// `Diag1` seconds at `m_ref`.
+    pub diag1: f64,
+    /// `DiagK` seconds at `m_ref`.
+    pub diag_k: f64,
+    /// `Cnot` seconds at `m_ref`.
+    pub cnot: f64,
+    /// `PhasePoly` fixed cost at `m_ref`.
+    pub phase_base: f64,
+    /// `PhasePoly` per-term cost at `m_ref`.
+    pub phase_term: f64,
+}
+
+impl KindTimes {
+    /// Seconds for one launch of kind `k` on a `2^m` slice.
+    pub fn seconds(&self, k: KernelKind, m: u32) -> f64 {
+        let at_ref = match k {
+            KernelKind::Dense1 => self.dense1,
+            KernelKind::Dense2 => self.dense2,
+            KernelKind::Dense3 => self.dense3,
+            KernelKind::Diag1 => self.diag1,
+            KernelKind::DiagK => self.diag_k,
+            KernelKind::Cnot => self.cnot,
+            KernelKind::PhasePoly { terms } => self.phase_base + self.phase_term * terms as f64,
+            KernelKind::Free => 0.0,
+        };
+        at_ref * 2f64.powi(m as i32 - self.m_ref as i32)
+    }
+}
+
+/// Per-exchange link bandwidth by exchange width (bytes/s, index `k − 1`).
+/// Widths past the table use its last entry (spec §6.2's documented
+/// extrapolation of the two-bit value).
+#[derive(Debug, Clone, PartialEq)]
+pub struct LinkModel {
+    /// Bandwidth in bytes/s for exchange width `k = index + 1`.
+    pub bw_by_k: Vec<f64>,
+}
+
+impl LinkModel {
+    /// AWS g6.12xlarge, 4× L4, no P2P, NCCL memcpy-SHM, FP64
+    /// (docs/perf/p6-multi-gpu.md §4.1: 7.16 GB/s single-bit, 4.35 two-bit).
+    pub fn aws_g6_fp64() -> Self {
+        Self {
+            bw_by_k: vec![7.16e9, 4.35e9],
+        }
+    }
+
+    /// FP32: 7.09 GB/s single-bit measured; two-bit scaled by the FP64 ratio
+    /// (no FP32 two-bit measurement exists — spec §6.2).
+    pub fn aws_g6_fp32() -> Self {
+        Self {
+            bw_by_k: vec![7.09e9, 7.09e9 * 4.35 / 7.16],
+        }
+    }
+
+    /// Seconds for one `k`-bit exchange of a `2^m` slice: `(1 − 2^−k)` of it moves.
+    pub fn seconds(&self, k: u32, m: u32, amp_bytes: f64) -> f64 {
+        if k == 0 || self.bw_by_k.is_empty() {
+            return 0.0;
+        }
+        let idx = (k as usize - 1).min(self.bw_by_k.len() - 1);
+        let frac = 1.0 - 2f64.powi(-(k as i32));
+        frac * 2f64.powi(m as i32) * amp_bytes / self.bw_by_k[idx]
+    }
+}
+
+/// Calibrated GPU cost model (spec §6.2): prices a rank's specialised, fused
+/// program by kernel kind, and exchanges by `LinkModel`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct GpuCostModel {
+    /// Per-kernel-kind launch times.
+    pub kinds: KindTimes,
+    /// Exchange bandwidth model.
+    pub link: LinkModel,
+    /// 16 (FP64) or 8 (FP32).
+    pub amp_bytes: f64,
+    /// Must match the executing `DistSvBackend`'s fusion setting.
+    pub fuse: bool,
+}
+
+impl GpuCostModel {
+    /// Seconds rank `rank` spends on one `Local` step.
+    pub fn rank_segment(
+        &self,
+        instrs: &[Instruction],
+        layout: DistLayout,
+        rank: u32,
+    ) -> Result<f64, DistError> {
+        let c = super::rank_circuit(instrs, layout, rank, self.fuse)?;
+        let m = layout.m();
+        let mut t = 0.0;
+        for i in c.instructions() {
+            t += self.kinds.seconds(classify(i)?, m);
+        }
+        Ok(t)
+    }
+
+    /// RTX 4000 SFF Ada, FP64, fused like `DistSvBackend::new` — constants
+    /// from `tests/dist_cost_calibrate.rs` (Task 4 documents the command there).
+    pub fn rtx4000_fp64() -> Self {
+        Self {
+            kinds: RTX4000_FP64,
+            link: LinkModel::aws_g6_fp64(),
+            amp_bytes: 16.0,
+            fuse: true,
+        }
+    }
+
+    /// FP32 counterpart.
+    pub fn rtx4000_fp32() -> Self {
+        Self {
+            kinds: RTX4000_FP32,
+            link: LinkModel::aws_g6_fp32(),
+            amp_bytes: 8.0,
+            fuse: true,
+        }
+    }
+}
+
+impl CostModel for GpuCostModel {
+    /// The busiest rank, R − 1 (all global bits 1: every global-controlled
+    /// gate is live) — an upper bound; ranks sync at each exchange anyway.
+    fn local_segment(&self, instrs: &[Instruction], layout: DistLayout) -> Result<f64, DistError> {
+        self.rank_segment(instrs, layout, layout.ranks() - 1)
+    }
+
+    fn exchange(&self, k: u32, m: u32) -> f64 {
+        self.link.seconds(k, m, self.amp_bytes)
+    }
+}
+
+/// Bootstrap: bandwidth-only estimate (2^27 amps × 16 B × 2 passes / 360 GB/s ≈ 12 ms per full pass).
+/// Replaced by measured values in Task 4.
+const RTX4000_FP64: KindTimes = KindTimes {
+    m_ref: 27,
+    dense1: 0.012,
+    dense2: 0.012,
+    dense3: 0.012,
+    diag1: 0.012,
+    diag_k: 0.012,
+    cnot: 0.006,
+    phase_base: 0.012,
+    phase_term: 0.0,
+};
+const RTX4000_FP32: KindTimes = KindTimes {
+    m_ref: 28,
+    dense1: 0.012,
+    dense2: 0.012,
+    dense3: 0.012,
+    diag1: 0.012,
+    diag_k: 0.012,
+    cnot: 0.006,
+    phase_base: 0.012,
+    phase_term: 0.0,
+};
 
 #[cfg(test)]
 mod tests {
@@ -157,5 +325,67 @@ mod tests {
     #[test]
     fn measure_is_rejected() {
         assert!(classify(&Instruction::Measure { qubit: 0, clbit: 0 }).is_err());
+    }
+
+    fn unit_times() -> KindTimes {
+        KindTimes {
+            m_ref: 20,
+            dense1: 1.0,
+            dense2: 2.0,
+            dense3: 3.0,
+            diag1: 0.5,
+            diag_k: 0.75,
+            cnot: 0.25,
+            phase_base: 1.0,
+            phase_term: 0.1,
+        }
+    }
+
+    #[test]
+    fn kind_seconds_scale_with_slice() {
+        let t = unit_times();
+        assert_eq!(t.seconds(KernelKind::Dense2, 20), 2.0);
+        assert_eq!(t.seconds(KernelKind::Dense2, 22), 8.0);
+        assert!((t.seconds(KernelKind::PhasePoly { terms: 10 }, 20) - 2.0).abs() < 1e-12);
+        assert_eq!(t.seconds(KernelKind::Free, 25), 0.0);
+    }
+
+    #[test]
+    fn scaling_handles_m_below_ref() {
+        let t = unit_times();
+        assert_eq!(t.seconds(KernelKind::Dense1, 18), 0.25);
+        assert!(t.seconds(KernelKind::Dense1, 0) > 0.0);
+    }
+
+    #[test]
+    fn link_extrapolates_last_entry() {
+        let l = LinkModel {
+            bw_by_k: vec![8.0, 4.0],
+        };
+        // k=1, m=3, 16 B/amp: (1 - 1/2) * 8 * 16 / 8 = 8 s
+        assert!((l.seconds(1, 3, 16.0) - 8.0).abs() < 1e-12);
+        // k=2: (3/4) * 8 * 16 / 4 = 24 s ; k=3 uses the k=2 bandwidth: (7/8)*8*16/4 = 28 s
+        assert!((l.seconds(2, 3, 16.0) - 24.0).abs() < 1e-12);
+        assert!((l.seconds(3, 3, 16.0) - 28.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn rank_segment_prices_the_fused_program() {
+        use aleph_ir::dist::DistLayout;
+        let model = GpuCostModel {
+            kinds: unit_times(),
+            link: LinkModel::aws_g6_fp64(),
+            amp_bytes: 16.0,
+            fuse: false,
+        };
+        // n=21, g=1 -> m=20 = m_ref. H(0) dense1 + Cnot(0,1) + Rz(1) diag1.
+        let l = DistLayout::new(21, 1).unwrap();
+        let instrs = vec![
+            Instruction::Gate(GateInstance::new(Gate::H, vec![0])),
+            Instruction::Gate(GateInstance::new(Gate::Cnot, vec![0, 1])),
+            Instruction::Gate(GateInstance::new(Gate::Rz(Param::Concrete(0.3)), vec![1])),
+        ];
+        let t = model.rank_segment(&instrs, l, 1).unwrap();
+        assert!((t - (1.0 + 0.25 + 0.5)).abs() < 1e-12);
     }
 }
