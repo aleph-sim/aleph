@@ -363,8 +363,8 @@ fn rank_pass_count_counts_rank_zero_instructions() {
     assert_eq!(db.rank_pass_count(&p).unwrap(), 6);
 }
 
-/// #529: a diagonal that keeps two local qubits must stay diagonal after
-/// `specialize`, so the fused rank program is one phase-polynomial pass.
+/// #529/#534: 2-local diagonals and rank phases from `specialize` must both
+/// join the diagonal run, so the fused rank program is one pass.
 #[test]
 fn specialized_2local_diagonals_fuse_to_one_pass() {
     use aleph_core::{Gate, GateInstance};
@@ -378,6 +378,9 @@ fn specialized_2local_diagonals_fuse_to_one_pass() {
             .unwrap();
         c.add_gate(GateInstance::new(Gate::Cz, vec![q, q + 1]))
             .unwrap();
+        // #534: an Rz on the global qubit specialises to a rank-phase
+        // `DiagonalPhase`, which must not fence the run either.
+        c.rz(0.3, 5).unwrap();
     }
     let p = aleph_ir::dist::plan(&c, DistLayout::new(6, 1).unwrap(), Router::Naive).unwrap();
     assert_eq!(db.rank_pass_count(&p).unwrap(), 1);
