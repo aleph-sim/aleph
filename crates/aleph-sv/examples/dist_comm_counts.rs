@@ -3,7 +3,7 @@
 //! `cargo run --release -p aleph-sv --example dist_comm_counts`
 
 use aleph_core::{Gate, GateInstance, Param};
-use aleph_ir::dist::{plan, DistLayout, Router};
+use aleph_ir::dist::{initial_placement, plan, plan_from, DistLayout, Router};
 use aleph_ir::{Circuit, Instruction};
 
 fn qft(n: u32) -> Circuit {
@@ -71,25 +71,42 @@ fn main() {
         ("random-30 d=20", brickwall(30, 20)),
         ("Grover-20 (5 iters)", grover()),
     ];
-    println!(
-        "| circuit | g | naive exch | naive × slice | lookahead exch | lookahead × slice | reduction | la local swaps |"
-    );
-    println!("|---|---|---|---|---|---|---|---|");
+    println!("| circuit | g | strategy | exch | × slice | local swaps | vs lookahead |");
+    println!("|---|---|---|---|---|---|---|");
     for (name, c) in &cases {
         for g in [2u32, 3] {
             let l = DistLayout::new(c.num_qubits(), g).unwrap();
             let slice = (1u64 << l.m()) as f64;
-            let n = plan(c, l, Router::Naive).unwrap().stats;
-            let a = plan(c, l, Router::Lookahead).unwrap().stats;
-            let ns = n.amps_moved_per_rank as f64 / slice;
-            let la = a.amps_moved_per_rank as f64 / slice;
-            println!(
-                "| {name} | {g} | {} | {ns:.1} | {} | {la:.1} | {:.2}× | {} |",
-                n.exchanges,
-                a.exchanges,
-                ns / la.max(f64::MIN_POSITIVE),
-                a.local_swaps
-            );
+            let placed = initial_placement(c, l);
+            let la = plan(c, l, Router::Lookahead).unwrap().stats;
+            let la_s = la.amps_moved_per_rank as f64 / slice;
+            let rows = [
+                ("naive", plan(c, l, Router::Naive).unwrap().stats),
+                ("lookahead", la),
+                (
+                    "reorder",
+                    plan(c, l, Router::Reorder { max_k: g }).unwrap().stats,
+                ),
+                (
+                    "reorder k=1",
+                    plan(c, l, Router::Reorder { max_k: 1 }).unwrap().stats,
+                ),
+                (
+                    "reorder+place",
+                    plan_from(c, l, Router::Reorder { max_k: g }, &placed)
+                        .unwrap()
+                        .stats,
+                ),
+            ];
+            for (s, st) in rows {
+                let x = st.amps_moved_per_rank as f64 / slice;
+                println!(
+                    "| {name} | {g} | {s} | {} | {x:.1} | {} | {:.2}× |",
+                    st.exchanges,
+                    st.local_swaps,
+                    la_s / x.max(f64::MIN_POSITIVE)
+                );
+            }
         }
     }
 }
