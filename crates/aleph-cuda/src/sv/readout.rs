@@ -128,7 +128,11 @@ impl GpuReadout {
     }
 
     /// `(Σ|aᵢ|², Σ_{i&qbit≠0}|aᵢ|²)`. Pass `qbit = 0` for the total alone.
-    fn reduce_branch(&mut self, state: &CudaSvState, qbit: u64) -> Result<(f64, f64), Error> {
+    pub(crate) fn reduce_branch(
+        &mut self,
+        state: &CudaSvState,
+        qbit: u64,
+    ) -> Result<(f64, f64), Error> {
         let n: u64 = 1 << state.num_qubits;
         let nb = Self::n_blocks(n);
         self.ensure_partials(nb)?;

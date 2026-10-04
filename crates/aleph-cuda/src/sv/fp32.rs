@@ -191,17 +191,23 @@ impl CudaSvBackendF32 {
     /// via NVRTC. Returns [`Error::NoDevice`] on a GPU-less host so callers can
     /// skip cleanly.
     pub fn new() -> Result<Self, Error> {
-        Self::build(StdRng::from_entropy())
+        Self::build(StdRng::from_entropy(), 0)
     }
 
     /// Construct with an explicit seed; measurement/sampling are reproducible
     /// across processes for a given seed.
     pub fn with_seed(seed: u64) -> Result<Self, Error> {
-        Self::build(StdRng::seed_from_u64(seed))
+        Self::build(StdRng::seed_from_u64(seed), 0)
     }
 
-    fn build(rng: StdRng) -> Result<Self, Error> {
-        let ctx = CudaContext::new(0)?;
+    /// Construct on device `ordinal` (entropy-seeded). A missing ordinal is
+    /// [`Error::NoDevice`]. The multi-GPU `DistSvBackend` builds one per device.
+    pub fn on_device(ordinal: usize) -> Result<Self, Error> {
+        Self::build(StdRng::from_entropy(), ordinal)
+    }
+
+    fn build(rng: StdRng, ordinal: usize) -> Result<Self, Error> {
+        let ctx = CudaContext::new(ordinal)?;
         let ptx = compile_ptx(SV_F32_SRC).map_err(|e| Error::Compile(e.to_string()))?;
         let module = ctx.raw().load_module(ptx)?;
         // Separate module: TF32 WMMA needs sm_89 + the CUDA mma.h include path.
@@ -242,6 +248,16 @@ impl CudaSvBackendF32 {
     /// The current qubit cap (the distributed layer bounds rank slices by it).
     pub(crate) fn qubit_cap(&self) -> u32 {
         self.qubit_cap
+    }
+
+    /// Device `(Σ|a|², Σ_{i&qbit≠0}|a|²)` without the normalisation check, for
+    /// distributed rank slices (which are not normalised on their own).
+    pub(crate) fn raw_branch(
+        &mut self,
+        st: &CudaSvStateF32,
+        qbit: u64,
+    ) -> Result<(f64, f64), BackendError> {
+        self.readout.reduce_branch(st, qbit).map_err(to_backend_err)
     }
 
     /// Enable (default) or disable routing plain CNOTs to `apply_cnot_f32`.
@@ -663,8 +679,10 @@ impl CudaSvBackendF32 {
                 .arg(&n_amps)
                 .launch(cfg)?;
         }
-        // Block so the upload buffers (dropped at scope end) outlive the kernel.
-        self.ctx.synchronize()?;
+        // No host sync: the upload buffers are freed by cudarc's `CudaSlice`
+        // drop, which is stream-ordered (`cuMemFreeAsync` after the kernel, or
+        // a stream sync + free without async alloc). Blocking here serialised
+        // multi-GPU `DistSvBackend` runs (one DiagonalPhase per QFT H).
         Ok(())
     }
 

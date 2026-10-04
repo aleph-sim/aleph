@@ -33,6 +33,10 @@ cuda = [
 # `libcustatevec`. Optional + off by default so it is built/tested only on a host
 # with cuQuantum installed (the RTX 4000 Ada box), never in CI.
 cuquantum = ["cuda"]
+# Multi-GPU exchange through NCCL (P6-01b). cudarc dlopens libnccl at runtime,
+# so this builds (and CI clippies) without NCCL installed; the library is only
+# needed when an `NcclExchange` is constructed.
+nccl = ["cuda", "cudarc?/nccl"]
 
 [dependencies]
 thiserror = { workspace = true, optional = true }

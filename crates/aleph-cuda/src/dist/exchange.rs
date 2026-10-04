@@ -14,18 +14,32 @@ use aleph_ir::dist::DistLayout;
 use super::DeviceSv;
 
 /// Moves amplitudes between rank slices for a `DistStep::Exchange`.
+///
+/// `devs[d]` is the backend of device `d`; rank `r` lives on device
+/// [`rank_device`]`(r, R, devs.len())`.
 pub trait Exchange<B: DeviceSv> {
     fn exchange(
         &mut self,
-        be: &mut B,
+        devs: &mut [B],
         ranks: &mut [B::State],
         layout: DistLayout,
         global_bits: &[u32],
     ) -> Result<(), BackendError>;
 }
 
+/// Device index of rank `r` when `ranks` ranks sit on `devs` devices in
+/// contiguous blocks (`devs` | `ranks`, both powers of two, checked by the
+/// caller): the top `log2(devs)` rank bits name the device.
+pub(crate) fn rank_device(r: u32, ranks: u32, devs: usize) -> usize {
+    let per = (ranks as usize / devs.max(1)).max(1);
+    r as usize / per
+}
+
+/// `((rank, chunk), (rank', chunk'))`: two chunks that trade places.
+pub(crate) type ChunkPair = ((u32, u32), (u32, u32));
+
 /// Every unordered moved chunk pair `((r, c), (r', c'))` once, `(r,c) < (r',c')`.
-pub(crate) fn chunk_pairs(l: DistLayout, global_bits: &[u32]) -> Vec<((u32, u32), (u32, u32))> {
+pub(crate) fn chunk_pairs(l: DistLayout, global_bits: &[u32]) -> Vec<ChunkPair> {
     let m = l.m();
     let k = global_bits.len() as u32;
     let mut out = Vec::new();
@@ -47,7 +61,7 @@ pub(crate) fn chunk_pairs(l: DistLayout, global_bits: &[u32]) -> Vec<((u32, u32)
 }
 
 /// Disjoint `&mut` to two different ranks (`None` if equal or out of range).
-fn two_mut<T>(v: &mut [T], a: usize, b: usize) -> Option<(&mut T, &mut T)> {
+pub(crate) fn two_mut<T>(v: &mut [T], a: usize, b: usize) -> Option<(&mut T, &mut T)> {
     if a == b || a.max(b) >= v.len() {
         return None;
     }
@@ -60,9 +74,16 @@ fn two_mut<T>(v: &mut [T], a: usize, b: usize) -> Option<(&mut T, &mut T)> {
     }
 }
 
+/// `n_dev` devices can hold `ranks` ranks in contiguous blocks: a power of
+/// two, at least one, at most one device per rank (else `rank_device` would
+/// index past the device list).
+pub(crate) fn valid_devices(n_dev: usize, ranks: u32) -> bool {
+    n_dev.is_power_of_two() && n_dev as u64 <= u64::from(ranks)
+}
+
 /// Every bit global, in range, and no bit named twice (a repeat would make
 /// `chunk_pairs` pair a rank with itself or visit a chunk twice).
-fn valid_bits(l: DistLayout, global_bits: &[u32]) -> bool {
+pub(crate) fn valid_bits(l: DistLayout, global_bits: &[u32]) -> bool {
     let mut seen = 0u64;
     for &b in global_bits {
         if b >= u64::BITS || !l.is_global(b) || b >= l.n || seen & (1u64 << b) != 0 {
@@ -73,13 +94,14 @@ fn valid_bits(l: DistLayout, global_bits: &[u32]) -> bool {
     true
 }
 
-/// All ranks on one device: chunk swaps are device-to-device copies through a
-/// scratch slice of at most `scratch_amps` amplitudes.
+/// Ranks on devices that share one CUDA ordinal (one GPU, possibly several
+/// backends): chunk swaps are device-to-device copies through a per-device
+/// scratch of at most `scratch_amps` amplitudes. A pair whose two devices are
+/// different GPUs is rejected: that needs `NcclExchange`.
 pub struct LocalExchange<B: DeviceSv> {
     scratch_amps: usize,
-    scratch: Option<B::State>,
-    /// Amplitudes the allocated scratch holds (0 = none yet).
-    scratch_len: usize,
+    /// Per device index: (scratch slice, amplitudes it holds).
+    scratch: Vec<Option<(B::State, usize)>>,
     _b: PhantomData<B>,
 }
 
@@ -91,12 +113,12 @@ impl<B: DeviceSv> LocalExchange<B> {
         Self::with_scratch_amps(Self::DEFAULT_SCRATCH_AMPS)
     }
 
-    /// Scratch of `amps` amplitudes (rounded up to a power of two, min 1).
+    /// Scratch of `amps` amplitudes (rounded up to a power of two, clamped to
+    /// `1..=2^40` so the rounding cannot overflow).
     pub fn with_scratch_amps(amps: usize) -> Self {
         Self {
-            scratch_amps: amps.max(1).next_power_of_two(),
-            scratch: None,
-            scratch_len: 0,
+            scratch_amps: amps.clamp(1, 1 << 40).next_power_of_two(),
+            scratch: Vec::new(),
             _b: PhantomData,
         }
     }
@@ -111,38 +133,54 @@ impl<B: DeviceSv> Default for LocalExchange<B> {
 impl<B: DeviceSv> Exchange<B> for LocalExchange<B> {
     fn exchange(
         &mut self,
-        be: &mut B,
+        devs: &mut [B],
         ranks: &mut [B::State],
         l: DistLayout,
         global_bits: &[u32],
     ) -> Result<(), BackendError> {
         let m = l.m();
         let k = global_bits.len() as u32;
-        if k == 0 || k > m || !valid_bits(l, global_bits) || ranks.len() != l.ranks() as usize {
+        if k == 0
+            || k > m
+            || !valid_bits(l, global_bits)
+            || ranks.len() != l.ranks() as usize
+            || !valid_devices(devs.len(), l.ranks())
+        {
             return Err(BackendError::InvalidState {
                 reason: "dist: bad exchange bits",
             });
         }
         let chunk = 1usize << (m - k);
         let piece = chunk.min(self.scratch_amps);
-        // A later exchange with smaller k has bigger chunks: grow the scratch
-        // when the piece no longer fits (never beyond `scratch_amps`).
-        if self.scratch_len < piece {
-            self.scratch = Some(be.alloc_rank(piece.trailing_zeros(), 1)?);
-            self.scratch_len = piece;
-        }
-        let Some(scr) = self.scratch.as_mut() else {
-            return Err(BackendError::InvalidState {
-                reason: "dist: scratch missing",
-            });
-        };
+        self.scratch.resize_with(devs.len(), || None);
         for ((ra, ca), (rb, cb)) in chunk_pairs(l, global_bits) {
+            let da = rank_device(ra, l.ranks(), devs.len());
+            let db = rank_device(rb, l.ranks(), devs.len());
+            if devs[da].ordinal() != devs[db].ordinal() {
+                return Err(BackendError::InvalidState {
+                    reason: "dist: cross-GPU chunk pair needs NcclExchange",
+                });
+            }
+            // Scratch lives on rank a's device; grow it when a later, smaller-k
+            // exchange has bigger chunks (never beyond `scratch_amps`).
+            let slot = &mut self.scratch[da];
+            if slot.as_ref().is_none_or(|(_, len)| *len < piece) {
+                *slot = Some((devs[da].alloc_rank(piece.trailing_zeros(), 1)?, piece));
+            }
+            let Some((scr, _)) = slot.as_mut() else {
+                return Err(BackendError::InvalidState {
+                    reason: "dist: scratch missing",
+                });
+            };
             let (a0, b0) = (ca as usize * chunk, cb as usize * chunk);
             let Some((sa, sb)) = two_mut(ranks, ra as usize, rb as usize) else {
                 return Err(BackendError::InvalidState {
                     reason: "dist: exchange paired a rank with itself",
                 });
             };
+            // Same ordinal => same primary context and legacy default stream,
+            // so issuing every copy through devs[da] keeps them stream-ordered.
+            let be = &mut devs[da];
             let mut off = 0;
             while off < chunk {
                 be.copy_amps(sa, a0 + off, scr, 0, piece)?;

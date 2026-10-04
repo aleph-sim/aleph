@@ -76,17 +76,23 @@ impl CudaSvBackend {
     /// Construct on device 0 with an entropy-seeded RNG. Returns
     /// [`Error::NoDevice`] on a GPU-less host so callers can skip cleanly.
     pub fn new() -> Result<Self, Error> {
-        Self::build(StdRng::from_entropy())
+        Self::build(StdRng::from_entropy(), 0)
     }
 
     /// Construct with an explicit seed; measurement/sampling are reproducible
     /// across processes for a given seed.
     pub fn with_seed(seed: u64) -> Result<Self, Error> {
-        Self::build(StdRng::seed_from_u64(seed))
+        Self::build(StdRng::seed_from_u64(seed), 0)
     }
 
-    fn build(rng: StdRng) -> Result<Self, Error> {
-        let ctx = CudaContext::new(0)?;
+    /// Construct on device `ordinal` (entropy-seeded). A missing ordinal is
+    /// [`Error::NoDevice`]. The multi-GPU `DistSvBackend` builds one per device.
+    pub fn on_device(ordinal: usize) -> Result<Self, Error> {
+        Self::build(StdRng::from_entropy(), ordinal)
+    }
+
+    fn build(rng: StdRng, ordinal: usize) -> Result<Self, Error> {
+        let ctx = CudaContext::new(ordinal)?;
         // NVRTC compiles the CUDA C++ to PTX at runtime (mirrors a CPU JIT) —
         // no nvcc, no build-time CUDA SDK; the driver JITs PTX→sm at load.
         let ptx = compile_ptx(SV_KERNELS_SRC).map_err(|e| Error::Compile(e.to_string()))?;
@@ -178,6 +184,16 @@ impl CudaSvBackend {
     /// The current qubit cap (the distributed layer bounds rank slices by it).
     pub(crate) fn qubit_cap(&self) -> u32 {
         self.qubit_cap
+    }
+
+    /// Device `(Σ|a|², Σ_{i&qbit≠0}|a|²)` without the normalisation check, for
+    /// distributed rank slices (which are not normalised on their own).
+    pub(crate) fn raw_branch(
+        &mut self,
+        st: &CudaSvState,
+        qbit: u64,
+    ) -> Result<(f64, f64), BackendError> {
+        self.readout.reduce_branch(st, qbit).map_err(to_backend_err)
     }
 
     /// Enable (default) or disable routing diagonal gates to the custom
@@ -321,7 +337,7 @@ impl CudaSvBackend {
     /// (`angles` / `conds` / `offsets`), uploads them, launches `apply_phase_poly`
     /// over all `2^n` amplitudes, then synchronises so the per-call upload buffers
     /// outlive the kernel. `DiagonalPhase` instructions are rare (one per fused
-    /// cphase ladder), so the upload + sync is amortised over the whole sweep.
+    /// cphase ladder), so the upload is amortised over the whole sweep.
     fn launch_phase_poly(&self, state: &mut CudaSvState, dp: &DiagonalPhase) -> Result<(), Error> {
         let n_terms = dp.terms.len();
         if n_terms == 0 {
@@ -368,9 +384,10 @@ impl CudaSvBackend {
                 .arg(&n_amps)
                 .launch(cfg)?;
         }
-        // Block until the kernel finishes so the upload buffers (dropped at end of
-        // scope) are not freed out from under it.
-        self.ctx.synchronize()?;
+        // No host sync: the upload buffers are freed by cudarc's `CudaSlice`
+        // drop, which is stream-ordered (`cuMemFreeAsync` after the kernel, or
+        // a stream sync + free without async alloc). Blocking here serialised
+        // multi-GPU `DistSvBackend` runs (one DiagonalPhase per QFT H).
         Ok(())
     }
 

@@ -2,8 +2,11 @@
 //! are ordinary `CudaSvState` / `CudaSvStateF32` with `num_qubits = m`, so the
 //! existing kernels apply unchanged (the same trick `run_paged` uses).
 
+use std::sync::Arc;
+
 use aleph_backend::BackendError;
 use aleph_core::Complex;
+use cudarc::driver::{CudaStream, CudaView, CudaViewMut};
 
 use super::DeviceSv;
 use crate::sv::to_backend_err;
@@ -31,7 +34,52 @@ fn range_err() -> BackendError {
     }
 }
 
+/// Scalar range `[2*off, 2*(off+len))` if it lies within `scalars` (overflow-safe).
+fn scalar_range(
+    off: usize,
+    len: usize,
+    scalars: usize,
+) -> Result<std::ops::Range<usize>, BackendError> {
+    let s0 = off.checked_mul(2).ok_or_else(range_err)?;
+    let l = len.checked_mul(2).ok_or_else(range_err)?;
+    match s0.checked_add(l) {
+        Some(e) if e <= scalars => Ok(s0..e),
+        _ => Err(range_err()),
+    }
+}
+
 impl DeviceSv for CudaSvBackend {
+    type Scalar = f64;
+
+    fn ordinal(&self) -> usize {
+        self.ctx().raw().ordinal()
+    }
+
+    fn stream(&self) -> Arc<CudaStream> {
+        self.ctx().stream().clone()
+    }
+
+    fn amps_view(
+        st: &CudaSvState,
+        off: usize,
+        len: usize,
+    ) -> Result<CudaView<'_, f64>, BackendError> {
+        let r = scalar_range(off, len, st.amps.len())?;
+        Ok(st.amps.slice().slice(r))
+    }
+
+    fn amps_view_mut(
+        st: &mut CudaSvState,
+        off: usize,
+        len: usize,
+    ) -> Result<CudaViewMut<'_, f64>, BackendError> {
+        let r = scalar_range(off, len, st.amps.len())?;
+        Ok(st.amps.slice_mut().slice_mut(r))
+    }
+
+    fn branch_norms(&mut self, st: &CudaSvState, qbit: u64) -> Result<(f64, f64), BackendError> {
+        self.raw_branch(st, qbit)
+    }
     fn max_qubits(&self) -> u32 {
         self.qubit_cap()
     }
@@ -59,12 +107,8 @@ impl DeviceSv for CudaSvBackend {
         dst_off: usize,
         len: usize,
     ) -> Result<(), BackendError> {
-        let (s0, d0, l) = (2 * src_off, 2 * dst_off, 2 * len);
-        if s0 + l > src.amps.len() || d0 + l > dst.amps.len() {
-            return Err(range_err());
-        }
-        let view = src.amps.slice().slice(s0..s0 + l);
-        let mut out = dst.amps.slice_mut().slice_mut(d0..d0 + l);
+        let view = Self::amps_view(src, src_off, len)?;
+        let mut out = Self::amps_view_mut(dst, dst_off, len)?;
         self.ctx()
             .stream()
             .memcpy_dtod(&view, &mut out)
@@ -99,6 +143,37 @@ impl DeviceSv for CudaSvBackend {
 }
 
 impl DeviceSv for CudaSvBackendF32 {
+    type Scalar = f32;
+
+    fn ordinal(&self) -> usize {
+        self.ctx().raw().ordinal()
+    }
+
+    fn stream(&self) -> Arc<CudaStream> {
+        self.ctx().stream().clone()
+    }
+
+    fn amps_view(
+        st: &CudaSvStateF32,
+        off: usize,
+        len: usize,
+    ) -> Result<CudaView<'_, f32>, BackendError> {
+        let r = scalar_range(off, len, st.amps.len())?;
+        Ok(st.amps.slice().slice(r))
+    }
+
+    fn amps_view_mut(
+        st: &mut CudaSvStateF32,
+        off: usize,
+        len: usize,
+    ) -> Result<CudaViewMut<'_, f32>, BackendError> {
+        let r = scalar_range(off, len, st.amps.len())?;
+        Ok(st.amps.slice_mut().slice_mut(r))
+    }
+
+    fn branch_norms(&mut self, st: &CudaSvStateF32, qbit: u64) -> Result<(f64, f64), BackendError> {
+        self.raw_branch(st, qbit)
+    }
     fn max_qubits(&self) -> u32 {
         self.qubit_cap()
     }
@@ -126,12 +201,8 @@ impl DeviceSv for CudaSvBackendF32 {
         dst_off: usize,
         len: usize,
     ) -> Result<(), BackendError> {
-        let (s0, d0, l) = (2 * src_off, 2 * dst_off, 2 * len);
-        if s0 + l > src.amps.len() || d0 + l > dst.amps.len() {
-            return Err(range_err());
-        }
-        let view = src.amps.slice().slice(s0..s0 + l);
-        let mut out = dst.amps.slice_mut().slice_mut(d0..d0 + l);
+        let view = Self::amps_view(src, src_off, len)?;
+        let mut out = Self::amps_view_mut(dst, dst_off, len)?;
         self.ctx()
             .stream()
             .memcpy_dtod(&view, &mut out)
