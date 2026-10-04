@@ -24,8 +24,11 @@ OUT=results/p6-aws
 STATE=$OUT/.state
 SSH_OPTS=(-i "$HOME/.ssh/$KEY.pem" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15)
 # Remote env for every test run: fail (not skip) with fewer than 4 GPUs, and
-# keep NCCL's own diagnostics (nccl_err drops the result code).
-REMOTE_ENV='source ~/.cargo/env; cd aleph; export ALEPH_REQUIRE_GPUS=4 NCCL_DEBUG=WARN'
+# keep NCCL's own diagnostics (nccl_err drops the result code). g6.12xlarge
+# has no GPU P2P (`nvidia-smi topo -p2p r` = NS), so NCCL stages through host
+# SHM; its default SM-driven copy gets ~2.9 GB/s/GPU, the copy-engine path
+# (SHM_USE_CUDA_MEMCPY) ~7.2 GB/s (measured 2026-10-04, docs/perf/p6-multi-gpu.md §4).
+REMOTE_ENV='source ~/.cargo/env; cd aleph; export ALEPH_REQUIRE_GPUS=4 NCCL_DEBUG=WARN NCCL_SHM_USE_CUDA_MEMCPY=1'
 export AWS_DEFAULT_REGION=$REGION
 mkdir -p "$OUT"
 
