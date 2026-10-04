@@ -7,7 +7,10 @@
 //! single-card development path); NCCL across devices is P6-01b.
 
 use aleph_backend::{Backend, BackendError};
+use std::sync::Arc;
+
 use aleph_core::Complex;
+use cudarc::driver::{CudaStream, CudaView, CudaViewMut, DeviceRepr};
 
 mod device_sv;
 mod exchange;
@@ -37,6 +40,28 @@ pub trait DeviceSv: Backend {
     fn download(&mut self, st: &Self::State) -> Result<Vec<Complex<f64>>, BackendError>;
     /// A fresh `m`-qubit slice holding `amps` (`amps.len() == 2^m`).
     fn upload(&mut self, m: u32, amps: &[Complex<f64>]) -> Result<Self::State, BackendError>;
+    /// Device scalar of the interleaved (re, im) amplitude buffer: f64 or f32.
+    type Scalar: DeviceRepr + Copy + 'static;
+    /// CUDA ordinal this backend launches on.
+    fn ordinal(&self) -> usize;
+    /// The stream every kernel and copy of this backend is ordered on (NCCL
+    /// comms bind to it, so exchanges need no host barrier).
+    fn stream(&self) -> Arc<CudaStream>;
+    /// Interleaved scalars `[2*off, 2*(off+len))` of `st` (bounds-checked).
+    fn amps_view(
+        st: &Self::State,
+        off: usize,
+        len: usize,
+    ) -> Result<CudaView<'_, Self::Scalar>, BackendError>;
+    /// Mutable form of [`Self::amps_view`].
+    fn amps_view_mut(
+        st: &mut Self::State,
+        off: usize,
+        len: usize,
+    ) -> Result<CudaViewMut<'_, Self::Scalar>, BackendError>;
+    /// `(Σ|a|², Σ_{i & qbit ≠ 0} |a|²)` on the device, with no normalisation
+    /// check (rank slices are not normalised). `qbit = 0` gives the total alone.
+    fn branch_norms(&mut self, st: &Self::State, qbit: u64) -> Result<(f64, f64), BackendError>;
 }
 
 /// Distributed-run failure.

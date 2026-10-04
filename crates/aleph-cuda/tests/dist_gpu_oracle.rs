@@ -355,3 +355,27 @@ fn backends_open_on_explicit_ordinal() {
     assert!(CudaSvBackend::on_device(n).is_err());
     assert!(CudaSvBackendF32::on_device(n).is_err());
 }
+
+#[test]
+fn device_sv_branch_norms_and_views() {
+    let Some(mut be) = gpu64() else { return };
+    let amps = ramp(16, 0.25);
+    let st = be.upload(4, &amps).unwrap();
+    let tot: f64 = amps.iter().map(|a| a.norm_sqr()).sum();
+    let p1: f64 = amps
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| i & 4 != 0)
+        .map(|(_, a)| a.norm_sqr())
+        .sum();
+    let (t, b) = be.branch_norms(&st, 4).unwrap();
+    assert!((t - tot).abs() < 1e-9 && (b - p1).abs() < 1e-9, "{t} {b}");
+    assert_eq!(be.ordinal(), 0);
+    assert_eq!(CudaSvBackend::amps_view(&st, 8, 8).unwrap().len(), 16);
+    assert!(CudaSvBackend::amps_view(&st, 9, 8).is_err());
+    assert!(CudaSvBackend::amps_view(&st, usize::MAX / 2, 8).is_err());
+    let Some(mut be32) = gpu32() else { return };
+    let s32 = be32.upload(4, &amps).unwrap();
+    let (t32, b32) = be32.branch_norms(&s32, 4).unwrap();
+    assert!((t32 - tot).abs() < 1e-3 && (b32 - p1).abs() < 1e-3);
+}

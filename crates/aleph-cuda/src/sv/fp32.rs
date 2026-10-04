@@ -250,6 +250,16 @@ impl CudaSvBackendF32 {
         self.qubit_cap
     }
 
+    /// Device `(Σ|a|², Σ_{i&qbit≠0}|a|²)` without the normalisation check, for
+    /// distributed rank slices (which are not normalised on their own).
+    pub(crate) fn raw_branch(
+        &mut self,
+        st: &CudaSvStateF32,
+        qbit: u64,
+    ) -> Result<(f64, f64), BackendError> {
+        self.readout.reduce_branch(st, qbit).map_err(to_backend_err)
+    }
+
     /// Enable (default) or disable routing plain CNOTs to `apply_cnot_f32`.
     pub fn with_custom_2q(mut self, on: bool) -> Self {
         self.custom_2q = on;

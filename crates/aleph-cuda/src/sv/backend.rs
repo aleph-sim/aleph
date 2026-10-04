@@ -186,6 +186,16 @@ impl CudaSvBackend {
         self.qubit_cap
     }
 
+    /// Device `(Σ|a|², Σ_{i&qbit≠0}|a|²)` without the normalisation check, for
+    /// distributed rank slices (which are not normalised on their own).
+    pub(crate) fn raw_branch(
+        &mut self,
+        st: &CudaSvState,
+        qbit: u64,
+    ) -> Result<(f64, f64), BackendError> {
+        self.readout.reduce_branch(st, qbit).map_err(to_backend_err)
+    }
+
     /// Enable (default) or disable routing diagonal gates to the custom
     /// `apply_diag` kernels (P5-06). Disabling forces the dense `apply_1q` /
     /// `apply_kq` path — the baseline arm of the P5-06 A/B benchmark.
