@@ -61,7 +61,8 @@ divided by this row's (> 1 = less traffic).
 **Reading.**
 - **Random-30 d=20 is a 1D nearest-neighbour brickwall.** Reorder needs 1 exchange for 20 layers (lookahead: 22–23),
   moving 0.8–0.9 slices against 16.5–20.1, a 22–23× reduction. Even `k=1` gives 16.5× (g=2) and 13.4× (g=3).
-  - Why: the depth (20) is less than the distance from most qubits to the global qubits, so gates form a light cone.
+  - Why: the depth (20) is less than the distance from at least g of the local qubits to the global ones (here roughly
+    q ≤ 7 at n=30), so gates form a light cone. That is all the mechanism needs.
     Qubits far from the global ones can finish all 20 layers before any global-qubit gate is needed. They then become
     free eviction victims (never needed again), so one exchange makes the global qubits local for the rest of the
     circuit.

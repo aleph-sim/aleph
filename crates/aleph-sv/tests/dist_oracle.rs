@@ -178,8 +178,14 @@ fn mutation_dropping_an_exchange_breaks_oracle() {
 fn unitary_only(c: &Circuit) -> Circuit {
     let mut out = Circuit::new(c.num_qubits(), 0);
     for i in c.instructions() {
-        if let Instruction::Gate(g) = i {
-            out.add_gate(g.clone()).unwrap();
+        match i {
+            Instruction::Gate(g) => {
+                out.add_gate(g.clone()).unwrap();
+            }
+            Instruction::Barrier(_) => {
+                out.add_instruction(i.clone()).unwrap();
+            }
+            _ => {}
         }
     }
     out
@@ -310,7 +316,7 @@ fn grover_n8_matches() {
 /// with 0–2 external controls.
 fn arb_any_gate(n: u32) -> impl Strategy<Value = GateInstance> {
     (
-        0usize..17,
+        0usize..19,
         Just((0..n).collect::<Vec<u32>>()).prop_shuffle(),
         0usize..=2,
         -3.0f64..3.0,
@@ -354,6 +360,8 @@ fn arb_any_gate(n: u32) -> impl Strategy<Value = GateInstance> {
                     (Gate::Unitary2q(Box::new(m)), 2)
                 }
                 15 => (Gate::Toffoli, 3),
+                16 => (Gate::X, 1),
+                17 => (Gate::Cz, 2),
                 _ => (Gate::Ccz, 3),
             };
             let nctrl = nctrl.min(perm.len() - arity);
@@ -647,7 +655,7 @@ proptest! {
             c.add_instruction(dp.clone()).unwrap();
         }
         let l = DistLayout::new(6, g).unwrap();
-        let p = plan_from(&c, l, router, &initial_placement(&c, l)).unwrap();
+        let p = plan_from(&c, l, router, &initial_placement(&c, l).unwrap()).unwrap();
         let got = run_dist(&p).unwrap();
         let want = reference(&c);
         for (x, y) in got.iter().zip(&want) {

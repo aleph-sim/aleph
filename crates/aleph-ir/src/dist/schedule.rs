@@ -43,6 +43,8 @@ pub(crate) fn schedule(
     let mut cur: Vec<Instruction> = Vec::new();
     let mut stats = CommStats::default();
     let max_k = max_k.clamp(1, layout.g.max(1)) as usize;
+    // Prefetch window over *original* indices [seed, seed + 4n): it may hold
+    // fewer than 4n still-unscheduled instructions.
     let horizon = 4 * layout.n as usize;
 
     while let Some(&seed) = ready.iter().next() {

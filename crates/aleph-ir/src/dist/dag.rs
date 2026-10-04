@@ -23,7 +23,7 @@ use crate::{Circuit, Instruction};
 
 /// How an instruction acts on one qubit (see the module docs).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Act {
+pub(crate) enum Act {
     Z,
     X,
     Other,
@@ -31,7 +31,7 @@ pub enum Act {
 
 /// Per-qubit actions of `instr`. Errors on instructions the distributed
 /// planner rejects (`Measure`, `Reset`, `TiledBlock`).
-pub fn actions(instr: &Instruction) -> Result<SmallVec<[(u32, Act); 6]>, DistError> {
+pub(crate) fn actions(instr: &Instruction) -> Result<SmallVec<[(u32, Act); 6]>, DistError> {
     let mut out: SmallVec<[(u32, Act); 6]> = SmallVec::new();
     match instr {
         Instruction::Gate(g) => gate_actions(g, &mut out),
@@ -102,7 +102,7 @@ impl Dag {
         for (i, instr) in c.instructions().iter().enumerate() {
             for (q, act) in actions(instr)? {
                 let slot = cur.get_mut(q as usize).ok_or(DistError::Unsupported {
-                    kind: "internal: qubit out of range",
+                    kind: "qubit out of range",
                 })?;
                 let (block, prev) = match *slot {
                     Some((b, t, prev)) if t == act && act != Act::Other => {
@@ -134,10 +134,13 @@ impl Dag {
         })
     }
 
+    /// Instructions with no predecessor, ascending.
     pub fn initial_ready(&self) -> Vec<usize> {
         (0..self.len()).filter(|&i| self.pending[i] == 0).collect()
     }
 
+    /// Mark `i` scheduled and push newly-ready nodes onto `ready`; errors on a
+    /// node that is not ready or already done.
     pub fn complete(&mut self, i: usize, ready: &mut Vec<usize>) -> Result<(), DistError> {
         if self.done.get(i).copied().unwrap_or(true) || self.pending[i] != 0 {
             return Err(DistError::Unsupported {
@@ -161,10 +164,12 @@ impl Dag {
         Ok(())
     }
 
+    /// Number of instructions in the DAG.
     pub fn len(&self) -> usize {
         self.pending.len()
     }
 
+    /// Whether the DAG has no instructions.
     pub fn is_empty(&self) -> bool {
         self.pending.is_empty()
     }
@@ -321,6 +326,27 @@ mod tests {
         assert!(d.complete(1, &mut r).is_err());
         d.complete(0, &mut r).unwrap();
         assert!(d.complete(0, &mut r).is_err());
+    }
+
+    #[test]
+    fn diagonal_phase_cond_bit_out_of_range_is_an_error() {
+        let mut c = Circuit::new(2, 0);
+        let dp = Instruction::DiagonalPhase(Box::new(crate::DiagonalPhase {
+            n_qubits: 2,
+            terms: vec![crate::PhaseTerm {
+                conds: smallvec![0b100],
+                angle: 0.2,
+            }],
+        }));
+        // If the circuit validates DiagonalPhase, the bad input never reaches build.
+        if c.add_instruction(dp).is_ok() {
+            assert!(matches!(
+                Dag::build(&c),
+                Err(DistError::Unsupported {
+                    kind: "qubit out of range"
+                })
+            ));
+        }
     }
 
     #[test]

@@ -727,6 +727,7 @@ mod tests {
             assert_eq!(a.stats, b.stats);
             assert_eq!(a.final_map, b.final_map);
             assert_eq!(a.steps.len(), b.steps.len());
+            assert_eq!(format!("{:?}", a.steps), format!("{:?}", b.steps));
         }
     }
 

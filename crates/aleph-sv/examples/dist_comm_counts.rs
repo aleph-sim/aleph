@@ -1,4 +1,5 @@
-//! Prints P6-02/P6-03 communication counts (naive vs lookahead router).
+//! Prints P6-02/P6-03/P6-05 communication counts for each strategy: naive,
+//! lookahead, reorder (max_k = g), reorder k=1, and reorder with initial placement.
 //! Run from the workspace root:
 //! `cargo run --release -p aleph-sv --example dist_comm_counts`
 
@@ -77,7 +78,7 @@ fn main() {
         for g in [2u32, 3] {
             let l = DistLayout::new(c.num_qubits(), g).unwrap();
             let slice = (1u64 << l.m()) as f64;
-            let placed = initial_placement(c, l);
+            let placed = initial_placement(c, l).unwrap();
             let la = plan(c, l, Router::Lookahead).unwrap().stats;
             let la_s = la.amps_moved_per_rank as f64 / slice;
             let rows = [

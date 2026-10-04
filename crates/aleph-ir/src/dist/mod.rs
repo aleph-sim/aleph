@@ -15,14 +15,14 @@ use smallvec::SmallVec;
 
 use crate::Instruction;
 
-pub mod dag;
+mod dag;
 mod next_use;
 mod placement;
 mod plan;
 mod schedule;
 mod specialize;
 
-pub use dag::{Act, Dag};
+pub use dag::Dag;
 pub use placement::initial_placement;
 pub use plan::{plan, plan_from, required_local};
 pub use specialize::specialize;
@@ -115,10 +115,11 @@ pub enum Router {
     /// needs plus prefetched qubits needed before their victim's next use;
     /// victims chosen by farthest next use (Belady). P6-03.
     Lookahead,
-    /// P6-05: reorder within commutation (see [`dag`]): run every gate that
+    /// P6-05: reorder within commutation (see [`Dag`]): run every gate that
     /// is runnable locally, exchange only when every ready gate is blocked.
-    /// `max_k` caps the bits per exchange beyond what the blocked gate itself
-    /// needs (clamped to `1..=max(g, 1)`).
+    /// `max_k` caps the exchange width (clamped to `1..=max(g, 1)`); a blocked
+    /// gate that needs more global qubits than `max_k` still gets all of them
+    /// in one exchange.
     Reorder { max_k: u32 },
 }
 

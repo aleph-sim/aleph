@@ -5,12 +5,21 @@
 use aleph_core::Gate;
 
 use super::plan::required_local;
-use super::DistLayout;
+use super::{DistError, DistLayout};
 use crate::{Circuit, Instruction};
 
 /// `l2p[logical] = physical`: chosen globals at `m..n` (ascending logical),
 /// the rest at `0..m` in logical order.
-pub fn initial_placement(circuit: &Circuit, layout: DistLayout) -> Vec<u32> {
+///
+/// Errors with [`DistError::QubitCountMismatch`] if the circuit's qubit count
+/// differs from `layout.n`.
+pub fn initial_placement(circuit: &Circuit, layout: DistLayout) -> Result<Vec<u32>, DistError> {
+    if circuit.num_qubits() != layout.n {
+        return Err(DistError::QubitCountMismatch {
+            circuit: circuit.num_qubits(),
+            layout: layout.n,
+        });
+    }
     let n = layout.n as usize;
     let mut first = vec![usize::MAX; n];
     let mut uses = vec![0u32; n];
@@ -50,7 +59,7 @@ pub fn initial_placement(circuit: &Circuit, layout: DistLayout) -> Vec<u32> {
     for (j, &q) in global.iter().enumerate() {
         l2p[q] = layout.m() + j as u32;
     }
-    l2p
+    Ok(l2p)
 }
 
 #[cfg(test)]
@@ -65,7 +74,7 @@ mod tests {
             c.h(q).unwrap();
         }
         let l = DistLayout::new(6, 2).unwrap();
-        assert_eq!(initial_placement(&c, l), vec![0, 1, 2, 3, 4, 5]);
+        assert_eq!(initial_placement(&c, l).unwrap(), vec![0, 1, 2, 3, 4, 5]);
     }
 
     #[test]
@@ -76,9 +85,9 @@ mod tests {
         }
         let l = DistLayout::new(6, 2).unwrap();
         // First needs: 5@0 4@1 3@2 0@3 1@4 2@5 → globals {1, 2}.
-        assert_eq!(initial_placement(&c, l), vec![0, 4, 5, 1, 2, 3]);
+        assert_eq!(initial_placement(&c, l).unwrap(), vec![0, 4, 5, 1, 2, 3]);
         let id = plan(&c, l, Router::Naive).unwrap().stats.exchanges;
-        let placed = plan_from(&c, l, Router::Naive, &initial_placement(&c, l))
+        let placed = plan_from(&c, l, Router::Naive, &initial_placement(&c, l).unwrap())
             .unwrap()
             .stats
             .exchanges;
@@ -93,7 +102,7 @@ mod tests {
         c.h(1).unwrap();
         c.h(2).unwrap();
         let l = DistLayout::new(4, 1).unwrap();
-        assert_eq!(initial_placement(&c, l), vec![0, 1, 2, 3]);
+        assert_eq!(initial_placement(&c, l).unwrap(), vec![0, 1, 2, 3]);
     }
 
     #[test]
@@ -101,7 +110,7 @@ mod tests {
         let mut c = Circuit::new(3, 0);
         c.h(2).unwrap();
         assert_eq!(
-            initial_placement(&c, DistLayout::new(3, 0).unwrap()),
+            initial_placement(&c, DistLayout::new(3, 0).unwrap()).unwrap(),
             vec![0, 1, 2]
         );
     }
@@ -116,6 +125,20 @@ mod tests {
         c.h(2).unwrap();
         let l = DistLayout::new(4, 1).unwrap();
         // Track 3 (label 3 at t=0) is never needed: it goes global.
-        assert_eq!(initial_placement(&c, l), vec![0, 1, 2, 3]);
+        assert_eq!(initial_placement(&c, l).unwrap(), vec![0, 1, 2, 3]);
+    }
+
+    #[test]
+    fn mismatched_qubit_count_is_an_error() {
+        let mut c = Circuit::new(5, 0);
+        c.h(4).unwrap();
+        let l = DistLayout::new(4, 1).unwrap();
+        assert_eq!(
+            initial_placement(&c, l).unwrap_err(),
+            DistError::QubitCountMismatch {
+                circuit: 5,
+                layout: 4
+            }
+        );
     }
 }

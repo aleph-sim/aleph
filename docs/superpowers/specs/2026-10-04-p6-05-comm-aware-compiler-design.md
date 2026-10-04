@@ -116,7 +116,7 @@ Loop until no gates remain:
 2. **Exchange.** When every ready gate needs at least one global qubit:
    - **Bring set B.** Seed with the missing qubits of the lowest-index ready gate. While `|B| < max_k`, consider each
      other global qubit whose next local-need (smallest unscheduled original index that needs it local) lies within
-     the next `H = 4·n` unscheduled original indices. Add the one with the earliest next local-need, but only if that
+     the window of original indices `[seed, seed + H)`, `H = 4·n` (so it may hold fewer than `4·n` unscheduled ones). Add the one with the earliest next local-need, but only if that
      need comes before the next local-need of the victim it would displace. This is P6-03's prefetch rule, applied to
      the DAG frontier. Stop when no qubit qualifies.
    - **Victims.** The `|B|` local qubits with the farthest next local-need (Belady). Ties prefer higher physical slots.
@@ -176,7 +176,7 @@ the report. Shipping an optimizer that aims at a wrong objective is not acceptab
 ### 6.4 Candidates in `compile`
 
 {Naive, Lookahead, Reorder{max_k = 1..=g}} × {identity placement, §5 placement}. Naive and Lookahead get the
-non-identity placement by starting `plan.rs` from that map. This needs a private `plan_from(map)` entry, and the public
+non-identity placement by starting `plan.rs` from that map. This needs a `plan_from(map)` entry, which is public and lands in PR 1;
 `plan()` stays identity.
 
 That is ≤ 2·(2+g) plans, 12 at g=4. The cheapest by `T` wins; ties go to fewer exchanges, then to fewer local passes.
@@ -234,7 +234,7 @@ Three PRs, each with green CI. GPU-specific tests run on the CUDA box.
    invariants, and the CPU comm-stats table.
 2. **Cost model.** The `CostModel` trait, `LinkModel`, `GpuCostModel`, the calibration test and constants, and the
    model accuracy gate (§6.3) with its numbers.
-3. **Compile.** `compile`, `plan_from`, `run_compiled`, the GPU oracle extension, the §8 benchmark, the report, and a
+3. **Compile.** `compile`, `run_compiled`, the GPU oracle extension, the §8 benchmark, the report, and a
    CLAUDE.md overview line.
 
 ## 10. Risks
