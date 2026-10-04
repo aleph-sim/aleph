@@ -31,6 +31,16 @@ use aleph_cuda::{
 use aleph_ir::dist::{plan, DistLayout, DistPlan, Router};
 use common::dist::{brickwall, ghz, qft};
 
+/// `None` only for a missing device; any other construction failure panics
+/// so a broken host cannot print a vacuous bench.
+fn or_skip<B>(r: Result<B, aleph_cuda::Error>) -> Option<B> {
+    match r {
+        Ok(b) => Some(b),
+        Err(aleph_cuda::Error::NoDevice(_)) => None,
+        Err(e) => panic!("GPU present but backend construction failed: {e}"),
+    }
+}
+
 /// Sync every device's default stream (all backends here submit to it).
 fn sync_all(ctxs: &[CudaContext]) {
     for c in ctxs {
@@ -108,7 +118,9 @@ where
     // Exchange bandwidth at the strong-scaling slice size of the widest D.
     let d_max = *ds.last().unwrap_or(&1);
     let m_x = n_strong - d_max.trailing_zeros().max(1);
-    let mut devs: Vec<B> = (0..d_max).filter_map(p.make).collect();
+    let mut devs: Vec<B> = (0..d_max)
+        .map(|i| (p.make)(i).expect("GPU missing"))
+        .collect();
     let bw = xchg_bw(&mut devs, &ctxs[..d_max], m_x, p.amp_bytes);
     drop(devs);
     println!("xchg,{},D={d_max},m={m_x},GBps={bw:.2}", p.name);
@@ -132,7 +144,7 @@ where
                 return;
             };
             let (passes, t_one) = onecard(b0, &ctxs[..1], &pl);
-            let devs: Vec<B> = (0..d).filter_map(p.make).collect();
+            let devs: Vec<B> = (0..d).map(|i| (p.make)(i).expect("GPU missing")).collect();
             let x = NcclExchange::new(&devs).unwrap();
             let mut db = DistSvBackend::multi(devs, x).unwrap();
             let mb = pl.stats.amps_moved_per_rank as f64 * p.amp_bytes as f64 / 1e6;
@@ -161,7 +173,7 @@ where
         let g = d.trailing_zeros();
         let n = m_weak + g;
         let c = brickwall(n, 10);
-        let devs: Vec<B> = (0..d).filter_map(p.make).collect();
+        let devs: Vec<B> = (0..d).map(|i| (p.make)(i).expect("GPU missing")).collect();
         let x = NcclExchange::new(&devs).unwrap();
         let mut db = DistSvBackend::multi(devs, x).unwrap();
         let t = median_of(&ctxs[..d], 1, || db.run(&c, g, Router::Lookahead).unwrap());
@@ -186,12 +198,12 @@ fn dist_nccl_scaling() {
     let p64 = Prec {
         name: "FP64",
         amp_bytes: 16,
-        make: |i| CudaSvBackend::on_device(i).ok(),
+        make: |i| or_skip(CudaSvBackend::on_device(i)),
     };
     let p32 = Prec {
         name: "FP32",
         amp_bytes: 8,
-        make: |i| CudaSvBackendF32::on_device(i).ok(),
+        make: |i| or_skip(CudaSvBackendF32::on_device(i)),
     };
     // Weak: FP64 m=30 (16 GiB per GPU), FP32 m=31 (16 GiB per GPU).
     strong_and_weak(&p64, 28, 30, &ctxs);
@@ -237,8 +249,8 @@ fn model_inputs() {
     }
     let ctx = [CudaContext::new(0).unwrap()];
     println!("model,prec,circuit,n,D,passes_per_rank,exchanges,amps_moved_per_rank,onecard_s");
-    model_rows("FP64", &ctx, || CudaSvBackend::on_device(0).ok());
-    model_rows("FP32", &ctx, || CudaSvBackendF32::on_device(0).ok());
+    model_rows("FP64", &ctx, || or_skip(CudaSvBackend::on_device(0)));
+    model_rows("FP32", &ctx, || or_skip(CudaSvBackendF32::on_device(0)));
 }
 
 fn model_rows<B: DeviceSv>(prec: &str, ctx: &[CudaContext], make: impl Fn() -> Option<B>) {
