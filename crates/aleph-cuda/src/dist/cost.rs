@@ -23,8 +23,16 @@ pub enum KernelKind {
     DiagK,
     /// `apply_cnot` (bare `Cnot`, no external controls).
     Cnot,
-    /// `apply_phase_poly` with `terms` phase terms.
-    PhasePoly { terms: usize },
+    /// `apply_phase_poly`, its terms split by shape: `single` terms have ≤ 1
+    /// cond, `multi` terms are an AND of ≥ 2 conds. A term's cost tracks how
+    /// often it fires (1/2 of amplitudes for one 1-bit cond, 1/4 for an AND of
+    /// two), so the two shapes are priced separately.
+    PhasePoly {
+        /// Terms with at most one cond.
+        single: usize,
+        /// Terms with two or more conds.
+        multi: usize,
+    },
     /// No kernel (barrier, empty `DiagonalPhase`).
     Free,
 }
@@ -37,13 +45,13 @@ pub fn classify(instr: &Instruction) -> Result<KernelKind, DistError> {
     let g = match instr {
         Instruction::Gate(g) => g,
         Instruction::DiagonalPhase(dp) => {
-            return Ok(if dp.terms.is_empty() {
+            let multi = dp.terms.iter().filter(|t| t.conds.len() >= 2).count();
+            let single = dp.terms.len() - multi;
+            return Ok(if single + multi == 0 {
                 KernelKind::Free
             } else {
-                KernelKind::PhasePoly {
-                    terms: dp.terms.len(),
-                }
-            })
+                KernelKind::PhasePoly { single, multi }
+            });
         }
         Instruction::Barrier(_) => return Ok(KernelKind::Free),
         _ => {
@@ -79,8 +87,9 @@ pub fn classify(instr: &Instruction) -> Result<KernelKind, DistError> {
     })
 }
 
-/// Calibrated seconds per kernel launch at a `2^m_ref` slice (Task 4 fills
-/// the presets). Every kind is bandwidth-bound, so time scales by `2^(m − m_ref)`.
+/// Calibrated seconds per kernel launch at a `2^m_ref` slice (the RTX 4000
+/// presets come from `tests/dist_cost_calibrate.rs`). Every kind is a full pass
+/// over the slice, so time scales by `2^(m − m_ref)`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct KindTimes {
     /// Slice size (qubits) the per-kind times were measured at.
@@ -99,8 +108,10 @@ pub struct KindTimes {
     pub cnot: f64,
     /// `PhasePoly` fixed cost at `m_ref`.
     pub phase_base: f64,
-    /// `PhasePoly` per-term cost at `m_ref`.
+    /// `PhasePoly` per-term cost at `m_ref`, terms with ≤ 1 cond.
     pub phase_term: f64,
+    /// `PhasePoly` per-term cost at `m_ref`, terms with ≥ 2 conds (AND).
+    pub phase_term_multi: f64,
 }
 
 impl KindTimes {
@@ -113,7 +124,11 @@ impl KindTimes {
             KernelKind::Diag1 => self.diag1,
             KernelKind::DiagK => self.diag_k,
             KernelKind::Cnot => self.cnot,
-            KernelKind::PhasePoly { terms } => self.phase_base + self.phase_term * terms as f64,
+            KernelKind::PhasePoly { single, multi } => {
+                self.phase_base
+                    + self.phase_term * single as f64
+                    + self.phase_term_multi * multi as f64
+            }
             KernelKind::Free => 0.0,
         };
         at_ref * 2f64.powi(m as i32 - self.m_ref as i32)
@@ -225,33 +240,39 @@ impl CostModel for GpuCostModel {
 /// Measured per-launch seconds per kernel kind on the RTX 4000 SFF Ada (20 GiB).
 ///
 /// Calibrated 2026-10-04 with
-/// `cargo test --release -p aleph-cuda --features cuda --test dist_cost_calibrate -- --ignored --nocapture`
-/// (best of 5 x 32 launches, H-layer baseline subtracted). Most kinds sit on the
-/// ~17.6 ms single-pass bandwidth floor (dense1/diag1/diag_k are within ~1 % of
-/// each other, so their ordering is noise); cnot touches half the state, dense3
-/// is compute-bound at FP64, and phase_poly pays a per-term cost.
+/// `cargo test --release -p aleph-cuda --features cuda --test dist_cost_calibrate -- --ignored --nocapture`.
+/// Method: each launch interleaved with an `H`, best of 5 × 32 launches, the
+/// interleaved-H baseline subtracted. Each constant is the **mean of 2 runs**
+/// (largest run-to-run spread: FP64 dense3 +2.4 %, dense2 and phase_base +2.0 %).
+/// Most kinds sit on the ~17.6 ms single-pass bandwidth floor (dense1/diag1/
+/// diag_k are within ~1 % of each other, so their ordering is noise); cnot
+/// touches half the state, dense3 is compute-bound at FP64, and phase_poly pays
+/// a per-term cost that depends on the term shape (single cond vs AND of two).
+/// `phase_base` includes the per-launch device allocation and upload of the terms.
 const RTX4000_FP64: KindTimes = KindTimes {
     m_ref: 27,
-    dense1: 1.756583e-2,
-    dense2: 2.113696e-2,
-    dense3: 3.630713e-2,
-    diag1: 1.773637e-2,
-    diag_k: 1.772850e-2,
-    cnot: 1.071684e-2,
-    phase_base: 2.331010e-2,
-    phase_term: 6.563838e-4,
+    dense1: 1.755645e-2,
+    dense2: 1.840509e-2,
+    dense3: 3.436177e-2,
+    diag1: 1.774244e-2,
+    diag_k: 1.759981e-2,
+    cnot: 1.080041e-2,
+    phase_base: 2.147593e-2,
+    phase_term: 6.712988e-4,
+    phase_term_multi: 4.776938e-4,
 };
 /// FP32 counterpart (same provenance as [`RTX4000_FP64`], state size 2^28).
 const RTX4000_FP32: KindTimes = KindTimes {
     m_ref: 28,
-    dense1: 1.762976e-2,
-    dense2: 1.767234e-2,
-    dense3: 1.715475e-2,
-    diag1: 1.764512e-2,
-    diag_k: 1.760776e-2,
-    cnot: 1.297517e-2,
-    phase_base: 4.622262e-2,
-    phase_term: 1.289533e-3,
+    dense1: 1.763479e-2,
+    dense2: 1.781169e-2,
+    dense3: 1.797886e-2,
+    diag1: 1.769642e-2,
+    diag_k: 1.771855e-2,
+    cnot: 1.295351e-2,
+    phase_base: 4.623386e-2,
+    phase_term: 1.285620e-3,
+    phase_term_multi: 8.999014e-4,
 };
 
 #[cfg(test)]
@@ -321,11 +342,46 @@ mod tests {
         };
         assert_eq!(
             classify(&dp(vec![t.clone(), t])).unwrap(),
-            KernelKind::PhasePoly { terms: 2 }
+            KernelKind::PhasePoly {
+                single: 2,
+                multi: 0
+            }
         );
         assert_eq!(
             classify(&Instruction::Barrier(smallvec![0, 1])).unwrap(),
             KernelKind::Free
+        );
+    }
+
+    #[test]
+    fn phase_poly_splits_terms_by_cond_count() {
+        let dp = Instruction::DiagonalPhase(Box::new(DiagonalPhase {
+            n_qubits: 3,
+            terms: vec![
+                PhaseTerm {
+                    conds: smallvec![],
+                    angle: 0.1,
+                },
+                PhaseTerm {
+                    conds: smallvec![0b001],
+                    angle: 0.2,
+                },
+                PhaseTerm {
+                    conds: smallvec![0b001, 0b100],
+                    angle: 0.3,
+                },
+                PhaseTerm {
+                    conds: smallvec![0b001, 0b010, 0b100],
+                    angle: 0.4,
+                },
+            ],
+        }));
+        assert_eq!(
+            classify(&dp).unwrap(),
+            KernelKind::PhasePoly {
+                single: 2,
+                multi: 2
+            }
         );
     }
 
@@ -345,6 +401,7 @@ mod tests {
             cnot: 0.25,
             phase_base: 1.0,
             phase_term: 0.1,
+            phase_term_multi: 0.05,
         }
     }
 
@@ -353,7 +410,16 @@ mod tests {
         let t = unit_times();
         assert_eq!(t.seconds(KernelKind::Dense2, 20), 2.0);
         assert_eq!(t.seconds(KernelKind::Dense2, 22), 8.0);
-        assert!((t.seconds(KernelKind::PhasePoly { terms: 10 }, 20) - 2.0).abs() < 1e-12);
+        let ph = KernelKind::PhasePoly {
+            single: 10,
+            multi: 0,
+        };
+        assert!((t.seconds(ph, 20) - 2.0).abs() < 1e-12);
+        let ph = KernelKind::PhasePoly {
+            single: 10,
+            multi: 4,
+        };
+        assert!((t.seconds(ph, 21) - 2.0 * (2.0 + 4.0 * 0.05)).abs() < 1e-12);
         assert_eq!(t.seconds(KernelKind::Free, 25), 0.0);
     }
 

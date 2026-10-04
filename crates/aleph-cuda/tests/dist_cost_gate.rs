@@ -38,8 +38,8 @@ fn best_of(sync: &CudaContext, reps: usize, mut f: impl FnMut()) -> f64 {
     best
 }
 
-/// QAOA Max-Cut p=2 on the 3-regular ring-plus-chords graph: ring
-/// `(i, i+1 mod n)` plus each chord `(i, i + n/2)` once (even `i < n/2`).
+/// QAOA Max-Cut p=2 on a ring plus chords: the ring `(i, i+1 mod n)` plus one
+/// chord `(i, i + n/2)` for each even `i < n/2` (7 chords at n=28; not regular).
 fn qaoa_ring_chords(n: u32) -> Circuit {
     let mut edges: Vec<(u32, u32)> = (0..n).map(|i| (i, (i + 1) % n)).collect();
     edges.extend((0..n / 2).step_by(2).map(|i| (i, i + n / 2)));
@@ -60,6 +60,7 @@ fn only(model: &GpuCostModel, keep: impl Fn(&KindTimes, &mut KindTimes)) -> GpuC
         cnot: 0.0,
         phase_base: 0.0,
         phase_term: 0.0,
+        phase_term_multi: 0.0,
     };
     keep(&k, &mut z);
     GpuCostModel {
@@ -112,6 +113,7 @@ fn model_gate_n28_fp64() {
             only(&model, |k, z| {
                 z.phase_base = k.phase_base;
                 z.phase_term = k.phase_term;
+                z.phase_term_multi = k.phase_term_multi;
             }),
         ),
     ];
