@@ -28,6 +28,13 @@ pred(D) = T_onecard(R=D) / D  +  bytes_moved_per_GPU / link_BW
 - **`link_BW`** is the per-GPU NCCL p2p bandwidth. `dist_nccl_bench` measures it (`xchg,…,GBps=` line). Before the
   run it is assumed (§2).
 
+**`T_onecard` cannot show host serialisation, and one was fixed before AWS.** `DistSvBackend` issues every rank's
+program from one host thread, so devices overlap only if no instruction blocks the host. The phase-polynomial kernel
+(QFT is about one `DiagonalPhase` per H after fusion) used to `synchronize` after launch. That would have made multi-GPU
+QFT run device after device, and the bug cannot show up on one card. The sync is removed: cudarc's buffer drop already
+orders the free after the kernel. `tests/dist_host_overlap.rs` pins this, and the inputs below were re-measured after
+the fix (no change beyond ±2 %).
+
 **A pass-count model was tried first and rejected.** That model was `pred = passes · t_pass + bytes / BW`.
 - A distributed rank issues about 2× the kernel passes of the fused single-GPU circuit (random-28 d=10: 162–188 vs 76).
   Fusion stops at every exchange, the router inserts local swaps, and a 2-local diagonal becomes a dense `Unitary2q`
