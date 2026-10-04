@@ -2,7 +2,7 @@
 
 use aleph_backend::run;
 use aleph_core::{Complex, Gate, GateInstance, Param};
-use aleph_ir::dist::{plan, DistLayout, DistStep, Router};
+use aleph_ir::dist::{plan, plan_from, DistLayout, DistStep, Router};
 use aleph_ir::{Circuit, Instruction};
 use aleph_sv::dist_ref::run_dist;
 use aleph_sv::NaiveSvBackend;
@@ -463,4 +463,26 @@ fn required_qubit_in_top_slot_k2_oracle() {
     c.h(4).unwrap();
     c.rx(0.2, 3).unwrap();
     check(&c, 2, "req-top-k2");
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(64))]
+    #[test]
+    fn prop_any_initial_map_matches(
+        gates in prop::collection::vec(arb_any_gate(6), 1..30),
+        g in 0u32..=2,
+        init in Just((0..6u32).collect::<Vec<u32>>()).prop_shuffle(),
+        router in prop_oneof![Just(Router::Naive), Just(Router::Lookahead)],
+    ) {
+        let mut c = h_layer(6);
+        for gi in gates {
+            c.add_gate(gi).unwrap();
+        }
+        let p = plan_from(&c, DistLayout::new(6, g).unwrap(), router, &init).unwrap();
+        let got = run_dist(&p).unwrap();
+        let want = reference(&c);
+        for (x, y) in got.iter().zip(&want) {
+            prop_assert!((x - y).norm() < TOL);
+        }
+    }
 }

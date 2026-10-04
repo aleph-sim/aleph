@@ -19,7 +19,7 @@ mod next_use;
 mod plan;
 mod specialize;
 
-pub use plan::{plan, required_local};
+pub use plan::{plan, plan_from, required_local};
 pub use specialize::specialize;
 
 /// Largest supported `g`: rank indices are `u32`, so `2^g` ranks must fit.
@@ -88,6 +88,10 @@ pub struct CommStats {
 }
 
 /// A complete distributed execution plan.
+///
+/// Every plan assumes the |0…0⟩ initial state. It is invariant under qubit
+/// permutations, so a plan may start from a non-identity map (see
+/// [`plan_from`]) at no cost.
 #[derive(Debug, Clone)]
 pub struct DistPlan {
     pub layout: DistLayout,
@@ -118,6 +122,8 @@ pub enum DistError {
     Unsupported { kind: &'static str },
     #[error("gate needs {need} local qubits but only m={m} are local")]
     TooFewLocalQubits { need: usize, m: u32 },
+    #[error("initial placement is not a permutation of 0..n")]
+    BadPlacement,
     #[error("non-diagonal target on global qubit {qubit} reached specialize (planner bug)")]
     GlobalTarget { qubit: u32 },
     #[error(transparent)]
