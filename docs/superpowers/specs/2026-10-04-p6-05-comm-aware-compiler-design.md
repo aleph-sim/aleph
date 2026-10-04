@@ -162,8 +162,13 @@ puts these qubits in physical slots `m..n`, and the rest in order in `0..m`.
     - No layer kind: the dist path applies instructions one at a time (`apply_one`), never `apply_1q_multi`.
     - `UnitaryKq` is tested before the diagonal check, so it is always dense; k=4/5 (TF32) is unreachable because
       `fuse_for_gpu` caps fusion at 3.
-    - `PhasePoly` costs `(t_phase_base + t_phase_term · n_terms) · 2^(m − m_ref)`.
+    - `PhasePoly` is priced by term shape: `(t_phase_base + t_phase_term · n_single + t_phase_term_multi · n_multi)
+      · 2^(m − m_ref)`, where single terms have ≤ 1 cond and multi terms are an AND of ≥ 2 conds. A term's cost tracks
+      how often it fires (1/2 vs 1/4 of amplitudes), as measured by a kernel sweep.
   - `local_segment` returns `Result<f64, DistError>` (specialisation can fail; library code must not panic).
+  - *PR 2 correction (calibration):* each launch is timed **interleaved with an `H`** (H-only baseline subtracted),
+    not 32 identical launches back to back, which read 2–10 % slow at the card's power cap. Constants are the mean of
+    two runs.
 - **`exchange(k, m)`:** `(1 − 2^−k) · 2^m · amp_bytes / bw_by_k[k−1]`.
   - `LinkModel::aws_g6_fp64()` = [7.16e9, 4.35e9] B/s. For k > 2 it extrapolates the two-bit value, and the extrapolation
     is documented.
@@ -175,9 +180,9 @@ puts these qubits in physical slots `m..n`, and the rest in order in `0..m`.
 
 ### 6.3 Model accuracy gate (must pass before `compile` lands)
 
-On every workload in §8 at n=28, D∈{2,4}, FP64, the model's compute term `Σ local_segment` for the Lookahead plan must
-be within **±10 %** of measured `T_onecard(R=D)/D`. Measured `T_onecard` includes on-card exchange copies; the gate
-subtracts those, using the measured `LocalExchange` copy time for the plan's exchanges.
+(Superseded below.) On every workload in §8 at n=28, D∈{2,4}, FP64, the model's compute term `Σ local_segment` for the
+Lookahead plan must be within **±10 %** of measured `T_onecard(R=D)/D`. Measured `T_onecard` includes on-card exchange
+copies; the gate subtracts those, using the measured `LocalExchange` copy time for the plan's exchanges.
 
 *PR 2 correction:* one card runs every rank, so the gate compares the model's compute summed over **all ranks**
 (`Σ_steps Σ_r rank_segment(step, r)`) against measured `T_onecard − T_exchange`, not one rank against `T_onecard/D`. The
