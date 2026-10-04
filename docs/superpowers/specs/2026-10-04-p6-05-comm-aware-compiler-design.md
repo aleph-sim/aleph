@@ -147,7 +147,7 @@ puts these qubits in physical slots `m..n`, and the rest in order in `0..m`.
 
 - **`local_segment`:**
   - Specialise the step for the representative rank **R−1** (all global bits 1). There, every global-controlled gate
-    is live, so this is the busiest rank.
+    is live, so this is typically the busiest rank.
   - Run `fuse_for_gpu` on the result.
   - Sum, over the fused instructions, the per-kind time `t_kind(m_ref) · 2^(m − m_ref)`. These passes are
     bandwidth-bound.
@@ -166,6 +166,10 @@ puts these qubits in physical slots `m..n`, and the rest in order in `0..m`.
       · 2^(m − m_ref)`, where single terms have ≤ 1 cond and multi terms are an AND of ≥ 2 conds. A term's cost tracks
       how often it fires (1/2 vs 1/4 of amplitudes), as measured by a kernel sweep.
   - `local_segment` returns `Result<f64, DistError>` (specialisation can fail; library code must not panic).
+  - *PR 2 note (external controls):* a gate with local external controls is priced as a full pass of its target kind,
+    although the kernels skip amplitudes whose control bits are clear. This is a conservative over-estimate; the §6.3
+    gate's Grover cell (K=3) bounds it at model/measured 1.034–1.042. The gate never exercises `DiagK`, so `diag_k` is
+    unvalidated.
   - *PR 2 correction (calibration):* each launch is timed **interleaved with an `H`** (H-only baseline subtracted),
     not 32 identical launches back to back, which read 2–10 % slow at the card's power cap. Constants are the mean of
     two runs.
@@ -193,7 +197,8 @@ copies; the gate subtracts those, using the measured `LocalExchange` copy time f
 (`Σ_steps Σ_r rank_segment(step, r)`) against measured `T_onecard − T_exchange`, not one rank against `T_onecard/D`. The
 exchange copy time is measured by running the same plan with every `Local` step emptied (an exchange-only plan) through
 `DistSvBackend::run_plan`; no timing hook is needed and allocation cancels in the subtraction. The representative-rank
-estimate `compile` uses, `R · cost(R−1)`, is reported alongside but not gated (an upper bound by design). Bench:
+estimate `compile` uses, `R · cost(R−1)`, is reported alongside but not gated (rank R−1 is representative, typically
+the busiest, not a strict bound). Bench:
 `crates/aleph-cuda/tests/dist_cost_gate.rs`.
 
 If the gate fails, the per-kind model is revised and re-checked before going further, and the finding is recorded in
@@ -269,5 +274,6 @@ Three PRs, each with green CI. GPU-specific tests run on the CUDA box.
   lowest-index-first order, and `compile` still has Lookahead as a fallback candidate.
 - **Model error on cheap kinds.** Diagonal and swap launches are latency-dominated at small m. Mitigation: calibrate at
   m_ref near the target m; the §6.3 gate catches any remaining error.
-- **Representative rank.** Ranks other than R−1 skip global-controlled gates and therefore run less. Using R−1 is an
-  upper bound on per-rank compute. Ranks also synchronise at each exchange, so the slowest rank sets the pace anyway.
+- **Representative rank.** Ranks other than R−1 skip global-controlled gates and therefore run less. Using R−1 is
+  representative, typically the busiest rank, but not a strict bound: a parity cond can expand into more terms on
+  another rank. Ranks also synchronise at each exchange, so the slowest rank sets the pace anyway.

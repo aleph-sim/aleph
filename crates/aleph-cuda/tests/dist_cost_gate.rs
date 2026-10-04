@@ -13,7 +13,7 @@ use aleph_cuda::{
 };
 use aleph_ir::dist::{plan, DistLayout, DistPlan, DistStep, Router};
 use aleph_ir::{build_qaoa, Circuit};
-use common::dist::{brickwall_bench, ccz_ladder, ghz, qft};
+use common::dist::{brickwall_bench, ccz_ladder, ghz, grover_iters, qft};
 
 /// The plan with every Local step emptied: exchanges (and allocation) only.
 fn comm_only(p: &DistPlan) -> DistPlan {
@@ -86,9 +86,11 @@ fn all_ranks(model: &GpuCostModel, p: &DistPlan) -> f64 {
 #[ignore]
 fn model_gate_n28_fp64() {
     let Ok(sync) = CudaContext::new(0) else {
+        eprintln!("skipped: no CUDA");
         return;
     };
     let Ok(be) = CudaSvBackend::with_seed(0) else {
+        eprintln!("skipped: no CUDA");
         return;
     };
     let mut d = DistSvBackend::new(be, LocalExchange::new());
@@ -100,6 +102,7 @@ fn model_gate_n28_fp64() {
         ("random d=10", brickwall_bench(n, 10)),
         ("QAOA p=2", qaoa_ring_chords(n)),
         ("CCZ ladder d=4", ccz_ladder(n, 4)),
+        ("Grover K=3", grover_iters(n, 3)),
     ];
     let shares: Vec<(&str, GpuCostModel)> = vec![
         ("dense1", only(&model, |k, z| z.dense1 = k.dense1)),

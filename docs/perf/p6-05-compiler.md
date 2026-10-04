@@ -184,65 +184,82 @@ n=28, FP64, `Router::Lookahead`, all D ranks on one card with `LocalExchange`, b
 - **R·model(R−1)** = the representative-rank estimate `compile` will use (reported, not gated).
 
 Workloads: QFT, GHZ, random = 1D brickwall d=10 (`Rx`/`Rz` layers + alternating nearest-neighbour `CNOT`s), QAOA
-Max-Cut p=2 on a ring `(i, i+1 mod n)` plus 7 chords `(i, i + n/2)` for even `i < n/2` (not a regular graph), and the
-CCZ ladder d=4.
+Max-Cut p=2 on a ring `(i, i+1 mod n)` plus 7 chords `(i, i + n/2)` for even `i < n/2` (not a regular graph), the
+CCZ ladder d=4, and Grover with K=3 iterations (the `gpu_report_bench` construction: oracle and diffusion each use a
+Z on qubit 27 controlled by qubits 0–7; K is fixed small because the gate measures per-launch model accuracy, not the
+algorithm).
 
-Two runs on an idle box (load 0.28 and 0.32, GPU util 0 %, 1339 MiB resident before each). Run 2:
+Before the Grover cell was added, two runs of the first ten cells gave worst 6.7 % and 6.9 % (QFT D=4). The final
+gate below includes Grover. Two runs on an idle box (load 0.23 and 0.43, GPU util 0 %, 1339 MiB resident before
+each). Run 2:
 
 | circuit | D | measured compute (s) | model all-ranks (s) | ratio | R·model(R−1) (s) | ratio |
 |---|---|---|---|---|---|---|
-| QFT | 2 | 2.357 | 2.492 | 1.057 | 2.514 | 1.067 |
-| QFT | 4 | 2.356 | 2.513 | 1.067 | 2.523 | 1.071 |
-| GHZ | 2 | 0.926 | 0.911 | 0.984 | 0.929 | 1.003 |
-| GHZ | 4 | 0.883 | 0.879 | 0.996 | 0.890 | 1.008 |
-| random d=10 | 2 | 7.054 | 6.775 | 0.960 | 6.775 | 0.960 |
-| random d=10 | 4 | 8.167 | 7.815 | 0.957 | 7.990 | 0.978 |
-| QAOA p=2 | 2 | 3.292 | 3.262 | 0.991 | 3.330 | 1.012 |
-| QAOA p=2 | 4 | 3.322 | 3.295 | 0.992 | 3.346 | 1.007 |
+| QFT | 2 | 2.359 | 2.492 | 1.056 | 2.514 | 1.065 |
+| QFT | 4 | 2.359 | 2.513 | 1.065 | 2.523 | 1.070 |
+| GHZ | 2 | 0.927 | 0.911 | 0.983 | 0.929 | 1.002 |
+| GHZ | 4 | 0.882 | 0.879 | 0.996 | 0.890 | 1.009 |
+| random d=10 | 2 | 7.055 | 6.775 | 0.960 | 6.775 | 0.960 |
+| random d=10 | 4 | 8.144 | 7.815 | 0.960 | 7.990 | 0.981 |
+| QAOA p=2 | 2 | 3.288 | 3.262 | 0.992 | 3.330 | 1.013 |
+| QAOA p=2 | 4 | 3.323 | 3.295 | 0.991 | 3.346 | 1.007 |
 | CCZ ladder d=4 | 2 | 1.060 | 1.062 | 1.002 | 1.062 | 1.002 |
-| CCZ ladder d=4 | 4 | 1.057 | 1.060 | 1.003 | 1.060 | 1.003 |
+| CCZ ladder d=4 | 4 | 1.055 | 1.060 | 1.004 | 1.060 | 1.004 |
+| Grover K=3 | 2 | 6.741 | 6.969 | 1.034 | 6.969 | 1.034 |
+| Grover K=3 | 4 | 6.540 | 6.808 | 1.041 | 6.808 | 1.041 |
 
-Run 1's all-ranks ratios (D=2 / D=4): QFT 1.059 / 1.069, GHZ 0.988 / 1.003, random 0.964 / 0.961, QAOA 0.992 / 0.992,
-CCZ ladder 1.007 / 1.002.
+Run 1's all-ranks ratios (D=2 / D=4): QFT 1.074 / 1.081, GHZ 1.013 / 1.025, random 0.980 / 0.976, QAOA 0.997 / 0.999,
+CCZ ladder 1.010 / 1.005, Grover 1.035 / 1.042. Run 1 measured 0.1–3.0 % less compute than run 2 on every cell
+(e.g. QFT D=2 2.319 vs 2.359 s, GHZ D=2 0.899 vs 0.927 s), so its ratios sit higher.
 
-Worst |model/measured − 1| = **6.7 %** (run 2), **6.9 %** (run 1), both on QFT D=4.
+Worst |model/measured − 1| = **6.5 %** (run 2), **8.1 %** (run 1), both on QFT D=4.
 
-**Gate PASSED** in both runs: every cell is within ±6.9 % (ratios 0.957–1.069 over both runs).
+**Gate PASSED** in both runs: every cell is within ±8.1 % (ratios 0.960–1.081 over both runs).
 
 Model all-ranks compute by kind (s; the model is deterministic, so both runs agree):
 
 | circuit | D | dense1 | dense2 | dense3 | diag1 | cnot | phase | exchange-only plan (s, run 2) |
 |---|---|---|---|---|---|---|---|---|
 | QFT | 2 | 0.983 | 0.043 | 0 | 0.018 | 0 | 1.448 | 0.070 |
-| QFT | 4 | 0.983 | 0.087 | 0 | 0.044 | 0 | 1.398 | 0.097 |
+| QFT | 4 | 0.983 | 0.087 | 0 | 0.044 | 0 | 1.398 | 0.096 |
 | GHZ | 2 | 0.018 | 0 | 0.893 | 0 | 0 | 0 | 0.043 |
 | GHZ | 4 | 0 | 0.022 | 0.825 | 0 | 0.032 | 0 | 0.056 |
 | random d=10 | 2 | 1.299 | 4.685 | 0.619 | 0 | 0.173 | 0 | 0.285 |
 | random d=10 | 4 | 2.317 | 4.641 | 0.619 | 0 | 0.238 | 0 | 0.457 |
-| QAOA p=2 | 2 | 2.879 | 0.043 | 0 | 0.071 | 0 | 0.268 | 0.150 |
+| QAOA p=2 | 2 | 2.879 | 0.043 | 0 | 0.071 | 0 | 0.268 | 0.151 |
 | QAOA p=2 | 4 | 2.669 | 0.304 | 0 | 0.053 | 0 | 0.269 | 0.217 |
 | CCZ ladder d=4 | 2 | 0.983 | 0 | 0 | 0 | 0 | 0.079 | 0.043 |
 | CCZ ladder d=4 | 4 | 0.983 | 0 | 0 | 0 | 0 | 0.077 | 0.056 |
+| Grover K=3 | 2 | 6.496 | 0.260 | 0 | 0.213 | 0 | 0 | 0.204 |
+| Grover K=3 | 4 | 6.075 | 0.521 | 0 | 0.213 | 0 | 0 | 0.296 |
 
-`diag_k` is 0 on every cell and is omitted.
+`diag_k` is 0 on every cell and is omitted: **the gate never exercises `DiagK`** (the CCZ ladder's diagonals fuse into
+the phase polynomial), so the `diag_k` constant is unvalidated.
 
 ### 2.6 Reading
 
-- **Errors ranked (run 2, |model/measured − 1|):** QFT D=4 6.7 %, QFT D=2 5.7 %, random D=4 4.3 %, random D=2
-  4.0 %, GHZ D=2 1.6 %, QAOA D=2 0.9 %, QAOA D=4 0.8 %, GHZ D=4 0.4 %, CCZ D=4 0.3 %, CCZ D=2 0.2 %. Run 1 has the
-  same top four (QFT 6.9 % / 5.9 %, random 3.9 % / 3.6 % at D=4 / D=2).
-- **QFT is the worst cell, over-predicted by 5.7–6.9 %.** It is the phase-dominated workload (phase 1.448 of 2.492 s
-  at D=2, 58 %). No cell is within 3 points of the ±10 % edge.
-- **Random d=10 is under-predicted by 3.6–4.3 %.** `dense2` is 4.685 of 6.775 s (69 %) at D=2 and 4.641 of 7.815 s
-  (59 %) at D=4. The remaining gap is 0.251–0.352 s over both runs. The diagnosis' Dense3 estimate (≈ +0.15 s)
-  accounts for part of it; the rest is not isolated.
-- **GHZ holds with the uniform-state Dense3** (0.984–1.003; `dense3` 0.893 of 0.911 s at D=2).
+- **Errors ranked (run 2, |model/measured − 1|):** QFT D=4 6.5 %, QFT D=2 5.6 %, Grover D=4 4.1 %, random D=2 4.0 %,
+  random D=4 4.0 %, Grover D=2 3.4 %, GHZ D=2 1.7 %, QAOA D=4 0.9 %, QAOA D=2 0.8 %, GHZ D=4 0.4 %, CCZ D=4 0.4 %,
+  CCZ D=2 0.2 %. In run 1 the order is QFT D=4 8.1 %, QFT D=2 7.4 %, Grover D=4 4.2 %, Grover D=2 3.5 %, GHZ D=4
+  2.5 %, random D=4 2.4 %, random D=2 2.0 %, then the rest ≤ 1.3 %.
+- **QFT is the worst cell, over-predicted by 5.6–8.1 %.** It is the phase-dominated workload (phase 1.448 of 2.492 s
+  at D=2, 58 %). Run 1's 8.1 % is the closest any cell came to the ±10 % edge.
+- **Random d=10 is under-predicted by 2.0–4.0 %.** `dense2` is 4.685 of 6.775 s (69 %) at D=2 and 4.641 of 7.815 s
+  (59 %) at D=4. The diagnosis' Dense3 state estimate (≈ +0.15 s) accounts for part of the gap; the rest is not
+  isolated.
+- **Grover: external controls are priced as a full pass.** The model prices a gate with local external controls by
+  its target kind over the whole slice, although the kernels skip amplitudes whose control bits are clear. Grover's
+  controlled-Z launches are the 0.213 s `diag1` column (3 % of its model); the cell is dominated by `dense1` (6.496 of
+  6.969 s at D=2, 93 %). It is over-predicted by 3.4–4.2 %, which bounds this conservative over-estimate on this
+  workload.
+- **GHZ holds with the uniform-state Dense3** (0.983–1.025; `dense3` 0.893 of 0.911 s at D=2).
 - **QAOA** (`dense1`, 2.879 of 3.262 s at D=2) is within 0.9 %; the **CCZ ladder** (`dense1`, 0.983 of ~1.06 s) within
-  0.7 %.
+  1.0 %.
 - **The representative-rank estimate over-predicts the all-ranks model by 0–2.2 %.** `R·model(R−1)` / model all-ranks
-  is 1.000 (random D=2, CCZ both D) up to 1.022 (random D=4: 7.990 vs 7.815 s). Against measured compute it lands at
-  0.960–1.071 (run 2).
+  is 1.000 (random D=2, CCZ both D, Grover both D) up to 1.022 (random D=4: 7.990 vs 7.815 s). Against measured
+  compute it lands at 0.960–1.070 (run 2). Rank R−1 is representative (typically the busiest), not a strict bound.
 - The exchange-only plan costs 0.043–0.457 s (run 2) on one card. That is on-card copy time, not interconnect time.
 - Limit: the constants are per-kind, but at the 70 W cap FP64 cost also depends on the state (§2.4). The gate passes
-  on these five workloads; a workload whose state entropy differs from what its dominant kind was calibrated on can
-  miss by up to the measured state factor (×1.2 for Dense2, ×1.12 for Dense3).
+  on these six workloads; a workload whose state entropy differs from what its dominant kind was calibrated on can
+  miss by up to the measured state factor (×1.2 for Dense2, ×1.12 for Dense3). The model is valid near `m_ref`; it
+  has no launch-latency floor, so small-m costs are not meaningful.

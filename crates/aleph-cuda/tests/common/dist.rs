@@ -152,3 +152,34 @@ pub fn ccz_ladder(n: u32, depth: usize) -> Circuit {
     }
     c
 }
+
+/// Grover on `n` qubits, the construction of `gpu_report_bench.rs`: H layer,
+/// then `iters` × (oracle multi-controlled Z, diffusion H·X·MCZ·X·H). The MCZ
+/// targets `n − 1` with controls `0..min(n−1, 8)` (the IR caps controls at 8).
+/// Cost-model gates use a small fixed `iters` (e.g. 3): they measure model
+/// accuracy per launch, not the algorithm, and π/4·√2^n iterations would run
+/// for hours at n=28.
+pub fn grover_iters(n: u32, iters: u32) -> Circuit {
+    let mut c = Circuit::new(n, 0);
+    for q in 0..n {
+        c.h(q).unwrap();
+    }
+    let mcz = |c: &mut Circuit| {
+        let ctrls: Vec<u32> = (0..(n - 1).min(8)).collect();
+        c.add_gate(GateInstance::controlled(Gate::Z, vec![n - 1], ctrls))
+            .unwrap();
+    };
+    for _ in 0..iters {
+        mcz(&mut c);
+        for q in 0..n {
+            c.h(q).unwrap();
+            c.x(q).unwrap();
+        }
+        mcz(&mut c);
+        for q in 0..n {
+            c.x(q).unwrap();
+            c.h(q).unwrap();
+        }
+    }
+    c
+}
