@@ -337,7 +337,7 @@ impl CudaSvBackend {
     /// (`angles` / `conds` / `offsets`), uploads them, launches `apply_phase_poly`
     /// over all `2^n` amplitudes, then synchronises so the per-call upload buffers
     /// outlive the kernel. `DiagonalPhase` instructions are rare (one per fused
-    /// cphase ladder), so the upload + sync is amortised over the whole sweep.
+    /// cphase ladder), so the upload is amortised over the whole sweep.
     fn launch_phase_poly(&self, state: &mut CudaSvState, dp: &DiagonalPhase) -> Result<(), Error> {
         let n_terms = dp.terms.len();
         if n_terms == 0 {
@@ -384,9 +384,10 @@ impl CudaSvBackend {
                 .arg(&n_amps)
                 .launch(cfg)?;
         }
-        // Block until the kernel finishes so the upload buffers (dropped at end of
-        // scope) are not freed out from under it.
-        self.ctx.synchronize()?;
+        // No host sync: the upload buffers are freed by cudarc's `CudaSlice`
+        // drop, which is stream-ordered (`cuMemFreeAsync` after the kernel, or
+        // a stream sync + free without async alloc). Blocking here serialised
+        // multi-GPU `DistSvBackend` runs (one DiagonalPhase per QFT H).
         Ok(())
     }
 

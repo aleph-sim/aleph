@@ -679,8 +679,10 @@ impl CudaSvBackendF32 {
                 .arg(&n_amps)
                 .launch(cfg)?;
         }
-        // Block so the upload buffers (dropped at scope end) outlive the kernel.
-        self.ctx.synchronize()?;
+        // No host sync: the upload buffers are freed by cudarc's `CudaSlice`
+        // drop, which is stream-ordered (`cuMemFreeAsync` after the kernel, or
+        // a stream sync + free without async alloc). Blocking here serialised
+        // multi-GPU `DistSvBackend` runs (one DiagonalPhase per QFT H).
         Ok(())
     }
 
