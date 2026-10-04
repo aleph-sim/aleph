@@ -5,6 +5,8 @@
 use aleph_core::Complex;
 use aleph_cuda::{CudaSvBackend, CudaSvBackendF32, DeviceSv};
 
+mod common;
+
 fn gpu64() -> Option<CudaSvBackend> {
     match CudaSvBackend::with_seed(0) {
         Ok(b) => Some(b),
@@ -112,7 +114,8 @@ fn local_exchange_matches_cpu_reference() {
                 aleph_sv::dist_ref::exchange_cpu(&mut want, l, &bits);
                 let mut ranks: Vec<_> = host.iter().map(|v| be.upload(m, v).unwrap()).collect();
                 let mut x = LocalExchange::<CudaSvBackend>::with_scratch_amps(scratch);
-                x.exchange(&mut be, &mut ranks, l, &bits).unwrap();
+                x.exchange(std::slice::from_mut(&mut be), &mut ranks, l, &bits)
+                    .unwrap();
                 for (r, st) in ranks.iter().enumerate() {
                     let got = be.download(st).unwrap();
                     assert_eq!(
@@ -126,121 +129,9 @@ fn local_exchange_matches_cpu_reference() {
 }
 
 use aleph_backend::run;
-use aleph_core::{Gate, GateInstance, Param};
 use aleph_cuda::DistSvBackend;
 use aleph_ir::dist::Router;
-use aleph_ir::{Circuit, Instruction};
-use aleph_sv::NaiveSvBackend;
-
-fn reference(c: &Circuit) -> Vec<Complex<f64>> {
-    let mut b = NaiveSvBackend::with_seed(0);
-    run(&mut b, c).unwrap().amplitudes().to_vec()
-}
-
-fn ghz(n: u32) -> Circuit {
-    let mut c = Circuit::new(n, 0);
-    c.h(0).unwrap();
-    for q in 0..n - 1 {
-        c.cnot(q, q + 1).unwrap();
-    }
-    c
-}
-
-fn qft(n: u32) -> Circuit {
-    let mut c = Circuit::new(n, 0);
-    for j in (0..n).rev() {
-        c.h(j).unwrap();
-        for k in (0..j).rev() {
-            let th = std::f64::consts::PI / f64::from(1u32 << (j - k));
-            c.add_gate(GateInstance::controlled(
-                Gate::Phase(Param::Concrete(th)),
-                vec![j],
-                vec![k],
-            ))
-            .unwrap();
-        }
-    }
-    for q in 0..n / 2 {
-        c.swap(q, n - 1 - q).unwrap();
-    }
-    c
-}
-
-fn brickwall(n: u32, depth: usize) -> Circuit {
-    let mut c = Circuit::new(n, 0);
-    for d in 0..depth {
-        for q in 0..n {
-            c.rx(0.3 + 0.17 * f64::from(q), q).unwrap();
-            c.rz(0.7 * d as f64 + 0.05 * f64::from(q), q).unwrap();
-        }
-        let mut q = (d % 2) as u32;
-        while q + 1 < n {
-            c.cnot(q, q + 1).unwrap();
-            q += 2;
-        }
-    }
-    c
-}
-
-fn grover8() -> Circuit {
-    let src = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../scripts/qiskit-baseline/circuits/grover_n8_iters13.qasm"
-    ))
-    .unwrap();
-    let parsed = aleph_parser::parse(&src).unwrap();
-    let mut c = Circuit::new(parsed.num_qubits(), 0);
-    for i in parsed.instructions() {
-        if let Instruction::Gate(g) = i {
-            c.add_gate(g.clone()).unwrap();
-        }
-    }
-    c
-}
-
-fn all_diag_on_globals(n: u32) -> Circuit {
-    let mut c = Circuit::new(n, 0);
-    for q in 0..n {
-        c.h(q).unwrap();
-    }
-    let top = n - 1;
-    c.rz(0.9, top).unwrap();
-    c.add_gate(GateInstance::new(Gate::Cz, vec![top - 1, top]))
-        .unwrap();
-    c.add_gate(GateInstance::new(
-        Gate::CRz(Param::Concrete(1.1)),
-        vec![0, top],
-    ))
-    .unwrap();
-    c.add_gate(GateInstance::new(Gate::Ccz, vec![top - 1, 1, top]))
-        .unwrap();
-    c.add_gate(GateInstance::controlled(Gate::T, vec![2u32], vec![top]))
-        .unwrap();
-    c.add_gate(GateInstance::new(Gate::Toffoli, vec![top, top - 1, 0]))
-        .unwrap();
-    // Externally controlled diagonals touching globals: at g >= 1 the first
-    // specialises to a `Unitary1qDiag` on q1 *with* local control q0; at g >= 2
-    // the second leaves only a scalar phase gated on local control q0.
-    c.add_gate(GateInstance::controlled(Gate::Cz, vec![1, top], vec![0]))
-        .unwrap();
-    c.add_gate(GateInstance::controlled(
-        Gate::Cz,
-        vec![top - 1, top],
-        vec![0],
-    ))
-    .unwrap();
-    c
-}
-
-fn cases() -> Vec<(&'static str, Circuit)> {
-    vec![
-        ("ghz10", ghz(10)),
-        ("qft10", qft(10)),
-        ("brick10", brickwall(10, 6)),
-        ("grover8", grover8()),
-        ("diag10", all_diag_on_globals(10)),
-    ]
-}
+use common::dist::*;
 
 #[test]
 fn dist_f64_matches_oracle_all_layouts_routers_fusion() {
@@ -335,9 +226,16 @@ fn local_exchange_rejects_duplicate_bits() {
         .map(|v| be.upload(m, v).unwrap())
         .collect();
     let mut x = LocalExchange::<CudaSvBackend>::new();
-    assert!(x.exchange(&mut be, &mut ranks, l, &[m, m]).is_err());
     assert!(x
-        .exchange(&mut be, &mut ranks, l, &[m + 1, m, m + 1])
+        .exchange(std::slice::from_mut(&mut be), &mut ranks, l, &[m, m])
+        .is_err());
+    assert!(x
+        .exchange(
+            std::slice::from_mut(&mut be),
+            &mut ranks,
+            l,
+            &[m + 1, m, m + 1]
+        )
         .is_err());
 }
 
@@ -378,4 +276,80 @@ fn device_sv_branch_norms_and_views() {
     let s32 = be32.upload(4, &amps).unwrap();
     let (t32, b32) = be32.branch_norms(&s32, 4).unwrap();
     assert!((t32 - tot).abs() < 1e-3 && (b32 - p1).abs() < 1e-3);
+}
+
+/// D backends that all live on GPU 0: exercises rank placement and per-device
+/// scratch on one card (LocalExchange pairs by *ordinal*, so cross-"device"
+/// pairs on the same GPU are plain D2D copies).
+fn same_gpu_devs(d: usize) -> Option<Vec<CudaSvBackend>> {
+    (0..d).map(|_| CudaSvBackend::on_device(0).ok()).collect()
+}
+
+#[test]
+fn multi_backend_same_gpu_matches_oracle() {
+    for d in [2usize, 4] {
+        let Some(devs) = same_gpu_devs(d) else { return };
+        let mut db = DistSvBackend::multi(devs, LocalExchange::with_scratch_amps(8)).unwrap();
+        assert_eq!(db.devices(), d);
+        for (name, c) in cases() {
+            let want = reference(&c);
+            for g in d.trailing_zeros()..=3u32 {
+                for router in [Router::Naive, Router::Lookahead] {
+                    let st = db.run(&c, g, router).unwrap();
+                    let got = db.amplitudes(&st).unwrap();
+                    for (i, (x, y)) in got.iter().zip(&want).enumerate() {
+                        assert!(
+                            (x - y).norm() < 1e-10,
+                            "{name} D={d} g={g} {router:?} amp {i}"
+                        );
+                    }
+                    assert!((db.norm_sqr(&st).unwrap() - 1.0).abs() < 1e-10);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn multi_rejects_bad_device_counts() {
+    let Some(devs) = same_gpu_devs(3) else { return };
+    assert!(DistSvBackend::multi(devs, LocalExchange::new()).is_err()); // D = 3
+    assert!(DistSvBackend::<CudaSvBackend, _>::multi(vec![], LocalExchange::new()).is_err());
+    let Some(devs) = same_gpu_devs(4) else { return };
+    let mut db = DistSvBackend::multi(devs, LocalExchange::new()).unwrap();
+    assert!(db.run(&ghz(8), 1, Router::Lookahead).is_err()); // R = 2 < D = 4
+}
+
+#[test]
+fn prob_one_matches_reference_for_every_qubit() {
+    let Some(be) = gpu64() else { return };
+    let mut db = DistSvBackend::new(be, LocalExchange::with_scratch_amps(8));
+    for (name, c) in [("qft10", qft(10)), ("brick10", brickwall(10, 6))] {
+        let want = reference(&c);
+        for g in [0u32, 2] {
+            let st = db.run(&c, g, Router::Lookahead).unwrap();
+            for q in 0..c.num_qubits() {
+                let p: f64 = want
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| (i >> q) & 1 == 1)
+                    .map(|(_, a)| a.norm_sqr())
+                    .sum();
+                let got = db.prob_one(&st, q).unwrap();
+                assert!((got - p).abs() < 1e-10, "{name} g={g} q={q}: {got} vs {p}");
+            }
+            assert!(db.prob_one(&st, c.num_qubits()).is_err());
+        }
+    }
+}
+
+#[test]
+fn run_plan_rejects_bad_final_map() {
+    let Some(be) = gpu64() else { return };
+    let mut db = DistSvBackend::new(be, LocalExchange::new());
+    let c = ghz(6);
+    let l = DistLayout::new(6, 1).unwrap();
+    let mut p = aleph_ir::dist::plan(&c, l, Router::Naive).unwrap();
+    p.final_map[0] = p.final_map[1]; // not a permutation
+    assert!(db.run_plan(&p).is_err());
 }

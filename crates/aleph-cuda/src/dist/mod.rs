@@ -3,8 +3,10 @@
 //! Executes an `aleph_ir::dist::DistPlan`: `2^g` rank slices of `2^m`
 //! amplitudes, local steps through the existing kernels (rank-specialised,
 //! optionally fused per rank), exchanges through an [`Exchange`]
-//! implementation. [`LocalExchange`] keeps every rank on one device (the
-//! single-card development path); NCCL across devices is P6-01b.
+//! implementation. Ranks sit on one or more devices in contiguous blocks
+//! (P6-01b). [`LocalExchange`] handles every pair whose two devices share a
+//! GPU (the single-card path); `NcclExchange` (feature `nccl`) moves chunks
+//! between GPUs.
 
 use aleph_backend::{Backend, BackendError};
 use std::sync::Arc;
@@ -15,6 +17,7 @@ use cudarc::driver::{CudaStream, CudaView, CudaViewMut, DeviceRepr};
 mod device_sv;
 mod exchange;
 
+use exchange::rank_device;
 pub use exchange::{Exchange, LocalExchange};
 
 /// What the distributed layer needs from a single-device SV backend beyond
@@ -83,17 +86,43 @@ pub struct DistSvState<B: DeviceSv> {
     ranks: Vec<B::State>,
 }
 
-/// Executes `DistPlan`s on `B` (one device) with exchange transport `X`.
+/// Executes `DistPlan`s on one or more `B` devices with exchange transport `X`.
 pub struct DistSvBackend<B: DeviceSv, X: Exchange<B>> {
-    be: B,
+    devs: Vec<B>,
     x: X,
     fuse: bool,
 }
 
 impl<B: DeviceSv, X: Exchange<B>> DistSvBackend<B, X> {
-    /// Per-rank fusion on (`fuse_for_gpu`).
+    /// One device; per-rank fusion on (`fuse_for_gpu`).
     pub fn new(be: B, x: X) -> Self {
-        Self { be, x, fuse: true }
+        Self {
+            devs: vec![be],
+            x,
+            fuse: true,
+        }
+    }
+
+    /// One backend per device. Ranks go to devices in contiguous blocks
+    /// (rank r → device r / (R/D)), so the top log2(D) rank bits name the
+    /// device and an exchange on lower global bits stays on-device.
+    pub fn multi(devs: Vec<B>, x: X) -> Result<Self, DistSvError> {
+        if devs.is_empty() || !devs.len().is_power_of_two() {
+            return Err(BackendError::InvalidState {
+                reason: "dist: device count must be a power of two >= 1",
+            }
+            .into());
+        }
+        Ok(Self {
+            devs,
+            x,
+            fuse: true,
+        })
+    }
+
+    /// Number of devices.
+    pub fn devices(&self) -> usize {
+        self.devs.len()
     }
 
     /// Toggle per-rank fusion (off = apply specialised gates one by one).
@@ -117,23 +146,35 @@ impl<B: DeviceSv, X: Exchange<B>> DistSvBackend<B, X> {
     /// Execute a plan from |0…0⟩.
     pub fn run_plan(&mut self, p: &DistPlan) -> Result<DistSvState<B>, DistSvError> {
         let l = p.layout;
-        let m = l.m();
-        let mut ranks = Vec::with_capacity(l.ranks() as usize);
-        for r in 0..l.ranks() {
-            ranks.push(self.be.alloc_rank(m, r)?);
+        let (m, nr, nd) = (l.m(), l.ranks(), self.devs.len());
+        if nd as u64 > u64::from(nr) {
+            return Err(BackendError::InvalidState {
+                reason: "dist: more devices than ranks",
+            }
+            .into());
         }
+        check_final_map(&p.final_map, l.n)?;
+        let mut ranks = Vec::with_capacity(nr as usize);
+        for r in 0..nr {
+            ranks.push(self.devs[rank_device(r, nr, nd)].alloc_rank(m, r)?);
+        }
+        // Launches are asynchronous on each device's stream, so this serial
+        // host loop still overlaps devices; exchanges are ordered on the same
+        // streams, so no host barrier is needed between steps.
         for step in &p.steps {
             match step {
                 DistStep::Local(instrs) => {
                     for (r, st) in ranks.iter_mut().enumerate() {
                         let local = self.rank_program(instrs, l, r as u32)?;
+                        let be = &mut self.devs[rank_device(r as u32, nr, nd)];
                         for i in local.instructions() {
-                            apply_one(&mut self.be, st, i)?;
+                            apply_one(be, st, i)?;
                         }
                     }
                 }
                 DistStep::Exchange { global_bits } => {
-                    self.x.exchange(&mut self.be, &mut ranks, l, global_bits)?;
+                    self.x
+                        .exchange(&mut self.devs, &mut ranks, l, global_bits)?;
                 }
             }
         }
@@ -174,8 +215,9 @@ impl<B: DeviceSv, X: Exchange<B>> DistSvBackend<B, X> {
         let m = st.layout.m();
         let size = 1usize << m;
         let mut phys: Vec<Complex<f64>> = Vec::with_capacity(size << st.layout.g);
-        for r in &st.ranks {
-            phys.extend(self.be.download(r)?);
+        let (nr, nd) = (st.layout.ranks(), self.devs.len());
+        for (r, rs) in st.ranks.iter().enumerate() {
+            phys.extend(self.devs[rank_device(r as u32, nr, nd)].download(rs)?);
         }
         let mut out = vec![Complex::new(0.0, 0.0); phys.len()];
         for (x, slot) in out.iter_mut().enumerate() {
@@ -188,19 +230,68 @@ impl<B: DeviceSv, X: Exchange<B>> DistSvBackend<B, X> {
         Ok(out)
     }
 
-    /// Σ|a|² over all ranks (host reduction of per-rank downloads).
+    /// Σ|a|²: per-rank device reduction, host sum of R scalars (spec §3.4).
     pub fn norm_sqr(&mut self, st: &DistSvState<B>) -> Result<f64, DistSvError> {
+        let (nr, nd) = (st.layout.ranks(), self.devs.len());
         let mut s = 0.0;
-        for r in &st.ranks {
-            s += self
-                .be
-                .download(r)?
-                .iter()
-                .map(|a| a.norm_sqr())
-                .sum::<f64>();
+        for (r, rs) in st.ranks.iter().enumerate() {
+            s += self.devs[rank_device(r as u32, nr, nd)]
+                .branch_norms(rs, 0)?
+                .0;
         }
         Ok(s)
     }
+
+    /// P(logical qubit `q` = 1). At physical position `final_map[q]`, a local
+    /// bit is a per-rank masked reduction; a global bit sums whole ranks with
+    /// that rank bit set.
+    pub fn prob_one(&mut self, st: &DistSvState<B>, q: u32) -> Result<f64, DistSvError> {
+        let Some(&p) = st.final_map.get(q as usize) else {
+            return Err(BackendError::QubitOutOfRange {
+                qubit: q,
+                num_qubits: st.layout.n,
+            }
+            .into());
+        };
+        let (m, nr, nd) = (st.layout.m(), st.layout.ranks(), self.devs.len());
+        let mut s = 0.0;
+        for (r, rs) in st.ranks.iter().enumerate() {
+            let be = &mut self.devs[rank_device(r as u32, nr, nd)];
+            if p < m {
+                s += be.branch_norms(rs, 1u64 << p)?.1;
+            } else if (r as u32 >> (p - m)) & 1 == 1 {
+                s += be.branch_norms(rs, 0)?.0;
+            }
+        }
+        Ok(s)
+    }
+}
+
+/// `final_map` must be a permutation of 0..n (a corrupt plan would read the
+/// wrong amplitudes or index out of bounds).
+fn check_final_map(map: &[u32], n: u32) -> Result<(), DistSvError> {
+    if map.len() != n as usize {
+        return Err(BackendError::InvalidState {
+            reason: "dist: final_map length != n",
+        }
+        .into());
+    }
+    let mut seen = vec![false; n as usize];
+    for &p in map {
+        let Some(s) = seen.get_mut(p as usize) else {
+            return Err(BackendError::InvalidState {
+                reason: "dist: final_map out of range",
+            }
+            .into());
+        };
+        if std::mem::replace(s, true) {
+            return Err(BackendError::InvalidState {
+                reason: "dist: final_map not a permutation",
+            }
+            .into());
+        }
+    }
+    Ok(())
 }
 
 fn apply_one<B: DeviceSv>(
