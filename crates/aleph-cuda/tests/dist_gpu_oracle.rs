@@ -353,3 +353,12 @@ fn run_plan_rejects_bad_final_map() {
     p.final_map[0] = p.final_map[1]; // not a permutation
     assert!(db.run_plan(&p).is_err());
 }
+
+#[test]
+fn rank_pass_count_counts_rank_zero_instructions() {
+    let Some(be) = gpu64() else { return };
+    let db = DistSvBackend::new(be, LocalExchange::new()).with_fusion(false);
+    let c = ghz(6); // H + 5 CNOT, all local at g = 0
+    let p = aleph_ir::dist::plan(&c, DistLayout::new(6, 0).unwrap(), Router::Naive).unwrap();
+    assert_eq!(db.rank_pass_count(&p).unwrap(), 6);
+}

@@ -191,6 +191,19 @@ impl<B: DeviceSv, X: Exchange<B>> DistSvBackend<B, X> {
         })
     }
 
+    /// Kernel launches rank 0 issues over the whole plan (after specialise +
+    /// fusion): the "passes" term of the P6 time model. Bench support.
+    #[doc(hidden)]
+    pub fn rank_pass_count(&self, p: &DistPlan) -> Result<usize, DistSvError> {
+        let mut n = 0;
+        for step in &p.steps {
+            if let DistStep::Local(instrs) = step {
+                n += self.rank_program(instrs, p.layout, 0)?.instructions().len();
+            }
+        }
+        Ok(n)
+    }
+
     /// Rank `r`'s `m`-qubit program for one `Local` step: specialised, then
     /// (optionally) fused — fusion runs *after* `specialize` so it never sees
     /// a global qubit (spec §3.1).
