@@ -66,6 +66,18 @@ fn median_of<T, F: FnMut() -> T>(ctxs: &[CudaContext], reps: usize, mut f: F) ->
     ts[reps / 2]
 }
 
+/// Wall time of one run, no warm-up: for the paged baseline, where one run is
+/// most of an hour and the JIT/pool warm-up is noise (`median_of` would
+/// double it; it did on AWS).
+fn once<T, F: FnOnce() -> T>(ctxs: &[CudaContext], f: F) -> f64 {
+    let t = Instant::now();
+    let out = f();
+    sync_all(ctxs);
+    let s = t.elapsed().as_secs_f64();
+    drop(out);
+    s
+}
+
 /// Bandwidth (GB/s, bytes moved per GPU / time) of one single-bit exchange of
 /// 2^m-amplitude slices, one rank per device (D=1: two ranks, NCCL self-send).
 fn xchg_bw<B: DeviceSv>(devs: &mut Vec<B>, ctxs: &[CudaContext], m: u32, amp_bytes: usize) -> f64
@@ -250,12 +262,12 @@ fn weak_paged_baseline() {
         let n = 30 + g;
         let c = brickwall(n, 10);
         let mut be = CudaSvBackend::with_seed(0).unwrap();
-        let t = median_of(&ctx, 1, || be.run_paged(&c, 28).unwrap());
+        let t = once(&ctx, || be.run_paged(&c, 28).unwrap());
         println!("weak_paged,FP64,{n},28,{t:.3}");
         let n = 31 + g;
         let c = brickwall(n, 10);
         let mut be = CudaSvBackendF32::with_seed(0).unwrap();
-        let t = median_of(&ctx, 1, || be.run_paged(&c, 29).unwrap());
+        let t = once(&ctx, || be.run_paged(&c, 29).unwrap());
         println!("weak_paged,FP32,{n},29,{t:.3}");
     }
 }
