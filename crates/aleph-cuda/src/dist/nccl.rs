@@ -12,7 +12,7 @@ use std::marker::PhantomData;
 
 use aleph_backend::BackendError;
 use aleph_ir::dist::DistLayout;
-use cudarc::driver::CudaViewMut;
+use cudarc::driver::{CudaViewMut, DriverError};
 use cudarc::nccl::result::NcclError;
 use cudarc::nccl::safe::{group_end, group_start, Comm, NcclType};
 
@@ -24,6 +24,23 @@ fn nccl_err(_e: NcclError) -> BackendError {
     BackendError::InvalidState {
         reason: "nccl: communication failure",
     }
+}
+
+fn sync_err(_e: DriverError) -> BackendError {
+    BackendError::InvalidState {
+        reason: "nccl: stream synchronize during an exchange failed",
+    }
+}
+
+/// NCCL rounds `exchange` may queue before draining (see the deadlock note
+/// there). Each round is a few launches per device, far below the push buffer.
+const SYNC_WINDOW_ROUNDS: usize = 16;
+
+fn sync_devices<B: DeviceSv>(devs: &[B]) -> Result<(), BackendError> {
+    for d in devs {
+        d.stream().synchronize().map_err(sync_err)?;
+    }
+    Ok(())
 }
 
 fn scratch_missing() -> BackendError {
@@ -192,6 +209,7 @@ where
         // sources are rank slices and recv targets are scratch slots the
         // scheduler hands out disjointly, so nothing in a group is both read
         // and written.
+        let mut pending = 0usize;
         for round in schedule(&nccl_pairs, chunk, self.scratch_amps, dev_of, nd) {
             group_start().map_err(nccl_err)?;
             let issued = (|| {
@@ -221,6 +239,25 @@ where
             for p in &round {
                 copy_back(devs, &self.scratch, ranks, p)?;
             }
+            // Bound the NCCL work in flight, and drain it all before
+            // returning. With a CUDA-calling NCCL proxy (SHM via cudaMemcpy,
+            // i.e. NCCL_SHM_USE_CUDA_MEMCPY=1, the fast path on P2P-less
+            // PCIe), a host thread that blocks inside a CUDA enqueue (full
+            // push buffer) holds a driver lock the proxy needs while the
+            // pending NCCL kernel waits on that proxy: a deadlock, seen on
+            // 4× L4 at n=31 (gdb: host in cuMemcpyDtoDAsync, proxy in
+            // cuMemcpyDtoHAsync on the same rwlock). A window, not a sync per
+            // round: rounds queued back to back let one device pair run ahead
+            // of another, and a per-round sync cost ~30 % of D=4 bandwidth.
+            pending += 1;
+            if pending == SYNC_WINDOW_ROUNDS {
+                sync_devices(devs)?;
+                pending = 0;
+            }
+        }
+        // Later gate kernels must not pile up behind pending NCCL kernels.
+        if pending > 0 {
+            sync_devices(devs)?;
         }
         Ok(())
     }

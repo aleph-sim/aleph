@@ -66,9 +66,36 @@ fn median_of<T, F: FnMut() -> T>(ctxs: &[CudaContext], reps: usize, mut f: F) ->
     ts[reps / 2]
 }
 
+/// Wall time of one run, no warm-up: for the paged baseline, where one run is
+/// most of an hour and the JIT/pool warm-up is noise (`median_of` would
+/// double it; it did on AWS).
+fn once<T, F: FnOnce() -> T>(ctxs: &[CudaContext], f: F) -> f64 {
+    let t = Instant::now();
+    let out = f();
+    sync_all(ctxs);
+    let s = t.elapsed().as_secs_f64();
+    drop(out);
+    s
+}
+
 /// Bandwidth (GB/s, bytes moved per GPU / time) of one single-bit exchange of
 /// 2^m-amplitude slices, one rank per device (D=1: two ranks, NCCL self-send).
 fn xchg_bw<B: DeviceSv>(devs: &mut Vec<B>, ctxs: &[CudaContext], m: u32, amp_bytes: usize) -> f64
+where
+    B::Scalar: NcclType,
+{
+    xchg_bw_bits(devs, ctxs, m, amp_bytes, &[0])
+}
+
+/// [`xchg_bw`] over an arbitrary set of global (rank) bits: `rank_bits = [1]`
+/// pairs devices 0↔2, `[0, 1]` sends to all three peers at once.
+fn xchg_bw_bits<B: DeviceSv>(
+    devs: &mut Vec<B>,
+    ctxs: &[CudaContext],
+    m: u32,
+    amp_bytes: usize,
+    rank_bits: &[u32],
+) -> f64
 where
     B::Scalar: NcclType,
 {
@@ -82,12 +109,16 @@ where
     let mut x = NcclExchange::new(devs)
         .unwrap()
         .route_all_through_nccl(d == 1);
+    let bits: Vec<u32> = rank_bits.iter().map(|b| m + b).collect();
     let t = median_of(ctxs, 3, || {
-        x.exchange(devs.as_mut_slice(), &mut ranks, l, &[m])
+        x.exchange(devs.as_mut_slice(), &mut ranks, l, &bits)
             .unwrap()
     });
-    // Each rank sends half its slice (the moved chunk) and receives as much.
-    let bytes = (1usize << (m - 1)) * amp_bytes * l.ranks() as usize / d;
+    // Swapping k global bits moves all but 2^-k of each slice (k = 1: half),
+    // and each rank receives as much as it sends.
+    let k = rank_bits.len();
+    let moved = (1usize << m) - (1usize << (m as usize - k));
+    let bytes = moved * amp_bytes * l.ranks() as usize / d;
     bytes as f64 / t / 1e9
 }
 
@@ -212,6 +243,10 @@ fn dist_nccl_scaling() {
 
 /// Single-GPU out-of-core baseline for the weak-scaling n (2^n state in pinned
 /// host RAM): n = 30 + log2 D FP64, 31 + log2 D FP32, for each D present.
+///
+/// The tile is one below the in-core ceiling: a brickwall 2q gate can touch two
+/// high qubits, and the co-resident group `2^(tile+2)` must still fit the
+/// device (`tile + g_max <= MAX_CUDA_QUBITS`; 16 GiB either precision).
 #[test]
 #[ignore]
 fn weak_paged_baseline() {
@@ -227,13 +262,39 @@ fn weak_paged_baseline() {
         let n = 30 + g;
         let c = brickwall(n, 10);
         let mut be = CudaSvBackend::with_seed(0).unwrap();
-        let t = median_of(&ctx, 1, || be.run_paged(&c, 29).unwrap());
-        println!("weak_paged,FP64,{n},29,{t:.3}");
+        let t = once(&ctx, || be.run_paged(&c, 28).unwrap());
+        println!("weak_paged,FP64,{n},28,{t:.3}");
         let n = 31 + g;
         let c = brickwall(n, 10);
         let mut be = CudaSvBackendF32::with_seed(0).unwrap();
-        let t = median_of(&ctx, 1, || be.run_paged(&c, 30).unwrap());
-        println!("weak_paged,FP32,{n},30,{t:.3}");
+        let t = once(&ctx, || be.run_paged(&c, 29).unwrap());
+        println!("weak_paged,FP32,{n},29,{t:.3}");
+    }
+}
+
+/// Exchange bandwidth alone, D = 2 and 4 (FP64, m = 26): a quick probe for
+/// trying NCCL transport settings (`NCCL_*` env) without the full scaling run.
+#[test]
+#[ignore]
+fn xchg_probe() {
+    let n_dev = device_count().unwrap_or(0).min(4);
+    let ctxs: Vec<CudaContext> = (0..n_dev).map(|i| CudaContext::new(i).unwrap()).collect();
+    for d in [2usize, 4].into_iter().filter(|&d| d <= n_dev) {
+        let Some(mut devs) = (0..d)
+            .map(|i| or_skip(CudaSvBackend::on_device(i)))
+            .collect::<Option<Vec<_>>>()
+        else {
+            return;
+        };
+        let sets: &[&[u32]] = if d == 4 {
+            &[&[0], &[1], &[0, 1]]
+        } else {
+            &[&[0]]
+        };
+        for bits in sets {
+            let bw = xchg_bw_bits(&mut devs, &ctxs[..d], 26, 16, bits);
+            println!("xchg_probe,FP64,D={d},m=26,rank_bits={bits:?},GBps={bw:.2}");
+        }
     }
 }
 

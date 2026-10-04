@@ -24,8 +24,11 @@ OUT=results/p6-aws
 STATE=$OUT/.state
 SSH_OPTS=(-i "$HOME/.ssh/$KEY.pem" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15)
 # Remote env for every test run: fail (not skip) with fewer than 4 GPUs, and
-# keep NCCL's own diagnostics (nccl_err drops the result code).
-REMOTE_ENV='source ~/.cargo/env; cd aleph; export ALEPH_REQUIRE_GPUS=4 NCCL_DEBUG=WARN'
+# keep NCCL's own diagnostics (nccl_err drops the result code). g6.12xlarge
+# has no GPU P2P (`nvidia-smi topo -p2p r` = NS), so NCCL stages through host
+# SHM; its default SM-driven copy gets ~2.9 GB/s/GPU, the copy-engine path
+# (SHM_USE_CUDA_MEMCPY) ~7.2 GB/s (measured 2026-10-04, docs/perf/p6-multi-gpu.md §4).
+REMOTE_ENV='source ~/.cargo/env; cd aleph; export ALEPH_REQUIRE_GPUS=4 NCCL_DEBUG=WARN NCCL_SHM_USE_CUDA_MEMCPY=1'
 export AWS_DEFAULT_REGION=$REGION
 mkdir -p "$OUT"
 
@@ -126,13 +129,16 @@ run() {
   rsh 'nvidia-smi topo -m > /tmp/p6-topo.txt; cat /tmp/p6-topo.txt'
   say "oracles: FP64 1e-10 / FP32 1e-5 at D=2,4 on real GPUs (fail, not skip, under 4 GPUs)"
   rsh "$REMOTE_ENV; timeout 40m cargo test -p aleph-cuda --features nccl \
-       --test dist_nccl_oracle --test dist_gpu_oracle --test dist_host_overlap -- --test-threads=1 --nocapture \
+       --test dist_nccl_oracle --test dist_gpu_oracle --test dist_host_overlap --test dist_nccl_memcpy_shm \
+       -- --test-threads=1 --nocapture \
        > /tmp/p6-oracle.log 2>&1; s=\$?; grep -E 'test result|panicked|FAILED' /tmp/p6-oracle.log; exit \$s"
   say "scaling bench (strong n=28, weak m=30/31)"
   rsh "$REMOTE_ENV; timeout 90m cargo test --release -p aleph-cuda --features nccl --test dist_nccl_bench \
        dist_nccl_scaling -- --ignored --nocapture --test-threads=1 > /tmp/p6-bench.log 2>&1; s=\$?; \
        grep -E '^(gpus|xchg|strong|weak)' /tmp/p6-bench.log; exit \$s"
-  say "paged single-GPU weak baseline (long: run last; skip with Ctrl-C if the clock is short)"
+  # On g6.12xlarge (L4 = PCIe Gen4 x8) one FP64 n=31 paged run alone took > 48 min
+  # (2026-10-04); n=32/33 take hours. The multi-GPU verdict does not need them.
+  say "paged single-GPU weak baseline (very long: run last; skip with Ctrl-C if the clock is short)"
   rsh "$REMOTE_ENV; timeout 80m cargo test --release -p aleph-cuda --features nccl --test dist_nccl_bench \
        weak_paged_baseline -- --ignored --nocapture --test-threads=1 > /tmp/p6-paged.log 2>&1; s=\$?; \
        grep -E '^weak_paged' /tmp/p6-paged.log; exit \$s"
