@@ -15,10 +15,12 @@ use smallvec::SmallVec;
 
 use crate::Instruction;
 
+pub mod dag;
 mod next_use;
 mod plan;
 mod specialize;
 
+pub use dag::{Act, Dag};
 pub use plan::{plan, plan_from, required_local};
 pub use specialize::specialize;
 
