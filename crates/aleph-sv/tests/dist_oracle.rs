@@ -2,8 +2,8 @@
 
 use aleph_backend::run;
 use aleph_core::{Complex, Gate, GateInstance, Param};
-use aleph_ir::dist::{plan, plan_from, DistLayout, DistStep, Router};
-use aleph_ir::{Circuit, Instruction};
+use aleph_ir::dist::{plan, plan_from, Dag, DistLayout, DistStep, Router};
+use aleph_ir::{Circuit, DiagonalPhase, Instruction, PhaseTerm};
 use aleph_sv::dist_ref::run_dist;
 use aleph_sv::NaiveSvBackend;
 use proptest::prelude::*;
@@ -485,4 +485,85 @@ proptest! {
             prop_assert!((x - y).norm() < TOL);
         }
     }
+}
+
+/// `c` re-emitted in a pseudo-random topological order of its DAG.
+fn random_topo(c: &Circuit, seed: u64) -> Circuit {
+    let mut dag = Dag::build(c).unwrap();
+    let mut ready = dag.initial_ready();
+    let mut out = Circuit::new(c.num_qubits(), 0);
+    let mut s = seed | 1;
+    while !ready.is_empty() {
+        s = s
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        let i = ready.swap_remove((s >> 33) as usize % ready.len());
+        out.add_instruction(c.instructions()[i].clone()).unwrap();
+        dag.complete(i, &mut ready).unwrap();
+    }
+    assert_eq!(out.len(), c.len(), "DAG must schedule every instruction");
+    out
+}
+
+fn arb_dp(n: u32) -> impl Strategy<Value = Instruction> {
+    prop::collection::vec(
+        (prop::collection::vec(1u64..(1u64 << n), 1..3), -3.0f64..3.0),
+        1..4,
+    )
+    .prop_map(move |terms| {
+        Instruction::DiagonalPhase(Box::new(DiagonalPhase {
+            n_qubits: n,
+            terms: terms
+                .into_iter()
+                .map(|(conds, angle)| PhaseTerm {
+                    conds: conds.into_iter().collect(),
+                    angle,
+                })
+                .collect(),
+        }))
+    })
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(128))]
+    /// Spec §7: any order the DAG allows is the same operator; random orders
+    /// test the DAG itself, not one scheduler's choice.
+    #[test]
+    fn prop_every_dag_order_is_equivalent(
+        gates in prop::collection::vec(arb_any_gate(6), 1..40),
+        dp in arb_dp(6),
+        dp_at in 0usize..40,
+        seed in any::<u64>(),
+    ) {
+        let mut c = h_layer(6);
+        for (k, gi) in gates.into_iter().enumerate() {
+            if k == dp_at {
+                c.add_instruction(dp.clone()).unwrap();
+            }
+            c.add_gate(gi).unwrap();
+        }
+        let want = reference(&c);
+        for k in 0..8u64 {
+            let got = reference(&random_topo(&c, seed ^ (k.wrapping_mul(0x9E37_79B9))));
+            for (x, y) in got.iter().zip(&want) {
+                prop_assert!((x - y).norm() < TOL);
+            }
+        }
+    }
+}
+
+/// Mutation check: an unsound DAG (here, treating CNOT target as Z) would be
+/// caught. Swapping the two CNOTs of `cx(0,1); cx(1,0)` changes the state.
+#[test]
+fn reordering_non_commuting_cnots_is_detectable() {
+    let mut c = h_layer(2);
+    c.rx(0.7, 0).unwrap();
+    c.cnot(0, 1).unwrap();
+    c.cnot(1, 0).unwrap();
+    let mut swapped = h_layer(2);
+    swapped.rx(0.7, 0).unwrap();
+    swapped.cnot(1, 0).unwrap();
+    swapped.cnot(0, 1).unwrap();
+    let (a, b) = (reference(&c), reference(&swapped));
+    assert!(a.iter().zip(&b).any(|(x, y)| (x - y).norm() > 1e-6));
 }
