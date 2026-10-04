@@ -59,11 +59,21 @@ This report grows over three PRs.
 divided by this row's (> 1 = less traffic).
 
 **Reading.**
-- **Random brickwall** gains most. Reorder needs 1 exchange for 20 layers (lookahead: 22–23), moving 0.8–0.9 slices
-  against 16.5–20.1, a 22–23× reduction. Even `k=1` gives 16.5× (g=2) and 13.4× (g=3).
-- **QFT** is unchanged by reorder alone (1.00×, same 2 exchanges). Reorder+place cuts it to 1 exchange and 0 local
-  swaps, 2.00× less data than lookahead at both g.
-- **GHZ** ties lookahead in every reorder variant (1.00×); naive is already 0.58–0.75× of it.
+- **Random-30 d=20 is a 1D nearest-neighbour brickwall.** Reorder needs 1 exchange for 20 layers (lookahead: 22–23),
+  moving 0.8–0.9 slices against 16.5–20.1, a 22–23× reduction. Even `k=1` gives 16.5× (g=2) and 13.4× (g=3).
+  - Why: the depth (20) is less than the distance from most qubits to the global qubits, so gates form a light cone.
+    Qubits far from the global ones can finish all 20 layers before any global-qubit gate is needed. They then become
+    free eviction victims (never needed again), so one exchange makes the global qubits local for the rest of the
+    circuit.
+  - This is specific to shallow 1D brickwalls (depth < distance to the global qubits), not a general ~22× gain.
+    Deeper or all-to-all circuits will not collapse this way.
+  - Correctness of these reorders is covered by the DAG soundness proptest (`prop_every_dag_order_is_equivalent`) and
+    the Reorder oracle proptests in `crates/aleph-sv/tests/dist_oracle.rs`.
+- **QFT** is unchanged by full-k reorder (the `reorder` row: 1.00×, same 2 exchanges). `reorder k=1` is 1.00× at g=2
+  (but 3 exchanges vs 2) and 0.88× at g=3. Reorder+place cuts it to 1 exchange and 0 local swaps, 2.00× less data than
+  lookahead at both g.
+- **GHZ**: reorder and reorder+place tie lookahead (1.00×). `reorder k=1` moves more (0.75× at g=2, 0.58× at g=3,
+  the same as naive; 2 and 3 exchanges vs lookahead's 1), because capping the exchange width at 1 bit forbids batching.
 - **Grover moves slightly more data than lookahead at g=3.** Reorder moves 20.8 slices vs 20.6 (0.99×), with 41
   exchanges vs 30 and 32 local swaps vs 28. `k=1` is 0.98× (42 exchanges). Reorder+place is identical to reorder here
   (placement does not help this circuit). At g=2 reorder moves less (11.0 vs 12.5, 1.14×) but uses more exchanges
