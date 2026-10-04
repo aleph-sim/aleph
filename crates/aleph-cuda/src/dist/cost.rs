@@ -10,6 +10,7 @@ use crate::common::diagonal_of;
 
 /// The CUDA kernel an instruction of a fused rank program launches.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum KernelKind {
     /// `apply_1q` (dense, non-diagonal 1-qubit).
     Dense1,
@@ -39,6 +40,12 @@ pub enum KernelKind {
 
 /// Kernel kind `instr` launches on `CudaSvBackend` / `CudaSvBackendF32`.
 ///
+/// External controls do not change the kind: a gate with local external
+/// controls is priced as a full pass of its target kind, although the kernels
+/// skip amplitudes whose control bits are clear. This is a conservative
+/// over-estimate; the §6.3 gate's Grover cell (controlled-Z oracle/diffusion)
+/// bounds it at model/measured 1.034–1.042 (docs/perf/p6-05-compiler.md §2).
+///
 /// The classification assumes the backend's defaults (`custom_2q` and
 /// `custom_diag` on), as `DistSvBackend` runs them.
 pub fn classify(instr: &Instruction) -> Result<KernelKind, DistError> {
@@ -56,7 +63,7 @@ pub fn classify(instr: &Instruction) -> Result<KernelKind, DistError> {
         Instruction::Barrier(_) => return Ok(KernelKind::Free),
         _ => {
             return Err(DistError::Unsupported {
-                kind: "cost: non-unitary instruction",
+                kind: "cost: unsupported instruction",
             })
         }
     };
@@ -67,6 +74,8 @@ pub fn classify(instr: &Instruction) -> Result<KernelKind, DistError> {
     // 2. UnitaryKq → apply_kq_tiled before any diagonal test (backend.rs:693-705)
     if let Gate::UnitaryKq { k, .. } = &g.gate {
         return match k {
+            // The backend runs generic `apply_kq` for k=1; unreachable from
+            // `fuse_for_gpu` (FuseKq emits k >= 2), so priced as Dense1.
             1 => Ok(KernelKind::Dense1),
             2 => Ok(KernelKind::Dense2),
             3 => Ok(KernelKind::Dense3),
@@ -116,6 +125,9 @@ pub struct KindTimes {
 
 impl KindTimes {
     /// Seconds for one launch of kind `k` on a `2^m` slice.
+    ///
+    /// Valid near `m_ref`: the `2^(m − m_ref)` scaling has no launch-latency
+    /// floor, so costs at small `m` are not meaningful.
     pub fn seconds(&self, k: KernelKind, m: u32) -> f64 {
         let at_ref = match k {
             KernelKind::Dense1 => self.dense1,
@@ -162,9 +174,14 @@ impl LinkModel {
     }
 
     /// Seconds for one `k`-bit exchange of a `2^m` slice: `(1 − 2^−k)` of it moves.
+    /// `k = 0` costs 0. An empty table with `k > 0` returns `f64::INFINITY`
+    /// (no bandwidth known), which `plan_cost` rejects.
     pub fn seconds(&self, k: u32, m: u32, amp_bytes: f64) -> f64 {
-        if k == 0 || self.bw_by_k.is_empty() {
+        if k == 0 {
             return 0.0;
+        }
+        if self.bw_by_k.is_empty() {
+            return f64::INFINITY;
         }
         let idx = (k as usize - 1).min(self.bw_by_k.len() - 1);
         let frac = 1.0 - 2f64.powi(-(k as i32));
@@ -204,7 +221,8 @@ impl GpuCostModel {
     }
 
     /// RTX 4000 SFF Ada, FP64, fused like `DistSvBackend::new` — constants
-    /// from `tests/dist_cost_calibrate.rs` (Task 4 documents the command there).
+    /// from `tests/dist_cost_calibrate.rs`, run with
+    /// `cargo test --release -p aleph-cuda --features cuda --test dist_cost_calibrate -- --ignored --nocapture`.
     pub fn rtx4000_fp64() -> Self {
         Self {
             kinds: RTX4000_FP64,
@@ -226,8 +244,10 @@ impl GpuCostModel {
 }
 
 impl CostModel for GpuCostModel {
-    /// The busiest rank, R − 1 (all global bits 1: every global-controlled
-    /// gate is live) — an upper bound; ranks sync at each exchange anyway.
+    /// Rank R − 1 (all global bits 1: every global-controlled gate is live) —
+    /// representative, typically the busiest; not a strict bound (a parity
+    /// cond can expand into more terms on another rank). Ranks sync at each
+    /// exchange anyway.
     fn local_segment(&self, instrs: &[Instruction], layout: DistLayout) -> Result<f64, DistError> {
         self.rank_segment(instrs, layout, layout.ranks() - 1)
     }
@@ -335,6 +355,15 @@ mod tests {
             data: id8.into_boxed_slice(),
         };
         assert_eq!(classify(&g(kq, &[0, 1, 2])).unwrap(), Dense3);
+        // Controlled 1q gates keep their 1q kind (external controls priced as a full pass).
+        let crz = Instruction::Gate(GateInstance::controlled(
+            Gate::Rz(p),
+            vec![0u32],
+            vec![1u32],
+        ));
+        assert_eq!(classify(&crz).unwrap(), Diag1);
+        let ch = Instruction::Gate(GateInstance::controlled(Gate::H, vec![0u32], vec![1u32]));
+        assert_eq!(classify(&ch).unwrap(), Dense1);
     }
 
     #[test]
@@ -447,6 +476,9 @@ mod tests {
         // k=2: (3/4) * 8 * 16 / 4 = 24 s ; k=3 uses the k=2 bandwidth: (7/8)*8*16/4 = 28 s
         assert!((l.seconds(2, 3, 16.0) - 24.0).abs() < 1e-12);
         assert!((l.seconds(3, 3, 16.0) - 28.0).abs() < 1e-12);
+        let empty = LinkModel { bw_by_k: vec![] };
+        assert_eq!(empty.seconds(0, 3, 16.0), 0.0);
+        assert_eq!(empty.seconds(1, 3, 16.0), f64::INFINITY);
     }
 
     #[test]
