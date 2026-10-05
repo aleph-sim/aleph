@@ -213,6 +213,17 @@ non-identity placement by starting `plan.rs` from that map. This needs a `plan_f
 That is ≤ 2·(2+g) plans, 12 at g=4. The cheapest by `T` wins; ties go to fewer exchanges, then to fewer local passes.
 Compile time is reported, and the target is < 50 ms for ~1k gates at g=2.
 
+*PR 3 rulings:*
+1. `compile` lives in `aleph-ir/src/dist/compile.rs`, not `cost.rs`; `cost.rs` keeps the trait and `plan_cost`. The
+   public path is unchanged (`aleph_ir::dist::compile`).
+2. `compile_detailed` returns the chosen plan, the winning candidate and every candidate's cost (the §8 report names
+   the winner per cell); `compile` is a thin wrapper returning the plan.
+3. A tie is a relative cost difference ≤ 1e-9. "Fewer local passes" is counted backend-neutrally as the number of
+   instructions in `Local` steps, before specialisation; after that, the earlier candidate wins.
+4. Duplicate candidates are skipped: if `initial_placement` is the identity, the placed set is not built. `Reorder`
+   widths run `1..=max(g, 1)`, so g=0 builds 3 candidates.
+5. Any candidate's planning or pricing error propagates out of `compile`; none is silently skipped.
+
 ## 7. Correctness and testing
 
 - **DAG soundness (proptest, CPU):**
@@ -257,6 +268,19 @@ compiled plans, so the model's compute estimate is not the evidence here.
 - Which candidate `compile` chose, per cell.
 
 **Report:** `docs/perf/p6-05-compiler.md`, linked from `docs/perf/p6-multi-gpu.md`.
+
+*PR 3 rulings:*
+6. The metric, exactly: for each plan `p` at `D = 2^g` on one card, `compute(p) = (T_full(p) − T_comm(p)) / D`, with
+   `T_comm` from the exchange-only plan as in the §6.3 gate, and `T_pred(p) = compute(p) + Σ_Exchange
+   link.seconds(k, m, amp_bytes)` on the AWS table. Exit 1: `T_pred(compiled) ≤ 1.03 · min(T_pred(Naive),
+   T_pred(Lookahead))` on every FP64 cell. Exit 2: `T_pred(compiled) ≤ 0.85 · T_pred(Lookahead)` for random d=10 at
+   D=2. Exit 3: the §6.3 gate re-run passes, and (added by the PR 3 plan) the compiled plan's all-ranks model/measured
+   ratio is within ±10 % on every FP64 cell. The bench prints verdicts and does not assert them; a miss is reported.
+7. The CLAUDE.md overview line moves to a separate `[meta]` PR after PR 3 merges (CLAUDE.md forbids bundling it with
+   feature work; that overrides §9).
+8. Compile time is reported, not asserted: `brickwall_bench(28, 15)` (1 043 gates) at g=2, wall time of
+   `compile_detailed` with `GpuCostModel::rtx4000_fp64()`, best of 5, release build, GPU-box CPU. Over 50 ms means a
+   follow-up issue.
 
 ## 9. Delivery
 
