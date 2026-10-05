@@ -44,6 +44,8 @@ struct Meas {
     t_pred: f64,
     /// Model all-ranks compute / measured.
     ratio: f64,
+    /// Measured compute is finite and positive (noise can break this).
+    valid: bool,
 }
 
 fn measure<B: DeviceSv>(
@@ -58,6 +60,7 @@ fn measure<B: DeviceSv>(
     let all = t_full - t_comm;
     let ranks = f64::from(p.layout.ranks());
     Meas {
+        valid: all.is_finite() && all > 0.0,
         all,
         t_pred: all / ranks + link_seconds(model, p),
         ratio: all_ranks(model, p) / all,
@@ -77,7 +80,9 @@ fn label(c: Candidate) -> String {
     }
 }
 
-/// Runs every (circuit, D) cell; returns verdict lines.
+/// Runs every (circuit, D) cell, printing the table and pushing exit-verdict
+/// lines into `verdicts`. The table's `compile (ms)` is a single cold run; the
+/// compile-time verdict (in `compile_bench_n28`) is best of 5.
 fn run_cells<B: DeviceSv>(
     sync: &CudaContext,
     d: &mut DistSvBackend<B, LocalExchange<B>>,
@@ -88,8 +93,9 @@ fn run_cells<B: DeviceSv>(
 ) {
     let n = 28;
     println!("\n### {tag}\n");
-    println!("| circuit | D | chosen | exch N/L/C | T_pred naive (s) | T_pred lookahead (s) | T_pred compiled (s) | compiled / min(N,L) | compiled / L | model/measured (C) | compile (ms) |");
-    println!("|---|---|---|---|---|---|---|---|---|---|---|");
+    println!("| circuit | D | chosen | exch N/L/C | T_pred naive (s) | T_pred lookahead (s) | T_pred compiled (s) | compiled / min(N,L) | compiled / L | model/measured (C) | compile (ms) | measured all N/L/C (s) |");
+    println!("|---|---|---|---|---|---|---|---|---|---|---|---|");
+    let mut cand_lines: Vec<String> = Vec::new();
     for (name, c) in cases {
         for g in [1u32, 2] {
             let l = DistLayout::new(n, g).unwrap();
@@ -108,7 +114,7 @@ fn run_cells<B: DeviceSv>(
             };
             let base = mn.t_pred.min(ml.t_pred);
             println!(
-                "| {name} | {} | {} | {}/{}/{} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {ms:.1} |",
+                "| {name} | {} | {} | {}/{}/{} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {ms:.1} | {:.3}/{:.3}/{:.3} |",
                 l.ranks(),
                 label(comp.choice),
                 pn.stats.exchanges,
@@ -120,24 +126,35 @@ fn run_cells<B: DeviceSv>(
                 mc.t_pred / base,
                 mc.t_pred / ml.t_pred,
                 mc.ratio,
+                mn.all,
+                ml.all,
+                mc.all,
             );
+            let valid = mn.valid && ml.valid && mc.valid;
+            const INVALID: &str = "INVALID (measured compute ≤ 0 or non-finite)";
             let cands: Vec<String> = comp
                 .candidates
                 .iter()
                 .map(|&(cd, t)| format!("{}={t:.3}", label(cd)))
                 .collect();
-            println!(
+            cand_lines.push(format!(
                 "candidates: {name} D={} model T: {}",
                 l.ranks(),
                 cands.join(" ")
-            );
+            ));
             if tag.starts_with("FP64") {
                 let ok1 = mc.t_pred <= 1.03 * base;
                 verdicts.push(format!(
                     "exit1 {name} D={}: compiled/min = {:.3} → {}",
                     l.ranks(),
                     mc.t_pred / base,
-                    if ok1 { "PASS" } else { "MISS" }
+                    if !valid {
+                        INVALID
+                    } else if ok1 {
+                        "PASS"
+                    } else {
+                        "MISS"
+                    }
                 ));
                 let ok3 = mc.ratio.is_finite() && (mc.ratio - 1.0).abs() <= 0.10;
                 verdicts.push(format!(
@@ -145,18 +162,36 @@ fn run_cells<B: DeviceSv>(
                     l.ranks(),
                     mc.ratio,
                     mc.all,
-                    if ok3 { "PASS" } else { "MISS" }
+                    if !valid {
+                        INVALID
+                    } else if ok3 {
+                        "PASS"
+                    } else {
+                        "MISS"
+                    }
                 ));
                 if *name == "random d=10" && g == 1 {
                     let gain = 1.0 - mc.t_pred / ml.t_pred;
                     verdicts.push(format!(
-                        "exit2 random d=10 D=2: {:.1} % better than lookahead (need ≥ 15 %) → {}",
+                        "exit2 random d=10 D=2: compiled {:.3} s vs lookahead {:.3} s = {:.1} % better (need ≥ 15 %) → {}",
+                        mc.t_pred,
+                        ml.t_pred,
                         100.0 * gain,
-                        if gain >= 0.15 { "PASS" } else { "MISS" }
+                        if !valid {
+                            INVALID
+                        } else if gain >= 0.15 {
+                            "PASS"
+                        } else {
+                            "MISS"
+                        }
                     ));
                 }
             }
         }
+    }
+    println!();
+    for l in &cand_lines {
+        println!("{l}");
     }
 }
 
