@@ -267,3 +267,86 @@ pub fn qaoa_ring_skip7(n: u32) -> Circuit {
     edges.extend((0..n).map(|i| (i, (i + 7) % n)));
     build_qaoa(n, &edges, &[0.4, 0.7], &[0.3, 0.5]).unwrap()
 }
+
+/// Zero-tracking held-out H1: `X` on every odd qubit, then `qft(n)`.
+pub fn qft_x_odd(n: u32) -> Circuit {
+    let mut c = Circuit::new(n, 0);
+    for q in (1..n).step_by(2) {
+        c.x(q).unwrap();
+    }
+    for i in qft(n).instructions() {
+        c.add_instruction(i.clone()).unwrap();
+    }
+    c
+}
+
+/// Zero-tracking held-out H2: `H` on qubits n/2..n; controlled `Phase(π/2^((t − n/2) + 1))`
+/// from every |0> qubit c < n/2 (external control) onto every t ≥ n/2; then `Cz(t, t+1)`
+/// on the upper half.
+pub fn zero_phase_ladder(n: u32) -> Circuit {
+    let h = n / 2;
+    let mut c = Circuit::new(n, 0);
+    for t in h..n {
+        c.h(t).unwrap();
+    }
+    for ctrl in 0..h {
+        for t in h..n {
+            let th = std::f64::consts::PI / f64::from(1u32 << ((t - h) + 1));
+            c.add_gate(GateInstance::controlled(
+                Gate::Phase(Param::Concrete(th)),
+                vec![t],
+                vec![ctrl],
+            ))
+            .unwrap();
+        }
+    }
+    for t in h..n - 1 {
+        c.add_gate(GateInstance::new(Gate::Cz, vec![t, t + 1]))
+            .unwrap();
+    }
+    c
+}
+
+/// Zero-tracking held-out H3: 4 Clifford layers on qubits n/2..n (H on even / S on odd,
+/// then nearest-neighbour CNOTs within the upper half), then `CRx(0.3)` on `[c, n/2 + c]`
+/// for every c < n/2.
+pub fn zero_crx(n: u32) -> Circuit {
+    let h = n / 2;
+    let mut c = Circuit::new(n, 0);
+    for d in 0..4usize {
+        for q in h..n {
+            if q % 2 == 0 {
+                c.h(q).unwrap();
+            } else {
+                c.s(q).unwrap();
+            }
+        }
+        let mut q = h + (d % 2) as u32;
+        while q + 1 < n {
+            c.cnot(q, q + 1).unwrap();
+            q += 2;
+        }
+    }
+    for ctrl in 0..h {
+        c.add_gate(GateInstance::new(
+            Gate::CRx(Param::Concrete(0.3)),
+            vec![ctrl, h + ctrl],
+        ))
+        .unwrap();
+    }
+    c
+}
+
+/// Generic `Local` steps under the **old** (pre-zero-tracking) walk: a step is
+/// generic if `makes_generic` is true for any of its instructions, monotone.
+pub fn old_rule_generic_steps(p: &DistPlan) -> usize {
+    let mut generic = false;
+    let mut count = 0;
+    for s in &p.steps {
+        if let DistStep::Local(v) = s {
+            generic |= v.iter().any(|i| aleph_cuda::makes_generic(i).unwrap());
+            count += usize::from(generic);
+        }
+    }
+    count
+}

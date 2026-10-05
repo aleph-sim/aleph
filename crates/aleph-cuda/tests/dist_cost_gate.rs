@@ -3,6 +3,7 @@
 //! on-card exchange copies subtracted via an exchange-only plan.
 //! #538 Stage C: the old cells plus four held-out cells (never used to choose
 //! a constant or the rule), with a `generic steps` column from the class walk.
+//! Zero-tracking follow-up: three more held-out cells (H1–H3) and an old-rule column.
 //! Run (idle box): cargo test --release -p aleph-cuda --features cuda --test dist_cost_gate -- --ignored --nocapture
 #![cfg(all(target_os = "linux", feature = "cuda"))]
 
@@ -16,7 +17,8 @@ use aleph_ir::dist::{plan, CostModel, DistLayout, DistStep, Router};
 use aleph_ir::Circuit;
 use common::dist::{
     all_ranks, best_of, brickwall_bench, ccz_ladder, clifford_brickwall, comm_only, ghz,
-    grover_iters, hea_bench, qaoa_ring_chords, qaoa_ring_skip7, qft,
+    grover_iters, hea_bench, old_rule_generic_steps, qaoa_ring_chords, qaoa_ring_skip7, qft,
+    qft_x_odd, zero_crx, zero_phase_ladder,
 };
 
 /// `model` with every kind zeroed except the one `keep` leaves set: the
@@ -108,8 +110,8 @@ fn gate_table(
         ),
     ];
     println!("### {title}");
-    println!("| circuit | D | measured compute (s) | model all-ranks (s) | ratio | R·model(R−1) (s) | ratio | generic steps | verdict |");
-    println!("|---|---|---|---|---|---|---|---|---|");
+    println!("| circuit | D | measured compute (s) | model all-ranks (s) | ratio | R·model(R−1) (s) | ratio | generic steps | old-rule generic | verdict |");
+    println!("|---|---|---|---|---|---|---|---|---|---|");
     let mut worst: f64 = 0.0;
     let mut breakdown = Vec::new();
     for (name, c) in cases {
@@ -138,6 +140,7 @@ fn gate_table(
                 .fold((0usize, 0usize), |(g, t), (_, &c)| {
                     (g + usize::from(c), t + 1)
                 });
+            let old_generic = old_rule_generic_steps(&p);
             let ratio = all / measured;
             // is_finite first: f64::max swallows NaN (ADR 0006), so a bad ratio is a MISS.
             let pass = ratio.is_finite() && (ratio - 1.0).abs() <= 0.10;
@@ -148,7 +151,7 @@ fn gate_table(
             };
             let verdict = if pass { "PASS" } else { "MISS" };
             println!(
-                "| {name} | {} | {measured:.3} | {all:.3} | {ratio:.3} | {rep:.3} | {:.3} | {generic}/{locals} | {verdict} |",
+                "| {name} | {} | {measured:.3} | {all:.3} | {ratio:.3} | {rep:.3} | {:.3} | {generic}/{locals} | {old_generic}/{locals} | {verdict} |",
                 l.ranks(),
                 rep / measured
             );
@@ -217,13 +220,27 @@ fn model_gate_n28_fp64() {
         &mut d,
         &model,
     );
+    let zero: Vec<(&str, Circuit)> = vec![
+        ("H1 QFT on X-odd input", qft_x_odd(n)),
+        ("H2 |0>-controlled phase ladder", zero_phase_ladder(n)),
+        ("H3 |0>-controlled CRx", zero_crx(n)),
+    ];
+    let w_zero = gate_table(
+        "zero-tracking held-out cells (fixed in the zero-tracking spec)",
+        &zero,
+        n,
+        &sync,
+        &mut d,
+        &model,
+    );
     println!(
-        "worst |model/measured − 1|: old {:.1} %, held-out {:.1} %",
+        "worst |model/measured − 1|: old {:.1} %, held-out {:.1} %, zero-tracking held-out {:.1} %",
         100.0 * w_old,
-        100.0 * w_new
+        100.0 * w_new,
+        100.0 * w_zero
     );
     assert!(
-        w_old.max(w_new) <= 0.10,
-        "#538 exit 1: every old and held-out cell within ±10 %"
+        w_old.max(w_new).max(w_zero) <= 0.10,
+        "every old and held-out cell within ±10 %"
     );
 }
