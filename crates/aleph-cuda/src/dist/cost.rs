@@ -2,9 +2,10 @@
 //! `CudaSvBackend::apply_gate` (sv/backend.rs) and `apply_diagonal_phase`, so
 //! each instruction is priced as the kernel it actually launches.
 
-use aleph_core::Gate;
+use aleph_core::{Complex, Gate, GateMatrix};
 use aleph_ir::dist::{CostModel, DistError, DistLayout};
 use aleph_ir::Instruction;
+use std::f64::consts::{FRAC_1_SQRT_2, FRAC_PI_4};
 
 use crate::common::diagonal_of;
 
@@ -94,6 +95,102 @@ pub fn classify(instr: &Instruction) -> Result<KernelKind, DistError> {
         (2, false) => KernelKind::Dense2,
         _ => KernelKind::Dense3,
     })
+}
+
+/// Candidate state-class transition rules (#538, spec §2 rule 3). An
+/// instruction that "makes the state generic" moves the amplitudes off the
+/// small value set where FP64 kernels run fastest at the card's power cap.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StateRule {
+    /// Non-diagonal, and some matrix entry has magnitude outside {0, 1, 1/√2}.
+    R1,
+    /// R1, or some entry (diagonal or not) or `DiagonalPhase` term angle has a
+    /// phase that is not a multiple of π/4.
+    R2,
+}
+
+/// The rule Stage A chose (docs/perf/p6-05-compiler.md §4.1).
+pub const STATE_RULE: StateRule = StateRule::R1;
+
+/// Tolerance on magnitudes and phases (spec §2 rule 3).
+const CLASS_TOL: f64 = 1e-9;
+
+const NON_FINITE: DistError = DistError::Unsupported {
+    kind: "cost: non-finite matrix entry or phase angle",
+};
+
+fn special_magnitude(r: f64) -> bool {
+    [0.0, 1.0, FRAC_1_SQRT_2]
+        .iter()
+        .any(|v| (r - v).abs() <= CLASS_TOL)
+}
+
+fn quarter_pi_phase(a: f64) -> bool {
+    (a - (a / FRAC_PI_4).round() * FRAC_PI_4).abs() <= CLASS_TOL
+}
+
+/// Dimension and row-major entries of `gate`'s target matrix. `UnitaryKq` is
+/// read from its data, as the backend does (`Gate::matrix` rejects it).
+fn matrix_entries(gate: &Gate) -> Result<(usize, Vec<Complex>), DistError> {
+    if let Gate::UnitaryKq { k, data } = gate {
+        return Ok((1usize << k, data.to_vec()));
+    }
+    Ok(match gate.matrix()? {
+        GateMatrix::M2x2(m) => (2, m.iter().flatten().copied().collect()),
+        GateMatrix::M4x4(m) => (4, m.iter().flatten().copied().collect()),
+        GateMatrix::M8x8(m) => (8, m.iter().flatten().copied().collect()),
+    })
+}
+
+/// Whether `instr` makes the state generic under `rule`.
+///
+/// Judged on the logical, pre-specialise instruction; external controls are
+/// ignored (the target matrix decides, as in [`classify`]). `Barrier` is never
+/// generic. Errors on a non-finite entry or angle (ADR 0006) and on
+/// instructions `classify` rejects.
+pub fn makes_generic_under(instr: &Instruction, rule: StateRule) -> Result<bool, DistError> {
+    let g = match instr {
+        Instruction::Gate(g) => g,
+        Instruction::DiagonalPhase(dp) => {
+            let mut generic = false;
+            for t in &dp.terms {
+                if !t.angle.is_finite() {
+                    return Err(NON_FINITE);
+                }
+                generic |= rule == StateRule::R2 && !quarter_pi_phase(t.angle);
+            }
+            return Ok(generic);
+        }
+        Instruction::Barrier(_) => return Ok(false),
+        _ => {
+            return Err(DistError::Unsupported {
+                kind: "cost: unsupported instruction",
+            })
+        }
+    };
+    let (dim, entries) = matrix_entries(&g.gate)?;
+    let (mut non_diagonal, mut odd_magnitude, mut odd_phase) = (false, false, false);
+    for (idx, z) in entries.iter().enumerate() {
+        if !z.re.is_finite() || !z.im.is_finite() {
+            return Err(NON_FINITE);
+        }
+        let r = z.norm();
+        if idx / dim != idx % dim && r > CLASS_TOL {
+            non_diagonal = true;
+        }
+        odd_magnitude |= !special_magnitude(r);
+        odd_phase |= r > CLASS_TOL && !quarter_pi_phase(z.arg());
+    }
+    let r1 = non_diagonal && odd_magnitude;
+    Ok(match rule {
+        StateRule::R1 => r1,
+        StateRule::R2 => r1 || odd_phase,
+    })
+}
+
+/// [`makes_generic_under`] the chosen [`STATE_RULE`].
+pub fn makes_generic(instr: &Instruction) -> Result<bool, DistError> {
+    makes_generic_under(instr, STATE_RULE)
 }
 
 /// Calibrated seconds per kernel launch at a `2^m_ref` slice (the RTX 4000
@@ -420,6 +517,132 @@ mod tests {
                 multi: 2
             }
         );
+    }
+
+    /// (instruction, generic under R1, generic under R2) — spec §3.3's list.
+    fn rule_table() -> Vec<(&'static str, Instruction, bool, bool)> {
+        use std::f64::consts::{FRAC_PI_2, FRAC_PI_4};
+        let p = Param::Concrete;
+        let ctl = |gate: Gate, t: u32, c: u32| {
+            Instruction::Gate(GateInstance::controlled(gate, vec![t], vec![c]))
+        };
+        let dp = |angle: f64| {
+            Instruction::DiagonalPhase(Box::new(DiagonalPhase {
+                n_qubits: 3,
+                terms: vec![PhaseTerm {
+                    conds: smallvec![0b011],
+                    angle,
+                }],
+            }))
+        };
+        // Rx(0.3) ⊗ I as a fused 2q block: non-diagonal, |cos 0.15|, |sin 0.15|.
+        let (a, b) = ((0.15f64).cos(), (0.15f64).sin());
+        let z = Complex::new(0.0, 0.0);
+        let (ca, mib) = (Complex::new(a, 0.0), Complex::new(0.0, -b));
+        let rx_i = [
+            [ca, z, mib, z],
+            [z, ca, z, mib],
+            [mib, z, ca, z],
+            [z, mib, z, ca],
+        ];
+        // 3q permutation block (simple) read from UnitaryKq data.
+        let mut perm = vec![z; 64];
+        for r in 0..8 {
+            perm[r * 8 + (r ^ 1)] = Complex::new(1.0, 0.0);
+        }
+        let kq = Gate::UnitaryKq {
+            k: 3,
+            data: perm.into_boxed_slice(),
+        };
+        vec![
+            ("H", g(Gate::H, &[0]), false, false),
+            ("S", g(Gate::S, &[0]), false, false),
+            ("T", g(Gate::T, &[0]), false, false),
+            ("X", g(Gate::X, &[0]), false, false),
+            ("Y", g(Gate::Y, &[0]), false, false),
+            ("CNOT", g(Gate::Cnot, &[0, 1]), false, false),
+            ("Toffoli", g(Gate::Toffoli, &[0, 1, 2]), false, false),
+            ("CZ", g(Gate::Cz, &[0, 1]), false, false),
+            ("Iswap", g(Gate::Iswap, &[0, 1]), false, false),
+            ("MCZ", ctl(Gate::Z, 3, 0), false, false),
+            ("Rx(0.3)", g(Gate::Rx(p(0.3)), &[0]), true, true),
+            ("Ry(0.3)", g(Gate::Ry(p(0.3)), &[0]), true, true),
+            ("Rz(0.3)", g(Gate::Rz(p(0.3)), &[0]), false, true),
+            ("Rz(pi/2)", g(Gate::Rz(p(FRAC_PI_2)), &[0]), false, false),
+            (
+                "Phase(pi/4)",
+                g(Gate::Phase(p(FRAC_PI_4)), &[0]),
+                false,
+                false,
+            ),
+            ("Phase(0.3)", g(Gate::Phase(p(0.3)), &[0]), false, true),
+            ("CRz(0.3)", g(Gate::CRz(p(0.3)), &[0, 1]), false, true),
+            (
+                "Unitary2q Rx⊗I",
+                g(Gate::Unitary2q(Box::new(rx_i)), &[0, 1]),
+                true,
+                true,
+            ),
+            ("UnitaryKq perm", g(kq, &[0, 1, 2]), false, false),
+            ("DiagonalPhase pi/4", dp(FRAC_PI_4), false, false),
+            ("DiagonalPhase 0.3", dp(0.3), false, true),
+            ("ext-ctl Rx(0.3)", ctl(Gate::Rx(p(0.3)), 0, 1), true, true),
+            ("ext-ctl Rz(0.3)", ctl(Gate::Rz(p(0.3)), 0, 1), false, true),
+            (
+                "Barrier",
+                Instruction::Barrier(smallvec![0, 1]),
+                false,
+                false,
+            ),
+        ]
+    }
+
+    #[test]
+    fn makes_generic_rule_tables() {
+        for (name, instr, r1, r2) in rule_table() {
+            assert_eq!(
+                makes_generic_under(&instr, StateRule::R1).unwrap(),
+                r1,
+                "R1 {name}"
+            );
+            assert_eq!(
+                makes_generic_under(&instr, StateRule::R2).unwrap(),
+                r2,
+                "R2 {name}"
+            );
+            assert_eq!(
+                makes_generic(&instr).unwrap(),
+                makes_generic_under(&instr, STATE_RULE).unwrap(),
+                "STATE_RULE {name}"
+            );
+        }
+    }
+
+    #[test]
+    fn makes_generic_rejects_bad_input() {
+        let nan_dp = Instruction::DiagonalPhase(Box::new(DiagonalPhase {
+            n_qubits: 2,
+            terms: vec![PhaseTerm {
+                conds: smallvec![0b01],
+                angle: f64::NAN,
+            }],
+        }));
+        let nan_rx = g(Gate::Rx(Param::Concrete(f64::NAN)), &[0]);
+        let measure = Instruction::Measure { qubit: 0, clbit: 0 };
+        for rule in [StateRule::R1, StateRule::R2] {
+            assert!(
+                makes_generic_under(&nan_dp, rule).is_err(),
+                "{rule:?} NaN angle"
+            );
+            assert!(
+                makes_generic_under(&nan_rx, rule).is_err(),
+                "{rule:?} Rx(NaN)"
+            );
+            assert!(
+                makes_generic_under(&measure, rule).is_err(),
+                "{rule:?} Measure"
+            );
+        }
     }
 
     #[test]
