@@ -364,8 +364,10 @@ lookahead 2.174, reorder k=1 0.810; random D=4 naive 3.349, lookahead 1.892, reo
 Exit 3 is read as the spec §8 defines it, "the model gate (§6.3) holds on every cell", and the §6.3 gate is defined
 on Lookahead plans; the compiled-plan check (3b) is reported alongside as an additional plan-level check. The PR 3
 plan had bundled the two into exit 3, and this narrowing was decided after seeing these runs (under the plan's
-wording, run 2 misses exit 3). The 3a worst cell, random d=10 D=2, moved from 4.0 % in PR 2 (§2.5) to 5.4–5.6 % in
+wording, run 2 misses exit 3). The 3a worst cell, random d=10 D=2, moved from 2.0–4.0 % in PR 2 (run 1 2.0 %, run 2 4.0 %; §2.5/§2.6) to 5.4–5.6 % in
 this re-run.
+
+Note: the raw logs of these runs print the old `exit3` label for what this report calls 3b.
 
 Gate re-run (spec exit 3a; `dist_cost_gate`, Lookahead plans, best of 3), run 2 with run 1 in brackets:
 
@@ -502,7 +504,7 @@ is calibrated on the uniform H state, and §2.3–2.4 measured it at ×1.12 on a
     is close (reorder k=1 model 2.656 vs lookahead 4.887 at D=2).
   - Supporting evidence: FP32 has no such gap. Its `dense3` constant sits on the bandwidth floor (§2.1), and the same
     compiled random plans land at 0.973–0.982 (§3.2).
-  - Follow-up: calibrate Dense3 for generic states, or price kernels by state entropy (a per-workload state factor),
+  - Follow-up (#538): calibrate Dense3 for generic states, or price kernels by state entropy (a per-workload state factor),
     and re-run both gates out of sample.
 - **FP32** makes the same choices as FP64 (naive+place for QFT, reorder k=1 for random). Compiled / L is 0.927 and
   0.821 for QFT and 0.381 and 0.243 for random (run 2). The random gains are larger than FP64's because the compiled

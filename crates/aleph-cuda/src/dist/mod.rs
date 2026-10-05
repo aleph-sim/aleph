@@ -164,7 +164,9 @@ impl<B: DeviceSv, X: Exchange<B>> DistSvBackend<B, X> {
     /// placement candidate under `cost`), then execute.
     ///
     /// `cost` only *chooses* among valid plans, so a mis-calibrated model
-    /// costs speed, never correctness. Build a `GpuCostModel` with
+    /// costs speed, never correctness. Use the preset matching the backend's
+    /// precision (`rtx4000_fp64()` for `CudaSvBackend`, `rtx4000_fp32()` for
+    /// `CudaSvBackendF32`). Build a `GpuCostModel` with
     /// `fuse: self.fusion()`; its constants are valid near the slice size
     /// they were calibrated at (`KindTimes::m_ref`).
     pub fn run_compiled(
