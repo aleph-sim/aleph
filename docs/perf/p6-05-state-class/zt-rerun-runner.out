@@ -1,0 +1,8 @@
+   Compiling aleph-cuda v0.3.0 (/root/aleph-p6/crates/aleph-cuda)
+    Finished `release` profile [optimized] target(s) in 4.78s
+  Executable tests/dist_cost_gate.rs (target/release/deps/dist_cost_gate-f1c4dd399fa91b2e)
+ollama
+neatkept-embed
+PAUSED 2026-10-05T13:45:14Z: /ollama=paused /neatkept-embed=paused 
+ZT_RERUN_DONE
+RESTORED 2026-10-05T14:02:07Z: /ollama=running /neatkept-embed=running 

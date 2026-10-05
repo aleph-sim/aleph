@@ -2,8 +2,7 @@
 //! Lookahead at n=28, with *measured* compute: one card runs all R ranks,
 //! exchange copies are subtracted with the exchange-only plan, and the AWS
 //! link table prices the exchanges. Prints the table and the exit verdicts
-//! (spec §8); it does not assert them. The `exit3b` lines are an extra
-//! plan-level check on compiled plans; the spec's exit 3 is `dist_cost_gate`.
+//! (spec §8); it does not assert them. The `exit3b` lines (compiled-plan model/measured) are #538's exit 2 and use the state-class model.
 //! Run (idle box): cargo test --release -p aleph-cuda --features cuda --test dist_compile_bench -- --ignored --nocapture
 #![cfg(all(target_os = "linux", feature = "cuda"))]
 
@@ -159,7 +158,7 @@ fn run_cells<B: DeviceSv>(
                 ));
                 let ok3 = mc.ratio.is_finite() && (mc.ratio - 1.0).abs() <= 0.10;
                 verdicts.push(format!(
-                    "exit3b (plan-level compiled-plan check; spec exit 3 = dist_cost_gate) {name} D={}: compiled model/measured = {:.3} (measured all-ranks {:.3} s) → {}",
+                    "exit3b (compiled-plan model/measured; #538 exit 2) {name} D={}: compiled model/measured = {:.3} (measured all-ranks {:.3} s) → {}",
                     l.ranks(),
                     mc.ratio,
                     mc.all,

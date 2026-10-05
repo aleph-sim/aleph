@@ -2,9 +2,10 @@
 //! `CudaSvBackend::apply_gate` (sv/backend.rs) and `apply_diagonal_phase`, so
 //! each instruction is priced as the kernel it actually launches.
 
-use aleph_core::Gate;
-use aleph_ir::dist::{CostModel, DistError, DistLayout};
+use aleph_core::{Complex, Gate, GateMatrix};
+use aleph_ir::dist::{CostModel, DistError, DistLayout, DistPlan, DistStep};
 use aleph_ir::Instruction;
+use std::f64::consts::{FRAC_1_SQRT_2, FRAC_PI_4};
 
 use crate::common::diagonal_of;
 
@@ -96,8 +97,192 @@ pub fn classify(instr: &Instruction) -> Result<KernelKind, DistError> {
     })
 }
 
+/// Candidate state-class transition rules (#538, spec §2 rule 3). An
+/// instruction that "makes the state generic" moves the amplitudes off the
+/// small value set where FP64 kernels run fastest at the card's power cap.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StateRule {
+    /// Non-diagonal, and some matrix entry has magnitude outside {0, 1, 1/√2}.
+    R1,
+    /// R1, or some entry (diagonal or not) or `DiagonalPhase` term angle has a
+    /// phase that is not a multiple of π/4.
+    R2,
+}
+
+/// The rule Stage A chose (docs/perf/p6-05-compiler.md §4.1): on FP64, state
+/// (b) (equal magnitudes, varied phases) measured generic (dense2 ×1.217 vs
+/// uniform), which only R2 predicts.
+pub const STATE_RULE: StateRule = StateRule::R2;
+
+/// Tolerance on magnitudes and phases (spec §2 rule 3).
+const CLASS_TOL: f64 = 1e-9;
+
+const NON_FINITE: DistError = DistError::Unsupported {
+    kind: "cost: non-finite matrix entry or phase angle",
+};
+
+fn special_magnitude(r: f64) -> bool {
+    [0.0, 1.0, FRAC_1_SQRT_2]
+        .iter()
+        .any(|v| (r - v).abs() <= CLASS_TOL)
+}
+
+fn quarter_pi_phase(a: f64) -> bool {
+    (a - (a / FRAC_PI_4).round() * FRAC_PI_4).abs() <= CLASS_TOL
+}
+
+/// Dimension and row-major entries of `gate`'s target matrix. `UnitaryKq` is
+/// read from its data, as the backend does (`Gate::matrix` rejects it).
+fn matrix_entries(gate: &Gate) -> Result<(usize, Vec<Complex>), DistError> {
+    if let Gate::UnitaryKq { k, data } = gate {
+        // Guard before the shift: k >= 64 would overflow it, and a wrong data
+        // length would misjudge the diagonal (never panic on input).
+        let k = u32::from(*k);
+        if !(1..=5).contains(&k) || data.len() != 1usize << (2 * k) {
+            return Err(DistError::Unsupported {
+                kind: "cost: malformed UnitaryKq",
+            });
+        }
+        return Ok((1usize << k, data.to_vec()));
+    }
+    Ok(match gate.matrix()? {
+        GateMatrix::M2x2(m) => (2, m.iter().flatten().copied().collect()),
+        GateMatrix::M4x4(m) => (4, m.iter().flatten().copied().collect()),
+        GateMatrix::M8x8(m) => (8, m.iter().flatten().copied().collect()),
+    })
+}
+
+/// Bit `q` of `z0` (qubits ≥ 64 are never known to be |0⟩).
+fn in_z0(z0: u64, q: u32) -> bool {
+    q < 64 && (z0 >> q) & 1 == 1
+}
+
+/// Sets bit `q` of `z0` to `on` (no-op for q ≥ 64).
+fn set_z0(z0: &mut u64, q: u32, on: bool) {
+    if q < 64 {
+        if on {
+            *z0 |= 1u64 << q;
+        } else {
+            *z0 &= !(1u64 << q);
+        }
+    }
+}
+
+/// Whether `instr` makes the state generic under `rule`, given the physical
+/// qubits `z0` known to be |0⟩, and updates `z0` (zero-tracking spec §2).
+///
+/// A gate with an external control in Z0, or whose target matrix is the
+/// identity on the columns Z0 allows, acts trivially. Otherwise `rule` is
+/// judged on those columns only. A `DiagonalPhase` term with a cond mask inside
+/// Z0 is dead (its parity is 0).
+fn instr_makes_generic(
+    instr: &Instruction,
+    rule: StateRule,
+    z0: &mut u64,
+) -> Result<bool, DistError> {
+    let g = match instr {
+        Instruction::Gate(g) => g,
+        Instruction::DiagonalPhase(dp) => {
+            let mut generic = false;
+            for t in &dp.terms {
+                if !t.angle.is_finite() {
+                    return Err(NON_FINITE);
+                }
+                let dead = t.conds.iter().any(|&m| m & !*z0 == 0);
+                generic |= !dead && rule == StateRule::R2 && !quarter_pi_phase(t.angle);
+            }
+            return Ok(generic);
+        }
+        Instruction::Barrier(_) => return Ok(false),
+        _ => {
+            return Err(DistError::Unsupported {
+                kind: "cost: unsupported instruction",
+            })
+        }
+    };
+    let (dim, entries) = matrix_entries(&g.gate)?;
+    if entries
+        .iter()
+        .any(|z| !z.re.is_finite() || !z.im.is_finite())
+    {
+        return Err(NON_FINITE);
+    }
+    // Step 1: an external control in Z0 never fires.
+    if g.controls.iter().any(|&c| in_z0(*z0, c)) {
+        return Ok(false);
+    }
+    let k = g.qubits.len();
+    if k >= usize::BITS as usize || dim != 1usize << k {
+        return Err(DistError::Unsupported {
+            kind: "internal: matrix size does not match qubit count",
+        });
+    }
+    // qubits[i] is bit k-1-i of a matrix index (MSB-first).
+    let bit = |i: usize| 1usize << (k - 1 - i);
+    let zero_bits: usize = (0..k).filter(|&i| in_z0(*z0, g.qubits[i])).map(bit).sum();
+    // Step 2: the columns the state occupies.
+    let cols: Vec<usize> = (0..dim).filter(|c| c & zero_bits == 0).collect();
+    let at = |r: usize, c: usize| entries[r * dim + c];
+    // Step 3: identity on those columns.
+    let identity = cols.iter().all(|&c| {
+        (0..dim).all(|r| {
+            let want = if r == c { 1.0 } else { 0.0 };
+            (at(r, c) - Complex::new(want, 0.0)).norm() <= CLASS_TOL
+        })
+    });
+    if identity {
+        return Ok(false);
+    }
+    // Step 4: R1/R2 on the restricted entries.
+    let (mut non_diagonal, mut odd_magnitude, mut odd_phase) = (false, false, false);
+    for &c in &cols {
+        for r in 0..dim {
+            let z = at(r, c);
+            let mag = z.norm();
+            if r != c && mag > CLASS_TOL {
+                non_diagonal = true;
+            }
+            odd_magnitude |= !special_magnitude(mag);
+            odd_phase |= mag > CLASS_TOL && !quarter_pi_phase(z.arg());
+        }
+    }
+    // Step 5: Z0 update for the target qubits.
+    for (i, &q) in g.qubits.iter().enumerate() {
+        let stays_zero = cols
+            .iter()
+            .all(|&c| (0..dim).all(|r| at(r, c).norm() <= CLASS_TOL || r & bit(i) == 0));
+        let now = if g.controls.is_empty() {
+            stays_zero
+        } else {
+            in_z0(*z0, q) && stays_zero
+        };
+        set_z0(z0, q, now);
+    }
+    let r1 = non_diagonal && odd_magnitude;
+    Ok(match rule {
+        StateRule::R1 => r1,
+        StateRule::R2 => r1 || odd_phase,
+    })
+}
+
+/// Whether `instr` makes the state generic under `rule`.
+///
+/// Judged on the logical, pre-specialise instruction; external controls are
+/// ignored (the target matrix decides, as in [`classify`]). `Barrier` is never
+/// generic. Errors on a non-finite entry or angle (ADR 0006) and on
+/// instructions `classify` rejects.
+/// No qubit is assumed |0⟩ (Z0 = ∅); [`state_classes`] tracks Z0.
+pub fn makes_generic_under(instr: &Instruction, rule: StateRule) -> Result<bool, DistError> {
+    instr_makes_generic(instr, rule, &mut 0)
+}
+
+/// [`makes_generic_under`] the chosen [`STATE_RULE`].
+pub fn makes_generic(instr: &Instruction) -> Result<bool, DistError> {
+    makes_generic_under(instr, STATE_RULE)
+}
+
 /// Calibrated seconds per kernel launch at a `2^m_ref` slice (the RTX 4000
-/// presets come from `tests/dist_cost_calibrate.rs`). Every kind is a full pass
+/// presets come from `tests/dist_cost_states.rs`). Every kind is a full pass
 /// over the slice, so time scales by `2^(m − m_ref)`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct KindTimes {
@@ -121,30 +306,128 @@ pub struct KindTimes {
     pub phase_term: f64,
     /// `PhasePoly` per-term cost at `m_ref`, terms with ≥ 2 conds (AND).
     pub phase_term_multi: f64,
+    /// Generic-state values; the fields above are the simple-state (uniform) values.
+    pub generic: GenericTimes,
+}
+
+/// Per-launch seconds at `m_ref` on a **generic** state, for the kinds whose
+/// time depends on the state class (#538, spec §2 rule 2). `None`: the kind
+/// keeps its one constant, the simple value in [`KindTimes`].
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct GenericTimes {
+    /// Generic-state `Dense1` seconds.
+    pub dense1: Option<f64>,
+    /// Generic-state `Dense2` seconds.
+    pub dense2: Option<f64>,
+    /// Generic-state `Dense3` seconds.
+    pub dense3: Option<f64>,
+    /// Generic-state `Diag1` seconds.
+    pub diag1: Option<f64>,
+    /// Generic-state `DiagK` seconds.
+    pub diag_k: Option<f64>,
+    /// Generic-state `Cnot` seconds.
+    pub cnot: Option<f64>,
+    /// Generic-state `PhasePoly` fixed cost.
+    pub phase_base: Option<f64>,
+    /// Generic-state `PhasePoly` per-term cost, terms with ≤ 1 cond.
+    pub phase_term: Option<f64>,
+    /// Generic-state `PhasePoly` per-term cost, terms with ≥ 2 conds (AND).
+    pub phase_term_multi: Option<f64>,
+}
+
+impl GenericTimes {
+    /// No kind is state-dependent: prices exactly as one constant per kind.
+    pub const NONE: Self = Self {
+        dense1: None,
+        dense2: None,
+        dense3: None,
+        diag1: None,
+        diag_k: None,
+        cnot: None,
+        phase_base: None,
+        phase_term: None,
+        phase_term_multi: None,
+    };
 }
 
 impl KindTimes {
-    /// Seconds for one launch of kind `k` on a `2^m` slice.
+    /// Seconds for one launch of kind `k` on a `2^m` slice, on a generic state
+    /// if `generic` (a kind without a generic value uses its simple one).
     ///
     /// Valid near `m_ref`: the `2^(m − m_ref)` scaling has no launch-latency
     /// floor, so costs at small `m` are not meaningful.
-    pub fn seconds(&self, k: KernelKind, m: u32) -> f64 {
+    pub fn seconds(&self, k: KernelKind, m: u32, generic: bool) -> f64 {
+        let pick = |simple: f64, gen: Option<f64>| {
+            if generic {
+                gen.unwrap_or(simple)
+            } else {
+                simple
+            }
+        };
+        let g = &self.generic;
         let at_ref = match k {
-            KernelKind::Dense1 => self.dense1,
-            KernelKind::Dense2 => self.dense2,
-            KernelKind::Dense3 => self.dense3,
-            KernelKind::Diag1 => self.diag1,
-            KernelKind::DiagK => self.diag_k,
-            KernelKind::Cnot => self.cnot,
+            KernelKind::Dense1 => pick(self.dense1, g.dense1),
+            KernelKind::Dense2 => pick(self.dense2, g.dense2),
+            KernelKind::Dense3 => pick(self.dense3, g.dense3),
+            KernelKind::Diag1 => pick(self.diag1, g.diag1),
+            KernelKind::DiagK => pick(self.diag_k, g.diag_k),
+            KernelKind::Cnot => pick(self.cnot, g.cnot),
             KernelKind::PhasePoly { single, multi } => {
-                self.phase_base
-                    + self.phase_term * single as f64
-                    + self.phase_term_multi * multi as f64
+                pick(self.phase_base, g.phase_base)
+                    + pick(self.phase_term, g.phase_term) * single as f64
+                    + pick(self.phase_term_multi, g.phase_term_multi) * multi as f64
             }
             KernelKind::Free => 0.0,
         };
         at_ref * 2f64.powi(m as i32 - self.m_ref as i32)
     }
+}
+
+/// Whether each step of `plan` is priced on a generic state (spec §3.2).
+///
+/// The walk starts simple with every qubit known |0⟩ (zero-tracking spec §2). A `Local` step that
+/// holds any instruction that makes the state generic, given the qubits still |0⟩ at that point,
+/// is priced generic in full, and so is every later step. Exchanges swap the paired bits' |0⟩
+/// status and keep the class.
+pub fn state_classes(plan: &DistPlan) -> Result<Vec<bool>, DistError> {
+    let l = plan.layout;
+    let mut z0: u64 = if l.n >= 64 {
+        u64::MAX
+    } else {
+        (1u64 << l.n) - 1
+    };
+    let mut generic = false;
+    let mut out = Vec::with_capacity(plan.steps.len());
+    for step in &plan.steps {
+        if !generic {
+            match step {
+                DistStep::Local(instrs) => {
+                    for i in instrs {
+                        if instr_makes_generic(i, STATE_RULE, &mut z0)? {
+                            generic = true;
+                            break;
+                        }
+                    }
+                }
+                DistStep::Exchange { global_bits } => {
+                    let k = global_bits.len() as u32;
+                    for (j, &gb) in global_bits.iter().enumerate() {
+                        let lb =
+                            (l.m() + j as u32)
+                                .checked_sub(k)
+                                .ok_or(DistError::Unsupported {
+                                    kind: "internal: exchange wider than the local slice",
+                                })?;
+                        let (a, b) = (in_z0(z0, gb), in_z0(z0, lb));
+                        set_z0(&mut z0, gb, b);
+                        set_z0(&mut z0, lb, a);
+                    }
+                }
+            }
+        }
+        out.push(generic);
+    }
+    Ok(out)
 }
 
 /// Per-exchange link bandwidth by exchange width (bytes/s, index `k − 1`).
@@ -206,24 +489,42 @@ pub struct GpuCostModel {
 
 impl GpuCostModel {
     /// Seconds rank `rank` spends on one `Local` step.
+    /// `generic`: price on a generic state (see [`state_classes`]).
     pub fn rank_segment(
         &self,
         instrs: &[Instruction],
         layout: DistLayout,
         rank: u32,
+        generic: bool,
     ) -> Result<f64, DistError> {
         let c = super::rank_circuit(instrs, layout, rank, self.fuse)?;
         let m = layout.m();
         let mut t = 0.0;
         for i in c.instructions() {
-            t += self.kinds.seconds(classify(i)?, m);
+            t += self.kinds.seconds(classify(i)?, m, generic);
         }
         Ok(t)
     }
 
+    /// All-ranks compute of `plan` (Σ over `Local` steps and ranks), with the
+    /// state-class walk: the quantity the §6.3 gate compares to one card
+    /// running every rank.
+    pub fn all_ranks(&self, plan: &DistPlan) -> Result<f64, DistError> {
+        let l = plan.layout;
+        let mut all = 0.0;
+        for (step, generic) in plan.steps.iter().zip(state_classes(plan)?) {
+            if let DistStep::Local(instrs) = step {
+                for r in 0..l.ranks() {
+                    all += self.rank_segment(instrs, l, r, generic)?;
+                }
+            }
+        }
+        Ok(all)
+    }
+
     /// RTX 4000 SFF Ada, FP64, fused like `DistSvBackend::new` — constants
-    /// from `tests/dist_cost_calibrate.rs`, run with
-    /// `cargo test --release -p aleph-cuda --features cuda --test dist_cost_calibrate -- --ignored --nocapture`.
+    /// from `tests/dist_cost_states.rs`, run with
+    /// `cargo test --release -p aleph-cuda --features cuda --test dist_cost_states -- --ignored --nocapture`.
     pub fn rtx4000_fp64() -> Self {
         Self {
             kinds: RTX4000_FP64,
@@ -245,12 +546,30 @@ impl GpuCostModel {
 }
 
 impl CostModel for GpuCostModel {
+    /// Without plan context this prices a **simple** state; `plan_cost` uses `step_costs`, which carries the class.
+    ///
     /// Rank R − 1 (all global bits 1: every global-controlled gate is live) —
     /// representative, typically the busiest; not a strict bound (a parity
     /// cond can expand into more terms on another rank). Ranks sync at each
     /// exchange anyway.
     fn local_segment(&self, instrs: &[Instruction], layout: DistLayout) -> Result<f64, DistError> {
-        self.rank_segment(instrs, layout, layout.ranks() - 1)
+        self.rank_segment(instrs, layout, layout.ranks() - 1, false)
+    }
+
+    /// Per-step costs with the state-class walk ([`state_classes`]); `Local`
+    /// steps priced at rank R − 1 as in [`CostModel::local_segment`].
+    fn step_costs(&self, plan: &DistPlan) -> Result<Vec<f64>, DistError> {
+        let l = plan.layout;
+        plan.steps
+            .iter()
+            .zip(state_classes(plan)?)
+            .map(|(step, generic)| match step {
+                DistStep::Local(instrs) => self.rank_segment(instrs, l, l.ranks() - 1, generic),
+                DistStep::Exchange { global_bits } => {
+                    Ok(self.exchange(global_bits.len() as u32, l.m()))
+                }
+            })
+            .collect()
     }
 
     fn exchange(&self, k: u32, m: u32) -> f64 {
@@ -260,53 +579,67 @@ impl CostModel for GpuCostModel {
 
 /// Measured per-launch seconds per kernel kind on the RTX 4000 SFF Ada (20 GiB).
 ///
-/// Calibrated 2026-10-04 with
-/// `cargo test --release -p aleph-cuda --features cuda --test dist_cost_calibrate -- --ignored --nocapture`.
+/// Calibrated 2026-10-05 (#538 Stage A) with
+/// `cargo test --release -p aleph-cuda --features cuda --test dist_cost_states -- --ignored --nocapture`.
 /// Method: each launch interleaved with an `H`, best of 5 × 32 launches, the
-/// interleaved-H baseline subtracted. Each constant is the **mean of 2 runs**
-/// (largest run-to-run spread: FP64 dense3 +2.4 %, phase_base +2.0 %).
-/// `dense2` alone is timed on a scrambled state (H layer + one Rx and one Rz
-/// per qubit, in payload and baseline) and was re-measured later the same day
-/// (mean of 2 runs, FP64 spread +3.3 %); the other constants are from the
-/// earlier pair. At the card's 70 W cap, FP64 kernel time depends on the
-/// amplitude data: dense2 costs ~1.2x on a generic complex state, and dense3
-/// (still uniform-state, to keep GHZ-like low-entropy states right) carries a
-/// known state-dependent error (~1.12x on generic states).
-/// Most kinds sit on the ~17.6 ms single-pass bandwidth floor (dense1/diag1/
-/// diag_k are within ~1 % of each other, so their ordering is noise); cnot
-/// touches half the state, dense3 is compute-bound at FP64, and phase_poly pays
-/// a per-term cost that depends on the term shape (single cond vs AND of two).
+/// interleaved-H baseline (same prepared state) subtracted; two passes in one
+/// invocation, each constant the **mean of 2** (spec rule 4). Simple values are
+/// timed on the uniform H state (a), generic values on a generic complex state
+/// (d: H layer + one Rx and one Rz per qubit). At the card's 70 W cap FP64
+/// kernel time depends on the amplitude data: a kind gets a generic value iff
+/// its (d) time is ≥ 5 % above (a) (spec rule 2) — dense2 ×1.216, dense3 ×1.157,
+/// phase_base ×1.164; every other kind moves ≤ 1.5 % (or is faster) and keeps
+/// one constant. Largest run-to-run spread: dense2 on (a), 18.04 / 19.28 ms.
+/// Most kinds sit on the ~17.6 ms single-pass bandwidth floor; cnot touches half
+/// the state, dense3 is compute-bound at FP64, and phase_poly pays a per-term
+/// cost that depends on the term shape (single cond vs AND of two).
 /// `phase_base` includes the per-launch device allocation and upload of the terms.
+/// Tables: docs/perf/p6-05-compiler.md §4.1.
 const RTX4000_FP64: KindTimes = KindTimes {
     m_ref: 27,
-    dense1: 1.755645e-2,
-    dense2: 2.168771e-2,
-    dense3: 3.436177e-2,
-    diag1: 1.774244e-2,
-    diag_k: 1.759981e-2,
-    cnot: 1.080041e-2,
-    phase_base: 2.147593e-2,
-    phase_term: 6.712988e-4,
-    phase_term_multi: 4.776938e-4,
+    dense1: 1.754941e-2,
+    dense2: 1.865920e-2,
+    dense3: 3.465677e-2,
+    diag1: 1.775814e-2,
+    diag_k: 1.761880e-2,
+    cnot: 1.076974e-2,
+    phase_base: 2.134603e-2,
+    phase_term: 6.695171e-4,
+    phase_term_multi: 4.769194e-4,
+    generic: GenericTimes {
+        dense2: Some(2.268356e-2),
+        dense3: Some(4.008718e-2),
+        phase_base: Some(2.485048e-2),
+        ..GenericTimes::NONE
+    },
 };
 /// FP32 counterpart (same provenance as [`RTX4000_FP64`], state size 2^28).
+/// No dense kind is state-dependent at FP32 (dense2 0.997–1.002 across states);
+/// only phase_base is (×1.074 on (d), and ≈ 49.6 vs 45.3–46.2 ms following the
+/// R2 classes exactly). Rule 3 does not resolve on FP32 alone; using R2 with
+/// this split was a user decision after Stage A (report §4.1).
 const RTX4000_FP32: KindTimes = KindTimes {
     m_ref: 28,
-    dense1: 1.763479e-2,
-    dense2: 1.773724e-2,
-    dense3: 1.797886e-2,
-    diag1: 1.769642e-2,
-    diag_k: 1.771855e-2,
-    cnot: 1.295351e-2,
-    phase_base: 4.623386e-2,
-    phase_term: 1.285620e-3,
-    phase_term_multi: 8.999014e-4,
+    dense1: 1.760144e-2,
+    dense2: 1.778507e-2,
+    dense3: 1.798735e-2,
+    diag1: 1.771054e-2,
+    diag_k: 1.765984e-2,
+    cnot: 1.293906e-2,
+    phase_base: 4.615620e-2,
+    phase_term: 1.281225e-3,
+    phase_term_multi: 9.070384e-4,
+    generic: GenericTimes {
+        phase_base: Some(4.958854e-2),
+        ..GenericTimes::NONE
+    },
 };
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use aleph_core::{Complex, GateInstance, Param};
+    use aleph_ir::dist::{DistLayout, DistPlan, DistStep};
     use aleph_ir::{DiagonalPhase, PhaseTerm};
     use smallvec::smallvec;
 
@@ -422,6 +755,132 @@ mod tests {
         );
     }
 
+    /// (instruction, generic under R1, generic under R2) — spec §3.3's list.
+    fn rule_table() -> Vec<(&'static str, Instruction, bool, bool)> {
+        use std::f64::consts::{FRAC_PI_2, FRAC_PI_4};
+        let p = Param::Concrete;
+        let ctl = |gate: Gate, t: u32, c: u32| {
+            Instruction::Gate(GateInstance::controlled(gate, vec![t], vec![c]))
+        };
+        let dp = |angle: f64| {
+            Instruction::DiagonalPhase(Box::new(DiagonalPhase {
+                n_qubits: 3,
+                terms: vec![PhaseTerm {
+                    conds: smallvec![0b011],
+                    angle,
+                }],
+            }))
+        };
+        // Rx(0.3) ⊗ I as a fused 2q block: non-diagonal, |cos 0.15|, |sin 0.15|.
+        let (a, b) = ((0.15f64).cos(), (0.15f64).sin());
+        let z = Complex::new(0.0, 0.0);
+        let (ca, mib) = (Complex::new(a, 0.0), Complex::new(0.0, -b));
+        let rx_i = [
+            [ca, z, mib, z],
+            [z, ca, z, mib],
+            [mib, z, ca, z],
+            [z, mib, z, ca],
+        ];
+        // 3q permutation block (simple) read from UnitaryKq data.
+        let mut perm = vec![z; 64];
+        for r in 0..8 {
+            perm[r * 8 + (r ^ 1)] = Complex::new(1.0, 0.0);
+        }
+        let kq = Gate::UnitaryKq {
+            k: 3,
+            data: perm.into_boxed_slice(),
+        };
+        vec![
+            ("H", g(Gate::H, &[0]), false, false),
+            ("S", g(Gate::S, &[0]), false, false),
+            ("T", g(Gate::T, &[0]), false, false),
+            ("X", g(Gate::X, &[0]), false, false),
+            ("Y", g(Gate::Y, &[0]), false, false),
+            ("CNOT", g(Gate::Cnot, &[0, 1]), false, false),
+            ("Toffoli", g(Gate::Toffoli, &[0, 1, 2]), false, false),
+            ("CZ", g(Gate::Cz, &[0, 1]), false, false),
+            ("Iswap", g(Gate::Iswap, &[0, 1]), false, false),
+            ("MCZ", ctl(Gate::Z, 3, 0), false, false),
+            ("Rx(0.3)", g(Gate::Rx(p(0.3)), &[0]), true, true),
+            ("Ry(0.3)", g(Gate::Ry(p(0.3)), &[0]), true, true),
+            ("Rz(0.3)", g(Gate::Rz(p(0.3)), &[0]), false, true),
+            ("Rz(pi/2)", g(Gate::Rz(p(FRAC_PI_2)), &[0]), false, false),
+            (
+                "Phase(pi/4)",
+                g(Gate::Phase(p(FRAC_PI_4)), &[0]),
+                false,
+                false,
+            ),
+            ("Phase(0.3)", g(Gate::Phase(p(0.3)), &[0]), false, true),
+            ("CRz(0.3)", g(Gate::CRz(p(0.3)), &[0, 1]), false, true),
+            (
+                "Unitary2q Rx⊗I",
+                g(Gate::Unitary2q(Box::new(rx_i)), &[0, 1]),
+                true,
+                true,
+            ),
+            ("UnitaryKq perm", g(kq, &[0, 1, 2]), false, false),
+            ("DiagonalPhase pi/4", dp(FRAC_PI_4), false, false),
+            ("DiagonalPhase 0.3", dp(0.3), false, true),
+            ("ext-ctl Rx(0.3)", ctl(Gate::Rx(p(0.3)), 0, 1), true, true),
+            ("ext-ctl Rz(0.3)", ctl(Gate::Rz(p(0.3)), 0, 1), false, true),
+            (
+                "Barrier",
+                Instruction::Barrier(smallvec![0, 1]),
+                false,
+                false,
+            ),
+        ]
+    }
+
+    #[test]
+    fn makes_generic_rule_tables() {
+        for (name, instr, r1, r2) in rule_table() {
+            assert_eq!(
+                makes_generic_under(&instr, StateRule::R1).unwrap(),
+                r1,
+                "R1 {name}"
+            );
+            assert_eq!(
+                makes_generic_under(&instr, StateRule::R2).unwrap(),
+                r2,
+                "R2 {name}"
+            );
+            assert_eq!(
+                makes_generic(&instr).unwrap(),
+                makes_generic_under(&instr, STATE_RULE).unwrap(),
+                "STATE_RULE {name}"
+            );
+        }
+    }
+
+    #[test]
+    fn makes_generic_rejects_bad_input() {
+        let nan_dp = Instruction::DiagonalPhase(Box::new(DiagonalPhase {
+            n_qubits: 2,
+            terms: vec![PhaseTerm {
+                conds: smallvec![0b01],
+                angle: f64::NAN,
+            }],
+        }));
+        let nan_rx = g(Gate::Rx(Param::Concrete(f64::NAN)), &[0]);
+        let measure = Instruction::Measure { qubit: 0, clbit: 0 };
+        for rule in [StateRule::R1, StateRule::R2] {
+            assert!(
+                makes_generic_under(&nan_dp, rule).is_err(),
+                "{rule:?} NaN angle"
+            );
+            assert!(
+                makes_generic_under(&nan_rx, rule).is_err(),
+                "{rule:?} Rx(NaN)"
+            );
+            assert!(
+                makes_generic_under(&measure, rule).is_err(),
+                "{rule:?} Measure"
+            );
+        }
+    }
+
     #[test]
     fn measure_is_rejected() {
         assert!(classify(&Instruction::Measure { qubit: 0, clbit: 0 }).is_err());
@@ -439,32 +898,384 @@ mod tests {
             phase_base: 1.0,
             phase_term: 0.1,
             phase_term_multi: 0.05,
+            generic: GenericTimes::NONE,
+        }
+    }
+
+    fn rx(q: u32) -> Instruction {
+        g(Gate::Rx(Param::Concrete(0.3)), &[q])
+    }
+
+    /// unit_times with every kind's generic value = 10 × simple.
+    fn unit_times_generic() -> KindTimes {
+        let s = unit_times();
+        KindTimes {
+            generic: GenericTimes {
+                dense1: Some(10.0 * s.dense1),
+                dense2: Some(10.0 * s.dense2),
+                dense3: Some(10.0 * s.dense3),
+                diag1: Some(10.0 * s.diag1),
+                diag_k: Some(10.0 * s.diag_k),
+                cnot: Some(10.0 * s.cnot),
+                phase_base: Some(10.0 * s.phase_base),
+                phase_term: Some(10.0 * s.phase_term),
+                phase_term_multi: Some(10.0 * s.phase_term_multi),
+            },
+            ..s
+        }
+    }
+
+    fn model(kinds: KindTimes) -> GpuCostModel {
+        GpuCostModel {
+            kinds,
+            link: LinkModel::aws_g6_fp64(),
+            amp_bytes: 16.0,
+            fuse: false,
+        }
+    }
+
+    /// n=21, g=1 (m=20=m_ref): steps = [Local(a), Exchange(top), Local(b)].
+    fn two_step_plan(a: Vec<Instruction>, b: Vec<Instruction>) -> DistPlan {
+        let l = DistLayout::new(21, 1).unwrap();
+        DistPlan {
+            layout: l,
+            steps: vec![
+                DistStep::Local(a),
+                DistStep::Exchange {
+                    global_bits: smallvec![20],
+                },
+                DistStep::Local(b),
+            ],
+            ..aleph_ir::dist::plan(
+                &aleph_ir::Circuit::new(21, 0),
+                l,
+                aleph_ir::dist::Router::Naive,
+            )
+            .unwrap()
+        }
+    }
+
+    #[test]
+    fn none_generic_prices_like_simple() {
+        let t = unit_times();
+        for k in [KernelKind::Dense1, KernelKind::Dense3, KernelKind::Cnot] {
+            assert_eq!(
+                t.seconds(k, 21, true).to_bits(),
+                t.seconds(k, 21, false).to_bits()
+            );
+        }
+        let tg = unit_times_generic();
+        assert_eq!(tg.seconds(KernelKind::Dense2, 20, true), 20.0);
+        assert_eq!(tg.seconds(KernelKind::Dense2, 20, false), 2.0);
+    }
+
+    #[test]
+    fn class_walk_survives_exchanges() {
+        // Step 0 Clifford (simple), step 2 has Rx(0.3): step 0 simple, 2 generic.
+        let p = two_step_plan(vec![g(Gate::H, &[0])], vec![g(Gate::H, &[0]), rx(1)]);
+        assert_eq!(state_classes(&p).unwrap(), vec![false, false, true]);
+        let costs = model(unit_times_generic()).step_costs(&p).unwrap();
+        // H = Dense1: simple 1.0, generic 10.0; Rx = Dense1 too.
+        assert_eq!(costs[0], 1.0);
+        assert_eq!(costs[2], 20.0);
+        // Transition first: everything after it stays generic across the exchange.
+        let q = two_step_plan(vec![rx(0)], vec![g(Gate::H, &[0])]);
+        assert_eq!(state_classes(&q).unwrap(), vec![true, true, true]);
+        assert_eq!(model(unit_times_generic()).step_costs(&q).unwrap()[2], 10.0);
+    }
+
+    #[test]
+    fn no_generic_gate_prices_like_pr3() {
+        let p = two_step_plan(
+            vec![g(Gate::H, &[0]), g(Gate::Cnot, &[0, 1])],
+            vec![g(Gate::T, &[1]), g(Gate::Toffoli, &[0, 1, 2])],
+        );
+        let pr3 = model(unit_times());
+        let new = model(unit_times_generic());
+        let a = aleph_ir::dist::plan_cost(&p, &new).unwrap();
+        let b = aleph_ir::dist::plan_cost(&p, &pr3).unwrap();
+        assert_eq!(a.to_bits(), b.to_bits());
+        assert_eq!(
+            new.all_ranks(&p).unwrap().to_bits(),
+            pr3.all_ranks(&p).unwrap().to_bits()
+        );
+    }
+
+    #[test]
+    fn empty_locals_cost_nothing() {
+        let p = two_step_plan(vec![], vec![]);
+        let m = model(unit_times_generic());
+        assert_eq!(state_classes(&p).unwrap(), vec![false, false, false]);
+        assert_eq!(m.all_ranks(&p).unwrap(), 0.0);
+        let costs = m.step_costs(&p).unwrap();
+        assert_eq!(costs[0], 0.0);
+        assert_eq!(costs[1], m.exchange(1, 20));
+    }
+
+    fn ctl(gate: Gate, targets: &[u32], controls: &[u32]) -> Instruction {
+        Instruction::Gate(GateInstance::controlled(
+            gate,
+            targets.to_vec(),
+            controls.to_vec(),
+        ))
+    }
+
+    fn qft_circuit(n: u32) -> aleph_ir::Circuit {
+        let mut c = aleph_ir::Circuit::new(n, 0);
+        for j in (0..n).rev() {
+            c.h(j).unwrap();
+            for k in (0..j).rev() {
+                let th = std::f64::consts::PI / f64::from(1u32 << (j - k));
+                c.add_gate(GateInstance::controlled(
+                    Gate::Phase(Param::Concrete(th)),
+                    vec![j],
+                    vec![k],
+                ))
+                .unwrap();
+            }
+        }
+        for q in 0..n / 2 {
+            c.swap(q, n - 1 - q).unwrap();
+        }
+        c
+    }
+
+    fn walk(instrs: &[Instruction], z0: &mut u64) -> Vec<bool> {
+        instrs
+            .iter()
+            .map(|i| instr_makes_generic(i, StateRule::R2, z0).unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn zero_tracking_rule_cases() {
+        let p = Param::Concrete;
+        let all = |n: u32| (1u64 << n) - 1;
+        // Cnot / controlled-Rx with control in Z0: identity, Z0 unchanged.
+        let mut z = all(4);
+        assert_eq!(
+            walk(
+                &[g(Gate::Cnot, &[0, 1]), ctl(Gate::Rx(p(0.3)), &[1], &[0])],
+                &mut z
+            ),
+            vec![false, false]
+        );
+        assert_eq!(z, all(4));
+        // CRx(0.3) on [c, t] with c in Z0: restricted columns are identity (rule steps 2-3).
+        let mut z = all(4);
+        assert_eq!(walk(&[g(Gate::CRx(p(0.3)), &[0, 1])], &mut z), vec![false]);
+        // H removes its qubit from Z0 (and is simple).
+        let mut z = all(4);
+        assert_eq!(walk(&[g(Gate::H, &[0])], &mut z), vec![false]);
+        assert_eq!(z, all(4) & !1);
+        // CP(0.3) control superposed (q0), target in Z0 (q1): identity on the state.
+        assert_eq!(
+            walk(&[ctl(Gate::Phase(p(0.3)), &[1], &[0])], &mut z),
+            vec![false]
+        );
+        // After H(1) the same CP fires: generic.
+        assert_eq!(
+            walk(
+                &[g(Gate::H, &[1]), ctl(Gate::Phase(p(0.3)), &[1], &[0])],
+                &mut z
+            ),
+            vec![false, true]
+        );
+        // A global phase on the Z0 subspace is not the identity: Rz(0.3) on a |0> qubit is generic under R2.
+        let mut z = all(4);
+        assert_eq!(walk(&[g(Gate::Rz(p(0.3)), &[2])], &mut z), vec![true]);
+        // Rx(0.3) on a |0> qubit: generic (cos/sin magnitudes), and the qubit leaves Z0.
+        let mut z = all(4);
+        assert_eq!(walk(&[g(Gate::Rx(p(0.3)), &[3])], &mut z), vec![true]);
+        assert_eq!(z & 0b1000, 0);
+    }
+
+    #[test]
+    fn swap_moves_zero() {
+        // q0 superposed, q1 in Z0; Swap(0, 1) moves the |0> to q0.
+        let mut z = 0b10u64;
+        assert_eq!(walk(&[g(Gate::Swap, &[0, 1])], &mut z), vec![false]);
+        assert_eq!(z, 0b01);
+        // A later Cnot controlled by q0 is now the identity.
+        let before = z;
+        assert_eq!(walk(&[g(Gate::Cnot, &[0, 1])], &mut z), vec![false]);
+        assert_eq!(z, before);
+    }
+
+    #[test]
+    fn controlled_target_never_joins_zero() {
+        // Swap(1, 2) controlled by superposed q0, with q1 in Z0 and q2 not. Restricted to
+        // q1 = 0 the Swap sends |q1 q2> = 01 to 10: a permutation with 0/1 magnitudes and
+        // trivial phases, so R2 (non-diagonal needs odd magnitude; no odd phase) says simple.
+        // Step 5: q1 can now be 1 (leaves Z0). q2 is never 1 on the restricted columns, but
+        // under a control it may only leave Z0, never join it: the gate may not fire.
+        let mut z = 0b010u64;
+        assert_eq!(walk(&[ctl(Gate::Swap, &[1, 2], &[0])], &mut z), vec![false]);
+        assert_eq!(z & 0b110, 0);
+    }
+
+    #[test]
+    fn diagonal_phase_dead_terms() {
+        let dp = |m: u64, angle: f64| {
+            Instruction::DiagonalPhase(Box::new(DiagonalPhase {
+                n_qubits: 3,
+                terms: vec![PhaseTerm {
+                    conds: smallvec![m],
+                    angle,
+                }],
+            }))
+        };
+        // q0 superposed, q1 and q2 in Z0.
+        let mut z = 0b110u64;
+        assert_eq!(walk(&[dp(0b110, 0.3)], &mut z), vec![false]); // cond ⊆ Z0: dead
+        assert_eq!(walk(&[dp(0b011, 0.3)], &mut z), vec![true]); // live cond, odd angle
+        assert_eq!(z, 0b110);
+    }
+
+    #[test]
+    fn qft_from_zero_is_simple_and_x_input_is_generic() {
+        use aleph_ir::dist::{plan, Router};
+        let l = DistLayout::new(6, 1).unwrap();
+        let p = plan(&qft_circuit(6), l, Router::Lookahead).unwrap();
+        assert!(state_classes(&p).unwrap().iter().all(|&g| !g));
+        let mut c = aleph_ir::Circuit::new(6, 0);
+        for q in (1..6).step_by(2) {
+            c.x(q).unwrap();
+        }
+        for i in qft_circuit(6).instructions() {
+            c.add_instruction(i.clone()).unwrap();
+        }
+        let p = plan(&c, l, Router::Lookahead).unwrap();
+        assert!(*state_classes(&p).unwrap().last().unwrap());
+    }
+
+    #[test]
+    fn exchange_swaps_zero_membership() {
+        // two_step_plan: n=21, g=1 (m=20); Exchange swaps physical 20 <-> 19.
+        // Step a superposes q19 and q0; after the exchange q20 holds that superposed
+        // qubit and q19 holds |0>.
+        let a = vec![g(Gate::H, &[19]), g(Gate::H, &[0])];
+        let via20 = two_step_plan(
+            a.clone(),
+            vec![ctl(Gate::Phase(Param::Concrete(0.3)), &[0], &[20])],
+        );
+        assert_eq!(state_classes(&via20).unwrap(), vec![false, false, true]);
+        let via19 = two_step_plan(a, vec![ctl(Gate::Phase(Param::Concrete(0.3)), &[0], &[19])]);
+        assert_eq!(state_classes(&via19).unwrap(), vec![false, false, false]);
+    }
+
+    #[test]
+    fn h_layer_first_matches_old_rule() {
+        use aleph_ir::dist::{plan, Router};
+        let mut c = aleph_ir::Circuit::new(6, 0);
+        for q in 0..6 {
+            c.h(q).unwrap();
+        }
+        c.add_gate(GateInstance::controlled(
+            Gate::Phase(Param::Concrete(0.3)),
+            vec![2],
+            vec![0],
+        ))
+        .unwrap();
+        c.cnot(1, 5).unwrap();
+        c.rz(0.7, 3).unwrap();
+        let p = plan(&c, DistLayout::new(6, 1).unwrap(), Router::Lookahead).unwrap();
+        let mut generic = false;
+        let old: Vec<bool> = p
+            .steps
+            .iter()
+            .map(|s| {
+                if let DistStep::Local(v) = s {
+                    generic |= v.iter().any(|i| makes_generic(i).unwrap());
+                }
+                generic
+            })
+            .collect();
+        assert_eq!(state_classes(&p).unwrap(), old);
+    }
+
+    #[test]
+    fn globally_controlled_generic_gate_flips_all_ranks() {
+        // q19 is superposed in step a; after the exchange it sits in global slot 20,
+        // so Rx(0.3) on q0 controlled by q20 really fires on rank 1 and is dropped on
+        // rank 0. The class is plan-wide: both ranks price step b generic.
+        let ctl_rx = Instruction::Gate(GateInstance::controlled(
+            Gate::Rx(Param::Concrete(0.3)),
+            vec![0u32],
+            vec![20u32],
+        ));
+        let p = two_step_plan(vec![g(Gate::H, &[19])], vec![ctl_rx, g(Gate::H, &[1])]);
+        assert_eq!(state_classes(&p).unwrap(), vec![false, false, true]);
+        let m = model(unit_times_generic());
+        let l = p.layout;
+        let DistStep::Local(instrs) = &p.steps[2] else {
+            unreachable!()
+        };
+        let r0 = m.rank_segment(instrs, l, 0, true).unwrap();
+        let r1 = m.rank_segment(instrs, l, 1, true).unwrap();
+        assert_eq!(r0, 10.0); // H only, generic
+        assert_eq!(r1, 20.0); // Rx + H, generic
+
+        // Step a: H(19) simple on both ranks (1.0 each).
+        assert_eq!(m.all_ranks(&p).unwrap(), 32.0);
+    }
+
+    #[test]
+    fn local_segment_alone_prices_simple() {
+        let m = model(unit_times_generic());
+        let l = DistLayout::new(21, 1).unwrap();
+        assert_eq!(m.local_segment(&[rx(0)], l).unwrap(), 1.0);
+    }
+
+    #[test]
+    fn makes_generic_rejects_malformed_unitary_kq() {
+        let z = Complex::new(0.0, 0.0);
+        let short = g(
+            Gate::UnitaryKq {
+                k: 3,
+                data: vec![z; 10].into_boxed_slice(),
+            },
+            &[0, 1, 2],
+        );
+        let wide = g(
+            Gate::UnitaryKq {
+                k: 6,
+                data: vec![z; 16].into_boxed_slice(),
+            },
+            &[0, 1, 2, 3, 4, 5],
+        );
+        for rule in [StateRule::R1, StateRule::R2] {
+            assert!(
+                makes_generic_under(&short, rule).is_err(),
+                "{rule:?} k=3 len 10"
+            );
+            assert!(makes_generic_under(&wide, rule).is_err(), "{rule:?} k=6");
         }
     }
 
     #[test]
     fn kind_seconds_scale_with_slice() {
         let t = unit_times();
-        assert_eq!(t.seconds(KernelKind::Dense2, 20), 2.0);
-        assert_eq!(t.seconds(KernelKind::Dense2, 22), 8.0);
+        assert_eq!(t.seconds(KernelKind::Dense2, 20, false), 2.0);
+        assert_eq!(t.seconds(KernelKind::Dense2, 22, false), 8.0);
         let ph = KernelKind::PhasePoly {
             single: 10,
             multi: 0,
         };
-        assert!((t.seconds(ph, 20) - 2.0).abs() < 1e-12);
+        assert!((t.seconds(ph, 20, false) - 2.0).abs() < 1e-12);
         let ph = KernelKind::PhasePoly {
             single: 10,
             multi: 4,
         };
-        assert!((t.seconds(ph, 21) - 2.0 * (2.0 + 4.0 * 0.05)).abs() < 1e-12);
-        assert_eq!(t.seconds(KernelKind::Free, 25), 0.0);
+        assert!((t.seconds(ph, 21, false) - 2.0 * (2.0 + 4.0 * 0.05)).abs() < 1e-12);
+        assert_eq!(t.seconds(KernelKind::Free, 25, false), 0.0);
     }
 
     #[test]
     fn scaling_handles_m_below_ref() {
         let t = unit_times();
-        assert_eq!(t.seconds(KernelKind::Dense1, 18), 0.25);
-        assert!(t.seconds(KernelKind::Dense1, 0) > 0.0);
+        assert_eq!(t.seconds(KernelKind::Dense1, 18, false), 0.25);
+        assert!(t.seconds(KernelKind::Dense1, 0, false) > 0.0);
     }
 
     #[test]
@@ -484,7 +1295,6 @@ mod tests {
 
     #[test]
     fn rank_segment_prices_the_fused_program() {
-        use aleph_ir::dist::DistLayout;
         let model = GpuCostModel {
             kinds: unit_times(),
             link: LinkModel::aws_g6_fp64(),
@@ -498,7 +1308,7 @@ mod tests {
             Instruction::Gate(GateInstance::new(Gate::Cnot, vec![0, 1])),
             Instruction::Gate(GateInstance::new(Gate::Rz(Param::Concrete(0.3)), vec![1])),
         ];
-        let t = model.rank_segment(&instrs, l, 1).unwrap();
+        let t = model.rank_segment(&instrs, l, 1, false).unwrap();
         assert!((t - (1.0 + 0.25 + 0.5)).abs() < 1e-12);
     }
 }

@@ -1,0 +1,6 @@
+    Finished `release` profile [optimized] target(s) in 0.03s
+  Executable tests/dist_compile_bench.rs (target/release/deps/dist_compile_bench-a09b6b0a15ac0850)
+  Executable tests/dist_cost_gate.rs (target/release/deps/dist_cost_gate-f1c4dd399fa91b2e)
+ 12:25:57 up 1 day, 20:41,  1 user,  load average: 1.57, 0.88, 0.85
+ 12:41:10 up 1 day, 20:56,  1 user,  load average: 2.36, 1.82, 1.39
+STAGE_C_DONE

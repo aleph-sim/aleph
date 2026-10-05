@@ -1,0 +1,7 @@
+    Finished `release` profile [optimized] target(s) in 0.04s
+  Executable tests/dist_cost_gate.rs (target/release/deps/dist_cost_gate-f1c4dd399fa91b2e)
+ollama
+neatkept-embed
+ISOLATED 2026-10-05T14:09:02Z: /ollama=paused /neatkept-embed=paused  timer=inactive
+ZT_ISO_DONE
+RESTORED 2026-10-05T14:25:24Z: /ollama=running /neatkept-embed=running  timer=active
