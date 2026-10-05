@@ -1276,3 +1276,90 @@ the re-run was made after seeing the MISS, so it is supplementary evidence, not 
 
 The re-runs did not get a GPU that was free in practice either. A truly isolated run on this box would also need
 `neatkept-watchdog.timer` stopped for its duration.
+
+### 4.8 Gate re-run on an isolated GPU (watchdog stopped)
+
+§4.7's pause did not hold, because the box's watchdog restarted the services. The user authorised stopping
+`neatkept-watchdog.timer` for the duration of a second re-run pair (`dist_cost_gate` ×2, code `c091345`).
+
+Raw files in `p6-05-state-class/`:
+
+| file | contents |
+|---|---|
+| `zt-gate-iso{1,2}.log` | the two gate runs |
+| `zt-iso-runner.out` | the run script's output |
+| `zt-iso-container-states.log` | container state, sampled once a minute from the Mac |
+| `zt-iso-watchdog.log` | the watchdog's journal |
+
+**Isolation sequence.**
+
+1. 14:09:02Z: the script stopped `neatkept-watchdog.timer`, waited for any in-flight watchdog run to finish, and
+   paused `ollama` and `neatkept-embed`. A `trap` would restore everything on any exit.
+2. Throughout both runs, both containers stayed `paused`. Their `StartedAt` (13:47:00Z / 13:51:34Z) never changed,
+   and both runs' end lines show `paused` with `timer=inactive`.
+3. 14:25:24Z: restored. Both containers were unpaused, the timer restarted, and one watchdog run was triggered
+   immediately. That run reported "0 problem(s), 0 fix(es)".
+
+The watchdog was silent from 14:08:09Z to 14:25:24Z. Its healthchecks dead-man ping may have fired a "down" notice in
+that window; this cannot be verified from the box.
+
+| run | UTC start | 1-min / 5-min / 15-min load | GPU util | GPU mem resident | power (W) |
+|---|---|---|---|---|---|
+| iso 1 | 14:09:32 | 0.06 / 0.28 / 0.45 | 0 % | 1371 MiB | 6.43 |
+| iso 2 | 14:18:43 | 0.09 / 0.55 / 0.58 | 0 % | 1371 MiB | 6.73 |
+
+**Results** (ratio = model all-ranks / measured compute; class columns identical to §4.6):
+
+| circuit | D | measured (s), iso 1 | ratio, iso 1 | measured (s), iso 2 | ratio, iso 2 |
+|---|---|---|---|---|---|
+| QFT | 2 | 2.326 | 1.065 | 2.340 | 1.059 |
+| QFT | 4 | 2.331 | 1.070 | 2.341 | 1.065 |
+| GHZ | 2 | 0.906 | 1.014 | 0.916 | 1.003 |
+| GHZ | 4 | 0.865 | 1.020 | 0.873 | 1.011 |
+| random d=10 | 2 | 6.950 | 1.020 | 6.994 | 1.014 |
+| random d=10 | 4 | 8.030 | 1.012 | 8.105 | 1.003 |
+| QAOA p=2 | 2 | 3.273 | 1.003 | 3.284 | 0.999 |
+| QAOA p=2 | 4 | 3.305 | 1.007 | 3.317 | 1.003 |
+| CCZ ladder d=4 | 2 | 1.057 | 1.011 | 1.059 | 1.009 |
+| CCZ ladder d=4 | 4 | 1.055 | 1.011 | 1.055 | 1.010 |
+| Grover K=3 | 2 | 6.737 | 1.029 | 6.738 | 1.029 |
+| Grover K=3 | 4 | 6.532 | 1.031 | 6.536 | 1.030 |
+| HEA d=4 | 2 | 8.720 | 1.023 | 8.739 | 1.020 |
+| HEA d=4 | 4 | 8.720 | 1.029 | 8.741 | 1.027 |
+| random d=20 | 2 | 13.999 | 0.970 | 14.075 | 0.965 |
+| random d=20 | 4 | 16.322 | 0.976 | 16.351 | 0.974 |
+| Clifford brickwall d=10 | 2 | 6.065 | 0.953 | 6.066 | 0.952 |
+| Clifford brickwall d=10 | 4 | 7.266 | 0.961 | 7.258 | 0.962 |
+| QAOA p=2 skip-7 | 2 | 3.561 | 0.995 | 3.560 | 0.995 |
+| QAOA p=2 skip-7 | 4 | 3.652 | 0.998 | 3.648 | 0.999 |
+| H1 QFT on X-odd input | 2 | 2.914 | 1.068 | 2.910 | 1.070 |
+| H1 QFT on X-odd input | 4 | 2.837 | 1.076 | 2.828 | 1.079 |
+| H2 \|0⟩-controlled phase ladder | 2 | 0.761 | 0.958 | 0.761 | 0.957 |
+| H2 \|0⟩-controlled phase ladder | 4 | 0.744 | 0.968 | 0.742 | 0.970 |
+| H3 \|0⟩-controlled CRx | 2 | 1.619 | 0.938 | 1.609 | 0.944 |
+| H3 \|0⟩-controlled CRx | 4 | 1.909 | 0.952 | 1.903 | 0.955 |
+
+Worst |model/measured − 1| by table:
+
+| table | iso 1 | iso 2 |
+|---|---|---|
+| old | 7.0 % | 6.5 % |
+| held-out §4.3 | 4.7 % | 4.8 % |
+| H1–H3 | 7.6 % | 7.9 % |
+
+**Both gate tests passed.**
+
+| exit | iso 1 | iso 2 |
+|---|---|---|
+| 1. H1–H3 within ±10 % | PASS (0.938–1.076) | PASS (0.944–1.079) |
+| 2. ten old cells within ±10 % | PASS (0.953–1.070) | PASS (0.952–1.065) |
+| 3. compile bench | not re-run (passed both §4.6 runs) | not re-run |
+| 4. constants and rule frozen | PASS | PASS |
+
+HEA D=2 measured 8.720 / 8.739 s. QFT reads 1.059–1.070.
+
+**Reading.** On a GPU with no other tenant, every cell passes in both runs. Across the six gate runs made on this code
+(§4.6, §4.7, §4.8), each cell's measured compute spreads by at most 2.2 % (max/min − 1; widest HEA D=4, then GHZ
+1.7 %, random d=10 1.3 %). The exception is §4.6 run 2's HEA D=2, 48.7–49.5 % above the other five (8.702–8.745 s). That cell is the only one measured
+while another tenant ran a GPU job. The original pair's MISS stays on record (§4.6). These re-runs were made after
+seeing it, so they are supplementary evidence that it was an external disturbance, not a model error.
