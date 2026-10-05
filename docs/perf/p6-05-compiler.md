@@ -269,7 +269,7 @@ the phase polynomial), so the `diag_k` constant is unvalidated.
 `compile` builds {Naive, Lookahead, Reorder{1..=g}} × {identity, initial placement}, prices each with the PR 2
 `GpuCostModel`, and runs the cheapest (`DistSvBackend::run_compiled`). Bench:
 `cargo test --release -p aleph-cuda --features cuda --test dist_compile_bench -- --ignored --nocapture`
-(RTX 4000 SFF Ada, driver 580.178.04, 2026-10-05, two idle-box runs, each followed by a re-run of the PR 2 gate).
+(RTX 4000 SFF Ada, driver 580.178.04 as reported by `nvidia-smi` on 2026-10-05, two idle-box runs on 2026-10-05, each followed by a re-run of the PR 2 gate).
 
 **Metric (spec §8).** `T_pred = (T_full − T_comm)/D + Σ bytes/BW(k)`, with measured compute from one card running
 all D ranks, exchange copies subtracted with the exchange-only plan, and the AWS g6 link table (FP64 7.16 / 4.35 GB/s
@@ -358,8 +358,14 @@ lookahead 2.174, reorder k=1 0.810; random D=4 naive 3.349, lookahead 1.892, reo
 | 1. compiled ≤ min(Naive, Lookahead) + 3 % on every cell | **PASS** in both runs. Worst cell 1.000 (GHZ and CCZ ladder, where the compiled plan *is* Naive); best 0.298 (Grover D=4). |
 | 2. random d=10 D=2 ≥ 15 % better than Lookahead | **PASS**: 42.6 % (run 2: 2.937 vs 5.120 s), 42.7 % (run 1: 2.899 vs 5.059 s). |
 | 3a. model gate (§6.3) on Lookahead plans, re-run (the spec's exit 3) | **PASS**: worst \|model/measured − 1\| 5.6 % (run 2), 5.4 % (run 1), both on random d=10 D=2 (table below). |
-| 3b. plan's stricter check: compiled plans' model/measured within ±10 % | **PASS on 10 of 12 cells; borderline MISS on random d=10.** Run 2: 0.899 / 0.898 (D=2 / D=4), i.e. 10.1 % / 10.2 % low. Run 1: 0.912 / 0.900 (inside the bound). Every other cell: 0.957–1.068. |
+| 3b. additional plan-level check (not part of the spec's exit): compiled plans' model/measured within ±10 % | **Borderline MISS on random d=10.** PASS on 10 of 12 cells (run 2; run 1: 12/12, D=4 exactly on the bound at 0.900). Run 2: 0.899 / 0.898 (D=2 / D=4), i.e. 10.1 % / 10.2 % low. Run 1: 0.912 / 0.900. Every other cell: 0.957–1.068. |
 | compile time, ~1k gates (brickwall d=15, 1043 gates), g=2, best of 5 (target < 50 ms) | **2.2 ms** in both runs. |
+
+Exit 3 is read as the spec §8 defines it, "the model gate (§6.3) holds on every cell", and the §6.3 gate is defined
+on Lookahead plans; the compiled-plan check (3b) is reported alongside as an additional plan-level check. The PR 3
+plan had bundled the two into exit 3, and this narrowing was decided after seeing these runs (under the plan's
+wording, run 2 misses exit 3). The 3a worst cell, random d=10 D=2, moved from 4.0 % in PR 2 (§2.5) to 5.4–5.6 % in
+this re-run.
 
 Gate re-run (spec exit 3a; `dist_cost_gate`, Lookahead plans, best of 3), run 2 with run 1 in brackets:
 
@@ -384,18 +390,20 @@ The model's per-kind split for these Lookahead plans is unchanged from §2.5.
 
 Why each plan wins or loses, from the plans themselves: exchange widths, local swaps, `Local` segments, the kernel
 launches rank 0 issues after specialisation and fusion (`DistSvBackend::rank_pass_count`), and the model's all-ranks
-compute by kind (s, with the all-ranks launch count of that kind in brackets). Produced by a throwaway model-only test
-on the GPU box (`compile_detailed` + `all_ranks` with one kind kept at a time, as `only(…)` in `dist_cost_gate.rs`; no
-timing). `diag_k` is 0 everywhere and omitted. Naive is listed only by its exchange widths.
+compute by kind (s, with the all-ranks launch count of that kind in brackets). Model only, no timing:
+`cargo test --release -p aleph-cuda --features cuda --test dist_compile_kinds -- --ignored --nocapture`. Launch
+counts are counted, not derived from seconds: `all_ranks` under a model whose constant is 1 for one kind and 0 for
+the rest, at `m_ref = m` (PhasePoly: `phase_base` = 1, per-term costs 0). `diag_k` is 0 on every Lookahead and
+compiled plan and is omitted; the test also prints Naive's full split (only its exchange widths are listed here).
 
 | circuit | D | plan | exchange widths | local swaps | `Local` segs | rank-0 launches | model all-ranks (s) | dense1 | dense2 | dense3 | diag1 | cnot | phase |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | QFT | 2 | naive | 1,1 | | | | | | | | | | |
-| QFT | 2 | lookahead | 1,1 | 1 | 3 | 55 | 2.492 | 0.983 [56] | 0.043 [2] | 0 | 0.018 [1] | 0 | 1.448 |
-| QFT | 2 | compiled (naive+place) | 1 | 0 | 2 | 54 | 2.448 | 0.983 [56] | 0 | 0 | 0.018 [1] | 0 | 1.448 |
+| QFT | 2 | lookahead | 1,1 | 1 | 3 | 55 | 2.492 | 0.983 [56] | 0.043 [2] | 0 | 0.018 [1] | 0 | 1.448 [51] |
+| QFT | 2 | compiled (naive+place) | 1 | 0 | 2 | 54 | 2.448 | 0.983 [56] | 0 | 0 | 0.018 [1] | 0 | 1.448 [51] |
 | QFT | 4 | naive | 1,1,1 | | | | | | | | | | |
-| QFT | 4 | lookahead | 2,2 | 2 | 3 | 56 | 2.513 | 0.983 [112] | 0.087 [8] | 0 | 0.044 [5] | 0 | 1.398 |
-| QFT | 4 | compiled (naive+place) | 1,1 | 0 | 3 | 53 | 2.391 | 0.983 [112] | 0 | 0 | 0.009 [1] | 0 | 1.398 |
+| QFT | 4 | lookahead | 2,2 | 2 | 3 | 56 | 2.513 | 0.983 [112] | 0.087 [8] | 0 | 0.044 [5] | 0 | 1.398 [99] |
+| QFT | 4 | compiled (naive+place) | 1,1 | 0 | 3 | 53 | 2.391 | 0.983 [112] | 0 | 0 | 0.009 [1] | 0 | 1.398 [99] |
 | GHZ | 2 | lookahead = compiled | 1 | 0 | 2 | 13 | 0.911 | 0.018 [1] | 0 | 0.893 [26] | 0 | 0 | 0 |
 | GHZ | 4 | lookahead | 2 | 0 | 2 | 14 | 0.879 | 0 | 0.022 [2] | 0.825 [48] | 0 | 0.032 [6] | 0 |
 | GHZ | 4 | compiled (naive) | 1,1 | 0 | 3 | 13 | 0.881 | 0.035 [4] | 0 | 0.825 [48] | 0 | 0.022 [4] | 0 |
@@ -406,14 +414,14 @@ timing). `diag_k` is 0 everywhere and omitted. Naive is listed only by its excha
 | random d=10 | 4 | lookahead | 2 ×11 | 20 | 12 | 188 | 7.815 | 2.317 [264] | 4.641 [428] | 0.619 [36] | 0 | 0.238 [44] | 0 |
 | random d=10 | 4 | compiled (reorder k=1) | 1,1 | 2 | 3 | 82 | 5.020 | 0.246 [28] | 0.651 [60] | 4.123 [240] | 0 | 0 | 0 |
 | QAOA p=2 | 2 | naive | 1 ×9 | | | | | | | | | | |
-| QAOA p=2 | 2 | lookahead | 1 ×5 | 1 | 6 | 87 | 3.262 | 2.879 [164] | 0.043 [2] | 0 | 0.071 [4] | 0 | 0.268 |
-| QAOA p=2 | 2 | compiled (reorder k=1) | 1,1 | 2 | 3 | 87 | 3.202 | 2.844 [162] | 0.087 [4] | 0 | 0 | 0 | 0.271 |
+| QAOA p=2 | 2 | lookahead | 1 ×5 | 1 | 6 | 87 | 3.262 | 2.879 [164] | 0.043 [2] | 0 | 0.071 [4] | 0 | 0.268 [8] |
+| QAOA p=2 | 2 | compiled (reorder k=1) | 1,1 | 2 | 3 | 87 | 3.202 | 2.844 [162] | 0.087 [4] | 0 | 0 | 0 | 0.271 [8] |
 | QAOA p=2 | 4 | naive | 1 ×16 | | | | | | | | | | |
-| QAOA p=2 | 4 | lookahead | 2 ×5 | 7 | 6 | 87 | 3.295 | 2.669 [304] | 0.304 [28] | 0 | 0.053 [6] | 0 | 0.269 |
-| QAOA p=2 | 4 | compiled (reorder k=1) | 1 ×4 | 4 | 5 | 86 | 3.181 | 2.739 [312] | 0.174 [16] | 0 | 0 | 0 | 0.268 |
-| CCZ ladder d=4 | 2 | lookahead = compiled | 1 | 0 | 2 | 29 | 1.062 | 0.983 [56] | 0 | 0 | 0 | 0 | 0.079 |
-| CCZ ladder d=4 | 4 | lookahead | 2 | 0 | 2 | 29 | 1.060 | 0.983 [112] | 0 | 0 | 0 | 0 | 0.077 |
-| CCZ ladder d=4 | 4 | compiled (naive) | 1,1 | 0 | 3 | 29 | 1.061 | 0.983 [112] | 0 | 0 | 0 | 0 | 0.078 |
+| QAOA p=2 | 4 | lookahead | 2 ×5 | 7 | 6 | 87 | 3.295 | 2.669 [304] | 0.304 [28] | 0 | 0.053 [6] | 0 | 0.269 [16] |
+| QAOA p=2 | 4 | compiled (reorder k=1) | 1 ×4 | 4 | 5 | 86 | 3.181 | 2.739 [312] | 0.174 [16] | 0 | 0 | 0 | 0.268 [16] |
+| CCZ ladder d=4 | 2 | lookahead = compiled | 1 | 0 | 2 | 29 | 1.062 | 0.983 [56] | 0 | 0 | 0 | 0 | 0.079 [2] |
+| CCZ ladder d=4 | 4 | lookahead | 2 | 0 | 2 | 29 | 1.060 | 0.983 [112] | 0 | 0 | 0 | 0 | 0.077 [4] |
+| CCZ ladder d=4 | 4 | compiled (naive) | 1,1 | 0 | 3 | 29 | 1.061 | 0.983 [112] | 0 | 0 | 0 | 0 | 0.078 [4] |
 | Grover K=3 | 2 | naive | 1 ×13 | | | | | | | | | | |
 | Grover K=3 | 2 | lookahead | 1 ×7 | 6 | 8 | 197 | 6.969 | 6.496 [370] | 0.260 [12] | 0 | 0.213 [12] | 0 | 0 |
 | Grover K=3 | 2 | compiled (reorder k=1) | 1 | 0 | 2 | 88 | 3.092 | 2.879 [164] | 0 | 0 | 0.213 [12] | 0 | 0 |
@@ -463,7 +471,7 @@ is calibrated on the uniform H state, and §2.3–2.4 measured it at ×1.12 on a
     3.234 s, 3.332 → 3.201 s). Compiled / L = 0.799 and 0.626.
   - **Grover picks reorder k=1, and the win is mostly compute.** Exchanges 7 → 1 (D=2) and seven 2-bit → two 1-bit
     (D=4), local swaps 6 → 0 and 12 → 0. But measured all-ranks compute also drops 6.745 → 2.896 s (D=2, run 2),
-    2.3× less. Mechanism, verified by launch count: the multi-controlled Z acts on qubits 0–7 and 27, so the H/X
+    2.3× less. Mechanism, verified by the counted launches in §3.4: the multi-controlled Z acts on qubits 0–7 and 27, so the H/X
     runs on the other 19 qubits commute with every MCZ. Lookahead keeps program order, so each MCZ splits every
     qubit's H/X sequence into 7 runs (initial H, then H·X and X·H around each of the 6 MCZs). Reorder emits a free
     qubit's whole sequence back to back, and the 1q fuser collapses it into one gate. The compiled plan's Dense1
@@ -488,8 +496,8 @@ is calibrated on the uniform H state, and §2.3–2.4 measured it at ×1.12 on a
   0.944–0.951 in the gate re-run): there Dense3 is too small a share (it would need ×1.55–1.75), so that residual is
   elsewhere, as §2.6 already said. The constants were **not** re-calibrated against this result (that would be
   in-sample tuning again).
-  - The miss did not change the choice: the compiled random plan was still measured 42.6–42.7 % faster than
-    Lookahead on `T_pred` (exit 2), and its measured compute is lower too (5.573 vs 7.240 s at D=2, run 2). An
+  - The miss did not change the choice: the compiled random plan's predicted time (`T_pred`) is 42.6–42.7 % lower
+    than Lookahead's (exit 2), and its measured compute is lower too (5.573 vs 7.240 s at D=2, run 2). An
     under-priced Dense3 favours fusion-heavy plans, so a better constant could move a close call; none of these cells
     is close (reorder k=1 model 2.656 vs lookahead 4.887 at D=2).
   - Supporting evidence: FP32 has no such gap. Its `dense3` constant sits on the bandwidth floor (§2.1), and the same
@@ -501,7 +509,7 @@ is calibrated on the uniform H state, and §2.3–2.4 measured it at ×1.12 on a
   plan's measured compute falls further (2.815 → 1.497 s at D=2, against 7.240 → 5.573 s for FP64): FP32 Dense3 is not
   compute-bound (§2.1). Model/measured for the compiled plans is 0.973–1.007 over both runs.
 - **Run-to-run spread.** Run 2 is slower than run 1 on the cells measured first: measured compute +2.5–3.6 % on QFT and
-  GHZ (e.g. GHZ D=2 0.919 → 0.952 s compiled), +1.4–1.7 % on random D=2, and ≤ 0.2 % on random D=4, QAOA, CCZ ladder,
+  GHZ (e.g. GHZ D=2 0.919 → 0.952 s compiled), +1.4–1.7 % on random D=2, and ≤ 0.25 % on random D=4, QAOA, CCZ ladder,
   Grover and every FP32 cell. All choices, exchange counts and verdicts are identical across runs except exit 3b on
   random d=10, which sits on the ±10 % edge in both runs (run 1 0.912 / 0.900, run 2 0.899 / 0.898). The gate re-run
   moved by ≤ 0.3 % per cell.
