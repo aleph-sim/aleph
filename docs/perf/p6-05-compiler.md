@@ -1192,3 +1192,87 @@ is repeated here. Whether to re-run with the shared GPU services paused is the u
   and an embeddings server. A check at the start of each run cannot prevent a request that arrives mid-run. Gate
   run 2's one MISS coincides in time with such a request (estimated, see above). A clean run would need those services
   paused, or a per-cell GPU-utilisation log.
+
+### 4.7 Gate re-run with the shared GPU services paused
+
+The user authorised a re-run of `dist_cost_gate` (×2, code `c33d7dd`) after §4.6's run-2 MISS, with the box's GPU
+services out of the way. Raw logs: `p6-05-state-class/zt-gate-rerun{1,2}.log` and `zt-rerun-runner.out`.
+Container events are in `zt-rerun-docker-events.log` and the watchdog journal is in `zt-rerun-watchdog.log`.
+Nothing in the model changed.
+
+**What actually happened to the services.**
+
+- 13:45:14Z: the script ran `docker pause ollama neatkept-embed`. A `trap` would unpause them on any exit.
+- The box also runs `neatkept-watchdog.timer`. Every 2 min it runs `docker exec <c> nvidia-smi -L` and probes an
+  embedding. A paused container fails that check, so the watchdog restarted both services:
+  - `neatkept-embed` at 13:46:49Z and again at 13:51:34Z;
+  - `ollama` at 13:47:00Z (its log line: "restarted ollama: it had lost the GPU").
+
+So the services were **running, not paused**, for almost all of both re-runs. The idle-check label in both logs
+still says "paused"; the container-state line under it shows the truth ("paused" before re-run 1, "running" before
+re-run 2). Re-run 1 also contains the three restarts.
+
+What the services did while running:
+
+- Ollama logged **no** `/api/chat` request between 13:44 and 14:02Z, and its model stayed unloaded after the restart.
+- The embeddings server served only the watchdog's ~10 ms probes, one every ~2 min.
+
+Re-run 1 started at 13:46:14Z, re-run 2 at 13:55:26Z. Both started at a 1-minute load of 0.08, GPU util 0 %.
+
+**Results** (ratio = model all-ranks / measured compute; class columns identical to §4.6):
+
+| circuit | D | measured (s), rerun 1 | ratio, rerun 1 | measured (s), rerun 2 | ratio, rerun 2 |
+|---|---|---|---|---|---|
+| QFT | 2 | 2.329 | 1.064 | 2.343 | 1.057 |
+| QFT | 4 | 2.327 | 1.071 | 2.342 | 1.065 |
+| GHZ | 2 | 0.904 | 1.016 | 0.914 | 1.005 |
+| GHZ | 4 | 0.858 | 1.029 | 0.873 | 1.011 |
+| random d=10 | 2 | 6.936 | 1.023 | 6.995 | 1.014 |
+| random d=10 | 4 | 8.064 | 1.008 | 8.107 | 1.003 |
+| QAOA p=2 | 2 | 3.275 | 1.002 | 3.284 | 0.999 |
+| QAOA p=2 | 4 | 3.304 | 1.007 | 3.318 | 1.002 |
+| CCZ ladder d=4 | 2 | 1.054 | 1.014 | 1.058 | 1.010 |
+| CCZ ladder d=4 | 4 | 1.055 | 1.010 | 1.056 | 1.009 |
+| Grover K=3 | 2 | 6.736 | 1.029 | 6.738 | 1.029 |
+| Grover K=3 | 4 | 6.532 | 1.031 | 6.537 | 1.030 |
+| HEA d=4 | 2 | 8.716 | 1.023 | 8.745 | 1.020 |
+| HEA d=4 | 4 | 8.727 | 1.028 | 8.732 | 1.028 |
+| random d=20 | 2 | 14.026 | 0.968 | 14.054 | 0.966 |
+| random d=20 | 4 | 16.354 | 0.974 | 16.348 | 0.974 |
+| Clifford brickwall d=10 | 2 | 6.070 | 0.952 | 6.065 | 0.953 |
+| Clifford brickwall d=10 | 4 | 7.267 | 0.961 | 7.262 | 0.962 |
+| QAOA p=2 skip-7 | 2 | 3.563 | 0.994 | 3.564 | 0.994 |
+| QAOA p=2 skip-7 | 4 | 3.652 | 0.998 | 3.652 | 0.998 |
+| H1 QFT on X-odd input | 2 | 2.916 | 1.068 | 2.917 | 1.067 |
+| H1 QFT on X-odd input | 4 | 2.832 | 1.078 | 2.836 | 1.076 |
+| H2 \|0⟩-controlled phase ladder | 2 | 0.761 | 0.957 | 0.762 | 0.957 |
+| H2 \|0⟩-controlled phase ladder | 4 | 0.744 | 0.968 | 0.736 | 0.978 |
+| H3 \|0⟩-controlled CRx | 2 | 1.616 | 0.940 | 1.618 | 0.939 |
+| H3 \|0⟩-controlled CRx | 4 | 1.905 | 0.954 | 1.903 | 0.955 |
+
+Worst |model/measured − 1| by table:
+
+| table | rerun 1 | rerun 2 |
+|---|---|---|
+| old | 7.1 % | 6.5 % |
+| held-out §4.3 | 4.8 % | 4.7 % |
+| zero-tracking held-out (H1–H3) | 7.8 % | 7.6 % |
+
+**Both gate tests passed.** HEA D=2 measured 8.716 / 8.745 s (ratio 1.023 / 1.020), in line with the 8.70–8.76 s of
+every run except §4.6's run 2.
+
+**Exit criteria on the re-run pair:**
+
+| exit | rerun 1 | rerun 2 |
+|---|---|---|
+| 1. H1–H3 within ±10 % | PASS (0.940–1.078) | PASS (0.939–1.076) |
+| 2. ten old cells within ±10 % | PASS (0.952–1.071) | PASS (0.953–1.065) |
+| 3. compile bench | not re-run (passed both §4.6 runs) | not re-run |
+| 4. constants and rule frozen | PASS | PASS |
+
+The original pair (§4.6) still stands as recorded, with exit 2 a MISS in run 2. The re-run pair passes every gate
+exit. This is consistent with the run-2 HEA cell being an external disturbance rather than a model error, but
+the re-run was made after seeing the MISS, so it is supplementary evidence, not a replacement.
+
+The re-runs did not get a GPU that was free in practice either. A truly isolated run on this box would also need
+`neatkept-watchdog.timer` stopped for its duration.

@@ -1,0 +1,14 @@
+2026-10-05T15:44:31+02:00 Ubuntu-2404-noble-amd64-base watchdog.sh[467786]: Ubuntu-2404-noble-amd64-base: 0 problem(s), 0 fix(es); gpu: 40, 13828 MiB, 20475 MiB, 0 %
+2026-10-05T15:47:15+02:00 Ubuntu-2404-noble-amd64-base watchdog.sh[468503]: Ubuntu-2404-noble-amd64-base: 0 problem(s), 2 fix(es); gpu: 66, 5922 MiB, 20475 MiB, 100 %
+2026-10-05T15:47:15+02:00 Ubuntu-2404-noble-amd64-base watchdog.sh[468503]: FIXED: restarted neatkept-embed
+2026-10-05T15:47:15+02:00 Ubuntu-2404-noble-amd64-base watchdog.sh[468503]: FIXED: restarted ollama: it had lost the GPU
+2026-10-05T15:48:59+02:00 Ubuntu-2404-noble-amd64-base watchdog.sh[469534]: Ubuntu-2404-noble-amd64-base: 0 problem(s), 0 fix(es); gpu: 77, 5922 MiB, 20475 MiB, 100 %
+2026-10-05T15:51:45+02:00 Ubuntu-2404-noble-amd64-base watchdog.sh[469837]: Ubuntu-2404-noble-amd64-base: 0 problem(s), 1 fix(es); gpu: 80, 5922 MiB, 20475 MiB, 100 %
+2026-10-05T15:51:45+02:00 Ubuntu-2404-noble-amd64-base watchdog.sh[469837]: FIXED: restarted neatkept-embed
+2026-10-05T15:53:25+02:00 Ubuntu-2404-noble-amd64-base watchdog.sh[470480]: Ubuntu-2404-noble-amd64-base: 0 problem(s), 0 fix(es); gpu: 63, 1371 MiB, 20475 MiB, 3 %
+2026-10-05T15:55:26+02:00 Ubuntu-2404-noble-amd64-base watchdog.sh[470778]: Ubuntu-2404-noble-amd64-base: 0 problem(s), 0 fix(es); gpu: 49, 1371 MiB, 20475 MiB, 0 %
+2026-10-05T15:57:26+02:00 Ubuntu-2404-noble-amd64-base watchdog.sh[471087]: Ubuntu-2404-noble-amd64-base: 0 problem(s), 0 fix(es); gpu: 76, 5922 MiB, 20475 MiB, 100 %
+2026-10-05T15:59:28+02:00 Ubuntu-2404-noble-amd64-base watchdog.sh[471361]: Ubuntu-2404-noble-amd64-base: 0 problem(s), 0 fix(es); gpu: 78, 5922 MiB, 20475 MiB, 100 %
+2026-10-05T16:01:29+02:00 Ubuntu-2404-noble-amd64-base watchdog.sh[471637]: Ubuntu-2404-noble-amd64-base: 0 problem(s), 0 fix(es); gpu: 78, 5922 MiB, 20475 MiB, 100 %
+2026-10-05T16:03:59+02:00 Ubuntu-2404-noble-amd64-base watchdog.sh[472288]: Ubuntu-2404-noble-amd64-base: 0 problem(s), 0 fix(es); gpu: 51, 1371 MiB, 20475 MiB, 0 %
+2026-10-05T16:05:59+02:00 Ubuntu-2404-noble-amd64-base watchdog.sh[472655]: Ubuntu-2404-noble-amd64-base: 0 problem(s), 0 fix(es); gpu: 46, 1371 MiB, 20475 MiB, 0 %

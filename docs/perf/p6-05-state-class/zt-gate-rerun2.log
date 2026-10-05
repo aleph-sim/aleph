@@ -1,0 +1,79 @@
+idle-check (code c33d7dd, ollama+neatkept-embed paused): 2026-10-05T13:55:26Z
+ 15:55:26 up 2 days, 10 min,  1 user,  load average: 0.08, 0.49, 0.47
+0 %, 1371 MiB, 13.67 W, 50
+/ollama=running /neatkept-embed=running 
+    Finished `release` profile [optimized] target(s) in 0.04s
+     Running tests/dist_cost_gate.rs (target/release/deps/dist_cost_gate-f1c4dd399fa91b2e)
+
+running 1 test
+### old cells (seen during design)
+| circuit | D | measured compute (s) | model all-ranks (s) | ratio | R·model(R−1) (s) | ratio | generic steps | old-rule generic | verdict |
+|---|---|---|---|---|---|---|---|---|---|
+| QFT | 2 | 2.343 | 2.478 | 1.057 | 2.500 | 1.067 | 0/3 | 2/3 | PASS |
+| QFT | 4 | 2.342 | 2.493 | 1.065 | 2.504 | 1.069 | 0/3 | 2/3 | PASS |
+| GHZ | 2 | 0.914 | 0.919 | 1.005 | 0.936 | 1.024 | 0/2 | 0/2 | PASS |
+| GHZ | 4 | 0.873 | 0.883 | 1.011 | 0.891 | 1.020 | 0/2 | 0/2 | PASS |
+| random d=10 | 2 | 6.995 | 7.092 | 1.014 | 7.092 | 1.014 | 11/11 | 11/11 | PASS |
+test model_gate_n28_fp64 has been running for over 60 seconds
+| random d=10 | 4 | 8.107 | 8.129 | 1.003 | 8.305 | 1.024 | 12/12 | 12/12 | PASS |
+| QAOA p=2 | 2 | 3.284 | 3.282 | 0.999 | 3.350 | 1.020 | 5/6 | 5/6 | PASS |
+| QAOA p=2 | 4 | 3.318 | 3.326 | 1.002 | 3.377 | 1.018 | 5/6 | 5/6 | PASS |
+| CCZ ladder d=4 | 2 | 1.058 | 1.069 | 1.010 | 1.069 | 1.010 | 1/2 | 1/2 | PASS |
+| CCZ ladder d=4 | 4 | 1.056 | 1.066 | 1.009 | 1.066 | 1.009 | 1/2 | 1/2 | PASS |
+| Grover K=3 | 2 | 6.738 | 6.930 | 1.029 | 6.930 | 1.029 | 0/8 | 0/8 | PASS |
+| Grover K=3 | 4 | 6.537 | 6.733 | 1.030 | 6.733 | 1.030 | 0/8 | 0/8 | PASS |
+kinds: QFT D=2 t_full=2.413 t_comm=0.070 dense1=0.983 dense2=0.037 dense3=0.000 diag1=0.018 diag_k=0.000 cnot=0.000 phase=1.440
+kinds: QFT D=4 t_full=2.438 t_comm=0.096 dense1=0.983 dense2=0.075 dense3=0.000 diag1=0.044 diag_k=0.000 cnot=0.000 phase=1.391
+kinds: GHZ D=2 t_full=0.957 t_comm=0.043 dense1=0.018 dense2=0.000 dense3=0.901 diag1=0.000 diag_k=0.000 cnot=0.000 phase=0.000
+kinds: GHZ D=4 t_full=0.929 t_comm=0.056 dense1=0.000 dense2=0.019 dense3=0.832 diag1=0.000 diag_k=0.000 cnot=0.032 phase=0.000
+kinds: random d=10 D=2 t_full=7.279 t_comm=0.283 dense1=1.299 dense2=4.900 dense3=0.722 diag1=0.000 diag_k=0.000 cnot=0.172 phase=0.000
+kinds: random d=10 D=4 t_full=8.564 t_comm=0.457 dense1=2.317 dense2=4.854 dense3=0.722 diag1=0.000 diag_k=0.000 cnot=0.237 phase=0.000
+kinds: QAOA p=2 D=2 t_full=3.434 t_comm=0.150 dense1=2.878 dense2=0.037 dense3=0.000 diag1=0.071 diag_k=0.000 cnot=0.000 phase=0.295
+kinds: QAOA p=2 D=4 t_full=3.535 t_comm=0.217 dense1=2.668 dense2=0.310 dense3=0.000 diag1=0.053 diag_k=0.000 cnot=0.000 phase=0.296
+kinds: CCZ ladder d=4 D=2 t_full=1.101 t_comm=0.043 dense1=0.983 dense2=0.000 dense3=0.000 diag1=0.000 diag_k=0.000 cnot=0.000 phase=0.086
+kinds: CCZ ladder d=4 D=4 t_full=1.112 t_comm=0.056 dense1=0.983 dense2=0.000 dense3=0.000 diag1=0.000 diag_k=0.000 cnot=0.000 phase=0.083
+kinds: Grover K=3 D=2 t_full=6.942 t_comm=0.204 dense1=6.493 dense2=0.224 dense3=0.000 diag1=0.213 diag_k=0.000 cnot=0.000 phase=0.000
+kinds: Grover K=3 D=4 t_full=6.834 t_comm=0.298 dense1=6.072 dense2=0.448 dense3=0.000 diag1=0.213 diag_k=0.000 cnot=0.000 phase=0.000
+old cells (seen during design): worst |model/measured − 1| = 6.5 %
+### held-out cells (never used to choose anything)
+| circuit | D | measured compute (s) | model all-ranks (s) | ratio | R·model(R−1) (s) | ratio | generic steps | old-rule generic | verdict |
+|---|---|---|---|---|---|---|---|---|---|
+| HEA d=4 | 2 | 8.745 | 8.918 | 1.020 | 8.918 | 1.020 | 10/10 | 10/10 | PASS |
+| HEA d=4 | 4 | 8.732 | 8.973 | 1.028 | 8.973 | 1.028 | 10/10 | 10/10 | PASS |
+| random d=20 | 2 | 14.054 | 13.581 | 0.966 | 13.581 | 0.966 | 21/21 | 21/21 | PASS |
+| random d=20 | 4 | 16.348 | 15.924 | 0.974 | 16.310 | 0.998 | 23/23 | 23/23 | PASS |
+| Clifford brickwall d=10 | 2 | 6.065 | 5.777 | 0.953 | 5.848 | 0.964 | 0/6 | 0/6 | PASS |
+| Clifford brickwall d=10 | 4 | 7.262 | 6.984 | 0.962 | 7.126 | 0.981 | 0/7 | 0/7 | PASS |
+| QAOA p=2 skip-7 | 2 | 3.564 | 3.543 | 0.994 | 3.662 | 1.028 | 7/8 | 7/8 | PASS |
+| QAOA p=2 skip-7 | 4 | 3.652 | 3.643 | 0.998 | 3.744 | 1.025 | 7/8 | 7/8 | PASS |
+kinds: HEA d=4 D=2 t_full=9.001 t_comm=0.257 dense1=4.703 dense2=0.045 dense3=4.169 diag1=0.000 diag_k=0.000 cnot=0.000 phase=0.000
+kinds: HEA d=4 D=4 t_full=9.109 t_comm=0.377 dense1=4.422 dense2=0.499 dense3=4.009 diag1=0.000 diag_k=0.000 cnot=0.043 phase=0.000
+kinds: random d=20 D=2 t_full=14.604 t_comm=0.551 dense1=1.650 dense2=10.344 dense3=1.523 diag1=0.000 diag_k=0.000 cnot=0.065 phase=0.000
+kinds: random d=20 D=4 t_full=17.245 t_comm=0.897 dense1=3.896 dense2=10.434 dense3=1.443 diag1=0.000 diag_k=0.000 cnot=0.151 phase=0.000
+kinds: Clifford brickwall d=10 D=2 t_full=6.214 t_comm=0.150 dense1=0.316 dense2=2.985 dense3=1.871 diag1=0.142 diag_k=0.000 cnot=0.022 phase=0.440
+kinds: Clifford brickwall d=10 D=4 t_full=7.518 t_comm=0.256 dense1=0.720 dense2=2.575 dense3=2.218 diag1=0.657 diag_k=0.000 cnot=0.022 phase=0.793
+kinds: QAOA p=2 skip-7 D=2 t_full=3.767 t_comm=0.203 dense1=2.808 dense2=0.264 dense3=0.000 diag1=0.071 diag_k=0.000 cnot=0.000 phase=0.400
+kinds: QAOA p=2 skip-7 D=4 t_full=3.948 t_comm=0.296 dense1=2.597 dense2=0.491 dense3=0.000 diag1=0.107 diag_k=0.000 cnot=0.000 phase=0.448
+held-out cells (never used to choose anything): worst |model/measured − 1| = 4.7 %
+### zero-tracking held-out cells (fixed in the zero-tracking spec)
+| circuit | D | measured compute (s) | model all-ranks (s) | ratio | R·model(R−1) (s) | ratio | generic steps | old-rule generic | verdict |
+|---|---|---|---|---|---|---|---|---|---|
+| H1 QFT on X-odd input | 2 | 2.917 | 3.113 | 1.067 | 3.138 | 1.076 | 2/3 | 2/3 | PASS |
+| H1 QFT on X-odd input | 4 | 2.836 | 3.053 | 1.076 | 3.065 | 1.081 | 2/3 | 2/3 | PASS |
+| H2 |0>-controlled phase ladder | 2 | 0.762 | 0.729 | 0.957 | 0.740 | 0.971 | 0/2 | 1/2 | PASS |
+| H2 |0>-controlled phase ladder | 4 | 0.736 | 0.720 | 0.978 | 0.727 | 0.987 | 0/2 | 1/2 | PASS |
+| H3 |0>-controlled CRx | 2 | 1.618 | 1.519 | 0.939 | 1.519 | 0.938 | 0/2 | 1/2 | PASS |
+| H3 |0>-controlled CRx | 4 | 1.903 | 1.817 | 0.955 | 1.817 | 0.955 | 0/2 | 1/2 | PASS |
+kinds: H1 QFT on X-odd input D=2 t_full=2.987 t_comm=0.070 dense1=1.439 dense2=0.037 dense3=0.000 diag1=0.018 diag_k=0.000 cnot=0.000 phase=1.619
+kinds: H1 QFT on X-odd input D=4 t_full=2.933 t_comm=0.096 dense1=1.369 dense2=0.075 dense3=0.000 diag1=0.044 diag_k=0.000 cnot=0.000 phase=1.565
+kinds: H2 |0>-controlled phase ladder D=2 t_full=0.805 t_comm=0.043 dense1=0.491 dense2=0.000 dense3=0.000 diag1=0.000 diag_k=0.000 cnot=0.000 phase=0.237
+kinds: H2 |0>-controlled phase ladder D=4 t_full=0.792 t_comm=0.056 dense1=0.491 dense2=0.000 dense3=0.000 diag1=0.000 diag_k=0.000 cnot=0.000 phase=0.228
+kinds: H3 |0>-controlled CRx D=2 t_full=1.661 t_comm=0.043 dense1=0.018 dense2=0.746 dense3=0.693 diag1=0.018 diag_k=0.000 cnot=0.000 phase=0.044
+kinds: H3 |0>-controlled CRx D=4 t_full=1.959 t_comm=0.056 dense1=0.193 dense2=0.597 dense3=0.832 diag1=0.195 diag_k=0.000 cnot=0.000 phase=0.000
+zero-tracking held-out cells (fixed in the zero-tracking spec): worst |model/measured − 1| = 7.6 %
+worst |model/measured − 1|: old 6.5 %, held-out 4.7 %, zero-tracking held-out 7.6 %
+test model_gate_n28_fp64 ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 400.93s
+
+end 2026-10-05T14:02:07Z
