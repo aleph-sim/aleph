@@ -108,8 +108,8 @@ fn gate_table(
         ),
     ];
     println!("### {title}");
-    println!("| circuit | D | measured compute (s) | model all-ranks (s) | ratio | R·model(R−1) (s) | ratio | generic steps |");
-    println!("|---|---|---|---|---|---|---|---|");
+    println!("| circuit | D | measured compute (s) | model all-ranks (s) | ratio | R·model(R−1) (s) | ratio | generic steps | verdict |");
+    println!("|---|---|---|---|---|---|---|---|---|");
     let mut worst: f64 = 0.0;
     let mut breakdown = Vec::new();
     for (name, c) in cases {
@@ -139,9 +139,16 @@ fn gate_table(
                     (g + usize::from(c), t + 1)
                 });
             let ratio = all / measured;
-            worst = worst.max((ratio - 1.0).abs());
+            // is_finite first: f64::max swallows NaN (ADR 0006), so a bad ratio is a MISS.
+            let pass = ratio.is_finite() && (ratio - 1.0).abs() <= 0.10;
+            worst = if ratio.is_finite() {
+                worst.max((ratio - 1.0).abs())
+            } else {
+                f64::INFINITY
+            };
+            let verdict = if pass { "PASS" } else { "MISS" };
             println!(
-                "| {name} | {} | {measured:.3} | {all:.3} | {ratio:.3} | {rep:.3} | {:.3} | {generic}/{locals} |",
+                "| {name} | {} | {measured:.3} | {all:.3} | {ratio:.3} | {rep:.3} | {:.3} | {generic}/{locals} | {verdict} |",
                 l.ranks(),
                 rep / measured
             );
