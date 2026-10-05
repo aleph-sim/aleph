@@ -83,7 +83,8 @@ pub enum DistSvError {
     Backend(#[from] BackendError),
 }
 use aleph_ir::dist::{
-    plan as dist_plan, specialize, DistError, DistLayout, DistPlan, DistStep, Router,
+    compile, plan as dist_plan, specialize, CostModel, DistError, DistLayout, DistPlan, DistStep,
+    Router,
 };
 use aleph_ir::{Circuit, Instruction};
 
@@ -140,6 +141,13 @@ impl<B: DeviceSv, X: Exchange<B>> DistSvBackend<B, X> {
         self
     }
 
+    /// Whether per-rank fusion is on. A [`crate::GpuCostModel`] passed to
+    /// [`Self::run_compiled`] should carry the same `fuse` value, or it
+    /// prices a different program than the one that runs.
+    pub fn fusion(&self) -> bool {
+        self.fuse
+    }
+
     /// Plan `c` over `2^g` ranks with `router`, then execute.
     pub fn run(
         &mut self,
@@ -149,6 +157,24 @@ impl<B: DeviceSv, X: Exchange<B>> DistSvBackend<B, X> {
     ) -> Result<DistSvState<B>, DistSvError> {
         let layout = DistLayout::new(c.num_qubits(), g)?;
         let p = dist_plan(c, layout, router)?;
+        self.run_plan(&p)
+    }
+
+    /// Compile `c` over `2^g` ranks (P6-05: the cheapest of every router x
+    /// placement candidate under `cost`), then execute.
+    ///
+    /// `cost` only *chooses* among valid plans, so a mis-calibrated model
+    /// costs speed, never correctness. Build a `GpuCostModel` with
+    /// `fuse: self.fusion()`; its constants are valid near the slice size
+    /// they were calibrated at (`KindTimes::m_ref`).
+    pub fn run_compiled(
+        &mut self,
+        c: &Circuit,
+        g: u32,
+        cost: &dyn CostModel,
+    ) -> Result<DistSvState<B>, DistSvError> {
+        let layout = DistLayout::new(c.num_qubits(), g)?;
+        let p = compile(c, layout, cost)?;
         self.run_plan(&p)
     }
 
