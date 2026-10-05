@@ -199,7 +199,8 @@ pub struct GpuCostModel {
     pub link: LinkModel,
     /// 16 (FP64) or 8 (FP32).
     pub amp_bytes: f64,
-    /// Must match the executing `DistSvBackend`'s fusion setting.
+    /// Must match the executing `DistSvBackend`'s fusion setting
+    /// (`DistSvBackend::fusion`).
     pub fuse: bool,
 }
 

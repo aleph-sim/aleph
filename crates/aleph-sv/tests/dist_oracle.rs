@@ -2,7 +2,10 @@
 
 use aleph_backend::run;
 use aleph_core::{Complex, Gate, GateInstance, Param};
-use aleph_ir::dist::{initial_placement, plan, plan_from, Dag, DistLayout, DistStep, Router};
+use aleph_ir::dist::{
+    compile_detailed, initial_placement, plan, plan_from, CostModel, Dag, DistError, DistLayout,
+    DistStep, Router,
+};
 use aleph_ir::{Circuit, DiagonalPhase, Instruction, PhaseTerm};
 use aleph_sv::dist_ref::run_dist;
 use aleph_sv::NaiveSvBackend;
@@ -657,6 +660,54 @@ proptest! {
         let l = DistLayout::new(6, g).unwrap();
         let p = plan_from(&c, l, router, &initial_placement(&c, l).unwrap()).unwrap();
         let got = run_dist(&p).unwrap();
+        let want = reference(&c);
+        for (x, y) in got.iter().zip(&want) {
+            prop_assert!((x - y).norm() < TOL);
+        }
+    }
+}
+
+/// Stub models for `compile`: `w` per local instruction, `(1 - 2^-k)*x` per
+/// exchange. Different weights steer `compile` to different candidates.
+struct StubModel {
+    w: f64,
+    x: f64,
+}
+impl CostModel for StubModel {
+    fn local_segment(&self, instrs: &[Instruction], _: DistLayout) -> Result<f64, DistError> {
+        Ok(self.w * instrs.len() as f64)
+    }
+    fn exchange(&self, k: u32, _m: u32) -> f64 {
+        self.x * (1.0 - 0.5f64.powi(k as i32))
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(64))]
+    #[test]
+    fn prop_compile_matches(
+        gates in prop::collection::vec(arb_any_gate(6), 1..30),
+        dp in arb_dp(6),
+        dp_at in 0usize..1000,
+        g in 0u32..=3,
+        w in prop_oneof![Just(0.0), Just(0.01), Just(1.0)],
+        x in prop_oneof![Just(0.0), Just(1.0), Just(100.0)],
+    ) {
+        let mut c = h_layer(6);
+        let at = dp_at % (gates.len() + 1);
+        let n_gates = gates.len();
+        for (k, gi) in gates.into_iter().enumerate() {
+            if k == at {
+                c.add_instruction(dp.clone()).unwrap();
+            }
+            c.add_gate(gi).unwrap();
+        }
+        if at == n_gates {
+            c.add_instruction(dp.clone()).unwrap();
+        }
+        let l = DistLayout::new(6, g).unwrap();
+        let out = compile_detailed(&c, l, &StubModel { w, x }).unwrap();
+        let got = run_dist(&out.plan).unwrap();
         let want = reference(&c);
         for (x, y) in got.iter().zip(&want) {
             prop_assert!((x - y).norm() < TOL);

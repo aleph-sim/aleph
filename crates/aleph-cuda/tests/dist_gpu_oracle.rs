@@ -140,7 +140,12 @@ fn dist_f64_matches_oracle_all_layouts_routers_fusion() {
     for (name, c) in cases() {
         let want = reference(&c);
         for g in 0..=3u32 {
-            for router in [Router::Naive, Router::Lookahead] {
+            for router in [
+                Router::Naive,
+                Router::Lookahead,
+                Router::Reorder { max_k: 1 },
+                Router::Reorder { max_k: 3 },
+            ] {
                 for fuse in [false, true] {
                     d = d.with_fusion(fuse);
                     let st = d.run(&c, g, router).unwrap();
@@ -165,10 +170,15 @@ fn dist_f32_matches_oracle() {
     for (name, c) in cases() {
         let want = reference(&c);
         for g in [1u32, 2, 3] {
-            let st = d.run(&c, g, Router::Lookahead).unwrap();
-            let got = d.amplitudes(&st).unwrap();
-            for (i, (x, y)) in got.iter().zip(&want).enumerate() {
-                assert!((x - y).norm() < 1e-5, "{name} g={g} amp {i}: {x} vs {y}");
+            for router in [Router::Lookahead, Router::Reorder { max_k: 3 }] {
+                let st = d.run(&c, g, router).unwrap();
+                let got = d.amplitudes(&st).unwrap();
+                for (i, (x, y)) in got.iter().zip(&want).enumerate() {
+                    assert!(
+                        (x - y).norm() < 1e-5,
+                        "{name} g={g} {router:?} amp {i}: {x} vs {y}"
+                    );
+                }
             }
         }
     }
@@ -401,4 +411,74 @@ fn exchange_rejects_bad_device_counts() {
         return;
     };
     assert!(x.exchange(&mut devs8, &mut ranks, l, &[4]).is_err()); // D = 8 > R = 4
+}
+
+use aleph_cuda::GpuCostModel;
+
+#[test]
+fn run_compiled_matches_oracle_f64() {
+    let Some(be) = gpu64() else { return };
+    let mut d = DistSvBackend::new(be, LocalExchange::with_scratch_amps(8));
+    let model = GpuCostModel {
+        fuse: d.fusion(),
+        ..GpuCostModel::rtx4000_fp64()
+    };
+    for (name, c) in cases() {
+        let want = reference(&c);
+        for g in 0..=3u32 {
+            let st = d.run_compiled(&c, g, &model).unwrap();
+            let got = d.amplitudes(&st).unwrap();
+            for (i, (x, y)) in got.iter().zip(&want).enumerate() {
+                assert!((x - y).norm() < 1e-10, "{name} g={g} amp {i}: {x} vs {y}");
+            }
+            assert!((d.norm_sqr(&st).unwrap() - 1.0).abs() < 1e-10);
+        }
+    }
+}
+
+#[test]
+fn run_compiled_matches_oracle_fusion_off() {
+    // The model's `fuse` disagrees with the backend on purpose: pricing is
+    // off, but every candidate is a valid plan, so results stay exact.
+    let Some(be) = gpu64() else { return };
+    let mut d = DistSvBackend::new(be, LocalExchange::with_scratch_amps(8)).with_fusion(false);
+    assert!(!d.fusion());
+    let model = GpuCostModel::rtx4000_fp64(); // fuse = true
+    for (name, c) in cases() {
+        let want = reference(&c);
+        for g in [1u32, 2] {
+            let st = d.run_compiled(&c, g, &model).unwrap();
+            let got = d.amplitudes(&st).unwrap();
+            for (i, (x, y)) in got.iter().zip(&want).enumerate() {
+                assert!((x - y).norm() < 1e-10, "{name} g={g} amp {i}: {x} vs {y}");
+            }
+        }
+    }
+}
+
+#[test]
+fn run_compiled_matches_oracle_f32() {
+    let Some(be) = gpu32() else { return };
+    let mut d = DistSvBackend::new(be, LocalExchange::with_scratch_amps(8));
+    let model = GpuCostModel::rtx4000_fp32();
+    for (name, c) in cases() {
+        let want = reference(&c);
+        for g in [1u32, 2, 3] {
+            let st = d.run_compiled(&c, g, &model).unwrap();
+            let got = d.amplitudes(&st).unwrap();
+            for (i, (x, y)) in got.iter().zip(&want).enumerate() {
+                assert!((x - y).norm() < 1e-5, "{name} g={g} amp {i}: {x} vs {y}");
+            }
+        }
+    }
+}
+
+#[test]
+fn run_compiled_rejects_bad_layout() {
+    let Some(be) = gpu64() else { return };
+    let mut d = DistSvBackend::new(be, LocalExchange::new());
+    // g >= n: DistLayout error, not a panic.
+    assert!(d
+        .run_compiled(&ghz(4), 4, &GpuCostModel::rtx4000_fp64())
+        .is_err());
 }

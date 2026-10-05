@@ -252,3 +252,5 @@ FP32 compute does not transfer.
 The Naive vs Lookahead exchange counts and bytes for QFT-32, random-30, GHZ-32 and Grover-20 at g ∈ {2,3} are in
 [`p6-03-routing.md`](p6-03-routing.md#measured-reduction). Lookahead cuts random-30 bytes 2.7–3.0× and Grover
 4.7–7.1×; it is the router every run above uses.
+
+P6-05's compiler (reordering, placement, model-chosen exchange width) and its predicted-time results: [p6-05-compiler.md](p6-05-compiler.md).
