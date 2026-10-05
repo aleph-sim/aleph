@@ -6,45 +6,15 @@
 
 mod common;
 
-use std::time::Instant;
-
 use aleph_cuda::{
     CudaContext, CudaSvBackend, DistSvBackend, GpuCostModel, KindTimes, LocalExchange,
 };
-use aleph_ir::dist::{plan, DistLayout, DistPlan, DistStep, Router};
-use aleph_ir::{build_qaoa, Circuit};
-use common::dist::{brickwall_bench, ccz_ladder, ghz, grover_iters, qft};
-
-/// The plan with every Local step emptied: exchanges (and allocation) only.
-fn comm_only(p: &DistPlan) -> DistPlan {
-    let mut q = p.clone();
-    for s in &mut q.steps {
-        if let DistStep::Local(v) = s {
-            v.clear();
-        }
-    }
-    q
-}
-
-fn best_of(sync: &CudaContext, reps: usize, mut f: impl FnMut()) -> f64 {
-    let mut best = f64::INFINITY;
-    for _ in 0..reps {
-        sync.synchronize().unwrap();
-        let t = Instant::now();
-        f();
-        sync.synchronize().unwrap();
-        best = best.min(t.elapsed().as_secs_f64());
-    }
-    best
-}
-
-/// QAOA Max-Cut p=2 on a ring plus chords: the ring `(i, i+1 mod n)` plus one
-/// chord `(i, i + n/2)` for each even `i < n/2` (7 chords at n=28; not regular).
-fn qaoa_ring_chords(n: u32) -> Circuit {
-    let mut edges: Vec<(u32, u32)> = (0..n).map(|i| (i, (i + 1) % n)).collect();
-    edges.extend((0..n / 2).step_by(2).map(|i| (i, i + n / 2)));
-    build_qaoa(n, &edges, &[0.4, 0.7], &[0.3, 0.5]).unwrap()
-}
+use aleph_ir::dist::{plan, DistLayout, DistStep, Router};
+use aleph_ir::Circuit;
+use common::dist::{
+    all_ranks, best_of, brickwall_bench, ccz_ladder, comm_only, ghz, grover_iters,
+    qaoa_ring_chords, qft,
+};
 
 /// `model` with every kind zeroed except the one `keep` leaves set: the
 /// per-kind share of the all-ranks compute (for the report's reading).
@@ -67,19 +37,6 @@ fn only(model: &GpuCostModel, keep: impl Fn(&KindTimes, &mut KindTimes)) -> GpuC
         kinds: z,
         ..model.clone()
     }
-}
-
-fn all_ranks(model: &GpuCostModel, p: &DistPlan) -> f64 {
-    let l = p.layout;
-    let mut all = 0.0;
-    for s in &p.steps {
-        if let DistStep::Local(instrs) = s {
-            for r in 0..l.ranks() {
-                all += model.rank_segment(instrs, l, r).unwrap();
-            }
-        }
-    }
-    all
 }
 
 #[test]

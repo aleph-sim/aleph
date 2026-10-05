@@ -3,6 +3,11 @@
 
 use aleph_backend::run;
 use aleph_core::{Complex, Gate, GateInstance, Param};
+use std::time::Instant;
+
+use aleph_cuda::{CudaContext, GpuCostModel};
+use aleph_ir::build_qaoa;
+use aleph_ir::dist::{DistPlan, DistStep};
 use aleph_ir::{Circuit, Instruction};
 use aleph_sv::NaiveSvBackend;
 
@@ -182,4 +187,48 @@ pub fn grover_iters(n: u32, iters: u32) -> Circuit {
         }
     }
     c
+}
+
+/// The plan with every Local step emptied: exchanges (and allocation) only.
+pub fn comm_only(p: &DistPlan) -> DistPlan {
+    let mut q = p.clone();
+    for s in &mut q.steps {
+        if let DistStep::Local(v) = s {
+            v.clear();
+        }
+    }
+    q
+}
+
+pub fn best_of(sync: &CudaContext, reps: usize, mut f: impl FnMut()) -> f64 {
+    let mut best = f64::INFINITY;
+    for _ in 0..reps {
+        sync.synchronize().unwrap();
+        let t = Instant::now();
+        f();
+        sync.synchronize().unwrap();
+        best = best.min(t.elapsed().as_secs_f64());
+    }
+    best
+}
+
+/// QAOA Max-Cut p=2 on a ring plus chords: the ring `(i, i+1 mod n)` plus one
+/// chord `(i, i + n/2)` for each even `i < n/2` (7 chords at n=28; not regular).
+pub fn qaoa_ring_chords(n: u32) -> Circuit {
+    let mut edges: Vec<(u32, u32)> = (0..n).map(|i| (i, (i + 1) % n)).collect();
+    edges.extend((0..n / 2).step_by(2).map(|i| (i, i + n / 2)));
+    build_qaoa(n, &edges, &[0.4, 0.7], &[0.3, 0.5]).unwrap()
+}
+
+pub fn all_ranks(model: &GpuCostModel, p: &DistPlan) -> f64 {
+    let l = p.layout;
+    let mut all = 0.0;
+    for s in &p.steps {
+        if let DistStep::Local(instrs) = s {
+            for r in 0..l.ranks() {
+                all += model.rank_segment(instrs, l, r).unwrap();
+            }
+        }
+    }
+    all
 }
