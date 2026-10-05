@@ -49,7 +49,7 @@ fn gate_table(
     cases: &[(&str, Circuit)],
     n: u32,
     sync: &CudaContext,
-    d: &mut DistSvBackend<CudaSvBackend, LocalExchange>,
+    d: &mut DistSvBackend<CudaSvBackend, LocalExchange<CudaSvBackend>>,
     model: &GpuCostModel,
 ) -> f64 {
     let shares: Vec<(&str, GpuCostModel)> = vec![
