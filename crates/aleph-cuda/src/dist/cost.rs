@@ -385,7 +385,10 @@ impl KindTimes {
 
 /// Whether each step of `plan` is priced on a generic state (spec §3.2).
 ///
-/// The walk starts simple with every qubit known |0⟩ (zero-tracking spec §2). A `Local` step that holds any instruction that makes the state generic, given the qubits still |0⟩ at that point, is priced generic in full, and so is every later step. Exchanges swap the paired bits' |0⟩ status and keep the class.
+/// The walk starts simple with every qubit known |0⟩ (zero-tracking spec §2). A `Local` step that
+/// holds any instruction that makes the state generic, given the qubits still |0⟩ at that point,
+/// is priced generic in full, and so is every later step. Exchanges swap the paired bits' |0⟩
+/// status and keep the class.
 pub fn state_classes(plan: &DistPlan) -> Result<Vec<bool>, DistError> {
     let l = plan.layout;
     let mut z0: u64 = if l.n >= 64 {
@@ -1100,6 +1103,18 @@ mod tests {
     }
 
     #[test]
+    fn controlled_target_never_joins_zero() {
+        // Swap(1, 2) controlled by superposed q0, with q1 in Z0 and q2 not. Restricted to
+        // q1 = 0 the Swap sends |q1 q2> = 01 to 10: a permutation with 0/1 magnitudes and
+        // trivial phases, so R2 (non-diagonal needs odd magnitude; no odd phase) says simple.
+        // Step 5: q1 can now be 1 (leaves Z0). q2 is never 1 on the restricted columns, but
+        // under a control it may only leave Z0, never join it: the gate may not fire.
+        let mut z = 0b010u64;
+        assert_eq!(walk(&[ctl(Gate::Swap, &[1, 2], &[0])], &mut z), vec![false]);
+        assert_eq!(z & 0b110, 0);
+    }
+
+    #[test]
     fn diagonal_phase_dead_terms() {
         let dp = |m: u64, angle: f64| {
             Instruction::DiagonalPhase(Box::new(DiagonalPhase {
@@ -1200,7 +1215,8 @@ mod tests {
         let r1 = m.rank_segment(instrs, l, 1, true).unwrap();
         assert_eq!(r0, 10.0); // H only, generic
         assert_eq!(r1, 20.0); // Rx + H, generic
-                              // Step a: H(19) simple on both ranks (1.0 each).
+
+        // Step a: H(19) simple on both ranks (1.0 each).
         assert_eq!(m.all_ranks(&p).unwrap(), 32.0);
     }
 

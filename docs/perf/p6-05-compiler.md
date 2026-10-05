@@ -1004,7 +1004,7 @@ The check runs only at the start of each run. It cannot see work that these serv
 on the same host, start during a run (see "Gate run 2's HEA D=2 cell" below).
 
 **Classes, expected vs measured.** "generic steps" is the new walk; "old-rule" is the pre-change walk on the same
-plan. Both columns are identical in both runs and at D=2 and D=4.
+plan. Each column is identical in both runs; the new walk differs from the old only on QFT, H2 and H3.
 
 | cell | expected (spec §3/§4) | generic steps, new | old-rule generic |
 |---|---|---|---|
@@ -1100,7 +1100,9 @@ Worst |model/measured − 1| for run 2, by table:
 (10/10 generic, 8.918 s), so the zero-tracking change cannot move this ratio. The gate takes best-of-3, so all three
 repetitions of this cell were slow.
 
-The Ollama container's log lists every `/api/chat` request on the shared GPU between 12:40 and 13:30 UTC. Run windows
+The Ollama container's log lists every `/api/chat` request on the shared GPU between 12:40 and 13:30 UTC. The raw
+source is `p6-05-state-class/zt-ollama-requests.log` (the container's `[GIN]` request log for 12:40–13:30 UTC; its
+other lines are short `GET` calls). Run windows
 are taken from each idle-check time plus the test's wall time.
 
 | request window (UTC) | duration (s) | falls in |
@@ -1156,18 +1158,18 @@ Both compile-bench runs passed: every `exit1`, every `exit3b`, the random d=10 `
 | exit | run 1 | run 2 |
 |---|---|---|
 | 1. H1–H3 within ±10 % | **PASS**: 0.940–1.077 | **PASS**: 0.940–1.079 |
-| 2. all ten old cells within ±10 % | **PASS**: 1.003–1.072 | **PASS**: 1.000–1.065 |
+| 2. all ten old cells within ±10 % (§4.2 six cells + §4.3 four held-out cells) | **PASS**: 0.954–1.072 | **MISS**: HEA D=2 0.686 (31.4 %); every other cell 0.953–1.065 |
 | 3. compile bench exit1 and 3b on every FP64 cell | **PASS**: exit1 ≤ 1.000; 3b 0.993–1.067 | **PASS**: exit1 ≤ 1.001; 3b 0.998–1.067 |
 | 4. Stage A constants and `STATE_RULE` unchanged | **PASS** | **PASS** |
 
-**All four zero-tracking exits pass in both runs.**
+Exits 1, 3 and 4 pass in both runs. Exit 2 passes in run 1 and **MISSES in run 2** on one cell, HEA D=2 (0.686).
 
-The #538 exit 1 (§4.5) also requires the §4.3 held-out cells. Under it:
+The #538 exit 1 (§4.5, old + held-out cells) has the same verdict:
 
-- run 1 now **PASSES**, every cell within 7.2 %;
-- run 2 is a **MISS** on one cell, HEA D=2 at 0.686.
+- run 1 **PASSES**, every cell within 7.2 %;
+- run 2 is a **MISS** on the same single cell, HEA D=2 at 0.686.
 
-The gate test asserts over all three tables, so it reports run 2 as FAILED. Per spec, nothing is re-tuned and no run
+The gate test asserts over all three tables, so it reported run 2 as FAILED. Per spec, nothing is re-tuned and no run
 is repeated here. Whether to re-run with the shared GPU services paused is the user's call.
 
 **Reading**
