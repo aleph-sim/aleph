@@ -5,6 +5,8 @@
 //! Run: cargo test --release -p aleph-cuda --features cuda --test dist_local_bench -- --ignored --nocapture
 #![cfg(all(target_os = "linux", feature = "cuda"))]
 
+mod common;
+
 use std::time::Instant;
 
 use aleph_backend::run;
@@ -14,6 +16,7 @@ use aleph_cuda::{
 };
 use aleph_ir::dist::{plan, DistLayout, Router};
 use aleph_ir::Circuit;
+use common::dist::{brickwall_bench as brickwall, ccz_ladder};
 
 fn qft(n: u32) -> Circuit {
     let mut c = Circuit::new(n, 0);
@@ -31,41 +34,6 @@ fn qft(n: u32) -> Circuit {
     }
     for q in 0..n / 2 {
         c.swap(q, n - 1 - q).unwrap();
-    }
-    c
-}
-
-fn brickwall(n: u32, depth: usize) -> Circuit {
-    let mut c = Circuit::new(n, 0);
-    for d in 0..depth {
-        for q in 0..n {
-            c.rx(0.3 + 0.17 * f64::from(q), q).unwrap();
-            c.rz(0.7 * d as f64, q).unwrap();
-        }
-        let mut q = (d % 2) as u32;
-        while q + 1 < n {
-            c.cnot(q, q + 1).unwrap();
-            q += 2;
-        }
-    }
-    c
-}
-
-/// All-diagonal ladder whose `Ccz`s each touch the top qubit, so at g = 1
-/// every one specialises to a 2-local diagonal (#529).
-fn ccz_ladder(n: u32, depth: usize) -> Circuit {
-    let mut c = Circuit::new(n, 0);
-    for q in 0..n {
-        c.h(q).unwrap();
-    }
-    for d in 0..depth {
-        for q in 0..n - 2 {
-            c.add_gate(GateInstance::new(Gate::Ccz, vec![q, q + 1, n - 1]))
-                .unwrap();
-            c.add_gate(GateInstance::new(Gate::Cz, vec![q, q + 1]))
-                .unwrap();
-            c.rz(0.1 * (d as f64 + 1.0), q).unwrap();
-        }
     }
     c
 }

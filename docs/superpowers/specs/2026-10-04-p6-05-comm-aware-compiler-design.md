@@ -147,7 +147,7 @@ puts these qubits in physical slots `m..n`, and the rest in order in `0..m`.
 
 - **`local_segment`:**
   - Specialise the step for the representative rank **R−1** (all global bits 1). There, every global-controlled gate
-    is live, so this is the busiest rank.
+    is live, so this is typically the busiest rank.
   - Run `fuse_for_gpu` on the result.
   - Sum, over the fused instructions, the per-kind time `t_kind(m_ref) · 2^(m − m_ref)`. These passes are
     bandwidth-bound.
@@ -155,20 +155,51 @@ puts these qubits in physical slots `m..n`, and the rest in order in `0..m`.
     dispatch code and pins each with a unit test mapping instruction → kind. The expected set is: dense block k=1/2/3,
     numerically diagonal (`apply_diag`), `DiagonalPhase` (`apply_phase_poly`; per-pass plus per-term), `apply_cnot`,
     and 2q permutation (`Swap`). If the dispatch has a kind outside this set, it gets its own weight.
+  - *PR 2 correction (verified against the dispatch code):* the shipped set is `Dense1/2/3`, `Diag1`, `DiagK`, `Cnot`,
+    `PhasePoly`.
+    - There is no `Swap` kind: `Swap` is not diagonal and goes to dense k=2 `apply_kq_tiled`, so it costs as `Dense2`.
+    - Diagonals split into `Diag1` (`apply_diag_1q`, no scratch upload) and `DiagK` (`apply_diag`, k=2/3).
+    - No layer kind: the dist path applies instructions one at a time (`apply_one`), never `apply_1q_multi`.
+    - `UnitaryKq` is tested before the diagonal check, so it is always dense; k=4/5 (TF32) is unreachable because
+      `fuse_for_gpu` caps fusion at 3.
+    - `PhasePoly` is priced by term shape: `(t_phase_base + t_phase_term · n_single + t_phase_term_multi · n_multi)
+      · 2^(m − m_ref)`, where single terms have ≤ 1 cond and multi terms are an AND of ≥ 2 conds. A term's cost tracks
+      how often it fires (1/2 vs 1/4 of amplitudes), as measured by a kernel sweep.
+  - `local_segment` returns `Result<f64, DistError>` (specialisation can fail; library code must not panic).
+  - *PR 2 note (external controls):* a gate with local external controls is priced as a full pass of its target kind,
+    although the kernels skip amplitudes whose control bits are clear. This is a conservative over-estimate; the §6.3
+    gate's Grover cell (K=3) bounds it at model/measured 1.034–1.042. The gate never exercises `DiagK`, so `diag_k` is
+    unvalidated.
+  - *PR 2 correction (calibration):* each launch is timed **interleaved with an `H`** (H-only baseline subtracted),
+    not 32 identical launches back to back, which read 2–10 % slow at the card's power cap. Constants are the mean of
+    two runs.
+  - *PR 2 correction (Dense2 state):* `Dense2` alone is calibrated on a scrambled state (H layer, then one `Rx` and one
+    `Rz` per qubit, in both payload and baseline). At the 70 W cap FP64 kernel time depends on the amplitude data, and
+    `Dense2` costs ×1.196 on a generic complex state. Every other kind stays on the uniform H state (scrambling `Dense3`
+    would mis-price GHZ). This per-kind choice was made after seeing the §6.3 gate results.
 - **`exchange(k, m)`:** `(1 − 2^−k) · 2^m · amp_bytes / bw_by_k[k−1]`.
   - `LinkModel::aws_g6_fp64()` = [7.16e9, 4.35e9] B/s. For k > 2 it extrapolates the two-bit value, and the extrapolation
     is documented.
   - The FP32 preset uses 7.09e9 single-bit and scales the two-bit value by the same ratio. Callers can supply other
     tables, e.g. a P2P preset.
 - **Calibration:** an `#[ignore]`d test, `tests/dist_cost_calibrate.rs`. On the RTX 4000 at m_ref = 27 (FP64) and 28
-  (FP32), it times each kind as the best of 5 over a batch of 32 launches. The constants are committed in `cost.rs`
+  (FP32), it times each kind as the best of 5 over a batch of 32 launches (method superseded by the PR 2 calibration
+  corrections above: interleaved with `H`, `Dense2` on a scrambled state, mean of two runs). The constants are committed in `cost.rs`
   with the date, GPU and command.
 
 ### 6.3 Model accuracy gate (must pass before `compile` lands)
 
-On every workload in §8 at n=28, D∈{2,4}, FP64, the model's compute term `Σ local_segment` for the Lookahead plan must
-be within **±10 %** of measured `T_onecard(R=D)/D`. Measured `T_onecard` includes on-card exchange copies; the gate
-subtracts those, using the measured `LocalExchange` copy time for the plan's exchanges.
+(Superseded below.) On every workload in §8 at n=28, D∈{2,4}, FP64, the model's compute term `Σ local_segment` for the
+Lookahead plan must be within **±10 %** of measured `T_onecard(R=D)/D`. Measured `T_onecard` includes on-card exchange
+copies; the gate subtracts those, using the measured `LocalExchange` copy time for the plan's exchanges.
+
+*PR 2 correction:* one card runs every rank, so the gate compares the model's compute summed over **all ranks**
+(`Σ_steps Σ_r rank_segment(step, r)`) against measured `T_onecard − T_exchange`, not one rank against `T_onecard/D`. The
+exchange copy time is measured by running the same plan with every `Local` step emptied (an exchange-only plan) through
+`DistSvBackend::run_plan`; no timing hook is needed and allocation cancels in the subtraction. The representative-rank
+estimate `compile` uses, `R · cost(R−1)`, is reported alongside but not gated (rank R−1 is representative, typically
+the busiest, not a strict bound). Bench:
+`crates/aleph-cuda/tests/dist_cost_gate.rs`.
 
 If the gate fails, the per-kind model is revised and re-checked before going further, and the finding is recorded in
 the report. Shipping an optimizer that aims at a wrong objective is not acceptable.
@@ -207,7 +238,7 @@ Compile time is reported, and the target is < 50 ms for ~1k gates at g=2.
 ## 8. Benchmark and acceptance
 
 **Workloads:** n=28, D∈{2,4}, FP64. QFT, GHZ, random brickwall d=10, Grover (multi-controlled), QAOA Max-Cut p=2 on a
-3-regular graph, CCZ ladder d=4. FP32 is reported for QFT and random.
+ring plus 7 chords `(i, i + n/2)`, even `i < n/2`, CCZ ladder d=4. FP32 is reported for QFT and random.
 
 **Metric:** predicted `T` with *measured* compute. That is `T_onecard(R=D)/D` from `dist_local_bench` on the RTX 4000,
 minus on-card copy time, plus `bytes/BW(k)` with the AWS FP64 table. It is computed for the Naive, Lookahead and
@@ -243,5 +274,6 @@ Three PRs, each with green CI. GPU-specific tests run on the CUDA box.
   lowest-index-first order, and `compile` still has Lookahead as a fallback candidate.
 - **Model error on cheap kinds.** Diagonal and swap launches are latency-dominated at small m. Mitigation: calibrate at
   m_ref near the target m; the §6.3 gate catches any remaining error.
-- **Representative rank.** Ranks other than R−1 skip global-controlled gates and therefore run less. Using R−1 is an
-  upper bound on per-rank compute. Ranks also synchronise at each exchange, so the slowest rank sets the pace anyway.
+- **Representative rank.** Ranks other than R−1 skip global-controlled gates and therefore run less. Using R−1 is
+  representative, typically the busiest rank, but not a strict bound: a parity cond can expand into more terms on
+  another rank. Ranks also synchronise at each exchange, so the slowest rank sets the pace anyway.

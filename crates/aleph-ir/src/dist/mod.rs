@@ -15,6 +15,7 @@ use smallvec::SmallVec;
 
 use crate::Instruction;
 
+mod cost;
 mod dag;
 mod next_use;
 mod placement;
@@ -22,6 +23,7 @@ mod plan;
 mod schedule;
 mod specialize;
 
+pub use cost::{plan_cost, CostModel};
 pub use dag::Dag;
 pub use placement::initial_placement;
 pub use plan::{plan, plan_from, required_local};

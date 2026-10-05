@@ -115,3 +115,71 @@ pub fn cases() -> Vec<(&'static str, Circuit)> {
         ("diag10", all_diag_on_globals(10)),
     ]
 }
+
+/// `brickwall` without the per-qubit `Rz` offset: the exact gate content of
+/// the P6-01a overhead bench (`dist_local_bench`), which P6-05 compares on.
+pub fn brickwall_bench(n: u32, depth: usize) -> Circuit {
+    let mut c = Circuit::new(n, 0);
+    for d in 0..depth {
+        for q in 0..n {
+            c.rx(0.3 + 0.17 * f64::from(q), q).unwrap();
+            c.rz(0.7 * d as f64, q).unwrap();
+        }
+        let mut q = (d % 2) as u32;
+        while q + 1 < n {
+            c.cnot(q, q + 1).unwrap();
+            q += 2;
+        }
+    }
+    c
+}
+
+/// All-diagonal ladder whose `Ccz`s each touch the top qubit, so at g = 1
+/// every one specialises to a 2-local diagonal (#529).
+pub fn ccz_ladder(n: u32, depth: usize) -> Circuit {
+    let mut c = Circuit::new(n, 0);
+    for q in 0..n {
+        c.h(q).unwrap();
+    }
+    for d in 0..depth {
+        for q in 0..n - 2 {
+            c.add_gate(GateInstance::new(Gate::Ccz, vec![q, q + 1, n - 1]))
+                .unwrap();
+            c.add_gate(GateInstance::new(Gate::Cz, vec![q, q + 1]))
+                .unwrap();
+            c.rz(0.1 * (d as f64 + 1.0), q).unwrap();
+        }
+    }
+    c
+}
+
+/// Grover on `n` qubits, the construction of `gpu_report_bench.rs`: H layer,
+/// then `iters` × (oracle multi-controlled Z, diffusion H·X·MCZ·X·H). The MCZ
+/// targets `n − 1` with controls `0..min(n−1, 8)` (the IR caps controls at 8).
+/// Cost-model gates use a small fixed `iters` (e.g. 3): they measure model
+/// accuracy per launch, not the algorithm, and π/4·√2^n iterations would run
+/// for hours at n=28.
+pub fn grover_iters(n: u32, iters: u32) -> Circuit {
+    let mut c = Circuit::new(n, 0);
+    for q in 0..n {
+        c.h(q).unwrap();
+    }
+    let mcz = |c: &mut Circuit| {
+        let ctrls: Vec<u32> = (0..(n - 1).min(8)).collect();
+        c.add_gate(GateInstance::controlled(Gate::Z, vec![n - 1], ctrls))
+            .unwrap();
+    };
+    for _ in 0..iters {
+        mcz(&mut c);
+        for q in 0..n {
+            c.h(q).unwrap();
+            c.x(q).unwrap();
+        }
+        mcz(&mut c);
+        for q in 0..n {
+            c.x(q).unwrap();
+            c.h(q).unwrap();
+        }
+    }
+    c
+}
