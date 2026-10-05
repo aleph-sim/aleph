@@ -519,3 +519,93 @@ is calibrated on the uniform H state, and §2.3–2.4 measured it at ×1.12 on a
   on the §3.1 workloads take 0.1–1.5 ms.
 - On one card `T_pred` is a prediction: compute is measured here, the link term is the AWS g6 table, and no
   multi-GPU run of the compiled plans was made.
+
+## 4. State-class cost model (#538)
+
+Spec: `docs/superpowers/specs/2026-10-05-p6-05-state-class-cost-design.md`. The rule and the constants below were
+fixed and pushed (commit `STAGE_A_SHA`) before any Stage C run.
+
+### 4.1 Stage A: per-kind time by state
+
+Bench: `cargo test --release -p aleph-cuda --features cuda --test dist_cost_states -- --ignored --nocapture`
+(RTX 4000 SFF Ada, 2026-10-05, idle box, two passes in one invocation, 5375 s; raw log
+`p6-05-state-class/stage-a.log`). Cells are ms per launch, mean of the two passes (pass 1 / pass 2). States (spec §2):
+(a) uniform H; (b) (a) + Rz per qubit (equal magnitudes, varied phases); (c) (a) + Ry per qubit (real, varied
+magnitudes); (d) (a) + Rx + Rz per qubit (generic complex); (e) GHZ; (f) 4 Clifford layers.
+
+**FP64, m_ref = 27:**
+
+| kind | a | b | c | d | e | f | d/a |
+|---|---|---|---|---|---|---|---|
+| dense1 | 17.549 (17.520/17.579) | 17.745 (17.723/17.767) | 17.639 (17.662/17.615) | 17.806 (17.778/17.834) | 17.548 (17.547/17.549) | 17.560 (17.609/17.510) | 1.015 |
+| dense2 | 18.659 (18.039/19.280) | 22.701 (22.626/22.776) | 22.709 (22.828/22.590) | 22.684 (22.763/22.604) | 18.965 (18.910/19.019) | 18.962 (18.916/19.009) | 1.216 |
+| dense3 | 34.657 (33.663/35.651) | 40.058 (39.997/40.119) | 37.981 (38.033/37.930) | 40.087 (40.205/39.969) | 35.584 (35.590/35.579) | 35.682 (35.762/35.601) | 1.157 |
+| diag1 | 17.758 (17.724/17.792) | 17.636 (17.641/17.631) | 17.812 (17.794/17.830) | 17.652 (17.670/17.635) | 17.684 (17.670/17.697) | 17.646 (17.630/17.662) | 0.994 |
+| diag_k | 17.619 (17.609/17.628) | 17.624 (17.632/17.617) | 17.639 (17.647/17.630) | 17.673 (17.627/17.720) | 17.627 (17.660/17.594) | 17.679 (17.675/17.683) | 1.003 |
+| cnot | 10.770 (10.752/10.788) | 10.663 (10.668/10.658) | 10.775 (10.758/10.792) | 10.708 (10.715/10.701) | 10.798 (10.814/10.781) | 10.777 (10.834/10.721) | 0.994 |
+| phase_base | 21.346 (20.933/21.759) | 24.958 (24.991/24.925) | 24.989 (25.014/24.964) | 24.850 (24.881/24.820) | 20.950 (20.972/20.929) | 20.949 (20.909/20.989) | 1.164 |
+| phase_term | 0.670 (0.665/0.674) | 0.630 (0.631/0.629) | 0.631 (0.632/0.630) | 0.630 (0.631/0.629) | 0.640 (0.642/0.637) | 0.638 (0.638/0.639) | 0.941 |
+| phase_term_multi | 0.477 (0.476/0.478) | 0.462 (0.463/0.461) | 0.468 (0.469/0.467) | 0.462 (0.464/0.461) | 0.463 (0.460/0.466) | 0.462 (0.462/0.463) | 0.970 |
+
+| state | dense2 / a | measured | R1 predicts | R2 predicts |
+|---|---|---|---|---|
+| A | 1.000 | simple | simple | simple |
+| B | 1.217 | generic | simple | generic |
+| C | 1.217 | generic | generic | generic |
+| D | 1.216 | generic | generic | generic |
+| E | 1.016 | simple | simple | simple |
+| F | 1.016 | simple | simple | simple |
+
+**FP32, m_ref = 28:**
+
+| kind | a | b | c | d | e | f | d/a |
+|---|---|---|---|---|---|---|---|
+| dense1 | 17.601 (17.596/17.606) | 17.678 (17.691/17.664) | 17.598 (17.601/17.596) | 17.661 (17.658/17.665) | 17.548 (17.567/17.530) | 17.593 (17.595/17.591) | 1.003 |
+| dense2 | 17.785 (17.782/17.788) | 17.725 (17.741/17.708) | 17.829 (17.813/17.845) | 17.741 (17.741/17.740) | 17.769 (17.800/17.739) | 17.781 (17.814/17.749) | 0.998 |
+| dense3 | 17.987 (17.999/17.975) | 17.334 (17.325/17.343) | 17.946 (17.954/17.938) | 17.274 (17.258/17.290) | 17.967 (17.936/17.997) | 17.863 (17.835/17.891) | 0.960 |
+| diag1 | 17.711 (17.734/17.687) | 17.608 (17.565/17.651) | 17.692 (17.695/17.689) | 17.599 (17.585/17.612) | 17.645 (17.652/17.638) | 17.575 (17.476/17.673) | 0.994 |
+| diag_k | 17.660 (17.672/17.647) | 17.681 (17.696/17.667) | 17.734 (17.736/17.732) | 17.698 (17.673/17.722) | 17.680 (17.700/17.661) | 17.698 (17.712/17.684) | 1.002 |
+| cnot | 12.939 (12.928/12.950) | 12.962 (12.959/12.965) | 12.933 (12.957/12.908) | 12.989 (12.992/12.987) | 12.973 (12.967/12.978) | 12.924 (12.909/12.940) | 1.004 |
+| phase_base | 46.156 (46.091/46.221) | 49.670 (49.690/49.650) | 49.625 (49.751/49.500) | 49.589 (49.696/49.481) | 45.390 (45.515/45.265) | 45.294 (45.406/45.181) | 1.074 |
+| phase_term | 1.281 (1.281/1.281) | 1.233 (1.231/1.234) | 1.236 (1.239/1.234) | 1.231 (1.233/1.229) | 1.206 (1.209/1.203) | 1.204 (1.208/1.200) | 0.961 |
+| phase_term_multi | 0.907 (0.906/0.908) | 0.885 (0.886/0.885) | 0.891 (0.893/0.890) | 0.885 (0.887/0.883) | 0.895 (0.895/0.894) | 0.896 (0.896/0.895) | 0.975 |
+
+| state | dense2 / a | measured | R1 predicts | R2 predicts |
+|---|---|---|---|---|
+| A | 1.000 | simple | simple | simple |
+| B | 0.997 | simple | simple | generic |
+| C | 1.002 | simple | generic | generic |
+| D | 0.998 | simple | generic | generic |
+| E | 0.999 | simple | simple | simple |
+| F | 1.000 | simple | simple | simple |
+
+`measured` is rule 1 (generic iff `dense2` ≥ 1.05 × its (a) time); the R1/R2 columns are each candidate rule's
+prediction from the state's preparation circuit.
+
+**Decision (pre-registered rules, spec §2):**
+- **Rule 1, FP64:** (b), (c), (d) are generic (dense2 1.216–1.217 × (a)); (e) and (f) are simple (1.016).
+- **Rule 3, FP64: R2.** State (b) has equal magnitudes and only non-π/4 phases. It measured generic (×1.217), which
+  only R2 predicts; R1 calls it simple. R2 matches all six states. So at the 70 W cap the phases alone are enough to
+  slow the dense kernels: the effect is about the amplitude *values*, not their magnitudes.
+- **Rule 2, FP64:** two constants for `dense2` (d/a 1.216), `dense3` (1.157) and `phase_base` (1.164). One constant
+  for `dense1` (1.015), `diag1` (0.994), `diag_k` (1.003), `cnot` (0.994), `phase_term` (0.941) and
+  `phase_term_multi` (0.970).
+- **FP32 — the pre-registered stop fired.** No dense kind moves with the state (dense2 0.997–1.002 × (a) on every
+  state), so rule 1 calls every state simple and neither R1 nor R2 matches (plan ruling 3). But rule 2 splits one
+  kind, `phase_base` (d/a 1.074), and its per-state times follow the R2 classes exactly: 49.59–49.67 ms on
+  (b)/(c)/(d) against 45.29–46.16 ms on (a)/(e)/(f). **The user decided, after seeing these tables,** to use R2 for
+  FP32 too, with the `phase_base` split as printed. This is the one post-measurement choice in #538; it touches only
+  FP32, which no exit criterion gates.
+- **Rule 4:** the constants are the printed literals, unedited, in `crates/aleph-cuda/src/dist/cost.rs`
+  (`RTX4000_FP64`, `RTX4000_FP32`).
+
+Compared with the PR 2 constants (§2.4), the simple FP64 `dense2` drops from 21.69 ms (a scrambled-state value) to
+18.66 ms (uniform), and the generic value is 22.68 ms. `dense3` gains a generic value of 40.09 ms (simple 34.66 ms,
+PR 2 34.36 ms).
+
+**Run-to-run noise.** The largest spread between the two passes is on state (a): FP64 dense2 18.04 / 19.28 ms
+(6.6 %), dense3 33.66 / 35.65 ms (5.7 %) and phase_base 20.93 / 21.76 ms (3.9 %). Pass 2 is the slower one in all
+three, and (a) is measured first in each pass. Every other cell moves by ≤ 1.4 % (FP64: next largest phase_term on
+(a) 1.3 %, phase_term_multi on (e) 1.3 %; FP32: largest diag1 on (f) 1.1 %). The
+class decisions are not near the 5 % threshold: the generic states sit at 1.216–1.217 and the simple ones at
+1.000–1.016.

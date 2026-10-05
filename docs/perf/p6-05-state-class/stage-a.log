@@ -1,0 +1,81 @@
+    Finished `release` profile [optimized] target(s) in 0.04s
+  Executable tests/dist_cost_states.rs (target/release/deps/dist_cost_states-2246e54a84bc7264)
+ 10:46:05 up 1 day, 19:01,  1 user,  load average: 0.00, 0.02, 0.01
+    Finished `release` profile [optimized] target(s) in 0.03s
+     Running tests/dist_cost_states.rs (target/release/deps/dist_cost_states-2246e54a84bc7264)
+
+running 1 test
+test state_microbench has been running for over 60 seconds
+
+### FP64 (n = m_ref = 27), ms per launch, mean of 2 (run1/run2)
+
+| kind | a | b | c | d | e | f | d/a |
+|---|---|---|---|---|---|---|---|
+| dense1 | 17.549 (17.520/17.579) | 17.745 (17.723/17.767) | 17.639 (17.662/17.615) | 17.806 (17.778/17.834) | 17.548 (17.547/17.549) | 17.560 (17.609/17.510) | 1.015 |
+| dense2 | 18.659 (18.039/19.280) | 22.701 (22.626/22.776) | 22.709 (22.828/22.590) | 22.684 (22.763/22.604) | 18.965 (18.910/19.019) | 18.962 (18.916/19.009) | 1.216 |
+| dense3 | 34.657 (33.663/35.651) | 40.058 (39.997/40.119) | 37.981 (38.033/37.930) | 40.087 (40.205/39.969) | 35.584 (35.590/35.579) | 35.682 (35.762/35.601) | 1.157 |
+| diag1 | 17.758 (17.724/17.792) | 17.636 (17.641/17.631) | 17.812 (17.794/17.830) | 17.652 (17.670/17.635) | 17.684 (17.670/17.697) | 17.646 (17.630/17.662) | 0.994 |
+| diag_k | 17.619 (17.609/17.628) | 17.624 (17.632/17.617) | 17.639 (17.647/17.630) | 17.673 (17.627/17.720) | 17.627 (17.660/17.594) | 17.679 (17.675/17.683) | 1.003 |
+| cnot | 10.770 (10.752/10.788) | 10.663 (10.668/10.658) | 10.775 (10.758/10.792) | 10.708 (10.715/10.701) | 10.798 (10.814/10.781) | 10.777 (10.834/10.721) | 0.994 |
+| phase_base | 21.346 (20.933/21.759) | 24.958 (24.991/24.925) | 24.989 (25.014/24.964) | 24.850 (24.881/24.820) | 20.950 (20.972/20.929) | 20.949 (20.909/20.989) | 1.164 |
+| phase_term | 0.670 (0.665/0.674) | 0.630 (0.631/0.629) | 0.631 (0.632/0.630) | 0.630 (0.631/0.629) | 0.640 (0.642/0.637) | 0.638 (0.638/0.639) | 0.941 |
+| phase_term_multi | 0.477 (0.476/0.478) | 0.462 (0.463/0.461) | 0.468 (0.469/0.467) | 0.462 (0.464/0.461) | 0.463 (0.460/0.466) | 0.462 (0.462/0.463) | 0.970 |
+
+| state | dense2 / a | measured | R1 predicts | R2 predicts |
+|---|---|---|---|---|
+| A | 1.000 | simple | simple | simple |
+| B | 1.217 | generic | simple | generic |
+| C | 1.217 | generic | generic | generic |
+| D | 1.216 | generic | generic | generic |
+| E | 1.016 | simple | simple | simple |
+| F | 1.016 | simple | simple | simple |
+FP64 rule 3: R2 (only R2 matches every state)
+FP64 rule 2: dense1 → one constant (d/a = 1.015)
+FP64 rule 2: dense2 → SPLIT (d/a = 1.216)
+FP64 rule 2: dense3 → SPLIT (d/a = 1.157)
+FP64 rule 2: diag1 → one constant (d/a = 0.994)
+FP64 rule 2: diag_k → one constant (d/a = 1.003)
+FP64 rule 2: cnot → one constant (d/a = 0.994)
+FP64 rule 2: phase_base → SPLIT (d/a = 1.164)
+FP64 rule 2: phase_term → one constant (d/a = 0.941)
+FP64 rule 2: phase_term_multi → one constant (d/a = 0.970)
+const RTX4000_FP64: KindTimes = KindTimes { m_ref: 27, dense1: 1.754941e-2, dense2: 1.865920e-2, dense3: 3.465677e-2, diag1: 1.775814e-2, diag_k: 1.761880e-2, cnot: 1.076974e-2, phase_base: 2.134603e-2, phase_term: 6.695171e-4, phase_term_multi: 4.769194e-4, generic: GenericTimes { dense2: Some(2.268356e-2), dense3: Some(4.008718e-2), phase_base: Some(2.485048e-2), ..GenericTimes::NONE } };
+
+### FP32 (n = m_ref = 28), ms per launch, mean of 2 (run1/run2)
+
+| kind | a | b | c | d | e | f | d/a |
+|---|---|---|---|---|---|---|---|
+| dense1 | 17.601 (17.596/17.606) | 17.678 (17.691/17.664) | 17.598 (17.601/17.596) | 17.661 (17.658/17.665) | 17.548 (17.567/17.530) | 17.593 (17.595/17.591) | 1.003 |
+| dense2 | 17.785 (17.782/17.788) | 17.725 (17.741/17.708) | 17.829 (17.813/17.845) | 17.741 (17.741/17.740) | 17.769 (17.800/17.739) | 17.781 (17.814/17.749) | 0.998 |
+| dense3 | 17.987 (17.999/17.975) | 17.334 (17.325/17.343) | 17.946 (17.954/17.938) | 17.274 (17.258/17.290) | 17.967 (17.936/17.997) | 17.863 (17.835/17.891) | 0.960 |
+| diag1 | 17.711 (17.734/17.687) | 17.608 (17.565/17.651) | 17.692 (17.695/17.689) | 17.599 (17.585/17.612) | 17.645 (17.652/17.638) | 17.575 (17.476/17.673) | 0.994 |
+| diag_k | 17.660 (17.672/17.647) | 17.681 (17.696/17.667) | 17.734 (17.736/17.732) | 17.698 (17.673/17.722) | 17.680 (17.700/17.661) | 17.698 (17.712/17.684) | 1.002 |
+| cnot | 12.939 (12.928/12.950) | 12.962 (12.959/12.965) | 12.933 (12.957/12.908) | 12.989 (12.992/12.987) | 12.973 (12.967/12.978) | 12.924 (12.909/12.940) | 1.004 |
+| phase_base | 46.156 (46.091/46.221) | 49.670 (49.690/49.650) | 49.625 (49.751/49.500) | 49.589 (49.696/49.481) | 45.390 (45.515/45.265) | 45.294 (45.406/45.181) | 1.074 |
+| phase_term | 1.281 (1.281/1.281) | 1.233 (1.231/1.234) | 1.236 (1.239/1.234) | 1.231 (1.233/1.229) | 1.206 (1.209/1.203) | 1.204 (1.208/1.200) | 0.961 |
+| phase_term_multi | 0.907 (0.906/0.908) | 0.885 (0.886/0.885) | 0.891 (0.893/0.890) | 0.885 (0.887/0.883) | 0.895 (0.895/0.894) | 0.896 (0.896/0.895) | 0.975 |
+
+| state | dense2 / a | measured | R1 predicts | R2 predicts |
+|---|---|---|---|---|
+| A | 1.000 | simple | simple | simple |
+| B | 0.997 | simple | simple | generic |
+| C | 1.002 | simple | generic | generic |
+| D | 0.998 | simple | generic | generic |
+| E | 0.999 | simple | simple | simple |
+| F | 1.000 | simple | simple | simple |
+FP32 rule 3: NONE MATCHES -> STOP, decide with the user (spec rule 3)
+FP32 rule 2: dense1 → one constant (d/a = 1.003)
+FP32 rule 2: dense2 → one constant (d/a = 0.998)
+FP32 rule 2: dense3 → one constant (d/a = 0.960)
+FP32 rule 2: diag1 → one constant (d/a = 0.994)
+FP32 rule 2: diag_k → one constant (d/a = 1.002)
+FP32 rule 2: cnot → one constant (d/a = 1.004)
+FP32 rule 2: phase_base → SPLIT (d/a = 1.074)
+FP32 rule 2: phase_term → one constant (d/a = 0.961)
+FP32 rule 2: phase_term_multi → one constant (d/a = 0.975)
+const RTX4000_FP32: KindTimes = KindTimes { m_ref: 28, dense1: 1.760144e-2, dense2: 1.778507e-2, dense3: 1.798735e-2, diag1: 1.771054e-2, diag_k: 1.765984e-2, cnot: 1.293906e-2, phase_base: 4.615620e-2, phase_term: 1.281225e-3, phase_term_multi: 9.070384e-4, generic: GenericTimes { phase_base: Some(4.958854e-2), ..GenericTimes::NONE } };
+test state_microbench ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5375.18s
+
+STAGE_A_DONE

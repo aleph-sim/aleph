@@ -109,8 +109,10 @@ pub enum StateRule {
     R2,
 }
 
-/// The rule Stage A chose (docs/perf/p6-05-compiler.md §4.1).
-pub const STATE_RULE: StateRule = StateRule::R1;
+/// The rule Stage A chose (docs/perf/p6-05-compiler.md §4.1): on FP64, state
+/// (b) (equal magnitudes, varied phases) measured generic (dense2 ×1.217 vs
+/// uniform), which only R2 predicts.
+pub const STATE_RULE: StateRule = StateRule::R2;
 
 /// Tolerance on magnitudes and phases (spec §2 rule 3).
 const CLASS_TOL: f64 = 1e-9;
@@ -476,49 +478,60 @@ impl CostModel for GpuCostModel {
 
 /// Measured per-launch seconds per kernel kind on the RTX 4000 SFF Ada (20 GiB).
 ///
-/// Calibrated 2026-10-04 with
+/// Calibrated 2026-10-05 (#538 Stage A) with
 /// `cargo test --release -p aleph-cuda --features cuda --test dist_cost_states -- --ignored --nocapture`.
 /// Method: each launch interleaved with an `H`, best of 5 × 32 launches, the
-/// interleaved-H baseline subtracted. Each constant is the **mean of 2 runs**
-/// (largest run-to-run spread: FP64 dense3 +2.4 %, phase_base +2.0 %).
-/// `dense2` alone is timed on a scrambled state (H layer + one Rx and one Rz
-/// per qubit, in payload and baseline) and was re-measured later the same day
-/// (mean of 2 runs, FP64 spread +3.3 %); the other constants are from the
-/// earlier pair. At the card's 70 W cap, FP64 kernel time depends on the
-/// amplitude data: dense2 costs ~1.2x on a generic complex state, and dense3
-/// (still uniform-state, to keep GHZ-like low-entropy states right) carries a
-/// known state-dependent error (~1.12x on generic states).
-/// Most kinds sit on the ~17.6 ms single-pass bandwidth floor (dense1/diag1/
-/// diag_k are within ~1 % of each other, so their ordering is noise); cnot
-/// touches half the state, dense3 is compute-bound at FP64, and phase_poly pays
-/// a per-term cost that depends on the term shape (single cond vs AND of two).
+/// interleaved-H baseline (same prepared state) subtracted; two passes in one
+/// invocation, each constant the **mean of 2** (spec rule 4). Simple values are
+/// timed on the uniform H state (a), generic values on a generic complex state
+/// (d: H layer + one Rx and one Rz per qubit). At the card's 70 W cap FP64
+/// kernel time depends on the amplitude data: a kind gets a generic value iff
+/// its (d) time is ≥ 5 % above (a) (spec rule 2) — dense2 ×1.216, dense3 ×1.157,
+/// phase_base ×1.164; every other kind moves ≤ 1.5 % (or is faster) and keeps
+/// one constant. Largest run-to-run spread: dense2 on (a), 18.04 / 19.28 ms.
+/// Most kinds sit on the ~17.6 ms single-pass bandwidth floor; cnot touches half
+/// the state, dense3 is compute-bound at FP64, and phase_poly pays a per-term
+/// cost that depends on the term shape (single cond vs AND of two).
 /// `phase_base` includes the per-launch device allocation and upload of the terms.
+/// Tables: docs/perf/p6-05-compiler.md §4.1.
 const RTX4000_FP64: KindTimes = KindTimes {
     m_ref: 27,
-    dense1: 1.755645e-2,
-    dense2: 2.168771e-2,
-    dense3: 3.436177e-2,
-    diag1: 1.774244e-2,
-    diag_k: 1.759981e-2,
-    cnot: 1.080041e-2,
-    phase_base: 2.147593e-2,
-    phase_term: 6.712988e-4,
-    phase_term_multi: 4.776938e-4,
-    generic: GenericTimes::NONE,
+    dense1: 1.754941e-2,
+    dense2: 1.865920e-2,
+    dense3: 3.465677e-2,
+    diag1: 1.775814e-2,
+    diag_k: 1.761880e-2,
+    cnot: 1.076974e-2,
+    phase_base: 2.134603e-2,
+    phase_term: 6.695171e-4,
+    phase_term_multi: 4.769194e-4,
+    generic: GenericTimes {
+        dense2: Some(2.268356e-2),
+        dense3: Some(4.008718e-2),
+        phase_base: Some(2.485048e-2),
+        ..GenericTimes::NONE
+    },
 };
 /// FP32 counterpart (same provenance as [`RTX4000_FP64`], state size 2^28).
+/// No dense kind is state-dependent at FP32 (dense2 0.997–1.002 across states);
+/// only phase_base is (×1.074 on (d), and ≈ 49.6 vs 45.3–46.2 ms following the
+/// R2 classes exactly). Rule 3 does not resolve on FP32 alone; using R2 with
+/// this split was a user decision after Stage A (report §4.1).
 const RTX4000_FP32: KindTimes = KindTimes {
     m_ref: 28,
-    dense1: 1.763479e-2,
-    dense2: 1.773724e-2,
-    dense3: 1.797886e-2,
-    diag1: 1.769642e-2,
-    diag_k: 1.771855e-2,
-    cnot: 1.295351e-2,
-    phase_base: 4.623386e-2,
-    phase_term: 1.285620e-3,
-    phase_term_multi: 8.999014e-4,
-    generic: GenericTimes::NONE,
+    dense1: 1.760144e-2,
+    dense2: 1.778507e-2,
+    dense3: 1.798735e-2,
+    diag1: 1.771054e-2,
+    diag_k: 1.765984e-2,
+    cnot: 1.293906e-2,
+    phase_base: 4.615620e-2,
+    phase_term: 1.281225e-3,
+    phase_term_multi: 9.070384e-4,
+    generic: GenericTimes {
+        phase_base: Some(4.958854e-2),
+        ..GenericTimes::NONE
+    },
 };
 
 #[cfg(test)]
