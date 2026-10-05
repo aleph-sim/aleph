@@ -250,3 +250,20 @@ pub fn clifford_brickwall(n: u32, depth: usize) -> Circuit {
     clifford_layers(&mut c, n, depth);
     c
 }
+
+/// #538 held-out HEA: `build_hea(n, 4, params)` with `params[i] = 0.1 + 0.07·i`.
+pub fn hea_bench(n: u32) -> Circuit {
+    let depth = 4;
+    let params: Vec<f64> = (0..n as usize * (depth as usize + 1))
+        .map(|i| 0.1 + 0.07 * i as f64)
+        .collect();
+    aleph_ir::build_hea(n, depth, &params).unwrap()
+}
+
+/// #538 held-out QAOA p=2 on a 3-regular-like graph: the ring `(i, i+1 mod n)`
+/// plus `(i, i+7 mod n)` for every `i`; γ = [0.4, 0.7], β = [0.3, 0.5].
+pub fn qaoa_ring_skip7(n: u32) -> Circuit {
+    let mut edges: Vec<(u32, u32)> = (0..n).map(|i| (i, (i + 1) % n)).collect();
+    edges.extend((0..n).map(|i| (i, (i + 7) % n)));
+    build_qaoa(n, &edges, &[0.4, 0.7], &[0.3, 0.5]).unwrap()
+}
