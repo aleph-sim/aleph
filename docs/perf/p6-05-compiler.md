@@ -970,3 +970,223 @@ and 3 pass in both runs, and all eight held-out cells pass in both runs. Per spe
 - **What exit 1 needs is the user's decision**, not a change made here: e.g. a state-aware treatment of diagonal
   phases that act on |0⟩ qubits (an amplitude-free "touched-qubit" walk), or accepting QFT as a documented
   exception. Neither is applied in this PR, and either would have to be re-validated out of sample.
+
+### 4.6 Zero-tracking walk (QFT follow-up)
+
+Spec: `docs/superpowers/specs/2026-10-05-p6-05-zero-tracking-design.md` (commit `b9bd87d`). The code (commits
+`8b23b25`, `9abbc76`) was pushed before any run. Stage A constants and `STATE_RULE = R2` are unchanged.
+
+**The rule.** `state_classes` now tracks **Z0**, the physical qubits known to be |0⟩. It starts as all qubits. A gate
+acts trivially on the state, and leaves the class alone, in two cases:
+
+- one of its external controls is in Z0;
+- its target matrix, restricted to the input columns that the Z0 qubits allow, is the identity (tolerance 1e-9).
+
+Otherwise R2 is judged on the restricted columns only. Targets leave Z0 when the restricted output can set their bit.
+A `Swap` moves a |0⟩ to the other qubit. A `DiagonalPhase` term whose cond mask lies inside Z0 is dead. An `Exchange`
+swaps the Z0 membership of the bits it pairs.
+
+`makes_generic` (no qubit assumed |0⟩) is unchanged. It drives the "old-rule generic" column below.
+
+**Runs.** `dist_cost_gate` ×2 and `dist_compile_bench` ×2 on the RTX 4000 SFF Ada, 2026-10-05, in one script
+(raw logs `p6-05-state-class/zt-{gate,compile}-run{1,2}.log`, runner output `zt-runner.out`). Before each run the
+script waited until the 1-minute load was below 0.1 and GPU utilisation was 0 %, then logged:
+
+| run | UTC start | 1-min / 5-min / 15-min load | GPU util | GPU mem resident | power (W) |
+|---|---|---|---|---|---|
+| gate 1 | 12:43:17 | 0.09 / 0.34 / 0.25 | 0 % | 6600 MiB | 23.67 |
+| compile 1 | 12:56:08 | 0.09 / 0.63 / 0.68 | 0 % | 13828 MiB | 6.58 |
+| gate 2 | 13:07:09 | 0.09 / 0.58 / 0.72 | 0 % | 13828 MiB | 6.67 |
+| compile 2 | 13:18:37 | 0.06 / 0.45 / 0.69 | 0 % | 13828 MiB | 6.57 |
+
+The resident memory belongs to services that share the card (an Ollama LLM server, a text-embeddings server).
+The check runs only at the start of each run. It cannot see work that these services, or another project's CI runner
+on the same host, start during a run (see "Gate run 2's HEA D=2 cell" below).
+
+**Classes, expected vs measured.** "generic steps" is the new walk; "old-rule" is the pre-change walk on the same
+plan. Both columns are identical in both runs and at D=2 and D=4.
+
+| cell | expected (spec §3/§4) | generic steps, new | old-rule generic |
+|---|---|---|---|
+| QFT (in-sample) | all simple | 0/3 | 2/3 |
+| GHZ, random d=10, QAOA p=2, CCZ ladder, Grover | unchanged | 0/2, 11/11 · 12/12, 5/6, 1/2, 0/8 | same |
+| HEA, random d=20, Clifford brickwall, QAOA skip-7 | unchanged | 10/10, 21/21 · 23/23, 0/6 · 0/7, 7/8 | same |
+| H1 QFT on X-odd input | generic | 2/3 | 2/3 |
+| H2 \|0⟩-controlled phase ladder | simple | 0/2 | 1/2 |
+| H3 \|0⟩-controlled CRx | simple | 0/2 | 1/2 |
+
+Every class came out as the spec stated before the runs. The only cells the change re-prices are QFT, H2 and H3.
+
+**Gate run 1:**
+
+| circuit | D | measured compute (s) | model all-ranks (s) | ratio | R·model(R−1) (s) | ratio | generic steps | old-rule generic | verdict |
+|---|---|---|---|---|---|---|---|---|---|
+| QFT | 2 | 2.328 | 2.478 | 1.064 | 2.500 | 1.074 | 0/3 | 2/3 | PASS |
+| QFT | 4 | 2.326 | 2.493 | 1.072 | 2.504 | 1.076 | 0/3 | 2/3 | PASS |
+| GHZ | 2 | 0.901 | 0.919 | 1.020 | 0.936 | 1.039 | 0/2 | 0/2 | PASS |
+| GHZ | 4 | 0.860 | 0.883 | 1.026 | 0.891 | 1.035 | 0/2 | 0/2 | PASS |
+| random d=10 | 2 | 6.914 | 7.092 | 1.026 | 7.092 | 1.026 | 11/11 | 11/11 | PASS |
+| random d=10 | 4 | 8.011 | 8.129 | 1.015 | 8.305 | 1.037 | 12/12 | 12/12 | PASS |
+| QAOA p=2 | 2 | 3.272 | 3.282 | 1.003 | 3.350 | 1.024 | 5/6 | 5/6 | PASS |
+| QAOA p=2 | 4 | 3.300 | 3.326 | 1.008 | 3.377 | 1.023 | 5/6 | 5/6 | PASS |
+| CCZ ladder d=4 | 2 | 1.056 | 1.069 | 1.012 | 1.069 | 1.012 | 1/2 | 1/2 | PASS |
+| CCZ ladder d=4 | 4 | 1.054 | 1.066 | 1.011 | 1.066 | 1.011 | 1/2 | 1/2 | PASS |
+| Grover K=3 | 2 | 6.734 | 6.930 | 1.029 | 6.930 | 1.029 | 0/8 | 0/8 | PASS |
+| Grover K=3 | 4 | 6.530 | 6.733 | 1.031 | 6.733 | 1.031 | 0/8 | 0/8 | PASS |
+| HEA d=4 | 2 | 8.702 | 8.918 | 1.025 | 8.918 | 1.025 | 10/10 | 10/10 | PASS |
+| HEA d=4 | 4 | 8.554 | 8.973 | 1.049 | 8.973 | 1.049 | 10/10 | 10/10 | PASS |
+| random d=20 | 2 | 13.997 | 13.581 | 0.970 | 13.581 | 0.970 | 21/21 | 21/21 | PASS |
+| random d=20 | 4 | 16.334 | 15.924 | 0.975 | 16.310 | 0.999 | 23/23 | 23/23 | PASS |
+| Clifford brickwall d=10 | 2 | 6.058 | 5.777 | 0.954 | 5.848 | 0.965 | 0/6 | 0/6 | PASS |
+| Clifford brickwall d=10 | 4 | 7.258 | 6.984 | 0.962 | 7.126 | 0.982 | 0/7 | 0/7 | PASS |
+| QAOA p=2 skip-7 | 2 | 3.562 | 3.543 | 0.995 | 3.662 | 1.028 | 7/8 | 7/8 | PASS |
+| QAOA p=2 skip-7 | 4 | 3.648 | 3.643 | 0.999 | 3.744 | 1.026 | 7/8 | 7/8 | PASS |
+| H1 QFT on X-odd input | 2 | 2.908 | 3.113 | 1.071 | 3.138 | 1.079 | 2/3 | 2/3 | PASS |
+| H1 QFT on X-odd input | 4 | 2.834 | 3.053 | 1.077 | 3.065 | 1.082 | 2/3 | 2/3 | PASS |
+| H2 \|0⟩-controlled phase ladder | 2 | 0.763 | 0.729 | 0.955 | 0.740 | 0.969 | 0/2 | 1/2 | PASS |
+| H2 \|0⟩-controlled phase ladder | 4 | 0.744 | 0.720 | 0.967 | 0.727 | 0.977 | 0/2 | 1/2 | PASS |
+| H3 \|0⟩-controlled CRx | 2 | 1.616 | 1.519 | 0.940 | 1.519 | 0.940 | 0/2 | 1/2 | PASS |
+| H3 \|0⟩-controlled CRx | 4 | 1.906 | 1.817 | 0.954 | 1.817 | 0.953 | 0/2 | 1/2 | PASS |
+
+Worst |model/measured − 1| for run 1, by table:
+
+- old cells: 7.2 % (QFT D=4);
+- held-out §4.3 cells: 4.9 % (HEA D=4);
+- H1–H3: 7.7 % (H1 D=4).
+
+The gate test passed.
+
+**Gate run 2:**
+
+| circuit | D | measured compute (s) | model all-ranks (s) | ratio | R·model(R−1) (s) | ratio | generic steps | old-rule generic | verdict |
+|---|---|---|---|---|---|---|---|---|---|
+| QFT | 2 | 2.341 | 2.478 | 1.059 | 2.500 | 1.068 | 0/3 | 2/3 | PASS |
+| QFT | 4 | 2.340 | 2.493 | 1.065 | 2.504 | 1.070 | 0/3 | 2/3 | PASS |
+| GHZ | 2 | 0.916 | 0.919 | 1.003 | 0.936 | 1.022 | 0/2 | 0/2 | PASS |
+| GHZ | 4 | 0.871 | 0.883 | 1.013 | 0.891 | 1.022 | 0/2 | 0/2 | PASS |
+| random d=10 | 2 | 7.003 | 7.092 | 1.013 | 7.092 | 1.013 | 11/11 | 11/11 | PASS |
+| random d=10 | 4 | 8.104 | 8.129 | 1.003 | 8.305 | 1.025 | 12/12 | 12/12 | PASS |
+| QAOA p=2 | 2 | 3.283 | 3.282 | 1.000 | 3.350 | 1.020 | 5/6 | 5/6 | PASS |
+| QAOA p=2 | 4 | 3.314 | 3.326 | 1.004 | 3.377 | 1.019 | 5/6 | 5/6 | PASS |
+| CCZ ladder d=4 | 2 | 1.059 | 1.069 | 1.009 | 1.069 | 1.009 | 1/2 | 1/2 | PASS |
+| CCZ ladder d=4 | 4 | 1.056 | 1.066 | 1.009 | 1.066 | 1.009 | 1/2 | 1/2 | PASS |
+| Grover K=3 | 2 | 6.739 | 6.930 | 1.028 | 6.930 | 1.028 | 0/8 | 0/8 | PASS |
+| Grover K=3 | 4 | 6.538 | 6.733 | 1.030 | 6.733 | 1.030 | 0/8 | 0/8 | PASS |
+| HEA d=4 | 2 | **13.008** | 8.918 | **0.686** | 8.918 | 0.686 | 10/10 | 10/10 | **MISS** |
+| HEA d=4 | 4 | 8.736 | 8.973 | 1.027 | 8.973 | 1.027 | 10/10 | 10/10 | PASS |
+| random d=20 | 2 | 14.064 | 13.581 | 0.966 | 13.581 | 0.966 | 21/21 | 21/21 | PASS |
+| random d=20 | 4 | 16.358 | 15.924 | 0.973 | 16.310 | 0.997 | 23/23 | 23/23 | PASS |
+| Clifford brickwall d=10 | 2 | 6.063 | 5.777 | 0.953 | 5.848 | 0.965 | 0/6 | 0/6 | PASS |
+| Clifford brickwall d=10 | 4 | 7.261 | 6.984 | 0.962 | 7.126 | 0.981 | 0/7 | 0/7 | PASS |
+| QAOA p=2 skip-7 | 2 | 3.559 | 3.543 | 0.995 | 3.662 | 1.029 | 7/8 | 7/8 | PASS |
+| QAOA p=2 skip-7 | 4 | 3.647 | 3.643 | 0.999 | 3.744 | 1.027 | 7/8 | 7/8 | PASS |
+| H1 QFT on X-odd input | 2 | 2.913 | 3.113 | 1.069 | 3.138 | 1.077 | 2/3 | 2/3 | PASS |
+| H1 QFT on X-odd input | 4 | 2.830 | 3.053 | 1.079 | 3.065 | 1.083 | 2/3 | 2/3 | PASS |
+| H2 \|0⟩-controlled phase ladder | 2 | 0.756 | 0.729 | 0.965 | 0.740 | 0.979 | 0/2 | 1/2 | PASS |
+| H2 \|0⟩-controlled phase ladder | 4 | 0.743 | 0.720 | 0.969 | 0.727 | 0.979 | 0/2 | 1/2 | PASS |
+| H3 \|0⟩-controlled CRx | 2 | 1.615 | 1.519 | 0.940 | 1.519 | 0.940 | 0/2 | 1/2 | PASS |
+| H3 \|0⟩-controlled CRx | 4 | 1.903 | 1.817 | 0.955 | 1.817 | 0.955 | 0/2 | 1/2 | PASS |
+
+Worst |model/measured − 1| for run 2, by table:
+
+- old cells: 6.5 % (QFT D=4);
+- held-out §4.3 cells: **31.4 %** (HEA D=2);
+- H1–H3: 7.9 % (H1 D=4).
+
+**The gate test FAILED.** Its assert covers all three tables.
+
+**Gate run 2's HEA D=2 cell.** The cell measured 13.008 s. The other measurements of the same Lookahead plan read
+8.702–8.755 s: Stage C runs 1–2 (§4.3) and zero-tracking gate run 1. The cell's model is identical under both rules
+(10/10 generic, 8.918 s), so the zero-tracking change cannot move this ratio. The gate takes best-of-3, so all three
+repetitions of this cell were slow.
+
+The Ollama container's log lists every `/api/chat` request on the shared GPU between 12:40 and 13:30 UTC. Run windows
+are taken from each idle-check time plus the test's wall time.
+
+| request window (UTC) | duration (s) | falls in |
+|---|---|---|
+| 12:46:09–12:46:13 | 3.3 | gate run 1 (12:43:17–12:50:07) |
+| 12:46:23–12:46:58 | 34.8 (includes a model load) | gate run 1 |
+| 12:55:06 | 0.8 | between runs |
+| 12:56:29–12:56:32 | 3.1 | compile run 1 (12:56:08–13:04:39), start |
+| 13:09:02 | 0.8 | gate run 2 (13:07:09–13:14:06) |
+| 13:09:33–13:09:48 | 14.6 | gate run 2 |
+| 13:09:33–13:10:14 | 41.0 | gate run 2 |
+
+Compile run 2 (13:18:37–13:27:08) saw none. Gate run 2's 41 s request is the longest generation with the model
+already loaded. Gate run 1's 34.8 s request includes the model load, and no gate run 1 cell stands out.
+
+The gate does not timestamp its cells. Pro-rating run 2's wall time by measured compute puts the first held-out
+cell (HEA D=2) at about 13:09:40–13:10:30 UTC. That would overlap the 41 s request. This is an estimate from timing,
+not a proof.
+
+**Compile bench** (FP64; deterministic model, so the chosen candidate and exchange counts are the same in both runs):
+
+| circuit | D | chosen | compiled / min(N,L), run 1 | run 2 | 3b model/measured (C), run 1 | run 2 | §4.4 3b (runs 1/2) |
+|---|---|---|---|---|---|---|---|
+| QFT | 2 | naive+place | 0.886 | 0.892 | 1.062 | 1.054 | 1.081 / 1.084 |
+| QFT | 4 | naive+place | 0.885 | 0.884 | 1.048 | 1.051 | 1.087 / 1.092 |
+| GHZ | 2 | naive | 1.000 | 1.000 | 0.993 | 0.998 | 0.952 / 0.954 |
+| GHZ | 4 | naive | 1.000 | 1.000 | 0.998 | 0.998 | 0.961 / 0.963 |
+| random d=10 | 2 | reorder k=1 | 0.573 | 0.573 | 1.037 | 1.039 | 1.019 / 1.022 |
+| random d=10 | 4 | reorder k=1 | 0.377 | 0.376 | 1.029 | 1.029 | 1.026 / 1.028 |
+| QAOA p=2 | 2 | reorder k=1 | 0.799 | 0.799 | 0.999 | 0.999 | 0.999 / 0.999 |
+| QAOA p=2 | 4 | reorder k=1 | 0.626 | 0.626 | 1.004 | 1.004 | 1.004 / 1.004 |
+| CCZ ladder d=4 | 2 | naive | 1.000 | 1.001 | 1.008 | 1.008 | 1.008 / 1.007 |
+| CCZ ladder d=4 | 4 | naive | 1.000 | 1.000 | 1.008 | 1.008 | 1.007 / 1.005 |
+| Grover K=3 | 2 | reorder k=1 | 0.361 | 0.362 | 1.067 | 1.067 | 1.067 / 1.068 |
+| Grover K=3 | 4 | reorder k=1 | 0.298 | 0.298 | 1.067 | 1.066 | 1.067 / 1.067 |
+
+Every FP64 cell's chosen candidate and exchange counts match §4.4 and §3.1. Only QFT's candidate model `T` moved:
+
+| QFT candidate | D=2 §4.4 | D=2 now | D=4 §4.4 | D=4 now |
+|---|---|---|---|---|
+| naive | 1.635 | 1.544 | 0.892 | 0.847 |
+| lookahead | 1.641 | 1.550 | 1.040 | 0.996 |
+| naive+place (chosen) | 1.472 | 1.381 | 0.792 | 0.748 |
+
+FP32 compiled QFT 3b reads 1.003 / 1.006 (run 1, D=2 / D=4) and 1.006 / 1.006 (run 2), against 1.049–1.052 in §4.4.
+FP32 random d=10 reads 0.971–0.983.
+
+Both compile-bench runs passed: every `exit1`, every `exit3b`, the random d=10 `exit2`, and the compile-time check
+(2.3 ms).
+
+**Exit criteria (zero-tracking spec §4)**
+
+| exit | run 1 | run 2 |
+|---|---|---|
+| 1. H1–H3 within ±10 % | **PASS**: 0.940–1.077 | **PASS**: 0.940–1.079 |
+| 2. all ten old cells within ±10 % | **PASS**: 1.003–1.072 | **PASS**: 1.000–1.065 |
+| 3. compile bench exit1 and 3b on every FP64 cell | **PASS**: exit1 ≤ 1.000; 3b 0.993–1.067 | **PASS**: exit1 ≤ 1.001; 3b 0.998–1.067 |
+| 4. Stage A constants and `STATE_RULE` unchanged | **PASS** | **PASS** |
+
+**All four zero-tracking exits pass in both runs.**
+
+The #538 exit 1 (§4.5) also requires the §4.3 held-out cells. Under it:
+
+- run 1 now **PASSES**, every cell within 7.2 %;
+- run 2 is a **MISS** on one cell, HEA D=2 at 0.686.
+
+The gate test asserts over all three tables, so it reports run 2 as FAILED. Per spec, nothing is re-tuned and no run
+is repeated here. Whether to re-run with the shared GPU services paused is the user's call.
+
+**Reading**
+
+- **The QFT blind spot is closed.** QFT now walks all simple (0/3, against 2/3 before), as spec §3 predicted. Its
+  model drops 2.657 → 2.478 s at D=2 and 2.667 → 2.493 s at D=4, which matches the §4.5
+  counterfactual (2.478 / 2.494) to within 0.001 s. Its ratio is 1.059–1.072 in both runs, against 1.089–1.147 in Stage C. QFT is **in-sample**: the
+  rule was designed after the Stage C QFT miss.
+- **The out-of-sample cells behave as stated in advance.**
+  - H1 (X on odd qubits, then QFT): the controlled phases really fire, and the class stays generic. The model is not
+    under-pricing it: 1.069–1.079 in both runs.
+  - H2 and H3: the old rule called one of two steps generic; the new walk calls both simple. They read 0.940–0.969.
+  - H3, the |0⟩-controlled CRx, is the most under-predicted cell at 0.940 in both runs. It is still inside the bound,
+    and it reads in the same direction as the all-simple Clifford brickwall (0.953–0.962).
+- **Nothing else moved.** Every other cell's class and model value is bit-identical to §4.2–4.3. Their ratios
+  (1.000–1.031 old, 0.953–1.049 held-out, excluding run 2's HEA D=2) are within run-to-run noise of Stage C.
+- **The compiler's choices did not change.** Compiled QFT's 3b improved from 1.081–1.092 to 1.048–1.062 (FP32:
+  1.049–1.052 to 1.003–1.006).
+- **The idle-wait precondition is necessary but not sufficient on this box.** The card is shared with an LLM server
+  and an embeddings server. A check at the start of each run cannot prevent a request that arrives mid-run. Gate
+  run 2's one MISS coincides in time with such a request (estimated, see above). A clean run would need those services
+  paused, or a per-cell GPU-utilisation log.

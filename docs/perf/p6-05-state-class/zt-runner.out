@@ -1,0 +1,4 @@
+    Finished `release` profile [optimized] target(s) in 0.03s
+  Executable tests/dist_compile_bench.rs (target/release/deps/dist_compile_bench-a09b6b0a15ac0850)
+  Executable tests/dist_cost_gate.rs (target/release/deps/dist_cost_gate-f1c4dd399fa91b2e)
+ZT_DONE
