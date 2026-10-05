@@ -1,0 +1,80 @@
+    Finished `release` profile [optimized] target(s) in 0.04s
+     Running tests/dist_compile_bench.rs (target/release/deps/dist_compile_bench-a09b6b0a15ac0850)
+
+running 1 test
+
+### FP64
+
+| circuit | D | chosen | exch N/L/C | T_pred naive (s) | T_pred lookahead (s) | T_pred compiled (s) | compiled / min(N,L) | compiled / L | model/measured (C) | compile (ms) | measured all N/L/C (s) |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| QFT | 2 | naive+place | 2/2/1 | 1.528 | 1.522 | 1.358 | 0.892 | 0.892 | 1.084 | 1.1 | 2.455/2.445/2.416 |
+| QFT | 4 | naive+place | 3/2/2 | 0.833 | 0.980 | 0.736 | 0.883 | 0.751 | 1.092 | 1.5 | 2.430/2.438/2.342 |
+| GHZ | 2 | naive | 1/1/1 | 0.632 | 0.632 | 0.632 | 1.000 | 1.000 | 0.954 | 0.1 | 0.963/0.964/0.963 |
+| GHZ | 4 | naive | 2/1/2 | 0.381 | 0.413 | 0.381 | 1.000 | 0.921 | 0.963 | 0.1 | 0.922/0.913/0.922 |
+test compile_bench_n28 has been running for over 60 seconds
+| random d=10 | 2 | reorder k=1 | 20/10/1 | 7.660 | 5.128 | 2.950 | 0.575 | 0.575 | 1.022 | 1.2 | 9.321/7.257/5.600 |
+| random d=10 | 4 | reorder k=1 | 44/11/2 | 6.413 | 4.104 | 1.545 | 0.376 | 0.376 | 1.028 | 1.6 | 12.453/8.272/5.580 |
+| QAOA p=2 | 2 | reorder k=1 | 9/5/2 | 3.003 | 2.400 | 1.918 | 0.799 | 0.799 | 0.999 | 0.4 | 3.307/3.301/3.235 |
+| QAOA p=2 | 4 | reorder k=1 | 16/5/4 | 2.061 | 1.759 | 1.100 | 0.626 | 0.626 | 1.004 | 0.6 | 3.446/3.331/3.201 |
+| CCZ ladder d=4 | 2 | naive | 1/1/1 | 0.681 | 0.680 | 0.681 | 1.000 | 1.000 | 1.007 | 0.5 | 1.062/1.061/1.062 |
+| CCZ ladder d=4 | 4 | naive | 2/1/2 | 0.415 | 0.449 | 0.415 | 1.000 | 0.924 | 1.005 | 0.7 | 1.062/1.057/1.062 |
+| Grover K=3 | 2 | reorder k=1 | 13/7/1 | 5.409 | 4.421 | 1.598 | 0.361 | 0.361 | 1.068 | 0.6 | 6.918/6.743/2.896 |
+| Grover K=3 | 4 | reorder k=1 | 20/7/2 | 3.229 | 2.931 | 0.874 | 0.298 | 0.298 | 1.067 | 0.7 | 6.919/6.542/2.898 |
+
+candidates: QFT D=2 model T: naive=1.635 lookahead=1.641 reorder k=1=1.641 naive+place=1.472 lookahead+place=1.472 reorder k=1+place=1.472
+candidates: QFT D=4 model T: naive=0.892 lookahead=1.040 reorder k=1=0.895 reorder k=2=1.040 naive+place=0.792 lookahead+place=0.836 reorder k=1+place=0.792 reorder k=2+place=0.836
+candidates: GHZ D=2 model T: naive=0.618 lookahead=0.618 reorder k=1=0.618
+candidates: GHZ D=4 model T: naive=0.381 lookahead=0.408 reorder k=1=0.381 reorder k=2=0.408
+candidates: random d=10 D=2 model T: naive=7.713 lookahead=5.046 reorder k=1=3.013
+candidates: random d=10 D=4 model T: naive=6.517 lookahead=4.113 reorder k=1=1.584 reorder k=2=1.611
+candidates: QAOA p=2 D=2 model T: naive=3.015 lookahead=2.425 reorder k=1=1.916
+candidates: QAOA p=2 D=4 model T: naive=2.067 lookahead=1.770 reorder k=1=1.104 reorder k=2=1.172
+candidates: CCZ ladder d=4 D=2 model T: naive=0.684 lookahead=0.684 reorder k=1=0.684
+candidates: CCZ ladder d=4 D=4 model T: naive=0.417 lookahead=0.452 reorder k=1=0.417 reorder k=2=0.452
+candidates: Grover K=3 D=2 model T: naive=5.496 lookahead=4.515 reorder k=1=1.696
+candidates: Grover K=3 D=4 model T: naive=3.273 lookahead=2.979 reorder k=1=0.923 reorder k=2=0.958
+
+### FP32
+
+| circuit | D | chosen | exch N/L/C | T_pred naive (s) | T_pred lookahead (s) | T_pred compiled (s) | compiled / min(N,L) | compiled / L | model/measured (C) | compile (ms) | measured all N/L/C (s) |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| QFT | 2 | naive+place | 2/2/1 | 1.168 | 1.162 | 1.075 | 0.926 | 0.926 | 1.051 | 1.1 | 2.033/2.021/1.999 |
+| QFT | 4 | naive+place | 3/2/2 | 0.621 | 0.684 | 0.561 | 0.904 | 0.821 | 1.052 | 1.4 | 2.028/1.988/1.942 |
+| random d=10 | 2 | reorder k=1 | 20/10/1 | 3.669 | 2.164 | 0.821 | 0.379 | 0.379 | 0.985 | 1.1 | 4.309/2.814/1.491 |
+| random d=10 | 4 | reorder k=1 | 44/11/2 | 3.217 | 1.865 | 0.453 | 0.243 | 0.243 | 0.974 | 1.6 | 6.205/3.345/1.509 |
+
+candidates: QFT D=2 model T: naive=1.223 lookahead=1.227 reorder k=1=1.227 naive+place=1.143 lookahead+place=1.143 reorder k=1+place=1.143
+candidates: QFT D=4 model T: naive=0.649 lookahead=0.715 reorder k=1=0.651 reorder k=2=0.715 naive+place=0.591 lookahead+place=0.613 reorder k=1+place=0.591 reorder k=2+place=0.613
+candidates: random d=10 D=2 model T: naive=3.772 lookahead=2.176 reorder k=1=0.810
+candidates: random d=10 D=4 model T: naive=3.346 lookahead=1.892 reorder k=1=0.443 reorder k=2=0.456
+
+exit1 QFT D=2: compiled/min = 0.892 → PASS
+exit3b (plan-level compiled-plan check; spec exit 3 = dist_cost_gate) QFT D=2: compiled model/measured = 1.084 (measured all-ranks 2.416 s) → PASS
+exit1 QFT D=4: compiled/min = 0.883 → PASS
+exit3b (plan-level compiled-plan check; spec exit 3 = dist_cost_gate) QFT D=4: compiled model/measured = 1.092 (measured all-ranks 2.342 s) → PASS
+exit1 GHZ D=2: compiled/min = 1.000 → PASS
+exit3b (plan-level compiled-plan check; spec exit 3 = dist_cost_gate) GHZ D=2: compiled model/measured = 0.954 (measured all-ranks 0.963 s) → PASS
+exit1 GHZ D=4: compiled/min = 1.000 → PASS
+exit3b (plan-level compiled-plan check; spec exit 3 = dist_cost_gate) GHZ D=4: compiled model/measured = 0.963 (measured all-ranks 0.922 s) → PASS
+exit1 random d=10 D=2: compiled/min = 0.575 → PASS
+exit3b (plan-level compiled-plan check; spec exit 3 = dist_cost_gate) random d=10 D=2: compiled model/measured = 1.022 (measured all-ranks 5.600 s) → PASS
+exit2 random d=10 D=2: compiled 2.950 s vs lookahead 5.128 s = 42.5 % better (need ≥ 15 %) → PASS
+exit1 random d=10 D=4: compiled/min = 0.376 → PASS
+exit3b (plan-level compiled-plan check; spec exit 3 = dist_cost_gate) random d=10 D=4: compiled model/measured = 1.028 (measured all-ranks 5.580 s) → PASS
+exit1 QAOA p=2 D=2: compiled/min = 0.799 → PASS
+exit3b (plan-level compiled-plan check; spec exit 3 = dist_cost_gate) QAOA p=2 D=2: compiled model/measured = 0.999 (measured all-ranks 3.235 s) → PASS
+exit1 QAOA p=2 D=4: compiled/min = 0.626 → PASS
+exit3b (plan-level compiled-plan check; spec exit 3 = dist_cost_gate) QAOA p=2 D=4: compiled model/measured = 1.004 (measured all-ranks 3.201 s) → PASS
+exit1 CCZ ladder d=4 D=2: compiled/min = 1.000 → PASS
+exit3b (plan-level compiled-plan check; spec exit 3 = dist_cost_gate) CCZ ladder d=4 D=2: compiled model/measured = 1.007 (measured all-ranks 1.062 s) → PASS
+exit1 CCZ ladder d=4 D=4: compiled/min = 1.000 → PASS
+exit3b (plan-level compiled-plan check; spec exit 3 = dist_cost_gate) CCZ ladder d=4 D=4: compiled model/measured = 1.005 (measured all-ranks 1.062 s) → PASS
+exit1 Grover K=3 D=2: compiled/min = 0.361 → PASS
+exit3b (plan-level compiled-plan check; spec exit 3 = dist_cost_gate) Grover K=3 D=2: compiled model/measured = 1.068 (measured all-ranks 2.896 s) → PASS
+exit1 Grover K=3 D=4: compiled/min = 0.298 → PASS
+exit3b (plan-level compiled-plan check; spec exit 3 = dist_cost_gate) Grover K=3 D=4: compiled model/measured = 1.067 (measured all-ranks 2.898 s) → PASS
+compile time: brickwall d=15 (1043 gates) g=2: 2.3 ms (target < 50 ms) → PASS
+test compile_bench_n28 ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 513.47s
+

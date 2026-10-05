@@ -156,3 +156,17 @@ and constants are **not** re-tuned in this PR; the user decides the next step.
   generic. Accepted, rare in practice.
 - **Run-to-run noise** is ~3 %, the same order as the effect on Dense1. Rule 2's 5 % threshold keeps noise from
   splitting a kind.
+
+## 7. Plan rulings (2026-10-05)
+
+Copied from the plan (`docs/superpowers/plans/2026-10-05-p6-05-state-class-cost.md`, "Spec rulings for this plan"), one line each:
+
+1. Every kind gets an optional generic constant in code (`GenericTimes`, one `Option<f64>` per constant); rule 2 decides which are `Some`, and `None` prices exactly as today.
+2. Both candidate rules are implemented (`makes_generic_under(instr, StateRule::{R1, R2})`, `const STATE_RULE` selects one); until Stage A, `STATE_RULE = R1` with every generic constant `None`, so prices stay bit-identical to PR 3.
+3. Rule 3 is judged on FP64; if FP32's rule 2 splits any kind, the chosen rule must also match FP32's measured classes, otherwise stop and ask the user.
+4. `dist_cost_states.rs` replaces `dist_cost_calibrate.rs` (removed with `git rm`, payload builders moved verbatim to `tests/common/calib.rs`); it runs both passes and prints per-run values and their mean.
+5. Rule 2 applies to all nine constants as written; a constant whose (a) value is ≤ 0 or non-finite is reported `INVALID` and keeps one constant.
+6. The non-diagonal test is numeric like `classify` (some off-diagonal `|z| > 1e-9`); `UnitaryKq` is read from its `data`; a non-finite entry or angle is an error (ADR 0006); `Barrier` is never generic; other non-gate instructions are rejected.
+7. The spec's "two commits" are two phase boundaries: code-only tasks commit separately, and the commit carrying Stage A's table, rule and constants is pushed to origin before any Stage C timed run.
+8. The gate keeps its `assert` over old and held-out cells together and asserts only after every table is printed, so a held-out MISS is still fully reported.
+9. FP32 rule-3 stop fired in Stage A; the user chose R2 with the FP32 phase_base split (report §4.1).

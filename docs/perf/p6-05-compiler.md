@@ -523,7 +523,7 @@ is calibrated on the uniform H state, and §2.3–2.4 measured it at ×1.12 on a
 ## 4. State-class cost model (#538)
 
 Spec: `docs/superpowers/specs/2026-10-05-p6-05-state-class-cost-design.md`. The rule and the constants below were
-fixed and pushed (commit `STAGE_A_SHA`) before any Stage C run.
+fixed and pushed (commit `ab514f7`) before any Stage C run.
 
 ### 4.1 Stage A: per-kind time by state
 
@@ -609,3 +609,340 @@ three, and (a) is measured first in each pass. Every other cell moves by ≤ 1.4
 (a) 1.3 %, phase_term_multi on (e) 1.3 %; FP32: largest diag1 on (f) 1.1 %). The
 class decisions are not near the 5 % threshold: the generic states sit at 1.216–1.217 and the simple ones at
 1.000–1.016.
+
+### 4.2 Stage C: old cells (seen during design)
+
+`cargo test --release -p aleph-cuda --features cuda --test dist_cost_gate -- --ignored --nocapture`
+
+Same method as §2.5 (n=28, FP64, `Router::Lookahead`, all D ranks on one card, best of 3), with the state-class model
+and frozen constants of §4.1. `generic steps` = `Local` steps priced generic / all `Local` steps (the class walk;
+deterministic, identical in both runs). Two runs back to back on 2026-10-05 (raw logs
+`p6-05-state-class/stage-c-gate-run{1,2}.log`). Run 1 started with a 1-min load average of 1.57, the tail of a
+compile that had just finished on the box (GPU idle); run 2 followed run 1's compile bench.
+
+Run 1:
+
+| circuit | D | measured compute (s) | model all-ranks (s) | ratio | R·model(R−1) (s) | ratio | generic steps | verdict |
+|---|---|---|---|---|---|---|---|---|
+| QFT | 2 | 2.323 | 2.657 | 1.144 | 2.682 | 1.155 | 2/3 | **MISS** |
+| QFT | 4 | 2.325 | 2.667 | 1.147 | 2.679 | 1.152 | 2/3 | **MISS** |
+| GHZ | 2 | 0.899 | 0.919 | 1.021 | 0.936 | 1.041 | 0/2 | PASS |
+| GHZ | 4 | 0.860 | 0.883 | 1.027 | 0.891 | 1.036 | 0/2 | PASS |
+| random d=10 | 2 | 6.910 | 7.092 | 1.026 | 7.092 | 1.026 | 11/11 | PASS |
+| random d=10 | 4 | 8.014 | 8.129 | 1.014 | 8.305 | 1.036 | 12/12 | PASS |
+| QAOA p=2 | 2 | 3.271 | 3.282 | 1.003 | 3.350 | 1.024 | 5/6 | PASS |
+| QAOA p=2 | 4 | 3.298 | 3.326 | 1.008 | 3.377 | 1.024 | 5/6 | PASS |
+| CCZ ladder d=4 | 2 | 1.052 | 1.069 | 1.016 | 1.069 | 1.016 | 1/2 | PASS |
+| CCZ ladder d=4 | 4 | 1.054 | 1.066 | 1.011 | 1.066 | 1.011 | 1/2 | PASS |
+| Grover K=3 | 2 | 6.733 | 6.930 | 1.029 | 6.930 | 1.029 | 0/8 | PASS |
+| Grover K=3 | 4 | 6.530 | 6.733 | 1.031 | 6.733 | 1.031 | 0/8 | PASS |
+
+Run 2:
+
+| circuit | D | measured compute (s) | model all-ranks (s) | ratio | R·model(R−1) (s) | ratio | generic steps | verdict |
+|---|---|---|---|---|---|---|---|---|
+| QFT | 2 | 2.440 | 2.657 | 1.089 | 2.682 | 1.099 | 2/3 | PASS |
+| QFT | 4 | 2.433 | 2.667 | 1.096 | 2.679 | 1.101 | 2/3 | PASS |
+| GHZ | 2 | 0.961 | 0.919 | 0.956 | 0.936 | 0.974 | 0/2 | PASS |
+| GHZ | 4 | 0.914 | 0.883 | 0.966 | 0.891 | 0.975 | 0/2 | PASS |
+| random d=10 | 2 | 7.263 | 7.092 | 0.976 | 7.092 | 0.976 | 11/11 | PASS |
+| random d=10 | 4 | 8.272 | 8.129 | 0.983 | 8.305 | 1.004 | 12/12 | PASS |
+| QAOA p=2 | 2 | 3.300 | 3.282 | 0.994 | 3.350 | 1.015 | 5/6 | PASS |
+| QAOA p=2 | 4 | 3.332 | 3.326 | 0.998 | 3.377 | 1.014 | 5/6 | PASS |
+| CCZ ladder d=4 | 2 | 1.061 | 1.069 | 1.008 | 1.069 | 1.008 | 1/2 | PASS |
+| CCZ ladder d=4 | 4 | 1.058 | 1.066 | 1.007 | 1.066 | 1.007 | 1/2 | PASS |
+| Grover K=3 | 2 | 6.743 | 6.930 | 1.028 | 6.930 | 1.028 | 0/8 | PASS |
+| Grover K=3 | 4 | 6.543 | 6.733 | 1.029 | 6.733 | 1.029 | 0/8 | PASS |
+
+Worst |model/measured − 1| on old cells: **14.7 %** (run 1, QFT D=4), **9.6 %** (run 2, QFT D=4).
+
+All-ranks ratio against the earlier models (D=2 / D=4; PR 2 = §2.5, PR 3 = the §3.3 gate re-run, same constants as
+PR 2):
+
+| circuit | PR 2 run 1 | PR 2 run 2 | PR 3 run 1 | PR 3 run 2 | #538 run 1 | #538 run 2 | generic steps (D=2 / D=4) |
+|---|---|---|---|---|---|---|---|
+| QFT | 1.074 / 1.081 | 1.056 / 1.065 | 1.041 / 1.052 | 1.043 / 1.053 | 1.144 / 1.147 | 1.089 / 1.096 | 2/3 / 2/3 |
+| GHZ | 1.013 / 1.025 | 0.983 / 0.996 | 0.968 / 0.982 | 0.970 / 0.981 | 1.021 / 1.027 | 0.956 / 0.966 | 0/2 / 0/2 |
+| random d=10 | 0.980 / 0.976 | 0.960 / 0.960 | 0.946 / 0.951 | 0.944 / 0.949 | 1.026 / 1.014 | 0.976 / 0.983 | 11/11 / 12/12 |
+| QAOA p=2 | 0.997 / 0.999 | 0.992 / 0.991 | 0.989 / 0.990 | 0.989 / 0.989 | 1.003 / 1.008 | 0.994 / 0.998 | 5/6 / 5/6 |
+| CCZ ladder d=4 | 1.010 / 1.005 | 1.002 / 1.004 | 1.001 / 1.002 | 1.001 / 1.002 | 1.016 / 1.011 | 1.008 / 1.007 | 1/2 / 1/2 |
+| Grover K=3 | 1.035 / 1.042 | 1.034 / 1.041 | 1.033 / 1.040 | 1.033 / 1.040 | 1.029 / 1.031 | 1.028 / 1.029 | 0/8 / 0/8 |
+
+Model all-ranks compute, PR 2/3 model → #538 model (s; deterministic):
+
+| circuit | D=2 | D=4 |
+|---|---|---|
+| QFT | 2.492 → 2.657 | 2.513 → 2.667 |
+| GHZ | 0.911 → 0.919 | 0.879 → 0.883 |
+| random d=10 | 6.775 → 7.092 | 7.815 → 8.129 |
+| QAOA p=2 | 3.262 → 3.282 | 3.295 → 3.326 |
+| CCZ ladder d=4 | 1.062 → 1.069 | 1.060 → 1.066 |
+| Grover K=3 | 6.969 → 6.930 | 6.808 → 6.733 |
+
+#538 model all-ranks compute by kind (s; identical in both runs; `t_comm` = exchange-only plan, run 1; `diag_k` is 0
+on every old cell and omitted):
+
+| circuit | D | dense1 | dense2 | dense3 | diag1 | cnot | phase | t_comm (s) |
+|---|---|---|---|---|---|---|---|---|
+| QFT | 2 | 0.983 | 0.037 | 0 | 0.018 | 0 | 1.619 | 0.070 |
+| QFT | 4 | 0.983 | 0.075 | 0 | 0.044 | 0 | 1.565 | 0.096 |
+| GHZ | 2 | 0.018 | 0 | 0.901 | 0 | 0 | 0 | 0.043 |
+| GHZ | 4 | 0 | 0.019 | 0.832 | 0 | 0.032 | 0 | 0.056 |
+| random d=10 | 2 | 1.299 | 4.900 | 0.722 | 0 | 0.172 | 0 | 0.283 |
+| random d=10 | 4 | 2.317 | 4.854 | 0.722 | 0 | 0.237 | 0 | 0.457 |
+| QAOA p=2 | 2 | 2.878 | 0.037 | 0 | 0.071 | 0 | 0.295 | 0.150 |
+| QAOA p=2 | 4 | 2.668 | 0.310 | 0 | 0.053 | 0 | 0.296 | 0.217 |
+| CCZ ladder d=4 | 2 | 0.983 | 0 | 0 | 0 | 0 | 0.086 | 0.043 |
+| CCZ ladder d=4 | 4 | 0.983 | 0 | 0 | 0 | 0 | 0.083 | 0.056 |
+| Grover K=3 | 2 | 6.493 | 0.224 | 0 | 0.213 | 0 | 0 | 0.203 |
+| Grover K=3 | 4 | 6.072 | 0.448 | 0 | 0.213 | 0 | 0 | 0.297 |
+
+**QFT MISS breakdown** (gate `kinds:` lines, run 1; run 2 identical except `t_full` 2.510 / 2.529):
+
+```
+kinds: QFT D=2 t_full=2.393 t_comm=0.070 dense1=0.983 dense2=0.037 dense3=0.000 diag1=0.018 diag_k=0.000 cnot=0.000 phase=1.619
+kinds: QFT D=4 t_full=2.422 t_comm=0.096 dense1=0.983 dense2=0.075 dense3=0.000 diag1=0.044 diag_k=0.000 cnot=0.000 phase=1.565
+```
+
+Measured compute run 1 → run 2 (the order the gate measures cells in):
+
+| circuit | D=2 (s) | change | D=4 (s) | change |
+|---|---|---|---|---|
+| QFT | 2.323 → 2.440 | +5.0 % | 2.325 → 2.433 | +4.6 % |
+| GHZ | 0.899 → 0.961 | +6.9 % | 0.860 → 0.914 | +6.3 % |
+| random d=10 | 6.910 → 7.263 | +5.1 % | 8.014 → 8.272 | +3.2 % |
+| QAOA p=2 | 3.271 → 3.300 | +0.9 % | 3.298 → 3.332 | +1.0 % |
+| CCZ ladder d=4 | 1.052 → 1.061 | +0.9 % | 1.054 → 1.058 | +0.4 % |
+| Grover K=3 | 6.733 → 6.743 | +0.1 % | 6.530 → 6.543 | +0.2 % |
+| HEA d=4 | 8.705 → 8.755 | +0.6 % | 8.703 → 8.735 | +0.4 % |
+| random d=20 | 13.968 → 14.012 | +0.3 % | 16.300 → 16.312 | +0.1 % |
+| Clifford brickwall d=10 | 6.048 → 6.037 | −0.2 % | 7.244 → 7.238 | −0.1 % |
+| QAOA p=2 skip-7 | 3.560 → 3.559 | −0.0 % | 3.646 → 3.647 | +0.0 % |
+
+The same Lookahead QFT plan's measured all-ranks compute, from every run on this branch and the PR 2/3 runs
+(`dist_compile_bench`'s `measured all` L column is the same quantity, `T_full − T_comm` of the Lookahead plan):
+
+| source | QFT D=2 (s) | QFT D=4 (s) | #538 model / it (D=2 / D=4) |
+|---|---|---|---|
+| PR 2 gate run 1 (§2.5) | 2.319 | – | – |
+| PR 2 gate run 2 (§2.5) | 2.359 | 2.359 | – |
+| PR 3 gate re-run, run 1 / run 2 (§3.3) | 2.393 / 2.389 | 2.389 / 2.387 | – |
+| #538 gate run 1 | 2.323 | 2.325 | 1.144 / 1.147 |
+| #538 gate run 2 | 2.440 | 2.433 | 1.089 / 1.096 |
+| #538 compile bench run 1 (L column) | 2.449 | 2.444 | 1.085 / 1.091 |
+| #538 compile bench run 2 (L column) | 2.445 | 2.438 | 1.087 / 1.094 |
+
+### 4.3 Stage C: held-out cells (never used to choose anything)
+
+Spec §4: HEA = `build_hea(28, 4, params)`, `params[i] = 0.1 + 0.07·i`; random d=20 = `brickwall_bench(28, 20)`;
+Clifford brickwall d=10 = the state (f) construction at depth 10; QAOA p=2 skip-7 = ring `(i, i+1 mod n)` plus
+`(i, i+7 mod n)`, γ = [0.4, 0.7], β = [0.3, 0.5].
+
+Run 1:
+
+| circuit | D | measured compute (s) | model all-ranks (s) | ratio | R·model(R−1) (s) | ratio | generic steps | verdict |
+|---|---|---|---|---|---|---|---|---|
+| HEA d=4 | 2 | 8.705 | 8.918 | 1.024 | 8.918 | 1.024 | 10/10 | PASS |
+| HEA d=4 | 4 | 8.703 | 8.973 | 1.031 | 8.973 | 1.031 | 10/10 | PASS |
+| random d=20 | 2 | 13.968 | 13.581 | 0.972 | 13.581 | 0.972 | 21/21 | PASS |
+| random d=20 | 4 | 16.300 | 15.924 | 0.977 | 16.310 | 1.001 | 23/23 | PASS |
+| Clifford brickwall d=10 | 2 | 6.048 | 5.777 | 0.955 | 5.848 | 0.967 | 0/6 | PASS |
+| Clifford brickwall d=10 | 4 | 7.244 | 6.984 | 0.964 | 7.126 | 0.984 | 0/7 | PASS |
+| QAOA p=2 skip-7 | 2 | 3.560 | 3.543 | 0.995 | 3.662 | 1.029 | 7/8 | PASS |
+| QAOA p=2 skip-7 | 4 | 3.646 | 3.643 | 0.999 | 3.744 | 1.027 | 7/8 | PASS |
+
+Run 2:
+
+| circuit | D | measured compute (s) | model all-ranks (s) | ratio | R·model(R−1) (s) | ratio | generic steps | verdict |
+|---|---|---|---|---|---|---|---|---|
+| HEA d=4 | 2 | 8.755 | 8.918 | 1.019 | 8.918 | 1.019 | 10/10 | PASS |
+| HEA d=4 | 4 | 8.735 | 8.973 | 1.027 | 8.973 | 1.027 | 10/10 | PASS |
+| random d=20 | 2 | 14.012 | 13.581 | 0.969 | 13.581 | 0.969 | 21/21 | PASS |
+| random d=20 | 4 | 16.312 | 15.924 | 0.976 | 16.310 | 1.000 | 23/23 | PASS |
+| Clifford brickwall d=10 | 2 | 6.037 | 5.777 | 0.957 | 5.848 | 0.969 | 0/6 | PASS |
+| Clifford brickwall d=10 | 4 | 7.238 | 6.984 | 0.965 | 7.126 | 0.984 | 0/7 | PASS |
+| QAOA p=2 skip-7 | 2 | 3.559 | 3.543 | 0.996 | 3.662 | 1.029 | 7/8 | PASS |
+| QAOA p=2 skip-7 | 4 | 3.647 | 3.643 | 0.999 | 3.744 | 1.027 | 7/8 | PASS |
+
+Worst |model/measured − 1| on held-out cells: **4.5 %** (run 1), **4.3 %** (run 2), both Clifford brickwall D=2.
+No held-out cell missed. Per-kind model (s; identical in both runs; `t_comm` run 1):
+
+| circuit | D | dense1 | dense2 | dense3 | diag1 | cnot | phase | t_comm (s) |
+|---|---|---|---|---|---|---|---|---|
+| HEA d=4 | 2 | 4.703 | 0.045 | 4.169 | 0 | 0 | 0 | 0.257 |
+| HEA d=4 | 4 | 4.422 | 0.499 | 4.009 | 0 | 0.043 | 0 | 0.379 |
+| random d=20 | 2 | 1.650 | 10.344 | 1.523 | 0 | 0.065 | 0 | 0.551 |
+| random d=20 | 4 | 3.896 | 10.434 | 1.443 | 0 | 0.151 | 0 | 0.898 |
+| Clifford brickwall d=10 | 2 | 0.316 | 2.985 | 1.871 | 0.142 | 0.022 | 0.440 | 0.150 |
+| Clifford brickwall d=10 | 4 | 0.720 | 2.575 | 2.218 | 0.657 | 0.022 | 0.793 | 0.258 |
+| QAOA p=2 skip-7 | 2 | 2.808 | 0.264 | 0 | 0.071 | 0 | 0.400 | 0.203 |
+| QAOA p=2 skip-7 | 4 | 2.597 | 0.491 | 0 | 0.107 | 0 | 0.448 | 0.298 |
+
+`diag_k` is 0 on every held-out cell too, so the gate still never exercises `DiagK` (§2.5).
+
+### 4.4 Stage C: compiled plans (spec exit 2) and compile bench (spec exit 3)
+
+`cargo test --release -p aleph-cuda --features cuda --test dist_compile_bench -- --ignored --nocapture`, two runs
+(raw logs `p6-05-state-class/stage-c-compile-run{1,2}.log`), same method and columns as §3. The log lines labelled
+`exit3b` are #538's exit 2 (compiled-plan model/measured within ±10 %); the lines labelled `exit1` are #538's exit 3.
+The labels keep P6-05's numbering.
+
+**FP64, run 1:**
+
+| circuit | D | chosen | exch N/L/C | T_pred naive (s) | T_pred lookahead (s) | T_pred compiled (s) | compiled / min(N,L) | compiled / L | model/measured (C) | compile (ms) | measured all N/L/C (s) |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| QFT | 2 | naive+place | 2/2/1 | 1.532 | 1.524 | 1.362 | 0.894 | 0.894 | 1.081 | 1.1 | 2.465/2.449/2.424 |
+| QFT | 4 | naive+place | 3/2/2 | 0.835 | 0.981 | 0.738 | 0.884 | 0.752 | 1.087 | 1.4 | 2.438/2.444/2.352 |
+| GHZ | 2 | naive | 1/1/1 | 0.633 | 0.633 | 0.633 | 1.000 | 0.999 | 0.952 | 0.1 | 0.965/0.967/0.965 |
+| GHZ | 4 | naive | 2/1/2 | 0.381 | 0.415 | 0.381 | 1.000 | 0.919 | 0.961 | 0.1 | 0.924/0.918/0.924 |
+| random d=10 | 2 | reorder k=1 | 20/10/1 | 7.451 | 5.028 | 2.959 | 0.588 | 0.588 | 1.019 | 1.2 | 8.903/7.056/5.617 |
+| random d=10 | 4 | reorder k=1 | 44/11/2 | 6.414 | 4.106 | 1.548 | 0.377 | 0.377 | 1.026 | 1.5 | 12.460/8.280/5.593 |
+| QAOA p=2 | 2 | reorder k=1 | 9/5/2 | 3.004 | 2.399 | 1.917 | 0.799 | 0.799 | 0.999 | 0.4 | 3.308/3.298/3.234 |
+| QAOA p=2 | 4 | reorder k=1 | 16/5/4 | 2.062 | 1.759 | 1.100 | 0.626 | 0.626 | 1.004 | 0.6 | 3.448/3.333/3.202 |
+| CCZ ladder d=4 | 2 | naive | 1/1/1 | 0.680 | 0.680 | 0.680 | 1.000 | 1.000 | 1.008 | 0.5 | 1.060/1.061/1.060 |
+| CCZ ladder d=4 | 4 | naive | 2/1/2 | 0.415 | 0.450 | 0.415 | 1.000 | 0.923 | 1.007 | 0.7 | 1.060/1.058/1.060 |
+| Grover K=3 | 2 | reorder k=1 | 13/7/1 | 5.407 | 4.421 | 1.598 | 0.361 | 0.361 | 1.067 | 0.6 | 6.916/6.743/2.896 |
+| Grover K=3 | 4 | reorder k=1 | 20/7/2 | 3.230 | 2.932 | 0.874 | 0.298 | 0.298 | 1.067 | 0.7 | 6.922/6.545/2.898 |
+
+**FP64, run 2:**
+
+| circuit | D | chosen | exch N/L/C | T_pred naive (s) | T_pred lookahead (s) | T_pred compiled (s) | compiled / min(N,L) | compiled / L | model/measured (C) | compile (ms) | measured all N/L/C (s) |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| QFT | 2 | naive+place | 2/2/1 | 1.528 | 1.522 | 1.358 | 0.892 | 0.892 | 1.084 | 1.1 | 2.455/2.445/2.416 |
+| QFT | 4 | naive+place | 3/2/2 | 0.833 | 0.980 | 0.736 | 0.883 | 0.751 | 1.092 | 1.5 | 2.430/2.438/2.342 |
+| GHZ | 2 | naive | 1/1/1 | 0.632 | 0.632 | 0.632 | 1.000 | 1.000 | 0.954 | 0.1 | 0.963/0.964/0.963 |
+| GHZ | 4 | naive | 2/1/2 | 0.381 | 0.413 | 0.381 | 1.000 | 0.921 | 0.963 | 0.1 | 0.922/0.913/0.922 |
+| random d=10 | 2 | reorder k=1 | 20/10/1 | 7.660 | 5.128 | 2.950 | 0.575 | 0.575 | 1.022 | 1.2 | 9.321/7.257/5.600 |
+| random d=10 | 4 | reorder k=1 | 44/11/2 | 6.413 | 4.104 | 1.545 | 0.376 | 0.376 | 1.028 | 1.6 | 12.453/8.272/5.580 |
+| QAOA p=2 | 2 | reorder k=1 | 9/5/2 | 3.003 | 2.400 | 1.918 | 0.799 | 0.799 | 0.999 | 0.4 | 3.307/3.301/3.235 |
+| QAOA p=2 | 4 | reorder k=1 | 16/5/4 | 2.061 | 1.759 | 1.100 | 0.626 | 0.626 | 1.004 | 0.6 | 3.446/3.331/3.201 |
+| CCZ ladder d=4 | 2 | naive | 1/1/1 | 0.681 | 0.680 | 0.681 | 1.000 | 1.000 | 1.007 | 0.5 | 1.062/1.061/1.062 |
+| CCZ ladder d=4 | 4 | naive | 2/1/2 | 0.415 | 0.449 | 0.415 | 1.000 | 0.924 | 1.005 | 0.7 | 1.062/1.057/1.062 |
+| Grover K=3 | 2 | reorder k=1 | 13/7/1 | 5.409 | 4.421 | 1.598 | 0.361 | 0.361 | 1.068 | 0.6 | 6.918/6.743/2.896 |
+| Grover K=3 | 4 | reorder k=1 | 20/7/2 | 3.229 | 2.931 | 0.874 | 0.298 | 0.298 | 1.067 | 0.7 | 6.919/6.542/2.898 |
+
+**The chosen candidate and the exchange counts are unchanged from §3.1 on every FP64 cell** (QFT naive+place, GHZ
+and CCZ ladder naive, random/QAOA/Grover reorder k=1). The model `T` of each candidate moved, not the ranking
+(deterministic, identical in both runs; chosen in bold, §3.1 value in brackets):
+
+| circuit | D | naive | lookahead | reorder k=1 | reorder k=2 | naive+place | lookahead+place | reorder k=1+place | reorder k=2+place |
+|---|---|---|---|---|---|---|---|---|---|
+| QFT | 2 | 1.635 [1.548] | 1.641 [1.557] | 1.641 [1.557] | – | **1.472** [1.385] | 1.472 [1.385] | 1.472 [1.385] | – |
+| QFT | 4 | 0.892 [0.849] | 1.040 [1.001] | 0.895 [0.853] | 1.040 [1.001] | **0.792** [0.750] | 0.836 [0.794] | 0.792 [0.750] | 0.836 [0.794] |
+| GHZ | 2 | **0.618** [0.614] | 0.618 [0.614] | 0.618 [0.614] | – | – | – | – | – |
+| GHZ | 4 | **0.381** [0.379] | 0.408 [0.408] | 0.381 [0.379] | 0.408 [0.408] | – | – | – | – |
+| random d=10 | 2 | 7.713 [7.648] | 5.046 [4.887] | **3.013** [2.656] | – | – | – | – | – |
+| random d=10 | 4 | 6.517 [6.520] | 4.113 [4.034] | **1.584** [1.405] | 1.611 [1.431] | – | – | – | – |
+| QAOA p=2 | 2 | 3.015 [3.000] | 2.425 [2.415] | **1.916** [1.901] | – | – | – | – | – |
+| QAOA p=2 | 4 | 2.067 [2.059] | 1.770 [1.762] | **1.104** [1.095] | 1.172 [1.164] | – | – | – | – |
+| CCZ ladder d=4 | 2 | **0.684** [0.681] | 0.684 [0.681] | 0.684 [0.681] | – | – | – | – | – |
+| CCZ ladder d=4 | 4 | **0.417** [0.415] | 0.452 [0.450] | 0.417 [0.416] | 0.452 [0.451] | – | – | – | – |
+| Grover K=3 | 2 | 5.496 [5.497] | 4.515 [4.534] | **1.696** [1.696] | – | – | – | – | – |
+| Grover K=3 | 4 | 3.273 [3.273] | 2.979 [2.998] | **0.923** [0.923] | 0.958 [0.958] | – | – | – | – |
+
+Compiled-plan model/measured (spec exit 2), against PR 3 (§3.1):
+
+| circuit | PR 3 run 1 (D=2 / D=4) | PR 3 run 2 | #538 run 1 | #538 run 2 |
+|---|---|---|---|---|
+| QFT | 1.060 / 1.057 | 1.033 / 1.031 | 1.081 / 1.087 | 1.084 / 1.092 |
+| GHZ | 0.992 / 0.994 | 0.957 / 0.962 | 0.952 / 0.961 | 0.954 / 0.963 |
+| random d=10 | 0.912 / 0.900 | 0.899 / 0.898 | 1.019 / 1.026 | 1.022 / 1.028 |
+| QAOA p=2 | 0.990 / 0.994 | 0.990 / 0.994 | 0.999 / 1.004 | 0.999 / 1.004 |
+| CCZ ladder d=4 | 1.002 / 1.003 | 1.002 / 1.001 | 1.008 / 1.007 | 1.007 / 1.005 |
+| Grover K=3 | 1.067 / 1.067 | 1.068 / 1.067 | 1.067 / 1.067 | 1.068 / 1.067 |
+| FP32 QFT (not gated) | 1.006 / 1.007 | 1.006 / 1.007 | 1.049 / 1.052 | 1.051 / 1.052 |
+| FP32 random d=10 (not gated) | 0.982 / 0.973 | 0.981 / 0.974 | 0.983 / 0.975 | 0.985 / 0.974 |
+
+**FP32** (reported, not gated; run 2, run 1 in brackets where it differs):
+
+| circuit | D | chosen | exch N/L/C | T_pred naive (s) | T_pred lookahead (s) | T_pred compiled (s) | compiled / min(N,L) | compiled / L | model/measured (C) | compile (ms) | measured all N/L/C (s) |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| QFT | 2 | naive+place | 2/2/1 | 1.168 [1.170] | 1.162 | 1.075 [1.077] | 0.926 [0.927] | 0.926 [0.927] | 1.051 [1.049] | 1.1 [1.0] | 2.033/2.021/1.999 [2.037/2.020/2.002] |
+| QFT | 4 | naive+place | 3/2/2 | 0.621 | 0.684 | 0.561 | 0.904 | 0.821 [0.820] | 1.052 | 1.4 | 2.028/1.988/1.942 [2.029/1.990/1.943] |
+| random d=10 | 2 | reorder k=1 | 20/10/1 | 3.669 [3.670] | 2.164 | 0.821 [0.823] | 0.379 [0.380] | 0.379 [0.380] | 0.985 [0.983] | 1.1 [1.2] | 4.309/2.814/1.491 [4.310/2.814/1.494] |
+| random d=10 | 4 | reorder k=1 | 44/11/2 | 3.217 | 1.865 [1.864] | 0.453 [0.452] | 0.243 | 0.243 | 0.974 [0.975] | 1.6 | 6.205/3.345/1.509 [6.206/3.344/1.507] |
+
+FP32 choices are unchanged from §3.2 (QFT naive+place, random reorder k=1). FP32 QFT model/measured rose from
+1.006 / 1.007 (§3.2, run 2) to 1.049–1.052: QFT's phase launches are now priced at the FP32 generic `phase_base`
+(49.59 vs 46.16 ms, §4.1). Model `T` per FP32 candidate: QFT D=2 naive 1.223, lookahead 1.227, reorder k=1 1.227, the
+three placed 1.143; QFT D=4 naive 0.649, lookahead 0.715, reorder k=1 0.651, reorder k=2 0.715, naive+place and
+reorder k=1+place 0.591, lookahead+place and reorder k=2+place 0.613; random D=2 naive 3.772, lookahead 2.176, reorder
+k=1 0.810; random D=4 naive 3.346, lookahead 1.892, reorder k=1 0.443, reorder k=2 0.456.
+
+Other bench lines (both runs):
+
+| line | run 1 | run 2 | PR 3 (run 1 / run 2) |
+|---|---|---|---|
+| P6-05 exit 2: random d=10 D=2 compiled vs Lookahead `T_pred` | 41.2 % better (2.959 vs 5.028 s) | 42.5 % better (2.950 vs 5.128 s) | 42.7 % / 42.6 % |
+| compile time, brickwall d=15 (1043 gates), g=2, best of 5 (target < 50 ms) | 2.3 ms | 2.3 ms | 2.2 ms / 2.2 ms |
+
+### 4.5 Exit criteria and Reading
+
+| spec §4 exit | run 1 | run 2 |
+|---|---|---|
+| 1. every old and held-out cell within ±10 % (`dist_cost_gate`) | **MISS**: QFT 1.144 / 1.147 (D=2 / D=4); every other old cell 1.003–1.031, every held-out cell 0.955–1.031 | **PASS**: worst QFT D=4 1.096 (9.6 %); held-out worst 4.3 % |
+| 2. compiled-plan check (3b) within ±10 % on every FP64 cell | **PASS**: 0.952–1.087 | **PASS**: 0.954–1.092 |
+| 3. `dist_compile_bench` exit 1, compiled ≤ min(Naive, Lookahead) + 3 % | **PASS**: worst 1.000 (GHZ, CCZ ladder), best 0.298 (Grover D=4) | **PASS**: worst 1.000, best 0.298 |
+
+**Spec exit 1 is MISSED** (it needs every cell in both runs; run 1's QFT cells are 14.4 % and 14.7 % high). Exits 2
+and 3 pass in both runs, and all eight held-out cells pass in both runs. Per spec §4 the rule and the constants are
+**not re-tuned in this PR; the next step is the user's call.**
+
+**Reading**
+
+- **The state-class model fixed the cell it was built for.** The compiled random d=10 plan, PR 3's borderline 3b
+  miss (0.899 / 0.898 in PR 3 run 2), now reads 1.019–1.028 in both runs. On the Lookahead gate, random d=10 moved
+  from 0.944–0.951 (PR 3 re-run) to 0.976–1.026. Its model rose from 6.775 to 7.092 s (D=2): every step is generic
+  (11/11), so `dense2` (4.900 s) and `dense3` (0.722 s) are priced at their generic values.
+- **Held-out cells: all within 4.5 %.** The generic-dominated ones (HEA 10/10, random d=20 21/21 and 23/23 generic
+  steps) land at 0.969–1.031; QAOA skip-7 (7/8) at 0.995–0.999. The Clifford brickwall is priced all simple (0/6,
+  0/7) and is the most under-predicted held-out cell, 0.955–0.965.
+- **Cells the walk leaves simple barely move.** Grover (0/8) gets slightly cheaper (6.969 → 6.930 s at D=2) because
+  the simple `dense2` is now the uniform-state value; its ratio goes 1.033 → 1.028–1.029. GHZ (0/2) spans 0.956–1.027
+  against 0.968–1.025 before (its model rose 0.911 → 0.919 s at D=2, via `dense3`
+  re-measured on state (a)). QAOA (5/6) and the CCZ ladder (1/2) stay within 1.6 %.
+- **QFT is the cell the model made clearly worse**: 2.492 → 2.657 s model at D=2 (2/3 generic steps), so its ratio rose
+  from 1.041–1.081 (PR 2/3) to 1.089–1.147. **Diagnosis: a blind spot of the gate-based rule** (the same kind of
+  error spec §6 accepts under "Un-scrambling", but here the state never leaves simple at all). QFT's controlled-phase
+  angles π/2^k (k ≥ 3) are not multiples of π/4, so R2 marks every step holding them generic and prices
+  `phase_base` at 24.85 ms instead of 21.35 ms (§4.1). But the gate runs QFT from |0…0⟩, and `qft()`
+  in `tests/common/dist.rs` applies the H on qubit j just before the controlled phases between j and every k < j, so
+  qubit k is still |0⟩ when each phase acts. A controlled phase only touches amplitudes with both qubits at 1, so
+  every phase acts as the identity: the state is a product of |+⟩ and |0⟩ factors throughout, i.e. state (a)'s class.
+  The rule is judged on gates, not amplitudes, so it cannot see this.
+- **Diagnostic counterfactual (not a re-tune):** price QFT's phase launches at the simple `phase_base`, leaving the
+  per-term costs (which did not split) and every other kind as they are. The number of phase launches is inferred
+  from the `phase` column: the PR 2 value at the old constants and the #538 value at the new ones (FP64, ms per
+  launch at m_ref = 27, from `cost.rs`) are two equations in the launch count N and the term total; they solve to N
+  below (m_ref-equivalent launches, all ranks), rounded to an integer.
+
+  | constant | PR 2 (§2.1) | #538 simple | #538 generic |
+  |---|---|---|---|
+  | `phase_base` | 21.476 | 21.346 | 24.850 |
+  | `phase_term` | 0.6713 | 0.6695 | – |
+  | `phase_term_multi` | 0.4777 | 0.4769 | – |
+
+  D=4 reconciles only to ~1 ms with an integer N, within the rounding of the printed values; ±1 launch moves a ratio
+  by ≤ 0.002. Each launch re-priced simple saves 24.850 − 21.346 = 3.504 ms.
+
+  | D | PR 2 phase (s) | #538 phase (s) | solved N | N used | phase at simple base (s) | model (s) | counterfactual model (s) | Δ (s) | run 1 ratio | run 1 counterfactual | run 2 ratio | run 2 counterfactual |
+  |---|---|---|---|---|---|---|---|---|---|---|---|---|
+  | 2 | 1.448 | 1.619 | 50.85 | 51 | 1.440 | 2.657 | 2.478 | 0.179 | 1.144 | 1.067 | 1.089 | 1.016 |
+  | 4 | 1.398 | 1.565 | 49.66 | 50 | 1.390 | 2.667 | 2.492 | 0.175 | 1.147 | 1.072 | 1.096 | 1.024 |
+
+  The counterfactual puts both runs inside ±10 % and back near the PR 2 range (run 1 1.074 / 1.081, §2.5). It
+  explains 0.175–0.179 s of the over-prediction, not all of run 1's: run 1 is still 1.067–1.072 against run 2's
+  1.016–1.024, because run 1 also measured QFT 4.6–5.0 % faster.
+- **Run 1 measured the first cells fast.** QFT, GHZ and random d=10 (the first three cells) measured 3.2–6.9 % less
+  compute in run 1 than in run 2; every later cell agrees within 1.0 %. Run 1's QFT (2.323 / 2.325 s) is the low
+  outlier of the four measurements of the same Lookahead plan on this branch: both runs of the compile bench measured
+  2.438–2.449 s, close to gate run 2. PR 2's run 1 showed the same first-run pattern (§2.5, QFT 2.319 vs 2.359 s).
+  Run 1 started with a residual CPU load of 1.57 from a just-finished compile; that is noted, not shown to be the
+  cause. Even at run 2's (or the compile bench's) QFT timings the cell sits at 1.085–1.096, near the bound.
+- **The compiled plans did not change.** Every FP64 and FP32 chosen candidate and exchange count matches §3.1 / §3.2;
+  the generic pricing raised each candidate's model `T` (random reorder k=1 2.656 → 3.013 at D=2) without changing
+  any ranking. Compiled QFT's 3b ratio rose 1.031–1.060 → 1.081–1.092 for the same phase-pricing reason; FP32 QFT
+  (1.006 → 1.049–1.052) shows it too.
+- **What exit 1 needs is the user's decision**, not a change made here: e.g. a state-aware treatment of diagonal
+  phases that act on |0⟩ qubits (an amplitude-free "touched-qubit" walk), or accepting QFT as a documented
+  exception. Neither is applied in this PR, and either would have to be re-validated out of sample.
