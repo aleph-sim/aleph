@@ -52,8 +52,8 @@ pub use cudarc::nccl::safe::NcclType;
 pub use cuquantum::CuStateVecBackend;
 #[cfg(all(target_os = "linux", feature = "cuda"))]
 pub use dist::cost::{
-    classify, makes_generic, makes_generic_under, GpuCostModel, KernelKind, KindTimes, LinkModel,
-    StateRule, STATE_RULE,
+    classify, makes_generic, makes_generic_under, state_classes, GenericTimes, GpuCostModel,
+    KernelKind, KindTimes, LinkModel, StateRule, STATE_RULE,
 };
 #[cfg(all(target_os = "linux", feature = "nccl"))]
 pub use dist::NcclExchange;

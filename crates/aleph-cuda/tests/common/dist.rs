@@ -220,15 +220,7 @@ pub fn qaoa_ring_chords(n: u32) -> Circuit {
     build_qaoa(n, &edges, &[0.4, 0.7], &[0.3, 0.5]).unwrap()
 }
 
+/// All-ranks model compute with the state-class walk (`GpuCostModel::all_ranks`).
 pub fn all_ranks(model: &GpuCostModel, p: &DistPlan) -> f64 {
-    let l = p.layout;
-    let mut all = 0.0;
-    for s in &p.steps {
-        if let DistStep::Local(instrs) = s {
-            for r in 0..l.ranks() {
-                all += model.rank_segment(instrs, l, r).unwrap();
-            }
-        }
-    }
-    all
+    model.all_ranks(p).unwrap()
 }

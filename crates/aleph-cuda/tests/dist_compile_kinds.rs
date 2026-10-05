@@ -11,7 +11,9 @@
 
 mod common;
 
-use aleph_cuda::{CudaSvBackend, DistSvBackend, GpuCostModel, KindTimes, LocalExchange};
+use aleph_cuda::{
+    CudaSvBackend, DistSvBackend, GenericTimes, GpuCostModel, KindTimes, LocalExchange,
+};
 use aleph_ir::dist::{compile_detailed, plan, DistLayout, DistPlan, DistStep, Router};
 use aleph_ir::Circuit;
 use common::dist::{
@@ -29,6 +31,7 @@ const ZERO: KindTimes = KindTimes {
     phase_base: 0.0,
     phase_term: 0.0,
     phase_term_multi: 0.0,
+    generic: GenericTimes::NONE,
 };
 
 /// `base` with every kind zeroed except what `keep` sets, at slice size `m_ref`.
@@ -48,18 +51,63 @@ type Count = fn(&mut KindTimes);
 
 /// (name, pick, count) per kind.
 const KINDS: [(&str, Pick, Count); 7] = [
-    ("dense1", |k, z| z.dense1 = k.dense1, |z| z.dense1 = 1.0),
-    ("dense2", |k, z| z.dense2 = k.dense2, |z| z.dense2 = 1.0),
-    ("dense3", |k, z| z.dense3 = k.dense3, |z| z.dense3 = 1.0),
-    ("diag1", |k, z| z.diag1 = k.diag1, |z| z.diag1 = 1.0),
-    ("diag_k", |k, z| z.diag_k = k.diag_k, |z| z.diag_k = 1.0),
-    ("cnot", |k, z| z.cnot = k.cnot, |z| z.cnot = 1.0),
+    (
+        "dense1",
+        |k, z| {
+            z.dense1 = k.dense1;
+            z.generic.dense1 = k.generic.dense1;
+        },
+        |z| z.dense1 = 1.0,
+    ),
+    (
+        "dense2",
+        |k, z| {
+            z.dense2 = k.dense2;
+            z.generic.dense2 = k.generic.dense2;
+        },
+        |z| z.dense2 = 1.0,
+    ),
+    (
+        "dense3",
+        |k, z| {
+            z.dense3 = k.dense3;
+            z.generic.dense3 = k.generic.dense3;
+        },
+        |z| z.dense3 = 1.0,
+    ),
+    (
+        "diag1",
+        |k, z| {
+            z.diag1 = k.diag1;
+            z.generic.diag1 = k.generic.diag1;
+        },
+        |z| z.diag1 = 1.0,
+    ),
+    (
+        "diag_k",
+        |k, z| {
+            z.diag_k = k.diag_k;
+            z.generic.diag_k = k.generic.diag_k;
+        },
+        |z| z.diag_k = 1.0,
+    ),
+    (
+        "cnot",
+        |k, z| {
+            z.cnot = k.cnot;
+            z.generic.cnot = k.generic.cnot;
+        },
+        |z| z.cnot = 1.0,
+    ),
     (
         "phase",
         |k, z| {
             z.phase_base = k.phase_base;
             z.phase_term = k.phase_term;
             z.phase_term_multi = k.phase_term_multi;
+            z.generic.phase_base = k.generic.phase_base;
+            z.generic.phase_term = k.generic.phase_term;
+            z.generic.phase_term_multi = k.generic.phase_term_multi;
         },
         |z| z.phase_base = 1.0,
     ),

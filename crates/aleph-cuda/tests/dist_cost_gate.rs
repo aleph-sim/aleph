@@ -7,9 +7,9 @@
 mod common;
 
 use aleph_cuda::{
-    CudaContext, CudaSvBackend, DistSvBackend, GpuCostModel, KindTimes, LocalExchange,
+    CudaContext, CudaSvBackend, DistSvBackend, GenericTimes, GpuCostModel, KindTimes, LocalExchange,
 };
-use aleph_ir::dist::{plan, DistLayout, DistStep, Router};
+use aleph_ir::dist::{plan, CostModel, DistLayout, DistStep, Router};
 use aleph_ir::Circuit;
 use common::dist::{
     all_ranks, best_of, brickwall_bench, ccz_ladder, comm_only, ghz, grover_iters,
@@ -31,6 +31,7 @@ fn only(model: &GpuCostModel, keep: impl Fn(&KindTimes, &mut KindTimes)) -> GpuC
         phase_base: 0.0,
         phase_term: 0.0,
         phase_term_multi: 0.0,
+        generic: GenericTimes::NONE,
     };
     keep(&k, &mut z);
     GpuCostModel {
@@ -62,18 +63,57 @@ fn model_gate_n28_fp64() {
         ("Grover K=3", grover_iters(n, 3)),
     ];
     let shares: Vec<(&str, GpuCostModel)> = vec![
-        ("dense1", only(&model, |k, z| z.dense1 = k.dense1)),
-        ("dense2", only(&model, |k, z| z.dense2 = k.dense2)),
-        ("dense3", only(&model, |k, z| z.dense3 = k.dense3)),
-        ("diag1", only(&model, |k, z| z.diag1 = k.diag1)),
-        ("diag_k", only(&model, |k, z| z.diag_k = k.diag_k)),
-        ("cnot", only(&model, |k, z| z.cnot = k.cnot)),
+        (
+            "dense1",
+            only(&model, |k, z| {
+                z.dense1 = k.dense1;
+                z.generic.dense1 = k.generic.dense1;
+            }),
+        ),
+        (
+            "dense2",
+            only(&model, |k, z| {
+                z.dense2 = k.dense2;
+                z.generic.dense2 = k.generic.dense2;
+            }),
+        ),
+        (
+            "dense3",
+            only(&model, |k, z| {
+                z.dense3 = k.dense3;
+                z.generic.dense3 = k.generic.dense3;
+            }),
+        ),
+        (
+            "diag1",
+            only(&model, |k, z| {
+                z.diag1 = k.diag1;
+                z.generic.diag1 = k.generic.diag1;
+            }),
+        ),
+        (
+            "diag_k",
+            only(&model, |k, z| {
+                z.diag_k = k.diag_k;
+                z.generic.diag_k = k.generic.diag_k;
+            }),
+        ),
+        (
+            "cnot",
+            only(&model, |k, z| {
+                z.cnot = k.cnot;
+                z.generic.cnot = k.generic.cnot;
+            }),
+        ),
         (
             "phase",
             only(&model, |k, z| {
                 z.phase_base = k.phase_base;
                 z.phase_term = k.phase_term;
                 z.phase_term_multi = k.phase_term_multi;
+                z.generic.phase_base = k.generic.phase_base;
+                z.generic.phase_term = k.generic.phase_term;
+                z.generic.phase_term_multi = k.generic.phase_term_multi;
             }),
         ),
     ];
@@ -90,13 +130,14 @@ fn model_gate_n28_fp64() {
             let t_comm = best_of(&sync, 3, || drop(d.run_plan(&comm).unwrap()));
             let measured = t_full - t_comm;
             let all = all_ranks(&model, &p);
-            let mut rep = 0.0;
-            for s in &p.steps {
-                if let DistStep::Local(instrs) = s {
-                    rep += f64::from(l.ranks())
-                        * model.rank_segment(instrs, l, l.ranks() - 1).unwrap();
-                }
-            }
+            let costs = model.step_costs(&p).unwrap();
+            let rep: f64 = p
+                .steps
+                .iter()
+                .zip(&costs)
+                .filter(|(s, _)| matches!(s, DistStep::Local(_)))
+                .map(|(_, c)| f64::from(l.ranks()) * c)
+                .sum();
             let ratio = all / measured;
             worst = worst.max((ratio - 1.0).abs());
             println!(
