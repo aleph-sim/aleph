@@ -224,3 +224,29 @@ pub fn qaoa_ring_chords(n: u32) -> Circuit {
 pub fn all_ranks(model: &GpuCostModel, p: &DistPlan) -> f64 {
     model.all_ranks(p).unwrap()
 }
+
+/// `depth` Clifford layers: `H` on even qubits and `S` on odd ones, then
+/// nearest-neighbour `CNOT`s starting at qubit `d % 2` (#538 state (f) and the
+/// held-out Clifford brickwall).
+pub fn clifford_layers(c: &mut Circuit, n: u32, depth: usize) {
+    for d in 0..depth {
+        for q in 0..n {
+            if q % 2 == 0 {
+                c.h(q).unwrap();
+            } else {
+                c.s(q).unwrap();
+            }
+        }
+        let mut q = (d % 2) as u32;
+        while q + 1 < n {
+            c.cnot(q, q + 1).unwrap();
+            q += 2;
+        }
+    }
+}
+
+pub fn clifford_brickwall(n: u32, depth: usize) -> Circuit {
+    let mut c = Circuit::new(n, 0);
+    clifford_layers(&mut c, n, depth);
+    c
+}

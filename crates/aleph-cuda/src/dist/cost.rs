@@ -202,7 +202,7 @@ pub fn makes_generic(instr: &Instruction) -> Result<bool, DistError> {
 }
 
 /// Calibrated seconds per kernel launch at a `2^m_ref` slice (the RTX 4000
-/// presets come from `tests/dist_cost_calibrate.rs`). Every kind is a full pass
+/// presets come from `tests/dist_cost_states.rs`). Every kind is a full pass
 /// over the slice, so time scales by `2^(m − m_ref)`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct KindTimes {
@@ -420,8 +420,8 @@ impl GpuCostModel {
     }
 
     /// RTX 4000 SFF Ada, FP64, fused like `DistSvBackend::new` — constants
-    /// from `tests/dist_cost_calibrate.rs`, run with
-    /// `cargo test --release -p aleph-cuda --features cuda --test dist_cost_calibrate -- --ignored --nocapture`.
+    /// from `tests/dist_cost_states.rs`, run with
+    /// `cargo test --release -p aleph-cuda --features cuda --test dist_cost_states -- --ignored --nocapture`.
     pub fn rtx4000_fp64() -> Self {
         Self {
             kinds: RTX4000_FP64,
@@ -477,7 +477,7 @@ impl CostModel for GpuCostModel {
 /// Measured per-launch seconds per kernel kind on the RTX 4000 SFF Ada (20 GiB).
 ///
 /// Calibrated 2026-10-04 with
-/// `cargo test --release -p aleph-cuda --features cuda --test dist_cost_calibrate -- --ignored --nocapture`.
+/// `cargo test --release -p aleph-cuda --features cuda --test dist_cost_states -- --ignored --nocapture`.
 /// Method: each launch interleaved with an `H`, best of 5 × 32 launches, the
 /// interleaved-H baseline subtracted. Each constant is the **mean of 2 runs**
 /// (largest run-to-run spread: FP64 dense3 +2.4 %, phase_base +2.0 %).
