@@ -158,7 +158,7 @@ fn run_cells<B: DeviceSv>(
                 ));
                 let ok3 = mc.ratio.is_finite() && (mc.ratio - 1.0).abs() <= 0.10;
                 verdicts.push(format!(
-                    "exit3b (plan-level compiled-plan check; spec exit 3 = dist_cost_gate) {name} D={}: compiled model/measured = {:.3} (measured all-ranks {:.3} s) → {}",
+                    "exit3b (compiled-plan model/measured; #538 exit 2) {name} D={}: compiled model/measured = {:.3} (measured all-ranks {:.3} s) → {}",
                     l.ranks(),
                     mc.ratio,
                     mc.all,

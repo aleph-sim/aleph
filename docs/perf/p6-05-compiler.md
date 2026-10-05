@@ -90,7 +90,7 @@ Hardware: RTX 4000 SFF Ada (sm_89, 20 GiB, 70 W cap), one card. Date: 2026-10-04
 
 ### 2.1 Calibration
 
-`cargo test --release -p aleph-cuda --features cuda --test dist_cost_calibrate -- --ignored --nocapture`
+`cargo test --release -p aleph-cuda --features cuda --test dist_cost_calibrate -- --ignored --nocapture` (replaced by `dist_cost_states`, §4.1)
 
 Method: on a `2^m_ref` state after an H layer, 32 × (`H` on qubit `i % 8`, then one launch of the kind), best of 5,
 minus the same circuit with the `H`s alone; divided by 32. `dense2` alone runs on a scrambled state: the H layer is
@@ -528,7 +528,7 @@ fixed and pushed (commit `ab514f7`) before any Stage C run.
 ### 4.1 Stage A: per-kind time by state
 
 Bench: `cargo test --release -p aleph-cuda --features cuda --test dist_cost_states -- --ignored --nocapture`
-(RTX 4000 SFF Ada, 2026-10-05, idle box, two passes in one invocation, 5375 s; raw log
+(RTX 4000 SFF Ada, 2026-10-05, idle box, two passes in one invocation; raw log
 `p6-05-state-class/stage-a.log`). Cells are ms per launch, mean of the two passes (pass 1 / pass 2). States (spec §2):
 (a) uniform H; (b) (a) + Rz per qubit (equal magnitudes, varied phases); (c) (a) + Ry per qubit (real, varied
 magnitudes); (d) (a) + Rx + Rz per qubit (generic complex); (e) GHZ; (f) 4 Clifford layers.
@@ -603,12 +603,20 @@ Compared with the PR 2 constants (§2.4), the simple FP64 `dense2` drops from 21
 18.66 ms (uniform), and the generic value is 22.68 ms. `dense3` gains a generic value of 40.09 ms (simple 34.66 ms,
 PR 2 34.36 ms).
 
-**Run-to-run noise.** The largest spread between the two passes is on state (a): FP64 dense2 18.04 / 19.28 ms
-(6.6 %), dense3 33.66 / 35.65 ms (5.7 %) and phase_base 20.93 / 21.76 ms (3.9 %). Pass 2 is the slower one in all
-three, and (a) is measured first in each pass. Every other cell moves by ≤ 1.4 % (FP64: next largest phase_term on
-(a) 1.3 %, phase_term_multi on (e) 1.3 %; FP32: largest diag1 on (f) 1.1 %). The
-class decisions are not near the 5 % threshold: the generic states sit at 1.216–1.217 and the simple ones at
-1.000–1.016.
+**Run-to-run noise.** The largest spread between the two passes is on state (a), FP64 dense2, dense3 and
+phase_base. Pass 2 is the slower one in all three, and (a) is measured first in each pass. Every other cell moves by
+≤ 1.4 %. The class decisions are not near the 5 % threshold: the generic states sit at 1.216–1.217 and the simple ones
+at 1.000–1.016. Spread = |pass 1 − pass 2| / mean, from `p6-05-state-class/stage-a.log` (the whole Stage A invocation
+took 5375 s):
+
+| kind | precision | state | pass 1 (ms) | pass 2 (ms) | mean (ms) | spread |
+|---|---|---|---|---|---|---|
+| dense2 | FP64 | (a) | 18.039 | 19.280 | 18.659 | 6.6 % |
+| dense3 | FP64 | (a) | 33.663 | 35.651 | 34.657 | 5.7 % |
+| phase_base | FP64 | (a) | 20.933 | 21.759 | 21.346 | 3.9 % |
+| phase_term | FP64 | (a) | 0.665 | 0.674 | 0.670 | 1.3 % |
+| phase_term_multi | FP64 | (e) | 0.460 | 0.466 | 0.463 | 1.3 % |
+| diag1 | FP32 | (f) | 17.476 | 17.673 | 17.575 | 1.1 % |
 
 ### 4.2 Stage C: old cells (seen during design)
 
@@ -617,8 +625,17 @@ class decisions are not near the 5 % threshold: the generic states sit at 1.216�
 Same method as §2.5 (n=28, FP64, `Router::Lookahead`, all D ranks on one card, best of 3), with the state-class model
 and frozen constants of §4.1. `generic steps` = `Local` steps priced generic / all `Local` steps (the class walk;
 deterministic, identical in both runs). Two runs back to back on 2026-10-05 (raw logs
-`p6-05-state-class/stage-c-gate-run{1,2}.log`). Run 1 started with a 1-min load average of 1.57, the tail of a
-compile that had just finished on the box (GPU idle); run 2 followed run 1's compile bench.
+`p6-05-state-class/stage-c-gate-run{1,2}.log`). **These runs did not satisfy spec §4's idle-box precondition.** The
+`uptime` line logged before each gate run (raw: `p6-05-state-class/stage-c-runner.out`):
+
+| run | time | 1-min load | 5-min load | 15-min load |
+|---|---|---|---|---|
+| 1 | 12:25:57 | 1.57 | 0.88 | 0.85 |
+| 2 | 12:41:10 | 2.36 | 1.82 | 1.39 |
+
+The load is residual from this session's own builds and runs, with no foreign workload: run 1's is the tail of a
+compile that had just finished (GPU idle), run 2's is run 1's gate and compile bench just finishing. The verdicts
+below are reported as measured; the deviation can only make them less clean, and the exit-1 MISS stands.
 
 Run 1:
 
@@ -785,7 +802,8 @@ No held-out cell missed. Per-kind model (s; identical in both runs; `t_comm` run
 `cargo test --release -p aleph-cuda --features cuda --test dist_compile_bench -- --ignored --nocapture`, two runs
 (raw logs `p6-05-state-class/stage-c-compile-run{1,2}.log`), same method and columns as §3. The log lines labelled
 `exit3b` are #538's exit 2 (compiled-plan model/measured within ±10 %); the lines labelled `exit1` are #538's exit 3.
-The labels keep P6-05's numbering.
+The labels keep P6-05's numbering. (The test source now prints `exit3b (compiled-plan model/measured; #538 exit 2)`; the committed logs carry the old
+label `exit3b (plan-level compiled-plan check; spec exit 3 = dist_cost_gate)`.)
 
 **FP64, run 1:**
 
@@ -864,10 +882,15 @@ Compiled-plan model/measured (spec exit 2), against PR 3 (§3.1):
 
 FP32 choices are unchanged from §3.2 (QFT naive+place, random reorder k=1). FP32 QFT model/measured rose from
 1.006 / 1.007 (§3.2, run 2) to 1.049–1.052: QFT's phase launches are now priced at the FP32 generic `phase_base`
-(49.59 vs 46.16 ms, §4.1). Model `T` per FP32 candidate: QFT D=2 naive 1.223, lookahead 1.227, reorder k=1 1.227, the
-three placed 1.143; QFT D=4 naive 0.649, lookahead 0.715, reorder k=1 0.651, reorder k=2 0.715, naive+place and
-reorder k=1+place 0.591, lookahead+place and reorder k=2+place 0.613; random D=2 naive 3.772, lookahead 2.176, reorder
-k=1 0.810; random D=4 naive 3.346, lookahead 1.892, reorder k=1 0.443, reorder k=2 0.456.
+(49.59 vs 46.16 ms, §4.1). Model `T` per FP32 candidate is in the table below (deterministic, identical in both runs; from the `candidates:`
+lines of the compile-run logs).
+
+| circuit | D | naive | lookahead | reorder k=1 | reorder k=2 | naive+place | lookahead+place | reorder k=1+place | reorder k=2+place |
+|---|---|---|---|---|---|---|---|---|---|
+| QFT | 2 | 1.223 | 1.227 | 1.227 | – | 1.143 | 1.143 | 1.143 | – |
+| QFT | 4 | 0.649 | 0.715 | 0.651 | 0.715 | 0.591 | 0.613 | 0.591 | 0.613 |
+| random d=10 | 2 | 3.772 | 2.176 | 0.810 | – | – | – | – | – |
+| random d=10 | 4 | 3.346 | 1.892 | 0.443 | 0.456 | – | – | – | – |
 
 Other bench lines (both runs):
 
@@ -883,6 +906,17 @@ Other bench lines (both runs):
 | 1. every old and held-out cell within ±10 % (`dist_cost_gate`) | **MISS**: QFT 1.144 / 1.147 (D=2 / D=4); every other old cell 1.003–1.031, every held-out cell 0.955–1.031 | **PASS**: worst QFT D=4 1.096 (9.6 %); held-out worst 4.3 % |
 | 2. compiled-plan check (3b) within ±10 % on every FP64 cell | **PASS**: 0.952–1.087 | **PASS**: 0.954–1.092 |
 | 3. `dist_compile_bench` exit 1, compiled ≤ min(Naive, Lookahead) + 3 % | **PASS**: worst 1.000 (GHZ, CCZ ladder), best 0.298 (Grover D=4) | **PASS**: worst 1.000, best 0.298 |
+
+**Idle-box precondition not met.** Spec §4 requires an idle box. Neither Stage C gate run met it (1-min load before
+each run, from `p6-05-state-class/stage-c-runner.out`):
+
+| run | time | 1-min load | 5-min load | 15-min load |
+|---|---|---|---|---|
+| 1 | 12:25:57 | 1.57 | 0.88 | 0.85 |
+| 2 | 12:41:10 | 2.36 | 1.82 | 1.39 |
+
+The load was residual from this session's own builds and runs (no foreign workload), and the GPU was idle. The runs
+were not repeated. The verdict below is reported as measured and is not softened.
 
 **Spec exit 1 is MISSED** (it needs every cell in both runs; run 1's QFT cells are 14.4 % and 14.7 % high). Exits 2
 and 3 pass in both runs, and all eight held-out cells pass in both runs. Per spec §4 the rule and the constants are
@@ -911,34 +945,24 @@ and 3 pass in both runs, and all eight held-out cells pass in both runs. Per spe
   every phase acts as the identity: the state is a product of |+⟩ and |0⟩ factors throughout, i.e. state (a)'s class.
   The rule is judged on gates, not amplitudes, so it cannot see this.
 - **Diagnostic counterfactual (not a re-tune):** price QFT's phase launches at the simple `phase_base`, leaving the
-  per-term costs (which did not split) and every other kind as they are. The number of phase launches is inferred
-  from the `phase` column: the PR 2 value at the old constants and the #538 value at the new ones (FP64, ms per
-  launch at m_ref = 27, from `cost.rs`) are two equations in the launch count N and the term total; they solve to N
-  below (m_ref-equivalent launches, all ranks), rounded to an integer.
+  per-term costs (which did not split) and every other kind as they are. The all-ranks phase launch counts are the
+  ones counted in §3.4 (QFT lookahead and compiled plans: 51 at D=2, 99 at D=4). Each launch at m_ref = 27 is
+  re-priced from the generic 24.850 ms to the simple 21.346 ms (`cost.rs`, §4.1), saving 3.504 ms; at D=4 each rank
+  holds m = 26 and a launch costs half as much, so it saves 1.752 ms.
 
-  | constant | PR 2 (§2.1) | #538 simple | #538 generic |
-  |---|---|---|---|
-  | `phase_base` | 21.476 | 21.346 | 24.850 |
-  | `phase_term` | 0.6713 | 0.6695 | – |
-  | `phase_term_multi` | 0.4777 | 0.4769 | – |
-
-  D=4 reconciles only to ~1 ms with an integer N, within the rounding of the printed values; ±1 launch moves a ratio
-  by ≤ 0.002. Each launch re-priced simple saves 24.850 − 21.346 = 3.504 ms.
-
-  | D | PR 2 phase (s) | #538 phase (s) | solved N | N used | phase at simple base (s) | model (s) | counterfactual model (s) | Δ (s) | run 1 ratio | run 1 counterfactual | run 2 ratio | run 2 counterfactual |
-  |---|---|---|---|---|---|---|---|---|---|---|---|---|
-  | 2 | 1.448 | 1.619 | 50.85 | 51 | 1.440 | 2.657 | 2.478 | 0.179 | 1.144 | 1.067 | 1.089 | 1.016 |
-  | 4 | 1.398 | 1.565 | 49.66 | 50 | 1.390 | 2.667 | 2.492 | 0.175 | 1.147 | 1.072 | 1.096 | 1.024 |
+  | D | phase launches (§3.4) | saving per launch (ms) | #538 phase (s) | phase at simple base (s) | model (s) | counterfactual model (s) | Δ (s) | run 1 ratio | run 1 counterfactual | run 2 ratio | run 2 counterfactual |
+  |---|---|---|---|---|---|---|---|---|---|---|---|
+  | 2 | 51 | 3.504 | 1.619 | 1.440 | 2.657 | 2.478 | 0.179 | 1.144 | 1.067 | 1.089 | 1.016 |
+  | 4 | 99 | 1.752 | 1.565 | 1.392 | 2.667 | 2.494 | 0.173 | 1.147 | 1.072 | 1.096 | 1.025 |
 
   The counterfactual puts both runs inside ±10 % and back near the PR 2 range (run 1 1.074 / 1.081, §2.5). It
-  explains 0.175–0.179 s of the over-prediction, not all of run 1's: run 1 is still 1.067–1.072 against run 2's
-  1.016–1.024, because run 1 also measured QFT 4.6–5.0 % faster.
+  explains 0.173–0.179 s of the over-prediction, not all of run 1's: run 1 is still 1.067–1.072 against run 2's
+  1.016–1.025, because run 1 also measured QFT 4.6–5.0 % faster.
 - **Run 1 measured the first cells fast.** QFT, GHZ and random d=10 (the first three cells) measured 3.2–6.9 % less
   compute in run 1 than in run 2; every later cell agrees within 1.0 %. Run 1's QFT (2.323 / 2.325 s) is the low
   outlier of the four measurements of the same Lookahead plan on this branch: both runs of the compile bench measured
   2.438–2.449 s, close to gate run 2. PR 2's run 1 showed the same first-run pattern (§2.5, QFT 2.319 vs 2.359 s).
-  Run 1 started with a residual CPU load of 1.57 from a just-finished compile; that is noted, not shown to be the
-  cause. Even at run 2's (or the compile bench's) QFT timings the cell sits at 1.085–1.096, near the bound.
+  Run 1 started with a residual 1-min load of 1.57 (§4.2); that is noted, not shown to be the cause. Even at run 2's (or the compile bench's) QFT timings the cell sits at 1.085–1.096, near the bound.
 - **The compiled plans did not change.** Every FP64 and FP32 chosen candidate and exchange count matches §3.1 / §3.2;
   the generic pricing raised each candidate's model `T` (random reorder k=1 2.656 → 3.013 at D=2) without changing
   any ranking. Compiled QFT's 3b ratio rose 1.031–1.060 → 1.081–1.092 for the same phase-pricing reason; FP32 QFT
