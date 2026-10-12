@@ -7,6 +7,11 @@
 
 -----
 
+> **Cross-track research phase:** mainline `../../ROADMAP.md` Phase 7 and
+> `../../BACKLOG.md` P7-00 through P7-06 add decoder failure minimization, rare-event
+> estimation, prior-mismatch studies, and deadline replay. These reuse Q0/Q4/Q7
+> infrastructure; their issue specifications live in the mainline backlog to avoid duplication.
+
 ## 0. North Star — the end goal (so we don't lose it)
 
 **A physical decoder chip (ASIC) that decodes surface-code / qLDPC syndromes in real time

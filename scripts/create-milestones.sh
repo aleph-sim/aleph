@@ -45,5 +45,7 @@ create_milestone "Phase 5.5 — Apple/Metal GPU" \
   "Apple/Metal GPU track (single-box M4 Mac Mini): FP32 Metal state-vector backend (≥2× same-Mac CPU on Tier-1) and GPU-resident MPS (one-sided Jacobi SVD on-device). FP32 accuracy ceiling ~1e-5. Covers sub-phases 5.5/5.6/5.7."
 create_milestone "Phase 6 — Multi-GPU & Distributed" \
   "Distributed state vector across multiple GPUs and nodes."
+create_milestone "Phase 7 — Research Instruments" \
+  "Reproducible decoder failure diagnosis, rare-event QEC estimation, observable-driven execution, decoder robustness, deadline replay, and exact near-Clifford expectations. Cross-track phase; correctness and measured research value gate completion."
 
 echo "All milestones created."

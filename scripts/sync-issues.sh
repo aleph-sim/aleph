@@ -24,6 +24,7 @@ awk -v outdir="$TMPDIR" '
     print > out;
     next;
   }
+  /^# / { capture = 0; next; }
   capture { print >> out; }
 ' "$BACKLOG"
 
@@ -43,6 +44,7 @@ phase_milestone() {
     5) echo "Phase 5 — GPU Backend" ;;
     5.5) echo "Phase 5.5 — Apple/Metal GPU" ;;
     6) echo "Phase 6 — Multi-GPU & Distributed" ;;
+    7) echo "Phase 7 — Research Instruments" ;;
     *) echo "" ;;
   esac
 }
