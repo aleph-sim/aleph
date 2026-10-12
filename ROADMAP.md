@@ -118,8 +118,40 @@ Each backend implements a common `Backend` trait. The frontend, IR, parser, and 
 |4.6  |CPU depth: QEC throughput + noise     |3–5 weeks           |Pauli-frame multi-shot sampler; noise models v1 (Kraus channels, oracle vs Aer)  |
 |5    |GPU backend (single-GPU)              |2–3 months          |cuQuantum integration + custom CUDA where it adds value                          |
 |6    |Multi-GPU and distributed             |2–3 months          |NCCL intra-node + MPI inter-node                                                 |
+|7    |Research instruments                  |Milestone-driven    |Failure diagnosis, rare-event QEC, observable queries, robustness and deadline studies, near-Clifford expectations |
 
 Estimates are aggressive solo full-time. Realistic part-time: roughly double.
+
+### Phase 7 — Research Instruments
+
+Turn the existing simulator and decoder implementations into instruments that answer new
+research questions. This is a cross-track phase spanning circuit simulation, QEC software,
+and hardware trace analysis; it can progress independently of Phase 6's distributed release.
+Detailed specifications: `BACKLOG.md`, P7-00 through P7-06.
+GitHub: [milestone](https://github.com/aleph-sim/aleph/milestone/20) and
+[phase tracker #542](https://github.com/aleph-sim/aleph/issues/542).
+
+| Issue | Capability | First deliverable |
+|-------|------------|-------------------|
+| P7-01 | Explain decoder failures | Reproducible, 1-minimal failing DEM fault sets and cross-decoder replay |
+| P7-02 | Estimate rare logical failures | Fault-count stratification with valid uncertainty estimates and comparison to direct Monte Carlo |
+| P7-03 | Compute requested observables | Exact backward causal-cone extraction and compact qubit remapping for unitary circuits |
+| P7-04 | Measure decoder robustness | Separate generating noise from decoder priors; study mismatch, drift, and correlated bursts |
+| P7-05 | Evaluate operational deadlines | Discrete-event replay of measured decode traces, finite queues, and fallback policies |
+| P7-06 | Simulate near-Clifford expectations | Exact sparse Pauli propagation with explicit resource limits |
+
+Start with P7-01, then P7-02; P7-03 is the independent general-simulator priority.
+P7-04 starts with prior mismatch before adding drift/bursts. P7-05 reuses Q4-02/Q4-03
+and Q7-07 instead of reimplementing streaming decoders or claiming new silicon timing.
+P7-06 begins with exact propagation; approximate pruning is a separate follow-up.
+P7-00 tracks integration, reproducible examples, and the final benchmark report.
+
+**Exit metric:** all six capability issues meet their scoped acceptance criteria, with a
+reproducible report in `docs/perf/p7-research-instruments.md`. The report must establish
+correctness against exact small instances/reference tools, quantify time/memory/statistical
+efficiency and failure regimes, and include at least one end-to-end QEC diagnosis study and
+one observable-query study. Research hypotheses are measured, not promised speedups;
+modelled deadline outcomes must be distinguished from measured hardware capability.
 
 -----
 

@@ -7,6 +7,10 @@
 
 -----
 
+> **Cross-track extension:** Phase 7 — Research Instruments is specified in
+> `../../BACKLOG.md` (P7-00 through P7-06). QEC tasks P7-01/P7-02/P7-04/P7-05
+> reuse this track's experiment, decoding, streaming, and hardware-policy work.
+
 ## How to Read This Document
 
 ```

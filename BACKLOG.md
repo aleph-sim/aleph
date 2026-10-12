@@ -1,7 +1,7 @@
 # Quantum Simulator — Detailed Backlog
 
 > **Source of truth for GitHub Issues.**
-> This document contains every planned issue for Phases 0–6. Each issue is structured so that an AI agent (e.g., Claude Code) or a human can create a GitHub Issue directly from its contents.
+> This document contains the mainline phase issues, including Phase 7's cross-track research instruments. Each issue is structured so that an AI agent (e.g., Claude Code) or a human can create a GitHub Issue directly from its contents. The companion QEC backlog is `docs/qec/BACKLOG.md`.
 
 -----
 
@@ -51,6 +51,7 @@ Each issue follows the same template:
 - Phase 5 — GPU Backend
 - Phase 5.5 — Apple/Metal GPU
 - Phase 6 — Multi-GPU & Distributed
+- Phase 7 — Research Instruments
 
 -----
 
@@ -4345,6 +4346,524 @@ Project’s grand culmination.
 
 -----
 
+# Phase 7 — Research Instruments
+
+Goal: use the existing simulator, QEC decoders, and hardware golden models to answer new
+research questions: which faults cause failure, how frequent rare failures are, which
+observables require simulation, how robust decoder priors are, and whether corrections
+arrive before operational deadlines.
+
+This phase spans the simulator and QEC tracks. The specifications below are the source of
+truth; QEC backlog documents link here rather than duplicate these issues. It does not
+require completion of the Phase 6 distributed release. All proposed API names and new
+module paths below are implementation suggestions, not existing APIs.
+
+**Exit metric:** P7-01 through P7-06 meet their scoped acceptance criteria and P7-00 publishes
+`docs/perf/p7-research-instruments.md`, including exact/reference validation, reproducible
+commands, resource/statistical-efficiency measurements, negative results, and supported
+regimes. No speedup or scientific novelty is assumed before measurement.
+
+**GitHub milestone:** [Phase 7 — Research Instruments](https://github.com/aleph-sim/aleph/milestone/20).
+
+| ID | GitHub issue |
+|----|--------------|
+| P7-00 | [Research instruments integration, examples, and phase exit report](https://github.com/aleph-sim/aleph/issues/542) |
+| P7-01 | [Decoder failure witness capture, minimization, and cross-decoder replay](https://github.com/aleph-sim/aleph/issues/543) |
+| P7-02 | [Rare-event logical error estimation with fault-count stratification](https://github.com/aleph-sim/aleph/issues/544) |
+| P7-03 | [Exact observable-driven execution via causal-cone extraction](https://github.com/aleph-sim/aleph/issues/545) |
+| P7-04 | [Decoder robustness experiments under prior mismatch, drift, and bursts](https://github.com/aleph-sim/aleph/issues/546) |
+| P7-05 | [Deadline-aware syndrome stream and fallback trace replay](https://github.com/aleph-sim/aleph/issues/547) |
+| P7-06 | [Exact near-Clifford expectation engine with sparse Pauli propagation](https://github.com/aleph-sim/aleph/issues/548) |
+
+**Recommended order:** P7-01 → P7-02; P7-03 independently; P7-04 starts with static prior
+mismatch; P7-05 reuses Q4/Q7 timing and policy work; P7-06 starts with exact Pauli propagation.
+
+-----
+
+### [P7-00] Research instruments integration, examples, and phase exit report
+
+**Labels:** `area:docs`, `area:bench`, `type:docs`, `priority:high`
+**Milestone:** Phase 7
+**Estimate:** L
+**Depends on:** P7-01 through P7-06 (for closure; coordination starts immediately)
+
+**Description**
+Coordinate the six research instruments, establish a shared reproducibility contract, and
+publish the phase exit report with runnable examples and measured limits.
+
+**Context**
+Aleph already has CPU/GPU state-vector, MPS and stabilizer engines, a communication-aware
+compiler, DEM experiment infrastructure, multiple software decoders, and FPGA golden models.
+Phase 7 turns those components into research workflows. Another isolated benchmark or
+unqualified rare-event/real-time claim would not establish useful new capability.
+
+**Technical Details**
+
+- Keep P7-01/P7-02/P7-04 in the QEC experiment/tooling layer, P7-03 in query planning,
+  P7-05 in trace/replay tooling, and P7-06 in an expectation engine. Preserve the backend-agnostic
+  IR and current noiseless execution semantics. Do not force expectation-only capabilities
+  into APIs that promise amplitudes or samples.
+- Each issue supplies a runnable Rust example or CLI/tool command. Document input schema,
+  configuration, seed, model/circuit hash, decoder parameters, software revision, precision,
+  resource limits, and hardware where relevant. Keep stochastic streams reproducible across
+  worker counts, following the existing `(seed, shot_index)` experiment convention.
+- Use shared artifacts where appropriate: P7-01 failure witnesses, P7-02 sampling diagnostics,
+  P7-04 model provenance, P7-05 timing traces, and P7-03/P7-06 query-plan statistics.
+  Identify any schema conversion explicitly; do not hide unmatched model/trace assumptions.
+- Report time, peak memory or allocation estimates, decoder calls, uncertainty and effective
+  sampling diagnostics as appropriate. Include failed/unsupported regimes and full benchmark
+  commands. Use existing oracle tools (FP64 SV/Aer, Stim, PyMatching) within their supported scope.
+- Deliver one end-to-end QEC study (sampling → failure witness → cross-decoder replay) and one
+  observable-query study (full SV versus causal cone and, where supported, Pauli propagation).
+- Python convenience bindings, automatic backend selection, GPU kernels, and RTL changes are
+  follow-ups unless a capability issue explicitly needs them. No new release/version commitment.
+
+**Phase Checklist**
+
+- [ ] [[P7-01] Decoder failure witness capture, minimization, and cross-decoder replay](https://github.com/aleph-sim/aleph/issues/543)
+- [ ] [[P7-02] Rare-event logical error estimation with fault-count stratification](https://github.com/aleph-sim/aleph/issues/544)
+- [ ] [[P7-03] Exact observable-driven execution via causal-cone extraction](https://github.com/aleph-sim/aleph/issues/545)
+- [ ] [[P7-04] Decoder robustness experiments under prior mismatch, drift, and bursts](https://github.com/aleph-sim/aleph/issues/546)
+- [ ] [[P7-05] Deadline-aware syndrome stream and fallback trace replay](https://github.com/aleph-sim/aleph/issues/547)
+- [ ] [[P7-06] Exact near-Clifford expectation engine with sparse Pauli propagation](https://github.com/aleph-sim/aleph/issues/548)
+
+**Acceptance Criteria**
+
+- [ ] All six child issues are linked in a phase checklist and have their scoped deliverables verified.
+- [ ] Reproducibility/provenance conventions and runnable examples are documented.
+- [ ] `docs/perf/p7-research-instruments.md` includes both end-to-end studies, correctness evidence,
+      measurement methodology, resource limits, and negative results.
+- [ ] Research estimates, queue-model results, and actual hardware measurements are clearly distinguished.
+- [ ] Existing public execution semantics are preserved; new interfaces state their supported inputs.
+
+**Testing Requirements**
+
+- Smoke-run every documented example on its stated environment; small deterministic examples belong in CI.
+- Validate artifact round trips and links; reuse each child's meaningful oracle/statistical checks.
+- Run required workspace checks for implementation changes; documentation-only changes need link/schema checks.
+
+**References**
+
+- `ROADMAP.md`, Phase 7; `docs/qec/ROADMAP.md`.
+- `crates/aleph-qec/src/experiment.rs`; `docs/benchmarking.md`.
+- P7-01 through P7-06.
+
+-----
+
+### [P7-01] Decoder failure witness capture, minimization, and cross-decoder replay
+
+**Labels:** `area:qec`, `area:decoder`, `type:feature`, `priority:high`
+**Milestone:** Phase 7
+**Estimate:** L
+**Depends on:** Q0-04 (existing experiment harness)
+
+**Description**
+Capture the fired DEM mechanisms behind a failed shot, reduce that fault set while preserving
+logical failure, and replay the resulting witness across compatible software decoders and
+the hardware golden model.
+
+**Context**
+`sample_shots` currently returns syndromes and true observable flips; aggregate logical error
+rates do not explain why a decoder failed. Aleph's MWPM, Union-Find, BP/relay-BP and fixed-point
+models make cross-decoder failure analysis a practical extension of the existing infrastructure.
+A short, reproducible witness can expose trapping sets, bad priors, and regression cases.
+
+**Technical Details**
+
+1. Add an opt-in trace sampler or companion sampler retaining fired mechanism indices. Keep
+   ordinary sampling's hot path unchanged when capture is disabled. Store the exact DEM,
+   its hash, fault indices, seed/shot identity, decoder configuration, syndrome, true logical
+   flips, predicted correction, and available convergence/validity diagnostics.
+2. Reconstruct syndrome and truth by XORing the chosen mechanisms' detector and observable
+   supports. The failure predicate is a logical mismatch for a fixed decoder configuration.
+   Non-convergence is a separate diagnostic, not automatically a logical failure.
+3. Use deterministic chunk deletion/delta debugging, followed by a single-fault deletion
+   sweep until no deletion preserves failure. The result is **1-minimal**, not a proof of
+   globally minimum weight. Respect a decoder-call/time budget and label interrupted results
+   as incomplete. Keep stochastic decoder choices fixed so the predicate is stable.
+4. Export/import a versioned witness artifact and replay it through compatible decoders.
+   Keep original priors fixed during minimization; do not rebuild them from the reduced fault set.
+   For fixed-point/RTL reference vectors, use the existing reference-vector path and state which
+   code, dimensions, window layout and configuration are supported.
+5. Distinguish DEM mechanism indices from physical circuit fault locations. Merged mechanisms
+   may have several physical origins; report circuit locations only when provenance exists.
+   Group witnesses by a documented signature to avoid counting identical examples repeatedly.
+6. Provide a Rust example/tool that captures a failure, minimizes it, and prints a decoder
+   comparison. Save useful witnesses as small regression fixtures.
+
+**Acceptance Criteria**
+
+- [ ] Witness round-trip reconstructs the original syndrome, truth, correction and failure.
+- [ ] A completed minimization preserves logical failure and passes the explicit 1-minimality check.
+- [ ] Budgets, incomplete status, decoder configuration and DEM-versus-circuit provenance are explicit.
+- [ ] At least two compatible software decoders replay the same witness; one supported fixed-point
+      golden-model witness is exported and checked through the existing reference-vector path.
+- [ ] At least one surface-code and one bivariate-bicycle failure case are documented with
+      starting/remaining fault counts, decoder calls and runtime.
+
+**Testing Requirements**
+
+- Exhaustively enumerate tiny DEMs to validate reconstruction and 1-minimality, including empty
+  syndrome with nonzero logical flips, duplicate supports, and multi-observable cases.
+- Check deterministic capture/replay across worker counts and stable decoder seeds.
+- Benchmark capture-disabled overhead and minimizer work; compare reconstructed shots with
+  the existing sampler and oracle decoders on supported DEMs.
+
+**References**
+
+- `crates/aleph-qec/src/experiment.rs`, `dem.rs`, `decoder.rs`, `refvec.rs`.
+- Q0-04: https://github.com/aleph-sim/aleph/issues/298.
+- `docs/qec/q7-07-nonconvergence-policy.md` (validity versus logical failure).
+
+-----
+
+### [P7-02] Rare-event logical error estimation with fault-count stratification
+
+**Labels:** `area:qec`, `area:decoder`, `area:bench`, `type:feature`, `priority:high`, `research`
+**Milestone:** Phase 7
+**Estimate:** XL
+**Depends on:** Q0-04; P7-01 (failure artifact/replay integration)
+
+**Description**
+Add a rare-event estimator for independent DEM mechanisms, starting with fault-count
+stratification, valid uncertainty estimates, and an explicit accounting of unsampled tails.
+Compare its statistical efficiency with direct Monte Carlo at matched decoder-call budgets.
+
+**Context**
+The current experiment loop samples independent Bernoulli mechanisms and counts failures.
+At low logical error rates most calls produce no failure, and zero observed failures do not
+establish zero risk. Recent work studies rare-event sampling specifically for circuit-level
+QEC and bivariate-bicycle codes with Relay decoding; Aleph has the needed DEM/decoder substrate.
+
+**Technical Details**
+
+1. For a fault set F and K=|F|, estimate `P(fail) = sum_k P(K=k) P(fail | K=k)`.
+   Compute binomial weights only for equal mechanism probabilities. For unequal probabilities,
+   use a Poisson-binomial dynamic program and an exact conditional sampler (suffix/prefix DP
+   is a starting point). Uniform k-subset draws are generally wrong for unequal probabilities.
+2. Handle deterministic p=0/p=1 mechanisms explicitly and use stable arithmetic/log-domain
+   calculations where needed. Preserve XOR semantics of merged DEM mechanisms. Operate on
+   DEM faults; do not label their count as physical circuit fault weight without provenance.
+3. Start with fixed, predeclared per-stratum sample budgets. Estimate binomial conditional
+   rates with intervals valid for zero/all failures, then combine simultaneous stratum bounds
+   and exact weights conservatively. Keep unsampled probability mass as an explicit interval
+   contribution (worst-case failure probability 1), rather than silently assuming zero.
+   Do not reuse `LogicalErrorResult`'s Wald half-width for this estimator.
+4. Report per-stratum weights, sample counts, failures, interval method, omitted tail mass,
+   decoder calls, runtime, and reproducibility data. A target-precision run must stop with
+   either a justified bound or explicit budget exhaustion. Adaptive allocation/stopping needs
+   its own statistical justification; it is not required by the fixed-budget MVP.
+5. Integrate witness capture with P7-01 for sampled failures. Keep the decoder's chosen priors
+   fixed at the target physical model, even if a future importance/splitting sampler uses a
+   different proposal distribution.
+6. Benchmark surface-code and bivariate-bicycle fixtures. Compare direct Monte Carlo where
+   failures are measurable and exact enumeration on small DEMs. Document where stratification
+   gains efficiency and where it does not. Splitting/Metropolis and correlated circuit-noise
+   sampling are separate follow-ups, with mixing/bias checks before scientific claims.
+
+**Acceptance Criteria**
+
+- [ ] Equal- and unequal-probability independent DEMs have correct stratum weights and conditional sampling.
+- [ ] Results include a non-degenerate bound for zero failures and an explicit unsampled-tail bound.
+- [ ] Tiny-model estimates agree with exact enumeration; direct Monte Carlo agrees in accessible regimes.
+- [ ] Fixed-budget repeated trials validate the stated interval coverage within reported Monte Carlo uncertainty.
+- [ ] A reproducible surface-code/bivariate-bicycle report compares interval width, runtime and decoder
+      calls at matched budgets, including an operating point where direct sampling is inefficient.
+- [ ] Failures export to P7-01; no rare-rate claim relies solely on extrapolating an empirical fit.
+
+**Testing Requirements**
+
+- Enumerate small heterogeneous DEMs; test p=0/p=1, underflow, overlapping supports and multiple observables.
+- Check conditional fault-set frequencies and seed determinism independently of decoder output.
+- Use offline repeated-seed coverage/efficiency experiments; keep a small deterministic/statistical
+  sanity suite in CI instead of expensive rare-event campaigns.
+
+**References**
+
+- Bravyi and Vargo, Simulation of rare events in quantum error correction:
+  https://arxiv.org/abs/1308.6270.
+- Rare Event Simulation of Quantum Error-Correcting Circuits:
+  https://arxiv.org/abs/2509.13678.
+- Fail fast: techniques to probe rare events in quantum error correction:
+  https://arxiv.org/abs/2511.15177.
+- `crates/aleph-qec/src/experiment.rs`, `decoder.rs`, `dem.rs`.
+
+-----
+
+### [P7-03] Exact observable-driven execution via causal-cone extraction
+
+**Labels:** `area:ir`, `area:backend-sv`, `type:optimization`, `priority:high`
+**Milestone:** Phase 7
+**Estimate:** L
+**Depends on:** P1-11 (existing DCE); P3-10 (existing exact light-cone demo/reference)
+
+**Description**
+Plan and execute a requested Pauli expectation on its backward causal cone, with compact
+qubit remapping, instead of allocating a full state vector for every circuit qubit.
+
+**Context**
+The existing `DeadCodeElim` seeds liveness from measurements and deliberately does nothing
+for circuits without them. P3-10 already validates local MPS observables with an exact
+light-cone state-vector reference. Making that idea a reusable query path can make large,
+shallow, local circuits tractable when the requested observable has a small cone.
+
+**Technical Details**
+
+1. Define an expectation-query planner separate from full-state/sample execution. MVP input:
+   unitary circuits starting in |0...0> and Hermitian Pauli strings or real-coefficient sums.
+   Reject measure/reset/noise/classical control with actionable errors. General entangled
+   initial states require a separate boundary-state treatment and are outside this issue.
+2. Walk backwards from each observable's non-identity support. Keep gates touching live
+   support and add all their targets/external controls. For fused diagonal/tiled instructions,
+   inspect the constituent representation or conservatively retain the full touched support;
+   never discard an instruction whose semantics are not understood. Preserve relevant barrier
+   ordering and do not interpret a barrier itself as a physical entangling operation.
+3. Build a compact circuit and bidirectional original-to-compact map; remap the observable
+   with the project's existing qubit/string ordering. Dropped gates have no effect on this
+   expectation, but the compact state is not the full circuit's final state.
+4. Handle identity observables analytically. For sums, start with per-term cones, deduplicate
+   identical plans, and only combine cones when the cost/memory policy justifies it. Do not
+   accidentally replace many small cones with one intractable union.
+5. Execute compact circuits on exact FP64 SV with an explicit memory cap. Report original and
+   active qubits, retained gates, estimated memory, planning/execution time, and query value.
+   If the cone is too large, return a clear resource-limit error or an explicitly requested
+   compatible backend; do not silently approximate or change the full-state API.
+6. Promote the existing P3-10 reference logic where appropriate. Supply a Rust example/tool
+   and document complexity in cone width/depth rather than total qubit count.
+
+**Acceptance Criteria**
+
+- [ ] Supported Pauli expectations agree with unpruned FP64 SV/Aer to 1e-10 on small oracle fixtures.
+- [ ] Compact maps, controls, Pauli ordering and multi-term coefficients are correct and inspectable.
+- [ ] Unsupported operations and resource-limit cases produce explicit errors.
+- [ ] A >=100-qubit shallow local circuit computes a tractable local expectation and matches
+      an analytic or independent exact-cone reference without full 2^n allocation.
+- [ ] Benchmarks include a useful small-cone case and a deep/global case with little or no reduction,
+      reporting planning overhead and memory/time changes.
+- [ ] Full-state and sampling paths retain their current semantics.
+
+**Testing Requirements**
+
+- Property-test random small unitary circuits/observables against full SV, including non-NN gates,
+  external controls, fused instructions, disjoint cones, identity, Y signs and qubit permutations.
+- Test rejection of nonunitary input and memory caps before allocation.
+- Reuse P3-10 fixtures and publish reproducible scaling versus cone width/depth.
+
+**References**
+
+- `crates/aleph-ir/src/passes/dce.rs`, `instruction.rs`.
+- `docs/perf/mps_100q.md`; P3-10: https://github.com/aleph-sim/aleph/issues/123.
+- `docs/superpowers/specs/2026-06-10-p3-10-mps-100q-demo-design.md`.
+
+-----
+
+### [P7-04] Decoder robustness experiments under prior mismatch, drift, and bursts
+
+**Labels:** `area:qec`, `area:decoder`, `area:bench`, `type:feature`, `priority:medium`, `research`
+**Milestone:** Phase 7
+**Estimate:** XL
+**Depends on:** Q0-04 (existing harness); P7-01 (diagnostic witness integration)
+
+**Description**
+Separate the true generating noise process from the decoder's assumed model, then measure
+logical failure and convergence under static prior mismatch, time-varying drift, and correlated bursts.
+
+**Context**
+The current harness intentionally samples the same DEM used to build the decoder, which is
+correct for matched-model benchmarks. Deployment raises a different question: how badly does
+a fixed decoder degrade when probabilities, bias or correlations change? A deliberate
+mismatch mode should coexist with the matched baseline and record both models explicitly.
+
+**Technical Details**
+
+1. MVP: sample a generating DEM and construct the decoder from an assumed DEM with identical
+   detector/observable identities. Validate structural compatibility; matching counts alone
+   are insufficient. Store hashes and both configurations. Start with unchanged mechanism
+   supports and perturbed probabilities, so any effect is attributable to prior mismatch.
+2. Sweep true versus assumed noise rate and data/measurement or X/Z bias where the selected
+   code/model supports it. Compare matched and mismatched decoders on identical generated
+   shots (paired experiment) and use a justified interval for the difference.
+3. Extend generation to a deterministic schedule of probabilities, then a named latent-state
+   burst process with configurable onset, duration, affected mechanisms and strength. Explicitly
+   record correlations and time ordering; an independent static DEM cannot encode temporal
+   correlation by simply changing individual marginal probabilities.
+4. For correlated runs, report uncertainty from independent streams/blocks with a documented
+   method rather than treating rounds as independent Bernoulli samples. Store burst state and
+   time index in witness provenance; independently regenerating each round would lose the model.
+5. Report LER, non-convergence/validity where available, decoder cost and robustness curves.
+   A bounded periodic prior-refresh comparator is optional; any fitted updates must use past
+   data only and be evaluated on held-out streams. No RL/controller dependency in this issue.
+6. Provide static mismatch and drift/burst examples for surface and bivariate-bicycle models,
+   with at least two compatible decoder families. Save representative failures through P7-01.
+
+**Acceptance Criteria**
+
+- [ ] The static matched case reproduces existing harness results; incompatible model identities are rejected.
+- [ ] Paired static-mismatch curves and full model provenance are reproducible.
+- [ ] Time-varying and correlated-burst generators preserve their configured temporal statistics,
+      and uncertainty reflects stream/block independence assumptions.
+- [ ] At least two decoder families are compared on supported surface/bivariate-bicycle fixtures;
+      logical failure is distinguished from non-convergence.
+- [ ] Reports include parameter ranges, negative results, runtime and saved failure witnesses.
+
+**Testing Requirements**
+
+- Tiny-model enumeration for static generators; deterministic seeds across worker counts.
+- Check measured burst occupancy/duration/correlation against configured laws on fixed campaigns.
+- Zero drift/zero burst strength reduces to the matched/static baseline; test detector/observable
+  schema mismatches and prohibit access to future samples in any refresh experiment.
+
+**References**
+
+- `crates/aleph-qec/src/experiment.rs`, `dem.rs`, `fixed_bp.rs`.
+- Q0-04: https://github.com/aleph-sim/aleph/issues/298.
+- `docs/qec/q7-07-nonconvergence-policy.md`.
+
+-----
+
+### [P7-05] Deadline-aware syndrome stream and fallback trace replay
+
+**Labels:** `area:qec`, `area:decoder`, `area:fpga`, `area:bench`, `type:feature`, `priority:medium`
+**Milestone:** Phase 7
+**Estimate:** L
+**Depends on:** Q4-02, Q4-03, Q7-07 (existing stream, latency and fallback work)
+
+**Description**
+Build a discrete-event experiment that replays decode traces against syndrome arrivals,
+finite queue capacity, correction deadlines and fallback policies. Measure tail latency,
+missed deadlines, dropped work and logical outcomes together.
+
+**Context**
+Q4 already provides streaming/backlog handling and latency instrumentation. Q7-07 shows a
+specific accuracy/latency conflict: host OSD can repair flagged shots but is too slow for the
+real-time path. Phase 7 asks whether a complete operational policy keeps up with a workload,
+including rare long service times and host/interface delays; it does not rebuild those decoders.
+
+**Technical Details**
+
+1. Define a versioned trace schema with arrival/round identity, decode service time or cycles
+   plus clock, code/window/configuration, validity, logical outcome and conditional fallback
+   outcome/time where measured. Label synthetic, golden-model and measured-silicon sources.
+   Preserve timing/outcome correlations; do not independently shuffle service times and failures.
+2. Start with deterministic single-server FIFO event replay; add configurable worker count,
+   arrivals, finite queue length and per-job correction deadline relative to arrival. Specify
+   what a job represents (round/window/block) and when a committed correction becomes usable.
+   Model transfer/host overhead explicitly; raw kernel cycles alone are not end-to-end latency.
+3. Compare flag-only, fixed iteration budget, early-exit and optional host fallback using actual
+   policy-specific traces/outcomes. Put fallback work on a declared queue/resource. Handle
+   simultaneous events deterministically and report overflow/drop/cancel policies.
+4. Report waiting/service/end-to-end times (p50/p95/p99/max), queue occupancy, utilization,
+   throughput, deadline misses, overflow, flags and decoded logical error separately. Define
+   operational failure only under an explicit policy for late/missing corrections: a deadline
+   miss is not automatically a physical logical error. Count already-failed/late jobs without
+   double counting when presenting a policy-dependent combined metric.
+5. Preserve sequential dependencies for streaming windows/commits. MVP uses ordered traces;
+   independent trace resampling requires an explicit assumption and cannot establish correlated
+   backlog behavior. Do not claim a closed-loop quantum-control simulation from trace replay.
+6. Benchmark arrival-rate/deadline sweeps around saturation, including stable average load
+   with rare service-time spikes and correlated flagged episodes. Reuse existing hardware
+   reference/timing data; do not modify RTL or invent a measured fallback latency.
+
+**Acceptance Criteria**
+
+- [ ] Deterministic finite-queue replay supports documented arrivals, deadlines, worker and fallback policies.
+- [ ] Existing Q4/Q7 traces or a documented adapter feed at least one measured/golden-model case;
+      every timing source and unmeasured component is identified.
+- [ ] A report compares operational policies on identical ordered input, including queue saturation
+      and a tail-latency case that mean decode time alone misses.
+- [ ] Deadline misses, overflows, validity and logical failures are distinct, with explicit combined-policy semantics.
+- [ ] Trace correlations, round/window units and commit dependencies are preserved and documented.
+
+**Testing Requirements**
+
+- Hand-calculated event timelines for empty/stable/overloaded queues, simultaneous arrival/completion,
+  finite capacity, multiple workers and fallback contention; verify conservation of submitted work.
+- Validate constant-service single-server behavior against analytical utilization/backlog expectations.
+- Round-trip traces and compare no-queue/no-deadline replay's logical outcomes with the original campaign.
+
+**References**
+
+- Q4-02: https://github.com/aleph-sim/aleph/issues/313.
+- Q4-03: https://github.com/aleph-sim/aleph/issues/314.
+- Q7-07: https://github.com/aleph-sim/aleph/issues/458.
+- `docs/perf/qec-q4-realtime.md`; `docs/qec/q7-07-nonconvergence-policy.md`.
+- `hw/product/README.md`; `crates/aleph-qec/src/relay_window.rs`.
+
+-----
+
+### [P7-06] Exact near-Clifford expectation engine with sparse Pauli propagation
+
+**Labels:** `area:backend-stab`, `area:ir`, `area:bench`, `type:feature`, `priority:medium`, `research`
+**Milestone:** Phase 7
+**Estimate:** XL
+**Depends on:** P3-01 through P3-03 (existing stabilizer conventions); P7-03 (shared expectation-query contract)
+
+**Description**
+Compute Pauli expectations by exact Heisenberg-picture sparse Pauli propagation through
+Clifford gates and supported Pauli rotations, with explicit limits on term growth and memory.
+Establish the useful near-Clifford regime before adding approximate pruning.
+
+**Context**
+Stabilizer simulation is efficient for Clifford circuits, while generic SV allocates 2^n
+amplitudes. For expectation queries, Clifford conjugation maps each Pauli term to a signed
+Pauli term; non-Clifford rotations can branch terms. This creates a possible regime where
+cost follows observable term growth rather than total qubit count. It is an expectation
+engine, not a universal replacement for state-vector amplitudes or sampling.
+
+**Technical Details**
+
+1. Represent Pauli strings with bit-packed X/Z supports and correctly tracked phases; use
+   canonical keys and coefficients. Start with |0...0> inputs and Hermitian Pauli sums.
+   Evaluate the final backward-propagated sum analytically: strings containing X/Y have zero
+   expectation on |0...0>, while I/Z strings contribute their signed coefficients.
+2. Reverse-propagate `U† O U`. Support a documented Clifford gate set and Pauli rotations
+   such as Rx/Ry/Rz and, if represented correctly, ZZ rotations. Fix `R_P(theta)=exp(-i theta P/2)`
+   conventions before implementation; derive commuting/anticommuting updates and verify signs
+   with dense matrices. T/T-dagger may be treated as Z rotations up to irrelevant global phase.
+3. Merge identical Pauli terms, handling exact algebraic cancellations without heuristic
+   magnitude pruning. "Exact" means no intentional truncation, with stated floating-point
+   roundoff. Unsupported generic gates, controls, measure/reset/noise and initial states
+   receive explicit errors or an explicitly requested exact fallback.
+4. Enforce maximum terms and memory before uncontrolled expansion. Return a structured
+   resource-limit result rather than an incomplete expectation. Report peak terms, branching
+   rotations, coefficient norms, merge counts, time and memory; cancellations can make the
+   number of non-Clifford gates alone a poor predictor of cost.
+5. Reuse the P7-03 query contract and cone preprocessing where supported; compare propagation
+   both with and without cone extraction. Keep opt-in execution until supported semantics
+   and measured crossover justify any automatic routing.
+6. Benchmark Clifford-only, a few non-Clifford rotations, growing magic/branch counts, and
+   adversarial term-growth cases against FP64 SV and MPS on tractable overlaps. A >=100-qubit
+   tractable near-Clifford example needs an independent analytic/cone reference. Approximate
+   coefficient pruning, sampling and their error guarantees belong to a separate follow-up.
+
+**Acceptance Criteria**
+
+- [ ] Supported expectations agree with FP64 SV/Aer to 1e-10 on small fixtures, including Y phases,
+      negative angles, T/T-dagger and multiple observable terms.
+- [ ] Clifford-only propagation has no non-Clifford branching and matches existing reference conventions.
+- [ ] No coefficient truncation is hidden; resource exhaustion and unsupported semantics are explicit.
+- [ ] A >=100-qubit supported near-Clifford example is independently validated without full-state allocation.
+- [ ] A crossover/resource-growth report states useful regimes and adverse cases; GPU/approximate
+      capabilities are not implied by the CPU exact prototype.
+- [ ] Runnable query example and term/memory diagnostics follow the P7-03 contract.
+
+**Testing Requirements**
+
+- Property-test conjugation against dense matrices on small random supported circuits, including
+  controls within supported Clifford gates, qubit permutations and signed Pauli products.
+- Check inverse-gate cancellation, identity observables, multiple-term merging and rotation limits
+  at Clifford angles. Validate resource checks before expansion/allocation.
+- Benchmark peak terms and runtime versus rotation count, topology and observable support.
+
+**References**
+
+- Begusic, Hejazi and Chan, Simulating quantum circuit expectation values by Clifford
+  perturbation theory: https://arxiv.org/abs/2306.04797 (research context; MVP is untruncated).
+- `crates/aleph-stab`, `crates/aleph-core`, `crates/aleph-ir/src/instruction.rs`.
+- P7-03 observable query planning.
+
+-----
+
 # Appendix: Counts and Order
 
 - **Phase 0**: 12 issues
@@ -4355,7 +4874,9 @@ Project’s grand culmination.
 - **Phase 5**: 8 issues
 - **Phase 6**: 6 issues
 
-**Total: 60 issues.**
+**Original Phases 0–6 baseline: 60 issues.** Later sub-phase additions are specified above.
+
+- **Phase 7**: 7 issues (one integration/report tracker + six capability issues).
 
 Recommended ordering for first weeks:
 
