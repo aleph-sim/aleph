@@ -56,8 +56,17 @@ impl<T: DeviceRepr> DeviceBuffer<T> {
     /// Download (device→host) into a fresh `Vec<T>`, synchronizing the stream so
     /// the returned data is complete.
     pub fn to_vec(&self, ctx: &CudaContext) -> Result<Vec<T>, Error> {
-        let host = ctx.stream().clone_dtoh(&self.slice)?;
-        ctx.stream().synchronize()?;
+        self.to_vec_on_stream(ctx.stream())
+    }
+
+    /// Readout holders keep the stream/context alive without retaining pool
+    /// configuration handles or execution scratch.
+    pub(crate) fn to_vec_on_stream(
+        &self,
+        stream: &std::sync::Arc<cudarc::driver::CudaStream>,
+    ) -> Result<Vec<T>, Error> {
+        let host = stream.clone_dtoh(&self.slice)?;
+        stream.synchronize()?;
         DEVICE_DTOH_BYTES.fetch_add(
             (self.slice.len() * std::mem::size_of::<T>()) as u64,
             Ordering::Relaxed,

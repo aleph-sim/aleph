@@ -9,6 +9,26 @@ use aleph_core::Complex;
 
 use crate::{CudaContext, DeviceBuffer, Error};
 
+/// Immutable final amplitudes with cudarc-owned stream/context lifetime.
+/// Contains no raw pool handle or execution scratch; naturally `Send`/`Sync`.
+pub struct CudaSvReadout {
+    amps: DeviceBuffer<f64>,
+    stream: std::sync::Arc<cudarc::driver::CudaStream>,
+}
+
+impl CudaSvReadout {
+    /// Download amplitudes, returning synchronization/copy failures.
+    pub fn try_amplitudes_vec(&self) -> Result<Vec<Complex<f64>>, Error> {
+        let host = self.amps.to_vec_on_stream(&self.stream)?;
+        Ok(host
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|&[re, im]| Complex::new(re, im))
+            .collect())
+    }
+}
+
 /// Largest state this backend will allocate. `n = 30` is 16 GiB of FP64
 /// amplitudes (`2^30 · 16 B`); the shift `1 << target` with `target ≤ 29` stays
 /// well inside `u32`. Larger states need the host-migration path (P5-04/05).
@@ -40,6 +60,15 @@ impl core::fmt::Debug for CudaSvState {
 }
 
 impl CudaSvState {
+    /// Finish queued work and retain only amplitudes and their owning stream.
+    /// The backend may drop immediately after this conversion, even for zero shots.
+    pub fn into_readout(self) -> Result<CudaSvReadout, Error> {
+        self.ctx.synchronize()?;
+        Ok(CudaSvReadout {
+            stream: self.ctx.stream().clone(),
+            amps: self.amps,
+        })
+    }
     /// Allocate `|0…0⟩`: `2 · 2^n` zeroed `f64`, then set `re` of amplitude 0
     /// to 1. `alloc_zeros` runs device-side (no `2^n` host buffer), and the
     /// `write(&[1.0])` reuses that allocation to set the single leading element.
@@ -62,20 +91,25 @@ impl CudaSvState {
 
     /// Download the interleaved `[re, im]` amplitude buffer to the host,
     /// synchronizing the stream so all queued gates have completed.
-    pub(crate) fn to_host(&self) -> Vec<f64> {
-        self.amps
-            .to_vec(&self.ctx)
-            .expect("device->host amplitude copy")
+    pub(crate) fn to_host(&self) -> Result<Vec<f64>, Error> {
+        self.amps.to_vec(&self.ctx)
     }
 
     /// The amplitudes as `Vec<Complex<f64>>` (one per basis state). The
     /// `HasAmplitudes` oracle hook and interop go through this.
     pub fn amplitudes_vec(&self) -> Vec<Complex<f64>> {
-        let host = self.to_host();
-        host.as_chunks::<2>()
+        self.try_amplitudes_vec()
+            .expect("device->host amplitude copy")
+    }
+
+    /// Download amplitudes, returning synchronization/copy failures to the caller.
+    pub fn try_amplitudes_vec(&self) -> Result<Vec<Complex<f64>>, Error> {
+        let host = self.to_host()?;
+        Ok(host
+            .as_chunks::<2>()
             .0
             .iter()
             .map(|&[re, im]| Complex::new(re, im))
-            .collect()
+            .collect())
     }
 }

@@ -23,23 +23,17 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use std::collections::BTreeMap;
 
-/// Final-state amplitude holder. The CPU SV backend keeps its `CpuState` so
-/// `statevector()` is a single zero-copy memcpy of its slice (no 2^n widening,
-/// up to 4 GiB at the n=28 cap); the Metal GPU backend is FP32, so it
-/// materializes the widened f64 buffer once.
+/// CPU state or a GPU-owned state materialized on the first explicit read.
+/// GPU cache reads return independent NumPy arrays; successful materialization
+/// releases the device state. Counts-only results retain it until result cleanup.
 enum AmpStore {
     Cpu(aleph_sv::CpuState),
-    // Constructed by the Metal arm (macOS + `metal`) and the CUDA in-core arms
-    // (Linux + `cuda`); the `statevector()` reader matches it in every build, so
-    // silence the never-constructed warning only when both GPU paths are compiled out.
-    #[cfg_attr(
-        not(any(
-            all(target_os = "macos", feature = "metal"),
-            all(target_os = "linux", feature = "cuda")
-        )),
-        allow(dead_code)
-    )]
-    Owned(Vec<Complex64>),
+    #[cfg(all(target_os = "macos", feature = "metal"))]
+    Metal(crate::lazy_amplitudes::LazyAmplitudes<aleph_metal::MetalSvReadout>),
+    #[cfg(all(target_os = "linux", feature = "cuda"))]
+    Cuda(crate::lazy_amplitudes::LazyAmplitudes<aleph_cuda::CudaSvReadout>),
+    #[cfg(all(target_os = "linux", feature = "cuda"))]
+    CudaF32(crate::lazy_amplitudes::LazyAmplitudes<aleph_cuda::CudaSvReadoutF32>),
 }
 
 /// Result of `run()`: a shot histogram and, on the SV/Metal backends, the final
@@ -60,7 +54,11 @@ impl RunResult {
     }
 
     /// Final state vector as a numpy `complex128` array of shape `(2**n,)`,
-    /// SV backend only.
+    /// CPU SV and in-core GPU backends only. GPU download/widening is lazy:
+    /// the first read caches host amplitudes and releases the retained GPU state;
+    /// subsequent reads copy the cache into independent arrays. Synchronization,
+    /// copy and cache work run without the GIL. CUDA copy errors raise ValueError
+    /// and leave the device state available for another attempt.
     ///
     /// One contiguous O(state) buffer (a copy of the backend's amplitude
     /// slice) rather than 2^n boxed Python complex objects — at n=25 the old
@@ -70,7 +68,31 @@ impl RunResult {
     fn statevector<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray1<Complex64>>> {
         match &self.amps {
             Some(AmpStore::Cpu(state)) => Ok(PyArray1::from_slice_bound(py, state.amplitudes())),
-            Some(AmpStore::Owned(v)) => Ok(PyArray1::from_slice_bound(py, v.as_slice())),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            Some(AmpStore::Metal(lazy)) => {
+                let host = py
+                    .allow_threads(|| lazy.materialize(|s| Ok(s.to_aos_f64())))
+                    .map_err(|e| err("materialize metal statevector", e))?;
+                Ok(PyArray1::from_slice_bound(py, host.as_slice()))
+            }
+            #[cfg(all(target_os = "linux", feature = "cuda"))]
+            Some(AmpStore::Cuda(lazy)) => {
+                let host = py
+                    .allow_threads(|| {
+                        lazy.materialize(|s| s.try_amplitudes_vec().map_err(|e| e.to_string()))
+                    })
+                    .map_err(|e| err("materialize cuda statevector", e))?;
+                Ok(PyArray1::from_slice_bound(py, host.as_slice()))
+            }
+            #[cfg(all(target_os = "linux", feature = "cuda"))]
+            Some(AmpStore::CudaF32(lazy)) => {
+                let host = py
+                    .allow_threads(|| {
+                        lazy.materialize(|s| s.try_amplitudes_vec().map_err(|e| e.to_string()))
+                    })
+                    .map_err(|e| err("materialize cuda-f32 statevector", e))?;
+                Ok(PyArray1::from_slice_bound(py, host.as_slice()))
+            }
             None => Err(PyValueError::new_err(
                 "statevector is only available on the \"sv\", \"metal\", and \
                  in-core \"cuda\"/\"cuda-f32\" backends",
@@ -118,6 +140,8 @@ fn err<E: std::fmt::Display>(what: &str, e: E) -> PyErr {
 /// never picks it), or `"cuda"` / `"cuda-f32"` (NVIDIA GPU state vector, FP64 /
 /// FP32, Linux `cuda`-feature wheel only). `RunResult.statevector()` is available
 /// on `"sv"`, `"metal"`, and the in-core CUDA backends.
+/// GPU results retain their device state until the first statevector read or
+/// result destruction. Counts-only calls never materialize host amplitudes.
 ///
 /// `precision` (`"auto"` default, `"f64"`, `"f32"`) steers an `auto` GPU pick:
 /// with a CUDA wheel on a CUDA host, large dense circuits route to `cuda-f32` by
@@ -201,7 +225,7 @@ pub(crate) fn run_circuit(
             #[cfg(all(target_os = "macos", feature = "metal"))]
             {
                 let (counts, amps) =
-                    py.allow_threads(|| -> PyResult<(BTreeMap<String, u64>, Vec<Complex64>)> {
+                    py.allow_threads(|| -> PyResult<(BTreeMap<String, u64>, AmpStore)> {
                         let mut be = match seed {
                             Some(s) => aleph_metal::MetalSvBackend::with_seed(s),
                             None => aleph_metal::MetalSvBackend::new(),
@@ -209,11 +233,17 @@ pub(crate) fn run_circuit(
                         .map_err(|e| err("init metal backend", e))?;
                         let state = be.run_optimized(c).map_err(|e| err("run metal", e))?;
                         let samples = be.sample(&state, shots).map_err(|e| err("sample", e))?;
-                        Ok((counts_map(&samples, n), state.to_aos_f64()))
+                        Ok((
+                            counts_map(&samples, n),
+                            AmpStore::Metal(crate::lazy_amplitudes::LazyAmplitudes::new(
+                                state.into_readout(),
+                                (1u64 << n) * 8,
+                            )),
+                        ))
                     })?;
                 Ok(RunResult {
                     counts,
-                    amps: Some(AmpStore::Owned(amps)),
+                    amps: Some(amps),
                 })
             }
             #[cfg(not(all(target_os = "macos", feature = "metal")))]
@@ -279,37 +309,52 @@ fn run_cuda_py(
              readout) — use the `aleph` CLI or the Rust API"
         )));
     }
-    let (counts, amps) =
-        py.allow_threads(|| -> PyResult<(BTreeMap<String, u64>, Vec<Complex64>)> {
-            // The FP32/FP64 in-core states both widen to Vec<Complex<f64>> via
-            // amplitudes_vec(); run unoptimized (raw gates) as MPS/stab do.
-            match kind {
-                BackendKind::CudaF32 => {
-                    let mut be = match seed {
-                        Some(s) => aleph_cuda::CudaSvBackendF32::with_seed(s),
-                        None => aleph_cuda::CudaSvBackendF32::new(),
-                    }
-                    .map_err(|e| err("init cuda-f32 backend", e))?;
-                    let state = run(&mut be, c).map_err(|e| err("run cuda-f32", e))?;
-                    let samples = be.sample(&state, shots).map_err(|e| err("sample", e))?;
-                    Ok((counts_map(&samples, n), state.amplitudes_vec()))
+    let (counts, amps) = py.allow_threads(|| -> PyResult<(BTreeMap<String, u64>, AmpStore)> {
+        // Keep the sampled state alive after the backend drops. It owns
+        // its context/stream; no amplitude download is needed for counts.
+        match kind {
+            BackendKind::CudaF32 => {
+                let mut be = match seed {
+                    Some(s) => aleph_cuda::CudaSvBackendF32::with_seed(s),
+                    None => aleph_cuda::CudaSvBackendF32::new(),
                 }
-                BackendKind::Cuda => {
-                    let mut be = match seed {
-                        Some(s) => aleph_cuda::CudaSvBackend::with_seed(s),
-                        None => aleph_cuda::CudaSvBackend::new(),
-                    }
-                    .map_err(|e| err("init cuda backend", e))?;
-                    let state = run(&mut be, c).map_err(|e| err("run cuda", e))?;
-                    let samples = be.sample(&state, shots).map_err(|e| err("sample", e))?;
-                    Ok((counts_map(&samples, n), state.amplitudes_vec()))
-                }
-                _ => unreachable!("run_cuda_py is only called for CUDA kinds"),
+                .map_err(|e| err("init cuda-f32 backend", e))?;
+                let state = run(&mut be, c).map_err(|e| err("run cuda-f32", e))?;
+                let samples = be.sample(&state, shots).map_err(|e| err("sample", e))?;
+                Ok((
+                    counts_map(&samples, n),
+                    AmpStore::CudaF32(crate::lazy_amplitudes::LazyAmplitudes::new(
+                        state
+                            .into_readout()
+                            .map_err(|e| err("finish cuda-f32 state", e))?,
+                        (1u64 << n) * 8,
+                    )),
+                ))
             }
-        })?;
+            BackendKind::Cuda => {
+                let mut be = match seed {
+                    Some(s) => aleph_cuda::CudaSvBackend::with_seed(s),
+                    None => aleph_cuda::CudaSvBackend::new(),
+                }
+                .map_err(|e| err("init cuda backend", e))?;
+                let state = run(&mut be, c).map_err(|e| err("run cuda", e))?;
+                let samples = be.sample(&state, shots).map_err(|e| err("sample", e))?;
+                Ok((
+                    counts_map(&samples, n),
+                    AmpStore::Cuda(crate::lazy_amplitudes::LazyAmplitudes::new(
+                        state
+                            .into_readout()
+                            .map_err(|e| err("finish cuda state", e))?,
+                        (1u64 << n) * 16,
+                    )),
+                ))
+            }
+            _ => unreachable!("run_cuda_py is only called for CUDA kinds"),
+        }
+    })?;
     Ok(RunResult {
         counts,
-        amps: Some(AmpStore::Owned(amps)),
+        amps: Some(amps),
     })
 }
 
@@ -373,4 +418,25 @@ pub(crate) fn _gpu_backend_init_count() -> u64 {
     {
         0
     }
+}
+
+/// Internal measurement hook: materializations, live device amplitude bytes,
+/// cached host amplitude bytes, and CUDA device-to-host bytes (zero on Metal).
+#[pyfunction]
+pub(crate) fn _gpu_result_stats() -> (u64, u64, u64, u64) {
+    #[cfg(any(
+        all(target_os = "macos", feature = "metal"),
+        all(target_os = "linux", feature = "cuda")
+    ))]
+    let (materializations, resident, cached) = crate::lazy_amplitudes::stats();
+    #[cfg(not(any(
+        all(target_os = "macos", feature = "metal"),
+        all(target_os = "linux", feature = "cuda")
+    )))]
+    let (materializations, resident, cached) = (0, 0, 0);
+    #[cfg(all(target_os = "linux", feature = "cuda"))]
+    let dtoh = aleph_cuda::device_dtoh_bytes();
+    #[cfg(not(all(target_os = "linux", feature = "cuda")))]
+    let dtoh = 0;
+    (materializations, resident, cached, dtoh)
 }

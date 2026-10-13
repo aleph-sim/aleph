@@ -9,4 +9,4 @@ mod state;
 
 pub use amps::AmpsF32;
 pub use backend::MetalSvBackend;
-pub use state::MetalSvState;
+pub use state::{MetalSvReadout, MetalSvState};

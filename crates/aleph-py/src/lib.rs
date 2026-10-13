@@ -10,6 +10,18 @@
 /// exercises it without a Python interpreter; Task 5 wraps it in pyo3.
 pub mod qec_core;
 
+#[cfg(any(
+    test,
+    all(
+        feature = "python",
+        any(
+            all(target_os = "macos", feature = "metal"),
+            all(target_os = "linux", feature = "cuda")
+        )
+    )
+))]
+mod lazy_amplitudes;
+
 #[cfg(feature = "python")]
 mod circuit;
 
@@ -49,6 +61,7 @@ mod module {
         m.add_class::<crate::run::RunResult>()?;
         m.add_function(wrap_pyfunction!(crate::run::run_circuit, m)?)?;
         m.add_function(wrap_pyfunction!(crate::run::_gpu_backend_init_count, m)?)?;
+        m.add_function(wrap_pyfunction!(crate::run::_gpu_result_stats, m)?)?;
         m.add_class::<crate::noise::PyNoiseModel>()?;
         m.add_class::<crate::noise::PyQuantumError>()?;
         m.add_function(wrap_pyfunction!(crate::noise::depolarizing_error, m)?)?;
