@@ -83,7 +83,8 @@ impl PhenomenologicalNoise {
 ///     /* seed   */ 1,
 ///     |dem| Ok(NullDecoder::new(dem.observables)),
 /// )?;
-/// println!("logical error rate = {} ± {}", res.rate, res.ci95);
+/// let bounds = res.interval95()?;
+/// println!("logical error rate = {}, 95% bounds [{}, {}]", res.rate, bounds.lower, bounds.upper);
 /// # Ok::<(), aleph_qec::Error>(())
 /// ```
 ///
@@ -128,7 +129,7 @@ pub fn run_dem_experiment(
     seed: u64,
 ) -> Result<LogicalErrorResult> {
     if shots == 0 {
-        return Ok(LogicalErrorResult::new(0, 0));
+        return LogicalErrorResult::try_new(0, 0);
     }
 
     // Sample every shot in parallel; each shot's RNG is seeded only from (seed, index), so the
@@ -143,7 +144,7 @@ pub fn run_dem_experiment(
         .filter(|(pred, truth)| mispredicted(&pred.observable_flips, truth, dem.observables))
         .count() as u64;
 
-    Ok(LogicalErrorResult::new(shots, logical_errors))
+    LogicalErrorResult::try_new(shots, logical_errors)
 }
 
 /// Sample `shots` independent shots from `dem`, returning their syndromes and *true* observable

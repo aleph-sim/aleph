@@ -6,7 +6,7 @@
 //! **backlog** (Battistel et al. arXiv:2303.00054) stays bounded.
 //!
 //! Three blocks of output:
-//!   1. **correctness** — parallel-window logical-error rate vs full-batch UF, within CI.
+//!   1. **rate comparison** — parallel-window vs full-batch UF, with marginal interval overlap.
 //!   2. **throughput** — sustained syndrome-bits/second of the parallel decoder (P cores) vs the
 //!      sequential sliding decoder (1 core), on one long stream.
 //!   3. **backlog** — a fluid queue simulation driven by the *measured* per-window service time: at a
@@ -55,6 +55,7 @@ fn sample_syndrome(dem: &aleph_qec::DetectorErrorModel, rng: &mut Rng) -> Syndro
 }
 
 fn main() {
+    eprintln!("# Legacy ci/ci95 columns are Wald half-widths; use explicit Clopper-Pearson bounds for inference. Marginal interval overlap is not decoder equivalence.");
     let args: Vec<String> = std::env::args().collect();
     let rounds_mult: usize = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(24);
     let shots: u64 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(40_000);
@@ -66,9 +67,11 @@ fn main() {
         "# Q4-02 parallel-window decoding, memory-Z p={p}, rounds={rounds_mult}*d, {threads} rayon threads"
     );
 
-    // ---- block 1: correctness (parallel rate within CI of batch) ----
+    // ---- block 1: marginal rate comparison (not decoder equivalence) ----
     println!("# correctness: parallel-window logical rate vs full-batch UF");
-    println!("d,rounds,commit,buffer,batch_rate,par_rate,abs_delta,combined_ci,within_ci");
+    println!(
+        "d,rounds,commit,buffer,batch_rate,par_rate,abs_delta,combined_ci,intervals_overlap95"
+    );
     for &d in &[3usize, 5, 7] {
         let rounds = rounds_mult * d;
         let exp = SurfaceCode::new(d).memory_z_experiment(rounds);
@@ -83,14 +86,14 @@ fn main() {
         let s = run_dem_experiment(&dem, shots, &pw, seed).expect("parallel");
 
         let delta = (s.rate - b.rate).abs();
-        let cci = b.ci95 + s.ci95;
+        let cci = b.ci95 + s.ci95; // Legacy diagnostic column; not used for decisions.
+        let overlap = b
+            .interval95()
+            .expect("binomial interval")
+            .overlaps(s.interval95().expect("binomial interval"));
         println!(
             "{d},{rounds},{c},{buf},{:.6},{:.6},{:.6},{:.6},{}",
-            b.rate,
-            s.rate,
-            delta,
-            cci,
-            delta <= cci
+            b.rate, s.rate, delta, cci, overlap
         );
     }
 

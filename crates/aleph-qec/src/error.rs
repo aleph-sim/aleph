@@ -4,6 +4,25 @@
 /// Errors produced by `aleph-qec`.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    /// A Bernoulli tally has more failures than trials.
+    #[error("invalid Bernoulli tally: {errors} errors exceeds {shots} shots")]
+    InvalidTally {
+        /// Number of trials.
+        shots: u64,
+        /// Number of failures.
+        errors: u64,
+    },
+
+    /// Numerical evaluation of a confidence bound could not be validated.
+    #[error(
+        "binomial interval could not be evaluated reliably for {shots} shots and {errors} errors"
+    )]
+    IntervalNumerics {
+        /// Number of trials.
+        shots: u64,
+        /// Number of failures.
+        errors: u64,
+    },
     /// A Detector Error Model text line could not be parsed.
     #[error("DEM parse error at line {line}: {msg}")]
     DemParse {

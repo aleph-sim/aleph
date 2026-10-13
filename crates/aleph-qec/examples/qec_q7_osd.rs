@@ -69,6 +69,7 @@ fn measure(
 }
 
 fn main() {
+    eprintln!("# Legacy ci/ci95 columns are Wald half-widths; use explicit Clopper-Pearson bounds for inference. Marginal interval overlap is not decoder equivalence.");
     let args: Vec<String> = std::env::args().collect();
     let mode = args.get(1).map(|s| s.as_str()).unwrap_or("capacity");
     let shots: u64 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(20_000);
@@ -117,24 +118,26 @@ fn main() {
             "{mode},{p},{shots},{:.6},{:.6},{:.6},{:.6},{:.5},{:.6},{:.6}",
             plain.rate, plain.ci95, osd.rate, osd.ci95, tail_rate, fl_plain.rate, fl_osd.rate
         );
-        let verdict = |a: f64, b: f64, ci: f64| {
-            if (a - b).abs() <= ci {
-                "≈"
-            } else if b < a {
-                "OSD wins"
+        let verdict = |a: LogicalErrorResult, b: LogicalErrorResult| {
+            let ai = a.interval95().expect("binomial interval");
+            let bi = b.interval95().expect("binomial interval");
+            if ai.overlaps(bi) {
+                "marginal intervals overlap; no equivalence conclusion"
+            } else if bi.upper < ai.lower {
+                "OSD marginal interval lower"
             } else {
-                "OSD worse"
+                "OSD marginal interval higher"
             }
         };
         eprintln!(
             "p={p}: FIXED plain {:.3e} → +OSD {:.3e} [{}]  tail {:.2}%  |  FLOAT plain {:.3e} → +OSD {:.3e} [{}]",
             plain.rate,
             osd.rate,
-            verdict(plain.rate, osd.rate, plain.ci95 + osd.ci95),
+            verdict(plain, osd),
             tail_rate * 100.0,
             fl_plain.rate,
             fl_osd.rate,
-            verdict(fl_plain.rate, fl_osd.rate, fl_plain.ci95 + fl_osd.ci95),
+            verdict(fl_plain, fl_osd),
         );
     }
 }

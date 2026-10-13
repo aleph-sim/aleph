@@ -31,6 +31,7 @@ const SEED: u64 = 0x5E1A_4B9C;
 const PS: &[f64] = &[0.001, 0.002, 0.003, 0.005];
 
 fn main() {
+    eprintln!("# Legacy ci/ci95 columns are Wald half-widths; use explicit Clopper-Pearson bounds for inference. Marginal interval overlap is not decoder equivalence.");
     let args: Vec<String> = std::env::args().collect();
     let rounds: usize = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(1);
     let shots: u64 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(40_000);
@@ -44,7 +45,7 @@ fn main() {
         MSG_BITS - 1 - FRAC_BITS,
         FRAC_BITS
     );
-    println!("p,ler_full,ci_full,ler_early,ci_early,within_ci,converged_frac,iters_mean,iters_p50,iters_p99,iters_max");
+    println!("p,ler_full,ci_full,ler_early,ci_early,intervals_overlap95,converged_frac,iters_mean,iters_p50,iters_p99,iters_max");
 
     for &p in PS {
         let dem = code
@@ -56,7 +57,10 @@ fn main() {
 
         let rf = aleph_qec::run_dem_experiment(&dem, shots, &full, seed).expect("full");
         let re = aleph_qec::run_dem_experiment(&dem, shots, &early, seed).expect("early");
-        let within = (rf.rate - re.rate).abs() <= (rf.ci95 + re.ci95);
+        let within = rf
+            .interval95()
+            .expect("binomial interval")
+            .overlaps(re.interval95().expect("binomial interval"));
 
         // Per-shot iteration count to the first valid ê (or full schedule if none).
         let (syndromes, _truths) = sample_shots(&dem, shots, seed);
@@ -92,7 +96,7 @@ fn main() {
             rf.ci95,
             re.rate,
             re.ci95,
-            if within { "[within CI]" } else { "[DIFFERS]" },
+            if within { "[marginal intervals overlap]" } else { "[marginal intervals disjoint]" },
             conv_frac * 100.0,
             pct(0.50),
             pct(0.99),

@@ -2,7 +2,8 @@
 """Plot the Q0-05 surface-code threshold sweep and estimate the threshold p_th.
 
 Reads the CSV emitted by the `qec_threshold` example (columns:
-source,d,rounds,p,shots,logical_errors,rate,ci95), draws logical error rate vs p with one
+source,d,rounds,p,shots,logical_errors,rate,ci95 plus explicit ci95_lower/upper/method),
+draws logical error rate vs p with asymmetric bounds and one
 curve per distance, and estimates the threshold two ways:
 
   1. Curve crossing — the p where the small-d and large-d curves intersect (where the
@@ -17,21 +18,54 @@ Usage:
 """
 import argparse
 import csv
+import math
 import sys
+import warnings
 from collections import defaultdict
 
 
 def load(path):
-    """Return {d: (ps, rates, ci95s)} sorted by p, plus shot count, source, and decoder.
+    """Return {d: (ps, rates, [lower_errors, upper_errors])} sorted by p.
 
     Accepts both the Q0-05 schema (no `decoder` column) and the Q1-04 schema (with it)."""
     by_d = defaultdict(list)
     shots = source = decoder = None
+    warned_legacy = False
+    shot_counts = set()
     with open(path) as f:
         for row in csv.DictReader(f):
             d = int(row["d"])
-            by_d[d].append((float(row["p"]), float(row["rate"]), float(row["ci95"])))
             shots = int(row["shots"])
+            shot_counts.add(shots)
+            errors = int(row["logical_errors"])
+            if not 0 <= errors <= shots:
+                raise ValueError("invalid Bernoulli tally")
+            rate = float(row["rate"])
+            if not math.isfinite(rate) or not 0 <= rate <= 1:
+                raise ValueError("invalid rate")
+            if "ci95_lower" in row or "ci95_upper" in row:
+                if not row.get("ci95_lower") or not row.get("ci95_upper"):
+                    raise ValueError("missing confidence endpoint")
+                if row.get("ci95_method") != "clopper-pearson":
+                    raise ValueError("unsupported interval method")
+                lower, upper = float(row["ci95_lower"]), float(row["ci95_upper"])
+                if not (math.isfinite(lower) and math.isfinite(upper)
+                        and 0 <= lower <= rate <= upper <= 1):
+                    raise ValueError("invalid confidence bounds")
+                ci = (rate - lower, upper - rate)
+            else:
+                if not warned_legacy:
+                    warnings.warn("legacy CSV: ci95 is a Wald half-width; boundary/rare-event intervals are unreliable")
+                    warned_legacy = True
+                half = float(row["ci95"])
+                if not math.isfinite(half) or half < 0:
+                    raise ValueError("invalid legacy half-width")
+                ci = (half, half)
+            # Zero trials are no estimate, not a point at zero risk.
+            if shots == 0:
+                rate = math.nan
+                ci = (math.nan, math.nan)
+            by_d[d].append((float(row["p"]), rate, ci))
             source = row.get("source")
             decoder = row.get("decoder")
     out = {}
@@ -39,9 +73,9 @@ def load(path):
         pts.sort()
         ps = [a for a, _, _ in pts]
         rates = [b for _, b, _ in pts]
-        cis = [c for _, _, c in pts]
+        cis = [[c[side] for _, _, c in pts] for side in (0, 1)]
         out[d] = (ps, rates, cis)
-    return out, shots, source, decoder
+    return out, shots if len(shot_counts) == 1 else None, source, decoder
 
 
 def crossing_threshold(by_d):
@@ -77,9 +111,13 @@ def scaling_threshold(by_d):
     ds, ps, rates = [], [], []
     for d, (pp, rr, _) in by_d.items():
         for p, r in zip(pp, rr):
+            if not (math.isfinite(p) and math.isfinite(r)):
+                continue
             ds.append(d)
             ps.append(p)
             rates.append(r)
+    if len(rates) < 5:
+        return None
     ds = np.array(ds, float)
     ps = np.array(ps, float)
     rates = np.array(rates, float)
@@ -142,6 +180,7 @@ def main():
             print("matplotlib unavailable; skipping plot", file=sys.stderr)
             return
         fig, ax = plt.subplots(figsize=(7, 5))
+        ax.set_yscale("log")
         # Reference (oracle) curves first, faint dashed, so the native curves sit on top.
         if args.overlay:
             ref_by_d, _, _, _ = load(args.overlay)
@@ -152,23 +191,41 @@ def main():
                     ls="--", lw=1, alpha=0.45, color="gray", marker="x", ms=4,
                     label=args.overlay_label if i == 0 else None,
                 )
+        limit_label_used = False
         for d in sorted(by_d):
             ps, rates, cis = by_d[d]
-            ax.errorbar(
-                [p * 100 for p in ps], rates, yerr=cis,
+            # A zero observed rate has no finite position on a log axis. Draw its
+            # two-sided interval's upper endpoint as an upper-limit marker instead.
+            upper_limits = [r == 0 and c > 0 for r, c in zip(rates, cis[1])]
+            display_rates = [math.nan if limit else r for r, limit in zip(rates, upper_limits)]
+            display_errors = [
+                [math.nan if limit else c for c, limit in zip(cis[0], upper_limits)],
+                [math.nan if limit else c for c, limit in zip(cis[1], upper_limits)],
+            ]
+            series = ax.errorbar(
+                [p * 100 for p in ps], display_rates, yerr=display_errors,
                 marker="o", capsize=3, label=f"d = {d}",
             )
+            if any(upper_limits):
+                # Limits are not estimates: do not connect them into the rate curve.
+                limit_ps = [p * 100 for p, limit in zip(ps, upper_limits) if limit]
+                limits = [c for c, limit in zip(cis[1], upper_limits) if limit]
+                ax.errorbar(limit_ps, limits, yerr=[c * 0.5 for c in limits],
+                            uplims=True, fmt="none", capsize=3,
+                            color=series.lines[0].get_color(),
+                            label=None if limit_label_used else "Zero failures: two-sided 95% upper endpoint")
+                limit_label_used = True
         if p_cross is not None:
             ax.axvline(
                 p_cross * 100, color="gray", ls="--", lw=1,
                 label=f"$p_{{th}}\\approx{p_cross*100:.2f}\\%$",
             )
-        ax.set_yscale("log")
         ax.set_xlabel("physical error rate p (%)")
         ax.set_ylabel("logical error rate")
         dec_label = {"mwpm": "aleph-MWPM", "pymatching": "PyMatching"}.get(decoder, decoder or "MWPM")
         ax.set_title(
-            f"Rotated surface-code memory-Z threshold ({source} DEM, {dec_label}, {shots:,} shots)"
+            f"Rotated surface-code memory-Z threshold\n({source} DEM, {dec_label}, "
+            + (f"{shots:,} shots)" if shots is not None else "varying shots per cell)")
         )
         ax.grid(True, which="both", alpha=0.3)
         ax.legend()

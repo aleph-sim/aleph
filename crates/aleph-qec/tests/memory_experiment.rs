@@ -28,6 +28,10 @@ fn p_zero_is_zero_rate_for_every_distance() {
         .unwrap();
         assert_eq!(res.logical_errors, 0, "d={d}");
         assert_eq!(res.rate, 0.0, "d={d}");
+        assert!(
+            res.interval95().unwrap().upper > 0.0,
+            "zero observations do not prove zero risk"
+        );
     }
 }
 

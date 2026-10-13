@@ -49,7 +49,7 @@ pub use benes::{benes_apply, benes_columns, benes_control, complete_partial};
 pub use bivariate_bicycle::{BBCode, BBMemoryExperiment};
 pub use bp::{BpDecoder, BpSoft, TannerGraph, DEFAULT_MAX_ITER};
 pub use builder::{build_dem, AnnotatedCircuit, CircuitNoise, ErrorMechanism};
-pub use decoder::{Decoder, LogicalErrorResult, NullDecoder};
+pub use decoder::{BinomialInterval95, Decoder, LogicalErrorResult, NullDecoder};
 pub use dem::{DemError, DetectorErrorModel};
 pub use error::{Error, Result};
 pub use experiment::{
