@@ -92,7 +92,9 @@ impl CudaSvBackend {
     }
 
     fn build(rng: StdRng, ordinal: usize) -> Result<Self, Error> {
+        crate::context::record_sv_backend_init();
         let ctx = CudaContext::new(ordinal)?;
+        crate::context::require_nvrtc()?;
         // NVRTC compiles the CUDA C++ to PTX at runtime (mirrors a CPU JIT) —
         // no nvcc, no build-time CUDA SDK; the driver JITs PTX→sm at load.
         let ptx = compile_ptx(SV_KERNELS_SRC).map_err(|e| Error::Compile(e.to_string()))?;

@@ -10,6 +10,44 @@ use cudarc::driver::{CudaContext as RawContext, CudaStream};
 use crate::pool::MemPool;
 use crate::Error;
 
+/// Discover a CUDA device without a context, NVRTC, or backend construction.
+/// Missing drivers/devices and driver-query failures mean unavailable. Discovery
+/// does not promise that subsequent backend initialization or compilation succeeds.
+pub fn device_available() -> bool {
+    // SAFETY: cudarc only opens/closes candidate driver libraries here; no device
+    // pointers or caller-owned buffers are involved. Avoid its panicking loader
+    // on hosts where the optional CUDA driver is not installed.
+    if !unsafe { cudarc::driver::sys::is_culib_present() } {
+        return false;
+    }
+    device_count().is_ok_and(|n| n > 0)
+}
+
+/// Fail clearly when discovery succeeded but the optional compiler is missing.
+pub(crate) fn require_nvrtc() -> Result<(), Error> {
+    // SAFETY: cudarc opens/closes compiler library candidates only; no pointers
+    // or buffers are passed. Keep its panicking loader out of normal init errors.
+    if unsafe { cudarc::nvrtc::sys::is_culib_present() } {
+        Ok(())
+    } else {
+        Err(Error::Compile(
+            "NVRTC compiler library is unavailable; install the CUDA NVRTC runtime".into(),
+        ))
+    }
+}
+
+static SV_BACKEND_INITS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Number of SV backend construction attempts in this process (benchmark/test hook).
+#[doc(hidden)]
+pub fn sv_backend_init_count() -> u64 {
+    SV_BACKEND_INITS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+pub(crate) fn record_sv_backend_init() {
+    SV_BACKEND_INITS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+
 /// A CUDA device context plus its default stream.
 ///
 /// Cheap to `clone` — both handles are reference-counted (`Arc`) inside
@@ -38,6 +76,11 @@ impl CudaContext {
     /// rather than fail; any other driver failure surfaces as
     /// [`Error::Driver`].
     pub fn new(ordinal: usize) -> Result<Self, Error> {
+        // SAFETY: only checks whether cudarc can open a driver library. Return
+        // a normal absent-device error instead of entering its panicking loader.
+        if !unsafe { cudarc::driver::sys::is_culib_present() } {
+            return Err(Error::NoDevice(ordinal));
+        }
         let ctx = RawContext::new(ordinal).map_err(|e| classify_init_error(e, ordinal))?;
         let stream = ctx.default_stream();
         // Only meaningful with the stream-ordered allocator; otherwise cudarc

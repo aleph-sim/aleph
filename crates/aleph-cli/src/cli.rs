@@ -2,13 +2,13 @@
 
 use std::path::PathBuf;
 
-use aleph_backend::{BackendKind, BackendRequest, Reach, SelectEnv, Selection};
+use aleph_backend::{BackendKind, BackendRequest, Reach, Selection};
 use clap::{Parser, Subcommand};
 
 /// Resolve a parsed [`BackendRequest`] into a [`Selection`] (kind + [`Reach`]).
 ///
 /// `Auto` runs the [`aleph_backend::select_explained_full`] reach-aware heuristic
-/// over `env` (GPU availability + precision preference); an auto pick of
+/// with lazy device probes and a precision preference; an auto pick of
 /// `Stabilizer` is downgraded to `Statevector` when `wants_amplitudes` is set
 /// (`--statevector`/`--force-statevector`), because the stabilizer backend has no
 /// dense state vector. A `Fixed` choice keeps its kind verbatim (manual override)
@@ -17,40 +17,51 @@ use clap::{Parser, Subcommand};
 ///
 /// Backend-name parsing lives once in [`BackendRequest::from_user_str`], shared
 /// with the Python binding (P4-12); this is only the CLI-side resolution.
+pub fn resolve_backend_with_probes(
+    request: BackendRequest,
+    circuit: &aleph_ir::Circuit,
+    wants_amplitudes: bool,
+    precision: aleph_backend::Precision,
+    metal_probe: impl FnOnce() -> bool,
+    cuda_probe: impl FnOnce() -> bool,
+) -> Selection {
+    let sel =
+        aleph_backend::select_with_probes(circuit, request, precision, metal_probe, cuda_probe);
+    if matches!(request, BackendRequest::Fixed(_)) {
+        return Selection {
+            reason: "explicit --backend override",
+            ..sel
+        };
+    }
+    if sel.kind == BackendKind::Stabilizer && wants_amplitudes {
+        eprintln!("auto-selected backend: state vector (downgraded from stabilizer: --statevector needs amplitudes the stabilizer backend cannot provide)");
+        Selection {
+            kind: BackendKind::Statevector,
+            reach: Reach::InCore,
+            reason: "downgraded from stabilizer for --statevector",
+        }
+    } else {
+        eprintln!("auto-selected backend: {} ({})", sel.kind, sel.reason);
+        sel
+    }
+}
+
+/// Resolve against an already discovered environment (compatibility entry point).
+/// Frontends should use [`resolve_backend_with_probes`] for lazy discovery.
 pub fn resolve_backend(
     request: BackendRequest,
     circuit: &aleph_ir::Circuit,
     wants_amplitudes: bool,
-    env: &SelectEnv,
+    env: &aleph_backend::SelectEnv,
 ) -> Selection {
-    match request {
-        BackendRequest::Fixed(kind) => Selection {
-            kind,
-            reach: Reach::for_kind(kind, circuit.num_qubits()),
-            reason: "explicit --backend override",
-        },
-        BackendRequest::Auto => {
-            // `env` carries the caller's runtime GPU probes (Metal / CUDA) and the
-            // precision preference; the reach-aware heuristic routes large dense
-            // circuits to the GPU and pages past the in-core cap (P5.6-07, P5.11-06).
-            let sel = aleph_backend::select_explained_full(circuit, env);
-            if sel.kind == BackendKind::Stabilizer && wants_amplitudes {
-                eprintln!(
-                    "auto-selected backend: state vector \
-                     (downgraded from stabilizer: --statevector needs amplitudes \
-                     the stabilizer backend cannot provide)"
-                );
-                Selection {
-                    kind: BackendKind::Statevector,
-                    reach: Reach::InCore,
-                    reason: "downgraded from stabilizer for --statevector",
-                }
-            } else {
-                eprintln!("auto-selected backend: {} ({})", sel.kind, sel.reason);
-                sel
-            }
-        }
-    }
+    resolve_backend_with_probes(
+        request,
+        circuit,
+        wants_amplitudes,
+        env.precision,
+        || env.metal_available,
+        || env.cuda_available,
+    )
 }
 
 /// Floating-point precision for the state-vector backend.

@@ -48,6 +48,7 @@ mod module {
         m.add_function(wrap_pyfunction!(crate::energy::qaoa_energy, m)?)?;
         m.add_class::<crate::run::RunResult>()?;
         m.add_function(wrap_pyfunction!(crate::run::run_circuit, m)?)?;
+        m.add_function(wrap_pyfunction!(crate::run::_gpu_backend_init_count, m)?)?;
         m.add_class::<crate::noise::PyNoiseModel>()?;
         m.add_class::<crate::noise::PyQuantumError>()?;
         m.add_function(wrap_pyfunction!(crate::noise::depolarizing_error, m)?)?;

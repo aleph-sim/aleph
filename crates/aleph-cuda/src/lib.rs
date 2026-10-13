@@ -44,7 +44,7 @@ mod sv;
 #[cfg(all(target_os = "linux", feature = "cuda"))]
 pub use buffer::{device_alloc_count, device_dtoh_bytes, DeviceBuffer};
 #[cfg(all(target_os = "linux", feature = "cuda"))]
-pub use context::{device_count, CudaContext};
+pub use context::{device_available, device_count, sv_backend_init_count, CudaContext};
 /// Element types NCCL can move (the `B::Scalar` bound of `NcclExchange`).
 #[cfg(all(target_os = "linux", feature = "nccl"))]
 pub use cudarc::nccl::safe::NcclType;

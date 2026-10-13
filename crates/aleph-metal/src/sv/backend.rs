@@ -77,6 +77,7 @@ impl MetalSvBackend {
     }
 
     fn build(rng: StdRng) -> Result<Self, BackendError> {
+        crate::context::record_sv_backend_init();
         let ctx = MetalContext::new().map_err(map_metal_err)?;
         let pipeline_1q = ctx
             .make_compute_pipeline(SV_1Q_SRC, SV_1Q_ENTRY)

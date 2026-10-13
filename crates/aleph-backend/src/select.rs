@@ -466,6 +466,62 @@ pub fn select_explained_full(c: &Circuit, env: &SelectEnv) -> Selection {
     select_from_full(&analyze(c), env)
 }
 
+/// Resolve a request, probing devices only when they can change the auto choice.
+///
+/// Explicit requests skip both probes and circuit analysis. Auto analyzes once;
+/// hypothetical availability is evaluated through the same pure selection rule,
+/// so Clifford/small/MPS circuits never pay for irrelevant device discovery.
+/// Probes must only discover devices, not construct backends or compile kernels.
+/// A selected backend's later initialization failure is an execution error, not
+/// evidence that a device was absent.
+pub fn select_with_probes(
+    c: &Circuit,
+    request: BackendRequest,
+    precision: Precision,
+    metal_probe: impl FnOnce() -> bool,
+    cuda_probe: impl FnOnce() -> bool,
+) -> Selection {
+    if let BackendRequest::Fixed(kind) = request {
+        return Selection {
+            kind,
+            reach: Reach::for_kind(kind, c.num_qubits()),
+            reason: "explicit backend",
+        };
+    }
+    let features = analyze(c);
+    let mut env = SelectEnv {
+        precision,
+        ..SelectEnv::default()
+    };
+    let baseline = select_from_full(&features, &env);
+    if select_from_full(
+        &features,
+        &SelectEnv {
+            metal_available: true,
+            ..env
+        },
+    )
+    .kind
+        != baseline.kind
+    {
+        env.metal_available = metal_probe();
+    }
+    let selected = select_from_full(&features, &env);
+    if select_from_full(
+        &features,
+        &SelectEnv {
+            cuda_available: true,
+            ..env
+        },
+    )
+    .kind
+        != selected.kind
+    {
+        env.cuda_available = cuda_probe();
+    }
+    select_from_full(&features, &env)
+}
+
 /// Analyze `c` and return the chosen backend kind (AC-exact signature).
 pub fn select_backend(c: &Circuit) -> BackendKind {
     select_explained(c).kind
@@ -866,5 +922,83 @@ mod tests {
         assert!(f.all_twoq_nearest_neighbor);
         assert!(f.all_gates_at_most_2q);
         assert_eq!(select_backend(&c), BackendKind::Stabilizer);
+    }
+}
+
+#[cfg(test)]
+mod probe_tests {
+    use super::*;
+    use std::cell::Cell;
+
+    #[test]
+    fn explicit_requests_never_probe_even_gpus() {
+        let c = Circuit::new(32, 0);
+        for kind in BackendKind::ALL {
+            let selected = select_with_probes(
+                &c,
+                BackendRequest::Fixed(kind),
+                Precision::Auto,
+                || panic!("explicit request probed Metal"),
+                || panic!("explicit request probed CUDA"),
+            );
+            assert_eq!(selected.kind, kind);
+            assert_eq!(selected.reach, Reach::for_kind(kind, 32));
+        }
+    }
+
+    #[test]
+    fn lazy_probes_preserve_policy_and_skip_irrelevant_devices() {
+        // (qubits, non-Clifford, nonlocal, expected Metal/CUDA probe counts).
+        let cases = [
+            (32, false, true, 0, 0),
+            (12, true, false, 0, 0),
+            (24, true, false, 1, 0),
+            (28, true, true, 1, 0),
+            (32, true, false, 0, 0),
+            (32, true, true, 0, 1),
+        ];
+        for (n, non_clifford, nonlocal, want_metal, want_cuda) in cases {
+            let mut c = Circuit::new(n, 0);
+            c.h(0).unwrap();
+            if non_clifford {
+                c.t(0).unwrap();
+            }
+            if nonlocal {
+                c.cnot(0, n - 1).unwrap();
+            }
+            for precision in [Precision::Auto, Precision::F32, Precision::F64] {
+                for metal in [false, true] {
+                    for cuda in [false, true] {
+                        let mc = Cell::new(0);
+                        let cc = Cell::new(0);
+                        let selected = select_with_probes(
+                            &c,
+                            BackendRequest::Auto,
+                            precision,
+                            || {
+                                mc.set(mc.get() + 1);
+                                metal
+                            },
+                            || {
+                                cc.set(cc.get() + 1);
+                                cuda
+                            },
+                        );
+                        assert_eq!(
+                            selected,
+                            select_explained_full(
+                                &c,
+                                &SelectEnv {
+                                    metal_available: metal,
+                                    cuda_available: cuda,
+                                    precision
+                                }
+                            )
+                        );
+                        assert_eq!((mc.get(), cc.get()), (want_metal, want_cuda));
+                    }
+                }
+            }
+        }
     }
 }
