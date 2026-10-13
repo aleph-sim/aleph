@@ -74,6 +74,29 @@ fn diagonal_and_dense_fusion_are_executed() {
     compare(&c, 1);
 }
 
+#[test]
+fn external_controls_remain_fences_and_tile_replay_preserves_them() {
+    let mut c = Circuit::new(6, 0);
+    c.h(5).unwrap();
+    c.t(5).unwrap();
+    c.h(0).unwrap();
+    c.add_gate(aleph_core::GateInstance::controlled(
+        aleph_core::Gate::X,
+        smallvec::smallvec![2],
+        smallvec::smallvec![5],
+    ))
+    .unwrap();
+    c.add_gate(aleph_core::GateInstance::controlled(
+        aleph_core::Gate::S,
+        smallvec::smallvec![0],
+        smallvec::smallvec![5],
+    ))
+    .unwrap();
+    c.h(1).unwrap();
+    c.cnot(0, 1).unwrap();
+    compare(&c, 4);
+}
+
 mod property {
     use super::*;
     use aleph_test::circuit::arb_circuit_emittable;
