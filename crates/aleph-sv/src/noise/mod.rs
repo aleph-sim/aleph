@@ -116,6 +116,8 @@ pub fn run_noisy(
 
 /// One Monte-Carlo trajectory: apply each gate then its (pre-resolved) attached
 /// channels, then sample a terminal Z-basis outcome and apply readout error.
+/// Sampling uses one RNG u64 as before; the cumulative single-shot algorithm
+/// changes seed-to-outcome mapping but not absolute shot seeds or channel order.
 fn run_one_shot(
     circuit: &Circuit,
     resolved: &[Vec<&QuantumError>],
