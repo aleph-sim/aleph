@@ -171,6 +171,35 @@ impl PassPipeline {
         ])
     }
 
+    /// Preserve the complete final quantum state, including unmeasured qubits.
+    /// Unlike the measurement-oriented default, this omits DCE. Fusion and
+    /// relabelling still respect measurement/barrier fences.
+    pub fn final_state_pipeline() -> Self {
+        Self::new(vec![
+            Box::new(RelabelQubits::default()),
+            Box::new(CancelInversePairs),
+            Box::new(FuseDiagonalRuns),
+            Box::new(Fuse1qRuns),
+            Box::new(Fuse2q),
+            Box::new(FuseKq::default()),
+            Box::new(TileBlock::default()),
+        ])
+    }
+
+    /// CPU final-state pipeline retaining small precomputed diagonal gates.
+    /// A large phase polynomial can trade cheap constant phase multiplies for
+    /// per-amplitude phase evaluation, so retain ordinary 1q/2q diagonal fusion.
+    pub fn final_state_cpu_pipeline() -> Self {
+        Self::new(vec![
+            Box::new(RelabelQubits::default()),
+            Box::new(CancelInversePairs),
+            Box::new(Fuse1qRuns),
+            Box::new(Fuse2q),
+            Box::new(FuseKq::default()),
+            Box::new(TileBlock::default()),
+        ])
+    }
+
     /// Run every pass in order. Aggregate stats:
     /// - `gates_before` from the first pass
     /// - `gates_after` from the last pass

@@ -258,6 +258,62 @@ pub fn run_optimized<B: Backend>(
     Ok(state)
 }
 
+/// Optimize without measurement-seeded DCE, preserving all final-state views.
+/// Use this when sampling the collapsed final state, reading amplitudes, or
+/// computing observables on qubits that may not have been measured.
+pub fn run_optimized_final_state<B: Backend>(
+    backend: &mut B,
+    circuit: &Circuit,
+) -> Result<B::State, BackendError> {
+    Ok(run_optimized_final_state_with_stats(backend, circuit)?.0)
+}
+
+/// Planning diagnostics for an actually executed optimized circuit. Counts are
+/// IR instructions, not physical kernel launches or full-state passes.
+#[derive(Debug, Clone)]
+pub struct OptimizedRunStats {
+    /// Circuit clone and pass-pipeline wall time.
+    pub planning_time: std::time::Duration,
+    /// Input IR instruction count, including fences.
+    pub input_instructions: usize,
+    /// Executed optimized IR instruction count, including fences.
+    pub planned_instructions: usize,
+    /// Fused diagonal-polynomial instructions.
+    pub diagonal_phases: usize,
+    /// Top-level fused dense gate instructions (excludes tiled contents).
+    pub fused_gates: usize,
+    /// Cache-tile blocks; backends may replay their contained gates.
+    pub tiled_blocks: usize,
+}
+
+/// Final-state preserving execution with planning time and retained IR kinds.
+pub fn run_optimized_final_state_with_stats<B: Backend>(
+    backend: &mut B,
+    circuit: &Circuit,
+) -> Result<(B::State, OptimizedRunStats), BackendError> {
+    let (state, _, stats) = run_optimized_with_pipeline(
+        backend,
+        circuit,
+        &aleph_ir::passes::PassPipeline::final_state_pipeline(),
+        true,
+    )?;
+    Ok((state, stats))
+}
+
+/// CPU final-state execution retaining small precomputed diagonal gates.
+pub fn run_optimized_cpu_final_state_with_stats<B: Backend>(
+    backend: &mut B,
+    circuit: &Circuit,
+) -> Result<(B::State, OptimizedRunStats), BackendError> {
+    let (state, _, stats) = run_optimized_with_pipeline(
+        backend,
+        circuit,
+        &aleph_ir::passes::PassPipeline::final_state_cpu_pipeline(),
+        true,
+    )?;
+    Ok((state, stats))
+}
+
 /// [`run_optimized`] preserving measurement outcomes.
 ///
 /// The outcomes are in the same order, and `outcome`/`qubit`/`clbit` match what
@@ -285,8 +341,51 @@ pub fn run_optimized_with_outcomes<B: Backend>(
     backend: &mut B,
     circuit: &Circuit,
 ) -> Result<(B::State, Vec<MeasurementRecord>), BackendError> {
+    let (state, outcomes, _) = run_optimized_with_pipeline(
+        backend,
+        circuit,
+        &aleph_ir::passes::PassPipeline::default_pipeline(),
+        false,
+    )?;
+    Ok((state, outcomes))
+}
+
+fn run_optimized_with_pipeline<B: Backend>(
+    backend: &mut B,
+    circuit: &Circuit,
+    pipeline: &aleph_ir::passes::PassPipeline,
+    collect_stats: bool,
+) -> Result<(B::State, Vec<MeasurementRecord>, OptimizedRunStats), BackendError> {
+    let start = collect_stats.then(std::time::Instant::now);
     let mut optimized = circuit.clone();
-    optimized.optimize()?; // PassError -> BackendError via #[from]
+    pipeline.run(&mut optimized)?;
+    let mut stats = OptimizedRunStats {
+        planning_time: start.map_or(std::time::Duration::ZERO, |s| s.elapsed()),
+        input_instructions: circuit.len(),
+        planned_instructions: optimized.len(),
+        diagonal_phases: 0,
+        fused_gates: 0,
+        tiled_blocks: 0,
+    };
+    if collect_stats {
+        for inst in optimized.instructions() {
+            match inst {
+                aleph_ir::Instruction::DiagonalPhase(_) => stats.diagonal_phases += 1,
+                aleph_ir::Instruction::TiledBlock(_) => stats.tiled_blocks += 1,
+                aleph_ir::Instruction::Gate(g)
+                    if matches!(
+                        g.gate,
+                        aleph_core::Gate::Unitary1q(_)
+                            | aleph_core::Gate::Unitary2q(_)
+                            | aleph_core::Gate::UnitaryKq { .. }
+                    ) =>
+                {
+                    stats.fused_gates += 1
+                }
+                _ => {}
+            }
+        }
+    }
     let perm = optimized.qubit_permutation().map(|p| p.to_vec());
     let (mut state, mut outcomes) = run_with_outcomes(backend, &optimized)?;
     if let Some(perm) = perm {
@@ -299,7 +398,7 @@ pub fn run_optimized_with_outcomes<B: Backend>(
         // Single final gather: physical-order state → logical order.
         backend.unpermute_state(&mut state, &perm)?;
     }
-    Ok((state, outcomes))
+    Ok((state, outcomes, stats))
 }
 
 /// `inv[perm[l]] = l` — invert a qubit permutation (`perm[logical] =
