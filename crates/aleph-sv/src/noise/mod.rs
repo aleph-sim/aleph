@@ -48,8 +48,8 @@ pub type Counts = Vec<u64>;
 /// Errors raised by the noise driver, on top of backend failures.
 #[derive(Debug, thiserror::Error)]
 pub enum NoiseError {
-    /// Requested output and one trajectory cannot fit the declared budget.
-    #[error("noisy run requires at least {required} buffer bytes, budget is {budget}; use sparse counts or increase NoiseOptions::memory_budget_bytes")]
+    /// Conservative reservation for output and one context exceeds the budget.
+    #[error("noisy buffer plan reserves {required} bytes, budget is {budget}; use sparse counts or increase NoiseOptions::memory_budget_bytes")]
     MemoryBudget { required: usize, budget: usize },
     /// Invalid budget/concurrency or overflowing allocation estimate.
     #[error("invalid noisy execution configuration: {reason}")]
