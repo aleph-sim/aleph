@@ -12,6 +12,8 @@ fn discovery_does_not_construct_a_backend() {
         assert!(cudarc::nvrtc::compile_ptx("invalid CUDA source").is_err());
         assert!(device_available());
     } else {
+        assert!(CudaSvBackendF32::with_seed(0).is_err());
+        assert_eq!(sv_backend_init_count(), before + 1);
         eprintln!("no CUDA device/driver: discovery unavailable, backend smoke not executed");
     }
 }

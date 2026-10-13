@@ -17,6 +17,12 @@ fn discovery_does_not_construct_a_backend() {
         // Device discovery must not conflate compilation readiness with absence.
         assert!(device_available());
     } else {
+        assert!(matches!(
+            aleph_metal::MetalContext::new(),
+            Err(aleph_metal::Error::NoDevice)
+        ));
+        assert!(MetalSvBackend::with_seed(0).is_err());
+        assert_eq!(sv_backend_init_count(), before + 1);
         eprintln!("no Metal device: discovery unavailable, backend smoke not executed");
     }
 }

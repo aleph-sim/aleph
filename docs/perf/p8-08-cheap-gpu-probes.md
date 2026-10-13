@@ -120,6 +120,11 @@ Raw per-process measurements, including import/first-call/warm values and counte
   CUDA smoke executed on the device rather than taking the absent-device skip path.
 - Python: maturin abi3 Metal/CUDA wheels built; all 27 binding tests passed on both hosts;
   public measurements confirm zero CPU/auto and one-per-call explicit GPU constructions.
+- Review follow-up: all 28 Python binding tests pass with both GPU-enabled wheels,
+  including a permanent zero-construction regression for sv/stab/MPS/Clifford auto
+  and small non-Clifford auto. Absent-device tests now assert explicit constructor
+  failure and one construction attempt: exercised with sandbox-hidden Metal and
+  process-local `CUDA_VISIBLE_DEVICES=""`, as well as the real CUDA smoke path.
 - Workspace and targeted Metal/Python clippy, formatting and diff checks passed locally.
   All eight GitHub CI jobs passed for candidate `333e5b5`, including CUDA/NCCL clippy.
 
