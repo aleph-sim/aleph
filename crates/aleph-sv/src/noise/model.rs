@@ -11,7 +11,7 @@ use super::error::{QuantumError, ReadoutError};
 #[derive(Debug, Clone, Default)]
 pub struct NoiseModel {
     /// Channels attached to a specific (gate-name, qubit-tuple).
-    specific: HashMap<(String, SmallVec<[u32; 2]>), Vec<QuantumError>>,
+    specific: HashMap<String, HashMap<SmallVec<[u32; 2]>, Vec<QuantumError>>>,
     /// Channels attached to a gate name on whichever qubits it acts on.
     all_qubit: HashMap<String, Vec<QuantumError>>,
     /// Per-qubit readout error.
@@ -31,7 +31,9 @@ impl NoiseModel {
         let key_qubits: SmallVec<[u32; 2]> = SmallVec::from_slice(qubits);
         for name in gate_names {
             self.specific
-                .entry(((*name).to_string(), key_qubits.clone()))
+                .entry((*name).to_string())
+                .or_default()
+                .entry(key_qubits.clone())
                 .or_default()
                 .push(err.clone());
         }
@@ -56,18 +58,25 @@ impl NoiseModel {
     /// Errors that fire after a gate named `gate_name` acting on `qubits`:
     /// the all-qubit list first, then the qubit-specific list (Aer order).
     pub fn errors_for(&self, gate_name: &str, qubits: &[u32]) -> Vec<&QuantumError> {
-        let mut out: Vec<&QuantumError> = Vec::new();
-        if let Some(list) = self.all_qubit.get(gate_name) {
-            out.extend(list.iter());
-        }
-        let key = (
-            gate_name.to_string(),
-            SmallVec::<[u32; 2]>::from_slice(qubits),
-        );
-        if let Some(list) = self.specific.get(&key) {
-            out.extend(list.iter());
-        }
-        out
+        self.errors_iter(gate_name, qubits).collect()
+    }
+
+    // Nested maps support borrowed string/slice lookups. Budget planning and
+    // resolution neither allocate lookup keys nor scan every specific attachment.
+    pub(super) fn errors_iter<'a>(
+        &'a self,
+        gate_name: &str,
+        qubits: &[u32],
+    ) -> impl Iterator<Item = &'a QuantumError> {
+        let specific = self
+            .specific
+            .get(gate_name)
+            .and_then(|by_qubits| by_qubits.get(qubits));
+        self.all_qubit
+            .get(gate_name)
+            .into_iter()
+            .flatten()
+            .chain(specific.into_iter().flatten())
     }
 
     /// The readout error for `qubit`, if any.

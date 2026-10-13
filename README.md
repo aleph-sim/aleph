@@ -141,7 +141,14 @@ print(aleph.run(c, shots=100_000, noise=nm, seed=7).counts())
 Error factories mirror Qiskit Aer names: `depolarizing_error(p, num_qubits)`,
 `amplitude_damping_error(gamma)`, `phase_damping_error(lam)`,
 `pauli_error([("X", 0.1), ("I", 0.9)])`, plus `bit_flip_error` / `phase_flip_error`.
-Noise runs on the state-vector backend as per-shot Monte-Carlo trajectories.
+Noise runs on the state-vector backend as per-shot Monte-Carlo trajectories. Each
+trajectory chunk reuses its state and channel scratch; absolute shot seeds keep
+counts reproducible across worker counts and memory budgets. CLI/Python use
+sparse counts and a 1 GiB incremental buffer budget, rejecting runs that cannot
+fit even one trajectory. This budget excludes input models, allocator/runtime
+overhead and other concurrent calls; it is not an RSS limit. Rust callers can
+set `noise::NoiseOptions` through `run_noisy_with_options` (legacy dense counts)
+or `run_noisy_sparse`, and inspect the estimate with `plan_noisy`.
 
 CLI presets — depolarizing on every gate, symmetric readout flip on every qubit
 (repeatable; forces the state-vector backend, shots-only):

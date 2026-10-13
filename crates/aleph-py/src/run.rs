@@ -115,14 +115,12 @@ fn counts_map(samples: &[u64], num_qubits: u32) -> BTreeMap<String, u64> {
         .collect()
 }
 
-/// Format a dense `run_noisy` histogram (index = basis state, qubit 0 = LSB)
-/// into the same bitstring→count dict as `counts_map`, skipping zero bins.
-fn hist_to_counts(hist: &[u64], num_qubits: u32) -> BTreeMap<String, u64> {
+/// Format sorted sparse counts into the public bitstring dictionary.
+fn sparse_to_counts(counts: &[(u64, u64)], num_qubits: u32) -> BTreeMap<String, u64> {
     let width = num_qubits as usize;
-    hist.iter()
-        .enumerate()
-        .filter(|(_, &c)| c > 0)
-        .map(|(i, &c)| (format!("{i:0width$b}"), c))
+    counts
+        .iter()
+        .map(|&(index, count)| (format!("{index:0width$b}"), count))
         .collect()
 }
 
@@ -189,9 +187,10 @@ pub(crate) fn run_circuit(
         let model = &nm.inner;
         let seed = seed.unwrap_or_else(rand::random::<u64>);
         let counts = py.allow_threads(|| -> PyResult<BTreeMap<String, u64>> {
-            let hist = aleph_sv::noise::run_noisy(c, model, shots, seed)
-                .map_err(|e| err("run noisy", e))?;
-            Ok(hist_to_counts(&hist, n))
+            let sparse =
+                aleph_sv::noise::run_noisy_sparse(c, model, shots, seed, Default::default())
+                    .map_err(|e| err("run noisy", e))?;
+            Ok(sparse_to_counts(&sparse, n))
         })?;
         return Ok(RunResult { counts, amps: None });
     }

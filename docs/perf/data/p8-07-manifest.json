@@ -1,0 +1,112 @@
+{
+  "issue": 557,
+  "baseline": "e51ba789abc21295c79e1326548099cbb9d3a7d6",
+  "candidate": "working patch: bounded contexts, reusable state/Kraus scratch, sparse frontend counts",
+  "public_timed_api": "aleph_sv::noise::run_noisy (dense compatibility path)",
+  "entrypoint": "crates/aleph-sv/benches/noisy_trajectories.rs",
+  "machine": "Architecture:                            x86_64\nCPU op-mode(s):                          32-bit, 64-bit\nAddress sizes:                           46 bits physical, 48 bits virtual\nByte Order:                              Little Endian\nCPU(s):                                  20\nOn-line CPU(s) list:                     0-19\nVendor ID:                               GenuineIntel\nBIOS Vendor ID:                          Intel(R) Corporation\nModel name:                              13th Gen Intel(R) Core(TM) i5-13500\nBIOS Model name:                         13th Gen Intel(R) Core(TM) i5-13500 To Be Filled By O.E.M. CPU @ 2.4GHz\nBIOS CPU family:                         205\nCPU family:                              6\nModel:                                   191\nThread(s) per core:                      2\nCore(s) per socket:                      14\nSocket(s):                               1\nStepping:                                2\nCPU(s) scaling MHz:                      23%\nCPU max MHz:                             4800.0000\nCPU min MHz:                             800.0000\nBogoMIPS:                                4992.00\nFlags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush dts acpi mmx fxsr sse sse2 ss ht tm pbe syscall nx pdpe1gb rdtscp lm constant_tsc art arch_perfmon pebs bts rep_good nopl xtopology nonstop_tsc cpuid aperfmperf tsc_known_freq pni pclmulqdq dtes64 monitor ds_cpl vmx smx est tm2 ssse3 sdbg fma cx16 xtpr pdcm pcid sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand lahf_lm abm 3dnowprefetch cpuid_fault epb ssbd ibrs ibpb stibp ibrs_enhanced tpr_shadow flexpriority ept vpid ept_ad fsgsbase tsc_adjust bmi1 avx2 smep bmi2 erms invpcid rdseed adx smap clflushopt clwb intel_pt sha_ni xsaveopt xsavec xgetbv1 xsaves split_lock_detect user_shstk avx_vnni dtherm ida arat pln pts hwp hwp_notify hwp_act_window hwp_epp hwp_pkg_req hfi vnmi umip pku ospke waitpkg gfni vaes vpclmulqdq tme rdpid movdiri movdir64b fsrm md_clear serialize pconfig arch_lbr ibt flush_l1d arch_capabilities ibpb_exit_to_user\nVirtualization:                          VT-x\nL1d cache:                               544 KiB (14 instances)\nL1i cache:                               704 KiB (14 instances)\nL2 cache:                                11.5 MiB (8 instances)\nL3 cache:                                24 MiB (1 instance)\nNUMA node(s):                            1\nNUMA node0 CPU(s):                       0-19\nVulnerability Gather data sampling:      Not affected\nVulnerability Indirect target selection: Not affected\nVulnerability Itlb multihit:             Not affected\nVulnerability L1tf:                      Not affected\nVulnerability Mds:                       Not affected\nVulnerability Meltdown:                  Not affected\nVulnerability Mmio stale data:           Not affected\nVulnerability Reg file data sampling:    Mitigation; Clear Register File\nVulnerability Retbleed:                  Not affected\nVulnerability Spec rstack overflow:      Not affected\nVulnerability Spec store bypass:         Mitigation; Speculative Store Bypass disabled via prctl\nVulnerability Spectre v1:                Mitigation; usercopy/swapgs barriers and __user pointer sanitization\nVulnerability Spectre v2:                Mitigation; Enhanced / Automatic IBRS; IBPB conditional; PBRSB-eIBRS SW sequence; BHI BHI_DIS_S\nVulnerability Srbds:                     Not affected\nVulnerability Tsa:                       Not affected\nVulnerability Tsx async abort:           Not affected\nVulnerability Vmscape:                   Mitigation; IBPB before exit to userspace\nLinux Ubuntu-2404-noble-amd64-base 6.8.0-146-generic #146-Ubuntu SMP PREEMPT_DYNAMIC Thu Sep  3 16:12:30 UTC 2026 x86_64 x86_64 x86_64 GNU/Linux\nrustc 1.96.0 (ac68faa20 2026-05-25)\nbinary: rustc\ncommit-hash: ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96\ncommit-date: 2026-05-25\nhost: x86_64-unknown-linux-gnu\nrelease: 1.96.0\nLLVM version: 22.1.2\n",
+  "binary_sha256": "9cd2fc266124ae19916a22934116c06ccd2c1de87420b5beb71aee2316612601  /tmp/aleph-p8-07-e51ba78/artifacts/bench-base\n87d6047c7e12fd17306d6168c96e59de53b329a049135efbf6c127fb42184198  /tmp/aleph-p8-07-e51ba78/artifacts/bench-candidate\n818d270f9c98fb32da5713ba2ab74c431ded98baea53cf9a67c26f1e3996ea67  /tmp/aleph-p8-07-e51ba78/artifacts/alloc-base\na6e0fd3392ba91f14febd8c0a6af3e4ca3e0633a2ec7ed65e3f6b258e5dea14f  /tmp/aleph-p8-07-e51ba78/artifacts/alloc-candidate\n",
+  "source_sha256": "e3007cbb25d36b0a1a7b52e8721eee975ef84cd4c725190ebadcb276c8c4ee7f  /tmp/aleph-p8-07-e51ba78/candidate/crates/aleph-sv/src/noise/execution.rs\n9c1d578ac4a9fa0bfb1a970b588c3ed46d0ce238718b31468269b5a11b7615d4  /tmp/aleph-p8-07-e51ba78/candidate/crates/aleph-sv/src/noise/apply.rs\ndd6ef6ea022fe3f5cb8a9e5b6e123f5ff7a237a73dc0be42d4cccf8f8372d19a  /tmp/aleph-p8-07-e51ba78/candidate/crates/aleph-sv/src/noise/model.rs\n726d786e6445e61243d0cf8cff30e19b49018baf5481540b97a96e893f4595d9  /tmp/aleph-p8-07-e51ba78/candidate/crates/aleph-sv/src/noise/mod.rs\n0f93580a7e3e575b2c19b70823ae20cc7e3fcd192a8349f1c723820c83e200c8  /tmp/aleph-p8-07-e51ba78/candidate/crates/aleph-sv/benches/noisy_trajectories.rs\n",
+  "count_preflight": {
+    "baseline_sha256": "750d173faf7b69ab6669485e647a4e4dc7c31e53062befea38f4e59e7bc3e2ba",
+    "candidate_sha256": "750d173faf7b69ab6669485e647a4e4dc7c31e53062befea38f4e59e7bc3e2ba",
+    "all_bins_match": true
+  },
+  "affinity": "0,2,4,6 (four physical P cores)",
+  "workers": [
+    1,
+    4
+  ],
+  "matrix": {
+    "state_and_shots": [
+      [
+        4,
+        1024
+      ],
+      [
+        16,
+        64
+      ],
+      [
+        20,
+        8
+      ]
+    ],
+    "models": [
+      "pauli_readout",
+      "pauli_kraus_readout"
+    ],
+    "seed": 557,
+    "gate_sequence": "each q: H; mixed adds Ry(0.73) after each H",
+    "noise": {
+      "H": "depolarizing(0.05,1)",
+      "mixed_Ry": [
+        "amplitude_damping(0.17)",
+        "phase_damping(0.23)"
+      ],
+      "readout_q0": [
+        [
+          0.97,
+          0.03
+        ],
+        [
+          0.07,
+          0.93
+        ]
+      ]
+    }
+  },
+  "protocol": {
+    "order": [
+      "base-1",
+      "candidate-1",
+      "candidate-2",
+      "base-2"
+    ],
+    "sample_size": 10,
+    "warmup_seconds": 0.3,
+    "requested_measurement_seconds": 0.7,
+    "reported_time": "CONTAMINATED diagnostic matrix only; no speedup claim"
+  },
+  "memory": "requested Rust heap allocations/bytes and additional live heap peak; not RSS; warmed pool, input circuit/model excluded, result included",
+  "resources": {
+    "base-1": " 23:14:37 up 10 days,  7:30,  1 user,  load average: 2.28, 2.32, 1.54\n               total        used        free      shared  buff/cache   available\nMem:            62Gi        15Gi       1.6Gi        43Mi        46Gi        47Gi\nSwap:           31Gi       1.0Mi        31Gi\n",
+    "candidate-1": " 23:15:55 up 10 days,  7:31,  1 user,  load average: 2.18, 2.25, 1.58\n               total        used        free      shared  buff/cache   available\nMem:            62Gi        15Gi       1.3Gi        65Mi        46Gi        47Gi\nSwap:           31Gi       1.0Mi        31Gi\n2394468 Runner.Worker   /opt/actions-runner/bin.2.337.0/Runner.Worker spawnclient 157 160\n",
+    "candidate-2": " 23:17:14 up 10 days,  7:32,  1 user,  load average: 2.84, 2.38, 1.67\n               total        used        free      shared  buff/cache   available\nMem:            62Gi        15Gi       1.5Gi        64Mi        46Gi        47Gi\nSwap:           31Gi       1.0Mi        31Gi\n2398793 Runner.Worker   /opt/actions-runner/bin.2.337.0/Runner.Worker spawnclient 157 160\n",
+    "base-2": " 23:18:32 up 10 days,  7:33,  1 user,  load average: 3.15, 2.47, 1.75\n               total        used        free      shared  buff/cache   available\nMem:            62Gi        15Gi       1.7Gi        64Mi        46Gi        47Gi\nSwap:           31Gi       1.0Mi        31Gi\n2403298 Runner.Worker   /opt/actions-runner/bin.2.337.0/Runner.Worker spawnclient 157 160\n"
+  },
+  "initial_campaign": "not used in summary; repeated after widening the kernel scratch budget envelope to include AVX512 matrix copies and control spills",
+  "local_validation": {
+    "sv_lib_tests": 351,
+    "noise_driver": 3,
+    "aer_fixtures": 6,
+    "single_shot": 2,
+    "cli_unit": 36,
+    "cli_integration": 40,
+    "cli_gpu_probe": 1,
+    "python_noise_tests": 8,
+    "workspace_all_targets_clippy": "passed",
+    "python_feature_clippy": "passed",
+    "fmt": "passed"
+  },
+  "limits": [
+    "shared services remain running",
+    "no GPU/Metal timing claim",
+    "no Python/CLI end-to-end speedup inferred",
+    "dense output reserved conservatively alongside states",
+    "O(shots) outcomes retained",
+    "frontend budget fixed at 1 GiB; Rust callers can customize",
+    "allocator and Rayon runtime overhead not covered by buffer budget"
+  ],
+  "timing_status": "CONTAMINATED: competing Runner.Worker found in candidate-1, candidate-2 and baseline-2 resource logs; not accepted as performance evidence. Per-case clean guard/retry campaign pending.",
+  "linux_release_validation": {
+    "results": [
+      "test result: ok. 406 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s",
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+      "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s",
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s"
+    ],
+    "log_sha256": "10f41e38d8a72c2a9bdf17cabaa32ced040abb0fd74a4921fca2cff26ac64e5e",
+    "remote_log": "/tmp/aleph-p8-07-e51ba78/artifacts/tests-release.log"
+  }
+}

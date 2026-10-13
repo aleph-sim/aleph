@@ -1,0 +1,13 @@
+case,allocations,allocated_bytes,additional_peak_heap_bytes
+workers1_pauli_n4_shots1024,2077,295284,16688
+workers1_pauli_n16_shots64,173,67636128,1050032
+workers1_pauli_n20_shots8,63,142607748,16778448
+workers1_kraus_n4_shots1024,10277,426588,16912
+workers1_kraus_n16_shots64,2253,67669824,1050936
+workers1_kraus_n20_shots8,423,142614028,16779576
+workers4_pauli_n4_shots1024,2309,297452,20616
+workers4_pauli_n16_shots64,257,67638528,4198328
+workers4_pauli_n20_shots8,75,142608180,67110280
+workers4_kraus_n4_shots1024,10616,431084,24128
+workers4_kraus_n16_shots64,2329,67671936,4199024
+workers4_kraus_n20_shots8,435,142614460,67111440

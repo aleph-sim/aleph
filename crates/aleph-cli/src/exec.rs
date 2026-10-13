@@ -126,9 +126,15 @@ pub fn run_circuit<W: Write>(
             Some(s) => format!("seed={s}"),
             None => "seed=entropy".to_string(),
         };
-        let hist = aleph_sv::noise::run_noisy(&circuit, &model, shots, run_seed)
-            .context("running noisy circuit")?;
-        output::format_counts_hist(out, &hist, shots, n, &seed_label)?;
+        let sparse = aleph_sv::noise::run_noisy_sparse(
+            &circuit,
+            &model,
+            shots,
+            run_seed,
+            Default::default(),
+        )
+        .context("running noisy circuit")?;
+        output::format_counts_sparse(out, &sparse, shots, n, &seed_label)?;
         return Ok(());
     }
 

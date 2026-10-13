@@ -19,7 +19,11 @@
 
 mod apply;
 mod error;
+mod execution;
 mod model;
+pub use execution::{
+    plan_noisy, run_noisy_sparse, run_noisy_with_options, NoiseOptions, NoisePlan, SparseCounts,
+};
 
 pub use error::{
     amplitude_damping_error, bit_flip_error, depolarizing_error, pauli_error, phase_damping_error,
@@ -33,7 +37,6 @@ use aleph_backend::BackendError;
 
 use aleph_backend::Backend;
 use aleph_ir::{Circuit, Instruction};
-use rayon::prelude::*;
 
 use crate::NaiveSvBackend;
 
@@ -45,6 +48,15 @@ pub type Counts = Vec<u64>;
 /// Errors raised by the noise driver, on top of backend failures.
 #[derive(Debug, thiserror::Error)]
 pub enum NoiseError {
+    /// Requested output and one trajectory cannot fit the declared budget.
+    #[error("noisy run requires at least {required} buffer bytes, budget is {budget}; use sparse counts or increase NoiseOptions::memory_budget_bytes")]
+    MemoryBudget { required: usize, budget: usize },
+    /// Invalid budget/concurrency or overflowing allocation estimate.
+    #[error("invalid noisy execution configuration: {reason}")]
+    Configuration { reason: &'static str },
+    /// Malformed channel attached to an executed gate.
+    #[error("invalid noise channel: {reason}")]
+    InvalidChannel { reason: &'static str },
     #[error(transparent)]
     Backend(#[from] BackendError),
     /// v1 supports terminal measurement only; mid-circuit measure/reset under
@@ -58,91 +70,49 @@ pub enum NoiseError {
     Unsupported { kind: &'static str },
 }
 
-/// Run `circuit` under `noise_model` for `shots` Monte-Carlo trajectories and
-/// return a per-basis-state histogram (length `2^num_qubits`).
+/// Run noisy trajectories with the default 1 GiB incremental buffer budget.
 ///
-/// Each shot owns a fresh `CpuState` and a `StdRng` seeded `shot_seed(seed,
-/// shot)`, so counts are reproducible regardless of rayon scheduling. v1
-/// supports terminal measurement only: mid-circuit `Measure`/`Reset` raise
-/// [`NoiseError::MidCircuit`]. `Barrier` is a no-op; `DiagonalPhase` is applied
-/// via the backend.
+/// Returns the legacy dense histogram of length `2^num_qubits`. Each chunk
+/// reuses a state, resetting it before each absolute-index seeded shot.
+/// Use [`run_noisy_with_options`] for an explicit budget, or
+/// [`run_noisy_sparse`] when a dense result would dominate memory.
+/// The budget excludes caller-owned inputs, allocator overhead and Rayon runtime.
 pub fn run_noisy(
     circuit: &Circuit,
     noise_model: &NoiseModel,
     shots: u32,
     seed: u64,
 ) -> Result<Counts, NoiseError> {
-    let n = circuit.num_qubits();
-    let dim = 1usize
-        .checked_shl(n)
-        .ok_or(NoiseError::Backend(BackendError::InvalidState {
-            reason: "num_qubits exceeds platform usize::BITS",
-        }))?;
-
-    // Resolve attached channels ONCE per gate (not per shot): errors_for
-    // allocates a lookup key, so hoisting it out of the hot shot loop avoids
-    // shots×gates allocations. The borrowed &QuantumError refs live for the
-    // whole run_noisy call and are shared read-only across rayon shots.
-    let resolved: Vec<Vec<&QuantumError>> = circuit
-        .instructions()
-        .iter()
-        .map(|inst| match inst {
-            Instruction::Gate(gi) => noise_model.errors_for(gi.gate.name(), &gi.qubits),
-            _ => Vec::new(),
-        })
-        .collect();
-
-    // Per-shot trajectory → final readout-perturbed basis-state index.
-    let outcomes: Result<Vec<u64>, NoiseError> = (0..shots)
-        .into_par_iter()
-        .map(|shot| {
-            run_one_shot(
-                circuit,
-                &resolved,
-                noise_model.readout_map(),
-                n,
-                apply::shot_seed(seed, shot as u64),
-            )
-        })
-        .collect();
-    let outcomes = outcomes?;
-
-    let mut hist = vec![0u64; dim];
-    for idx in outcomes {
-        hist[idx as usize] += 1;
-    }
-    Ok(hist)
+    run_noisy_with_options(circuit, noise_model, shots, seed, NoiseOptions::default())
 }
 
-/// One Monte-Carlo trajectory: apply each gate then its (pre-resolved) attached
-/// channels, then sample a terminal Z-basis outcome and apply readout error.
-/// Sampling uses one RNG u64 as before; the cumulative single-shot algorithm
-/// changes seed-to-outcome mapping but not absolute shot seeds or channel order.
-fn run_one_shot(
+/// Execute one trajectory in a reusable state. Gate validation and channel
+/// boundaries remain on the original path; no noiseless fusion is introduced.
+fn run_trajectory(
     circuit: &Circuit,
     resolved: &[Vec<&QuantumError>],
     readout: &HashMap<u32, ReadoutError>,
-    n: u32,
-    seed: u64,
+    backend: &mut NaiveSvBackend,
+    state: &mut crate::CpuState,
+    scratch: &mut Vec<f64>,
 ) -> Result<u64, NoiseError> {
-    let mut backend = NaiveSvBackend::with_seed(seed);
-    let mut state = backend.allocate(n)?;
+    let n = state.num_qubits;
     for (inst, errs) in circuit.instructions().iter().zip(resolved.iter()) {
-        let errs: &Vec<&QuantumError> = errs;
         match inst {
             Instruction::Gate(gi) => {
-                // TODO(perf): apply_gate re-runs the unitarity check on every
-                // gate every shot; the circuit is immutable across shots, so a
-                // future pre-validated/cached-matrix path could hoist it out of
-                // the shot loop. Negligible vs the kernel + Kraus passes for v1.
-                backend.apply_gate(&mut state, gi)?;
+                backend.apply_gate(state, gi)?;
                 for err in errs.iter().copied() {
-                    apply::apply_channel(&mut state.amps, n, err, &gi.qubits, &mut backend.rng);
+                    apply::apply_channel_with_scratch(
+                        &mut state.amps,
+                        n,
+                        err,
+                        &gi.qubits,
+                        &mut backend.rng,
+                        scratch,
+                    );
                 }
             }
-            Instruction::DiagonalPhase(dp) => {
-                backend.apply_diagonal_phase(&mut state, dp)?;
-            }
+            Instruction::DiagonalPhase(dp) => backend.apply_diagonal_phase(state, dp)?,
             Instruction::Barrier(_) => {}
             Instruction::Measure { .. } => return Err(NoiseError::MidCircuit { kind: "measure" }),
             Instruction::Reset(_) => return Err(NoiseError::MidCircuit { kind: "reset" }),
@@ -153,7 +123,6 @@ fn run_one_shot(
             }
         }
     }
-    // Terminal Z-basis sample: one draw from |amps|² via the backend's rng.
-    let idx = backend.sample(&state, 1)?[0];
+    let idx = backend.sample(state, 1)?[0];
     Ok(apply::apply_readout(idx, n, readout, &mut backend.rng))
 }
