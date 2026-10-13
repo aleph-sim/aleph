@@ -28,6 +28,7 @@ use aleph_qec::{
 };
 
 fn main() {
+    eprintln!("# Legacy ci/ci95 columns are Wald half-widths; use explicit Clopper-Pearson bounds for inference. Marginal interval overlap is not decoder equivalence.");
     let a: Vec<String> = std::env::args().collect();
     let d: usize = a.get(1).and_then(|s| s.parse().ok()).unwrap_or(3);
     let w: usize = a.get(2).and_then(|s| s.parse().ok()).unwrap_or(9);

@@ -16,9 +16,9 @@
 //! and translates each `(legs, iters)` schedule directly into worst-case cycles/latency at the two
 //! banking geometries the spec cares about (64/192 shipped-stretch and 144/864 full-parallel).
 //!
-//! For each schedule it reports LER (vs the full 6×10 relay-BP), whether it is within Monte-Carlo CI
-//! of that baseline, and the worst-case latency it would cost — so the smallest ITERS still within CI
-//! is the min-ITERS the latency budget can assume, and whether 64/192 or 144/864 meets 1 µs at it.
+//! For each schedule it reports LER (vs the full 6×10 relay-BP), marginal interval overlap,
+//! and worst-case latency. Overlap alone does not establish equivalent accuracy or qualify
+//! a reduced iteration budget; that requires a paired comparison with a declared margin.
 //!
 //! Usage:
 //! ```text
@@ -76,6 +76,7 @@ fn worst_cycles(sweeps: u32, gc: u32, gv: u32) -> u32 {
 }
 
 fn main() {
+    eprintln!("# Legacy ci/ci95 columns are Wald half-widths; use explicit Clopper-Pearson bounds for inference. Marginal interval overlap is not decoder equivalence.");
     let args: Vec<String> = std::env::args().collect();
     let shots: u64 = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(20_000);
     let seed: u64 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(2024);
@@ -103,7 +104,7 @@ fn main() {
         .flat_map(|(b, _, _)| [format!("cyc_{b}"), format!("us_{b}")])
         .collect();
     println!(
-        "p,legs,iters,sweeps,rate,ci95,base_rate,ratio_to_base,within_ci,{}",
+        "p,legs,iters,sweeps,rate,ci95,base_rate,ratio_to_base,intervals_overlap95,{}",
         bank_cols.join(",")
     );
 
@@ -135,7 +136,10 @@ fn main() {
             } else {
                 f64::NAN
             };
-            let within = (r.rate - rb.rate).abs() <= (r.ci95 + rb.ci95);
+            let within = r
+                .interval95()
+                .expect("binomial interval")
+                .overlaps(rb.interval95().expect("binomial interval"));
 
             let bank_vals: Vec<String> = BANKS
                 .iter()
@@ -159,13 +163,13 @@ fn main() {
                 "   ({legs} legs × {iters:>2}) = {sweeps:>2} sweeps  LER {:.3e} ({ratio:.2}× base){}  \
                  → 64/192 {lat_644:.2} µs, 144/864 {lat_full:.2} µs",
                 r.rate,
-                if within { "  [within CI]" } else { "" }
+                if within { "  [marginal intervals overlap]" } else { "" }
             );
         }
     }
 
     eprintln!(
-        "# Smallest ITERS with within_ci=1 across all p is the min-ITERS the latency budget can assume. \
+        "# Marginal overlap alone does not establish equivalent accuracy or justify reducing ITERS. \
          The 1 µs worst-case budget is met when that ITERS's 64/192 (or 144/864) latency column ≤ 1.00."
     );
 }

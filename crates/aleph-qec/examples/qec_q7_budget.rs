@@ -4,8 +4,8 @@
 //! is 3.16 µs at the KV260's 95.2 MHz — still ~3× over the ~1 µs budget. The dominant term is the
 //! schedule length `legs·iters`, so the cheapest cycles to cut are the ones the decode doesn't need.
 //! This sweeps `(legs, iters_per_leg)` at the hardware word (Q5.3) and reports each schedule's LER
-//! **relative to the full 4×25 relay-BP** plus the RTL cycles/latency it would cost — so the smallest
-//! schedule still within Monte-Carlo CI of the full decoder is obvious.
+//! **relative to the full 4×25 relay-BP** plus marginal interval overlap and RTL cycles/latency.
+//! Qualifying a smaller schedule requires paired accuracy checks with a declared margin.
 //!
 //! Relay-BP's disorder diversity lives in the *legs* (each leg reseeds γ and relays the messages), so
 //! a priori cutting legs should hurt more than cutting iters — the sweep quantifies that trade.
@@ -50,6 +50,7 @@ const PS: &[f64] = &[0.03, 0.04, 0.05];
 const KV260_MHZ: f64 = 95.2;
 
 fn main() {
+    eprintln!("# Legacy ci/ci95 columns are Wald half-widths; use explicit Clopper-Pearson bounds for inference. Marginal interval overlap is not decoder equivalence.");
     let args: Vec<String> = std::env::args().collect();
     let shots: u64 = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(20_000);
     let seed: u64 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(2024);
@@ -62,7 +63,7 @@ fn main() {
         FRAC_BITS
     );
 
-    println!("p,legs,iters,sweeps,cycles,latency_us,rate,ci95,base_rate,ratio_to_base,within_ci");
+    println!("p,legs,iters,sweeps,cycles,latency_us,rate,ci95,base_rate,ratio_to_base,intervals_overlap95");
     for &p in PS {
         let dem = code.code_capacity_dem(p);
 
@@ -86,7 +87,10 @@ fn main() {
             } else {
                 f64::NAN
             };
-            let within = (r.rate - rb.rate).abs() <= (r.ci95 + rb.ci95);
+            let within = r
+                .interval95()
+                .expect("binomial interval")
+                .overlaps(rb.interval95().expect("binomial interval"));
             println!(
                 "{p},{legs},{iters},{sweeps},{cycles},{latency_us:.3},{:.6},{:.6},{:.6},{ratio:.3},{}",
                 r.rate, r.ci95, rb.rate, within as u8
@@ -95,13 +99,13 @@ fn main() {
                 "   ({legs} legs × {iters:>2}) = {sweeps:>3} sweeps, {cycles:>3} cyc, {latency_us:.2} µs  \
                  LER {:.3e} ({ratio:.2}× base){}",
                 r.rate,
-                if within { "  [within CI]" } else { "" }
+                if within { "  [marginal intervals overlap]" } else { "" }
             );
         }
     }
 
     eprintln!(
-        "# Smallest (legs,iters) with within_ci=1 across all p is the M5 schedule → regenerate the"
+        "# Marginal overlap does not establish schedule equivalence; require paired accuracy checks before changing the"
     );
     eprintln!("# .svh (BP_LEGS/BP_ITERS) and the M4 RTL uses it unchanged for a direct cycle/latency cut.");
 }
