@@ -91,6 +91,26 @@ pub struct CudaSvStateF32 {
     pub(crate) mat_scratch: Option<DeviceBuffer<f64>>,
 }
 
+/// Immutable FP32 amplitudes with cudarc-owned stream/context lifetime.
+/// No raw pool handle or execution scratch is retained.
+pub struct CudaSvReadoutF32 {
+    amps: DeviceBuffer<f32>,
+    stream: Arc<cudarc::driver::CudaStream>,
+}
+
+impl CudaSvReadoutF32 {
+    /// Download and widen amplitudes, returning synchronization/copy failures.
+    pub fn try_amplitudes_vec(&self) -> Result<Vec<Complex>, Error> {
+        let host = self.amps.to_vec_on_stream(&self.stream)?;
+        Ok(host
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|&[re, im]| Complex::new(re as f64, im as f64))
+            .collect())
+    }
+}
+
 impl core::fmt::Debug for CudaSvStateF32 {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("CudaSvStateF32")
@@ -100,6 +120,14 @@ impl core::fmt::Debug for CudaSvStateF32 {
 }
 
 impl CudaSvStateF32 {
+    /// Finish queued work and retain only amplitudes and their owning stream.
+    pub fn into_readout(self) -> Result<CudaSvReadoutF32, Error> {
+        self.ctx.synchronize()?;
+        Ok(CudaSvReadoutF32 {
+            stream: self.ctx.stream().clone(),
+            amps: self.amps,
+        })
+    }
     pub(crate) fn allocate(ctx: &CudaContext, num_qubits: u32) -> Result<Self, Error> {
         let n_amps = 1usize << num_qubits;
         let mut amps = DeviceBuffer::<f32>::zeros(ctx, 2 * n_amps)?;
@@ -120,12 +148,18 @@ impl CudaSvStateF32 {
     /// Amplitudes widened to `Vec<Complex<f64>>` (one per basis state) for oracle
     /// comparison. Allocates a `2^n` host buffer — small-`n` use only.
     pub fn amplitudes_vec(&self) -> Vec<Complex> {
-        let host = self.amps.to_vec(&self.ctx).expect("device->host f32 copy");
-        host.as_chunks::<2>()
+        self.try_amplitudes_vec().expect("device->host f32 copy")
+    }
+
+    /// Download and widen amplitudes, returning synchronization/copy failures.
+    pub fn try_amplitudes_vec(&self) -> Result<Vec<Complex>, Error> {
+        let host = self.amps.to_vec(&self.ctx)?;
+        Ok(host
+            .as_chunks::<2>()
             .0
             .iter()
             .map(|&[re, im]| Complex::new(re as f64, im as f64))
-            .collect()
+            .collect())
     }
 
     /// `Σ |amp|²` (f64 accumulation), a large-`n` sanity check.

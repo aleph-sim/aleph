@@ -1,0 +1,1898 @@
+[
+  {
+    "variant": "baseline",
+    "backend": "cuda-f32",
+    "qubits": 24,
+    "read": false,
+    "run_counts_ms": 342.4333380535245,
+    "first_read_ms": null,
+    "repeat_read_ms": null,
+    "before": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 0,
+      "peak_rss_bytes": 13434880,
+      "rss_bytes": 13746176
+    },
+    "after_run": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 134218000,
+      "peak_rss_bytes": 577769472,
+      "rss_bytes": 366825472
+    },
+    "after_read": null,
+    "after_drop": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 134218000,
+      "peak_rss_bytes": 577769472,
+      "rss_bytes": 98385920
+    },
+    "sampled_gpu_process_peak_bytes": 606076928,
+    "gpu_memory_samples": 2
+  },
+  {
+    "variant": "candidate",
+    "backend": "cuda-f32",
+    "qubits": 24,
+    "read": false,
+    "run_counts_ms": 176.77432496566325,
+    "first_read_ms": null,
+    "repeat_read_ms": null,
+    "before": {
+      "materializations": 0,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 0,
+      "peak_rss_bytes": 13434880,
+      "rss_bytes": 13635584
+    },
+    "after_run": {
+      "materializations": 0,
+      "device_amplitude_bytes": 134217728,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 272,
+      "peak_rss_bytes": 175140864,
+      "rss_bytes": 175366144
+    },
+    "after_read": null,
+    "after_drop": {
+      "materializations": 0,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 272,
+      "peak_rss_bytes": 175140864,
+      "rss_bytes": 98226176
+    },
+    "sampled_gpu_process_peak_bytes": 169869312,
+    "gpu_memory_samples": 1
+  },
+  {
+    "variant": "candidate",
+    "backend": "cuda-f32",
+    "qubits": 24,
+    "read": false,
+    "run_counts_ms": 175.33720203209668,
+    "first_read_ms": null,
+    "repeat_read_ms": null,
+    "before": {
+      "materializations": 0,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 0,
+      "peak_rss_bytes": 13598720,
+      "rss_bytes": 13725696
+    },
+    "after_run": {
+      "materializations": 0,
+      "device_amplitude_bytes": 134217728,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 272,
+      "peak_rss_bytes": 175095808,
+      "rss_bytes": 175448064
+    },
+    "after_read": null,
+    "after_drop": {
+      "materializations": 0,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 272,
+      "peak_rss_bytes": 175095808,
+      "rss_bytes": 98308096
+    },
+    "sampled_gpu_process_peak_bytes": 169869312,
+    "gpu_memory_samples": 1
+  },
+  {
+    "variant": "baseline",
+    "backend": "cuda-f32",
+    "qubits": 24,
+    "read": false,
+    "run_counts_ms": 339.6638809936121,
+    "first_read_ms": null,
+    "repeat_read_ms": null,
+    "before": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 0,
+      "peak_rss_bytes": 13434880,
+      "rss_bytes": 13774848
+    },
+    "after_run": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 134218000,
+      "peak_rss_bytes": 577695744,
+      "rss_bytes": 366845952
+    },
+    "after_read": null,
+    "after_drop": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 134218000,
+      "peak_rss_bytes": 577695744,
+      "rss_bytes": 98406400
+    },
+    "sampled_gpu_process_peak_bytes": 606076928,
+    "gpu_memory_samples": 2
+  },
+  {
+    "variant": "baseline",
+    "backend": "cuda-f32",
+    "qubits": 24,
+    "read": false,
+    "run_counts_ms": 334.4540480757132,
+    "first_read_ms": null,
+    "repeat_read_ms": null,
+    "before": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 0,
+      "peak_rss_bytes": 13434880,
+      "rss_bytes": 13770752
+    },
+    "after_run": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 134218000,
+      "peak_rss_bytes": 577568768,
+      "rss_bytes": 366809088
+    },
+    "after_read": null,
+    "after_drop": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 134218000,
+      "peak_rss_bytes": 577568768,
+      "rss_bytes": 98369536
+    },
+    "sampled_gpu_process_peak_bytes": 606076928,
+    "gpu_memory_samples": 2
+  },
+  {
+    "variant": "candidate",
+    "backend": "cuda-f32",
+    "qubits": 24,
+    "read": false,
+    "run_counts_ms": 174.24385901540518,
+    "first_read_ms": null,
+    "repeat_read_ms": null,
+    "before": {
+      "materializations": 0,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 0,
+      "peak_rss_bytes": 13434880,
+      "rss_bytes": 13635584
+    },
+    "after_run": {
+      "materializations": 0,
+      "device_amplitude_bytes": 134217728,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 272,
+      "peak_rss_bytes": 175181824,
+      "rss_bytes": 175353856
+    },
+    "after_read": null,
+    "after_drop": {
+      "materializations": 0,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 272,
+      "peak_rss_bytes": 175181824,
+      "rss_bytes": 98222080
+    },
+    "sampled_gpu_process_peak_bytes": 169869312,
+    "gpu_memory_samples": 1
+  },
+  {
+    "variant": "baseline",
+    "backend": "cuda-f32",
+    "qubits": 24,
+    "read": true,
+    "run_counts_ms": 336.6443730192259,
+    "first_read_ms": 88.77122297417372,
+    "repeat_read_ms": 40.86611489765346,
+    "before": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 0,
+      "peak_rss_bytes": 13434880,
+      "rss_bytes": 13651968
+    },
+    "after_run": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 134218000,
+      "peak_rss_bytes": 577572864,
+      "rss_bytes": 366800896
+    },
+    "after_read": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 134218000,
+      "peak_rss_bytes": 646979584,
+      "rss_bytes": 647643136
+    },
+    "after_drop": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 134218000,
+      "peak_rss_bytes": 646979584,
+      "rss_bytes": 110764032
+    },
+    "sampled_gpu_process_peak_bytes": 606076928,
+    "gpu_memory_samples": 2
+  },
+  {
+    "variant": "candidate",
+    "backend": "cuda-f32",
+    "qubits": 24,
+    "read": true,
+    "run_counts_ms": 175.95164594240487,
+    "first_read_ms": 242.86620097700506,
+    "repeat_read_ms": 38.66484097670764,
+    "before": {
+      "materializations": 0,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 0,
+      "peak_rss_bytes": 13762560,
+      "rss_bytes": 13795328
+    },
+    "after_run": {
+      "materializations": 0,
+      "device_amplitude_bytes": 134217728,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 272,
+      "peak_rss_bytes": 175177728,
+      "rss_bytes": 175697920
+    },
+    "after_read": {
+      "materializations": 1,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 268435456,
+      "dtoh_bytes": 134218000,
+      "peak_rss_bytes": 647262208,
+      "rss_bytes": 647888896
+    },
+    "after_drop": {
+      "materializations": 1,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 134218000,
+      "peak_rss_bytes": 647262208,
+      "rss_bytes": 111009792
+    },
+    "sampled_gpu_process_peak_bytes": 603979776,
+    "gpu_memory_samples": 2
+  },
+  {
+    "variant": "candidate",
+    "backend": "cuda-f32",
+    "qubits": 24,
+    "read": true,
+    "run_counts_ms": 174.46349607780576,
+    "first_read_ms": 239.16257405653596,
+    "repeat_read_ms": 37.5278799328953,
+    "before": {
+      "materializations": 0,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 0,
+      "peak_rss_bytes": 13598720,
+      "rss_bytes": 13631488
+    },
+    "after_run": {
+      "materializations": 0,
+      "device_amplitude_bytes": 134217728,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 272,
+      "peak_rss_bytes": 175017984,
+      "rss_bytes": 175534080
+    },
+    "after_read": {
+      "materializations": 1,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 268435456,
+      "dtoh_bytes": 134218000,
+      "peak_rss_bytes": 647065600,
+      "rss_bytes": 647671808
+    },
+    "after_drop": {
+      "materializations": 1,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 134218000,
+      "peak_rss_bytes": 647065600,
+      "rss_bytes": 110792704
+    },
+    "sampled_gpu_process_peak_bytes": 603979776,
+    "gpu_memory_samples": 2
+  },
+  {
+    "variant": "baseline",
+    "backend": "cuda-f32",
+    "qubits": 24,
+    "read": true,
+    "run_counts_ms": 336.43094706349075,
+    "first_read_ms": 79.707114957273,
+    "repeat_read_ms": 38.312438991852105,
+    "before": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 0,
+      "peak_rss_bytes": 13434880,
+      "rss_bytes": 13742080
+    },
+    "after_run": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 134218000,
+      "peak_rss_bytes": 577576960,
+      "rss_bytes": 366915584
+    },
+    "after_read": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 134218000,
+      "peak_rss_bytes": 646971392,
+      "rss_bytes": 647770112
+    },
+    "after_drop": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 134218000,
+      "peak_rss_bytes": 646971392,
+      "rss_bytes": 110891008
+    },
+    "sampled_gpu_process_peak_bytes": 606076928,
+    "gpu_memory_samples": 2
+  },
+  {
+    "variant": "baseline",
+    "backend": "cuda-f32",
+    "qubits": 24,
+    "read": true,
+    "run_counts_ms": 333.0030699726194,
+    "first_read_ms": 78.65473895799369,
+    "repeat_read_ms": 37.348026991821826,
+    "before": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 0,
+      "peak_rss_bytes": 13598720,
+      "rss_bytes": 13774848
+    },
+    "after_run": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 134218000,
+      "peak_rss_bytes": 577904640,
+      "rss_bytes": 366948352
+    },
+    "after_read": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 134218000,
+      "peak_rss_bytes": 646881280,
+      "rss_bytes": 647503872
+    },
+    "after_drop": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 134218000,
+      "peak_rss_bytes": 646881280,
+      "rss_bytes": 110624768
+    },
+    "sampled_gpu_process_peak_bytes": 606076928,
+    "gpu_memory_samples": 2
+  },
+  {
+    "variant": "candidate",
+    "backend": "cuda-f32",
+    "qubits": 24,
+    "read": true,
+    "run_counts_ms": 174.15326402988285,
+    "first_read_ms": 238.48796589300036,
+    "repeat_read_ms": 37.55958809051663,
+    "before": {
+      "materializations": 0,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 0,
+      "peak_rss_bytes": 13434880,
+      "rss_bytes": 13783040
+    },
+    "after_run": {
+      "materializations": 0,
+      "device_amplitude_bytes": 134217728,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 272,
+      "peak_rss_bytes": 175239168,
+      "rss_bytes": 175673344
+    },
+    "after_read": {
+      "materializations": 1,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 268435456,
+      "dtoh_bytes": 134218000,
+      "peak_rss_bytes": 647127040,
+      "rss_bytes": 647798784
+    },
+    "after_drop": {
+      "materializations": 1,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 134218000,
+      "peak_rss_bytes": 647127040,
+      "rss_bytes": 110919680
+    },
+    "sampled_gpu_process_peak_bytes": 603979776,
+    "gpu_memory_samples": 2
+  },
+  {
+    "variant": "baseline",
+    "backend": "cuda-f32",
+    "qubits": 26,
+    "read": false,
+    "run_counts_ms": 781.3107270048931,
+    "first_read_ms": null,
+    "repeat_read_ms": null,
+    "before": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 0,
+      "peak_rss_bytes": 13598720,
+      "rss_bytes": 13721600
+    },
+    "after_run": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 536871184,
+      "peak_rss_bytes": 1785479168,
+      "rss_bytes": 1172111360
+    },
+    "after_read": null,
+    "after_drop": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 536871184,
+      "peak_rss_bytes": 1785479168,
+      "rss_bytes": 98365440
+    },
+    "sampled_gpu_process_peak_bytes": 1814036480,
+    "gpu_memory_samples": 6
+  },
+  {
+    "variant": "candidate",
+    "backend": "cuda-f32",
+    "qubits": 26,
+    "read": false,
+    "run_counts_ms": 283.6612530518323,
+    "first_read_ms": null,
+    "repeat_read_ms": null,
+    "before": {
+      "materializations": 0,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 0,
+      "peak_rss_bytes": 13434880,
+      "rss_bytes": 13647872
+    },
+    "after_run": {
+      "materializations": 0,
+      "device_amplitude_bytes": 536870912,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 272,
+      "peak_rss_bytes": 175054848,
+      "rss_bytes": 175423488
+    },
+    "after_read": null,
+    "after_drop": {
+      "materializations": 0,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 272,
+      "peak_rss_bytes": 175054848,
+      "rss_bytes": 98279424
+    },
+    "sampled_gpu_process_peak_bytes": 1814036480,
+    "gpu_memory_samples": 2
+  },
+  {
+    "variant": "candidate",
+    "backend": "cuda-f32",
+    "qubits": 26,
+    "read": false,
+    "run_counts_ms": 280.4333360400051,
+    "first_read_ms": null,
+    "repeat_read_ms": null,
+    "before": {
+      "materializations": 0,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 0,
+      "peak_rss_bytes": 13434880,
+      "rss_bytes": 13643776
+    },
+    "after_run": {
+      "materializations": 0,
+      "device_amplitude_bytes": 536870912,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 272,
+      "peak_rss_bytes": 175161344,
+      "rss_bytes": 175357952
+    },
+    "after_read": null,
+    "after_drop": {
+      "materializations": 0,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 272,
+      "peak_rss_bytes": 175161344,
+      "rss_bytes": 98217984
+    },
+    "sampled_gpu_process_peak_bytes": 1814036480,
+    "gpu_memory_samples": 2
+  },
+  {
+    "variant": "baseline",
+    "backend": "cuda-f32",
+    "qubits": 26,
+    "read": false,
+    "run_counts_ms": 768.7677619978786,
+    "first_read_ms": null,
+    "repeat_read_ms": null,
+    "before": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 0,
+      "peak_rss_bytes": 13434880,
+      "rss_bytes": 13639680
+    },
+    "after_run": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 536871184,
+      "peak_rss_bytes": 1785364480,
+      "rss_bytes": 1172025344
+    },
+    "after_read": null,
+    "after_drop": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 536871184,
+      "peak_rss_bytes": 1785364480,
+      "rss_bytes": 98279424
+    },
+    "sampled_gpu_process_peak_bytes": 1814036480,
+    "gpu_memory_samples": 6
+  },
+  {
+    "variant": "baseline",
+    "backend": "cuda-f32",
+    "qubits": 26,
+    "read": false,
+    "run_counts_ms": 758.7101079989225,
+    "first_read_ms": null,
+    "repeat_read_ms": null,
+    "before": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 0,
+      "peak_rss_bytes": 13598720,
+      "rss_bytes": 13651968
+    },
+    "after_run": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 536871184,
+      "peak_rss_bytes": 1785479168,
+      "rss_bytes": 1171988480
+    },
+    "after_read": null,
+    "after_drop": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 536871184,
+      "peak_rss_bytes": 1785479168,
+      "rss_bytes": 98242560
+    },
+    "sampled_gpu_process_peak_bytes": 1814036480,
+    "gpu_memory_samples": 6
+  },
+  {
+    "variant": "candidate",
+    "backend": "cuda-f32",
+    "qubits": 26,
+    "read": false,
+    "run_counts_ms": 280.5746130179614,
+    "first_read_ms": null,
+    "repeat_read_ms": null,
+    "before": {
+      "materializations": 0,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 0,
+      "peak_rss_bytes": 13434880,
+      "rss_bytes": 13631488
+    },
+    "after_run": {
+      "materializations": 0,
+      "device_amplitude_bytes": 536870912,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 272,
+      "peak_rss_bytes": 175177728,
+      "rss_bytes": 175407104
+    },
+    "after_read": null,
+    "after_drop": {
+      "materializations": 0,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 272,
+      "peak_rss_bytes": 175177728,
+      "rss_bytes": 98267136
+    },
+    "sampled_gpu_process_peak_bytes": 1814036480,
+    "gpu_memory_samples": 2
+  },
+  {
+    "variant": "baseline",
+    "backend": "cuda-f32",
+    "qubits": 26,
+    "read": true,
+    "run_counts_ms": 752.2001840407029,
+    "first_read_ms": 351.92569089122117,
+    "repeat_read_ms": 164.60304497741163,
+    "before": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 0,
+      "peak_rss_bytes": 13434880,
+      "rss_bytes": 13627392
+    },
+    "after_run": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 536871184,
+      "peak_rss_bytes": 1785360384,
+      "rss_bytes": 1172135936
+    },
+    "after_read": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 536871184,
+      "peak_rss_bytes": 2257399808,
+      "rss_bytes": 2258276352
+    },
+    "after_drop": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 536871184,
+      "peak_rss_bytes": 2257399808,
+      "rss_bytes": 110784512
+    },
+    "sampled_gpu_process_peak_bytes": 1814036480,
+    "gpu_memory_samples": 6
+  },
+  {
+    "variant": "candidate",
+    "backend": "cuda-f32",
+    "qubits": 26,
+    "read": true,
+    "run_counts_ms": 280.91378801036626,
+    "first_read_ms": 656.6536700120196,
+    "repeat_read_ms": 137.4568820465356,
+    "before": {
+      "materializations": 0,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 0,
+      "peak_rss_bytes": 13598720,
+      "rss_bytes": 13651968
+    },
+    "after_run": {
+      "materializations": 0,
+      "device_amplitude_bytes": 536870912,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 272,
+      "peak_rss_bytes": 175169536,
+      "rss_bytes": 175562752
+    },
+    "after_read": {
+      "materializations": 1,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 1073741824,
+      "dtoh_bytes": 536871184,
+      "peak_rss_bytes": 2257412096,
+      "rss_bytes": 2258198528
+    },
+    "after_drop": {
+      "materializations": 1,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 536871184,
+      "peak_rss_bytes": 2257412096,
+      "rss_bytes": 110706688
+    },
+    "sampled_gpu_process_peak_bytes": 1814036480,
+    "gpu_memory_samples": 6
+  },
+  {
+    "variant": "candidate",
+    "backend": "cuda-f32",
+    "qubits": 26,
+    "read": true,
+    "run_counts_ms": 279.9552589422092,
+    "first_read_ms": 687.7463510027155,
+    "repeat_read_ms": 133.50537593942136,
+    "before": {
+      "materializations": 0,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 0,
+      "peak_rss_bytes": 13598720,
+      "rss_bytes": 13746176
+    },
+    "after_run": {
+      "materializations": 0,
+      "device_amplitude_bytes": 536870912,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 272,
+      "peak_rss_bytes": 175321088,
+      "rss_bytes": 175583232
+    },
+    "after_read": {
+      "materializations": 1,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 1073741824,
+      "dtoh_bytes": 536871184,
+      "peak_rss_bytes": 2257584128,
+      "rss_bytes": 2258173952
+    },
+    "after_drop": {
+      "materializations": 1,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 536871184,
+      "peak_rss_bytes": 2257584128,
+      "rss_bytes": 110682112
+    },
+    "sampled_gpu_process_peak_bytes": 1814036480,
+    "gpu_memory_samples": 6
+  },
+  {
+    "variant": "baseline",
+    "backend": "cuda-f32",
+    "qubits": 26,
+    "read": true,
+    "run_counts_ms": 753.119776956737,
+    "first_read_ms": 182.42451595142484,
+    "repeat_read_ms": 134.58656100556254,
+    "before": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 0,
+      "peak_rss_bytes": 13434880,
+      "rss_bytes": 13631488
+    },
+    "after_run": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 536871184,
+      "peak_rss_bytes": 1785266176,
+      "rss_bytes": 1172094976
+    },
+    "after_read": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 536871184,
+      "peak_rss_bytes": 2257477632,
+      "rss_bytes": 2258075648
+    },
+    "after_drop": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 536871184,
+      "peak_rss_bytes": 2257477632,
+      "rss_bytes": 110583808
+    },
+    "sampled_gpu_process_peak_bytes": 1814036480,
+    "gpu_memory_samples": 6
+  },
+  {
+    "variant": "baseline",
+    "backend": "cuda-f32",
+    "qubits": 26,
+    "read": true,
+    "run_counts_ms": 746.2757559260353,
+    "first_read_ms": 300.8176899747923,
+    "repeat_read_ms": 170.3879589913413,
+    "before": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 0,
+      "peak_rss_bytes": 13434880,
+      "rss_bytes": 13639680
+    },
+    "after_run": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 536871184,
+      "peak_rss_bytes": 1785552896,
+      "rss_bytes": 1172094976
+    },
+    "after_read": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 536871184,
+      "peak_rss_bytes": 2257559552,
+      "rss_bytes": 2258284544
+    },
+    "after_drop": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 536871184,
+      "peak_rss_bytes": 2257559552,
+      "rss_bytes": 110792704
+    },
+    "sampled_gpu_process_peak_bytes": 1814036480,
+    "gpu_memory_samples": 6
+  },
+  {
+    "variant": "candidate",
+    "backend": "cuda-f32",
+    "qubits": 26,
+    "read": true,
+    "run_counts_ms": 284.0037550777197,
+    "first_read_ms": 655.370066058822,
+    "repeat_read_ms": 134.3896659091115,
+    "before": {
+      "materializations": 0,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 0,
+      "peak_rss_bytes": 13434880,
+      "rss_bytes": 13750272
+    },
+    "after_run": {
+      "materializations": 0,
+      "device_amplitude_bytes": 536870912,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 272,
+      "peak_rss_bytes": 175374336,
+      "rss_bytes": 175636480
+    },
+    "after_read": {
+      "materializations": 1,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 1073741824,
+      "dtoh_bytes": 536871184,
+      "peak_rss_bytes": 2257727488,
+      "rss_bytes": 2258210816
+    },
+    "after_drop": {
+      "materializations": 1,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 536871184,
+      "peak_rss_bytes": 2257727488,
+      "rss_bytes": 110718976
+    },
+    "sampled_gpu_process_peak_bytes": 1814036480,
+    "gpu_memory_samples": 6
+  },
+  {
+    "variant": "baseline",
+    "backend": "cuda",
+    "qubits": 24,
+    "read": false,
+    "run_counts_ms": 335.2713530184701,
+    "first_read_ms": null,
+    "repeat_read_ms": null,
+    "before": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 0,
+      "peak_rss_bytes": 13434880,
+      "rss_bytes": 13643776
+    },
+    "after_run": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 268435728,
+      "peak_rss_bytes": 704933888,
+      "rss_bytes": 360091648
+    },
+    "after_read": null,
+    "after_drop": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 268435728,
+      "peak_rss_bytes": 704933888,
+      "rss_bytes": 91652096
+    },
+    "sampled_gpu_process_peak_bytes": 740294656,
+    "gpu_memory_samples": 2
+  },
+  {
+    "variant": "candidate",
+    "backend": "cuda",
+    "qubits": 24,
+    "read": false,
+    "run_counts_ms": 143.23360391426831,
+    "first_read_ms": null,
+    "repeat_read_ms": null,
+    "before": {
+      "materializations": 0,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 0,
+      "peak_rss_bytes": 13434880,
+      "rss_bytes": 13750272
+    },
+    "after_run": {
+      "materializations": 0,
+      "device_amplitude_bytes": 268435456,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 272,
+      "peak_rss_bytes": 168464384,
+      "rss_bytes": 168935424
+    },
+    "after_read": null,
+    "after_drop": {
+      "materializations": 0,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 272,
+      "peak_rss_bytes": 168464384,
+      "rss_bytes": 91791360
+    },
+    "sampled_gpu_process_peak_bytes": 740294656,
+    "gpu_memory_samples": 1
+  },
+  {
+    "variant": "candidate",
+    "backend": "cuda",
+    "qubits": 24,
+    "read": false,
+    "run_counts_ms": 140.39446599781513,
+    "first_read_ms": null,
+    "repeat_read_ms": null,
+    "before": {
+      "materializations": 0,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 0,
+      "peak_rss_bytes": 13434880,
+      "rss_bytes": 13643776
+    },
+    "after_run": {
+      "materializations": 0,
+      "device_amplitude_bytes": 268435456,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 272,
+      "peak_rss_bytes": 168341504,
+      "rss_bytes": 168820736
+    },
+    "after_read": null,
+    "after_drop": {
+      "materializations": 0,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 272,
+      "peak_rss_bytes": 168341504,
+      "rss_bytes": 91680768
+    },
+    "sampled_gpu_process_peak_bytes": 740294656,
+    "gpu_memory_samples": 1
+  },
+  {
+    "variant": "baseline",
+    "backend": "cuda",
+    "qubits": 24,
+    "read": false,
+    "run_counts_ms": 352.36101190093905,
+    "first_read_ms": null,
+    "repeat_read_ms": null,
+    "before": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 0,
+      "peak_rss_bytes": 13598720,
+      "rss_bytes": 13643776
+    },
+    "after_run": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 268435728,
+      "peak_rss_bytes": 705294336,
+      "rss_bytes": 360144896
+    },
+    "after_read": null,
+    "after_drop": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 268435728,
+      "peak_rss_bytes": 705294336,
+      "rss_bytes": 91705344
+    },
+    "sampled_gpu_process_peak_bytes": 740294656,
+    "gpu_memory_samples": 2
+  },
+  {
+    "variant": "baseline",
+    "backend": "cuda",
+    "qubits": 24,
+    "read": false,
+    "run_counts_ms": 367.9861429845914,
+    "first_read_ms": null,
+    "repeat_read_ms": null,
+    "before": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 0,
+      "peak_rss_bytes": 13434880,
+      "rss_bytes": 13643776
+    },
+    "after_run": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 268435728,
+      "peak_rss_bytes": 705073152,
+      "rss_bytes": 360144896
+    },
+    "after_read": null,
+    "after_drop": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 268435728,
+      "peak_rss_bytes": 705073152,
+      "rss_bytes": 91705344
+    },
+    "sampled_gpu_process_peak_bytes": 740294656,
+    "gpu_memory_samples": 2
+  },
+  {
+    "variant": "candidate",
+    "backend": "cuda",
+    "qubits": 24,
+    "read": false,
+    "run_counts_ms": 154.06718291342258,
+    "first_read_ms": null,
+    "repeat_read_ms": null,
+    "before": {
+      "materializations": 0,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 0,
+      "peak_rss_bytes": 13598720,
+      "rss_bytes": 13647872
+    },
+    "after_run": {
+      "materializations": 0,
+      "device_amplitude_bytes": 268435456,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 272,
+      "peak_rss_bytes": 168394752,
+      "rss_bytes": 168828928
+    },
+    "after_read": null,
+    "after_drop": {
+      "materializations": 0,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 272,
+      "peak_rss_bytes": 168394752,
+      "rss_bytes": 91688960
+    },
+    "sampled_gpu_process_peak_bytes": 471859200,
+    "gpu_memory_samples": 1
+  },
+  {
+    "variant": "baseline",
+    "backend": "cuda",
+    "qubits": 24,
+    "read": true,
+    "run_counts_ms": 354.7531809890643,
+    "first_read_ms": 78.66570504847914,
+    "repeat_read_ms": 38.52757904678583,
+    "before": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 0,
+      "peak_rss_bytes": 13434880,
+      "rss_bytes": 13639680
+    },
+    "after_run": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 268435728,
+      "peak_rss_bytes": 705105920,
+      "rss_bytes": 360161280
+    },
+    "after_read": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 268435728,
+      "peak_rss_bytes": 705105920,
+      "rss_bytes": 640950272
+    },
+    "after_drop": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 268435728,
+      "peak_rss_bytes": 705105920,
+      "rss_bytes": 104071168
+    },
+    "sampled_gpu_process_peak_bytes": 740294656,
+    "gpu_memory_samples": 2
+  },
+  {
+    "variant": "candidate",
+    "backend": "cuda",
+    "qubits": 24,
+    "read": true,
+    "run_counts_ms": 151.50082996115088,
+    "first_read_ms": 279.42550694569945,
+    "repeat_read_ms": 38.245334988459945,
+    "before": {
+      "materializations": 0,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 0,
+      "peak_rss_bytes": 13598720,
+      "rss_bytes": 13635584
+    },
+    "after_run": {
+      "materializations": 0,
+      "device_amplitude_bytes": 268435456,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 272,
+      "peak_rss_bytes": 168411136,
+      "rss_bytes": 168873984
+    },
+    "after_read": {
+      "materializations": 1,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 268435456,
+      "dtoh_bytes": 268435728,
+      "peak_rss_bytes": 705314816,
+      "rss_bytes": 640905216
+    },
+    "after_drop": {
+      "materializations": 1,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 268435728,
+      "peak_rss_bytes": 705314816,
+      "rss_bytes": 104026112
+    },
+    "sampled_gpu_process_peak_bytes": 738197504,
+    "gpu_memory_samples": 2
+  },
+  {
+    "variant": "candidate",
+    "backend": "cuda",
+    "qubits": 24,
+    "read": true,
+    "run_counts_ms": 152.787936036475,
+    "first_read_ms": 282.42755390238017,
+    "repeat_read_ms": 38.32226397935301,
+    "before": {
+      "materializations": 0,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 0,
+      "peak_rss_bytes": 13434880,
+      "rss_bytes": 13639680
+    },
+    "after_run": {
+      "materializations": 0,
+      "device_amplitude_bytes": 268435456,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 272,
+      "peak_rss_bytes": 168124416,
+      "rss_bytes": 168873984
+    },
+    "after_read": {
+      "materializations": 1,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 268435456,
+      "dtoh_bytes": 268435728,
+      "peak_rss_bytes": 705028096,
+      "rss_bytes": 640933888
+    },
+    "after_drop": {
+      "materializations": 1,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 268435728,
+      "peak_rss_bytes": 705028096,
+      "rss_bytes": 104054784
+    },
+    "sampled_gpu_process_peak_bytes": 738197504,
+    "gpu_memory_samples": 2
+  },
+  {
+    "variant": "baseline",
+    "backend": "cuda",
+    "qubits": 24,
+    "read": true,
+    "run_counts_ms": 353.84361597243696,
+    "first_read_ms": 78.0077549861744,
+    "repeat_read_ms": 37.144794943742454,
+    "before": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 0,
+      "peak_rss_bytes": 13598720,
+      "rss_bytes": 13717504
+    },
+    "after_run": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 268435728,
+      "peak_rss_bytes": 705409024,
+      "rss_bytes": 360202240
+    },
+    "after_read": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 268435728,
+      "peak_rss_bytes": 705409024,
+      "rss_bytes": 640974848
+    },
+    "after_drop": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 268435728,
+      "peak_rss_bytes": 705409024,
+      "rss_bytes": 104095744
+    },
+    "sampled_gpu_process_peak_bytes": 740294656,
+    "gpu_memory_samples": 2
+  },
+  {
+    "variant": "baseline",
+    "backend": "cuda",
+    "qubits": 24,
+    "read": true,
+    "run_counts_ms": 357.3202450061217,
+    "first_read_ms": 78.67745496332645,
+    "repeat_read_ms": 38.322567008435726,
+    "before": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 0,
+      "peak_rss_bytes": 13434880,
+      "rss_bytes": 13656064
+    },
+    "after_run": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 268435728,
+      "peak_rss_bytes": 705212416,
+      "rss_bytes": 360185856
+    },
+    "after_read": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 268435728,
+      "peak_rss_bytes": 705212416,
+      "rss_bytes": 640958464
+    },
+    "after_drop": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 268435728,
+      "peak_rss_bytes": 705212416,
+      "rss_bytes": 104079360
+    },
+    "sampled_gpu_process_peak_bytes": 740294656,
+    "gpu_memory_samples": 2
+  },
+  {
+    "variant": "candidate",
+    "backend": "cuda",
+    "qubits": 24,
+    "read": true,
+    "run_counts_ms": 152.3060459876433,
+    "first_read_ms": 282.3053590254858,
+    "repeat_read_ms": 37.84695302601904,
+    "before": {
+      "materializations": 0,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 0,
+      "peak_rss_bytes": 13434880,
+      "rss_bytes": 13811712
+    },
+    "after_run": {
+      "materializations": 0,
+      "device_amplitude_bytes": 268435456,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 272,
+      "peak_rss_bytes": 168321024,
+      "rss_bytes": 168984576
+    },
+    "after_read": {
+      "materializations": 1,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 268435456,
+      "dtoh_bytes": 268435728,
+      "peak_rss_bytes": 705224704,
+      "rss_bytes": 641191936
+    },
+    "after_drop": {
+      "materializations": 1,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 268435728,
+      "peak_rss_bytes": 705224704,
+      "rss_bytes": 104312832
+    },
+    "sampled_gpu_process_peak_bytes": 738197504,
+    "gpu_memory_samples": 2
+  },
+  {
+    "variant": "baseline",
+    "backend": "cuda",
+    "qubits": 26,
+    "read": false,
+    "run_counts_ms": 931.8380570039153,
+    "first_read_ms": null,
+    "repeat_read_ms": null,
+    "before": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 0,
+      "peak_rss_bytes": 13598720,
+      "rss_bytes": 13647872
+    },
+    "after_run": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 1073742096,
+      "peak_rss_bytes": 2315849728,
+      "rss_bytes": 1165434880
+    },
+    "after_read": null,
+    "after_drop": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 1073742096,
+      "peak_rss_bytes": 2315849728,
+      "rss_bytes": 91688960
+    },
+    "sampled_gpu_process_peak_bytes": 2350907392,
+    "gpu_memory_samples": 7
+  },
+  {
+    "variant": "candidate",
+    "backend": "cuda",
+    "qubits": 26,
+    "read": false,
+    "run_counts_ms": 273.9135940792039,
+    "first_read_ms": null,
+    "repeat_read_ms": null,
+    "before": {
+      "materializations": 0,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 0,
+      "peak_rss_bytes": 13598720,
+      "rss_bytes": 13639680
+    },
+    "after_run": {
+      "materializations": 0,
+      "device_amplitude_bytes": 1073741824,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 272,
+      "peak_rss_bytes": 168386560,
+      "rss_bytes": 168820736
+    },
+    "after_read": null,
+    "after_drop": {
+      "materializations": 0,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 272,
+      "peak_rss_bytes": 168386560,
+      "rss_bytes": 91680768
+    },
+    "sampled_gpu_process_peak_bytes": 2350907392,
+    "gpu_memory_samples": 2
+  },
+  {
+    "variant": "candidate",
+    "backend": "cuda",
+    "qubits": 26,
+    "read": false,
+    "run_counts_ms": 272.64169708359987,
+    "first_read_ms": null,
+    "repeat_read_ms": null,
+    "before": {
+      "materializations": 0,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 0,
+      "peak_rss_bytes": 13434880,
+      "rss_bytes": 13660160
+    },
+    "after_run": {
+      "materializations": 0,
+      "device_amplitude_bytes": 1073741824,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 272,
+      "peak_rss_bytes": 168206336,
+      "rss_bytes": 168828928
+    },
+    "after_read": null,
+    "after_drop": {
+      "materializations": 0,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 272,
+      "peak_rss_bytes": 168206336,
+      "rss_bytes": 91697152
+    },
+    "sampled_gpu_process_peak_bytes": 2350907392,
+    "gpu_memory_samples": 2
+  },
+  {
+    "variant": "baseline",
+    "backend": "cuda",
+    "qubits": 26,
+    "read": false,
+    "run_counts_ms": 926.3852649601176,
+    "first_read_ms": null,
+    "repeat_read_ms": null,
+    "before": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 0,
+      "peak_rss_bytes": 13598720,
+      "rss_bytes": 13688832
+    },
+    "after_run": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 1073742096,
+      "peak_rss_bytes": 2315763712,
+      "rss_bytes": 1165484032
+    },
+    "after_read": null,
+    "after_drop": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 1073742096,
+      "peak_rss_bytes": 2315763712,
+      "rss_bytes": 91738112
+    },
+    "sampled_gpu_process_peak_bytes": 2350907392,
+    "gpu_memory_samples": 7
+  },
+  {
+    "variant": "baseline",
+    "backend": "cuda",
+    "qubits": 26,
+    "read": false,
+    "run_counts_ms": 927.0761600928381,
+    "first_read_ms": null,
+    "repeat_read_ms": null,
+    "before": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 0,
+      "peak_rss_bytes": 13434880,
+      "rss_bytes": 13692928
+    },
+    "after_run": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 1073742096,
+      "peak_rss_bytes": 2315845632,
+      "rss_bytes": 1165471744
+    },
+    "after_read": null,
+    "after_drop": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 1073742096,
+      "peak_rss_bytes": 2315845632,
+      "rss_bytes": 91725824
+    },
+    "sampled_gpu_process_peak_bytes": 2350907392,
+    "gpu_memory_samples": 7
+  },
+  {
+    "variant": "candidate",
+    "backend": "cuda",
+    "qubits": 26,
+    "read": false,
+    "run_counts_ms": 271.37929399032146,
+    "first_read_ms": null,
+    "repeat_read_ms": null,
+    "before": {
+      "materializations": 0,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 0,
+      "peak_rss_bytes": 13434880,
+      "rss_bytes": 13656064
+    },
+    "after_run": {
+      "materializations": 0,
+      "device_amplitude_bytes": 1073741824,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 272,
+      "peak_rss_bytes": 168251392,
+      "rss_bytes": 168849408
+    },
+    "after_read": null,
+    "after_drop": {
+      "materializations": 0,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 272,
+      "peak_rss_bytes": 168251392,
+      "rss_bytes": 91709440
+    },
+    "sampled_gpu_process_peak_bytes": 2350907392,
+    "gpu_memory_samples": 2
+  },
+  {
+    "variant": "baseline",
+    "backend": "cuda",
+    "qubits": 26,
+    "read": true,
+    "run_counts_ms": 929.4219570001587,
+    "first_read_ms": 272.4082909990102,
+    "repeat_read_ms": 134.9953229073435,
+    "before": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 0,
+      "peak_rss_bytes": 13434880,
+      "rss_bytes": 13742080
+    },
+    "after_run": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 1073742096,
+      "peak_rss_bytes": 2315829248,
+      "rss_bytes": 1165574144
+    },
+    "after_read": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 1073742096,
+      "peak_rss_bytes": 2315829248,
+      "rss_bytes": 2251603968
+    },
+    "after_drop": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 1073742096,
+      "peak_rss_bytes": 2315829248,
+      "rss_bytes": 104112128
+    },
+    "sampled_gpu_process_peak_bytes": 2350907392,
+    "gpu_memory_samples": 7
+  },
+  {
+    "variant": "candidate",
+    "backend": "cuda",
+    "qubits": 26,
+    "read": true,
+    "run_counts_ms": 272.9335310868919,
+    "first_read_ms": 842.267574975267,
+    "repeat_read_ms": 131.71650294680148,
+    "before": {
+      "materializations": 0,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 0,
+      "peak_rss_bytes": 13434880,
+      "rss_bytes": 13672448
+    },
+    "after_run": {
+      "materializations": 0,
+      "device_amplitude_bytes": 1073741824,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 272,
+      "peak_rss_bytes": 168230912,
+      "rss_bytes": 168894464
+    },
+    "after_read": {
+      "materializations": 1,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 1073741824,
+      "dtoh_bytes": 1073742096,
+      "peak_rss_bytes": 2315681792,
+      "rss_bytes": 2251579392
+    },
+    "after_drop": {
+      "materializations": 1,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 1073742096,
+      "peak_rss_bytes": 2315681792,
+      "rss_bytes": 104087552
+    },
+    "sampled_gpu_process_peak_bytes": 2350907392,
+    "gpu_memory_samples": 7
+  },
+  {
+    "variant": "candidate",
+    "backend": "cuda",
+    "qubits": 26,
+    "read": true,
+    "run_counts_ms": 271.26958908047527,
+    "first_read_ms": 897.4051660625264,
+    "repeat_read_ms": 162.79432794544846,
+    "before": {
+      "materializations": 0,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 0,
+      "peak_rss_bytes": 13434880,
+      "rss_bytes": 13692928
+    },
+    "after_run": {
+      "materializations": 0,
+      "device_amplitude_bytes": 1073741824,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 272,
+      "peak_rss_bytes": 168419328,
+      "rss_bytes": 168923136
+    },
+    "after_read": {
+      "materializations": 1,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 1073741824,
+      "dtoh_bytes": 1073742096,
+      "peak_rss_bytes": 2316034048,
+      "rss_bytes": 2251583488
+    },
+    "after_drop": {
+      "materializations": 1,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 1073742096,
+      "peak_rss_bytes": 2316034048,
+      "rss_bytes": 104091648
+    },
+    "sampled_gpu_process_peak_bytes": 2350907392,
+    "gpu_memory_samples": 7
+  },
+  {
+    "variant": "baseline",
+    "backend": "cuda",
+    "qubits": 26,
+    "read": true,
+    "run_counts_ms": 934.4549480592832,
+    "first_read_ms": 182.09895095787942,
+    "repeat_read_ms": 132.58610700722784,
+    "before": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 0,
+      "peak_rss_bytes": 13434880,
+      "rss_bytes": 13615104
+    },
+    "after_run": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 1073742096,
+      "peak_rss_bytes": 2315841536,
+      "rss_bytes": 1165430784
+    },
+    "after_read": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 1073742096,
+      "peak_rss_bytes": 2315841536,
+      "rss_bytes": 2251538432
+    },
+    "after_drop": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 1073742096,
+      "peak_rss_bytes": 2315841536,
+      "rss_bytes": 104046592
+    },
+    "sampled_gpu_process_peak_bytes": 2350907392,
+    "gpu_memory_samples": 7
+  },
+  {
+    "variant": "baseline",
+    "backend": "cuda",
+    "qubits": 26,
+    "read": true,
+    "run_counts_ms": 937.6650990452617,
+    "first_read_ms": 255.78198896255344,
+    "repeat_read_ms": 133.98996298201382,
+    "before": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 0,
+      "peak_rss_bytes": 13434880,
+      "rss_bytes": 13721600
+    },
+    "after_run": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 1073742096,
+      "peak_rss_bytes": 2315796480,
+      "rss_bytes": 1165541376
+    },
+    "after_read": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 1073742096,
+      "peak_rss_bytes": 2315796480,
+      "rss_bytes": 2251767808
+    },
+    "after_drop": {
+      "materializations": null,
+      "device_amplitude_bytes": null,
+      "cached_host_bytes": null,
+      "dtoh_bytes": 1073742096,
+      "peak_rss_bytes": 2315796480,
+      "rss_bytes": 104275968
+    },
+    "sampled_gpu_process_peak_bytes": 2350907392,
+    "gpu_memory_samples": 7
+  },
+  {
+    "variant": "candidate",
+    "backend": "cuda",
+    "qubits": 26,
+    "read": true,
+    "run_counts_ms": 271.95804298389703,
+    "first_read_ms": 904.7736040083691,
+    "repeat_read_ms": 134.4440809916705,
+    "before": {
+      "materializations": 0,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 0,
+      "peak_rss_bytes": 13598720,
+      "rss_bytes": 13647872
+    },
+    "after_run": {
+      "materializations": 0,
+      "device_amplitude_bytes": 1073741824,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 272,
+      "peak_rss_bytes": 168431616,
+      "rss_bytes": 168869888
+    },
+    "after_read": {
+      "materializations": 1,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 1073741824,
+      "dtoh_bytes": 1073742096,
+      "peak_rss_bytes": 2315882496,
+      "rss_bytes": 2251526144
+    },
+    "after_drop": {
+      "materializations": 1,
+      "device_amplitude_bytes": 0,
+      "cached_host_bytes": 0,
+      "dtoh_bytes": 1073742096,
+      "peak_rss_bytes": 2315882496,
+      "rss_bytes": 104034304
+    },
+    "sampled_gpu_process_peak_bytes": 2350907392,
+    "gpu_memory_samples": 7
+  }
+]

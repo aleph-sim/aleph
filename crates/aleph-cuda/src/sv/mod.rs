@@ -25,10 +25,10 @@ mod state;
 
 pub(crate) use backend::to_backend_err;
 pub use backend::CudaSvBackend;
-pub use fp32::{CudaSvBackendF32, CudaSvStateF32, MAX_CUDA_QUBITS_F32};
+pub use fp32::{CudaSvBackendF32, CudaSvReadoutF32, CudaSvStateF32, MAX_CUDA_QUBITS_F32};
 pub use paged::{paged_pass_counts, PagedSvState};
 pub use paged_f32::PagedSvStateF32;
-pub use state::{CudaSvState, MAX_CUDA_QUBITS};
+pub use state::{CudaSvReadout, CudaSvState, MAX_CUDA_QUBITS};
 
 // The oracle harness pulls amplitudes through `HasAmplitudes`. Implemented here
 // (the state's home crate) per the orphan rule; widening the device FP64 buffer

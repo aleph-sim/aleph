@@ -23,7 +23,7 @@ pub use context::{device_available, sv_backend_init_count, MetalContext};
 #[cfg(all(target_os = "macos", feature = "metal"))]
 pub use mps::{MetalMpsBackend, MetalMpsState};
 #[cfg(all(target_os = "macos", feature = "metal"))]
-pub use sv::{AmpsF32, MetalSvBackend, MetalSvState};
+pub use sv::{AmpsF32, MetalSvBackend, MetalSvReadout, MetalSvState};
 
 /// Errors from the Metal foundation layer.
 #[cfg(all(target_os = "macos", feature = "metal"))]

@@ -34,8 +34,7 @@ pub struct MetalSvState {
     kq_slot: Cell<usize>,
     // Per-dispatch side buffers (e.g. a diagonal phase's condition-mask and
     // term-descriptor buffers) that the GPU reads after `commit`; held alive
-    // until `sync`. `Box<dyn Any>` so heterogeneous DeviceBuffer<T> can share one
-    // arena without a typed field per kind.
+    // until `sync`. `Box<dyn Any>` lets heterogeneous buffers share one arena.
     aux: RefCell<Vec<Box<dyn core::any::Any>>>,
     batch_len: Cell<usize>,
 }
@@ -61,7 +60,30 @@ impl core::fmt::Debug for MetalSvState {
     }
 }
 
+/// Immutable final amplitudes in shared storage, without commands or scratch.
+/// Naturally movable between threads without unchecked trait implementations.
+pub struct MetalSvReadout {
+    amps: DeviceBuffer<Complex<f32>>,
+}
+
+impl MetalSvReadout {
+    /// Widen already synchronized shared-storage amplitudes to complex128.
+    pub fn to_aos_f64(&self) -> Vec<Complex<f64>> {
+        self.amps
+            .as_slice()
+            .iter()
+            .map(|a| Complex::new(a.re as f64, a.im as f64))
+            .collect()
+    }
+}
+
 impl MetalSvState {
+    /// Finish pending work and retain only the shared-storage amplitude buffer.
+    pub fn into_readout(self) -> MetalSvReadout {
+        self.sync();
+        MetalSvReadout { amps: self.amps }
+    }
+
     /// Wrap an amplitude buffer with an empty (closed) gate batch.
     pub(crate) fn new(num_qubits: u32, amps: DeviceBuffer<Complex<f32>>) -> Self {
         Self {
