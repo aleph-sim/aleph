@@ -10,6 +10,23 @@ use metal::{CommandQueue, CompileOptions, ComputePipelineState, Device, Library}
 
 use crate::Error;
 
+/// Discover the default Metal device without queues, shaders, or backend construction.
+pub fn device_available() -> bool {
+    Device::system_default().is_some()
+}
+
+static SV_BACKEND_INITS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Number of SV backend construction attempts in this process (benchmark/test hook).
+#[doc(hidden)]
+pub fn sv_backend_init_count() -> u64 {
+    SV_BACKEND_INITS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+pub(crate) fn record_sv_backend_init() {
+    SV_BACKEND_INITS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+
 /// A Metal device plus its command queue.
 pub struct MetalContext {
     device: Device,

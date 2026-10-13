@@ -19,7 +19,7 @@ mod sv;
 #[cfg(all(target_os = "macos", feature = "metal"))]
 pub use buffer::{device_alloc_count, DeviceBuffer};
 #[cfg(all(target_os = "macos", feature = "metal"))]
-pub use context::MetalContext;
+pub use context::{device_available, sv_backend_init_count, MetalContext};
 #[cfg(all(target_os = "macos", feature = "metal"))]
 pub use mps::{MetalMpsBackend, MetalMpsState};
 #[cfg(all(target_os = "macos", feature = "metal"))]

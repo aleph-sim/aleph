@@ -105,6 +105,26 @@ class TestCircuitBuilder(unittest.TestCase):
         with self.assertRaises(ValueError):
             aleph.run(c, backend="stab")
 
+    def test_cpu_requests_do_not_initialize_gpu_backends(self):
+        # Also run this suite with a GPU-enabled wheel: the counter detects
+        # discarded CUDA/Metal constructors without timing assertions.
+        from aleph import _native
+        before = _native._gpu_backend_init_count()
+        for backend in ("sv", "stab", "mps", "auto"):
+            with self.subTest(backend=backend):
+                c = aleph.Circuit(2)
+                c.h(0)
+                c.cx(0, 1)
+                counts = aleph.run(c, shots=32, seed=7, backend=backend).counts()
+                self.assertEqual(set(counts), {"00", "11"})
+                self.assertEqual(sum(counts.values()), 32)
+                self.assertEqual(_native._gpu_backend_init_count(), before)
+        # Small non-Clifford auto selects CPU SV rather than stabilizer.
+        c.t(0)
+        result = aleph.run(c, shots=32, seed=7, backend="auto")
+        self.assertEqual(result.statevector().shape, (4,))
+        self.assertEqual(_native._gpu_backend_init_count(), before)
+
     def test_unknown_backend_raises(self):
         c = aleph.Circuit(1)
         with self.assertRaises(ValueError):

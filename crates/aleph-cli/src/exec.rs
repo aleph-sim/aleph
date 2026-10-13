@@ -6,13 +6,13 @@ use std::time::Instant;
 
 use anyhow::{anyhow, Context, Result};
 
-use aleph_backend::{run, Backend, BackendKind, BackendRequest, SelectEnv};
+use aleph_backend::{run, Backend, BackendKind, BackendRequest};
 use aleph_core::Complex;
 use aleph_mps::{MpsBackend, TruncationPolicy};
 use aleph_stab::StabilizerBackend;
 use aleph_sv::{Fp32SvBackend, NaiveSvBackend};
 
-use crate::cli::{resolve_backend, Precision};
+use crate::cli::{resolve_backend_with_probes, Precision};
 use crate::output;
 use crate::pauli::parse_pauli_arg;
 
@@ -160,12 +160,14 @@ pub fn run_circuit<W: Write>(
     //     The requested output view gates an auto stabilizer pick: a
     //     state-vector view needs amplitudes the stabilizer backend lacks.
     let wants_amplitudes = print_statevector || force_statevector;
-    let env = SelectEnv {
-        metal_available: metal_available(),
-        cuda_available: cuda_available(),
-        precision: precision.into(),
-    };
-    let selection = resolve_backend(backend, &circuit, wants_amplitudes, &env);
+    let selection = resolve_backend_with_probes(
+        backend,
+        &circuit,
+        wants_amplitudes,
+        precision.into(),
+        metal_available,
+        cuda_available,
+    );
     let resolved = selection.kind;
 
     // The CPU/Metal dense state-vector family shares the qubit soft-cap warning;
@@ -456,12 +458,11 @@ fn run_mps<W: Write>(
 /// heuristic to decide whether to route large dense circuits to the GPU
 /// (P5.6-07). True only on a macOS+`metal` build where a Metal device is
 /// acquirable, so headless macOS (e.g. CI) and every other platform correctly
-/// stay on the CPU. Probing constructs a backend (acquire device + compile
-/// pipelines); that cost is paid once per `auto` run and avoided entirely when
-/// the user fixes `--backend` explicitly.
+/// stay on the CPU. Discovery creates no queue/backend and compiles no shaders;
+/// the selection policy calls it only when Metal can affect an auto choice.
 #[cfg(all(target_os = "macos", feature = "metal"))]
 fn metal_available() -> bool {
-    aleph_metal::MetalSvBackend::new().is_ok()
+    aleph_metal::device_available()
 }
 
 #[cfg(not(all(target_os = "macos", feature = "metal")))]
@@ -526,11 +527,11 @@ fn run_metal<W: Write>(
 
 /// Whether the CUDA GPU backend can run here — the `auto` heuristic's CUDA probe
 /// (mirrors [`metal_available`]). True only on a Linux + `cuda` build where a CUDA
-/// device is acquirable; constructing the FP32 backend (which also compiles the
-/// kernels) is the probe. Paid once per `auto` run, skipped when `--backend` is fixed.
+/// device is discoverable. No context/backend or NVRTC kernels are constructed;
+/// the selection policy calls it only when CUDA can affect an auto choice.
 #[cfg(all(target_os = "linux", feature = "cuda"))]
 fn cuda_available() -> bool {
-    aleph_cuda::CudaSvBackendF32::new().is_ok()
+    aleph_cuda::device_available()
 }
 
 #[cfg(not(all(target_os = "linux", feature = "cuda")))]

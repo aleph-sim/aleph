@@ -207,7 +207,9 @@ impl CudaSvBackendF32 {
     }
 
     fn build(rng: StdRng, ordinal: usize) -> Result<Self, Error> {
+        crate::context::record_sv_backend_init();
         let ctx = CudaContext::new(ordinal)?;
+        crate::context::require_nvrtc()?;
         let ptx = compile_ptx(SV_F32_SRC).map_err(|e| Error::Compile(e.to_string()))?;
         let module = ctx.raw().load_module(ptx)?;
         // Separate module: TF32 WMMA needs sm_89 + the CUDA mma.h include path.

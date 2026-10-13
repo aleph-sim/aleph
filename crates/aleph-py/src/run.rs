@@ -13,8 +13,7 @@
 use crate::circuit::PyCircuit;
 use crate::noise::PyNoiseModel;
 use aleph_backend::{
-    run, run_optimized, select_explained_full, Backend, BackendKind, BackendRequest, Reach,
-    SelectEnv, Selection,
+    run, run_optimized, select_with_probes, Backend, BackendKind, BackendRequest, Reach,
 };
 use aleph_mps::MpsBackend;
 use aleph_stab::StabilizerBackend;
@@ -172,24 +171,9 @@ pub(crate) fn run_circuit(
         return Ok(RunResult { counts, amps: None });
     }
 
-    // Resolve `auto` through the same reach-aware heuristic the CLI uses (P5.11-06):
-    // GPU availability is probed, and a precision preference steers the GPU pick.
-    let env = SelectEnv {
-        // Python `auto` has never GPU-probed Metal (it stays explicit-only via
-        // backend="metal"); P5.11-06 adds CUDA auto-routing only, so Metal-auto
-        // behaviour is unchanged here.
-        metal_available: false,
-        cuda_available: cuda_available(),
-        precision,
-    };
-    let selection = match request {
-        BackendRequest::Auto => select_explained_full(c, &env),
-        BackendRequest::Fixed(k) => Selection {
-            kind: k,
-            reach: Reach::for_kind(k, n),
-            reason: "explicit backend",
-        },
-    };
+    // Metal remains explicit-only in Python. Discovery is lazy and never compiles
+    // kernels; construction of the selected backend below surfaces init errors.
+    let selection = select_with_probes(c, request, precision, || false, cuda_available);
     let kind = selection.kind;
 
     // Each arm releases the GIL for execute+sample (minutes at n ≥ 25):
@@ -347,11 +331,11 @@ fn run_cuda_py(
     ))
 }
 
-/// CUDA device probe for the `auto` heuristic (Linux + `cuda` only). Constructing
-/// the FP32 backend compiles the kernels + acquires the device.
+/// CUDA device discovery for auto selection (Linux + cuda only). No backend
+/// is constructed and no kernels are compiled; initialization happens after selection.
 #[cfg(all(target_os = "linux", feature = "cuda"))]
 fn cuda_available() -> bool {
-    aleph_cuda::CudaSvBackendF32::new().is_ok()
+    aleph_cuda::device_available()
 }
 
 #[cfg(not(all(target_os = "linux", feature = "cuda")))]
@@ -368,5 +352,25 @@ fn parse_precision(s: &str) -> PyResult<aleph_backend::Precision> {
         other => Err(PyValueError::new_err(format!(
             "unknown precision {other:?}; expected one of: auto, f64, f32"
         ))),
+    }
+}
+
+/// Internal measurement hook: SV construction attempts, not device discovery.
+#[pyfunction]
+pub(crate) fn _gpu_backend_init_count() -> u64 {
+    #[cfg(all(target_os = "linux", feature = "cuda"))]
+    {
+        aleph_cuda::sv_backend_init_count()
+    }
+    #[cfg(all(target_os = "macos", feature = "metal"))]
+    {
+        aleph_metal::sv_backend_init_count()
+    }
+    #[cfg(not(any(
+        all(target_os = "linux", feature = "cuda"),
+        all(target_os = "macos", feature = "metal")
+    )))]
+    {
+        0
     }
 }
