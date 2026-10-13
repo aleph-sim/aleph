@@ -29,7 +29,8 @@ impl NaiveSvBackend {
     }
 
     /// Construct with an explicit seed; runs are reproducible across
-    /// processes and machines for a given seed.
+    /// processes and machines for a given version, sampling mode and seed.
+    /// Single-shot cumulative sampling has a different mapping than alias sampling.
     pub fn with_seed(seed: u64) -> Self {
         Self {
             rng: StdRng::seed_from_u64(seed),

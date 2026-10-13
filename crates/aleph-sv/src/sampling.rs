@@ -1,4 +1,4 @@
-//! Vose's alias method for O(1)-per-draw discrete sampling.
+//! Validated probability scanning, single-draw inverse CDF and Vose alias sampling.
 //!
 //! Used by [`crate::measure::sample_impl`]. Build cost is `O(n)` over
 //! the `n = 2^num_qubits` probability table; per-draw cost is one
@@ -7,7 +7,88 @@
 //! Vose 1991, "A linear algorithm for generating random numbers with
 //! a given distribution", Algorithm 3.
 
+use aleph_backend::BackendError;
 use rand::{rngs::StdRng, Rng};
+
+/// Shared layout check, before allocating probability or alias buffers.
+pub(crate) fn validate_shape(
+    qubits: u32,
+    len: usize,
+    mismatch: &'static str,
+) -> Result<(), BackendError> {
+    if len == 0 {
+        return Err(BackendError::InvalidState {
+            reason: "empty state vector",
+        });
+    }
+    let expected = 1usize
+        .checked_shl(qubits)
+        .ok_or(BackendError::InvalidState {
+            reason: "num_qubits exceeds platform usize::BITS",
+        })?;
+    if len != expected {
+        return Err(BackendError::InvalidState { reason: mismatch });
+    }
+    Ok(())
+}
+
+/// Full norm/finiteness validation with an optional probability sink.
+/// The same pass validates both stored-probability and allocation-free query paths.
+pub(crate) fn validate_norm(
+    probabilities: impl Iterator<Item = f64>,
+    tolerance: f64,
+    norm_error: &'static str,
+    mut visit: impl FnMut(f64),
+) -> Result<f64, BackendError> {
+    let mut total = 0.0;
+    for p in probabilities {
+        if !p.is_finite() {
+            return Err(BackendError::InvalidState {
+                reason: "non-finite amplitude norm²",
+            });
+        }
+        total += p;
+        visit(p);
+    }
+    if !total.is_finite() || (total - 1.0).abs() > tolerance {
+        return Err(BackendError::InvalidState { reason: norm_error });
+    }
+    Ok(total)
+}
+
+/// Invert one cumulative sum over an already validated immutable distribution.
+/// Strict comparison skips zero-mass bins even for a zero random variate.
+fn cumulative_index(
+    probabilities: impl Iterator<Item = f64>,
+    target: f64,
+) -> Result<u64, BackendError> {
+    let mut cumulative = 0.0;
+    let mut last_positive = None;
+    for (i, p) in probabilities.enumerate() {
+        if p > 0.0 {
+            last_positive = Some(i as u64);
+            cumulative += p;
+            if target < cumulative {
+                return Ok(i as u64);
+            }
+        }
+    }
+    // A multiply may round a variate just below one to the total norm.
+    // Use the final positive bin, never a trailing zero-probability bin.
+    last_positive.ok_or(BackendError::InvalidState {
+        reason: "state has no positive probability",
+    })
+}
+
+/// One 53-bit uniform draw, scaled by the actual (validated) norm.
+/// Consumes one u64 of StdRng, as does AliasTable::draw, including forced states.
+pub(crate) fn draw_cumulative(
+    rng: &mut StdRng,
+    probabilities: impl Iterator<Item = f64>,
+    total: f64,
+) -> Result<u64, BackendError> {
+    cumulative_index(probabilities, rng.gen::<f64>() * total)
+}
 
 pub(crate) struct AliasTable {
     /// `prob[i]` is the threshold at index `i`: draw `u ∈ [0,1)`;
@@ -120,6 +201,125 @@ impl AliasTable {
 mod tests {
     use super::*;
     use rand::SeedableRng;
+
+    #[test]
+    fn cumulative_boundaries_skip_zeros_and_keep_tiny_branches() {
+        assert_eq!(
+            cumulative_index([0.0, 1e-300, 1.0, 0.0].into_iter(), 0.0).unwrap(),
+            1
+        );
+        assert_eq!(
+            cumulative_index([0.0, 0.25, 0.0, 0.75].into_iter(), 0.25).unwrap(),
+            3
+        );
+        assert_eq!(
+            cumulative_index([0.0, 1.0, 0.0, 0.0].into_iter(), 1.0).unwrap(),
+            1
+        );
+    }
+
+    #[test]
+    fn low_shot_validation_and_rng_contract_all_cpu_layouts() {
+        use crate::{CpuState, Fp32CpuState, SoaState};
+        use aleph_core::{AlignedBuf, Complex};
+        let check = |amps: &[Complex], qubits: u32, valid: bool| {
+            let a = CpuState {
+                num_qubits: qubits,
+                amps: AlignedBuf::from_slice(amps),
+            };
+            let s = SoaState {
+                num_qubits: qubits,
+                re: AlignedBuf::from_slice(&amps.iter().map(|a| a.re).collect::<Vec<_>>()),
+                im: AlignedBuf::from_slice(&amps.iter().map(|a| a.im).collect::<Vec<_>>()),
+            };
+            let f = Fp32CpuState {
+                num_qubits: qubits,
+                amps: AlignedBuf::from_slice(
+                    &amps
+                        .iter()
+                        .map(|a| Complex::<f32>::new(a.re as f32, a.im as f32))
+                        .collect::<Vec<_>>(),
+                ),
+            };
+            for shots in [0, 1, 2, 64] {
+                let mut ra = StdRng::seed_from_u64(556);
+                let mut rs = ra.clone();
+                let mut rf = ra.clone();
+                let aa = crate::measure::sample_impl(&mut ra, &a, shots);
+                let ss = crate::measure_soa::sample_impl_soa(&mut rs, &s, shots);
+                let ff = crate::fp32_measure::sample_impl_f32(&mut rf, &f, shots);
+                assert_eq!(aa.is_ok(), valid);
+                assert_eq!(ss.is_ok(), valid);
+                assert_eq!(ff.is_ok(), valid);
+                if valid {
+                    assert_eq!(aa.unwrap(), ss.unwrap());
+                    assert_eq!(ff.unwrap().len(), shots as usize);
+                }
+                let mut reference = StdRng::seed_from_u64(556);
+                if valid {
+                    for _ in 0..shots {
+                        let _: u64 = reference.gen();
+                    }
+                }
+                let expected: u64 = reference.gen();
+                assert_eq!(ra.gen::<u64>(), expected);
+                assert_eq!(rs.gen::<u64>(), expected);
+                assert_eq!(rf.gen::<u64>(), expected);
+            }
+        };
+        check(&[], 0, false);
+        check(&[Complex::new(1.0, 0.0)], 1, false);
+        check(&[Complex::new(1.0, 0.0); 2], usize::BITS, false);
+        check(
+            &[Complex::new(1.0, 0.0), Complex::new(f64::NAN, 0.0)],
+            1,
+            false,
+        );
+        check(
+            &[Complex::new(1.0, 0.0), Complex::new(0.0, f64::INFINITY)],
+            1,
+            false,
+        );
+        check(&[Complex::new(0.25, 0.0); 2], 1, false);
+        check(&[Complex::new(0.0, 0.0), Complex::new(1.0, 0.0)], 1, true);
+        check(&[Complex::new(0.5, 0.0); 4], 2, true);
+        check(
+            &[
+                Complex::new(0.3_f64.sqrt(), 0.0),
+                Complex::new(0.7_f64.sqrt(), 0.0),
+            ],
+            1,
+            true,
+        );
+    }
+
+    #[test]
+    fn multi_shot_mapping_remains_alias_bit_exact() {
+        use crate::CpuState;
+        use aleph_core::{AlignedBuf, Complex};
+        let s = CpuState {
+            num_qubits: 2,
+            amps: AlignedBuf::from_slice(&[
+                Complex::new(0.1_f64.sqrt(), 0.0),
+                Complex::new(0.2_f64.sqrt(), 0.0),
+                Complex::new(0.3_f64.sqrt(), 0.0),
+                Complex::new(0.4_f64.sqrt(), 0.0),
+            ]),
+        };
+        for shots in [2, 4, 32, 4096] {
+            let mut actual = StdRng::seed_from_u64(556);
+            let mut reference = actual.clone();
+            let probabilities = crate::measure::validate_state(&s).unwrap();
+            let table = AliasTable::build(&probabilities);
+            let expected: Vec<_> = (0..shots)
+                .map(|_| table.draw(&mut reference) as u64)
+                .collect();
+            assert_eq!(
+                crate::measure::sample_impl(&mut actual, &s, shots).unwrap(),
+                expected
+            );
+        }
+    }
 
     #[test]
     fn single_index_always_returns_0() {

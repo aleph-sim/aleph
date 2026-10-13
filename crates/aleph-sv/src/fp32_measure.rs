@@ -35,41 +35,21 @@ fn norm_sqr_f64(a: Complex<f32>) -> f64 {
 /// returning the per-amp `|a|²` (computed in f64) so callers avoid a second
 /// pass. Same shared-preamble role as [`crate::measure::validate_state`].
 pub(crate) fn validate_state_f32(state: &Fp32CpuState) -> Result<Vec<f64>, BackendError> {
-    let n = state.amps.len();
-    if n == 0 {
-        return Err(BackendError::InvalidState {
-            reason: "empty state vector",
-        });
-    }
-    let expected = 1usize
-        .checked_shl(state.num_qubits)
-        .ok_or(BackendError::InvalidState {
-            reason: "num_qubits exceeds platform usize::BITS",
-        })?;
-    if n != expected {
-        return Err(BackendError::InvalidState {
-            reason: "amps.len() != 2^num_qubits",
-        });
-    }
+    let n = validate_layout(state)?;
     let mut probs = Vec::with_capacity(n);
-    let mut total = 0.0_f64;
-    for a in state.amps.iter() {
-        let p = norm_sqr_f64(*a);
-        if !p.is_finite() {
-            return Err(BackendError::InvalidState {
-                reason: "non-finite amplitude norm²",
-            });
-        }
-        total += p;
-        probs.push(p);
-    }
-    // f32 states drift more than f64 — use the relaxed absolute tolerance.
-    if (total - 1.0).abs() > FP32_NORM_TOL {
-        return Err(BackendError::InvalidState {
-            reason: "state norm² deviates from 1 beyond f32 tolerance",
-        });
-    }
+    crate::sampling::validate_norm(
+        state.amps.iter().map(|a| norm_sqr_f64(*a)),
+        FP32_NORM_TOL,
+        "state norm² deviates from 1 beyond f32 tolerance",
+        |p| probs.push(p),
+    )?;
     Ok(probs)
+}
+
+fn validate_layout(state: &Fp32CpuState) -> Result<usize, BackendError> {
+    let n = state.amps.len();
+    crate::sampling::validate_shape(state.num_qubits, n, "amps.len() != 2^num_qubits")?;
+    Ok(n)
 }
 
 pub(crate) fn measure_impl_f32(
@@ -129,7 +109,7 @@ pub(crate) fn measure_impl_f32(
     Ok(outcome)
 }
 
-/// Sample basis-state indices from `|amps[i]|²` via the alias table.
+/// Sample indices with a scratch-free single draw or the repeated-draw alias table.
 ///
 /// Mirrors [`crate::measure::sample_impl`]; the alias table is built from
 /// the f64-widened probability vector for numerical fidelity.
@@ -138,6 +118,9 @@ pub(crate) fn sample_impl_f32(
     state: &Fp32CpuState,
     shots: u32,
 ) -> Result<Vec<u64>, BackendError> {
+    if shots <= 1 {
+        return sample_low_shot(rng, state, shots);
+    }
     let probs = validate_state_f32(state)?;
     let table = crate::sampling::AliasTable::build(&probs);
     let mut out = Vec::with_capacity(shots as usize);
@@ -145,6 +128,30 @@ pub(crate) fn sample_impl_f32(
         out.push(table.draw(rng) as u64);
     }
     Ok(out)
+}
+
+// Keep the one-draw scan out of the repeated-draw alias loop's code/register footprint.
+#[inline(never)]
+fn sample_low_shot(
+    rng: &mut StdRng,
+    state: &Fp32CpuState,
+    shots: u32,
+) -> Result<Vec<u64>, BackendError> {
+    validate_layout(state)?;
+    let total = crate::sampling::validate_norm(
+        state.amps.iter().map(|a| norm_sqr_f64(*a)),
+        FP32_NORM_TOL,
+        "state norm² deviates from 1 beyond f32 tolerance",
+        |_| {},
+    )?;
+    if shots == 0 {
+        return Ok(Vec::new());
+    }
+    Ok(vec![crate::sampling::draw_cumulative(
+        rng,
+        state.amps.iter().map(|a| norm_sqr_f64(*a)),
+        total,
+    )?])
 }
 
 /// Naive expectation value over the f32 state. Z-only Pauli strings take the
