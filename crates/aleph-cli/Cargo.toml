@@ -48,7 +48,12 @@ metal = ["dep:aleph-metal", "aleph-metal/metal"]
 cuda = ["dep:aleph-cuda", "aleph-cuda/cuda"]
 
 [dev-dependencies]
+criterion    = { workspace = true }
 aleph-oracle = { path = "../aleph-oracle" }
 assert_cmd   = { workspace = true }
 predicates   = { workspace = true }
 proptest     = { workspace = true }
+
+[[bench]]
+name = "public_pipeline"
+harness = false

@@ -76,6 +76,25 @@ impl MetalSvBackend {
         Ok(state)
     }
 
+    /// Optimize while preserving every final-state qubit, not only the measured
+    /// distribution. Flushes pending Metal commands before returning.
+    pub fn run_optimized_final_state(
+        &mut self,
+        circuit: &Circuit,
+    ) -> Result<MetalSvState, BackendError> {
+        Ok(self.run_optimized_final_state_with_stats(circuit)?.0)
+    }
+
+    /// Final-state preserving execution with IR planning diagnostics.
+    pub fn run_optimized_final_state_with_stats(
+        &mut self,
+        circuit: &Circuit,
+    ) -> Result<(MetalSvState, aleph_backend::OptimizedRunStats), BackendError> {
+        let (state, stats) = aleph_backend::run_optimized_final_state_with_stats(self, circuit)?;
+        state.sync();
+        Ok((state, stats))
+    }
+
     fn build(rng: StdRng) -> Result<Self, BackendError> {
         crate::context::record_sv_backend_init();
         let ctx = MetalContext::new().map_err(map_metal_err)?;

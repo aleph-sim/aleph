@@ -1,0 +1,50 @@
+{
+  "date": "2026-10-13",
+  "candidate_implementation_commit": "094856d",
+  "base_commit": "bfd939da86dd2cc4b71d83ee476024335fe3caba",
+  "comparison": "same candidate release CLI, --raw vs default optimized; not historical binaries",
+  "cpu_host": {
+    "model": "Intel Core i5-13500",
+    "logical_cpus": 20,
+    "os": "Linux 6.8.0-146-generic",
+    "rust": "1.96.0",
+    "rayon_num_threads": 1,
+    "dedicated_core_isolation": false,
+    "services_stopped": false
+  },
+  "binary_sha256": "9e84994bd92cdffc2ef44b605d9b97825b6ec942f7de33004470861013526f02",
+  "public_sweep": {
+    "entrypoint": "aleph run QASM --backend sv --precision f64/f32 --shots 32 --seed 7 --execution-stats [--raw]",
+    "fresh_process_order": [
+      "raw",
+      "optimized",
+      "optimized",
+      "raw",
+      "raw",
+      "optimized"
+    ],
+    "samples_per_mode": 3,
+    "workloads": [
+      "Bell n=2",
+      "QFT n=20 controlled-phase decomposition",
+      "deterministic rotation/CX brickwall n=20 depth=12"
+    ],
+    "source_hashes": "stored per row",
+    "sampling_contract": "same-mode seeded output stable; cross-mode rounding may change alias bins and outcomes"
+  },
+  "criterion": {
+    "entrypoint": "public CLI processes without diagnostics, output redirected after formatting",
+    "samples": 10,
+    "warmup_seconds": 1,
+    "requested_measurement_seconds": 2,
+    "workloads": [
+      "committed Bell n=2",
+      "committed qft_n15",
+      "committed random_brickwall_n15_d20"
+    ]
+  },
+  "metal": {
+    "hardware_correctness": "executed and passed",
+    "timing": "pending; user explicitly chose CPU on openwebgui first and Mac later"
+  }
+}
