@@ -56,8 +56,9 @@ impl RunResult {
     /// Final state vector as a numpy `complex128` array of shape `(2**n,)`,
     /// CPU SV and in-core GPU backends only. GPU download/widening is lazy:
     /// the first read caches host amplitudes and releases the retained GPU state;
-    /// subsequent reads copy the cache into independent arrays. Synchronization,
-    /// copy and cache work run without the GIL. CUDA copy errors raise ValueError
+    /// subsequent reads copy the cache into independent arrays. GPU synchronization,
+    /// download/widening and cache lookup run without the GIL; the final NumPy
+    /// copy uses the same GIL-held path as CPU/previous GPU results. CUDA copy errors raise ValueError
     /// and leave the device state available for another attempt.
     ///
     /// One contiguous O(state) buffer (a copy of the backend's amplitude

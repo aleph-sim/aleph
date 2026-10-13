@@ -1,0 +1,50 @@
+{
+  "date": "2026-10-13",
+  "baseline_revision": "dce007348272c0e8f00be8d43f3f8b3a218a0b4c",
+  "candidate_revision": "7c8050c",
+  "entrypoint": "aleph.run(...).counts(); optional RunResult.statevector() twice",
+  "workload": {
+    "gates": [
+      "h(0)",
+      "s(0)",
+      "cx(0,n-1)"
+    ],
+    "shots": 32,
+    "seed": 7
+  },
+  "build": "release, --locked, python,cuda or python,metal",
+  "order": [
+    "baseline",
+    "candidate",
+    "candidate",
+    "baseline",
+    "baseline",
+    "candidate"
+  ],
+  "samples_per_variant": 3,
+  "cuda": {
+    "device": "NVIDIA RTX 4000 SFF Ada Generation, 20 GiB",
+    "driver": "580.178.04",
+    "os": "Linux 6.8.0-146-generic",
+    "rust": "1.96.0",
+    "python": "3.12.3",
+    "numpy": "2.5.0",
+    "isolated": false,
+    "baseline_diagnostics": "p8-03-baseline-dtoh.patch: read-only transfer counter; no execution changes",
+    "baseline_wheel_sha256": "419b293eb816b8efbc43e4ec810c763b3d30f99856814eba0095864850294128",
+    "candidate_wheel_sha256": "43118b3ea4e1b9649f2d3c970bad69da8d6f4eab2c63fe9dfc4a4acafbcf27ce"
+  },
+  "metal": {
+    "os": "macOS arm64",
+    "python": "3.12",
+    "numpy": "2.3.5",
+    "baseline_artifact": "retained P8-08 Metal wheel; same eager amplitude result path as baseline main, not rebuilt for P8-03",
+    "baseline_wheel_sha256": "3d3527703ed9d3bfe556876a8472398d19d9376265b9886b88b4ee2549643a57",
+    "candidate_wheel_sha256": "129b79abc031782c74322da0dfb86a8eb25885390a524551089c20720abd353b"
+  },
+  "memory": {
+    "host": "ru_maxrss: process lifetime peak; Linux statm current RSS also saved",
+    "cuda_device": "nvidia-smi per-process used_gpu_memory sampled about every 100 ms; sampled peaks are lower bounds including allocator/context reservations",
+    "logical": "native diagnostics track result amplitude buffers and caches only, not pool/scratch/NumPy/transient memory"
+  }
+}
