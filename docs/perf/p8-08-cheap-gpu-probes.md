@@ -59,23 +59,69 @@ These are candidate smoke/counter measurements, **not a Python before/after spee
 Python did not auto-probe Metal before this change. Linux/CUDA Python is the platform
 where the removed eager compiler setup must be measured before/after.
 
+## Actual Linux/CUDA before/after
+
+Measured 2026-10-13 on Linux 6.8.0-146-generic, NVIDIA RTX 4000 SFF Ada
+Generation (20 GiB), driver 580.178.04, Rust 1.96.0, Python 3.12.3 and NumPy 2.5.0.
+Baseline `c7be899f5b22ac528d727f12433da80934f98a96`; candidate
+`333e5b525665cb0f237b08ba1d070035bfc26ff5`. Both use locked release CUDA builds.
+CLI binaries and maturin wheels were saved separately, with **separate Cargo target
+directories**. An initial shared-target attempt reused stale artifacts; its timings were
+discarded. The final wheel checks require the baseline to lack the new counter and the
+candidate to expose its expected count, in addition to checking distinct artifact hashes.
+
+Each backend uses fresh processes in baseline/candidate/candidate/baseline/baseline/candidate
+order: three samples per revision. Same 2-qubit Bell circuit, 32 shots and seed 7.
+CLI times are subprocess wall times. Python cold times are whole subprocess wall times
+with **one** public call (including interpreter startup, import, execution and exit).
+Python warm times are the median of calls 2–20 within each interpreter; the table reports
+the median of those three medians. No timing assertions gate tests.
+
+| Public request | Cold process baseline → candidate (ms) | Warm Python baseline → candidate (ms) | Candidate constructions per 20 calls |
+|----------------|---------------------------------------:|--------------------------------------:|------------------------------------:|
+| CLI statevector | 194.561 → 1.271 | — | — |
+| CLI Clifford auto | 192.281 → 1.255 | — | — |
+| CLI cuda-f32 | 357.078 → 196.071 | — | — |
+| Python sv | 212.764 → 24.286 | 159.880 → 0.00203 | 0 |
+| Python Clifford auto | 210.163 → 24.276 | 160.016 → 0.00201 | 0 |
+| Python cuda-f32 | 373.970 → 217.536 | 319.756 → 159.047 | 20 |
+
+Warm Python median ranges across the three samples: baseline sv 158.461–160.042 ms,
+candidate sv 0.00198–0.00203 ms; baseline auto 159.185–160.116 ms, candidate auto
+0.00188–0.00202 ms; baseline cuda-f32 319.326–319.761 ms, candidate cuda-f32
+157.960–159.531 ms. Import medians were approximately 0.37–0.41 ms for both wheels
+in the 20-call measurements. Candidate GPU first calls still cost approximately 189 ms;
+there is no module cache, and each GPU run still compiles its selected backend.
+
+The historical wheel has no initialization counter, so baseline counts are recorded as
+null, not inferred measurements. Candidate counters confirm zero discarded CPU/Clifford
+constructions and exactly one selected GPU construction per call. CLI baseline/candidate
+stdout matched for every measured request. Python Bell counts were valid and deterministic
+within each process. These results concern frontend setup on tiny circuits, not GPU gate
+throughput or large-circuit execution.
+
+The host remained shared: no services or watchdog were paused. GPU memory was 1339 MiB
+before/after; utilization was 0% before and 3% after, CPU load averages 1.92/1.25/0.57
+before and 1.41/1.22/0.61 after. Only three samples per revision were taken. Treat times
+as observations on this host, not isolated-card calibration or statistical confidence.
+Raw per-process measurements, including import/first-call/warm values and counters:
+[data/p8-08-cuda-startup.json](data/p8-08-cuda-startup.json) and
+[data/p8-08-cuda-cold-python.json](data/p8-08-cuda-cold-python.json).
+
 ## Validation
 
 - Shared policy: 36 backend unit tests passed, including all explicit kinds and a
   lazy-versus-pure selection matrix across circuit shapes, availability and precision.
 - CLI: 35 unit tests, 40 command integration tests and the new public CPU/Clifford
-  initialization-counter regression passed. The counter test also passed with Metal enabled.
-- Real Metal: device discovery left construction count unchanged; backend construction
-  incremented once; deliberately invalid shader source failed compilation while device
-  discovery remained true. Sandboxed execution hid the GPU; the real smoke ran outside it.
-- Python: maturin abi3 Python/Metal wheel built; 27 binding tests passed; public counter
-  measurements confirm zero CPU/auto and one-per-call explicit Metal constructions.
-- Targeted default/Metal/Python clippy, formatting and diff checks passed during development.
-
-**Pending:** Linux CUDA build/hardware smoke and actual baseline/candidate cold/warm Python
-measurements. Copying the baseline snapshot/patch to the shared CUDA host was rejected by
-automatic approval review pending explicit user authorization. No source was transferred,
-no shared GPU services were paused, and no CUDA speedup is claimed by this report.
+  initialization-counter regression passed. The counter test also passed with Metal and CUDA enabled.
+- Real Metal and CUDA: discovery left construction count unchanged; backend construction
+  incremented once; deliberately invalid shader/CUDA source failed compilation while
+  discovery remained true. Sandboxed macOS execution hid the GPU; Metal smoke ran outside it.
+  CUDA smoke executed on the device rather than taking the absent-device skip path.
+- Python: maturin abi3 Metal/CUDA wheels built; all 27 binding tests passed on both hosts;
+  public measurements confirm zero CPU/auto and one-per-call explicit GPU constructions.
+- Workspace and targeted Metal/Python clippy, formatting and diff checks passed locally.
+  All eight GitHub CI jobs passed for candidate `333e5b5`, including CUDA/NCCL clippy.
 
 ## Reproduce
 
@@ -84,14 +130,21 @@ cargo test -p aleph-backend --lib
 cargo test -p aleph-cli --lib --test cli --test gpu_probe
 cargo test -p aleph-cli --features metal --test gpu_probe
 cargo test -p aleph-metal --features metal --test device_probe -- --nocapture
+cargo test -p aleph-cli --features cuda --test gpu_probe
+cargo test -p aleph-cuda --features cuda --test device_probe -- --nocapture
 cargo run --release -p aleph-cli --features metal --example probe_startup -- legacy 20
 cargo run --release -p aleph-cli --features metal --example probe_startup -- lazy 20
 python scripts/python/bench_probe_startup.py --backend sv --repeats 20
 python scripts/python/bench_probe_startup.py --backend auto --repeats 20
-python scripts/python/bench_probe_startup.py --backend metal --repeats 3
+python scripts/python/bench_probe_startup.py --backend cuda-f32 --repeats 20
 ```
 
-On an authorized Linux CUDA host, use `--features cuda` for the CLI example/regression and
-`cargo test -p aleph-cuda --features cuda --test device_probe -- --nocapture`. Compare actual
-baseline/candidate wheels in fresh interleaved processes; hardware smoke must report execution
-rather than silently treating missing devices as performance evidence.
+For actual before/after, build each revision with its own `CARGO_TARGET_DIR`:
+`cargo build --release --locked -p aleph-cli --features cuda` and
+`maturin build --release --locked -m crates/aleph-py/Cargo.toml --features python,cuda`.
+Extract each wheel with Python `zipfile` into a separate directory and select it with
+`PYTHONPATH`; do not install over the other wheel. Invoke the candidate benchmark script
+with each wheel in the interleaved order above. Wrap each subprocess with
+`time.perf_counter()` for whole-process wall time; use `--repeats 1` for Python cold
+processes and `--repeats 20` for warm calls. Compare CLI stdout across revisions and
+assert candidate counters are zero for sv/auto and equal to calls for cuda-f32.
