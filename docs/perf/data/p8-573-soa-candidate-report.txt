@@ -1,0 +1,17 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 545  of event 'cpu/cycles/P'
+# Event count (approx.): 4835142986
+#
+# Overhead  Command          Shared Object      Symbol                                                             
+# ........  ...............  .................  ...................................................................
+#
+    90.03%  bench-candidate  bench-candidate    [.] aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{{closure}}
+
+
+#
+# (Cannot load tips.txt file, please install perf!)
+#
