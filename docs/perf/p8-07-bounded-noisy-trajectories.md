@@ -63,8 +63,12 @@ is unchanged. The backend's existing 28-qubit ceiling remains.
 If fixed output plus one context cannot fit, the call returns an actionable
 `MemoryBudget` error before allocating execution/result buffers. Zero-shot sparse
 calls need no buffers; dense zero-shot calls still budget the full histogram.
-Rust users can raise the budget explicitly. CLI/Python currently use the fixed
-default policy; larger frontend budgets require a future exposed option.
+Rust users can raise the budget explicitly. CLI `--noise-memory-budget-bytes` and Python `noise_memory_budget_bytes=`
+raise or lower this policy explicitly; `--noise-max-workers` / `noise_max_workers=`
+cap contexts. Both require noise. The legacy CLI Rust function is preserved as a
+default-options adapter. States at 26–28 qubits require more than the default
+1 GiB even with one context; allocation-free planning tests cover this limit
+and a raised 8 GiB one-context budget.
 
 Outcomes remain O(shots), and sparse output reserves its worst-case capacity even
 for a concentrated distribution. This issue does not implement an unbounded-shot
@@ -82,11 +86,11 @@ clearing and resizing. Dense and sparse results reconstruct the same histogram.
 
 Boundary tests cover zero shots/qubits, insufficient/exact budgets, zero worker
 limits, dimension/arithmetic overflow, control spills, vectorized matrix scratch
-and malformed channel/readout inputs. Local validation passed 351 SV unit/property
+and malformed channel/readout inputs. Local validation passed 353 SV unit/property
 tests, three driver tests, six stored Aer density-matrix/readout fixtures and two
 public sampling/worker-invariance tests. CLI tests cover the unchanged noise output;
 the sparse formatter is compared directly with the raw-sample formatter, including
-zero shots. Eight Python `TestNoise` tests passed on the newly built Python 3.12
+zero shots. Nine Python `TestNoise` tests passed on the newly built Python 3.12
 extension. Workspace/all-target clippy, Python-feature clippy and fmt passed.
 
 ## Measurement protocol
@@ -226,3 +230,76 @@ python3 scripts/python/bench_noisy_trajectories_guard.py /tmp/noisy-artifacts
 The guard changes affinity only for its monitor and benchmark children, stores
 all attempt logs/telemetry, and writes accepted Criterion JSON/summary CSV. Its
 shared-host limits still apply even when every repeat passes the CPU guard.
+
+## Review follow-up
+
+The review is a manual re-read of the full PR diff against `e51ba78`, not an
+independent external Code Review run. No Code Review skill is installed in this
+session; the plugin's exposed tool reads CI diagnostics only. Correctness and
+oracle tests support the review but are not presented as independent review.
+
+Review covered allocation lifetime/reservations, chunk ownership during nested
+Rayon work, absolute seed/reset behavior, channel scratch resizing, attachment
+ordering, dense/sparse compatibility, frontend argument/error behavior, and
+benchmark provenance/selection. No production unsafe code was added.
+
+Two compatibility/correctness findings were fixed:
+
+- The fixed frontend budget had no override, preventing previously feasible
+  26–28-qubit noisy calls. CLI/Python now expose the byte budget and context cap,
+  retain existing default call forms, reject noise options without noise, and
+  test count invariance under these options. Allocation-free planning verifies
+  large-state budgets without allocating multi-GiB vectors during CI.
+- The CPU backend trusts pass-produced `UnitaryKq` matrices and ignores controls;
+  manual public IR can violate those assumptions. The noisy driver now checks
+  fused width (2–5), exact matrix length, finite coefficients and unitarity once
+  before allocating trajectories. It rejects controls and unsorted targets,
+  since the fused kernel sorts targets internally. Regression tests cover valid
+  identity execution and each rejected case. This guard applies to noisy calls;
+  general backend validation of manual fused IR remains outside this PR and is
+  tracked in [#573](https://github.com/aleph-sim/aleph/issues/573). A separate
+  release-mode reproducer confirmed both ignored controls (expected basis 0,
+  observed 1) and permuted operand mapping (expected basis 2, observed 1).
+
+Ordinary gate validation still runs through `apply_gate` every shot; no gate
+unitarity checks or channel boundaries were removed. Validation of fused matrices
+uses immutable borrowed inputs and stack accumulators, with no new owned buffers.
+
+The initial post-review A/B/B/A check of tiny four-worker Kraus measured baseline
+1.587 ms and candidate 1.501 ms. All four repeats passed the same CPU guard.
+This candidate predates the final unsorted-target guard (which affects only fused
+IR, absent from this workload); its raw data is retained as intermediate evidence.
+It does not erase the original 2.802 ms outlier or establish that rare variability
+was fixed. A separate final-source replication is recorded below.
+
+A five-second `perf record`/`perf stat` diagnostic of the earlier measured
+candidate was also collected on the same four-core affinity. The largest sampled
+symbol is the inlined Rayon producer/consumer helper (48.41% self samples), which
+contains inlined trajectory work; it is not a 48% scheduler-overhead attribution.
+Named samples include gate application, unitary validation, `hypot`, sampling,
+and RNG refill. Aggregate context switches/migrations were collected, but the
+profile-time runs complete different numbers of calls and have no CPU-overlap
+guard. These counters cannot identify the old outlier or serve as normalized
+before/after throughput measurements. Retained reports are diagnostic evidence,
+not a reason to make an unmeasured scheduler change.
+
+Final-source A/B/B/A replication: baseline repeat medians **1.593/1.570 ms**,
+candidate **1.510/1.494 ms**; mean-repeat medians **1.581 → 1.502 ms** (1.053×).
+All four repeats passed the existing CPU guard, with observed external overlap
+0–0.02 CPU seconds per run. Raw estimates/samples and telemetry are retained as
+`p8-07-review-final-*`; binary and source hashes are in the manifest. Only extra
+matrix regression assertions were added after this replication; production code
+is unchanged. This narrow replication demonstrates no repeated slowdown in these
+two candidate runs, not elimination of rare latency spikes. The original full
+matrix, all seven earlier Kraus medians and the 6.9% slower aggregate remain intact.
+
+Final local checks: 353 SV unit/property tests, 3 driver tests, 6 stored Aer oracle
+fixtures and 2 public sampling/invariance tests; 36 CLI unit tests, 41 CLI
+integration tests and 1 startup probe; 9 Python noise tests on the freshly rebuilt
+Python 3.12 module; workspace/all-target clippy, Python-feature clippy, fmt and
+diff checks. The same SV release/oracle suites also pass on the Xeon AVX512 host.
+No new blocking finding remains in the changed execution/frontend paths after
+this manual review. Residual risks are the conservative default budget policy,
+O(shots) outcomes/sparse sorting, unchanged same-concurrency large-state peak,
+and unresolved rare latency variability; none is represented as a universal
+performance improvement or an RSS guarantee.

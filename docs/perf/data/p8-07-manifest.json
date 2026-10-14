@@ -152,13 +152,7 @@
   },
   "host": "51.159.0.49 (user-selected CPU-only server)",
   "measured_code_revision": "d3f5a3a99ac2d19e9eacf2400c4072b0d61c9cb1",
-  "post_measurement_changes": "Clarify conservative budget reservation error wording; add reusable Linux telemetry/reproduction helpers. Trajectory execution, sampling and planning arithmetic unchanged.",
-  "final_source_sha256": {
-    "crates/aleph-sv/src/noise/mod.rs": "9ef96e6dcb0c14a2662bcb90971276fb967c17b163db9cf1c4ed34a25c560e8c",
-    "crates/aleph-sv/src/noise/execution.rs": "e3007cbb25d36b0a1a7b52e8721eee975ef84cd4c725190ebadcb276c8c4ee7f",
-    "crates/aleph-sv/src/noise/apply.rs": "9c1d578ac4a9fa0bfb1a970b588c3ed46d0ce238718b31468269b5a11b7615d4",
-    "crates/aleph-sv/src/noise/model.rs": "dd6ef6ea022fe3f5cb8a9e5b6e123f5ff7a237a73dc0be42d4cccf8f8372d19a"
-  },
+  "post_measurement_changes": "Initial d3f5a3a -> b96da98 changes clarified the conservative budget error and added helpers/data. Review follow-up exposes frontend budget/context controls and validates manual fused IR on noisy calls; final-source targeted Criterion data is recorded separately. Full original throughput data and unresolved outlier are retained.",
   "targeted_replication": {
     "case": "p8_trajectories/workers4/kraus_n4_shots1024",
     "reason": "initial candidate repeat 2.802 ms versus 1.514 ms; investigate repeat variability rather than discard slower result",
@@ -201,5 +195,58 @@
   "reproduction_helpers": {
     "scripts/python/select_noisy_bench_cores.py": "1c1e1e81ca1082192b4569bfcc2bbf9140a3d00eaccc12e894edfeac82fde37d",
     "scripts/python/bench_noisy_trajectories_guard.py": "2f9c99340bf513ba3cd6dbd84b0942bf2e6eca05a14f10db890ad7cdf480a569"
+  },
+  "pre_review_source_sha256": {
+    "crates/aleph-sv/src/noise/mod.rs": "9ef96e6dcb0c14a2662bcb90971276fb967c17b163db9cf1c4ed34a25c560e8c",
+    "crates/aleph-sv/src/noise/execution.rs": "e3007cbb25d36b0a1a7b52e8721eee975ef84cd4c725190ebadcb276c8c4ee7f",
+    "crates/aleph-sv/src/noise/apply.rs": "9c1d578ac4a9fa0bfb1a970b588c3ed46d0ce238718b31468269b5a11b7615d4",
+    "crates/aleph-sv/src/noise/model.rs": "dd6ef6ea022fe3f5cb8a9e5b6e123f5ff7a237a73dc0be42d4cccf8f8372d19a"
+  },
+  "review_followup": {
+    "manual_review": true,
+    "independent_external_review": false,
+    "reason": "No Code Review skill available; exposed plugin tool reads CI diagnostics only",
+    "final_source_sha256": {
+      "crates/aleph-sv/src/noise/execution.rs": "941114a21f8f68a72996b5043ce9394c6f467d423ba179a274f6da66a39228ad",
+      "crates/aleph-cli/src/cli.rs": "bcfddf84fc173412cc82e82ee1ef0ea1997e68f2053ae0b4035a67b1916c34e3",
+      "crates/aleph-cli/src/exec.rs": "a6e875e0e3ccfda67c7b7edf741efc2c082894fd6476758da9fdd11b4e5aa201",
+      "crates/aleph-cli/src/main.rs": "33596f9838a719090a2f3922fe4670ee4f54ae4afcf8208a99be929d6dad866a",
+      "crates/aleph-py/src/run.rs": "baea89ee54b6a9167ffdcd5cb85ca1ecca7ec75e83d774ad0403b119217f247e"
+    },
+    "measured_patch_sha256": "c9b3ec23ccc4c205a301c43190fe162a3fc1cd32d5d5d3b866e24267f8cf8e18",
+    "post_replication_change": "Adds valid nonidentity and finite-overflow matrix regression assertions only; production code unchanged.",
+    "final_binary_sha256": {
+      "baseline": "dfbc1e1c7fb6af28fdb6345e9e8fb011b2ebd038a28384bc3a2ea4e8e30bedf8",
+      "candidate": "142d23cc83442c4db417903da0ae35411bdd153803fc1ddb12e64220ef1a5678"
+    },
+    "final_case": {
+      "case": "p8_trajectories/workers4/kraus_n4_shots1024",
+      "base1_median_ns": "1592565.0442708335",
+      "base2_median_ns": "1570094.9166666665",
+      "candidate1_median_ns": "1509958.8277777778",
+      "candidate2_median_ns": "1493809.375",
+      "baseline_mean_median_ns": "1581329.98046875",
+      "candidate_mean_median_ns": "1501884.101388889",
+      "speedup": "1.0528974765805115"
+    },
+    "final_guard": {
+      "accepted": 4,
+      "rejected": 0,
+      "order": [
+        "base-1",
+        "candidate-1",
+        "candidate-2",
+        "base-2"
+      ]
+    },
+    "final_files": [
+      "p8-07-review-final-summary.csv",
+      "p8-07-review-final-criterion.json",
+      "p8-07-review-final-guard.jsonl"
+    ],
+    "general_backend_followup": "https://github.com/aleph-sim/aleph/issues/573",
+    "linux_release_test_log_sha256": "f2acea453e00da597e8e38adb302f6845acc24404fd02679bd64f92e2dcfc517",
+    "measured_execution_source_sha256": "7d878d59da8d583a41264c5a2f306ab3bd5cd76c5ad17693156143860ef4b181",
+    "reviewed_code_commit": "d1d3997838236d65f40d61b02be5c9473b61350d"
   }
 }
