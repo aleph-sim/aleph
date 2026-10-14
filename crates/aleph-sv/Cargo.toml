@@ -71,3 +71,7 @@ harness = false
 name = "chunk_tune"
 harness = false
 required-features = ["internal-bench"]
+
+[[bench]]
+name = "noisy_trajectories"
+harness = false

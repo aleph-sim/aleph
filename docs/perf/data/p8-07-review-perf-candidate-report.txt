@@ -1,0 +1,24 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 3K of event 'cpu/cycles/P'
+# Event count (approx.): 27874112826
+#
+# Overhead  Command          Shared Object      Symbol                                                                       
+# ........  ...............  .................  .............................................................................
+#
+    48.41%  bench-candidate  bench-candidate    [.] rayon::iter::plumbing::bridge_producer_consumer::helper
+     8.51%  bench-candidate  bench-candidate    [.] aleph_sv::kernels::aos::apply_1q
+     5.47%  bench-candidate  bench-candidate    [.] <aleph_sv::backend::NaiveSvBackend as aleph_backend::Backend>::apply_gate
+     3.86%  bench-candidate  bench-candidate    [.] aleph_sv::validation::unitarity_deviation
+     3.79%  bench-candidate  libm.so.6          [.] hypot
+     3.69%  bench-candidate  bench-candidate    [.] aleph_sv::kernels::aos::apply_1q_avx512
+     3.35%  bench-candidate  bench-candidate    [.] aleph_sv::measure::sample_low_shot
+     3.25%  bench-candidate  bench-candidate    [.] rand_chacha::guts::refill_wide::impl_avx2
+
+
+#
+# (Cannot load tips.txt file, please install perf!)
+#

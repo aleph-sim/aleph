@@ -1,0 +1,2 @@
+case,base1_median_ns,base2_median_ns,candidate1_median_ns,candidate2_median_ns,baseline_mean_median_ns,candidate_mean_median_ns,speedup
+p8_trajectories/workers4/kraus_n4_shots1024,1590132.53125,1583613.9625,1494351.6507936507,1507300.0,1586873.246875,1500825.8253968253,1.0573333827430798
