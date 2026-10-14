@@ -75,3 +75,7 @@ required-features = ["internal-bench"]
 [[bench]]
 name = "noisy_trajectories"
 harness = false
+
+[[bench]]
+name = "fused_validation"
+harness = false

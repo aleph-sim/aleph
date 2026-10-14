@@ -1,5 +1,5 @@
-//! Shared per-gate validation helpers used by both state-vector
-//! backends (`NaiveSvBackend`, `SoaSvBackend`).
+//! Shared per-gate validation helpers used by the CPU state-vector backends
+//! (`NaiveSvBackend`, `SoaSvBackend`, `Fp32SvBackend`).
 //!
 //! Hoisted out of `backend.rs` / `soa_backend.rs` in the P1-01
 //! review pass: the function carries NaN-propagation discipline
@@ -48,6 +48,105 @@ pub(crate) fn unitarity_deviation(matrix: &GateMatrix) -> f64 {
         GateMatrix::M4x4(m) => max_dev::<4>(m),
         GateMatrix::M8x8(m) => max_dev::<8>(m),
     }
+}
+
+/// One owned, immutable validated matrix; never a pointer-identity cache.
+/// Comparison covers every coefficient and width before reusing validation.
+/// At most 16 KiB retained, or 32 KiB transient during replacement at k=5.
+#[derive(Default)]
+pub(crate) struct UnitaryKqCache {
+    last: Option<(u8, Box<[Complex]>)>,
+}
+impl UnitaryKqCache {
+    // Keep snapshot checking separate from backend dispatch and SIMD hot loops.
+    #[inline(never)]
+    pub(crate) fn validate(
+        &mut self,
+        k: u8,
+        data: &[Complex],
+        controls: &[u32],
+    ) -> Result<(), aleph_backend::BackendError> {
+        // Controls are not part of matrix contents and must never hit the cache.
+        if !controls.is_empty() {
+            return Err(aleph_backend::BackendError::UnsupportedGate {
+                kind: "controlled UnitaryKq",
+            });
+        }
+        if self
+            .last
+            .as_ref()
+            .is_some_and(|(width, matrix)| *width == k && &**matrix == data)
+        {
+            return Ok(());
+        }
+        self.refresh(k, data, controls)
+    }
+
+    // Full validation/copy is setup work for a new matrix, outside the common
+    // immutable-matrix reuse path. Keep it out of the hot caller's code layout.
+    #[cold]
+    #[inline(never)]
+    fn refresh(
+        &mut self,
+        k: u8,
+        data: &[Complex],
+        controls: &[u32],
+    ) -> Result<(), aleph_backend::BackendError> {
+        validate_unitary_kq(k, data, controls)?;
+        // Own a snapshot: callers may mutate or free the public gate after return.
+        self.last = Some((k, data.into()));
+        Ok(())
+    }
+}
+
+/// Validate manually supplied fused IR before any kernel reads or FP32 narrowing.
+/// Public gate fields are mutable, so validation cannot be cached by pointer.
+pub(crate) fn validate_unitary_kq(
+    k: u8,
+    data: &[Complex],
+    controls: &[u32],
+) -> Result<(), aleph_backend::BackendError> {
+    use aleph_backend::BackendError;
+    if !(2..=5).contains(&k) {
+        return Err(BackendError::InvalidState {
+            reason: "UnitaryKq width must be between 2 and 5",
+        });
+    }
+    if !controls.is_empty() {
+        return Err(BackendError::UnsupportedGate {
+            kind: "controlled UnitaryKq",
+        });
+    }
+    let width = 1usize << k;
+    if data.len() != width * width {
+        return Err(BackendError::InvalidState {
+            reason: "UnitaryKq matrix length does not match width",
+        });
+    }
+    if data.iter().any(|z| !z.re.is_finite() || !z.im.is_finite()) {
+        return Err(BackendError::NonFiniteParam { kind: "UnitaryKq" });
+    }
+    let mut deviation_squared: f64 = 0.0;
+    for (i, row_i) in data.chunks_exact(width).enumerate() {
+        // U U† is Hermitian: mirrored entries have the same absolute deviation.
+        for (j, row_j) in data.chunks_exact(width).take(i + 1).enumerate() {
+            let mut sum = Complex::new(0.0, 0.0);
+            for (a, b) in row_i.iter().zip(row_j) {
+                sum += a * b.conj();
+            }
+            let error = (sum - Complex::new(if i == j { 1.0 } else { 0.0 }, 0.0)).norm_sqr();
+            if !error.is_finite() {
+                return Err(BackendError::NonUnitaryMatrix { deviation: error });
+            }
+            deviation_squared = deviation_squared.max(error);
+        }
+    }
+    if deviation_squared > aleph_core::AMPLITUDE_TOL.powi(2) {
+        return Err(BackendError::NonUnitaryMatrix {
+            deviation: deviation_squared.sqrt(),
+        });
+    }
+    Ok(())
 }
 
 #[cfg(test)]

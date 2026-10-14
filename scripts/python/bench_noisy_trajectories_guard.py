@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""Guard paired noisy-driver Criterion runs on a shared Linux CPU host.
+"""Guard paired noisy-driver or fused-gate Criterion runs on a shared Linux CPU host.
 
-Run select_noisy_bench_cores.py first. The artifact directory must contain
+The fused suite uses RAYON_NUM_THREADS=1; configure affinity and monitored SMT
+siblings for the selected core. For noisy runs, run select_noisy_bench_cores.py
+first. The artifact directory must contain
 bench-base and bench-candidate executables compiled in independent targets.
 Before each run all selected cores/SMT siblings must be <=2% busy. During the
 run external CPU overlap on active benchmark cores must be <3% of nominal
@@ -12,6 +14,7 @@ has its affinity changed or is stopped.
 import argparse
 import csv
 import fcntl
+import hashlib
 import json
 import os
 import pathlib
@@ -21,7 +24,19 @@ import time
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('artifacts', type=pathlib.Path)
-    root = parser.parse_args().artifacts
+    parser.add_argument('--suite', choices=['noisy', 'fused'], default='noisy')
+    args = parser.parse_args()
+    root = args.artifacts
+    hashes = {}
+    for version in ['base', 'candidate']:
+        with (root / f'bench-{version}').open('rb') as binary:
+            digest = hashlib.sha256()
+            for chunk in iter(lambda: binary.read(1024 * 1024), b''):
+                digest.update(chunk)
+            hashes[version] = digest.hexdigest()
+    if hashes['base'] == hashes['candidate']:
+        raise ValueError('baseline and candidate binaries are identical; verify build provenance')
+    (root / 'guard-binary-sha256.json').write_text(json.dumps(hashes, indent=2) + '\n')
     lock = (root / '.guard.lock').open('w')
     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     policy = json.loads((root / 'core-policy.json').read_text())
@@ -102,13 +117,16 @@ def main():
         with (root / 'clean-events.jsonl').open('a') as f:
             f.write(json.dumps(event) + '\n')
     cases = [f'p8_trajectories/workers{workers}/{kind}_n{n}_shots{shots}' for workers in [1, 4] for kind in ['pauli', 'kraus'] for (n, shots) in [(4, 1024), (16, 64), (20, 8)]]
+    if args.suite == 'fused':
+        cases = [f'p8_fused/{backend}/n{n}_k{k}' for backend in ['aos', 'soa', 'fp32'] for n in [10, 20] for k in [2, 3, 5]]
+        cases += [f'p8_fused/cold_{backend}/n10_k5' for backend in ['aos', 'soa', 'fp32']]
     for case in cases:
         key = case.replace('/', '__')
         for run in ['base-1', 'candidate-1', 'candidate-2', 'base-2']:
             if (case, run) in accepted:
                 continue
             version = run.rsplit('-', 1)[0]
-            workers = int(case.split('/')[1].replace('workers', ''))
+            workers = int(case.split('/')[1].replace('workers', '')) if args.suite == 'noisy' else 1
             attempt = max([e['attempt'] for e in history if e['case'] == case and e['run'] == run] + [0])
             while True:
                 idle = core_idle()
@@ -117,6 +135,8 @@ def main():
                 attempt += 1
                 env = os.environ.copy()
                 env['ALEPH_BENCH_OUTPUT'] = str(root / f'clean-{run}')
+                if args.suite == 'fused':
+                    env['RAYON_NUM_THREADS'] = '1'
                 log = root / f'clean-{run}-{key}-attempt{attempt}.log'
                 hits = []
                 before = tasks()
@@ -145,7 +165,7 @@ def main():
             new = estimate.parent
             metadata = json.loads((new / 'benchmark.json').read_text())
             records.append({'run': run, 'case': metadata['full_id'], 'estimates': json.loads(estimate.read_text()), 'samples': json.loads((new / 'sample.json').read_text())})
-    assert len(records) == 48, len(records)
+    assert len(records) == 4 * len(cases), len(records)
     (root / 'clean-criterion.json').write_text(json.dumps(records, separators=(',', ':')) + '\n')
     with (root / 'clean-summary.csv').open('w') as f:
         writer = csv.writer(f)

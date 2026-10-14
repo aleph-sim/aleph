@@ -64,7 +64,7 @@ pub(crate) fn apply_kq_soa(
 }
 
 // ---------------------------------------------------------------------------
-// Shared helper: sort targets, build offsets + fixed list.
+// Shared helper: preserve operand order for offsets; sort only the fixed list.
 //
 // MSB-first operand convention (qubits[0] = matrix MSB, ADR 0004):
 //   matrix bit p (0=LSB … k-1=MSB) ↔ qubit Q[k-1-p]
@@ -81,13 +81,14 @@ pub(crate) fn targets_offsets_fixed(qubits: &[u32], k: u8) -> (Vec<usize>, Vec<(
             let mut off = 0usize;
             for p in 0..k {
                 if (m >> p) & 1 == 1 {
-                    off |= 1usize << q[k - 1 - p];
+                    off |= 1usize << qubits[k - 1 - p];
                 }
             }
             off
         })
         .collect();
 
+    // Preserve matrix operand order in offsets; only the fixed-bit walk needs sorting.
     // fixed: each target qubit is cleared; expand_with_fixed requires ascending order.
     let fixed: Vec<(u32, bool)> = q.iter().map(|&x| (x, false)).collect();
 

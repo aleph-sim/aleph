@@ -17,6 +17,7 @@ pub(crate) const MAX_FP32_QUBITS: u32 = 28;
 /// Opt-in single-precision CPU state-vector backend.
 pub struct Fp32SvBackend {
     pub(crate) rng: StdRng,
+    fused_validation: crate::validation::UnitaryKqCache,
 }
 
 impl Fp32SvBackend {
@@ -24,6 +25,7 @@ impl Fp32SvBackend {
     pub fn new() -> Self {
         Self {
             rng: StdRng::from_entropy(),
+            fused_validation: Default::default(),
         }
     }
 
@@ -33,6 +35,7 @@ impl Fp32SvBackend {
     pub fn with_seed(seed: u64) -> Self {
         Self {
             rng: StdRng::seed_from_u64(seed),
+            fused_validation: Default::default(),
         }
     }
 }
@@ -97,6 +100,7 @@ impl Backend for Fp32SvBackend {
         // UnitaryKq has no fixed-size GateMatrix; the kernel reads `data`
         // directly. Intercept before matrix() so `Unrepresentable` never fires.
         if let aleph_core::Gate::UnitaryKq { k, data } = &gate.gate {
+            self.fused_validation.validate(*k, data, &gate.controls)?;
             let data_f32: Vec<Complex<f32>> = data.iter().copied().map(narrow).collect();
             crate::kernels::aos_f32::apply_kq_f32(&mut state.amps, &gate.qubits, *k, &data_f32);
             return Ok(());
