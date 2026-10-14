@@ -171,6 +171,15 @@ pub enum Cmd {
         /// construction is available in the Python API.
         #[arg(long)]
         noise: Vec<String>,
+
+        /// Noisy execution buffer budget in bytes (default 1073741824 = 1 GiB).
+        /// Excludes inputs, allocator/runtime overhead and formatting; requires --noise.
+        #[arg(long, requires = "noise")]
+        noise_memory_budget_bytes: Option<usize>,
+
+        /// Maximum noisy trajectory contexts; positive, bounded by the Rayon pool.
+        #[arg(long, requires = "noise")]
+        noise_max_workers: Option<usize>,
     },
 
     /// Run a QASM circuit once and print parse / execute / sample

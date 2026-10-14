@@ -152,11 +152,17 @@ fn err<E: std::fmt::Display>(what: &str, e: E) -> PyErr {
 /// Clifford circuit routes to the stabilizer backend by default and
 /// `RunResult.statevector()` raises unless you pass `backend="sv"`.
 ///
+/// `noise_memory_budget_bytes` overrides the 1 GiB incremental noisy buffer
+/// budget; `noise_max_workers` caps trajectory contexts within the Rayon pool.
+/// Both require `noise=`. The budget excludes inputs, allocator/runtime overhead
+/// and Python result conversion; it is not an RSS cap.
+///
 /// `Measure` instructions collapse the state once during execution; the
 /// `shots` samples re-sample that single final state — they do NOT re-run
 /// the circuit per shot (unlike Qiskit's per-shot execution model).
 #[pyfunction]
-#[pyo3(name = "run", signature = (circuit, *, shots = 1024, backend = "auto", precision = "auto", seed = None, noise = None))]
+#[pyo3(name = "run", signature = (circuit, *, shots = 1024, backend = "auto", precision = "auto", seed = None, noise = None, noise_memory_budget_bytes = None, noise_max_workers = None))]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn run_circuit(
     py: Python<'_>,
     circuit: &PyCircuit,
@@ -165,7 +171,19 @@ pub(crate) fn run_circuit(
     precision: &str,
     seed: Option<u64>,
     noise: Option<&PyNoiseModel>,
+    noise_memory_budget_bytes: Option<usize>,
+    noise_max_workers: Option<usize>,
 ) -> PyResult<RunResult> {
+    if noise.is_none() && (noise_memory_budget_bytes.is_some() || noise_max_workers.is_some()) {
+        return Err(PyValueError::new_err(
+            "noise_memory_budget_bytes and noise_max_workers require noise=",
+        ));
+    }
+    let noise_options = aleph_sv::noise::NoiseOptions {
+        memory_budget_bytes: noise_memory_budget_bytes
+            .unwrap_or_else(|| aleph_sv::noise::NoiseOptions::default().memory_budget_bytes),
+        max_workers: noise_max_workers,
+    };
     let c = &circuit.inner;
     let n = c.num_qubits();
 
@@ -187,9 +205,15 @@ pub(crate) fn run_circuit(
         let model = &nm.inner;
         let seed = seed.unwrap_or_else(rand::random::<u64>);
         let counts = py.allow_threads(|| -> PyResult<BTreeMap<String, u64>> {
-            let sparse =
-                aleph_sv::noise::run_noisy_sparse(c, model, shots, seed, Default::default())
-                    .map_err(|e| err("run noisy", e))?;
+            let sparse = aleph_sv::noise::run_noisy_sparse(c, model, shots, seed, noise_options)
+                .map_err(|e| {
+                    let context = if matches!(e, aleph_sv::noise::NoiseError::MemoryBudget { .. }) {
+                        "run noisy (adjust noise_memory_budget_bytes)"
+                    } else {
+                        "run noisy"
+                    };
+                    err(context, e)
+                })?;
             Ok(sparse_to_counts(&sparse, n))
         })?;
         return Ok(RunResult { counts, amps: None });

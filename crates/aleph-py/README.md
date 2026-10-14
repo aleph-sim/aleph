@@ -58,6 +58,21 @@ print(aleph.run(c, shots=100_000, noise=nm, seed=7).counts())
 
 Error factories mirror Qiskit Aer names (`depolarizing_error`, `amplitude_damping_error`, `phase_damping_error`, `pauli_error`, `bit_flip_error`, `phase_flip_error`). Noise runs on the state-vector backend as per-shot Monte-Carlo trajectories. Attach errors by Aer gate mnemonic (`"h"`, `"cx"`); unknown names raise `ValueError`.
 
+Noisy runs use a 1 GiB incremental owned-buffer budget by default. Override it
+with `noise_memory_budget_bytes=...` and optionally cap contexts with
+`noise_max_workers=...` (positive; limited by the shared Rayon pool). Both
+keywords require `noise=`. For example:
+
+```python
+result = aleph.run(c, shots=100_000, noise=nm, seed=7,
+                   noise_memory_budget_bytes=2 * 1024**3, noise_max_workers=2)
+```
+
+The budget excludes the input model, allocator/runtime overhead and Python
+result conversion; it is not an RSS limit. States with 26–28 qubits need an
+explicit budget above 1 GiB even for one context. Fixed-seed counts are invariant
+under changing the budget/context limit.
+
 ## QEC decoding
 
 aleph ships MWPM, Union-Find, BP, BP-OSD and relay-BP decoders for stim

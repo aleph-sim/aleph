@@ -88,6 +88,41 @@ pub fn run_circuit<W: Write>(
     noise: &[String],
     out: &mut W,
 ) -> Result<()> {
+    run_circuit_with_noise_options(
+        qasm_path,
+        shots_opt,
+        print_statevector,
+        force_statevector,
+        expectations,
+        seed,
+        precision,
+        backend,
+        max_bond,
+        max_error,
+        noise,
+        Default::default(),
+        out,
+    )
+}
+
+/// Execute with an explicit noisy buffer budget and trajectory context limit.
+/// The options apply only when noise presets are present.
+#[allow(clippy::too_many_arguments)]
+pub fn run_circuit_with_noise_options<W: Write>(
+    qasm_path: &Path,
+    shots_opt: Option<u32>,
+    print_statevector: bool,
+    force_statevector: bool,
+    expectations: &[String],
+    seed: Option<u64>,
+    precision: Precision,
+    backend: BackendRequest,
+    max_bond: usize,
+    max_error: Option<f64>,
+    noise: &[String],
+    noise_options: aleph_sv::noise::NoiseOptions,
+    out: &mut W,
+) -> Result<()> {
     // 1. Read + parse.
     let source = std::fs::read_to_string(qasm_path)
         .with_context(|| format!("reading QASM file: {}", qasm_path.display()))?;
@@ -126,14 +161,17 @@ pub fn run_circuit<W: Write>(
             Some(s) => format!("seed={s}"),
             None => "seed=entropy".to_string(),
         };
-        let sparse = aleph_sv::noise::run_noisy_sparse(
-            &circuit,
-            &model,
-            shots,
-            run_seed,
-            Default::default(),
-        )
-        .context("running noisy circuit")?;
+        let sparse =
+            aleph_sv::noise::run_noisy_sparse(&circuit, &model, shots, run_seed, noise_options)
+                .map_err(|error| {
+                    let context =
+                        if matches!(error, aleph_sv::noise::NoiseError::MemoryBudget { .. }) {
+                            "running noisy circuit (adjust --noise-memory-budget-bytes)"
+                        } else {
+                            "running noisy circuit"
+                        };
+                    anyhow::Error::new(error).context(context)
+                })?;
         output::format_counts_sparse(out, &sparse, shots, n, &seed_label)?;
         return Ok(());
     }

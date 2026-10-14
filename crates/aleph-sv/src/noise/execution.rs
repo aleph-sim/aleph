@@ -183,6 +183,60 @@ fn fit(
     })
 }
 
+// The backend trusts pass-produced fused matrices, but public IR can also
+// contain them. Check them once here before the unchecked fused kernel path.
+fn validate_fused_gate(gi: &aleph_core::GateInstance) -> Result<(), NoiseError> {
+    let Gate::UnitaryKq { k, data } = &gi.gate else {
+        return Ok(());
+    };
+    if !(2..=5).contains(k) {
+        return Err(NoiseError::Configuration {
+            reason: "UnitaryKq width must be between 2 and 5",
+        });
+    }
+    if !gi.controls.is_empty() {
+        return Err(NoiseError::Unsupported {
+            kind: "controlled UnitaryKq",
+        });
+    }
+    // This kernel sorts targets internally; pass-produced targets are sorted.
+    // Reject manual operand permutations rather than silently permute the matrix.
+    if gi.qubits.windows(2).any(|pair| pair[0] >= pair[1]) {
+        return Err(NoiseError::Unsupported {
+            kind: "unsorted UnitaryKq targets",
+        });
+    }
+    let width = 1usize << k;
+    if data.len() != width * width {
+        return Err(NoiseError::Configuration {
+            reason: "UnitaryKq matrix length does not match width",
+        });
+    }
+    if data.iter().any(|z| !z.re.is_finite() || !z.im.is_finite()) {
+        return Err(aleph_backend::BackendError::NonFiniteParam { kind: "UnitaryKq" }.into());
+    }
+    let mut deviation: f64 = 0.0;
+    for i in 0..width {
+        for j in 0..width {
+            let mut value = Complex::new(0.0, 0.0);
+            for row in 0..width {
+                value += data[row * width + i].conj() * data[row * width + j];
+            }
+            let error = (value - Complex::new(if i == j { 1.0 } else { 0.0 }, 0.0)).norm();
+            if !error.is_finite() {
+                return Err(
+                    aleph_backend::BackendError::NonUnitaryMatrix { deviation: error }.into(),
+                );
+            }
+            deviation = deviation.max(error);
+        }
+    }
+    if deviation > aleph_core::AMPLITUDE_TOL {
+        return Err(aleph_backend::BackendError::NonUnitaryMatrix { deviation }.into());
+    }
+    Ok(())
+}
+
 // Validate public-field channel inputs before scratch allocation/indexing.
 // Gate/unitarity validation stays in apply_gate on every trajectory.
 fn validate_channel(error: &QuantumError, arity: usize) -> Result<(), NoiseError> {
@@ -247,6 +301,7 @@ fn outcomes(
     for inst in circuit.instructions() {
         match inst {
             Instruction::Gate(gi) => {
+                validate_fused_gate(gi)?;
                 for error in model.errors_iter(gi.gate.name(), &gi.qubits) {
                     validate_channel(error, gi.qubits.len())?;
                 }
@@ -557,6 +612,29 @@ mod tests {
         assert!(add(isize::MAX as usize, 1).is_err());
     }
     #[test]
+    fn large_state_budget_can_be_raised_without_allocating_the_state() {
+        let model = NoiseModel::new();
+        for n in [26, 27, 28] {
+            let circuit = Circuit::new(n, 0);
+            for sparse in [false, true] {
+                assert!(matches!(
+                    plan_noisy(&circuit, &model, 1, NoiseOptions::default(), sparse),
+                    Err(NoiseError::MemoryBudget { .. })
+                ));
+                let options = NoiseOptions {
+                    memory_budget_bytes: 8usize << 30,
+                    max_workers: Some(1),
+                };
+                assert_eq!(
+                    plan_noisy(&circuit, &model, 1, options, sparse)
+                        .unwrap()
+                        .workers,
+                    1
+                );
+            }
+        }
+    }
+    #[test]
     fn sparse_result_avoids_dense_output_limit() {
         let circuit = Circuit::new(20, 0);
         let model = NoiseModel::new();
@@ -570,6 +648,72 @@ mod tests {
             run_noisy_sparse(&circuit, &model, 3, 9, options).unwrap(),
             vec![(0, 3)]
         );
+    }
+    #[test]
+    fn fused_matrix_inputs_cannot_bypass_validation() {
+        use aleph_core::GateInstance;
+        let mut identity = vec![Complex::new(0.0, 0.0); 16];
+        for i in 0..4 {
+            identity[i * 4 + i] = Complex::new(1.0, 0.0);
+        }
+        let execute = |k, data: Vec<Complex>, controlled| {
+            let mut circuit = Circuit::new(3, 0);
+            let gate = Gate::UnitaryKq {
+                k,
+                data: data.into_boxed_slice(),
+            };
+            let qubits: Vec<u32> = (0..k as u32).collect();
+            let gi = if controlled {
+                GateInstance::controlled(gate, &qubits[..], &[2][..])
+            } else {
+                GateInstance::new(gate, &qubits[..])
+            };
+            circuit.add_gate(gi).unwrap();
+            run_noisy_sparse(
+                &circuit,
+                &NoiseModel::new(),
+                3,
+                557,
+                NoiseOptions::default(),
+            )
+        };
+        assert_eq!(execute(2, identity.clone(), false).unwrap(), vec![(0, 3)]);
+        let mut x_first = vec![Complex::new(0.0, 0.0); 16];
+        for col in 0..4 {
+            x_first[(col ^ 2) * 4 + col] = Complex::new(1.0, 0.0);
+        }
+        assert_eq!(execute(2, x_first, false).unwrap(), vec![(1, 3)]);
+        assert!(execute(2, vec![Complex::new(1e308, 0.0); 16], false).is_err());
+        assert!(execute(2, vec![], false).is_err());
+        assert!(execute(1, vec![Complex::new(1.0, 0.0); 4], false).is_err());
+        assert!(execute(2, vec![Complex::new(0.0, 0.0); 16], false).is_err());
+        let mut nonfinite = identity.clone();
+        nonfinite[0].re = f64::NAN;
+        assert!(execute(2, nonfinite, false).is_err());
+        let mut reversed = Circuit::new(2, 0);
+        reversed
+            .add_gate(GateInstance::new(
+                Gate::UnitaryKq {
+                    k: 2,
+                    data: identity.clone().into_boxed_slice(),
+                },
+                &[1, 0][..],
+            ))
+            .unwrap();
+        assert!(matches!(
+            run_noisy_sparse(
+                &reversed,
+                &NoiseModel::new(),
+                1,
+                557,
+                NoiseOptions::default()
+            ),
+            Err(NoiseError::Unsupported { .. })
+        ));
+        assert!(matches!(
+            execute(2, identity, true),
+            Err(NoiseError::Unsupported { .. })
+        ));
     }
     #[test]
     fn plan_includes_vectorized_matrix_and_control_spills() {

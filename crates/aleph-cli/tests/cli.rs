@@ -598,3 +598,51 @@ fn noise_rejects_statevector_view() {
         .failure()
         .stderr(contains("shots-only"));
 }
+
+#[test]
+fn noisy_budget_override_and_worker_limit_preserve_counts() {
+    let run = |budget: &str, workers: &str| {
+        aleph()
+            .arg("run")
+            .arg(bell_path())
+            .args([
+                "--shots",
+                "257",
+                "--seed",
+                "557",
+                "--noise",
+                "depol:0.1",
+                "--noise-memory-budget-bytes",
+                budget,
+                "--noise-max-workers",
+                workers,
+            ])
+            .assert()
+            .success()
+            .get_output()
+            .stdout
+            .clone()
+    };
+    assert_eq!(run("16384", "1"), run("1073741824", "4"));
+    aleph()
+        .arg("run")
+        .arg(bell_path())
+        .args(["--noise", "depol:0.1", "--noise-memory-budget-bytes", "1"])
+        .assert()
+        .failure()
+        .stderr(contains("--noise-memory-budget-bytes"));
+    aleph()
+        .arg("run")
+        .arg(bell_path())
+        .args(["--noise", "depol:0.1", "--noise-max-workers", "0"])
+        .assert()
+        .failure()
+        .stderr(contains("max_workers must be positive"));
+    aleph()
+        .arg("run")
+        .arg(bell_path())
+        .args(["--noise-memory-budget-bytes", "4096"])
+        .assert()
+        .failure()
+        .stderr(contains("--noise"));
+}

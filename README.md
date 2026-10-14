@@ -146,7 +146,13 @@ trajectory chunk reuses its state and channel scratch; absolute shot seeds keep
 counts reproducible across worker counts and memory budgets. CLI/Python use
 sparse counts and a 1 GiB incremental buffer budget, rejecting runs that cannot
 fit even one trajectory. This budget excludes input models, allocator/runtime
-overhead and other concurrent calls; it is not an RSS limit. Rust callers can
+overhead and other concurrent calls; it is not an RSS limit. Override it with
+Python `noise_memory_budget_bytes=...` or CLI `--noise-memory-budget-bytes ...`;
+cap contexts with `noise_max_workers=...` / `--noise-max-workers ...`. These options
+require noise. States at 26–28 qubits need a budget above the default even with
+one worker. For example, `noise_memory_budget_bytes=8 * 1024**3,
+noise_max_workers=1` permits planning one 28-qubit trajectory if the host has
+sufficient memory. Rust callers can
 set `noise::NoiseOptions` through `run_noisy_with_options` (legacy dense counts)
 or `run_noisy_sparse`, and inspect the estimate with `plan_noisy`.
 
