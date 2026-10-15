@@ -58,6 +58,16 @@ impl PyDem {
     fn num_errors(&self) -> usize {
         self.inner.errors.len()
     }
+    /// Return a decoder model with one error column per `^` part, in stable order.
+    /// Probabilities are retained; detector/observable duplicates cancel within each part.
+    /// Does not mutate this model. Use the original DEM for sampling: the split model
+    /// treats formerly correlated parts as independent mechanisms.
+    fn split_components(&self) -> Self {
+        Self {
+            inner: self.inner.split_components(),
+        }
+    }
+
     /// The flat model as DEM text (`repeat` blocks unrolled).
     fn to_dem_string(&self) -> String {
         self.inner.to_dem_string()
@@ -242,7 +252,7 @@ impl PyDecoder {
     ///
     /// Raises `ValueError` for `mwpm`/`union-find`/`union-find-weighted` on a DEM with
     /// `^`-decomposed mechanisms: their per-column estimate is per mechanism, not per part, so
-    /// `H ê = s` would not hold (split the parts first via `aleph.qec.dem_to_matrices` + `aleph.qec.dem_from_matrices`).
+    /// `H ê = s` would not hold (build the matching decoder with `dem.split_components()` first).
     #[allow(clippy::type_complexity)]
     fn decode_batch_errors<'py>(
         &self,
@@ -257,8 +267,8 @@ impl PyDecoder {
         {
             return Err(value_err(
                 "decode_batch_errors: this DEM has ^-decomposed mechanisms; a matching \
-                 decoder's per-column estimate needs one column per part — rebuild the model \
-                 with aleph.qec.dem_to_matrices(dem) + aleph.qec.dem_from_matrices(H, O, rates)",
+                 decoder's per-column estimate needs one column per part — rebuild the decoder \
+                 with aleph.qec.Decoder(dem.split_components(), name); estimates index the split model",
             ));
         }
         let (shots, bits) = to_bytes(dets, 2, self.detectors, "decode_batch_errors")?;

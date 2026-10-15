@@ -69,6 +69,42 @@ def xor_reduce_dem_text(text):
 class TestApi(unittest.TestCase):
     DEM = "error(0.1) D0 L0\nerror(0.1) D0 D1\nerror(0.1) D1\n"
 
+    def test_split_components_matches_matrices_without_mutation(self):
+        text = ("error(0.125) D0 D0 D2 L0 L0 L2 ^ D1 L1 ^ L2 ^\n"
+                "error(0) D3\ndetector D4\nlogical_observable L3\n")
+        dem = qec.DetectorErrorModel(text)
+        before = dem.to_dem_string()
+        split = dem.split_components()
+        self.assertEqual(dem.to_dem_string(), before)
+        self.assertEqual((split.num_detectors, split.num_observables, split.num_errors), (5, 4, 5))
+        self.assertNotIn("^", split.to_dem_string())
+        self.assertEqual(split.split_components().to_dem_string(), split.to_dem_string())
+        H, O, rates = qec.dem_to_matrices(dem)
+        h, o, p = qec.dem_to_matrices(split)
+        np.testing.assert_array_equal(h, H)
+        np.testing.assert_array_equal(o, O)
+        np.testing.assert_array_equal(p, rates)
+        self.assertEqual(split.to_dem_string(), qec.dem_from_matrices(H, O, rates).to_dem_string())
+        for text in ("", "detector D2\nlogical_observable L1\n", self.DEM):
+            plain = qec.DetectorErrorModel(text)
+            self.assertEqual(plain.split_components().to_dem_string(), plain.to_dem_string())
+
+    def test_split_matching_projects_each_part_exactly_without_ties(self):
+        dem = qec.DetectorErrorModel("error(0.1) D0 L0 ^ D1 L1")
+        split = dem.split_components()
+        H, O, _ = qec.dem_to_matrices(split)
+        dets = np.array([[0, 0], [1, 0], [0, 1], [1, 1]], dtype=np.uint8)
+        for name in sorted(MATCHING):
+            dec = qec.Decoder(split, name)
+            ehat, conv = dec.decode_batch_errors(dets)
+            self.assertEqual(dec.num_errors, 2)
+            self.assertEqual(ehat.shape, (4, 2))
+            self.assertTrue(conv.all())
+            np.testing.assert_array_equal(ehat @ H.T % 2, dets)
+            np.testing.assert_array_equal((ehat @ O.T % 2).astype(bool), dec.decode_batch(dets))
+            empty, converged = dec.decode_batch_errors(np.zeros((0, 2), dtype=np.uint8))
+            self.assertEqual((empty.shape, converged.shape), ((0, 2), (0,)))
+
     def test_names(self):
         self.assertEqual(sorted(qec.decoder_names()), sorted(ALL))
 
@@ -246,7 +282,7 @@ class TestStimDems(unittest.TestCase):
         for name in ("mwpm", "union-find", "union-find-weighted"):
             with self.subTest(name=name):
                 dec = qec.Decoder(dem, name)
-                with self.assertRaisesRegex(ValueError, r"\^|decomposed"):
+                with self.assertRaisesRegex(ValueError, r"split_components"):
                     dec.decode_batch_errors(dets)
 
         # BP-family decoders are unaffected: their columns are the parity-reduced mechanisms
@@ -270,6 +306,38 @@ class TestStimDems(unittest.TestCase):
         ehat2, conv2 = qec.Decoder(dem2, "mwpm").decode_batch_errors(dets)
         self.assertTrue(conv2.all())
         np.testing.assert_array_equal((ehat2 @ H2.T) % 2, dets)
+
+    def test_native_split_matches_matrix_roundtrip_on_real_stim_shots(self):
+        for d in (3, 5):
+            circ = surface(d, 0.003)
+            dem = qec.DetectorErrorModel(circ.detector_error_model(decompose_errors=True))
+            before = dem.to_dem_string()
+            native = dem.split_components()
+            H, O, rates = qec.dem_to_matrices(dem)
+            reference = qec.dem_from_matrices(H, O, rates)
+            self.assertEqual(native.to_dem_string(), reference.to_dem_string())
+            self.assertEqual(dem.to_dem_string(), before)
+            dets, _ = circ.compile_detector_sampler(seed=518).sample(2000, separate_observables=True)
+            dets = dets.astype(np.uint8)
+            for name in sorted(MATCHING):
+                with self.subTest(d=d, decoder=name):
+                    dec, ref = qec.Decoder(native, name), qec.Decoder(reference, name)
+                    ehat, conv = dec.decode_batch_errors(dets)
+                    expected, expected_conv = ref.decode_batch_errors(dets)
+                    np.testing.assert_array_equal(ehat, expected)
+                    np.testing.assert_array_equal(conv, expected_conv)
+                    self.assertTrue(conv.all())
+                    np.testing.assert_array_equal(ehat @ H.T % 2, dets)
+                    np.testing.assert_array_equal(dec.decode_batch(dets), ref.decode_batch(dets))
+                    np.testing.assert_array_equal(dec.decode_batch(dets), qec.Decoder(dem, name).decode_batch(dets))
+                    observable = (ehat @ O.T % 2).astype(bool)
+                    if name != "mwpm":
+                        np.testing.assert_array_equal(observable, dec.decode_batch(dets))
+                    else:
+                        # Existing MWPM retrace ties can disagree with decode's observable.
+                        # Native splitting must reproduce the old matrix route exactly,
+                        # including that pre-existing limitation rather than hiding it.
+                        np.testing.assert_array_equal(observable, (expected @ O.T % 2).astype(bool))
 
     def test_hypergraph_dem(self):
         circ = color(3, 0.003)
