@@ -28,7 +28,7 @@ use rayon::prelude::*;
 use crate::builder::build_dem;
 use crate::decoder::{Decoder, LogicalErrorResult};
 use crate::dem::DetectorErrorModel;
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::surface::SurfaceCode;
 use crate::syndrome::Syndrome;
 
@@ -110,41 +110,119 @@ where
     run_dem_experiment(&dem, shots, &decoder, seed)
 }
 
-/// Monte-Carlo a logical-error rate for an arbitrary [`DetectorErrorModel`] and [`Decoder`].
+/// Sampling/decode batch policy for a DEM experiment.
 ///
-/// Samples `shots` shots from `dem` (each independent error mechanism fires with its own
-/// probability, XORing its support into the shot's detectors and observables), decodes them all
-/// through [`Decoder::decode_batch`], and counts shots where the decoder's predicted observable
-/// flips differ from the truth.
+/// The harness retains at most `batch_size` syndromes, truths and predictions at once,
+/// plus sampling scratch per active Rayon worker. Memory scales with model size and this
+/// limit, rather than total shots. Decoder-owned scratch/caches are outside this bound.
+/// No partial or budget-stopped result is returned: any failure aborts the experiment.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DemExperimentOptions {
+    /// Maximum shots per `decode_batch` call. Must be positive, including for zero-shot runs.
+    /// Larger batches amortize external decoder startup; smaller batches reduce memory.
+    pub batch_size: usize,
+}
+
+impl Default for DemExperimentOptions {
+    fn default() -> Self {
+        Self { batch_size: 65_536 }
+    }
+}
+
+/// Monte-Carlo a logical-error rate using bounded batches (65,536 shots by default).
 ///
-/// Deterministic for a fixed `seed`. The sampling is rayon-parallel over shots; the decode is a
-/// single batch call (so an external batch decoder pays one round-trip, not one per shot).
+/// Use [`run_dem_experiment_with_options`] to select another batch size. Sampling uses
+/// absolute shot indices, so changing batch size or Rayon scheduling preserves the stream.
+/// Results also remain identical for decoders whose predictions are batch-independent.
+/// The same decoder instance is retained across all calls, preserving its caches.
 ///
 /// # Errors
-/// Propagates any error from the decoder's [`decode_batch`](Decoder::decode_batch).
+/// Propagates decoder errors and rejects prediction counts or observable widths that do
+/// not exactly match the sampled batch and DEM. No incomplete tally is returned.
 pub fn run_dem_experiment(
     dem: &DetectorErrorModel,
     shots: u64,
     decoder: &dyn Decoder,
     seed: u64,
 ) -> Result<LogicalErrorResult> {
-    if shots == 0 {
-        return LogicalErrorResult::try_new(0, 0);
+    run_dem_experiment_with_options(dem, shots, decoder, seed, &DemExperimentOptions::default())
+}
+
+/// Run a complete DEM experiment with a configurable sampling/decode batch limit.
+///
+/// ```
+/// use aleph_qec::{DetectorErrorModel, NullDecoder, DemExperimentOptions,
+///     run_dem_experiment_with_options};
+/// let dem = DetectorErrorModel::parse("error(0.1) D0 L0")?;
+/// let result = run_dem_experiment_with_options(
+///     &dem, 100, &NullDecoder::new(1), 42, &DemExperimentOptions { batch_size: 32 },
+/// )?;
+/// assert_eq!(result.shots, 100);
+/// # Ok::<(), aleph_qec::Error>(())
+/// ```
+///
+/// # Errors
+/// A zero batch size is invalid. Decoder failures, wrong prediction counts/observable
+/// widths and tally overflow return errors instead of silently scoring a prefix.
+pub fn run_dem_experiment_with_options(
+    dem: &DetectorErrorModel,
+    shots: u64,
+    decoder: &dyn Decoder,
+    seed: u64,
+    options: &DemExperimentOptions,
+) -> Result<LogicalErrorResult> {
+    let batch_size = u64::try_from(options.batch_size)
+        .ok()
+        .filter(|&n| n > 0)
+        .ok_or(Error::InvalidExperimentBatchSize)?;
+    let mut processed = 0_u64;
+    let mut logical_errors = 0_u64;
+    while processed < shots {
+        let end = processed
+            .checked_add(batch_size.min(shots - processed))
+            .ok_or(Error::ExperimentCountOverflow)?;
+        let (syndromes, truths) = sample_range(dem, processed..end, seed);
+        let predictions = decoder.decode_batch(&syndromes)?;
+        if predictions.len() != syndromes.len() {
+            return Err(Error::DecoderContract {
+                shot: processed,
+                message: format!(
+                    "expected {} predictions, got {}",
+                    syndromes.len(),
+                    predictions.len()
+                ),
+            });
+        }
+        // Validate the whole output schema before scoring any row of this batch.
+        if let Some((i, prediction)) = predictions
+            .iter()
+            .enumerate()
+            .find(|(_, p)| p.observable_flips.len() != dem.observables)
+        {
+            return Err(Error::DecoderContract {
+                // i < batch length <= end - processed, so this cannot overflow.
+                shot: processed + i as u64,
+                message: format!(
+                    "expected {} observable bits, got {}",
+                    dem.observables,
+                    prediction.observable_flips.len()
+                ),
+            });
+        }
+        let batch_errors = predictions
+            .iter()
+            .zip(&truths)
+            .filter(|(prediction, truth)| prediction.observable_flips != **truth)
+            .count();
+        let batch_errors =
+            u64::try_from(batch_errors).map_err(|_| Error::ExperimentCountOverflow)?;
+        logical_errors = logical_errors
+            .checked_add(batch_errors)
+            .ok_or(Error::ExperimentCountOverflow)?;
+        processed = end;
+        // All batch buffers drop here, before the next batch is sampled.
     }
-
-    // Sample every shot in parallel; each shot's RNG is seeded only from (seed, index), so the
-    // collected order — and thus the result — is independent of rayon's scheduling.
-    let (syndromes, truths): (Vec<Syndrome>, Vec<Vec<bool>>) = sample_shots(dem, shots, seed);
-
-    let predictions = decoder.decode_batch(&syndromes)?;
-
-    let logical_errors = predictions
-        .iter()
-        .zip(&truths)
-        .filter(|(pred, truth)| mispredicted(&pred.observable_flips, truth, dem.observables))
-        .count() as u64;
-
-    LogicalErrorResult::try_new(shots, logical_errors)
+    LogicalErrorResult::try_new(processed, logical_errors)
 }
 
 /// Sample `shots` independent shots from `dem`, returning their syndromes and *true* observable
@@ -163,7 +241,15 @@ pub fn sample_shots(
     shots: u64,
     seed: u64,
 ) -> (Vec<Syndrome>, Vec<Vec<bool>>) {
-    (0..shots)
+    sample_range(dem, 0..shots, seed)
+}
+
+fn sample_range(
+    dem: &DetectorErrorModel,
+    range: std::ops::Range<u64>,
+    seed: u64,
+) -> (Vec<Syndrome>, Vec<Vec<bool>>) {
+    range
         .into_par_iter()
         .map(|s| sample_shot(dem, seed, s))
         .unzip()
@@ -186,12 +272,6 @@ fn sample_shot(dem: &DetectorErrorModel, seed: u64, shot: u64) -> (Syndrome, Vec
         }
     }
     (Syndrome::from_bits(&det), obs)
-}
-
-/// Whether predicted observable flips differ from the truth on any observable.
-fn mispredicted(pred: &[bool], truth: &[bool], observables: usize) -> bool {
-    (0..observables)
-        .any(|o| pred.get(o).copied().unwrap_or(false) != truth.get(o).copied().unwrap_or(false))
 }
 
 /// SplitMix64 finalizer over `base + shot * φ⁻¹`, giving each shot a well-mixed, independent

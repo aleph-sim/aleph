@@ -18,6 +18,12 @@ pub trait Decoder {
 
     /// Predict corrections for a batch of syndromes at once.
     ///
+    /// Return exactly one correction per input syndrome, in input order. Each correction
+    /// must contain exactly the model's number of observable bits, including zero when
+    /// the model has no observables. The experiment harness rejects incompatible output.
+    /// A decoder used for reproducible experiments should predict independently of batch
+    /// boundaries; a campaign may invoke this method repeatedly on the same instance.
+    ///
     /// The default loops [`decode`](Self::decode) — correct for any in-process decoder. It is
     /// a separate, *fallible* method because some decoders (notably the external
     /// [`PyMatchingOracle`](crate::PyMatchingOracle), which shells out to PyMatching) decode a
