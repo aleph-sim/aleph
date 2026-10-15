@@ -53,7 +53,8 @@ pub use decoder::{BinomialInterval95, Decoder, LogicalErrorResult, NullDecoder};
 pub use dem::{DemError, DetectorErrorModel};
 pub use error::{Error, Result};
 pub use experiment::{
-    run_dem_experiment, run_memory_experiment, sample_shots, PhenomenologicalNoise,
+    run_dem_experiment, run_dem_experiment_with_options, run_memory_experiment, sample_shots,
+    DemExperimentOptions, PhenomenologicalNoise,
 };
 pub use fixed_bp::{FixedHwView, FixedRelayBp, FixedRelayBpOsd};
 pub use matching::{MatchingEdge, MatchingGraph, NodeId};
