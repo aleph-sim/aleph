@@ -131,6 +131,20 @@ impl UnionFindDecoder {
         Ok(Self::from_graph(&graph))
     }
 
+    /// Build from one column per `^` component without a caller-side matrix round trip.
+    ///
+    /// Equivalent to `Self::new(&dem.split_components())`. Error estimates index the
+    /// **split** model in mechanism/component order; use that model's H/O columns when
+    /// projecting estimates. Keep the original model for sampling correlated mechanisms.
+    /// The ordinary [`Self::new`] retains the original mechanism-column API.
+    /// Chain `.weighted(true)` to use weighted growth on the split representation.
+    ///
+    /// # Errors
+    /// Returns [`crate::Error::NonGraphlike`] if an individual part is a hyperedge.
+    pub fn new_with_split_components(dem: &DetectorErrorModel) -> Result<Self> {
+        Self::new(&dem.split_components())
+    }
+
     /// Build a **weighted-growth** decoder for `dem` (Q2-02). Equivalent to
     /// `UnionFindDecoder::new(dem)?.weighted(true)`.
     ///
@@ -288,7 +302,8 @@ impl UnionFindDecoder {
     /// [`decode`](Decoder::decode)'s flips — exact on `^`-free DEMs.
     ///
     /// On a DEM with `^`-decomposed mechanisms the estimate is per mechanism, not per part, and
-    /// `H ê = s` does not hold — split the parts into separate mechanisms first.
+    /// `H ê = s` does not hold — use [`Self::new_with_split_components`] or construct
+    /// the decoder against [`DetectorErrorModel::split_components`] first.
     pub fn decode_errors(&self, syndrome: &Syndrome) -> Vec<u8> {
         let (_, edges) = self.decode_edges(syndrome);
         let mut ehat = vec![0u8; self.num_columns];

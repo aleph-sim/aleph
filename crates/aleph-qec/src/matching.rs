@@ -59,15 +59,16 @@ pub struct MatchingEdge {
     pub weight: f64,
     /// Logical observables flipped when this edge is part of the error (sorted ascending).
     pub observables: Vec<u32>,
-    /// Index into the source DEM's `errors` of the first mechanism (first `^` part) that produced
+    /// Index into the source DEM's `errors` of the first mechanism that produced
     /// this edge's `(a, b, observables)` key — the *representative column* a per-column error
-    /// estimate marks when this edge is in the correction. Its observable set equals
-    /// `observables` by construction.
+    /// estimate marks when this edge is in the correction. On a split (`^`-free) DEM,
+    /// its support equals the edge's detector/observable support.
     ///
     /// For a mechanism with `^` parts, this edge came from *one* part, so the marked column
     /// stands for that part only: `O·ê` over the whole (parity-reduced) column is not meaningful
-    /// for such a column. Callers that need per-part columns split the DEM first (as the Python
-    /// plugin does). Two edges of one `^` mechanism may share this value — every part is recorded
+    /// for such a column. Callers that need per-part columns use
+    /// [`DetectorErrorModel::split_components`] before decoder construction. Two edges of one
+    /// `^` mechanism may share this value — every part is recorded
     /// against the same mechanism index `j`, so a per-column error estimate cannot tell which part
     /// fired from `column` alone.
     pub column: u32,

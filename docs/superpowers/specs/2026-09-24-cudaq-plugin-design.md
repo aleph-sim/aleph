@@ -144,13 +144,28 @@ method returning the error estimate over DEM columns plus a convergence flag:
 `crates/aleph-py/src/qec_core.rs::AnyDecoder` gets `decode_errors(&self, &Syndrome) -> (Vec<u8>, bool)`
 dispatching to those; the batch driver mirrors `decode_batch` (rayon `par_chunks`, `Sync`).
 
-**Edge → column map.** `MatchingGraph::from_dem` merges parallel edges keyed by
-`(a, b, observables)` and drops undetectable columns. It now also records, per edge, the
-**representative column**: the index of the first DEM error (and, for `^`-decomposed mechanisms,
-the first *part*) that produced that key. `MatchingEdge` gains `pub column: u32`. Because the key
-includes the observable set, the representative column's `O` row equals the edge's observables,
-so `O · ê` over representative columns reproduces the edge's observable flips exactly. For
-`H + O + rates` input (no `^`), every column has ≤ 2 detectors, so parts are trivially single.
+**Edge → column map (corrected by #518).** `MatchingGraph::from_dem` merges
+parallel edges keyed by `(a, b, observables)` and drops undetectable columns. Each
+edge records the first **mechanism index** that produced that key, not a distinct
+part index. On an unsplit `^` mechanism several edges can share one column, whose
+parity-reduced H/O supports need not equal any individual edge. Therefore an error
+estimate over original mechanism columns does not generally satisfy H/O projection.
+
+Use `DetectorErrorModel::split_components()` before building a matching decoder,
+or Rust's `MwpmDecoder::new_with_split_components` / `UnionFindDecoder::new_with_split_components`.
+Python uses `split = dem.split_components(); decoder = qec.Decoder(split, name)`;
+its guard on unsplit matching inputs remains. Error estimates now index the split
+model, in original mechanism/component order. Parallel edges use their first split
+column, which has exactly the edge's detector and observable support. The existing
+`dem_to_matrices` / `dem_from_matrices` path is still supported and is the differential
+reference for this representation.
+
+Splitting is for decoder construction, not equivalent noise generation: parts of
+one original error fire together; sampling split columns loses that correlation.
+Use original DEMs/circuit samples for experiments. For split H/O columns the usual
+matching limitations still apply: infeasible syndromes, negative weights (#515),
+and genuine equal-weight MWPM retrace ties (§4.3). Splitting does not promise
+unconditional agreement with `decode()` on those ties.
 
 ### 4.3 Sparse Blossom: matched pairs + path retrace
 

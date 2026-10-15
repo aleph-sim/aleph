@@ -7,8 +7,10 @@
 ``decoder_names()`` lists the available decoders. stim is not required. One rule to know up
 front: ``Decoder.decode_batch_errors`` raises for the matching decoders (``mwpm``,
 ``union-find``, ``union-find-weighted``) on a DEM with ``^``-decomposed mechanisms — split the
-parts first with ``dem_to_matrices`` + ``dem_from_matrices`` (BP-family decoders have no such
-restriction).
+parts first with ``split = dem.split_components()`` and build ``Decoder(split, name)``.
+Returned error columns index ``split``, in mechanism/component order. Keep the original DEM
+for sampling: splitting makes formerly correlated parts independent. BP-family decoders
+continue to use the original, parity-reduced mechanism columns.
 """
 import numpy as np
 

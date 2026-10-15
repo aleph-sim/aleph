@@ -133,6 +133,19 @@ impl MwpmDecoder {
         Ok(Self::from_graph(&graph))
     }
 
+    /// Build from one column per `^` component without a caller-side matrix round trip.
+    ///
+    /// Equivalent to `Self::new(&dem.split_components())`. Error estimates index the
+    /// **split** model in mechanism/component order; use that model's H/O columns when
+    /// projecting estimates. Keep the original model for sampling correlated mechanisms.
+    /// The ordinary [`Self::new`] retains the original mechanism-column API.
+    ///
+    /// # Errors
+    /// Returns [`crate::Error::NonGraphlike`] if an individual part is a hyperedge.
+    pub fn new_with_split_components(dem: &DetectorErrorModel) -> Result<Self> {
+        Self::new(&dem.split_components())
+    }
+
     /// Build a decoder directly from an already-constructed [`MatchingGraph`].
     pub fn from_graph(graph: &MatchingGraph) -> Self {
         MwpmDecoder {
@@ -207,7 +220,8 @@ impl MwpmDecoder {
     ///   through (a negative edge makes the shortest-path search ill-posed): a pair whose path
     ///   needs one is left unmarked unless a non-negative path within the same bound exists;
     /// - on a DEM with `^`-decomposed mechanisms the estimate is per mechanism, not per part, and
-    ///   `H ê = s` does not hold — split the parts into separate mechanisms first.
+    ///   `H ê = s` does not hold — use [`Self::new_with_split_components`] or construct
+    ///   the decoder against [`DetectorErrorModel::split_components`] first.
     pub fn decode_errors(&self, syndrome: &Syndrome) -> Vec<u8> {
         let mut ehat = vec![0u8; self.graph.num_columns()];
         let defects = self.defects_of(syndrome);
