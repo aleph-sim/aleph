@@ -109,6 +109,8 @@ fn parse_params(name: &str, kw: Option<&Bound<'_, PyDict>>) -> PyResult<DecoderP
             "alpha" => p.alpha = Some(v.extract()?),
             "osd_order" => p.osd_order = Some(v.extract()?),
             "legs" => p.legs = Some(v.extract()?),
+            "iters_per_leg" => p.iters_per_leg = Some(v.extract()?),
+            "early_exit" => p.early_exit = Some(v.extract()?),
             "gamma_min" => p.gamma_min = Some(v.extract()?),
             "gamma_max" => p.gamma_max = Some(v.extract()?),
             "seed" => p.seed = Some(v.extract()?),

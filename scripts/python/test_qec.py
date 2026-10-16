@@ -29,6 +29,22 @@ ALL = ["mwpm", "union-find", "union-find-weighted", "bp", "bp-osd", "relay-bp", 
 MATCHING = {"mwpm", "union-find", "union-find-weighted"}
 
 
+# A seeded trapping-set fixture: first-valid has weight 5, while the full 3x8
+# schedule finds weight 3. Observable labels make the two valid choices distinct.
+RELAY_BUDGET_DEM = """error(0.15) D0 D2 D3 L0
+error(0.07) D0 D1 D3 L1
+error(0.03) D1 D3 D4 L0
+error(0.07) D0 D1 D2 D3 L1
+error(0.07) D0 D1 D2 D4 L0
+error(0.07) D0 D1 D3
+error(0.07) D0 D2 D3 D4 L0
+error(0.25) D0 D1 D2 D3 D4 L1
+"""
+RELAY_BUDGET_SYNDROME = np.array([[0, 1, 0, 1, 0]], dtype=np.uint8)
+RELAY_BUDGET_FULL = np.array([[0, 0, 1, 1, 0, 0, 0, 1]], dtype=np.uint8)
+RELAY_BUDGET_FIRST = np.array([[0, 1, 1, 1, 0, 1, 0, 1]], dtype=np.uint8)
+
+
 def surface(d, p, rounds=None):
     return stim.Circuit.generated(
         "surface_code:rotated_memory_x",
@@ -169,6 +185,44 @@ class TestApi(unittest.TestCase):
                         qec.Decoder(dem, name)
                     with self.assertRaisesRegex(ValueError, r"matching prior at column 0"):
                         qec.Decoder(dem.split_components(), name)
+
+    def test_relay_budget_and_early_exit_change_the_actual_decision(self):
+        dem = qec.DetectorErrorModel(RELAY_BUDGET_DEM)
+        H, O, _ = qec.dem_to_matrices(dem)
+        for name in ("relay-bp", "relay-bp-osd"):
+            for iterations, early, expected in [(8, False, RELAY_BUDGET_FULL),
+                                                 (8, True, RELAY_BUDGET_FIRST),
+                                                 (1, False, RELAY_BUDGET_FIRST),
+                                                 (0, False, RELAY_BUDGET_FIRST)]:
+                with self.subTest(name=name, iterations=iterations, early=early):
+                    dec = qec.Decoder(dem, name, legs=3, iters_per_leg=iterations,
+                                      early_exit=early, seed=7)
+                    estimate, converged = dec.decode_batch_errors(RELAY_BUDGET_SYNDROME)
+                    np.testing.assert_array_equal(estimate, expected)
+                    self.assertTrue(converged.all())
+                    np.testing.assert_array_equal(estimate @ H.T % 2, RELAY_BUDGET_SYNDROME)
+                    np.testing.assert_array_equal(dec.decode_batch(RELAY_BUDGET_SYNDROME),
+                                                  (expected @ O.T % 2).astype(bool))
+            default = qec.Decoder(dem, name)
+            explicit = qec.Decoder(dem, name, legs=4, iters_per_leg=25, early_exit=False)
+            all_syndromes = ((np.arange(32)[:, None] >> np.arange(5)) & 1).astype(np.uint8)
+            for got, want in zip(default.decode_batch_errors(all_syndromes),
+                                 explicit.decode_batch_errors(all_syndromes)):
+                np.testing.assert_array_equal(got, want)
+
+    def test_relay_budget_parameters_are_scoped_and_typed(self):
+        dem = qec.DetectorErrorModel(self.DEM)
+        for name in sorted(set(ALL) - {"relay-bp", "relay-bp-osd"}):
+            for key, value in [("iters_per_leg", 10), ("early_exit", True)]:
+                with self.assertRaisesRegex(ValueError, key):
+                    qec.Decoder(dem, name, **{key: value})
+        for name in ("relay-bp", "relay-bp-osd"):
+            for value in [-1, 2**32, 1.5, "10", None]:
+                with self.assertRaises((ValueError, TypeError, OverflowError)):
+                    qec.Decoder(dem, name, iters_per_leg=value)
+            for value in ["false", None, 1]:
+                with self.assertRaises((ValueError, TypeError)):
+                    qec.Decoder(dem, name, early_exit=value)
 
     def test_names(self):
         self.assertEqual(sorted(qec.decoder_names()), sorted(ALL))

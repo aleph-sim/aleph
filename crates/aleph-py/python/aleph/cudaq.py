@@ -21,6 +21,11 @@ require every prior (``error_rate_vec`` entry, or the scalar ``error_rate``) to 
 and in [0, 0.5]. Unsupported priors raise at construction with the offending column;
 inputs are never clamped. BP-family decoders (``aleph-bp``, ``aleph-bp-osd``,
 ``aleph-relay-bp``, ``aleph-relay-bp-osd``) accept priors in [0, 1].
+
+``aleph-relay-bp`` and ``aleph-relay-bp-osd`` forward ``iters_per_leg`` and
+``early_exit`` to the native decoder. Omitted budgets retain the legacy schedule
+(default 4 x 25); ``early_exit`` defaults to False. True selects the first valid
+estimate instead of the lightest valid estimate seen over the full schedule.
 """
 import cudaq_qec as _qec  # the only cudaq import in aleph; ImportError means "install the extra"
 import numpy as np

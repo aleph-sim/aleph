@@ -1,0 +1,69 @@
+relay-debug
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 10.36s
+test relay_bp::tests::explicit_budget_counts_actual_sweeps_and_stops_only_on_valid_decisions ... ok
+test relay_bp::tests::nonempty_first_valid_result_and_llrs_match_the_stopping_prefix ... ok
+test relay_bp::tests::omitted_budget_keeps_legacy_schedule_and_disorder ... ok
+test relay_bp::tests::relay_is_deterministic ... ok
+test relay_bp::tests::relay_valid_decisions_reproduce_syndrome ... ok
+test relay_bp::tests::decode_errors_agrees_with_decode_and_satisfies_syndrome_when_converged ... ok
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 187 filtered out; finished in 1.66s
+
+relay-release
+    Finished `release` profile [optimized] target(s) in 28.62s
+test relay_bp::tests::explicit_budget_counts_actual_sweeps_and_stops_only_on_valid_decisions ... ok
+test relay_bp::tests::nonempty_first_valid_result_and_llrs_match_the_stopping_prefix ... ok
+test relay_bp::tests::omitted_budget_keeps_legacy_schedule_and_disorder ... ok
+test relay_bp::tests::relay_is_deterministic ... ok
+test relay_bp::tests::relay_valid_decisions_reproduce_syndrome ... ok
+test relay_bp::tests::decode_errors_agrees_with_decode_and_satisfies_syndrome_when_converged ... ok
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 187 filtered out; finished in 0.17s
+
+budget-release
+    Finished `release` profile [optimized] target(s) in 6.57s
+test early_exit_is_first_valid_not_best_over_the_full_schedule ... ok
+test default_budget_and_configured_parallel_decode_match_on_gross_shots ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+
+relay-integration
+    Finished `release` profile [optimized] target(s) in 2.41s
+test relay_bp_beats_plain_bp_below_floor ... ignored, Monte-Carlo (~2 min); nightly
+test relay_bp_osd_beats_bposd_circuit_level ... ignored, Monte-Carlo (~minutes); nightly
+test relay_bp_decodes_gross_at_low_p ... ok
+test relay_bp_osd_decodes_circuit_level ... ok
+test result: ok. 2 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 1.52s
+
+factory-debug
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 21.05s
+test qec_core::tests::non_finite_float_param_is_rejected ... ok
+test qec_core::tests::more_than_64_observables_is_rejected ... ok
+test qec_core::tests::every_name_builds ... ok
+test qec_core::tests::unknown_name_lists_valid_ones ... ok
+test qec_core::tests::relay_schedule_overrides_reach_plain_and_osd_frontends ... ok
+test qec_core::tests::zero_detector_model ... ok
+test qec_core::tests::rows_match_single_decode ... ok
+test qec_core::tests::packed_matches_rows ... ok
+test qec_core::tests::decode_errors_rows_matches_decode_rows_through_o ... ok
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+doc-tests
+    Finished `release` profile [optimized] target(s) in 0.04s
+test crates/aleph-qec/src/experiment.rs - experiment::run_memory_experiment (line 75) - compile ... ok
+test crates/aleph-qec/src/relay_bp.rs - relay_bp::RelayBpDecoder::with_budget (line 82) ... ok
+test crates/aleph-qec/src/experiment.rs - experiment::run_dem_experiment_with_options (line 153) ... ok
+test crates/aleph-qec/src/decoder.rs - decoder::LogicalErrorResult::interval95 (line 103) ... ok
+test crates/aleph-qec/src/dem.rs - dem::DetectorErrorModel::split_components (line 161) ... ok
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.52s
+
+python-tests-final
+Ran 36 tests in 1.147s
+OK
+PRIVATE_NATIVE_MODULE /tmp/aleph-514-IoS4E1/candidate/crates/aleph-py/python/aleph/_native.abi3.so
+
+clippy
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 19.44s
+
+local Python and lint
+Ran 16 tests in 0.690s
+OK
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 22.10s
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 9.19s

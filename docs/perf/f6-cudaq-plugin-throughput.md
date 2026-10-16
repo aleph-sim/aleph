@@ -51,7 +51,7 @@ error column rather than just observable bits.
 Host: Intel Core i5-13500, Linux, rustc 1.96.0, Python 3.12.3, NumPy 2.5.3,
 Stim 1.16.0; real CUDA-Q QEC 0.8.0 source build
 `6ac00e5c24ab17bbb6515f09009ce69643839eed`. Baseline is main
-`bb128f7e3dcc3138b7bb89d20fba070f40f0c677`. Candidate is this PR's source.
+`bb128f7e3dcc3138b7bb89d20fba070f40f0c677`. Measured candidate is commit `e54b7759191edd98e174159f40829d2c89c04eec`.
 Snapshots and the native extension were isolated under `/tmp/aleph-516-Ew3ttU`;
 the shared SDK environment and GPU services were unchanged. No GPU is used.
 
@@ -137,3 +137,12 @@ released. Results retain the SDK's float64 shape/dtype, bool convergence vector,
 and optional-result fields. Per-shot decoder allocations and shortest-path
 retrace remain future optimization opportunities; this PR does not incorporate
 pending #511 or the native C++ plugin proposed in #513.
+
+## Integration with #514
+
+After main `49ded0941fe9f9f324b9e6c6e7d238ec4f0370bd` landed, the branch
+was merged with main. The conflict joined two newly added unit tests; both are
+retained. The measured float-output batch loop is unchanged. Integration
+validation passes 14 Rust library tests, 24 local Python QEC tests, 40 real SDK
+Python tests (no skips), workspace/all-target Clippy, and rustfmt. The source-hash
+artifact above identifies the measured pre-integration snapshot.
