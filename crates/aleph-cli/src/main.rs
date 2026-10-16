@@ -7,7 +7,7 @@ use anyhow::Result;
 use clap::Parser;
 
 use aleph_cli::cli::{Cli, Cmd};
-use aleph_cli::exec::{bench_circuit, run_circuit_with_noise_options};
+use aleph_cli::exec::{bench_circuit, run_circuit_with_execution_options};
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -28,7 +28,9 @@ fn main() -> Result<()> {
             noise,
             noise_memory_budget_bytes,
             noise_max_workers,
-        } => run_circuit_with_noise_options(
+            cuda_raw,
+            cuda_diagnostics,
+        } => run_circuit_with_execution_options(
             &qasm,
             shots,
             statevector,
@@ -45,6 +47,10 @@ fn main() -> Result<()> {
                     aleph_sv::noise::NoiseOptions::default().memory_budget_bytes
                 }),
                 max_workers: noise_max_workers,
+            },
+            aleph_cli::exec::CudaOptions {
+                raw: cuda_raw,
+                diagnostics: cuda_diagnostics,
             },
             &mut out,
         )?,

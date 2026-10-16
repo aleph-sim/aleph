@@ -92,6 +92,11 @@ rand          = { workspace = true }
 criterion = { workspace = true }
 
 [[bench]]
+name = "public_execution"
+harness = false
+required-features = ["cuda"]
+
+[[bench]]
 name = "sampling"
 harness = false
 required-features = ["cuda"]

@@ -101,4 +101,11 @@ pub enum Error {
 }
 
 #[cfg(all(target_os = "linux", feature = "cuda"))]
+mod execution;
+#[cfg(all(target_os = "linux", feature = "cuda"))]
+pub use execution::{
+    execution_counters, prepare_cuda_execution, CudaExecutionOptions, CudaExecutionPlan,
+    CudaPlanBackend, CudaReadoutRequest,
+};
+#[cfg(all(target_os = "linux", feature = "cuda"))]
 pub use sv::sampling::{sampling_workspace_bytes, SamplingAlgorithm, SamplingStats};

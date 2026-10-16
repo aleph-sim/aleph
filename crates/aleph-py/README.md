@@ -240,3 +240,15 @@ model. A/B numbers against NVIDIA's decoders: `docs/perf/f6-cudaq-plugin.md`.
 
 - Repository: <https://github.com/aleph-sim/aleph>
 - Benchmarks: <https://github.com/aleph-sim/aleph/blob/main/docs/perf/parity.md>
+
+
+### CUDA execution planning
+
+CUDA `run` uses full-final-state-safe fusion and layered dispatch by default.
+`cuda_optimize=False` retains raw dispatch for comparisons or workload-specific
+regressions. Both modes preserve ordinary FP32 arithmetic on `cuda-f32`; public
+execution disables the separate experimental TF32 path, including on capable GPUs.
+`result.execution_stats()` returns plan/stage diagnostics (empty on other backends).
+Launch counters are process-wide deltas and can overlap during concurrent calls.
+Counts still sample a single final collapsed state; amplitude export remains lazy.
+See `docs/perf/p8-02-public-cuda-execution.md` for measurements and known tradeoffs.
