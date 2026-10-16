@@ -57,6 +57,29 @@ class TestRegistration(unittest.TestCase):
         ehat = (br.result > 0.5).astype(np.uint8)
         np.testing.assert_array_equal((ehat @ O.T % 2).astype(bool), ref)
 
+    def test_numpy_layouts_and_thresholds_match_native_errors(self):
+        values = np.array([[0.5, np.nextafter(0.5, 1.0)], [np.nan, np.inf],
+                           [-np.inf, -1.0], [0.7, 0.3]])
+        for name in ac.NAMES:
+            decoder = cq.get_decoder(f"aleph-{name}", H, O=O, error_rate_vec=RATES)
+            native = aq.Decoder(aq.dem_from_matrices(H, O, RATES), name)
+            for rows in (values, values[::-1], values[:, ::-1], values.tolist(),
+                         values > .5, (values > .5).astype(np.uint8) * 255):
+                expected, conv = native.decode_batch_errors((np.asarray(rows) > .5).astype(np.uint8))
+                result = decoder.decode_batch(rows)
+                np.testing.assert_array_equal(result.result, expected)
+                np.testing.assert_array_equal(result.converged, conv)
+                self.assertEqual(result.result.dtype, np.float64)
+
+    def test_empty_shape_validation(self):
+        decoder = cq.get_decoder("aleph-mwpm", H, error_rate=.1)
+        for bad in (np.empty((0, 3)), np.empty((1, 0)), np.empty((0, 2, 0))):
+            with self.assertRaisesRegex(ValueError, "width"):
+                decoder.decode_batch(bad)
+        # Zero detectors still represent N shots, rather than an empty batch.
+        rows = ac._to_bits(np.empty((3, 0)), 0)
+        self.assertEqual(rows.shape, (3, 0))
+
     def test_decode_batch_empty(self):
         d = cq.get_decoder("aleph-bp", H, O=O, error_rate_vec=RATES)
         br = d.decode_batch([])

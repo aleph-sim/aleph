@@ -261,6 +261,50 @@ impl PyDecoder {
         py: Python<'py>,
         dets: &Bound<'py, PyAny>,
     ) -> PyResult<(Bound<'py, PyArray2<u8>>, Bound<'py, PyArray1<bool>>)> {
+        self.check_error_columns()?;
+        let (shots, bits) = to_bytes(dets, 2, self.detectors, "decode_batch_errors")?;
+        let (d, e) = (self.detectors, self.errors);
+        let dec = &self.dec;
+        let (out, conv) =
+            py.allow_threads(|| qec_core::decode_errors_rows(dec, &bits, shots, d, e));
+        let errors = PyArray1::from_vec_bound(py, out).reshape([shots, e])?;
+        Ok((errors, PyArray1::from_vec_bound(py, conv)))
+    }
+
+    /// Internal CUDA-Q output path; same input validation and decoder as decode_batch_errors.
+    #[allow(clippy::type_complexity)]
+    fn _decode_batch_errors_f64<'py>(
+        &self,
+        py: Python<'py>,
+        dets: &Bound<'py, PyAny>,
+    ) -> PyResult<(Bound<'py, PyArray2<f64>>, Bound<'py, PyArray1<bool>>)> {
+        self.check_error_columns()?;
+        let (shots, bits) = to_bytes(dets, 2, self.detectors, "decode_batch_errors")?;
+        let (d, e) = (self.detectors, self.errors);
+        let dec = &self.dec;
+        // Keep NumPy's allocation policy for this large SDK-facing buffer. A Rust-owned
+        // Vec<f64> regressed the measured batch path despite removing the same byte copy.
+        // The fresh array stays private until decoding finishes; no Python aliases can
+        // mutate it while its exclusive storage borrow is used with the GIL released.
+        let errors = PyArray2::<f64>::zeros_bound(py, [shots, e], false);
+        let conv = {
+            let mut storage = errors.readwrite();
+            let out = storage.as_slice_mut()?;
+            py.allow_threads(|| qec_core::decode_errors_rows_f64_into(dec, &bits, shots, d, e, out))
+        };
+        Ok((errors, PyArray1::from_vec_bound(py, conv)))
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Decoder({:?}, detectors={}, observables={})",
+            self.name, self.detectors, self.observables
+        )
+    }
+}
+
+impl PyDecoder {
+    fn check_error_columns(&self) -> PyResult<()> {
         if self.has_components
             && matches!(
                 self.name.as_str(),
@@ -273,20 +317,7 @@ impl PyDecoder {
                  with aleph.qec.Decoder(dem.split_components(), name); estimates index the split model",
             ));
         }
-        let (shots, bits) = to_bytes(dets, 2, self.detectors, "decode_batch_errors")?;
-        let (d, e) = (self.detectors, self.errors);
-        let dec = &self.dec;
-        let (out, conv) =
-            py.allow_threads(|| qec_core::decode_errors_rows(dec, &bits, shots, d, e));
-        let errors = PyArray1::from_vec_bound(py, out).reshape([shots, e])?;
-        Ok((errors, PyArray1::from_vec_bound(py, conv)))
-    }
-
-    fn __repr__(&self) -> String {
-        format!(
-            "Decoder({:?}, detectors={}, observables={})",
-            self.name, self.detectors, self.observables
-        )
+        Ok(())
     }
 }
 

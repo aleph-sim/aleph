@@ -194,6 +194,7 @@ dependencies = [
  "aleph-qec",
  "aleph-stab",
  "aleph-sv",
+ "criterion",
  "numpy",
  "pyo3",
  "rand 0.8.6",
