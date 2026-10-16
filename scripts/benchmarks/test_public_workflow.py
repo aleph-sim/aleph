@@ -117,6 +117,11 @@ class Contracts(unittest.TestCase):
             self.assertEqual(r['status'],'failed')
             self.assertNotEqual(r['returncode'],0)
 
+    def test_missing_process_observer_cannot_claim_idle(self):
+        with patch.object(w,'probe',return_value=dict(returncode=None,stdout='')):
+            snapshot=w.resources()
+        self.assertFalse(w.resource_ok(spec(),snapshot))
+
     def test_gpu_settling_is_fixed_and_does_not_retry_until_quiet(self):
         s=spec();s['route']='cuda-python'
         def snapshot(util):

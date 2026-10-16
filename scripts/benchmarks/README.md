@@ -90,7 +90,7 @@ utilization and CPU load/competitors throughout reject contaminated campaigns.
 During-call GPU utilization includes our own work, so it is recorded for review
 but cannot identify other tenants. Load averages lag, polling can miss short
 bursts, and a shared service can still contaminate accepted results. No monitor
-proves exclusive use. A rejected campaign stops; it does not quietly select only
+proves exclusive use. An unavailable process observer also rejects admission. A rejected campaign stops; it does not quietly select only
 fast repeats or disable services. Isolation requires separate user authorization.
 
 ## Validation

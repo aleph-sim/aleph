@@ -130,7 +130,7 @@ that protocol. Separate tests verify that a busy settled boundary still rejects
 without retrying. Polling cannot prove exclusive GPU use.
 
 A process-only `CUDA_VISIBLE_DEVICES=""` negative campaign is recorded as `failed`,
-without a success receipt/summary. It does not alter host services. Twelve harness
+without a success receipt/summary. It does not alter host services. Thirteen harness
 contracts, including the real CPU CLI guard, seven actual CUDA CLI/Python
 regressions, Linux CUDA/CLI all-target Clippy, local workspace Clippy and the
 78 CLI tests pass. All six saved server campaigns revalidate, preserving executed,

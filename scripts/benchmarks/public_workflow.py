@@ -125,6 +125,7 @@ def resources(gpu=False):
              cpu_count=os.cpu_count())
     # Names only, never full command lines/environment; unrelated command lines may contain secrets.
     ps = probe(['ps', '-eo', 'comm='])
+    r['process_probe_status'] = ps['returncode']
     names = ps.get('stdout', '').splitlines()
     r['competing_processes'] = [x.strip() for x in names if any(
         token in x for token in ('Runner.Worker', 'cargo', 'bencher'))]
@@ -135,6 +136,8 @@ def resources(gpu=False):
 
 
 def resource_ok(s, r):
+    if r.get('process_probe_status', 0) != 0:
+        return False
     if r['load'][0] / (r['cpu_count'] or 1) > s['max_load_per_cpu'] or r['competing_processes']:
         return False
     if s['route'] == 'cuda-python':
