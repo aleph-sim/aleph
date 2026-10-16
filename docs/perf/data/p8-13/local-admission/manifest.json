@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "status": "contaminated",
+  "spec": {
+    "schema_version": 1,
+    "name": "cpu-cli-ghz-control",
+    "route": "cpu-cli",
+    "comparison": "same-algorithm",
+    "model": "ghz",
+    "precision": "f64",
+    "error_budget": {
+      "amplitude_atol": 1e-10,
+      "norm_atol": 0.0001
+    },
+    "topology": "one process, one host",
+    "stop_rule": "stop on failures or contamination; five paired controls, no intended speed gain",
+    "qubits": 8,
+    "shots": 16,
+    "pairs": 5,
+    "threads": 1,
+    "workers": 1,
+    "seed": 563,
+    "warmup_calls": 0,
+    "max_load_per_cpu": 0.25,
+    "max_gpu_utilization": 5,
+    "bottleneck_fraction": 0.5,
+    "target_speedup": 1,
+    "preflight": {
+      "kind": "control",
+      "reason": "identical reference: expected no gain"
+    },
+    "arms": [
+      {
+        "name": "a",
+        "executable": "/Users/ex/GitHub/aleph/target/release/aleph",
+        "revision": "5ca341dcf6158996261c0e6b463a90e230b044fb",
+        "optimizer": false,
+        "algorithm": "statevector",
+        "build_command": "cargo build -p aleph-cli --release",
+        "rustflags": "unset",
+        "compiler": "rustc 1.98.1 (48a229cea 2026-09-01)",
+        "executable_sha256": "ee767d964aaaa1b7a64c5cae68a9211b42ae01be67c851f78b59aa6b975573ea"
+      },
+      {
+        "name": "b",
+        "executable": "/Users/ex/GitHub/aleph/target/release/aleph",
+        "revision": "5ca341dcf6158996261c0e6b463a90e230b044fb",
+        "optimizer": false,
+        "algorithm": "statevector",
+        "build_command": "cargo build -p aleph-cli --release",
+        "rustflags": "unset",
+        "compiler": "rustc 1.98.1 (48a229cea 2026-09-01)",
+        "executable_sha256": "ee767d964aaaa1b7a64c5cae68a9211b42ae01be67c851f78b59aa6b975573ea"
+      }
+    ]
+  },
+  "source": {
+    "command": [
+      "git",
+      "-C",
+      "/Users/ex/GitHub/aleph",
+      "rev-parse",
+      "HEAD"
+    ],
+    "returncode": 0,
+    "stdout": "5ca341dcf6158996261c0e6b463a90e230b044fb",
+    "stderr": ""
+  },
+  "dirty": {
+    "command": [
+      "git",
+      "-C",
+      "/Users/ex/GitHub/aleph",
+      "status",
+      "--porcelain"
+    ],
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "harness_sha256": {
+    "scripts/benchmarks/public_workflow.py": "794d15aecfec14e86aab9b9de6b7d491e73e495f7f2b5c7aa888befb695b1b41",
+    "scripts/benchmarks/cuda_worker.py": "a49b82ac32bcabdddb00fa64ad8eb65863e945e3f20b87d8c823756080d8081d"
+  },
+  "compiler": {
+    "command": [
+      "rustc",
+      "-Vv"
+    ],
+    "returncode": 0,
+    "stdout": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: aarch64-apple-darwin\nrelease: 1.98.1\nLLVM version: 22.1.8",
+    "stderr": ""
+  },
+  "platform": "macOS-27.0.1-arm64-arm-64bit",
+  "cpu": "arm",
+  "cpu_topology": {
+    "command": [
+      "lscpu",
+      "-J"
+    ],
+    "returncode": null,
+    "error": "[Errno 2] No such file or directory: 'lscpu'"
+  },
+  "python": "3.9.6 (default, Aug 17 2026, 12:07:42) \n[Clang 21.0.0 (clang-2100.3.34.1)]",
+  "affinity": null,
+  "environment": {
+    "RAYON_NUM_THREADS": "1",
+    "OMP_NUM_THREADS": "1",
+    "OPENBLAS_NUM_THREADS": "1",
+    "MKL_NUM_THREADS": "1"
+  },
+  "clock_contract": "CLI caller is subprocess launch through exit; CUDA caller is parse/run/read/result-release inside worker; process_wall includes imports/warmups/oracle",
+  "source_revision_note": "arm revisions are operator declarations; artifact hashes identify executed files",
+  "sampling_interval_seconds": 0.5,
+  "amdahl_upper_bound": 2.0,
+  "workload_sha256": "ddfaf1bba7a66ccdec29ac016e088de756c2e62790bd2570cd652ab445a555e3",
+  "finished_utc": "2026-10-16T15:24:08.474162+00:00"
+}
