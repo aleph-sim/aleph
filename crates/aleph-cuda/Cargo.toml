@@ -89,3 +89,9 @@ aleph-stab    = { path = "../aleph-stab" }
 aleph-qec     = { path = "../aleph-qec" }
 aleph-parser  = { path = "../aleph-parser" }
 rand          = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name = "sampling"
+harness = false
+required-features = ["cuda"]
