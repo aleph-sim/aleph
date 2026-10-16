@@ -629,12 +629,10 @@ pub(crate) fn gate_kq_params(qubits: &[u32], controls: &[u32]) -> GateKqParams {
 }
 
 /// Map a CUDA-layer error to a backend error. Launch/transfer failures on a
-/// working GPU indicate an internal fault, not user input; richer plumbing is a
-/// follow-up (the variant set is shared across all backends).
-pub(crate) fn to_backend_err(_e: Error) -> BackendError {
-    BackendError::InvalidState {
-        reason: "CUDA backend failure (compile/launch/transfer)",
-    }
+/// working GPU retain the driver diagnosis, including allocation failure when
+/// shared-device capacity changes after the advisory preflight.
+pub(crate) fn to_backend_err(e: Error) -> BackendError {
+    BackendError::DeviceFailure(e.to_string())
 }
 
 impl Backend for CudaSvBackend {

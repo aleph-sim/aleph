@@ -110,6 +110,11 @@ impl MemPool {
         self.get_u64_attr(sys::CUmemPool_attribute::CU_MEMPOOL_ATTR_USED_MEM_CURRENT)
     }
 
+    /// Peak live pool allocation bytes in this process, for allocation-model validation.
+    pub(crate) fn used_high_bytes(&self) -> Result<u64, Error> {
+        self.get_u64_attr(sys::CUmemPool_attribute::CU_MEMPOOL_ATTR_USED_MEM_HIGH)
+    }
+
     /// Return cached-free memory above `min_keep` bytes to the OS. Frees must
     /// have completed (synchronize the stream first) for them to be trimmable.
     pub(crate) fn trim(&self, min_keep: usize) -> Result<(), Error> {

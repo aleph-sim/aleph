@@ -22,18 +22,18 @@ use crate::pauli::parse_pauli_arg;
 /// to the historical `state.amplitudes()` dump); the f32 path widens via the
 /// backend's `to_aos_f64()`.
 trait AmpsF64 {
-    fn amps_f64(&self) -> Vec<Complex>;
+    fn amps_f64(&self) -> Result<Vec<Complex>>;
 }
 
 impl AmpsF64 for aleph_sv::CpuState {
-    fn amps_f64(&self) -> Vec<Complex> {
-        self.amplitudes().to_vec()
+    fn amps_f64(&self) -> Result<Vec<Complex>> {
+        Ok(self.amplitudes().to_vec())
     }
 }
 
 impl AmpsF64 for aleph_sv::Fp32CpuState {
-    fn amps_f64(&self) -> Vec<Complex> {
-        self.to_aos_f64()
+    fn amps_f64(&self) -> Result<Vec<Complex>> {
+        Ok(self.to_aos_f64())
     }
 }
 
@@ -41,8 +41,8 @@ impl AmpsF64 for aleph_sv::Fp32CpuState {
 // like the CPU FP32 backend. Only compiled when the `metal` feature is on (macOS).
 #[cfg(all(target_os = "macos", feature = "metal"))]
 impl AmpsF64 for aleph_metal::MetalSvState {
-    fn amps_f64(&self) -> Vec<Complex> {
-        self.to_aos_f64()
+    fn amps_f64(&self) -> Result<Vec<Complex>> {
+        Ok(self.to_aos_f64())
     }
 }
 
@@ -50,15 +50,15 @@ impl AmpsF64 for aleph_metal::MetalSvState {
 // via `amplitudes_vec` (the FP32 one casts on the way out). Linux + `cuda` only.
 #[cfg(all(target_os = "linux", feature = "cuda"))]
 impl AmpsF64 for aleph_cuda::CudaSvState {
-    fn amps_f64(&self) -> Vec<Complex> {
-        self.amplitudes_vec()
+    fn amps_f64(&self) -> Result<Vec<Complex>> {
+        self.try_amplitudes_vec().map_err(anyhow::Error::from)
     }
 }
 
 #[cfg(all(target_os = "linux", feature = "cuda"))]
 impl AmpsF64 for aleph_cuda::CudaSvStateF32 {
-    fn amps_f64(&self) -> Vec<Complex> {
-        self.amplitudes_vec()
+    fn amps_f64(&self) -> Result<Vec<Complex>> {
+        self.try_amplitudes_vec().map_err(anyhow::Error::from)
     }
 }
 
@@ -384,7 +384,7 @@ where
         output::format_counts(out, &samples, shots, n, seed_label)?;
     }
     if print_statevector {
-        let amps = state.amps_f64();
+        let amps = state.amps_f64()?;
         output::format_statevector(out, &amps, n)?;
     }
     if !paulis.is_empty() {
@@ -583,11 +583,9 @@ fn cuda_available() -> bool {
     false
 }
 
-/// CUDA GPU state-vector run path (Linux + `cuda`). Dispatches on the resolved
-/// [`aleph_backend::Selection`]: **in core** (`n ≤ cap`) runs the FP64/FP32 backend
-/// through the shared [`run_with_backend`] helper with full views; **paged**
-/// (`n > cap`) streams the state out-of-core and reports the norm (the paged host
-/// state exposes no GPU sampling/expectation yet — see [`run_cuda_paged`]).
+/// CUDA frontend execution: validate all requested outputs against runtime memory
+/// before constructing the SV backend. The norm-only Rust paged executor cannot
+/// substitute for counts/expectation/export requested through this command.
 #[cfg(all(target_os = "linux", feature = "cuda"))]
 #[allow(clippy::too_many_arguments)]
 fn run_cuda<W: Write>(
@@ -601,125 +599,56 @@ fn run_cuda<W: Write>(
     seed_label: &str,
     out: &mut W,
 ) -> Result<()> {
-    use aleph_backend::{BackendKind, Reach};
+    use aleph_backend::BackendKind;
     use aleph_cuda::{CudaSvBackend, CudaSvBackendF32};
 
-    match selection.reach {
-        Reach::InCore => match selection.kind {
-            BackendKind::CudaF32 => {
-                let backend = match seed {
-                    Some(s) => CudaSvBackendF32::with_seed(s),
-                    None => CudaSvBackendF32::new(),
-                }
-                .map_err(|e| anyhow!("initializing the CUDA FP32 backend: {e}"))?;
-                run_with_backend(
-                    backend,
-                    circuit,
-                    effective_shots,
-                    print_statevector,
-                    paulis,
-                    n,
-                    seed_label,
-                    out,
-                )
-            }
-            BackendKind::Cuda => {
-                let backend = match seed {
-                    Some(s) => CudaSvBackend::with_seed(s),
-                    None => CudaSvBackend::new(),
-                }
-                .map_err(|e| anyhow!("initializing the CUDA FP64 backend: {e}"))?;
-                run_with_backend(
-                    backend,
-                    circuit,
-                    effective_shots,
-                    print_statevector,
-                    paulis,
-                    n,
-                    seed_label,
-                    out,
-                )
-            }
-            _ => unreachable!("run_cuda is only dispatched for CUDA kinds"),
-        },
-        Reach::Paged { tile_qubits } => run_cuda_paged(
-            selection.kind,
-            tile_qubits,
-            circuit,
-            effective_shots,
-            print_statevector,
-            paulis,
-            n,
-            seed,
-            out,
-        ),
-    }
-}
-
-/// CUDA out-of-core paged run (`n` past the in-core cap). The pinned-host paged
-/// state exposes only the norm today — no GPU sampling/expectation — so the rich
-/// views are rejected with an actionable message rather than silently dropped, and
-/// the run reports `‖ψ‖²` as a reach sanity check.
-#[cfg(all(target_os = "linux", feature = "cuda"))]
-#[allow(clippy::too_many_arguments)]
-fn run_cuda_paged<W: Write>(
-    kind: aleph_backend::BackendKind,
-    tile_qubits: u32,
-    circuit: &aleph_ir::Circuit,
-    effective_shots: Option<u32>,
-    print_statevector: bool,
-    paulis: &[(String, aleph_core::PauliString)],
-    n: u32,
-    seed: Option<u64>,
-    out: &mut W,
-) -> Result<()> {
-    use aleph_backend::BackendKind;
-    if print_statevector {
-        return Err(anyhow!(
-            "--statevector is unavailable on the CUDA out-of-core paged path \
-             (n={n} ⇒ 2^{n} amplitudes); paged readout is norm-only"
-        ));
-    }
-    if !paulis.is_empty() {
-        return Err(anyhow!(
-            "--expectation is unavailable on the CUDA out-of-core paged path; \
-             paged readout is norm-only"
-        ));
-    }
-    let norm = match kind {
+    let _memory_plan = aleph_cuda::memory::plan_frontend(
+        circuit,
+        selection.kind,
+        effective_shots.unwrap_or(0) as u64,
+        !paulis.is_empty(),
+        print_statevector,
+    )
+    .map_err(|e| anyhow!(e))?;
+    match selection.kind {
         BackendKind::CudaF32 => {
-            let mut b = match seed {
-                Some(s) => aleph_cuda::CudaSvBackendF32::with_seed(s),
-                None => aleph_cuda::CudaSvBackendF32::new(),
+            let backend = match seed {
+                Some(s) => CudaSvBackendF32::with_seed(s),
+                None => CudaSvBackendF32::new(),
             }
-            .map_err(|e| anyhow!("initializing the CUDA FP32 backend: {e}"))?;
-            b.run_paged_batched(circuit, tile_qubits)
-                .map_err(|e| anyhow!("CUDA FP32 paged run: {e}"))?
-                .norm_sqr()
+            .map_err(|e| anyhow!("initializing the CUDA FP32 backend: {e}"))?
+            .with_qubit_cap(n);
+            run_with_backend(
+                backend,
+                circuit,
+                effective_shots,
+                print_statevector,
+                paulis,
+                n,
+                seed_label,
+                out,
+            )
         }
         BackendKind::Cuda => {
-            let mut b = match seed {
-                Some(s) => aleph_cuda::CudaSvBackend::with_seed(s),
-                None => aleph_cuda::CudaSvBackend::new(),
+            let backend = match seed {
+                Some(s) => CudaSvBackend::with_seed(s),
+                None => CudaSvBackend::new(),
             }
-            .map_err(|e| anyhow!("initializing the CUDA FP64 backend: {e}"))?;
-            b.run_paged_batched(circuit, tile_qubits)
-                .map_err(|e| anyhow!("CUDA FP64 paged run: {e}"))?
-                .norm_sqr()
+            .map_err(|e| anyhow!("initializing the CUDA FP64 backend: {e}"))?
+            .with_qubit_cap(n);
+            run_with_backend(
+                backend,
+                circuit,
+                effective_shots,
+                print_statevector,
+                paulis,
+                n,
+                seed_label,
+                out,
+            )
         }
-        _ => unreachable!("run_cuda_paged is only dispatched for CUDA kinds"),
-    };
-    if effective_shots.is_some() {
-        eprintln!(
-            "note: sampling is unavailable on the CUDA out-of-core paged path; \
-             reporting the state norm only"
-        );
+        _ => unreachable!("run_cuda is only dispatched for CUDA kinds"),
     }
-    writeln!(
-        out,
-        "CUDA out-of-core paged run: n={n}, tile_qubits={tile_qubits}, ‖ψ‖² = {norm:.6}"
-    )?;
-    Ok(())
 }
 
 /// Stub when the CUDA backend is not compiled in (non-Linux, or built without
