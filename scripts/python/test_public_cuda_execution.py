@@ -52,6 +52,25 @@ class PublicCudaExecution(unittest.TestCase):
                 del r,again
                 gc.collect()
 
+    def test_fused_plan_with_large_state_sparse_shot_sampler(self):
+        # n=18, shots=16 selects #555's hierarchical path, rather than the
+        # small-state BlockCdf path used by the other frontend fixtures.
+        c=aleph.Circuit(18)
+        c.h(0)
+        for q in range(17): c.cx(q,q+1)
+        expected=aleph.run(c,backend='sv',shots=0).statevector()
+        support={'0'*18,'1'*18}
+        for backend,tol in [('cuda',1e-10),('cuda-f32',1e-5)]:
+            for optimize in [False,True]:
+                r=aleph.run(c,backend=backend,shots=16,seed=552,cuda_optimize=optimize)
+                self.assertEqual(sum(r.counts().values()),16)
+                self.assertTrue(set(r.counts()) <= support)
+                np.testing.assert_allclose(r.statevector(),expected,atol=tol,rtol=0)
+                again=aleph.run(c,backend=backend,shots=16,seed=552,cuda_optimize=optimize)
+                self.assertEqual(r.counts(),again.counts())
+                del r,again
+                gc.collect()
+
     def test_diagonal_phase_and_nontrivial_preparation(self):
         c=aleph.Circuit(8)
         for q in range(8):c.ry(.3+.09*q,q)

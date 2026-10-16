@@ -8,6 +8,9 @@ pub struct DenseMemoryRequest {
     /// Bytes per complex amplitude (not per scalar).
     pub amplitude_bytes: u64,
     pub shots: u64,
+    /// Executor-computed workspace excluding targets/results. None uses the layout's
+    /// linear per-amplitude workspace (e.g. the former full-state CDF).
+    pub sampling_workspace_bytes: Option<u64>,
     pub expectation: bool,
     pub marginal_qubits: Option<u32>,
     pub export_amplitudes: bool,
@@ -94,7 +97,13 @@ pub fn estimate_dense_memory(
         },
     ])?;
     let sampling_bytes = if r.shots > 0 {
-        sum(&[mul(n, l.sample_bytes_per_amplitude)?, mul(r.shots, 16)?])?
+        sum(&[
+            match r.sampling_workspace_bytes {
+                Some(bytes) => bytes,
+                None => mul(n, l.sample_bytes_per_amplitude)?,
+            },
+            mul(r.shots, 16)?,
+        ])?
     } else {
         0
     };
@@ -185,7 +194,7 @@ mod tests {
         }
     }
     #[test]
-    fn counts_do_not_fit_reference_card_despite_state_fitting() {
+    fn legacy_cdf_counts_do_not_fit_reference_card_despite_state_fitting() {
         for n in [30, 31] {
             let mut r = request(n);
             r.shots = 1024;
@@ -277,6 +286,22 @@ mod tests {
             .is_ok());
     }
 
+    #[test]
+    fn executor_workspace_override_includes_shot_buffers_and_checks_overflow() {
+        let mut r = request(31);
+        r.shots = 1024;
+        r.sampling_workspace_bytes = Some(64 << 20);
+        let e = estimate_dense_memory(r, layout()).unwrap();
+        assert_eq!(e.sampling_bytes, (64 << 20) + 16384);
+        assert!(e.check(budget(20)).is_ok());
+        r.sampling_workspace_bytes = Some(u64::MAX);
+        assert!(estimate_dense_memory(r, layout()).is_err());
+        r.shots = 0;
+        assert_eq!(
+            estimate_dense_memory(r, layout()).unwrap().sampling_bytes,
+            0
+        );
+    }
     #[test]
     fn overflow_and_invalid_layouts_are_errors() {
         for n in [60, 64, 65535] {

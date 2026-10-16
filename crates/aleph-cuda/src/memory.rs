@@ -1,4 +1,4 @@
-//! CUDA frontend preflight for the current two-FP64-CDF sampler. Update this layout
+//! CUDA frontend preflight for the current operation-selected sampling workspace. Update this layout
 //! and allocation tests when changing the sampler (#555). No large allocation occurs here.
 use crate::CudaContext;
 use aleph_backend::memory::{
@@ -7,7 +7,8 @@ use aleph_backend::memory::{
 use aleph_backend::BackendKind;
 use aleph_ir::{Circuit, Instruction};
 
-/// Current readout allocation layout (both FP32 and FP64 states).
+/// Reduction layout and legacy reference-sampler fallback (both precisions).
+/// Frontend requests override sampling bytes with the selected #555 workspace.
 pub const CUDA_READOUT_LAYOUT: DenseMemoryLayout = DenseMemoryLayout {
     sample_bytes_per_amplitude: 16, // two f64 arrays, each 2^n
     reduction_block: 256,
@@ -168,6 +169,11 @@ pub fn frontend_memory_request(
         qubits: c.num_qubits(),
         amplitude_bytes,
         shots,
+        sampling_workspace_bytes: Some(crate::sampling_workspace_bytes(
+            c.num_qubits(),
+            u32::try_from(shots).map_err(|_| "CUDA shots exceed u32")?,
+            crate::SamplingAlgorithm::Auto,
+        )?),
         expectation,
         export_amplitudes: export,
         execution_scratch_bytes,
@@ -206,6 +212,29 @@ pub fn plan_frontend(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn selected_sampler_memory_drives_frontend_feasibility() {
+        let c = Circuit::new(31, 0);
+        let request =
+            frontend_memory_request(&c, BackendKind::CudaF32, 1024, false, false).unwrap();
+        let e = estimate_dense_memory(request, CUDA_READOUT_LAYOUT).unwrap();
+        assert!(e.sampling_bytes < 65 << 20);
+        let budget = MemoryBudget {
+            device_free_bytes: 20 << 30,
+            device_total_bytes: 20 << 30,
+            device_headroom_bytes: 1 << 30,
+            host_available_bytes: 64 << 30,
+            host_headroom_bytes: 1 << 30,
+        };
+        assert!(e.check(budget).is_ok());
+        let many =
+            frontend_memory_request(&c, BackendKind::CudaF32, 1_000_000, false, false).unwrap();
+        assert!(estimate_dense_memory(many, CUDA_READOUT_LAYOUT)
+            .unwrap()
+            .check(budget)
+            .is_err());
+        assert!(frontend_memory_request(&c, BackendKind::CudaF32, u64::MAX, false, false).is_err());
+    }
     #[test]
     fn cgroup_leaf_and_parent_limits_are_both_enforced() {
         let root = std::env::temp_dir().join(format!("aleph-554-cgroup-{}", std::process::id()));

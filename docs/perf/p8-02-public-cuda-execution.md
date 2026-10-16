@@ -232,3 +232,13 @@ Production dependencies are unchanged; Criterion is dev-only and already in the
 workspace. Remaining work includes native-CP FP32 admission/crossover tuning and
 reducing repeated context/JIT/result-release costs, rather than claiming these
 execution-pass savings eliminate all frontend overhead.
+
+Integration after #555 (2026-10-16): merged main `928bdb7` and retained both
+sampling and public-execution benchmarks/exports. On the real CUDA device, all
+three planner tests, three sampler tests and seven public CLI/Python tests pass.
+The added n=18, shots=16 GHZ fixture combines raw/optimized execution with the
+hierarchical sampler in both precisions, checking full amplitudes, outcome
+support and seeded repeats. Linux CUDA/CLI all-target Clippy, local workspace
+Clippy, 78 default CLI tests and rustfmt pass. The benchmark evidence above
+predates this integration and remains an execution-planning A/B with the former
+sampler; it does not measure combined planner-plus-new-sampler speedups.

@@ -3,8 +3,10 @@
 CLI and Python now check the requested operations against the actual CUDA device's
 free/total memory before constructing an SV backend or allocating its state.
 A reference-card qubit cap is a structural hint, not evidence that sampling fits.
-The old n=30/n=31 FP32 counts requests need at least 24/48 GiB for state plus CDFs
-alone, exceeding the reference card's roughly 20 GiB.
+The original n=30/n=31 FP32 counts requests needed at least 24/48 GiB for state plus
+CDFs alone. #555 replaces that default sampler; the lower current sampling bound
+is described in [the hierarchical sampling report](p8-05-hierarchical-sampling.md).
+The tables below retain the original #554 measurements for comparison.
 
 The shared pure planner lives in `aleph-backend::memory`, with no CUDA implementation
 types. `aleph_cuda::memory` supplies the current executor/readout layout, circuit
@@ -22,8 +24,11 @@ For N=2^n:
 - Reductions: two FP64 values per 256-amplitude block, plus a 16-byte accumulator.
   In-circuit measurement/reset and readout use these. Frontend zero-shot/export-only
   requests conservatively include reduction capacity because sample(0) checks norm.
-- Sampling with positive shots: **two N-element FP64 CDF buffers in both precisions**,
-  plus FP64 targets and u64 output indices (16 bytes per shot).
+- Sampling with positive shots: the executor now supplies the selected workspace
+  through `DenseMemoryRequest.sampling_workspace_bytes`. #555 uses a small mass
+  hierarchy, optionally adding one N-element FP64 local CDF; see its report for the
+  exact bound. Targets and output indices still add 16 bytes per shot. `None` keeps
+  the linear layout fallback used by the explicit two-buffer reference sampler.
 - Marginals: 8*2^k bytes for bins and 4*k for positions, with reductions. The pure
   model/audit supports this existing Rust readout; no new Python/CLI marginal API
   is introduced.
@@ -98,14 +103,15 @@ sometimes unused reduction capacity.
 
 The audit asserts that observed peak is covered and that excess is bounded by
 explicit gate/reduction slack, so a changed sampler cannot silently retain a stale
-full-CDF estimate. #555 must update `CUDA_READOUT_LAYOUT` with the sampler and rerun
-this audit. Pool/driver reservations are handled by runtime free memory and headroom,
+full-CDF estimate. #555 supplies the exact workspace override and reruns this audit
+(see its report and `data/p8-05/allocation.jsonl`). Pool/driver reservations are handled by runtime free memory and headroom,
 not confused with these logical allocation counters.
 
-The same audit rejects a 31-qubit FP32 counts request and verifies zero new device
-allocation and zero SV backend initialization attempts. Public CLI tests reject
-30/31-qubit counts in both precisions, and check small counts, statevector and ZZ
-expectation. Public Python tests exercise oversize/overflow rejection, zero shots,
+The original audit rejected a 31-qubit FP32 counts request. Since #555 permits
+low-shot requests at that size, the current audit uses an overflowing 64-qubit
+request and verifies zero new device allocation/backend initialization attempts.
+The current bounded CLI audit rejects 32/33-qubit counts on the reference card
+without allocating the state, and checks small counts, statevector and ZZ expectation. Public Python tests exercise oversize/overflow rejection, zero shots,
 counts and repeated lazy export. Existing concurrent/cache/collapse GPU result
 oracles pass in both precisions. Raw measurements: `data/p8-04-*.json*`.
 

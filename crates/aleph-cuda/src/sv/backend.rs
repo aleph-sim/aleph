@@ -176,6 +176,21 @@ impl CudaSvBackend {
         self
     }
 
+    /// Select the seeded sampler; Reference retains the former full-state scan for A/B.
+    pub fn with_sampling_algorithm(mut self, algorithm: crate::SamplingAlgorithm) -> Self {
+        self.readout.algorithm = algorithm;
+        self
+    }
+    /// Enable synchronized sampling-stage diagnostics (off in normal execution).
+    pub fn with_sampling_profile(mut self, enabled: bool) -> Self {
+        self.readout.profile_sampling = enabled;
+        self
+    }
+    /// Diagnostics of the most recent successful sample call.
+    pub fn sampling_stats(&self) -> crate::SamplingStats {
+        self.readout.sampling_stats
+    }
+
     /// Override the qubit cap (default [`MAX_CUDA_QUBITS`]). For large-memory
     /// benchmarks on a GPU that can hold the state.
     pub fn with_qubit_cap(mut self, cap: u32) -> Self {

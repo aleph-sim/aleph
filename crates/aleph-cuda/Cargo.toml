@@ -95,3 +95,8 @@ criterion = { workspace = true }
 name = "public_execution"
 harness = false
 required-features = ["cuda"]
+
+[[bench]]
+name = "sampling"
+harness = false
+required-features = ["cuda"]
