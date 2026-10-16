@@ -19,6 +19,7 @@ pub(crate) const MAX_SOA_QUBITS: u32 = 28;
 /// SoA single-threaded CPU state-vector backend.
 pub struct SoaSvBackend {
     pub(crate) rng: StdRng,
+    fused_validation: crate::validation::UnitaryKqCache,
 }
 
 impl SoaSvBackend {
@@ -26,6 +27,7 @@ impl SoaSvBackend {
     pub fn new() -> Self {
         Self {
             rng: StdRng::from_entropy(),
+            fused_validation: Default::default(),
         }
     }
 
@@ -35,6 +37,7 @@ impl SoaSvBackend {
     pub fn with_seed(seed: u64) -> Self {
         Self {
             rng: StdRng::seed_from_u64(seed),
+            fused_validation: Default::default(),
         }
     }
 }
@@ -94,9 +97,11 @@ impl Backend for SoaSvBackend {
             seen.push(q);
         }
         // UnitaryKq has no fixed-size GateMatrix (the enum stops at 8×8); the
-        // kernel reads `data` directly. Produced by FuseKq from unitary members.
+        // kernel reads `data` directly. Public IR needs the same validation as
+        // optimizer-produced matrices before entering that trusted kernel.
         // Intercept before matrix() so the `Unrepresentable` error never fires.
         if let aleph_core::Gate::UnitaryKq { k, data } = &gate.gate {
+            self.fused_validation.validate(*k, data, &gate.controls)?;
             crate::kernels::unitary_kq::apply_kq_soa(
                 &mut state.re,
                 &mut state.im,

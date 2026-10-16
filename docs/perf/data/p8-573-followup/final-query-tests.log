@@ -1,0 +1,22 @@
+   Compiling aleph-sv v0.3.0 (/tmp/aleph-573-followup/final/crates/aleph-sv)
+   Compiling aleph-oracle v0.3.0 (/tmp/aleph-573-followup/final/crates/aleph-oracle)
+    Finished `release` profile [optimized] target(s) in 19.22s
+     Running tests/expectation_query.rs (target/release/deps/expectation_query-6a11b03d62d66635)
+
+running 14 tests
+test barrier_does_not_entangle_support_and_order_is_kept ... ok
+test finite_parameters_diagonal_scope_and_sum_overflow_are_guarded ... ok
+test canonical_five_qubit_matrix_stays_within_query_workspace_contract ... ok
+test global_and_overflow_cones_reject_before_state_allocation ... ok
+test rejects_all_nonunitary_input_even_when_disjoint_or_analytic ... ok
+test manual_diagonal_high_bits_and_tiled_controls ... ok
+test rejects_invalid_manual_ir_and_mutated_paulis ... ok
+test nontrivial_relabeling_exposes_logical_maps ... ok
+test identity_zero_coefficients_and_shared_states ... ok
+test reordered_controlled_manual_kq_preserves_msb_operand_contract ... ok
+test shallow_128q_analytic_pairs_and_disjoint_cones_do_not_union ... ok
+test aer_fixture_amplitudes_independently_contract_pauli_expectations ... ok
+test p3_10_shallow_128q_matches_independent_window_reference ... ok
+test random_controls_fusion_tiling_and_permutation_match_full_sv ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s

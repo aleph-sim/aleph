@@ -1,0 +1,859 @@
+===== clean-base-1-p8_fused__aos__n10_k2-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/aos/n10_k2
+Benchmarking p8_fused/aos/n10_k2: Warming up for 100.00 ms
+Benchmarking p8_fused/aos/n10_k2: Collecting 10 samples in estimated 300.69 ms (17k iterations)
+Benchmarking p8_fused/aos/n10_k2: Analyzing
+p8_fused/aos/n10_k2     time:   [14.912 µs 15.222 µs 15.712 µs]
+
+===== clean-base-1-p8_fused__aos__n10_k3-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/aos/n10_k3
+Benchmarking p8_fused/aos/n10_k3: Warming up for 100.00 ms
+Benchmarking p8_fused/aos/n10_k3: Collecting 10 samples in estimated 300.48 ms (23k iterations)
+Benchmarking p8_fused/aos/n10_k3: Analyzing
+p8_fused/aos/n10_k3     time:   [12.367 µs 12.423 µs 12.495 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+
+===== clean-base-1-p8_fused__aos__n10_k5-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/aos/n10_k5
+Benchmarking p8_fused/aos/n10_k5: Warming up for 100.00 ms
+Benchmarking p8_fused/aos/n10_k5: Collecting 10 samples in estimated 300.92 ms (10k iterations)
+Benchmarking p8_fused/aos/n10_k5: Analyzing
+p8_fused/aos/n10_k5     time:   [28.141 µs 28.449 µs 29.151 µs]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+
+===== clean-base-1-p8_fused__aos__n20_k2-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/aos/n20_k2
+Benchmarking p8_fused/aos/n20_k2: Warming up for 100.00 ms
+Benchmarking p8_fused/aos/n20_k2: Collecting 10 samples in estimated 559.94 ms (20 iterations)
+Benchmarking p8_fused/aos/n20_k2: Analyzing
+p8_fused/aos/n20_k2     time:   [27.303 ms 27.625 ms 27.948 ms]
+
+===== clean-base-1-p8_fused__aos__n20_k3-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/aos/n20_k3
+Benchmarking p8_fused/aos/n20_k3: Warming up for 100.00 ms
+Benchmarking p8_fused/aos/n20_k3: Collecting 10 samples in estimated 357.58 ms (20 iterations)
+Benchmarking p8_fused/aos/n20_k3: Analyzing
+p8_fused/aos/n20_k3     time:   [17.672 ms 17.704 ms 17.738 ms]
+
+===== clean-base-1-p8_fused__aos__n20_k5-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/aos/n20_k5
+Benchmarking p8_fused/aos/n20_k5: Warming up for 100.00 ms
+Benchmarking p8_fused/aos/n20_k5: Collecting 10 samples in estimated 446.20 ms (20 iterations)
+Benchmarking p8_fused/aos/n20_k5: Analyzing
+p8_fused/aos/n20_k5     time:   [23.258 ms 24.245 ms 25.388 ms]
+
+===== clean-base-1-p8_fused__cold_aos__n10_k5-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/cold_aos/n10_k5
+Benchmarking p8_fused/cold_aos/n10_k5: Warming up for 100.00 ms
+Benchmarking p8_fused/cold_aos/n10_k5: Collecting 10 samples in estimated 300.07 ms (10k iterations)
+Benchmarking p8_fused/cold_aos/n10_k5: Analyzing
+p8_fused/cold_aos/n10_k5
+                        time:   [28.811 µs 28.940 µs 29.191 µs]
+Found 3 outliers among 10 measurements (30.00%)
+  2 (20.00%) low mild
+  1 (10.00%) high severe
+
+===== clean-base-1-p8_fused__cold_fp32__n10_k5-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/cold_fp32/n10_k5
+Benchmarking p8_fused/cold_fp32/n10_k5: Warming up for 100.00 ms
+Benchmarking p8_fused/cold_fp32/n10_k5: Collecting 10 samples in estimated 302.38 ms (5115 iterations)
+Benchmarking p8_fused/cold_fp32/n10_k5: Analyzing
+p8_fused/cold_fp32/n10_k5
+                        time:   [59.073 µs 59.495 µs 60.192 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+
+===== clean-base-1-p8_fused__cold_soa__n10_k5-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/cold_soa/n10_k5
+Benchmarking p8_fused/cold_soa/n10_k5: Warming up for 100.00 ms
+Benchmarking p8_fused/cold_soa/n10_k5: Collecting 10 samples in estimated 300.40 ms (10k iterations)
+Benchmarking p8_fused/cold_soa/n10_k5: Analyzing
+p8_fused/cold_soa/n10_k5
+                        time:   [27.944 µs 28.149 µs 28.378 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+
+===== clean-base-1-p8_fused__cold_soa__n10_k5-attempt2.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/cold_soa/n10_k5
+Benchmarking p8_fused/cold_soa/n10_k5: Warming up for 100.00 ms
+Benchmarking p8_fused/cold_soa/n10_k5: Collecting 10 samples in estimated 300.40 ms (10k iterations)
+Benchmarking p8_fused/cold_soa/n10_k5: Analyzing
+p8_fused/cold_soa/n10_k5
+                        time:   [27.894 µs 27.975 µs 28.121 µs]
+                        change: [-1.4643% -0.4741% +0.4203%] (p = 0.38 > 0.05)
+                        No change in performance detected.
+
+===== clean-base-1-p8_fused__fp32__n10_k2-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/fp32/n10_k2
+Benchmarking p8_fused/fp32/n10_k2: Warming up for 100.00 ms
+Benchmarking p8_fused/fp32/n10_k2: Collecting 10 samples in estimated 300.23 ms (42k iterations)
+Benchmarking p8_fused/fp32/n10_k2: Analyzing
+p8_fused/fp32/n10_k2    time:   [7.1375 µs 7.1479 µs 7.1641 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+
+===== clean-base-1-p8_fused__fp32__n10_k3-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/fp32/n10_k3
+Benchmarking p8_fused/fp32/n10_k3: Warming up for 100.00 ms
+Benchmarking p8_fused/fp32/n10_k3: Collecting 10 samples in estimated 300.02 ms (32k iterations)
+Benchmarking p8_fused/fp32/n10_k3: Analyzing
+p8_fused/fp32/n10_k3    time:   [9.3755 µs 9.4004 µs 9.4298 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+
+===== clean-base-1-p8_fused__fp32__n10_k5-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/fp32/n10_k5
+Benchmarking p8_fused/fp32/n10_k5: Warming up for 100.00 ms
+Benchmarking p8_fused/fp32/n10_k5: Collecting 10 samples in estimated 300.94 ms (5115 iterations)
+Benchmarking p8_fused/fp32/n10_k5: Analyzing
+p8_fused/fp32/n10_k5    time:   [58.699 µs 58.821 µs 59.103 µs]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+
+===== clean-base-1-p8_fused__fp32__n20_k2-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/fp32/n20_k2
+Benchmarking p8_fused/fp32/n20_k2: Warming up for 100.00 ms
+Benchmarking p8_fused/fp32/n20_k2: Collecting 10 samples in estimated 341.70 ms (30 iterations)
+Benchmarking p8_fused/fp32/n20_k2: Analyzing
+p8_fused/fp32/n20_k2    time:   [11.512 ms 11.798 ms 12.100 ms]
+
+===== clean-base-1-p8_fused__fp32__n20_k3-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/fp32/n20_k3
+Benchmarking p8_fused/fp32/n20_k3: Warming up for 100.00 ms
+Benchmarking p8_fused/fp32/n20_k3: Collecting 10 samples in estimated 362.05 ms (30 iterations)
+Benchmarking p8_fused/fp32/n20_k3: Analyzing
+p8_fused/fp32/n20_k3    time:   [11.987 ms 12.010 ms 12.036 ms]
+
+===== clean-base-1-p8_fused__fp32__n20_k5-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/fp32/n20_k5
+Benchmarking p8_fused/fp32/n20_k5: Warming up for 100.00 ms
+
+Warning: Unable to complete 10 samples in 300.0ms. You may wish to increase target time to 600.1ms.
+Benchmarking p8_fused/fp32/n20_k5: Collecting 10 samples in estimated 600.12 ms (10 iterations)
+Benchmarking p8_fused/fp32/n20_k5: Analyzing
+p8_fused/fp32/n20_k5    time:   [59.820 ms 60.023 ms 60.287 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+
+===== clean-base-1-p8_fused__soa__n10_k2-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/soa/n10_k2
+Benchmarking p8_fused/soa/n10_k2: Warming up for 100.00 ms
+Benchmarking p8_fused/soa/n10_k2: Collecting 10 samples in estimated 300.74 ms (19k iterations)
+Benchmarking p8_fused/soa/n10_k2: Analyzing
+p8_fused/soa/n10_k2     time:   [14.352 µs 14.412 µs 14.474 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+
+===== clean-base-1-p8_fused__soa__n10_k3-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/soa/n10_k3
+Benchmarking p8_fused/soa/n10_k3: Warming up for 100.00 ms
+Benchmarking p8_fused/soa/n10_k3: Collecting 10 samples in estimated 300.03 ms (24k iterations)
+Benchmarking p8_fused/soa/n10_k3: Analyzing
+p8_fused/soa/n10_k3     time:   [11.276 µs 11.292 µs 11.304 µs]
+
+===== clean-base-1-p8_fused__soa__n10_k5-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/soa/n10_k5
+Benchmarking p8_fused/soa/n10_k5: Warming up for 100.00 ms
+Benchmarking p8_fused/soa/n10_k5: Collecting 10 samples in estimated 301.06 ms (11k iterations)
+Benchmarking p8_fused/soa/n10_k5: Analyzing
+p8_fused/soa/n10_k5     time:   [28.423 µs 28.518 µs 28.668 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+
+===== clean-base-1-p8_fused__soa__n20_k2-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/soa/n20_k2
+Benchmarking p8_fused/soa/n20_k2: Warming up for 100.00 ms
+Benchmarking p8_fused/soa/n20_k2: Collecting 10 samples in estimated 412.26 ms (20 iterations)
+Benchmarking p8_fused/soa/n20_k2: Analyzing
+p8_fused/soa/n20_k2     time:   [20.619 ms 20.735 ms 20.866 ms]
+
+===== clean-base-1-p8_fused__soa__n20_k3-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/soa/n20_k3
+Benchmarking p8_fused/soa/n20_k3: Warming up for 100.00 ms
+Benchmarking p8_fused/soa/n20_k3: Collecting 10 samples in estimated 431.03 ms (30 iterations)
+Benchmarking p8_fused/soa/n20_k3: Analyzing
+p8_fused/soa/n20_k3     time:   [14.301 ms 14.367 ms 14.478 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+
+===== clean-base-1-p8_fused__soa__n20_k5-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/soa/n20_k5
+Benchmarking p8_fused/soa/n20_k5: Warming up for 100.00 ms
+Benchmarking p8_fused/soa/n20_k5: Collecting 10 samples in estimated 430.11 ms (20 iterations)
+Benchmarking p8_fused/soa/n20_k5: Analyzing
+p8_fused/soa/n20_k5     time:   [21.393 ms 21.530 ms 21.735 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+
+===== clean-base-2-p8_fused__aos__n10_k2-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/aos/n10_k2
+Benchmarking p8_fused/aos/n10_k2: Warming up for 100.00 ms
+Benchmarking p8_fused/aos/n10_k2: Collecting 10 samples in estimated 300.12 ms (18k iterations)
+Benchmarking p8_fused/aos/n10_k2: Analyzing
+p8_fused/aos/n10_k2     time:   [16.322 µs 16.367 µs 16.418 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+
+===== clean-base-2-p8_fused__aos__n10_k3-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/aos/n10_k3
+Benchmarking p8_fused/aos/n10_k3: Warming up for 100.00 ms
+Benchmarking p8_fused/aos/n10_k3: Collecting 10 samples in estimated 300.04 ms (23k iterations)
+Benchmarking p8_fused/aos/n10_k3: Analyzing
+p8_fused/aos/n10_k3     time:   [12.251 µs 12.292 µs 12.344 µs]
+
+===== clean-base-2-p8_fused__aos__n10_k5-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/aos/n10_k5
+Benchmarking p8_fused/aos/n10_k5: Warming up for 100.00 ms
+Benchmarking p8_fused/aos/n10_k5: Collecting 10 samples in estimated 300.91 ms (10k iterations)
+Benchmarking p8_fused/aos/n10_k5: Analyzing
+p8_fused/aos/n10_k5     time:   [28.719 µs 29.031 µs 29.280 µs]
+
+===== clean-base-2-p8_fused__aos__n20_k2-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/aos/n20_k2
+Benchmarking p8_fused/aos/n20_k2: Warming up for 100.00 ms
+Benchmarking p8_fused/aos/n20_k2: Collecting 10 samples in estimated 504.72 ms (20 iterations)
+Benchmarking p8_fused/aos/n20_k2: Analyzing
+p8_fused/aos/n20_k2     time:   [25.627 ms 30.098 ms 36.881 ms]
+Found 4 outliers among 10 measurements (40.00%)
+  2 (20.00%) low mild
+  2 (20.00%) high severe
+
+===== clean-base-2-p8_fused__aos__n20_k2-attempt2.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/aos/n20_k2
+Benchmarking p8_fused/aos/n20_k2: Warming up for 100.00 ms
+Benchmarking p8_fused/aos/n20_k2: Collecting 10 samples in estimated 539.06 ms (20 iterations)
+Benchmarking p8_fused/aos/n20_k2: Analyzing
+p8_fused/aos/n20_k2     time:   [27.032 ms 27.703 ms 28.524 ms]
+                        change: [-24.272% -7.9586% +8.8791%] (p = 0.54 > 0.05)
+                        No change in performance detected.
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+
+===== clean-base-2-p8_fused__aos__n20_k3-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/aos/n20_k3
+Benchmarking p8_fused/aos/n20_k3: Warming up for 100.00 ms
+Benchmarking p8_fused/aos/n20_k3: Collecting 10 samples in estimated 355.60 ms (20 iterations)
+Benchmarking p8_fused/aos/n20_k3: Analyzing
+p8_fused/aos/n20_k3     time:   [17.708 ms 17.724 ms 17.738 ms]
+
+===== clean-base-2-p8_fused__aos__n20_k5-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/aos/n20_k5
+Benchmarking p8_fused/aos/n20_k5: Warming up for 100.00 ms
+Benchmarking p8_fused/aos/n20_k5: Collecting 10 samples in estimated 443.20 ms (20 iterations)
+Benchmarking p8_fused/aos/n20_k5: Analyzing
+p8_fused/aos/n20_k5     time:   [22.286 ms 23.208 ms 24.356 ms]
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+
+===== clean-base-2-p8_fused__cold_aos__n10_k5-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/cold_aos/n10_k5
+Benchmarking p8_fused/cold_aos/n10_k5: Warming up for 100.00 ms
+Benchmarking p8_fused/cold_aos/n10_k5: Collecting 10 samples in estimated 300.89 ms (10k iterations)
+Benchmarking p8_fused/cold_aos/n10_k5: Analyzing
+p8_fused/cold_aos/n10_k5
+                        time:   [28.203 µs 28.300 µs 28.397 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+
+===== clean-base-2-p8_fused__cold_fp32__n10_k5-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/cold_fp32/n10_k5
+Benchmarking p8_fused/cold_fp32/n10_k5: Warming up for 100.00 ms
+Benchmarking p8_fused/cold_fp32/n10_k5: Collecting 10 samples in estimated 302.64 ms (4730 iterations)
+Benchmarking p8_fused/cold_fp32/n10_k5: Analyzing
+p8_fused/cold_fp32/n10_k5
+                        time:   [59.574 µs 60.068 µs 61.289 µs]
+
+===== clean-base-2-p8_fused__cold_soa__n10_k5-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/cold_soa/n10_k5
+Benchmarking p8_fused/cold_soa/n10_k5: Warming up for 100.00 ms
+Benchmarking p8_fused/cold_soa/n10_k5: Collecting 10 samples in estimated 300.77 ms (10k iterations)
+Benchmarking p8_fused/cold_soa/n10_k5: Analyzing
+p8_fused/cold_soa/n10_k5
+                        time:   [28.052 µs 28.086 µs 28.146 µs]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+
+===== clean-base-2-p8_fused__fp32__n10_k2-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/fp32/n10_k2
+Benchmarking p8_fused/fp32/n10_k2: Warming up for 100.00 ms
+Benchmarking p8_fused/fp32/n10_k2: Collecting 10 samples in estimated 300.09 ms (42k iterations)
+Benchmarking p8_fused/fp32/n10_k2: Analyzing
+p8_fused/fp32/n10_k2    time:   [7.1596 µs 7.1725 µs 7.1810 µs]
+
+===== clean-base-2-p8_fused__fp32__n10_k3-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/fp32/n10_k3
+Benchmarking p8_fused/fp32/n10_k3: Warming up for 100.00 ms
+Benchmarking p8_fused/fp32/n10_k3: Collecting 10 samples in estimated 300.25 ms (41k iterations)
+Benchmarking p8_fused/fp32/n10_k3: Analyzing
+p8_fused/fp32/n10_k3    time:   [7.9903 µs 8.9750 µs 9.6885 µs]
+
+===== clean-base-2-p8_fused__fp32__n10_k3-attempt2.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/fp32/n10_k3
+Benchmarking p8_fused/fp32/n10_k3: Warming up for 100.00 ms
+Benchmarking p8_fused/fp32/n10_k3: Collecting 10 samples in estimated 300.47 ms (32k iterations)
+Benchmarking p8_fused/fp32/n10_k3: Analyzing
+p8_fused/fp32/n10_k3    time:   [9.3055 µs 9.3340 µs 9.3561 µs]
+                        change: [-1.5665% +7.8473% +18.507%] (p = 0.14 > 0.05)
+                        No change in performance detected.
+
+===== clean-base-2-p8_fused__fp32__n10_k5-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/fp32/n10_k5
+Benchmarking p8_fused/fp32/n10_k5: Warming up for 100.00 ms
+Benchmarking p8_fused/fp32/n10_k5: Collecting 10 samples in estimated 300.10 ms (5115 iterations)
+Benchmarking p8_fused/fp32/n10_k5: Analyzing
+p8_fused/fp32/n10_k5    time:   [58.726 µs 58.949 µs 59.425 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+
+===== clean-base-2-p8_fused__fp32__n20_k2-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/fp32/n20_k2
+Benchmarking p8_fused/fp32/n20_k2: Warming up for 100.00 ms
+Benchmarking p8_fused/fp32/n20_k2: Collecting 10 samples in estimated 343.83 ms (30 iterations)
+Benchmarking p8_fused/fp32/n20_k2: Analyzing
+p8_fused/fp32/n20_k2    time:   [11.438 ms 11.507 ms 11.603 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+
+===== clean-base-2-p8_fused__fp32__n20_k3-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/fp32/n20_k3
+Benchmarking p8_fused/fp32/n20_k3: Warming up for 100.00 ms
+Benchmarking p8_fused/fp32/n20_k3: Collecting 10 samples in estimated 362.98 ms (30 iterations)
+Benchmarking p8_fused/fp32/n20_k3: Analyzing
+p8_fused/fp32/n20_k3    time:   [12.006 ms 12.072 ms 12.157 ms]
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+
+===== clean-base-2-p8_fused__fp32__n20_k5-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/fp32/n20_k5
+Benchmarking p8_fused/fp32/n20_k5: Warming up for 100.00 ms
+
+Warning: Unable to complete 10 samples in 300.0ms. You may wish to increase target time to 599.1ms.
+Benchmarking p8_fused/fp32/n20_k5: Collecting 10 samples in estimated 599.07 ms (10 iterations)
+Benchmarking p8_fused/fp32/n20_k5: Analyzing
+p8_fused/fp32/n20_k5    time:   [60.265 ms 60.509 ms 60.748 ms]
+
+===== clean-base-2-p8_fused__soa__n10_k2-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/soa/n10_k2
+Benchmarking p8_fused/soa/n10_k2: Warming up for 100.00 ms
+Benchmarking p8_fused/soa/n10_k2: Collecting 10 samples in estimated 300.06 ms (25k iterations)
+Benchmarking p8_fused/soa/n10_k2: Analyzing
+p8_fused/soa/n10_k2     time:   [12.700 µs 13.041 µs 13.355 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) low mild
+
+===== clean-base-2-p8_fused__soa__n10_k3-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/soa/n10_k3
+Benchmarking p8_fused/soa/n10_k3: Warming up for 100.00 ms
+Benchmarking p8_fused/soa/n10_k3: Collecting 10 samples in estimated 300.62 ms (27k iterations)
+Benchmarking p8_fused/soa/n10_k3: Analyzing
+p8_fused/soa/n10_k3     time:   [11.162 µs 11.174 µs 11.187 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+
+===== clean-base-2-p8_fused__soa__n10_k5-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/soa/n10_k5
+Benchmarking p8_fused/soa/n10_k5: Warming up for 100.00 ms
+Benchmarking p8_fused/soa/n10_k5: Collecting 10 samples in estimated 300.56 ms (11k iterations)
+Benchmarking p8_fused/soa/n10_k5: Analyzing
+p8_fused/soa/n10_k5     time:   [28.580 µs 28.641 µs 28.732 µs]
+Found 3 outliers among 10 measurements (30.00%)
+  1 (10.00%) low severe
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+
+===== clean-base-2-p8_fused__soa__n20_k2-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/soa/n20_k2
+Benchmarking p8_fused/soa/n20_k2: Warming up for 100.00 ms
+Benchmarking p8_fused/soa/n20_k2: Collecting 10 samples in estimated 422.09 ms (20 iterations)
+Benchmarking p8_fused/soa/n20_k2: Analyzing
+p8_fused/soa/n20_k2     time:   [20.982 ms 21.077 ms 21.189 ms]
+
+===== clean-base-2-p8_fused__soa__n20_k3-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/soa/n20_k3
+Benchmarking p8_fused/soa/n20_k3: Warming up for 100.00 ms
+Benchmarking p8_fused/soa/n20_k3: Collecting 10 samples in estimated 430.14 ms (30 iterations)
+Benchmarking p8_fused/soa/n20_k3: Analyzing
+p8_fused/soa/n20_k3     time:   [14.337 ms 14.840 ms 15.418 ms]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high mild
+
+===== clean-base-2-p8_fused__soa__n20_k5-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/soa/n20_k5
+Benchmarking p8_fused/soa/n20_k5: Warming up for 100.00 ms
+Benchmarking p8_fused/soa/n20_k5: Collecting 10 samples in estimated 430.40 ms (20 iterations)
+Benchmarking p8_fused/soa/n20_k5: Analyzing
+p8_fused/soa/n20_k5     time:   [21.338 ms 21.611 ms 22.069 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+
+===== clean-candidate-1-p8_fused__aos__n10_k2-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/aos/n10_k2
+Benchmarking p8_fused/aos/n10_k2: Warming up for 100.00 ms
+Benchmarking p8_fused/aos/n10_k2: Collecting 10 samples in estimated 300.01 ms (49k iterations)
+Benchmarking p8_fused/aos/n10_k2: Analyzing
+p8_fused/aos/n10_k2     time:   [5.3081 µs 5.3801 µs 5.4948 µs]
+
+===== clean-candidate-1-p8_fused__aos__n10_k3-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/aos/n10_k3
+Benchmarking p8_fused/aos/n10_k3: Warming up for 100.00 ms
+Benchmarking p8_fused/aos/n10_k3: Collecting 10 samples in estimated 300.36 ms (34k iterations)
+Benchmarking p8_fused/aos/n10_k3: Analyzing
+p8_fused/aos/n10_k3     time:   [8.4224 µs 8.4367 µs 8.4501 µs]
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) low mild
+  1 (10.00%) high mild
+
+===== clean-candidate-1-p8_fused__aos__n10_k5-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/aos/n10_k5
+Benchmarking p8_fused/aos/n10_k5: Warming up for 100.00 ms
+Benchmarking p8_fused/aos/n10_k5: Collecting 10 samples in estimated 300.84 ms (10k iterations)
+Benchmarking p8_fused/aos/n10_k5: Analyzing
+p8_fused/aos/n10_k5     time:   [27.710 µs 28.107 µs 28.864 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+
+===== clean-candidate-1-p8_fused__aos__n20_k2-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/aos/n20_k2
+Benchmarking p8_fused/aos/n20_k2: Warming up for 100.00 ms
+
+Warning: Unable to complete 10 samples in 300.0ms. You may wish to increase target time to 312.2ms or enable flat sampling.
+Benchmarking p8_fused/aos/n20_k2: Collecting 10 samples in estimated 312.21 ms (55 iterations)
+Benchmarking p8_fused/aos/n20_k2: Analyzing
+p8_fused/aos/n20_k2     time:   [5.8252 ms 5.9181 ms 6.0344 ms]
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+
+===== clean-candidate-1-p8_fused__aos__n20_k3-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/aos/n20_k3
+Benchmarking p8_fused/aos/n20_k3: Warming up for 100.00 ms
+
+Warning: Unable to complete 10 samples in 300.0ms. You may wish to increase target time to 450.7ms or enable flat sampling.
+Benchmarking p8_fused/aos/n20_k3: Collecting 10 samples in estimated 450.68 ms (55 iterations)
+Benchmarking p8_fused/aos/n20_k3: Analyzing
+p8_fused/aos/n20_k3     time:   [8.2278 ms 8.2581 ms 8.2883 ms]
+
+===== clean-candidate-1-p8_fused__aos__n20_k5-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/aos/n20_k5
+Benchmarking p8_fused/aos/n20_k5: Warming up for 100.00 ms
+Benchmarking p8_fused/aos/n20_k5: Collecting 10 samples in estimated 385.10 ms (20 iterations)
+Benchmarking p8_fused/aos/n20_k5: Analyzing
+p8_fused/aos/n20_k5     time:   [19.175 ms 19.236 ms 19.315 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+
+===== clean-candidate-1-p8_fused__cold_aos__n10_k5-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/cold_aos/n10_k5
+Benchmarking p8_fused/cold_aos/n10_k5: Warming up for 100.00 ms
+Benchmarking p8_fused/cold_aos/n10_k5: Collecting 10 samples in estimated 303.39 ms (3850 iterations)
+Benchmarking p8_fused/cold_aos/n10_k5: Analyzing
+p8_fused/cold_aos/n10_k5
+                        time:   [77.453 µs 80.476 µs 85.358 µs]
+
+===== clean-candidate-1-p8_fused__cold_fp32__n10_k5-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/cold_fp32/n10_k5
+Benchmarking p8_fused/cold_fp32/n10_k5: Warming up for 100.00 ms
+Benchmarking p8_fused/cold_fp32/n10_k5: Collecting 10 samples in estimated 300.76 ms (3465 iterations)
+Benchmarking p8_fused/cold_fp32/n10_k5: Analyzing
+p8_fused/cold_fp32/n10_k5
+                        time:   [86.482 µs 86.689 µs 86.837 µs]
+
+===== clean-candidate-1-p8_fused__cold_soa__n10_k5-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/cold_soa/n10_k5
+Benchmarking p8_fused/cold_soa/n10_k5: Warming up for 100.00 ms
+Benchmarking p8_fused/cold_soa/n10_k5: Collecting 10 samples in estimated 303.18 ms (3795 iterations)
+Benchmarking p8_fused/cold_soa/n10_k5: Analyzing
+p8_fused/cold_soa/n10_k5
+                        time:   [78.705 µs 81.258 µs 83.416 µs]
+
+===== clean-candidate-1-p8_fused__fp32__n10_k2-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/fp32/n10_k2
+Benchmarking p8_fused/fp32/n10_k2: Warming up for 100.00 ms
+Benchmarking p8_fused/fp32/n10_k2: Collecting 10 samples in estimated 300.15 ms (96k iterations)
+Benchmarking p8_fused/fp32/n10_k2: Analyzing
+p8_fused/fp32/n10_k2    time:   [3.1417 µs 3.1483 µs 3.1524 µs]
+
+===== clean-candidate-1-p8_fused__fp32__n10_k3-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/fp32/n10_k3
+Benchmarking p8_fused/fp32/n10_k3: Warming up for 100.00 ms
+Benchmarking p8_fused/fp32/n10_k3: Collecting 10 samples in estimated 300.13 ms (53k iterations)
+Benchmarking p8_fused/fp32/n10_k3: Analyzing
+p8_fused/fp32/n10_k3    time:   [5.6484 µs 5.6650 µs 5.6878 µs]
+
+===== clean-candidate-1-p8_fused__fp32__n10_k5-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/fp32/n10_k5
+Benchmarking p8_fused/fp32/n10_k5: Warming up for 100.00 ms
+Benchmarking p8_fused/fp32/n10_k5: Collecting 10 samples in estimated 301.37 ms (5115 iterations)
+Benchmarking p8_fused/fp32/n10_k5: Analyzing
+p8_fused/fp32/n10_k5    time:   [59.012 µs 59.261 µs 59.558 µs]
+
+===== clean-candidate-1-p8_fused__fp32__n20_k2-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/fp32/n20_k2
+Benchmarking p8_fused/fp32/n20_k2: Warming up for 100.00 ms
+Benchmarking p8_fused/fp32/n20_k2: Collecting 10 samples in estimated 317.03 ms (110 iterations)
+Benchmarking p8_fused/fp32/n20_k2: Analyzing
+p8_fused/fp32/n20_k2    time:   [2.8670 ms 2.8947 ms 2.9513 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+
+===== clean-candidate-1-p8_fused__fp32__n20_k3-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/fp32/n20_k3
+Benchmarking p8_fused/fp32/n20_k3: Warming up for 100.00 ms
+Benchmarking p8_fused/fp32/n20_k3: Collecting 10 samples in estimated 554.64 ms (110 iterations)
+Benchmarking p8_fused/fp32/n20_k3: Analyzing
+p8_fused/fp32/n20_k3    time:   [5.0397 ms 5.0568 ms 5.0771 ms]
+
+===== clean-candidate-1-p8_fused__fp32__n20_k5-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/fp32/n20_k5
+Benchmarking p8_fused/fp32/n20_k5: Warming up for 100.00 ms
+
+Warning: Unable to complete 10 samples in 300.0ms. You may wish to increase target time to 587.1ms.
+Benchmarking p8_fused/fp32/n20_k5: Collecting 10 samples in estimated 587.10 ms (10 iterations)
+Benchmarking p8_fused/fp32/n20_k5: Analyzing
+p8_fused/fp32/n20_k5    time:   [59.555 ms 60.215 ms 60.982 ms]
+
+===== clean-candidate-1-p8_fused__soa__n10_k2-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/soa/n10_k2
+Benchmarking p8_fused/soa/n10_k2: Warming up for 100.00 ms
+Benchmarking p8_fused/soa/n10_k2: Collecting 10 samples in estimated 300.45 ms (26k iterations)
+Benchmarking p8_fused/soa/n10_k2: Analyzing
+p8_fused/soa/n10_k2     time:   [5.6885 µs 6.5171 µs 8.5840 µs]
+
+===== clean-candidate-1-p8_fused__soa__n10_k2-attempt2.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/soa/n10_k2
+Benchmarking p8_fused/soa/n10_k2: Warming up for 100.00 ms
+Benchmarking p8_fused/soa/n10_k2: Collecting 10 samples in estimated 300.09 ms (54k iterations)
+Benchmarking p8_fused/soa/n10_k2: Analyzing
+p8_fused/soa/n10_k2     time:   [5.5233 µs 5.5565 µs 5.5751 µs]
+                        change: [-49.423% -37.630% -18.796%] (p = 0.01 < 0.05)
+                        Performance has improved.
+
+===== clean-candidate-1-p8_fused__soa__n10_k3-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/soa/n10_k3
+Benchmarking p8_fused/soa/n10_k3: Warming up for 100.00 ms
+Benchmarking p8_fused/soa/n10_k3: Collecting 10 samples in estimated 300.23 ms (43k iterations)
+Benchmarking p8_fused/soa/n10_k3: Analyzing
+p8_fused/soa/n10_k3     time:   [6.6982 µs 6.8554 µs 7.0272 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) low mild
+
+===== clean-candidate-1-p8_fused__soa__n10_k5-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/soa/n10_k5
+Benchmarking p8_fused/soa/n10_k5: Warming up for 100.00 ms
+Benchmarking p8_fused/soa/n10_k5: Collecting 10 samples in estimated 301.55 ms (10k iterations)
+Benchmarking p8_fused/soa/n10_k5: Analyzing
+p8_fused/soa/n10_k5     time:   [29.104 µs 29.260 µs 29.466 µs]
+
+===== clean-candidate-1-p8_fused__soa__n20_k2-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/soa/n20_k2
+Benchmarking p8_fused/soa/n20_k2: Warming up for 100.00 ms
+
+Warning: Unable to complete 10 samples in 300.0ms. You may wish to increase target time to 311.2ms or enable flat sampling.
+Benchmarking p8_fused/soa/n20_k2: Collecting 10 samples in estimated 311.23 ms (55 iterations)
+Benchmarking p8_fused/soa/n20_k2: Analyzing
+p8_fused/soa/n20_k2     time:   [5.6352 ms 5.6559 ms 5.6696 ms]
+
+===== clean-candidate-1-p8_fused__soa__n20_k3-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/soa/n20_k3
+Benchmarking p8_fused/soa/n20_k3: Warming up for 100.00 ms
+
+Warning: Unable to complete 10 samples in 300.0ms. You may wish to increase target time to 496.6ms or enable flat sampling.
+Benchmarking p8_fused/soa/n20_k3: Collecting 10 samples in estimated 496.62 ms (55 iterations)
+Benchmarking p8_fused/soa/n20_k3: Analyzing
+p8_fused/soa/n20_k3     time:   [9.0472 ms 9.0881 ms 9.1134 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) low severe
+
+===== clean-candidate-1-p8_fused__soa__n20_k5-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/soa/n20_k5
+Benchmarking p8_fused/soa/n20_k5: Warming up for 100.00 ms
+Benchmarking p8_fused/soa/n20_k5: Collecting 10 samples in estimated 411.86 ms (20 iterations)
+Benchmarking p8_fused/soa/n20_k5: Analyzing
+p8_fused/soa/n20_k5     time:   [20.774 ms 21.390 ms 22.107 ms]
+
+===== clean-candidate-2-p8_fused__aos__n10_k2-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/aos/n10_k2
+Benchmarking p8_fused/aos/n10_k2: Warming up for 100.00 ms
+Benchmarking p8_fused/aos/n10_k2: Collecting 10 samples in estimated 300.18 ms (47k iterations)
+Benchmarking p8_fused/aos/n10_k2: Analyzing
+p8_fused/aos/n10_k2     time:   [5.3709 µs 5.4757 µs 5.5874 µs]
+
+===== clean-candidate-2-p8_fused__aos__n10_k3-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/aos/n10_k3
+Benchmarking p8_fused/aos/n10_k3: Warming up for 100.00 ms
+Benchmarking p8_fused/aos/n10_k3: Collecting 10 samples in estimated 300.23 ms (32k iterations)
+Benchmarking p8_fused/aos/n10_k3: Analyzing
+p8_fused/aos/n10_k3     time:   [8.6349 µs 8.8598 µs 9.3900 µs]
+
+===== clean-candidate-2-p8_fused__aos__n10_k5-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/aos/n10_k5
+Benchmarking p8_fused/aos/n10_k5: Warming up for 100.00 ms
+Benchmarking p8_fused/aos/n10_k5: Collecting 10 samples in estimated 301.14 ms (10k iterations)
+Benchmarking p8_fused/aos/n10_k5: Analyzing
+p8_fused/aos/n10_k5     time:   [27.666 µs 29.046 µs 30.694 µs]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+
+===== clean-candidate-2-p8_fused__aos__n20_k2-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/aos/n20_k2
+Benchmarking p8_fused/aos/n20_k2: Warming up for 100.00 ms
+
+Warning: Unable to complete 10 samples in 300.0ms. You may wish to increase target time to 324.0ms or enable flat sampling.
+Benchmarking p8_fused/aos/n20_k2: Collecting 10 samples in estimated 323.98 ms (55 iterations)
+Benchmarking p8_fused/aos/n20_k2: Analyzing
+p8_fused/aos/n20_k2     time:   [6.0010 ms 6.1967 ms 6.5324 ms]
+
+===== clean-candidate-2-p8_fused__aos__n20_k3-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/aos/n20_k3
+Benchmarking p8_fused/aos/n20_k3: Warming up for 100.00 ms
+
+Warning: Unable to complete 10 samples in 300.0ms. You may wish to increase target time to 458.7ms or enable flat sampling.
+Benchmarking p8_fused/aos/n20_k3: Collecting 10 samples in estimated 458.70 ms (55 iterations)
+Benchmarking p8_fused/aos/n20_k3: Analyzing
+p8_fused/aos/n20_k3     time:   [8.2183 ms 8.2536 ms 8.2797 ms]
+
+===== clean-candidate-2-p8_fused__aos__n20_k5-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/aos/n20_k5
+Benchmarking p8_fused/aos/n20_k5: Warming up for 100.00 ms
+Benchmarking p8_fused/aos/n20_k5: Collecting 10 samples in estimated 386.35 ms (20 iterations)
+Benchmarking p8_fused/aos/n20_k5: Analyzing
+p8_fused/aos/n20_k5     time:   [19.142 ms 19.197 ms 19.257 ms]
+
+===== clean-candidate-2-p8_fused__cold_aos__n10_k5-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/cold_aos/n10_k5
+Benchmarking p8_fused/cold_aos/n10_k5: Warming up for 100.00 ms
+Benchmarking p8_fused/cold_aos/n10_k5: Collecting 10 samples in estimated 302.34 ms (4070 iterations)
+Benchmarking p8_fused/cold_aos/n10_k5: Analyzing
+p8_fused/cold_aos/n10_k5
+                        time:   [75.152 µs 77.744 µs 79.015 µs]
+
+===== clean-candidate-2-p8_fused__cold_fp32__n10_k5-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/cold_fp32/n10_k5
+Benchmarking p8_fused/cold_fp32/n10_k5: Warming up for 100.00 ms
+Benchmarking p8_fused/cold_fp32/n10_k5: Collecting 10 samples in estimated 300.52 ms (3465 iterations)
+Benchmarking p8_fused/cold_fp32/n10_k5: Analyzing
+p8_fused/cold_fp32/n10_k5
+                        time:   [86.424 µs 86.565 µs 86.640 µs]
+
+===== clean-candidate-2-p8_fused__cold_soa__n10_k5-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/cold_soa/n10_k5
+Benchmarking p8_fused/cold_soa/n10_k5: Warming up for 100.00 ms
+Benchmarking p8_fused/cold_soa/n10_k5: Collecting 10 samples in estimated 302.76 ms (3960 iterations)
+Benchmarking p8_fused/cold_soa/n10_k5: Analyzing
+p8_fused/cold_soa/n10_k5
+                        time:   [75.573 µs 79.155 µs 81.392 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+
+===== clean-candidate-2-p8_fused__fp32__n10_k2-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/fp32/n10_k2
+Benchmarking p8_fused/fp32/n10_k2: Warming up for 100.00 ms
+Benchmarking p8_fused/fp32/n10_k2: Collecting 10 samples in estimated 300.00 ms (104k iterations)
+Benchmarking p8_fused/fp32/n10_k2: Analyzing
+p8_fused/fp32/n10_k2    time:   [2.9476 µs 3.0175 µs 3.1015 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+
+===== clean-candidate-2-p8_fused__fp32__n10_k3-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/fp32/n10_k3
+Benchmarking p8_fused/fp32/n10_k3: Warming up for 100.00 ms
+Benchmarking p8_fused/fp32/n10_k3: Collecting 10 samples in estimated 300.29 ms (53k iterations)
+Benchmarking p8_fused/fp32/n10_k3: Analyzing
+p8_fused/fp32/n10_k3    time:   [5.6794 µs 5.8969 µs 6.1824 µs]
+
+===== clean-candidate-2-p8_fused__fp32__n10_k5-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/fp32/n10_k5
+Benchmarking p8_fused/fp32/n10_k5: Warming up for 100.00 ms
+Benchmarking p8_fused/fp32/n10_k5: Collecting 10 samples in estimated 300.49 ms (4950 iterations)
+Benchmarking p8_fused/fp32/n10_k5: Analyzing
+p8_fused/fp32/n10_k5    time:   [58.833 µs 58.879 µs 58.970 µs]
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+
+===== clean-candidate-2-p8_fused__fp32__n20_k2-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/fp32/n20_k2
+Benchmarking p8_fused/fp32/n20_k2: Warming up for 100.00 ms
+Benchmarking p8_fused/fp32/n20_k2: Collecting 10 samples in estimated 332.45 ms (110 iterations)
+Benchmarking p8_fused/fp32/n20_k2: Analyzing
+p8_fused/fp32/n20_k2    time:   [2.9819 ms 2.9870 ms 2.9906 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+
+===== clean-candidate-2-p8_fused__fp32__n20_k3-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/fp32/n20_k3
+Benchmarking p8_fused/fp32/n20_k3: Warming up for 100.00 ms
+Benchmarking p8_fused/fp32/n20_k3: Collecting 10 samples in estimated 569.89 ms (110 iterations)
+Benchmarking p8_fused/fp32/n20_k3: Analyzing
+p8_fused/fp32/n20_k3    time:   [5.1270 ms 5.5800 ms 5.8485 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+
+===== clean-candidate-2-p8_fused__fp32__n20_k5-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/fp32/n20_k5
+Benchmarking p8_fused/fp32/n20_k5: Warming up for 100.00 ms
+
+Warning: Unable to complete 10 samples in 300.0ms. You may wish to increase target time to 586.7ms.
+Benchmarking p8_fused/fp32/n20_k5: Collecting 10 samples in estimated 586.67 ms (10 iterations)
+Benchmarking p8_fused/fp32/n20_k5: Analyzing
+p8_fused/fp32/n20_k5    time:   [58.241 ms 58.383 ms 58.564 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+
+===== clean-candidate-2-p8_fused__soa__n10_k2-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/soa/n10_k2
+Benchmarking p8_fused/soa/n10_k2: Warming up for 100.00 ms
+Benchmarking p8_fused/soa/n10_k2: Collecting 10 samples in estimated 300.07 ms (54k iterations)
+Benchmarking p8_fused/soa/n10_k2: Analyzing
+p8_fused/soa/n10_k2     time:   [5.5031 µs 5.5249 µs 5.5502 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+
+===== clean-candidate-2-p8_fused__soa__n10_k3-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/soa/n10_k3
+Benchmarking p8_fused/soa/n10_k3: Warming up for 100.00 ms
+Benchmarking p8_fused/soa/n10_k3: Collecting 10 samples in estimated 300.15 ms (44k iterations)
+Benchmarking p8_fused/soa/n10_k3: Analyzing
+p8_fused/soa/n10_k3     time:   [6.7814 µs 6.9667 µs 7.1862 µs]
+
+===== clean-candidate-2-p8_fused__soa__n10_k3-attempt2.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/soa/n10_k3
+Benchmarking p8_fused/soa/n10_k3: Warming up for 100.00 ms
+Benchmarking p8_fused/soa/n10_k3: Collecting 10 samples in estimated 300.04 ms (31k iterations)
+Benchmarking p8_fused/soa/n10_k3: Analyzing
+p8_fused/soa/n10_k3     time:   [9.7590 µs 9.7796 µs 9.7988 µs]
+                        change: [+38.031% +42.093% +46.381%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+
+===== clean-candidate-2-p8_fused__soa__n10_k5-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/soa/n10_k5
+Benchmarking p8_fused/soa/n10_k5: Warming up for 100.00 ms
+Benchmarking p8_fused/soa/n10_k5: Collecting 10 samples in estimated 301.30 ms (10k iterations)
+Benchmarking p8_fused/soa/n10_k5: Analyzing
+p8_fused/soa/n10_k5     time:   [29.073 µs 29.107 µs 29.141 µs]
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+
+===== clean-candidate-2-p8_fused__soa__n20_k2-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/soa/n20_k2
+Benchmarking p8_fused/soa/n20_k2: Warming up for 100.00 ms
+
+Warning: Unable to complete 10 samples in 300.0ms. You may wish to increase target time to 312.7ms or enable flat sampling.
+Benchmarking p8_fused/soa/n20_k2: Collecting 10 samples in estimated 312.65 ms (55 iterations)
+Benchmarking p8_fused/soa/n20_k2: Analyzing
+p8_fused/soa/n20_k2     time:   [5.6759 ms 5.7019 ms 5.7180 ms]
+
+===== clean-candidate-2-p8_fused__soa__n20_k3-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/soa/n20_k3
+Benchmarking p8_fused/soa/n20_k3: Warming up for 100.00 ms
+
+Warning: Unable to complete 10 samples in 300.0ms. You may wish to increase target time to 503.1ms or enable flat sampling.
+Benchmarking p8_fused/soa/n20_k3: Collecting 10 samples in estimated 503.09 ms (55 iterations)
+Benchmarking p8_fused/soa/n20_k3: Analyzing
+p8_fused/soa/n20_k3     time:   [9.0861 ms 9.1352 ms 9.1878 ms]
+
+===== clean-candidate-2-p8_fused__soa__n20_k5-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/soa/n20_k5
+Benchmarking p8_fused/soa/n20_k5: Warming up for 100.00 ms
+Benchmarking p8_fused/soa/n20_k5: Collecting 10 samples in estimated 411.38 ms (20 iterations)
+Benchmarking p8_fused/soa/n20_k5: Analyzing
+p8_fused/soa/n20_k5     time:   [20.542 ms 20.637 ms 20.782 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe

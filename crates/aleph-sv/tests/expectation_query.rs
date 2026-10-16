@@ -437,3 +437,42 @@ fn finite_parameters_diagonal_scope_and_sum_overflow_are_guarded() {
     .unwrap();
     assert!(matches!(q.execute(), Err(ExactQueryError::NonFiniteResult)));
 }
+
+#[test]
+fn canonical_five_qubit_matrix_stays_within_query_workspace_contract() {
+    let mut circuit = Circuit::new(5, 0);
+    // H tensor five: independent analytic |+>^5 reference, maximum Kq width.
+    let data = (0usize..32)
+        .flat_map(|r| {
+            (0usize..32).map(move |c| {
+                let sign = if (r & c).count_ones() % 2 == 0 {
+                    1.
+                } else {
+                    -1.
+                };
+                Complex::new(sign / 32f64.sqrt(), 0.)
+            })
+        })
+        .collect();
+    circuit
+        .add_gate(GateInstance::new(
+            Gate::UnitaryKq { k: 5, data },
+            &[0, 1, 2, 3, 4][..],
+        ))
+        .unwrap();
+    let observable = sum(vec![term(1., &[(4, Pauli::X)])]);
+    let budget = 40 * 32 + 4096 + 128 * 32 * 32;
+    let query = ExactExpectationQuery::compile(&circuit, &observable, budget).unwrap();
+    assert_eq!(query.peak_dense_workspace_bytes(), budget);
+    close(query.execute().unwrap().value, 1.);
+    close(query.execute().unwrap().value, full(&circuit, &observable));
+    assert!(matches!(
+        ExactExpectationQuery::compile(&circuit, &observable, budget - 1),
+        Err(ExactQueryError::Memory { .. })
+    ));
+    // Direct kernel entry trusts only the immutable owned plan, not the caller's
+    // mutable original circuit or an optimizer provenance flag.
+    circuit.reset(4).unwrap();
+    close(query.execute().unwrap().value, 1.);
+    assert!(ExactExpectationQuery::compile(&circuit, &observable, budget).is_err());
+}

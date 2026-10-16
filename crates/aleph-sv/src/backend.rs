@@ -13,6 +13,7 @@ pub(crate) const MAX_NAIVE_QUBITS: u32 = 28;
 /// Naive single-threaded CPU state-vector backend.
 pub struct NaiveSvBackend {
     pub(crate) rng: StdRng,
+    fused_validation: crate::validation::UnitaryKqCache,
     /// Per-instance max qubit count for `allocate`. Defaults to
     /// [`MAX_NAIVE_QUBITS`]; raised only for large-memory benchmarks on hosts
     /// that can hold the state vector (e.g. n=30 ⇒ 16 GiB on the EPYC box).
@@ -24,6 +25,7 @@ impl NaiveSvBackend {
     pub fn new() -> Self {
         Self {
             rng: StdRng::from_entropy(),
+            fused_validation: Default::default(),
             qubit_cap: MAX_NAIVE_QUBITS,
         }
     }
@@ -34,6 +36,7 @@ impl NaiveSvBackend {
     pub fn with_seed(seed: u64) -> Self {
         Self {
             rng: StdRng::seed_from_u64(seed),
+            fused_validation: Default::default(),
             qubit_cap: MAX_NAIVE_QUBITS,
         }
     }
@@ -101,9 +104,11 @@ impl Backend for NaiveSvBackend {
             seen.push(q);
         }
         // UnitaryKq has no fixed-size GateMatrix (the enum stops at 8×8); the
-        // kernel reads `data` directly. Produced by FuseKq from unitary members.
+        // kernel reads `data` directly. Public IR needs the same validation as
+        // optimizer-produced matrices before entering that trusted kernel.
         // Intercept before matrix() so the `Unrepresentable` error never fires.
         if let aleph_core::Gate::UnitaryKq { k, data } = &gate.gate {
+            self.fused_validation.validate(*k, data, &gate.controls)?;
             crate::kernels::unitary_kq::apply_kq_aos(&mut state.amps, &gate.qubits, *k, data);
             return Ok(());
         }

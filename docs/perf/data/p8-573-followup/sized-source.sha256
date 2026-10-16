@@ -1,0 +1,5 @@
+25419e7af9a51340c3c9d801d2b63500280ddf9adbda8c672ef0ae52738bb80e  sized/crates/aleph-sv/src/kernels/unitary_kq.rs
+0df8031f77d49886c3e747b1aa4644471842ade2a06ea01007d3b0e3b90a999c  sized/crates/aleph-sv/src/kernels/aos_f32.rs
+8dc682988655bcc64043d356388d6a4abda93ffd7b9f8d726b3b3370111e9cb7  sized/crates/aleph-sv/src/expectation_query.rs
+e4a45e379a27fcbc593ff18dd4e1a0b7ebdc0214e274e8d371b8bfe95af08b24  sized/crates/aleph-sv/tests/expectation_query.rs
+93b0051bc76fea20cd246db1ed5e961abeaef8aa67a218bf758eae7630703e70  sized/crates/aleph-sv/benches/fused_validation.rs

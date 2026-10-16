@@ -1,0 +1,83 @@
+===== clean-base-1-p8_fused__fp32__n10_k5-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/fp32/n10_k5
+Benchmarking p8_fused/fp32/n10_k5: Warming up for 100.00 ms
+Benchmarking p8_fused/fp32/n10_k5: Collecting 10 samples in estimated 300.21 ms (5115 iterations)
+Benchmarking p8_fused/fp32/n10_k5: Analyzing
+p8_fused/fp32/n10_k5    time:   [58.712 µs 58.988 µs 59.336 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+
+===== clean-base-1-p8_fused__fp32__n20_k5-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/fp32/n20_k5
+Benchmarking p8_fused/fp32/n20_k5: Warming up for 100.00 ms
+
+Warning: Unable to complete 10 samples in 300.0ms. You may wish to increase target time to 597.8ms.
+Benchmarking p8_fused/fp32/n20_k5: Collecting 10 samples in estimated 597.82 ms (10 iterations)
+Benchmarking p8_fused/fp32/n20_k5: Analyzing
+p8_fused/fp32/n20_k5    time:   [59.619 ms 59.842 ms 60.244 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+
+===== clean-base-2-p8_fused__fp32__n10_k5-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/fp32/n10_k5
+Benchmarking p8_fused/fp32/n10_k5: Warming up for 100.00 ms
+Benchmarking p8_fused/fp32/n10_k5: Collecting 10 samples in estimated 300.34 ms (5115 iterations)
+Benchmarking p8_fused/fp32/n10_k5: Analyzing
+p8_fused/fp32/n10_k5    time:   [58.729 µs 58.796 µs 58.955 µs]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+
+===== clean-base-2-p8_fused__fp32__n20_k5-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/fp32/n20_k5
+Benchmarking p8_fused/fp32/n20_k5: Warming up for 100.00 ms
+
+Warning: Unable to complete 10 samples in 300.0ms. You may wish to increase target time to 601.9ms.
+Benchmarking p8_fused/fp32/n20_k5: Collecting 10 samples in estimated 601.91 ms (10 iterations)
+Benchmarking p8_fused/fp32/n20_k5: Analyzing
+p8_fused/fp32/n20_k5    time:   [59.944 ms 60.361 ms 60.828 ms]
+
+===== clean-candidate-1-p8_fused__fp32__n10_k5-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/fp32/n10_k5
+Benchmarking p8_fused/fp32/n10_k5: Warming up for 100.00 ms
+Benchmarking p8_fused/fp32/n10_k5: Collecting 10 samples in estimated 301.12 ms (5115 iterations)
+Benchmarking p8_fused/fp32/n10_k5: Analyzing
+p8_fused/fp32/n10_k5    time:   [58.947 µs 60.129 µs 61.656 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+
+===== clean-candidate-1-p8_fused__fp32__n20_k5-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/fp32/n20_k5
+Benchmarking p8_fused/fp32/n20_k5: Warming up for 100.00 ms
+
+Warning: Unable to complete 10 samples in 300.0ms. You may wish to increase target time to 589.0ms.
+Benchmarking p8_fused/fp32/n20_k5: Collecting 10 samples in estimated 588.98 ms (10 iterations)
+Benchmarking p8_fused/fp32/n20_k5: Analyzing
+p8_fused/fp32/n20_k5    time:   [58.394 ms 58.939 ms 59.670 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+
+===== clean-candidate-2-p8_fused__fp32__n10_k5-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/fp32/n10_k5
+Benchmarking p8_fused/fp32/n10_k5: Warming up for 100.00 ms
+Benchmarking p8_fused/fp32/n10_k5: Collecting 10 samples in estimated 302.29 ms (5115 iterations)
+Benchmarking p8_fused/fp32/n10_k5: Analyzing
+p8_fused/fp32/n10_k5    time:   [59.012 µs 59.218 µs 59.544 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+
+===== clean-candidate-2-p8_fused__fp32__n20_k5-attempt1.log =====
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/fp32/n20_k5
+Benchmarking p8_fused/fp32/n20_k5: Warming up for 100.00 ms
+
+Warning: Unable to complete 10 samples in 300.0ms. You may wish to increase target time to 592.2ms.
+Benchmarking p8_fused/fp32/n20_k5: Collecting 10 samples in estimated 592.17 ms (10 iterations)
+Benchmarking p8_fused/fp32/n20_k5: Analyzing
+p8_fused/fp32/n20_k5    time:   [59.640 ms 60.592 ms 61.651 ms]

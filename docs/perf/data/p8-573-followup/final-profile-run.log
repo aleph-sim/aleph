@@ -1,0 +1,10 @@
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/soa/n20_k2
+Benchmarking p8_fused/soa/n20_k2: Warming up for 100.00 ms
+
+Warning: Unable to complete 10 samples in 300.0ms. You may wish to increase target time to 315.2ms or enable flat sampling.
+Benchmarking p8_fused/soa/n20_k2: Collecting 10 samples in estimated 315.24 ms (55 iterations)
+Benchmarking p8_fused/soa/n20_k2: Analyzing
+p8_fused/soa/n20_k2     time:   [5.7251 ms 5.7535 ms 5.7978 ms]
+                        change: [-73.226% -72.983% -72.751%] (p = 0.00 < 0.05)
+                        Performance has improved.

@@ -1,0 +1,355 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 140  of event 'cpu/cycles/P'
+# Event count (approx.): 1274298157
+#
+# Overhead  Command          Shared Object                      Symbol
+# ........  ...............  .................................  ...................................................................
+#
+    73.96%  fused_validatio  fused_validation-1302611a399e1eda  [.] aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{{closure}}
+            |
+            |--43.63%--expand_with_fixed (inlined)
+            |          {closure#1} (inlined)
+            |
+            |--9.19%--{closure#1} (inlined)
+            |
+            |--4.24%--as_ref<&(u32, bool)> (inlined)
+            |          peek<core::slice::iter::Iter<(u32, bool)>> (inlined)
+            |          expand_with_fixed (inlined)
+            |          {closure#1} (inlined)
+            |
+            |--2.85%--_mm512_fmadd_pd (inlined)
+            |          di_fma (inlined)
+            |          {closure#1} (inlined)
+            |
+            |--2.12%--spec_next<usize> (inlined)
+            |          next<usize> (inlined)
+            |          {closure#1} (inlined)
+            |
+            |--2.11%--_mm512_i64scatter_pd<8> (inlined)
+            |          {closure#1} (inlined)
+            |
+            |--2.11%--_mm512_i64gather_pd<8> (inlined)
+            |          {closure#1} (inlined)
+            |
+            |--1.41%--eq<(u32, bool)> (inlined)
+            |          next<(u32, bool)> (inlined)
+            |          {closure#0}<core::slice::iter::Iter<(u32, bool)>> (inlined)
+            |          get_or_insert_with<core::option::Option<&(u32, bool)>, core::iter::adapters::peekable::{impl#5}::peek::{closure_env#0}<core::slice::iter::Iter<(u32, bool)>>> (inlined)
+            |          peek<core::slice::iter::Iter<(u32, bool)>> (inlined)
+            |          expand_with_fixed (inlined)
+            |          {closure#1} (inlined)
+            |
+            |--1.38%--get_or_insert_with<core::option::Option<&(u32, bool)>, core::iter::adapters::peekable::{impl#5}::peek::{closure_env#0}<core::slice::iter::Iter<(u32, bool)>>> (inlined)
+            |          peek<core::slice::iter::Iter<(u32, bool)>> (inlined)
+            |          expand_with_fixed (inlined)
+            |          {closure#1} (inlined)
+            |
+            |--0.71%--dealloc (inlined)
+            |          __rdl_dealloc (inlined)
+            |          dealloc_nonnull (inlined)
+            |          deallocate_impl_runtime (inlined)
+            |          deallocate_impl (inlined)
+            |          deallocate (inlined)
+            |          deallocate<alloc::alloc::Global> (inlined)
+            |          drop<core::core_arch::x86::__m512d, alloc::alloc::Global> (inlined)
+            |          drop_in_place<alloc::raw_vec::RawVec<core::core_arch::x86::__m512d, alloc::alloc::Global>> (inlined)
+            |          drop_in_place<alloc::vec::Vec<core::core_arch::x86::__m512d, alloc::alloc::Global>> (inlined)
+            |          {closure#1} (inlined)
+            |
+            |--0.71%--aligned_malloc (inlined)
+            |          alloc (inlined)
+            |          __rdl_alloc (inlined)
+            |          alloc (inlined)
+            |          alloc_impl_runtime (inlined)
+            |          alloc_impl (inlined)
+            |          allocate (inlined)
+            |          try_allocate_in<alloc::alloc::Global> (inlined)
+            |          with_capacity_in<alloc::alloc::Global> (inlined)
+            |          with_capacity_in<core::core_arch::x86::__m512d, alloc::alloc::Global> (inlined)
+            |          with_capacity_in<core::core_arch::x86::__m512d, alloc::alloc::Global> (inlined)
+            |          from_elem<core::core_arch::x86::__m512d, alloc::alloc::Global> (inlined)
+            |          from_elem<core::core_arch::x86::__m512d> (inlined)
+            |          {closure#1} (inlined)
+            |
+            |--0.71%--next<core::slice::iter::IterMut<i64>> (inlined)
+            |          {closure#1} (inlined)
+            |
+            |--0.71%--write<core::core_arch::x86::__m512d> (inlined)
+            |          extend_with<core::core_arch::x86::__m512d, alloc::alloc::Global> (inlined)
+            |          from_elem<core::core_arch::x86::__m512d, alloc::alloc::Global> (inlined)
+            |          from_elem<core::core_arch::x86::__m512d> (inlined)
+            |          {closure#1} (inlined)
+            |
+            |--0.70%--overflowing_mul (inlined)
+            |          checked_mul (inlined)
+            |          repeat_packed (inlined)
+            |          layout_array (inlined)
+            |          try_allocate_in<alloc::alloc::Global> (inlined)
+            |          with_capacity_in<alloc::alloc::Global> (inlined)
+            |          with_capacity_in<core::core_arch::x86::__m512d, alloc::alloc::Global> (inlined)
+            |          with_capacity_in<core::core_arch::x86::__m512d, alloc::alloc::Global> (inlined)
+            |          from_elem<core::core_arch::x86::__m512d, alloc::alloc::Global> (inlined)
+            |          from_elem<core::core_arch::x86::__m512d> (inlined)
+            |          {closure#1} (inlined)
+            |
+            |--0.70%--lt (inlined)
+            |          spec_next<usize> (inlined)
+            |          next<usize> (inlined)
+            |          {closure#1} (inlined)
+            |
+             --0.70%--try_allocate_in<alloc::alloc::Global> (inlined)
+                       with_capacity_in<alloc::alloc::Global> (inlined)
+                       with_capacity_in<core::core_arch::x86::__m512d, alloc::alloc::Global> (inlined)
+                       with_capacity_in<core::core_arch::x86::__m512d, alloc::alloc::Global> (inlined)
+                       from_elem<core::core_arch::x86::__m512d, alloc::alloc::Global> (inlined)
+                       from_elem<core::core_arch::x86::__m512d> (inlined)
+                       {closure#1} (inlined)
+
+     5.15%  fused_validatio  libc.so.6                          [.] 0x00000000001a8513
+            |
+            |--2.95%--asm_exc_page_fault
+            |          0x75e575ba8513
+            |
+            |--1.16%--asm_sysvec_apic_timer_interrupt
+            |          0x75e575ba8513
+            |
+             --1.03%--0x75e575ba8515
+
+     4.82%  fused_validatio  fused_validation-1302611a399e1eda  [.] core::slice::sort::shared::smallsort::insertion_sort_shift_left
+            |
+            |--4.13%--insert_tail<f64, core::slice::{impl#0}::sort_unstable_by::{closure_env#0}<f64, fn(&f64, &f64) -> core::cmp::Ordering>> (inlined)
+            |          insertion_sort_shift_left<f64, core::slice::{impl#0}::sort_unstable_by::{closure_env#0}<f64, fn(&f64, &f64) -> core::cmp::Ordering>> (inlined)
+            |
+             --0.69%--add<f64> (inlined)
+                       insertion_sort_shift_left<f64, core::slice::{impl#0}::sort_unstable_by::{closure_env#0}<f64, fn(&f64, &f64) -> core::cmp::Ordering>> (inlined)
+
+     2.90%  fused_validatio  libc.so.6                          [.] posix_memalign
+            |
+            |--2.20%--posix_memalign
+            |          aligned_malloc (inlined)
+            |          alloc (inlined)
+            |          __rdl_alloc (inlined)
+            |          alloc (inlined)
+            |          alloc_impl_runtime (inlined)
+            |          alloc_impl (inlined)
+            |          allocate (inlined)
+            |          try_allocate_in<alloc::alloc::Global> (inlined)
+            |          with_capacity_in<alloc::alloc::Global> (inlined)
+            |          with_capacity_in<core::core_arch::x86::__m512d, alloc::alloc::Global> (inlined)
+            |          with_capacity_in<core::core_arch::x86::__m512d, alloc::alloc::Global> (inlined)
+            |          from_elem<core::core_arch::x86::__m512d, alloc::alloc::Global> (inlined)
+            |          from_elem<core::core_arch::x86::__m512d> (inlined)
+            |          {closure#1} (inlined)
+            |
+             --0.70%--0x75e575ab4f70
+                       aligned_malloc (inlined)
+                       alloc (inlined)
+                       __rdl_alloc (inlined)
+                       alloc (inlined)
+                       alloc_impl_runtime (inlined)
+                       alloc_impl (inlined)
+                       allocate (inlined)
+                       try_allocate_in<alloc::alloc::Global> (inlined)
+                       with_capacity_in<alloc::alloc::Global> (inlined)
+                       with_capacity_in<core::core_arch::x86::__m512d, alloc::alloc::Global> (inlined)
+                       with_capacity_in<core::core_arch::x86::__m512d, alloc::alloc::Global> (inlined)
+                       from_elem<core::core_arch::x86::__m512d, alloc::alloc::Global> (inlined)
+                       from_elem<core::core_arch::x86::__m512d> (inlined)
+                       {closure#1} (inlined)
+
+     2.84%  fused_validatio  fused_validation-1302611a399e1eda  [.] criterion::analysis::estimates::stats
+            |
+            |--1.12%--fold<f64, f64, core::iter::adapters::map::map_fold::{closure_env#0}<&f64, f64, f64, criterion::stats::univariate::sample::{impl#0}::var::{closure_env#1}<f64>, fn(f64, f64) -> f64>> (inlined)
+            |          fold<f64, core::slice::iter::Iter<f64>, criterion::stats::univariate::sample::{impl#0}::var::{closure_env#1}<f64>, f64, fn(f64, f64) -> f64> (inlined)
+            |          var<f64> (inlined)
+            |          std_dev<f64> (inlined)
+            |          stats (inlined)
+            |
+            |--0.85%--cast (inlined)
+            |          at_unchecked<f64> (inlined)
+            |          at<f64> (inlined)
+            |          median<f64> (inlined)
+            |          median_abs_dev<f64> (inlined)
+            |          stats (inlined)
+            |
+             --0.53%--sort<f64, core::slice::{impl#0}::sort_unstable_by::{closure_env#0}<f64, fn(&f64, &f64) -> core::cmp::Ordering>> (inlined)
+                       sort_unstable_by<f64, fn(&f64, &f64) -> core::cmp::Ordering> (inlined)
+                       percentiles<f64> (inlined)
+                       stats (inlined)
+
+     1.16%  fused_validatio  fused_validation-1302611a399e1eda  [.] core::slice::sort::unstable::quicksort::quicksort
+            |
+            ---copy<f64> (inlined)
+               {closure#0}<f64, core::slice::{impl#0}::sort_unstable_by::{closure_env#0}<f64, fn(&f64, &f64) -> core::cmp::Ordering>> (inlined)
+               partition_lomuto_branchless_cyclic<f64, core::slice::{impl#0}::sort_unstable_by::{closure_env#0}<f64, fn(&f64, &f64) -> core::cmp::Ordering>> (inlined)
+               partition<f64, core::slice::{impl#0}::sort_unstable_by::{closure_env#0}<f64, fn(&f64, &f64) -> core::cmp::Ordering>> (inlined)
+               quicksort<f64, core::slice::{impl#0}::sort_unstable_by::{closure_env#0}<f64, fn(&f64, &f64) -> core::cmp::Ordering>> (inlined)
+
+     1.16%  fused_validatio  [kernel.kallsyms]                  [k] kernel_init_pages
+            |
+            ---kernel_init_pages
+               post_alloc_hook
+               get_page_from_freelist
+               __alloc_frozen_pages_noprof
+               alloc_pages_mpol
+               vma_alloc_folio_noprof
+               alloc_anon_folio
+               do_anonymous_page
+               handle_pte_fault
+               __handle_mm_fault
+               handle_mm_fault
+               do_user_addr_fault
+               exc_page_fault
+               asm_exc_page_fault
+               0x75e575ba8513
+
+     0.93%  fused_validatio  [kernel.kallsyms]                  [k] error_entry
+            |
+            ---error_entry
+               0x75e575ba8513
+
+     0.81%  fused_validatio  [kernel.kallsyms]                  [k] native_set_pte
+            |
+            ---set_ptes.isra.0
+               do_anonymous_page
+               handle_pte_fault
+               __handle_mm_fault
+               handle_mm_fault
+               do_user_addr_fault
+               exc_page_fault
+               asm_exc_page_fault
+               0x75e575ba7c6d
+               realloc
+               finish_grow<alloc::alloc::Global> (inlined)
+
+     0.72%  fused_validatio  fused_validation-1302611a399e1eda  [.] rayon::iter::plumbing::bridge_producer_consumer::helper
+            |
+            ---unchecked_add (inlined)
+               forward_unchecked (inlined)
+               spec_next<usize> (inlined)
+               next<usize> (inlined)
+               fold<core::ops::range::Range<usize>, (), core::iter::traits::iterator::Iterator::for_each::call::{closure_env#0}<usize, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+               for_each<core::ops::range::Range<usize>, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+               consume_iter<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>, usize, core::ops::range::Range<usize>> (inlined)
+               fold_with<rayon::range::IterProducer<usize>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+               fold_with<rayon::range::IterProducer<usize>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+               helper<rayon::iter::len::MinLenProducer<rayon::range::IterProducer<usize>>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+
+     0.71%  fused_validatio  libc.so.6                          [.] 0x00000000000b4fc7
+            |
+            ---0x75e575ab4fd1
+               posix_memalign
+               aligned_malloc (inlined)
+               alloc (inlined)
+               __rdl_alloc (inlined)
+               alloc (inlined)
+               alloc_impl_runtime (inlined)
+               alloc_impl (inlined)
+               allocate (inlined)
+               try_allocate_in<alloc::alloc::Global> (inlined)
+               with_capacity_in<alloc::alloc::Global> (inlined)
+               with_capacity_in<core::core_arch::x86::__m512d, alloc::alloc::Global> (inlined)
+               with_capacity_in<core::core_arch::x86::__m512d, alloc::alloc::Global> (inlined)
+               from_elem<core::core_arch::x86::__m512d, alloc::alloc::Global> (inlined)
+               from_elem<core::core_arch::x86::__m512d> (inlined)
+               {closure#1} (inlined)
+
+     0.71%  fused_validatio  libc.so.6                          [.] 0x00000000000b4fb3
+            |
+            ---0x75e575ab4fba
+               posix_memalign
+               aligned_malloc (inlined)
+               alloc (inlined)
+               __rdl_alloc (inlined)
+               alloc (inlined)
+               alloc_impl_runtime (inlined)
+               alloc_impl (inlined)
+               allocate (inlined)
+               try_allocate_in<alloc::alloc::Global> (inlined)
+               with_capacity_in<alloc::alloc::Global> (inlined)
+               with_capacity_in<core::core_arch::x86::__m512d, alloc::alloc::Global> (inlined)
+               with_capacity_in<core::core_arch::x86::__m512d, alloc::alloc::Global> (inlined)
+               from_elem<core::core_arch::x86::__m512d, alloc::alloc::Global> (inlined)
+               from_elem<core::core_arch::x86::__m512d> (inlined)
+               {closure#1} (inlined)
+
+     0.71%  fused_validatio  libc.so.6                          [.] 0x00000000001a84ff
+            |
+            ---write<core::core_arch::x86::__m512d> (inlined)
+               extend_with<core::core_arch::x86::__m512d, alloc::alloc::Global> (inlined)
+               from_elem<core::core_arch::x86::__m512d, alloc::alloc::Global> (inlined)
+               from_elem<core::core_arch::x86::__m512d> (inlined)
+               {closure#1} (inlined)
+
+     0.70%  fused_validatio  libc.so.6                          [.] cfree
+            |
+            ---cfree
+
+     0.69%  fused_validatio  [kernel.kallsyms]                  [k] lru_gen_del_folio.constprop.0
+            |
+            ---lru_gen_del_folio.constprop.0
+               __page_cache_release.part.0
+               folios_put_refs
+               free_pages_and_swap_cache
+               __tlb_batch_free_encoded_pages
+               tlb_finish_mmu
+               unmap_region
+               vms_complete_munmap_vmas
+               do_vmi_align_munmap
+               do_vmi_munmap
+               __vm_munmap
+               __x64_sys_munmap
+               x64_sys_call
+               do_syscall_64
+               entry_SYSCALL_64_after_hwframe
+               __munmap
+               backend<aleph_sv::backend::NaiveSvBackend, fused_validation::bench::{closure_env#0}> (inlined)
+               bench (inlined)
+               0x30326e2f736f612f
+
+     0.67%  fused_validatio  libc.so.6                          [.] 0x00000000000b5000
+            |
+            ---0x75e575ab5004
+               posix_memalign
+               aligned_malloc (inlined)
+               alloc (inlined)
+               __rdl_alloc (inlined)
+               alloc (inlined)
+               alloc_impl_runtime (inlined)
+               alloc_impl (inlined)
+               allocate (inlined)
+               try_allocate_in<alloc::alloc::Global> (inlined)
+               with_capacity_in<alloc::alloc::Global> (inlined)
+               with_capacity_in<core::core_arch::x86::__m512d, alloc::alloc::Global> (inlined)
+               with_capacity_in<core::core_arch::x86::__m512d, alloc::alloc::Global> (inlined)
+               from_elem<core::core_arch::x86::__m512d, alloc::alloc::Global> (inlined)
+               from_elem<core::core_arch::x86::__m512d> (inlined)
+               {closure#1} (inlined)
+
+     0.58%  fused_validatio  [kernel.kallsyms]                  [k] try_charge_memcg
+            |
+            ---try_charge_memcg
+               charge_memcg
+               __mem_cgroup_charge
+               alloc_anon_folio
+               do_anonymous_page
+               handle_pte_fault
+               __handle_mm_fault
+               handle_mm_fault
+               do_user_addr_fault
+               exc_page_fault
+               asm_exc_page_fault
+               0x75e575ba8513
+
+     0.35%  fused_validatio  [kernel.kallsyms]                  [k] sync_regs
+     0.25%  fused_validatio  [kernel.kallsyms]                  [k] native_irq_return_iret
+     0.20%  fused_validatio  libc.so.6                          [.] 0x00000000000720e7
+
+
+#
+# (Cannot load tips.txt file, please install perf!)
+#

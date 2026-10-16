@@ -43,7 +43,7 @@ pub struct NoisePlan {
     pub workers: usize,
     /// Outcomes, result and resolved attachment storage.
     pub fixed_bytes: usize,
-    /// State, Kraus probabilities, sample and conservatively bounded kernel scratch.
+    /// State, Kraus probabilities, sample, validated matrix snapshots and kernel scratch.
     pub per_worker_bytes: usize,
     /// `fixed_bytes + workers * per_worker_bytes`.
     pub peak_buffer_bytes: usize,
@@ -109,6 +109,7 @@ pub fn plan_noisy(
     )?;
     let mut branches = 0;
     let mut kernel_scratch = 0;
+    let mut matrix_cache_bytes = 0;
     for inst in circuit.instructions() {
         if let Instruction::Gate(gi) = inst {
             let mut count = 0;
@@ -131,6 +132,9 @@ pub fn plan_noisy(
             };
             let scratch = if let Gate::UnitaryKq { k, .. } = gi.gate {
                 let width = 1usize.checked_shl(k as u32).ok_or_else(overflow)?;
+                // Replacing the backend's single validated snapshot briefly owns
+                // both matrices. Budget two maximum matrices per context.
+                matrix_cache_bytes = matrix_cache_bytes.max(mul(mul(width, width)?, 32)?);
                 // AVX512 gathers eight blocks; scalar uses one. Kernel tasks
                 // share the Rayon pool but can suspend, so conservatively allow
                 // eight blocks per pool thread per trajectory, plus offsets.
@@ -151,7 +155,10 @@ pub fn plan_noisy(
     }
     let per_worker = add(
         mul(dim, size_of::<Complex>())?,
-        add(mul(branches, 8)?, add(8, kernel_scratch)?)?,
+        add(
+            mul(branches, 8)?,
+            add(8, add(kernel_scratch, matrix_cache_bytes)?)?,
+        )?,
     )?;
     let max_workers = options
         .max_workers
@@ -183,56 +190,21 @@ fn fit(
     })
 }
 
-// The backend trusts pass-produced fused matrices, but public IR can also
-// contain them. Check them once here before the unchecked fused kernel path.
+// Keep the allocation-free noisy preflight consistent with all CPU SV backends.
 fn validate_fused_gate(gi: &aleph_core::GateInstance) -> Result<(), NoiseError> {
-    let Gate::UnitaryKq { k, data } = &gi.gate else {
-        return Ok(());
-    };
-    if !(2..=5).contains(k) {
-        return Err(NoiseError::Configuration {
-            reason: "UnitaryKq width must be between 2 and 5",
-        });
-    }
-    if !gi.controls.is_empty() {
-        return Err(NoiseError::Unsupported {
-            kind: "controlled UnitaryKq",
-        });
-    }
-    // This kernel sorts targets internally; pass-produced targets are sorted.
-    // Reject manual operand permutations rather than silently permute the matrix.
-    if gi.qubits.windows(2).any(|pair| pair[0] >= pair[1]) {
-        return Err(NoiseError::Unsupported {
-            kind: "unsorted UnitaryKq targets",
-        });
-    }
-    let width = 1usize << k;
-    if data.len() != width * width {
-        return Err(NoiseError::Configuration {
-            reason: "UnitaryKq matrix length does not match width",
-        });
-    }
-    if data.iter().any(|z| !z.re.is_finite() || !z.im.is_finite()) {
-        return Err(aleph_backend::BackendError::NonFiniteParam { kind: "UnitaryKq" }.into());
-    }
-    let mut deviation: f64 = 0.0;
-    for i in 0..width {
-        for j in 0..width {
-            let mut value = Complex::new(0.0, 0.0);
-            for row in 0..width {
-                value += data[row * width + i].conj() * data[row * width + j];
+    if let Gate::UnitaryKq { k, data } = &gi.gate {
+        crate::validation::validate_unitary_kq(*k, data, &gi.controls).map_err(|error| {
+            // Preserve the noisy API's existing fused-input error categories.
+            match error {
+                aleph_backend::BackendError::InvalidState { reason } => {
+                    NoiseError::Configuration { reason }
+                }
+                aleph_backend::BackendError::UnsupportedGate { kind } => {
+                    NoiseError::Unsupported { kind }
+                }
+                other => NoiseError::Backend(other),
             }
-            let error = (value - Complex::new(if i == j { 1.0 } else { 0.0 }, 0.0)).norm();
-            if !error.is_finite() {
-                return Err(
-                    aleph_backend::BackendError::NonUnitaryMatrix { deviation: error }.into(),
-                );
-            }
-            deviation = deviation.max(error);
-        }
-    }
-    if deviation > aleph_core::AMPLITUDE_TOL {
-        return Err(aleph_backend::BackendError::NonUnitaryMatrix { deviation }.into());
+        })?;
     }
     Ok(())
 }
@@ -682,7 +654,7 @@ mod tests {
         for col in 0..4 {
             x_first[(col ^ 2) * 4 + col] = Complex::new(1.0, 0.0);
         }
-        assert_eq!(execute(2, x_first, false).unwrap(), vec![(1, 3)]);
+        assert_eq!(execute(2, x_first.clone(), false).unwrap(), vec![(1, 3)]);
         assert!(execute(2, vec![Complex::new(1e308, 0.0); 16], false).is_err());
         assert!(execute(2, vec![], false).is_err());
         assert!(execute(1, vec![Complex::new(1.0, 0.0); 4], false).is_err());
@@ -695,21 +667,22 @@ mod tests {
             .add_gate(GateInstance::new(
                 Gate::UnitaryKq {
                     k: 2,
-                    data: identity.clone().into_boxed_slice(),
+                    data: x_first.into_boxed_slice(),
                 },
                 &[1, 0][..],
             ))
             .unwrap();
-        assert!(matches!(
+        assert_eq!(
             run_noisy_sparse(
                 &reversed,
                 &NoiseModel::new(),
                 1,
                 557,
                 NoiseOptions::default()
-            ),
-            Err(NoiseError::Unsupported { .. })
-        ));
+            )
+            .unwrap(),
+            vec![(2, 1)]
+        );
         assert!(matches!(
             execute(2, identity, true),
             Err(NoiseError::Unsupported { .. })

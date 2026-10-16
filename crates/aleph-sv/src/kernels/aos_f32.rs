@@ -282,10 +282,30 @@ pub fn apply_kq_scalar_f32(
     k: u8,
     data: &[Complex<f32>],
 ) {
-    use crate::kernels::expand_with_fixed;
-    use crate::kernels::unitary_kq::targets_offsets_fixed;
+    match k {
+        2 => apply_kq_scalar_f32_sized::<4, 16>(amps, qubits, k, data),
+        3 => apply_kq_scalar_f32_sized::<8, 64>(amps, qubits, k, data),
+        4 => apply_kq_scalar_f32_sized::<16, 256>(amps, qubits, k, data),
+        5 => apply_kq_scalar_f32_sized::<32, 1024>(amps, qubits, k, data),
+        _ => unreachable!("validated Kq width is between 2 and 5"),
+    }
+}
 
-    let dim = 1usize << k;
+// Fixed matrix width keeps the heap-free fallback's indexing bounds visible to
+// LLVM, especially at k=5 where FP32 intentionally has no AVX512 dispatcher.
+fn apply_kq_scalar_f32_sized<const DIM: usize, const MATRIX: usize>(
+    amps: &mut [Complex<f32>],
+    qubits: &[u32],
+    k: u8,
+    data: &[Complex<f32>],
+) {
+    use crate::kernels::unitary_kq::{expand_target_zeros, targets_offsets_fixed};
+
+    // Prove the matrix bound once, rather than checking a dynamic slice index
+    // for every coefficient of every block's matvec. Public callers validated
+    // the exact shape before this internal kernel.
+    let data: &[Complex<f32>; MATRIX] = data.try_into().expect("validated Kq matrix shape");
+    let dim = DIM;
     let (offsets, fixed) = targets_offsets_fixed(qubits, k);
     let len = amps.len();
     let outer = len >> k; // 2^(n-k) outer blocks
@@ -298,10 +318,10 @@ pub fn apply_kq_scalar_f32(
         len,
         |c| c,
         move |counter| {
-            let base = expand_with_fixed(counter, &fixed);
+            let base = expand_target_zeros(counter, &fixed);
 
             // Read the block of 2^k amplitudes into a local buffer.
-            let mut inb = vec![Complex::<f32>::new(0.0, 0.0); dim];
+            let mut inb = [Complex::<f32>::new(0.0, 0.0); DIM];
             for (m, inb_m) in inb.iter_mut().enumerate() {
                 // SAFETY: base|offsets[m] is within [0, len), distinct across
                 // m (coverage invariant from targets_offsets_fixed), and
@@ -382,10 +402,10 @@ const AVX512_LANES_F32_KQ: usize = 16;
 /// 8 f64 lanes).
 ///
 /// The lanes' c-th amplitude lives at `base_b | offsets[c]` for the 16 block
-/// bases `base_b` (`expand_with_fixed` scatters the free bits, so the bases are
+/// bases `base_b` (`expand_target_zeros` scatters the free bits, so the bases are
 /// not contiguous); gathered with `_mm512_i32gather_ps` and scattered back with
 /// `_mm512_i32scatter_ps`. AoS interleave: amplitude index `i` → f32 element
-/// `2*i` (re), `2*i + 1` (im); the `targets_offsets_fixed` / `expand_with_fixed`
+/// `2*i` (re), `2*i + 1` (im); the `targets_offsets_fixed` / `expand_target_zeros`
 /// index construction is precision-independent and copied verbatim.
 ///
 /// # Safety
@@ -405,8 +425,7 @@ pub(crate) unsafe fn apply_kq_avx512_f32(
     k: u8,
     data: &[Complex<f32>],
 ) {
-    use crate::kernels::expand_with_fixed;
-    use crate::kernels::unitary_kq::targets_offsets_fixed;
+    use crate::kernels::unitary_kq::{expand_target_zeros, targets_offsets_fixed};
     use core::arch::x86_64::*;
 
     let dim = 1usize << k;
@@ -435,7 +454,7 @@ pub(crate) unsafe fn apply_kq_avx512_f32(
         |g| g,
         move |g| {
             // SAFETY: par_blocks hands each task a distinct group index `g`.
-            // The 16 counters g*16..g*16+16 map (via expand_with_fixed) to 16
+            // The 16 counters g*16..g*16+16 map (via expand_target_zeros) to 16
             // distinct base indices; combined with offsets[m] they cover 16
             // disjoint 2^k-blocks, themselves disjoint from every other group's
             // blocks (the scalar kernel's coverage invariant, in groups of 16).
@@ -447,14 +466,15 @@ pub(crate) unsafe fn apply_kq_avx512_f32(
             // Base index (target bits cleared) for each of the 16 lanes.
             let mut bases = [0i32; AVX512_LANES_F32_KQ];
             for (lane, b) in bases.iter_mut().enumerate() {
-                *b = expand_with_fixed(counter0 + lane, &fixed) as i32;
+                *b = expand_target_zeros(counter0 + lane, &fixed) as i32;
             }
             let base_v = _mm512_loadu_si512(bases.as_ptr() as *const _);
 
             // Gather the 2^k inputs (one __m512 per matrix column), as separate
             // real/imag vectors. AoS f32: re at f32 element 2*idx, im at 2*idx+1.
-            let mut in_re = vec![_mm512_setzero_ps(); dim];
-            let mut in_im = vec![_mm512_setzero_ps(); dim];
+            // This SIMD path is bounded to k <= 4 (16 columns).
+            let mut in_re = [_mm512_setzero_ps(); 16];
+            let mut in_im = [_mm512_setzero_ps(); 16];
             for c in 0..dim {
                 // f32 element index of amplitude (base | offsets[c]) is 2*(base|off).
                 let amp_idx = _mm512_or_si512(base_v, _mm512_set1_epi32(offsets[c] as i32));

@@ -1,0 +1,81 @@
+{
+  "baseline_commit": "c283272747877863fa4a2723421c8d710a8550b3",
+  "host": "51.159.0.49",
+  "affinity": [
+    3
+  ],
+  "monitored_smt_siblings": [
+    3,
+    23
+  ],
+  "monitor_cpu": 39,
+  "rayon_num_threads": 1,
+  "stages": {
+    "uncached": {
+      "accepted": 72,
+      "rejected_overlap": 4,
+      "valid_for_before_after": true
+    },
+    "rejected-working-directory": {
+      "accepted": 84,
+      "rejected_overlap": 9,
+      "valid_for_before_after": false
+    },
+    "rejected-stale-target": {
+      "accepted": 84,
+      "rejected_overlap": 8,
+      "valid_for_before_after": false
+    },
+    "cache": {
+      "accepted": 84,
+      "rejected_overlap": 7,
+      "valid_for_before_after": true
+    },
+    "sorted-experiment": {
+      "accepted": 84,
+      "rejected_overlap": 6,
+      "valid_for_before_after": true
+    },
+    "cold-experiment": {
+      "accepted": 84,
+      "rejected_overlap": 1,
+      "valid_for_before_after": true
+    },
+    "final": {
+      "accepted": 84,
+      "rejected_overlap": 4,
+      "valid_for_before_after": true
+    }
+  },
+  "measured_patch_sha256": "de5b1aab2b79085bd7a489913666f3ba7aba0c3e881669ae69d6218ff54bd854",
+  "reviewed_source_sha256": {
+    "crates/aleph-sv/src/validation.rs": "e34305e7f6e9866d4d72147927cafc059b2d069bc3e4c0bc846adb06de1ff758",
+    "crates/aleph-sv/src/backend.rs": "a9784bf9756bcd211b951a606a5097a73e4902b324cccc3143fed71cd666e4d2",
+    "crates/aleph-sv/src/soa_backend.rs": "e71c022ba4a6830dc911f1c39dc4dde05e5dd440988508b2de39820e3992cccf",
+    "crates/aleph-sv/src/fp32_backend.rs": "14520df4e5508856e0225d90c0ebc8d1492c919acad20c92e2c505970f454f64",
+    "crates/aleph-sv/src/kernels/unitary_kq.rs": "9ccdb4a4795d51c337c7dff030bf3726109ed16f3d19d558f0f26d871f1575fc",
+    "crates/aleph-sv/src/noise/execution.rs": "16298a99f793ca83793392a46a70e58c748ab89ffa9a29e6aebcafa53b62e361"
+  },
+  "local_sv_passed": 440,
+  "manual_dense_oracle_and_generated_fusion_tests": 9,
+  "optimized_oracle_tests": 4,
+  "baseline_regression_oracle_failed": 3,
+  "production_unsafe_added": false,
+  "external_independent_review": false,
+  "limitations": [
+    "shared CPU host; short interference/cache/turbo effects can remain",
+    "single owned snapshot: changing matrices can miss repeatedly",
+    "first-use validation and snapshot allocation are mandatory",
+    "two nominal-baseline stages contain candidate cache code and are excluded entirely"
+  ],
+  "final_binary_sha256": {
+    "base": "29e3b4aa2d10a11b563b8d2b17e099ec9ef759fdecfa2e1cd1de984cbc538c91",
+    "candidate": "537ecb30c6d74fe6ef8dafeb5146d55e36f1d3a2da53db29473f31d7da320f74"
+  },
+  "linux_release_test_log_sha256": "c21c683247603c2b1ca817e16ec46a1b6c80fd16b71a86d8153fe7bc8ea9ef40",
+  "linux_release_passed": 495,
+  "baseline_source_validation_sha256": "e1051106298f99dddafb6a5952dfe861dbe2496a1b0c96e08ec29782dee2d0a3",
+  "baseline_has_new_cache_symbol": false,
+  "candidate_has_new_cache_symbol": true,
+  "reviewed_code_commit": "b473a4e285ed82ce42e29048e8d28249cdd467be"
+}
