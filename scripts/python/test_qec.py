@@ -69,6 +69,39 @@ def xor_reduce_dem_text(text):
 class TestApi(unittest.TestCase):
     DEM = "error(0.1) D0 L0\nerror(0.1) D0 D1\nerror(0.1) D1\n"
 
+    def test_cudaq_float_error_output_matches_public_byte_api(self):
+        dem = qec.DetectorErrorModel("error(0.1) D0 L0\nerror(0.1) D0 D1\nerror(0.1) D1\n")
+        for name in qec.decoder_names():
+            decoder = qec.Decoder(dem, name)
+            for dtype in (np.bool_, np.uint8):
+                rows = np.tile(np.array([[0, 0], [1, 0], [0, 1], [1, 1]], dtype=dtype), (7, 1))
+                for data in (rows, rows[::-1], rows[:, ::-1], rows[:0]):
+                    with self.subTest(name=name, dtype=dtype, shape=data.shape):
+                        ref, rc = decoder.decode_batch_errors(data)
+                        got, gc = decoder._decode_batch_errors_f64(data)
+                        self.assertEqual(got.dtype, np.float64)
+                        np.testing.assert_array_equal(got, ref)
+                        np.testing.assert_array_equal(gc, rc)
+            with self.assertRaisesRegex(ValueError, "last dimension"):
+                decoder._decode_batch_errors_f64(np.zeros((2, 3), dtype=np.uint8))
+        for name in ("mwpm", "union-find", "union-find-weighted"):
+            decoder = qec.Decoder(qec.DetectorErrorModel("error(0.1) D0 ^ D1\n"), name)
+            with self.assertRaisesRegex(ValueError, "split_components"):
+                decoder._decode_batch_errors_f64(np.zeros((1, 2), dtype=np.uint8))
+
+    def test_cudaq_float_output_empty_axes(self):
+        for text, detectors, errors in [("error(0.1) L0\n", 0, 1),
+                                         ("detector D0\n", 1, 0), ("", 0, 0)]:
+            for name in qec.decoder_names():
+                decoder = qec.Decoder(qec.DetectorErrorModel(text), name)
+                for shots in (0, 1, 3):
+                    rows = np.zeros((shots, detectors), dtype=np.uint8)
+                    ref, rc = decoder.decode_batch_errors(rows)
+                    got, gc = decoder._decode_batch_errors_f64(rows)
+                    self.assertEqual(got.shape, (shots, errors))
+                    np.testing.assert_array_equal(got, ref)
+                    np.testing.assert_array_equal(gc, rc)
+
     def test_split_components_matches_matrices_without_mutation(self):
         text = ("error(0.125) D0 D0 D2 L0 L0 L2 ^ D1 L1 ^ L2 ^\n"
                 "error(0) D3\ndetector D4\nlogical_observable L3\n")

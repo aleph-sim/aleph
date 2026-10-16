@@ -268,29 +268,58 @@ pub fn decode_errors_rows(
     errors: usize,
 ) -> (Vec<u8>, Vec<bool>) {
     let mut out = vec![0u8; shots * errors];
+    let conv = decode_error_values_into(dec, bits, shots, detectors, errors, &mut out);
+    (out, conv)
+}
+
+/// Fill caller-owned CUDA-Q float64 storage; keeps its allocator's memory policy.
+/// `out` must have `shots * errors` elements, in row-major order.
+pub fn decode_errors_rows_f64_into(
+    dec: &AnyDecoder,
+    bits: &[u8],
+    shots: usize,
+    detectors: usize,
+    errors: usize,
+    out: &mut [f64],
+) -> Vec<bool> {
+    decode_error_values_into(dec, bits, shots, detectors, errors, out)
+}
+
+fn decode_error_values_into<T: From<u8> + Send>(
+    dec: &AnyDecoder,
+    bits: &[u8],
+    shots: usize,
+    detectors: usize,
+    errors: usize,
+    out: &mut [T],
+) -> Vec<bool> {
     let mut conv = vec![false; shots];
     if shots == 0 || errors == 0 {
         // `par_chunks_mut(0)` panics; an empty row also carries nothing to write.
         if errors == 0 {
             conv.iter_mut().for_each(|c| *c = true);
         }
-        return (out, conv);
+        return conv;
     }
-    let rows: Vec<(&mut [u8], &mut bool)> = out.chunks_mut(errors).zip(conv.iter_mut()).collect();
-    rows.into_par_iter().enumerate().for_each(|(i, (o, c))| {
-        let fired = if detectors == 0 {
-            Vec::new()
-        } else {
-            let row = &bits[i * detectors..(i + 1) * detectors];
-            (0..detectors as u32)
-                .filter(|&d| row[d as usize] != 0)
-                .collect()
-        };
-        let (ehat, ok) = dec.decode_errors(&Syndrome { detectors, fired });
-        o.copy_from_slice(&ehat);
-        *c = ok;
-    });
-    (out, conv)
+    out.par_chunks_mut(errors)
+        .zip(conv.par_iter_mut())
+        .enumerate()
+        .for_each(|(i, (o, c))| {
+            let fired = if detectors == 0 {
+                Vec::new()
+            } else {
+                let row = &bits[i * detectors..(i + 1) * detectors];
+                (0..detectors as u32)
+                    .filter(|&d| row[d as usize] != 0)
+                    .collect()
+            };
+            let (ehat, ok) = dec.decode_errors(&Syndrome { detectors, fired });
+            for (dst, bit) in o.iter_mut().zip(ehat) {
+                *dst = T::from(bit);
+            }
+            *c = ok;
+        });
+    conv
 }
 
 #[cfg(test)]
@@ -437,6 +466,34 @@ error(0.1) D2
             4,
         );
         assert!(e.is_empty() && c.is_empty());
+    }
+
+    #[test]
+    fn float_error_rows_match_byte_rows_including_empty_axes() {
+        for text in [DEM, "error(0.1) L0\n", "detector D0\n", ""] {
+            let dem = DetectorErrorModel::parse(text).unwrap();
+            for &(name, _) in DECODER_NAMES {
+                let dec = AnyDecoder::build(&dem, name, &DecoderParams::default()).unwrap();
+                for shots in [0, 1, 37] {
+                    let bits: Vec<u8> = (0..shots * dem.detectors)
+                        .map(|i| ((i * 7 + i / 3) % 5 == 0) as u8)
+                        .collect();
+                    let (bytes, bc) =
+                        decode_errors_rows(&dec, &bits, shots, dem.detectors, dem.errors.len());
+                    let mut floats = vec![0.0; shots * dem.errors.len()];
+                    let fc = decode_errors_rows_f64_into(
+                        &dec,
+                        &bits,
+                        shots,
+                        dem.detectors,
+                        dem.errors.len(),
+                        &mut floats,
+                    );
+                    assert_eq!(fc, bc, "{name} {text:?} shots={shots}");
+                    assert_eq!(floats, bytes.into_iter().map(f64::from).collect::<Vec<_>>());
+                }
+            }
+        }
     }
 
     #[test]

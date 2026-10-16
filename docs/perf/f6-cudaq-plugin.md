@@ -419,3 +419,9 @@ unchanged in cost; the new `decode_errors`/`from_check_matrices` surface is addi
   `DetectorErrorModel::split_components()` so `MwpmDecoder`/`UnionFindDecoder::decode_errors` (and
   hence `PyDecoder::decode_batch_errors`) are exact on a `^`-decomposed DEM without the caller
   doing the `dem_to_matrices`/`dem_from_matrices` round trip the current guard requires.
+
+## Follow-up #516: measured plugin marshalling changes
+
+The original cost breakdown above is historical. The current scratch-cache audit,
+NumPy-owned native output path, and reproducible before/after results are recorded
+in [the #516 follow-up](f6-cudaq-plugin-throughput.md).

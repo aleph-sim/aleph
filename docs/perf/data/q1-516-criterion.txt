@@ -1,0 +1,44 @@
+    Finished `bench` profile [optimized + debuginfo] target(s) in 0.05s
+     Running benches/error_output.rs (/tmp/aleph-516-Ew3ttU/candidate-target/release/deps/error_output-34154322631a3930)
+Gnuplot not found, using plotters backend
+Benchmarking cudaq_error_output/byte_then_cast/5
+Benchmarking cudaq_error_output/byte_then_cast/5: Warming up for 3.0000 s
+Benchmarking cudaq_error_output/byte_then_cast/5: Collecting 20 samples in estimated 3.0050 s (37k iterations)
+Benchmarking cudaq_error_output/byte_then_cast/5: Analyzing
+cudaq_error_output/byte_then_cast/5
+                        time:   [79.925 µs 83.034 µs 86.853 µs]
+                        thrpt:  [2.9475 Melem/s 3.0831 Melem/s 3.2030 Melem/s]
+Found 2 outliers among 20 measurements (10.00%)
+  1 (5.00%) high mild
+  1 (5.00%) high severe
+Benchmarking cudaq_error_output/direct_f64_into/5
+Benchmarking cudaq_error_output/direct_f64_into/5: Warming up for 3.0000 s
+Benchmarking cudaq_error_output/direct_f64_into/5: Collecting 20 samples in estimated 3.0083 s (38k iterations)
+Benchmarking cudaq_error_output/direct_f64_into/5: Analyzing
+cudaq_error_output/direct_f64_into/5
+                        time:   [77.753 µs 77.840 µs 77.972 µs]
+                        thrpt:  [3.2832 Melem/s 3.2888 Melem/s 3.2925 Melem/s]
+Found 2 outliers among 20 measurements (10.00%)
+  1 (5.00%) high mild
+  1 (5.00%) high severe
+Benchmarking cudaq_error_output/byte_then_cast/9
+Benchmarking cudaq_error_output/byte_then_cast/9: Warming up for 3.0000 s
+Benchmarking cudaq_error_output/byte_then_cast/9: Collecting 20 samples in estimated 3.0391 s (5880 iterations)
+Benchmarking cudaq_error_output/byte_then_cast/9: Analyzing
+cudaq_error_output/byte_then_cast/9
+                        time:   [516.98 µs 517.52 µs 518.54 µs]
+                        thrpt:  [493.70 Kelem/s 494.67 Kelem/s 495.19 Kelem/s]
+Found 4 outliers among 20 measurements (20.00%)
+  2 (10.00%) low mild
+  1 (5.00%) high mild
+  1 (5.00%) high severe
+Benchmarking cudaq_error_output/direct_f64_into/9
+Benchmarking cudaq_error_output/direct_f64_into/9: Warming up for 3.0000 s
+Benchmarking cudaq_error_output/direct_f64_into/9: Collecting 20 samples in estimated 3.0864 s (5880 iterations)
+Benchmarking cudaq_error_output/direct_f64_into/9: Analyzing
+cudaq_error_output/direct_f64_into/9
+                        time:   [511.11 µs 511.71 µs 512.58 µs]
+                        thrpt:  [499.44 Kelem/s 500.28 Kelem/s 500.87 Kelem/s]
+Found 4 outliers among 20 measurements (20.00%)
+  1 (5.00%) high mild
+  3 (15.00%) high severe
