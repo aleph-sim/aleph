@@ -6,29 +6,29 @@
 # Samples: 616  of event 'cpu/cycles/P'
 # Event count (approx.): 5506530098
 #
-# Overhead  Command          Shared Object      Symbol                                                                       
+# Overhead  Command          Shared Object      Symbol
 # ........  ...............  .................  .............................................................................
 #
     51.57%  bench-candidate  bench-candidate    [.] aleph_sv::validation::validate_unitary_kq
-            |          
+            |
             |--26.61%--add (inlined)
             |          mul<f64> (inlined)
             |          mul<f64> (inlined)
             |          validate_unitary_kq (inlined)
-            |          
+            |
             |--6.61%--mul (inlined)
             |          mul<f64> (inlined)
             |          mul<f64> (inlined)
             |          validate_unitary_kq (inlined)
-            |          
+            |
             |--5.67%--add_assign (inlined)
             |          add_assign<f64> (inlined)
             |          validate_unitary_kq (inlined)
-            |          
+            |
             |--5.02%--next<core::slice::iter::Iter<num_complex::Complex<f64>>, core::slice::iter::Iter<num_complex::Complex<f64>>> (inlined)
             |          next<core::slice::iter::Iter<num_complex::Complex<f64>>, core::slice::iter::Iter<num_complex::Complex<f64>>> (inlined)
             |          validate_unitary_kq (inlined)
-            |          
+            |
              --2.94%--validate_unitary_kq (inlined)
 
     26.85%  bench-candidate  libm.so.6          [.] hypot
@@ -40,12 +40,12 @@
                validate_unitary_kq (inlined)
 
     10.49%  bench-candidate  bench-candidate    [.] aleph_sv::kernels::unitary_kq::apply_kq_avx512_aos::{{closure}}
-            |          
+            |
             |--2.25%--_mm512_fnmadd_pd (inlined)
             |          di_fma (inlined)
             |          {closure#1} (inlined)
             |          0x1009f
-            |          
+            |
              --2.23%--_mm512_fmadd_pd (inlined)
                        di_fma (inlined)
                        {closure#1} (inlined)
@@ -53,7 +53,7 @@
 
      4.23%  bench-candidate  bench-candidate    [.] aleph_sv::kernels::unitary_kq::apply_kq_avx512_aos
      3.78%  bench-candidate  libc.so.6          [.] 0x00000000001a8513
-            |          
+            |
              --3.27%--0x785c207a8513
                        write<core::core_arch::x86::__m512d> (inlined)
                        extend_with<core::core_arch::x86::__m512d, alloc::alloc::Global> (inlined)

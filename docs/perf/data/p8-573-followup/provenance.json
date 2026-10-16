@@ -1,7 +1,7 @@
 {
   "baseline_commit": "64b729f6d7f000d0640439bc4c80ae23cf9a1405",
   "integration_commit": "d367ef54cceaa4eccf0a50f9ef5ffeed2ca434a9",
-  "candidate_patch": "bounded.patch",
+  "candidate_patch": "bounded.patch.gz",
   "rustflags": null,
   "features": "default for benchmarks; internal-bench for SIMD/oracle tests",
   "candidate_sources": {

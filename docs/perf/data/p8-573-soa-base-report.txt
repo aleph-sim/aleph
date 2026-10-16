@@ -6,7 +6,7 @@
 # Samples: 613  of event 'cpu/cycles/P'
 # Event count (approx.): 5505379275
 #
-# Overhead  Command     Shared Object      Symbol                                                             
+# Overhead  Command     Shared Object      Symbol
 # ........  ..........  .................  ...................................................................
 #
     90.57%  bench-base  bench-base         [.] aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{{closure}}

@@ -6,35 +6,35 @@
 # Samples: 140  of event 'cpu/cycles/P'
 # Event count (approx.): 1274298157
 #
-# Overhead  Command          Shared Object                      Symbol                                                             
+# Overhead  Command          Shared Object                      Symbol
 # ........  ...............  .................................  ...................................................................
 #
     73.96%  fused_validatio  fused_validation-1302611a399e1eda  [.] aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{{closure}}
-            |          
+            |
             |--43.63%--expand_with_fixed (inlined)
             |          {closure#1} (inlined)
-            |          
+            |
             |--9.19%--{closure#1} (inlined)
-            |          
+            |
             |--4.24%--as_ref<&(u32, bool)> (inlined)
             |          peek<core::slice::iter::Iter<(u32, bool)>> (inlined)
             |          expand_with_fixed (inlined)
             |          {closure#1} (inlined)
-            |          
+            |
             |--2.85%--_mm512_fmadd_pd (inlined)
             |          di_fma (inlined)
             |          {closure#1} (inlined)
-            |          
+            |
             |--2.12%--spec_next<usize> (inlined)
             |          next<usize> (inlined)
             |          {closure#1} (inlined)
-            |          
+            |
             |--2.11%--_mm512_i64scatter_pd<8> (inlined)
             |          {closure#1} (inlined)
-            |          
+            |
             |--2.11%--_mm512_i64gather_pd<8> (inlined)
             |          {closure#1} (inlined)
-            |          
+            |
             |--1.41%--eq<(u32, bool)> (inlined)
             |          next<(u32, bool)> (inlined)
             |          {closure#0}<core::slice::iter::Iter<(u32, bool)>> (inlined)
@@ -42,12 +42,12 @@
             |          peek<core::slice::iter::Iter<(u32, bool)>> (inlined)
             |          expand_with_fixed (inlined)
             |          {closure#1} (inlined)
-            |          
+            |
             |--1.38%--get_or_insert_with<core::option::Option<&(u32, bool)>, core::iter::adapters::peekable::{impl#5}::peek::{closure_env#0}<core::slice::iter::Iter<(u32, bool)>>> (inlined)
             |          peek<core::slice::iter::Iter<(u32, bool)>> (inlined)
             |          expand_with_fixed (inlined)
             |          {closure#1} (inlined)
-            |          
+            |
             |--0.71%--dealloc (inlined)
             |          __rdl_dealloc (inlined)
             |          dealloc_nonnull (inlined)
@@ -59,7 +59,7 @@
             |          drop_in_place<alloc::raw_vec::RawVec<core::core_arch::x86::__m512d, alloc::alloc::Global>> (inlined)
             |          drop_in_place<alloc::vec::Vec<core::core_arch::x86::__m512d, alloc::alloc::Global>> (inlined)
             |          {closure#1} (inlined)
-            |          
+            |
             |--0.71%--aligned_malloc (inlined)
             |          alloc (inlined)
             |          __rdl_alloc (inlined)
@@ -74,16 +74,16 @@
             |          from_elem<core::core_arch::x86::__m512d, alloc::alloc::Global> (inlined)
             |          from_elem<core::core_arch::x86::__m512d> (inlined)
             |          {closure#1} (inlined)
-            |          
+            |
             |--0.71%--next<core::slice::iter::IterMut<i64>> (inlined)
             |          {closure#1} (inlined)
-            |          
+            |
             |--0.71%--write<core::core_arch::x86::__m512d> (inlined)
             |          extend_with<core::core_arch::x86::__m512d, alloc::alloc::Global> (inlined)
             |          from_elem<core::core_arch::x86::__m512d, alloc::alloc::Global> (inlined)
             |          from_elem<core::core_arch::x86::__m512d> (inlined)
             |          {closure#1} (inlined)
-            |          
+            |
             |--0.70%--overflowing_mul (inlined)
             |          checked_mul (inlined)
             |          repeat_packed (inlined)
@@ -95,12 +95,12 @@
             |          from_elem<core::core_arch::x86::__m512d, alloc::alloc::Global> (inlined)
             |          from_elem<core::core_arch::x86::__m512d> (inlined)
             |          {closure#1} (inlined)
-            |          
+            |
             |--0.70%--lt (inlined)
             |          spec_next<usize> (inlined)
             |          next<usize> (inlined)
             |          {closure#1} (inlined)
-            |          
+            |
              --0.70%--try_allocate_in<alloc::alloc::Global> (inlined)
                        with_capacity_in<alloc::alloc::Global> (inlined)
                        with_capacity_in<core::core_arch::x86::__m512d, alloc::alloc::Global> (inlined)
@@ -110,25 +110,25 @@
                        {closure#1} (inlined)
 
      5.15%  fused_validatio  libc.so.6                          [.] 0x00000000001a8513
-            |          
+            |
             |--2.95%--asm_exc_page_fault
             |          0x75e575ba8513
-            |          
+            |
             |--1.16%--asm_sysvec_apic_timer_interrupt
             |          0x75e575ba8513
-            |          
+            |
              --1.03%--0x75e575ba8515
 
      4.82%  fused_validatio  fused_validation-1302611a399e1eda  [.] core::slice::sort::shared::smallsort::insertion_sort_shift_left
-            |          
+            |
             |--4.13%--insert_tail<f64, core::slice::{impl#0}::sort_unstable_by::{closure_env#0}<f64, fn(&f64, &f64) -> core::cmp::Ordering>> (inlined)
             |          insertion_sort_shift_left<f64, core::slice::{impl#0}::sort_unstable_by::{closure_env#0}<f64, fn(&f64, &f64) -> core::cmp::Ordering>> (inlined)
-            |          
+            |
              --0.69%--add<f64> (inlined)
                        insertion_sort_shift_left<f64, core::slice::{impl#0}::sort_unstable_by::{closure_env#0}<f64, fn(&f64, &f64) -> core::cmp::Ordering>> (inlined)
 
      2.90%  fused_validatio  libc.so.6                          [.] posix_memalign
-            |          
+            |
             |--2.20%--posix_memalign
             |          aligned_malloc (inlined)
             |          alloc (inlined)
@@ -144,7 +144,7 @@
             |          from_elem<core::core_arch::x86::__m512d, alloc::alloc::Global> (inlined)
             |          from_elem<core::core_arch::x86::__m512d> (inlined)
             |          {closure#1} (inlined)
-            |          
+            |
              --0.70%--0x75e575ab4f70
                        aligned_malloc (inlined)
                        alloc (inlined)
@@ -162,20 +162,20 @@
                        {closure#1} (inlined)
 
      2.84%  fused_validatio  fused_validation-1302611a399e1eda  [.] criterion::analysis::estimates::stats
-            |          
+            |
             |--1.12%--fold<f64, f64, core::iter::adapters::map::map_fold::{closure_env#0}<&f64, f64, f64, criterion::stats::univariate::sample::{impl#0}::var::{closure_env#1}<f64>, fn(f64, f64) -> f64>> (inlined)
             |          fold<f64, core::slice::iter::Iter<f64>, criterion::stats::univariate::sample::{impl#0}::var::{closure_env#1}<f64>, f64, fn(f64, f64) -> f64> (inlined)
             |          var<f64> (inlined)
             |          std_dev<f64> (inlined)
             |          stats (inlined)
-            |          
+            |
             |--0.85%--cast (inlined)
             |          at_unchecked<f64> (inlined)
             |          at<f64> (inlined)
             |          median<f64> (inlined)
             |          median_abs_dev<f64> (inlined)
             |          stats (inlined)
-            |          
+            |
              --0.53%--sort<f64, core::slice::{impl#0}::sort_unstable_by::{closure_env#0}<f64, fn(&f64, &f64) -> core::cmp::Ordering>> (inlined)
                        sort_unstable_by<f64, fn(&f64, &f64) -> core::cmp::Ordering> (inlined)
                        percentiles<f64> (inlined)

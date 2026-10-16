@@ -11,7 +11,7 @@ check. Baseline negative allocation output is retained separately.
 
 Sources: baseline main 64b729f6d7f000d0640439bc4c80ae23cf9a1405, with the same
 fused_validation.rs harness and its Cargo bench registration added. Candidate is
-integration d367ef54cceaa4eccf0a50f9ef5ffeed2ca434a9 plus bounded.patch. Both builds
+integration d367ef54cceaa4eccf0a50f9ef5ffeed2ca434a9 plus the decompressed bounded.patch.gz. Both builds
 use fresh independent target directories. No native flags or extra features are
 used in Criterion; internal-bench enables SIMD oracle access in release tests.
 
@@ -31,12 +31,14 @@ final-campaign (index insertion with runtime-width FP32 scratch), sized-campaign
 and bounded-campaign (final exact matrix-array bound). sized-probe and
 bounded-probe are targeted diagnostics and do not replace complete matrices.
 Each candidate patch is against the same integration commit; patch names match
-stage names except final-campaign=index.patch and sized-campaign=sized.patch.
+stage names except final-campaign=index.patch.gz and sized-campaign=sized.patch.gz.
+Decompress each .patch.gz before git apply; snapshot checksums refer to the
+original decompressed patch bytes, preserved exactly.
 The final kernel/query/validator fingerprints equal the checked-out source.
 
 The host is shared; the core/SMT overlap policy is not global isolation and can
 miss brief activity/cache/frequency effects. Do not advertise sub-5% speedups.
 Bounds are requested heap/buffer accounting, not RSS. Every raw attempt's metadata
 is retained, including rejected attempts; accepted repeats are chosen solely by
-the fixed CPU-overlap/exit-status policy. Log trailing blank lines and CRLF were
-normalized; attempt log files are concatenated without dropping their content.
+the fixed CPU-overlap/exit-status policy. Text receipt trailing whitespace and CRLF were
+normalized (including LF-only historical #573 CSV line endings); attempt log files are concatenated without dropping their content.
