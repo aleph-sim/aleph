@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "name": "cuda-python-fusion",
+  "route": "cuda-python",
+  "comparison": "same-algorithm",
+  "model": "brickwall",
+  "precision": "f64",
+  "error_budget": {
+    "amplitude_atol": 1e-10,
+    "norm_atol": 0.0001
+  },
+  "topology": "one process, one CUDA device; shared services recorded",
+  "stop_rule": "stop on oracle/counter/resource failure; five interleaved pairs; small wins exploratory",
+  "qubits": 22,
+  "shots": 32,
+  "pairs": 5,
+  "threads": 1,
+  "workers": 1,
+  "seed": 563,
+  "warmup_calls": 1,
+  "max_load_per_cpu": 0.25,
+  "max_gpu_utilization": 5,
+  "bottleneck_fraction": 0.5,
+  "target_speedup": 1.1,
+  "preflight": {
+    "kind": "counter-change",
+    "counter": "output_instructions"
+  },
+  "arms": [
+    {
+      "name": "a",
+      "executable": "/path/to/cuda-venv/bin/python",
+      "revision": "928bdb7eec894d2f4c51fee03bf45f60a6ce2267",
+      "optimizer": false,
+      "algorithm": "statevector",
+      "build_command": "maturin develop --release --manifest-path crates/aleph-py/Cargo.toml --features python,cuda",
+      "rustflags": "unset",
+      "compiler": "REPLACE with the compiler version used to build this artifact"
+    },
+    {
+      "name": "b",
+      "executable": "/path/to/cuda-venv/bin/python",
+      "revision": "928bdb7eec894d2f4c51fee03bf45f60a6ce2267",
+      "optimizer": true,
+      "algorithm": "statevector",
+      "build_command": "maturin develop --release --manifest-path crates/aleph-py/Cargo.toml --features python,cuda",
+      "rustflags": "unset",
+      "compiler": "REPLACE with the compiler version used to build this artifact"
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "snapshot_revision": "efab77b189732e91050b58f3fd3296011e853354",
+  "snapshot_sha256": "a7d517d1776fdcf161ee31161b0429a8c622d095fb744117d52d2b120a7e536a",
+  "validation": "shared services unchanged; no OOM or large reach allocation; max n=22",
+  "code_note": "Python controller/worker fixes over snapshot; each run manifest fingerprints its actual scripts; Rust binary/wheel from the snapshot",
+  "compiler": "rustc 1.96.0 (ac68faa20 2026-05-25)\nbinary: rustc\ncommit-hash: ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96\ncommit-date: 2026-05-25\nhost: x86_64-unknown-linux-gnu\nrelease: 1.96.0\nLLVM version: 22.1.2\n",
+  "status": {
+    "cpu-control-run": "executed",
+    "cuda-fusion-run": "contaminated",
+    "cuda-fusion-settled": "executed",
+    "cuda-small-run": "executed",
+    "cuda-f32-run": "executed",
+    "cuda-disabled-run": "failed"
+  },
+  "negative_test_environment": {
+    "CUDA_VISIBLE_DEVICES": ""
+  },
+  "runtime_observed_after_campaign": {
+    "numpy": "2.5.3",
+    "aleph-sim": "0.3.0"
+  },
+  "cuda_toolkit_observed_after_campaign": {
+    "returncode": 0,
+    "stdout": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2025 NVIDIA Corporation\nBuilt on Wed_Aug_20_01:58:59_PM_PDT_2025\nCuda compilation tools, release 13.0, V13.0.88\nBuild cuda_13.0.r13.0/compiler.36424714_0\n"
+  },
+  "reproduction_patches": {
+    "base_revision": "efab77b189732e91050b58f3fd3296011e853354",
+    "initial-code.patch": "CPU control and first rejected CUDA attempt",
+    "validated-code.patch": "settled CUDA campaigns and device-disabled negative control"
+  }
+}

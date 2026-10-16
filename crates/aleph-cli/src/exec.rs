@@ -383,6 +383,7 @@ pub fn run_circuit_with_execution_options<W: Write>(
             };
             run_with_backend(
                 backend,
+                parse_ms,
                 &circuit,
                 effective_shots,
                 print_statevector,
@@ -399,6 +400,7 @@ pub fn run_circuit_with_execution_options<W: Write>(
             };
             run_with_backend(
                 backend,
+                parse_ms,
                 &circuit,
                 effective_shots,
                 print_statevector,
@@ -419,6 +421,7 @@ pub fn run_circuit_with_execution_options<W: Write>(
 #[allow(clippy::too_many_arguments)]
 fn run_with_backend<B, W>(
     mut backend: B,
+    parse_ms: f64,
     circuit: &aleph_ir::Circuit,
     effective_shots: Option<u32>,
     print_statevector: bool,
@@ -432,9 +435,10 @@ where
     B::State: AmpsF64,
     W: Write,
 {
+    let execution_start = Instant::now();
     let state = run(&mut backend, circuit).context("running circuit")?;
-
-    write_backend_views(
+    let execution_ms = execution_start.elapsed().as_secs_f64() * 1000.0;
+    let (sampling_ms, materialization_ms, formatting_ms) = write_backend_views(
         &mut backend,
         &state,
         effective_shots,
@@ -443,7 +447,16 @@ where
         n,
         seed_label,
         out,
-    )
+    )?;
+    // Explicit benchmark instrumentation of the ordinary CPU `run` route.
+    // Caller wall time remains authoritative: these stages exclude process
+    // startup, backend construction, teardown and the final stdout flush.
+    if std::env::var("ALEPH_BENCH_CPU_DIAGNOSTICS").as_deref() == Ok("1") {
+        eprintln!(
+            "CPU_EXECUTION={{\"parse_ms\":{parse_ms},\"execution_ms\":{execution_ms},\"sampling_ms\":{sampling_ms},\"materialization_ms\":{materialization_ms},\"formatting_ms\":{formatting_ms},\"qubits\":{n}}}"
+        );
+    }
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -456,21 +469,32 @@ fn write_backend_views<B, W>(
     n: u32,
     seed_label: &str,
     out: &mut W,
-) -> Result<()>
+) -> Result<(f64, f64, f64)>
 where
     B: Backend,
     B::State: AmpsF64,
     W: Write,
 {
+    let mut sampling_ms = 0.0;
+    let mut materialization_ms = 0.0;
+    let mut formatting_ms = 0.0;
     if let Some(shots) = effective_shots {
+        let started = Instant::now();
         let samples = backend
             .sample(state, shots)
             .context("sampling final state")?;
+        sampling_ms = started.elapsed().as_secs_f64() * 1000.0;
+        let started = Instant::now();
         output::format_counts(out, &samples, shots, n, seed_label)?;
+        formatting_ms += started.elapsed().as_secs_f64() * 1000.0;
     }
     if print_statevector {
+        let started = Instant::now();
         let amps = state.amps_f64()?;
+        materialization_ms = started.elapsed().as_secs_f64() * 1000.0;
+        let started = Instant::now();
         output::format_statevector(out, &amps, n)?;
+        formatting_ms += started.elapsed().as_secs_f64() * 1000.0;
     }
     if !paulis.is_empty() {
         writeln!(out, "expectation values:")?;
@@ -481,7 +505,7 @@ where
             output::format_expectation(out, raw, v)?;
         }
     }
-    Ok(())
+    Ok((sampling_ms, materialization_ms, formatting_ms))
 }
 
 /// Stabilizer-backend run path. Supports `--shots` and `--expectation`;
