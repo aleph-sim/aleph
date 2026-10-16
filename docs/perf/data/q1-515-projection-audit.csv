@@ -1,0 +1,7 @@
+distance,decoder,shots,probability,original_columns,split_columns,native_reference_estimate_disagreement,syndrome_projection_failures,observable_vs_decode_disagreement,reference_observable_vs_decode_disagreement,original_decode_disagreement
+3,mwpm,2000,0.003,291,568,0,0,0,0,0
+3,union-find,2000,0.003,291,568,0,0,0,0,0
+3,union-find-weighted,2000,0.003,291,568,0,0,0,0,0
+5,mwpm,2000,0.003,1958,3718,0,0,0,0,0
+5,union-find,2000,0.003,1958,3718,0,0,0,0,0
+5,union-find-weighted,2000,0.003,1958,3718,0,0,0,0,0
