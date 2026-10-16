@@ -133,8 +133,8 @@ Local arm64 Mac, Rust 1.98.1, `RAYON_NUM_THREADS=1`, identical existing
 The aggregate patch/main ratio is 1.098, but both binaries drift from roughly 0.84 ms to
 1.51 ms within this short campaign. Load averages were 12.4–13.9 on a 10-core shared Mac.
 This is **inconclusive** for capture-disabled overhead: neither a speedup nor a regression
-acceptance is claimed. The sampler loop itself remains source-identical. A clean-host paired
-campaign is still required before declaring performance validation complete.
+acceptance is claimed. The sampler loop itself remains source-identical. A separate pinned-server campaign is recorded below; this local run remains inconclusive
+and is retained in full.
 
 Warmed opt-in Criterion medians on the same shared machine were capture **7.780 us**
 (95% CI 7.592–7.941) and surface 5->2 minimization **18.460 us** (18.213–18.924). These are
@@ -147,3 +147,54 @@ validation changes. Workspace/all-target Clippy, rustfmt and the public Rust doc
 example passed. Stim 1.16.0 checked both original/reduced fixture reconstructions plus all 16
 tiny correlated subsets; PyMatching 2.4.0 matched both surface predictions. The BB hypergraph
 is explicitly excluded from PyMatching replay.
+
+## Pinned-server follow-up
+
+The authorized follow-up tested exactly source head `816ef96e2a5aadd6955d5967a07eaedd2101ee83`
+against main `ca5d6b3989204fd056d4f6bc8242e3b1489e22f3` on the shared dual-Xeon Silver 4114
+server (40 logical CPUs), Rust 1.96.0. Services and CI jobs remained running. Both snapshots
+were compiled separately with the same compiler and locked dependencies; source and binary
+SHA-256 values accompany the receipts. All locally recorded source fingerprints matched.
+
+Four ABBA blocks produced 16 accepted runs of the **same existing three control cells**,
+with `RAYON_NUM_THREADS=1` and affinity to CPU 3. SMT sibling 23 was also monitored. A one-second
+preflight required <=2% busy time on both CPUs; each measured process required <=3% external
+CPU-3 busy time (total busy minus child process CPU usage) and <=3% busy time on sibling 23.
+Thirteen preflight attempts and one measured-overlap attempt were rejected and retained. Among accepted runs, external CPU-3
+busy time was <=1.625%; sibling busy time was <=2.934%. These are per-process aggregate guards,
+not whole-host isolation or proof against short interference bursts, cache or frequency effects.
+
+| Ordinary capture-disabled cell, 1024 shots | Main median (us) | Patch median (us) | Paired block ratio | Block-bootstrap 95% range |
+|---|---:|---:|---:|---:|
+| Sampling only | 1054.8 | 1043.5 | 0.983 | 0.958–1.008 |
+| Null-decoder complete experiment | 1167.7 | 1112.1 | 0.983 | 0.956–1.003 |
+| MWPM d3 complete experiment | 820.3 | 811.6 | 0.979 | 0.899–1.036 |
+
+Time columns are medians of per-run Criterion medians. Ratios are geometric means of the
+within-ABBA log ratios, so dividing the displayed medians is a different statistic. The ranges
+are percentile bootstrap ranges from resampling four complete blocks (all 4^4 combinations),
+not a universal non-regression guarantee. No material capture-disabled regression was detected
+in these cells. No speedup is claimed: all three ranges include parity, and the small block
+count/shared-host conditions limit generalization. The noisy Mac run remains inconclusive.
+
+Warmed opt-in surface d3/r3 costs on the same pinned CPU were **14.230 us** per captured shot
+(95% Criterion interval 14.218–14.260), and **59.671 us** for the 5->2 reduction
+(59.438–83.661; wider uncertainty retained). Capture includes a decoder call, an owned DEM
+snapshot and hashing; reduction includes initial validation/replay and six predicate calls.
+These opt-in costs do not run in the ordinary sampler.
+
+The server passed all 8 witness tests, all 5 existing experiment tests, the independent
+Stim/PyMatching oracle script and the complete example. The example again produced surface
+5->2 / 6 calls and BB 9->7 / 28 calls, with identical signatures. Its one-shot, unpinned
+correctness-run minimization times were 315 us and 9099 us respectively; these cold observations
+are not the warmed Criterion surface estimate. Regenerated BB `.syn` and `.ref` bytes exactly
+matched the checked-in fixtures across architectures. The fixed-vector check still makes no
+new board/RTL execution claim.
+
+The performance-validation item that kept this PR in draft is complete for these scoped
+controls. Remote receipts, every executed run, raw samples, guarded feature costs, source/binary
+hashes and the campaign/analysis scripts are checked in alongside the earlier local evidence.
+
+The control campaign logs every preflight decision. The separate feature runner skipped one
+busy preflight before its accepted run; that skipped check did not execute a benchmark and its
+CPU readings were not serialized. All executed feature measurements are retained.

@@ -1,0 +1,12 @@
+   Compiling aleph-qec v0.3.0 (/tmp/aleph-543-816ef96/patch/crates/aleph-qec)
+    Finished `release` profile [optimized] target(s) in 31.25s
+     Running unittests src/lib.rs (../target-patch/release/deps/aleph_qec-83b599a6cb791f6d)
+
+running 5 tests
+test experiment::tests::zero_shots_is_empty_result ... ok
+test experiment::tests::p_zero_gives_exactly_zero_rate ... ok
+test experiment::tests::sampler_detector_frequency_matches_edge_probability ... ok
+test experiment::tests::deterministic_for_fixed_seed ... ok
+test experiment::tests::null_decoder_rate_matches_observable_flip_probability ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 189 filtered out; finished in 0.11s

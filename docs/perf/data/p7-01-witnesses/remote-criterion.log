@@ -1,0 +1,465 @@
+1-base/stdout.log
+dem_experiment/null_total/1024
+                        time:   [1.0925 ms 1.1183 ms 1.1623 ms]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+dem_experiment/sample_1024
+                        time:   [1.0535 ms 1.0678 ms 1.0872 ms]
+dem_experiment/mwpm_d3_total_1024
+                        time:   [794.88 µs 833.03 µs 907.68 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+
+Gnuplot not found, using plotters backend
+Benchmarking dem_experiment/null_total/1024
+Benchmarking dem_experiment/null_total/1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/null_total/1024: Collecting 10 samples in estimated 502.64 ms (440 iterations)
+Benchmarking dem_experiment/null_total/1024: Analyzing
+Benchmarking dem_experiment/sample_1024
+Benchmarking dem_experiment/sample_1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/sample_1024: Collecting 10 samples in estimated 513.34 ms (495 iterations)
+Benchmarking dem_experiment/sample_1024: Analyzing
+Benchmarking dem_experiment/mwpm_d3_total_1024
+Benchmarking dem_experiment/mwpm_d3_total_1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/mwpm_d3_total_1024: Collecting 10 samples in estimated 524.58 ms (660 iterations)
+Benchmarking dem_experiment/mwpm_d3_total_1024: Analyzing
+
+15-base/stdout.log
+dem_experiment/null_total/1024
+                        time:   [1.1402 ms 1.1523 ms 1.1661 ms]
+dem_experiment/sample_1024
+                        time:   [1.0309 ms 1.0390 ms 1.0519 ms]
+dem_experiment/mwpm_d3_total_1024
+                        time:   [1.0006 ms 1.0065 ms 1.0154 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+
+Gnuplot not found, using plotters backend
+Benchmarking dem_experiment/null_total/1024
+Benchmarking dem_experiment/null_total/1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/null_total/1024: Collecting 10 samples in estimated 524.69 ms (440 iterations)
+Benchmarking dem_experiment/null_total/1024: Analyzing
+Benchmarking dem_experiment/sample_1024
+Benchmarking dem_experiment/sample_1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/sample_1024: Collecting 10 samples in estimated 515.12 ms (495 iterations)
+Benchmarking dem_experiment/sample_1024: Analyzing
+Benchmarking dem_experiment/mwpm_d3_total_1024
+Benchmarking dem_experiment/mwpm_d3_total_1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/mwpm_d3_total_1024: Collecting 10 samples in estimated 533.82 ms (605 iterations)
+Benchmarking dem_experiment/mwpm_d3_total_1024: Analyzing
+
+16-patch/stdout.log
+dem_experiment/null_total/1024
+                        time:   [1.1053 ms 1.1192 ms 1.1340 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+dem_experiment/sample_1024
+                        time:   [1.0490 ms 1.0698 ms 1.0876 ms]
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+dem_experiment/mwpm_d3_total_1024
+                        time:   [820.05 µs 877.29 µs 929.12 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+
+Gnuplot not found, using plotters backend
+Benchmarking dem_experiment/null_total/1024
+Benchmarking dem_experiment/null_total/1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/null_total/1024: Collecting 10 samples in estimated 509.03 ms (440 iterations)
+Benchmarking dem_experiment/null_total/1024: Analyzing
+Benchmarking dem_experiment/sample_1024
+Benchmarking dem_experiment/sample_1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/sample_1024: Collecting 10 samples in estimated 537.45 ms (495 iterations)
+Benchmarking dem_experiment/sample_1024: Analyzing
+Benchmarking dem_experiment/mwpm_d3_total_1024
+Benchmarking dem_experiment/mwpm_d3_total_1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/mwpm_d3_total_1024: Collecting 10 samples in estimated 531.53 ms (660 iterations)
+Benchmarking dem_experiment/mwpm_d3_total_1024: Analyzing
+
+18-patch/stdout.log
+dem_experiment/null_total/1024
+                        time:   [1.2061 ms 1.2119 ms 1.2177 ms]
+Found 3 outliers among 10 measurements (30.00%)
+  2 (20.00%) low mild
+  1 (10.00%) high mild
+dem_experiment/sample_1024
+                        time:   [1.0309 ms 1.0325 ms 1.0352 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+dem_experiment/mwpm_d3_total_1024
+                        time:   [906.97 µs 921.90 µs 937.80 µs]
+
+Gnuplot not found, using plotters backend
+Benchmarking dem_experiment/null_total/1024
+Benchmarking dem_experiment/null_total/1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/null_total/1024: Collecting 10 samples in estimated 545.90 ms (440 iterations)
+Benchmarking dem_experiment/null_total/1024: Analyzing
+Benchmarking dem_experiment/sample_1024
+Benchmarking dem_experiment/sample_1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/sample_1024: Collecting 10 samples in estimated 513.18 ms (495 iterations)
+Benchmarking dem_experiment/sample_1024: Analyzing
+Benchmarking dem_experiment/mwpm_d3_total_1024
+Benchmarking dem_experiment/mwpm_d3_total_1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/mwpm_d3_total_1024: Collecting 10 samples in estimated 540.10 ms (550 iterations)
+Benchmarking dem_experiment/mwpm_d3_total_1024: Analyzing
+
+19-base/stdout.log
+dem_experiment/null_total/1024
+                        time:   [1.1093 ms 1.1193 ms 1.1257 ms]
+dem_experiment/sample_1024
+                        time:   [1.1446 ms 1.1462 ms 1.1483 ms]
+dem_experiment/mwpm_d3_total_1024
+                        time:   [1.4191 ms 1.4340 ms 1.4475 ms]
+
+Gnuplot not found, using plotters backend
+Benchmarking dem_experiment/null_total/1024
+Benchmarking dem_experiment/null_total/1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/null_total/1024: Collecting 10 samples in estimated 502.62 ms (440 iterations)
+Benchmarking dem_experiment/null_total/1024: Analyzing
+Benchmarking dem_experiment/sample_1024
+Benchmarking dem_experiment/sample_1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/sample_1024: Collecting 10 samples in estimated 506.56 ms (440 iterations)
+Benchmarking dem_experiment/sample_1024: Analyzing
+Benchmarking dem_experiment/mwpm_d3_total_1024
+Benchmarking dem_experiment/mwpm_d3_total_1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/mwpm_d3_total_1024: Collecting 10 samples in estimated 571.40 ms (385 iterations)
+Benchmarking dem_experiment/mwpm_d3_total_1024: Analyzing
+
+2-patch/stdout.log
+dem_experiment/null_total/1024
+                        time:   [1.1072 ms 1.1126 ms 1.1195 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+dem_experiment/sample_1024
+                        time:   [1.0402 ms 1.0494 ms 1.0546 ms]
+dem_experiment/mwpm_d3_total_1024
+                        time:   [871.33 µs 910.65 µs 1.0131 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+
+Gnuplot not found, using plotters backend
+Benchmarking dem_experiment/null_total/1024
+Benchmarking dem_experiment/null_total/1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/null_total/1024: Collecting 10 samples in estimated 502.16 ms (440 iterations)
+Benchmarking dem_experiment/null_total/1024: Analyzing
+Benchmarking dem_experiment/sample_1024
+Benchmarking dem_experiment/sample_1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/sample_1024: Collecting 10 samples in estimated 520.21 ms (495 iterations)
+Benchmarking dem_experiment/sample_1024: Analyzing
+Benchmarking dem_experiment/mwpm_d3_total_1024
+Benchmarking dem_experiment/mwpm_d3_total_1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/mwpm_d3_total_1024: Collecting 10 samples in estimated 514.15 ms (440 iterations)
+Benchmarking dem_experiment/mwpm_d3_total_1024: Analyzing
+
+20-base/stdout.log
+dem_experiment/null_total/1024
+                        time:   [1.1692 ms 1.1755 ms 1.1882 ms]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high mild
+dem_experiment/sample_1024
+                        time:   [1.1152 ms 1.1261 ms 1.1414 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) low mild
+dem_experiment/mwpm_d3_total_1024
+                        time:   [850.31 µs 1.1189 ms 1.6243 ms]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+
+Gnuplot not found, using plotters backend
+Benchmarking dem_experiment/null_total/1024
+Benchmarking dem_experiment/null_total/1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/null_total/1024: Collecting 10 samples in estimated 540.68 ms (440 iterations)
+Benchmarking dem_experiment/null_total/1024: Analyzing
+Benchmarking dem_experiment/sample_1024
+Benchmarking dem_experiment/sample_1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/sample_1024: Collecting 10 samples in estimated 503.30 ms (440 iterations)
+Benchmarking dem_experiment/sample_1024: Analyzing
+Benchmarking dem_experiment/mwpm_d3_total_1024
+Benchmarking dem_experiment/mwpm_d3_total_1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/mwpm_d3_total_1024: Collecting 10 samples in estimated 527.37 ms (550 iterations)
+Benchmarking dem_experiment/mwpm_d3_total_1024: Analyzing
+
+21-base/stdout.log
+dem_experiment/null_total/1024
+                        time:   [1.1670 ms 1.1682 ms 1.1693 ms]
+dem_experiment/sample_1024
+                        time:   [1.1009 ms 1.1049 ms 1.1114 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+dem_experiment/mwpm_d3_total_1024
+                        time:   [855.25 µs 1.0383 ms 1.3086 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+
+Gnuplot not found, using plotters backend
+Benchmarking dem_experiment/null_total/1024
+Benchmarking dem_experiment/null_total/1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/null_total/1024: Collecting 10 samples in estimated 526.94 ms (440 iterations)
+Benchmarking dem_experiment/null_total/1024: Analyzing
+Benchmarking dem_experiment/sample_1024
+Benchmarking dem_experiment/sample_1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/sample_1024: Collecting 10 samples in estimated 545.80 ms (495 iterations)
+Benchmarking dem_experiment/sample_1024: Analyzing
+Benchmarking dem_experiment/mwpm_d3_total_1024
+Benchmarking dem_experiment/mwpm_d3_total_1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/mwpm_d3_total_1024: Collecting 10 samples in estimated 518.52 ms (605 iterations)
+Benchmarking dem_experiment/mwpm_d3_total_1024: Analyzing
+
+22-patch/stdout.log
+dem_experiment/null_total/1024
+                        time:   [1.1800 ms 1.1832 ms 1.1924 ms]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+dem_experiment/sample_1024
+                        time:   [1.1118 ms 1.1125 ms 1.1133 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+dem_experiment/mwpm_d3_total_1024
+                        time:   [876.89 µs 904.79 µs 957.36 µs]
+
+Gnuplot not found, using plotters backend
+Benchmarking dem_experiment/null_total/1024
+Benchmarking dem_experiment/null_total/1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/null_total/1024: Collecting 10 samples in estimated 539.45 ms (440 iterations)
+Benchmarking dem_experiment/null_total/1024: Analyzing
+Benchmarking dem_experiment/sample_1024
+Benchmarking dem_experiment/sample_1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/sample_1024: Collecting 10 samples in estimated 500.60 ms (440 iterations)
+Benchmarking dem_experiment/sample_1024: Analyzing
+Benchmarking dem_experiment/mwpm_d3_total_1024
+Benchmarking dem_experiment/mwpm_d3_total_1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/mwpm_d3_total_1024: Collecting 10 samples in estimated 531.77 ms (605 iterations)
+Benchmarking dem_experiment/mwpm_d3_total_1024: Analyzing
+
+23-patch/stdout.log
+dem_experiment/null_total/1024
+                        time:   [1.0907 ms 1.0926 ms 1.0956 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+dem_experiment/sample_1024
+                        time:   [1.0302 ms 1.0340 ms 1.0405 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+dem_experiment/mwpm_d3_total_1024
+                        time:   [799.53 µs 800.34 µs 801.86 µs]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+
+Gnuplot not found, using plotters backend
+Benchmarking dem_experiment/null_total/1024
+Benchmarking dem_experiment/null_total/1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/null_total/1024: Collecting 10 samples in estimated 556.32 ms (495 iterations)
+Benchmarking dem_experiment/null_total/1024: Analyzing
+Benchmarking dem_experiment/sample_1024
+Benchmarking dem_experiment/sample_1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/sample_1024: Collecting 10 samples in estimated 559.84 ms (275 iterations)
+Benchmarking dem_experiment/sample_1024: Analyzing
+Benchmarking dem_experiment/mwpm_d3_total_1024
+Benchmarking dem_experiment/mwpm_d3_total_1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/mwpm_d3_total_1024: Collecting 10 samples in estimated 528.94 ms (660 iterations)
+Benchmarking dem_experiment/mwpm_d3_total_1024: Analyzing
+
+24-base/stdout.log
+dem_experiment/null_total/1024
+                        time:   [1.0872 ms 1.1097 ms 1.1482 ms]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+dem_experiment/sample_1024
+                        time:   [1.0244 ms 1.0679 ms 1.1225 ms]
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+dem_experiment/mwpm_d3_total_1024
+                        time:   [794.47 µs 795.38 µs 796.83 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+
+Gnuplot not found, using plotters backend
+Benchmarking dem_experiment/null_total/1024
+Benchmarking dem_experiment/null_total/1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/null_total/1024: Collecting 10 samples in estimated 555.83 ms (495 iterations)
+Benchmarking dem_experiment/null_total/1024: Analyzing
+Benchmarking dem_experiment/sample_1024
+Benchmarking dem_experiment/sample_1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/sample_1024: Collecting 10 samples in estimated 508.15 ms (495 iterations)
+Benchmarking dem_experiment/sample_1024: Analyzing
+Benchmarking dem_experiment/mwpm_d3_total_1024
+Benchmarking dem_experiment/mwpm_d3_total_1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/mwpm_d3_total_1024: Collecting 10 samples in estimated 523.52 ms (660 iterations)
+Benchmarking dem_experiment/mwpm_d3_total_1024: Analyzing
+
+26-base/stdout.log
+dem_experiment/null_total/1024
+                        time:   [1.1253 ms 1.2245 ms 1.4862 ms]
+dem_experiment/sample_1024
+                        time:   [1.0281 ms 1.0309 ms 1.0324 ms]
+dem_experiment/mwpm_d3_total_1024
+                        time:   [799.03 µs 815.53 µs 859.63 µs]
+
+Gnuplot not found, using plotters backend
+Benchmarking dem_experiment/null_total/1024
+Benchmarking dem_experiment/null_total/1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/null_total/1024: Collecting 10 samples in estimated 563.68 ms (440 iterations)
+Benchmarking dem_experiment/null_total/1024: Analyzing
+Benchmarking dem_experiment/sample_1024
+Benchmarking dem_experiment/sample_1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/sample_1024: Collecting 10 samples in estimated 530.49 ms (495 iterations)
+Benchmarking dem_experiment/sample_1024: Analyzing
+Benchmarking dem_experiment/mwpm_d3_total_1024
+Benchmarking dem_experiment/mwpm_d3_total_1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/mwpm_d3_total_1024: Collecting 10 samples in estimated 521.82 ms (550 iterations)
+Benchmarking dem_experiment/mwpm_d3_total_1024: Analyzing
+
+28-patch/stdout.log
+dem_experiment/null_total/1024
+                        time:   [1.1036 ms 1.1189 ms 1.1319 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+dem_experiment/sample_1024
+                        time:   [1.0276 ms 1.0298 ms 1.0338 ms]
+dem_experiment/mwpm_d3_total_1024
+                        time:   [803.45 µs 829.52 µs 860.15 µs]
+
+Gnuplot not found, using plotters backend
+Benchmarking dem_experiment/null_total/1024
+Benchmarking dem_experiment/null_total/1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/null_total/1024: Collecting 10 samples in estimated 562.36 ms (495 iterations)
+Benchmarking dem_experiment/null_total/1024: Analyzing
+Benchmarking dem_experiment/sample_1024
+Benchmarking dem_experiment/sample_1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/sample_1024: Collecting 10 samples in estimated 527.62 ms (495 iterations)
+Benchmarking dem_experiment/sample_1024: Analyzing
+Benchmarking dem_experiment/mwpm_d3_total_1024
+Benchmarking dem_experiment/mwpm_d3_total_1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/mwpm_d3_total_1024: Collecting 10 samples in estimated 530.87 ms (660 iterations)
+Benchmarking dem_experiment/mwpm_d3_total_1024: Analyzing
+
+29-patch/stdout.log
+dem_experiment/null_total/1024
+                        time:   [1.1028 ms 1.1128 ms 1.1201 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+dem_experiment/sample_1024
+                        time:   [1.0401 ms 1.0434 ms 1.0480 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+dem_experiment/mwpm_d3_total_1024
+                        time:   [806.82 µs 809.26 µs 813.10 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+
+Gnuplot not found, using plotters backend
+Benchmarking dem_experiment/null_total/1024
+Benchmarking dem_experiment/null_total/1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/null_total/1024: Collecting 10 samples in estimated 502.65 ms (440 iterations)
+Benchmarking dem_experiment/null_total/1024: Analyzing
+Benchmarking dem_experiment/sample_1024
+Benchmarking dem_experiment/sample_1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/sample_1024: Collecting 10 samples in estimated 529.04 ms (495 iterations)
+Benchmarking dem_experiment/sample_1024: Analyzing
+Benchmarking dem_experiment/mwpm_d3_total_1024
+Benchmarking dem_experiment/mwpm_d3_total_1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/mwpm_d3_total_1024: Collecting 10 samples in estimated 535.40 ms (660 iterations)
+Benchmarking dem_experiment/mwpm_d3_total_1024: Analyzing
+
+3-patch/stdout.log
+dem_experiment/null_total/1024
+                        time:   [1.1378 ms 1.1676 ms 1.2109 ms]
+Found 4 outliers among 10 measurements (40.00%)
+  2 (20.00%) low severe
+  2 (20.00%) high severe
+dem_experiment/sample_1024
+                        time:   [1.0566 ms 1.0782 ms 1.1193 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+dem_experiment/mwpm_d3_total_1024
+                        time:   [803.36 µs 827.78 µs 854.71 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+
+Gnuplot not found, using plotters backend
+Benchmarking dem_experiment/null_total/1024
+Benchmarking dem_experiment/null_total/1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/null_total/1024: Collecting 10 samples in estimated 531.04 ms (440 iterations)
+Benchmarking dem_experiment/null_total/1024: Analyzing
+Benchmarking dem_experiment/sample_1024
+Benchmarking dem_experiment/sample_1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/sample_1024: Collecting 10 samples in estimated 528.21 ms (495 iterations)
+Benchmarking dem_experiment/sample_1024: Analyzing
+Benchmarking dem_experiment/mwpm_d3_total_1024
+Benchmarking dem_experiment/mwpm_d3_total_1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/mwpm_d3_total_1024: Collecting 10 samples in estimated 529.39 ms (660 iterations)
+Benchmarking dem_experiment/mwpm_d3_total_1024: Analyzing
+
+30-base/stdout.log
+dem_experiment/null_total/1024
+                        time:   [1.0900 ms 1.0996 ms 1.1134 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+dem_experiment/sample_1024
+                        time:   [1.0238 ms 1.0254 ms 1.0287 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+dem_experiment/mwpm_d3_total_1024
+                        time:   [794.90 µs 796.06 µs 797.89 µs]
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+
+Gnuplot not found, using plotters backend
+Benchmarking dem_experiment/null_total/1024
+Benchmarking dem_experiment/null_total/1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/null_total/1024: Collecting 10 samples in estimated 504.43 ms (440 iterations)
+Benchmarking dem_experiment/null_total/1024: Analyzing
+Benchmarking dem_experiment/sample_1024
+Benchmarking dem_experiment/sample_1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/sample_1024: Collecting 10 samples in estimated 510.16 ms (495 iterations)
+Benchmarking dem_experiment/sample_1024: Analyzing
+Benchmarking dem_experiment/mwpm_d3_total_1024
+Benchmarking dem_experiment/mwpm_d3_total_1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/mwpm_d3_total_1024: Collecting 10 samples in estimated 517.56 ms (605 iterations)
+Benchmarking dem_experiment/mwpm_d3_total_1024: Analyzing
+
+9-base/stdout.log
+dem_experiment/null_total/1024
+                        time:   [1.1799 ms 1.2036 ms 1.2409 ms]
+Found 3 outliers among 10 measurements (30.00%)
+  2 (20.00%) low mild
+  1 (10.00%) high mild
+dem_experiment/sample_1024
+                        time:   [1.1556 ms 1.1651 ms 1.1732 ms]
+dem_experiment/mwpm_d3_total_1024
+                        time:   [807.52 µs 812.70 µs 817.27 µs]
+
+Gnuplot not found, using plotters backend
+Benchmarking dem_experiment/null_total/1024
+Benchmarking dem_experiment/null_total/1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/null_total/1024: Collecting 10 samples in estimated 537.68 ms (440 iterations)
+Benchmarking dem_experiment/null_total/1024: Analyzing
+Benchmarking dem_experiment/sample_1024
+Benchmarking dem_experiment/sample_1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/sample_1024: Collecting 10 samples in estimated 547.56 ms (495 iterations)
+Benchmarking dem_experiment/sample_1024: Analyzing
+Benchmarking dem_experiment/mwpm_d3_total_1024
+Benchmarking dem_experiment/mwpm_d3_total_1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/mwpm_d3_total_1024: Collecting 10 samples in estimated 511.59 ms (605 iterations)
+Benchmarking dem_experiment/mwpm_d3_total_1024: Analyzing
+
+feature-1.log
+failure_witness/capture_d3
+                        time:   [14.224 µs 14.245 µs 14.258 µs]
+failure_witness/minimize_d3
+                        time:   [59.594 µs 82.795 µs 99.599 µs]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+
+Gnuplot not found, using plotters backend
+Benchmarking failure_witness/capture_d3
+Benchmarking failure_witness/capture_d3: Warming up for 200.00 ms
+Benchmarking failure_witness/capture_d3: Collecting 10 samples in estimated 500.49 ms (34k iterations)
+Benchmarking failure_witness/capture_d3: Analyzing
+Benchmarking failure_witness/minimize_d3
+Benchmarking failure_witness/minimize_d3: Warming up for 200.00 ms
+Benchmarking failure_witness/minimize_d3: Collecting 10 samples in estimated 502.11 ms (8415 iterations)
+Benchmarking failure_witness/minimize_d3: Analyzing
