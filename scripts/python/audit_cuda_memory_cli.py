@@ -9,7 +9,9 @@ binary=args.binary.resolve()
 workspace=tempfile.TemporaryDirectory(prefix='aleph-memory-cli-')
 root=pathlib.Path(workspace.name)
 results=[]
-for n in (30,31):
+# #555 makes low-shot FP32 n=30/31 feasible; use states that still cannot fit
+# either precision on this reference card, without attempting those allocations.
+for n in (32,33):
  f=root/f'large{n}.qasm';f.write_text(f'OPENQASM 3.0; include "stdgates.inc"; qubit[{n}] q; h q[0];')
  for backend in ('cuda','cuda-f32'):
   p=subprocess.run([str(binary),'run',str(f),'--backend',backend,'--shots','16'],capture_output=True,text=True)

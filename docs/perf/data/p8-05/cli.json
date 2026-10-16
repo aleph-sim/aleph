@@ -1,0 +1,72 @@
+[
+  {
+    "qubits": 32,
+    "backend": "cuda",
+    "rejected": true,
+    "error": "Error: CUDA memory plan needs 69123184928 device bytes (state 68719476736, execution scratch 2048, reductions 268435472, sampling 135270672, marginals 0), available 18364107981 after headroom 1049490227 (free 19413598208, total 20989804544). Requested outputs cannot fit; paged execution is norm-only and cannot replace counts/expectation/marginals/export. Reduce qubits/shots or use a larger/free device."
+  },
+  {
+    "qubits": 32,
+    "backend": "cuda-f32",
+    "rejected": true,
+    "error": "Error: CUDA memory plan needs 34763446560 device bytes (state 34359738368, execution scratch 2048, reductions 268435472, sampling 135270672, marginals 0), available 18364107981 after headroom 1049490227 (free 19413598208, total 20989804544). Requested outputs cannot fit; paged execution is norm-only and cannot replace counts/expectation/marginals/export. Reduce qubits/shots or use a larger/free device."
+  },
+  {
+    "qubits": 33,
+    "backend": "cuda",
+    "rejected": true,
+    "error": "Error: CUDA memory plan needs 138246367552 device bytes (state 137438953472, execution scratch 2048, reductions 536870928, sampling 270541104, marginals 0), available 18364107981 after headroom 1049490227 (free 19413598208, total 20989804544). Requested outputs cannot fit; paged execution is norm-only and cannot replace counts/expectation/marginals/export. Reduce qubits/shots or use a larger/free device."
+  },
+  {
+    "qubits": 33,
+    "backend": "cuda-f32",
+    "rejected": true,
+    "error": "Error: CUDA memory plan needs 69526890816 device bytes (state 68719476736, execution scratch 2048, reductions 536870928, sampling 270541104, marginals 0), available 18364107981 after headroom 1049490227 (free 19413598208, total 20989804544). Requested outputs cannot fit; paged execution is norm-only and cannot replace counts/expectation/marginals/export. Reduce qubits/shots or use a larger/free device."
+  },
+  {
+    "backend": "cuda",
+    "flags": [
+      "--shots",
+      "16"
+    ],
+    "output": "counts (16 shots, seed=554):\n  |00\u27e9  8  (0.5000)\n  |11\u27e9  8  (0.5000)"
+  },
+  {
+    "backend": "cuda",
+    "flags": [
+      "--statevector"
+    ],
+    "output": "statevector (2 qubits, 4 amplitudes):\n  |00\u27e9   +7.0710678118654757e-1 +0.0000000000000000e0i  |a|\u00b2 = 0.500000\n  |01\u27e9   +0.0000000000000000e0 +0.0000000000000000e0i  |a|\u00b2 = 0.000000\n  |10\u27e9   +0.0000000000000000e0 +0.0000000000000000e0i  |a|\u00b2 = 0.000000\n  |11\u27e9   +7.0710678118654757e-1 +0.0000000000000000e0i  |a|\u00b2 = 0.500000"
+  },
+  {
+    "backend": "cuda",
+    "flags": [
+      "--expectation",
+      "ZZ"
+    ],
+    "output": "expectation values:\n  ZZ    +1.0000000000000002"
+  },
+  {
+    "backend": "cuda-f32",
+    "flags": [
+      "--shots",
+      "16"
+    ],
+    "output": "counts (16 shots, seed=554):\n  |00\u27e9  8  (0.5000)\n  |11\u27e9  8  (0.5000)"
+  },
+  {
+    "backend": "cuda-f32",
+    "flags": [
+      "--statevector"
+    ],
+    "output": "statevector (2 qubits, 4 amplitudes):\n  |00\u27e9   +7.0710676908493042e-1 +0.0000000000000000e0i  |a|\u00b2 = 0.500000\n  |01\u27e9   +0.0000000000000000e0 +0.0000000000000000e0i  |a|\u00b2 = 0.000000\n  |10\u27e9   +0.0000000000000000e0 +0.0000000000000000e0i  |a|\u00b2 = 0.000000\n  |11\u27e9   +7.0710676908493042e-1 +0.0000000000000000e0i  |a|\u00b2 = 0.500000"
+  },
+  {
+    "backend": "cuda-f32",
+    "flags": [
+      "--expectation",
+      "ZZ"
+    ],
+    "output": "expectation values:\n  ZZ    +0.9999999657714582"
+  }
+]

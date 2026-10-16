@@ -54,7 +54,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // A budget rejection must happen before backend construction or state allocation.
     let before = aleph_cuda::device_alloc_count();
     let init = aleph_cuda::sv_backend_init_count();
-    let huge = aleph_ir::Circuit::new(31, 0);
+    let huge = aleph_ir::Circuit::new(64, 0);
     assert!(
         aleph_cuda::memory::plan_frontend(&huge, BackendKind::CudaF32, 1024, false, false).is_err()
     );

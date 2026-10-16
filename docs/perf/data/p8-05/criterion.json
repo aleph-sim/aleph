@@ -1,0 +1,74 @@
+[
+  {
+    "case": "f64_Reference_n18_s1024",
+    "low_ms": 0.13783,
+    "estimate_ms": 0.14409,
+    "high_ms": 0.14762
+  },
+  {
+    "case": "f32_Reference_n18_s1024",
+    "low_ms": 0.14368,
+    "estimate_ms": 0.14375000000000002,
+    "high_ms": 0.1438
+  },
+  {
+    "case": "f64_Auto_n18_s1024",
+    "low_ms": 0.13715000000000002,
+    "estimate_ms": 0.13723,
+    "high_ms": 0.13731000000000002
+  },
+  {
+    "case": "f32_Auto_n18_s1024",
+    "low_ms": 0.14495,
+    "estimate_ms": 0.145,
+    "high_ms": 0.14508000000000001
+  },
+  {
+    "case": "f64_Reference_n22_s1024",
+    "low_ms": 7.1532,
+    "estimate_ms": 7.156,
+    "high_ms": 7.1581
+  },
+  {
+    "case": "f32_Reference_n22_s1024",
+    "low_ms": 6.8437,
+    "estimate_ms": 6.845,
+    "high_ms": 6.8464
+  },
+  {
+    "case": "f64_Auto_n22_s1024",
+    "low_ms": 0.47745,
+    "estimate_ms": 0.47761000000000003,
+    "high_ms": 0.47769
+  },
+  {
+    "case": "f32_Auto_n22_s1024",
+    "low_ms": 0.44527,
+    "estimate_ms": 0.44612,
+    "high_ms": 0.44843
+  },
+  {
+    "case": "f64_Reference_n22_s65536",
+    "low_ms": 7.3276,
+    "estimate_ms": 7.3285,
+    "high_ms": 7.3295
+  },
+  {
+    "case": "f32_Reference_n22_s65536",
+    "low_ms": 7.0225,
+    "estimate_ms": 7.0238,
+    "high_ms": 7.0262
+  },
+  {
+    "case": "f64_Auto_n22_s65536",
+    "low_ms": 1.4043,
+    "estimate_ms": 1.4046,
+    "high_ms": 1.4051
+  },
+  {
+    "case": "f32_Auto_n22_s65536",
+    "low_ms": 1.3134,
+    "estimate_ms": 1.3136,
+    "high_ms": 1.3139
+  }
+]

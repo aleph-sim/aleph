@@ -38,6 +38,10 @@ const READOUT_SRC: &str = include_str!("readout.cu");
 /// hold one and delegate their `Backend` readout methods to it.
 pub(crate) struct GpuReadout {
     ctx: CudaContext,
+    pub(crate) algorithm: crate::SamplingAlgorithm,
+    pub(crate) profile_sampling: bool,
+    pub(crate) sampling_stats: crate::SamplingStats,
+    sampler: super::sampling::Sampler,
     f_branch: CudaFunction,
     f_expect: CudaFunction,
     f_collapse: CudaFunction,
@@ -58,7 +62,12 @@ pub(crate) struct GpuReadout {
 impl GpuReadout {
     /// Compile the readout kernels on `ctx`'s device.
     pub(crate) fn new(ctx: &CudaContext) -> Result<Self, Error> {
-        let ptx = compile_ptx(READOUT_SRC).map_err(|e| Error::Compile(e.to_string()))?;
+        let source = format!(
+            "{}\nusing SampleAmplitude = cplx;\n{}",
+            READOUT_SRC,
+            include_str!("sampling.cu")
+        );
+        let ptx = compile_ptx(&source).map_err(|e| Error::Compile(e.to_string()))?;
         let module = ctx.raw().load_module(ptx)?;
         let f_branch = module.load_function("reduce_abs2_branch")?;
         let f_expect = module.load_function("expect_pauli")?;
@@ -69,8 +78,13 @@ impl GpuReadout {
         let f_scan = module.load_function("scan_step")?;
         let f_search = module.load_function("sample_search")?;
         let acc = DeviceBuffer::<f64>::zeros(ctx, 2)?;
+        let sampler = super::sampling::Sampler::new(&module)?;
         Ok(Self {
             ctx: ctx.clone(),
+            algorithm: crate::SamplingAlgorithm::Auto,
+            profile_sampling: false,
+            sampling_stats: Default::default(),
+            sampler,
             f_branch,
             f_expect,
             f_final,
@@ -387,21 +401,83 @@ impl GpuReadout {
         Ok(v)
     }
 
-    /// Draw `shots` basis-state samples via an inverse-CDF built entirely on the
-    /// GPU (|a|² → Hillis-Steele inclusive scan → per-shot upper-bound search);
-    /// only the `shots` indices cross PCIe.
+    /// Draw GPU-resident hierarchical samples; only norm scalars and output
+    /// indices cross PCIe. Reference retains the former full-state scan.
     pub(crate) fn sample(
         &mut self,
         rng: &mut StdRng,
         state: &CudaSvState,
         shots: u32,
     ) -> Result<Vec<u64>, BackendError> {
-        let total = self.check_norm(state)?;
+        if self.algorithm == crate::SamplingAlgorithm::Reference {
+            return self.sample_reference(rng, state, shots);
+        }
+        let start = std::time::Instant::now();
+        self.check_norm(state)?;
+        let norm_ms = start.elapsed().as_secs_f64() * 1000.;
         if shots == 0 {
+            self.sampling_stats = crate::SamplingStats {
+                norm_ms,
+                ..Default::default()
+            };
+            return Ok(Vec::new());
+        }
+        let partials = self
+            .partials
+            .as_ref()
+            .ok_or_else(|| BackendError::DeviceFailure("norm partials missing".into()))?;
+        let (result, mut stats) = self
+            .sampler
+            .sample(
+                &self.ctx,
+                rng,
+                &state.amps,
+                partials,
+                state.num_qubits,
+                shots,
+                self.algorithm,
+                self.profile_sampling,
+            )
+            .map_err(to_be)?;
+        stats.norm_ms = norm_ms;
+        self.sampling_stats = stats;
+        Ok(result)
+    }
+
+    fn sample_reference(
+        &mut self,
+        rng: &mut StdRng,
+        state: &CudaSvState,
+        shots: u32,
+    ) -> Result<Vec<u64>, BackendError> {
+        let start = std::time::Instant::now();
+        let total = self.check_norm(state)?;
+        let norm_done = std::time::Instant::now();
+        if shots == 0 {
+            self.sampling_stats = crate::SamplingStats {
+                norm_ms: start.elapsed().as_secs_f64() * 1000.,
+                ..Default::default()
+            };
             return Ok(Vec::new());
         }
         let nq = state.num_qubits;
         let n: u64 = 1 << nq;
+        let required =
+            crate::sampling_workspace_bytes(nq, shots, crate::SamplingAlgorithm::Reference)
+                .map_err(BackendError::DeviceFailure)?
+                .checked_add(u64::from(shots) * 16)
+                .ok_or_else(|| BackendError::DeviceFailure("sampling size overflow".into()))?;
+        let budget =
+            crate::memory::runtime_memory_budget(&self.ctx).map_err(BackendError::DeviceFailure)?;
+        if required
+            > budget
+                .device_free_bytes
+                .saturating_sub(budget.device_headroom_bytes)
+        {
+            return Err(BackendError::DeviceFailure(
+                "reference sampling exceeds current device budget".into(),
+            ));
+        }
         let stream = self.ctx.stream().clone();
         let cfg = launch_cfg(n);
 
@@ -458,6 +534,10 @@ impl GpuReadout {
 
         // Targets r·total (r ∈ [0,1)); upper-bound search matches the CPU
         // sampler's `partition_point(|&c| c <= r)`.
+        if self.profile_sampling {
+            self.ctx.synchronize().map_err(to_be)?;
+        }
+        let built = std::time::Instant::now();
         let targets: Vec<f64> = (0..shots).map(|_| rng.gen::<f64>() * total).collect();
         let targets_dev = DeviceBuffer::<f64>::from_slice(&self.ctx, &targets).map_err(to_be)?;
         let mut out_dev = DeviceBuffer::<u64>::zeros(&self.ctx, shots as usize).map_err(to_be)?;
@@ -481,8 +561,21 @@ impl GpuReadout {
                     .map_err(|e| to_be(Error::Driver(e)))?;
             }
         }
+        if self.profile_sampling {
+            self.ctx.synchronize().map_err(to_be)?;
+        }
+        let drawn = std::time::Instant::now();
         let mut v = out_dev.to_vec(&self.ctx).map_err(to_be)?;
         v.truncate(shots as usize);
+        let end = std::time::Instant::now();
+        self.sampling_stats = crate::SamplingStats {
+            norm_ms: (norm_done - start).as_secs_f64() * 1000.,
+            build_ms: (built - norm_done).as_secs_f64() * 1000.,
+            draw_ms: (drawn - built).as_secs_f64() * 1000.,
+            download_ms: (end - drawn).as_secs_f64() * 1000.,
+            workspace_bytes: n * 16,
+            build_launches: nq + 1,
+        };
         Ok(v)
     }
 }

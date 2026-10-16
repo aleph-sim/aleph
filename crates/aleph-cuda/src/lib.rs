@@ -99,3 +99,6 @@ pub enum Error {
     #[error("cuStateVec error (status {0})")]
     CuStateVec(i32),
 }
+
+#[cfg(all(target_os = "linux", feature = "cuda"))]
+pub use sv::sampling::{sampling_workspace_bytes, SamplingAlgorithm, SamplingStats};
