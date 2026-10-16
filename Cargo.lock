@@ -88,6 +88,7 @@ dependencies = [
  "aleph-qec",
  "aleph-stab",
  "aleph-sv",
+ "criterion",
  "cudarc",
  "rand 0.8.6",
  "smallvec",

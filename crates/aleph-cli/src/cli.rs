@@ -153,6 +153,13 @@ pub enum Cmd {
         #[arg(long, default_value = BackendRequest::AUTO, value_parser = BackendRequest::from_user_str)]
         backend: BackendRequest,
 
+        /// Use the raw CUDA execution reference for A/B comparisons.
+        #[arg(long)]
+        cuda_raw: bool,
+        /// Emit CUDA plan, launch and stage diagnostics to stderr.
+        #[arg(long)]
+        cuda_diagnostics: bool,
+
         /// MPS max bond dimension χ (only used by `--backend mps`).
         #[arg(long, default_value_t = 128)]
         max_bond: usize,

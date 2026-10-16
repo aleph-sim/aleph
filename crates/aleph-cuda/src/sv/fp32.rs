@@ -287,6 +287,14 @@ impl CudaSvBackendF32 {
         })
     }
 
+    /// True only when the optional TF32 module loaded successfully.
+    pub fn tf32_available(&self) -> bool {
+        self.tf32.is_some()
+    }
+    pub(crate) fn set_tf32_policy(&mut self, on: bool) {
+        self.tf32_kq = on;
+    }
+
     /// Override the qubit cap (default [`MAX_CUDA_QUBITS_F32`]).
     pub fn with_qubit_cap(mut self, cap: u32) -> Self {
         self.qubit_cap = cap;
@@ -485,6 +493,7 @@ impl CudaSvBackendF32 {
                 .arg(&params)
                 .arg(&n_pairs)
                 .launch(cfg)?;
+            crate::execution::record_launch();
         }
         Ok(())
     }
@@ -514,6 +523,7 @@ impl CudaSvBackendF32 {
                 .arg(&params)
                 .arg(&n_groups)
                 .launch(cfg)?;
+            crate::execution::record_launch();
         }
         Ok(())
     }
@@ -562,6 +572,7 @@ impl CudaSvBackendF32 {
                 .arg(&params)
                 .arg(&n_groups)
                 .launch(cfg)?;
+            crate::execution::record_launch();
         }
         Ok(())
     }
@@ -599,6 +610,7 @@ impl CudaSvBackendF32 {
                 .arg(&params)
                 .arg(&n_amps)
                 .launch(cfg)?;
+            crate::execution::record_launch();
         }
         Ok(())
     }
@@ -648,6 +660,8 @@ impl CudaSvBackendF32 {
                 .arg(&params)
                 .arg(&n_groups)
                 .launch(cfg)?;
+            crate::execution::record_launch();
+            crate::execution::record_tf32();
         }
         Ok(())
     }
@@ -673,6 +687,8 @@ impl CudaSvBackendF32 {
                 .arg(&params)
                 .arg(&n_groups)
                 .launch(cfg)?;
+            crate::execution::record_launch();
+            crate::execution::record_layer();
         }
         Ok(())
     }
@@ -726,6 +742,7 @@ impl CudaSvBackendF32 {
                 .arg(&n_terms_u)
                 .arg(&n_amps)
                 .launch(cfg)?;
+            crate::execution::record_launch();
         }
         // No host sync: the upload buffers are freed by cudarc's `CudaSlice`
         // drop, which is stream-ordered (`cuMemFreeAsync` after the kernel, or
@@ -864,6 +881,7 @@ impl CudaSvBackendF32 {
                 .arg(&params)
                 .arg(&n_amps)
                 .launch(cfg)?;
+            crate::execution::record_launch();
         }
         Ok(())
     }
@@ -897,6 +915,7 @@ impl CudaSvBackendF32 {
                 .arg(&params)
                 .arg(&n_amps)
                 .launch(cfg)?;
+            crate::execution::record_launch();
         }
         Ok(())
     }
