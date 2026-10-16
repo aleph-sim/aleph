@@ -25,3 +25,5 @@ pub mod bench_fixtures;
 pub mod dist;
 pub mod passes;
 pub use ansatz::{build_hea, build_qaoa, maxcut_pauli_sum, AnsatzError};
+
+pub mod expectation_query;
