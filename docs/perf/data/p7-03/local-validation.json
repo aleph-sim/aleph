@@ -1,0 +1,31 @@
+{
+  "purpose": "Local correctness evidence only; busy Mac timings are not performance claims",
+  "base_revision": "07a71f98e1ca4758d6f1e0a62c10fe76b2865ce3",
+  "compiler": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: aarch64-apple-darwin\nrelease: 1.98.1\nLLVM version: 22.1.8\n",
+  "host_load": [
+    14.2734375,
+    15.31591796875,
+    14.72021484375
+  ],
+  "source_sha256": {
+    "crates/aleph-ir/src/expectation_query.rs": "e0fefd81a29f2c7776673be1ef7b119b054b95d9ee1b77108805d1164fa92981",
+    "crates/aleph-sv/src/expectation_query.rs": "0ebefbb83c085e8c5a50dd314c8e9b1ca17712ea9e77f3182ac029d532f0ab16",
+    "crates/aleph-sv/examples/expectation_query.rs": "2dadb1513a9010d5880a94aa529c87c71490a546ed3c1c225706f22aeda3f6b8",
+    "crates/aleph-sv/examples/support/cone_workloads.rs": "b20fde117867e2f6ebdac2d3fa6de1867013ef35b9af66a13ecb001d752e453b",
+    "crates/aleph-sv/tests/expectation_query.rs": "30e1db248c0e4116bdfb879c209dc03b52f8e38ea8e59ac65c8146e5cd4a4fca",
+    "crates/aleph-sv/benches/expectation_query.rs": "f80fc07efb0f02db30707aea3e3c5b27a164ee0835476d6b3359be68288b87f8"
+  },
+  "focused_tests": 13,
+  "property_cases": 128,
+  "aer_fixtures": 5,
+  "crate_regression_passed": 751,
+  "existing_ignored": "ghz_25_runs (pre-existing n=25 large-state test)",
+  "checks": [
+    "aleph-ir/aleph-sv all-target regression",
+    "workspace Clippy",
+    "final changed-crate all-target Clippy",
+    "rustfmt"
+  ],
+  "audit_contract": "20 alternating public Rust API rows completed locally; local18 width 18->6 and global16 width 16->16; noisy timings not retained as performance evidence",
+  "remaining": "Clean CPU server Criterion and paired API timing campaign awaits snapshot-transfer authorization"
+}
