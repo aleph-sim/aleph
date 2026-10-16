@@ -144,7 +144,11 @@ impl Region {
             matched_to: NONE,
             match_edge: CEdge::EMPTY,
             children: Vec::new(),
-            shell: vec![source],
+            shell: if source == NONE {
+                Vec::new()
+            } else {
+                vec![source]
+            },
             source,
             shrink_queued: NO_TIME,
         }
@@ -179,6 +183,18 @@ pub(crate) struct State {
     pub touched: Vec<NodeId>,
     pub regions: Vec<Region>,
     pub trees: Vec<TreeNode>,
+    // Slots retain their inner buffers across shots. Only these prefixes are live;
+    // allocation resets every scalar field before a slot becomes visible again.
+    pub region_count: usize,
+    pub tree_count: usize,
+    pub subtree_stack: Vec<RegionId>,
+    pub tree_stack: Vec<TreeId>,
+    pub path_a: Vec<TreeId>,
+    pub path_b: Vec<TreeId>,
+    pub moved: Vec<TreeId>,
+    pub shatter_path: Vec<usize>,
+    pub shatter_rest: Vec<usize>,
+    pub defects: Vec<NodeId>,
     heap: BinaryHeap<Reverse<(i64, u64, u8, u32)>>,
     seq: u64,
     pub now: i64,
@@ -204,6 +220,16 @@ impl State {
             touched: Vec::new(),
             regions: Vec::new(),
             trees: Vec::new(),
+            region_count: 0,
+            tree_count: 0,
+            subtree_stack: Vec::new(),
+            tree_stack: Vec::new(),
+            path_a: Vec::new(),
+            path_b: Vec::new(),
+            moved: Vec::new(),
+            shatter_path: Vec::new(),
+            shatter_rest: Vec::new(),
+            defects: Vec::new(),
             heap: BinaryHeap::new(),
             seq: 0,
             now: 0,
@@ -224,13 +250,51 @@ impl State {
             self.nodes[u as usize] = NodeState::FREE;
         }
         self.touched.clear();
-        self.regions.clear();
-        self.trees.clear();
+        self.region_count = 0;
+        self.tree_count = 0;
         self.heap.clear();
         self.seq = 0;
         self.now = 0;
         self.active_trees = 0;
         self.stats = Stats::default();
+    }
+
+    /// Reuse the next region's shell/child storage, initializing a leaf or empty blossom.
+    pub(crate) fn new_region(&mut self, source: NodeId) -> RegionId {
+        let id = self.region_count;
+        if id == self.regions.len() {
+            self.regions.push(Region::leaf(source));
+        } else {
+            let r = &mut self.regions[id];
+            r.radius = Varying { y0: 0, slope: 1 };
+            r.blossom_parent = NONE;
+            r.tree = NONE;
+            r.matched_to = NONE;
+            r.match_edge = CEdge::EMPTY;
+            r.children.clear();
+            r.shell.clear();
+            r.source = source;
+            r.shrink_queued = NO_TIME;
+            if source != NONE {
+                r.shell.push(source);
+            }
+        }
+        self.region_count += 1;
+        id as RegionId
+    }
+
+    /// Keep the child buffer belonging to this tree slot while replacing all tree links.
+    pub(crate) fn alloc_tree(&mut self, mut node: TreeNode) -> TreeId {
+        let id = self.tree_count;
+        if id == self.trees.len() {
+            self.trees.push(node);
+        } else {
+            std::mem::swap(&mut node.children, &mut self.trees[id].children);
+            node.children.clear();
+            self.trees[id] = node;
+        }
+        self.tree_count += 1;
+        id as TreeId
     }
 
     pub(crate) fn push_event(&mut self, t: i64, kind: u8, id: u32) {
@@ -313,9 +377,11 @@ mod tests {
         let mut st = State::new(3);
         st.nodes[2].region = 7;
         st.touched.push(2);
-        st.regions.push(Region::leaf(2));
+        st.new_region(2);
         st.reset();
         assert_eq!(st.nodes[2].region, NONE);
-        assert!(st.regions.is_empty() && st.touched.is_empty());
+        assert_eq!(st.region_count, 0);
+        assert!(st.touched.is_empty());
+        assert_eq!(st.regions.len(), 1); // slot storage is retained
     }
 }

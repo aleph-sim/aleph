@@ -87,8 +87,7 @@ impl State {
                 continue;
             }
             last = d;
-            let r = self.regions.len() as RegionId;
-            self.regions.push(Region::leaf(d));
+            let r = self.new_region(d);
             self.nodes[d as usize] = NodeState {
                 region: r,
                 source: d,
@@ -102,8 +101,8 @@ impl State {
             let t = self.new_tree_root(r);
             self.regions[r as usize].tree = t;
         }
-        let roots: Vec<NodeId> = self.regions.iter().map(|r| r.source).collect();
-        for d in roots {
+        for i in 0..self.region_count {
+            let d = self.regions[i].source;
             self.schedule_node(g, d);
         }
         while let Some((t, kind, id)) = self.pop_event() {
@@ -156,6 +155,7 @@ impl SparseMatcher {
     }
 
     /// `defects` must be ascending. Returns `(observable mask, weight)`.
+    #[cfg(test)]
     pub(crate) fn decode(&self, defects: &[u32]) -> (u64, i64) {
         self.decode_with_stats(defects).0
     }
@@ -166,6 +166,7 @@ impl SparseMatcher {
     /// `with_state`, shared with `decode_errors`); profiling tests
     /// (`mwpm::tests::profile_local_phases_d11`) call this directly to report average
     /// events/pushes per shot.
+    #[cfg(test)]
     pub(crate) fn decode_with_stats(&self, defects: &[u32]) -> ((u64, i64), Stats) {
         self.with_state(|st| {
             let out = st.run(&self.graph, defects);
@@ -175,8 +176,45 @@ impl SparseMatcher {
 
     /// `decode`, plus the matched paths XORed into `ehat` by representative DEM column (`ehat`
     /// must cover every column of the graph). Same matching, same `(obs, weight)` as `decode`.
+    #[cfg(test)]
     pub(crate) fn decode_errors(&self, defects: &[u32], ehat: &mut [u8]) -> (u64, i64) {
         self.with_state(|st| st.run_edges(&self.graph, defects, ehat))
+    }
+
+    /// Canonicalize public syndrome fields in cached scratch, including caller-built unsorted,
+    /// duplicated or out-of-range inputs. No temporary defect vectors escape the cache.
+    pub(crate) fn decode_syndrome(&self, fired: &[u32]) -> (u64, i64) {
+        if fired.is_empty() {
+            return (0, 0);
+        }
+        self.with_syndrome(fired, |st, defects| st.run(&self.graph, defects))
+    }
+
+    pub(crate) fn decode_syndrome_errors(&self, fired: &[u32], ehat: &mut [u8]) -> (u64, i64) {
+        if fired.is_empty() {
+            return (0, 0);
+        }
+        self.with_syndrome(fired, |st, defects| {
+            st.run_edges(&self.graph, defects, ehat)
+        })
+    }
+
+    fn with_syndrome<R>(&self, fired: &[u32], mut f: impl FnMut(&mut State, &[u32]) -> R) -> R {
+        self.with_state(|st| {
+            let mut defects = std::mem::take(&mut st.defects);
+            defects.clear();
+            defects.extend(
+                fired
+                    .iter()
+                    .copied()
+                    .filter(|&d| (d as usize) < self.graph.num_nodes()),
+            );
+            defects.sort_unstable();
+            defects.dedup();
+            let out = f(st, &defects);
+            st.defects = defects;
+            out
+        })
     }
 
     /// Run `f` on this thread's cached `State` for this decoder (allocating and caching one on
@@ -498,6 +536,20 @@ pub(crate) mod tests {
             // Corrections may differ from the dense oracle only on genuine ties (equal-weight
             // matchings in different homology classes); weight equality above is the invariant,
             // and there is no tie-aware oracle to assert on the correction itself.
+        }
+
+        #[test]
+        fn retained_slots_do_not_leak_between_shots((g, defects) in graph_strategy()) {
+            let matcher = SparseMatcher::new(g.clone());
+            let small: Vec<_> = defects.iter().copied().step_by(2).collect();
+            for shot in [&defects[..], &[][..], &small[..], &defects[..]] {
+                // Exact tie choices and event counts must also agree with a fresh arena.
+                let expected = SparseMatcher::new(g.clone()).decode_with_stats(shot);
+                let actual = matcher.decode_with_stats(shot);
+                prop_assert_eq!(actual.0, expected.0);
+                prop_assert_eq!(actual.1.events, expected.1.events);
+                prop_assert_eq!(actual.1.pushes, expected.1.pushes);
+            }
         }
 
         #[test]

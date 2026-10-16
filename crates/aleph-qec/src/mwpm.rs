@@ -195,16 +195,38 @@ impl MwpmDecoder {
 
     /// Q1-03b production path: Sparse Blossom on the compiled detector graph.
     pub(crate) fn decode_sparse(&self, syndrome: &Syndrome) -> (Correction, i64) {
-        let defects = self.defects_of(syndrome);
-        if defects.is_empty() {
-            return (Correction::none(self.num_observables), 0);
-        }
-        let d32: Vec<u32> = defects.iter().map(|&d| d as u32).collect();
-        let (acc, weight) = self.sparse.decode(&d32);
+        let (acc, weight) = self.sparse.decode_syndrome(&syndrome.fired);
         let flips = (0..self.num_observables)
             .map(|o| (acc >> o) & 1 == 1)
             .collect();
         (Correction::new(flips), weight)
+    }
+
+    /// Decode into a caller-owned correction, reusing its observable storage.
+    ///
+    /// Produces the same correction as [`Decoder::decode`]. After warming this thread's
+    /// matcher cache and output buffer, repeated workloads that fit the retained capacities
+    /// need no heap allocations. A larger shot may grow those capacities; cache eviction or
+    /// using a new thread requires warming again. The output is resized to this model's
+    /// observable count, including for an empty syndrome.
+    ///
+    /// ```
+    /// use aleph_qec::{Correction, DetectorErrorModel, MwpmDecoder, Syndrome};
+    /// let dem = DetectorErrorModel::parse("error(0.1) D0 L0")?;
+    /// let decoder = MwpmDecoder::new(&dem)?;
+    /// let mut correction = Correction::none(0);
+    /// decoder.decode_into(&Syndrome::new(1, vec![0]), &mut correction);
+    /// assert_eq!(correction.observable_flips, vec![true]);
+    /// # Ok::<(), aleph_qec::Error>(())
+    /// ```
+    pub fn decode_into(&self, syndrome: &Syndrome, correction: &mut Correction) {
+        let (acc, _) = self.sparse.decode_syndrome(&syndrome.fired);
+        correction
+            .observable_flips
+            .resize(self.num_observables, false);
+        for (o, flip) in correction.observable_flips.iter_mut().enumerate() {
+            *flip = (acc >> o) & 1 == 1;
+        }
     }
 
     /// Decode `syndrome` and return the error estimate over DEM columns (`ehat[j] == 1` ⇔ the
@@ -224,11 +246,8 @@ impl MwpmDecoder {
     ///   the decoder against [`DetectorErrorModel::split_components`] first.
     pub fn decode_errors(&self, syndrome: &Syndrome) -> Vec<u8> {
         let mut ehat = vec![0u8; self.graph.num_columns()];
-        let defects = self.defects_of(syndrome);
-        if !defects.is_empty() {
-            let d32: Vec<u32> = defects.iter().map(|&d| d as u32).collect();
-            self.sparse.decode_errors(&d32, &mut ehat);
-        }
+        self.sparse
+            .decode_syndrome_errors(&syndrome.fired, &mut ehat);
         ehat
     }
 
