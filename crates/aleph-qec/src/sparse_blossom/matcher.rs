@@ -77,12 +77,13 @@ impl State {
 
     /// Freeze every region of the tree rooted at `root`, matching untouched pairs as they stand.
     fn dissolve_tree(&mut self, g: &CompiledGraph, root: TreeId) {
-        let mut stack = vec![root];
-        while let Some(n) = stack.pop() {
+        self.tree_stack.clear();
+        self.tree_stack.push(root);
+        while let Some(n) = self.tree_stack.pop() {
             let (inner, outer, io) = {
                 let t = &mut self.trees[n as usize];
                 t.alive = false;
-                stack.extend_from_slice(&t.children);
+                self.tree_stack.extend_from_slice(&t.children);
                 (t.inner, t.outer, t.inner_to_outer)
             };
             if inner != NONE {
@@ -128,7 +129,7 @@ impl State {
     }
 
     pub(crate) fn new_tree_root(&mut self, outer: RegionId) -> TreeId {
-        self.trees.push(TreeNode {
+        let id = self.alloc_tree(TreeNode {
             inner: NONE,
             outer,
             inner_to_outer: CEdge::EMPTY,
@@ -138,7 +139,7 @@ impl State {
             alive: true,
         });
         self.active_trees += 1;
-        (self.trees.len() - 1) as TreeId
+        id
     }
 
     pub(crate) fn new_tree_node(
@@ -149,7 +150,7 @@ impl State {
         parent: TreeId,
         parent_edge: CEdge,
     ) -> TreeId {
-        self.trees.push(TreeNode {
+        let id = self.alloc_tree(TreeNode {
             inner,
             outer,
             inner_to_outer,
@@ -158,7 +159,6 @@ impl State {
             children: Vec::new(),
             alive: true,
         });
-        let id = (self.trees.len() - 1) as TreeId;
         self.trees[parent as usize].children.push(id);
         id
     }
@@ -168,26 +168,31 @@ impl State {
         let na = self.regions[a as usize].tree;
         let nb = self.regions[b as usize].tree;
         // Paths to the root; the LCA is the first common node.
-        let up = |s: &Self, mut n: TreeId| {
-            let mut p = vec![n];
-            while s.trees[n as usize].parent != NONE {
-                n = s.trees[n as usize].parent;
-                p.push(n);
+        let mut path_a = std::mem::take(&mut self.path_a);
+        let mut path_b = std::mem::take(&mut self.path_b);
+        for (path, mut n) in [(&mut path_a, na), (&mut path_b, nb)] {
+            path.clear();
+            path.push(n);
+            while self.trees[n as usize].parent != NONE {
+                n = self.trees[n as usize].parent;
+                path.push(n);
             }
-            p
-        };
-        let pa = up(self, na);
-        let pb = up(self, nb);
-        let lca = *pa
+        }
+        let ia = path_a
             .iter()
-            .find(|n| pb.contains(n))
-            .unwrap_or(&pa[pa.len() - 1]);
-        let path_a: Vec<TreeId> = pa.iter().copied().take_while(|&n| n != lca).collect();
-        let path_b: Vec<TreeId> = pb.iter().copied().take_while(|&n| n != lca).collect();
+            .position(|n| path_b.contains(n))
+            .unwrap_or(path_a.len() - 1);
+        let lca = path_a[ia];
+        let ib = path_b
+            .iter()
+            .position(|&n| n == lca)
+            .unwrap_or(path_b.len() - 1);
+        path_a.truncate(ia);
+        path_b.truncate(ib);
 
         // Cycle in order a, inner(a), outer(parent), …, outer(lca), inner(b side), …, b.
-        let mut cycle: Vec<(RegionId, CEdge)> =
-            Vec::with_capacity(2 * (path_a.len() + path_b.len()) + 1);
+        let bid = self.new_region(NONE);
+        let mut cycle = std::mem::take(&mut self.regions[bid as usize].children);
         for &n in &path_a {
             let t = &self.trees[n as usize];
             cycle.push((t.outer, t.inner_to_outer.reversed()));
@@ -213,23 +218,15 @@ impl State {
         debug_assert_eq!(cycle.len() % 2, 1);
         debug_assert_eq!(cycle[0].0, if path_a.is_empty() { lca_outer } else { a });
 
-        // The blossom region.
-        let bid = self.regions.len() as RegionId;
-        self.regions.push(Region {
-            radius: Varying {
-                y0: -self.now,
-                slope: 1,
-            },
-            blossom_parent: NONE,
-            tree: lca,
-            matched_to: NONE,
-            match_edge: CEdge::EMPTY,
-            children: cycle.clone(),
-            shell: Vec::new(),
-            source: NONE,
-            shrink_queued: NO_TIME,
-        });
-        for &(c, _) in &cycle {
+        // The blossom region owns the cycle buffer until shattering/reset.
+        self.regions[bid as usize].radius = Varying {
+            y0: -self.now,
+            slope: 1,
+        };
+        self.regions[bid as usize].tree = lca;
+        self.regions[bid as usize].children = cycle;
+        for i in 0..self.regions[bid as usize].children.len() {
+            let (c, _) = self.regions[bid as usize].children[i];
             let rc = self.regions[c as usize].radius.at(self.now);
             self.regions[c as usize].radius = Varying::frozen(rc);
             self.regions[c as usize].blossom_parent = bid;
@@ -239,7 +236,8 @@ impl State {
 
         // Tree surgery: the LCA node's outer becomes the blossom; the path nodes die and their
         // other children re-hang on the LCA node.
-        let mut moved: Vec<TreeId> = Vec::new();
+        let mut moved = std::mem::take(&mut self.moved);
+        moved.clear();
         for &n in path_a.iter().chain(path_b.iter()) {
             let t = &mut self.trees[n as usize];
             t.alive = false;
@@ -257,9 +255,12 @@ impl State {
             .children
             .retain(|&c| Some(c) != top_a && Some(c) != top_b);
         lca_node.children.extend_from_slice(&moved);
-        for c in moved {
+        for &c in &moved {
             self.trees[c as usize].parent = lca;
         }
+        self.moved = moved;
+        self.path_a = path_a;
+        self.path_b = path_b;
         self.regions[bid as usize].tree = lca;
         self.reschedule_region(g, bid);
     }
@@ -274,7 +275,7 @@ impl State {
             let t = &self.trees[n as usize];
             (t.parent, t.parent_edge, t.inner_to_outer, t.outer)
         };
-        let children = std::mem::take(&mut self.regions[b as usize].children);
+        let mut children = std::mem::take(&mut self.regions[b as usize].children);
         let k = children.len();
         let i_par = self.child_index_of(&children, parent_edge.to);
         let i_out = self.child_index_of(&children, io.from);
@@ -303,13 +304,16 @@ impl State {
             }
         };
         // Path i_par → … → i_out (odd number of children).
-        let mut path = vec![i_par];
+        let mut path = std::mem::take(&mut self.shatter_path);
+        path.clear();
+        path.push(i_par);
         while *path.last().unwrap_or(&i_out) != i_out {
             let last = *path.last().unwrap_or(&i_out);
             path.push(step(last));
         }
         // The rest, continuing past i_out until just before i_par (even number of children).
-        let mut rest = Vec::new();
+        let mut rest = std::mem::take(&mut self.shatter_rest);
+        rest.clear();
         let mut i = step(i_out);
         while i != i_par {
             rest.push(i);
@@ -321,7 +325,7 @@ impl State {
         // Rebuild the tree chain in place of `n`.
         self.trees[n as usize].alive = false;
         self.trees[p as usize].children.retain(|&c| c != n);
-        let old_children = std::mem::take(&mut self.trees[n as usize].children);
+        let mut old_children = std::mem::take(&mut self.trees[n as usize].children);
         let mut parent = p;
         let mut pe = parent_edge;
         let mut j = 0;
@@ -340,10 +344,14 @@ impl State {
         let last = self.new_tree_node(c_out, outer_o, io, parent, pe);
         self.regions[c_out as usize].tree = last;
         self.regions[outer_o as usize].tree = last;
-        self.trees[last as usize].children = old_children;
-        for &c in &self.trees[last as usize].children.clone() {
+        self.trees[last as usize]
+            .children
+            .extend_from_slice(&old_children);
+        for &c in &old_children {
             self.trees[c as usize].parent = last;
         }
+        old_children.clear();
+        self.trees[n as usize].children = old_children;
         self.set_slope(g, c_out, -1);
         // Matched pairs along the rest of the cycle: frozen, re-derive their events.
         let mut i = 0;
@@ -359,6 +367,10 @@ impl State {
         // behind, so a debug print or a future reuse of this slot sees an inert region.
         self.regions[b as usize].radius = Varying::frozen(0);
         self.regions[b as usize].tree = NONE;
+        children.clear();
+        self.regions[b as usize].children = children;
+        self.shatter_path = path;
+        self.shatter_rest = rest;
     }
 
     fn child_index_of(&self, children: &[(RegionId, CEdge)], defect: NodeId) -> usize {
@@ -376,7 +388,7 @@ impl State {
     /// component with no boundary) is dissolved like a completed one, except the root's own
     /// outer region is deliberately left unmatched — the one best-effort exposed vertex.
     pub(crate) fn dissolve_leftover_trees(&mut self, g: &CompiledGraph) {
-        for n in 0..self.trees.len() as TreeId {
+        for n in 0..self.tree_count as TreeId {
             if self.trees[n as usize].alive && self.trees[n as usize].parent == NONE {
                 self.dissolve_tree(g, n);
             }
@@ -417,7 +429,7 @@ impl State {
     /// Visit every matched defect-to-defect edge of the final matching (`e.to == BOUNDARY` for a
     /// boundary match), top-level matches first, blossoms resolved recursively.
     pub(crate) fn resolve_with(&self, f: &mut impl FnMut(&CEdge)) {
-        for r in 0..self.regions.len() as RegionId {
+        for r in 0..self.region_count as RegionId {
             let reg = &self.regions[r as usize];
             if reg.blossom_parent != NONE {
                 continue;

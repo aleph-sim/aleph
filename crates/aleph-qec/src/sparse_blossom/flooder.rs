@@ -275,11 +275,13 @@ impl State {
     /// All nodes owned by `r` or any blossom descendant, into `self.scratch`.
     pub(crate) fn collect_subtree(&mut self, r: RegionId) {
         self.scratch.clear();
-        let mut stack = vec![r];
-        while let Some(x) = stack.pop() {
+        self.subtree_stack.clear();
+        self.subtree_stack.push(r);
+        while let Some(x) = self.subtree_stack.pop() {
             let reg = &self.regions[x as usize];
             self.scratch.extend_from_slice(&reg.shell);
-            stack.extend(reg.children.iter().map(|&(c, _)| c));
+            self.subtree_stack
+                .extend(reg.children.iter().map(|&(c, _)| c));
         }
     }
 
