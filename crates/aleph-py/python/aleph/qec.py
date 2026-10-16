@@ -16,6 +16,13 @@ Matching decoders require finite priors in [0, 0.5] and raise ValueError at cons
 for unsupported priors (with the offending column). Zero is allowed and omitted from
 the graph; 0.5 is allowed with zero edge weight. Priors are never clamped. BP-family
 models retain their [0, 1] prior range.
+
+Both ``relay-bp`` and ``relay-bp-osd`` accept ``iters_per_leg`` and ``early_exit``.
+Omitting the budget retains ``max(100 // max(legs, 1), 8)`` sweeps per leg;
+``early_exit=False`` retains the lightest valid decision over the full schedule.
+``early_exit=True`` stops at the first valid decision, which can change logical quality.
+Explicit zero legs or iterations are promoted to one, as in the Rust fixed-point decoder.
+For example: ``Decoder(dem, "relay-bp", legs=6, iters_per_leg=10, early_exit=True)``.
 """
 import numpy as np
 

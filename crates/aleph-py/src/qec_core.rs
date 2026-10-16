@@ -17,12 +17,22 @@ pub const DECODER_NAMES: &[(&str, &[&str])] = &[
     ("bp-osd", &["max_iter", "alpha", "osd_order"]),
     (
         "relay-bp",
-        &["legs", "alpha", "gamma_min", "gamma_max", "seed"],
+        &[
+            "legs",
+            "iters_per_leg",
+            "early_exit",
+            "alpha",
+            "gamma_min",
+            "gamma_max",
+            "seed",
+        ],
     ),
     (
         "relay-bp-osd",
         &[
             "legs",
+            "iters_per_leg",
+            "early_exit",
             "alpha",
             "gamma_min",
             "gamma_max",
@@ -46,6 +56,8 @@ pub struct DecoderParams {
     pub alpha: Option<f64>,
     pub osd_order: Option<usize>,
     pub legs: Option<usize>,
+    pub iters_per_leg: Option<u32>,
+    pub early_exit: Option<bool>,
     pub gamma_min: Option<f64>,
     pub gamma_max: Option<f64>,
     pub seed: Option<u64>,
@@ -94,13 +106,15 @@ impl AnyDecoder {
             if gmin > gmax {
                 return Err(format!("gamma_min ({gmin}) must be <= gamma_max ({gmax})"));
             }
-            Ok(RelayBpDecoder::with_params(
-                dem,
-                p.legs.unwrap_or(DEFAULT_LEGS),
-                alpha,
-                (gmin, gmax),
-                p.seed.unwrap_or(RELAY_SEED),
-            ))
+            let legs = p.legs.unwrap_or(DEFAULT_LEGS);
+            let seed = p.seed.unwrap_or(RELAY_SEED);
+            let relay = match p.iters_per_leg {
+                Some(iterations) => {
+                    RelayBpDecoder::with_budget(dem, legs, iterations, alpha, (gmin, gmax), seed)
+                }
+                None => RelayBpDecoder::with_params(dem, legs, alpha, (gmin, gmax), seed),
+            };
+            Ok(relay.with_early_exit(p.early_exit.unwrap_or(false)))
         };
         Ok(match name {
             "mwpm" => AnyDecoder::Mwpm(MwpmDecoder::new(dem).map_err(|e| e.to_string())?),
@@ -437,6 +451,46 @@ error(0.1) D2
             4,
         );
         assert!(e.is_empty() && c.is_empty());
+    }
+
+    #[test]
+    fn relay_schedule_overrides_reach_plain_and_osd_frontends() {
+        let dem = DetectorErrorModel::parse(
+            "error(0.15) D0 D2 D3 L0
+error(0.07) D0 D1 D3 L1
+error(0.03) D1 D3 D4 L0
+error(0.07) D0 D1 D2 D3 L1
+error(0.07) D0 D1 D2 D4 L0
+error(0.07) D0 D1 D3
+error(0.07) D0 D2 D3 D4 L0
+error(0.25) D0 D1 D2 D3 D4 L1",
+        )
+        .unwrap();
+        let syndrome = Syndrome::new(5, vec![1, 3]);
+        for name in ["relay-bp", "relay-bp-osd"] {
+            let mut results = Vec::new();
+            for (iterations, early) in [(8, false), (8, true), (1, false)] {
+                let params = DecoderParams {
+                    legs: Some(3),
+                    iters_per_leg: Some(iterations),
+                    early_exit: Some(early),
+                    seed: Some(7),
+                    ..Default::default()
+                };
+                let decoder = AnyDecoder::build(&dem, name, &params).unwrap();
+                let expected =
+                    RelayBpDecoder::with_budget(&dem, 3, iterations, 0.875, RELAY_GAMMA, 7)
+                        .with_early_exit(early);
+                assert_eq!(
+                    decoder.decode_errors(&syndrome),
+                    expected.decode_errors(&syndrome)
+                );
+                assert_eq!(decoder.get().decode(&syndrome), expected.decode(&syndrome));
+                results.push(decoder.decode_errors(&syndrome));
+            }
+            assert_ne!(results[0], results[1]);
+            assert_eq!(results[1], results[2]);
+        }
     }
 
     #[test]
