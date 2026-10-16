@@ -19,6 +19,7 @@ import time
 from datetime import datetime, timezone
 
 VERSION = 1
+GPU_SETTLE_SECONDS = 1.25  # let the utilization trailing window drain after our own work
 ROOT = Path(__file__).resolve().parents[2]
 STAGES = ('startup_ms', 'parse_compile_ms', 'execution_ms', 'sampling_ms',
           'materialization_ms', 'formatting_ms', 'run_api_ms')
@@ -75,7 +76,7 @@ def validate_spec(s):
     require(isinstance(arms, list) and len(arms) == 2 and all(isinstance(a, dict) for a in arms)
             and {a.get('name') for a in arms} == {'a', 'b'}, 'need arms a/b')
     for arm in arms:
-        require(re.fullmatch(r'[0-9a-f]{40}', arm.get('revision', '')) is not None,
+        require(isinstance(arm.get('revision'), str) and re.fullmatch(r'[0-9a-f]{40}', arm['revision']) is not None,
                 'each arm needs the full source revision (declared, not inferred from binary)')
         require(isinstance(arm.get('optimizer'), bool), 'declare optimizer per arm')
         require(isinstance(arm.get('algorithm'), str) and arm['algorithm'], 'declare algorithm')
@@ -199,6 +200,9 @@ def invoke(s, arm, work, path, preflight=False):
         done.set()
         thread.join()
     samples.append(resources(s['route'] == 'cuda-python'))
+    if s['route'] == 'cuda-python':
+        time.sleep(GPU_SETTLE_SECONDS)
+        samples.append(resources(True))
     base = dict(command=command, caller_ms=caller_ms, returncode=p.returncode,
                 stdout=p.stdout[-16000:], stderr=p.stderr[-16000:], resources=samples)
     if p.returncode != 0:
@@ -268,10 +272,11 @@ def run_campaign(s, output, skip_hardware=False):
                     compiler=probe(['rustc', '-Vv']), platform=platform.platform(),
                     cpu=platform.processor(), cpu_topology=probe(['lscpu', '-J']), python=sys.version,
                     affinity=sorted(os.sched_getaffinity(0)) if hasattr(os, 'sched_getaffinity') else None,
+                    runtime_environment={k: os.environ.get(k) for k in ('CUDA_VISIBLE_DEVICES', 'CUDA_HOME', 'CUDA_PATH')},
                     environment={k: str(s['threads']) for k in ('RAYON_NUM_THREADS', 'OMP_NUM_THREADS', 'OPENBLAS_NUM_THREADS', 'MKL_NUM_THREADS')},
                     clock_contract=('CLI caller is subprocess launch through exit; CUDA caller is parse/run/read/result-release inside worker; process_wall includes imports/warmups/oracle'),
                     source_revision_note='arm revisions are operator declarations; artifact hashes identify executed files',
-                    sampling_interval_seconds=.5, amdahl_upper_bound=1/(1-s['bottleneck_fraction']))
+                    sampling_interval_seconds=.5, post_gpu_settle_seconds=GPU_SETTLE_SECONDS, amdahl_upper_bound=1/(1-s['bottleneck_fraction']))
     def save():
         (output/'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
     save()
@@ -285,7 +290,7 @@ def run_campaign(s, output, skip_hardware=False):
             manifest['status'] = 'skipped'
             return manifest
         for arm in s['arms']:
-            arm['executable'] = str(Path(arm['executable']).resolve())
+            arm['executable'] = os.path.abspath(arm['executable'])
             arm['executable_sha256'] = sha256(arm['executable'])
         path = output/'workload.qasm'
         path.write_text(qasm(s))
@@ -299,7 +304,7 @@ def run_campaign(s, output, skip_hardware=False):
                     row = dict(invoke(s, arm, work, path.resolve(), preflight=phase == 'preflight'), phase=phase, pair=pair, arm=arm['name'])
                     if row['status'] == 'executed' and s['route'] == 'cuda-python':
                         imported = row['receipt'].get('imported_artifact')
-                        require(isinstance(imported, dict) and re.fullmatch(r'[0-9a-f]{64}', imported.get('sha256', '')),
+                        require(isinstance(imported, dict) and isinstance(imported.get('sha256'), str) and re.fullmatch(r'[0-9a-f]{64}', imported['sha256']),
                                 'missing imported native artifact hash')
                         previous = arm.setdefault('imported_artifact', imported)
                         if previous != imported:

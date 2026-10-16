@@ -83,7 +83,9 @@ byte counters describe public result ownership, not total allocator peak.
 
 Load averages, CPU count, competing runner/cargo/bencher process names and GPU
 identity/utilization/free memory are sampled before, every 0.5 seconds during,
-and after each subprocess. Each snapshot has its own timestamp. Pre/post GPU
+and immediately after each subprocess. CUDA also takes a boundary snapshot after
+a fixed 1.25-second settling period outside the caller clock, allowing our own
+work to leave the trailing utilization window. There is no retry-until-quiet loop. Each snapshot has its own timestamp. Pre/settled-post GPU
 utilization and CPU load/competitors throughout reject contaminated campaigns.
 During-call GPU utilization includes our own work, so it is recorded for review
 but cannot identify other tenants. Load averages lag, polling can miss short

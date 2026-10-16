@@ -74,11 +74,64 @@ without computing a speedup. An explicit CUDA skip probe exits 2 and records
 `skipped`, without a success summary. These are structural/admission checks,
 not real CUDA execution or an isolated CPU timing baseline.
 
-The real CPU/CUDA reference campaigns remain pending authorization to transfer
-#563 to the shared GPU host. Keep this change in draft until those campaigns
-reproduce the fusion improvement and a small/no-gain control, with manifests and
-raw pairs. The CUDA adapter intentionally fails against packages predating
-#583; its diagnostic API is an explicit integration prerequisite.
-
 The fresh local admission record is preserved in `data/p8-13/local-admission/`;
 its manifest records a contaminated campaign and contains no success summary.
+
+
+## Real reference campaigns (2026-10-16)
+
+User-authorized temporary deployment on openwebgui, RTX 4000 SFF Ada / driver
+580.178.04, Rust 1.96.0, 20 logical CPUs. Shared services stayed running. Each
+campaign uses one worker/thread, five interleaved pairs plus one preflight pair.
+The CUDA clocks include QASM parse, public run, first state read and result
+release; one full same-process warmup uses a new backend. Exact build revisions,
+artifacts, raw rows, resource samples and rejected attempts are in
+`data/p8-13/server/`; the exported snapshot contains no `.git`, so the controller's
+Git discovery correctly reports unavailable while arm revisions and snapshot
+SHA-256 are recorded explicitly. Python controller/worker follow-up changes are
+fingerprinted in each run and preserved as patches against the exported revision; the Rust binary/wheel remain the exported snapshot.
+
+| Public route | Case | A median | B median | Median paired A/B | Paired bootstrap 95% | Conclusion |
+|---|---|---:|---:|---:|---|---|
+| CPU CLI, fresh process | n=8 GHZ, 16 shots, identical executable | 1.542 ms | 1.522 ms | 1.030 | 0.396–1.714 | No intended or established gain; startup/scheduling noise dominates |
+| CUDA Python, FP64 | n=22 brickwall, 32 shots, raw/fused | 348.510 ms | 258.380 ms | 1.342 | 1.319–1.404 | Known fusion benefit reproduced in this bounded campaign |
+| CUDA Python, FP64 | n=8 brickwall, 32 shots, raw/fused | 139.199 ms | 138.882 ms | 1.006 | 0.984–1.013 | No resolved end-to-end benefit |
+| CUDA Python, FP32 | n=18 brickwall, 32 shots, raw/fused | 166.450 ms | 164.728 ms | 1.011 | 0.998–1.029 | No resolved end-to-end benefit |
+
+These are separate same-algorithm/resource/precision comparisons, not a combined
+CPU/GPU or decoder speedup. Five pairs are exploratory, especially for small
+margins. Ratios are medians of pairs, not ratios of independently chosen best
+cells. Do not pool them with historical cross-decoder headlines.
+
+The n=22 preflight confirms 327 -> 37 output instructions/actual gate launches.
+Median execution drops 159.754 -> 49.039 ms, while sampling stays approximately
+0.59–0.62 ms and first materialization takes approximately 94–107 ms. Context,
+setup and result lifecycle therefore limit caller savings. The materialization
+stage includes native caching/conversion and ownership release, not pure PCIe
+time. The n=8 case still reduces launches 117 -> 14 and execution 0.319 ->
+0.125 ms, yet caller time is unchanged within uncertainty: a useful stop example
+against continuing small-state kernel work for headline wall-time improvements.
+FP32 n=18 similarly reduces launches 267 -> 30 and execution 2.402 -> 0.524 ms,
+without establishing an overall gain.
+
+Every successful CUDA record contains a real hardware receipt and checked exact
+transfer/ownership stages. FP64 n=22 owns 67,108,864 device bytes after run;
+the first read transfers that state plus 272 scalar/shot bytes and releases the
+device ownership into a 67,108,864-byte host cache. Dropping the result returns
+both ownership counters to baseline. CPU-amplitude oracles ran for both arms of
+each CUDA preflight; strict FP32/FP64 budgets were not relaxed.
+
+The initial CUDA attempt is preserved as `contaminated`: immediately after our
+own completed call, nvidia-smi's trailing utilization window still showed 15%.
+The corrected protocol always waits a fixed 1.25 seconds outside the caller clock
+before one postflight boundary check, while retaining the immediate reading.
+It does not retry until a fast/quiet sample appears. A full fresh campaign used
+that protocol. Separate tests verify that a busy settled boundary still rejects
+without retrying. Polling cannot prove exclusive GPU use.
+
+A process-only `CUDA_VISIBLE_DEVICES=""` negative campaign is recorded as `failed`,
+without a success receipt/summary. It does not alter host services. Twelve harness
+contracts, including the real CPU CLI guard, seven actual CUDA CLI/Python
+regressions, Linux CUDA/CLI all-target Clippy, local workspace Clippy and the
+78 CLI tests pass. All six saved server campaigns revalidate, preserving executed,
+contaminated and failed distinctions.

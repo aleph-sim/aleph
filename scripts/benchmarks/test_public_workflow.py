@@ -35,6 +35,8 @@ class Contracts(unittest.TestCase):
             with self.subTest(key=key):
                 s=spec(); s[key]=val
                 with self.assertRaises(ValueError): w.validate_spec(s)
+        s=spec();s['arms'][0]['revision']=42
+        with self.assertRaises(ValueError):w.validate_spec(s)
         s=spec(); s['arms'][1]['algorithm']='other'
         with self.assertRaises(ValueError): w.validate_spec(s)
         s['comparison']='algorithm-change'
@@ -80,6 +82,21 @@ class Contracts(unittest.TestCase):
             self.assertIn('inert',result['error'])
             self.assertEqual(len(calls),2)
 
+    def test_preserves_venv_executable_symlink(self):
+        # Resolving bin/python to the system interpreter silently loses the venv.
+        with tempfile.TemporaryDirectory() as d:
+            executable=Path(d)/'venv/bin/python'
+            executable.parent.mkdir(parents=True)
+            executable.symlink_to(sys.executable)
+            s=spec()
+            for arm in s['arms']:arm['executable']=str(executable)
+            def invoke(s, arm, *args, **kwargs):
+                self.assertEqual(arm['executable'],str(executable))
+                return dict(status='executed',caller_ms=1,receipt=receipt(s))
+            with patch.object(w,'invoke',side_effect=invoke):
+                result=w.run_campaign(s,Path(d)/'result')
+            self.assertEqual(result['status'],'executed')
+
     def test_skipped_hardware_never_passes(self):
         s=spec();s['route']='cuda-python'
         for arm in s['arms']:arm['executable']='/missing/sdk/python'
@@ -99,6 +116,25 @@ class Contracts(unittest.TestCase):
             r=w.invoke(s,s['arms'][0],Path(d),p)
             self.assertEqual(r['status'],'failed')
             self.assertNotEqual(r['returncode'],0)
+
+    def test_gpu_settling_is_fixed_and_does_not_retry_until_quiet(self):
+        s=spec();s['route']='cuda-python'
+        def snapshot(util):
+            return dict(load=[0,0,0],cpu_count=20,competing_processes=[],
+                        gpu=dict(returncode=0,stdout=f'0, uuid, card, driver, {util}, 1, 2'))
+        r=receipt(s);r['caller_ms']=1
+        class Process:
+            returncode=0
+            stdout=json.dumps(r)
+            stderr=''
+        for post,status in [(0,'executed'),(80,'contaminated')]:
+            with self.subTest(post=post), tempfile.TemporaryDirectory() as d, \
+                    patch.object(w,'resources',side_effect=[snapshot(0),snapshot(80),snapshot(post)]) as resources, \
+                    patch.object(w.subprocess,'run',return_value=Process()), patch.object(w.time,'sleep') as sleep:
+                result=w.invoke(s,s['arms'][0],Path(d),Path(d)/'x')
+                self.assertEqual(result['status'],status)
+                self.assertEqual(resources.call_count,3)
+                sleep.assert_called_once_with(w.GPU_SETTLE_SECONDS)
 
     def test_changed_executable_rejected_before_launch(self):
         s=spec();s['arms'][0]['executable_sha256']='0'*64

@@ -64,6 +64,8 @@ def main():
     assert after_run['device_bytes']-before['device_bytes'] == (1 << s['qubits'])*width
     assert after_read['dtoh_bytes']-after_run['dtoh_bytes'] == (1 << s['qubits'])*width
     assert after_read['materializations']-before['materializations'] == 1
+    assert amplitudes.shape == (1 << s['qubits'],) and amplitudes.dtype.name == 'complex128'
+    assert after_read['host_bytes']-before['host_bytes'] == (1 << s['qubits'])*16
     assert after_drop['device_bytes'] == before['device_bytes']
     assert after_drop['host_bytes'] == before['host_bytes']
     assert np.isfinite(amplitudes).all()
@@ -71,7 +73,8 @@ def main():
     if reference is not None:
         np.testing.assert_allclose(amplitudes, reference, atol=s['error_budget']['amplitude_atol'], rtol=0)
     counters = dict(diagnostics)
-    counters.update({k+'_delta': after_read[k]-before[k] for k in before})
+    for stage, values in [('after_run', after_run), ('after_read', after_read), ('after_drop', after_drop)]:
+        counters.update({stage+'_'+k+'_delta': values[k]-before[k] for k in before})
     peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     counters['peak_rss_bytes'] = peak if sys.platform == 'darwin' else peak*1024
     native = Path(_native.__file__)
