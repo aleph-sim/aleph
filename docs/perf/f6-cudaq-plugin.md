@@ -403,6 +403,9 @@ unchanged in cost; the new `decode_errors`/`from_check_matrices` surface is addi
   plugin path.
 - [#514](https://github.com/aleph-sim/aleph/issues/514) — `iters_per_leg` / early-exit knob for
   the f64 `RelayBpDecoder` so the A/B can match the ASIC's 6×10 schedule exactly (spec §10.2).
+  **Implemented:** explicit budgets and first-valid stopping are available in Rust, Python
+  and CUDA-Q; see the [policy and validation](../qec/relay-bp-budget.md). The historical
+  benchmark above has not been rerun as a schedule-matched NVIDIA comparison.
 - [#515](https://github.com/aleph-sim/aleph/issues/515) — MWPM/Union-Find behaviour for priors
   > 0.5 (negative edge weights) is inconsistent across the stack (`aleph.cudaq` rejects them for
   matching decoders, Rust `MatchingGraph::from_dem` accepts them, the Sparse Blossom retrace skips

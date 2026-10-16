@@ -375,6 +375,9 @@ only on LER at equal inputs.
    ABI the shim will call.
 2. **`iters_per_leg` / early-exit knob for the f64 `RelayBpDecoder`** (today only
    `FixedRelayBp::with_budget` has it), so the A/B can match the ASIC's 6 × 10 schedule exactly.
+   Implemented by #514: f64 explicit budgets and optional first-valid stopping now reach
+   native Python/CUDA-Q; [semantics and validation](../../qec/relay-bp-budget.md).
+   This enables the comparison; it does not by itself demonstrate matched decoder quality.
 3. **Python guard for > 64 observables** in `aleph-py` becomes redundant once §4.1 lands; #512
    is closed by this PR's Rust guard and the remaining item (docs note) is done here too.
 
