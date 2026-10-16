@@ -12,7 +12,7 @@
 //!   blocks, so each matrix cell `data[r*dim+c]` is a scalar broadcast and the
 //!   per-lane input `in[block][c]` drives a packed complex FMA across the 8
 //!   lanes. The 8 lanes' c-th amplitude is fetched with `_mm512_i64gather_pd`
-//!   (the 8 block bases are not contiguous — `expand_with_fixed` scatters free
+//!   (the 8 block bases are not contiguous — `expand_target_zeros` scatters free
 //!   bits) and written back with `_mm512_i64scatter_pd`.
 //!
 //! The public `apply_kq_aos` / `_soa` dispatchers pick the SIMD path at runtime
@@ -89,23 +89,36 @@ pub(crate) fn targets_offsets_fixed(qubits: &[u32], k: u8) -> (Vec<usize>, Vec<(
         .collect();
 
     // Preserve matrix operand order in offsets; only the fixed-bit walk needs sorting.
-    // fixed: each target qubit is cleared; expand_with_fixed requires ascending order.
+    // fixed: each target qubit is cleared; expand_target_zeros requires ascending order.
     let fixed: Vec<(u32, bool)> = q.iter().map(|&x| (x, false)).collect();
 
     (offsets, fixed)
 }
 
+/// Insert zero bits at the sorted target positions. Unlike the general fixed-bit
+/// walk this costs O(k), independent of the number of free bits in the state.
+/// `fixed` comes from `targets_offsets_fixed`: distinct ascending positions,
+/// all false, below the CPU backend's qubit cap.
+pub(crate) fn expand_target_zeros(mut counter: usize, fixed: &[(u32, bool)]) -> usize {
+    for &(position, value) in fixed {
+        debug_assert!(!value);
+        let low_mask = (1usize << position) - 1;
+        counter = (counter & low_mask) | ((counter & !low_mask) << 1);
+    }
+    counter
+}
+
 /// Scalar AoS implementation.
 ///
 /// Iterates over `outer = 2^(n-k)` outer counters. For each counter,
-/// `expand_with_fixed` gives a base index with all k target bits cleared.
+/// `expand_target_zeros` gives a base index with all k target bits cleared.
 /// The 2^k amplitudes in this block are at `base | offsets[m]` for each
 /// matrix index `m`. The matvec reads them all into a local buffer, then
 /// writes back the contracted result.
 ///
 /// # Safety (parallel-write contract)
 /// `par_blocks` hands each task a distinct `counter` value. The bit-positions
-/// used by `expand_with_fixed` are exactly the FREE bits (not in `fixed`).
+/// used by `expand_target_zeros` are exactly the FREE bits (not in `fixed`).
 /// Two distinct counters produce distinct `base` values that differ in at
 /// least one FREE bit position, so `base_a | offsets[m] ≠ base_b | offsets[n]`
 /// for any m, n — disjoint writes, no aliasing. The indexing-coverage test
@@ -125,10 +138,12 @@ pub(crate) fn apply_kq_scalar_aos(amps: &mut [Complex], qubits: &[u32], k: u8, d
         len,
         |c| c,
         move |counter| {
-            let base = crate::kernels::expand_with_fixed(counter, &fixed);
+            let base = expand_target_zeros(counter, &fixed);
 
             // Read the block of 2^k amplitudes into a local buffer.
-            let mut inb = vec![Complex::new(0.0, 0.0); dim];
+            // k <= 5: bounded per-block scratch avoids an allocation per outer block.
+            let mut scratch = [Complex::new(0.0, 0.0); 32];
+            let inb = &mut scratch[..dim];
             for (m, inb_m) in inb.iter_mut().enumerate() {
                 // SAFETY: base|offsets[m] is within [0, len), distinct across
                 // m (coverage test), and disjoint from other counters'
@@ -176,11 +191,11 @@ pub(crate) fn apply_kq_scalar_soa(
         len,
         |c| c,
         move |counter| {
-            let base = crate::kernels::expand_with_fixed(counter, &fixed);
+            let base = expand_target_zeros(counter, &fixed);
 
             // Read the block of 2^k SoA amplitudes into local buffers.
-            let mut inr = vec![0.0f64; dim];
-            let mut ini = vec![0.0f64; dim];
+            let mut inr = [0.0f64; 32];
+            let mut ini = [0.0f64; 32];
             for m in 0..dim {
                 let idx = base | offsets[m];
                 // SAFETY: idx is within [0, len), distinct across m, and
@@ -271,7 +286,7 @@ unsafe fn apply_kq_avx512_aos(amps: &mut [Complex], qubits: &[u32], k: u8, data:
         |g| g,
         move |g| {
             // SAFETY: par_blocks hands each task a distinct group index `g`.
-            // The 8 counters g*8..g*8+8 map (via expand_with_fixed) to 8
+            // The 8 counters g*8..g*8+8 map (via expand_target_zeros) to 8
             // distinct base indices; combined with offsets[m] they cover 8
             // disjoint 2^k-blocks, themselves disjoint from every other group's
             // blocks (the scalar kernel's coverage invariant, indexed in groups
@@ -283,14 +298,15 @@ unsafe fn apply_kq_avx512_aos(amps: &mut [Complex], qubits: &[u32], k: u8, data:
             // Base index (target bits cleared) for each of the 8 lanes.
             let mut bases = [0i64; AVX512_LANES];
             for (lane, b) in bases.iter_mut().enumerate() {
-                *b = crate::kernels::expand_with_fixed(counter0 + lane, &fixed) as i64;
+                *b = expand_target_zeros(counter0 + lane, &fixed) as i64;
             }
             let base_v = _mm512_loadu_si512(bases.as_ptr() as *const _);
 
             // Gather the 2^k inputs (one __m512d per matrix column), as
             // separate real/imag vectors. AoS: re at 2*idx, im at 2*idx+1.
-            let mut in_re = vec![_mm512_setzero_pd(); dim];
-            let mut in_im = vec![_mm512_setzero_pd(); dim];
+            // At most 32 columns (k <= 5), 4 KiB total stack scratch.
+            let mut in_re = [_mm512_setzero_pd(); 32];
+            let mut in_im = [_mm512_setzero_pd(); 32];
             for c in 0..dim {
                 // f64 index of amplitude (base | offsets[c]) is 2*(base|off).
                 let amp_idx = _mm512_or_si512(base_v, _mm512_set1_epi64(offsets[c] as i64));
@@ -382,12 +398,13 @@ unsafe fn apply_kq_avx512_soa(
 
             let mut bases = [0i64; AVX512_LANES];
             for (lane, b) in bases.iter_mut().enumerate() {
-                *b = crate::kernels::expand_with_fixed(counter0 + lane, &fixed) as i64;
+                *b = expand_target_zeros(counter0 + lane, &fixed) as i64;
             }
             let base_v = _mm512_loadu_si512(bases.as_ptr() as *const _);
 
-            let mut in_re = vec![_mm512_setzero_pd(); dim];
-            let mut in_im = vec![_mm512_setzero_pd(); dim];
+            // At most 32 columns (k <= 5), 4 KiB total stack scratch.
+            let mut in_re = [_mm512_setzero_pd(); 32];
+            let mut in_im = [_mm512_setzero_pd(); 32];
             for c in 0..dim {
                 let amp_idx = _mm512_or_si512(base_v, _mm512_set1_epi64(offsets[c] as i64));
                 // scale = 8 bytes per f64; indices are amplitude indices.
@@ -452,6 +469,35 @@ unsafe fn di_fma(
 mod tests {
     use super::*;
 
+    #[test]
+    fn target_bit_insertion_matches_general_walk() {
+        // Exhaust every supported target subset in nine bits and every free
+        // counter; include high physical positions separately.
+        for mask in 0usize..512 {
+            let k = mask.count_ones();
+            if !(2..=5).contains(&k) {
+                continue;
+            }
+            let fixed: Vec<_> = (0..9)
+                .filter(|q| mask & (1 << q) != 0)
+                .map(|q| (q, false))
+                .collect();
+            for counter in 0..(1 << (9 - k)) {
+                assert_eq!(
+                    expand_target_zeros(counter, &fixed),
+                    crate::kernels::expand_with_fixed(counter, &fixed)
+                );
+            }
+        }
+        let fixed = [(0, false), (13, false), (27, false)];
+        for counter in [0, 1, 7, (1 << 24) - 1, (1 << 25) - 1] {
+            assert_eq!(
+                expand_target_zeros(counter, &fixed),
+                crate::kernels::expand_with_fixed(counter, &fixed)
+            );
+        }
+    }
+
     /// Reference offset computation matching the spec's MSB-first convention.
     fn offsets_ref(q_sorted: &[u32], k: u8) -> Vec<usize> {
         let k = k as usize;
@@ -478,7 +524,7 @@ mod tests {
         let offs = offsets_ref(&q, k);
         let mut seen = vec![false; 1usize << n];
         for counter in 0..(1usize << (n as usize - k as usize)) {
-            let base = crate::kernels::expand_with_fixed(counter, &fixed);
+            let base = expand_target_zeros(counter, &fixed);
             for &o in &offs {
                 let idx = base | o;
                 assert!(!seen[idx], "dup idx {idx} (base={base} off={o})");
@@ -498,7 +544,7 @@ mod tests {
         let offs = offsets_ref(&q, k);
         let mut seen = vec![false; 1usize << n];
         for counter in 0..(1usize << (n as usize - k as usize)) {
-            let base = crate::kernels::expand_with_fixed(counter, &fixed);
+            let base = expand_target_zeros(counter, &fixed);
             for &o in &offs {
                 let idx = base | o;
                 assert!(!seen[idx], "dup idx {idx}");

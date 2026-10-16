@@ -53,7 +53,9 @@ pub struct ExactExpectationQuery {
 impl ExactExpectationQuery {
     /// Input is a unitary |0…0>-initialized circuit only. Dense workspace bound
     /// conservatively includes state (16N), probability validation (8N), the X/Y
-    /// expectation clone (16N), and 4 KiB of gate scratch. Cones run sequentially;
+    /// expectation clone (16N), 4 KiB fixed scratch, and SIMD matrix broadcasts
+    /// for uncontrolled Kq gates (128 * 4^k bytes, conservatively on every CPU).
+    /// Runtime/worker stacks and initialization are excluded. Cones run sequentially;
     /// the cap is not multiplied by the number of terms. Identity needs no state.
     pub fn compile(
         circuit: &Circuit,
@@ -65,10 +67,24 @@ impl ExactExpectationQuery {
         let mut workspace = Vec::new();
         for cone in plan.cones() {
             let active = cone.circuit().num_qubits();
+            let broadcasts = cone
+                .circuit()
+                .instructions()
+                .iter()
+                .filter_map(|inst| match inst {
+                    Instruction::Gate(g) if g.controls.is_empty() => match g.gate {
+                        Gate::UnitaryKq { k, .. } => Some(128usize * (1usize << (2 * k))),
+                        _ => None,
+                    },
+                    _ => None,
+                })
+                .max()
+                .unwrap_or(0);
             let bytes = 1usize
                 .checked_shl(active)
                 .and_then(|n| n.checked_mul(40))
-                .and_then(|n| n.checked_add(4096));
+                .and_then(|n| n.checked_add(4096))
+                .and_then(|n| n.checked_add(broadcasts));
             match bytes {
                 Some(bytes) if bytes <= budget_bytes && bytes <= isize::MAX as usize => {
                     workspace.push(bytes)
@@ -115,16 +131,19 @@ impl ExactExpectationQuery {
             for inst in cone.circuit().instructions() {
                 match inst {
                     Instruction::Gate(g) => {
-                        let needs_ordered_controls =
-                            !g.controls.is_empty() || !g.qubits.windows(2).all(|qs| qs[0] < qs[1]);
                         if let Gate::UnitaryKq { k, data } = &g.gate {
-                            if needs_ordered_controls {
-                                apply_query_kq(&mut state, &g.qubits, &g.controls, *k, data);
+                            if g.controls.is_empty() {
+                                // Private immutable plan validated width, matrix and
+                                // indices before allocation. Reuse the SIMD kernel
+                                // without a second public-backend validation snapshot.
+                                crate::kernels::unitary_kq::apply_kq_aos(
+                                    &mut state.amps,
+                                    &g.qubits,
+                                    *k,
+                                    data,
+                                );
                             } else {
-                                // Validated canonical FuseKq blocks retain the existing
-                                // SIMD kernel; only unsupported operand/control layouts
-                                // need the query-local exact fallback.
-                                backend.apply_gate(&mut state, g)?;
+                                apply_query_kq(&mut state, &g.qubits, &g.controls, *k, data);
                             }
                         } else {
                             backend.apply_gate(&mut state, g)?;
@@ -163,10 +182,8 @@ impl ExactExpectationQuery {
     }
 }
 
-// Query-local bounded matvec. The current full-state CPU fused kernel sorts
-// targets and ignores external controls (#573); this path preserves the core
-// MSB-first operand contract for arbitrary target order and controls, without
-// changing any existing full-state/sampling behavior. No unsafe or state clone.
+// Query-local bounded controlled matvec: public CPU Kq controls are unsupported.
+// Preserves MSB-first operand order with no unsafe code or state clone.
 fn apply_query_kq(state: &mut CpuState, qubits: &[u32], controls: &[u32], k: u8, data: &[Complex]) {
     let dim = 1usize << k;
     let target_mask = qubits.iter().fold(0usize, |m, q| m | 1usize << q);

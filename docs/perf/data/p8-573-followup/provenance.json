@@ -1,0 +1,28 @@
+{
+  "baseline_commit": "64b729f6d7f000d0640439bc4c80ae23cf9a1405",
+  "integration_commit": "d367ef54cceaa4eccf0a50f9ef5ffeed2ca434a9",
+  "candidate_patch": "bounded.patch",
+  "rustflags": null,
+  "features": "default for benchmarks; internal-bench for SIMD/oracle tests",
+  "candidate_sources": {
+    "crates/aleph-sv/src/validation.rs": "c838a60fa636f8494819c140e8e06a14598c0c4d779f0524b406a89df89bac7f",
+    "crates/aleph-sv/src/kernels/unitary_kq.rs": "25419e7af9a51340c3c9d801d2b63500280ddf9adbda8c672ef0ae52738bb80e",
+    "crates/aleph-sv/src/kernels/aos_f32.rs": "08e4275f597b3ec9b7924c9b294a544baf7c711a1a4b085613aff91dda8b9dd2",
+    "crates/aleph-sv/src/expectation_query.rs": "8dc682988655bcc64043d356388d6a4abda93ffd7b9f8d726b3b3370111e9cb7",
+    "crates/aleph-sv/tests/expectation_query.rs": "e4a45e379a27fcbc593ff18dd4e1a0b7ebdc0214e274e8d371b8bfe95af08b24",
+    "crates/aleph-sv/benches/fused_validation.rs": "93b0051bc76fea20cd246db1ed5e961abeaef8aa67a218bf758eae7630703e70",
+    "crates/aleph-sv/examples/trajectory_budget.rs": "1f77115acfb333a4036a7f1995eb0542f8ff4849cbad237f7a948a14319d9fbd"
+  },
+  "binaries": {
+    "bench-base": "ed3a392692cc2558204c8e2a5108c556f6ceee924a3709d9e0f4d0dc1b3a525f",
+    "bench-candidate": "656b8e66d32fbc4bb9a42118b4d89a4904503d2c075b6168b1c75908d843c30f"
+  },
+  "remote_root": "/tmp/aleph-573-followup",
+  "final_campaign": "bounded-campaign",
+  "accepted_runs": 84,
+  "rejected_attempts": 5,
+  "final_avx512_tests": 518,
+  "ignored_tests": [
+    "ghz_25_runs"
+  ]
+}

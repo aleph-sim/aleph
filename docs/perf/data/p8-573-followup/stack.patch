@@ -1,0 +1,66 @@
+diff --git a/crates/aleph-sv/src/kernels/aos_f32.rs b/crates/aleph-sv/src/kernels/aos_f32.rs
+index 5869cc4..d456455 100644
+--- a/crates/aleph-sv/src/kernels/aos_f32.rs
++++ b/crates/aleph-sv/src/kernels/aos_f32.rs
+@@ -453,8 +453,9 @@ pub(crate) unsafe fn apply_kq_avx512_f32(
+ 
+             // Gather the 2^k inputs (one __m512 per matrix column), as separate
+             // real/imag vectors. AoS f32: re at f32 element 2*idx, im at 2*idx+1.
+-            let mut in_re = vec![_mm512_setzero_ps(); dim];
+-            let mut in_im = vec![_mm512_setzero_ps(); dim];
++            // This SIMD path is bounded to k <= 4 (16 columns).
++            let mut in_re = [_mm512_setzero_ps(); 16];
++            let mut in_im = [_mm512_setzero_ps(); 16];
+             for c in 0..dim {
+                 // f32 element index of amplitude (base | offsets[c]) is 2*(base|off).
+                 let amp_idx = _mm512_or_si512(base_v, _mm512_set1_epi32(offsets[c] as i32));
+diff --git a/crates/aleph-sv/src/kernels/unitary_kq.rs b/crates/aleph-sv/src/kernels/unitary_kq.rs
+index 1ec5239..ca6d389 100644
+--- a/crates/aleph-sv/src/kernels/unitary_kq.rs
++++ b/crates/aleph-sv/src/kernels/unitary_kq.rs
+@@ -128,7 +128,9 @@ pub(crate) fn apply_kq_scalar_aos(amps: &mut [Complex], qubits: &[u32], k: u8, d
+             let base = crate::kernels::expand_with_fixed(counter, &fixed);
+ 
+             // Read the block of 2^k amplitudes into a local buffer.
+-            let mut inb = vec![Complex::new(0.0, 0.0); dim];
++            // k <= 5: bounded per-block scratch avoids an allocation per outer block.
++            let mut scratch = [Complex::new(0.0, 0.0); 32];
++            let inb = &mut scratch[..dim];
+             for (m, inb_m) in inb.iter_mut().enumerate() {
+                 // SAFETY: base|offsets[m] is within [0, len), distinct across
+                 // m (coverage test), and disjoint from other counters'
+@@ -179,8 +181,8 @@ pub(crate) fn apply_kq_scalar_soa(
+             let base = crate::kernels::expand_with_fixed(counter, &fixed);
+ 
+             // Read the block of 2^k SoA amplitudes into local buffers.
+-            let mut inr = vec![0.0f64; dim];
+-            let mut ini = vec![0.0f64; dim];
++            let mut inr = [0.0f64; 32];
++            let mut ini = [0.0f64; 32];
+             for m in 0..dim {
+                 let idx = base | offsets[m];
+                 // SAFETY: idx is within [0, len), distinct across m, and
+@@ -289,8 +291,9 @@ unsafe fn apply_kq_avx512_aos(amps: &mut [Complex], qubits: &[u32], k: u8, data:
+ 
+             // Gather the 2^k inputs (one __m512d per matrix column), as
+             // separate real/imag vectors. AoS: re at 2*idx, im at 2*idx+1.
+-            let mut in_re = vec![_mm512_setzero_pd(); dim];
+-            let mut in_im = vec![_mm512_setzero_pd(); dim];
++            // At most 32 columns (k <= 5), 4 KiB total stack scratch.
++            let mut in_re = [_mm512_setzero_pd(); 32];
++            let mut in_im = [_mm512_setzero_pd(); 32];
+             for c in 0..dim {
+                 // f64 index of amplitude (base | offsets[c]) is 2*(base|off).
+                 let amp_idx = _mm512_or_si512(base_v, _mm512_set1_epi64(offsets[c] as i64));
+@@ -386,8 +389,9 @@ unsafe fn apply_kq_avx512_soa(
+             }
+             let base_v = _mm512_loadu_si512(bases.as_ptr() as *const _);
+ 
+-            let mut in_re = vec![_mm512_setzero_pd(); dim];
+-            let mut in_im = vec![_mm512_setzero_pd(); dim];
++            // At most 32 columns (k <= 5), 4 KiB total stack scratch.
++            let mut in_re = [_mm512_setzero_pd(); 32];
++            let mut in_im = [_mm512_setzero_pd(); 32];
+             for c in 0..dim {
+                 let amp_idx = _mm512_or_si512(base_v, _mm512_set1_epi64(offsets[c] as i64));
+                 // scale = 8 bytes per f64; indices are amplitude indices.

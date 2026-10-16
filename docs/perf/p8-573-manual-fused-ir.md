@@ -26,7 +26,8 @@ not replace it. Full validation/copy is a separate cold path. Gram validation
 checks one Hermitian triangle and squared deviations, explicitly rejecting
 non-finite intermediates before taking a maximum.
 
-At most 16 KiB of matrix data is retained per backend at k=5. Replacement can
+Cache hits compare coefficient bits exactly; signed-zero changes conservatively
+miss and validate again. At most 16 KiB of matrix data is retained per backend at k=5. Replacement can
 briefly own two snapshots (32 KiB); this bound is included in the noisy driver's
 per-context plan. Ordinary circuits with no `UnitaryKq` allocate no snapshots.
 Noisy preflight shares the validator and preserves its prior error categories;
@@ -120,7 +121,7 @@ python3 scripts/python/bench_noisy_trajectories_guard.py /tmp/artifacts --suite 
 cargo run --locked --release -p aleph-sv --example trajectory_budget
 ```
 
-## Final results and limits
+## Initial results and limits (before the follow-up)
 
 Final outlining also prevents snapshot-checking from being inlined into backend
 dispatch. Correctness is complete, but this is a safety fix with costs, not a
@@ -176,4 +177,149 @@ Four optimized-driver oracle checks also passed. Workspace/all-target clippy,
 fmt/diff, and identical-binary guard negative verification pass. The existing
 ignored GHZ-25 resource smoke test remains ignored; no fused oracle was skipped.
 Manual correctness review has no unresolved blocker. Performance regressions
-above remain a merge consideration; this PR is kept draft for that reason.
+above caused the original draft hold. The follow-up below records the subsequent changes and remeasurement.
+
+
+## Follow-up: integrate main and reduce fused-kernel overhead
+
+Main `64b729f6d7f000d0640439bc4c80ae23cf9a1405` is merged into the branch;
+the Cargo conflict retains both `fused_validation` and `expectation_query` benches.
+The public validation contract, bounded owned snapshot, invalid-input rejection,
+operand ordering and unsupported-control behavior remain unchanged.
+
+A new profile of the integrated previous implementation on the same Xeon places
+most samples in the SoA AVX512 block closure, with the general fixed-bit index
+walk its largest named inlined component. This motivates two bounded changes:
+
+- Per-block input vectors become initialized fixed-size stack scratch: 512 bytes
+  for scalar FP64, 4 KiB for AVX512 FP64 and 2 KiB for AVX512 FP32. Only the active
+  prefix is used; k remains bounded to 2–5 (FP32 SIMD to 2–4). Every input is read
+  before writes, preserving the existing gather/scatter and parallel disjointness
+  proof. No new unsafe code is needed.
+- Kq's target bits are always zero in the block base. Insert one zero bit at each
+  sorted target position using a mask/shift instead of walking each free bit. This
+  is O(k), independent of state width, and does not change matrix operand order.
+  Exhaustive tests compare against the general walk for all supported target
+  subsets/counters in nine bits and separately test high target positions.
+
+The public cache still compares every coefficient and width on every hit. There
+is no unchecked optimizer flag, pointer/hash trust or route for manually forged
+IR to bypass validation. First-use matrix validation is intentional new work.
+
+The main integration also brings #545's immutable expectation query. Uncontrolled
+Kq gates now enter the SIMD-capable kernel directly from that private validated
+plan, avoiding a redundant public-backend snapshot without trusting mutable public
+IR. Controlled Kq stays on its bounded query-local path. Preflight includes the
+largest uncontrolled Kq SIMD broadcast buffer (`128 * 4^k` bytes) in addition to
+`40 * 2^active + 4096`; it conservatively applies without AVX512 too. Runtime and
+worker stacks remain outside the dense heap-buffer cap. A new maximum-width
+analytic H-tensor-five query checks execution/reuse at the exact expanded budget
+and rejection one byte below it. The #545 local18/global16 measurements contain no
+Kq blocks, so their bounds and reported timings retain their meaning.
+
+`trajectory_budget --fused-kernels` checks warmed public apply allocation growth
+between n=9 and n=18 for all three layouts in a one-thread pool. Bounded setup
+allocations are allowed, but fewer than 64 calls are required; the old per-block
+scratch allocation behavior fails that bound. The default noisy-budget evaluator
+is also retained and rerun. Matrix snapshots and broadcast buffers remain bounded
+per apply; these are not claims of zero allocation or process RSS.
+
+
+After index/scratch changes, the remaining small-state k=5 profile includes
+coefficient equality in `UnitaryKqCache::validate`. Its hit check now OR-reduces
+exact XORs of every real/imaginary coefficient's `to_bits()` value. This allows
+integer SIMD instead of a floating-equality branch per coefficient, without
+unsafe casts, a hash or pointer trust. Width/length/controls are still checked;
+any bit change revalidates. In particular +0/-0 changes conservatively miss the
+cache. No NaN/Inf can be admitted by a hit because only successfully validated
+finite matrices enter the owned snapshot.
+
+The FP32 scalar fallback dispatches its supported widths to fixed-size input
+arrays, exposing each matrix dimension/index bound to the compiler. This keeps
+k=5 heap-free while avoiding the runtime-width scratch experiment's measured
+~8% n=20 slowdown. All intermediate accepted campaigns remain alongside final
+receipts; the complete final matrix, not the favorable probe, determines the
+reported result.
+
+
+A complete bit-comparison campaign still exposed FP32/k=5 sensitivity, so it is
+not used as the final result. The final FP32 specialization additionally converts
+the already shape-checked matrix slice to a reference to its exact-size array
+once per apply. Matrix shape remains checked; the typed bound lets LLVM remove
+coefficient-index checks from every block matvec. No arithmetic order, precision,
+unsafe access or public input-validation bypass is introduced. Targeted probes
+and the subsequent full matrix are retained separately.
+
+
+### Final follow-up measurements (2026-10-16)
+
+Same Xeon Silver 4114, CPU 3 / SMT sibling 23, monitor CPU39, Rust 1.96.0;
+`RAYON_NUM_THREADS=1`, default bench profile/features, no extra RUSTFLAGS.
+Baseline is current main `64b729f`, with the identical harness copied in.
+Each source used its own fresh target; the baseline lacks the validation-cache
+symbol, the candidate contains it, and ELF/source fingerprints are retained.
+All seven measured source fingerprints match the final checkout, including the
+matrix-bound specialization and bitwise cache check.
+
+The **complete final 21-case campaign** has 84 accepted per-case A/B/B/A runs.
+The shared-host guard rejects >2% preflight busy time or >=3% sampled external
+CPU overlap on the selected physical core; all attempts and accepted samples are
+retained. No CI/services were stopped. This does not isolate shared caches,
+frequency or memory bandwidth, so differences below 5% get no speedup claim.
+The numbers below average each arm's two Criterion median estimates; they are
+public `apply_gate` timings, not complete CLI/circuit throughput.
+
+| Case | Main us | Final us | Main / final |
+| --- | ---: | ---: | ---: |
+| aos/n10_k2 | 15.741 | 5.430 | 2.899x |
+| aos/n10_k3 | 12.309 | 8.986 | 1.370x |
+| aos/n10_k5 | 28.388 | 27.678 | 1.026x |
+| aos/n20_k2 | 27503.668 | 6023.609 | 4.566x |
+| aos/n20_k3 | 17705.783 | 8225.127 | 2.153x |
+| aos/n20_k5 | 22794.262 | 19200.474 | 1.187x |
+| cold_aos/n10_k5 | 28.536 | 79.397 | 0.359x |
+| cold_fp32/n10_k5 | 60.427 | 86.558 | 0.698x |
+| cold_soa/n10_k5 | 28.112 | 78.618 | 0.358x |
+| fp32/n10_k2 | 7.149 | 3.037 | 2.354x |
+| fp32/n10_k3 | 9.347 | 5.674 | 1.647x |
+| fp32/n10_k5 | 58.734 | 58.940 | 0.996x |
+| fp32/n20_k2 | 11460.675 | 2928.564 | 3.913x |
+| fp32/n20_k3 | 12007.613 | 5113.775 | 2.348x |
+| fp32/n20_k5 | 60140.993 | 58964.704 | 1.020x |
+| soa/n10_k2 | 13.755 | 5.519 | 2.492x |
+| soa/n10_k3 | 11.223 | 8.318 | 1.349x |
+| soa/n10_k5 | 28.511 | 29.106 | 0.980x |
+| soa/n20_k2 | 20841.530 | 5670.882 | 3.675x |
+| soa/n20_k3 | 14333.812 | 9123.227 | 1.571x |
+| soa/n20_k5 | 21416.938 | 20704.064 | 1.034x |
+
+The original large-state SoA regressions are removed: n=20/k=2 is
+20.842 -> 5.671 ms (3.68x), k=3 is 14.334 -> 9.123 ms (1.57x).
+AoS n=20/k=2,3 improves 4.57x / 2.15x; FP32 improves 3.91x / 2.35x.
+Warmed k=5 cases stay near baseline (small SoA is 2.1% slower, small FP32 0.4%
+slower), with a larger AoS n=20 improvement; no universal speedup is claimed.
+First-use k=5 remains materially more expensive: AoS 28.536 -> 79.397 us,
+SoA 28.112 -> 78.618 us, FP32 60.427 -> 86.558 us. That new validation/copy
+cost, including repeated misses when switching matrices, remains a real tradeoff.
+
+The final warmed allocation evaluator reports 5 heap calls for AoS/SoA and 6
+for FP32 at **both n=9 and n=18**, width two, one thread. The same evaluator on
+main fails its bounded-allocation assertion with 16,389 calls for AoS n=18.
+SIMD broadcast/setup and FP32 conversion allocations remain per apply; no zero
+allocation or RSS reduction is claimed. The final noisy fused-cache budget
+probe measures 156,056 additional requested heap bytes, below its 192,968-byte
+plan. Stack scratch is accounted separately from requested heap.
+
+Final validation: **518 AVX512 release SV tests pass**, including nine manual
+matrix/dense-oracle/generated-fusion tests, five FP32 scalar/SIMD comparisons,
+and 14 expectation-query tests; only the pre-existing GHZ-25 resource smoke
+remains ignored. The final focused 28-test subset also passes. Local SV regression
+checks, four optimized-driver oracles, final manual/query tests, workspace/all-target
+Clippy, fmt and diff checks pass. Manual review covers cache mutation/bit equality,
+fixed-width bounds, scatter disjointness, query ownership and broadcast budgeting;
+there is no remaining blocking correctness finding. PR CI remains the merge gate.
+
+Raw evidence and reproduction patches: `data/p8-573-followup/README.md`.
+Intermediate complete matrices (including the unfavorable FP32 experiments),
+probes, profiler/assembly output, all guard attempts and final samples are retained.
+The PR can return to review with the first-use cost explicitly visible.

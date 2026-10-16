@@ -1,0 +1,471 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 129  of event 'cpu/cycles/P'
+# Event count (approx.): 1797520724
+#
+# Overhead  Command          Shared Object         Symbol                                                             
+# ........  ...............  ....................  ...................................................................
+#
+    56.01%  bench-candidate  bench-candidate       [.] aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{{closure}}
+            |          
+            |--16.84%--{closure#1} (inlined)
+            |          |          
+            |           --16.04%--{closure#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}> (inlined)
+            |                     call_mut<(usize), aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+            |                     {closure#0}<usize, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+            |                     fold<core::ops::range::Range<usize>, (), core::iter::traits::iterator::Iterator::for_each::call::{closure_env#0}<usize, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+            |                     for_each<core::ops::range::Range<usize>, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+            |                     consume_iter<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>, usize, core::ops::range::Range<usize>> (inlined)
+            |                     fold_with<rayon::range::IterProducer<usize>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+            |                     fold_with<rayon::range::IterProducer<usize>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+            |                     helper<rayon::iter::len::MinLenProducer<rayon::range::IterProducer<usize>>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+            |          
+            |--8.78%--spec_next<usize> (inlined)
+            |          next<usize> (inlined)
+            |          {closure#1} (inlined)
+            |          {closure#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}> (inlined)
+            |          call_mut<(usize), aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+            |          {closure#0}<usize, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+            |          fold<core::ops::range::Range<usize>, (), core::iter::traits::iterator::Iterator::for_each::call::{closure_env#0}<usize, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+            |          for_each<core::ops::range::Range<usize>, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+            |          consume_iter<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>, usize, core::ops::range::Range<usize>> (inlined)
+            |          fold_with<rayon::range::IterProducer<usize>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+            |          fold_with<rayon::range::IterProducer<usize>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+            |          helper<rayon::iter::len::MinLenProducer<rayon::range::IterProducer<usize>>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+            |          
+            |--7.21%--expand_target_zeros (inlined)
+            |          {closure#1} (inlined)
+            |          {closure#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}> (inlined)
+            |          call_mut<(usize), aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+            |          {closure#0}<usize, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+            |          fold<core::ops::range::Range<usize>, (), core::iter::traits::iterator::Iterator::for_each::call::{closure_env#0}<usize, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+            |          for_each<core::ops::range::Range<usize>, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+            |          consume_iter<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>, usize, core::ops::range::Range<usize>> (inlined)
+            |          fold_with<rayon::range::IterProducer<usize>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+            |          fold_with<rayon::range::IterProducer<usize>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+            |          helper<rayon::iter::len::MinLenProducer<rayon::range::IterProducer<usize>>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+            |          
+            |--4.79%--index<core::core_arch::x86::__m512d> (inlined)
+            |          index<core::core_arch::x86::__m512d, usize> (inlined)
+            |          index<core::core_arch::x86::__m512d, usize, alloc::alloc::Global> (inlined)
+            |          {closure#1} (inlined)
+            |          {closure#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}> (inlined)
+            |          call_mut<(usize), aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+            |          {closure#0}<usize, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+            |          fold<core::ops::range::Range<usize>, (), core::iter::traits::iterator::Iterator::for_each::call::{closure_env#0}<usize, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+            |          for_each<core::ops::range::Range<usize>, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+            |          consume_iter<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>, usize, core::ops::range::Range<usize>> (inlined)
+            |          fold_with<rayon::range::IterProducer<usize>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+            |          fold_with<rayon::range::IterProducer<usize>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+            |          helper<rayon::iter::len::MinLenProducer<rayon::range::IterProducer<usize>>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+            |          
+            |--4.77%--next<(u32, bool)> (inlined)
+            |          expand_target_zeros (inlined)
+            |          {closure#1} (inlined)
+            |          {closure#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}> (inlined)
+            |          call_mut<(usize), aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+            |          {closure#0}<usize, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+            |          fold<core::ops::range::Range<usize>, (), core::iter::traits::iterator::Iterator::for_each::call::{closure_env#0}<usize, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+            |          for_each<core::ops::range::Range<usize>, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+            |          consume_iter<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>, usize, core::ops::range::Range<usize>> (inlined)
+            |          fold_with<rayon::range::IterProducer<usize>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+            |          fold_with<rayon::range::IterProducer<usize>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+            |          helper<rayon::iter::len::MinLenProducer<rayon::range::IterProducer<usize>>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+            |          
+            |--3.97%--_mm512_i64scatter_pd<8> (inlined)
+            |          {closure#1} (inlined)
+            |          {closure#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}> (inlined)
+            |          call_mut<(usize), aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+            |          {closure#0}<usize, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+            |          fold<core::ops::range::Range<usize>, (), core::iter::traits::iterator::Iterator::for_each::call::{closure_env#0}<usize, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+            |          for_each<core::ops::range::Range<usize>, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+            |          consume_iter<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>, usize, core::ops::range::Range<usize>> (inlined)
+            |          fold_with<rayon::range::IterProducer<usize>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+            |          fold_with<rayon::range::IterProducer<usize>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+            |          helper<rayon::iter::len::MinLenProducer<rayon::range::IterProducer<usize>>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+            |          
+            |--3.22%--_mm512_fmadd_pd (inlined)
+            |          di_fma (inlined)
+            |          {closure#1} (inlined)
+            |          {closure#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}> (inlined)
+            |          call_mut<(usize), aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+            |          {closure#0}<usize, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+            |          fold<core::ops::range::Range<usize>, (), core::iter::traits::iterator::Iterator::for_each::call::{closure_env#0}<usize, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+            |          for_each<core::ops::range::Range<usize>, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+            |          consume_iter<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>, usize, core::ops::range::Range<usize>> (inlined)
+            |          fold_with<rayon::range::IterProducer<usize>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+            |          fold_with<rayon::range::IterProducer<usize>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+            |          helper<rayon::iter::len::MinLenProducer<rayon::range::IterProducer<usize>>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+            |          
+            |--2.41%--_mm512_i64gather_pd<8> (inlined)
+            |          {closure#1} (inlined)
+            |          {closure#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}> (inlined)
+            |          call_mut<(usize), aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+            |          {closure#0}<usize, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+            |          fold<core::ops::range::Range<usize>, (), core::iter::traits::iterator::Iterator::for_each::call::{closure_env#0}<usize, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+            |          for_each<core::ops::range::Range<usize>, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+            |          consume_iter<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>, usize, core::ops::range::Range<usize>> (inlined)
+            |          fold_with<rayon::range::IterProducer<usize>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+            |          fold_with<rayon::range::IterProducer<usize>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+            |          helper<rayon::iter::len::MinLenProducer<rayon::range::IterProducer<usize>>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+            |          
+            |--2.40%--lt (inlined)
+            |          spec_next<usize> (inlined)
+            |          next<usize> (inlined)
+            |          {closure#1} (inlined)
+            |          {closure#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}> (inlined)
+            |          call_mut<(usize), aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+            |          {closure#0}<usize, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+            |          fold<core::ops::range::Range<usize>, (), core::iter::traits::iterator::Iterator::for_each::call::{closure_env#0}<usize, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+            |          for_each<core::ops::range::Range<usize>, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+            |          consume_iter<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>, usize, core::ops::range::Range<usize>> (inlined)
+            |          fold_with<rayon::range::IterProducer<usize>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+            |          fold_with<rayon::range::IterProducer<usize>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+            |          helper<rayon::iter::len::MinLenProducer<rayon::range::IterProducer<usize>>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+            |          
+            |--0.81%--eq<(u32, bool)> (inlined)
+            |          next<(u32, bool)> (inlined)
+            |          expand_target_zeros (inlined)
+            |          {closure#1} (inlined)
+            |          {closure#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}> (inlined)
+            |          call_mut<(usize), aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+            |          {closure#0}<usize, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+            |          fold<core::ops::range::Range<usize>, (), core::iter::traits::iterator::Iterator::for_each::call::{closure_env#0}<usize, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+            |          for_each<core::ops::range::Range<usize>, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+            |          consume_iter<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>, usize, core::ops::range::Range<usize>> (inlined)
+            |          fold_with<rayon::range::IterProducer<usize>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+            |          fold_with<rayon::range::IterProducer<usize>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+            |          helper<rayon::iter::len::MinLenProducer<rayon::range::IterProducer<usize>>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+            |          
+             --0.80%--_mm512_fnmadd_pd (inlined)
+                       di_fma (inlined)
+                       {closure#1} (inlined)
+                       {closure#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}> (inlined)
+                       call_mut<(usize), aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+                       {closure#0}<usize, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+                       fold<core::ops::range::Range<usize>, (), core::iter::traits::iterator::Iterator::for_each::call::{closure_env#0}<usize, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+                       for_each<core::ops::range::Range<usize>, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+                       consume_iter<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>, usize, core::ops::range::Range<usize>> (inlined)
+                       fold_with<rayon::range::IterProducer<usize>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+                       fold_with<rayon::range::IterProducer<usize>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+                       helper<rayon::iter::len::MinLenProducer<rayon::range::IterProducer<usize>>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+
+     4.85%  bench-candidate  bench-candidate       [.] core::slice::sort::shared::smallsort::insertion_sort_shift_left
+            |          
+            |--2.44%--insert_tail<f64, core::slice::{impl#0}::sort_unstable_by::{closure_env#0}<f64, fn(&f64, &f64) -> core::cmp::Ordering>> (inlined)
+            |          insertion_sort_shift_left<f64, core::slice::{impl#0}::sort_unstable_by::{closure_env#0}<f64, fn(&f64, &f64) -> core::cmp::Ordering>> (inlined)
+            |          
+            |--0.83%--eq (inlined)
+            |          {closure#0}<f64, fn(&f64, &f64) -> core::cmp::Ordering> (inlined)
+            |          insert_tail<f64, core::slice::{impl#0}::sort_unstable_by::{closure_env#0}<f64, fn(&f64, &f64) -> core::cmp::Ordering>> (inlined)
+            |          insertion_sort_shift_left<f64, core::slice::{impl#0}::sort_unstable_by::{closure_env#0}<f64, fn(&f64, &f64) -> core::cmp::Ordering>> (inlined)
+            |          
+            |--0.80%--add<f64> (inlined)
+            |          insertion_sort_shift_left<f64, core::slice::{impl#0}::sort_unstable_by::{closure_env#0}<f64, fn(&f64, &f64) -> core::cmp::Ordering>> (inlined)
+            |          
+             --0.79%--copy_nonoverlapping<f64> (inlined)
+                       drop<f64> (inlined)
+                       drop_in_place<core::slice::sort::shared::smallsort::CopyOnDrop<f64>> (inlined)
+                       insert_tail<f64, core::slice::{impl#0}::sort_unstable_by::{closure_env#0}<f64, fn(&f64, &f64) -> core::cmp::Ordering>> (inlined)
+                       insertion_sort_shift_left<f64, core::slice::{impl#0}::sort_unstable_by::{closure_env#0}<f64, fn(&f64, &f64) -> core::cmp::Ordering>> (inlined)
+
+     4.81%  bench-candidate  libc.so.6             [.] 0x00000000001a84cd
+            |
+            ---0x71cec2fa84d4
+               {closure#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}> (inlined)
+               call_mut<(usize), aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+               {closure#0}<usize, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+               fold<core::ops::range::Range<usize>, (), core::iter::traits::iterator::Iterator::for_each::call::{closure_env#0}<usize, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+               for_each<core::ops::range::Range<usize>, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+               consume_iter<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>, usize, core::ops::range::Range<usize>> (inlined)
+               fold_with<rayon::range::IterProducer<usize>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+               fold_with<rayon::range::IterProducer<usize>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+               helper<rayon::iter::len::MinLenProducer<rayon::range::IterProducer<usize>>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+
+     4.79%  bench-candidate  libc.so.6             [.] 0x00000000001a84d4
+            |
+            ---0x71cec2fa84db
+               {closure#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}> (inlined)
+               call_mut<(usize), aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+               {closure#0}<usize, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+               fold<core::ops::range::Range<usize>, (), core::iter::traits::iterator::Iterator::for_each::call::{closure_env#0}<usize, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+               for_each<core::ops::range::Range<usize>, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+               consume_iter<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>, usize, core::ops::range::Range<usize>> (inlined)
+               fold_with<rayon::range::IterProducer<usize>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+               fold_with<rayon::range::IterProducer<usize>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+               helper<rayon::iter::len::MinLenProducer<rayon::range::IterProducer<usize>>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+
+     3.98%  bench-candidate  libc.so.6             [.] 0x00000000001a84c0
+            |
+            ---0x71cec2fa84c6
+               {closure#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}> (inlined)
+               call_mut<(usize), aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+               {closure#0}<usize, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+               fold<core::ops::range::Range<usize>, (), core::iter::traits::iterator::Iterator::for_each::call::{closure_env#0}<usize, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+               for_each<core::ops::range::Range<usize>, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+               consume_iter<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>, usize, core::ops::range::Range<usize>> (inlined)
+               fold_with<rayon::range::IterProducer<usize>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+               fold_with<rayon::range::IterProducer<usize>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+               helper<rayon::iter::len::MinLenProducer<rayon::range::IterProducer<usize>>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+
+     2.46%  bench-candidate  bench-candidate       [.] criterion::analysis::compare::t_test
+            |          
+            |--0.82%--add (inlined)
+            |          call_mut<fn(f64, f64) -> f64, (f64, f64)> (inlined)
+            |          {closure#0}<&f64, f64, f64, fn(&f64) -> f64, fn(f64, f64) -> f64> (inlined)
+            |          fold<f64, f64, core::iter::adapters::map::map_fold::{closure_env#0}<&f64, f64, f64, fn(&f64) -> f64, fn(f64, f64) -> f64>> (inlined)
+            |          fold<f64, core::slice::iter::Iter<f64>, fn(&f64) -> f64, f64, fn(f64, f64) -> f64> (inlined)
+            |          fold<core::slice::iter::Iter<f64>, f64, f64, fn(f64, f64) -> f64> (inlined)
+            |          sum<f64> (inlined)
+            |          sum<f64> (inlined)
+            |          mean<f64> (inlined)
+            |          t<f64> (inlined)
+            |          {closure#1} (inlined)
+            |          {closure#0}<f64, (f64), criterion::analysis::compare::t_test::{closure_env#1}> (inlined)
+            |          {closure#0}<usize, (f64), (alloc::vec::Vec<f64, alloc::alloc::Global>), criterion::stats::univariate::mixed::bootstrap::{closure_env#0}<f64, (f64), criterion::analysis::compare::t_test::{closure_env#1}>, criterion::stats::univariate::mixed::bootstrap::{closure_env#1}<f64, (f64), criterion::analysis::compare::t_test::{closure_env#1}>> (inlined)
+            |          fold<core::ops::range::Range<usize>, (alloc::vec::Vec<f64, alloc::alloc::Global>), core::iter::adapters::map::map_fold::{closure_env#0}<usize, (f64), (alloc::vec::Vec<f64, alloc::alloc::Global>), criterion::stats::univariate::mixed::bootstrap::{closure_env#0}<f64, (f64), criterion::analysis::compare::t_test::{closure_env#1}>, criterion::stats::univariate::mixed::bootstrap::{closure_env#1}<f64, (f64), criterion::analysis::compare::t_test::{closure_env#1}>>> (inlined)
+            |          fold<(f64), core::ops::range::Range<usize>, criterion::stats::univariate::mixed::bootstrap::{closure_env#0}<f64, (f64), criterion::analysis::compare::t_test::{closure_env#1}>, (alloc::vec::Vec<f64, alloc::alloc::Global>), criterion::stats::univariate::mixed::bootstrap::{closure_env#1}<f64, (f64), criterion::analysis::compare::t_test::{closure_env#1}>> (inlined)
+            |          bootstrap<f64, (f64), criterion::analysis::compare::t_test::{closure_env#1}> (inlined)
+            |          t_test (inlined)
+            |          
+            |--0.82%--unchecked_add (inlined)
+            |          fold<f64, f64, core::iter::adapters::map::map_fold::{closure_env#0}<&f64, f64, f64, fn(&f64) -> f64, fn(f64, f64) -> f64>> (inlined)
+            |          fold<f64, core::slice::iter::Iter<f64>, fn(&f64) -> f64, f64, fn(f64, f64) -> f64> (inlined)
+            |          fold<core::slice::iter::Iter<f64>, f64, f64, fn(f64, f64) -> f64> (inlined)
+            |          sum<f64> (inlined)
+            |          sum<f64> (inlined)
+            |          mean<f64> (inlined)
+            |          t<f64> (inlined)
+            |          {closure#1} (inlined)
+            |          {closure#0}<f64, (f64), criterion::analysis::compare::t_test::{closure_env#1}> (inlined)
+            |          {closure#0}<usize, (f64), (alloc::vec::Vec<f64, alloc::alloc::Global>), criterion::stats::univariate::mixed::bootstrap::{closure_env#0}<f64, (f64), criterion::analysis::compare::t_test::{closure_env#1}>, criterion::stats::univariate::mixed::bootstrap::{closure_env#1}<f64, (f64), criterion::analysis::compare::t_test::{closure_env#1}>> (inlined)
+            |          fold<core::ops::range::Range<usize>, (alloc::vec::Vec<f64, alloc::alloc::Global>), core::iter::adapters::map::map_fold::{closure_env#0}<usize, (f64), (alloc::vec::Vec<f64, alloc::alloc::Global>), criterion::stats::univariate::mixed::bootstrap::{closure_env#0}<f64, (f64), criterion::analysis::compare::t_test::{closure_env#1}>, criterion::stats::univariate::mixed::bootstrap::{closure_env#1}<f64, (f64), criterion::analysis::compare::t_test::{closure_env#1}>>> (inlined)
+            |          fold<(f64), core::ops::range::Range<usize>, criterion::stats::univariate::mixed::bootstrap::{closure_env#0}<f64, (f64), criterion::analysis::compare::t_test::{closure_env#1}>, (alloc::vec::Vec<f64, alloc::alloc::Global>), criterion::stats::univariate::mixed::bootstrap::{closure_env#1}<f64, (f64), criterion::analysis::compare::t_test::{closure_env#1}>> (inlined)
+            |          bootstrap<f64, (f64), criterion::analysis::compare::t_test::{closure_env#1}> (inlined)
+            |          t_test (inlined)
+            |          
+             --0.81%--fold<f64, f64, core::iter::adapters::map::map_fold::{closure_env#0}<&f64, f64, f64, criterion::stats::univariate::sample::{impl#0}::var::{closure_env#1}<f64>, fn(f64, f64) -> f64>> (inlined)
+                       fold<f64, core::slice::iter::Iter<f64>, criterion::stats::univariate::sample::{impl#0}::var::{closure_env#1}<f64>, f64, fn(f64, f64) -> f64> (inlined)
+                       var<f64> (inlined)
+                       t<f64> (inlined)
+                       {closure#1} (inlined)
+                       {closure#0}<f64, (f64), criterion::analysis::compare::t_test::{closure_env#1}> (inlined)
+                       {closure#0}<usize, (f64), (alloc::vec::Vec<f64, alloc::alloc::Global>), criterion::stats::univariate::mixed::bootstrap::{closure_env#0}<f64, (f64), criterion::analysis::compare::t_test::{closure_env#1}>, criterion::stats::univariate::mixed::bootstrap::{closure_env#1}<f64, (f64), criterion::analysis::compare::t_test::{closure_env#1}>> (inlined)
+                       fold<core::ops::range::Range<usize>, (alloc::vec::Vec<f64, alloc::alloc::Global>), core::iter::adapters::map::map_fold::{closure_env#0}<usize, (f64), (alloc::vec::Vec<f64, alloc::alloc::Global>), criterion::stats::univariate::mixed::bootstrap::{closure_env#0}<f64, (f64), criterion::analysis::compare::t_test::{closure_env#1}>, criterion::stats::univariate::mixed::bootstrap::{closure_env#1}<f64, (f64), criterion::analysis::compare::t_test::{closure_env#1}>>> (inlined)
+                       fold<(f64), core::ops::range::Range<usize>, criterion::stats::univariate::mixed::bootstrap::{closure_env#0}<f64, (f64), criterion::analysis::compare::t_test::{closure_env#1}>, (alloc::vec::Vec<f64, alloc::alloc::Global>), criterion::stats::univariate::mixed::bootstrap::{closure_env#1}<f64, (f64), criterion::analysis::compare::t_test::{closure_env#1}>> (inlined)
+                       bootstrap<f64, (f64), criterion::analysis::compare::t_test::{closure_env#1}> (inlined)
+                       t_test (inlined)
+
+     2.45%  bench-candidate  libc.so.6             [.] 0x00000000001a8513
+            |          
+            |--1.60%--asm_sysvec_apic_timer_interrupt
+            |          |          
+            |          |--0.82%--0x71cec2fa8513
+            |          |          
+            |           --0.77%--allocate (inlined)
+            |          
+             --0.86%--asm_exc_page_fault
+                       0x71cec2fa8513
+
+     2.41%  bench-candidate  libc.so.6             [.] 0x00000000001a84ff
+            |
+            ---{closure#1} (inlined)
+               {closure#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}> (inlined)
+               call_mut<(usize), aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+               {closure#0}<usize, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+               fold<core::ops::range::Range<usize>, (), core::iter::traits::iterator::Iterator::for_each::call::{closure_env#0}<usize, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+               for_each<core::ops::range::Range<usize>, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+               consume_iter<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>, usize, core::ops::range::Range<usize>> (inlined)
+               fold_with<rayon::range::IterProducer<usize>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+               fold_with<rayon::range::IterProducer<usize>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+               helper<rayon::iter::len::MinLenProducer<rayon::range::IterProducer<usize>>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+
+     2.41%  bench-candidate  bench-candidate       [.] criterion::analysis::estimates::stats
+            |          
+            |--0.80%--mul (inlined)
+            |          at_unchecked<f64> (inlined)
+            |          at<f64> (inlined)
+            |          median<f64> (inlined)
+            |          stats (inlined)
+            |          
+            |--0.80%--all<f64, criterion::stats::univariate::sample::{impl#0}::new::{closure_env#0}<f64>> (inlined)
+            |          new<f64> (inlined)
+            |          median_abs_dev<f64> (inlined)
+            |          stats (inlined)
+            |          
+             --0.80%--cast (inlined)
+                       usize<f64> (inlined)
+                       at_unchecked<f64> (inlined)
+                       at<f64> (inlined)
+                       median<f64> (inlined)
+                       median_abs_dev<f64> (inlined)
+                       stats (inlined)
+
+     2.39%  bench-candidate  libc.so.6             [.] 0x00000000001a84c6
+            |
+            ---0x71cec2fa84cd
+               {closure#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}> (inlined)
+               call_mut<(usize), aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+               {closure#0}<usize, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+               fold<core::ops::range::Range<usize>, (), core::iter::traits::iterator::Iterator::for_each::call::{closure_env#0}<usize, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+               for_each<core::ops::range::Range<usize>, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+               consume_iter<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>, usize, core::ops::range::Range<usize>> (inlined)
+               fold_with<rayon::range::IterProducer<usize>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+               fold_with<rayon::range::IterProducer<usize>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+               helper<rayon::iter::len::MinLenProducer<rayon::range::IterProducer<usize>>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+
+     1.66%  bench-candidate  bench-candidate       [.] criterion::analysis::compare::estimates::stats
+            |
+            ---stats (inlined)
+
+     1.61%  bench-candidate  bench-candidate       [.] criterion::analysis::regression
+            |          
+            |--0.81%--lt (inlined)
+            |          spec_next<usize> (inlined)
+            |          next<usize> (inlined)
+            |          fold<core::slice::iter::Iter<f64>, core::slice::iter::Iter<f64>, f64, criterion::stats::dot::{closure_env#0}<f64>> (inlined)
+            |          fold<core::slice::iter::Iter<f64>, core::slice::iter::Iter<f64>, f64, criterion::stats::dot::{closure_env#0}<f64>> (inlined)
+            |          dot<f64> (inlined)
+            |          fit<f64> (inlined)
+            |          {closure#0} (inlined)
+            |          {closure#0}<f64, f64, (f64), criterion::analysis::regression::{closure_env#0}> (inlined)
+            |          {closure#0}<usize, (f64), (alloc::vec::Vec<f64, alloc::alloc::Global>), criterion::stats::bivariate::{impl#3}::bootstrap::{closure_env#0}<f64, f64, (f64), criterion::analysis::regression::{closure_env#0}>, criterion::stats::bivariate::{impl#3}::bootstrap::{closure_env#1}<f64, f64, (f64), criterion::analysis::regression::{closure_env#0}>> (inlined)
+            |          fold<core::ops::range::Range<usize>, (alloc::vec::Vec<f64, alloc::alloc::Global>), core::iter::adapters::map::map_fold::{closure_env#0}<usize, (f64), (alloc::vec::Vec<f64, alloc::alloc::Global>), criterion::stats::bivariate::{impl#3}::bootstrap::{closure_env#0}<f64, f64, (f64), criterion::analysis::regression::{closure_env#0}>, criterion::stats::bivariate::{impl#3}::bootstrap::{closure_env#1}<f64, f64, (f64), criterion::analysis::regression::{closure_env#0}>>> (inlined)
+            |          fold<(f64), core::ops::range::Range<usize>, criterion::stats::bivariate::{impl#3}::bootstrap::{closure_env#0}<f64, f64, (f64), criterion::analysis::regression::{closure_env#0}>, (alloc::vec::Vec<f64, alloc::alloc::Global>), criterion::stats::bivariate::{impl#3}::bootstrap::{closure_env#1}<f64, f64, (f64), criterion::analysis::regression::{closure_env#0}>> (inlined)
+            |          bootstrap<f64, f64, (f64), criterion::analysis::regression::{closure_env#0}> (inlined)
+            |          regression (inlined)
+            |          
+             --0.81%--index_mut<f64> (inlined)
+                       index_mut<f64, usize> (inlined)
+                       index_mut<f64, usize, alloc::alloc::Global> (inlined)
+                       next<f64, f64> (inlined)
+                       {closure#0}<f64, f64, (f64), criterion::analysis::regression::{closure_env#0}> (inlined)
+                       {closure#0}<usize, (f64), (alloc::vec::Vec<f64, alloc::alloc::Global>), criterion::stats::bivariate::{impl#3}::bootstrap::{closure_env#0}<f64, f64, (f64), criterion::analysis::regression::{closure_env#0}>, criterion::stats::bivariate::{impl#3}::bootstrap::{closure_env#1}<f64, f64, (f64), criterion::analysis::regression::{closure_env#0}>> (inlined)
+                       fold<core::ops::range::Range<usize>, (alloc::vec::Vec<f64, alloc::alloc::Global>), core::iter::adapters::map::map_fold::{closure_env#0}<usize, (f64), (alloc::vec::Vec<f64, alloc::alloc::Global>), criterion::stats::bivariate::{impl#3}::bootstrap::{closure_env#0}<f64, f64, (f64), criterion::analysis::regression::{closure_env#0}>, criterion::stats::bivariate::{impl#3}::bootstrap::{closure_env#1}<f64, f64, (f64), criterion::analysis::regression::{closure_env#0}>>> (inlined)
+                       fold<(f64), core::ops::range::Range<usize>, criterion::stats::bivariate::{impl#3}::bootstrap::{closure_env#0}<f64, f64, (f64), criterion::analysis::regression::{closure_env#0}>, (alloc::vec::Vec<f64, alloc::alloc::Global>), criterion::stats::bivariate::{impl#3}::bootstrap::{closure_env#1}<f64, f64, (f64), criterion::analysis::regression::{closure_env#0}>> (inlined)
+                       bootstrap<f64, f64, (f64), criterion::analysis::regression::{closure_env#0}> (inlined)
+                       regression (inlined)
+
+     0.90%  bench-candidate  [kernel.kallsyms]     [k] __irqentry_text_end
+            |
+            ---__irqentry_text_end
+               0x71cec2fa8513
+
+     0.83%  bench-candidate  bench-candidate       [.] criterion::analysis::common
+            |
+            ---call<fn(&criterion::stats::univariate::sample::Sample<f64>, &criterion::stats::univariate::sample::Sample<f64>) -> (f64, f64), (&criterion::stats::univariate::sample::Sample<f64>, &criterion::stats::univariate::sample::Sample<f64>)> (inlined)
+               {closure#0}<f64, f64, (f64, f64), fn(&criterion::stats::univariate::sample::Sample<f64>, &criterion::stats::univariate::sample::Sample<f64>) -> (f64, f64)> (inlined)
+               {closure#0}<usize, (alloc::vec::Vec<f64, alloc::alloc::Global>, alloc::vec::Vec<f64, alloc::alloc::Global>), (alloc::vec::Vec<f64, alloc::alloc::Global>, alloc::vec::Vec<f64, alloc::alloc::Global>), criterion::stats::univariate::bootstrap::{closure_env#0}<f64, f64, (f64, f64), fn(&criterion::stats::univariate::sample::Sample<f64>, &criterion::stats::univariate::sample::Sample<f64>) -> (f64, f64)>, criterion::stats::univariate::bootstrap::{closure_env#1}<f64, f64, (f64, f64), fn(&criterion::stats::univariate::sample::Sample<f64>, &criterion::stats::univariate::sample::Sample<f64>) -> (f64, f64)>> (inlined)
+               fold<core::ops::range::Range<usize>, (alloc::vec::Vec<f64, alloc::alloc::Global>, alloc::vec::Vec<f64, alloc::alloc::Global>), core::iter::adapters::map::map_fold::{closure_env#0}<usize, (alloc::vec::Vec<f64, alloc::alloc::Global>, alloc::vec::Vec<f64, alloc::alloc::Global>), (alloc::vec::Vec<f64, alloc::alloc::Global>, alloc::vec::Vec<f64, alloc::alloc::Global>), criterion::stats::univariate::bootstrap::{closure_env#0}<f64, f64, (f64, f64), fn(&criterion::stats::univariate::sample::Sample<f64>, &criterion::stats::univariate::sample::Sample<f64>) -> (f64, f64)>, criterion::stats::univariate::bootstrap::{closure_env#1}<f64, f64, (f64, f64), fn(&criterion::stats::univariate::sample::Sample<f64>, &criterion::stats::univariate::sample::Sample<f64>) -> (f64, f64)>>> (inlined)
+               fold<(alloc::vec::Vec<f64, alloc::alloc::Global>, alloc::vec::Vec<f64, alloc::alloc::Global>), core::ops::range::Range<usize>, criterion::stats::univariate::bootstrap::{closure_env#0}<f64, f64, (f64, f64), fn(&criterion::stats::univariate::sample::Sample<f64>, &criterion::stats::univariate::sample::Sample<f64>) -> (f64, f64)>, (alloc::vec::Vec<f64, alloc::alloc::Global>, alloc::vec::Vec<f64, alloc::alloc::Global>), criterion::stats::univariate::bootstrap::{closure_env#1}<f64, f64, (f64, f64), fn(&criterion::stats::univariate::sample::Sample<f64>, &criterion::stats::univariate::sample::Sample<f64>) -> (f64, f64)>> (inlined)
+               bootstrap<f64, f64, (f64, f64), fn(&criterion::stats::univariate::sample::Sample<f64>, &criterion::stats::univariate::sample::Sample<f64>) -> (f64, f64)> (inlined)
+               estimates<criterion::measurement::WallTime> (inlined)
+               common<criterion::measurement::WallTime> (inlined)
+               common<criterion::measurement::WallTime, ()> (inlined)
+
+     0.82%  bench-candidate  bench-candidate       [.] core::slice::sort::unstable::quicksort::quicksort
+            |
+            ---copy_nonoverlapping<f64> (inlined)
+               {closure#0}<f64, core::slice::{impl#0}::sort_unstable_by::{closure_env#0}<f64, fn(&f64, &f64) -> core::cmp::Ordering>> (inlined)
+               partition_lomuto_branchless_cyclic<f64, core::slice::{impl#0}::sort_unstable_by::{closure_env#0}<f64, fn(&f64, &f64) -> core::cmp::Ordering>> (inlined)
+               partition<f64, core::slice::{impl#0}::sort_unstable_by::{closure_env#0}<f64, fn(&f64, &f64) -> core::cmp::Ordering>> (inlined)
+               quicksort<f64, core::slice::{impl#0}::sort_unstable_by::{closure_env#0}<f64, fn(&f64, &f64) -> core::cmp::Ordering>> (inlined)
+
+     0.81%  bench-candidate  bench-candidate       [.] criterion::analysis::estimates
+            |
+            ---fold<f64, f64, core::iter::adapters::map::map_fold::{closure_env#0}<&f64, f64, f64, criterion::stats::univariate::sample::{impl#0}::var::{closure_env#1}<f64>, fn(f64, f64) -> f64>> (inlined)
+               fold<f64, core::slice::iter::Iter<f64>, criterion::stats::univariate::sample::{impl#0}::var::{closure_env#1}<f64>, f64, fn(f64, f64) -> f64> (inlined)
+               var<f64> (inlined)
+               std_dev<f64> (inlined)
+               {closure#0} (inlined)
+               build_estimates (inlined)
+               estimates (inlined)
+
+     0.81%  bench-candidate  libc.so.6             [.] 0x00000000001a84ea
+            |
+            ---0x71cec2fa84f1
+               {closure#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}> (inlined)
+               call_mut<(usize), aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+               {closure#0}<usize, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+               fold<core::ops::range::Range<usize>, (), core::iter::traits::iterator::Iterator::for_each::call::{closure_env#0}<usize, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+               for_each<core::ops::range::Range<usize>, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+               consume_iter<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>, usize, core::ops::range::Range<usize>> (inlined)
+               fold_with<rayon::range::IterProducer<usize>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+               fold_with<rayon::range::IterProducer<usize>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+               helper<rayon::iter::len::MinLenProducer<rayon::range::IterProducer<usize>>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+
+     0.81%  bench-candidate  libc.so.6             [.] 0x00000000001a7c6d
+            |
+            ---asm_exc_page_fault
+               0x71cec2fa7c6d
+               realloc
+               finish_grow<alloc::alloc::Global> (inlined)
+
+     0.81%  bench-candidate  libc.so.6             [.] 0x00000000001a84db
+            |
+            ---0x71cec2fa84df
+               {closure#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}> (inlined)
+               call_mut<(usize), aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+               {closure#0}<usize, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+               fold<core::ops::range::Range<usize>, (), core::iter::traits::iterator::Iterator::for_each::call::{closure_env#0}<usize, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+               for_each<core::ops::range::Range<usize>, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+               consume_iter<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>, usize, core::ops::range::Range<usize>> (inlined)
+               fold_with<rayon::range::IterProducer<usize>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+               fold_with<rayon::range::IterProducer<usize>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+               helper<rayon::iter::len::MinLenProducer<rayon::range::IterProducer<usize>>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+
+     0.81%  bench-candidate  bench-candidate       [.] rayon::iter::plumbing::bridge_producer_consumer::helper
+            |
+            ---lt (inlined)
+               spec_next<usize> (inlined)
+               next<usize> (inlined)
+               fold<core::ops::range::Range<usize>, (), core::iter::traits::iterator::Iterator::for_each::call::{closure_env#0}<usize, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+               for_each<core::ops::range::Range<usize>, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+               consume_iter<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>, usize, core::ops::range::Range<usize>> (inlined)
+               fold_with<rayon::range::IterProducer<usize>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+               fold_with<rayon::range::IterProducer<usize>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+               helper<rayon::iter::len::MinLenProducer<rayon::range::IterProducer<usize>>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+
+     0.80%  bench-candidate  libc.so.6             [.] 0x00000000001a844a
+            |
+            ---0x71cec2fa844d
+               {closure#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}> (inlined)
+               call_mut<(usize), aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+               {closure#0}<usize, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+               fold<core::ops::range::Range<usize>, (), core::iter::traits::iterator::Iterator::for_each::call::{closure_env#0}<usize, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+               for_each<core::ops::range::Range<usize>, &aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>> (inlined)
+               consume_iter<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>, usize, core::ops::range::Range<usize>> (inlined)
+               fold_with<rayon::range::IterProducer<usize>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+               fold_with<rayon::range::IterProducer<usize>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+               helper<rayon::iter::len::MinLenProducer<rayon::range::IterProducer<usize>>, rayon::iter::for_each::ForEachConsumer<aleph_sv::kernels::par_blocks::{closure_env#0}<aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#0}, aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{closure_env#1}>>> (inlined)
+
+     0.80%  bench-candidate  [kernel.kallsyms]     [k] __schedule
+            |
+            ---__schedule
+               schedule
+               do_sched_yield
+               __x64_sys_sched_yield
+               x64_sys_call
+               do_syscall_64
+               entry_SYSCALL_64_after_hwframe
+               __sched_yield
+
+     0.74%  bench-candidate  [kernel.kallsyms]     [k] native_irq_return_iret
+            |
+            ---0x71cec2fa8513
+
+     0.60%  bench-candidate  [kernel.kallsyms]     [k] error_entry
+            |
+            ---error_entry
+               0x71cec2fa8513
+
+     0.49%  bench-candidate  [kernel.kallsyms]     [k] __rcu_read_lock
+     0.14%  bench-candidate  ld-linux-x86-64.so.2  [.] 0x000000000002b596
+
+
+#
+# (Cannot load tips.txt file, please install perf!)
+#

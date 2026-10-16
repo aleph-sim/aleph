@@ -1,0 +1,44 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 222  of event 'cpu/cycles/P'
+# Event count (approx.): 1054093721
+#
+# Overhead  Command          Shared Object      Symbol                                                                         
+# ........  ...............  .................  ...............................................................................
+#
+    44.67%  bench-candidate  bench-candidate    [.] aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa::{{closure}}
+    14.49%  bench-candidate  libc.so.6          [.] 0x00000000001a8513
+     9.78%  bench-candidate  bench-candidate    [.] aleph_sv::kernels::unitary_kq::apply_kq_avx512_soa
+     8.83%  bench-candidate  bench-candidate    [.] aleph_sv::validation::UnitaryKqCache::validate
+     3.65%  bench-candidate  bench-candidate    [.] criterion::analysis::estimates::stats
+     3.05%  bench-candidate  bench-candidate    [.] core::slice::sort::shared::smallsort::insertion_sort_shift_left
+     2.10%  bench-candidate  bench-candidate    [.] core::slice::sort::unstable::quicksort::quicksort
+     2.08%  bench-candidate  bench-candidate    [.] criterion::analysis::regression
+     1.37%  bench-candidate  bench-candidate    [.] criterion::analysis::estimates
+     1.05%  bench-candidate  [kernel.kallsyms]  [k] error_entry
+     0.70%  bench-candidate  [kernel.kallsyms]  [k] __irqentry_text_end
+     0.70%  bench-candidate  libc.so.6          [.] 0x00000000001a7cc9
+     0.70%  bench-candidate  libc.so.6          [.] 0x00000000001a7c6d
+     0.70%  bench-candidate  [kernel.kallsyms]  [k] rmqueue_bulk
+     0.69%  bench-candidate  libc.so.6          [.] malloc
+     0.69%  bench-candidate  bench-candidate    [.] <aleph_sv::soa_backend::SoaSvBackend as aleph_backend::Backend>::apply_gate
+     0.67%  bench-candidate  [kernel.kallsyms]  [k] __rmqueue_pcplist
+     0.63%  bench-candidate  [kernel.kallsyms]  [k] native_irq_return_iret
+     0.60%  bench-candidate  [kernel.kallsyms]  [k] __rcu_read_lock
+     0.55%  bench-candidate  [kernel.kallsyms]  [k] set_ptes.isra.0
+     0.46%  bench-candidate  bench-candidate    [.] criterion::stats::univariate::resamples::Resamples<A>::next
+     0.43%  bench-candidate  [kernel.kallsyms]  [k] __irq_exit_rcu
+     0.43%  bench-candidate  bench-candidate    [.] aleph_sv::kernels::unitary_kq::targets_offsets_fixed
+     0.42%  bench-candidate  [kernel.kallsyms]  [k] update_cfs_rq_load_avg
+     0.19%  bench-candidate  [kernel.kallsyms]  [k] __folio_throttle_swaprate
+     0.15%  bench-candidate  [kernel.kallsyms]  [k] kernel_init_pages
+     0.12%  bench-candidate  [kernel.kallsyms]  [k] up_write
+     0.12%  taskset          [unknown]          [.] 0000000000000000
+
+
+#
+# (Cannot load tips.txt file, please install perf!)
+#

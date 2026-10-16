@@ -62,10 +62,13 @@ fields are rejected. Manual `UnitaryKq` is bounded to its documented width 2–5
 Relabel metadata maps logical observables into physical IR coordinates before
 support propagation. Compact bit order follows sorted physical positions, so gate
 matrix operand order is preserved; exposed maps always refer back to original
-logical qubits. Generic external controls and arbitrary target order on manual
-Kq matrices are executed by a query-local bounded matvec when controls or target
-order need it. Validated canonical fused blocks retain the existing SIMD kernel. This avoids the existing
-full-state CPU Kq limitations tracked by #573 without modifying that path.
+logical qubits. Uncontrolled Kq matrices use the existing SIMD-capable kernel directly from the
+private immutable validated query plan, preserving arbitrary operand order and
+avoiding a redundant public-backend validation snapshot. Controlled Kq matrices
+use the query-local bounded matvec. The resource preflight adds the largest
+uncontrolled Kq SIMD broadcast buffer bound (`128 * 4^k` bytes); it conservatively
+applies on CPUs without AVX512 too. Public full-state CPU Kq controls remain
+explicitly unsupported after #573.
 
 Each nonzero/nonidentity term gets its own cone. Identical active-support and
 retained-operation plans share one simulation, even for different Pauli axes or
@@ -78,7 +81,8 @@ no state. Finite-result checks reject overflowing sums.
 
 For each active width k, the preflight bound is `40 * 2^k + 4096` bytes: state
 (16N), backend norm-validation probabilities (8N), the X/Y expectation clone
-(16N), and 4 KiB fixed gate scratch. Z-only and gate-free cases are conservatively
+(16N), and 4 KiB fixed gate scratch, plus `128 * 4^w` bytes where w is the largest
+uncontrolled Kq matrix width (2–5) (zero when absent). Z-only and gate-free cases are conservatively
 overestimated. All cones must fit the caller's explicit cap before any state is
 allocated; dimension/size overflow produces a resource error. Identity-only
 queries accept a zero-byte dense budget.
@@ -86,7 +90,7 @@ queries accept a zero-byte dense budget.
 The cap applies per execution call; concurrent callers budget their aggregate
 usage separately. This is a dense-buffer/scratch cap, not process RSS: the input circuit, owned
 compact plans/matrices/maps, result vectors, allocator metadata, worker/runtime
-stacks and library overhead are excluded. A large declared circuit still has
+stacks (including per-worker SIMD stack scratch) and library overhead are excluded. A large declared circuit still has
 polynomial planning bookkeeping. No full `2^original_qubits` state is allocated.
 
 Planning costs the unitary validation pass plus roughly T backward traversals of

@@ -1,0 +1,1384 @@
+0000000000156e50 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}>:
+  156e50:	53                   	push   %rbx
+  156e51:	48 83 ec 60          	sub    $0x60,%rsp
+  156e55:	4c 8b 47 10          	mov    0x10(%rdi),%r8
+  156e59:	4d 85 c0             	test   %r8,%r8
+  156e5c:	74 44                	je     156ea2 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x52>
+  156e5e:	4c 8b 4f 08          	mov    0x8(%rdi),%r9
+  156e62:	4e 8d 14 c5 00 00 00 	lea    0x0(,%r8,8),%r10
+  156e69:	00 
+  156e6a:	49 83 c2 f8          	add    $0xfffffffffffffff8,%r10
+  156e6e:	41 f6 c2 08          	test   $0x8,%r10b
+  156e72:	75 33                	jne    156ea7 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x57>
+  156e74:	41 0f b6 09          	movzbl (%r9),%ecx
+  156e78:	48 c7 c2 ff ff ff ff 	mov    $0xffffffffffffffff,%rdx
+  156e7f:	48 d3 e2             	shl    %cl,%rdx
+  156e82:	49 8d 41 08          	lea    0x8(%r9),%rax
+  156e86:	48 89 d1             	mov    %rdx,%rcx
+  156e89:	48 f7 d1             	not    %rcx
+  156e8c:	48 21 f1             	and    %rsi,%rcx
+  156e8f:	48 21 f2             	and    %rsi,%rdx
+  156e92:	48 01 d2             	add    %rdx,%rdx
+  156e95:	48 09 ca             	or     %rcx,%rdx
+  156e98:	48 89 d6             	mov    %rdx,%rsi
+  156e9b:	4d 85 d2             	test   %r10,%r10
+  156e9e:	75 0f                	jne    156eaf <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x5f>
+  156ea0:	eb 66                	jmp    156f08 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0xb8>
+  156ea2:	48 89 f2             	mov    %rsi,%rdx
+  156ea5:	eb 61                	jmp    156f08 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0xb8>
+  156ea7:	4c 89 c8             	mov    %r9,%rax
+  156eaa:	4d 85 d2             	test   %r10,%r10
+  156ead:	74 59                	je     156f08 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0xb8>
+  156eaf:	4f 8d 04 c1          	lea    (%r9,%r8,8),%r8
+  156eb3:	48 89 f2             	mov    %rsi,%rdx
+  156eb6:	66 2e 0f 1f 84 00 00 	cs nopw 0x0(%rax,%rax,1)
+  156ebd:	00 00 00 
+  156ec0:	0f b6 08             	movzbl (%rax),%ecx
+  156ec3:	48 c7 c6 ff ff ff ff 	mov    $0xffffffffffffffff,%rsi
+  156eca:	48 d3 e6             	shl    %cl,%rsi
+  156ecd:	0f b6 48 08          	movzbl 0x8(%rax),%ecx
+  156ed1:	49 89 f1             	mov    %rsi,%r9
+  156ed4:	49 f7 d1             	not    %r9
+  156ed7:	49 21 d1             	and    %rdx,%r9
+  156eda:	48 21 d6             	and    %rdx,%rsi
+  156edd:	48 01 f6             	add    %rsi,%rsi
+  156ee0:	4c 09 ce             	or     %r9,%rsi
+  156ee3:	48 c7 c2 ff ff ff ff 	mov    $0xffffffffffffffff,%rdx
+  156eea:	48 d3 e2             	shl    %cl,%rdx
+  156eed:	48 89 d1             	mov    %rdx,%rcx
+  156ef0:	48 f7 d1             	not    %rcx
+  156ef3:	48 21 f1             	and    %rsi,%rcx
+  156ef6:	48 21 f2             	and    %rsi,%rdx
+  156ef9:	48 01 d2             	add    %rdx,%rdx
+  156efc:	48 09 ca             	or     %rcx,%rdx
+  156eff:	48 83 c0 10          	add    $0x10,%rax
+  156f03:	4c 39 c0             	cmp    %r8,%rax
+  156f06:	75 b8                	jne    156ec0 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x70>
+  156f08:	48 8b 47 28          	mov    0x28(%rdi),%rax
+  156f0c:	48 85 c0             	test   %rax,%rax
+  156f0f:	0f 84 33 05 00 00    	je     157448 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x5f8>
+  156f15:	48 83 f8 01          	cmp    $0x1,%rax
+  156f19:	0f 84 3b 05 00 00    	je     15745a <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x60a>
+  156f1f:	48 83 f8 02          	cmp    $0x2,%rax
+  156f23:	0f 84 46 05 00 00    	je     15746f <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x61f>
+  156f29:	48 83 f8 03          	cmp    $0x3,%rax
+  156f2d:	0f 84 51 05 00 00    	je     157484 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x634>
+  156f33:	48 83 f8 04          	cmp    $0x4,%rax
+  156f37:	0f 84 5c 05 00 00    	je     157499 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x649>
+  156f3d:	48 83 f8 05          	cmp    $0x5,%rax
+  156f41:	0f 84 67 05 00 00    	je     1574ae <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x65e>
+  156f47:	48 83 f8 06          	cmp    $0x6,%rax
+  156f4b:	0f 84 72 05 00 00    	je     1574c3 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x673>
+  156f51:	48 83 f8 07          	cmp    $0x7,%rax
+  156f55:	0f 84 7d 05 00 00    	je     1574d8 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x688>
+  156f5b:	4c 8b 57 48          	mov    0x48(%rdi),%r10
+  156f5f:	4d 85 d2             	test   %r10,%r10
+  156f62:	0f 84 30 01 00 00    	je     157098 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x248>
+  156f68:	4c 8b 47 20          	mov    0x20(%rdi),%r8
+  156f6c:	48 8b 4f 40          	mov    0x40(%rdi),%rcx
+  156f70:	49 8b 30             	mov    (%r8),%rsi
+  156f73:	48 09 d6             	or     %rdx,%rsi
+  156f76:	f3 44 0f 10 1c f1    	movss  (%rcx,%rsi,8),%xmm11
+  156f7c:	f3 0f 10 44 f1 04    	movss  0x4(%rcx,%rsi,8),%xmm0
+  156f82:	4c 8b 4f 30          	mov    0x30(%rdi),%r9
+  156f86:	48 8b 77 38          	mov    0x38(%rdi),%rsi
+  156f8a:	49 83 fa 01          	cmp    $0x1,%r10
+  156f8e:	0f 84 0a 01 00 00    	je     15709e <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x24e>
+  156f94:	49 8b 78 08          	mov    0x8(%r8),%rdi
+  156f98:	48 09 d7             	or     %rdx,%rdi
+  156f9b:	f3 0f 10 1c f9       	movss  (%rcx,%rdi,8),%xmm3
+  156fa0:	f3 0f 10 54 f9 04    	movss  0x4(%rcx,%rdi,8),%xmm2
+  156fa6:	49 83 fa 02          	cmp    $0x2,%r10
+  156faa:	0f 85 36 01 00 00    	jne    1570e6 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x296>
+  156fb0:	48 89 f7             	mov    %rsi,%rdi
+  156fb3:	48 85 f6             	test   %rsi,%rsi
+  156fb6:	0f 84 8e 05 00 00    	je     15754a <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x6fa>
+  156fbc:	48 83 fe 01          	cmp    $0x1,%rsi
+  156fc0:	0f 84 36 05 00 00    	je     1574fc <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x6ac>
+  156fc6:	49 8b 00             	mov    (%r8),%rax
+  156fc9:	48 09 d0             	or     %rdx,%rax
+  156fcc:	f2 41 0f 10 29       	movsd  (%r9),%xmm5
+  156fd1:	f2 41 0f 10 61 08    	movsd  0x8(%r9),%xmm4
+  156fd7:	45 0f c6 db 00       	shufps $0x0,%xmm11,%xmm11
+  156fdc:	41 0f 28 f3          	movaps %xmm11,%xmm6
+  156fe0:	0f 59 f5             	mulps  %xmm5,%xmm6
+  156fe3:	0f c6 c0 00          	shufps $0x0,%xmm0,%xmm0
+  156fe7:	0f c6 ed e1          	shufps $0xe1,%xmm5,%xmm5
+  156feb:	0f 59 e8             	mulps  %xmm0,%xmm5
+  156fee:	0f 28 fe             	movaps %xmm6,%xmm7
+  156ff1:	0f 5c fd             	subps  %xmm5,%xmm7
+  156ff4:	0f 58 ee             	addps  %xmm6,%xmm5
+  156ff7:	0f c6 ef 01          	shufps $0x1,%xmm7,%xmm5
+  156ffb:	0f c6 ef e2          	shufps $0xe2,%xmm7,%xmm5
+  156fff:	0f 57 f6             	xorps  %xmm6,%xmm6
+  157002:	0f 58 f5             	addps  %xmm5,%xmm6
+  157005:	0f c6 db 00          	shufps $0x0,%xmm3,%xmm3
+  157009:	0f 28 eb             	movaps %xmm3,%xmm5
+  15700c:	0f 59 ec             	mulps  %xmm4,%xmm5
+  15700f:	0f c6 d2 00          	shufps $0x0,%xmm2,%xmm2
+  157013:	0f c6 e4 e1          	shufps $0xe1,%xmm4,%xmm4
+  157017:	0f 59 e2             	mulps  %xmm2,%xmm4
+  15701a:	0f 28 fd             	movaps %xmm5,%xmm7
+  15701d:	0f 5c fc             	subps  %xmm4,%xmm7
+  157020:	0f 58 e5             	addps  %xmm5,%xmm4
+  157023:	0f c6 e7 01          	shufps $0x1,%xmm7,%xmm4
+  157027:	0f c6 e7 e2          	shufps $0xe2,%xmm7,%xmm4
+  15702b:	0f 58 e6             	addps  %xmm6,%xmm4
+  15702e:	0f 13 24 c1          	movlps %xmm4,(%rcx,%rax,8)
+  157032:	48 83 fe 03          	cmp    $0x3,%rsi
+  157036:	0f 82 c7 04 00 00    	jb     157503 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x6b3>
+  15703c:	0f 84 d3 04 00 00    	je     157515 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x6c5>
+  157042:	49 0b 50 08          	or     0x8(%r8),%rdx
+  157046:	f2 41 0f 10 61 10    	movsd  0x10(%r9),%xmm4
+  15704c:	f2 41 0f 10 69 18    	movsd  0x18(%r9),%xmm5
+  157052:	44 0f 59 dc          	mulps  %xmm4,%xmm11
+  157056:	0f c6 e4 e1          	shufps $0xe1,%xmm4,%xmm4
+  15705a:	0f 59 c4             	mulps  %xmm4,%xmm0
+  15705d:	41 0f 28 e3          	movaps %xmm11,%xmm4
+  157061:	0f 5c e0             	subps  %xmm0,%xmm4
+  157064:	41 0f 58 c3          	addps  %xmm11,%xmm0
+  157068:	0f c6 c4 01          	shufps $0x1,%xmm4,%xmm0
+  15706c:	0f c6 c4 e2          	shufps $0xe2,%xmm4,%xmm0
+  157070:	0f 57 c9             	xorps  %xmm1,%xmm1
+  157073:	0f 58 c8             	addps  %xmm0,%xmm1
+  157076:	0f 59 dd             	mulps  %xmm5,%xmm3
+  157079:	0f c6 ed e1          	shufps $0xe1,%xmm5,%xmm5
+  15707d:	0f 59 d5             	mulps  %xmm5,%xmm2
+  157080:	0f 28 c3             	movaps %xmm3,%xmm0
+  157083:	0f 5c c2             	subps  %xmm2,%xmm0
+  157086:	0f 58 d3             	addps  %xmm3,%xmm2
+  157089:	0f c6 d0 01          	shufps $0x1,%xmm0,%xmm2
+  15708d:	0f c6 d0 e2          	shufps $0xe2,%xmm0,%xmm2
+  157091:	0f 58 d1             	addps  %xmm1,%xmm2
+  157094:	0f 13 14 d1          	movlps %xmm2,(%rcx,%rdx,8)
+  157098:	48 83 c4 60          	add    $0x60,%rsp
+  15709c:	5b                   	pop    %rbx
+  15709d:	c3                   	ret
+  15709e:	48 85 f6             	test   %rsi,%rsi
+  1570a1:	0f 84 46 04 00 00    	je     1574ed <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x69d>
+  1570a7:	49 0b 10             	or     (%r8),%rdx
+  1570aa:	f2 41 0f 10 11       	movsd  (%r9),%xmm2
+  1570af:	45 0f c6 db 00       	shufps $0x0,%xmm11,%xmm11
+  1570b4:	44 0f 59 da          	mulps  %xmm2,%xmm11
+  1570b8:	0f c6 c0 00          	shufps $0x0,%xmm0,%xmm0
+  1570bc:	0f c6 d2 e1          	shufps $0xe1,%xmm2,%xmm2
+  1570c0:	0f 59 d0             	mulps  %xmm0,%xmm2
+  1570c3:	41 0f 28 c3          	movaps %xmm11,%xmm0
+  1570c7:	0f 5c c2             	subps  %xmm2,%xmm0
+  1570ca:	41 0f 58 d3          	addps  %xmm11,%xmm2
+  1570ce:	0f c6 d0 01          	shufps $0x1,%xmm0,%xmm2
+  1570d2:	0f c6 d0 e2          	shufps $0xe2,%xmm0,%xmm2
+  1570d6:	0f 57 c0             	xorps  %xmm0,%xmm0
+  1570d9:	0f 58 c2             	addps  %xmm2,%xmm0
+  1570dc:	0f 13 04 d1          	movlps %xmm0,(%rcx,%rdx,8)
+  1570e0:	48 83 c4 60          	add    $0x60,%rsp
+  1570e4:	5b                   	pop    %rbx
+  1570e5:	c3                   	ret
+  1570e6:	49 8b 78 10          	mov    0x10(%r8),%rdi
+  1570ea:	48 09 d7             	or     %rdx,%rdi
+  1570ed:	f3 0f 10 24 f9       	movss  (%rcx,%rdi,8),%xmm4
+  1570f2:	f3 0f 10 6c f9 04    	movss  0x4(%rcx,%rdi,8),%xmm5
+  1570f8:	49 8b 78 18          	mov    0x18(%r8),%rdi
+  1570fc:	48 09 d7             	or     %rdx,%rdi
+  1570ff:	f3 0f 10 34 f9       	movss  (%rcx,%rdi,8),%xmm6
+  157104:	f3 0f 10 7c f9 04    	movss  0x4(%rcx,%rdi,8),%xmm7
+  15710a:	49 8b 78 20          	mov    0x20(%r8),%rdi
+  15710e:	48 09 d7             	or     %rdx,%rdi
+  157111:	f3 44 0f 10 04 f9    	movss  (%rcx,%rdi,8),%xmm8
+  157117:	f3 44 0f 10 4c f9 04 	movss  0x4(%rcx,%rdi,8),%xmm9
+  15711e:	49 8b 78 28          	mov    0x28(%r8),%rdi
+  157122:	48 09 d7             	or     %rdx,%rdi
+  157125:	f3 0f 10 0c f9       	movss  (%rcx,%rdi,8),%xmm1
+  15712a:	f3 44 0f 10 54 f9 04 	movss  0x4(%rcx,%rdi,8),%xmm10
+  157131:	49 8b 78 30          	mov    0x30(%r8),%rdi
+  157135:	48 09 d7             	or     %rdx,%rdi
+  157138:	f3 44 0f 10 24 f9    	movss  (%rcx,%rdi,8),%xmm12
+  15713e:	f3 44 0f 10 6c f9 04 	movss  0x4(%rcx,%rdi,8),%xmm13
+  157145:	49 8b 78 38          	mov    0x38(%r8),%rdi
+  157149:	48 09 d7             	or     %rdx,%rdi
+  15714c:	f3 44 0f 10 34 f9    	movss  (%rcx,%rdi,8),%xmm14
+  157152:	f3 44 0f 10 7c f9 04 	movss  0x4(%rcx,%rdi,8),%xmm15
+  157159:	45 0f c6 db 00       	shufps $0x0,%xmm11,%xmm11
+  15715e:	0f c6 c0 00          	shufps $0x0,%xmm0,%xmm0
+  157162:	0f c6 db 00          	shufps $0x0,%xmm3,%xmm3
+  157166:	0f c6 d2 00          	shufps $0x0,%xmm2,%xmm2
+  15716a:	0f c6 ed 00          	shufps $0x0,%xmm5,%xmm5
+  15716e:	0f c6 e4 00          	shufps $0x0,%xmm4,%xmm4
+  157172:	0f c6 ff 00          	shufps $0x0,%xmm7,%xmm7
+  157176:	0f c6 f6 00          	shufps $0x0,%xmm6,%xmm6
+  15717a:	45 0f c6 c9 00       	shufps $0x0,%xmm9,%xmm9
+  15717f:	45 0f c6 c0 00       	shufps $0x0,%xmm8,%xmm8
+  157184:	45 0f c6 d2 00       	shufps $0x0,%xmm10,%xmm10
+  157189:	44 0f 29 54 24 40    	movaps %xmm10,0x40(%rsp)
+  15718f:	0f c6 c9 00          	shufps $0x0,%xmm1,%xmm1
+  157193:	0f 29 4c 24 50       	movaps %xmm1,0x50(%rsp)
+  157198:	45 0f c6 ed 00       	shufps $0x0,%xmm13,%xmm13
+  15719d:	44 0f 29 6c 24 20    	movaps %xmm13,0x20(%rsp)
+  1571a3:	45 0f c6 e4 00       	shufps $0x0,%xmm12,%xmm12
+  1571a8:	44 0f 29 64 24 30    	movaps %xmm12,0x30(%rsp)
+  1571ae:	45 0f c6 ff 00       	shufps $0x0,%xmm15,%xmm15
+  1571b3:	44 0f 29 3c 24       	movaps %xmm15,(%rsp)
+  1571b8:	45 0f c6 f6 00       	shufps $0x0,%xmm14,%xmm14
+  1571bd:	44 0f 29 74 24 10    	movaps %xmm14,0x10(%rsp)
+  1571c3:	45 31 db             	xor    %r11d,%r11d
+  1571c6:	45 0f 57 f6          	xorps  %xmm14,%xmm14
+  1571ca:	31 db                	xor    %ebx,%ebx
+  1571cc:	0f 1f 40 00          	nopl   0x0(%rax)
+  1571d0:	49 39 f3             	cmp    %rsi,%r11
+  1571d3:	0f 83 4c 02 00 00    	jae    157425 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x5d5>
+  1571d9:	49 8d 7b 01          	lea    0x1(%r11),%rdi
+  1571dd:	48 39 f7             	cmp    %rsi,%rdi
+  1571e0:	0f 83 64 03 00 00    	jae    15754a <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x6fa>
+  1571e6:	49 8d 7b 02          	lea    0x2(%r11),%rdi
+  1571ea:	48 39 f7             	cmp    %rsi,%rdi
+  1571ed:	0f 83 57 03 00 00    	jae    15754a <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x6fa>
+  1571f3:	f2 47 0f 10 2c d9    	movsd  (%r9,%r11,8),%xmm13
+  1571f9:	f2 47 0f 10 64 d9 08 	movsd  0x8(%r9,%r11,8),%xmm12
+  157200:	f2 47 0f 10 7c d9 10 	movsd  0x10(%r9,%r11,8),%xmm15
+  157207:	45 0f 28 d3          	movaps %xmm11,%xmm10
+  15720b:	45 0f 59 d5          	mulps  %xmm13,%xmm10
+  15720f:	45 0f c6 ed e1       	shufps $0xe1,%xmm13,%xmm13
+  157214:	44 0f 59 e8          	mulps  %xmm0,%xmm13
+  157218:	41 0f 28 ca          	movaps %xmm10,%xmm1
+  15721c:	41 0f 5c cd          	subps  %xmm13,%xmm1
+  157220:	45 0f 58 ea          	addps  %xmm10,%xmm13
+  157224:	44 0f c6 e9 01       	shufps $0x1,%xmm1,%xmm13
+  157229:	44 0f c6 e9 e2       	shufps $0xe2,%xmm1,%xmm13
+  15722e:	45 0f 58 ee          	addps  %xmm14,%xmm13
+  157232:	0f 28 cb             	movaps %xmm3,%xmm1
+  157235:	41 0f 59 cc          	mulps  %xmm12,%xmm1
+  157239:	45 0f c6 e4 e1       	shufps $0xe1,%xmm12,%xmm12
+  15723e:	44 0f 59 e2          	mulps  %xmm2,%xmm12
+  157242:	44 0f 28 d1          	movaps %xmm1,%xmm10
+  157246:	45 0f 5c d4          	subps  %xmm12,%xmm10
+  15724a:	44 0f 58 e1          	addps  %xmm1,%xmm12
+  15724e:	45 0f c6 e2 01       	shufps $0x1,%xmm10,%xmm12
+  157253:	45 0f c6 e2 e2       	shufps $0xe2,%xmm10,%xmm12
+  157258:	45 0f 58 e5          	addps  %xmm13,%xmm12
+  15725c:	0f 28 cc             	movaps %xmm4,%xmm1
+  15725f:	41 0f 59 cf          	mulps  %xmm15,%xmm1
+  157263:	45 0f c6 ff e1       	shufps $0xe1,%xmm15,%xmm15
+  157268:	44 0f 59 fd          	mulps  %xmm5,%xmm15
+  15726c:	44 0f 28 d1          	movaps %xmm1,%xmm10
+  157270:	45 0f 5c d7          	subps  %xmm15,%xmm10
+  157274:	44 0f 58 f9          	addps  %xmm1,%xmm15
+  157278:	45 0f c6 fa 01       	shufps $0x1,%xmm10,%xmm15
+  15727d:	45 0f c6 fa e2       	shufps $0xe2,%xmm10,%xmm15
+  157282:	45 0f 58 fc          	addps  %xmm12,%xmm15
+  157286:	49 83 fa 03          	cmp    $0x3,%r10
+  15728a:	0f 84 70 01 00 00    	je     157400 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x5b0>
+  157290:	49 8d 7b 03          	lea    0x3(%r11),%rdi
+  157294:	48 39 f7             	cmp    %rsi,%rdi
+  157297:	0f 83 ad 02 00 00    	jae    15754a <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x6fa>
+  15729d:	f2 43 0f 10 4c d9 18 	movsd  0x18(%r9,%r11,8),%xmm1
+  1572a4:	44 0f 28 d1          	movaps %xmm1,%xmm10
+  1572a8:	44 0f c6 d1 e1       	shufps $0xe1,%xmm1,%xmm10
+  1572ad:	44 0f 59 d7          	mulps  %xmm7,%xmm10
+  1572b1:	0f 59 ce             	mulps  %xmm6,%xmm1
+  1572b4:	44 0f 28 e1          	movaps %xmm1,%xmm12
+  1572b8:	45 0f 5c e2          	subps  %xmm10,%xmm12
+  1572bc:	41 0f 58 ca          	addps  %xmm10,%xmm1
+  1572c0:	41 0f c6 cc 01       	shufps $0x1,%xmm12,%xmm1
+  1572c5:	41 0f c6 cc e2       	shufps $0xe2,%xmm12,%xmm1
+  1572ca:	44 0f 58 f9          	addps  %xmm1,%xmm15
+  1572ce:	49 83 fa 04          	cmp    $0x4,%r10
+  1572d2:	0f 84 28 01 00 00    	je     157400 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x5b0>
+  1572d8:	49 8d 7b 04          	lea    0x4(%r11),%rdi
+  1572dc:	48 39 f7             	cmp    %rsi,%rdi
+  1572df:	0f 83 65 02 00 00    	jae    15754a <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x6fa>
+  1572e5:	f2 43 0f 10 4c d9 20 	movsd  0x20(%r9,%r11,8),%xmm1
+  1572ec:	44 0f 28 d1          	movaps %xmm1,%xmm10
+  1572f0:	44 0f c6 d1 e1       	shufps $0xe1,%xmm1,%xmm10
+  1572f5:	45 0f 59 d1          	mulps  %xmm9,%xmm10
+  1572f9:	41 0f 59 c8          	mulps  %xmm8,%xmm1
+  1572fd:	44 0f 28 e1          	movaps %xmm1,%xmm12
+  157301:	45 0f 5c e2          	subps  %xmm10,%xmm12
+  157305:	41 0f 58 ca          	addps  %xmm10,%xmm1
+  157309:	41 0f c6 cc 01       	shufps $0x1,%xmm12,%xmm1
+  15730e:	41 0f c6 cc e2       	shufps $0xe2,%xmm12,%xmm1
+  157313:	44 0f 58 f9          	addps  %xmm1,%xmm15
+  157317:	49 83 fa 05          	cmp    $0x5,%r10
+  15731b:	0f 84 df 00 00 00    	je     157400 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x5b0>
+  157321:	49 8d 7b 05          	lea    0x5(%r11),%rdi
+  157325:	48 39 f7             	cmp    %rsi,%rdi
+  157328:	0f 83 1c 02 00 00    	jae    15754a <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x6fa>
+  15732e:	f2 43 0f 10 4c d9 28 	movsd  0x28(%r9,%r11,8),%xmm1
+  157335:	44 0f 28 d1          	movaps %xmm1,%xmm10
+  157339:	44 0f c6 d1 e1       	shufps $0xe1,%xmm1,%xmm10
+  15733e:	44 0f 59 54 24 40    	mulps  0x40(%rsp),%xmm10
+  157344:	0f 59 4c 24 50       	mulps  0x50(%rsp),%xmm1
+  157349:	44 0f 28 e1          	movaps %xmm1,%xmm12
+  15734d:	45 0f 5c e2          	subps  %xmm10,%xmm12
+  157351:	41 0f 58 ca          	addps  %xmm10,%xmm1
+  157355:	41 0f c6 cc 01       	shufps $0x1,%xmm12,%xmm1
+  15735a:	41 0f c6 cc e2       	shufps $0xe2,%xmm12,%xmm1
+  15735f:	44 0f 58 f9          	addps  %xmm1,%xmm15
+  157363:	49 83 fa 06          	cmp    $0x6,%r10
+  157367:	0f 84 93 00 00 00    	je     157400 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x5b0>
+  15736d:	49 8d 7b 06          	lea    0x6(%r11),%rdi
+  157371:	48 39 f7             	cmp    %rsi,%rdi
+  157374:	0f 83 d0 01 00 00    	jae    15754a <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x6fa>
+  15737a:	f2 43 0f 10 4c d9 30 	movsd  0x30(%r9,%r11,8),%xmm1
+  157381:	44 0f 28 d1          	movaps %xmm1,%xmm10
+  157385:	44 0f c6 d1 e1       	shufps $0xe1,%xmm1,%xmm10
+  15738a:	44 0f 59 54 24 20    	mulps  0x20(%rsp),%xmm10
+  157390:	0f 59 4c 24 30       	mulps  0x30(%rsp),%xmm1
+  157395:	44 0f 28 e1          	movaps %xmm1,%xmm12
+  157399:	45 0f 5c e2          	subps  %xmm10,%xmm12
+  15739d:	41 0f 58 ca          	addps  %xmm10,%xmm1
+  1573a1:	41 0f c6 cc 01       	shufps $0x1,%xmm12,%xmm1
+  1573a6:	41 0f c6 cc e2       	shufps $0xe2,%xmm12,%xmm1
+  1573ab:	44 0f 58 f9          	addps  %xmm1,%xmm15
+  1573af:	49 83 fa 07          	cmp    $0x7,%r10
+  1573b3:	74 4b                	je     157400 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x5b0>
+  1573b5:	49 8d 7b 07          	lea    0x7(%r11),%rdi
+  1573b9:	48 39 f7             	cmp    %rsi,%rdi
+  1573bc:	0f 83 88 01 00 00    	jae    15754a <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x6fa>
+  1573c2:	49 83 fa 08          	cmp    $0x8,%r10
+  1573c6:	0f 85 5b 01 00 00    	jne    157527 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x6d7>
+  1573cc:	f2 43 0f 10 4c d9 38 	movsd  0x38(%r9,%r11,8),%xmm1
+  1573d3:	44 0f 28 d1          	movaps %xmm1,%xmm10
+  1573d7:	44 0f c6 d1 e1       	shufps $0xe1,%xmm1,%xmm10
+  1573dc:	44 0f 59 14 24       	mulps  (%rsp),%xmm10
+  1573e1:	0f 59 4c 24 10       	mulps  0x10(%rsp),%xmm1
+  1573e6:	44 0f 28 e1          	movaps %xmm1,%xmm12
+  1573ea:	45 0f 5c e2          	subps  %xmm10,%xmm12
+  1573ee:	41 0f 58 ca          	addps  %xmm10,%xmm1
+  1573f2:	41 0f c6 cc 01       	shufps $0x1,%xmm12,%xmm1
+  1573f7:	41 0f c6 cc e2       	shufps $0xe2,%xmm12,%xmm1
+  1573fc:	44 0f 58 f9          	addps  %xmm1,%xmm15
+  157400:	48 39 d8             	cmp    %rbx,%rax
+  157403:	74 30                	je     157435 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x5e5>
+  157405:	49 8b 3c d8          	mov    (%r8,%rbx,8),%rdi
+  157409:	48 09 d7             	or     %rdx,%rdi
+  15740c:	48 ff c3             	inc    %rbx
+  15740f:	44 0f 13 3c f9       	movlps %xmm15,(%rcx,%rdi,8)
+  157414:	4d 01 d3             	add    %r10,%r11
+  157417:	49 39 da             	cmp    %rbx,%r10
+  15741a:	0f 85 b0 fd ff ff    	jne    1571d0 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x380>
+  157420:	e9 73 fc ff ff       	jmp    157098 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x248>
+  157425:	4c 89 df             	mov    %r11,%rdi
+  157428:	48 8d 15 59 25 1f 00 	lea    0x1f2559(%rip),%rdx        # 349988 <__frame_dummy_init_array_entry+0xdf8>
+  15742f:	ff 15 6b 92 21 00    	call   *0x21926b(%rip)        # 3706a0 <_DYNAMIC+0x260>
+  157435:	48 8d 15 34 25 1f 00 	lea    0x1f2534(%rip),%rdx        # 349970 <__frame_dummy_init_array_entry+0xde0>
+  15743c:	48 89 c7             	mov    %rax,%rdi
+  15743f:	48 89 c6             	mov    %rax,%rsi
+  157442:	ff 15 58 92 21 00    	call   *0x219258(%rip)        # 3706a0 <_DYNAMIC+0x260>
+  157448:	31 ff                	xor    %edi,%edi
+  15744a:	48 8d 15 67 25 1f 00 	lea    0x1f2567(%rip),%rdx        # 3499b8 <__frame_dummy_init_array_entry+0xe28>
+  157451:	48 89 c6             	mov    %rax,%rsi
+  157454:	ff 15 46 92 21 00    	call   *0x219246(%rip)        # 3706a0 <_DYNAMIC+0x260>
+  15745a:	bf 01 00 00 00       	mov    $0x1,%edi
+  15745f:	48 8d 15 52 25 1f 00 	lea    0x1f2552(%rip),%rdx        # 3499b8 <__frame_dummy_init_array_entry+0xe28>
+  157466:	48 89 c6             	mov    %rax,%rsi
+  157469:	ff 15 31 92 21 00    	call   *0x219231(%rip)        # 3706a0 <_DYNAMIC+0x260>
+  15746f:	bf 02 00 00 00       	mov    $0x2,%edi
+  157474:	48 8d 15 3d 25 1f 00 	lea    0x1f253d(%rip),%rdx        # 3499b8 <__frame_dummy_init_array_entry+0xe28>
+  15747b:	48 89 c6             	mov    %rax,%rsi
+  15747e:	ff 15 1c 92 21 00    	call   *0x21921c(%rip)        # 3706a0 <_DYNAMIC+0x260>
+  157484:	bf 03 00 00 00       	mov    $0x3,%edi
+  157489:	48 8d 15 28 25 1f 00 	lea    0x1f2528(%rip),%rdx        # 3499b8 <__frame_dummy_init_array_entry+0xe28>
+  157490:	48 89 c6             	mov    %rax,%rsi
+  157493:	ff 15 07 92 21 00    	call   *0x219207(%rip)        # 3706a0 <_DYNAMIC+0x260>
+  157499:	bf 04 00 00 00       	mov    $0x4,%edi
+  15749e:	48 8d 15 13 25 1f 00 	lea    0x1f2513(%rip),%rdx        # 3499b8 <__frame_dummy_init_array_entry+0xe28>
+  1574a5:	48 89 c6             	mov    %rax,%rsi
+  1574a8:	ff 15 f2 91 21 00    	call   *0x2191f2(%rip)        # 3706a0 <_DYNAMIC+0x260>
+  1574ae:	bf 05 00 00 00       	mov    $0x5,%edi
+  1574b3:	48 8d 15 fe 24 1f 00 	lea    0x1f24fe(%rip),%rdx        # 3499b8 <__frame_dummy_init_array_entry+0xe28>
+  1574ba:	48 89 c6             	mov    %rax,%rsi
+  1574bd:	ff 15 dd 91 21 00    	call   *0x2191dd(%rip)        # 3706a0 <_DYNAMIC+0x260>
+  1574c3:	bf 06 00 00 00       	mov    $0x6,%edi
+  1574c8:	48 8d 15 e9 24 1f 00 	lea    0x1f24e9(%rip),%rdx        # 3499b8 <__frame_dummy_init_array_entry+0xe28>
+  1574cf:	48 89 c6             	mov    %rax,%rsi
+  1574d2:	ff 15 c8 91 21 00    	call   *0x2191c8(%rip)        # 3706a0 <_DYNAMIC+0x260>
+  1574d8:	bf 07 00 00 00       	mov    $0x7,%edi
+  1574dd:	48 8d 15 d4 24 1f 00 	lea    0x1f24d4(%rip),%rdx        # 3499b8 <__frame_dummy_init_array_entry+0xe28>
+  1574e4:	48 89 c6             	mov    %rax,%rsi
+  1574e7:	ff 15 b3 91 21 00    	call   *0x2191b3(%rip)        # 3706a0 <_DYNAMIC+0x260>
+  1574ed:	31 ff                	xor    %edi,%edi
+  1574ef:	48 8d 15 92 24 1f 00 	lea    0x1f2492(%rip),%rdx        # 349988 <__frame_dummy_init_array_entry+0xdf8>
+  1574f6:	ff 15 a4 91 21 00    	call   *0x2191a4(%rip)        # 3706a0 <_DYNAMIC+0x260>
+  1574fc:	bf 01 00 00 00       	mov    $0x1,%edi
+  157501:	eb 47                	jmp    15754a <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x6fa>
+  157503:	bf 02 00 00 00       	mov    $0x2,%edi
+  157508:	48 8d 15 79 24 1f 00 	lea    0x1f2479(%rip),%rdx        # 349988 <__frame_dummy_init_array_entry+0xdf8>
+  15750f:	ff 15 8b 91 21 00    	call   *0x21918b(%rip)        # 3706a0 <_DYNAMIC+0x260>
+  157515:	bf 03 00 00 00       	mov    $0x3,%edi
+  15751a:	48 8d 15 67 24 1f 00 	lea    0x1f2467(%rip),%rdx        # 349988 <__frame_dummy_init_array_entry+0xdf8>
+  157521:	ff 15 79 91 21 00    	call   *0x219179(%rip)        # 3706a0 <_DYNAMIC+0x260>
+  157527:	49 83 c3 08          	add    $0x8,%r11
+  15752b:	4c 89 df             	mov    %r11,%rdi
+  15752e:	49 39 f3             	cmp    %rsi,%r11
+  157531:	73 17                	jae    15754a <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x6fa>
+  157533:	48 8d 15 66 24 1f 00 	lea    0x1f2466(%rip),%rdx        # 3499a0 <__frame_dummy_init_array_entry+0xe10>
+  15753a:	bf 08 00 00 00       	mov    $0x8,%edi
+  15753f:	be 08 00 00 00       	mov    $0x8,%esi
+  157544:	ff 15 56 91 21 00    	call   *0x219156(%rip)        # 3706a0 <_DYNAMIC+0x260>
+  15754a:	48 8d 15 37 24 1f 00 	lea    0x1f2437(%rip),%rdx        # 349988 <__frame_dummy_init_array_entry+0xdf8>
+  157551:	ff 15 49 91 21 00    	call   *0x219149(%rip)        # 3706a0 <_DYNAMIC+0x260>
+  157557:	cc                   	int3
+  157558:	cc                   	int3
+  157559:	cc                   	int3
+  15755a:	cc                   	int3
+  15755b:	cc                   	int3
+  15755c:	cc                   	int3
+  15755d:	cc                   	int3
+  15755e:	cc                   	int3
+  15755f:	cc                   	int3
+
+0000000000157560 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}>:
+  157560:	41 57                	push   %r15
+  157562:	41 56                	push   %r14
+  157564:	41 54                	push   %r12
+  157566:	53                   	push   %rbx
+  157567:	48 81 ec 88 00 00 00 	sub    $0x88,%rsp
+  15756e:	4c 8b 47 10          	mov    0x10(%rdi),%r8
+  157572:	4d 85 c0             	test   %r8,%r8
+  157575:	74 44                	je     1575bb <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x5b>
+  157577:	4c 8b 4f 08          	mov    0x8(%rdi),%r9
+  15757b:	4e 8d 14 c5 00 00 00 	lea    0x0(,%r8,8),%r10
+  157582:	00 
+  157583:	49 83 c2 f8          	add    $0xfffffffffffffff8,%r10
+  157587:	41 f6 c2 08          	test   $0x8,%r10b
+  15758b:	75 33                	jne    1575c0 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x60>
+  15758d:	41 0f b6 09          	movzbl (%r9),%ecx
+  157591:	48 c7 c2 ff ff ff ff 	mov    $0xffffffffffffffff,%rdx
+  157598:	48 d3 e2             	shl    %cl,%rdx
+  15759b:	49 8d 41 08          	lea    0x8(%r9),%rax
+  15759f:	48 89 d1             	mov    %rdx,%rcx
+  1575a2:	48 f7 d1             	not    %rcx
+  1575a5:	48 21 f1             	and    %rsi,%rcx
+  1575a8:	48 21 f2             	and    %rsi,%rdx
+  1575ab:	48 01 d2             	add    %rdx,%rdx
+  1575ae:	48 09 ca             	or     %rcx,%rdx
+  1575b1:	48 89 d6             	mov    %rdx,%rsi
+  1575b4:	4d 85 d2             	test   %r10,%r10
+  1575b7:	75 0f                	jne    1575c8 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x68>
+  1575b9:	eb 5d                	jmp    157618 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0xb8>
+  1575bb:	48 89 f2             	mov    %rsi,%rdx
+  1575be:	eb 58                	jmp    157618 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0xb8>
+  1575c0:	4c 89 c8             	mov    %r9,%rax
+  1575c3:	4d 85 d2             	test   %r10,%r10
+  1575c6:	74 50                	je     157618 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0xb8>
+  1575c8:	4f 8d 04 c1          	lea    (%r9,%r8,8),%r8
+  1575cc:	48 89 f2             	mov    %rsi,%rdx
+  1575cf:	90                   	nop
+  1575d0:	0f b6 08             	movzbl (%rax),%ecx
+  1575d3:	48 c7 c6 ff ff ff ff 	mov    $0xffffffffffffffff,%rsi
+  1575da:	48 d3 e6             	shl    %cl,%rsi
+  1575dd:	0f b6 48 08          	movzbl 0x8(%rax),%ecx
+  1575e1:	49 89 f1             	mov    %rsi,%r9
+  1575e4:	49 f7 d1             	not    %r9
+  1575e7:	49 21 d1             	and    %rdx,%r9
+  1575ea:	48 21 d6             	and    %rdx,%rsi
+  1575ed:	48 01 f6             	add    %rsi,%rsi
+  1575f0:	4c 09 ce             	or     %r9,%rsi
+  1575f3:	48 c7 c2 ff ff ff ff 	mov    $0xffffffffffffffff,%rdx
+  1575fa:	48 d3 e2             	shl    %cl,%rdx
+  1575fd:	48 89 d1             	mov    %rdx,%rcx
+  157600:	48 f7 d1             	not    %rcx
+  157603:	48 21 f1             	and    %rsi,%rcx
+  157606:	48 21 f2             	and    %rsi,%rdx
+  157609:	48 01 d2             	add    %rdx,%rdx
+  15760c:	48 09 ca             	or     %rcx,%rdx
+  15760f:	48 83 c0 10          	add    $0x10,%rax
+  157613:	4c 39 c0             	cmp    %r8,%rax
+  157616:	75 b8                	jne    1575d0 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x70>
+  157618:	0f 57 c0             	xorps  %xmm0,%xmm0
+  15761b:	0f 11 44 24 70       	movups %xmm0,0x70(%rsp)
+  157620:	0f 11 44 24 60       	movups %xmm0,0x60(%rsp)
+  157625:	0f 11 44 24 50       	movups %xmm0,0x50(%rsp)
+  15762a:	48 c7 84 24 80 00 00 	movq   $0x0,0x80(%rsp)
+  157631:	00 00 00 00 00 
+  157636:	48 8b 77 28          	mov    0x28(%rdi),%rsi
+  15763a:	48 85 f6             	test   %rsi,%rsi
+  15763d:	0f 84 cb 02 00 00    	je     15790e <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x3ae>
+  157643:	48 8b 4f 20          	mov    0x20(%rdi),%rcx
+  157647:	4c 8b 47 40          	mov    0x40(%rdi),%r8
+  15764b:	48 8b 01             	mov    (%rcx),%rax
+  15764e:	48 09 d0             	or     %rdx,%rax
+  157651:	f2 41 0f 10 04 c0    	movsd  (%r8,%rax,8),%xmm0
+  157657:	f2 0f 11 44 24 08    	movsd  %xmm0,0x8(%rsp)
+  15765d:	48 83 fe 01          	cmp    $0x1,%rsi
+  157661:	0f 84 b6 02 00 00    	je     15791d <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x3bd>
+  157667:	48 8b 41 08          	mov    0x8(%rcx),%rax
+  15766b:	48 09 d0             	or     %rdx,%rax
+  15766e:	f2 41 0f 10 04 c0    	movsd  (%r8,%rax,8),%xmm0
+  157674:	f2 0f 11 44 24 10    	movsd  %xmm0,0x10(%rsp)
+  15767a:	48 83 fe 02          	cmp    $0x2,%rsi
+  15767e:	0f 84 ab 02 00 00    	je     15792f <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x3cf>
+  157684:	48 8b 41 10          	mov    0x10(%rcx),%rax
+  157688:	48 09 d0             	or     %rdx,%rax
+  15768b:	f2 41 0f 10 04 c0    	movsd  (%r8,%rax,8),%xmm0
+  157691:	f2 0f 11 44 24 18    	movsd  %xmm0,0x18(%rsp)
+  157697:	48 83 fe 03          	cmp    $0x3,%rsi
+  15769b:	0f 84 a0 02 00 00    	je     157941 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x3e1>
+  1576a1:	48 8b 41 18          	mov    0x18(%rcx),%rax
+  1576a5:	48 09 d0             	or     %rdx,%rax
+  1576a8:	f2 41 0f 10 04 c0    	movsd  (%r8,%rax,8),%xmm0
+  1576ae:	f2 0f 11 44 24 20    	movsd  %xmm0,0x20(%rsp)
+  1576b4:	48 83 fe 04          	cmp    $0x4,%rsi
+  1576b8:	0f 84 95 02 00 00    	je     157953 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x3f3>
+  1576be:	48 8b 41 20          	mov    0x20(%rcx),%rax
+  1576c2:	48 09 d0             	or     %rdx,%rax
+  1576c5:	f2 41 0f 10 04 c0    	movsd  (%r8,%rax,8),%xmm0
+  1576cb:	f2 0f 11 44 24 28    	movsd  %xmm0,0x28(%rsp)
+  1576d1:	48 83 fe 05          	cmp    $0x5,%rsi
+  1576d5:	0f 84 8a 02 00 00    	je     157965 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x405>
+  1576db:	48 8b 41 28          	mov    0x28(%rcx),%rax
+  1576df:	48 09 d0             	or     %rdx,%rax
+  1576e2:	f2 41 0f 10 04 c0    	movsd  (%r8,%rax,8),%xmm0
+  1576e8:	f2 0f 11 44 24 30    	movsd  %xmm0,0x30(%rsp)
+  1576ee:	48 83 fe 06          	cmp    $0x6,%rsi
+  1576f2:	0f 84 7f 02 00 00    	je     157977 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x417>
+  1576f8:	48 8b 41 30          	mov    0x30(%rcx),%rax
+  1576fc:	48 09 d0             	or     %rdx,%rax
+  1576ff:	f2 41 0f 10 04 c0    	movsd  (%r8,%rax,8),%xmm0
+  157705:	f2 0f 11 44 24 38    	movsd  %xmm0,0x38(%rsp)
+  15770b:	48 83 fe 07          	cmp    $0x7,%rsi
+  15770f:	0f 84 74 02 00 00    	je     157989 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x429>
+  157715:	48 8b 41 38          	mov    0x38(%rcx),%rax
+  157719:	48 09 d0             	or     %rdx,%rax
+  15771c:	f2 41 0f 10 04 c0    	movsd  (%r8,%rax,8),%xmm0
+  157722:	f2 0f 11 44 24 40    	movsd  %xmm0,0x40(%rsp)
+  157728:	48 83 fe 08          	cmp    $0x8,%rsi
+  15772c:	0f 84 69 02 00 00    	je     15799b <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x43b>
+  157732:	48 8b 41 40          	mov    0x40(%rcx),%rax
+  157736:	48 09 d0             	or     %rdx,%rax
+  157739:	f2 41 0f 10 04 c0    	movsd  (%r8,%rax,8),%xmm0
+  15773f:	f2 0f 11 44 24 48    	movsd  %xmm0,0x48(%rsp)
+  157745:	48 83 fe 09          	cmp    $0x9,%rsi
+  157749:	0f 84 5e 02 00 00    	je     1579ad <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x44d>
+  15774f:	48 8b 41 48          	mov    0x48(%rcx),%rax
+  157753:	48 09 d0             	or     %rdx,%rax
+  157756:	f2 41 0f 10 04 c0    	movsd  (%r8,%rax,8),%xmm0
+  15775c:	f2 0f 11 44 24 50    	movsd  %xmm0,0x50(%rsp)
+  157762:	48 83 fe 0a          	cmp    $0xa,%rsi
+  157766:	0f 84 53 02 00 00    	je     1579bf <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x45f>
+  15776c:	48 8b 41 50          	mov    0x50(%rcx),%rax
+  157770:	48 09 d0             	or     %rdx,%rax
+  157773:	f2 41 0f 10 04 c0    	movsd  (%r8,%rax,8),%xmm0
+  157779:	f2 0f 11 44 24 58    	movsd  %xmm0,0x58(%rsp)
+  15777f:	48 83 fe 0b          	cmp    $0xb,%rsi
+  157783:	0f 84 48 02 00 00    	je     1579d1 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x471>
+  157789:	48 8b 41 58          	mov    0x58(%rcx),%rax
+  15778d:	48 09 d0             	or     %rdx,%rax
+  157790:	f2 41 0f 10 04 c0    	movsd  (%r8,%rax,8),%xmm0
+  157796:	f2 0f 11 44 24 60    	movsd  %xmm0,0x60(%rsp)
+  15779c:	48 83 fe 0c          	cmp    $0xc,%rsi
+  1577a0:	0f 84 3d 02 00 00    	je     1579e3 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x483>
+  1577a6:	48 8b 41 60          	mov    0x60(%rcx),%rax
+  1577aa:	48 09 d0             	or     %rdx,%rax
+  1577ad:	f2 41 0f 10 04 c0    	movsd  (%r8,%rax,8),%xmm0
+  1577b3:	f2 0f 11 44 24 68    	movsd  %xmm0,0x68(%rsp)
+  1577b9:	48 83 fe 0d          	cmp    $0xd,%rsi
+  1577bd:	0f 84 32 02 00 00    	je     1579f5 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x495>
+  1577c3:	48 8b 41 68          	mov    0x68(%rcx),%rax
+  1577c7:	48 09 d0             	or     %rdx,%rax
+  1577ca:	f2 41 0f 10 04 c0    	movsd  (%r8,%rax,8),%xmm0
+  1577d0:	f2 0f 11 44 24 70    	movsd  %xmm0,0x70(%rsp)
+  1577d6:	48 83 fe 0e          	cmp    $0xe,%rsi
+  1577da:	0f 84 27 02 00 00    	je     157a07 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x4a7>
+  1577e0:	48 8b 41 70          	mov    0x70(%rcx),%rax
+  1577e4:	48 09 d0             	or     %rdx,%rax
+  1577e7:	f2 41 0f 10 04 c0    	movsd  (%r8,%rax,8),%xmm0
+  1577ed:	f2 0f 11 44 24 78    	movsd  %xmm0,0x78(%rsp)
+  1577f3:	48 83 fe 0f          	cmp    $0xf,%rsi
+  1577f7:	0f 84 1c 02 00 00    	je     157a19 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x4b9>
+  1577fd:	48 8b 41 78          	mov    0x78(%rcx),%rax
+  157801:	48 09 d0             	or     %rdx,%rax
+  157804:	f2 41 0f 10 04 c0    	movsd  (%r8,%rax,8),%xmm0
+  15780a:	f2 0f 11 84 24 80 00 	movsd  %xmm0,0x80(%rsp)
+  157811:	00 00 
+  157813:	4c 8b 4f 48          	mov    0x48(%rdi),%r9
+  157817:	4d 85 c9             	test   %r9,%r9
+  15781a:	0f 84 a8 00 00 00    	je     1578c8 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x368>
+  157820:	4c 8b 57 30          	mov    0x30(%rdi),%r10
+  157824:	48 8b 47 38          	mov    0x38(%rdi),%rax
+  157828:	4e 8d 1c cd 00 00 00 	lea    0x0(,%r9,8),%r11
+  15782f:	00 
+  157830:	45 31 f6             	xor    %r14d,%r14d
+  157833:	31 db                	xor    %ebx,%ebx
+  157835:	66 66 2e 0f 1f 84 00 	data16 cs nopw 0x0(%rax,%rax,1)
+  15783c:	00 00 00 00 
+  157840:	4d 8d 7e 01          	lea    0x1(%r14),%r15
+  157844:	0f 57 c0             	xorps  %xmm0,%xmm0
+  157847:	45 31 e4             	xor    %r12d,%r12d
+  15784a:	66 0f 1f 44 00 00    	nopw   0x0(%rax,%rax,1)
+  157850:	4a 8d 3c 23          	lea    (%rbx,%r12,1),%rdi
+  157854:	48 39 c7             	cmp    %rax,%rdi
+  157857:	0f 83 91 00 00 00    	jae    1578ee <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x38e>
+  15785d:	49 83 fc 10          	cmp    $0x10,%r12
+  157861:	74 74                	je     1578d7 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x377>
+  157863:	f2 43 0f 10 0c e2    	movsd  (%r10,%r12,8),%xmm1
+  157869:	f3 42 0f 10 54 e4 08 	movss  0x8(%rsp,%r12,8),%xmm2
+  157870:	f3 42 0f 10 5c e4 0c 	movss  0xc(%rsp,%r12,8),%xmm3
+  157877:	49 ff c4             	inc    %r12
+  15787a:	0f c6 d2 00          	shufps $0x0,%xmm2,%xmm2
+  15787e:	0f 59 d1             	mulps  %xmm1,%xmm2
+  157881:	0f c6 c9 e1          	shufps $0xe1,%xmm1,%xmm1
+  157885:	0f c6 db 00          	shufps $0x0,%xmm3,%xmm3
+  157889:	0f 59 d9             	mulps  %xmm1,%xmm3
+  15788c:	0f 28 ca             	movaps %xmm2,%xmm1
+  15788f:	0f 5c cb             	subps  %xmm3,%xmm1
+  157892:	0f 58 d3             	addps  %xmm3,%xmm2
+  157895:	0f c6 d1 01          	shufps $0x1,%xmm1,%xmm2
+  157899:	0f c6 d1 e2          	shufps $0xe2,%xmm1,%xmm2
+  15789d:	0f 58 c2             	addps  %xmm2,%xmm0
+  1578a0:	4d 39 e1             	cmp    %r12,%r9
+  1578a3:	75 ab                	jne    157850 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x2f0>
+  1578a5:	49 39 f6             	cmp    %rsi,%r14
+  1578a8:	74 54                	je     1578fe <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x39e>
+  1578aa:	4a 8b 3c f1          	mov    (%rcx,%r14,8),%rdi
+  1578ae:	48 09 d7             	or     %rdx,%rdi
+  1578b1:	41 0f 13 04 f8       	movlps %xmm0,(%r8,%rdi,8)
+  1578b6:	4c 01 cb             	add    %r9,%rbx
+  1578b9:	4d 01 da             	add    %r11,%r10
+  1578bc:	4d 89 fe             	mov    %r15,%r14
+  1578bf:	4d 39 cf             	cmp    %r9,%r15
+  1578c2:	0f 85 78 ff ff ff    	jne    157840 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x2e0>
+  1578c8:	48 81 c4 88 00 00 00 	add    $0x88,%rsp
+  1578cf:	5b                   	pop    %rbx
+  1578d0:	41 5c                	pop    %r12
+  1578d2:	41 5e                	pop    %r14
+  1578d4:	41 5f                	pop    %r15
+  1578d6:	c3                   	ret
+  1578d7:	48 8d 15 c2 20 1f 00 	lea    0x1f20c2(%rip),%rdx        # 3499a0 <__frame_dummy_init_array_entry+0xe10>
+  1578de:	bf 10 00 00 00       	mov    $0x10,%edi
+  1578e3:	be 10 00 00 00       	mov    $0x10,%esi
+  1578e8:	ff 15 b2 8d 21 00    	call   *0x218db2(%rip)        # 3706a0 <_DYNAMIC+0x260>
+  1578ee:	48 8d 15 93 20 1f 00 	lea    0x1f2093(%rip),%rdx        # 349988 <__frame_dummy_init_array_entry+0xdf8>
+  1578f5:	48 89 c6             	mov    %rax,%rsi
+  1578f8:	ff 15 a2 8d 21 00    	call   *0x218da2(%rip)        # 3706a0 <_DYNAMIC+0x260>
+  1578fe:	48 8d 15 6b 20 1f 00 	lea    0x1f206b(%rip),%rdx        # 349970 <__frame_dummy_init_array_entry+0xde0>
+  157905:	48 89 f7             	mov    %rsi,%rdi
+  157908:	ff 15 92 8d 21 00    	call   *0x218d92(%rip)        # 3706a0 <_DYNAMIC+0x260>
+  15790e:	31 ff                	xor    %edi,%edi
+  157910:	48 8d 15 a1 20 1f 00 	lea    0x1f20a1(%rip),%rdx        # 3499b8 <__frame_dummy_init_array_entry+0xe28>
+  157917:	ff 15 83 8d 21 00    	call   *0x218d83(%rip)        # 3706a0 <_DYNAMIC+0x260>
+  15791d:	bf 01 00 00 00       	mov    $0x1,%edi
+  157922:	48 8d 15 8f 20 1f 00 	lea    0x1f208f(%rip),%rdx        # 3499b8 <__frame_dummy_init_array_entry+0xe28>
+  157929:	ff 15 71 8d 21 00    	call   *0x218d71(%rip)        # 3706a0 <_DYNAMIC+0x260>
+  15792f:	bf 02 00 00 00       	mov    $0x2,%edi
+  157934:	48 8d 15 7d 20 1f 00 	lea    0x1f207d(%rip),%rdx        # 3499b8 <__frame_dummy_init_array_entry+0xe28>
+  15793b:	ff 15 5f 8d 21 00    	call   *0x218d5f(%rip)        # 3706a0 <_DYNAMIC+0x260>
+  157941:	bf 03 00 00 00       	mov    $0x3,%edi
+  157946:	48 8d 15 6b 20 1f 00 	lea    0x1f206b(%rip),%rdx        # 3499b8 <__frame_dummy_init_array_entry+0xe28>
+  15794d:	ff 15 4d 8d 21 00    	call   *0x218d4d(%rip)        # 3706a0 <_DYNAMIC+0x260>
+  157953:	bf 04 00 00 00       	mov    $0x4,%edi
+  157958:	48 8d 15 59 20 1f 00 	lea    0x1f2059(%rip),%rdx        # 3499b8 <__frame_dummy_init_array_entry+0xe28>
+  15795f:	ff 15 3b 8d 21 00    	call   *0x218d3b(%rip)        # 3706a0 <_DYNAMIC+0x260>
+  157965:	bf 05 00 00 00       	mov    $0x5,%edi
+  15796a:	48 8d 15 47 20 1f 00 	lea    0x1f2047(%rip),%rdx        # 3499b8 <__frame_dummy_init_array_entry+0xe28>
+  157971:	ff 15 29 8d 21 00    	call   *0x218d29(%rip)        # 3706a0 <_DYNAMIC+0x260>
+  157977:	bf 06 00 00 00       	mov    $0x6,%edi
+  15797c:	48 8d 15 35 20 1f 00 	lea    0x1f2035(%rip),%rdx        # 3499b8 <__frame_dummy_init_array_entry+0xe28>
+  157983:	ff 15 17 8d 21 00    	call   *0x218d17(%rip)        # 3706a0 <_DYNAMIC+0x260>
+  157989:	bf 07 00 00 00       	mov    $0x7,%edi
+  15798e:	48 8d 15 23 20 1f 00 	lea    0x1f2023(%rip),%rdx        # 3499b8 <__frame_dummy_init_array_entry+0xe28>
+  157995:	ff 15 05 8d 21 00    	call   *0x218d05(%rip)        # 3706a0 <_DYNAMIC+0x260>
+  15799b:	bf 08 00 00 00       	mov    $0x8,%edi
+  1579a0:	48 8d 15 11 20 1f 00 	lea    0x1f2011(%rip),%rdx        # 3499b8 <__frame_dummy_init_array_entry+0xe28>
+  1579a7:	ff 15 f3 8c 21 00    	call   *0x218cf3(%rip)        # 3706a0 <_DYNAMIC+0x260>
+  1579ad:	bf 09 00 00 00       	mov    $0x9,%edi
+  1579b2:	48 8d 15 ff 1f 1f 00 	lea    0x1f1fff(%rip),%rdx        # 3499b8 <__frame_dummy_init_array_entry+0xe28>
+  1579b9:	ff 15 e1 8c 21 00    	call   *0x218ce1(%rip)        # 3706a0 <_DYNAMIC+0x260>
+  1579bf:	bf 0a 00 00 00       	mov    $0xa,%edi
+  1579c4:	48 8d 15 ed 1f 1f 00 	lea    0x1f1fed(%rip),%rdx        # 3499b8 <__frame_dummy_init_array_entry+0xe28>
+  1579cb:	ff 15 cf 8c 21 00    	call   *0x218ccf(%rip)        # 3706a0 <_DYNAMIC+0x260>
+  1579d1:	bf 0b 00 00 00       	mov    $0xb,%edi
+  1579d6:	48 8d 15 db 1f 1f 00 	lea    0x1f1fdb(%rip),%rdx        # 3499b8 <__frame_dummy_init_array_entry+0xe28>
+  1579dd:	ff 15 bd 8c 21 00    	call   *0x218cbd(%rip)        # 3706a0 <_DYNAMIC+0x260>
+  1579e3:	bf 0c 00 00 00       	mov    $0xc,%edi
+  1579e8:	48 8d 15 c9 1f 1f 00 	lea    0x1f1fc9(%rip),%rdx        # 3499b8 <__frame_dummy_init_array_entry+0xe28>
+  1579ef:	ff 15 ab 8c 21 00    	call   *0x218cab(%rip)        # 3706a0 <_DYNAMIC+0x260>
+  1579f5:	bf 0d 00 00 00       	mov    $0xd,%edi
+  1579fa:	48 8d 15 b7 1f 1f 00 	lea    0x1f1fb7(%rip),%rdx        # 3499b8 <__frame_dummy_init_array_entry+0xe28>
+  157a01:	ff 15 99 8c 21 00    	call   *0x218c99(%rip)        # 3706a0 <_DYNAMIC+0x260>
+  157a07:	bf 0e 00 00 00       	mov    $0xe,%edi
+  157a0c:	48 8d 15 a5 1f 1f 00 	lea    0x1f1fa5(%rip),%rdx        # 3499b8 <__frame_dummy_init_array_entry+0xe28>
+  157a13:	ff 15 87 8c 21 00    	call   *0x218c87(%rip)        # 3706a0 <_DYNAMIC+0x260>
+  157a19:	bf 0f 00 00 00       	mov    $0xf,%edi
+  157a1e:	48 8d 15 93 1f 1f 00 	lea    0x1f1f93(%rip),%rdx        # 3499b8 <__frame_dummy_init_array_entry+0xe28>
+  157a25:	ff 15 75 8c 21 00    	call   *0x218c75(%rip)        # 3706a0 <_DYNAMIC+0x260>
+  157a2b:	cc                   	int3
+  157a2c:	cc                   	int3
+  157a2d:	cc                   	int3
+  157a2e:	cc                   	int3
+  157a2f:	cc                   	int3
+
+0000000000157a30 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}>:
+  157a30:	41 57                	push   %r15
+  157a32:	41 56                	push   %r14
+  157a34:	41 54                	push   %r12
+  157a36:	53                   	push   %rbx
+  157a37:	48 81 ec 08 01 00 00 	sub    $0x108,%rsp
+  157a3e:	4c 8b 47 10          	mov    0x10(%rdi),%r8
+  157a42:	4d 85 c0             	test   %r8,%r8
+  157a45:	74 44                	je     157a8b <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x5b>
+  157a47:	4c 8b 4f 08          	mov    0x8(%rdi),%r9
+  157a4b:	4e 8d 14 c5 00 00 00 	lea    0x0(,%r8,8),%r10
+  157a52:	00 
+  157a53:	49 83 c2 f8          	add    $0xfffffffffffffff8,%r10
+  157a57:	41 f6 c2 08          	test   $0x8,%r10b
+  157a5b:	75 33                	jne    157a90 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x60>
+  157a5d:	41 0f b6 09          	movzbl (%r9),%ecx
+  157a61:	48 c7 c2 ff ff ff ff 	mov    $0xffffffffffffffff,%rdx
+  157a68:	48 d3 e2             	shl    %cl,%rdx
+  157a6b:	49 8d 41 08          	lea    0x8(%r9),%rax
+  157a6f:	48 89 d1             	mov    %rdx,%rcx
+  157a72:	48 f7 d1             	not    %rcx
+  157a75:	48 21 f1             	and    %rsi,%rcx
+  157a78:	48 21 f2             	and    %rsi,%rdx
+  157a7b:	48 01 d2             	add    %rdx,%rdx
+  157a7e:	48 09 ca             	or     %rcx,%rdx
+  157a81:	48 89 d6             	mov    %rdx,%rsi
+  157a84:	4d 85 d2             	test   %r10,%r10
+  157a87:	75 0f                	jne    157a98 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x68>
+  157a89:	eb 5d                	jmp    157ae8 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0xb8>
+  157a8b:	48 89 f2             	mov    %rsi,%rdx
+  157a8e:	eb 58                	jmp    157ae8 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0xb8>
+  157a90:	4c 89 c8             	mov    %r9,%rax
+  157a93:	4d 85 d2             	test   %r10,%r10
+  157a96:	74 50                	je     157ae8 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0xb8>
+  157a98:	4f 8d 04 c1          	lea    (%r9,%r8,8),%r8
+  157a9c:	48 89 f2             	mov    %rsi,%rdx
+  157a9f:	90                   	nop
+  157aa0:	0f b6 08             	movzbl (%rax),%ecx
+  157aa3:	48 c7 c6 ff ff ff ff 	mov    $0xffffffffffffffff,%rsi
+  157aaa:	48 d3 e6             	shl    %cl,%rsi
+  157aad:	0f b6 48 08          	movzbl 0x8(%rax),%ecx
+  157ab1:	49 89 f1             	mov    %rsi,%r9
+  157ab4:	49 f7 d1             	not    %r9
+  157ab7:	49 21 d1             	and    %rdx,%r9
+  157aba:	48 21 d6             	and    %rdx,%rsi
+  157abd:	48 01 f6             	add    %rsi,%rsi
+  157ac0:	4c 09 ce             	or     %r9,%rsi
+  157ac3:	48 c7 c2 ff ff ff ff 	mov    $0xffffffffffffffff,%rdx
+  157aca:	48 d3 e2             	shl    %cl,%rdx
+  157acd:	48 89 d1             	mov    %rdx,%rcx
+  157ad0:	48 f7 d1             	not    %rcx
+  157ad3:	48 21 f1             	and    %rsi,%rcx
+  157ad6:	48 21 f2             	and    %rsi,%rdx
+  157ad9:	48 01 d2             	add    %rdx,%rdx
+  157adc:	48 09 ca             	or     %rcx,%rdx
+  157adf:	48 83 c0 10          	add    $0x10,%rax
+  157ae3:	4c 39 c0             	cmp    %r8,%rax
+  157ae6:	75 b8                	jne    157aa0 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x70>
+  157ae8:	0f 57 c0             	xorps  %xmm0,%xmm0
+  157aeb:	0f 29 84 24 f0 00 00 	movaps %xmm0,0xf0(%rsp)
+  157af2:	00 
+  157af3:	0f 29 84 24 e0 00 00 	movaps %xmm0,0xe0(%rsp)
+  157afa:	00 
+  157afb:	0f 29 84 24 d0 00 00 	movaps %xmm0,0xd0(%rsp)
+  157b02:	00 
+  157b03:	0f 29 84 24 c0 00 00 	movaps %xmm0,0xc0(%rsp)
+  157b0a:	00 
+  157b0b:	0f 29 84 24 b0 00 00 	movaps %xmm0,0xb0(%rsp)
+  157b12:	00 
+  157b13:	0f 29 84 24 a0 00 00 	movaps %xmm0,0xa0(%rsp)
+  157b1a:	00 
+  157b1b:	0f 29 84 24 90 00 00 	movaps %xmm0,0x90(%rsp)
+  157b22:	00 
+  157b23:	0f 29 84 24 80 00 00 	movaps %xmm0,0x80(%rsp)
+  157b2a:	00 
+  157b2b:	0f 29 44 24 70       	movaps %xmm0,0x70(%rsp)
+  157b30:	0f 29 44 24 60       	movaps %xmm0,0x60(%rsp)
+  157b35:	0f 29 44 24 50       	movaps %xmm0,0x50(%rsp)
+  157b3a:	0f 29 44 24 40       	movaps %xmm0,0x40(%rsp)
+  157b3f:	0f 29 44 24 30       	movaps %xmm0,0x30(%rsp)
+  157b44:	0f 29 44 24 20       	movaps %xmm0,0x20(%rsp)
+  157b49:	0f 29 44 24 10       	movaps %xmm0,0x10(%rsp)
+  157b4e:	0f 29 04 24          	movaps %xmm0,(%rsp)
+  157b52:	48 8b 47 28          	mov    0x28(%rdi),%rax
+  157b56:	48 85 c0             	test   %rax,%rax
+  157b59:	0f 84 db 04 00 00    	je     15803a <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x60a>
+  157b5f:	48 8b 4f 20          	mov    0x20(%rdi),%rcx
+  157b63:	4c 8b 47 40          	mov    0x40(%rdi),%r8
+  157b67:	48 8b 31             	mov    (%rcx),%rsi
+  157b6a:	48 09 d6             	or     %rdx,%rsi
+  157b6d:	f2 41 0f 10 04 f0    	movsd  (%r8,%rsi,8),%xmm0
+  157b73:	f2 0f 11 04 24       	movsd  %xmm0,(%rsp)
+  157b78:	48 83 f8 01          	cmp    $0x1,%rax
+  157b7c:	0f 84 b8 04 00 00    	je     15803a <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x60a>
+  157b82:	48 8b 71 08          	mov    0x8(%rcx),%rsi
+  157b86:	48 09 d6             	or     %rdx,%rsi
+  157b89:	f2 41 0f 10 04 f0    	movsd  (%r8,%rsi,8),%xmm0
+  157b8f:	f2 0f 11 44 24 08    	movsd  %xmm0,0x8(%rsp)
+  157b95:	48 83 f8 02          	cmp    $0x2,%rax
+  157b99:	0f 84 9b 04 00 00    	je     15803a <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x60a>
+  157b9f:	48 8b 71 10          	mov    0x10(%rcx),%rsi
+  157ba3:	48 09 d6             	or     %rdx,%rsi
+  157ba6:	f2 41 0f 10 04 f0    	movsd  (%r8,%rsi,8),%xmm0
+  157bac:	f2 0f 11 44 24 10    	movsd  %xmm0,0x10(%rsp)
+  157bb2:	48 83 f8 03          	cmp    $0x3,%rax
+  157bb6:	0f 84 7e 04 00 00    	je     15803a <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x60a>
+  157bbc:	48 8b 71 18          	mov    0x18(%rcx),%rsi
+  157bc0:	48 09 d6             	or     %rdx,%rsi
+  157bc3:	f2 41 0f 10 04 f0    	movsd  (%r8,%rsi,8),%xmm0
+  157bc9:	f2 0f 11 44 24 18    	movsd  %xmm0,0x18(%rsp)
+  157bcf:	48 83 f8 04          	cmp    $0x4,%rax
+  157bd3:	0f 84 61 04 00 00    	je     15803a <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x60a>
+  157bd9:	48 8b 71 20          	mov    0x20(%rcx),%rsi
+  157bdd:	48 09 d6             	or     %rdx,%rsi
+  157be0:	f2 41 0f 10 04 f0    	movsd  (%r8,%rsi,8),%xmm0
+  157be6:	f2 0f 11 44 24 20    	movsd  %xmm0,0x20(%rsp)
+  157bec:	48 83 f8 05          	cmp    $0x5,%rax
+  157bf0:	0f 84 44 04 00 00    	je     15803a <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x60a>
+  157bf6:	48 8b 71 28          	mov    0x28(%rcx),%rsi
+  157bfa:	48 09 d6             	or     %rdx,%rsi
+  157bfd:	f2 41 0f 10 04 f0    	movsd  (%r8,%rsi,8),%xmm0
+  157c03:	f2 0f 11 44 24 28    	movsd  %xmm0,0x28(%rsp)
+  157c09:	48 83 f8 06          	cmp    $0x6,%rax
+  157c0d:	0f 84 27 04 00 00    	je     15803a <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x60a>
+  157c13:	48 8b 71 30          	mov    0x30(%rcx),%rsi
+  157c17:	48 09 d6             	or     %rdx,%rsi
+  157c1a:	f2 41 0f 10 04 f0    	movsd  (%r8,%rsi,8),%xmm0
+  157c20:	f2 0f 11 44 24 30    	movsd  %xmm0,0x30(%rsp)
+  157c26:	48 83 f8 07          	cmp    $0x7,%rax
+  157c2a:	0f 84 0a 04 00 00    	je     15803a <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x60a>
+  157c30:	48 8b 71 38          	mov    0x38(%rcx),%rsi
+  157c34:	48 09 d6             	or     %rdx,%rsi
+  157c37:	f2 41 0f 10 04 f0    	movsd  (%r8,%rsi,8),%xmm0
+  157c3d:	f2 0f 11 44 24 38    	movsd  %xmm0,0x38(%rsp)
+  157c43:	48 83 f8 08          	cmp    $0x8,%rax
+  157c47:	0f 84 ed 03 00 00    	je     15803a <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x60a>
+  157c4d:	48 8b 71 40          	mov    0x40(%rcx),%rsi
+  157c51:	48 09 d6             	or     %rdx,%rsi
+  157c54:	f2 41 0f 10 04 f0    	movsd  (%r8,%rsi,8),%xmm0
+  157c5a:	f2 0f 11 44 24 40    	movsd  %xmm0,0x40(%rsp)
+  157c60:	48 83 f8 09          	cmp    $0x9,%rax
+  157c64:	0f 84 d0 03 00 00    	je     15803a <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x60a>
+  157c6a:	48 8b 71 48          	mov    0x48(%rcx),%rsi
+  157c6e:	48 09 d6             	or     %rdx,%rsi
+  157c71:	f2 41 0f 10 04 f0    	movsd  (%r8,%rsi,8),%xmm0
+  157c77:	f2 0f 11 44 24 48    	movsd  %xmm0,0x48(%rsp)
+  157c7d:	48 83 f8 0a          	cmp    $0xa,%rax
+  157c81:	0f 84 b3 03 00 00    	je     15803a <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x60a>
+  157c87:	48 8b 71 50          	mov    0x50(%rcx),%rsi
+  157c8b:	48 09 d6             	or     %rdx,%rsi
+  157c8e:	f2 41 0f 10 04 f0    	movsd  (%r8,%rsi,8),%xmm0
+  157c94:	f2 0f 11 44 24 50    	movsd  %xmm0,0x50(%rsp)
+  157c9a:	48 83 f8 0b          	cmp    $0xb,%rax
+  157c9e:	0f 84 96 03 00 00    	je     15803a <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x60a>
+  157ca4:	48 8b 71 58          	mov    0x58(%rcx),%rsi
+  157ca8:	48 09 d6             	or     %rdx,%rsi
+  157cab:	f2 41 0f 10 04 f0    	movsd  (%r8,%rsi,8),%xmm0
+  157cb1:	f2 0f 11 44 24 58    	movsd  %xmm0,0x58(%rsp)
+  157cb7:	48 83 f8 0c          	cmp    $0xc,%rax
+  157cbb:	0f 84 79 03 00 00    	je     15803a <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x60a>
+  157cc1:	48 8b 71 60          	mov    0x60(%rcx),%rsi
+  157cc5:	48 09 d6             	or     %rdx,%rsi
+  157cc8:	f2 41 0f 10 04 f0    	movsd  (%r8,%rsi,8),%xmm0
+  157cce:	f2 0f 11 44 24 60    	movsd  %xmm0,0x60(%rsp)
+  157cd4:	48 83 f8 0d          	cmp    $0xd,%rax
+  157cd8:	0f 84 5c 03 00 00    	je     15803a <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x60a>
+  157cde:	48 8b 71 68          	mov    0x68(%rcx),%rsi
+  157ce2:	48 09 d6             	or     %rdx,%rsi
+  157ce5:	f2 41 0f 10 04 f0    	movsd  (%r8,%rsi,8),%xmm0
+  157ceb:	f2 0f 11 44 24 68    	movsd  %xmm0,0x68(%rsp)
+  157cf1:	48 83 f8 0e          	cmp    $0xe,%rax
+  157cf5:	0f 84 3f 03 00 00    	je     15803a <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x60a>
+  157cfb:	48 8b 71 70          	mov    0x70(%rcx),%rsi
+  157cff:	48 09 d6             	or     %rdx,%rsi
+  157d02:	f2 41 0f 10 04 f0    	movsd  (%r8,%rsi,8),%xmm0
+  157d08:	f2 0f 11 44 24 70    	movsd  %xmm0,0x70(%rsp)
+  157d0e:	48 83 f8 0f          	cmp    $0xf,%rax
+  157d12:	0f 84 22 03 00 00    	je     15803a <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x60a>
+  157d18:	48 8b 71 78          	mov    0x78(%rcx),%rsi
+  157d1c:	48 09 d6             	or     %rdx,%rsi
+  157d1f:	f2 41 0f 10 04 f0    	movsd  (%r8,%rsi,8),%xmm0
+  157d25:	f2 0f 11 44 24 78    	movsd  %xmm0,0x78(%rsp)
+  157d2b:	48 83 f8 10          	cmp    $0x10,%rax
+  157d2f:	0f 84 05 03 00 00    	je     15803a <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x60a>
+  157d35:	48 8b b1 80 00 00 00 	mov    0x80(%rcx),%rsi
+  157d3c:	48 09 d6             	or     %rdx,%rsi
+  157d3f:	f2 41 0f 10 04 f0    	movsd  (%r8,%rsi,8),%xmm0
+  157d45:	f2 0f 11 84 24 80 00 	movsd  %xmm0,0x80(%rsp)
+  157d4c:	00 00 
+  157d4e:	48 83 f8 11          	cmp    $0x11,%rax
+  157d52:	0f 84 e2 02 00 00    	je     15803a <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x60a>
+  157d58:	48 8b b1 88 00 00 00 	mov    0x88(%rcx),%rsi
+  157d5f:	48 09 d6             	or     %rdx,%rsi
+  157d62:	f2 41 0f 10 04 f0    	movsd  (%r8,%rsi,8),%xmm0
+  157d68:	f2 0f 11 84 24 88 00 	movsd  %xmm0,0x88(%rsp)
+  157d6f:	00 00 
+  157d71:	48 83 f8 12          	cmp    $0x12,%rax
+  157d75:	0f 84 bf 02 00 00    	je     15803a <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x60a>
+  157d7b:	48 8b b1 90 00 00 00 	mov    0x90(%rcx),%rsi
+  157d82:	48 09 d6             	or     %rdx,%rsi
+  157d85:	f2 41 0f 10 04 f0    	movsd  (%r8,%rsi,8),%xmm0
+  157d8b:	f2 0f 11 84 24 90 00 	movsd  %xmm0,0x90(%rsp)
+  157d92:	00 00 
+  157d94:	48 83 f8 13          	cmp    $0x13,%rax
+  157d98:	0f 84 9c 02 00 00    	je     15803a <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x60a>
+  157d9e:	48 8b b1 98 00 00 00 	mov    0x98(%rcx),%rsi
+  157da5:	48 09 d6             	or     %rdx,%rsi
+  157da8:	f2 41 0f 10 04 f0    	movsd  (%r8,%rsi,8),%xmm0
+  157dae:	f2 0f 11 84 24 98 00 	movsd  %xmm0,0x98(%rsp)
+  157db5:	00 00 
+  157db7:	48 83 f8 14          	cmp    $0x14,%rax
+  157dbb:	0f 84 79 02 00 00    	je     15803a <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x60a>
+  157dc1:	48 8b b1 a0 00 00 00 	mov    0xa0(%rcx),%rsi
+  157dc8:	48 09 d6             	or     %rdx,%rsi
+  157dcb:	f2 41 0f 10 04 f0    	movsd  (%r8,%rsi,8),%xmm0
+  157dd1:	f2 0f 11 84 24 a0 00 	movsd  %xmm0,0xa0(%rsp)
+  157dd8:	00 00 
+  157dda:	48 83 f8 15          	cmp    $0x15,%rax
+  157dde:	0f 84 56 02 00 00    	je     15803a <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x60a>
+  157de4:	48 8b b1 a8 00 00 00 	mov    0xa8(%rcx),%rsi
+  157deb:	48 09 d6             	or     %rdx,%rsi
+  157dee:	f2 41 0f 10 04 f0    	movsd  (%r8,%rsi,8),%xmm0
+  157df4:	f2 0f 11 84 24 a8 00 	movsd  %xmm0,0xa8(%rsp)
+  157dfb:	00 00 
+  157dfd:	48 83 f8 16          	cmp    $0x16,%rax
+  157e01:	0f 84 33 02 00 00    	je     15803a <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x60a>
+  157e07:	48 8b b1 b0 00 00 00 	mov    0xb0(%rcx),%rsi
+  157e0e:	48 09 d6             	or     %rdx,%rsi
+  157e11:	f2 41 0f 10 04 f0    	movsd  (%r8,%rsi,8),%xmm0
+  157e17:	f2 0f 11 84 24 b0 00 	movsd  %xmm0,0xb0(%rsp)
+  157e1e:	00 00 
+  157e20:	48 83 f8 17          	cmp    $0x17,%rax
+  157e24:	0f 84 10 02 00 00    	je     15803a <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x60a>
+  157e2a:	48 8b b1 b8 00 00 00 	mov    0xb8(%rcx),%rsi
+  157e31:	48 09 d6             	or     %rdx,%rsi
+  157e34:	f2 41 0f 10 04 f0    	movsd  (%r8,%rsi,8),%xmm0
+  157e3a:	f2 0f 11 84 24 b8 00 	movsd  %xmm0,0xb8(%rsp)
+  157e41:	00 00 
+  157e43:	48 83 f8 18          	cmp    $0x18,%rax
+  157e47:	0f 84 ed 01 00 00    	je     15803a <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x60a>
+  157e4d:	48 8b b1 c0 00 00 00 	mov    0xc0(%rcx),%rsi
+  157e54:	48 09 d6             	or     %rdx,%rsi
+  157e57:	f2 41 0f 10 04 f0    	movsd  (%r8,%rsi,8),%xmm0
+  157e5d:	f2 0f 11 84 24 c0 00 	movsd  %xmm0,0xc0(%rsp)
+  157e64:	00 00 
+  157e66:	48 83 f8 19          	cmp    $0x19,%rax
+  157e6a:	0f 84 ca 01 00 00    	je     15803a <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x60a>
+  157e70:	48 8b b1 c8 00 00 00 	mov    0xc8(%rcx),%rsi
+  157e77:	48 09 d6             	or     %rdx,%rsi
+  157e7a:	f2 41 0f 10 04 f0    	movsd  (%r8,%rsi,8),%xmm0
+  157e80:	f2 0f 11 84 24 c8 00 	movsd  %xmm0,0xc8(%rsp)
+  157e87:	00 00 
+  157e89:	48 83 f8 1a          	cmp    $0x1a,%rax
+  157e8d:	0f 84 a7 01 00 00    	je     15803a <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x60a>
+  157e93:	48 8b b1 d0 00 00 00 	mov    0xd0(%rcx),%rsi
+  157e9a:	48 09 d6             	or     %rdx,%rsi
+  157e9d:	f2 41 0f 10 04 f0    	movsd  (%r8,%rsi,8),%xmm0
+  157ea3:	f2 0f 11 84 24 d0 00 	movsd  %xmm0,0xd0(%rsp)
+  157eaa:	00 00 
+  157eac:	48 83 f8 1b          	cmp    $0x1b,%rax
+  157eb0:	0f 84 84 01 00 00    	je     15803a <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x60a>
+  157eb6:	48 8b b1 d8 00 00 00 	mov    0xd8(%rcx),%rsi
+  157ebd:	48 09 d6             	or     %rdx,%rsi
+  157ec0:	f2 41 0f 10 04 f0    	movsd  (%r8,%rsi,8),%xmm0
+  157ec6:	f2 0f 11 84 24 d8 00 	movsd  %xmm0,0xd8(%rsp)
+  157ecd:	00 00 
+  157ecf:	48 83 f8 1c          	cmp    $0x1c,%rax
+  157ed3:	0f 84 61 01 00 00    	je     15803a <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x60a>
+  157ed9:	48 8b b1 e0 00 00 00 	mov    0xe0(%rcx),%rsi
+  157ee0:	48 09 d6             	or     %rdx,%rsi
+  157ee3:	f2 41 0f 10 04 f0    	movsd  (%r8,%rsi,8),%xmm0
+  157ee9:	f2 0f 11 84 24 e0 00 	movsd  %xmm0,0xe0(%rsp)
+  157ef0:	00 00 
+  157ef2:	48 83 f8 1d          	cmp    $0x1d,%rax
+  157ef6:	0f 84 3e 01 00 00    	je     15803a <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x60a>
+  157efc:	48 8b b1 e8 00 00 00 	mov    0xe8(%rcx),%rsi
+  157f03:	48 09 d6             	or     %rdx,%rsi
+  157f06:	f2 41 0f 10 04 f0    	movsd  (%r8,%rsi,8),%xmm0
+  157f0c:	f2 0f 11 84 24 e8 00 	movsd  %xmm0,0xe8(%rsp)
+  157f13:	00 00 
+  157f15:	48 83 f8 1e          	cmp    $0x1e,%rax
+  157f19:	0f 84 1b 01 00 00    	je     15803a <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x60a>
+  157f1f:	48 8b b1 f0 00 00 00 	mov    0xf0(%rcx),%rsi
+  157f26:	48 09 d6             	or     %rdx,%rsi
+  157f29:	f2 41 0f 10 04 f0    	movsd  (%r8,%rsi,8),%xmm0
+  157f2f:	f2 0f 11 84 24 f0 00 	movsd  %xmm0,0xf0(%rsp)
+  157f36:	00 00 
+  157f38:	48 83 f8 1f          	cmp    $0x1f,%rax
+  157f3c:	0f 84 f8 00 00 00    	je     15803a <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x60a>
+  157f42:	48 8b b1 f8 00 00 00 	mov    0xf8(%rcx),%rsi
+  157f49:	48 09 d6             	or     %rdx,%rsi
+  157f4c:	f2 41 0f 10 04 f0    	movsd  (%r8,%rsi,8),%xmm0
+  157f52:	f2 0f 11 84 24 f8 00 	movsd  %xmm0,0xf8(%rsp)
+  157f59:	00 00 
+  157f5b:	4c 8b 4f 48          	mov    0x48(%rdi),%r9
+  157f5f:	4d 85 c9             	test   %r9,%r9
+  157f62:	0f 84 9f 00 00 00    	je     158007 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x5d7>
+  157f68:	4c 8b 57 30          	mov    0x30(%rdi),%r10
+  157f6c:	48 8b 77 38          	mov    0x38(%rdi),%rsi
+  157f70:	4e 8d 1c cd 00 00 00 	lea    0x0(,%r9,8),%r11
+  157f77:	00 
+  157f78:	45 31 f6             	xor    %r14d,%r14d
+  157f7b:	31 db                	xor    %ebx,%ebx
+  157f7d:	0f 1f 00             	nopl   (%rax)
+  157f80:	4d 8d 7e 01          	lea    0x1(%r14),%r15
+  157f84:	0f 57 c0             	xorps  %xmm0,%xmm0
+  157f87:	45 31 e4             	xor    %r12d,%r12d
+  157f8a:	66 0f 1f 44 00 00    	nopw   0x0(%rax,%rax,1)
+  157f90:	4a 8d 3c 23          	lea    (%rbx,%r12,1),%rdi
+  157f94:	48 39 f7             	cmp    %rsi,%rdi
+  157f97:	0f 83 90 00 00 00    	jae    15802d <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x5fd>
+  157f9d:	49 83 fc 20          	cmp    $0x20,%r12
+  157fa1:	74 73                	je     158016 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x5e6>
+  157fa3:	f2 43 0f 10 0c e2    	movsd  (%r10,%r12,8),%xmm1
+  157fa9:	f3 42 0f 10 14 e4    	movss  (%rsp,%r12,8),%xmm2
+  157faf:	f3 42 0f 10 5c e4 04 	movss  0x4(%rsp,%r12,8),%xmm3
+  157fb6:	49 ff c4             	inc    %r12
+  157fb9:	0f c6 d2 00          	shufps $0x0,%xmm2,%xmm2
+  157fbd:	0f 59 d1             	mulps  %xmm1,%xmm2
+  157fc0:	0f c6 c9 e1          	shufps $0xe1,%xmm1,%xmm1
+  157fc4:	0f c6 db 00          	shufps $0x0,%xmm3,%xmm3
+  157fc8:	0f 59 d9             	mulps  %xmm1,%xmm3
+  157fcb:	0f 28 ca             	movaps %xmm2,%xmm1
+  157fce:	0f 5c cb             	subps  %xmm3,%xmm1
+  157fd1:	0f 58 d3             	addps  %xmm3,%xmm2
+  157fd4:	0f c6 d1 01          	shufps $0x1,%xmm1,%xmm2
+  157fd8:	0f c6 d1 e2          	shufps $0xe2,%xmm1,%xmm2
+  157fdc:	0f 58 c2             	addps  %xmm2,%xmm0
+  157fdf:	4d 39 e1             	cmp    %r12,%r9
+  157fe2:	75 ac                	jne    157f90 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x560>
+  157fe4:	49 39 c6             	cmp    %rax,%r14
+  157fe7:	74 64                	je     15804d <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x61d>
+  157fe9:	4a 8b 3c f1          	mov    (%rcx,%r14,8),%rdi
+  157fed:	48 09 d7             	or     %rdx,%rdi
+  157ff0:	41 0f 13 04 f8       	movlps %xmm0,(%r8,%rdi,8)
+  157ff5:	4c 01 cb             	add    %r9,%rbx
+  157ff8:	4d 01 da             	add    %r11,%r10
+  157ffb:	4d 89 fe             	mov    %r15,%r14
+  157ffe:	4d 39 cf             	cmp    %r9,%r15
+  158001:	0f 85 79 ff ff ff    	jne    157f80 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x550>
+  158007:	48 81 c4 08 01 00 00 	add    $0x108,%rsp
+  15800e:	5b                   	pop    %rbx
+  15800f:	41 5c                	pop    %r12
+  158011:	41 5e                	pop    %r14
+  158013:	41 5f                	pop    %r15
+  158015:	c3                   	ret
+  158016:	48 8d 15 83 19 1f 00 	lea    0x1f1983(%rip),%rdx        # 3499a0 <__frame_dummy_init_array_entry+0xe10>
+  15801d:	bf 20 00 00 00       	mov    $0x20,%edi
+  158022:	be 20 00 00 00       	mov    $0x20,%esi
+  158027:	ff 15 73 86 21 00    	call   *0x218673(%rip)        # 3706a0 <_DYNAMIC+0x260>
+  15802d:	48 8d 15 54 19 1f 00 	lea    0x1f1954(%rip),%rdx        # 349988 <__frame_dummy_init_array_entry+0xdf8>
+  158034:	ff 15 66 86 21 00    	call   *0x218666(%rip)        # 3706a0 <_DYNAMIC+0x260>
+  15803a:	48 8d 15 77 19 1f 00 	lea    0x1f1977(%rip),%rdx        # 3499b8 <__frame_dummy_init_array_entry+0xe28>
+  158041:	48 89 c7             	mov    %rax,%rdi
+  158044:	48 89 c6             	mov    %rax,%rsi
+  158047:	ff 15 53 86 21 00    	call   *0x218653(%rip)        # 3706a0 <_DYNAMIC+0x260>
+  15804d:	48 8d 15 1c 19 1f 00 	lea    0x1f191c(%rip),%rdx        # 349970 <__frame_dummy_init_array_entry+0xde0>
+  158054:	48 89 c7             	mov    %rax,%rdi
+  158057:	48 89 c6             	mov    %rax,%rsi
+  15805a:	ff 15 40 86 21 00    	call   *0x218640(%rip)        # 3706a0 <_DYNAMIC+0x260>
+
+0000000000158060 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}>:
+  158060:	53                   	push   %rbx
+  158061:	4c 8b 47 10          	mov    0x10(%rdi),%r8
+  158065:	4d 85 c0             	test   %r8,%r8
+  158068:	74 44                	je     1580ae <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x4e>
+  15806a:	4c 8b 4f 08          	mov    0x8(%rdi),%r9
+  15806e:	4e 8d 14 c5 00 00 00 	lea    0x0(,%r8,8),%r10
+  158075:	00 
+  158076:	49 83 c2 f8          	add    $0xfffffffffffffff8,%r10
+  15807a:	41 f6 c2 08          	test   $0x8,%r10b
+  15807e:	75 33                	jne    1580b3 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x53>
+  158080:	41 0f b6 09          	movzbl (%r9),%ecx
+  158084:	48 c7 c2 ff ff ff ff 	mov    $0xffffffffffffffff,%rdx
+  15808b:	48 d3 e2             	shl    %cl,%rdx
+  15808e:	49 8d 41 08          	lea    0x8(%r9),%rax
+  158092:	48 89 d1             	mov    %rdx,%rcx
+  158095:	48 f7 d1             	not    %rcx
+  158098:	48 21 f1             	and    %rsi,%rcx
+  15809b:	48 21 f2             	and    %rsi,%rdx
+  15809e:	48 01 d2             	add    %rdx,%rdx
+  1580a1:	48 09 ca             	or     %rcx,%rdx
+  1580a4:	48 89 d6             	mov    %rdx,%rsi
+  1580a7:	4d 85 d2             	test   %r10,%r10
+  1580aa:	75 0f                	jne    1580bb <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x5b>
+  1580ac:	eb 6a                	jmp    158118 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0xb8>
+  1580ae:	48 89 f2             	mov    %rsi,%rdx
+  1580b1:	eb 65                	jmp    158118 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0xb8>
+  1580b3:	4c 89 c8             	mov    %r9,%rax
+  1580b6:	4d 85 d2             	test   %r10,%r10
+  1580b9:	74 5d                	je     158118 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0xb8>
+  1580bb:	4f 8d 04 c1          	lea    (%r9,%r8,8),%r8
+  1580bf:	48 89 f2             	mov    %rsi,%rdx
+  1580c2:	66 66 66 66 66 2e 0f 	data16 data16 data16 data16 cs nopw 0x0(%rax,%rax,1)
+  1580c9:	1f 84 00 00 00 00 00 
+  1580d0:	0f b6 08             	movzbl (%rax),%ecx
+  1580d3:	48 c7 c6 ff ff ff ff 	mov    $0xffffffffffffffff,%rsi
+  1580da:	48 d3 e6             	shl    %cl,%rsi
+  1580dd:	0f b6 48 08          	movzbl 0x8(%rax),%ecx
+  1580e1:	49 89 f1             	mov    %rsi,%r9
+  1580e4:	49 f7 d1             	not    %r9
+  1580e7:	49 21 d1             	and    %rdx,%r9
+  1580ea:	48 21 d6             	and    %rdx,%rsi
+  1580ed:	48 01 f6             	add    %rsi,%rsi
+  1580f0:	4c 09 ce             	or     %r9,%rsi
+  1580f3:	48 c7 c2 ff ff ff ff 	mov    $0xffffffffffffffff,%rdx
+  1580fa:	48 d3 e2             	shl    %cl,%rdx
+  1580fd:	48 89 d1             	mov    %rdx,%rcx
+  158100:	48 f7 d1             	not    %rcx
+  158103:	48 21 f1             	and    %rsi,%rcx
+  158106:	48 21 f2             	and    %rsi,%rdx
+  158109:	48 01 d2             	add    %rdx,%rdx
+  15810c:	48 09 ca             	or     %rcx,%rdx
+  15810f:	48 83 c0 10          	add    $0x10,%rax
+  158113:	4c 39 c0             	cmp    %r8,%rax
+  158116:	75 b8                	jne    1580d0 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x70>
+  158118:	48 8b 47 28          	mov    0x28(%rdi),%rax
+  15811c:	48 85 c0             	test   %rax,%rax
+  15811f:	0f 84 56 03 00 00    	je     15847b <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x41b>
+  158125:	48 83 f8 01          	cmp    $0x1,%rax
+  158129:	0f 84 5e 03 00 00    	je     15848d <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x42d>
+  15812f:	48 83 f8 02          	cmp    $0x2,%rax
+  158133:	0f 84 69 03 00 00    	je     1584a2 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x442>
+  158139:	48 83 f8 03          	cmp    $0x3,%rax
+  15813d:	0f 84 74 03 00 00    	je     1584b7 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x457>
+  158143:	4c 8b 57 48          	mov    0x48(%rdi),%r10
+  158147:	4d 85 d2             	test   %r10,%r10
+  15814a:	0f 84 e3 02 00 00    	je     158433 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x3d3>
+  158150:	4c 8b 47 20          	mov    0x20(%rdi),%r8
+  158154:	48 8b 4f 40          	mov    0x40(%rdi),%rcx
+  158158:	49 8b 30             	mov    (%r8),%rsi
+  15815b:	48 09 d6             	or     %rdx,%rsi
+  15815e:	f3 0f 10 0c f1       	movss  (%rcx,%rsi,8),%xmm1
+  158163:	f3 0f 10 44 f1 04    	movss  0x4(%rcx,%rsi,8),%xmm0
+  158169:	4c 8b 4f 30          	mov    0x30(%rdi),%r9
+  15816d:	48 8b 77 38          	mov    0x38(%rdi),%rsi
+  158171:	49 83 fa 01          	cmp    $0x1,%r10
+  158175:	0f 84 01 01 00 00    	je     15827c <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x21c>
+  15817b:	49 8b 78 08          	mov    0x8(%r8),%rdi
+  15817f:	48 09 d7             	or     %rdx,%rdi
+  158182:	f3 0f 10 1c f9       	movss  (%rcx,%rdi,8),%xmm3
+  158187:	f3 0f 10 54 f9 04    	movss  0x4(%rcx,%rdi,8),%xmm2
+  15818d:	49 83 fa 02          	cmp    $0x2,%r10
+  158191:	0f 85 25 01 00 00    	jne    1582bc <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x25c>
+  158197:	48 89 f7             	mov    %rsi,%rdi
+  15819a:	48 85 f6             	test   %rsi,%rsi
+  15819d:	0f 84 3d 03 00 00    	je     1584e0 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x480>
+  1581a3:	48 83 fe 01          	cmp    $0x1,%rsi
+  1581a7:	0f 84 2e 03 00 00    	je     1584db <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x47b>
+  1581ad:	49 8b 00             	mov    (%r8),%rax
+  1581b0:	48 09 d0             	or     %rdx,%rax
+  1581b3:	f2 41 0f 10 29       	movsd  (%r9),%xmm5
+  1581b8:	f2 41 0f 10 61 08    	movsd  0x8(%r9),%xmm4
+  1581be:	0f c6 c9 00          	shufps $0x0,%xmm1,%xmm1
+  1581c2:	0f 28 f1             	movaps %xmm1,%xmm6
+  1581c5:	0f 59 f5             	mulps  %xmm5,%xmm6
+  1581c8:	0f c6 c0 00          	shufps $0x0,%xmm0,%xmm0
+  1581cc:	0f c6 ed e1          	shufps $0xe1,%xmm5,%xmm5
+  1581d0:	0f 59 e8             	mulps  %xmm0,%xmm5
+  1581d3:	0f 28 fe             	movaps %xmm6,%xmm7
+  1581d6:	0f 5c fd             	subps  %xmm5,%xmm7
+  1581d9:	0f 58 ee             	addps  %xmm6,%xmm5
+  1581dc:	0f c6 ef 01          	shufps $0x1,%xmm7,%xmm5
+  1581e0:	0f c6 ef e2          	shufps $0xe2,%xmm7,%xmm5
+  1581e4:	0f 57 f6             	xorps  %xmm6,%xmm6
+  1581e7:	0f 58 f5             	addps  %xmm5,%xmm6
+  1581ea:	0f c6 db 00          	shufps $0x0,%xmm3,%xmm3
+  1581ee:	0f 28 eb             	movaps %xmm3,%xmm5
+  1581f1:	0f 59 ec             	mulps  %xmm4,%xmm5
+  1581f4:	0f c6 d2 00          	shufps $0x0,%xmm2,%xmm2
+  1581f8:	0f c6 e4 e1          	shufps $0xe1,%xmm4,%xmm4
+  1581fc:	0f 59 e2             	mulps  %xmm2,%xmm4
+  1581ff:	0f 28 fd             	movaps %xmm5,%xmm7
+  158202:	0f 5c fc             	subps  %xmm4,%xmm7
+  158205:	0f 58 e5             	addps  %xmm5,%xmm4
+  158208:	0f c6 e7 01          	shufps $0x1,%xmm7,%xmm4
+  15820c:	0f c6 e7 e2          	shufps $0xe2,%xmm7,%xmm4
+  158210:	0f 58 e6             	addps  %xmm6,%xmm4
+  158213:	0f 13 24 c1          	movlps %xmm4,(%rcx,%rax,8)
+  158217:	48 83 fe 03          	cmp    $0x3,%rsi
+  15821b:	0f 82 cc 02 00 00    	jb     1584ed <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x48d>
+  158221:	0f 84 d8 02 00 00    	je     1584ff <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x49f>
+  158227:	49 0b 50 08          	or     0x8(%r8),%rdx
+  15822b:	f2 41 0f 10 61 10    	movsd  0x10(%r9),%xmm4
+  158231:	f2 41 0f 10 69 18    	movsd  0x18(%r9),%xmm5
+  158237:	0f 59 cc             	mulps  %xmm4,%xmm1
+  15823a:	0f c6 e4 e1          	shufps $0xe1,%xmm4,%xmm4
+  15823e:	0f 59 c4             	mulps  %xmm4,%xmm0
+  158241:	0f 28 e1             	movaps %xmm1,%xmm4
+  158244:	0f 5c e0             	subps  %xmm0,%xmm4
+  158247:	0f 58 c1             	addps  %xmm1,%xmm0
+  15824a:	0f c6 c4 01          	shufps $0x1,%xmm4,%xmm0
+  15824e:	0f c6 c4 e2          	shufps $0xe2,%xmm4,%xmm0
+  158252:	0f 57 c9             	xorps  %xmm1,%xmm1
+  158255:	0f 58 c8             	addps  %xmm0,%xmm1
+  158258:	0f 59 dd             	mulps  %xmm5,%xmm3
+  15825b:	0f c6 ed e1          	shufps $0xe1,%xmm5,%xmm5
+  15825f:	0f 59 d5             	mulps  %xmm5,%xmm2
+  158262:	0f 28 c3             	movaps %xmm3,%xmm0
+  158265:	0f 5c c2             	subps  %xmm2,%xmm0
+  158268:	0f 58 d3             	addps  %xmm3,%xmm2
+  15826b:	0f c6 d0 01          	shufps $0x1,%xmm0,%xmm2
+  15826f:	0f c6 d0 e2          	shufps $0xe2,%xmm0,%xmm2
+  158273:	0f 58 d1             	addps  %xmm1,%xmm2
+  158276:	0f 13 14 d1          	movlps %xmm2,(%rcx,%rdx,8)
+  15827a:	5b                   	pop    %rbx
+  15827b:	c3                   	ret
+  15827c:	48 85 f6             	test   %rsi,%rsi
+  15827f:	0f 84 47 02 00 00    	je     1584cc <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x46c>
+  158285:	49 0b 10             	or     (%r8),%rdx
+  158288:	f2 41 0f 10 11       	movsd  (%r9),%xmm2
+  15828d:	0f c6 c9 00          	shufps $0x0,%xmm1,%xmm1
+  158291:	0f 59 ca             	mulps  %xmm2,%xmm1
+  158294:	0f c6 c0 00          	shufps $0x0,%xmm0,%xmm0
+  158298:	0f c6 d2 e1          	shufps $0xe1,%xmm2,%xmm2
+  15829c:	0f 59 d0             	mulps  %xmm0,%xmm2
+  15829f:	0f 28 c1             	movaps %xmm1,%xmm0
+  1582a2:	0f 5c c2             	subps  %xmm2,%xmm0
+  1582a5:	0f 58 d1             	addps  %xmm1,%xmm2
+  1582a8:	0f c6 d0 01          	shufps $0x1,%xmm0,%xmm2
+  1582ac:	0f c6 d0 e2          	shufps $0xe2,%xmm0,%xmm2
+  1582b0:	0f 57 c0             	xorps  %xmm0,%xmm0
+  1582b3:	0f 58 c2             	addps  %xmm2,%xmm0
+  1582b6:	0f 13 04 d1          	movlps %xmm0,(%rcx,%rdx,8)
+  1582ba:	5b                   	pop    %rbx
+  1582bb:	c3                   	ret
+  1582bc:	49 8b 78 10          	mov    0x10(%r8),%rdi
+  1582c0:	48 09 d7             	or     %rdx,%rdi
+  1582c3:	f3 0f 10 24 f9       	movss  (%rcx,%rdi,8),%xmm4
+  1582c8:	f3 0f 10 6c f9 04    	movss  0x4(%rcx,%rdi,8),%xmm5
+  1582ce:	49 8b 78 18          	mov    0x18(%r8),%rdi
+  1582d2:	48 09 d7             	or     %rdx,%rdi
+  1582d5:	f3 0f 10 34 f9       	movss  (%rcx,%rdi,8),%xmm6
+  1582da:	f3 0f 10 7c f9 04    	movss  0x4(%rcx,%rdi,8),%xmm7
+  1582e0:	0f c6 c9 00          	shufps $0x0,%xmm1,%xmm1
+  1582e4:	0f c6 c0 00          	shufps $0x0,%xmm0,%xmm0
+  1582e8:	0f c6 db 00          	shufps $0x0,%xmm3,%xmm3
+  1582ec:	0f c6 d2 00          	shufps $0x0,%xmm2,%xmm2
+  1582f0:	0f c6 ed 00          	shufps $0x0,%xmm5,%xmm5
+  1582f4:	0f c6 e4 00          	shufps $0x0,%xmm4,%xmm4
+  1582f8:	0f c6 ff 00          	shufps $0x0,%xmm7,%xmm7
+  1582fc:	0f c6 f6 00          	shufps $0x0,%xmm6,%xmm6
+  158300:	45 31 db             	xor    %r11d,%r11d
+  158303:	45 0f 57 c0          	xorps  %xmm8,%xmm8
+  158307:	31 db                	xor    %ebx,%ebx
+  158309:	0f 1f 80 00 00 00 00 	nopl   0x0(%rax)
+  158310:	49 39 f3             	cmp    %rsi,%r11
+  158313:	0f 83 2f 01 00 00    	jae    158448 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x3e8>
+  158319:	49 8d 7b 01          	lea    0x1(%r11),%rdi
+  15831d:	48 39 f7             	cmp    %rsi,%rdi
+  158320:	0f 83 ba 01 00 00    	jae    1584e0 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x480>
+  158326:	49 8d 7b 02          	lea    0x2(%r11),%rdi
+  15832a:	48 39 f7             	cmp    %rsi,%rdi
+  15832d:	0f 83 ad 01 00 00    	jae    1584e0 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x480>
+  158333:	f2 47 0f 10 1c d9    	movsd  (%r9,%r11,8),%xmm11
+  158339:	f2 47 0f 10 54 d9 08 	movsd  0x8(%r9,%r11,8),%xmm10
+  158340:	f2 47 0f 10 4c d9 10 	movsd  0x10(%r9,%r11,8),%xmm9
+  158347:	44 0f 28 e1          	movaps %xmm1,%xmm12
+  15834b:	45 0f 59 e3          	mulps  %xmm11,%xmm12
+  15834f:	45 0f c6 db e1       	shufps $0xe1,%xmm11,%xmm11
+  158354:	44 0f 59 d8          	mulps  %xmm0,%xmm11
+  158358:	45 0f 28 ec          	movaps %xmm12,%xmm13
+  15835c:	45 0f 5c eb          	subps  %xmm11,%xmm13
+  158360:	45 0f 58 dc          	addps  %xmm12,%xmm11
+  158364:	45 0f c6 dd 01       	shufps $0x1,%xmm13,%xmm11
+  158369:	45 0f c6 dd e2       	shufps $0xe2,%xmm13,%xmm11
+  15836e:	45 0f 58 d8          	addps  %xmm8,%xmm11
+  158372:	44 0f 28 e3          	movaps %xmm3,%xmm12
+  158376:	45 0f 59 e2          	mulps  %xmm10,%xmm12
+  15837a:	45 0f c6 d2 e1       	shufps $0xe1,%xmm10,%xmm10
+  15837f:	44 0f 59 d2          	mulps  %xmm2,%xmm10
+  158383:	45 0f 28 ec          	movaps %xmm12,%xmm13
+  158387:	45 0f 5c ea          	subps  %xmm10,%xmm13
+  15838b:	45 0f 58 d4          	addps  %xmm12,%xmm10
+  15838f:	45 0f c6 d5 01       	shufps $0x1,%xmm13,%xmm10
+  158394:	45 0f c6 d5 e2       	shufps $0xe2,%xmm13,%xmm10
+  158399:	45 0f 58 d3          	addps  %xmm11,%xmm10
+  15839d:	44 0f 28 dc          	movaps %xmm4,%xmm11
+  1583a1:	45 0f 59 d9          	mulps  %xmm9,%xmm11
+  1583a5:	45 0f c6 c9 e1       	shufps $0xe1,%xmm9,%xmm9
+  1583aa:	44 0f 59 cd          	mulps  %xmm5,%xmm9
+  1583ae:	45 0f 28 e3          	movaps %xmm11,%xmm12
+  1583b2:	45 0f 5c e1          	subps  %xmm9,%xmm12
+  1583b6:	45 0f 58 cb          	addps  %xmm11,%xmm9
+  1583ba:	45 0f c6 cc 01       	shufps $0x1,%xmm12,%xmm9
+  1583bf:	45 0f c6 cc e2       	shufps $0xe2,%xmm12,%xmm9
+  1583c4:	45 0f 58 ca          	addps  %xmm10,%xmm9
+  1583c8:	49 83 fa 03          	cmp    $0x3,%r10
+  1583cc:	74 45                	je     158413 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x3b3>
+  1583ce:	49 8d 7b 03          	lea    0x3(%r11),%rdi
+  1583d2:	48 39 f7             	cmp    %rsi,%rdi
+  1583d5:	0f 83 05 01 00 00    	jae    1584e0 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x480>
+  1583db:	49 83 fa 04          	cmp    $0x4,%r10
+  1583df:	75 77                	jne    158458 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x3f8>
+  1583e1:	f2 47 0f 10 54 d9 18 	movsd  0x18(%r9,%r11,8),%xmm10
+  1583e8:	45 0f 28 da          	movaps %xmm10,%xmm11
+  1583ec:	45 0f c6 da e1       	shufps $0xe1,%xmm10,%xmm11
+  1583f1:	44 0f 59 df          	mulps  %xmm7,%xmm11
+  1583f5:	44 0f 59 d6          	mulps  %xmm6,%xmm10
+  1583f9:	45 0f 28 e2          	movaps %xmm10,%xmm12
+  1583fd:	45 0f 5c e3          	subps  %xmm11,%xmm12
+  158401:	45 0f 58 d3          	addps  %xmm11,%xmm10
+  158405:	45 0f c6 d4 01       	shufps $0x1,%xmm12,%xmm10
+  15840a:	45 0f c6 d4 e2       	shufps $0xe2,%xmm12,%xmm10
+  15840f:	45 0f 58 ca          	addps  %xmm10,%xmm9
+  158413:	48 39 d8             	cmp    %rbx,%rax
+  158416:	74 1d                	je     158435 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x3d5>
+  158418:	49 8b 3c d8          	mov    (%r8,%rbx,8),%rdi
+  15841c:	48 09 d7             	or     %rdx,%rdi
+  15841f:	48 ff c3             	inc    %rbx
+  158422:	44 0f 13 0c f9       	movlps %xmm9,(%rcx,%rdi,8)
+  158427:	4d 01 d3             	add    %r10,%r11
+  15842a:	49 39 da             	cmp    %rbx,%r10
+  15842d:	0f 85 dd fe ff ff    	jne    158310 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x2b0>
+  158433:	5b                   	pop    %rbx
+  158434:	c3                   	ret
+  158435:	48 8d 15 34 15 1f 00 	lea    0x1f1534(%rip),%rdx        # 349970 <__frame_dummy_init_array_entry+0xde0>
+  15843c:	48 89 c7             	mov    %rax,%rdi
+  15843f:	48 89 c6             	mov    %rax,%rsi
+  158442:	ff 15 58 82 21 00    	call   *0x218258(%rip)        # 3706a0 <_DYNAMIC+0x260>
+  158448:	4c 89 df             	mov    %r11,%rdi
+  15844b:	48 8d 15 36 15 1f 00 	lea    0x1f1536(%rip),%rdx        # 349988 <__frame_dummy_init_array_entry+0xdf8>
+  158452:	ff 15 48 82 21 00    	call   *0x218248(%rip)        # 3706a0 <_DYNAMIC+0x260>
+  158458:	49 83 c3 04          	add    $0x4,%r11
+  15845c:	4c 89 df             	mov    %r11,%rdi
+  15845f:	49 39 f3             	cmp    %rsi,%r11
+  158462:	73 7c                	jae    1584e0 <aleph_sv::kernels::aos_f32::apply_kq_scalar_f32_sized::{{closure}}+0x480>
+  158464:	48 8d 15 35 15 1f 00 	lea    0x1f1535(%rip),%rdx        # 3499a0 <__frame_dummy_init_array_entry+0xe10>
+  15846b:	bf 04 00 00 00       	mov    $0x4,%edi
+  158470:	be 04 00 00 00       	mov    $0x4,%esi
+  158475:	ff 15 25 82 21 00    	call   *0x218225(%rip)        # 3706a0 <_DYNAMIC+0x260>
+  15847b:	31 ff                	xor    %edi,%edi
+  15847d:	48 8d 15 34 15 1f 00 	lea    0x1f1534(%rip),%rdx        # 3499b8 <__frame_dummy_init_array_entry+0xe28>
+  158484:	48 89 c6             	mov    %rax,%rsi
+  158487:	ff 15 13 82 21 00    	call   *0x218213(%rip)        # 3706a0 <_DYNAMIC+0x260>
+  15848d:	bf 01 00 00 00       	mov    $0x1,%edi
+  158492:	48 8d 15 1f 15 1f 00 	lea    0x1f151f(%rip),%rdx        # 3499b8 <__frame_dummy_init_array_entry+0xe28>
+  158499:	48 89 c6             	mov    %rax,%rsi
+  15849c:	ff 15 fe 81 21 00    	call   *0x2181fe(%rip)        # 3706a0 <_DYNAMIC+0x260>
+  1584a2:	bf 02 00 00 00       	mov    $0x2,%edi
+  1584a7:	48 8d 15 0a 15 1f 00 	lea    0x1f150a(%rip),%rdx        # 3499b8 <__frame_dummy_init_array_entry+0xe28>
+  1584ae:	48 89 c6             	mov    %rax,%rsi
+  1584b1:	ff 15 e9 81 21 00    	call   *0x2181e9(%rip)        # 3706a0 <_DYNAMIC+0x260>
+  1584b7:	bf 03 00 00 00       	mov    $0x3,%edi
+  1584bc:	48 8d 15 f5 14 1f 00 	lea    0x1f14f5(%rip),%rdx        # 3499b8 <__frame_dummy_init_array_entry+0xe28>
+  1584c3:	48 89 c6             	mov    %rax,%rsi
+  1584c6:	ff 15 d4 81 21 00    	call   *0x2181d4(%rip)        # 3706a0 <_DYNAMIC+0x260>
+  1584cc:	31 ff                	xor    %edi,%edi
+  1584ce:	48 8d 15 b3 14 1f 00 	lea    0x1f14b3(%rip),%rdx        # 349988 <__frame_dummy_init_array_entry+0xdf8>
+  1584d5:	ff 15 c5 81 21 00    	call   *0x2181c5(%rip)        # 3706a0 <_DYNAMIC+0x260>
+  1584db:	bf 01 00 00 00       	mov    $0x1,%edi
+  1584e0:	48 8d 15 a1 14 1f 00 	lea    0x1f14a1(%rip),%rdx        # 349988 <__frame_dummy_init_array_entry+0xdf8>
+  1584e7:	ff 15 b3 81 21 00    	call   *0x2181b3(%rip)        # 3706a0 <_DYNAMIC+0x260>
+  1584ed:	bf 02 00 00 00       	mov    $0x2,%edi
+  1584f2:	48 8d 15 8f 14 1f 00 	lea    0x1f148f(%rip),%rdx        # 349988 <__frame_dummy_init_array_entry+0xdf8>
+  1584f9:	ff 15 a1 81 21 00    	call   *0x2181a1(%rip)        # 3706a0 <_DYNAMIC+0x260>
+  1584ff:	bf 03 00 00 00       	mov    $0x3,%edi
+  158504:	48 8d 15 7d 14 1f 00 	lea    0x1f147d(%rip),%rdx        # 349988 <__frame_dummy_init_array_entry+0xdf8>
+  15850b:	ff 15 8f 81 21 00    	call   *0x21818f(%rip)        # 3706a0 <_DYNAMIC+0x260>
+  158511:	cc                   	int3
+  158512:	cc                   	int3
+  158513:	cc                   	int3
+  158514:	cc                   	int3
+  158515:	cc                   	int3
+  158516:	cc                   	int3
+  158517:	cc                   	int3
+  158518:	cc                   	int3
+  158519:	cc                   	int3
+  15851a:	cc                   	int3
+  15851b:	cc                   	int3
+  15851c:	cc                   	int3
+  15851d:	cc                   	int3
+  15851e:	cc                   	int3
+  15851f:	cc                   	int3

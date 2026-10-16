@@ -96,8 +96,54 @@ fn fixture(n: u32, mixed: bool) -> (Circuit, NoiseModel) {
     model.add_readout_error(ReadoutError::new([[0.97, 0.03], [0.07, 0.93]]), 0);
     (circuit, model)
 }
+fn fused_kernel_allocations<B: aleph_backend::Backend>(name: &str, mut backend: B) {
+    let gate = GateInstance::new(
+        Gate::UnitaryKq {
+            k: 2,
+            data: (0usize..16)
+                .map(|i| {
+                    let sign = if ((i / 4) & (i % 4)).count_ones() % 2 == 0 {
+                        1.
+                    } else {
+                        -1.
+                    };
+                    Complex::new(sign / 2., 0.)
+                })
+                .collect(),
+        },
+        &[0, 1][..],
+    );
+    for n in [9, 18] {
+        let mut state = backend.allocate(n).unwrap();
+        backend.apply_gate(&mut state, &gate).unwrap();
+        measure(&format!("fused_{name}_n{n}_warmed"), || {
+            let before = ALLOCS.load(Relaxed);
+            backend.apply_gate(&mut state, &gate).unwrap();
+            let count = ALLOCS.load(Relaxed) - before;
+            // Bounded setup allocations are allowed; one allocation per outer
+            // block would grow from hundreds to thousands as n increases.
+            assert!(
+                count < 64,
+                "per-block allocation regression: {name} n={n}: {count}"
+            );
+        });
+    }
+}
+
 fn main() {
     println!("case,allocations,allocated_bytes,additional_peak_heap_bytes");
+    if std::env::args().nth(1).as_deref() == Some("--fused-kernels") {
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .unwrap();
+        pool.install(|| {
+            fused_kernel_allocations("aos", aleph_sv::NaiveSvBackend::with_seed(573));
+            fused_kernel_allocations("soa", aleph_sv::SoaSvBackend::with_seed(573));
+            fused_kernel_allocations("fp32", aleph_sv::Fp32SvBackend::with_seed(573));
+        });
+        return;
+    }
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(4)
         .build()

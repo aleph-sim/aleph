@@ -1,0 +1,270 @@
+diff --git a/crates/aleph-sv/src/expectation_query.rs b/crates/aleph-sv/src/expectation_query.rs
+index 74b7e31..c134591 100644
+--- a/crates/aleph-sv/src/expectation_query.rs
++++ b/crates/aleph-sv/src/expectation_query.rs
+@@ -115,17 +115,12 @@ impl ExactExpectationQuery {
+             for inst in cone.circuit().instructions() {
+                 match inst {
+                     Instruction::Gate(g) => {
+-                        let needs_ordered_controls =
+-                            !g.controls.is_empty() || !g.qubits.windows(2).all(|qs| qs[0] < qs[1]);
+                         if let Gate::UnitaryKq { k, data } = &g.gate {
+-                            if needs_ordered_controls {
+-                                apply_query_kq(&mut state, &g.qubits, &g.controls, *k, data);
+-                            } else {
+-                                // Validated canonical FuseKq blocks retain the existing
+-                                // SIMD kernel; only unsupported operand/control layouts
+-                                // need the query-local exact fallback.
+-                                backend.apply_gate(&mut state, g)?;
+-                            }
++                            // The immutable query plan already validated every matrix.
++                            // Keep all Kq execution within its bounded stack scratch;
++                            // the public backend additionally owns a validation snapshot
++                            // and SIMD broadcast buffers outside this query's budget.
++                            apply_query_kq(&mut state, &g.qubits, &g.controls, *k, data);
+                         } else {
+                             backend.apply_gate(&mut state, g)?;
+                         }
+diff --git a/crates/aleph-sv/src/kernels/aos_f32.rs b/crates/aleph-sv/src/kernels/aos_f32.rs
+index 5869cc4..242f97c 100644
+--- a/crates/aleph-sv/src/kernels/aos_f32.rs
++++ b/crates/aleph-sv/src/kernels/aos_f32.rs
+@@ -282,8 +282,7 @@ pub fn apply_kq_scalar_f32(
+     k: u8,
+     data: &[Complex<f32>],
+ ) {
+-    use crate::kernels::expand_with_fixed;
+-    use crate::kernels::unitary_kq::targets_offsets_fixed;
++    use crate::kernels::unitary_kq::{expand_target_zeros, targets_offsets_fixed};
+ 
+     let dim = 1usize << k;
+     let (offsets, fixed) = targets_offsets_fixed(qubits, k);
+@@ -298,10 +297,11 @@ pub fn apply_kq_scalar_f32(
+         len,
+         |c| c,
+         move |counter| {
+-            let base = expand_with_fixed(counter, &fixed);
++            let base = expand_target_zeros(counter, &fixed);
+ 
+             // Read the block of 2^k amplitudes into a local buffer.
+-            let mut inb = vec![Complex::<f32>::new(0.0, 0.0); dim];
++            let mut scratch = [Complex::<f32>::new(0.0, 0.0); 32];
++            let inb = &mut scratch[..dim];
+             for (m, inb_m) in inb.iter_mut().enumerate() {
+                 // SAFETY: base|offsets[m] is within [0, len), distinct across
+                 // m (coverage invariant from targets_offsets_fixed), and
+@@ -405,8 +405,7 @@ pub(crate) unsafe fn apply_kq_avx512_f32(
+     k: u8,
+     data: &[Complex<f32>],
+ ) {
+-    use crate::kernels::expand_with_fixed;
+-    use crate::kernels::unitary_kq::targets_offsets_fixed;
++    use crate::kernels::unitary_kq::{expand_target_zeros, targets_offsets_fixed};
+     use core::arch::x86_64::*;
+ 
+     let dim = 1usize << k;
+@@ -447,14 +446,15 @@ pub(crate) unsafe fn apply_kq_avx512_f32(
+             // Base index (target bits cleared) for each of the 16 lanes.
+             let mut bases = [0i32; AVX512_LANES_F32_KQ];
+             for (lane, b) in bases.iter_mut().enumerate() {
+-                *b = expand_with_fixed(counter0 + lane, &fixed) as i32;
++                *b = expand_target_zeros(counter0 + lane, &fixed) as i32;
+             }
+             let base_v = _mm512_loadu_si512(bases.as_ptr() as *const _);
+ 
+             // Gather the 2^k inputs (one __m512 per matrix column), as separate
+             // real/imag vectors. AoS f32: re at f32 element 2*idx, im at 2*idx+1.
+-            let mut in_re = vec![_mm512_setzero_ps(); dim];
+-            let mut in_im = vec![_mm512_setzero_ps(); dim];
++            // This SIMD path is bounded to k <= 4 (16 columns).
++            let mut in_re = [_mm512_setzero_ps(); 16];
++            let mut in_im = [_mm512_setzero_ps(); 16];
+             for c in 0..dim {
+                 // f32 element index of amplitude (base | offsets[c]) is 2*(base|off).
+                 let amp_idx = _mm512_or_si512(base_v, _mm512_set1_epi32(offsets[c] as i32));
+diff --git a/crates/aleph-sv/src/kernels/unitary_kq.rs b/crates/aleph-sv/src/kernels/unitary_kq.rs
+index 1ec5239..fb0f42b 100644
+--- a/crates/aleph-sv/src/kernels/unitary_kq.rs
++++ b/crates/aleph-sv/src/kernels/unitary_kq.rs
+@@ -95,6 +95,19 @@ pub(crate) fn targets_offsets_fixed(qubits: &[u32], k: u8) -> (Vec<usize>, Vec<(
+     (offsets, fixed)
+ }
+ 
++/// Insert zero bits at the sorted target positions. Unlike the general fixed-bit
++/// walk this costs O(k), independent of the number of free bits in the state.
++/// `fixed` comes from `targets_offsets_fixed`: distinct ascending positions,
++/// all false, below the CPU backend's qubit cap.
++pub(crate) fn expand_target_zeros(mut counter: usize, fixed: &[(u32, bool)]) -> usize {
++    for &(position, value) in fixed {
++        debug_assert!(!value);
++        let low_mask = (1usize << position) - 1;
++        counter = (counter & low_mask) | ((counter & !low_mask) << 1);
++    }
++    counter
++}
++
+ /// Scalar AoS implementation.
+ ///
+ /// Iterates over `outer = 2^(n-k)` outer counters. For each counter,
+@@ -125,10 +138,12 @@ pub(crate) fn apply_kq_scalar_aos(amps: &mut [Complex], qubits: &[u32], k: u8, d
+         len,
+         |c| c,
+         move |counter| {
+-            let base = crate::kernels::expand_with_fixed(counter, &fixed);
++            let base = expand_target_zeros(counter, &fixed);
+ 
+             // Read the block of 2^k amplitudes into a local buffer.
+-            let mut inb = vec![Complex::new(0.0, 0.0); dim];
++            // k <= 5: bounded per-block scratch avoids an allocation per outer block.
++            let mut scratch = [Complex::new(0.0, 0.0); 32];
++            let inb = &mut scratch[..dim];
+             for (m, inb_m) in inb.iter_mut().enumerate() {
+                 // SAFETY: base|offsets[m] is within [0, len), distinct across
+                 // m (coverage test), and disjoint from other counters'
+@@ -176,11 +191,11 @@ pub(crate) fn apply_kq_scalar_soa(
+         len,
+         |c| c,
+         move |counter| {
+-            let base = crate::kernels::expand_with_fixed(counter, &fixed);
++            let base = expand_target_zeros(counter, &fixed);
+ 
+             // Read the block of 2^k SoA amplitudes into local buffers.
+-            let mut inr = vec![0.0f64; dim];
+-            let mut ini = vec![0.0f64; dim];
++            let mut inr = [0.0f64; 32];
++            let mut ini = [0.0f64; 32];
+             for m in 0..dim {
+                 let idx = base | offsets[m];
+                 // SAFETY: idx is within [0, len), distinct across m, and
+@@ -283,14 +298,15 @@ unsafe fn apply_kq_avx512_aos(amps: &mut [Complex], qubits: &[u32], k: u8, data:
+             // Base index (target bits cleared) for each of the 8 lanes.
+             let mut bases = [0i64; AVX512_LANES];
+             for (lane, b) in bases.iter_mut().enumerate() {
+-                *b = crate::kernels::expand_with_fixed(counter0 + lane, &fixed) as i64;
++                *b = expand_target_zeros(counter0 + lane, &fixed) as i64;
+             }
+             let base_v = _mm512_loadu_si512(bases.as_ptr() as *const _);
+ 
+             // Gather the 2^k inputs (one __m512d per matrix column), as
+             // separate real/imag vectors. AoS: re at 2*idx, im at 2*idx+1.
+-            let mut in_re = vec![_mm512_setzero_pd(); dim];
+-            let mut in_im = vec![_mm512_setzero_pd(); dim];
++            // At most 32 columns (k <= 5), 4 KiB total stack scratch.
++            let mut in_re = [_mm512_setzero_pd(); 32];
++            let mut in_im = [_mm512_setzero_pd(); 32];
+             for c in 0..dim {
+                 // f64 index of amplitude (base | offsets[c]) is 2*(base|off).
+                 let amp_idx = _mm512_or_si512(base_v, _mm512_set1_epi64(offsets[c] as i64));
+@@ -382,12 +398,13 @@ unsafe fn apply_kq_avx512_soa(
+ 
+             let mut bases = [0i64; AVX512_LANES];
+             for (lane, b) in bases.iter_mut().enumerate() {
+-                *b = crate::kernels::expand_with_fixed(counter0 + lane, &fixed) as i64;
++                *b = expand_target_zeros(counter0 + lane, &fixed) as i64;
+             }
+             let base_v = _mm512_loadu_si512(bases.as_ptr() as *const _);
+ 
+-            let mut in_re = vec![_mm512_setzero_pd(); dim];
+-            let mut in_im = vec![_mm512_setzero_pd(); dim];
++            // At most 32 columns (k <= 5), 4 KiB total stack scratch.
++            let mut in_re = [_mm512_setzero_pd(); 32];
++            let mut in_im = [_mm512_setzero_pd(); 32];
+             for c in 0..dim {
+                 let amp_idx = _mm512_or_si512(base_v, _mm512_set1_epi64(offsets[c] as i64));
+                 // scale = 8 bytes per f64; indices are amplitude indices.
+@@ -452,6 +469,35 @@ unsafe fn di_fma(
+ mod tests {
+     use super::*;
+ 
++    #[test]
++    fn target_bit_insertion_matches_general_walk() {
++        // Exhaust every supported target subset in nine bits and every free
++        // counter; include high physical positions separately.
++        for mask in 0usize..512 {
++            let k = mask.count_ones();
++            if !(2..=5).contains(&k) {
++                continue;
++            }
++            let fixed: Vec<_> = (0..9)
++                .filter(|q| mask & (1 << q) != 0)
++                .map(|q| (q, false))
++                .collect();
++            for counter in 0..(1 << (9 - k)) {
++                assert_eq!(
++                    expand_target_zeros(counter, &fixed),
++                    crate::kernels::expand_with_fixed(counter, &fixed)
++                );
++            }
++        }
++        let fixed = [(0, false), (13, false), (27, false)];
++        for counter in [0, 1, 7, (1 << 24) - 1, (1 << 25) - 1] {
++            assert_eq!(
++                expand_target_zeros(counter, &fixed),
++                crate::kernels::expand_with_fixed(counter, &fixed)
++            );
++        }
++    }
++
+     /// Reference offset computation matching the spec's MSB-first convention.
+     fn offsets_ref(q_sorted: &[u32], k: u8) -> Vec<usize> {
+         let k = k as usize;
+@@ -478,7 +524,7 @@ mod tests {
+         let offs = offsets_ref(&q, k);
+         let mut seen = vec![false; 1usize << n];
+         for counter in 0..(1usize << (n as usize - k as usize)) {
+-            let base = crate::kernels::expand_with_fixed(counter, &fixed);
++            let base = expand_target_zeros(counter, &fixed);
+             for &o in &offs {
+                 let idx = base | o;
+                 assert!(!seen[idx], "dup idx {idx} (base={base} off={o})");
+@@ -498,7 +544,7 @@ mod tests {
+         let offs = offsets_ref(&q, k);
+         let mut seen = vec![false; 1usize << n];
+         for counter in 0..(1usize << (n as usize - k as usize)) {
+-            let base = crate::kernels::expand_with_fixed(counter, &fixed);
++            let base = expand_target_zeros(counter, &fixed);
+             for &o in &offs {
+                 let idx = base | o;
+                 assert!(!seen[idx], "dup idx {idx}");
+diff --git a/crates/aleph-sv/tests/expectation_query.rs b/crates/aleph-sv/tests/expectation_query.rs
+index a00ab1c..e22e34d 100644
+--- a/crates/aleph-sv/tests/expectation_query.rs
++++ b/crates/aleph-sv/tests/expectation_query.rs
+@@ -437,3 +437,37 @@ fn finite_parameters_diagonal_scope_and_sum_overflow_are_guarded() {
+     .unwrap();
+     assert!(matches!(q.execute(), Err(ExactQueryError::NonFiniteResult)));
+ }
++
++#[test]
++fn canonical_five_qubit_matrix_stays_within_query_workspace_contract() {
++    let mut circuit = Circuit::new(5, 0);
++    // H tensor five: independent analytic |+>^5 reference, maximum Kq width.
++    let data = (0usize..32)
++        .flat_map(|r| {
++            (0usize..32).map(move |c| {
++                let sign = if (r & c).count_ones() % 2 == 0 {
++                    1.
++                } else {
++                    -1.
++                };
++                Complex::new(sign / 32f64.sqrt(), 0.)
++            })
++        })
++        .collect();
++    circuit
++        .add_gate(GateInstance::new(
++            Gate::UnitaryKq { k: 5, data },
++            &[0, 1, 2, 3, 4][..],
++        ))
++        .unwrap();
++    let observable = sum(vec![term(1., &[(4, Pauli::X)])]);
++    let budget = 40 * 32 + 4096;
++    let query = ExactExpectationQuery::compile(&circuit, &observable, budget).unwrap();
++    assert_eq!(query.peak_dense_workspace_bytes(), budget);
++    close(query.execute().unwrap().value, 1.);
++    close(query.execute().unwrap().value, full(&circuit, &observable));
++    assert!(matches!(
++        ExactExpectationQuery::compile(&circuit, &observable, budget - 1),
++        Err(ExactQueryError::Memory { .. })
++    ));
++}

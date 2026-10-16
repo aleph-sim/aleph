@@ -1,0 +1,7 @@
+case,allocations,allocated_bytes,additional_peak_heap_bytes
+fused_aos_n9_warmed,5,2104,2096
+fused_aos_n18_warmed,5,2104,2096
+fused_soa_n9_warmed,5,2104,2096
+fused_soa_n18_warmed,5,2104,2096
+fused_fp32_n9_warmed,6,2232,2224
+fused_fp32_n18_warmed,6,2232,2224

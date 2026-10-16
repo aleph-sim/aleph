@@ -25,6 +25,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('artifacts', type=pathlib.Path)
     parser.add_argument('--suite', choices=['noisy', 'fused'], default='noisy')
+    parser.add_argument('--case', action='append', help='Exact suite case to run (repeatable); default: every case')
     args = parser.parse_args()
     root = args.artifacts
     hashes = {}
@@ -120,6 +121,11 @@ def main():
     if args.suite == 'fused':
         cases = [f'p8_fused/{backend}/n{n}_k{k}' for backend in ['aos', 'soa', 'fp32'] for n in [10, 20] for k in [2, 3, 5]]
         cases += [f'p8_fused/cold_{backend}/n10_k5' for backend in ['aos', 'soa', 'fp32']]
+    if args.case:
+        unknown = set(args.case) - set(cases)
+        if unknown:
+            parser.error('unknown suite cases: ' + ', '.join(sorted(unknown)))
+        cases = [case for case in cases if case in args.case]
     for case in cases:
         key = case.replace('/', '__')
         for run in ['base-1', 'candidate-1', 'candidate-2', 'base-2']:

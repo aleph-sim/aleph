@@ -1,0 +1,104 @@
+0000000000136200 <aleph_sv::validation::UnitaryKqCache::validate>:
+  136200:	4d 85 c9             	test   %r9,%r9
+  136203:	74 1a                	je     13621f <aleph_sv::validation::UnitaryKqCache::validate+0x1f>
+  136205:	c7 07 04 00 00 00    	movl   $0x4,(%rdi)
+  13620b:	48 8d 05 a0 b2 f0 ff 	lea    -0xf4d60(%rip),%rax        # 414b2 <anon.263d709cb5235cda927d2603b328bc6e.1589.llvm.16736734036217614885+0x2d2>
+  136212:	48 89 47 08          	mov    %rax,0x8(%rdi)
+  136216:	48 c7 47 10 14 00 00 	movq   $0x14,0x10(%rdi)
+  13621d:	00 
+  13621e:	c3                   	ret
+  13621f:	48 8b 46 08          	mov    0x8(%rsi),%rax
+  136223:	48 85 c0             	test   %rax,%rax
+  136226:	0f 84 67 01 00 00    	je     136393 <aleph_sv::validation::UnitaryKqCache::validate+0x193>
+  13622c:	38 16                	cmp    %dl,(%rsi)
+  13622e:	0f 85 5f 01 00 00    	jne    136393 <aleph_sv::validation::UnitaryKqCache::validate+0x193>
+  136234:	4c 39 46 10          	cmp    %r8,0x10(%rsi)
+  136238:	0f 85 55 01 00 00    	jne    136393 <aleph_sv::validation::UnitaryKqCache::validate+0x193>
+  13623e:	4d 85 c0             	test   %r8,%r8
+  136241:	0f 84 45 01 00 00    	je     13638c <aleph_sv::validation::UnitaryKqCache::validate+0x18c>
+  136247:	41 56                	push   %r14
+  136249:	53                   	push   %rbx
+  13624a:	49 83 f8 04          	cmp    $0x4,%r8
+  13624e:	73 0b                	jae    13625b <aleph_sv::validation::UnitaryKqCache::validate+0x5b>
+  136250:	45 31 d2             	xor    %r10d,%r10d
+  136253:	45 31 c9             	xor    %r9d,%r9d
+  136256:	e9 e7 00 00 00       	jmp    136342 <aleph_sv::validation::UnitaryKqCache::validate+0x142>
+  13625b:	49 b9 fc ff ff ff ff 	movabs $0x7fffffffffffffc,%r9
+  136262:	ff ff 07 
+  136265:	4d 21 c1             	and    %r8,%r9
+  136268:	4d 89 c2             	mov    %r8,%r10
+  13626b:	49 c1 e2 04          	shl    $0x4,%r10
+  13626f:	49 83 e2 c0          	and    $0xffffffffffffffc0,%r10
+  136273:	66 0f ef c0          	pxor   %xmm0,%xmm0
+  136277:	45 31 db             	xor    %r11d,%r11d
+  13627a:	66 0f ef c9          	pxor   %xmm1,%xmm1
+  13627e:	66 90                	xchg   %ax,%ax
+  136280:	f3 42 0f 6f 1c 18    	movdqu (%rax,%r11,1),%xmm3
+  136286:	f3 42 0f 6f 64 18 10 	movdqu 0x10(%rax,%r11,1),%xmm4
+  13628d:	f3 42 0f 6f 54 18 20 	movdqu 0x20(%rax,%r11,1),%xmm2
+  136294:	f3 42 0f 6f 6c 18 30 	movdqu 0x30(%rax,%r11,1),%xmm5
+  13629b:	f3 42 0f 6f 34 19    	movdqu (%rcx,%r11,1),%xmm6
+  1362a1:	f3 42 0f 6f 7c 19 10 	movdqu 0x10(%rcx,%r11,1),%xmm7
+  1362a8:	f3 46 0f 6f 44 19 20 	movdqu 0x20(%rcx,%r11,1),%xmm8
+  1362af:	f3 46 0f 6f 4c 19 30 	movdqu 0x30(%rcx,%r11,1),%xmm9
+  1362b6:	66 44 0f 6f d6       	movdqa %xmm6,%xmm10
+  1362bb:	66 44 0f 6c d7       	punpcklqdq %xmm7,%xmm10
+  1362c0:	66 44 0f 6f db       	movdqa %xmm3,%xmm11
+  1362c5:	66 44 0f 6c dc       	punpcklqdq %xmm4,%xmm11
+  1362ca:	66 45 0f ef da       	pxor   %xmm10,%xmm11
+  1362cf:	66 44 0f eb d8       	por    %xmm0,%xmm11
+  1362d4:	66 41 0f 6f c0       	movdqa %xmm8,%xmm0
+  1362d9:	66 41 0f 6c c1       	punpcklqdq %xmm9,%xmm0
+  1362de:	66 44 0f 6f d2       	movdqa %xmm2,%xmm10
+  1362e3:	66 44 0f 6c d5       	punpcklqdq %xmm5,%xmm10
+  1362e8:	66 44 0f ef d0       	pxor   %xmm0,%xmm10
+  1362ed:	66 44 0f eb d1       	por    %xmm1,%xmm10
+  1362f2:	66 0f 6d f7          	punpckhqdq %xmm7,%xmm6
+  1362f6:	66 0f 6d dc          	punpckhqdq %xmm4,%xmm3
+  1362fa:	66 0f ef de          	pxor   %xmm6,%xmm3
+  1362fe:	66 0f 6f c3          	movdqa %xmm3,%xmm0
+  136302:	66 41 0f eb c3       	por    %xmm11,%xmm0
+  136307:	66 45 0f 6d c1       	punpckhqdq %xmm9,%xmm8
+  13630c:	66 0f 6d d5          	punpckhqdq %xmm5,%xmm2
+  136310:	66 41 0f ef d0       	pxor   %xmm8,%xmm2
+  136315:	66 0f 6f ca          	movdqa %xmm2,%xmm1
+  136319:	66 41 0f eb ca       	por    %xmm10,%xmm1
+  13631e:	49 83 c3 40          	add    $0x40,%r11
+  136322:	4d 39 da             	cmp    %r11,%r10
+  136325:	0f 85 55 ff ff ff    	jne    136280 <aleph_sv::validation::UnitaryKqCache::validate+0x80>
+  13632b:	66 0f eb c8          	por    %xmm0,%xmm1
+  13632f:	66 0f 70 c1 ee       	pshufd $0xee,%xmm1,%xmm0
+  136334:	66 0f eb c1          	por    %xmm1,%xmm0
+  136338:	66 49 0f 7e c2       	movq   %xmm0,%r10
+  13633d:	4d 39 c8             	cmp    %r9,%r8
+  136340:	74 42                	je     136384 <aleph_sv::validation::UnitaryKqCache::validate+0x184>
+  136342:	4d 89 c3             	mov    %r8,%r11
+  136345:	4d 29 cb             	sub    %r9,%r11
+  136348:	49 c1 e1 04          	shl    $0x4,%r9
+  13634c:	49 83 c9 08          	or     $0x8,%r9
+  136350:	4c 89 d3             	mov    %r10,%rbx
+  136353:	66 66 66 66 2e 0f 1f 	data16 data16 data16 cs nopw 0x0(%rax,%rax,1)
+  13635a:	84 00 00 00 00 00 
+  136360:	4e 8b 74 09 f8       	mov    -0x8(%rcx,%r9,1),%r14
+  136365:	4e 33 74 08 f8       	xor    -0x8(%rax,%r9,1),%r14
+  13636a:	4e 8b 14 09          	mov    (%rcx,%r9,1),%r10
+  13636e:	49 09 de             	or     %rbx,%r14
+  136371:	4e 33 14 08          	xor    (%rax,%r9,1),%r10
+  136375:	4d 09 f2             	or     %r14,%r10
+  136378:	49 83 c1 10          	add    $0x10,%r9
+  13637c:	4c 89 d3             	mov    %r10,%rbx
+  13637f:	49 ff cb             	dec    %r11
+  136382:	75 dc                	jne    136360 <aleph_sv::validation::UnitaryKqCache::validate+0x160>
+  136384:	4d 85 d2             	test   %r10,%r10
+  136387:	5b                   	pop    %rbx
+  136388:	41 5e                	pop    %r14
+  13638a:	75 07                	jne    136393 <aleph_sv::validation::UnitaryKqCache::validate+0x193>
+  13638c:	c7 07 10 00 00 00    	movl   $0x10,(%rdi)
+  136392:	c3                   	ret
+  136393:	0f b6 d2             	movzbl %dl,%edx
+  136396:	e9 95 fa ff ff       	jmp    135e30 <aleph_sv::validation::UnitaryKqCache::refresh>
+  13639b:	cc                   	int3
+  13639c:	cc                   	int3
+  13639d:	cc                   	int3
+  13639e:	cc                   	int3
+  13639f:	cc                   	int3

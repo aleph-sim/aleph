@@ -72,11 +72,17 @@ impl UnitaryKqCache {
                 kind: "controlled UnitaryKq",
             });
         }
-        if self
-            .last
-            .as_ref()
-            .is_some_and(|(width, matrix)| *width == k && &**matrix == data)
-        {
+        if self.last.as_ref().is_some_and(|(width, matrix)| {
+            *width == k
+                    && matrix.len() == data.len()
+                    // Exact integer reduction permits SIMD without float-equality
+                    // branches per coefficient. Every bit is checked, not hashed;
+                    // signed-zero changes conservatively miss and revalidate.
+                    && matrix.iter().zip(data).fold(0u64, |difference, (a, b)| {
+                        difference | (a.re.to_bits() ^ b.re.to_bits())
+                            | (a.im.to_bits() ^ b.im.to_bits())
+                    }) == 0
+        }) {
             return Ok(());
         }
         self.refresh(k, data, controls)
