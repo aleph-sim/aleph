@@ -128,6 +128,33 @@ class TestRegistration(unittest.TestCase):
                 self.assertTrue(np.asarray(result.converged).all())
                 np.testing.assert_array_equal(np.asarray(result.result) > 0.5, [[0], [1]])
 
+    def test_relay_budget_forwarding_and_typed_rejection(self):
+        from test_qec import (RELAY_BUDGET_DEM, RELAY_BUDGET_SYNDROME,
+                              RELAY_BUDGET_FULL, RELAY_BUDGET_FIRST)
+        H, O, rates = aq.dem_to_matrices(RELAY_BUDGET_DEM)
+        for name in ("relay-bp", "relay-bp-osd"):
+            for iterations, early, expected in [(8, False, RELAY_BUDGET_FULL),
+                                                 (8, True, RELAY_BUDGET_FIRST),
+                                                 (1, False, RELAY_BUDGET_FIRST),
+                                                 (0, False, RELAY_BUDGET_FIRST)]:
+                with self.subTest(name=name, iterations=iterations, early=early):
+                    for source, priors in [(H, {"O": O, "error_rate_vec": rates}),
+                                            (RELAY_BUDGET_DEM, {})]:
+                        dec = cq.get_decoder(f"aleph-{name}", source, **priors,
+                                             legs=3, iters_per_leg=iterations, early_exit=early, seed=7)
+                        result = dec.decode_batch(RELAY_BUDGET_SYNDROME.astype(float))
+                        self.assertTrue(np.asarray(result.converged).all())
+                        np.testing.assert_array_equal(np.asarray(result.result) > 0.5, expected)
+                        single = dec.decode(RELAY_BUDGET_SYNDROME[0].astype(float))
+                        self.assertTrue(single.converged)
+                        np.testing.assert_array_equal(np.asarray(single.result) > 0.5, expected[0])
+            with self.assertRaises((ValueError, TypeError, OverflowError)):
+                cq.get_decoder(f"aleph-{name}", H, error_rate=0.1, iters_per_leg=-1)
+            with self.assertRaises((ValueError, TypeError)):
+                cq.get_decoder(f"aleph-{name}", H, error_rate=0.1, early_exit="false")
+        with self.assertRaisesRegex(ValueError, "iters_per_leg"):
+            cq.get_decoder("aleph-bp", H, error_rate=0.1, iters_per_leg=10)
+
     def test_scipy_sparse_h(self):
         import scipy.sparse as sp
         d = cq.get_decoder("aleph-union-find", sp.csr_matrix(H), O=sp.csr_matrix(O), error_rate_vec=RATES)
