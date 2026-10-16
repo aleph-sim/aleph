@@ -30,3 +30,5 @@ pub use fp32_state::Fp32CpuState;
 pub use soa_backend::SoaSvBackend;
 pub use soa_state::SoaState;
 pub use state::CpuState;
+
+pub mod expectation_query;

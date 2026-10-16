@@ -7,8 +7,22 @@
 ``decoder_names()`` lists the available decoders. stim is not required. One rule to know up
 front: ``Decoder.decode_batch_errors`` raises for the matching decoders (``mwpm``,
 ``union-find``, ``union-find-weighted``) on a DEM with ``^``-decomposed mechanisms — split the
-parts first with ``dem_to_matrices`` + ``dem_from_matrices`` (BP-family decoders have no such
-restriction).
+parts first with ``split = dem.split_components()`` and build ``Decoder(split, name)``.
+Returned error columns index ``split``, in mechanism/component order. Keep the original DEM
+for sampling: splitting makes formerly correlated parts independent. BP-family decoders
+continue to use the original, parity-reduced mechanism columns.
+
+Matching decoders require finite priors in [0, 0.5] and raise ValueError at construction
+for unsupported priors (with the offending column). Zero is allowed and omitted from
+the graph; 0.5 is allowed with zero edge weight. Priors are never clamped. BP-family
+models retain their [0, 1] prior range.
+
+Both ``relay-bp`` and ``relay-bp-osd`` accept ``iters_per_leg`` and ``early_exit``.
+Omitting the budget retains ``max(100 // max(legs, 1), 8)`` sweeps per leg;
+``early_exit=False`` retains the lightest valid decision over the full schedule.
+``early_exit=True`` stops at the first valid decision, which can change logical quality.
+Explicit zero legs or iterations are promoted to one, as in the Rust fixed-point decoder.
+For example: ``Decoder(dem, "relay-bp", legs=6, iters_per_leg=10, early_exit=True)``.
 """
 import numpy as np
 

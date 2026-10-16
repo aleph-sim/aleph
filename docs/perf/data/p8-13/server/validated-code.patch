@@ -1,0 +1,59 @@
+--- a/scripts/benchmarks/public_workflow.py
++++ b/scripts/benchmarks/public_workflow.py
+@@ -19,6 +19,7 @@
+ from datetime import datetime, timezone
+ 
+ VERSION = 1
++GPU_SETTLE_SECONDS = 1.25  # let the utilization trailing window drain after our own work
+ ROOT = Path(__file__).resolve().parents[2]
+ STAGES = ('startup_ms', 'parse_compile_ms', 'execution_ms', 'sampling_ms',
+           'materialization_ms', 'formatting_ms', 'run_api_ms')
+@@ -199,6 +200,9 @@
+         done.set()
+         thread.join()
+     samples.append(resources(s['route'] == 'cuda-python'))
++    if s['route'] == 'cuda-python':
++        time.sleep(GPU_SETTLE_SECONDS)
++        samples.append(resources(True))
+     base = dict(command=command, caller_ms=caller_ms, returncode=p.returncode,
+                 stdout=p.stdout[-16000:], stderr=p.stderr[-16000:], resources=samples)
+     if p.returncode != 0:
+@@ -271,7 +275,7 @@
+                     environment={k: str(s['threads']) for k in ('RAYON_NUM_THREADS', 'OMP_NUM_THREADS', 'OPENBLAS_NUM_THREADS', 'MKL_NUM_THREADS')},
+                     clock_contract=('CLI caller is subprocess launch through exit; CUDA caller is parse/run/read/result-release inside worker; process_wall includes imports/warmups/oracle'),
+                     source_revision_note='arm revisions are operator declarations; artifact hashes identify executed files',
+-                    sampling_interval_seconds=.5, amdahl_upper_bound=1/(1-s['bottleneck_fraction']))
++                    sampling_interval_seconds=.5, post_gpu_settle_seconds=GPU_SETTLE_SECONDS, amdahl_upper_bound=1/(1-s['bottleneck_fraction']))
+     def save():
+         (output/'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
+     save()
+@@ -285,7 +289,7 @@
+             manifest['status'] = 'skipped'
+             return manifest
+         for arm in s['arms']:
+-            arm['executable'] = str(Path(arm['executable']).resolve())
++            arm['executable'] = os.path.abspath(arm['executable'])
+             arm['executable_sha256'] = sha256(arm['executable'])
+         path = output/'workload.qasm'
+         path.write_text(qasm(s))
+--- a/scripts/benchmarks/cuda_worker.py
++++ b/scripts/benchmarks/cuda_worker.py
+@@ -64,6 +64,8 @@
+     assert after_run['device_bytes']-before['device_bytes'] == (1 << s['qubits'])*width
+     assert after_read['dtoh_bytes']-after_run['dtoh_bytes'] == (1 << s['qubits'])*width
+     assert after_read['materializations']-before['materializations'] == 1
++    assert amplitudes.shape == (1 << s['qubits'],) and amplitudes.dtype.name == 'complex128'
++    assert after_read['host_bytes']-before['host_bytes'] == (1 << s['qubits'])*16
+     assert after_drop['device_bytes'] == before['device_bytes']
+     assert after_drop['host_bytes'] == before['host_bytes']
+     assert np.isfinite(amplitudes).all()
+@@ -71,7 +73,8 @@
+     if reference is not None:
+         np.testing.assert_allclose(amplitudes, reference, atol=s['error_budget']['amplitude_atol'], rtol=0)
+     counters = dict(diagnostics)
+-    counters.update({k+'_delta': after_read[k]-before[k] for k in before})
++    for stage, values in [('after_run', after_run), ('after_read', after_read), ('after_drop', after_drop)]:
++        counters.update({stage+'_'+k+'_delta': values[k]-before[k] for k in before})
+     peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+     counters['peak_rss_bytes'] = peak if sys.platform == 'darwin' else peak*1024
+     native = Path(_native.__file__)

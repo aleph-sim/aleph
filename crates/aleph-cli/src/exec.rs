@@ -22,18 +22,18 @@ use crate::pauli::parse_pauli_arg;
 /// to the historical `state.amplitudes()` dump); the f32 path widens via the
 /// backend's `to_aos_f64()`.
 trait AmpsF64 {
-    fn amps_f64(&self) -> Vec<Complex>;
+    fn amps_f64(&self) -> Result<Vec<Complex>>;
 }
 
 impl AmpsF64 for aleph_sv::CpuState {
-    fn amps_f64(&self) -> Vec<Complex> {
-        self.amplitudes().to_vec()
+    fn amps_f64(&self) -> Result<Vec<Complex>> {
+        Ok(self.amplitudes().to_vec())
     }
 }
 
 impl AmpsF64 for aleph_sv::Fp32CpuState {
-    fn amps_f64(&self) -> Vec<Complex> {
-        self.to_aos_f64()
+    fn amps_f64(&self) -> Result<Vec<Complex>> {
+        Ok(self.to_aos_f64())
     }
 }
 
@@ -41,8 +41,8 @@ impl AmpsF64 for aleph_sv::Fp32CpuState {
 // like the CPU FP32 backend. Only compiled when the `metal` feature is on (macOS).
 #[cfg(all(target_os = "macos", feature = "metal"))]
 impl AmpsF64 for aleph_metal::MetalSvState {
-    fn amps_f64(&self) -> Vec<Complex> {
-        self.to_aos_f64()
+    fn amps_f64(&self) -> Result<Vec<Complex>> {
+        Ok(self.to_aos_f64())
     }
 }
 
@@ -50,15 +50,15 @@ impl AmpsF64 for aleph_metal::MetalSvState {
 // via `amplitudes_vec` (the FP32 one casts on the way out). Linux + `cuda` only.
 #[cfg(all(target_os = "linux", feature = "cuda"))]
 impl AmpsF64 for aleph_cuda::CudaSvState {
-    fn amps_f64(&self) -> Vec<Complex> {
-        self.amplitudes_vec()
+    fn amps_f64(&self) -> Result<Vec<Complex>> {
+        self.try_amplitudes_vec().map_err(anyhow::Error::from)
     }
 }
 
 #[cfg(all(target_os = "linux", feature = "cuda"))]
 impl AmpsF64 for aleph_cuda::CudaSvStateF32 {
-    fn amps_f64(&self) -> Vec<Complex> {
-        self.amplitudes_vec()
+    fn amps_f64(&self) -> Result<Vec<Complex>> {
+        self.try_amplitudes_vec().map_err(anyhow::Error::from)
     }
 }
 
@@ -105,6 +105,13 @@ pub fn run_circuit<W: Write>(
     )
 }
 
+/// CUDA-specific execution choices; defaults preserve strict FP32 arithmetic.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct CudaOptions {
+    pub raw: bool,
+    pub diagnostics: bool,
+}
+
 /// Execute with an explicit noisy buffer budget and trajectory context limit.
 /// The options apply only when noise presets are present.
 #[allow(clippy::too_many_arguments)]
@@ -123,12 +130,55 @@ pub fn run_circuit_with_noise_options<W: Write>(
     noise_options: aleph_sv::noise::NoiseOptions,
     out: &mut W,
 ) -> Result<()> {
+    run_circuit_with_execution_options(
+        qasm_path,
+        shots_opt,
+        print_statevector,
+        force_statevector,
+        expectations,
+        seed,
+        precision,
+        backend,
+        max_bond,
+        max_error,
+        noise,
+        noise_options,
+        CudaOptions::default(),
+        out,
+    )
+}
+
+/// Execute with explicit CUDA optimization and diagnostic choices.
+#[allow(clippy::too_many_arguments)]
+pub fn run_circuit_with_execution_options<W: Write>(
+    qasm_path: &Path,
+    shots_opt: Option<u32>,
+    print_statevector: bool,
+    force_statevector: bool,
+    expectations: &[String],
+    seed: Option<u64>,
+    precision: Precision,
+    backend: BackendRequest,
+    max_bond: usize,
+    max_error: Option<f64>,
+    noise: &[String],
+    noise_options: aleph_sv::noise::NoiseOptions,
+    cuda_options: CudaOptions,
+    out: &mut W,
+) -> Result<()> {
+    let caller_start = Instant::now();
     // 1. Read + parse.
     let source = std::fs::read_to_string(qasm_path)
         .with_context(|| format!("reading QASM file: {}", qasm_path.display()))?;
     let circuit =
         aleph_parser::parse(&source).with_context(|| format!("parsing {}", qasm_path.display()))?;
     let n = circuit.num_qubits();
+    let parse_ms = caller_start.elapsed().as_secs_f64() * 1000.;
+    if !noise.is_empty() && (cuda_options.raw || cuda_options.diagnostics) {
+        return Err(anyhow!(
+            "CUDA execution options cannot be combined with noise"
+        ));
+    }
 
     // Noise preset path: build a NoiseModel from --noise presets and run the
     // Monte-Carlo trajectory engine. SV-only, shots-only (no statevector /
@@ -261,6 +311,10 @@ pub fn run_circuit_with_noise_options<W: Write>(
         None => "seed=entropy".to_string(),
     };
 
+    if !cuda_family && (cuda_options.raw || cuda_options.diagnostics) {
+        return Err(anyhow!("CUDA execution options require a CUDA backend"));
+    }
+
     if resolved == aleph_backend::BackendKind::Stabilizer {
         return run_stabilizer(
             &circuit,
@@ -313,6 +367,9 @@ pub fn run_circuit_with_noise_options<W: Write>(
             seed,
             &seed_label,
             out,
+            cuda_options,
+            parse_ms,
+            caller_start,
         );
     }
 
@@ -326,6 +383,7 @@ pub fn run_circuit_with_noise_options<W: Write>(
             };
             run_with_backend(
                 backend,
+                parse_ms,
                 &circuit,
                 effective_shots,
                 print_statevector,
@@ -342,6 +400,7 @@ pub fn run_circuit_with_noise_options<W: Write>(
             };
             run_with_backend(
                 backend,
+                parse_ms,
                 &circuit,
                 effective_shots,
                 print_statevector,
@@ -362,6 +421,7 @@ pub fn run_circuit_with_noise_options<W: Write>(
 #[allow(clippy::too_many_arguments)]
 fn run_with_backend<B, W>(
     mut backend: B,
+    parse_ms: f64,
     circuit: &aleph_ir::Circuit,
     effective_shots: Option<u32>,
     print_statevector: bool,
@@ -375,28 +435,77 @@ where
     B::State: AmpsF64,
     W: Write,
 {
+    let execution_start = Instant::now();
     let state = run(&mut backend, circuit).context("running circuit")?;
+    let execution_ms = execution_start.elapsed().as_secs_f64() * 1000.0;
+    let (sampling_ms, materialization_ms, formatting_ms) = write_backend_views(
+        &mut backend,
+        &state,
+        effective_shots,
+        print_statevector,
+        paulis,
+        n,
+        seed_label,
+        out,
+    )?;
+    // Explicit benchmark instrumentation of the ordinary CPU `run` route.
+    // Caller wall time remains authoritative: these stages exclude process
+    // startup, backend construction, teardown and the final stdout flush.
+    if std::env::var("ALEPH_BENCH_CPU_DIAGNOSTICS").as_deref() == Ok("1") {
+        eprintln!(
+            "CPU_EXECUTION={{\"parse_ms\":{parse_ms},\"execution_ms\":{execution_ms},\"sampling_ms\":{sampling_ms},\"materialization_ms\":{materialization_ms},\"formatting_ms\":{formatting_ms},\"qubits\":{n}}}"
+        );
+    }
+    Ok(())
+}
 
+#[allow(clippy::too_many_arguments)]
+fn write_backend_views<B, W>(
+    backend: &mut B,
+    state: &B::State,
+    effective_shots: Option<u32>,
+    print_statevector: bool,
+    paulis: &[(String, aleph_core::PauliString)],
+    n: u32,
+    seed_label: &str,
+    out: &mut W,
+) -> Result<(f64, f64, f64)>
+where
+    B: Backend,
+    B::State: AmpsF64,
+    W: Write,
+{
+    let mut sampling_ms = 0.0;
+    let mut materialization_ms = 0.0;
+    let mut formatting_ms = 0.0;
     if let Some(shots) = effective_shots {
+        let started = Instant::now();
         let samples = backend
-            .sample(&state, shots)
+            .sample(state, shots)
             .context("sampling final state")?;
+        sampling_ms = started.elapsed().as_secs_f64() * 1000.0;
+        let started = Instant::now();
         output::format_counts(out, &samples, shots, n, seed_label)?;
+        formatting_ms += started.elapsed().as_secs_f64() * 1000.0;
     }
     if print_statevector {
-        let amps = state.amps_f64();
+        let started = Instant::now();
+        let amps = state.amps_f64()?;
+        materialization_ms = started.elapsed().as_secs_f64() * 1000.0;
+        let started = Instant::now();
         output::format_statevector(out, &amps, n)?;
+        formatting_ms += started.elapsed().as_secs_f64() * 1000.0;
     }
     if !paulis.is_empty() {
         writeln!(out, "expectation values:")?;
         for (raw, ps) in paulis {
             let v = backend
-                .expectation_value(&state, ps)
+                .expectation_value(state, ps)
                 .with_context(|| format!("computing expectation value for {raw:?}"))?;
             output::format_expectation(out, raw, v)?;
         }
     }
-    Ok(())
+    Ok((sampling_ms, materialization_ms, formatting_ms))
 }
 
 /// Stabilizer-backend run path. Supports `--shots` and `--expectation`;
@@ -583,11 +692,9 @@ fn cuda_available() -> bool {
     false
 }
 
-/// CUDA GPU state-vector run path (Linux + `cuda`). Dispatches on the resolved
-/// [`aleph_backend::Selection`]: **in core** (`n ≤ cap`) runs the FP64/FP32 backend
-/// through the shared [`run_with_backend`] helper with full views; **paged**
-/// (`n > cap`) streams the state out-of-core and reports the norm (the paged host
-/// state exposes no GPU sampling/expectation yet — see [`run_cuda_paged`]).
+/// CUDA frontend execution: validate all requested outputs against runtime memory
+/// before constructing the SV backend. The norm-only Rust paged executor cannot
+/// substitute for counts/expectation/export requested through this command.
 #[cfg(all(target_os = "linux", feature = "cuda"))]
 #[allow(clippy::too_many_arguments)]
 fn run_cuda<W: Write>(
@@ -600,126 +707,85 @@ fn run_cuda<W: Write>(
     seed: Option<u64>,
     seed_label: &str,
     out: &mut W,
-) -> Result<()> {
-    use aleph_backend::{BackendKind, Reach};
-    use aleph_cuda::{CudaSvBackend, CudaSvBackendF32};
-
-    match selection.reach {
-        Reach::InCore => match selection.kind {
-            BackendKind::CudaF32 => {
-                let backend = match seed {
-                    Some(s) => CudaSvBackendF32::with_seed(s),
-                    None => CudaSvBackendF32::new(),
-                }
-                .map_err(|e| anyhow!("initializing the CUDA FP32 backend: {e}"))?;
-                run_with_backend(
-                    backend,
-                    circuit,
-                    effective_shots,
-                    print_statevector,
-                    paulis,
-                    n,
-                    seed_label,
-                    out,
-                )
-            }
-            BackendKind::Cuda => {
-                let backend = match seed {
-                    Some(s) => CudaSvBackend::with_seed(s),
-                    None => CudaSvBackend::new(),
-                }
-                .map_err(|e| anyhow!("initializing the CUDA FP64 backend: {e}"))?;
-                run_with_backend(
-                    backend,
-                    circuit,
-                    effective_shots,
-                    print_statevector,
-                    paulis,
-                    n,
-                    seed_label,
-                    out,
-                )
-            }
-            _ => unreachable!("run_cuda is only dispatched for CUDA kinds"),
-        },
-        Reach::Paged { tile_qubits } => run_cuda_paged(
-            selection.kind,
-            tile_qubits,
-            circuit,
-            effective_shots,
-            print_statevector,
-            paulis,
-            n,
-            seed,
-            out,
-        ),
-    }
-}
-
-/// CUDA out-of-core paged run (`n` past the in-core cap). The pinned-host paged
-/// state exposes only the norm today — no GPU sampling/expectation — so the rich
-/// views are rejected with an actionable message rather than silently dropped, and
-/// the run reports `‖ψ‖²` as a reach sanity check.
-#[cfg(all(target_os = "linux", feature = "cuda"))]
-#[allow(clippy::too_many_arguments)]
-fn run_cuda_paged<W: Write>(
-    kind: aleph_backend::BackendKind,
-    tile_qubits: u32,
-    circuit: &aleph_ir::Circuit,
-    effective_shots: Option<u32>,
-    print_statevector: bool,
-    paulis: &[(String, aleph_core::PauliString)],
-    n: u32,
-    seed: Option<u64>,
-    out: &mut W,
+    options: CudaOptions,
+    parse_ms: f64,
+    caller_start: Instant,
 ) -> Result<()> {
     use aleph_backend::BackendKind;
-    if print_statevector {
-        return Err(anyhow!(
-            "--statevector is unavailable on the CUDA out-of-core paged path \
-             (n={n} ⇒ 2^{n} amplitudes); paged readout is norm-only"
-        ));
-    }
-    if !paulis.is_empty() {
-        return Err(anyhow!(
-            "--expectation is unavailable on the CUDA out-of-core paged path; \
-             paged readout is norm-only"
-        ));
-    }
-    let norm = match kind {
-        BackendKind::CudaF32 => {
-            let mut b = match seed {
-                Some(s) => aleph_cuda::CudaSvBackendF32::with_seed(s),
-                None => aleph_cuda::CudaSvBackendF32::new(),
-            }
-            .map_err(|e| anyhow!("initializing the CUDA FP32 backend: {e}"))?;
-            b.run_paged_batched(circuit, tile_qubits)
-                .map_err(|e| anyhow!("CUDA FP32 paged run: {e}"))?
-                .norm_sqr()
-        }
-        BackendKind::Cuda => {
-            let mut b = match seed {
-                Some(s) => aleph_cuda::CudaSvBackend::with_seed(s),
-                None => aleph_cuda::CudaSvBackend::new(),
-            }
-            .map_err(|e| anyhow!("initializing the CUDA FP64 backend: {e}"))?;
-            b.run_paged_batched(circuit, tile_qubits)
-                .map_err(|e| anyhow!("CUDA FP64 paged run: {e}"))?
-                .norm_sqr()
-        }
-        _ => unreachable!("run_cuda_paged is only dispatched for CUDA kinds"),
+    let policy = aleph_cuda::CudaExecutionOptions {
+        optimize: !options.raw,
     };
-    if effective_shots.is_some() {
-        eprintln!(
-            "note: sampling is unavailable on the CUDA out-of-core paged path; \
-             reporting the state norm only"
-        );
+    let views = aleph_cuda::CudaReadoutRequest {
+        shots: effective_shots.unwrap_or(0),
+        expectation: !paulis.is_empty(),
+        export: print_statevector,
+    };
+    macro_rules! execute {
+        ($backend:ident) => {{
+            let (mut be, plan) = aleph_cuda::prepare_cuda_execution(circuit, policy, views, || {
+                let be = match seed {
+                    Some(s) => aleph_cuda::$backend::with_seed(s),
+                    None => aleph_cuda::$backend::new(),
+                }?;
+                Ok(be.with_qubit_cap(n))
+            })
+            .map_err(|e| anyhow!(e))?;
+            let before = aleph_cuda::execution_counters();
+            let start = Instant::now();
+            let state = plan.execute(&mut be).map_err(|e| anyhow!(e))?;
+            let execution_ms = start.elapsed().as_secs_f64() * 1000.;
+            let after = aleph_cuda::execution_counters();
+            let start = Instant::now();
+            let mut sample_ms = 0.;
+            let mut counts_ms = 0.;
+            if let Some(shots) = effective_shots {
+                let samples = be.sample(&state, shots).map_err(|e| anyhow!(e))?;
+                sample_ms = start.elapsed().as_secs_f64() * 1000.;
+                let count_start = Instant::now();
+                output::format_counts(out, &samples, shots, n, seed_label)?;
+                counts_ms = count_start.elapsed().as_secs_f64() * 1000.;
+            }
+            let start = Instant::now();
+            write_backend_views(
+                &mut be,
+                &state,
+                None,
+                print_statevector,
+                paulis,
+                n,
+                seed_label,
+                out,
+            )?;
+            let materialization_ms = start.elapsed().as_secs_f64() * 1000.;
+            if options.diagnostics {
+                let mut d = plan.diagnostics();
+                for (key, value) in [
+                    ("parse_ms", parse_ms),
+                    ("sampling_ms", sample_ms),
+                    ("counts_ms", counts_ms),
+                    ("execution_ms", execution_ms),
+                    ("materialization_ms", materialization_ms),
+                    ("kernel_launches_process_delta", (after.0 - before.0) as f64),
+                    ("layer_launches_process_delta", (after.1 - before.1) as f64),
+                    ("tf32_launches_process_delta", (after.2 - before.2) as f64),
+                    (
+                        "total_native_ms",
+                        caller_start.elapsed().as_secs_f64() * 1000.,
+                    ),
+                ] {
+                    d.insert(key.into(), value);
+                }
+                // Fixed numeric fields only; BTreeMap Debug is valid JSON for these keys.
+                eprintln!("CUDA_EXECUTION={d:?}");
+            }
+            Ok(())
+        }};
     }
-    writeln!(
-        out,
-        "CUDA out-of-core paged run: n={n}, tile_qubits={tile_qubits}, ‖ψ‖² = {norm:.6}"
-    )?;
-    Ok(())
+    match selection.kind {
+        BackendKind::Cuda => execute!(CudaSvBackend),
+        BackendKind::CudaF32 => execute!(CudaSvBackendF32),
+        _ => unreachable!(),
+    }
 }
 
 /// Stub when the CUDA backend is not compiled in (non-Linux, or built without
@@ -737,6 +803,9 @@ fn run_cuda<W: Write>(
     _seed: Option<u64>,
     _seed_label: &str,
     _out: &mut W,
+    _options: CudaOptions,
+    _parse_ms: f64,
+    _caller_start: Instant,
 ) -> Result<()> {
     Err(anyhow!(
         "the CUDA GPU backend is not available in this build; \

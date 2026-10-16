@@ -17,12 +17,22 @@ pub const DECODER_NAMES: &[(&str, &[&str])] = &[
     ("bp-osd", &["max_iter", "alpha", "osd_order"]),
     (
         "relay-bp",
-        &["legs", "alpha", "gamma_min", "gamma_max", "seed"],
+        &[
+            "legs",
+            "iters_per_leg",
+            "early_exit",
+            "alpha",
+            "gamma_min",
+            "gamma_max",
+            "seed",
+        ],
     ),
     (
         "relay-bp-osd",
         &[
             "legs",
+            "iters_per_leg",
+            "early_exit",
             "alpha",
             "gamma_min",
             "gamma_max",
@@ -46,6 +56,8 @@ pub struct DecoderParams {
     pub alpha: Option<f64>,
     pub osd_order: Option<usize>,
     pub legs: Option<usize>,
+    pub iters_per_leg: Option<u32>,
+    pub early_exit: Option<bool>,
     pub gamma_min: Option<f64>,
     pub gamma_max: Option<f64>,
     pub seed: Option<u64>,
@@ -94,13 +106,15 @@ impl AnyDecoder {
             if gmin > gmax {
                 return Err(format!("gamma_min ({gmin}) must be <= gamma_max ({gmax})"));
             }
-            Ok(RelayBpDecoder::with_params(
-                dem,
-                p.legs.unwrap_or(DEFAULT_LEGS),
-                alpha,
-                (gmin, gmax),
-                p.seed.unwrap_or(RELAY_SEED),
-            ))
+            let legs = p.legs.unwrap_or(DEFAULT_LEGS);
+            let seed = p.seed.unwrap_or(RELAY_SEED);
+            let relay = match p.iters_per_leg {
+                Some(iterations) => {
+                    RelayBpDecoder::with_budget(dem, legs, iterations, alpha, (gmin, gmax), seed)
+                }
+                None => RelayBpDecoder::with_params(dem, legs, alpha, (gmin, gmax), seed),
+            };
+            Ok(relay.with_early_exit(p.early_exit.unwrap_or(false)))
         };
         Ok(match name {
             "mwpm" => AnyDecoder::Mwpm(MwpmDecoder::new(dem).map_err(|e| e.to_string())?),
@@ -268,29 +282,58 @@ pub fn decode_errors_rows(
     errors: usize,
 ) -> (Vec<u8>, Vec<bool>) {
     let mut out = vec![0u8; shots * errors];
+    let conv = decode_error_values_into(dec, bits, shots, detectors, errors, &mut out);
+    (out, conv)
+}
+
+/// Fill caller-owned CUDA-Q float64 storage; keeps its allocator's memory policy.
+/// `out` must have `shots * errors` elements, in row-major order.
+pub fn decode_errors_rows_f64_into(
+    dec: &AnyDecoder,
+    bits: &[u8],
+    shots: usize,
+    detectors: usize,
+    errors: usize,
+    out: &mut [f64],
+) -> Vec<bool> {
+    decode_error_values_into(dec, bits, shots, detectors, errors, out)
+}
+
+fn decode_error_values_into<T: From<u8> + Send>(
+    dec: &AnyDecoder,
+    bits: &[u8],
+    shots: usize,
+    detectors: usize,
+    errors: usize,
+    out: &mut [T],
+) -> Vec<bool> {
     let mut conv = vec![false; shots];
     if shots == 0 || errors == 0 {
         // `par_chunks_mut(0)` panics; an empty row also carries nothing to write.
         if errors == 0 {
             conv.iter_mut().for_each(|c| *c = true);
         }
-        return (out, conv);
+        return conv;
     }
-    let rows: Vec<(&mut [u8], &mut bool)> = out.chunks_mut(errors).zip(conv.iter_mut()).collect();
-    rows.into_par_iter().enumerate().for_each(|(i, (o, c))| {
-        let fired = if detectors == 0 {
-            Vec::new()
-        } else {
-            let row = &bits[i * detectors..(i + 1) * detectors];
-            (0..detectors as u32)
-                .filter(|&d| row[d as usize] != 0)
-                .collect()
-        };
-        let (ehat, ok) = dec.decode_errors(&Syndrome { detectors, fired });
-        o.copy_from_slice(&ehat);
-        *c = ok;
-    });
-    (out, conv)
+    out.par_chunks_mut(errors)
+        .zip(conv.par_iter_mut())
+        .enumerate()
+        .for_each(|(i, (o, c))| {
+            let fired = if detectors == 0 {
+                Vec::new()
+            } else {
+                let row = &bits[i * detectors..(i + 1) * detectors];
+                (0..detectors as u32)
+                    .filter(|&d| row[d as usize] != 0)
+                    .collect()
+            };
+            let (ehat, ok) = dec.decode_errors(&Syndrome { detectors, fired });
+            for (dst, bit) in o.iter_mut().zip(ehat) {
+                *dst = T::from(bit);
+            }
+            *c = ok;
+        });
+    conv
 }
 
 #[cfg(test)]
@@ -437,6 +480,74 @@ error(0.1) D2
             4,
         );
         assert!(e.is_empty() && c.is_empty());
+    }
+
+    #[test]
+    fn float_error_rows_match_byte_rows_including_empty_axes() {
+        for text in [DEM, "error(0.1) L0\n", "detector D0\n", ""] {
+            let dem = DetectorErrorModel::parse(text).unwrap();
+            for &(name, _) in DECODER_NAMES {
+                let dec = AnyDecoder::build(&dem, name, &DecoderParams::default()).unwrap();
+                for shots in [0, 1, 37] {
+                    let bits: Vec<u8> = (0..shots * dem.detectors)
+                        .map(|i| ((i * 7 + i / 3) % 5 == 0) as u8)
+                        .collect();
+                    let (bytes, bc) =
+                        decode_errors_rows(&dec, &bits, shots, dem.detectors, dem.errors.len());
+                    let mut floats = vec![0.0; shots * dem.errors.len()];
+                    let fc = decode_errors_rows_f64_into(
+                        &dec,
+                        &bits,
+                        shots,
+                        dem.detectors,
+                        dem.errors.len(),
+                        &mut floats,
+                    );
+                    assert_eq!(fc, bc, "{name} {text:?} shots={shots}");
+                    assert_eq!(floats, bytes.into_iter().map(f64::from).collect::<Vec<_>>());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn relay_schedule_overrides_reach_plain_and_osd_frontends() {
+        let dem = DetectorErrorModel::parse(
+            "error(0.15) D0 D2 D3 L0
+error(0.07) D0 D1 D3 L1
+error(0.03) D1 D3 D4 L0
+error(0.07) D0 D1 D2 D3 L1
+error(0.07) D0 D1 D2 D4 L0
+error(0.07) D0 D1 D3
+error(0.07) D0 D2 D3 D4 L0
+error(0.25) D0 D1 D2 D3 D4 L1",
+        )
+        .unwrap();
+        let syndrome = Syndrome::new(5, vec![1, 3]);
+        for name in ["relay-bp", "relay-bp-osd"] {
+            let mut results = Vec::new();
+            for (iterations, early) in [(8, false), (8, true), (1, false)] {
+                let params = DecoderParams {
+                    legs: Some(3),
+                    iters_per_leg: Some(iterations),
+                    early_exit: Some(early),
+                    seed: Some(7),
+                    ..Default::default()
+                };
+                let decoder = AnyDecoder::build(&dem, name, &params).unwrap();
+                let expected =
+                    RelayBpDecoder::with_budget(&dem, 3, iterations, 0.875, RELAY_GAMMA, 7)
+                        .with_early_exit(early);
+                assert_eq!(
+                    decoder.decode_errors(&syndrome),
+                    expected.decode_errors(&syndrome)
+                );
+                assert_eq!(decoder.get().decode(&syndrome), expected.decode(&syndrome));
+                results.push(decoder.decode_errors(&syndrome));
+            }
+            assert_ne!(results[0], results[1]);
+            assert_eq!(results[1], results[2]);
+        }
     }
 
     #[test]

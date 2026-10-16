@@ -126,16 +126,34 @@ impl UnionFindDecoder {
     /// # Errors
     /// Propagates [`crate::Error::NonGraphlike`] if the DEM has a hyperedge (Union-Find, like
     /// MWPM, needs a graph-like DEM).
+    /// Returns [`crate::Error::InvalidMatchingPrior`] for any prior outside finite `[0, 0.5]`.
     pub fn new(dem: &DetectorErrorModel) -> Result<Self> {
         let graph = MatchingGraph::from_dem(dem)?;
         Ok(Self::from_graph(&graph))
+    }
+
+    /// Build from one column per `^` component without a caller-side matrix round trip.
+    ///
+    /// Equivalent to `Self::new(&dem.split_components())`. Error estimates index the
+    /// **split** model in mechanism/component order; use that model's H/O columns when
+    /// projecting estimates. Keep the original model for sampling correlated mechanisms.
+    /// The ordinary [`Self::new`] retains the original mechanism-column API.
+    /// Chain `.weighted(true)` to use weighted growth on the split representation.
+    ///
+    /// # Errors
+    /// Returns [`crate::Error::NonGraphlike`] if an individual part is a hyperedge.
+    /// Returns [`crate::Error::InvalidMatchingPrior`] for an unsupported prior; its column
+    /// index refers to the split model.
+    pub fn new_with_split_components(dem: &DetectorErrorModel) -> Result<Self> {
+        Self::new(&dem.split_components())
     }
 
     /// Build a **weighted-growth** decoder for `dem` (Q2-02). Equivalent to
     /// `UnionFindDecoder::new(dem)?.weighted(true)`.
     ///
     /// # Errors
-    /// Propagates [`crate::Error::NonGraphlike`] if the DEM has a hyperedge.
+    /// Propagates [`crate::Error::NonGraphlike`] for hyperedges and
+    /// [`crate::Error::InvalidMatchingPrior`] for priors outside finite `[0, 0.5]`.
     pub fn new_weighted(dem: &DetectorErrorModel) -> Result<Self> {
         Ok(Self::new(dem)?.weighted(true))
     }
@@ -288,7 +306,8 @@ impl UnionFindDecoder {
     /// [`decode`](Decoder::decode)'s flips — exact on `^`-free DEMs.
     ///
     /// On a DEM with `^`-decomposed mechanisms the estimate is per mechanism, not per part, and
-    /// `H ê = s` does not hold — split the parts into separate mechanisms first.
+    /// `H ê = s` does not hold — use [`Self::new_with_split_components`] or construct
+    /// the decoder against [`DetectorErrorModel::split_components`] first.
     pub fn decode_errors(&self, syndrome: &Syndrome) -> Vec<u8> {
         let (_, edges) = self.decode_edges(syndrome);
         let mut ehat = vec![0u8; self.num_columns];

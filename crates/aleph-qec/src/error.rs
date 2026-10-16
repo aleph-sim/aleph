@@ -4,6 +4,32 @@
 /// Errors produced by `aleph-qec`.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    /// Matching decoders require finite per-mechanism priors in [0, 0.5].
+    #[error("matching prior at column {column} must be finite and in [0, 0.5], got {prob}")]
+    InvalidMatchingPrior {
+        /// Zero-based column in the DEM used to build the graph (split columns if split first).
+        column: usize,
+        /// Rejected input probability, retained without clamping.
+        prob: f64,
+    },
+
+    /// The experiment's sampling/decode batch limit must be positive and fit in u64.
+    #[error("DEM experiment batch size must be positive and fit in u64")]
+    InvalidExperimentBatchSize,
+
+    /// Experiment accounting would exceed the u64 shot-count representation.
+    #[error("DEM experiment shot/error count overflow")]
+    ExperimentCountOverflow,
+
+    /// A decoder returned a wrong batch length or observable width.
+    #[error("decoder contract violation at absolute shot {shot}: {message}")]
+    DecoderContract {
+        /// Zero-based offending shot, or start of a batch with a wrong prediction count.
+        shot: u64,
+        /// Expected and actual output dimensions.
+        message: String,
+    },
+
     /// A Bernoulli tally has more failures than trials.
     #[error("invalid Bernoulli tally: {errors} errors exceeds {shots} shots")]
     InvalidTally {

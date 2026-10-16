@@ -1,0 +1,438 @@
+{
+  "cpu-control-run": {
+    "status": "executed",
+    "summary": {
+      "pairs": 5,
+      "median_paired_speedup": 1.0298312790759707,
+      "paired_speedup_range": [
+        0.3960616393754351,
+        1.7143571015327936
+      ],
+      "paired_bootstrap_95": [
+        0.3960616393754351,
+        1.7143571015327936
+      ],
+      "uncertainty_note": "paired median bootstrap; small N is exploratory, not a stable small-win claim",
+      "arms": {
+        "a": {
+          "median_ms": 1.5416399110108614,
+          "range_ms": [
+            1.2143158819526434,
+            2.6431360747665167
+          ]
+        },
+        "b": {
+          "median_ms": 1.5224430244415998,
+          "range_ms": [
+            1.4969829935580492,
+            3.0659770127385855
+          ]
+        }
+      }
+    },
+    "rows": 12,
+    "stages": {
+      "a": {
+        "parse_compile_ms": 0.061500000000000006,
+        "execution_ms": 0.04648,
+        "sampling_ms": 0.006618,
+        "materialization_ms": 0,
+        "formatting_ms": 0.020959000000000002
+      },
+      "b": {
+        "parse_compile_ms": 0.062819,
+        "execution_ms": 0.040735,
+        "sampling_ms": 0.00651,
+        "materialization_ms": 0,
+        "formatting_ms": 0.017048
+      }
+    },
+    "preflight_counters": [
+      {
+        "output_rows": 2
+      },
+      {
+        "output_rows": 2
+      }
+    ]
+  },
+  "cuda-fusion-run": {
+    "status": "contaminated",
+    "summary": null,
+    "rows": 3
+  },
+  "cuda-fusion-settled": {
+    "status": "executed",
+    "summary": {
+      "pairs": 5,
+      "median_paired_speedup": 1.34236993868459,
+      "paired_speedup_range": [
+        1.3192604474560057,
+        1.4040054744058927
+      ],
+      "paired_bootstrap_95": [
+        1.3192604474560057,
+        1.4040054744058927
+      ],
+      "uncertainty_note": "paired median bootstrap; small N is exploratory, not a stable small-win claim",
+      "arms": {
+        "a": {
+          "median_ms": 348.51013612933457,
+          "range_ms": [
+            340.8711689990014,
+            357.31077403761446
+          ]
+        },
+        "b": {
+          "median_ms": 258.3804961759597,
+          "range_ms": [
+            252.63599399477243,
+            266.66442095302045
+          ]
+        }
+      }
+    },
+    "rows": 12,
+    "stages": {
+      "a": {
+        "startup_ms": 41.60948097705841,
+        "parse_compile_ms": 0.2048271708190441,
+        "execution_ms": 159.75438499999998,
+        "sampling_ms": 0.5894389999999999,
+        "materialization_ms": 94.07411492429674,
+        "run_api_ms": 249.20990807004273
+      },
+      "b": {
+        "startup_ms": 40.079489117488265,
+        "parse_compile_ms": 0.20522112026810646,
+        "execution_ms": 49.038549,
+        "sampling_ms": 0.617688,
+        "materialization_ms": 107.18668205663562,
+        "run_api_ms": 143.9323730301112
+      }
+    },
+    "preflight_counters": [
+      {
+        "counts_ms": 0.00645,
+        "diagonal_polynomials": 0.0,
+        "execution_ms": 49.039966,
+        "fused_1q": 0.0,
+        "fused_2q": 11.0,
+        "fused_kq": 26.0,
+        "fusion_width": 3.0,
+        "initialization_ms": 23.417697,
+        "input_instructions": 327.0,
+        "kernel_launches_process_delta": 37.0,
+        "layer_launches_process_delta": 0.0,
+        "optimized": 1.0,
+        "output_instructions": 37.0,
+        "planning_ms": 0.180609,
+        "preflight_ms": 72.51591499999999,
+        "sampling_ms": 0.6089589999999999,
+        "tf32_available": 0.0,
+        "tf32_effective": 0.0,
+        "tf32_launches_process_delta": 0.0,
+        "total_native_ms": 145.772499,
+        "after_run_materializations_delta": 0,
+        "after_run_device_bytes_delta": 67108864,
+        "after_run_host_bytes_delta": 0,
+        "after_run_dtoh_bytes_delta": 272,
+        "after_read_materializations_delta": 1,
+        "after_read_device_bytes_delta": 0,
+        "after_read_host_bytes_delta": 67108864,
+        "after_read_dtoh_bytes_delta": 67109136,
+        "after_drop_materializations_delta": 1,
+        "after_drop_device_bytes_delta": 0,
+        "after_drop_host_bytes_delta": 0,
+        "after_drop_dtoh_bytes_delta": 67109136,
+        "peak_rss_bytes": 511692800
+      },
+      {
+        "counts_ms": 0.00647,
+        "diagonal_polynomials": 0.0,
+        "execution_ms": 159.649221,
+        "fused_1q": 0.0,
+        "fused_2q": 0.0,
+        "fused_kq": 0.0,
+        "fusion_width": 3.0,
+        "initialization_ms": 23.169958,
+        "input_instructions": 327.0,
+        "kernel_launches_process_delta": 327.0,
+        "layer_launches_process_delta": 0.0,
+        "optimized": 0.0,
+        "output_instructions": 327.0,
+        "planning_ms": 0.009592,
+        "preflight_ms": 64.240782,
+        "sampling_ms": 0.5745560000000001,
+        "tf32_available": 0.0,
+        "tf32_effective": 0.0,
+        "tf32_launches_process_delta": 0.0,
+        "total_native_ms": 247.655621,
+        "after_run_materializations_delta": 0,
+        "after_run_device_bytes_delta": 67108864,
+        "after_run_host_bytes_delta": 0,
+        "after_run_dtoh_bytes_delta": 272,
+        "after_read_materializations_delta": 1,
+        "after_read_device_bytes_delta": 0,
+        "after_read_host_bytes_delta": 67108864,
+        "after_read_dtoh_bytes_delta": 67109136,
+        "after_drop_materializations_delta": 1,
+        "after_drop_device_bytes_delta": 0,
+        "after_drop_host_bytes_delta": 0,
+        "after_drop_dtoh_bytes_delta": 67109136,
+        "peak_rss_bytes": 511692800
+      }
+    ]
+  },
+  "cuda-small-run": {
+    "status": "executed",
+    "summary": {
+      "pairs": 5,
+      "median_paired_speedup": 1.0055150403319428,
+      "paired_speedup_range": [
+        0.9842895846943719,
+        1.0126416888520682
+      ],
+      "paired_bootstrap_95": [
+        0.9842895846943719,
+        1.0126416888520682
+      ],
+      "uncertainty_note": "paired median bootstrap; small N is exploratory, not a stable small-win claim",
+      "arms": {
+        "a": {
+          "median_ms": 139.19858285225928,
+          "range_ms": [
+            136.80449384264648,
+            140.63786901533604
+          ]
+        },
+        "b": {
+          "median_ms": 138.88216391205788,
+          "range_ms": [
+            137.78439490124583,
+            140.51284291781485
+          ]
+        }
+      }
+    },
+    "rows": 12,
+    "stages": {
+      "a": {
+        "startup_ms": 39.43398501724005,
+        "parse_compile_ms": 0.08007511496543884,
+        "execution_ms": 0.318614,
+        "sampling_ms": 0.128247,
+        "materialization_ms": 45.876685064285994,
+        "run_api_ms": 90.75048589147627
+      },
+      "b": {
+        "startup_ms": 40.64336698502302,
+        "parse_compile_ms": 0.0819650012999773,
+        "execution_ms": 0.12457700000000001,
+        "sampling_ms": 0.126178,
+        "materialization_ms": 46.07477807439864,
+        "run_api_ms": 90.58039309456944
+      }
+    },
+    "preflight_counters": [
+      {
+        "counts_ms": 0.00516,
+        "diagonal_polynomials": 0.0,
+        "execution_ms": 0.12438400000000001,
+        "fused_1q": 1.0,
+        "fused_2q": 5.0,
+        "fused_kq": 8.0,
+        "fusion_width": 3.0,
+        "initialization_ms": 22.884199000000002,
+        "input_instructions": 117.0,
+        "kernel_launches_process_delta": 14.0,
+        "layer_launches_process_delta": 1.0,
+        "optimized": 1.0,
+        "output_instructions": 14.0,
+        "planning_ms": 0.057021,
+        "preflight_ms": 67.689584,
+        "sampling_ms": 0.12493599999999999,
+        "tf32_available": 0.0,
+        "tf32_effective": 0.0,
+        "tf32_launches_process_delta": 0.0,
+        "total_native_ms": 90.887807,
+        "after_run_materializations_delta": 0,
+        "after_run_device_bytes_delta": 4096,
+        "after_run_host_bytes_delta": 0,
+        "after_run_dtoh_bytes_delta": 272,
+        "after_read_materializations_delta": 1,
+        "after_read_device_bytes_delta": 0,
+        "after_read_host_bytes_delta": 4096,
+        "after_read_dtoh_bytes_delta": 4368,
+        "after_drop_materializations_delta": 1,
+        "after_drop_device_bytes_delta": 0,
+        "after_drop_host_bytes_delta": 0,
+        "after_drop_dtoh_bytes_delta": 4368,
+        "peak_rss_bytes": 194396160
+      },
+      {
+        "counts_ms": 0.004791,
+        "diagonal_polynomials": 0.0,
+        "execution_ms": 0.318423,
+        "fused_1q": 0.0,
+        "fused_2q": 0.0,
+        "fused_kq": 0.0,
+        "fusion_width": 3.0,
+        "initialization_ms": 22.519025000000003,
+        "input_instructions": 117.0,
+        "kernel_launches_process_delta": 117.0,
+        "layer_launches_process_delta": 0.0,
+        "optimized": 0.0,
+        "output_instructions": 117.0,
+        "planning_ms": 0.0025239999999999998,
+        "preflight_ms": 67.66063000000001,
+        "sampling_ms": 0.132583,
+        "tf32_available": 0.0,
+        "tf32_effective": 0.0,
+        "tf32_launches_process_delta": 0.0,
+        "total_native_ms": 90.64054900000001,
+        "after_run_materializations_delta": 0,
+        "after_run_device_bytes_delta": 4096,
+        "after_run_host_bytes_delta": 0,
+        "after_run_dtoh_bytes_delta": 272,
+        "after_read_materializations_delta": 1,
+        "after_read_device_bytes_delta": 0,
+        "after_read_host_bytes_delta": 4096,
+        "after_read_dtoh_bytes_delta": 4368,
+        "after_drop_materializations_delta": 1,
+        "after_drop_device_bytes_delta": 0,
+        "after_drop_host_bytes_delta": 0,
+        "after_drop_dtoh_bytes_delta": 4368,
+        "peak_rss_bytes": 194572288
+      }
+    ]
+  },
+  "cuda-f32-run": {
+    "status": "executed",
+    "summary": {
+      "pairs": 5,
+      "median_paired_speedup": 1.0106142983626845,
+      "paired_speedup_range": [
+        0.9978279404571135,
+        1.0289599605601178
+      ],
+      "paired_bootstrap_95": [
+        0.9978279404571135,
+        1.0289599605601178
+      ],
+      "uncertainty_note": "paired median bootstrap; small N is exploratory, not a stable small-win claim",
+      "arms": {
+        "a": {
+          "median_ms": 166.45000409334898,
+          "range_ms": [
+            166.28773789852858,
+            169.1908440552652
+          ]
+        },
+        "b": {
+          "median_ms": 164.72758818417788,
+          "range_ms": [
+            164.42898707464337,
+            166.7397958226502
+          ]
+        }
+      }
+    },
+    "rows": 12,
+    "stages": {
+      "a": {
+        "startup_ms": 40.21927900612354,
+        "parse_compile_ms": 0.16261707060039043,
+        "execution_ms": 2.401676,
+        "sampling_ms": 0.26938599999999996,
+        "materialization_ms": 46.92580993287265,
+        "run_api_ms": 117.31403786689043
+      },
+      "b": {
+        "startup_ms": 40.05777300335467,
+        "parse_compile_ms": 0.1592128537595272,
+        "execution_ms": 0.524276,
+        "sampling_ms": 0.263868,
+        "materialization_ms": 47.02860489487648,
+        "run_api_ms": 115.761605091393
+      }
+    },
+    "preflight_counters": [
+      {
+        "counts_ms": 0.006355,
+        "diagonal_polynomials": 0.0,
+        "execution_ms": 0.527028,
+        "fused_1q": 0.0,
+        "fused_2q": 9.0,
+        "fused_kq": 21.0,
+        "fusion_width": 3.0,
+        "initialization_ms": 47.253724,
+        "input_instructions": 267.0,
+        "kernel_launches_process_delta": 30.0,
+        "layer_launches_process_delta": 0.0,
+        "optimized": 1.0,
+        "output_instructions": 30.0,
+        "planning_ms": 0.137441,
+        "preflight_ms": 67.215599,
+        "sampling_ms": 0.267581,
+        "tf32_available": 1.0,
+        "tf32_effective": 0.0,
+        "tf32_launches_process_delta": 0.0,
+        "total_native_ms": 115.410306,
+        "after_run_materializations_delta": 0,
+        "after_run_device_bytes_delta": 2097152,
+        "after_run_host_bytes_delta": 0,
+        "after_run_dtoh_bytes_delta": 272,
+        "after_read_materializations_delta": 1,
+        "after_read_device_bytes_delta": 0,
+        "after_read_host_bytes_delta": 4194304,
+        "after_read_dtoh_bytes_delta": 2097424,
+        "after_drop_materializations_delta": 1,
+        "after_drop_device_bytes_delta": 0,
+        "after_drop_host_bytes_delta": 0,
+        "after_drop_dtoh_bytes_delta": 2097424,
+        "peak_rss_bytes": 230912000
+      },
+      {
+        "counts_ms": 0.0055520000000000005,
+        "diagonal_polynomials": 0.0,
+        "execution_ms": 2.402079,
+        "fused_1q": 0.0,
+        "fused_2q": 0.0,
+        "fused_kq": 0.0,
+        "fusion_width": 3.0,
+        "initialization_ms": 47.454314999999994,
+        "input_instructions": 267.0,
+        "kernel_launches_process_delta": 267.0,
+        "layer_launches_process_delta": 0.0,
+        "optimized": 0.0,
+        "output_instructions": 267.0,
+        "planning_ms": 0.00428,
+        "preflight_ms": 70.279933,
+        "sampling_ms": 0.268787,
+        "tf32_available": 1.0,
+        "tf32_effective": 0.0,
+        "tf32_launches_process_delta": 0.0,
+        "total_native_ms": 120.418047,
+        "after_run_materializations_delta": 0,
+        "after_run_device_bytes_delta": 2097152,
+        "after_run_host_bytes_delta": 0,
+        "after_run_dtoh_bytes_delta": 272,
+        "after_read_materializations_delta": 1,
+        "after_read_device_bytes_delta": 0,
+        "after_read_host_bytes_delta": 4194304,
+        "after_read_dtoh_bytes_delta": 2097424,
+        "after_drop_materializations_delta": 1,
+        "after_drop_device_bytes_delta": 0,
+        "after_drop_host_bytes_delta": 0,
+        "after_drop_dtoh_bytes_delta": 2097424,
+        "peak_rss_bytes": 207400960
+      }
+    ]
+  },
+  "cuda-disabled-run": {
+    "status": "failed",
+    "summary": null,
+    "rows": 1
+  }
+}

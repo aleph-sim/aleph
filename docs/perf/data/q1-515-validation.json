@@ -1,0 +1,61 @@
+{
+  "issue": 515,
+  "date": "2026-10-16",
+  "baseline_commit": "5a671ae26b2eb4235d024403952c2f27988bddfb",
+  "scope": "Targeted correctness, no throughput claim; full workspace tests delegated to PR CI",
+  "rust_tests_per_environment": {
+    "prior-debug": 7,
+    "prior-release": 7,
+    "dem-tests": 21,
+    "matching-tests": 19,
+    "split-tests": 7,
+    "doc-tests": 4
+  },
+  "local": {
+    "platform": "macOS",
+    "python": "3.12.14",
+    "numpy": "2.5.4",
+    "stim": "1.16.0",
+    "python_tests_passed": 15,
+    "checks": [
+      "workspace all-target clippy",
+      "Python-feature all-target clippy",
+      "rustfmt"
+    ]
+  },
+  "remote": {
+    "host": "openwebgui.splynx.com",
+    "temporary_root": "/tmp/aleph-515-LAf0e0",
+    "python": "3.12.3",
+    "numpy": "2.5.3",
+    "stim": "1.16.0",
+    "rustc": "1.96.0 (ac68faa20 2026-05-25)",
+    "real_cudaq_qec": true,
+    "python_tests_passed": 33,
+    "python_tests_skipped": 0,
+    "cudaq_registration_tests": 18,
+    "source_hashes_matched": 10,
+    "checks": [
+      "QEC and Python-feature all-target clippy"
+    ],
+    "installed_environment_modified": false
+  },
+  "stim_projection_audit": {
+    "seed": 518,
+    "distances": [
+      3,
+      5
+    ],
+    "probability": 0.003,
+    "shots_per_decoder_distance": 2000,
+    "decoders": [
+      "mwpm",
+      "union-find",
+      "union-find-weighted"
+    ],
+    "total_cases": 12000,
+    "all_disagreement_columns_zero": true
+  },
+  "review": "Manual self-review; no blocking findings",
+  "validated_code_commit": "ef9c93b723c9942c7434b0aa9001f06fcfadfe9c"
+}

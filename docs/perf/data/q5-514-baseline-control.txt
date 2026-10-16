@@ -1,0 +1,2 @@
+BASELINE_REJECTS_NEW_BUDGET unknown parameter `iters_per_leg` for decoder `relay-bp`; valid: [legs, alpha, gamma_min, gamma_max, seed]
+BASELINE_MODULE /tmp/aleph-514-IoS4E1/base/crates/aleph-py/python/aleph/_native.abi3.so

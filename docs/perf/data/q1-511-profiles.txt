@@ -1,0 +1,226 @@
+base-decoder-profile.txt
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 2K of event 'cycles:u'
+# Event count (approx.): 13710350243
+#
+# Overhead  Command          Shared Object                 Symbol                                                                                                      
+# ........  ...............  ............................  ............................................................................................................
+#
+    47.97%  mwpm_decode-fee  mwpm_decode-fee274f8dfd3d21f  [.] aleph_qec::sparse_blossom::flooder::<impl aleph_qec::sparse_blossom::state::State>::next_at
+    20.75%  mwpm_decode-fee  mwpm_decode-fee274f8dfd3d21f  [.] aleph_qec::sparse_blossom::<impl aleph_qec::sparse_blossom::state::State>::run_to_matching
+     5.19%  mwpm_decode-fee  mwpm_decode-fee274f8dfd3d21f  [.] aleph_qec::sparse_blossom::flooder::<impl aleph_qec::sparse_blossom::state::State>::schedule_node
+     2.12%  mwpm_decode-fee  mwpm_decode-fee274f8dfd3d21f  [.] aleph_qec::sparse_blossom::flooder::<impl aleph_qec::sparse_blossom::state::State>::collect_subtree
+     1.99%  mwpm_decode-fee  libc.so.6                     [.] cfree
+            |
+            ---cfree
+
+     1.83%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b23a9
+            |
+            ---0x7d24bc2b23a9
+
+     1.46%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b3cf8
+            |
+            ---0x7d24bc2b3cf8
+
+     1.36%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b23bc
+            |
+            ---0x7d24bc2b23bc
+
+     1.34%  mwpm_decode-fee  mwpm_decode-fee274f8dfd3d21f  [.] aleph_qec::sparse_blossom::flooder::<impl aleph_qec::sparse_blossom::state::State>::reschedule_region
+     1.29%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b3cdc
+            |
+            ---0x7d24bc2b3cdc
+
+     1.21%  mwpm_decode-fee  mwpm_decode-fee274f8dfd3d21f  [.] aleph_qec::sparse_blossom::matcher::<impl aleph_qec::sparse_blossom::state::State>::dissolve_tree
+     1.01%  mwpm_decode-fee  mwpm_decode-fee274f8dfd3d21f  [.] aleph_qec::sparse_blossom::SparseMatcher::decode_with_stats::{{closure}}
+     0.89%  mwpm_decode-fee  libc.so.6                     [.] malloc
+            |
+            ---malloc
+
+     0.45%  mwpm_decode-fee  mwpm_decode-fee274f8dfd3d21f  [.] aleph_qec::sparse_blossom::matcher::<impl aleph_qec::sparse_blossom::state::State>::descend
+     0.39%  mwpm_decode-fee  mwpm_decode-fee274f8dfd3d21f  [.] aleph_qec::sparse_blossom::matcher::<impl aleph_qec::sparse_blossom::state::State>::augment
+     0.36%  mwpm_decode-fee  libc.so.6                     [.] realloc
+     0.36%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000001a79b6
+     0.24%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b2115
+     0.20%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b2940
+     0.20%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b21da
+     0.20%  mwpm_decode-fee  mwpm_decode-fee274f8dfd3d21f  [.] alloc::raw_vec::RawVecInner<A>::finish_grow
+     0.20%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b0f89
+     0.20%  mwpm_decode-fee  mwpm_decode-fee274f8dfd3d21f  [.] aleph_qec::sparse_blossom::matcher::<impl aleph_qec::sparse_blossom::state::State>::flip_path_to_root
+     0.20%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b2314
+     0.17%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000001a79b9
+     0.16%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b2190
+     0.16%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b1ca4
+     0.16%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b2ed7
+     0.16%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b3ca0
+     0.16%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b2322
+     0.16%  mwpm_decode-fee  mwpm_decode-fee274f8dfd3d21f  [.] aleph_qec::sparse_blossom::flooder::<impl aleph_qec::sparse_blossom::state::State>::schedule_shrink
+     0.16%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b212f
+     0.16%  mwpm_decode-fee  mwpm_decode-fee274f8dfd3d21f  [.] aleph_qec::mwpm::MwpmDecoder::defects_of
+     0.16%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b3d28
+     0.16%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b30de
+     0.15%  mwpm_decode-fee  mwpm_decode-fee274f8dfd3d21f  [.] alloc::raw_vec::RawVecInner<A>::finish_grow
+     0.12%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b2104
+     0.12%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b2359
+     0.12%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b2411
+     0.12%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b2ee0
+     0.12%  mwpm_decode-fee  mwpm_decode-fee274f8dfd3d21f  [.] alloc::raw_vec::RawVecInner<A>::reserve::do_reserve_and_handle
+     0.12%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b20f1
+     0.12%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b20ea
+     0.12%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b2421
+     0.12%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000001a79be
+     0.12%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b21f1
+     0.12%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b3316
+     0.12%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b3ca6
+     0.12%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b0f70
+     0.12%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b3cd6
+     0.10%  mwpm_decode-fee  mwpm_decode-fee274f8dfd3d21f  [.] alloc::raw_vec::RawVec<T,A>::grow_one
+     0.09%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000001a7980
+     0.08%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b2474
+     0.08%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b3108
+     0.08%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b1e54
+     0.08%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b3d9e
+     0.08%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b3ce5
+     0.08%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b2832
+     0.08%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b2464
+     0.08%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b23af
+     0.08%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b2ec5
+     0.08%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b2317
+     0.08%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b0f78
+     0.08%  mwpm_decode-fee  mwpm_decode-fee274f8dfd3d21f  [.] aleph_qec::sparse_blossom::matcher::<impl aleph_qec::sparse_blossom::state::State>::blossom::{{closure}}
+     0.08%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b310c
+     0.08%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b21e4
+     0.08%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b2f05
+     0.08%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b2300
+     0.08%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b23b4
+     0.08%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b21f5
+     0.08%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b2727
+     0.08%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b3cb5
+     0.07%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b0f97
+     0.07%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000001a79ca
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000001a79ea
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b23a4
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b2b66
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000001a79c0
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b266a
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b3cc6
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b274d
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b2f01
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b25c5
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b41b4
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b2ae8
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b225b
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b4300
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b2305
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b1e6a
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b2708
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000001a7a05
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b4230
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b2657
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b2201
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b2f27
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b214d
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b2610
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b1e71
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b2280
+     0.04%  mwpm_decode-fee  mwpm_decode-fee274f8dfd3d21f  [.] core::slice::sort::unstable::ipnsort
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b217f
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b20e4
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b21c4
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b2408
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b1cbe
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b2780
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b2b10
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b0f9d
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b25df
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b249c
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b0fd6
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b24c6
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b21dc
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b216d
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b1e50
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b2204
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b1cba
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b2b2f
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b3cf2
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b2735
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b2739
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b21e9
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b221f
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b225e
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b21d0
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b221d
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b2eb8
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b0fa1
+     0.04%  mwpm_decode-fee  mwpm_decode-fee274f8dfd3d21f  [.] <aleph_qec::mwpm::MwpmDecoder as aleph_qec::decoder::Decoder>::decode
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b21f9
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b1cac
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b30f7
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b311a
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b2401
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b2324
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b30d1
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b2723
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b2911
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b2208
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b2b1a
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b2224
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b277e
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000001a7a36
+     0.04%  mwpm_decode-fee  mwpm_decode-fee274f8dfd3d21f  [.] criterion::bencher::Bencher<M>::iter
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000001a7984
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b3ca1
+     0.03%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000001a79c5
+     0.03%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000001a7993
+     0.03%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000000b218b
+
+
+#
+# (Cannot load tips.txt file, please install perf!)
+#
+
+
+candidate-decoder-profile.txt
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 2K of event 'cycles:u'
+# Event count (approx.): 13166062210
+#
+# Overhead  Command          Shared Object                 Symbol                                                                                                   
+# ........  ...............  ............................  .........................................................................................................
+#
+    58.25%  mwpm_decode-fee  mwpm_decode-fee274f8dfd3d21f  [.] aleph_qec::sparse_blossom::flooder::<impl aleph_qec::sparse_blossom::state::State>::next_at
+    22.05%  mwpm_decode-fee  mwpm_decode-fee274f8dfd3d21f  [.] aleph_qec::sparse_blossom::<impl aleph_qec::sparse_blossom::state::State>::run_to_matching
+     5.57%  mwpm_decode-fee  mwpm_decode-fee274f8dfd3d21f  [.] aleph_qec::sparse_blossom::flooder::<impl aleph_qec::sparse_blossom::state::State>::schedule_node
+     2.99%  mwpm_decode-fee  mwpm_decode-fee274f8dfd3d21f  [.] aleph_qec::sparse_blossom::state::State::alloc_tree
+     2.27%  mwpm_decode-fee  mwpm_decode-fee274f8dfd3d21f  [.] aleph_qec::sparse_blossom::flooder::<impl aleph_qec::sparse_blossom::state::State>::collect_subtree
+     2.19%  mwpm_decode-fee  mwpm_decode-fee274f8dfd3d21f  [.] aleph_qec::sparse_blossom::matcher::<impl aleph_qec::sparse_blossom::state::State>::dissolve_tree
+     1.90%  mwpm_decode-fee  mwpm_decode-fee274f8dfd3d21f  [.] aleph_qec::sparse_blossom::flooder::<impl aleph_qec::sparse_blossom::state::State>::reschedule_region
+     1.53%  mwpm_decode-fee  mwpm_decode-fee274f8dfd3d21f  [.] aleph_qec::sparse_blossom::SparseMatcher::with_syndrome::{{closure}}
+     0.89%  mwpm_decode-fee  mwpm_decode-fee274f8dfd3d21f  [.] aleph_qec::sparse_blossom::matcher::<impl aleph_qec::sparse_blossom::state::State>::descend
+     0.57%  mwpm_decode-fee  mwpm_decode-fee274f8dfd3d21f  [.] aleph_qec::sparse_blossom::state::State::new_region
+     0.36%  mwpm_decode-fee  mwpm_decode-fee274f8dfd3d21f  [.] aleph_qec::sparse_blossom::flooder::<impl aleph_qec::sparse_blossom::state::State>::schedule_shrink
+     0.28%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000001a79b9
+     0.24%  mwpm_decode-fee  mwpm_decode-fee274f8dfd3d21f  [.] aleph_qec::sparse_blossom::matcher::<impl aleph_qec::sparse_blossom::state::State>::flip_path_to_root
+     0.24%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000001a79be
+     0.24%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000001a79b6
+     0.12%  mwpm_decode-fee  mwpm_decode-fee274f8dfd3d21f  [.] aleph_qec::sparse_blossom::matcher::<impl aleph_qec::sparse_blossom::state::State>::augment
+     0.08%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000001a79ca
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000001a7980
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000001a79b4
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000001a7993
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000001a7987
+     0.04%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000001a7984
+     0.03%  mwpm_decode-fee  libc.so.6                     [.] 0x00000000001a79c0
+
+
+#
+# (Cannot load tips.txt file, please install perf!)
+#

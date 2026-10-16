@@ -244,3 +244,10 @@ cargo test --release -p aleph-qec --lib profile_local_phases_d11 -- --ignored --
 - Design doc: [`docs/superpowers/specs/2026-09-24-sparse-blossom-design.md`](../superpowers/specs/2026-09-24-sparse-blossom-design.md).
 - Predecessor record: [`docs/perf/q1-03-localized-matching.md`](q1-03-localized-matching.md).
 - Head-to-head vs PyMatching before this rewrite: [`docs/perf/qec-q1-mwpm.md`](qec-q1-mwpm.md).
+
+## Q1-03c follow-up (#511)
+
+The [allocation-reuse report](q1-03c-reuse-allocations.md) records complete inner-buffer
+reuse, the allocation-free caller-output API, paired CPU/Python measurements, and
+the remaining event-processing bottleneck. The measurements above remain the
+historical Q1-03b results on their original hardware.

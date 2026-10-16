@@ -214,10 +214,17 @@ print("logical error rate:", (pred != obs).any(axis=1).mean())
 
 Names: `aleph-mwpm`, `aleph-union-find`, `aleph-union-find-weighted`, `aleph-bp`,
 `aleph-bp-osd`, `aleph-relay-bp`, `aleph-relay-bp-osd`. Keyword parameters are
-those of `aleph.qec.Decoder` (`legs`, `alpha`, `gamma_min`, `gamma_max`, `seed`,
+those of `aleph.qec.Decoder` (`legs`, `iters_per_leg`, `early_exit`, `alpha`, `gamma_min`, `gamma_max`, `seed`,
 `osd_order`, `max_iter`); priors come from `error_rate_vec` (cudaq fills it in
 when you pass a DEM string) or a scalar `error_rate`. Results are per-column
 error estimates like cudaq's own decoders, so `O @ ê` gives the observable flips.
+
+For `relay-bp` / `relay-bp-osd`, set `legs=6, iters_per_leg=10` for an explicit
+6×10 relay schedule. `early_exit=True` takes the first syndrome-valid decision;
+the default `False` searches the full schedule for the lightest valid one. This
+can change logical quality, not just latency. Omitting `iters_per_leg` preserves
+`max(100 // max(legs, 1), 8)` iterations per leg (default 4×25). Explicit zero
+legs/iterations are promoted to one. See the [budget policy and validation](../../docs/qec/relay-bp-budget.md).
 
 Matching decoders need a graph-like `H` (≤ 2 ones per column). cudaq's DEM
 parser keeps a `^`-decomposed hyperedge as one column, so for `aleph-mwpm` /
@@ -233,3 +240,15 @@ model. A/B numbers against NVIDIA's decoders: `docs/perf/f6-cudaq-plugin.md`.
 
 - Repository: <https://github.com/aleph-sim/aleph>
 - Benchmarks: <https://github.com/aleph-sim/aleph/blob/main/docs/perf/parity.md>
+
+
+### CUDA execution planning
+
+CUDA `run` uses full-final-state-safe fusion and layered dispatch by default.
+`cuda_optimize=False` retains raw dispatch for comparisons or workload-specific
+regressions. Both modes preserve ordinary FP32 arithmetic on `cuda-f32`; public
+execution disables the separate experimental TF32 path, including on capable GPUs.
+`result.execution_stats()` returns plan/stage diagnostics (empty on other backends).
+Launch counters are process-wide deltas and can overlap during concurrent calls.
+Counts still sample a single final collapsed state; amplitude export remains lazy.
+See `docs/perf/p8-02-public-cuda-execution.md` for measurements and known tradeoffs.

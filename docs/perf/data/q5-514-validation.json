@@ -1,0 +1,87 @@
+{
+  "issue": 514,
+  "date": "2026-10-16",
+  "baseline_commit": "bb128f7e3dcc3138b7bb89d20fba070f40f0c677",
+  "candidate_code_commit": "58606d38368e29bd60b04e0696b8218cb3c0a763",
+  "source_hashes_matched": 9,
+  "review": "manual self-review, no blocking findings",
+  "remote": {
+    "environment": {
+      "platform": "Linux-6.8.0-146-generic-x86_64-with-glibc2.39",
+      "python": "3.12.3",
+      "logical_cpus": 20,
+      "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)",
+      "cudaq_qec_module": "/root/cqvenv/lib/python3.12/site-packages/cudaq_qec/__init__.py",
+      "native_module": "/tmp/aleph-514-IoS4E1/candidate/crates/aleph-py/python/aleph/_native.abi3.so",
+      "package_versions": {
+        "cudaq-qec": "unavailable",
+        "cudaq": "unavailable",
+        "numpy": "2.5.3",
+        "stim": "1.16.0"
+      },
+      "cargo_profile": "release, no RUSTFLAGS override in harness",
+      "candidate_target": "/tmp/aleph-514-IoS4E1/candidate-target",
+      "baseline_target": "/tmp/aleph-514-IoS4E1/target",
+      "module_sha256": {
+        "base": "a6ea7d9e215c29ec41ddd6954d50683da40b646c17665ed26d0caf20e62d1d52",
+        "candidate": "fde6893d4d4e6c8c6f042dc689de9365a62d239808831b01b49b2cd83724c28a"
+      },
+      "cpu_model": "13th Gen Intel Core i5-13500",
+      "cudaq_version_string": "CUDA-Q Version 0.16.0 (https://github.com/NVIDIA/cuda-quantum 62fce8b862302158e0119c65e3ce57538f3af048)",
+      "cudaq_qec_version_string": "CUDA-Q QEC 0.8.0 (https://github.com/NVIDIA/cudaqx 6ac00e5c24ab17bbb6515f09009ce69643839eed)"
+    },
+    "rust_tests_passed": {
+      "relay_debug": 6,
+      "relay_release": 6,
+      "budget_release": 2,
+      "existing_relay_integration": 2,
+      "binding_factory": 9,
+      "doctests": 5
+    },
+    "existing_nightly_monte_carlo_tests_not_run": 2,
+    "python_tests_passed": 36,
+    "python_skips": 0,
+    "sdk_routes": [
+      "matrix",
+      "DEM string",
+      "single shot",
+      "batch"
+    ],
+    "installed_sdk_environment_modified": false,
+    "gpu_services_stopped": false
+  },
+  "local": {
+    "rust_tests_passed": {
+      "relay_debug": 6,
+      "budget_debug": 2,
+      "binding_factory": 9
+    },
+    "python_tests_passed": 16,
+    "checks": [
+      "workspace all-target clippy",
+      "Python-feature all-target clippy",
+      "rustfmt",
+      "Python syntax"
+    ]
+  },
+  "compatibility_signature_pairs_equal": 16,
+  "audit_timing": {
+    "pinned_cpu": 2,
+    "smt_sibling": 3,
+    "rayon_threads": 1,
+    "round_order": [
+      "base",
+      "candidate",
+      "candidate",
+      "base"
+    ],
+    "samples_per_mode": 6,
+    "guards": "overall busy <5%; CPU/sibling idle <=1.1% before each run; shared services unchanged"
+  },
+  "limitations": [
+    "small fixed-seed 256-shot samples do not establish LER equivalence",
+    "OSD audit uses default order 0, not the historical NVIDIA comparison order 12",
+    "no NVIDIA/GPU decoder comparison",
+    "full workspace/platform tests are delegated to PR CI"
+  ]
+}

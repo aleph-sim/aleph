@@ -5,6 +5,7 @@
 //! is gated by an oracle test vs the CPU `NaiveSvBackend` (ADR 0004 convention).
 
 mod backend;
+pub(crate) mod sampling;
 // Custom diagonal-gate kernels (P5-06). `pub(crate)` so the cuStateVec backend
 // embeds the same `DiagKernels` and diverts diagonal gates to it.
 pub(crate) mod diag;

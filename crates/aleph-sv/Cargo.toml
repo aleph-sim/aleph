@@ -79,3 +79,7 @@ harness = false
 [[bench]]
 name = "fused_validation"
 harness = false
+
+[[bench]]
+name = "expectation_query"
+harness = false

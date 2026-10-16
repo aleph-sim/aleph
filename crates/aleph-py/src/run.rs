@@ -42,10 +42,17 @@ enum AmpStore {
 pub(crate) struct RunResult {
     counts: BTreeMap<String, u64>,
     amps: Option<AmpStore>,
+    cuda_stats: BTreeMap<String, f64>,
 }
 
 #[pymethods]
 impl RunResult {
+    /// CUDA plan/stage diagnostics. Empty for other backends. Kernel counters are
+    /// process-wide deltas; do not attribute them per call during concurrent runs.
+    fn execution_stats(&self) -> BTreeMap<String, f64> {
+        self.cuda_stats.clone()
+    }
+
     /// Histogram of sampled bitstrings. Qubit 0 is the RIGHTMOST character
     /// (qubit 0 is the LSB of the amplitude index — ADR 0004; the leftmost
     /// character is qubit n-1), matching the CLI's |q_{n-1}…q_0⟩ output.
@@ -83,6 +90,12 @@ impl RunResult {
                         lazy.materialize(|s| s.try_amplitudes_vec().map_err(|e| e.to_string()))
                     })
                     .map_err(|e| err("materialize cuda statevector", e))?;
+                aleph_cuda::memory::ensure_host_bytes(
+                    (host.len() as u64)
+                        .checked_mul(16)
+                        .ok_or_else(|| PyValueError::new_err("host export size overflow"))?,
+                )
+                .map_err(PyValueError::new_err)?;
                 Ok(PyArray1::from_slice_bound(py, host.as_slice()))
             }
             #[cfg(all(target_os = "linux", feature = "cuda"))]
@@ -92,6 +105,12 @@ impl RunResult {
                         lazy.materialize(|s| s.try_amplitudes_vec().map_err(|e| e.to_string()))
                     })
                     .map_err(|e| err("materialize cuda-f32 statevector", e))?;
+                aleph_cuda::memory::ensure_host_bytes(
+                    (host.len() as u64)
+                        .checked_mul(16)
+                        .ok_or_else(|| PyValueError::new_err("host export size overflow"))?,
+                )
+                .map_err(PyValueError::new_err)?;
                 Ok(PyArray1::from_slice_bound(py, host.as_slice()))
             }
             None => Err(PyValueError::new_err(
@@ -145,8 +164,9 @@ fn err<E: std::fmt::Display>(what: &str, e: E) -> PyErr {
 /// `precision` (`"auto"` default, `"f64"`, `"f32"`) steers an `auto` GPU pick:
 /// with a CUDA wheel on a CUDA host, large dense circuits route to `cuda-f32` by
 /// default (2× throughput, ~1e-5). On the CPU, `auto` stays FP64. Circuits past
-/// the CUDA in-core cap (n>31 FP32 / n>30 FP64) need the CLI/Rust paged API —
-/// Python raises rather than running them, as the paged state has no sampling.
+/// device/output memory budget raise before large allocation. Counts require
+/// sampling scratch in addition to the state. The Rust paged API is norm-only;
+/// it cannot substitute for requested Python outputs.
 ///
 /// **Breaking change vs v0.2:** the default was `"sv"`; it is now `"auto"`, so a
 /// Clifford circuit routes to the stabilizer backend by default and
@@ -157,11 +177,16 @@ fn err<E: std::fmt::Display>(what: &str, e: E) -> PyErr {
 /// Both require `noise=`. The budget excludes inputs, allocator/runtime overhead
 /// and Python result conversion; it is not an RSS cap.
 ///
+/// CUDA uses full-state-safe fusion and layered dispatch by default. Set
+/// `cuda_optimize=False` for the raw A/B path. Both paths enforce ordinary FP32
+/// arithmetic; TF32 is disabled and fusion width is 3, including on capable GPUs.
+/// `RunResult.execution_stats()` exposes CUDA planning, launch and stage diagnostics.
+///
 /// `Measure` instructions collapse the state once during execution; the
 /// `shots` samples re-sample that single final state — they do NOT re-run
 /// the circuit per shot (unlike Qiskit's per-shot execution model).
 #[pyfunction]
-#[pyo3(name = "run", signature = (circuit, *, shots = 1024, backend = "auto", precision = "auto", seed = None, noise = None, noise_memory_budget_bytes = None, noise_max_workers = None))]
+#[pyo3(name = "run", signature = (circuit, *, shots = 1024, backend = "auto", precision = "auto", seed = None, noise = None, noise_memory_budget_bytes = None, noise_max_workers = None, cuda_optimize = true))]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn run_circuit(
     py: Python<'_>,
@@ -173,7 +198,13 @@ pub(crate) fn run_circuit(
     noise: Option<&PyNoiseModel>,
     noise_memory_budget_bytes: Option<usize>,
     noise_max_workers: Option<usize>,
+    cuda_optimize: bool,
 ) -> PyResult<RunResult> {
+    if noise.is_some() && !cuda_optimize {
+        return Err(PyValueError::new_err(
+            "CUDA execution options cannot be combined with noise",
+        ));
+    }
     if noise.is_none() && (noise_memory_budget_bytes.is_some() || noise_max_workers.is_some()) {
         return Err(PyValueError::new_err(
             "noise_memory_budget_bytes and noise_max_workers require noise=",
@@ -216,7 +247,11 @@ pub(crate) fn run_circuit(
                 })?;
             Ok(sparse_to_counts(&sparse, n))
         })?;
-        return Ok(RunResult { counts, amps: None });
+        return Ok(RunResult {
+            counts,
+            amps: None,
+            cuda_stats: Default::default(),
+        });
     }
 
     // Metal remains explicit-only in Python. Discovery is lazy and never compiles
@@ -224,6 +259,11 @@ pub(crate) fn run_circuit(
     let selection = select_with_probes(c, request, precision, || false, cuda_available);
     let kind = selection.kind;
 
+    if !cuda_optimize && !matches!(kind, BackendKind::Cuda | BackendKind::CudaF32) {
+        return Err(PyValueError::new_err(
+            "cuda_optimize option require a CUDA backend",
+        ));
+    }
     // Each arm releases the GIL for execute+sample (minutes at n ≥ 25):
     // other Python threads — and Ctrl-C delivery — stay live during the run.
     match kind {
@@ -242,6 +282,7 @@ pub(crate) fn run_circuit(
             )?;
             Ok(RunResult {
                 counts,
+                cuda_stats: Default::default(),
                 amps: Some(AmpStore::Cpu(amps)),
             })
         }
@@ -267,6 +308,7 @@ pub(crate) fn run_circuit(
                     })?;
                 Ok(RunResult {
                     counts,
+                    cuda_stats: Default::default(),
                     amps: Some(amps),
                 })
             }
@@ -291,7 +333,11 @@ pub(crate) fn run_circuit(
                 let samples = be.sample(&state, shots).map_err(|e| err("sample", e))?;
                 Ok(counts_map(&samples, n))
             })?;
-            Ok(RunResult { counts, amps: None })
+            Ok(RunResult {
+                counts,
+                amps: None,
+                cuda_stats: Default::default(),
+            })
         }
         BackendKind::Stabilizer => {
             let counts = py.allow_threads(|| -> PyResult<BTreeMap<String, u64>> {
@@ -303,88 +349,101 @@ pub(crate) fn run_circuit(
                 let samples = be.sample(&state, shots).map_err(|e| err("sample", e))?;
                 Ok(counts_map(&samples, n))
             })?;
-            Ok(RunResult { counts, amps: None })
+            Ok(RunResult {
+                counts,
+                amps: None,
+                cuda_stats: Default::default(),
+            })
         }
         BackendKind::Cuda | BackendKind::CudaF32 => {
-            run_cuda_py(py, c, kind, selection.reach, shots, seed, n)
+            run_cuda_py(py, c, kind, selection.reach, shots, seed, n, cuda_optimize)
         }
     }
 }
 
-/// CUDA GPU `run()` dispatch (`backend="cuda"` / `"cuda-f32"`, or an `auto` GPU
-/// pick). In core: run the FP64/FP32 backend, sample, and return amplitudes like
-/// the SV/Metal arms. Paged (`n` past the in-core cap) is rejected — the
-/// out-of-core host state exposes no GPU sampling/amplitude readout to Python, so
-/// it raises with guidance rather than silently degrading. Linux + `cuda` only.
+/// CUDA run with shared operation-aware device/host preflight. Counts retain
+/// device amplitudes; host export is checked separately when explicitly requested.
 #[cfg(all(target_os = "linux", feature = "cuda"))]
+#[allow(clippy::too_many_arguments)]
 fn run_cuda_py(
     py: Python<'_>,
     c: &aleph_ir::Circuit,
     kind: BackendKind,
-    reach: Reach,
+    _reach: Reach,
     shots: u32,
     seed: Option<u64>,
     n: u32,
+    optimize: bool,
 ) -> PyResult<RunResult> {
-    if let Reach::Paged { .. } = reach {
-        return Err(PyValueError::new_err(format!(
-            "n={n} exceeds the CUDA in-core cap; out-of-core paged runs are not \
-             available from Python (the paged host state has no sampling/amplitude \
-             readout) — use the `aleph` CLI or the Rust API"
-        )));
-    }
-    let (counts, amps) = py.allow_threads(|| -> PyResult<(BTreeMap<String, u64>, AmpStore)> {
-        // Keep the sampled state alive after the backend drops. It owns
-        // its context/stream; no amplitude download is needed for counts.
+    let (counts, amps, cuda_stats) = py.allow_threads(|| -> PyResult<_> {
+        let total = std::time::Instant::now();
+        let options = aleph_cuda::CudaExecutionOptions { optimize };
+        let views = aleph_cuda::CudaReadoutRequest {
+            shots,
+            ..Default::default()
+        };
+        macro_rules! execute {
+            ($backend:ident,$store:ident,$bytes:expr) => {{
+                let (mut be, plan) = aleph_cuda::prepare_cuda_execution(c, options, views, || {
+                    let be = match seed {
+                        Some(s) => aleph_cuda::$backend::with_seed(s),
+                        None => aleph_cuda::$backend::new(),
+                    }?;
+                    Ok(be.with_qubit_cap(n))
+                })
+                .map_err(|e| err("prepare CUDA execution", e))?;
+                let before = aleph_cuda::execution_counters();
+                let start = std::time::Instant::now();
+                let state = plan.execute(&mut be).map_err(|e| err("run CUDA plan", e))?;
+                let execution_ms = start.elapsed().as_secs_f64() * 1000.;
+                let after = aleph_cuda::execution_counters();
+                let start = std::time::Instant::now();
+                let samples = be.sample(&state, shots).map_err(|e| err("sample", e))?;
+                let sampling_ms = start.elapsed().as_secs_f64() * 1000.;
+                let start = std::time::Instant::now();
+                let counts = counts_map(&samples, n);
+                let counts_ms = start.elapsed().as_secs_f64() * 1000.;
+                let mut stats = plan.diagnostics();
+                for (key, value) in [
+                    ("execution_ms", execution_ms),
+                    ("sampling_ms", sampling_ms),
+                    ("counts_ms", counts_ms),
+                    ("kernel_launches_process_delta", (after.0 - before.0) as f64),
+                    ("layer_launches_process_delta", (after.1 - before.1) as f64),
+                    ("tf32_launches_process_delta", (after.2 - before.2) as f64),
+                    ("total_native_ms", total.elapsed().as_secs_f64() * 1000.),
+                ] {
+                    stats.insert(key.into(), value);
+                }
+                Ok((
+                    counts,
+                    AmpStore::$store(crate::lazy_amplitudes::LazyAmplitudes::new(
+                        state
+                            .into_readout()
+                            .map_err(|e| err("finish CUDA state", e))?,
+                        (1u64 << n) * $bytes,
+                    )),
+                    stats,
+                ))
+            }};
+        }
         match kind {
-            BackendKind::CudaF32 => {
-                let mut be = match seed {
-                    Some(s) => aleph_cuda::CudaSvBackendF32::with_seed(s),
-                    None => aleph_cuda::CudaSvBackendF32::new(),
-                }
-                .map_err(|e| err("init cuda-f32 backend", e))?;
-                let state = run(&mut be, c).map_err(|e| err("run cuda-f32", e))?;
-                let samples = be.sample(&state, shots).map_err(|e| err("sample", e))?;
-                Ok((
-                    counts_map(&samples, n),
-                    AmpStore::CudaF32(crate::lazy_amplitudes::LazyAmplitudes::new(
-                        state
-                            .into_readout()
-                            .map_err(|e| err("finish cuda-f32 state", e))?,
-                        (1u64 << n) * 8,
-                    )),
-                ))
-            }
-            BackendKind::Cuda => {
-                let mut be = match seed {
-                    Some(s) => aleph_cuda::CudaSvBackend::with_seed(s),
-                    None => aleph_cuda::CudaSvBackend::new(),
-                }
-                .map_err(|e| err("init cuda backend", e))?;
-                let state = run(&mut be, c).map_err(|e| err("run cuda", e))?;
-                let samples = be.sample(&state, shots).map_err(|e| err("sample", e))?;
-                Ok((
-                    counts_map(&samples, n),
-                    AmpStore::Cuda(crate::lazy_amplitudes::LazyAmplitudes::new(
-                        state
-                            .into_readout()
-                            .map_err(|e| err("finish cuda state", e))?,
-                        (1u64 << n) * 16,
-                    )),
-                ))
-            }
-            _ => unreachable!("run_cuda_py is only called for CUDA kinds"),
+            BackendKind::Cuda => execute!(CudaSvBackend, Cuda, 16),
+            BackendKind::CudaF32 => execute!(CudaSvBackendF32, CudaF32, 8),
+            _ => unreachable!(),
         }
     })?;
     Ok(RunResult {
         counts,
         amps: Some(amps),
+        cuda_stats,
     })
 }
 
 /// Stub when CUDA is not compiled in: `backend="cuda"`/`"cuda-f32"` (or an `auto`
 /// CUDA pick, which can't happen without the probe) raises a clear build hint.
 #[cfg(not(all(target_os = "linux", feature = "cuda")))]
+#[allow(clippy::too_many_arguments)]
 fn run_cuda_py(
     _py: Python<'_>,
     _c: &aleph_ir::Circuit,
@@ -393,6 +452,7 @@ fn run_cuda_py(
     _shots: u32,
     _seed: Option<u64>,
     _n: u32,
+    _optimize: bool,
 ) -> PyResult<RunResult> {
     Err(PyValueError::new_err(
         "the \"cuda\" / \"cuda-f32\" backend is not available in this build; \

@@ -17,5 +17,10 @@ rand       = { workspace = true }
 statrs     = { version = "0.18", default-features = false }
 
 [dev-dependencies]
+criterion = { workspace = true }
 proptest = { workspace = true }
 rayon = { workspace = true }
+
+[[bench]]
+name = "dem_experiment"
+harness = false
