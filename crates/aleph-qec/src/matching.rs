@@ -53,7 +53,7 @@ pub struct MatchingEdge {
     pub a: NodeId,
     /// Higher-indexed endpoint (possibly the boundary node).
     pub b: NodeId,
-    /// Combined firing probability of this edge, in `(0, 1)`.
+    /// Combined firing probability of this edge, in `(0, 0.5]`.
     pub prob: f64,
     /// Edge weight `ln((1 - prob) / prob)`. Non-negative when `prob ≤ 0.5`.
     pub weight: f64,
@@ -101,7 +101,11 @@ impl MatchingGraph {
     /// one edge per component.
     ///
     /// # Errors
-    /// Returns [`Error::NonGraphlike`] if any mechanism flips three or more detectors.
+    /// Returns [`Error::NonGraphlike`] if any active part flips three or more detectors.
+    /// Returns [`Error::InvalidMatchingPrior`] for any non-finite prior or prior outside
+    /// `[0, 0.5]`, including empty/purely logical columns and priors that would otherwise
+    /// disappear after merging. Priors are never clamped. Zero-probability mechanisms
+    /// are omitted; `0.5` is supported and produces zero-weight edges.
     pub fn from_dem(dem: &DetectorErrorModel) -> Result<Self> {
         let boundary = dem.detectors;
 
@@ -113,11 +117,16 @@ impl MatchingGraph {
         let mut order: Vec<(EdgeKey, u32)> = Vec::new();
 
         for (j, e) in dem.errors.iter().enumerate() {
-            // A non-positive (or NaN) probability never fires; `!(p > 0.0)` is true for NaN, so
-            // this also rejects NaN per the IEEE-754 discipline in CLAUDE.md / ADR 0006. A
-            // probability of 1.0 (or more) is a deterministic fault with `ln(0) = -inf` weight,
-            // which has no place in a matching; skip it too.
-            if !(e.prob > 0.0 && e.prob < 1.0) {
+            // Validate source columns before skipping/merging: an inadmissible prior
+            // must not disappear in an inactive edge or XOR-combine into an allowed one.
+            // Check finiteness explicitly before comparisons (ADR 0006).
+            if !e.prob.is_finite() || !(0.0..=0.5).contains(&e.prob) {
+                return Err(Error::InvalidMatchingPrior {
+                    column: j,
+                    prob: e.prob,
+                });
+            }
+            if e.prob == 0.0 {
                 continue;
             }
 
@@ -229,9 +238,17 @@ impl MatchingGraph {
 /// Edge weight `ln((1 - p) / p)`.
 ///
 /// For `p ∈ (0, 0.5]` this is `≥ 0`; smaller `p` ⇒ larger weight ⇒ a less-likely (more costly)
-/// edge for the matching to use. Caller guarantees `p ∈ (0, 1)`.
+/// edge for the matching to use. Caller guarantees finite `p ∈ (0, 0.5]`.
 fn edge_weight(p: f64) -> f64 {
-    ((1.0 - p) / p).ln()
+    let odds = (1.0 - p) / p;
+    if odds.is_finite() {
+        // Preserve existing weights/quantization for ordinary supported priors.
+        odds.ln()
+    } else {
+        // A positive subnormal prior can overflow the ratio although its log is
+        // finite. An infinite weight would overflow sparse matching's integer scale.
+        (1.0 - p).ln() - p.ln()
+    }
 }
 
 /// Combine two independent firing probabilities under XOR: `p₁ + p₂ − 2p₁p₂` — the probability
@@ -385,7 +402,7 @@ mod tests {
     }
 
     #[test]
-    fn zero_and_one_probabilities_are_skipped() {
+    fn zero_probability_is_skipped_without_renumbering_columns() {
         let dem = DetectorErrorModel {
             detectors: 2,
             observables: 0,
@@ -393,12 +410,6 @@ mod tests {
                 DemError {
                     prob: 0.0,
                     dets: vec![0],
-                    obs: vec![],
-                    components: vec![],
-                },
-                DemError {
-                    prob: 1.0,
-                    dets: vec![1],
                     obs: vec![],
                     components: vec![],
                 },
@@ -413,6 +424,8 @@ mod tests {
         let g = MatchingGraph::from_dem(&dem).unwrap();
         assert_eq!(g.edges().len(), 1);
         assert_eq!((g.edges()[0].a, g.edges()[0].b), (0, 1));
+        assert_eq!(g.num_columns(), 2);
+        assert_eq!(g.edges()[0].column, 1);
     }
 
     #[test]

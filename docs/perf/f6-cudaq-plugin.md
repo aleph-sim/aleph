@@ -407,7 +407,8 @@ unchanged in cost; the new `decode_errors`/`from_check_matrices` surface is addi
   > 0.5 (negative edge weights) is inconsistent across the stack (`aleph.cudaq` rejects them for
   matching decoders, Rust `MatchingGraph::from_dem` accepts them, the Sparse Blossom retrace skips
   negative-weight edges, and the flooder trips a `debug_assert` in debug builds); decide
-  reject-vs-clamp at construction, consistently.
+  reject-vs-clamp at construction, consistently. **Resolution:** matching constructors now reject
+  unsupported priors consistently; see the [policy and validation](../qec/matching-priors.md).
 - [#516](https://github.com/aleph-sim/aleph/issues/516) — `decode_batch_errors`'s per-shot path
   retrace measured ≈1.84x slower than `decode_batch`'s direct observable decode on MWPM at d=5
   (522k vs 284k shots/s on the split model, single-threaded, see "Where the plugin path's time goes"); audit whether

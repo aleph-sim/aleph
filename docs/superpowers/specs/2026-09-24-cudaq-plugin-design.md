@@ -163,8 +163,9 @@ reference for this representation.
 Splitting is for decoder construction, not equivalent noise generation: parts of
 one original error fire together; sampling split columns loses that correlation.
 Use original DEMs/circuit samples for experiments. For split H/O columns the usual
-matching limitations still apply: infeasible syndromes, negative weights (#515),
-and genuine equal-weight MWPM retrace ties (§4.3). Splitting does not promise
+matching limitations still apply: infeasible syndromes and genuine equal-weight
+MWPM retrace ties (§4.3). Unsupported matching priors are rejected at construction
+([#515 policy](../../qec/matching-priors.md)). Splitting does not promise
 unconditional agreement with `decode()` on those ties.
 
 ### 4.3 Sparse Blossom: matched pairs + path retrace

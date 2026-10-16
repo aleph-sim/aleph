@@ -67,8 +67,9 @@ equivalent noise model. The Rust regression tests include a deterministic exampl
 D0 alone is possible in the split model but impossible under `error(p) D0 ^ D1`.
 
 Per-part column identity fixes this representation problem. Existing matching
-limitations still apply: infeasible syndromes, negative edge weights (#515), and
-MWPM equal-weight path retrace ties. In particular, this API does not promise that
+limitations still apply: infeasible syndromes and MWPM equal-weight path retrace
+ties. Unsupported matching priors are now [rejected at construction](matching-priors.md)
+(#515). In particular, this API does not promise that
 MWPM `O·ehat` always equals its separate `decode()` observable prediction on genuine
 ties. Union-Find uses the same peeled edges for both outputs. No hot decoder or
 sampling algorithm, precision policy or tie-breaking is changed here; no speedup

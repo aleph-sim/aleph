@@ -96,9 +96,37 @@ class TestRegistration(unittest.TestCase):
 
     def test_matching_decoder_rejects_prior_above_half(self):
         for name in ("mwpm", "union-find", "union-find-weighted"):
-            with self.assertRaisesRegex(ValueError, "0.5"):
-                cq.get_decoder(f"aleph-{name}", H, O=O, error_rate_vec=[0.1, 0.6, 0.1])
-        cq.get_decoder("aleph-bp", H, O=O, error_rate_vec=[0.1, 0.6, 0.1])  # BP unaffected
+            for probability in (np.nextafter(0.5, 1.0), 0.6, 1.0):
+                for kwargs in ({"error_rate_vec": [0.1, probability, 0.1]},
+                               {"error_rate": probability}):
+                    with self.subTest(name=name, kwargs=kwargs):
+                        with self.assertRaisesRegex(ValueError, r"matching prior at column [01].*0.5"):
+                            cq.get_decoder(f"aleph-{name}", H, O=O, **kwargs)
+        for name in ("bp", "bp-osd", "relay-bp", "relay-bp-osd"):
+            cq.get_decoder(f"aleph-{name}", H, O=O, error_rate_vec=[0.1, 0.6, 0.1])
+
+    def test_matching_prior_message_matches_native_python(self):
+        rates = [0.1, 0.7, 0.1]
+        dem = aq.dem_from_matrices(H, O, rates)
+        for name in ("mwpm", "union-find", "union-find-weighted"):
+            with self.subTest(name=name):
+                with self.assertRaises(ValueError) as native:
+                    aq.Decoder(dem, name)
+                with self.assertRaises(ValueError) as adapter:
+                    cq.get_decoder(f"aleph-{name}", H, O=O, error_rate_vec=rates)
+                self.assertEqual(str(adapter.exception), str(native.exception))
+
+    def test_matching_boundary_priors_are_accepted(self):
+        for name in ("mwpm", "union-find", "union-find-weighted"):
+            for probability in (0.0, 0.5, np.nextafter(0.0, 1.0)):
+                cq.get_decoder(f"aleph-{name}", H, O=O, error_rate=probability)
+            # Independently constrained columns exercise zero and very large finite weights.
+            for probability in (0.5, np.nextafter(0.0, 1.0)):
+                dec = cq.get_decoder(f"aleph-{name}", np.ones((1, 1), dtype=np.uint8),
+                                     O=np.ones((1, 1), dtype=np.uint8), error_rate=probability)
+                result = dec.decode_batch(np.array([[0], [1]], dtype=float))
+                self.assertTrue(np.asarray(result.converged).all())
+                np.testing.assert_array_equal(np.asarray(result.result) > 0.5, [[0], [1]])
 
     def test_scipy_sparse_h(self):
         import scipy.sparse as sp

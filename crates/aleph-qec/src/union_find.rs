@@ -126,6 +126,7 @@ impl UnionFindDecoder {
     /// # Errors
     /// Propagates [`crate::Error::NonGraphlike`] if the DEM has a hyperedge (Union-Find, like
     /// MWPM, needs a graph-like DEM).
+    /// Returns [`crate::Error::InvalidMatchingPrior`] for any prior outside finite `[0, 0.5]`.
     pub fn new(dem: &DetectorErrorModel) -> Result<Self> {
         let graph = MatchingGraph::from_dem(dem)?;
         Ok(Self::from_graph(&graph))
@@ -141,6 +142,8 @@ impl UnionFindDecoder {
     ///
     /// # Errors
     /// Returns [`crate::Error::NonGraphlike`] if an individual part is a hyperedge.
+    /// Returns [`crate::Error::InvalidMatchingPrior`] for an unsupported prior; its column
+    /// index refers to the split model.
     pub fn new_with_split_components(dem: &DetectorErrorModel) -> Result<Self> {
         Self::new(&dem.split_components())
     }
@@ -149,7 +152,8 @@ impl UnionFindDecoder {
     /// `UnionFindDecoder::new(dem)?.weighted(true)`.
     ///
     /// # Errors
-    /// Propagates [`crate::Error::NonGraphlike`] if the DEM has a hyperedge.
+    /// Propagates [`crate::Error::NonGraphlike`] for hyperedges and
+    /// [`crate::Error::InvalidMatchingPrior`] for priors outside finite `[0, 0.5]`.
     pub fn new_weighted(dem: &DetectorErrorModel) -> Result<Self> {
         Ok(Self::new(dem)?.weighted(true))
     }

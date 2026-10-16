@@ -4,6 +4,15 @@
 /// Errors produced by `aleph-qec`.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    /// Matching decoders require finite per-mechanism priors in [0, 0.5].
+    #[error("matching prior at column {column} must be finite and in [0, 0.5], got {prob}")]
+    InvalidMatchingPrior {
+        /// Zero-based column in the DEM used to build the graph (split columns if split first).
+        column: usize,
+        /// Rejected input probability, retained without clamping.
+        prob: f64,
+    },
+
     /// The experiment's sampling/decode batch limit must be positive and fit in u64.
     #[error("DEM experiment batch size must be positive and fit in u64")]
     InvalidExperimentBatchSize,
