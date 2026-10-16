@@ -1,0 +1,20 @@
+{
+  "baseline": "ca5d6b3989204fd056d4f6bc8242e3b1489e22f3",
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "platform": "Darwin arm64",
+  "rayon_threads": 1,
+  "source_sha256": {
+    "Cargo.lock": "dbc328063e68eea4fe58b161d841b62e21df300ecafed6c6decc60712ce1fd49",
+    "crates/aleph-qec/Cargo.toml": "1cb239a5d18f76f7275036c70d8245e98a11a25cb3d94ea766379c0e900cb817",
+    "crates/aleph-qec/src/witness.rs": "d284fb382081c52d5a467d24862970a4a249fba0d92db89c8a08bd8d4dacb24f",
+    "crates/aleph-qec/src/experiment.rs": "04c9567b022b53fc55c501a97289e51f6383397855323fe86caef81380ca965c",
+    "crates/aleph-qec/src/error.rs": "96e379c7a6f2ae82f0c3cb672ae8c764eda97cd92379b194b3bffded398c5741",
+    "crates/aleph-qec/src/lib.rs": "dfcf1c62083569ed70e52d5da2e6663d0c52950c2bc2c3df3a95dd70b35c641e",
+    "crates/aleph-qec/benches/dem_experiment.rs": "464318d4d70df226180bef726aa702f5f6900cd7aa763f8a3ca3a8691b017e1b",
+    "crates/aleph-qec/benches/failure_witness.rs": "8727860b07159e7779ad85d13c7549f843e884e4319dcc8e527a182cf5930393",
+    "crates/aleph-qec/examples/decoder_witness.rs": "e5a319d6c33c87fae8677af921110d4a384e77b477de5896cc61f043aa333ed0",
+    "crates/aleph-qec/tests/witness.rs": "fc4efa7207d5ae914e3d35c86f7c0e9072488928296c45f6df91147701ef6d86",
+    "scripts/python/check_decoder_witnesses.py": "198a96b18d730af56d31968f77b7b175d5399c4b2a62891b40d2021ef9f86fb6"
+  },
+  "limitations": "Busy local Mac; two ABBA blocks show time-dependent drift in both binaries. Diagnostic timings only. No capture-disabled regression/speedup acceptance from this run."
+}

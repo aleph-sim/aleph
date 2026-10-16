@@ -276,7 +276,7 @@ fn sample_shot(dem: &DetectorErrorModel, seed: u64, shot: u64) -> (Syndrome, Vec
 
 /// SplitMix64 finalizer over `base + shot * φ⁻¹`, giving each shot a well-mixed, independent
 /// seed from the run seed and its index (Steele et al., "Fast Splittable PRNGs", 2014).
-fn splitmix64(base: u64, shot: u64) -> u64 {
+pub(crate) fn splitmix64(base: u64, shot: u64) -> u64 {
     let mut z = base.wrapping_add(shot.wrapping_mul(0x9E37_79B9_7F4A_7C15));
     z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
     z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
