@@ -1,0 +1,1402 @@
+[
+  {
+    "family": "qft",
+    "backend": "cuda",
+    "entry": "python",
+    "raw": {
+      "caller_ms": {
+        "median": 581.0890409629792,
+        "min": 580.9352330397815,
+        "max": 581.1028729658574
+      },
+      "execution_ms": {
+        "median": 480.90052,
+        "min": 480.801276,
+        "max": 481.101432
+      },
+      "planning_ms": {
+        "median": 0.034167,
+        "min": 0.030374,
+        "max": 0.044403000000000005
+      },
+      "initialization_ms": {
+        "median": 19.888414,
+        "min": 19.794717,
+        "max": 20.16983
+      },
+      "sampling_ms": {
+        "median": 7.127098,
+        "min": 7.122611,
+        "max": 7.135688
+      },
+      "kernel_launches_process_delta": {
+        "median": 1177.0,
+        "min": 1177.0,
+        "max": 1177.0
+      }
+    },
+    "optimized": {
+      "caller_ms": {
+        "median": 141.50495384819806,
+        "min": 140.78239304944873,
+        "max": 145.1176491100341
+      },
+      "execution_ms": {
+        "median": 39.937419,
+        "min": 39.931084999999996,
+        "max": 39.939876999999996
+      },
+      "planning_ms": {
+        "median": 0.5452049999999999,
+        "min": 0.427147,
+        "max": 0.814969
+      },
+      "initialization_ms": {
+        "median": 20.027161000000003,
+        "min": 20.007098,
+        "max": 20.351837
+      },
+      "sampling_ms": {
+        "median": 7.1377369999999996,
+        "min": 7.122557,
+        "max": 7.139814
+      },
+      "kernel_launches_process_delta": {
+        "median": 43.0,
+        "min": 43.0,
+        "max": 43.0
+      }
+    },
+    "caller_speedup": 4.1064925655277955
+  },
+  {
+    "family": "qft",
+    "backend": "cuda",
+    "entry": "cli",
+    "raw": {
+      "caller_ms": {
+        "median": 659.5510051120073,
+        "min": 659.3563428614289,
+        "max": 662.4364301096648
+      },
+      "execution_ms": {
+        "median": 482.178577,
+        "min": 481.623927,
+        "max": 482.2557
+      },
+      "planning_ms": {
+        "median": 0.10082200000000001,
+        "min": 0.06492300000000001,
+        "max": 0.10552
+      },
+      "initialization_ms": {
+        "median": 33.412781,
+        "min": 33.151373,
+        "max": 33.508359
+      },
+      "sampling_ms": {
+        "median": 7.132879,
+        "min": 7.127056,
+        "max": 7.147282
+      },
+      "kernel_launches_process_delta": {
+        "median": 1177.0,
+        "min": 1177.0,
+        "max": 1177.0
+      }
+    },
+    "optimized": {
+      "caller_ms": {
+        "median": 231.98128095827997,
+        "min": 225.86067602969706,
+        "max": 235.9018181450665
+      },
+      "execution_ms": {
+        "median": 39.985136999999995,
+        "min": 39.976023,
+        "max": 39.98906
+      },
+      "planning_ms": {
+        "median": 1.064518,
+        "min": 1.0352130000000002,
+        "max": 1.066867
+      },
+      "initialization_ms": {
+        "median": 33.540596,
+        "min": 33.363839999999996,
+        "max": 34.132281
+      },
+      "sampling_ms": {
+        "median": 7.133539000000001,
+        "min": 7.12467,
+        "max": 7.1559859999999995
+      },
+      "kernel_launches_process_delta": {
+        "median": 43.0,
+        "min": 43.0,
+        "max": 43.0
+      }
+    },
+    "caller_speedup": 2.843121662176796
+  },
+  {
+    "family": "qft",
+    "backend": "cuda-f32",
+    "entry": "python",
+    "raw": {
+      "caller_ms": {
+        "median": 229.70522195100784,
+        "min": 229.6670249197632,
+        "max": 232.18987393192947
+      },
+      "execution_ms": {
+        "median": 105.08842899999999,
+        "min": 105.084551,
+        "max": 105.092855
+      },
+      "planning_ms": {
+        "median": 0.030397999999999998,
+        "min": 0.030293,
+        "max": 0.034274
+      },
+      "initialization_ms": {
+        "median": 43.932463999999996,
+        "min": 43.788749,
+        "max": 43.980554999999995
+      },
+      "sampling_ms": {
+        "median": 6.94437,
+        "min": 6.943622,
+        "max": 6.9545520000000005
+      },
+      "kernel_launches_process_delta": {
+        "median": 1177.0,
+        "min": 1177.0,
+        "max": 1177.0
+      }
+    },
+    "optimized": {
+      "caller_ms": {
+        "median": 159.79187400080264,
+        "min": 159.435641951859,
+        "max": 161.94580914452672
+      },
+      "execution_ms": {
+        "median": 34.979494,
+        "min": 34.979051,
+        "max": 34.980371000000005
+      },
+      "planning_ms": {
+        "median": 0.426072,
+        "min": 0.403203,
+        "max": 0.429839
+      },
+      "initialization_ms": {
+        "median": 43.577682,
+        "min": 43.465423,
+        "max": 44.022796
+      },
+      "sampling_ms": {
+        "median": 6.943884,
+        "min": 6.936202,
+        "max": 6.946689
+      },
+      "kernel_launches_process_delta": {
+        "median": 43.0,
+        "min": 43.0,
+        "max": 43.0
+      }
+    },
+    "caller_speedup": 1.4375275550611168
+  },
+  {
+    "family": "qft",
+    "backend": "cuda-f32",
+    "entry": "cli",
+    "raw": {
+      "caller_ms": {
+        "median": 326.9160350318998,
+        "min": 321.0903878789395,
+        "max": 327.6062118820846
+      },
+      "execution_ms": {
+        "median": 105.27932299999999,
+        "min": 105.268704,
+        "max": 105.281889
+      },
+      "planning_ms": {
+        "median": 0.114645,
+        "min": 0.106325,
+        "max": 0.21831699999999998
+      },
+      "initialization_ms": {
+        "median": 58.989453,
+        "min": 58.263719,
+        "max": 59.037165
+      },
+      "sampling_ms": {
+        "median": 6.989349,
+        "min": 6.975068,
+        "max": 6.997101000000001
+      },
+      "kernel_launches_process_delta": {
+        "median": 1177.0,
+        "min": 1177.0,
+        "max": 1177.0
+      }
+    },
+    "optimized": {
+      "caller_ms": {
+        "median": 250.5661640316248,
+        "min": 242.59935203008354,
+        "max": 253.4829219803214
+      },
+      "execution_ms": {
+        "median": 34.998263,
+        "min": 34.996742,
+        "max": 35.013598
+      },
+      "planning_ms": {
+        "median": 1.03807,
+        "min": 0.458237,
+        "max": 1.1725489999999998
+      },
+      "initialization_ms": {
+        "median": 58.667692,
+        "min": 58.585208,
+        "max": 58.815391
+      },
+      "sampling_ms": {
+        "median": 6.967175,
+        "min": 6.965617,
+        "max": 6.980338
+      },
+      "kernel_launches_process_delta": {
+        "median": 43.0,
+        "min": 43.0,
+        "max": 43.0
+      }
+    },
+    "caller_speedup": 1.3047094219418973
+  },
+  {
+    "family": "qpe",
+    "backend": "cuda",
+    "entry": "python",
+    "raw": {
+      "caller_ms": {
+        "median": 590.6518760602921,
+        "min": 589.4039489794523,
+        "max": 593.1105930358171
+      },
+      "execution_ms": {
+        "median": 493.55269699999997,
+        "min": 493.52061299999997,
+        "max": 494.65995899999996
+      },
+      "planning_ms": {
+        "median": 0.038444,
+        "min": 0.020292,
+        "max": 0.042370000000000005
+      },
+      "initialization_ms": {
+        "median": 20.087713,
+        "min": 20.022548,
+        "max": 20.2442
+      },
+      "sampling_ms": {
+        "median": 7.125245,
+        "min": 7.114048,
+        "max": 7.131242
+      },
+      "kernel_launches_process_delta": {
+        "median": 1198.0,
+        "min": 1198.0,
+        "max": 1198.0
+      }
+    },
+    "optimized": {
+      "caller_ms": {
+        "median": 145.8921250887215,
+        "min": 144.95808305218816,
+        "max": 146.09606005251408
+      },
+      "execution_ms": {
+        "median": 47.551843000000005,
+        "min": 47.545135,
+        "max": 47.553873
+      },
+      "planning_ms": {
+        "median": 0.62969,
+        "min": 0.591959,
+        "max": 0.635057
+      },
+      "initialization_ms": {
+        "median": 19.9315,
+        "min": 19.785845,
+        "max": 20.021926
+      },
+      "sampling_ms": {
+        "median": 7.14138,
+        "min": 7.139856,
+        "max": 7.154807
+      },
+      "kernel_launches_process_delta": {
+        "median": 50.0,
+        "min": 50.0,
+        "max": 50.0
+      }
+    },
+    "caller_speedup": 4.048552145642532
+  },
+  {
+    "family": "qpe",
+    "backend": "cuda",
+    "entry": "cli",
+    "raw": {
+      "caller_ms": {
+        "median": 674.9481030274183,
+        "min": 663.865745998919,
+        "max": 676.2803010642529
+      },
+      "execution_ms": {
+        "median": 495.000769,
+        "min": 494.90001500000005,
+        "max": 495.215302
+      },
+      "planning_ms": {
+        "median": 0.124186,
+        "min": 0.06746500000000001,
+        "max": 0.12610200000000002
+      },
+      "initialization_ms": {
+        "median": 33.408874999999995,
+        "min": 33.079314,
+        "max": 33.437968999999995
+      },
+      "sampling_ms": {
+        "median": 7.160334,
+        "min": 7.15881,
+        "max": 7.167628
+      },
+      "kernel_launches_process_delta": {
+        "median": 1198.0,
+        "min": 1198.0,
+        "max": 1198.0
+      }
+    },
+    "optimized": {
+      "caller_ms": {
+        "median": 237.5385209452361,
+        "min": 234.3858398962766,
+        "max": 238.88275097124279
+      },
+      "execution_ms": {
+        "median": 47.593399,
+        "min": 47.589778,
+        "max": 47.601754
+      },
+      "planning_ms": {
+        "median": 1.104732,
+        "min": 1.0010659999999998,
+        "max": 1.147532
+      },
+      "initialization_ms": {
+        "median": 33.365397,
+        "min": 32.840672,
+        "max": 33.829759
+      },
+      "sampling_ms": {
+        "median": 7.147759,
+        "min": 7.133625,
+        "max": 7.155816
+      },
+      "kernel_launches_process_delta": {
+        "median": 50.0,
+        "min": 50.0,
+        "max": 50.0
+      }
+    },
+    "caller_speedup": 2.841425888910986
+  },
+  {
+    "family": "qpe",
+    "backend": "cuda-f32",
+    "entry": "python",
+    "raw": {
+      "caller_ms": {
+        "median": 230.9343370143324,
+        "min": 230.83059396594763,
+        "max": 231.78913979791105
+      },
+      "execution_ms": {
+        "median": 108.030235,
+        "min": 108.010627,
+        "max": 108.036988
+      },
+      "planning_ms": {
+        "median": 0.045663,
+        "min": 0.028438,
+        "max": 0.047293
+      },
+      "initialization_ms": {
+        "median": 43.866035999999994,
+        "min": 43.561704999999996,
+        "max": 44.046163
+      },
+      "sampling_ms": {
+        "median": 6.942669,
+        "min": 6.93635,
+        "max": 6.964385
+      },
+      "kernel_launches_process_delta": {
+        "median": 1198.0,
+        "min": 1198.0,
+        "max": 1198.0
+      }
+    },
+    "optimized": {
+      "caller_ms": {
+        "median": 161.6604479495436,
+        "min": 161.15823411382735,
+        "max": 164.54202309250832
+      },
+      "execution_ms": {
+        "median": 37.055327,
+        "min": 37.054054,
+        "max": 37.062561
+      },
+      "planning_ms": {
+        "median": 0.491405,
+        "min": 0.44749,
+        "max": 0.914343
+      },
+      "initialization_ms": {
+        "median": 43.578421999999996,
+        "min": 43.498516,
+        "max": 43.866597999999996
+      },
+      "sampling_ms": {
+        "median": 6.93153,
+        "min": 6.919289,
+        "max": 6.952656
+      },
+      "kernel_launches_process_delta": {
+        "median": 50.0,
+        "min": 50.0,
+        "max": 50.0
+      }
+    },
+    "caller_speedup": 1.4285147662488857
+  },
+  {
+    "family": "qpe",
+    "backend": "cuda-f32",
+    "entry": "cli",
+    "raw": {
+      "caller_ms": {
+        "median": 324.2697329260409,
+        "min": 323.5587798990309,
+        "max": 328.8122059311718
+      },
+      "execution_ms": {
+        "median": 108.198453,
+        "min": 108.18715499999999,
+        "max": 108.237085
+      },
+      "planning_ms": {
+        "median": 0.10546499999999999,
+        "min": 0.053937,
+        "max": 0.20035
+      },
+      "initialization_ms": {
+        "median": 58.935874999999996,
+        "min": 58.913988,
+        "max": 59.214316000000004
+      },
+      "sampling_ms": {
+        "median": 6.974622,
+        "min": 6.965717,
+        "max": 6.987668
+      },
+      "kernel_launches_process_delta": {
+        "median": 1198.0,
+        "min": 1198.0,
+        "max": 1198.0
+      }
+    },
+    "optimized": {
+      "caller_ms": {
+        "median": 255.877329967916,
+        "min": 253.78400296904147,
+        "max": 255.96608011983335
+      },
+      "execution_ms": {
+        "median": 37.079988,
+        "min": 37.078371,
+        "max": 37.087311
+      },
+      "planning_ms": {
+        "median": 1.096081,
+        "min": 0.979599,
+        "max": 1.194622
+      },
+      "initialization_ms": {
+        "median": 58.813871,
+        "min": 58.393312,
+        "max": 58.943949
+      },
+      "sampling_ms": {
+        "median": 6.969154,
+        "min": 6.953277,
+        "max": 6.9793
+      },
+      "kernel_launches_process_delta": {
+        "median": 50.0,
+        "min": 50.0,
+        "max": 50.0
+      }
+    },
+    "caller_speedup": 1.2672859020636977
+  },
+  {
+    "family": "brickwall",
+    "backend": "cuda",
+    "entry": "python",
+    "raw": {
+      "caller_ms": {
+        "median": 259.7393759060651,
+        "min": 250.4338100552559,
+        "max": 261.0264699906111
+      },
+      "execution_ms": {
+        "median": 160.39023999999998,
+        "min": 159.724644,
+        "max": 160.587962
+      },
+      "planning_ms": {
+        "median": 0.009562,
+        "min": 0.008705999999999998,
+        "max": 0.009911
+      },
+      "initialization_ms": {
+        "median": 20.074087000000002,
+        "min": 19.898025999999998,
+        "max": 20.103294
+      },
+      "sampling_ms": {
+        "median": 7.11674,
+        "min": 7.11582,
+        "max": 7.140917
+      },
+      "kernel_launches_process_delta": {
+        "median": 327.0,
+        "min": 327.0,
+        "max": 327.0
+      }
+    },
+    "optimized": {
+      "caller_ms": {
+        "median": 150.023662019521,
+        "min": 146.97950496338308,
+        "max": 150.42182500474155
+      },
+      "execution_ms": {
+        "median": 49.028751,
+        "min": 49.028383000000005,
+        "max": 49.03049
+      },
+      "planning_ms": {
+        "median": 0.297712,
+        "min": 0.207786,
+        "max": 0.528202
+      },
+      "initialization_ms": {
+        "median": 20.074587,
+        "min": 19.757825,
+        "max": 20.074728
+      },
+      "sampling_ms": {
+        "median": 7.129716999999999,
+        "min": 7.128625,
+        "max": 7.1401829999999995
+      },
+      "kernel_launches_process_delta": {
+        "median": 37.0,
+        "min": 37.0,
+        "max": 37.0
+      }
+    },
+    "caller_speedup": 1.7313227287590671
+  },
+  {
+    "family": "brickwall",
+    "backend": "cuda",
+    "entry": "cli",
+    "raw": {
+      "caller_ms": {
+        "median": 344.9846860021353,
+        "min": 343.17817399278283,
+        "max": 351.4900249429047
+      },
+      "execution_ms": {
+        "median": 160.283183,
+        "min": 160.188485,
+        "max": 160.32159000000001
+      },
+      "planning_ms": {
+        "median": 0.040389,
+        "min": 0.01947,
+        "max": 0.048123
+      },
+      "initialization_ms": {
+        "median": 33.662231,
+        "min": 33.570879,
+        "max": 34.82044
+      },
+      "sampling_ms": {
+        "median": 7.136285,
+        "min": 7.131746,
+        "max": 7.148769
+      },
+      "kernel_launches_process_delta": {
+        "median": 327.0,
+        "min": 327.0,
+        "max": 327.0
+      }
+    },
+    "optimized": {
+      "caller_ms": {
+        "median": 242.4423668999225,
+        "min": 240.49609410576522,
+        "max": 242.7439270541072
+      },
+      "execution_ms": {
+        "median": 49.071072,
+        "min": 49.065668,
+        "max": 49.095433
+      },
+      "planning_ms": {
+        "median": 0.699457,
+        "min": 0.65831,
+        "max": 1.034608
+      },
+      "initialization_ms": {
+        "median": 33.367123,
+        "min": 33.293032,
+        "max": 33.915576
+      },
+      "sampling_ms": {
+        "median": 7.130267,
+        "min": 7.118402000000001,
+        "max": 7.14757
+      },
+      "kernel_launches_process_delta": {
+        "median": 37.0,
+        "min": 37.0,
+        "max": 37.0
+      }
+    },
+    "caller_speedup": 1.4229554446832353
+  },
+  {
+    "family": "brickwall",
+    "backend": "cuda-f32",
+    "entry": "python",
+    "raw": {
+      "caller_ms": {
+        "median": 159.8874181509018,
+        "min": 157.07401814870536,
+        "max": 163.90698309987783
+      },
+      "execution_ms": {
+        "median": 36.455171,
+        "min": 36.453917000000004,
+        "max": 36.455858
+      },
+      "planning_ms": {
+        "median": 0.008777,
+        "min": 0.0069770000000000006,
+        "max": 0.017143
+      },
+      "initialization_ms": {
+        "median": 43.789052000000005,
+        "min": 43.548293,
+        "max": 44.006260999999995
+      },
+      "sampling_ms": {
+        "median": 6.939339,
+        "min": 6.937995,
+        "max": 6.967181999999999
+      },
+      "kernel_launches_process_delta": {
+        "median": 327.0,
+        "min": 327.0,
+        "max": 327.0
+      }
+    },
+    "optimized": {
+      "caller_ms": {
+        "median": 131.96426420472562,
+        "min": 131.03616912849247,
+        "max": 133.79177497699857
+      },
+      "execution_ms": {
+        "median": 7.387371,
+        "min": 7.386572,
+        "max": 7.393287999999999
+      },
+      "planning_ms": {
+        "median": 0.340243,
+        "min": 0.328107,
+        "max": 0.698201
+      },
+      "initialization_ms": {
+        "median": 43.902021,
+        "min": 43.439701,
+        "max": 43.952139
+      },
+      "sampling_ms": {
+        "median": 6.943491000000001,
+        "min": 6.933788,
+        "max": 6.9570099999999995
+      },
+      "kernel_launches_process_delta": {
+        "median": 37.0,
+        "min": 37.0,
+        "max": 37.0
+      }
+    },
+    "caller_speedup": 1.2115963296158494
+  },
+  {
+    "family": "brickwall",
+    "backend": "cuda-f32",
+    "entry": "cli",
+    "raw": {
+      "caller_ms": {
+        "median": 253.15672298893332,
+        "min": 251.02071999572217,
+        "max": 259.92037006653845
+      },
+      "execution_ms": {
+        "median": 36.483878,
+        "min": 36.483699,
+        "max": 36.502021
+      },
+      "planning_ms": {
+        "median": 0.025109999999999997,
+        "min": 0.021085,
+        "max": 0.036964000000000004
+      },
+      "initialization_ms": {
+        "median": 58.772726,
+        "min": 58.502289,
+        "max": 59.805005
+      },
+      "sampling_ms": {
+        "median": 6.981768,
+        "min": 6.967488,
+        "max": 6.994209000000001
+      },
+      "kernel_launches_process_delta": {
+        "median": 327.0,
+        "min": 327.0,
+        "max": 327.0
+      }
+    },
+    "optimized": {
+      "caller_ms": {
+        "median": 225.50013498403132,
+        "min": 217.92793716304004,
+        "max": 226.87086509540677
+      },
+      "execution_ms": {
+        "median": 7.410952,
+        "min": 7.410727,
+        "max": 7.414083
+      },
+      "planning_ms": {
+        "median": 0.656944,
+        "min": 0.5856220000000001,
+        "max": 0.710379
+      },
+      "initialization_ms": {
+        "median": 58.850364,
+        "min": 58.784377,
+        "max": 58.926909
+      },
+      "sampling_ms": {
+        "median": 6.9710730000000005,
+        "min": 6.967049,
+        "max": 6.98023
+      },
+      "kernel_launches_process_delta": {
+        "median": 37.0,
+        "min": 37.0,
+        "max": 37.0
+      }
+    },
+    "caller_speedup": 1.1226455496661254
+  },
+  {
+    "family": "vqe",
+    "backend": "cuda",
+    "entry": "python",
+    "raw": {
+      "caller_ms": {
+        "median": 275.61040688306093,
+        "min": 273.5586641356349,
+        "max": 276.6629490070045
+      },
+      "execution_ms": {
+        "median": 174.412658,
+        "min": 174.237505,
+        "max": 174.71757399999998
+      },
+      "planning_ms": {
+        "median": 0.010909,
+        "min": 0.010211,
+        "max": 0.011179
+      },
+      "initialization_ms": {
+        "median": 19.866965,
+        "min": 19.827283,
+        "max": 20.096114
+      },
+      "sampling_ms": {
+        "median": 7.147782,
+        "min": 7.146959,
+        "max": 7.151732
+      },
+      "kernel_launches_process_delta": {
+        "median": 390.0,
+        "min": 390.0,
+        "max": 390.0
+      }
+    },
+    "optimized": {
+      "caller_ms": {
+        "median": 169.1143459174782,
+        "min": 155.64987994730473,
+        "max": 199.97367192991078
+      },
+      "execution_ms": {
+        "median": 77.051917,
+        "min": 69.032886,
+        "max": 97.707952
+      },
+      "planning_ms": {
+        "median": 0.44535199999999997,
+        "min": 0.286509,
+        "max": 0.8248930000000001
+      },
+      "initialization_ms": {
+        "median": 19.927042999999998,
+        "min": 19.851674,
+        "max": 20.485709
+      },
+      "sampling_ms": {
+        "median": 7.0815529999999995,
+        "min": 7.071257,
+        "max": 7.0931
+      },
+      "kernel_launches_process_delta": {
+        "median": 66.0,
+        "min": 66.0,
+        "max": 66.0
+      }
+    },
+    "caller_speedup": 1.6297281309153335
+  },
+  {
+    "family": "vqe",
+    "backend": "cuda",
+    "entry": "cli",
+    "raw": {
+      "caller_ms": {
+        "median": 364.4506970886141,
+        "min": 354.58191693760455,
+        "max": 364.46862295269966
+      },
+      "execution_ms": {
+        "median": 174.764015,
+        "min": 174.702145,
+        "max": 174.79396
+      },
+      "planning_ms": {
+        "median": 0.039949,
+        "min": 0.029095,
+        "max": 0.052854
+      },
+      "initialization_ms": {
+        "median": 35.958954,
+        "min": 32.834544,
+        "max": 37.651056000000004
+      },
+      "sampling_ms": {
+        "median": 7.182577,
+        "min": 7.141522,
+        "max": 7.250025
+      },
+      "kernel_launches_process_delta": {
+        "median": 390.0,
+        "min": 390.0,
+        "max": 390.0
+      }
+    },
+    "optimized": {
+      "caller_ms": {
+        "median": 288.5643779300153,
+        "min": 282.8992980066687,
+        "max": 291.18335503153503
+      },
+      "execution_ms": {
+        "median": 97.749145,
+        "min": 97.74265,
+        "max": 97.76238
+      },
+      "planning_ms": {
+        "median": 0.891524,
+        "min": 0.399721,
+        "max": 1.673973
+      },
+      "initialization_ms": {
+        "median": 34.506938,
+        "min": 33.59145,
+        "max": 36.543153000000004
+      },
+      "sampling_ms": {
+        "median": 7.136366,
+        "min": 7.1254029999999995,
+        "max": 7.151597
+      },
+      "kernel_launches_process_delta": {
+        "median": 66.0,
+        "min": 66.0,
+        "max": 66.0
+      }
+    },
+    "caller_speedup": 1.2629788184631827
+  },
+  {
+    "family": "vqe",
+    "backend": "cuda-f32",
+    "entry": "python",
+    "raw": {
+      "caller_ms": {
+        "median": 162.36115107312799,
+        "min": 161.26999305561185,
+        "max": 165.11726705357432
+      },
+      "execution_ms": {
+        "median": 38.815749,
+        "min": 38.812805,
+        "max": 38.816246
+      },
+      "planning_ms": {
+        "median": 0.009569,
+        "min": 0.008729,
+        "max": 0.011375
+      },
+      "initialization_ms": {
+        "median": 45.489565000000006,
+        "min": 45.359938,
+        "max": 46.817447
+      },
+      "sampling_ms": {
+        "median": 6.947576,
+        "min": 6.938149,
+        "max": 6.986754
+      },
+      "kernel_launches_process_delta": {
+        "median": 390.0,
+        "min": 390.0,
+        "max": 390.0
+      }
+    },
+    "optimized": {
+      "caller_ms": {
+        "median": 147.86325604654849,
+        "min": 136.61380601115525,
+        "max": 164.9997099302709
+      },
+      "execution_ms": {
+        "median": 14.259449,
+        "min": 14.258155,
+        "max": 14.262369
+      },
+      "planning_ms": {
+        "median": 0.429587,
+        "min": 0.301323,
+        "max": 0.443604
+      },
+      "initialization_ms": {
+        "median": 47.340419000000004,
+        "min": 45.961817,
+        "max": 48.034152
+      },
+      "sampling_ms": {
+        "median": 6.952674,
+        "min": 6.9469129999999994,
+        "max": 6.953715
+      },
+      "kernel_launches_process_delta": {
+        "median": 66.0,
+        "min": 66.0,
+        "max": 66.0
+      }
+    },
+    "caller_speedup": 1.0980493424412043
+  },
+  {
+    "family": "vqe",
+    "backend": "cuda-f32",
+    "entry": "cli",
+    "raw": {
+      "caller_ms": {
+        "median": 258.1568800378591,
+        "min": 252.28229397907853,
+        "max": 264.7037690039724
+      },
+      "execution_ms": {
+        "median": 38.846789,
+        "min": 38.843783,
+        "max": 38.857746999999996
+      },
+      "planning_ms": {
+        "median": 0.041090999999999996,
+        "min": 0.021955,
+        "max": 0.104302
+      },
+      "initialization_ms": {
+        "median": 62.342063,
+        "min": 60.998192,
+        "max": 62.74455600000001
+      },
+      "sampling_ms": {
+        "median": 6.989459,
+        "min": 6.988338000000001,
+        "max": 7.005459
+      },
+      "kernel_launches_process_delta": {
+        "median": 390.0,
+        "min": 390.0,
+        "max": 390.0
+      }
+    },
+    "optimized": {
+      "caller_ms": {
+        "median": 231.08851513825357,
+        "min": 230.32267089001834,
+        "max": 235.73919315822423
+      },
+      "execution_ms": {
+        "median": 14.281703,
+        "min": 14.280167,
+        "max": 14.283938
+      },
+      "planning_ms": {
+        "median": 0.261457,
+        "min": 0.2545,
+        "max": 0.730853
+      },
+      "initialization_ms": {
+        "median": 61.613222,
+        "min": 60.091484,
+        "max": 63.1147
+      },
+      "sampling_ms": {
+        "median": 6.992421,
+        "min": 6.972985,
+        "max": 6.993754
+      },
+      "kernel_launches_process_delta": {
+        "median": 66.0,
+        "min": 66.0,
+        "max": 66.0
+      }
+    },
+    "caller_speedup": 1.1171341850693501
+  },
+  {
+    "family": "qaoa",
+    "backend": "cuda",
+    "entry": "python",
+    "raw": {
+      "caller_ms": {
+        "median": 244.79599203914404,
+        "min": 244.4431520998478,
+        "max": 247.20821506343782
+      },
+      "execution_ms": {
+        "median": 143.887518,
+        "min": 143.86185500000002,
+        "max": 143.972345
+      },
+      "planning_ms": {
+        "median": 0.008342,
+        "min": 0.007089,
+        "max": 0.010821
+      },
+      "initialization_ms": {
+        "median": 20.607963,
+        "min": 20.228945000000003,
+        "max": 21.485259
+      },
+      "sampling_ms": {
+        "median": 7.138099,
+        "min": 7.1338490000000006,
+        "max": 7.155569
+      },
+      "kernel_launches_process_delta": {
+        "median": 362.0,
+        "min": 362.0,
+        "max": 362.0
+      }
+    },
+    "optimized": {
+      "caller_ms": {
+        "median": 153.93550298176706,
+        "min": 145.51648497581482,
+        "max": 167.610245058313
+      },
+      "execution_ms": {
+        "median": 45.535953,
+        "min": 45.529413999999996,
+        "max": 45.574615
+      },
+      "planning_ms": {
+        "median": 0.190494,
+        "min": 0.15376800000000002,
+        "max": 0.22916399999999998
+      },
+      "initialization_ms": {
+        "median": 21.478606,
+        "min": 20.304790999999998,
+        "max": 29.665486
+      },
+      "sampling_ms": {
+        "median": 7.162781,
+        "min": 7.124156,
+        "max": 7.289963
+      },
+      "kernel_launches_process_delta": {
+        "median": 44.0,
+        "min": 44.0,
+        "max": 44.0
+      }
+    },
+    "caller_speedup": 1.5902503795251117
+  },
+  {
+    "family": "qaoa",
+    "backend": "cuda",
+    "entry": "cli",
+    "raw": {
+      "caller_ms": {
+        "median": 323.0434979777783,
+        "min": 321.6265640221536,
+        "max": 329.41915513947606
+      },
+      "execution_ms": {
+        "median": 144.173535,
+        "min": 144.016707,
+        "max": 144.328847
+      },
+      "planning_ms": {
+        "median": 0.017566000000000002,
+        "min": 0.015361000000000001,
+        "max": 0.022713
+      },
+      "initialization_ms": {
+        "median": 33.909961,
+        "min": 33.646229,
+        "max": 34.616765
+      },
+      "sampling_ms": {
+        "median": 7.146643,
+        "min": 7.1441040000000005,
+        "max": 7.2669939999999995
+      },
+      "kernel_launches_process_delta": {
+        "median": 362.0,
+        "min": 362.0,
+        "max": 362.0
+      }
+    },
+    "optimized": {
+      "caller_ms": {
+        "median": 229.74995197728276,
+        "min": 228.20717887952924,
+        "max": 231.18496988900006
+      },
+      "execution_ms": {
+        "median": 45.602281000000005,
+        "min": 45.599069,
+        "max": 45.606214
+      },
+      "planning_ms": {
+        "median": 0.13234400000000002,
+        "min": 0.127112,
+        "max": 0.21004899999999999
+      },
+      "initialization_ms": {
+        "median": 33.422809,
+        "min": 33.282787,
+        "max": 34.122163
+      },
+      "sampling_ms": {
+        "median": 7.123809,
+        "min": 7.12235,
+        "max": 7.136328
+      },
+      "kernel_launches_process_delta": {
+        "median": 44.0,
+        "min": 44.0,
+        "max": 44.0
+      }
+    },
+    "caller_speedup": 1.4060655734531786
+  },
+  {
+    "family": "qaoa",
+    "backend": "cuda-f32",
+    "entry": "python",
+    "raw": {
+      "caller_ms": {
+        "median": 159.21737509779632,
+        "min": 152.49082096852362,
+        "max": 160.49577295780182
+      },
+      "execution_ms": {
+        "median": 31.523365999999996,
+        "min": 31.522809,
+        "max": 31.527136
+      },
+      "planning_ms": {
+        "median": 0.008107,
+        "min": 0.007297,
+        "max": 0.011169
+      },
+      "initialization_ms": {
+        "median": 44.651886000000005,
+        "min": 44.204466,
+        "max": 44.924046000000004
+      },
+      "sampling_ms": {
+        "median": 6.947476,
+        "min": 6.943973,
+        "max": 6.951467
+      },
+      "kernel_launches_process_delta": {
+        "median": 362.0,
+        "min": 362.0,
+        "max": 362.0
+      }
+    },
+    "optimized": {
+      "caller_ms": {
+        "median": 143.99198396131396,
+        "min": 143.41009291820228,
+        "max": 144.48416605591774
+      },
+      "execution_ms": {
+        "median": 16.786051,
+        "min": 16.785297,
+        "max": 16.788466
+      },
+      "planning_ms": {
+        "median": 0.14100000000000001,
+        "min": 0.137067,
+        "max": 0.144177
+      },
+      "initialization_ms": {
+        "median": 44.800024,
+        "min": 43.843238,
+        "max": 44.893375999999996
+      },
+      "sampling_ms": {
+        "median": 6.963193,
+        "min": 6.934135,
+        "max": 6.967048
+      },
+      "kernel_launches_process_delta": {
+        "median": 44.0,
+        "min": 44.0,
+        "max": 44.0
+      }
+    },
+    "caller_speedup": 1.1057377689897858
+  },
+  {
+    "family": "qaoa",
+    "backend": "cuda-f32",
+    "entry": "cli",
+    "raw": {
+      "caller_ms": {
+        "median": 246.8314729630947,
+        "min": 245.2590351458639,
+        "max": 249.9535100068897
+      },
+      "execution_ms": {
+        "median": 31.616471,
+        "min": 31.614624,
+        "max": 31.622761999999998
+      },
+      "planning_ms": {
+        "median": 0.021433999999999998,
+        "min": 0.015627000000000002,
+        "max": 0.023726999999999998
+      },
+      "initialization_ms": {
+        "median": 61.179552,
+        "min": 58.527575999999996,
+        "max": 64.40578199999999
+      },
+      "sampling_ms": {
+        "median": 6.990302000000001,
+        "min": 6.980354,
+        "max": 7.001986
+      },
+      "kernel_launches_process_delta": {
+        "median": 362.0,
+        "min": 362.0,
+        "max": 362.0
+      }
+    },
+    "optimized": {
+      "caller_ms": {
+        "median": 231.56546312384307,
+        "min": 231.34338995441794,
+        "max": 235.37505697458982
+      },
+      "execution_ms": {
+        "median": 16.813456000000002,
+        "min": 16.812406,
+        "max": 16.814462
+      },
+      "planning_ms": {
+        "median": 0.211177,
+        "min": 0.125187,
+        "max": 0.226002
+      },
+      "initialization_ms": {
+        "median": 60.820176,
+        "min": 59.944507,
+        "max": 61.63999
+      },
+      "sampling_ms": {
+        "median": 6.983111999999999,
+        "min": 6.967534,
+        "max": 7.009281
+      },
+      "kernel_launches_process_delta": {
+        "median": 44.0,
+        "min": 44.0,
+        "max": 44.0
+      }
+    },
+    "caller_speedup": 1.0659252447809424
+  }
+]

@@ -34,7 +34,8 @@
       "optimizer": false,
       "algorithm": "statevector",
       "build_command": "maturin develop --release --manifest-path crates/aleph-py/Cargo.toml --features python,cuda",
-      "rustflags": "unset"
+      "rustflags": "unset",
+      "compiler": "REPLACE with the compiler version used to build this artifact"
     },
     {
       "name": "b",
@@ -43,7 +44,8 @@
       "optimizer": true,
       "algorithm": "statevector",
       "build_command": "maturin develop --release --manifest-path crates/aleph-py/Cargo.toml --features python,cuda",
-      "rustflags": "unset"
+      "rustflags": "unset",
+      "compiler": "REPLACE with the compiler version used to build this artifact"
     }
   ]
 }

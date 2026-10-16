@@ -65,3 +65,17 @@ Reference run evidence and conclusions are recorded below after execution. CPU
 startup is not separately observable and stays null; CUDA import startup and
 entire process wall are distinct from its warmed API-call clock. Polling and load
 averages are useful contamination checks but cannot prove an isolated machine.
+
+Local validation (2026-10-16): ten harness tests, including the actual CPU CLI
+route guard, pass. The CLI's 78 default tests, workspace Clippy and rustfmt pass
+both before and after integrating #583's public CUDA API. The local timing
+admission probe rejects the busy ten-core Mac (load about 14) as contaminated,
+without computing a speedup. An explicit CUDA skip probe exits 2 and records
+`skipped`, without a success summary. These are structural/admission checks,
+not real CUDA execution or an isolated CPU timing baseline.
+
+The real CPU/CUDA reference campaigns remain pending authorization to transfer
+#563 to the shared GPU host. Keep this change in draft until those campaigns
+reproduce the fusion improvement and a small/no-gain control, with manifests and
+raw pairs. The CUDA adapter intentionally fails against packages predating
+#583; its diagnostic API is an explicit integration prerequisite.

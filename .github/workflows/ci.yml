@@ -57,6 +57,8 @@ jobs:
       # CUDA SDK on the runner; the actual GPU test runs on the RTX 4000 box.
       - name: clippy aleph-cuda (cuda feature)
         run: cargo clippy -p aleph-cuda --features cuda --all-targets -- -D warnings
+      - name: CUDA full-state planning contracts (no device required)
+        run: cargo test -p aleph-cuda --features cuda --test public_execution pure_planning_contracts
       # P6-01b: the NCCL exchange (cudarc `nccl`, dlopened like the rest of
       # cudarc), so it lints without libnccl on the runner.
       - name: clippy aleph-cuda (nccl feature)

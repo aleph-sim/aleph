@@ -79,7 +79,7 @@ def validate_spec(s):
                 'each arm needs the full source revision (declared, not inferred from binary)')
         require(isinstance(arm.get('optimizer'), bool), 'declare optimizer per arm')
         require(isinstance(arm.get('algorithm'), str) and arm['algorithm'], 'declare algorithm')
-        for key in ('build_command', 'rustflags'):
+        for key in ('build_command', 'rustflags', 'compiler'):
             require(isinstance(arm.get(key), str) and arm[key], f'declare {key} (use unset if absent)')
         require(isinstance(arm.get('executable'), str) and arm['executable'], 'declare executable path')
         if s['route'] == 'cpu-cli':
@@ -141,7 +141,8 @@ def resource_ok(s, r):
         if p['returncode'] != 0:
             return False
         try:
-            return all(float(line.split(',')[-3]) <= s['max_gpu_utilization'] for line in p['stdout'].splitlines())
+            lines = p['stdout'].splitlines()
+            return bool(lines) and all(float(line.split(',')[-3]) <= s['max_gpu_utilization'] for line in lines)
         except (ValueError, IndexError):
             return False
     return True

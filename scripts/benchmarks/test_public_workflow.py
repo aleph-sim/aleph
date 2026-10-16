@@ -19,7 +19,7 @@ def spec():
         qubits=3, shots=16, pairs=2, threads=1, workers=1, seed=563, warmup_calls=0,
         max_load_per_cpu=1, max_gpu_utilization=5, bottleneck_fraction=.5, target_speedup=1,
         preflight=dict(kind='control', reason='identical reference: expected no gain'),
-        arms=[dict(name=a, executable=sys.executable, revision='0'*40, optimizer=False, algorithm='statevector', build_command='test fixture', rustflags='unset', executable_sha256=w.sha256(sys.executable)) for a in ('a','b')])
+        arms=[dict(name=a, executable=sys.executable, revision='0'*40, optimizer=False, algorithm='statevector', build_command='test fixture', rustflags='unset', compiler='test fixture', executable_sha256=w.sha256(sys.executable)) for a in ('a','b')])
 
 
 def receipt(s):
