@@ -1,0 +1,168 @@
+alloc-release-final
+    Finished `release` profile [optimized] target(s) in 9.51s
+test reusable_output_resizes_and_clears_previous_observables ... ok
+shots=514 decode_into_allocs=0 decode_allocs=514 decode_errors_allocs=514
+test d11_repeated_workload_allocates_only_owned_outputs ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.84s
+
+sparse-debug
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 24.91s
+test sparse_blossom::graph::tests::csr_holds_each_undirected_edge_on_both_endpoints_with_doubled_weight ... ok
+test sparse_blossom::graph::tests::boundary_edge_is_per_node_min_weight ... ok
+test sparse_blossom::graph::tests::from_int_edges_doubles_and_mirrors ... ok
+test sparse_blossom::state::tests::cedge_reverses_and_chains ... ok
+test sparse_blossom::graph::tests::parallel_edges_keep_the_lightest_one ... ok
+test sparse_blossom::state::tests::heap_pops_in_time_then_insertion_order ... ok
+test sparse_blossom::state::tests::varying_evaluates_and_changes_slope_continuously ... ok
+test sparse_blossom::state::tests::reset_clears_touched_nodes_only ... ok
+test sparse_blossom::tests::decode_errors_marks_the_matched_paths ... ok
+test sparse_blossom::tests::empty_syndrome_is_zero ... ok
+test sparse_blossom::tests::equilateral_triangle_with_boundary ... ok
+test sparse_blossom::tests::blossom_shatter_pairs_the_remaining_cycle ... ok
+test sparse_blossom::tests::blossom_is_shattered_when_it_becomes_inner ... ok
+test sparse_blossom::tests::decode_errors_terminates_on_negative_weight_edges ... ok
+test sparse_blossom::tests::grow_then_augment_through_the_boundary ... ok
+test sparse_blossom::tests::odd_component_without_boundary_is_best_effort ... ok
+test sparse_blossom::tests::lone_defect_matches_boundary ... ok
+test sparse_blossom::tests::two_defects_on_a_line_match_each_other ... ok
+test sparse_blossom::tests::zero_weight_edge_matches_at_time_zero ... ok
+test sparse_blossom::tests::pentagon_with_chord_forms_and_uses_a_blossom ... ok
+test sparse_blossom::tests::repeated_decodes_reuse_state_identically ... ok
+test sparse_blossom::tests::sparse_reaches_the_dense_optimum_weight ... ok
+test sparse_blossom::tests::decode_errors_is_weight_and_syndrome_exact ... ok
+test sparse_blossom::tests::retained_slots_do_not_leak_between_shots ... ok
+test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 167 filtered out; finished in 0.48s
+
+sparse-release
+    Finished `release` profile [optimized] target(s) in 30.22s
+test sparse_blossom::graph::tests::from_int_edges_doubles_and_mirrors ... ok
+test sparse_blossom::graph::tests::boundary_edge_is_per_node_min_weight ... ok
+test sparse_blossom::graph::tests::csr_holds_each_undirected_edge_on_both_endpoints_with_doubled_weight ... ok
+test sparse_blossom::state::tests::heap_pops_in_time_then_insertion_order ... ok
+test sparse_blossom::state::tests::varying_evaluates_and_changes_slope_continuously ... ok
+test sparse_blossom::state::tests::cedge_reverses_and_chains ... ok
+test sparse_blossom::state::tests::reset_clears_touched_nodes_only ... ok
+test sparse_blossom::graph::tests::parallel_edges_keep_the_lightest_one ... ok
+test sparse_blossom::tests::blossom_is_shattered_when_it_becomes_inner ... ok
+test sparse_blossom::tests::decode_errors_marks_the_matched_paths ... ok
+test sparse_blossom::tests::blossom_shatter_pairs_the_remaining_cycle ... ok
+test sparse_blossom::tests::decode_errors_terminates_on_negative_weight_edges ... ok
+test sparse_blossom::tests::empty_syndrome_is_zero ... ok
+test sparse_blossom::tests::equilateral_triangle_with_boundary ... ok
+test sparse_blossom::tests::grow_then_augment_through_the_boundary ... ok
+test sparse_blossom::tests::lone_defect_matches_boundary ... ok
+test sparse_blossom::tests::odd_component_without_boundary_is_best_effort ... ok
+test sparse_blossom::tests::pentagon_with_chord_forms_and_uses_a_blossom ... ok
+test sparse_blossom::tests::two_defects_on_a_line_match_each_other ... ok
+test sparse_blossom::tests::zero_weight_edge_matches_at_time_zero ... ok
+test sparse_blossom::tests::repeated_decodes_reuse_state_identically ... ok
+test sparse_blossom::tests::decode_errors_is_weight_and_syndrome_exact ... ok
+test sparse_blossom::tests::sparse_reaches_the_dense_optimum_weight ... ok
+test sparse_blossom::tests::retained_slots_do_not_leak_between_shots ... ok
+test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 167 filtered out; finished in 0.10s
+
+dense-100500
+    Finished `release` profile [optimized] target(s) in 0.10s
+test mwpm::tests::sparse_matches_dense_weight_and_corrections has been running for over 60 seconds
+test mwpm::tests::sparse_matches_dense_weight_and_corrections ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 190 filtered out; finished in 90.30s
+
+error-invariants
+    Finished `release` profile [optimized] target(s) in 0.11s
+test mwpm::tests::decode_errors_invariants_on_phenomenological_shots has been running for over 60 seconds
+test mwpm::tests::decode_errors_invariants_on_phenomenological_shots ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 190 filtered out; finished in 102.62s
+
+pymatching-oracle
+    Finished `release` profile [optimized] target(s) in 38.38s
+d=3 p=0.03: aleph rate=0.0978 pymatching rate=0.0981 |Δ|=0.0003 ci95=0.0037 nonempty-agreement=0.9824 (38246 nonempty)
+d=3 p=0.006: nonempty-agreement=0.99688 over 25296 nonempty shots
+d=5 p=0.03: aleph rate=0.1097 pymatching rate=0.1075 |Δ|=0.0021 ci95=0.0039 nonempty-agreement=0.9683 (49911 nonempty)
+d=5 p=0.006: nonempty-agreement=0.99943 over 71594 nonempty shots
+d=7 p=0.006: nonempty-agreement=0.99984 over 96514 nonempty shots
+d=7 p=0.03: aleph rate=0.1102 pymatching rate=0.1115 |Δ|=0.0013 ci95=0.0039 nonempty-agreement=0.9590 (50000 nonempty)
+d=9 p=0.006: nonempty-agreement=0.99995 over 99897 nonempty shots
+d=9 p=0.03: aleph rate=0.1125 pymatching rate=0.1113 |Δ|=0.0012 ci95=0.0039 nonempty-agreement=0.9564 (50000 nonempty)
+d=11 p=0.006: nonempty-agreement=1.00000 over 100000 nonempty shots
+test mwpm_corrections_match_pymatching_when_unambiguous ... ok
+d=11 p=0.03: aleph rate=0.1139 pymatching rate=0.1158 |Δ|=0.0019 ci95=0.0040 nonempty-agreement=0.9552 (50000 nonempty)
+test mwpm_logical_error_rate_matches_pymatching ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 13.88s
+
+circuit-dense
+    Finished `release` profile [optimized] target(s) in 0.10s
+test mwpm::tests::sparse_matches_dense_on_circuit_level_dems ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 190 filtered out; finished in 0.17s
+
+doc-tests
+    Finished `release` profile [optimized] target(s) in 0.10s
+test crates/aleph-qec/src/experiment.rs - experiment::run_memory_experiment (line 75) - compile ... ok
+test crates/aleph-qec/src/decoder.rs - decoder::LogicalErrorResult::interval95 (line 103) ... ok
+test crates/aleph-qec/src/mwpm.rs - mwpm::MwpmDecoder::decode_into (line 213) ... ok
+test crates/aleph-qec/src/dem.rs - dem::DetectorErrorModel::split_components (line 161) ... ok
+test crates/aleph-qec/src/experiment.rs - experiment::run_dem_experiment_with_options (line 153) ... ok
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.07s
+
+clippy
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 12.15s
+
+python-tests
+Ran 12 tests in 1.146s
+OK
+
+base-alloc
+    Finished `release` profile [optimized] target(s) in 37.40s
+shots=514 three_owned_passes_allocs=845871 decode_allocs=281957 decode_errors_allocs=281957
+test baseline_d11_owned_output_allocations ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.89s
+
+environment
+Linux sd-146537 7.0.0-27-generic #27-Ubuntu SMP PREEMPT_DYNAMIC Thu Jun 18 19:13:49 UTC 2026 x86_64 GNU/Linux
+rustc 1.96.0 (ac68faa20 2026-05-25)
+Architecture:                            x86_64
+CPU op-mode(s):                          32-bit, 64-bit
+Address sizes:                           46 bits physical, 48 bits virtual
+Byte Order:                              Little Endian
+CPU(s):                                  40
+On-line CPU(s) list:                     0-39
+Vendor ID:                               GenuineIntel
+Model name:                              Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz
+CPU family:                              6
+Model:                                   85
+Thread(s) per core:                      2
+Core(s) per socket:                      10
+Socket(s):                               2
+Stepping:                                4
+BogoMIPS:                                4400.00
+Flags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush dts acpi mmx fxsr sse sse2 ss ht tm pbe syscall nx pdpe1gb rdtscp lm constant_tsc art arch_perfmon pebs bts rep_good nopl xtopology nonstop_tsc cpuid aperfmperf pni pclmulqdq dtes64 monitor ds_cpl vmx smx est tm2 ssse3 sdbg fma cx16 xtpr pdcm pcid dca sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand lahf_lm abm 3dnowprefetch cpuid_fault epb cat_l3 cdp_l3 pti intel_ppin ssbd mba ibrs ibpb stibp tpr_shadow flexpriority ept vpid ept_ad fsgsbase tsc_adjust bmi1 hle avx2 smep bmi2 erms invpcid rtm cqm mpx rdt_a avx512f avx512dq rdseed adx smap clflushopt clwb intel_pt avx512cd avx512bw avx512vl xsaveopt xsavec xgetbv1 xsaves cqm_llc cqm_occup_llc cqm_mbm_total cqm_mbm_local dtherm ida arat pln pts vnmi pku ospke md_clear flush_l1d arch_capabilities
+Virtualization:                          VT-x
+L1d cache:                               640 KiB (20 instances)
+L1i cache:                               640 KiB (20 instances)
+L2 cache:                                20 MiB (20 instances)
+L3 cache:                                27.5 MiB (2 instances)
+NUMA node(s):                            2
+NUMA node0 CPU(s):                       0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34,36,38
+NUMA node1 CPU(s):                       1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31,33,35,37,39
+Vulnerability Gather data sampling:      Vulnerable
+Vulnerability Ghostwrite:                Not affected
+Vulnerability Indirect target selection: Not affected
+Vulnerability Itlb multihit:             KVM: Mitigation: Split huge pages
+Vulnerability L1tf:                      Mitigation; PTE Inversion; VMX conditional cache flushes, SMT vulnerable
+Vulnerability Mds:                       Mitigation; Clear CPU buffers; SMT vulnerable
+Vulnerability Meltdown:                  Mitigation; PTI
+Vulnerability Mmio stale data:           Mitigation; Clear CPU buffers; SMT vulnerable
+Vulnerability Old microcode:             Not affected
+Vulnerability Reg file data sampling:    Not affected
+Vulnerability Retbleed:                  Mitigation; IBRS
+Vulnerability Spec rstack overflow:      Not affected
+Vulnerability Spec store bypass:         Mitigation; Speculative Store Bypass disabled via prctl
+Vulnerability Spectre v1:                Mitigation; usercopy/swapgs barriers and __user pointer sanitization
+Vulnerability Spectre v2:                Mitigation; IBRS; IBPB conditional; STIBP conditional; RSB filling; PBRSB-eIBRS Not affected; BHI Not affected
+Vulnerability Srbds:                     Not affected
+Vulnerability Tsa:                       Not affected
+Vulnerability Tsx async abort:           Mitigation; Clear CPU buffers; SMT vulnerable
+Vulnerability Vmscape:                   Mitigation; IBPB before exit to userspace
+
+RUSTFLAGS=-C target-cpu=native
+RAYON_NUM_THREADS=1 (timings), 4 (oracles)
+
