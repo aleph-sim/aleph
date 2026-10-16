@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "name": "cpu-cli-ghz-control",
+  "route": "cpu-cli",
+  "comparison": "same-algorithm",
+  "model": "ghz",
+  "precision": "f64",
+  "error_budget": {
+    "amplitude_atol": 1e-10,
+    "norm_atol": 0.0001
+  },
+  "topology": "one process, one host",
+  "stop_rule": "stop on failures or contamination; five paired controls, no intended speed gain",
+  "qubits": 8,
+  "shots": 16,
+  "pairs": 5,
+  "threads": 1,
+  "workers": 1,
+  "seed": 563,
+  "warmup_calls": 0,
+  "max_load_per_cpu": 0.25,
+  "max_gpu_utilization": 5,
+  "bottleneck_fraction": 0.5,
+  "target_speedup": 1,
+  "preflight": {
+    "kind": "control",
+    "reason": "identical reference: expected no gain"
+  },
+  "arms": [
+    {
+      "name": "a",
+      "executable": "target/release/aleph",
+      "revision": "928bdb7eec894d2f4c51fee03bf45f60a6ce2267",
+      "optimizer": false,
+      "algorithm": "statevector",
+      "build_command": "cargo build -p aleph-cli --release",
+      "rustflags": "unset"
+    },
+    {
+      "name": "b",
+      "executable": "target/release/aleph",
+      "revision": "928bdb7eec894d2f4c51fee03bf45f60a6ce2267",
+      "optimizer": false,
+      "algorithm": "statevector",
+      "build_command": "cargo build -p aleph-cli --release",
+      "rustflags": "unset"
+    }
+  ]
+}

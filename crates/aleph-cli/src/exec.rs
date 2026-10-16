@@ -123,11 +123,13 @@ pub fn run_circuit_with_noise_options<W: Write>(
     noise_options: aleph_sv::noise::NoiseOptions,
     out: &mut W,
 ) -> Result<()> {
+    let parse_start = Instant::now();
     // 1. Read + parse.
     let source = std::fs::read_to_string(qasm_path)
         .with_context(|| format!("reading QASM file: {}", qasm_path.display()))?;
     let circuit =
         aleph_parser::parse(&source).with_context(|| format!("parsing {}", qasm_path.display()))?;
+    let parse_ms = parse_start.elapsed().as_secs_f64() * 1000.0;
     let n = circuit.num_qubits();
 
     // Noise preset path: build a NoiseModel from --noise presets and run the
@@ -326,6 +328,7 @@ pub fn run_circuit_with_noise_options<W: Write>(
             };
             run_with_backend(
                 backend,
+                parse_ms,
                 &circuit,
                 effective_shots,
                 print_statevector,
@@ -342,6 +345,7 @@ pub fn run_circuit_with_noise_options<W: Write>(
             };
             run_with_backend(
                 backend,
+                parse_ms,
                 &circuit,
                 effective_shots,
                 print_statevector,
@@ -362,6 +366,7 @@ pub fn run_circuit_with_noise_options<W: Write>(
 #[allow(clippy::too_many_arguments)]
 fn run_with_backend<B, W>(
     mut backend: B,
+    parse_ms: f64,
     circuit: &aleph_ir::Circuit,
     effective_shots: Option<u32>,
     print_statevector: bool,
@@ -375,17 +380,30 @@ where
     B::State: AmpsF64,
     W: Write,
 {
+    let execution_start = Instant::now();
     let state = run(&mut backend, circuit).context("running circuit")?;
+    let execution_ms = execution_start.elapsed().as_secs_f64() * 1000.0;
+    let mut sampling_ms = 0.0;
+    let mut materialization_ms = 0.0;
+    let mut formatting_ms = 0.0;
 
     if let Some(shots) = effective_shots {
+        let started = Instant::now();
         let samples = backend
             .sample(&state, shots)
             .context("sampling final state")?;
+        sampling_ms = started.elapsed().as_secs_f64() * 1000.0;
+        let started = Instant::now();
         output::format_counts(out, &samples, shots, n, seed_label)?;
+        formatting_ms += started.elapsed().as_secs_f64() * 1000.0;
     }
     if print_statevector {
+        let started = Instant::now();
         let amps = state.amps_f64()?;
+        materialization_ms = started.elapsed().as_secs_f64() * 1000.0;
+        let started = Instant::now();
         output::format_statevector(out, &amps, n)?;
+        formatting_ms += started.elapsed().as_secs_f64() * 1000.0;
     }
     if !paulis.is_empty() {
         writeln!(out, "expectation values:")?;
@@ -395,6 +413,14 @@ where
                 .with_context(|| format!("computing expectation value for {raw:?}"))?;
             output::format_expectation(out, raw, v)?;
         }
+    }
+    // Explicit benchmark instrumentation of the ordinary CPU `run` route.
+    // Caller wall time remains authoritative: these stages exclude process
+    // startup, backend construction, teardown and the final stdout flush.
+    if std::env::var("ALEPH_BENCH_CPU_DIAGNOSTICS").as_deref() == Ok("1") {
+        eprintln!(
+            "CPU_EXECUTION={{\"parse_ms\":{parse_ms},\"execution_ms\":{execution_ms},\"sampling_ms\":{sampling_ms},\"materialization_ms\":{materialization_ms},\"formatting_ms\":{formatting_ms},\"qubits\":{n}}}"
+        );
     }
     Ok(())
 }

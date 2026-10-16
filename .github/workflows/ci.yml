@@ -143,6 +143,10 @@ jobs:
         run: pip install stim sinter pymatching
       # The suite import-guards on `aleph`, so a build/install failure surfaces
       # here as a hard error rather than silently-skipped tests.
+      - name: Public benchmark contracts and CPU CLI route
+        run: |
+          cargo build -p aleph-cli --release
+          ALEPH_BENCH_TEST_CLI="$PWD/target/release/aleph" python -m unittest discover -s scripts/benchmarks -v
       - name: Run binding tests
         run: python -m unittest discover -s scripts/python -v
 
