@@ -498,8 +498,6 @@ fn launch_cfg(n: u64) -> LaunchConfig {
 }
 
 /// Map a CUDA-layer error to a backend error (same shape as the backends use).
-fn to_be(_e: Error) -> BackendError {
-    BackendError::InvalidState {
-        reason: "CUDA readout failure (launch/transfer)",
-    }
+fn to_be(e: Error) -> BackendError {
+    BackendError::DeviceFailure(e.to_string())
 }

@@ -101,6 +101,12 @@ pub struct CudaSvReadoutF32 {
 impl CudaSvReadoutF32 {
     /// Download and widen amplitudes, returning synchronization/copy failures.
     pub fn try_amplitudes_vec(&self) -> Result<Vec<Complex>, Error> {
+        crate::memory::ensure_host_bytes(
+            (self.amps.len() as u64)
+                .checked_mul(16)
+                .ok_or_else(|| Error::Memory("host export size overflow".into()))?,
+        )
+        .map_err(Error::Memory)?;
         let host = self.amps.to_vec_on_stream(&self.stream)?;
         Ok(host
             .as_chunks::<2>()
@@ -153,6 +159,12 @@ impl CudaSvStateF32 {
 
     /// Download and widen amplitudes, returning synchronization/copy failures.
     pub fn try_amplitudes_vec(&self) -> Result<Vec<Complex>, Error> {
+        crate::memory::ensure_host_bytes(
+            (self.amps.len() as u64)
+                .checked_mul(16)
+                .ok_or_else(|| Error::Memory("host export size overflow".into()))?,
+        )
+        .map_err(Error::Memory)?;
         let host = self.amps.to_vec(&self.ctx)?;
         Ok(host
             .as_chunks::<2>()

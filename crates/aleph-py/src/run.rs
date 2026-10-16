@@ -83,6 +83,12 @@ impl RunResult {
                         lazy.materialize(|s| s.try_amplitudes_vec().map_err(|e| e.to_string()))
                     })
                     .map_err(|e| err("materialize cuda statevector", e))?;
+                aleph_cuda::memory::ensure_host_bytes(
+                    (host.len() as u64)
+                        .checked_mul(16)
+                        .ok_or_else(|| PyValueError::new_err("host export size overflow"))?,
+                )
+                .map_err(PyValueError::new_err)?;
                 Ok(PyArray1::from_slice_bound(py, host.as_slice()))
             }
             #[cfg(all(target_os = "linux", feature = "cuda"))]
@@ -92,6 +98,12 @@ impl RunResult {
                         lazy.materialize(|s| s.try_amplitudes_vec().map_err(|e| e.to_string()))
                     })
                     .map_err(|e| err("materialize cuda-f32 statevector", e))?;
+                aleph_cuda::memory::ensure_host_bytes(
+                    (host.len() as u64)
+                        .checked_mul(16)
+                        .ok_or_else(|| PyValueError::new_err("host export size overflow"))?,
+                )
+                .map_err(PyValueError::new_err)?;
                 Ok(PyArray1::from_slice_bound(py, host.as_slice()))
             }
             None => Err(PyValueError::new_err(
@@ -145,8 +157,9 @@ fn err<E: std::fmt::Display>(what: &str, e: E) -> PyErr {
 /// `precision` (`"auto"` default, `"f64"`, `"f32"`) steers an `auto` GPU pick:
 /// with a CUDA wheel on a CUDA host, large dense circuits route to `cuda-f32` by
 /// default (2× throughput, ~1e-5). On the CPU, `auto` stays FP64. Circuits past
-/// the CUDA in-core cap (n>31 FP32 / n>30 FP64) need the CLI/Rust paged API —
-/// Python raises rather than running them, as the paged state has no sampling.
+/// device/output memory budget raise before large allocation. Counts require
+/// sampling scratch in addition to the state. The Rust paged API is norm-only;
+/// it cannot substitute for requested Python outputs.
 ///
 /// **Breaking change vs v0.2:** the default was `"sv"`; it is now `"auto"`, so a
 /// Clifford circuit routes to the stabilizer backend by default and
@@ -311,29 +324,21 @@ pub(crate) fn run_circuit(
     }
 }
 
-/// CUDA GPU `run()` dispatch (`backend="cuda"` / `"cuda-f32"`, or an `auto` GPU
-/// pick). In core: run the FP64/FP32 backend, sample, and return amplitudes like
-/// the SV/Metal arms. Paged (`n` past the in-core cap) is rejected — the
-/// out-of-core host state exposes no GPU sampling/amplitude readout to Python, so
-/// it raises with guidance rather than silently degrading. Linux + `cuda` only.
+/// CUDA run with shared operation-aware device/host preflight. Counts retain
+/// device amplitudes; host export is checked separately when explicitly requested.
 #[cfg(all(target_os = "linux", feature = "cuda"))]
 fn run_cuda_py(
     py: Python<'_>,
     c: &aleph_ir::Circuit,
     kind: BackendKind,
-    reach: Reach,
+    _reach: Reach,
     shots: u32,
     seed: Option<u64>,
     n: u32,
 ) -> PyResult<RunResult> {
-    if let Reach::Paged { .. } = reach {
-        return Err(PyValueError::new_err(format!(
-            "n={n} exceeds the CUDA in-core cap; out-of-core paged runs are not \
-             available from Python (the paged host state has no sampling/amplitude \
-             readout) — use the `aleph` CLI or the Rust API"
-        )));
-    }
     let (counts, amps) = py.allow_threads(|| -> PyResult<(BTreeMap<String, u64>, AmpStore)> {
+        let _memory_plan = aleph_cuda::memory::plan_frontend(c, kind, shots as u64, false, false)
+            .map_err(PyValueError::new_err)?;
         // Keep the sampled state alive after the backend drops. It owns
         // its context/stream; no amplitude download is needed for counts.
         match kind {
@@ -342,7 +347,8 @@ fn run_cuda_py(
                     Some(s) => aleph_cuda::CudaSvBackendF32::with_seed(s),
                     None => aleph_cuda::CudaSvBackendF32::new(),
                 }
-                .map_err(|e| err("init cuda-f32 backend", e))?;
+                .map_err(|e| err("init cuda-f32 backend", e))?
+                .with_qubit_cap(n);
                 let state = run(&mut be, c).map_err(|e| err("run cuda-f32", e))?;
                 let samples = be.sample(&state, shots).map_err(|e| err("sample", e))?;
                 Ok((
@@ -360,7 +366,8 @@ fn run_cuda_py(
                     Some(s) => aleph_cuda::CudaSvBackend::with_seed(s),
                     None => aleph_cuda::CudaSvBackend::new(),
                 }
-                .map_err(|e| err("init cuda backend", e))?;
+                .map_err(|e| err("init cuda backend", e))?
+                .with_qubit_cap(n);
                 let state = run(&mut be, c).map_err(|e| err("run cuda", e))?;
                 let samples = be.sample(&state, shots).map_err(|e| err("sample", e))?;
                 Ok((

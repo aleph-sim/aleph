@@ -4,6 +4,7 @@
 //!
 //! See `docs/superpowers/specs/2026-05-24-p0-09-backend-naive-sv-design.md`.
 
+pub mod memory;
 pub mod select;
 pub use select::{
     analyze, select_backend, select_explained, select_explained_env, select_explained_full,
@@ -19,6 +20,9 @@ pub use select::{
 /// Python bindings) don't have to be generic over an open-ended error.
 #[derive(Debug, thiserror::Error, PartialEq)]
 pub enum BackendError {
+    /// Preserve actionable device/allocator diagnostics, including memory races after preflight.
+    #[error("device operation failed: {0}")]
+    DeviceFailure(String),
     #[error("qubit {qubit} out of range for {num_qubits}-qubit state")]
     QubitOutOfRange { qubit: u32, num_qubits: u32 },
 

@@ -19,6 +19,12 @@ pub struct CudaSvReadout {
 impl CudaSvReadout {
     /// Download amplitudes, returning synchronization/copy failures.
     pub fn try_amplitudes_vec(&self) -> Result<Vec<Complex<f64>>, Error> {
+        crate::memory::ensure_host_bytes(
+            (self.amps.len() as u64)
+                .checked_mul(16)
+                .ok_or_else(|| Error::Memory("host export size overflow".into()))?,
+        )
+        .map_err(Error::Memory)?;
         let host = self.amps.to_vec_on_stream(&self.stream)?;
         Ok(host
             .as_chunks::<2>()
@@ -104,6 +110,12 @@ impl CudaSvState {
 
     /// Download amplitudes, returning synchronization/copy failures to the caller.
     pub fn try_amplitudes_vec(&self) -> Result<Vec<Complex<f64>>, Error> {
+        crate::memory::ensure_host_bytes(
+            (self.amps.len() as u64)
+                .checked_mul(16)
+                .ok_or_else(|| Error::Memory("host export size overflow".into()))?,
+        )
+        .map_err(Error::Memory)?;
         let host = self.to_host()?;
         Ok(host
             .as_chunks::<2>()

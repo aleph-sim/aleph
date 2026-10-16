@@ -13,7 +13,7 @@ use clap::{Parser, Subcommand};
 /// (`--statevector`/`--force-statevector`), because the stabilizer backend has no
 /// dense state vector. A `Fixed` choice keeps its kind verbatim (manual override)
 /// but still gets its [`Reach`] computed from `n` (so `--backend cuda` at n>cap
-/// pages). Diagnostics go to stderr so stdout stays pipeable.
+/// carries a reference-card reach hint; execution checks runtime output memory). Diagnostics go to stderr so stdout stays pipeable.
 ///
 /// Backend-name parsing lives once in [`BackendRequest::from_user_str`], shared
 /// with the Python binding (P4-12); this is only the CLI-side resolution.
@@ -147,7 +147,7 @@ pub enum Cmd {
         /// rejects --statevector), `metal` (alias `gpu`; FP32 Apple Silicon
         /// GPU — needs a macOS `--features metal` build), or `cuda` /
         /// `cuda-f32` (NVIDIA GPU state vector, FP64 / FP32 — needs a Linux
-        /// `--features cuda` build; out-of-core paging past the in-core cap).
+        /// `--features cuda` build; requested outputs must fit runtime memory).
         /// `auto` picks a CUDA GPU backend for large dense circuits only when
         /// a CUDA build reports a device. Same names as the Python `backend=`.
         #[arg(long, default_value = BackendRequest::AUTO, value_parser = BackendRequest::from_user_str)]
