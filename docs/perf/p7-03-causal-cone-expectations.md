@@ -120,10 +120,53 @@ both timed paths. Separate planning-only and reused-plan tiers are labelled and
 must not be substituted for end-to-end query results. Global16 has no cone-width
 reduction and serves as an overhead/no-gain control.
 
-Clean timing evidence remains pending the requested CPU server campaign. The
-busy Mac's correctness/demo execution is not speedup evidence. Keep the PR in
-draft until the Criterion numbers, stage/memory changes and validation provenance
-are recorded here.
+The authorized CPU campaign ran on openwebgui (i5-13500, Rust 1.96.0,
+Linux x86_64), pinned to performance-core logical CPU 2 with
+`RAYON_NUM_THREADS=1`. The host was idle before building (load 0.00, no active
+runner/benchmark); services stayed running. During timing, the benchmark used one
+CPU and the process samples showed no competing CPU job. The load average still
+included the preceding compilation; it is not a direct CPU-utilization measure.
+
+| Exact FP64 request | Full SV | Compile + query | Planning only | Reused plan |
+| --- | ---: | ---: | ---: | ---: |
+| local18, depth 3, X9 (18 -> 6 qubits) | 48.461 ms | 24.162 us | 19.293 us | 4.103 us |
+| global16, GHZ X15 (16 -> 16 qubits) | 779.44 us | 784.36 us | 3.786 us | 782.71 us |
+
+These are Criterion slope estimates (10 samples, 0.5 s warmup, 2 s target;
+local18/full automatically collected for 2.665 s). The local end-to-end benefit
+is about **2,006x** for this deliberately small-cone fixture. Its dense workspace
+bound falls from 10,489,856 to 6,656 bytes (about 1,576x); this is a buffer bound,
+not measured RSS. Global16 keeps all 16 gates and the same 2,625,536-byte bound:
+**no gain**, about 0.6% extra caller time. This tiny overhead should not be
+generalized to fused matrices or many-term queries, whose validation/planning
+cost can be larger. The global fixture is a support/no-reduction control, not
+a representative hard global quantum workload.
+
+Five alternating AB/BA API pairs independently check whole-call behavior and
+correctness. Median caller times are local18 48.815 ms -> 27.786 us (median
+paired speedup 1,767x), global16 795.439 us -> 800.839 us (0.6% slower).
+The local query spends median 21.697 us planning and 5.391 us executing;
+global16 spends 4.921 us planning and 795.340 us executing. The small difference
+between Criterion and paired query timings is retained, not averaged away.
+Reused-plan figures are a separate tier, not the end-to-end headline.
+
+All 13 focused correctness/oracle tests passed again on this Linux host; the
+128-qubit demo returns the same value and six-qubit plan. Source commit
+`addb154286ecb84f3011d4f5b0570a5a5658ddf0` was transferred with `git archive`
+to `/tmp/aleph-545-JgzjYC`; no uncommitted patch was needed. Raw Criterion samples,
+estimates/log, alternating audit rows, compiler/hardware metadata, resource
+samples, snapshot SHA256 and the demo are in `data/p7-03/server/`.
+
+Reproduce after building (default features, no extra RUSTFLAGS):
+
+```sh
+cargo test -p aleph-sv --test expectation_query
+cargo bench -p aleph-sv --bench expectation_query --no-run
+# Use the executable printed above; pin both arms identically.
+RAYON_NUM_THREADS=1 taskset -c 2 target/release/deps/expectation_query-<hash> --bench --noplot
+cargo build --release -p aleph-sv --example expectation_query
+RAYON_NUM_THREADS=1 taskset -c 2 target/release/examples/expectation_query --audit
+```
 
 
 Local validation: 13 focused tests pass (128 random property cases and five Aer
