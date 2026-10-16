@@ -11,6 +11,11 @@ parts first with ``split = dem.split_components()`` and build ``Decoder(split, n
 Returned error columns index ``split``, in mechanism/component order. Keep the original DEM
 for sampling: splitting makes formerly correlated parts independent. BP-family decoders
 continue to use the original, parity-reduced mechanism columns.
+
+Matching decoders require finite priors in [0, 0.5] and raise ValueError at construction
+for unsupported priors (with the offending column). Zero is allowed and omitted from
+the graph; 0.5 is allowed with zero edge weight. Priors are never clamped. BP-family
+models retain their [0, 1] prior range.
 """
 import numpy as np
 

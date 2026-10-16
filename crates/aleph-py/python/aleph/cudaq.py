@@ -15,9 +15,10 @@ cudaq's own decoders. Matching decoders need a graph-like ``H`` (every column ha
 ones): cudaq keeps ``^``-decomposed hyperedges of a Stim DEM as one column, so pass
 ``dem_to_matrices(dem)`` instead of the DEM string for ``aleph-mwpm`` / ``aleph-union-find*``.
 Matching decoders (``aleph-mwpm``, ``aleph-union-find``, ``aleph-union-find-weighted``) also
-require every prior (``error_rate_vec`` entry, or the scalar ``error_rate``) to be <= 0.5
-(matching on a negative-weight edge is undefined here); BP-family decoders (``aleph-bp``,
-``aleph-bp-osd``, ``aleph-relay-bp``, ``aleph-relay-bp-osd``) have no such restriction.
+require every prior (``error_rate_vec`` entry, or the scalar ``error_rate``) to be finite
+and in [0, 0.5]. Unsupported priors raise at construction with the offending column;
+inputs are never clamped. BP-family decoders (``aleph-bp``, ``aleph-bp-osd``,
+``aleph-relay-bp``, ``aleph-relay-bp-osd``) accept priors in [0, 1].
 """
 import cudaq_qec as _qec  # the only cudaq import in aleph; ImportError means "install the extra"
 import numpy as np
@@ -26,8 +27,6 @@ import aleph.qec as _aq
 from aleph.qec import dem_to_matrices  # re-exported: aleph.cudaq.dem_to_matrices (no cudaq dep)
 
 NAMES = tuple(_aq.decoder_names())
-
-_MATCHING = {"mwpm", "union-find", "union-find-weighted"}
 
 __all__ = ["NAMES", "DECODERS", "dem_to_matrices"]
 
@@ -71,12 +70,8 @@ def _make(name):
             _qec.Decoder.__init__(self, H)
             n = H.shape[1]
             rates = _rates(n, error_rate_vec, error_rate)
-            if name in _MATCHING and rates.size:
-                j = int(np.argmax(rates))
-                if rates[j] > 0.5:
-                    raise ValueError(
-                        f"aleph-{name}: priors must be <= 0.5 for a matching decoder "
-                        f"(max {rates[j]:.3g} at column {j}); clamp or use a BP-family decoder")
+            # Rust's MatchingGraph validates matching priors in the common
+            # construction path; keep the same policy and errors as aleph.qec.
             try:
                 dem = _aq.dem_from_matrices(H, O, rates)
                 self._inner = _aq.Decoder(dem, name, **params)

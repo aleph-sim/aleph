@@ -105,6 +105,38 @@ class TestApi(unittest.TestCase):
             empty, converged = dec.decode_batch_errors(np.zeros((0, 2), dtype=np.uint8))
             self.assertEqual((empty.shape, converged.shape), ((0, 2), (0,)))
 
+    def test_matching_prior_policy_at_construction(self):
+        for probability in (np.nextafter(0.5, 1.0), 0.6, 1.0):
+            dem = qec.DetectorErrorModel(f"error(0.1) D0\nerror({probability}) D1 L0")
+            for name in sorted(MATCHING):
+                with self.subTest(name=name, probability=probability):
+                    with self.assertRaisesRegex(ValueError, r"column 1.*\[0, 0.5\]"):
+                        qec.Decoder(dem, name)
+            # Parsing and BP-family construction still accept priors in [0, 1].
+            for name in sorted(set(ALL) - MATCHING):
+                qec.Decoder(dem, name)
+        for probability in (0.0, 0.5, np.nextafter(0.0, 1.0)):
+            dem = qec.DetectorErrorModel(f"error({probability}) D0 L0")
+            for name in sorted(MATCHING):
+                dec = qec.Decoder(dem, name)
+                if probability > 0:
+                    dets = np.array([[0], [1]], dtype=np.uint8)
+                    estimate, conv = dec.decode_batch_errors(dets)
+                    self.assertTrue(conv.all())
+                    np.testing.assert_array_equal(estimate, dets)
+                    np.testing.assert_array_equal(dec.decode_batch(dets), dets.astype(bool))
+
+    def test_matching_invalid_prior_cannot_hide_in_empty_or_merged_columns(self):
+        for text in ("error(0.6) L0", "error(0.6)",
+                     "error(0.6) D0 ^ D1", "error(0.6) D0\nerror(0.6) D0"):
+            dem = qec.DetectorErrorModel(text)
+            for name in sorted(MATCHING):
+                with self.subTest(name=name, text=text):
+                    with self.assertRaisesRegex(ValueError, r"matching prior at column 0"):
+                        qec.Decoder(dem, name)
+                    with self.assertRaisesRegex(ValueError, r"matching prior at column 0"):
+                        qec.Decoder(dem.split_components(), name)
+
     def test_names(self):
         self.assertEqual(sorted(qec.decoder_names()), sorted(ALL))
 

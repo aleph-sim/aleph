@@ -8,7 +8,9 @@
 //!
 //! Negative edges (mechanisms with p > 0.5) are not relaxed: an undirected negative edge is a
 //! negative 2-cycle, on which a Dijkstra never terminates. A pair whose path needs one is left
-//! unmarked (or retraced along a non-negative path, if one fits the bound).
+//! unmarked (or retraced along a non-negative path, if one fits the bound). Public matching
+//! graph construction rejects these priors; this guard remains defensive for raw internal
+//! integer graphs and their regression tests.
 
 use std::cmp::Reverse;
 

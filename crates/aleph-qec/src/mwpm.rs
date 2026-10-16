@@ -128,6 +128,7 @@ impl MwpmDecoder {
     /// # Errors
     /// Propagates [`crate::Error::NonGraphlike`] if the DEM has a hyperedge (matching needs a
     /// graph-like DEM).
+    /// Returns [`crate::Error::InvalidMatchingPrior`] for any prior outside finite `[0, 0.5]`.
     pub fn new(dem: &DetectorErrorModel) -> Result<Self> {
         let graph = MatchingGraph::from_dem(dem)?;
         Ok(Self::from_graph(&graph))
@@ -142,6 +143,8 @@ impl MwpmDecoder {
     ///
     /// # Errors
     /// Returns [`crate::Error::NonGraphlike`] if an individual part is a hyperedge.
+    /// Returns [`crate::Error::InvalidMatchingPrior`] for an unsupported prior; its column
+    /// index refers to the split model.
     pub fn new_with_split_components(dem: &DetectorErrorModel) -> Result<Self> {
         Self::new(&dem.split_components())
     }
@@ -216,9 +219,6 @@ impl MwpmDecoder {
     /// Exceptions:
     /// - an odd component with no boundary has no perfect matching; like `decode`, one defect
     ///   there is left unmatched, so `H ê` misses that detector;
-    /// - mechanisms with p > 0.5 have negative weight `ln((1-p)/p)` and are never retraced
-    ///   through (a negative edge makes the shortest-path search ill-posed): a pair whose path
-    ///   needs one is left unmarked unless a non-negative path within the same bound exists;
     /// - on a DEM with `^`-decomposed mechanisms the estimate is per mechanism, not per part, and
     ///   `H ê = s` does not hold — use [`Self::new_with_split_components`] or construct
     ///   the decoder against [`DetectorErrorModel::split_components`] first.
