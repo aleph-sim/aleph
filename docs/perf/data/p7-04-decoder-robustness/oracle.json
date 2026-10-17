@@ -1,0 +1,233 @@
+{
+  "cases": [
+    {
+      "name": "surface-d3-r3-f0-p0.01-ratio0.25",
+      "interval_checks": "PASS",
+      "burst_law": {}
+    },
+    {
+      "name": "surface-d3-r3-f0-p0.01-ratio1",
+      "interval_checks": "PASS",
+      "burst_law": {}
+    },
+    {
+      "name": "surface-d3-r3-f0-p0.01-ratio4",
+      "interval_checks": "PASS",
+      "burst_law": {}
+    },
+    {
+      "name": "surface-d3-r3-f0-p0.01-data-meas-bias",
+      "interval_checks": "PASS",
+      "burst_law": {}
+    },
+    {
+      "name": "surface-d3-r3-f1-p0.01-ratio0.25",
+      "interval_checks": "PASS",
+      "burst_law": {}
+    },
+    {
+      "name": "surface-d3-r3-f1-p0.01-ratio1",
+      "interval_checks": "PASS",
+      "burst_law": {}
+    },
+    {
+      "name": "surface-d3-r3-f1-p0.01-ratio4",
+      "interval_checks": "PASS",
+      "burst_law": {}
+    },
+    {
+      "name": "surface-d3-r3-f1-p0.01-data-meas-bias",
+      "interval_checks": "PASS",
+      "burst_law": {}
+    },
+    {
+      "name": "surface-d3-r3-f0-p0.03-ratio0.25",
+      "interval_checks": "PASS",
+      "burst_law": {}
+    },
+    {
+      "name": "surface-d3-r3-f0-p0.03-ratio1",
+      "interval_checks": "PASS",
+      "burst_law": {}
+    },
+    {
+      "name": "surface-d3-r3-f0-p0.03-ratio4",
+      "interval_checks": "PASS",
+      "burst_law": {}
+    },
+    {
+      "name": "surface-d3-r3-f0-p0.03-data-meas-bias",
+      "interval_checks": "PASS",
+      "burst_law": {}
+    },
+    {
+      "name": "surface-d3-r3-f1-p0.03-ratio0.25",
+      "interval_checks": "PASS",
+      "burst_law": {}
+    },
+    {
+      "name": "surface-d3-r3-f1-p0.03-ratio1",
+      "interval_checks": "PASS",
+      "burst_law": {}
+    },
+    {
+      "name": "surface-d3-r3-f1-p0.03-ratio4",
+      "interval_checks": "PASS",
+      "burst_law": {}
+    },
+    {
+      "name": "surface-d3-r3-f1-p0.03-data-meas-bias",
+      "interval_checks": "PASS",
+      "burst_law": {}
+    },
+    {
+      "name": "surface-d3-r3-f0-drift",
+      "interval_checks": "PASS",
+      "burst_law": {}
+    },
+    {
+      "name": "surface-d3-r3-f0-bursts",
+      "interval_checks": "PASS",
+      "burst_law": {
+        "active_fraction": 0.19384765625,
+        "expected_active_fraction": 0.1953125,
+        "active_adjacent_fraction": 0.15354330708661418,
+        "expected_active_adjacent_fraction": 0.15622047244094497,
+        "starts": 340,
+        "expected_starts": 330.2399999999999,
+        "duration_mean_asymptotic": 5.0,
+        "censoring": "runs ending at a stream boundary are right-censored"
+      }
+    },
+    {
+      "name": "surface-d3-r3-f1-drift",
+      "interval_checks": "PASS",
+      "burst_law": {}
+    },
+    {
+      "name": "surface-d3-r3-f1-bursts",
+      "interval_checks": "PASS",
+      "burst_law": {
+        "active_fraction": 0.19384765625,
+        "expected_active_fraction": 0.1953125,
+        "active_adjacent_fraction": 0.15354330708661418,
+        "expected_active_adjacent_fraction": 0.15622047244094497,
+        "starts": 340,
+        "expected_starts": 330.2399999999999,
+        "duration_mean_asymptotic": 5.0,
+        "censoring": "runs ending at a stream boundary are right-censored"
+      }
+    },
+    {
+      "name": "gross-bb-f0-p0.01-ratio0.25",
+      "interval_checks": "PASS",
+      "burst_law": {}
+    },
+    {
+      "name": "gross-bb-f0-p0.01-ratio1",
+      "interval_checks": "PASS",
+      "burst_law": {}
+    },
+    {
+      "name": "gross-bb-f0-p0.01-ratio4",
+      "interval_checks": "PASS",
+      "burst_law": {}
+    },
+    {
+      "name": "gross-bb-f1-p0.01-ratio0.25",
+      "interval_checks": "PASS",
+      "burst_law": {}
+    },
+    {
+      "name": "gross-bb-f1-p0.01-ratio1",
+      "interval_checks": "PASS",
+      "burst_law": {}
+    },
+    {
+      "name": "gross-bb-f1-p0.01-ratio4",
+      "interval_checks": "PASS",
+      "burst_law": {}
+    },
+    {
+      "name": "gross-bb-f0-p0.03-ratio0.25",
+      "interval_checks": "PASS",
+      "burst_law": {}
+    },
+    {
+      "name": "gross-bb-f0-p0.03-ratio1",
+      "interval_checks": "PASS",
+      "burst_law": {}
+    },
+    {
+      "name": "gross-bb-f0-p0.03-ratio4",
+      "interval_checks": "PASS",
+      "burst_law": {}
+    },
+    {
+      "name": "gross-bb-f1-p0.03-ratio0.25",
+      "interval_checks": "PASS",
+      "burst_law": {}
+    },
+    {
+      "name": "gross-bb-f1-p0.03-ratio1",
+      "interval_checks": "PASS",
+      "burst_law": {}
+    },
+    {
+      "name": "gross-bb-f1-p0.03-ratio4",
+      "interval_checks": "PASS",
+      "burst_law": {}
+    },
+    {
+      "name": "gross-bb-f0-drift",
+      "interval_checks": "PASS",
+      "burst_law": {}
+    },
+    {
+      "name": "gross-bb-f0-bursts",
+      "interval_checks": "PASS",
+      "burst_law": {
+        "active_fraction": 0.19384765625,
+        "expected_active_fraction": 0.1953125,
+        "active_adjacent_fraction": 0.15354330708661418,
+        "expected_active_adjacent_fraction": 0.15622047244094497,
+        "starts": 340,
+        "expected_starts": 330.2399999999999,
+        "duration_mean_asymptotic": 5.0,
+        "censoring": "runs ending at a stream boundary are right-censored"
+      }
+    },
+    {
+      "name": "gross-bb-f1-drift",
+      "interval_checks": "PASS",
+      "burst_law": {}
+    },
+    {
+      "name": "gross-bb-f1-bursts",
+      "interval_checks": "PASS",
+      "burst_law": {
+        "active_fraction": 0.19384765625,
+        "expected_active_fraction": 0.1953125,
+        "active_adjacent_fraction": 0.15354330708661418,
+        "expected_active_adjacent_fraction": 0.15622047244094497,
+        "starts": 340,
+        "expected_starts": 330.2399999999999,
+        "duration_mean_asymptotic": 5.0,
+        "censoring": "runs ending at a stream boundary are right-censored"
+      }
+    }
+  ],
+  "tiny": {
+    "name": "tiny-mismatch",
+    "interval_checks": "PASS",
+    "burst_law": {}
+  },
+  "tiny_oracle": {
+    "assumed_truth": 0.40499999999999997,
+    "reference_truth": 0.1925,
+    "difference_truth": 0.21249999999999997,
+    "matching_policy": "explicit smallest-weight boundary edges; default DEM importer has different parallel-edge merge semantics",
+    "stim_observable0_frequency": 0.18609,
+    "exact_observable0_probability": 0.185
+  }
+}

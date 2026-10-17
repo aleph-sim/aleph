@@ -1,0 +1,44 @@
+   Compiling aleph-qec v0.3.0 (/tmp/aleph-546-879e5d2/source/crates/aleph-qec)
+    Finished `release` profile [optimized] target(s) in 20.72s
+     Running tests/robustness.rs (../target/release/deps/robustness-66d0e5d9a9cee957)
+
+running 7 tests
+test burst_prefix_does_not_depend_on_future_stream_length_or_other_streams ... ok
+test schema_and_process_validation_happens_before_sampling ... ok
+test zero_drift_and_burst_strength_preserve_shots_and_worker_determinism ... ok
+test matched_static_is_exactly_the_existing_harness ... ok
+test correlated_witnesses_replay_state_and_reject_tampering ... ok
+test burst_law_has_expected_occupancy_duration_and_correlation ... ok
+test exact_heterogeneous_truth_and_paired_mismatch ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/stratified.rs (../target/release/deps/stratified-8fc1b5e86465bb16)
+
+running 10 tests
+test deterministic_faults_enumeration_and_underflow ... ok
+test exact_weights_for_equal_heterogeneous_and_deterministic_models ... ok
+test zero_failures_omitted_mass_and_budget_status_are_explicit ... ok
+test impossible_strata_are_not_silently_sampled_and_invalid_inputs_spend_no_calls ... ok
+test enumeration_unranking_covers_each_supported_set_once ... ok
+test exact_campaign_agrees_with_enumeration_and_legacy_witnesses_survive ... ok
+test automatic_preflight_and_zero_budget_are_explicit ... ok
+test conditional_sampling_is_not_uniform_for_unequal_probabilities ... ok
+test repeated_fixed_budget_coverage_on_tiny_heterogeneous_dem ... ok
+test automatic_routing_is_pre_observation_and_preserves_selected_estimator ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.38s
+
+     Running tests/witness.rs (../target/release/deps/witness-2fbb0f060da2cd44)
+
+running 8 tests
+test budgets_tampering_and_incompatible_replay ... ok
+test signatures_group_exact_examples_across_shots_but_keep_decoder_choices ... ok
+test invalid_diagnostics_are_separate_and_fixed_codec_is_checked ... ok
+test malformed_inputs_return_errors_and_pure_logical_tiny_models_certify ... ok
+test capture_matches_ordinary_sampler_and_worker_counts ... ok
+test exhaustive_tiny_reconstruction_and_one_minimality ... ok
+test real_fixtures_replay_certify_and_match_reference_bytes ... ok
+test relay_seed_is_stable_and_nonconvergence_is_not_failure ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
