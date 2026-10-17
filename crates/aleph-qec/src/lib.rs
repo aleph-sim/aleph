@@ -40,6 +40,7 @@ mod relay_window;
 mod serial_gather;
 mod sliding;
 mod sparse_blossom;
+mod stratified;
 mod surface;
 mod syndrome;
 mod union_find;
@@ -77,4 +78,12 @@ pub use union_find::{DecoderGraph, UnionFindDecoder};
 pub use witness::{
     capture_shot, reconstruct_faults, DecoderSpec, FailureWitness, MinimizationReceipt,
     MinimizeBudget, MinimizeResult, MinimizeStatus, WitnessDecoder, WitnessOutcome,
+    WitnessSampling,
+};
+
+pub use stratified::{
+    capture_stratified_shot, run_automatic_rare_event, run_stratified, select_rare_event_method,
+    AutomaticRareEventResult, FaultCountPlan, ProbabilityBounds, RareEventDecision,
+    RareEventMethod, StratifiedOptions, StratifiedResult, StratifiedStatus, StratumMode,
+    StratumResult,
 };

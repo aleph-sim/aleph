@@ -4,6 +4,10 @@
 /// Errors produced by `aleph-qec`.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    /// Invalid or numerically unsupported rare-event plan or experiment.
+    #[error("rare-event experiment: {0}")]
+    RareEvent(String),
+
     /// Invalid, incompatible or inconsistent failure-witness data.
     #[error("failure witness: {0}")]
     Witness(String),

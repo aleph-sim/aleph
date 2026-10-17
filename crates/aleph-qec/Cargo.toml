@@ -31,3 +31,7 @@ harness = false
 [[bench]]
 name = "failure_witness"
 harness = false
+
+[[bench]]
+name = "rare_events"
+harness = false

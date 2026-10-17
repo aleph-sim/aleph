@@ -198,3 +198,9 @@ hashes and the campaign/analysis scripts are checked in alongside the earlier lo
 The control campaign logs every preflight decision. The separate feature runner skipped one
 busy preflight before its accepted run; that skipped check did not execute a benchmark and its
 CPU readings were not serialized. All executed feature measurements are retained.
+
+## Conditional provenance extension
+
+P7-02 adds explicit v2 conditional-draw and enumeration-rank provenance while preserving v1
+ordinary artifacts. See `docs/qec/p7-02-rare-events.md`; a conditional sample index is not an
+ordinary-shot identity. Existing replay/minimization and exact-example signatures remain shared.

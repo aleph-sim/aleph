@@ -158,7 +158,18 @@ pub struct BinomialInterval95 {
 impl BinomialInterval95 {
     /// Compute equal-tailed binomial bounds; zero trials produce the full `[0, 1]` range.
     pub fn from_counts(shots: u64, errors: u64) -> Result<Self> {
+        Self::from_counts_alpha(shots, errors, 0.05)
+    }
+
+    /// Internal arbitrary-confidence form for simultaneous stratified bounds.
+    pub(crate) fn from_counts_alpha(shots: u64, errors: u64, alpha: f64) -> Result<Self> {
         use statrs::function::beta::checked_beta_reg;
+        if !alpha.is_finite() || alpha <= 0.0 || alpha >= 1.0 || 1.0 - alpha / 2.0 == 1.0 {
+            return Err(crate::Error::RareEvent(
+                "unrepresentable interval confidence".into(),
+            ));
+        }
+        let tail_alpha = alpha / 2.0;
         if errors > shots {
             return Err(crate::Error::InvalidTally { shots, errors });
         }
@@ -170,7 +181,7 @@ impl BinomialInterval95 {
         }
         let n = shots as f64;
         // Stable boundary expression even for u64::MAX; avoid subtracting near-one powers.
-        let boundary = -(0.025_f64.ln() / n).exp_m1();
+        let boundary = -(tail_alpha.ln() / n).exp_m1();
         if errors == 0 {
             return Ok(Self {
                 lower: 0.0,
@@ -222,8 +233,13 @@ impl BinomialInterval95 {
             }
             Ok(value)
         };
-        let lower = quantile(errors as f64, (shots - errors + 1) as f64, 0.025, true)?;
-        let upper = quantile((errors + 1) as f64, (shots - errors) as f64, 0.975, false)?;
+        let lower = quantile(errors as f64, (shots - errors + 1) as f64, tail_alpha, true)?;
+        let upper = quantile(
+            (errors + 1) as f64,
+            (shots - errors) as f64,
+            1.0 - tail_alpha,
+            false,
+        )?;
         let rate = errors as f64 / n;
         if lower > rate || upper < rate {
             return Err(crate::Error::IntervalNumerics { shots, errors });

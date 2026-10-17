@@ -1,0 +1,17 @@
+   Compiling aleph-qec v0.3.0 (/tmp/aleph-544-1790f09/source/crates/aleph-qec)
+    Finished `release` profile [optimized] target(s) in 19.44s
+     Running tests/stratified.rs (../target/release/deps/stratified-8fc1b5e86465bb16)
+
+running 10 tests
+test impossible_strata_are_not_silently_sampled_and_invalid_inputs_spend_no_calls ... ok
+test exact_weights_for_equal_heterogeneous_and_deterministic_models ... ok
+test enumeration_unranking_covers_each_supported_set_once ... ok
+test deterministic_faults_enumeration_and_underflow ... ok
+test zero_failures_omitted_mass_and_budget_status_are_explicit ... ok
+test exact_campaign_agrees_with_enumeration_and_legacy_witnesses_survive ... ok
+test automatic_preflight_and_zero_budget_are_explicit ... ok
+test conditional_sampling_is_not_uniform_for_unequal_probabilities ... ok
+test repeated_fixed_budget_coverage_on_tiny_heterogeneous_dem ... ok
+test automatic_routing_is_pre_observation_and_preserves_selected_estimator ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.40s
