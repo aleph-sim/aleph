@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 fn invalid(message: impl Into<String>) -> Error {
     Error::Witness(message.into())
 }
-fn digest(bytes: &[u8]) -> String {
+pub(crate) fn digest(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 
@@ -66,6 +66,18 @@ pub struct WitnessDecoder {
     engine: Engine,
 }
 impl WitnessDecoder {
+    /// Immutable original target model, including fixed decoder priors.
+    pub fn model(&self) -> &DetectorErrorModel {
+        &self.dem
+    }
+    /// Fixed decoder configuration, including the independent disorder seed.
+    pub fn configuration(&self) -> &DecoderSpec {
+        &self.spec
+    }
+    /// Evaluate a counterfactual set of original DEM mechanisms, without artifact allocation.
+    pub fn decode_faults(&self, faults: &[usize]) -> Result<WitnessOutcome> {
+        self.outcome(faults)
+    }
     /// Validate the DEM and configuration, then build the replay engine.
     pub fn new(dem: &DetectorErrorModel, spec: DecoderSpec) -> Result<Self> {
         validate_dem(dem)?;
@@ -165,7 +177,7 @@ impl WitnessDecoder {
     }
 }
 
-fn validate_dem(dem: &DetectorErrorModel) -> Result<()> {
+pub(crate) fn validate_dem(dem: &DetectorErrorModel) -> Result<()> {
     if dem.detectors > u32::MAX as usize || dem.observables > 64 {
         return Err(invalid("unsupported DEM dimensions"));
     }
@@ -235,19 +247,39 @@ pub struct WitnessOutcome {
     pub first_valid_iter: Option<u32>,
 }
 
-/// Portable v1 artifact. Indices identify DEM mechanisms, not physical circuit locations.
+/// Conditional sampler provenance for a v2 witness. Version 1 keeps ordinary shot provenance.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", deny_unknown_fields)]
+pub enum WitnessSampling {
+    /// Log-suffix conditional RNG v1; seed/shot identify a conditional draw, not an ordinary shot.
+    FaultCountV1 {
+        /// Total fired mechanisms, including p=1 mechanisms.
+        faults: usize,
+    },
+    /// Lexicographic enumeration v1; shot is the rank, seed is retained campaign metadata.
+    FaultCountEnumerationV1 {
+        /// Total fired mechanisms.
+        faults: usize,
+    },
+}
+
+/// Portable v1/v2 artifact. Indices identify DEM mechanisms, not physical circuit locations.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FailureWitness {
-    /// Schema version, currently 1.
+    /// Schema version: 1 for ordinary draws, 2 for conditional/enumeration provenance.
     pub version: u32,
+    /// Absent for legacy ordinary sampling; explicit conditional/rank provenance for v2.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sampling: Option<WitnessSampling>,
     /// Exact canonical DEM including original probabilities and correlated components.
     pub dem: String,
     /// SHA-256 of UTF-8 DEM bytes.
     pub dem_sha256: String,
     /// Original sampling seed.
     pub seed: u64,
-    /// Absolute original shot index; reduced faults no longer describe a random draw at this index.
+    /// Original ordinary/conditional sample index, or enumeration rank (see sampling).
+    /// Reduced faults no longer describe a random draw at this index.
     pub shot: u64,
     /// Original fired mechanisms, retained through reduction.
     pub original_faults: Vec<usize>,
@@ -266,7 +298,7 @@ pub struct FailureWitness {
 }
 impl FailureWitness {
     fn validate_structure(&self) -> Result<DetectorErrorModel> {
-        if self.version != 1
+        if !matches!((self.version, &self.sampling), (1, None) | (2, Some(_)))
             || self.provenance != "dem-mechanisms"
             || digest(self.dem.as_bytes()) != self.dem_sha256
         {
@@ -274,7 +306,18 @@ impl FailureWitness {
         }
         let dem = DetectorErrorModel::parse(&self.dem)?;
         validate_dem(&dem)?;
-        if sample_faults(&dem, self.seed, self.shot) != self.original_faults {
+        let original = match &self.sampling {
+            None => sample_faults(&dem, self.seed, self.shot),
+            Some(WitnessSampling::FaultCountV1 { faults }) => {
+                crate::FaultCountPlan::new(&dem, *faults, crate::stratified::MAX_CONDITIONAL_CELLS)?
+                    .sample(*faults, self.seed, self.shot)?
+            }
+            Some(WitnessSampling::FaultCountEnumerationV1 { faults }) => {
+                crate::FaultCountPlan::new(&dem, *faults, crate::stratified::MAX_CONDITIONAL_CELLS)?
+                    .enumerated_faults(*faults, self.shot)?
+            }
+        };
+        if original != self.original_faults {
             return Err(invalid("original faults do not match sampling seed/shot"));
         }
         for (faults, outcome) in [
@@ -362,6 +405,7 @@ pub fn capture_shot(decoder: &WitnessDecoder, seed: u64, shot: u64) -> Result<Fa
     let dem = decoder.dem.to_dem_string();
     Ok(FailureWitness {
         version: 1,
+        sampling: None,
         dem_sha256: digest(dem.as_bytes()),
         dem,
         seed,
@@ -597,4 +641,47 @@ fn sample_faults(dem: &DetectorErrorModel, seed: u64, shot: u64) -> Vec<usize> {
         .enumerate()
         .filter_map(|(i, e)| (rng.gen::<f64>() < e.prob).then_some(i))
         .collect()
+}
+
+/// Internal constructor reuses the single scored outcome: exporting does not spend a second predicate call.
+pub(crate) fn fault_count_witness(
+    decoder: &WitnessDecoder,
+    k: usize,
+    enumerated: bool,
+    seed: u64,
+    shot: u64,
+    faults: Vec<usize>,
+    outcome: WitnessOutcome,
+) -> FailureWitness {
+    let dem = decoder.dem.to_dem_string();
+    FailureWitness {
+        version: 2,
+        sampling: Some(if enumerated {
+            WitnessSampling::FaultCountEnumerationV1 { faults: k }
+        } else {
+            WitnessSampling::FaultCountV1 { faults: k }
+        }),
+        dem_sha256: digest(dem.as_bytes()),
+        dem,
+        seed,
+        shot,
+        original_faults: faults.clone(),
+        faults,
+        decoder: decoder.spec.clone(),
+        provenance: "dem-mechanisms".into(),
+        original_outcome: outcome.clone(),
+        outcome,
+        minimization: None,
+    }
+}
+
+impl Decoder for WitnessDecoder {
+    fn decode(&self, syndrome: &Syndrome) -> crate::Correction {
+        match &self.engine {
+            Engine::Mwpm(d) => d.decode(syndrome),
+            Engine::Uf(d) => d.decode(syndrome),
+            Engine::Relay(d) => d.decode(syndrome),
+            Engine::Fixed(d) => d.decode(syndrome),
+        }
+    }
 }

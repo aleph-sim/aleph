@@ -1,0 +1,93 @@
+{
+  "cases": [
+    {
+      "case": "surface-low",
+      "calls": 1065,
+      "strat_width": 1.2650629413122533e-06,
+      "direct_width": 0.003457744761116563,
+      "median_width_ratio": 0.0003658635985912805,
+      "strat_ms": 4.6784229999999996,
+      "direct_ms": 0.419727,
+      "direct_errors": 0,
+      "status_counts": {
+        "BudgetExhausted": 15,
+        "TargetMet": 1
+      },
+      "tail_upper": 1.0952671254107613e-17
+    },
+    {
+      "case": "surface-accessible",
+      "calls": 1065,
+      "strat_width": 0.05635970944758363,
+      "direct_width": 0.03689386965276572,
+      "median_width_ratio": 1.509496935587014,
+      "strat_ms": 5.069787,
+      "direct_ms": 1.621001,
+      "direct_errors": 1699,
+      "status_counts": {
+        "BudgetExhausted": 16
+      },
+      "tail_upper": 0.0027087910985697013
+    },
+    {
+      "case": "bb-low",
+      "calls": 1169,
+      "strat_width": 0.00018395899474322113,
+      "direct_width": 0.0031506118769543943,
+      "median_width_ratio": 0.05838833913146071,
+      "strat_ms": 380.202783,
+      "direct_ms": 364.63743900000003,
+      "direct_errors": 0,
+      "status_counts": {
+        "BudgetExhausted": 16
+      },
+      "tail_upper": 9.90117793724366e-09
+    },
+    {
+      "case": "bb-accessible",
+      "calls": 1937,
+      "strat_width": 0.050235413417173636,
+      "direct_width": 0.005383576919321205,
+      "median_width_ratio": 9.549466672942248,
+      "strat_ms": 640.054272,
+      "direct_ms": 630.9522185000001,
+      "direct_errors": 77,
+      "status_counts": {
+        "BudgetExhausted": 16
+      },
+      "tail_upper": 0.03027578417237315
+    }
+  ],
+  "coverage": {
+    "all_conditional": {
+      "coverage_binomial95": {
+        "lower": 0.9981572602065939,
+        "upper": 1.0
+      },
+      "covered": 2000,
+      "dem": "error(0.05) D0 L0\nerror(0.3) D0 L1\nerror(0.15) L0\nerror(0.2) D1 L1\n",
+      "enumerate_small": false,
+      "exact_failure_probability": 0.1925,
+      "fixed_calls_per_trial": 160,
+      "nominal_confidence": 0.95,
+      "observed_coverage": 1.0,
+      "seconds": 0.296423355,
+      "trials": 2000
+    },
+    "mixed_exact": {
+      "coverage_binomial95": {
+        "lower": 0.9870409314115289,
+        "upper": 0.9954205953386013
+      },
+      "covered": 1984,
+      "dem": "error(0.05) D0 L0\nerror(0.3) D0 L1\nerror(0.15) L0\nerror(0.2) D1 L1\n",
+      "enumerate_small": true,
+      "exact_failure_probability": 0.1925,
+      "fixed_calls_per_trial": 15,
+      "nominal_confidence": 0.95,
+      "observed_coverage": 0.992,
+      "seconds": 0.068093904,
+      "trials": 2000
+    }
+  }
+}

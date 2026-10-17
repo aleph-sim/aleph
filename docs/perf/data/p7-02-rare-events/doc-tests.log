@@ -1,0 +1,14 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.14s
+   Doc-tests aleph_qec
+
+running 8 tests
+test crates/aleph-qec/src/experiment.rs - experiment::run_memory_experiment (line 75) - compile ... ok
+test crates/aleph-qec/src/decoder.rs - decoder::LogicalErrorResult::interval95 (line 103) ... ok
+test crates/aleph-qec/src/stratified.rs - stratified::FaultCountPlan::new (line 88) ... ok
+test crates/aleph-qec/src/relay_bp.rs - relay_bp::RelayBpDecoder::with_budget (line 82) ... ok
+test crates/aleph-qec/src/mwpm.rs - mwpm::MwpmDecoder::decode_into (line 216) ... ok
+test crates/aleph-qec/src/dem.rs - dem::DetectorErrorModel::split_components (line 161) ... ok
+test crates/aleph-qec/src/experiment.rs - experiment::run_dem_experiment_with_options (line 153) ... ok
+test crates/aleph-qec/src/witness.rs - witness::capture_shot (line 392) ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.70s

@@ -1,0 +1,44 @@
+{
+  "decimal_digits": 100,
+  "scipy": "1.18.1",
+  "cases": [
+    {
+      "case": "surface-low",
+      "runs": 16,
+      "mass_and_interval_checks": "PASS"
+    },
+    {
+      "case": "surface-accessible",
+      "runs": 16,
+      "mass_and_interval_checks": "PASS"
+    },
+    {
+      "case": "bb-low",
+      "runs": 16,
+      "mass_and_interval_checks": "PASS"
+    },
+    {
+      "case": "bb-accessible",
+      "runs": 16,
+      "mass_and_interval_checks": "PASS"
+    }
+  ],
+  "coverage_checks": [
+    {
+      "design": "all_conditional",
+      "exact_pymatching_aligned_truth": 0.1925,
+      "default_dem_import_truth": 0.40499999999999997,
+      "parallel_edge_policy": "explicit minimum-weight boundary classifier; default importer differs",
+      "covered": 2000,
+      "trials": 2000
+    },
+    {
+      "design": "mixed_exact",
+      "exact_pymatching_aligned_truth": 0.1925,
+      "default_dem_import_truth": 0.40499999999999997,
+      "parallel_edge_policy": "explicit minimum-weight boundary classifier; default importer differs",
+      "covered": 1984,
+      "trials": 2000
+    }
+  ]
+}
