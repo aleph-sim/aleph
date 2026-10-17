@@ -226,3 +226,7 @@ fixtures and direct MC for both accessible fixtures. Scores (stratified/direct) 
 1.774e-6/0.05062, 0.06897/0.05062, 0.001489/0.05062 and 0.18414/0.04124,
 respectively. Exact selected-method equality is tested for counts and bounds. These are
 four regression fixtures, not held-out evidence of universal predictive accuracy.
+
+Final-source validation: 251 Rust tests passed (22 existing ignores), plus 8 doc tests;
+10 focused stratification/automatic tests passed on both Mac and Linux, and workspace
+all-target Clippy and rustfmt passed. `final-full-tests.log` preserves the complete final suite.
