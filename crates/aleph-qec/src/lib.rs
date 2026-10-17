@@ -87,3 +87,10 @@ pub use stratified::{
     RareEventMethod, StratifiedOptions, StratifiedResult, StratifiedStatus, StratumMode,
     StratumResult,
 };
+
+mod robustness;
+pub use robustness::{
+    generate_noise_stream, robustness_stream_seed, run_robustness, validate_noise_compatibility,
+    NoiseProcess, NoiseShot, RobustnessOptions, RobustnessResult, RobustnessStream,
+    MAX_ROBUSTNESS_STEPS,
+};

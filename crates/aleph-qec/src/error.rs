@@ -4,6 +4,10 @@
 /// Errors produced by `aleph-qec`.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    /// Invalid model identity, generating process or robustness campaign.
+    #[error("robustness experiment: {0}")]
+    Robustness(String),
+
     /// Invalid or numerically unsupported rare-event plan or experiment.
     #[error("rare-event experiment: {0}")]
     RareEvent(String),
