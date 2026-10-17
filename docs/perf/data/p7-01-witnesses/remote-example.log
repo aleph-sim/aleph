@@ -1,0 +1,10 @@
+   Compiling aleph-qec v0.3.0 (/tmp/aleph-543-816ef96/patch/crates/aleph-qec)
+    Finished `release` profile [optimized] target(s) in 5.05s
+     Running `../target-patch/release/examples/decoder_witness capture ../generated`
+case=surface-d3-r3 shot=39 faults=5->2 calls=6 status=OneMinimal search_us=2620 minimize_us=315 signature=5eda3297872eba713e4b5d42a6d3da1efb07820eff43e94a94f0bd2d50beb16d
+decoder=Mwpm failure=true valid=None prediction=[false]
+decoder=UnionFind failure=true valid=None prediction=[false]
+case=bb-gross-capacity shot=515 faults=9->7 calls=28 status=OneMinimal search_us=186607 minimize_us=9099 signature=71060bb27dfb755758c7fb3459b2417f30f84fa555e076d14bc799b31d17520a
+decoder=Relay { legs: 6, iters: 10, seed: 1578781596, early_exit: false } failure=true valid=Some(true) prediction=[false, false, false, false, false, false, true, true, true, false, false, false]
+decoder=FixedRelay { legs: 6, iters: 10, seed: 1578781596, msg_bits: 8, frac_bits: 3, early_exit: false } failure=true valid=Some(true) prediction=[false, false, false, false, false, false, true, true, true, false, false, false]
+fixed_reference=PASS layout=block gross_code_capacity C=72 V=144 OBS=12 words=3 Q5.3 schedule=6x10 full priors=0.03

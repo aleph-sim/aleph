@@ -4,6 +4,10 @@
 /// Errors produced by `aleph-qec`.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    /// Invalid, incompatible or inconsistent failure-witness data.
+    #[error("failure witness: {0}")]
+    Witness(String),
+
     /// Matching decoders require finite per-mechanism priors in [0, 0.5].
     #[error("matching prior at column {column} must be finite and in [0, 0.5], got {prob}")]
     InvalidMatchingPrior {

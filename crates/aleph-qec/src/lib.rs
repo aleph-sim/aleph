@@ -43,6 +43,7 @@ mod sparse_blossom;
 mod surface;
 mod syndrome;
 mod union_find;
+mod witness;
 
 pub use aswaksman::{aswaksman_apply, aswaksman_control, aswaksman_switch_count};
 pub use benes::{benes_apply, benes_columns, benes_control, complete_partial};
@@ -72,3 +73,8 @@ pub use sliding::{SlidingWindowDecoder, WindowExport};
 pub use surface::{MemoryExperiment, SurfaceCode};
 pub use syndrome::{Correction, Syndrome};
 pub use union_find::{DecoderGraph, UnionFindDecoder};
+
+pub use witness::{
+    capture_shot, reconstruct_faults, DecoderSpec, FailureWitness, MinimizationReceipt,
+    MinimizeBudget, MinimizeResult, MinimizeStatus, WitnessDecoder, WitnessOutcome,
+};

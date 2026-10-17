@@ -1,0 +1,106 @@
+0-base.log
+dem_experiment/sample_1024
+                        time:   [840.35 µs 848.34 µs 856.84 µs]
+
+Gnuplot not found, using plotters backend
+Benchmarking dem_experiment/sample_1024
+Benchmarking dem_experiment/sample_1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/sample_1024: Collecting 10 samples in estimated 532.67 ms (660 iterations)
+Benchmarking dem_experiment/sample_1024: Analyzing
+
+1-patch.log
+dem_experiment/sample_1024
+                        time:   [839.89 µs 843.54 µs 846.46 µs]
+
+Gnuplot not found, using plotters backend
+Benchmarking dem_experiment/sample_1024
+Benchmarking dem_experiment/sample_1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/sample_1024: Collecting 10 samples in estimated 513.04 ms (550 iterations)
+Benchmarking dem_experiment/sample_1024: Analyzing
+
+2-patch.log
+dem_experiment/sample_1024
+                        time:   [836.53 µs 844.61 µs 863.81 µs]
+
+Gnuplot not found, using plotters backend
+Benchmarking dem_experiment/sample_1024
+Benchmarking dem_experiment/sample_1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/sample_1024: Collecting 10 samples in estimated 533.88 ms (605 iterations)
+Benchmarking dem_experiment/sample_1024: Analyzing
+
+3-base.log
+dem_experiment/sample_1024
+                        time:   [847.42 µs 872.23 µs 894.10 µs]
+
+Gnuplot not found, using plotters backend
+Benchmarking dem_experiment/sample_1024
+Benchmarking dem_experiment/sample_1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/sample_1024: Collecting 10 samples in estimated 507.20 ms (605 iterations)
+Benchmarking dem_experiment/sample_1024: Analyzing
+
+4-base.log
+dem_experiment/sample_1024
+                        time:   [851.75 µs 925.55 µs 1.0113 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+
+Gnuplot not found, using plotters backend
+Benchmarking dem_experiment/sample_1024
+Benchmarking dem_experiment/sample_1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/sample_1024: Collecting 10 samples in estimated 523.94 ms (605 iterations)
+Benchmarking dem_experiment/sample_1024: Analyzing
+
+5-patch.log
+dem_experiment/sample_1024
+                        time:   [999.22 µs 1.0065 ms 1.0243 ms]
+
+Gnuplot not found, using plotters backend
+Benchmarking dem_experiment/sample_1024
+Benchmarking dem_experiment/sample_1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/sample_1024: Collecting 10 samples in estimated 511.20 ms (440 iterations)
+Benchmarking dem_experiment/sample_1024: Analyzing
+
+6-patch.log
+dem_experiment/sample_1024
+                        time:   [1.4337 ms 1.9154 ms 2.3449 ms]
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+
+Gnuplot not found, using plotters backend
+Benchmarking dem_experiment/sample_1024
+Benchmarking dem_experiment/sample_1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/sample_1024: Collecting 10 samples in estimated 574.64 ms (275 iterations)
+Benchmarking dem_experiment/sample_1024: Analyzing
+
+7-base.log
+dem_experiment/sample_1024
+                        time:   [1.5185 ms 2.1111 ms 2.9878 ms]
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+
+Gnuplot not found, using plotters backend
+Benchmarking dem_experiment/sample_1024
+Benchmarking dem_experiment/sample_1024: Warming up for 200.00 ms
+Benchmarking dem_experiment/sample_1024: Collecting 10 samples in estimated 623.85 ms (275 iterations)
+Benchmarking dem_experiment/sample_1024: Analyzing
+
+feature.log
+failure_witness/capture_d3
+                        time:   [7.3721 µs 8.0234 µs 9.1004 µs]
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) low mild
+  1 (10.00%) high severe
+failure_witness/minimize_d3
+                        time:   [18.351 µs 18.665 µs 18.981 µs]
+
+Gnuplot not found, using plotters backend
+Benchmarking failure_witness/capture_d3
+Benchmarking failure_witness/capture_d3: Warming up for 200.00 ms
+Benchmarking failure_witness/capture_d3: Collecting 10 samples in estimated 500.27 ms (70k iterations)
+Benchmarking failure_witness/capture_d3: Analyzing
+Benchmarking failure_witness/minimize_d3
+Benchmarking failure_witness/minimize_d3: Warming up for 200.00 ms
+Benchmarking failure_witness/minimize_d3: Collecting 10 samples in estimated 500.97 ms (27k iterations)
+Benchmarking failure_witness/minimize_d3: Analyzing
