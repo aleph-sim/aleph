@@ -248,17 +248,17 @@ impl FaultCountPlan {
             return Err(error("enumeration rank out of range"));
         }
         let mut faults = self.forced.clone();
-        for i in 0..n {
+        for (i, &(mechanism, _)) in self.variables.iter().enumerate() {
             if r == 0 {
                 break;
             }
             match count_capped(n - i - 1, r - 1, rank) {
                 None => {
-                    faults.push(self.variables[i].0);
+                    faults.push(mechanism);
                     r -= 1;
                 }
                 Some(c) if rank < c => {
-                    faults.push(self.variables[i].0);
+                    faults.push(mechanism);
                     r -= 1;
                 }
                 Some(c) => rank -= c,
