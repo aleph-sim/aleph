@@ -4420,12 +4420,12 @@ unqualified rare-event/real-time claim would not establish useful new capability
 
 **Phase Checklist**
 
-- [ ] [[P7-01] Decoder failure witness capture, minimization, and cross-decoder replay](https://github.com/aleph-sim/aleph/issues/543)
-- [ ] [[P7-02] Rare-event logical error estimation with fault-count stratification](https://github.com/aleph-sim/aleph/issues/544)
-- [ ] [[P7-03] Exact observable-driven execution via causal-cone extraction](https://github.com/aleph-sim/aleph/issues/545)
-- [ ] [[P7-04] Decoder robustness experiments under prior mismatch, drift, and bursts](https://github.com/aleph-sim/aleph/issues/546)
-- [ ] [[P7-05] Deadline-aware syndrome stream and fallback trace replay](https://github.com/aleph-sim/aleph/issues/547)
-- [ ] [[P7-06] Exact near-Clifford expectation engine with sparse Pauli propagation](https://github.com/aleph-sim/aleph/issues/548)
+- [x] [[P7-01] Decoder failure witness capture, minimization, and cross-decoder replay](https://github.com/aleph-sim/aleph/issues/543)
+- [x] [[P7-02] Rare-event logical error estimation with fault-count stratification](https://github.com/aleph-sim/aleph/issues/544)
+- [x] [[P7-03] Exact observable-driven execution via causal-cone extraction](https://github.com/aleph-sim/aleph/issues/545)
+- [x] [[P7-04] Decoder robustness experiments under prior mismatch, drift, and bursts](https://github.com/aleph-sim/aleph/issues/546)
+- [x] [[P7-05] Deadline-aware syndrome stream and fallback trace replay](https://github.com/aleph-sim/aleph/issues/547)
+- [x] [[P7-06] Exact near-Clifford expectation engine with sparse Pauli propagation](https://github.com/aleph-sim/aleph/issues/548)
 
 **Acceptance Criteria**
 

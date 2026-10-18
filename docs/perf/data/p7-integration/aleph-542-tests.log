@@ -1,0 +1,19 @@
+   Compiling simba v0.9.1
+   Compiling aleph-qec v0.3.0 (/tmp/aleph-542-integration/crates/aleph-qec)
+   Compiling nalgebra v0.33.3
+   Compiling aleph-mps v0.3.0 (/tmp/aleph-542-integration/crates/aleph-mps)
+   Compiling aleph-stab v0.3.0 (/tmp/aleph-542-integration/crates/aleph-stab)
+    Finished `release` profile [optimized] target(s) in 31.62s
+     Running tests/research_workflow.rs (/tmp/aleph-542-target/release/deps/research_workflow-7b422707d76601dc)
+
+running 1 test
+test sampling_estimation_and_saved_witness_replay_share_model_identity ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/research_workflow.rs (/tmp/aleph-542-target/release/deps/research_workflow-c4f044860226aa0d)
+
+running 1 test
+test same_saved_queries_cross_full_cone_sparse_and_analytic_references ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s

@@ -145,6 +145,8 @@ P7-04 starts with prior mismatch before adding drift/bursts. P7-05 reuses Q4-02/
 and Q7-07 instead of reimplementing streaming decoders or claiming new silicon timing.
 P7-06 begins with exact propagation; approximate pruning is a separate follow-up.
 P7-00 tracks integration, reproducible examples, and the final benchmark report.
+The six capability issues are complete; the [integration/exit report](docs/perf/p7-research-instruments.md)
+records both end-to-end studies, reproduction commands, measured benefits and negative regimes.
 
 **Exit metric:** all six capability issues meet their scoped acceptance criteria, with a
 reproducible report in `docs/perf/p7-research-instruments.md`. The report must establish
