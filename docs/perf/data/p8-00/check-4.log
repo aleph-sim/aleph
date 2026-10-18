@@ -1,0 +1,29 @@
+   Compiling aleph-qec v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-qec)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.19s
+     Running tests/binomial_interval.rs (target/debug/deps/binomial_interval-1df52106e512bb6d)
+
+running 7 tests
+test boundaries_no_evidence_and_invalid_tallies ... ok
+test conditional_paired_comparison_does_not_assume_independent_rates ... ok
+test large_counts_and_overlap_semantics ... ok
+test reference_values ... ok
+test exact_small_sample_coverage ... ok
+test random_direct_counts_produce_ordered_finite_bounds ... ok
+test ordered_monotone_symmetric_bounds ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s
+
+     Running tests/bounded_dem_experiment.rs (target/debug/deps/bounded_dem_experiment-98b2a3e0c79ee9be)
+
+running 9 tests
+test pymatching_batch_boundaries_and_zero_observables ... ignored, requires numpy + stim + pymatching; set PYMATCHING_PYTHON
+test zero_batch_size_is_rejected_even_for_zero_shots ... ok
+test huge_requested_count_does_not_materialize_all_shots ... ok
+test zero_observables_require_exact_empty_corrections ... ok
+test deterministic_mechanisms_produce_exact_tallies ... ok
+test batch_bound_tail_and_absolute_stream_are_preserved ... ok
+test short_long_empty_or_wrong_width_predictions_are_rejected_in_later_batches ... ok
+test default_limit_splits_campaign_and_reports_late_schema_index ... ok
+test fixed_seed_matches_full_artifact_path_across_batches_and_workers ... ok
+
+test result: ok. 8 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.08s

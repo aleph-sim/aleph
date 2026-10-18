@@ -119,6 +119,7 @@ Each backend implements a common `Backend` trait. The frontend, IR, parser, and 
 |5    |GPU backend (single-GPU)              |2–3 months          |cuQuantum integration + custom CUDA where it adds value                          |
 |6    |Multi-GPU and distributed             |2–3 months          |NCCL intra-node + MPI inter-node                                                 |
 |7    |Research instruments                  |Milestone-driven    |Failure diagnosis, rare-event QEC, observable queries, robustness and deadline studies, near-Clifford expectations |
+|8    |Performance audit and recovery        |Milestone-driven    |Public frontend parity, operation-aware memory, reproducible gains and measured research verdicts |
 
 Estimates are aggressive solo full-time. Realistic part-time: roughly double.
 
@@ -154,6 +155,27 @@ correctness against exact small instances/reference tools, quantify time/memory/
 efficiency and failure regimes, and include at least one end-to-end QEC diagnosis study and
 one observable-query study. Research hypotheses are measured, not promised speedups;
 modelled deadline outcomes must be distinguished from measured hardware capability.
+
+### Phase 8 — Performance Audit and Recovery
+
+Bring existing optimized execution into public frontends, remove unnecessary setup
+and output work, and bound memory by the requested operations. Detailed specifications:
+`BACKLOG.md`, P8-00 through P8-16; tracker [#550](https://github.com/aleph-sim/aleph/issues/550).
+
+As of 2026-10-18, **13 of 16 capability issues are closed**. The
+[integration report](docs/perf/p8-performance-recovery.md) links public API timings,
+kernel/operation measurements, allocation evidence, adverse cases and raw provenance.
+Phase 8 remains in progress: optimized CPU/Metal CLI execution (#551, draft #569),
+competitive Metal MPS factorization (#561), and real multi-GPU plan validation
+(#562) remain open. Explicit BP/paging opt-ins are completed research outcomes,
+not default-routing or universal performance claims.
+
+**Exit metric:** every capability has a verified repair or its explicitly allowed,
+measured research verdict. The report must cover CPU CLI, CUDA Python counts-only,
+large-state sampling and noisy trajectories; distinguish modelled reach from actual
+allocations and kernel time from public caller time; smoke-run documented commands;
+and preserve negative results. The tracker stays open until the three remaining
+gates are resolved. This phase does not imply Phase 6 scaling or v1.0 completion.
 
 -----
 

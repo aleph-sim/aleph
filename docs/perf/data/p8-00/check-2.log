@@ -1,0 +1,17 @@
+   Compiling aleph-ir v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-ir)
+   Compiling aleph-backend v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-backend)
+   Compiling aleph-parser v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-parser)
+   Compiling aleph-test v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-test)
+   Compiling aleph-sv v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-sv)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.87s
+     Running unittests src/lib.rs (target/debug/deps/aleph_backend-a2fadda868659f85)
+
+running 6 tests
+test memory::tests::overflow_and_invalid_layouts_are_errors ... ok
+test memory::tests::requested_views_scratch_and_host_limits_are_accounted ... ok
+test memory::tests::executor_workspace_override_includes_shot_buffers_and_checks_overflow ... ok
+test memory::tests::runtime_sizes_and_free_memory_drive_fit ... ok
+test memory::tests::legacy_cdf_counts_do_not_fit_reference_card_despite_state_fitting ... ok
+test memory::tests::counts_reach_scales_with_capacity_and_precision ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 36 filtered out; finished in 0.00s

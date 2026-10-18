@@ -1,0 +1,234 @@
+{
+  "as_of": "2026-10-18",
+  "main_revision": "6114dab7e18c4deac0fda3039060e00f7661b653",
+  "closed_capabilities": 13,
+  "total_capabilities": 16,
+  "issues": [
+    {
+      "number": 550,
+      "title": "[P8-00] Performance audit integration and end-to-end recovery report",
+      "state": "OPEN",
+      "url": "https://github.com/aleph-sim/aleph/issues/550"
+    },
+    {
+      "number": 551,
+      "title": "[P8-01] Use optimized CPU and Metal execution in the CLI",
+      "state": "OPEN",
+      "url": "https://github.com/aleph-sim/aleph/issues/551",
+      "pull_request": {
+        "number": 569,
+        "state": "OPEN",
+        "url": "https://github.com/aleph-sim/aleph/pull/569",
+        "headRefOid": "a32d4d2e574cd77b2a3828a130072a573e381945",
+        "mergeCommit": null
+      }
+    },
+    {
+      "number": 552,
+      "title": "[P8-02] Integrate CUDA fusion and layered dispatch into public frontends",
+      "state": "CLOSED",
+      "url": "https://github.com/aleph-sim/aleph/issues/552",
+      "pull_request": {
+        "number": 583,
+        "state": "MERGED",
+        "url": "https://github.com/aleph-sim/aleph/pull/583",
+        "headRefOid": "94cf457034d7e57241ca7bb846e258ea6d873593",
+        "mergeCommit": {
+          "oid": "07a71f98e1ca4758d6f1e0a62c10fe76b2865ce3"
+        }
+      }
+    },
+    {
+      "number": 553,
+      "title": "[P8-03] Materialize Python GPU amplitudes lazily",
+      "state": "CLOSED",
+      "url": "https://github.com/aleph-sim/aleph/issues/553",
+      "pull_request": {
+        "number": 568,
+        "state": "MERGED",
+        "url": "https://github.com/aleph-sim/aleph/pull/568",
+        "headRefOid": "24daa1456b3b54a6a206f5925f84083ded2bed4b",
+        "mergeCommit": {
+          "oid": "bfd939da86dd2cc4b71d83ee476024335fe3caba"
+        }
+      }
+    },
+    {
+      "number": 554,
+      "title": "[P8-04] Plan backend reach from requested operations and peak memory",
+      "state": "CLOSED",
+      "url": "https://github.com/aleph-sim/aleph/issues/554",
+      "pull_request": {
+        "number": 581,
+        "state": "MERGED",
+        "url": "https://github.com/aleph-sim/aleph/pull/581",
+        "headRefOid": "99b7da643d5c41ff3a3e65ddf56765c07976e501",
+        "mergeCommit": {
+          "oid": "8e6ddecec9ca947b73765ddc49a8dfd9fef0685f"
+        }
+      }
+    },
+    {
+      "number": 555,
+      "title": "[P8-05] Replace full-state multi-pass CUDA CDF sampling",
+      "state": "CLOSED",
+      "url": "https://github.com/aleph-sim/aleph/issues/555",
+      "pull_request": {
+        "number": 582,
+        "state": "MERGED",
+        "url": "https://github.com/aleph-sim/aleph/pull/582",
+        "headRefOid": "6b219610459626bfa6c724ebcced12fafd03843e",
+        "mergeCommit": {
+          "oid": "928bdb7eec894d2f4c51fee03bf45f60a6ce2267"
+        }
+      }
+    },
+    {
+      "number": 556,
+      "title": "[P8-06] Avoid building CPU alias tables for one or few samples",
+      "state": "CLOSED",
+      "url": "https://github.com/aleph-sim/aleph/issues/556",
+      "pull_request": {
+        "number": 571,
+        "state": "MERGED",
+        "url": "https://github.com/aleph-sim/aleph/pull/571",
+        "headRefOid": "792cb4d661f18473aafea2ab4010aef8a50bd3ff",
+        "mergeCommit": {
+          "oid": "e51ba789abc21295c79e1326548099cbb9d3a7d6"
+        }
+      }
+    },
+    {
+      "number": 557,
+      "title": "[P8-07] Bound noisy trajectory memory and reuse per-worker state",
+      "state": "CLOSED",
+      "url": "https://github.com/aleph-sim/aleph/issues/557",
+      "pull_request": {
+        "number": 572,
+        "state": "MERGED",
+        "url": "https://github.com/aleph-sim/aleph/pull/572",
+        "headRefOid": "b3a0482ac62b309c5f21bf8af8381cf0a9eef964",
+        "mergeCommit": {
+          "oid": "c283272747877863fa4a2723421c8d710a8550b3"
+        }
+      }
+    },
+    {
+      "number": 558,
+      "title": "[P8-08] Probe GPU availability without compiling discarded backends",
+      "state": "CLOSED",
+      "url": "https://github.com/aleph-sim/aleph/issues/558",
+      "pull_request": {
+        "number": 567,
+        "state": "MERGED",
+        "url": "https://github.com/aleph-sim/aleph/pull/567",
+        "headRefOid": "e839c0a0188fd5b1d4b021083d4ff654c29db78d",
+        "mergeCommit": {
+          "oid": "dce007348272c0e8f00be8d43f3f8b3a218a0b4c"
+        }
+      }
+    },
+    {
+      "number": 559,
+      "title": "[P8-09] Coalesce GPU QEC scratch while retaining serial-shot arithmetic",
+      "state": "CLOSED",
+      "url": "https://github.com/aleph-sim/aleph/issues/559",
+      "pull_request": {
+        "number": 592,
+        "state": "MERGED",
+        "url": "https://github.com/aleph-sim/aleph/pull/592",
+        "headRefOid": "8981aa4143b110a06af06e7f75a3a1f7c693a011",
+        "mergeCommit": {
+          "oid": "e9f61b6923cef985d9ff7178a2f2a6f59e978e27"
+        }
+      }
+    },
+    {
+      "number": 560,
+      "title": "[P8-10] Prototype cooperative GPU BP with explicit accuracy and latency trade-offs",
+      "state": "CLOSED",
+      "url": "https://github.com/aleph-sim/aleph/issues/560",
+      "pull_request": {
+        "number": 593,
+        "state": "MERGED",
+        "url": "https://github.com/aleph-sim/aleph/pull/593",
+        "headRefOid": "eeff5ea5a4ba416fa13e1e749d3baabc3c222826",
+        "mergeCommit": {
+          "oid": "ab3aed8027132f42f9df4e9ddc614403da5a3147"
+        }
+      }
+    },
+    {
+      "number": 561,
+      "title": "[P8-11] Prove a competitive Metal MPS factorization before another pipeline rewrite",
+      "state": "OPEN",
+      "url": "https://github.com/aleph-sim/aleph/issues/561"
+    },
+    {
+      "number": 562,
+      "title": "[P8-12] Validate communication-aware plans on real multi-GPU workloads",
+      "state": "OPEN",
+      "url": "https://github.com/aleph-sim/aleph/issues/562"
+    },
+    {
+      "number": 563,
+      "title": "[P8-13] Make public-workflow baselines and experiment gates reproducible",
+      "state": "CLOSED",
+      "url": "https://github.com/aleph-sim/aleph/issues/563",
+      "pull_request": {
+        "number": 584,
+        "state": "MERGED",
+        "url": "https://github.com/aleph-sim/aleph/pull/584",
+        "headRefOid": "b59e33760759d4cd5a8bf12b94712ddbe19010b2",
+        "mergeCommit": {
+          "oid": "40e625cec3bf43ad193fdddf9ac43232ae7deb3a"
+        }
+      }
+    },
+    {
+      "number": 564,
+      "title": "[P8-14] Evaluate combined tile residency and overlapped paging",
+      "state": "CLOSED",
+      "url": "https://github.com/aleph-sim/aleph/issues/564",
+      "pull_request": {
+        "number": 594,
+        "state": "MERGED",
+        "url": "https://github.com/aleph-sim/aleph/pull/594",
+        "headRefOid": "58de2a1f34bcdeab4ca89ae5b7cca4d34c7ac3fa",
+        "mergeCommit": {
+          "oid": "e079665cf9610b305984347d197805c172f4b2e3"
+        }
+      }
+    },
+    {
+      "number": 565,
+      "title": "[P8-15] Bound DEM experiment batches and validate decoder result contracts",
+      "state": "CLOSED",
+      "url": "https://github.com/aleph-sim/aleph/issues/565",
+      "pull_request": {
+        "number": 575,
+        "state": "MERGED",
+        "url": "https://github.com/aleph-sim/aleph/pull/575",
+        "headRefOid": "b9f6696dfdc6a83822a89016e8aafbb800d408fd",
+        "mergeCommit": {
+          "oid": "809acd3e4a05ec39b8013790666773ee4f6f39f6"
+        }
+      }
+    },
+    {
+      "number": 566,
+      "title": "[P8-16] Use valid logical-error intervals for zero and rare observed failures",
+      "state": "CLOSED",
+      "url": "https://github.com/aleph-sim/aleph/issues/566",
+      "pull_request": {
+        "number": 570,
+        "state": "MERGED",
+        "url": "https://github.com/aleph-sim/aleph/pull/570",
+        "headRefOid": "d8a74140604c93c1e2699d6241a57c4b1893c0c8",
+        "mergeCommit": {
+          "oid": "8c9223f2d95998e9cd26c484cb35690816d47080"
+        }
+      }
+    }
+  ]
+}
