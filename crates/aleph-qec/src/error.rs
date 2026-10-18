@@ -4,6 +4,10 @@
 /// Errors produced by `aleph-qec`.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    /// Invalid trace identity, timing, dependency or replay policy.
+    #[error("deadline trace replay: {0}")]
+    TraceReplay(String),
+
     /// Invalid model identity, generating process or robustness campaign.
     #[error("robustness experiment: {0}")]
     Robustness(String),
