@@ -28,11 +28,13 @@ pub enum BpScratchLayout {
 }
 
 /// GPU min-sum belief-propagation decoder for a fixed Tanner graph. Compiles the kernel once, holds
-/// the device-resident graph, and decodes batches of syndromes one GPU thread per shot —
+/// the device-resident graph, and by default decodes with one GPU thread per shot —
 /// numerically identical to the CPU [`BpDecoder`](aleph_qec::BpDecoder).
+/// [`Self::warp_cooperative`] is an explicit alternative parallel node schedule.
 pub struct CudaBp {
     ctx: CudaContext,
     layout: BpScratchLayout,
+    cooperative: bool,
     f_decode: CudaFunction,
     _module: Arc<CudaModule>,
 
@@ -79,12 +81,41 @@ impl CudaBp {
         tanner: &TannerGraph,
         layout: BpScratchLayout,
     ) -> Result<Self, Error> {
+        Self::build(tanner, layout, false)
+    }
+
+    /// Experimental one-warp-per-shot BP. Nodes execute in parallel; each node keeps
+    /// its serial FP64 reduction order. This is opt-in and uses unpadded shot-major scratch.
+    /// CSR bounds and unique edge ownership are validated before device access: malformed
+    /// graphs return a memory-capacity error instead of allowing concurrent conflicting writes.
+    ///
+    /// ```no_run
+    /// # fn main() -> Result<(), aleph_cuda::Error> {
+    /// let dem = aleph_qec::BBCode::gross().code_capacity_dem(0.001);
+    /// let cpu = aleph_qec::BpDecoder::new(&dem);
+    /// let gpu = aleph_cuda::CudaBp::warp_cooperative(&cpu.tanner())?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn warp_cooperative(tanner: &TannerGraph) -> Result<Self, Error> {
+        validate_cooperative_graph(tanner)?;
+        Self::build(tanner, BpScratchLayout::ShotMajor, true)
+    }
+
+    fn build(
+        tanner: &TannerGraph,
+        layout: BpScratchLayout,
+        cooperative: bool,
+    ) -> Result<Self, Error> {
         let ctx = CudaContext::new(0)?;
-        let source = match layout {
+        let mut source = match layout {
             BpScratchLayout::ShotMajor => BP_SRC.to_owned(),
             BpScratchLayout::EdgeMajor => format!("#define BP_EDGE_MAJOR\n{BP_SRC}"),
             BpScratchLayout::WarpTiled => format!("#define BP_WARP_TILED\n{BP_SRC}"),
         };
+        if cooperative {
+            source.insert_str(0, "#define BP_COOPERATIVE\n");
+        }
         let ptx = compile_ptx(source).map_err(|e| Error::Compile(e.to_string()))?;
         let module = ctx.raw().load_module(ptx)?;
         let f_decode = module.load_function("bp_decode")?;
@@ -102,6 +133,7 @@ impl CudaBp {
         Ok(Self {
             ctx,
             layout,
+            cooperative,
             f_decode,
             _module: module,
             n_vars: tanner.n_vars as u32,
@@ -204,7 +236,7 @@ impl CudaBp {
         sc.syn_words.as_mut().unwrap().write(&self.ctx, packed)?;
 
         let cur_u32 = cur as u32;
-        let cfg = launch_config(cur as u64);
+        let cfg = launch_config(cur as u64 * if self.cooperative { 32 } else { 1 });
         let stream = self.ctx.stream();
 
         let Scratch {
@@ -218,9 +250,12 @@ impl CudaBp {
         } = &mut *sc;
 
         // SAFETY: arg order/types match `bp_decode`'s C signature exactly (see bp.cu). The grid
-        // covers `cur` shots with an in-kernel `shot >= n_shots` guard; each thread touches only its
-        // own shot-major slice, edge-major column or warp-tile lane and `out_mask[shot]`.
-        // Writes never alias. Read-only graph buffers and padded scratch bounds are ensured above.
+        // covers `cur` shots with an in-kernel `shot >= n_shots` guard. Serial threads touch only
+        // their own shot-major slice, edge-major column or warp-tile lane and output mask.
+        // Serial layouts have disjoint per-shot writes. In cooperative mode a full warp owns
+        // each shot; independent node updates write disjoint edges and __syncwarp fences
+        // each phase. Grid threads = cur*32 rounded to full blocks; the shot guard is warp-uniform.
+        // Graph buffers are read-only and scratch covers every shot (including padding).
         unsafe {
             stream
                 .launch_builder(&self.f_decode)
@@ -284,6 +319,58 @@ impl CudaBp {
     }
 }
 
+// A check owns each e_cv edge; a variable owns each m_vc edge. This is what makes
+// parallel node updates race-free. Public TannerGraph fields must not bypass that proof.
+fn validate_cooperative_graph(t: &TannerGraph) -> Result<(), Error> {
+    let invalid = || Error::Memory("invalid cooperative BP graph bounds/edge ownership".into());
+    if t.n_vars > u32::MAX as usize
+        || t.n_edges > u32::MAX as usize
+        || t.num_detectors > u32::MAX as usize
+        || t.num_observables > 64
+        || t.lambda.len() != t.n_vars
+        || t.obs.len() != t.n_vars
+        || t.var_off.len() != t.n_vars + 1
+        || t.check_off.len() != t.num_detectors + 1
+        || t.edge_var.len() != t.n_edges
+        || t.edge_check.len() != t.n_edges
+        || t.check_edges.len() != t.n_edges
+    {
+        return Err(invalid());
+    }
+    let bytes =
+        t.n_edges * 16 + t.n_vars + t.num_detectors + 8 + t.num_detectors.div_ceil(32).max(1) * 4;
+    if bytes > SCRATCH_BUDGET {
+        return Err(invalid());
+    }
+    for offsets in [t.var_off, t.check_off] {
+        if offsets.first() != Some(&0)
+            || offsets.last().copied() != Some(t.n_edges as u32)
+            || offsets.windows(2).any(|w| w[0] > w[1])
+        {
+            return Err(invalid());
+        }
+    }
+    for (v, range) in t.var_off.windows(2).enumerate() {
+        if t.edge_var[range[0] as usize..range[1] as usize]
+            .iter()
+            .any(|&owner| owner as usize != v)
+        {
+            return Err(invalid());
+        }
+    }
+    let mut seen = vec![false; t.n_edges];
+    for (c, range) in t.check_off.windows(2).enumerate() {
+        for &edge in &t.check_edges[range[0] as usize..range[1] as usize] {
+            let e = edge as usize;
+            if e >= t.n_edges || seen[e] || t.edge_check[e] as usize != c {
+                return Err(invalid());
+            }
+            seen[e] = true;
+        }
+    }
+    Ok(())
+}
+
 fn tile_capacity(per_shot: usize, shots: usize, layout: BpScratchLayout) -> Result<usize, Error> {
     if per_shot == 0 || per_shot > SCRATCH_BUDGET {
         return Err(Error::Memory("one BP shot exceeds scratch budget".into()));
@@ -342,6 +429,51 @@ mod tests {
         assert_eq!(max % 32, 0);
         assert!(max * 123 <= SCRATCH_BUDGET);
         assert!(tile_capacity(SCRATCH_BUDGET, 1, BpScratchLayout::WarpTiled).is_err());
+        // Cooperative global thread indices can exceed u32 even though shot indices fit.
+        let threads = u64::from(u32::MAX) * 32;
+        let config = launch_config(threads);
+        let launched = u64::from(config.grid_dim.0) * u64::from(config.block_dim.0);
+        assert!(launched >= threads && launched - threads < u64::from(BLOCK));
+        assert!(config.grid_dim.0 <= i32::MAX as u32);
+        assert_eq!(config.block_dim.0 % 32, 0);
+    }
+
+    #[test]
+    fn cooperative_graph_ownership_is_checked_before_device_access() {
+        let dem = DetectorErrorModel {
+            detectors: 2,
+            observables: 1,
+            errors: vec![
+                DemError::new(0.1, vec![0], vec![0]),
+                DemError::new(0.2, vec![1], vec![]),
+            ],
+        };
+        let cpu = BpDecoder::new(&dem);
+        assert!(validate_cooperative_graph(&cpu.tanner()).is_ok());
+        let mut bad = cpu.tanner();
+        bad.check_edges = &[0, 0];
+        assert!(matches!(
+            CudaBp::warp_cooperative(&bad),
+            Err(Error::Memory(_))
+        ));
+        bad = cpu.tanner();
+        bad.edge_var = &[1, 0];
+        assert!(validate_cooperative_graph(&bad).is_err());
+        bad = cpu.tanner();
+        bad.check_edges = &[0, 2];
+        assert!(validate_cooperative_graph(&bad).is_err());
+        bad = cpu.tanner();
+        bad.var_off = &[0, 2, 1];
+        assert!(validate_cooperative_graph(&bad).is_err());
+        bad = cpu.tanner();
+        bad.check_off = &[0, 3, 2];
+        assert!(validate_cooperative_graph(&bad).is_err());
+        bad = cpu.tanner();
+        bad.lambda = &[];
+        assert!(validate_cooperative_graph(&bad).is_err());
+        bad = cpu.tanner();
+        bad.num_observables = 65;
+        assert!(validate_cooperative_graph(&bad).is_err());
     }
 
     #[test]
@@ -372,17 +504,24 @@ mod tests {
                 observables: 0,
                 errors: vec![],
             },
+            aleph_qec::BBCode::gross().code_capacity_dem(0.03),
         ];
         for model in models {
             for iterations in [1, 2, 64] {
                 let cpu = BpDecoder::with_params(&model, iterations, 0.875);
                 let graph = cpu.tanner();
-                for layout in [
-                    BpScratchLayout::ShotMajor,
-                    BpScratchLayout::EdgeMajor,
-                    BpScratchLayout::WarpTiled,
+                for (layout, cooperative) in [
+                    (BpScratchLayout::ShotMajor, false),
+                    (BpScratchLayout::EdgeMajor, false),
+                    (BpScratchLayout::WarpTiled, false),
+                    (BpScratchLayout::ShotMajor, true),
                 ] {
-                    let gpu = match CudaBp::with_scratch_layout(&graph, layout) {
+                    let built = if cooperative {
+                        CudaBp::warp_cooperative(&graph)
+                    } else {
+                        CudaBp::with_scratch_layout(&graph, layout)
+                    };
+                    let gpu = match built {
                         Ok(gpu) => gpu,
                         Err(e) => {
                             assert!(
@@ -401,7 +540,7 @@ mod tests {
                             .map(|shot| {
                                 Syndrome::from_bits(
                                     &(0..model.detectors)
-                                        .map(|c| (shot >> c) & 1 != 0)
+                                        .map(|c| (shot >> (c % usize::BITS as usize)) & 1 != 0)
                                         .collect::<Vec<_>>(),
                                 )
                             })
@@ -457,9 +596,12 @@ mod tests {
                     }
                     assert!(gpu.decode_packed(&[], 1).is_err());
                     assert!(gpu.decode_packed(&[0], 0).unwrap().is_empty());
+                    let prefix = vec![0; gpu.words_per_shot as usize];
+                    let mut extended = prefix.clone();
+                    extended.push(42);
                     assert_eq!(
-                        gpu.decode_packed(&[0, 42], 1).unwrap(),
-                        gpu.decode_packed(&[0], 1).unwrap()
+                        gpu.decode_packed(&extended, 1).unwrap(),
+                        gpu.decode_packed(&prefix, 1).unwrap()
                     );
                 }
             }

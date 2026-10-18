@@ -1,0 +1,20 @@
+{
+  "base": "e9f61b6923cef985d9ff7178a2f2a6f59e978e27",
+  "measured_source_sha256": {
+    "Cargo.lock": "ac065b6d0ece3017345f40cf6f2dee0aef7cfe4ba6e887694e52fe7c056a67bd",
+    "crates/aleph-cuda/Cargo.toml": "500b8a17d1fc06c7a80f4efa5a8afc52d7dbcf717175400abc2c8965c4fc6e2f",
+    "crates/aleph-cuda/src/qec/bp.cu": "da77ca1aadacf20a60d9131b43ca6d2ec25a0ad94d67ec07943cbcfb5f19549b",
+    "crates/aleph-cuda/src/qec/bp.rs": "3deb4130341af5a3180d66a40a340b2f2f1baf368038929109ff042c33df6fb6",
+    "crates/aleph-cuda/tests/qec_bp_oracle.rs": "6456a69a956ccd6cc55f2f106306d60525987c4dbc2d5c0316014c532a227e16",
+    "crates/aleph-cuda/examples/bp_cooperative_probe.rs": "65cf6deda746d389441a7d0f87d25cd27ecb1ec8cc460de100bdcff282517a73"
+  },
+  "final_source_sha256": {
+    "Cargo.lock": "ac065b6d0ece3017345f40cf6f2dee0aef7cfe4ba6e887694e52fe7c056a67bd",
+    "crates/aleph-cuda/Cargo.toml": "500b8a17d1fc06c7a80f4efa5a8afc52d7dbcf717175400abc2c8965c4fc6e2f",
+    "crates/aleph-cuda/src/qec/bp.rs": "31c714d3dcb660428bbbfb1e2093e95568c7cc98ad88d84ae946f8e7183ada2e",
+    "crates/aleph-cuda/src/qec/bp.cu": "2431c819f302fbffd087390275623b74c305736bf927310ee09691806a4114e1",
+    "crates/aleph-cuda/tests/qec_bp_oracle.rs": "bf63b55454dc9f8ef6eaf19a8246cec6e64eb1f761f1563b062edbc529fd459c",
+    "crates/aleph-cuda/examples/bp_cooperative_probe.rs": "48d73ad346a95cee2570049eb46ddd0fe410d9f6f5d78a4e73042af95dab827e"
+  },
+  "kernel_executable_body_equal_after_comment_whitespace_removal": true
+}

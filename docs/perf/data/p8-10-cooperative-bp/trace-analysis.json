@@ -1,0 +1,201 @@
+{
+  "status": "PASS",
+  "invocations": 144,
+  "timed_calls": 9216,
+  "unique_inputs": 384,
+  "cells": [
+    {
+      "model": "surface7",
+      "rate": 0.001,
+      "stats": {
+        "shot": {
+          "median_ns": 457704.0,
+          "p95_ns": 801612,
+          "p99_ns": 1186739,
+          "max_ns": 1194929
+        },
+        "warp": {
+          "median_ns": 703715.5,
+          "p95_ns": 1284536,
+          "p99_ns": 1833566,
+          "max_ns": 1859314
+        },
+        "coop": {
+          "median_ns": 40256.5,
+          "p95_ns": 56030,
+          "p99_ns": 72645,
+          "max_ns": 73074
+        }
+      },
+      "block_median_speedup": [
+        14.026873502437413,
+        11.629397112647418,
+        9.646447926111803,
+        11.626327692229507
+      ],
+      "invalid": 0,
+      "logical_failures": 0
+    },
+    {
+      "model": "surface7",
+      "rate": 0.03,
+      "stats": {
+        "shot": {
+          "median_ns": 20470568.0,
+          "p95_ns": 21905003,
+          "p99_ns": 28302848,
+          "max_ns": 32603843
+        },
+        "warp": {
+          "median_ns": 32562579.5,
+          "p95_ns": 36191603,
+          "p99_ns": 37363238,
+          "max_ns": 37363657
+        },
+        "coop": {
+          "median_ns": 957031.0,
+          "p95_ns": 1268645,
+          "p99_ns": 1269182,
+          "max_ns": 1270443
+        }
+      },
+      "block_median_speedup": [
+        21.374211037194353,
+        21.423482539447026,
+        21.49533529859103,
+        21.41369336331842
+      ],
+      "invalid": 50,
+      "logical_failures": 16
+    },
+    {
+      "model": "surface11",
+      "rate": 0.001,
+      "stats": {
+        "shot": {
+          "median_ns": 1948603.5,
+          "p95_ns": 3570067,
+          "p99_ns": 92249452,
+          "max_ns": 92250996
+        },
+        "warp": {
+          "median_ns": 2792587.0,
+          "p95_ns": 5242222,
+          "p99_ns": 133955640,
+          "max_ns": 133960361
+        },
+        "coop": {
+          "median_ns": 129670.0,
+          "p95_ns": 203975,
+          "p99_ns": 5077444,
+          "max_ns": 5078898
+        }
+      },
+      "block_median_speedup": [
+        14.982566154012488,
+        15.019974646378632,
+        15.03565890874868,
+        15.02070392576951
+      ],
+      "invalid": 1,
+      "logical_failures": 0
+    },
+    {
+      "model": "surface11",
+      "rate": 0.03,
+      "stats": {
+        "shot": {
+          "median_ns": 88146122.0,
+          "p95_ns": 92791033,
+          "p99_ns": 98434240,
+          "max_ns": 112022895
+        },
+        "warp": {
+          "median_ns": 126910691.0,
+          "p95_ns": 135234266,
+          "p99_ns": 146350742,
+          "max_ns": 147073937
+        },
+        "coop": {
+          "median_ns": 5077357.0,
+          "p95_ns": 5078567,
+          "p99_ns": 5083898,
+          "max_ns": 5086618
+        }
+      },
+      "block_median_speedup": [
+        17.380162238822926,
+        17.404638506284787,
+        17.40079683950594,
+        17.42202335064838
+      ],
+      "invalid": 64,
+      "logical_failures": 33
+    },
+    {
+      "model": "gross",
+      "rate": 0.001,
+      "stats": {
+        "shot": {
+          "median_ns": 221307.5,
+          "p95_ns": 261594,
+          "p99_ns": 262033,
+          "max_ns": 263950
+        },
+        "warp": {
+          "median_ns": 302979.0,
+          "p95_ns": 350962,
+          "p99_ns": 351556,
+          "max_ns": 353923
+        },
+        "coop": {
+          "median_ns": 22942.5,
+          "p95_ns": 24328,
+          "p99_ns": 31109,
+          "max_ns": 40052
+        }
+      },
+      "block_median_speedup": [
+        8.524248917654262,
+        11.292029079579384,
+        8.523743932834842,
+        10.963717790614655
+      ],
+      "invalid": 0,
+      "logical_failures": 0
+    },
+    {
+      "model": "gross",
+      "rate": 0.03,
+      "stats": {
+        "shot": {
+          "median_ns": 328704.0,
+          "p95_ns": 1865917,
+          "p99_ns": 8100306,
+          "max_ns": 10042253
+        },
+        "warp": {
+          "median_ns": 457677.0,
+          "p95_ns": 2636584,
+          "p99_ns": 11311948,
+          "max_ns": 14911004
+        },
+        "coop": {
+          "median_ns": 31042.0,
+          "p95_ns": 104563,
+          "p99_ns": 399656,
+          "max_ns": 507383
+        }
+      },
+      "block_median_speedup": [
+        10.27713368914975,
+        12.603964062600632,
+        10.492889010581925,
+        11.601825910540045
+      ],
+      "invalid": 1,
+      "logical_failures": 1
+    }
+  ],
+  "scope": "Supplementary fixed 64-input distribution per cell; repeated inputs are not independent trials; does not replace primary go gate."
+}

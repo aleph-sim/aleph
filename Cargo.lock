@@ -91,6 +91,8 @@ dependencies = [
  "criterion",
  "cudarc",
  "rand 0.8.6",
+ "serde_json",
+ "sha2",
  "smallvec",
  "thiserror",
 ]

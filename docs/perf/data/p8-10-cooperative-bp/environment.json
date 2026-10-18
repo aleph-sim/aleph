@@ -1,0 +1,13 @@
+{
+  "host": "authorized temporary workspace on openwebgui.splynx.com",
+  "gpu": "NVIDIA RTX 4000 SFF Ada Generation",
+  "compute_capability": "8.9",
+  "memory_mib": 20475,
+  "driver": "580.178.04",
+  "cuda_bindings": "13.0",
+  "rustc": "1.96.0 (ac68faa20 2026-05-25)",
+  "target": "x86_64-unknown-linux-gnu",
+  "nsight_compute": "2025.3.1",
+  "services_or_clocks_modified": false,
+  "scope": "Shared host; continuous primary and trace telemetry is in archives."
+}
