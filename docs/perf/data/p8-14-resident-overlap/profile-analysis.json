@@ -1,0 +1,399 @@
+{
+  "status": "PASS",
+  "controls": [
+    {
+      "model": "locality",
+      "median_ns": 6722405266.0,
+      "samples_ns": [
+        6707061063,
+        6687171512,
+        6722559912,
+        6757928319,
+        6745444058,
+        6740774646,
+        6722250620,
+        6708747234
+      ]
+    },
+    {
+      "model": "alternating",
+      "median_ns": 1392386772.5,
+      "samples_ns": [
+        1385953709,
+        1398271555,
+        1392011265,
+        1391046909,
+        1392762280,
+        1390402890,
+        1394505349,
+        1411421523
+      ]
+    }
+  ],
+  "profiles": [
+    {
+      "label": "locality-n24-m20-resident",
+      "mode": "resident",
+      "model": "locality",
+      "n": 24,
+      "m": 20,
+      "api_counts": {
+        "cuEventSynchronize": 4,
+        "cuMemcpyHtoDAsync_v2": 129,
+        "cuMemcpyDtoHAsync_v2": 128,
+        "cuStreamSynchronize": 1
+      },
+      "observed_passes": 8,
+      "tile_copy_count": 256,
+      "h2d_bytes": 2147483648,
+      "d2h_bytes": 2147483648,
+      "kernel_count": 2528,
+      "h2d_streams": [
+        7
+      ],
+      "d2h_streams": [
+        7
+      ],
+      "kernel_streams": [
+        7
+      ],
+      "setup_from_pinned_alloc_to_first_copy_ns": 60599187,
+      "pinned_alloc_api_ns": 41573028,
+      "initial_memset_bytes": 33554448,
+      "gpu_pipeline_span_ns": 438578099,
+      "fill_to_first_kernel_ns": 1266957,
+      "drain_after_last_kernel_ns": 2551323,
+      "summed_h2d_ns": 162503887,
+      "summed_d2h_ns": 164609317,
+      "summed_kernel_ns": 107879289,
+      "busy_union_ns": 434992493,
+      "h2d_d2h_overlap_ns": 0,
+      "copy_compute_overlap_ns": 0
+    },
+    {
+      "label": "locality-n24-m20-overlap",
+      "mode": "overlap",
+      "model": "locality",
+      "n": 24,
+      "m": 20,
+      "api_counts": {
+        "cuEventSynchronize": 4,
+        "cuMemcpyHtoDAsync_v2": 2564,
+        "cuCtxSynchronize": 1,
+        "cuMemcpyDtoHAsync_v2": 2560,
+        "cuStreamSynchronize": 4
+      },
+      "observed_passes": 160,
+      "tile_copy_count": 5120,
+      "h2d_bytes": 42949672960,
+      "d2h_bytes": 42949672960,
+      "kernel_count": 2528,
+      "h2d_streams": [
+        13
+      ],
+      "d2h_streams": [
+        14
+      ],
+      "kernel_streams": [
+        15
+      ],
+      "setup_from_pinned_alloc_to_first_copy_ns": 54945137,
+      "pinned_alloc_api_ns": 35679247,
+      "initial_memset_bytes": 134217744,
+      "gpu_pipeline_span_ns": 5320160030,
+      "fill_to_first_kernel_ns": 1316879,
+      "drain_after_last_kernel_ns": 2573178,
+      "summed_h2d_ns": 5097102717,
+      "summed_d2h_ns": 4307885608,
+      "summed_kernel_ns": 101614548,
+      "busy_union_ns": 5314066694,
+      "h2d_d2h_overlap_ns": 4097305058,
+      "copy_compute_overlap_ns": 95231121
+    },
+    {
+      "label": "locality-n24-m20-combined",
+      "mode": "combined",
+      "model": "locality",
+      "n": 24,
+      "m": 20,
+      "api_counts": {
+        "cuEventSynchronize": 4,
+        "cuMemcpyHtoDAsync_v2": 132,
+        "cuCtxSynchronize": 1,
+        "cuMemcpyDtoHAsync_v2": 128,
+        "cuStreamSynchronize": 4
+      },
+      "observed_passes": 8,
+      "tile_copy_count": 256,
+      "h2d_bytes": 2147483648,
+      "d2h_bytes": 2147483648,
+      "kernel_count": 2528,
+      "h2d_streams": [
+        13
+      ],
+      "d2h_streams": [
+        14
+      ],
+      "kernel_streams": [
+        15
+      ],
+      "setup_from_pinned_alloc_to_first_copy_ns": 55249355,
+      "pinned_alloc_api_ns": 35837549,
+      "initial_memset_bytes": 134217744,
+      "gpu_pipeline_span_ns": 277086705,
+      "fill_to_first_kernel_ns": 1261646,
+      "drain_after_last_kernel_ns": 2523227,
+      "summed_h2d_ns": 248799422,
+      "summed_d2h_ns": 212294605,
+      "summed_kernel_ns": 114395554,
+      "busy_union_ns": 276756624,
+      "h2d_d2h_overlap_ns": 189806810,
+      "copy_compute_overlap_ns": 108926147
+    },
+    {
+      "label": "short-n24-m20-resident",
+      "mode": "resident",
+      "model": "short",
+      "n": 24,
+      "m": 20,
+      "api_counts": {
+        "cuEventSynchronize": 4,
+        "cuMemcpyHtoDAsync_v2": 129,
+        "cuMemcpyDtoHAsync_v2": 128,
+        "cuStreamSynchronize": 1
+      },
+      "observed_passes": 8,
+      "tile_copy_count": 256,
+      "h2d_bytes": 2147483648,
+      "d2h_bytes": 2147483648,
+      "kernel_count": 144,
+      "h2d_streams": [
+        7
+      ],
+      "d2h_streams": [
+        7
+      ],
+      "kernel_streams": [
+        7
+      ],
+      "setup_from_pinned_alloc_to_first_copy_ns": 58507775,
+      "pinned_alloc_api_ns": 39502962,
+      "initial_memset_bytes": 67108880,
+      "gpu_pipeline_span_ns": 341988129,
+      "fill_to_first_kernel_ns": 1307374,
+      "drain_after_last_kernel_ns": 5131961,
+      "summed_h2d_ns": 163115766,
+      "summed_d2h_ns": 165220533,
+      "summed_kernel_ns": 11811648,
+      "busy_union_ns": 340147947,
+      "h2d_d2h_overlap_ns": 0,
+      "copy_compute_overlap_ns": 0
+    },
+    {
+      "label": "short-n24-m20-overlap",
+      "mode": "overlap",
+      "model": "short",
+      "n": 24,
+      "m": 20,
+      "api_counts": {
+        "cuEventSynchronize": 4,
+        "cuMemcpyHtoDAsync_v2": 196,
+        "cuCtxSynchronize": 1,
+        "cuMemcpyDtoHAsync_v2": 192,
+        "cuStreamSynchronize": 4
+      },
+      "observed_passes": 12,
+      "tile_copy_count": 384,
+      "h2d_bytes": 3221225472,
+      "d2h_bytes": 3221225472,
+      "kernel_count": 144,
+      "h2d_streams": [
+        7,
+        13
+      ],
+      "d2h_streams": [
+        7,
+        14
+      ],
+      "kernel_streams": [
+        7,
+        15
+      ],
+      "setup_from_pinned_alloc_to_first_copy_ns": 57796144,
+      "pinned_alloc_api_ns": 38061256,
+      "initial_memset_bytes": 268435472,
+      "gpu_pipeline_span_ns": 436024128,
+      "fill_to_first_kernel_ns": 1331215,
+      "drain_after_last_kernel_ns": 5123928,
+      "summed_h2d_ns": 338215732,
+      "summed_d2h_ns": 299196878,
+      "summed_kernel_ns": 11877029,
+      "busy_union_ns": 435055066,
+      "h2d_d2h_overlap_ns": 205907888,
+      "copy_compute_overlap_ns": 8326685
+    },
+    {
+      "label": "short-n24-m20-combined",
+      "mode": "combined",
+      "model": "short",
+      "n": 24,
+      "m": 20,
+      "api_counts": {
+        "cuEventSynchronize": 4,
+        "cuMemcpyHtoDAsync_v2": 132,
+        "cuCtxSynchronize": 1,
+        "cuMemcpyDtoHAsync_v2": 128,
+        "cuStreamSynchronize": 4
+      },
+      "observed_passes": 8,
+      "tile_copy_count": 256,
+      "h2d_bytes": 2147483648,
+      "d2h_bytes": 2147483648,
+      "kernel_count": 144,
+      "h2d_streams": [
+        7,
+        13
+      ],
+      "d2h_streams": [
+        7,
+        14
+      ],
+      "kernel_streams": [
+        7,
+        15
+      ],
+      "setup_from_pinned_alloc_to_first_copy_ns": 56967799,
+      "pinned_alloc_api_ns": 36881008,
+      "initial_memset_bytes": 268435472,
+      "gpu_pipeline_span_ns": 302508049,
+      "fill_to_first_kernel_ns": 1306638,
+      "drain_after_last_kernel_ns": 5104824,
+      "summed_h2d_ns": 209930137,
+      "summed_d2h_ns": 190903014,
+      "summed_kernel_ns": 12946733,
+      "busy_union_ns": 301697413,
+      "h2d_d2h_overlap_ns": 102765186,
+      "copy_compute_overlap_ns": 9317285
+    },
+    {
+      "label": "locality-n24-m22-resident",
+      "mode": "resident",
+      "model": "locality",
+      "n": 24,
+      "m": 22,
+      "api_counts": {
+        "cuEventSynchronize": 4,
+        "cuMemcpyHtoDAsync_v2": 33,
+        "cuMemcpyDtoHAsync_v2": 32,
+        "cuStreamSynchronize": 1
+      },
+      "observed_passes": 8,
+      "tile_copy_count": 64,
+      "h2d_bytes": 2147483648,
+      "d2h_bytes": 2147483648,
+      "kernel_count": 696,
+      "h2d_streams": [
+        7
+      ],
+      "d2h_streams": [
+        7
+      ],
+      "kernel_streams": [
+        7
+      ],
+      "setup_from_pinned_alloc_to_first_copy_ns": 58730448,
+      "pinned_alloc_api_ns": 39314342,
+      "initial_memset_bytes": 134217744,
+      "gpu_pipeline_span_ns": 598581441,
+      "fill_to_first_kernel_ns": 5118584,
+      "drain_after_last_kernel_ns": 10334353,
+      "summed_h2d_ns": 162768407,
+      "summed_d2h_ns": 165425207,
+      "summed_kernel_ns": 269477454,
+      "busy_union_ns": 597671068,
+      "h2d_d2h_overlap_ns": 0,
+      "copy_compute_overlap_ns": 0
+    },
+    {
+      "label": "locality-n24-m22-overlap",
+      "mode": "overlap",
+      "model": "locality",
+      "n": 24,
+      "m": 22,
+      "api_counts": {
+        "cuEventSynchronize": 4,
+        "cuMemcpyHtoDAsync_v2": 708,
+        "cuCtxSynchronize": 1,
+        "cuMemcpyDtoHAsync_v2": 704,
+        "cuStreamSynchronize": 4
+      },
+      "observed_passes": 176,
+      "tile_copy_count": 1408,
+      "h2d_bytes": 47244640256,
+      "d2h_bytes": 47244640256,
+      "kernel_count": 696,
+      "h2d_streams": [
+        7
+      ],
+      "d2h_streams": [
+        7
+      ],
+      "kernel_streams": [
+        7
+      ],
+      "setup_from_pinned_alloc_to_first_copy_ns": 56776272,
+      "pinned_alloc_api_ns": 36020297,
+      "initial_memset_bytes": 536870928,
+      "gpu_pipeline_span_ns": 7414496371,
+      "fill_to_first_kernel_ns": 5189593,
+      "drain_after_last_kernel_ns": 10307018,
+      "summed_h2d_ns": 3565590803,
+      "summed_d2h_ns": 3628653194,
+      "summed_kernel_ns": 206498925,
+      "busy_union_ns": 7400742922,
+      "h2d_d2h_overlap_ns": 0,
+      "copy_compute_overlap_ns": 0
+    },
+    {
+      "label": "locality-n24-m22-combined",
+      "mode": "combined",
+      "model": "locality",
+      "n": 24,
+      "m": 22,
+      "api_counts": {
+        "cuEventSynchronize": 4,
+        "cuMemcpyHtoDAsync_v2": 36,
+        "cuCtxSynchronize": 1,
+        "cuMemcpyDtoHAsync_v2": 32,
+        "cuStreamSynchronize": 4
+      },
+      "observed_passes": 8,
+      "tile_copy_count": 64,
+      "h2d_bytes": 2147483648,
+      "d2h_bytes": 2147483648,
+      "kernel_count": 696,
+      "h2d_streams": [
+        7
+      ],
+      "d2h_streams": [
+        7
+      ],
+      "kernel_streams": [
+        7
+      ],
+      "setup_from_pinned_alloc_to_first_copy_ns": 57442291,
+      "pinned_alloc_api_ns": 36513075,
+      "initial_memset_bytes": 536870928,
+      "gpu_pipeline_span_ns": 598312891,
+      "fill_to_first_kernel_ns": 5128888,
+      "drain_after_last_kernel_ns": 10369233,
+      "summed_h2d_ns": 162518188,
+      "summed_d2h_ns": 165195115,
+      "summed_kernel_ns": 269661657,
+      "busy_union_ns": 597374960,
+      "h2d_d2h_overlap_ns": 0,
+      "copy_compute_overlap_ns": 0
+    }
+  ],
+  "scope": "Post-primary instrumented CUDA timelines; allocation/setup interval includes host initialization, ring allocation and stream setup. Fill/drain are descriptive global endpoints, not independent additive stage costs. Busy-time sums overlap and must not be added to infer API time."
+}

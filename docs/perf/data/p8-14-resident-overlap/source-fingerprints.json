@@ -1,0 +1,17 @@
+{
+  "base": "ab3aed8027132f42f9df4e9ddc614403da5a3147",
+  "measured_sha256": {
+    "crates/aleph-cuda/src/sv/paged.rs": "4141a05471a5e51a23e6aa138a8ef051eabcee7e7f20b56172340dc9d0fac389",
+    "crates/aleph-cuda/examples/paged_resident_probe.rs": "425b599c2f7f4e7af30b0773353b1721d6e9512b5a464473a21274bee0746e44",
+    "crates/aleph-cuda/tests/paged_resident_overlap_oracle.rs": "fa289ee12adc250bb3a00d4683b019306018f08aa07b9bbefa9fcbe6ec3121c6",
+    "scripts/python/bench_resident_overlap.py": "a09839a347bb04abd2262eaae30d993f5af409804c09c631acc1da6bff4361de",
+    "scripts/python/check_resident_overlap.py": "29cfe3539ce4b2cf38c05d60858a784fcd2192972fa7f62209a67edd4fa08274",
+    "docs/perf/data/p8-14-resident-overlap/protocol.json": "18d824303d84111a083736437ad7be3f46c4a2b77f350974b1fccaaade6c21ae"
+  },
+  "final_sha256": {
+    "crates/aleph-cuda/src/sv/paged.rs": "4141a05471a5e51a23e6aa138a8ef051eabcee7e7f20b56172340dc9d0fac389",
+    "crates/aleph-cuda/examples/paged_resident_probe.rs": "425b599c2f7f4e7af30b0773353b1721d6e9512b5a464473a21274bee0746e44",
+    "crates/aleph-cuda/tests/paged_resident_overlap_oracle.rs": "08acfd6b2ab044a768650c9be06c658fd7e8acd38d6cd348b72ec4a159e16a49"
+  },
+  "production_and_probe_byte_identical": true
+}
