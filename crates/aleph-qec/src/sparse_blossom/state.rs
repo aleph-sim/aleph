@@ -202,6 +202,9 @@ pub(crate) struct State {
     /// Reusable scratch for subtree walks.
     pub scratch: Vec<NodeId>,
     pub stats: Stats,
+    /// Test-only scan accounting; production carries no scan counters or Cell.
+    #[cfg(test)]
+    pub look_work: std::cell::Cell<[u64; 2]>,
     /// Path-retrace scratch (`retrace.rs`, used only by `run_edges`): tentative distance per
     /// node, `(predecessor node, column)` per node, the nodes touched since the last reset, the
     /// Dijkstra heap, and the matched edges being retraced. All start empty (no allocation) and
@@ -236,6 +239,8 @@ impl State {
             active_trees: 0,
             scratch: Vec::new(),
             stats: Stats::default(),
+            #[cfg(test)]
+            look_work: std::cell::Cell::new([0; 2]),
             rt_dist: Vec::new(),
             rt_pred: Vec::new(),
             rt_touched: Vec::new(),
@@ -257,6 +262,8 @@ impl State {
         self.now = 0;
         self.active_trees = 0;
         self.stats = Stats::default();
+        #[cfg(test)]
+        self.look_work.set([0; 2]);
     }
 
     /// Reuse the next region's shell/child storage, initializing a leaf or empty blossom.

@@ -1,0 +1,80 @@
+--- both-guards/flooder.rs
++++ queued-only/flooder.rs
+@@ -64,8 +64,6 @@
+         if n.region == NONE {
+             return None;
+         }
+-        #[cfg(test)]
+-        let mut work = [1u64, 0, 0, 0, 0, 0, 0]; // calls/neighbours/free/owner/top/skips/skipped neighbours
+         let (tu, top_u) = self.total(u);
+         let mut best: Option<(i64, Next)> = None;
+         let mut consider = |t: i64, what: Next| {
+@@ -74,44 +72,17 @@
+             }
+         };
+         for (k, e) in g.edges(u).iter().enumerate() {
+-            #[cfg(test)]
+-            {
+-                work[1] += 1;
+-            }
+             let m = self.nodes[e.v as usize];
+             if m.region == NONE {
+-                #[cfg(test)]
+-                {
+-                    work[2] += 1;
+-                }
+                 if tu.slope > 0 {
+                     consider(n.dist + e.w - tu.y0, Next::Arrive(k));
+                 }
+                 continue;
+             }
+-            // Identical direct owners necessarily have the same blossom root.
+-            // Internal edges cannot produce an event: avoid the parent walk and
+-            // radius loads before doing any neighbour affine arithmetic.
+-            if m.region == n.region {
+-                #[cfg(test)]
+-                {
+-                    work[3] += 1;
+-                }
+-                continue;
+-            }
+-            let top_v = self.top(m.region);
++            let (tv, top_v) = self.total(e.v);
+             if top_v == top_u {
+-                #[cfg(test)]
+-                {
+-                    work[4] += 1;
+-                }
+-                continue;
+-            }
+-            let radius = self.regions[top_v as usize].radius;
+-            let tv = Varying {
+-                y0: radius.y0 + m.wrapped,
+-                slope: radius.slope,
+-            };
++                continue;
++            }
+             let cs = tu.slope + tv.slope;
+             if cs <= 0 {
+                 continue;
+@@ -130,19 +101,7 @@
+                 consider(n.dist + wb - tu.y0, Next::Boundary);
+             }
+         }
+-        let result = best.map(|(t, w)| (t.max(self.now), w));
+-        #[cfg(test)]
+-        {
+-            let mut total = self.look_work.get();
+-            for (total, value) in total.iter_mut().zip(work) {
+-                *total += value;
+-            }
+-            self.look_work.set(total);
+-            // The unoptimized scanner pins time, event kind, edge index and tie
+-            // choice at every actual scheduling/pop call in native unit tests.
+-            assert_eq!(result, self.next_at_reference(g, u));
+-        }
+-        result
++        best.map(|(t, w)| (t.max(self.now), w))
+     }
+ 
+     // Pre-optimization scanner retained only as an exact transition oracle.

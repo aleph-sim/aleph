@@ -1,0 +1,44 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 4K of event 'cycles:u'
+# Event count (approx.): 28358806813
+#
+# Overhead  Command          Shared Object                 Symbol                                                                                                   
+# ........  ...............  ............................  .........................................................................................................
+#
+    59.70%  mwpm_decode-c34  mwpm_decode-c34064fc3d91e724  [.] aleph_qec::sparse_blossom::flooder::<impl aleph_qec::sparse_blossom::state::State>::next_at
+    21.73%  mwpm_decode-c34  mwpm_decode-c34064fc3d91e724  [.] aleph_qec::sparse_blossom::<impl aleph_qec::sparse_blossom::state::State>::run_to_matching
+     5.95%  mwpm_decode-c34  mwpm_decode-c34064fc3d91e724  [.] aleph_qec::sparse_blossom::flooder::<impl aleph_qec::sparse_blossom::state::State>::schedule_node
+     2.52%  mwpm_decode-c34  mwpm_decode-c34064fc3d91e724  [.] aleph_qec::sparse_blossom::state::State::alloc_tree
+     2.10%  mwpm_decode-c34  mwpm_decode-c34064fc3d91e724  [.] aleph_qec::sparse_blossom::flooder::<impl aleph_qec::sparse_blossom::state::State>::collect_subtree
+     1.94%  mwpm_decode-c34  mwpm_decode-c34064fc3d91e724  [.] aleph_qec::sparse_blossom::matcher::<impl aleph_qec::sparse_blossom::state::State>::dissolve_tree
+     1.71%  mwpm_decode-c34  mwpm_decode-c34064fc3d91e724  [.] aleph_qec::sparse_blossom::flooder::<impl aleph_qec::sparse_blossom::state::State>::reschedule_region
+     0.99%  mwpm_decode-c34  mwpm_decode-c34064fc3d91e724  [.] aleph_qec::sparse_blossom::SparseMatcher::with_syndrome::{{closure}}
+     0.52%  mwpm_decode-c34  mwpm_decode-c34064fc3d91e724  [.] aleph_qec::sparse_blossom::matcher::<impl aleph_qec::sparse_blossom::state::State>::descend
+     0.49%  mwpm_decode-c34  mwpm_decode-c34064fc3d91e724  [.] aleph_qec::sparse_blossom::state::State::new_region
+     0.37%  mwpm_decode-c34  mwpm_decode-c34064fc3d91e724  [.] aleph_qec::sparse_blossom::flooder::<impl aleph_qec::sparse_blossom::state::State>::schedule_shrink
+     0.29%  mwpm_decode-c34  libc.so.6                     [.] 0x00000000001a79b9
+     0.28%  mwpm_decode-c34  libc.so.6                     [.] 0x00000000001a79b6
+     0.28%  mwpm_decode-c34  mwpm_decode-c34064fc3d91e724  [.] aleph_qec::sparse_blossom::matcher::<impl aleph_qec::sparse_blossom::state::State>::augment
+     0.26%  mwpm_decode-c34  mwpm_decode-c34064fc3d91e724  [.] aleph_qec::sparse_blossom::matcher::<impl aleph_qec::sparse_blossom::state::State>::flip_path_to_root
+     0.16%  mwpm_decode-c34  libc.so.6                     [.] 0x00000000001a79ca
+     0.12%  mwpm_decode-c34  libc.so.6                     [.] 0x00000000001a79be
+     0.10%  mwpm_decode-c34  libc.so.6                     [.] 0x00000000001a79b4
+     0.10%  mwpm_decode-c34  mwpm_decode-c34064fc3d91e724  [.] core::slice::sort::unstable::ipnsort
+     0.08%  mwpm_decode-c34  libc.so.6                     [.] 0x00000000001a7980
+     0.08%  mwpm_decode-c34  libc.so.6                     [.] 0x00000000001a7984
+     0.06%  mwpm_decode-c34  libc.so.6                     [.] 0x00000000001a7a00
+     0.04%  mwpm_decode-c34  libc.so.6                     [.] 0x00000000001a79c0
+     0.02%  mwpm_decode-c34  libc.so.6                     [.] 0x00000000001a7a05
+     0.02%  mwpm_decode-c34  libc.so.6                     [.] 0x00000000001a7a08
+     0.02%  mwpm_decode-c34  libc.so.6                     [.] 0x00000000001a7987
+     0.02%  mwpm_decode-c34  libc.so.6                     [.] 0x00000000001a7993
+     0.02%  mwpm_decode-c34  libc.so.6                     [.] 0x00000000001a79a5
+
+
+#
+# (Cannot load tips.txt file, please install perf!)
+#

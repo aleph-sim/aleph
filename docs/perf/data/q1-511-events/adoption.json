@@ -1,0 +1,50 @@
+{
+  "native_adoption_pass": true,
+  "python_no_regression_pass": true,
+  "adopt": true,
+  "original_issue_target_met": false,
+  "issue_511": "keep open",
+  "native_d11": {
+    "distance": 11,
+    "median_us": {
+      "original": 132.4489401452945,
+      "main": 108.49552459876313,
+      "candidate": 90.2144527722968
+    },
+    "candidate_speedup_vs": {
+      "original": 1.4681565544669262,
+      "main": 1.2026401675639284
+    },
+    "block_ratios": {
+      "original": [
+        1.4628387008055008,
+        1.4519120666067609,
+        1.4793314706305323,
+        1.4876184978910656
+      ],
+      "main": [
+        1.2189233214041861,
+        1.2119495101323605,
+        1.1853509707342824,
+        1.2276242951341723
+      ]
+    }
+  },
+  "host": {
+    "native": {
+      "total_intervals": 1514,
+      "timing_intervals": 916,
+      "min_active_intervals_per_case": 5,
+      "max_timing_overall": 8.582183186951067,
+      "max_timing_sibling": 5.0,
+      "max_whole_process_overall": 8.582183186951067,
+      "max_whole_process_sibling": 5.0
+    },
+    "python": {
+      "intervals": 24,
+      "max_overall": 8.383534136546185,
+      "max_sibling": 0.0
+    }
+  },
+  "also_passes_earlier_whole_process_host_rule": true
+}

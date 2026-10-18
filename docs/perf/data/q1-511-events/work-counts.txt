@@ -1,0 +1,111 @@
+   Compiling proc-macro2 v1.0.106
+   Compiling unicode-ident v1.0.24
+   Compiling quote v1.0.45
+   Compiling libc v0.2.186
+   Compiling cfg-if v1.0.4
+   Compiling autocfg v1.5.1
+   Compiling zerocopy v0.8.48
+   Compiling getrandom v0.3.4
+   Compiling version_check v0.9.5
+   Compiling serde_core v1.0.228
+   Compiling crossbeam-utils v0.8.21
+   Compiling thiserror v1.0.69
+   Compiling zmij v1.0.21
+   Compiling rustix v1.1.4
+   Compiling typenum v1.20.1
+   Compiling serde v1.0.228
+   Compiling getrandom v0.4.2
+   Compiling linux-raw-sys v0.12.1
+   Compiling either v1.16.0
+   Compiling serde_json v1.0.150
+   Compiling smallvec v1.15.1
+   Compiling bitflags v2.11.1
+   Compiling regex-syntax v0.8.10
+   Compiling once_cell v1.21.4
+   Compiling rayon-core v1.13.0
+   Compiling fastrand v2.4.1
+   Compiling clap_lex v1.1.0
+   Compiling memchr v2.8.0
+   Compiling anstyle v1.0.14
+   Compiling ciborium-io v0.2.2
+   Compiling plotters-backend v0.3.7
+   Compiling itoa v1.0.18
+   Compiling fnv v1.0.7
+   Compiling same-file v1.0.6
+   Compiling bit-vec v0.8.0
+   Compiling cast v0.3.0
+   Compiling quick-error v1.2.3
+   Compiling cpufeatures v0.2.17
+   Compiling unarray v0.1.4
+   Compiling anes v0.1.6
+   Compiling oorandom v11.1.5
+   Compiling walkdir v2.5.0
+   Compiling generic-array v0.14.7
+   Compiling itertools v0.10.5
+   Compiling clap_builder v4.6.0
+   Compiling plotters-svg v0.3.7
+   Compiling num-traits v0.2.19
+   Compiling bit-set v0.8.0
+   Compiling crossbeam-epoch v0.9.18
+   Compiling syn v2.0.117
+   Compiling crossbeam-deque v0.8.6
+   Compiling num-complex v0.4.6
+   Compiling plotters v0.3.7
+   Compiling approx v0.5.1
+   Compiling getrandom v0.2.17
+   Compiling wait-timeout v0.2.1
+   Compiling is-terminal v0.4.17
+   Compiling statrs v0.18.0
+   Compiling rand_core v0.6.4
+   Compiling rand_core v0.9.5
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling rand v0.9.4
+   Compiling rand_xorshift v0.4.0
+   Compiling digest v0.10.7
+   Compiling sha2 v0.10.9
+   Compiling rayon v1.12.0
+   Compiling criterion-plot v0.5.0
+   Compiling tempfile v3.27.0
+   Compiling regex-automata v0.4.14
+   Compiling clap v4.6.1
+   Compiling rusty-fork v0.3.1
+   Compiling zerocopy-derive v0.8.48
+   Compiling thiserror-impl v1.0.69
+   Compiling serde_derive v1.0.228
+   Compiling regex v1.12.3
+   Compiling aleph-core v0.3.0 (/tmp/aleph-511-events-candidate/crates/aleph-core)
+   Compiling aleph-ir v0.3.0 (/tmp/aleph-511-events-candidate/crates/aleph-ir)
+   Compiling aleph-backend v0.3.0 (/tmp/aleph-511-events-candidate/crates/aleph-backend)
+   Compiling tinytemplate v1.2.1
+   Compiling ppv-lite86 v0.2.21
+   Compiling half v2.7.1
+   Compiling ciborium-ll v0.2.2
+   Compiling rand_chacha v0.3.1
+   Compiling rand_chacha v0.9.0
+   Compiling ciborium v0.2.2
+   Compiling proptest v1.11.0
+   Compiling rand v0.8.6
+   Compiling criterion v0.5.1
+   Compiling aleph-stab v0.3.0 (/tmp/aleph-511-events-candidate/crates/aleph-stab)
+   Compiling aleph-qec v0.3.0 (/tmp/aleph-511-events-candidate/crates/aleph-qec)
+    Finished `release` profile [optimized] target(s) in 56.87s
+     Running unittests src/lib.rs (/tmp/aleph-511-events-candidate-target/release/deps/aleph_qec-774c7d5c356a7410)
+
+running 1 test
+d=7 rate=0.03 shots=256 calls=38661 neighbours=188731 free=124800 same_owner=11498 same_top=9773 queued_now_skips=11834 skipped_neighbours=58378 external=42660
+d=7 rate=0.003 shots=256 calls=2529 neighbours=12001 free=9531 same_owner=241 same_top=0 queued_now_skips=808 skipped_neighbours=3916 external=2229
+d=9 rate=0.03 shots=256 calls=92254 neighbours=477815 free=307916 same_owner=26686 same_top=40048 queued_now_skips=27982 skipped_neighbours=145057 external=103165
+d=9 rate=0.003 shots=256 calls=5678 neighbours=28638 free=22823 same_owner=654 same_top=96 queued_now_skips=1794 skipped_neighbours=9150 external=5065
+d=11 rate=0.03 shots=256 calls=173924 neighbours=932948 free=598950 same_owner=48851 same_top=85250 queued_now_skips=54796 skipped_neighbours=295396 external=199897
+d=11 rate=0.003 shots=256 calls=9747 neighbours=50609 free=40455 same_owner=761 same_top=48 queued_now_skips=3247 skipped_neighbours=17141 external=9345
+d=13 rate=0.03 shots=256 calls=295216 neighbours=1613897 free=1031536 same_owner=80798 same_top=162244 queued_now_skips=94227 skipped_neighbours=516459 external=339319
+d=13 rate=0.003 shots=256 calls=15976 neighbours=84654 free=67975 same_owner=1140 same_top=170 queued_now_skips=5355 skipped_neighbours=28699 external=15369
+d=15 rate=0.03 shots=256 calls=496945 neighbours=2766061 free=1737831 same_owner=130833 same_top=333056 queued_now_skips=158464 skipped_neighbours=884102 external=564341
+d=15 rate=0.003 shots=256 calls=26044 neighbours=141048 free=113670 same_owner=2194 same_top=119 queued_now_skips=8600 skipped_neighbours=47098 external=25065
+d=17 rate=0.03 shots=256 calls=748673 neighbours=4215704 free=2630884 same_owner=212850 same_top=537498 queued_now_skips=240776 skipped_neighbours=1358533 external=834472
+d=17 rate=0.003 shots=256 calls=36147 neighbours=198406 free=160254 same_owner=2131 same_top=106 queued_now_skips=12300 skipped_neighbours=68095 external=35915
+test sparse_blossom::tests::profile_next_at_work ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 194 filtered out; finished in 3.46s
+

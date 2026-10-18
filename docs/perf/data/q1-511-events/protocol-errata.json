@@ -1,0 +1,8 @@
+{
+  "recorded_utc": "2026-10-18T16:16:36.374876+00:00",
+  "scope": "Factual attribution only; numerical adoption and active-phase host predicates unchanged after held-out start.",
+  "correction": "The guard-ablation host-invalid interval is sample index 1 (second recorded 1-second interval), overall 13.7%, sibling 0%. That older driver did not record Criterion phases. Its exact relation to warmup/collection is unconfirmed. The earlier construction/first-second attribution was an inference stated too strongly.",
+  "retained_invalid": true,
+  "no_retroactive_phase_reclassification": true,
+  "protocol_files_unchanged": true
+}

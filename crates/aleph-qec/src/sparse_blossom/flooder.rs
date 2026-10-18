@@ -64,6 +64,12 @@ impl State {
         if n.region == NONE {
             return None;
         }
+        #[cfg(test)]
+        {
+            let mut work = self.look_work.get();
+            work[0] += 1;
+            self.look_work.set(work);
+        }
         let (tu, top_u) = self.total(u);
         let mut best: Option<(i64, Next)> = None;
         let mut consider = |t: i64, what: Next| {
@@ -106,6 +112,18 @@ impl State {
 
     /// Queue `u`'s look-at if it is earlier than what is queued.
     pub(crate) fn schedule_node(&mut self, g: &CompiledGraph, u: NodeId) {
+        // next_at clamps every candidate to `now`. An entry already queued
+        // for this instant cannot be improved; keep its original sequence/tie.
+        if self.nodes[u as usize].queued == self.now {
+            #[cfg(test)]
+            {
+                let work = self.look_work.get();
+                assert!(self.next_at(g, u).is_none_or(|(t, _)| t >= self.now));
+                // Exclude the assertion's oracle scan from actual work counts.
+                self.look_work.set([work[0], work[1] + 1]);
+            }
+            return;
+        }
         if let Some((t, _)) = self.next_at(g, u) {
             let q = self.nodes[u as usize].queued;
             if q == NO_TIME || t < q {
