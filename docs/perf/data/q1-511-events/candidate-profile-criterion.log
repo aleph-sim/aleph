@@ -1,0 +1,4 @@
+Gnuplot not found, using plotters backend
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Profiling for 20.000 s
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Complete (Analysis Disabled)
+

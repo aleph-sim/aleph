@@ -1,0 +1,339 @@
+{
+  "started_unix": 1792341056.112788,
+  "runs": [
+    {
+      "label": "b0-i0-main",
+      "block": 0,
+      "variant": "main",
+      "argv": [
+        "taskset",
+        "-c",
+        "3",
+        "/tmp/aleph-518-K1bhhc/test-venv/bin/python",
+        "/tmp/aleph-511-events-final/scripts/python/bench_mwpm_allocations.py",
+        "--repeats",
+        "7"
+      ],
+      "preflights": [
+        {
+          "time": 1792341058.114534,
+          "overall": 2.744017040471119,
+          "cpu": 0.0,
+          "sibling": 2.512562814070352
+        },
+        {
+          "time": 1792341063.1172848,
+          "overall": 1.0255127563781892,
+          "cpu": 0.0,
+          "sibling": 0.0
+        }
+      ],
+      "samples": [
+        {
+          "time": 1792341064.1214302,
+          "overall": 2.722957781663752,
+          "sibling": 0.0
+        },
+        {
+          "time": 1792341065.1227143,
+          "overall": 3.1281281281281283,
+          "sibling": 0.0
+        },
+        {
+          "time": 1792341066.1240962,
+          "overall": 2.347652347652348,
+          "sibling": 0.0
+        }
+      ],
+      "exit_code": 0
+    },
+    {
+      "label": "b0-i1-candidate",
+      "block": 0,
+      "variant": "candidate",
+      "argv": [
+        "taskset",
+        "-c",
+        "3",
+        "/tmp/aleph-518-K1bhhc/test-venv/bin/python",
+        "/tmp/aleph-511-events-final/scripts/python/bench_mwpm_allocations.py",
+        "--repeats",
+        "7"
+      ],
+      "preflights": [
+        {
+          "time": 1792341068.1272333,
+          "overall": 0.0749718855429214,
+          "cpu": 0.0,
+          "sibling": 0.0
+        }
+      ],
+      "samples": [
+        {
+          "time": 1792341069.1315408,
+          "overall": 2.5474525474525476,
+          "sibling": 0.0
+        },
+        {
+          "time": 1792341070.132844,
+          "overall": 3.0,
+          "sibling": 0.0
+        },
+        {
+          "time": 1792341071.1343567,
+          "overall": 2.8271203402551914,
+          "sibling": 0.0
+        }
+      ],
+      "exit_code": 0
+    },
+    {
+      "label": "b0-i2-candidate",
+      "block": 0,
+      "variant": "candidate",
+      "argv": [
+        "taskset",
+        "-c",
+        "3",
+        "/tmp/aleph-518-K1bhhc/test-venv/bin/python",
+        "/tmp/aleph-511-events-final/scripts/python/bench_mwpm_allocations.py",
+        "--repeats",
+        "7"
+      ],
+      "preflights": [
+        {
+          "time": 1792341073.1375947,
+          "overall": 0.5375671958994874,
+          "cpu": 0.5025125628140703,
+          "sibling": 0.0
+        }
+      ],
+      "samples": [
+        {
+          "time": 1792341074.1416726,
+          "overall": 2.598051461403947,
+          "sibling": 0.0
+        },
+        {
+          "time": 1792341075.143008,
+          "overall": 2.548088933300025,
+          "sibling": 0.0
+        },
+        {
+          "time": 1792341076.144443,
+          "overall": 2.1733699725206095,
+          "sibling": 0.0
+        }
+      ],
+      "exit_code": 0
+    },
+    {
+      "label": "b0-i3-main",
+      "block": 0,
+      "variant": "main",
+      "argv": [
+        "taskset",
+        "-c",
+        "3",
+        "/tmp/aleph-518-K1bhhc/test-venv/bin/python",
+        "/tmp/aleph-511-events-final/scripts/python/bench_mwpm_allocations.py",
+        "--repeats",
+        "7"
+      ],
+      "preflights": [
+        {
+          "time": 1792341078.1477082,
+          "overall": 1.1888374421223877,
+          "cpu": 0.0,
+          "sibling": 2.0
+        },
+        {
+          "time": 1792341083.1503978,
+          "overall": 0.4375,
+          "cpu": 0.0,
+          "sibling": 0.0
+        }
+      ],
+      "samples": [
+        {
+          "time": 1792341084.1544914,
+          "overall": 2.749312671832042,
+          "sibling": 0.0
+        },
+        {
+          "time": 1792341085.155776,
+          "overall": 2.548088933300025,
+          "sibling": 0.0
+        },
+        {
+          "time": 1792341086.157131,
+          "overall": 2.8507126781695424,
+          "sibling": 0.0
+        }
+      ],
+      "exit_code": 0
+    },
+    {
+      "label": "b1-i0-main",
+      "block": 1,
+      "variant": "main",
+      "argv": [
+        "taskset",
+        "-c",
+        "3",
+        "/tmp/aleph-518-K1bhhc/test-venv/bin/python",
+        "/tmp/aleph-511-events-final/scripts/python/bench_mwpm_allocations.py",
+        "--repeats",
+        "7"
+      ],
+      "preflights": [
+        {
+          "time": 1792341088.1603982,
+          "overall": 0.125,
+          "cpu": 0.0,
+          "sibling": 0.0
+        }
+      ],
+      "samples": [
+        {
+          "time": 1792341089.1645198,
+          "overall": 2.5243689077730567,
+          "sibling": 0.0
+        },
+        {
+          "time": 1792341090.1658037,
+          "overall": 2.571785268414482,
+          "sibling": 0.0
+        },
+        {
+          "time": 1792341091.1671488,
+          "overall": 2.6493376655836043,
+          "sibling": 0.0
+        }
+      ],
+      "exit_code": 0
+    },
+    {
+      "label": "b1-i1-candidate",
+      "block": 1,
+      "variant": "candidate",
+      "argv": [
+        "taskset",
+        "-c",
+        "3",
+        "/tmp/aleph-518-K1bhhc/test-venv/bin/python",
+        "/tmp/aleph-511-events-final/scripts/python/bench_mwpm_allocations.py",
+        "--repeats",
+        "7"
+      ],
+      "preflights": [
+        {
+          "time": 1792341093.1705654,
+          "overall": 0.4125,
+          "cpu": 0.0,
+          "sibling": 0.0
+        }
+      ],
+      "samples": [
+        {
+          "time": 1792341094.1745791,
+          "overall": 8.383534136546185,
+          "sibling": 0.0
+        },
+        {
+          "time": 1792341095.1759002,
+          "overall": 3.202401801351013,
+          "sibling": 0.0
+        },
+        {
+          "time": 1792341096.1771443,
+          "overall": 2.4725274725274726,
+          "sibling": 0.0
+        }
+      ],
+      "exit_code": 0
+    },
+    {
+      "label": "b1-i2-candidate",
+      "block": 1,
+      "variant": "candidate",
+      "argv": [
+        "taskset",
+        "-c",
+        "3",
+        "/tmp/aleph-518-K1bhhc/test-venv/bin/python",
+        "/tmp/aleph-511-events-final/scripts/python/bench_mwpm_allocations.py",
+        "--repeats",
+        "7"
+      ],
+      "preflights": [
+        {
+          "time": 1792341098.1803722,
+          "overall": 0.06249218847644045,
+          "cpu": 0.0,
+          "sibling": 0.0
+        }
+      ],
+      "samples": [
+        {
+          "time": 1792341099.1845753,
+          "overall": 2.5474525474525476,
+          "sibling": 0.0
+        },
+        {
+          "time": 1792341100.1858664,
+          "overall": 2.573070197351986,
+          "sibling": 0.0
+        },
+        {
+          "time": 1792341101.1872694,
+          "overall": 3.077307980985739,
+          "sibling": 0.0
+        }
+      ],
+      "exit_code": 0
+    },
+    {
+      "label": "b1-i3-main",
+      "block": 1,
+      "variant": "main",
+      "argv": [
+        "taskset",
+        "-c",
+        "3",
+        "/tmp/aleph-518-K1bhhc/test-venv/bin/python",
+        "/tmp/aleph-511-events-final/scripts/python/bench_mwpm_allocations.py",
+        "--repeats",
+        "7"
+      ],
+      "preflights": [
+        {
+          "time": 1792341103.1906037,
+          "overall": 0.3249593800774903,
+          "cpu": 0.0,
+          "sibling": 0.0
+        }
+      ],
+      "samples": [
+        {
+          "time": 1792341104.1946123,
+          "overall": 3.05,
+          "sibling": 0.0
+        },
+        {
+          "time": 1792341105.195907,
+          "overall": 2.523107669248064,
+          "sibling": 0.0
+        },
+        {
+          "time": 1792341106.1973014,
+          "overall": 2.347652347652348,
+          "sibling": 0.0
+        }
+      ],
+      "exit_code": 0
+    }
+  ],
+  "helper_sha256": "21dfe0f035b485b434cf6c3b4c3f7acf3be72ccd6a57d1e5a7d4fd162a41508c",
+  "finished_unix": 1792341106.198616
+}

@@ -1,0 +1,7 @@
+    Checking aleph-qec v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-qec)
+    Checking aleph-benches v0.3.0 (/Users/ex/GitHub/aleph/benches)
+    Checking aleph-py v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-py)
+    Checking aleph-cuda v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-cuda)
+    Checking aleph-mps v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-mps)
+    Checking aleph-metal v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-metal)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 57.15s

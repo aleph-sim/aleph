@@ -6,6 +6,9 @@ on the recorded d=11 phenomenological corpus. `decode()` and `decode_errors()`
 still allocate their owned result once; `MwpmDecoder::decode_into()` lets callers
 reuse the correction and makes the whole warmed call allocation-free.
 
+The [event-scanning follow-up](q1-03c-event-scans.md) measures the remaining hot
+path with fresh original/main/candidate controls for the original #511 target.
+
 ## Implementation and lifetime
 
 Region and tree arenas retain their slots. `region_count` and `tree_count` identify

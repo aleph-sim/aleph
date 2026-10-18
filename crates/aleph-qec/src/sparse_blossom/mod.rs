@@ -522,6 +522,82 @@ pub(crate) mod tests {
         })
     }
 
+    #[test]
+    fn queued_now_keeps_heap_sequence_but_future_entries_can_move_earlier() {
+        let graph = CompiledGraph::from_int_edges(2, &[(0, 1, 2, 1)], &[]);
+        let mut state = State::new(2);
+        let region = state.new_region(0);
+        state.nodes[0] = NodeState {
+            region,
+            ..NodeState::FREE
+        };
+        state.now = 10;
+        state.nodes[0].queued = 10;
+        state.push_event(10, EV_NODE, 0);
+        state.push_event(10, EV_SHRINK, region);
+        let pushes = state.stats.pushes;
+        state.schedule_node(&graph, 0);
+        assert_eq!(state.stats.pushes, pushes);
+        assert_eq!(state.pop_event(), Some((10, EV_NODE, 0)));
+        assert_eq!(state.pop_event(), Some((10, EV_SHRINK, region)));
+        assert_eq!(state.look_work.get()[1], 1);
+        state.nodes[0].queued = 11;
+        state.push_event(11, EV_NODE, 0);
+        state.schedule_node(&graph, 0);
+        assert_eq!(state.nodes[0].queued, 10);
+        assert_eq!(state.pop_event(), Some((10, EV_NODE, 0)));
+        assert_eq!(state.pop_event(), Some((11, EV_NODE, 0)));
+    }
+
+    /// Work accounting only, not a timing benchmark: test builds also execute
+    /// the unchanged scanner on skipped schedules to assert its lower bound.
+    #[test]
+    #[ignore = "profiling diagnostic; run explicitly with --ignored --nocapture"]
+    fn profile_next_at_work() {
+        use crate::{build_dem, MatchingGraph, SurfaceCode};
+        for d in [7usize, 9, 11, 13, 15, 17] {
+            for p in [0.03, 0.003] {
+                let exp = SurfaceCode::new(d).memory_z_experiment(d);
+                let dem =
+                    build_dem(&exp.annotated, &exp.phenomenological_mechanisms(p, p)).unwrap();
+                let graph = MatchingGraph::from_dem(&dem).unwrap();
+                let graph = CompiledGraph::from_matching_graph(&graph);
+                let mut state = State::new(graph.num_nodes());
+                let mut total = [0u64; 2];
+                for shot in 0..256u64 {
+                    let mut z =
+                        (0x5EED ^ d as u64).wrapping_add(shot.wrapping_mul(0x9E37_79B9_7F4A_7C15));
+                    let mut det = vec![false; dem.detectors];
+                    for error in &dem.errors {
+                        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+                        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+                        z ^= z >> 31;
+                        let x = (z >> 11) as f64 / (1u64 << 53) as f64;
+                        if x < error.prob {
+                            for &u in &error.dets {
+                                det[u as usize] ^= true;
+                            }
+                        }
+                    }
+                    let defects: Vec<_> = det
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(u, &f)| f.then_some(u as u32))
+                        .collect();
+                    state.run(&graph, &defects);
+                    for (sum, value) in total.iter_mut().zip(state.look_work.get()) {
+                        *sum += value;
+                    }
+                }
+                let [calls, queued_now_skips] = total;
+                assert!(calls > 0 && queued_now_skips > 0);
+                eprintln!(
+                    "d={d} rate={p} shots=256 calls={calls} queued_now_skips={queued_now_skips}"
+                );
+            }
+        }
+    }
+
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(3000))]
         #[test]

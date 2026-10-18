@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "frozen_before_candidate_measurements": true,
+  "baseline": "ab3aed8027132f42f9df4e9ddc614403da5a3147 (current main, retained buffers)",
+  "historical_control": "5a671ae26b2eb4235d024403952c2f27988bddfb (original pre-reuse #511 baseline)",
+  "training": "d11 p=.03; exact unchanged mwpm_decode Criterion corpus; inspect baseline steady-state perf and candidate test-only work counts",
+  "ablation": "current main / neighbour-only / neighbour+queued-now guards, two mirrored three-arm blocks at d11 before held-out results; retain all samples",
+  "primary": "six unchanged Criterion sparse arms d=7,9,11,13,15,17 p=.03, 256 fixed shots; four mirrored three-arm blocks (historical/current/candidate), rotate first arm; CLI sample-size15 (existing benchmark retains its large-distance group override; actual samples recorded), warm1s, measurement3s; no deleted samples",
+  "python": "current/candidate exact bench_mwpm_allocations fixtures/helper: d5 20000 shots, d9 5000, p=.003 seed1, one Rayon thread; two ABBA blocks, seven samples/process; exact prediction SHA256",
+  "adoption": ">=1.05x vs current main at d11 with all four paired block ratios >1; no aggregate regression >5% on any held-out Criterion/Python case. Otherwise document/revert non-beneficial guard(s), never change matching semantics to reach a timing target.",
+  "issue_target": "Only claim #511 1.5x target met if fresh same-host historical/current/candidate inputs agree and candidate beats historical by >=1.5x at d11 in aggregate and every block. Never multiply historical ratios from separate campaigns.",
+  "correctness": "old scanner exact transition assertions in native unit builds; existing 100500-shot dense optimum/tie and error-estimate suites, circuit-level differential, proptests, PyMatching oracle, zero warmed decode_into allocations, serial/parallel determinism",
+  "host": "same idle physical CPU/SMT sibling for all timed processes, wait <10% overall and <1.1% benchmark core/sibling before runs; pin CPU, log per-second sibling/overall activity; leave services/CI running; no parallel builds/tests during timings",
+  "no_claim": "No improved matching quality, changed rounding/precision, event ordering, heap or graph algorithms. No added production diagnostic counters. Results apply to measured fixtures on shared CPU host.",
+  "summary_rule": "Median of process-level Criterion mean point estimates; two observations/arm/block, eight/arm overall. Report each native bootstrap interval and all raw samples; no pooled confidence interval. Python medians include all 28 rate samples/version/case."
+}

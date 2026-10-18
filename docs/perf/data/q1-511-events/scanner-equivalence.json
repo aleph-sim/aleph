@@ -1,0 +1,7 @@
+{
+  "baseline": "ab3aed8027132f42f9df4e9ddc614403da5a3147",
+  "production_scanner_text_equal": true,
+  "scope": "next_at function including whitespace, excluding the added cfg(test) counter block",
+  "baseline_scanner_sha256": "48b840c5fbcc4cf79e9855960beca723f97c7cb0163f4c14d7b8b84aca2886ee",
+  "candidate_scanner_without_test_counter_sha256": "48b840c5fbcc4cf79e9855960beca723f97c7cb0163f4c14d7b8b84aca2886ee"
+}

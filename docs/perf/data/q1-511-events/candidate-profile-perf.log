@@ -1,0 +1,2 @@
+[ perf record: Woken up 83 times to write data ]
+[ perf record: Captured and wrote 20.622 MB /tmp/aleph-511-events-candidate-profile/perf.data (4994 samples) ]
