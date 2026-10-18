@@ -1,0 +1,37 @@
+    Checking aleph-cuda v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-cuda)
+    Checking aleph-stab v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-stab)
+    Checking aleph-qec v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-qec)
+warning: unused dependency `aleph-qec`
+  --> benches/Cargo.toml:30:1
+   |
+30 | aleph-qec     = { path = "../crates/aleph-qec" }
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `cargo::unused_dependencies` is set to `warn` by default
+help: consider removing the dependency on `aleph-qec`
+help: to still use for development builds, move to `dev-dependencies`
+warning: `aleph-benches` (manifest) generated 1 warning
+warning: unused dependency `aleph-mps`
+  --> crates/aleph-py/Cargo.toml:33:1
+   |
+33 | aleph-mps     = { path = "../aleph-mps" }
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `cargo::unused_dependencies` is set to `warn` by default
+help: consider removing the dependency on `aleph-mps`
+warning: unused dependency `aleph-parser`
+  --> crates/aleph-py/Cargo.toml:34:1
+   |
+34 | aleph-parser  = { path = "../aleph-parser" }
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+help: consider removing the dependency on `aleph-parser`
+warning: unused dependency `aleph-sv`
+  --> crates/aleph-py/Cargo.toml:32:1
+   |
+32 | aleph-sv      = { path = "../aleph-sv" }
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+help: consider removing the dependency on `aleph-sv`
+warning: `aleph-py` (manifest) generated 3 warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.04s

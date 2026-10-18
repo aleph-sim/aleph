@@ -1,0 +1,67 @@
+[
+  {
+    "distance": 7,
+    "rate": 0.001,
+    "shots": 4096,
+    "histogram": {
+      "1": 3644,
+      "2": 423,
+      "3": 10,
+      "4": 9,
+      "64": 10
+    },
+    "mean_iterations": 1.2685546875,
+    "warp_iteration_lane_utilization": 0.18183090705487123,
+    "identical_all_three_layouts": true,
+    "logical_checksum_matches_uninstrumented": true
+  },
+  {
+    "distance": 7,
+    "rate": 0.03,
+    "shots": 4096,
+    "histogram": {
+      "1": 3,
+      "2": 101,
+      "3": 133,
+      "4": 218,
+      "5": 135,
+      "6": 97,
+      "7": 20,
+      "8": 34,
+      "9": 2,
+      "10": 9,
+      "11": 2,
+      "12": 1,
+      "17": 3,
+      "64": 3338
+    },
+    "mean_iterations": 52.97119140625,
+    "warp_iteration_lane_utilization": 0.8276748657226562,
+    "identical_all_three_layouts": true,
+    "logical_checksum_matches_uninstrumented": true
+  },
+  {
+    "distance": 11,
+    "rate": 0.03,
+    "shots": 4096,
+    "histogram": {
+      "64": 4096
+    },
+    "mean_iterations": 64.0,
+    "warp_iteration_lane_utilization": 1.0,
+    "identical_all_three_layouts": true,
+    "logical_checksum_matches_uninstrumented": true
+  },
+  {
+    "distance": 11,
+    "rate": 0.15,
+    "shots": 4096,
+    "histogram": {
+      "64": 4096
+    },
+    "mean_iterations": 64.0,
+    "warp_iteration_lane_utilization": 1.0,
+    "identical_all_three_layouts": true,
+    "logical_checksum_matches_uninstrumented": true
+  }
+]

@@ -1,0 +1,4 @@
+    Checking aleph-cuda v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-cuda)
+    Checking aleph-stab v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-stab)
+    Checking aleph-qec v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-qec)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 20.29s
