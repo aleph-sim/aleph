@@ -256,6 +256,41 @@ impl CudaSvBackend {
         tile_qubits: u32,
         depth: u32,
     ) -> Result<PagedSvState, BackendError> {
+        self.run_paged_pipeline(circuit, tile_qubits, depth, false)
+    }
+
+    /// Combine low-qubit residency with event-ordered copy overlap (FP64, opt-in).
+    /// Maximal low-only runs share one load/scatter per tile; high gates flush the
+    /// run. Segments with fewer than `2*depth` groups use synchronous residency.
+    /// The ring holds `depth * 2^(tile_qubits + max_high_fanout) * 16` bytes,
+    /// in addition to the pinned `2^n * 16` byte host state and per-slot matrix
+    /// scratch. Available host/device memory is preflighted with headroom. No FP32 mirror yet.
+    ///
+    /// ```no_run
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let mut backend = aleph_cuda::CudaSvBackend::new()?;
+    /// let mut circuit = aleph_ir::Circuit::new(10, 0);
+    /// circuit.h(0)?;
+    /// let state = backend.run_paged_batched_overlapped(&circuit, 6, 4)?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn run_paged_batched_overlapped(
+        &mut self,
+        circuit: &Circuit,
+        tile_qubits: u32,
+        depth: u32,
+    ) -> Result<PagedSvState, BackendError> {
+        self.run_paged_pipeline(circuit, tile_qubits, depth, true)
+    }
+
+    fn run_paged_pipeline(
+        &mut self,
+        circuit: &Circuit,
+        tile_qubits: u32,
+        depth: u32,
+        residency: bool,
+    ) -> Result<PagedSvState, BackendError> {
         let n = circuit.num_qubits();
         if n == 0 && circuit.is_empty() {
             return Err(BackendError::EmptyCircuit);
@@ -294,7 +329,9 @@ impl CudaSvBackend {
         let local_qubits = m + g_max;
         // The whole ring (`depth` buffers of `2^local_qubits` amps) must fit the
         // card's `2^MAX_CUDA_QUBITS` amplitude budget.
-        if (depth as u64).saturating_mul(1u64 << local_qubits) > (1u64 << MAX_CUDA_QUBITS) {
+        if local_qubits > MAX_CUDA_QUBITS
+            || (depth as u64).saturating_mul(1u64 << local_qubits) > (1u64 << MAX_CUDA_QUBITS)
+        {
             return Err(BackendError::TooManyQubits {
                 requested: local_qubits,
                 limit: MAX_CUDA_QUBITS,
@@ -303,7 +340,41 @@ impl CudaSvBackend {
 
         let ctx = self.ctx();
 
-        let host_len = 2usize << n;
+        let host_len = 2usize
+            .checked_shl(n)
+            .filter(|&len| len <= isize::MAX as usize / 8)
+            .ok_or(BackendError::InvalidState {
+                reason: "paged host state size overflow",
+            })?;
+        if residency {
+            crate::memory::ensure_host_bytes(host_len as u64 * 8)
+                .map_err(|e| to_backend_err(Error::Memory(e)))?;
+            ctx.trim_pool(0).map_err(to_backend_err)?;
+            let matrix_bytes = circuit
+                .instructions()
+                .iter()
+                .filter_map(|inst| {
+                    if let Instruction::Gate(gate) = inst {
+                        Some(match &gate.gate {
+                            aleph_core::Gate::UnitaryKq { data, .. } => data.len() as u64 * 16,
+                            _ => 1024,
+                        })
+                    } else {
+                        None
+                    }
+                })
+                .max()
+                .unwrap_or(0);
+            let required = depth as u64 * ((16u64 << local_qubits) + matrix_bytes);
+            let (free, _) = ctx.raw().mem_get_info().map_err(drv_err)?;
+            // Reserve context/events/library overhead; this preflight is advisory
+            // against concurrent users, and driver allocation errors still propagate.
+            if required > (free as u64).saturating_sub(64 << 20) {
+                return Err(to_backend_err(Error::Memory(
+                    "resident paging ring exceeds available device memory with headroom".into(),
+                )));
+            }
+        }
         // SAFETY: see [`Self::run_paged`] — owned page-locked alloc, every element
         // initialised before any copy reads it.
         let mut host: PinnedHostSlice<f64> = unsafe { ctx.raw().alloc_pinned(host_len) }
@@ -363,7 +434,7 @@ impl CudaSvBackend {
         self.set_ctx(compute_ctx.clone());
 
         // Closure so `self.ctx` is restored on every exit path (including `?`).
-        let result = (|| -> Result<PagedSvState, BackendError> {
+        let result = (|| -> Result<(), BackendError> {
             // Pipeline state, persisting across gates.
             let mut slot_scatter: Vec<Option<Rc<CudaEvent>>> = vec![None; depth];
             // The most recent host write (scatter), on whatever stream — the
@@ -382,10 +453,8 @@ impl CudaSvBackend {
             // bandwidth. Threshold: need ≳ 2× the ring depth in groups.
             let overlap_threshold = 2 * depth as u64;
 
-            for inst in circuit.instructions() {
-                let Instruction::Gate(gate) = inst else {
-                    continue;
-                };
+            for gates in paging_segments(circuit, m, residency) {
+                let gate = gates[0];
                 let plan = plan_gate(gate, m);
                 let n_outer = 1u64 << (h - plan.hh);
                 let n_sub = 1u64 << plan.hh;
@@ -423,7 +492,13 @@ impl CudaSvBackend {
                         // Compute after the gather (on the compute stream).
                         compute.wait(&gather_ev).map_err(drv_err)?;
                         bufs[slot].num_qubits = m + plan.hh;
-                        self.apply_gate(&mut bufs[slot], &plan.rg)?;
+                        if plan.hh == 0 {
+                            for gate in &gates {
+                                self.apply_gate(&mut bufs[slot], gate)?;
+                            }
+                        } else {
+                            self.apply_gate(&mut bufs[slot], &plan.rg)?;
+                        }
                         let compute_ev = compute.record_event(None).map_err(drv_err)?;
 
                         // Scatter back on the D2H stream after the compute.
@@ -457,7 +532,11 @@ impl CudaSvBackend {
                     }
                     // Reuses ring buffer 0 for all groups (serial on the default
                     // stream, so no cross-group hazard).
-                    self.apply_gate_paged(&default_ctx, &mut bufs[0], base, n, m, gate)?;
+                    if plan.hh == 0 {
+                        self.apply_low_run_paged(&default_ctx, &mut bufs[0], base, n, m, &gates)?;
+                    } else {
+                        self.apply_gate_paged(&default_ctx, &mut bufs[0], base, n, m, gate)?;
+                    }
                     let sev = Rc::new(def.record_event(None).map_err(drv_err)?);
                     // Buffer 0 was last written here; the next overlapped gather
                     // into slot 0 must wait this. (Other slots are untouched.)
@@ -467,20 +546,26 @@ impl CudaSvBackend {
                 }
             }
 
-            // Drain all streams (incl. the default stream used by the sync
-            // fallback) so the host state is complete before readout.
-            h2d.synchronize().map_err(drv_err)?;
-            compute.synchronize().map_err(drv_err)?;
-            d2h.synchronize().map_err(drv_err)?;
-            def.synchronize().map_err(drv_err)?;
-            Ok(PagedSvState {
-                num_qubits: n,
-                host,
-            })
+            Ok(())
         })();
 
+        // Drain even on an enqueue/apply error, before pinned host/ring storage
+        // can drop. Try every stream rather than returning after the first error.
+        let drains = [
+            h2d.synchronize(),
+            compute.synchronize(),
+            d2h.synchronize(),
+            def.synchronize(),
+        ];
         self.set_ctx(saved_ctx);
-        result
+        result?;
+        for drain in drains {
+            drain.map_err(drv_err)?;
+        }
+        Ok(PagedSvState {
+            num_qubits: n,
+            host,
+        })
     }
 
     /// Run `circuit` out-of-core like [`Self::run_paged`], but **amortise PCIe
@@ -790,6 +875,28 @@ fn plan_gate(gate: &GateInstance, m: u32) -> GatePlan {
     GatePlan { rg, hprime, hh }
 }
 
+// A segment is either one high gate or a maximal low-only run. Barrier
+// instructions carry no state and do not interrupt residency. Non-resident
+// execution keeps exactly one gate per segment for the original overlap path.
+fn paging_segments(circuit: &Circuit, m: u32, residency: bool) -> Vec<Vec<&GateInstance>> {
+    let mut segments: Vec<Vec<&GateInstance>> = Vec::new();
+    let mut low = false;
+    for inst in circuit.instructions() {
+        if let Instruction::Gate(gate) = inst {
+            let next_low = high_count(gate, m) == 0;
+            if residency && low && next_low {
+                if let Some(run) = segments.last_mut() {
+                    run.push(gate);
+                }
+            } else {
+                segments.push(vec![gate]);
+            }
+            low = next_low;
+        }
+    }
+    segments
+}
+
 /// Full-state PCIe passes (one read + one write of the whole `2^n` state) that
 /// [`CudaSvBackend::run_paged`] (per-gate) vs [`CudaSvBackend::run_paged_batched`]
 /// (multi-gate residency) make for `circuit` under the low-bit split `m` —
@@ -839,7 +946,7 @@ pub(crate) fn high_count(gate: &GateInstance, m: u32) -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{compose_high, paged_pass_counts};
+    use super::{compose_high, paged_pass_counts, paging_segments};
     use aleph_ir::Circuit;
 
     /// `paged_pass_counts` folds each maximal run of low-only (`< m`) gates into a
@@ -875,6 +982,28 @@ mod tests {
         high.cnot(1, 2).unwrap();
         high.cnot(2, 3).unwrap();
         assert_eq!(paged_pass_counts(&high, 1), (2, 2));
+    }
+
+    #[test]
+    fn resident_segments_preserve_gate_order_and_flush_high_controls() {
+        use aleph_core::{Gate, GateInstance};
+        let mut c = Circuit::new(5, 0);
+        c.h(0).unwrap();
+        c.barrier([0, 1]).unwrap();
+        c.h(1).unwrap();
+        c.add_gate(GateInstance::controlled(Gate::X, vec![0], vec![4]))
+            .unwrap();
+        c.h(0).unwrap();
+        let segments = paging_segments(&c, 2, true);
+        assert_eq!(segments.iter().map(Vec::len).collect::<Vec<_>>(), [2, 1, 1]);
+        let flat: Vec<_> = segments.into_iter().flatten().collect();
+        let original: Vec<_> = paging_segments(&c, 2, false)
+            .into_iter()
+            .flatten()
+            .collect();
+        assert_eq!(flat.len(), original.len());
+        assert!(flat.iter().zip(original).all(|(a, b)| std::ptr::eq(*a, b)));
+        assert_eq!(flat.len() as u64, paged_pass_counts(&c, 2).0);
     }
 
     /// `compose_high` must place `s` into the `hprime` bit positions and `outer`

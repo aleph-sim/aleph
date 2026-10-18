@@ -63,6 +63,8 @@ jobs:
         run: cargo test -p aleph-cuda --features cuda --lib scratch_budget_has_no_padding_or_oversized_single_tile
       - name: Cooperative BP graph ownership (no device required)
         run: cargo test -p aleph-cuda --features cuda --lib cooperative_graph_ownership_is_checked_before_device_access
+      - name: Paging residency schedule (no device required)
+        run: cargo test -p aleph-cuda --features cuda --lib sv::paged::tests
       # P6-01b: the NCCL exchange (cudarc `nccl`, dlopened like the rest of
       # cudarc), so it lints without libnccl on the runner.
       - name: clippy aleph-cuda (nccl feature)
