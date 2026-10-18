@@ -228,12 +228,15 @@ dependencies = [
  "aleph-backend",
  "aleph-core",
  "aleph-ir",
+ "aleph-mps",
  "aleph-oracle",
  "aleph-parser",
  "aleph-sv",
  "criterion",
  "proptest",
  "rand 0.8.6",
+ "serde_json",
+ "smallvec",
  "thiserror",
 ]
 

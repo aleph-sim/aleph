@@ -24,3 +24,8 @@ pub use error::StabError;
 pub use frame::{propagate_pauli_flips, sample_noisy, NoisyOutcomes};
 pub use noise::PauliNoise;
 pub use tableau::Tableau;
+
+mod sparse_expectation;
+pub use sparse_expectation::{
+    SparsePauliError, SparsePauliOptions, SparsePauliQuery, SparsePauliResult, SparsePauliStats,
+};
