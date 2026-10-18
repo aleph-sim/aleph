@@ -56,12 +56,18 @@ fn repetition_dem(n: usize, p: f64) -> DetectorErrorModel {
 
 /// GPU masks must equal CPU corrections on every shot.
 fn assert_match(bp: &BpDecoder, nd: usize, shots: usize, seed: u64) {
-    for layout in [
-        BpScratchLayout::ShotMajor,
-        BpScratchLayout::EdgeMajor,
-        BpScratchLayout::WarpTiled,
+    for (layout, cooperative) in [
+        (BpScratchLayout::ShotMajor, false),
+        (BpScratchLayout::EdgeMajor, false),
+        (BpScratchLayout::WarpTiled, false),
+        (BpScratchLayout::ShotMajor, true),
     ] {
-        let gpu = match CudaBp::with_scratch_layout(&bp.tanner(), layout) {
+        let built = if cooperative {
+            CudaBp::warp_cooperative(&bp.tanner())
+        } else {
+            CudaBp::with_scratch_layout(&bp.tanner(), layout)
+        };
+        let gpu = match built {
             Ok(g) => g,
             Err(e) => {
                 assert!(
@@ -114,12 +120,18 @@ fn gpu_bp_matches_cpu_large_batch() {
     let exp = SurfaceCode::new(d).memory_z_experiment(d);
     let dem = build_dem(&exp.annotated, &exp.phenomenological_mechanisms(0.03, 0.03)).unwrap();
     let bp = BpDecoder::with_params(&dem, 64, 0.875);
-    for layout in [
-        BpScratchLayout::ShotMajor,
-        BpScratchLayout::EdgeMajor,
-        BpScratchLayout::WarpTiled,
+    for (layout, cooperative) in [
+        (BpScratchLayout::ShotMajor, false),
+        (BpScratchLayout::EdgeMajor, false),
+        (BpScratchLayout::WarpTiled, false),
+        (BpScratchLayout::ShotMajor, true),
     ] {
-        let gpu = match CudaBp::with_scratch_layout(&bp.tanner(), layout) {
+        let built = if cooperative {
+            CudaBp::warp_cooperative(&bp.tanner())
+        } else {
+            CudaBp::with_scratch_layout(&bp.tanner(), layout)
+        };
+        let gpu = match built {
             Ok(g) => g,
             Err(e) => {
                 assert!(
@@ -143,4 +155,11 @@ fn gpu_bp_matches_cpu_large_batch() {
             "{mismatches}/100000 GPU/CPU BP corrections disagreed"
         );
     }
+}
+
+#[test]
+fn gpu_bp_matches_cpu_gross_qldpc() {
+    let dem = aleph_qec::BBCode::gross().code_capacity_dem(0.03);
+    let cpu = BpDecoder::with_params(&dem, 64, 0.875);
+    assert_match(&cpu, dem.detectors, 4_000, 0x0005_60BB);
 }

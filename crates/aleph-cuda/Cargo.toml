@@ -80,6 +80,8 @@ cudarc = { version = "0.19.8", default-features = false, features = [
 # `feature = "cuda"`, so these only do real work under `--features cuda`; pure
 # Rust, so they never pull CUDA in.
 [dev-dependencies]
+sha2 = "0.10"
+serde_json = { workspace = true }
 aleph-backend = { path = "../aleph-backend" }
 aleph-core    = { path = "../aleph-core" }
 aleph-ir      = { path = "../aleph-ir" }
