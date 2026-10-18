@@ -1,0 +1,798 @@
+{
+  "protocol": "one warm oracle check per case/API; five forward/reverse paired blocks, ten observations per API, no result-based retries; total API timing includes compilation/allocation/execution/release/JSON adapter; cold RSS is separate process",
+  "oracle_tolerance": 1e-10,
+  "observations": 430,
+  "cases": [
+    {
+      "name": "cancel16",
+      "reference": 1.0,
+      "modes": [
+        {
+          "mode": "mps",
+          "median_total_ns": 12033.0,
+          "min_total_ns": 6279,
+          "max_total_ns": 17371,
+          "cold_peak_rss_kib": 3372,
+          "stats": {
+            "max_bond_reached": 1,
+            "mode": "mps",
+            "truncation_weight": 0.0,
+            "value": 1.0000000000000018
+          }
+        },
+        {
+          "mode": "sparse",
+          "median_total_ns": 19551.0,
+          "min_total_ns": 11907,
+          "max_total_ns": 21741,
+          "cold_peak_rss_kib": 3496,
+          "stats": {
+            "branching_rotations": 64,
+            "coefficient_l1": 1.0,
+            "coefficient_l2": 1.0,
+            "max_active_qubits": 16,
+            "merges": 64,
+            "mode": "sparse",
+            "peak_candidates": 4,
+            "peak_terms": 2,
+            "peak_workspace_bytes": 288,
+            "retained_gates": 65,
+            "splits": 96,
+            "value": 1.0
+          }
+        },
+        {
+          "mode": "sparse-cone",
+          "median_total_ns": 62130.5,
+          "min_total_ns": 36566,
+          "max_total_ns": 66615,
+          "cold_peak_rss_kib": 3428,
+          "stats": {
+            "branching_rotations": 64,
+            "coefficient_l1": 1.0,
+            "coefficient_l2": 1.0,
+            "max_active_qubits": 1,
+            "merges": 64,
+            "mode": "sparse-cone",
+            "peak_candidates": 4,
+            "peak_terms": 2,
+            "peak_workspace_bytes": 288,
+            "retained_gates": 65,
+            "splits": 96,
+            "value": 1.0
+          }
+        },
+        {
+          "mode": "sv",
+          "median_total_ns": 9802680.5,
+          "min_total_ns": 9602718,
+          "max_total_ns": 9869861,
+          "cold_peak_rss_kib": 6272,
+          "stats": {
+            "mode": "sv",
+            "state_payload_bytes": 1048576,
+            "value": 1.0000000000000018
+          }
+        }
+      ]
+    },
+    {
+      "name": "ghz128",
+      "reference": 0.9323273456060345,
+      "modes": [
+        {
+          "mode": "mps",
+          "median_total_ns": 41308620.0,
+          "min_total_ns": 40737011,
+          "max_total_ns": 48395104,
+          "cold_peak_rss_kib": 4056,
+          "stats": {
+            "max_bond_reached": 2,
+            "mode": "mps",
+            "truncation_weight": 0.0,
+            "value": 0.9323273456060343
+          }
+        },
+        {
+          "mode": "sparse",
+          "median_total_ns": 12591.0,
+          "min_total_ns": 12149,
+          "max_total_ns": 16179,
+          "cold_peak_rss_kib": 3712,
+          "stats": {
+            "branching_rotations": 1,
+            "coefficient_l1": 1.2939427775709964,
+            "coefficient_l2": 1.0,
+            "max_active_qubits": 128,
+            "merges": 0,
+            "mode": "sparse",
+            "peak_candidates": 2,
+            "peak_terms": 2,
+            "peak_workspace_bytes": 192,
+            "retained_gates": 129,
+            "splits": 1,
+            "value": 0.9323273456060345
+          }
+        },
+        {
+          "mode": "sparse-cone",
+          "median_total_ns": 87513.0,
+          "min_total_ns": 83174,
+          "max_total_ns": 117785,
+          "cold_peak_rss_kib": 3428,
+          "stats": {
+            "branching_rotations": 1,
+            "coefficient_l1": 1.2939427775709964,
+            "coefficient_l2": 1.0,
+            "max_active_qubits": 128,
+            "merges": 0,
+            "mode": "sparse-cone",
+            "peak_candidates": 2,
+            "peak_terms": 2,
+            "peak_workspace_bytes": 192,
+            "retained_gates": 129,
+            "splits": 1,
+            "value": 0.9323273456060345
+          }
+        }
+      ]
+    },
+    {
+      "name": "ghz18-clifford",
+      "reference": 1.0,
+      "modes": [
+        {
+          "mode": "mps",
+          "median_total_ns": 814017.5,
+          "min_total_ns": 699446,
+          "max_total_ns": 926669,
+          "cold_peak_rss_kib": 3724,
+          "stats": {
+            "max_bond_reached": 2,
+            "mode": "mps",
+            "truncation_weight": 0.0,
+            "value": 0.9999999999999998
+          }
+        },
+        {
+          "mode": "sparse",
+          "median_total_ns": 3342.0,
+          "min_total_ns": 2570,
+          "max_total_ns": 10100,
+          "cold_peak_rss_kib": 3068,
+          "stats": {
+            "branching_rotations": 0,
+            "coefficient_l1": 1.0,
+            "coefficient_l2": 1.0,
+            "max_active_qubits": 18,
+            "merges": 0,
+            "mode": "sparse",
+            "peak_candidates": 1,
+            "peak_terms": 1,
+            "peak_workspace_bytes": 48,
+            "retained_gates": 18,
+            "splits": 0,
+            "value": 1.0
+          }
+        },
+        {
+          "mode": "sparse-cone",
+          "median_total_ns": 24576.0,
+          "min_total_ns": 15093,
+          "max_total_ns": 31084,
+          "cold_peak_rss_kib": 3408,
+          "stats": {
+            "branching_rotations": 0,
+            "coefficient_l1": 1.0,
+            "coefficient_l2": 1.0,
+            "max_active_qubits": 18,
+            "merges": 0,
+            "mode": "sparse-cone",
+            "peak_candidates": 1,
+            "peak_terms": 1,
+            "peak_workspace_bytes": 48,
+            "retained_gates": 18,
+            "splits": 0,
+            "value": 1.0
+          }
+        },
+        {
+          "mode": "sv",
+          "median_total_ns": 22051486.5,
+          "min_total_ns": 19411120,
+          "max_total_ns": 24321945,
+          "cold_peak_rss_kib": 13568,
+          "stats": {
+            "mode": "sv",
+            "state_payload_bytes": 4194304,
+            "value": 1.0000000000000002
+          }
+        }
+      ]
+    },
+    {
+      "name": "ghz18-rotation",
+      "reference": 0.9323273456060345,
+      "modes": [
+        {
+          "mode": "mps",
+          "median_total_ns": 907426.5,
+          "min_total_ns": 720136,
+          "max_total_ns": 948625,
+          "cold_peak_rss_kib": 4440,
+          "stats": {
+            "max_bond_reached": 2,
+            "mode": "mps",
+            "truncation_weight": 0.0,
+            "value": 0.9323273456060343
+          }
+        },
+        {
+          "mode": "sparse",
+          "median_total_ns": 4048.5,
+          "min_total_ns": 3120,
+          "max_total_ns": 11683,
+          "cold_peak_rss_kib": 3416,
+          "stats": {
+            "branching_rotations": 1,
+            "coefficient_l1": 1.2939427775709964,
+            "coefficient_l2": 1.0,
+            "max_active_qubits": 18,
+            "merges": 0,
+            "mode": "sparse",
+            "peak_candidates": 2,
+            "peak_terms": 2,
+            "peak_workspace_bytes": 144,
+            "retained_gates": 19,
+            "splits": 1,
+            "value": 0.9323273456060345
+          }
+        },
+        {
+          "mode": "sparse-cone",
+          "median_total_ns": 25548.0,
+          "min_total_ns": 15928,
+          "max_total_ns": 34790,
+          "cold_peak_rss_kib": 3388,
+          "stats": {
+            "branching_rotations": 1,
+            "coefficient_l1": 1.2939427775709964,
+            "coefficient_l2": 1.0,
+            "max_active_qubits": 18,
+            "merges": 0,
+            "mode": "sparse-cone",
+            "peak_candidates": 2,
+            "peak_terms": 2,
+            "peak_workspace_bytes": 144,
+            "retained_gates": 19,
+            "splits": 1,
+            "value": 0.9323273456060345
+          }
+        },
+        {
+          "mode": "sv",
+          "median_total_ns": 21786507.5,
+          "min_total_ns": 17891608,
+          "max_total_ns": 25017348,
+          "cold_peak_rss_kib": 14012,
+          "stats": {
+            "mode": "sv",
+            "state_payload_bytes": 4194304,
+            "value": 0.9323273456060345
+          }
+        }
+      ]
+    },
+    {
+      "name": "local128",
+      "reference": 0.5645652527710875,
+      "modes": [
+        {
+          "mode": "cone-sv",
+          "median_total_ns": 168355.0,
+          "min_total_ns": 162791,
+          "max_total_ns": 170077,
+          "cold_peak_rss_kib": 3744,
+          "stats": {
+            "mode": "cone-sv",
+            "peak_dense_workspace_bytes": 6656,
+            "value": 0.5645652527710875
+          }
+        },
+        {
+          "mode": "mps",
+          "median_total_ns": 1316430.0,
+          "min_total_ns": 1171661,
+          "max_total_ns": 1450869,
+          "cold_peak_rss_kib": 4072,
+          "stats": {
+            "max_bond_reached": 4,
+            "mode": "mps",
+            "truncation_weight": 3.571331232570994e-32,
+            "value": 0.5645652527710978
+          }
+        },
+        {
+          "mode": "sparse",
+          "median_total_ns": 62693.5,
+          "min_total_ns": 59485,
+          "max_total_ns": 74579,
+          "cold_peak_rss_kib": 3380,
+          "stats": {
+            "branching_rotations": 7,
+            "coefficient_l1": 3.4747022972318913,
+            "coefficient_l2": 0.9999999999999998,
+            "max_active_qubits": 128,
+            "merges": 0,
+            "mode": "sparse",
+            "peak_candidates": 42,
+            "peak_terms": 42,
+            "peak_workspace_bytes": 4608,
+            "retained_gates": 575,
+            "splits": 41,
+            "value": 0.5645652527710874
+          }
+        },
+        {
+          "mode": "sparse-cone",
+          "median_total_ns": 204432.0,
+          "min_total_ns": 199408,
+          "max_total_ns": 208716,
+          "cold_peak_rss_kib": 4024,
+          "stats": {
+            "branching_rotations": 7,
+            "coefficient_l1": 3.4747022972318904,
+            "coefficient_l2": 1.0,
+            "max_active_qubits": 6,
+            "merges": 0,
+            "mode": "sparse-cone",
+            "peak_candidates": 42,
+            "peak_terms": 42,
+            "peak_workspace_bytes": 3456,
+            "retained_gates": 18,
+            "splits": 41,
+            "value": 0.5645652527710874
+          }
+        }
+      ]
+    },
+    {
+      "name": "product16-k0",
+      "reference": 1.0,
+      "modes": [
+        {
+          "mode": "mps",
+          "median_total_ns": 4360.0,
+          "min_total_ns": 3266,
+          "max_total_ns": 5101,
+          "cold_peak_rss_kib": 3484,
+          "stats": {
+            "max_bond_reached": 1,
+            "mode": "mps",
+            "truncation_weight": 0.0,
+            "value": 1.0
+          }
+        },
+        {
+          "mode": "sparse",
+          "median_total_ns": 1112.5,
+          "min_total_ns": 983,
+          "max_total_ns": 1763,
+          "cold_peak_rss_kib": 3104,
+          "stats": {
+            "branching_rotations": 0,
+            "coefficient_l1": 1.0,
+            "coefficient_l2": 1.0,
+            "max_active_qubits": 16,
+            "merges": 0,
+            "mode": "sparse",
+            "peak_candidates": 1,
+            "peak_terms": 1,
+            "peak_workspace_bytes": 48,
+            "retained_gates": 0,
+            "splits": 0,
+            "value": 1.0
+          }
+        },
+        {
+          "mode": "sparse-cone",
+          "median_total_ns": 2992.5,
+          "min_total_ns": 1827,
+          "max_total_ns": 3960,
+          "cold_peak_rss_kib": 3072,
+          "stats": {
+            "branching_rotations": 0,
+            "coefficient_l1": 1.0,
+            "coefficient_l2": 1.0,
+            "max_active_qubits": 16,
+            "merges": 0,
+            "mode": "sparse-cone",
+            "peak_candidates": 1,
+            "peak_terms": 1,
+            "peak_workspace_bytes": 48,
+            "retained_gates": 0,
+            "splits": 0,
+            "value": 1.0
+          }
+        },
+        {
+          "mode": "sv",
+          "median_total_ns": 342150.5,
+          "min_total_ns": 335713,
+          "max_total_ns": 356630,
+          "cold_peak_rss_kib": 4704,
+          "stats": {
+            "mode": "sv",
+            "state_payload_bytes": 1048576,
+            "value": 1.0
+          }
+        }
+      ]
+    },
+    {
+      "name": "product16-k12",
+      "reference": 0.43134132658546687,
+      "modes": [
+        {
+          "mode": "mps",
+          "median_total_ns": 6544.5,
+          "min_total_ns": 4912,
+          "max_total_ns": 10026,
+          "cold_peak_rss_kib": 3404,
+          "stats": {
+            "max_bond_reached": 1,
+            "mode": "mps",
+            "truncation_weight": 0.0,
+            "value": 0.43134132658546703
+          }
+        },
+        {
+          "mode": "sparse",
+          "median_total_ns": 702823.5,
+          "min_total_ns": 696685,
+          "max_total_ns": 796916,
+          "cold_peak_rss_kib": 4008,
+          "stats": {
+            "branching_rotations": 12,
+            "coefficient_l1": 22.028293273741635,
+            "coefficient_l2": 0.9999999999999986,
+            "max_active_qubits": 16,
+            "merges": 0,
+            "mode": "sparse",
+            "peak_candidates": 4096,
+            "peak_terms": 4096,
+            "peak_workspace_bytes": 294912,
+            "retained_gates": 12,
+            "splits": 4095,
+            "value": 0.431341326585467
+          }
+        },
+        {
+          "mode": "sparse-cone",
+          "median_total_ns": 753544.5,
+          "min_total_ns": 706802,
+          "max_total_ns": 805862,
+          "cold_peak_rss_kib": 3444,
+          "stats": {
+            "branching_rotations": 12,
+            "coefficient_l1": 22.028293273741635,
+            "coefficient_l2": 0.9999999999999986,
+            "max_active_qubits": 16,
+            "merges": 0,
+            "mode": "sparse-cone",
+            "peak_candidates": 4096,
+            "peak_terms": 4096,
+            "peak_workspace_bytes": 294912,
+            "retained_gates": 12,
+            "splits": 4095,
+            "value": 0.431341326585467
+          }
+        },
+        {
+          "mode": "sv",
+          "median_total_ns": 1693958.0,
+          "min_total_ns": 1614185,
+          "max_total_ns": 2059050,
+          "cold_peak_rss_kib": 5372,
+          "stats": {
+            "mode": "sv",
+            "state_payload_bytes": 1048576,
+            "value": 0.4313413265855032
+          }
+        }
+      ]
+    },
+    {
+      "name": "product16-k16",
+      "reference": 0.32590780369910105,
+      "modes": [
+        {
+          "mode": "mps",
+          "median_total_ns": 7748.5,
+          "min_total_ns": 6000,
+          "max_total_ns": 8979,
+          "cold_peak_rss_kib": 3732,
+          "stats": {
+            "max_bond_reached": 1,
+            "mode": "mps",
+            "truncation_weight": 0.0,
+            "value": 0.3259078036991012
+          }
+        },
+        {
+          "mode": "sparse",
+          "median_total_ns": 11527642.0,
+          "min_total_ns": 11510978,
+          "max_total_ns": 13014399,
+          "cold_peak_rss_kib": 9644,
+          "stats": {
+            "branching_rotations": 16,
+            "coefficient_l1": 61.750593079557504,
+            "coefficient_l2": 0.9999999999999829,
+            "max_active_qubits": 16,
+            "merges": 0,
+            "mode": "sparse",
+            "peak_candidates": 65536,
+            "peak_terms": 65536,
+            "peak_workspace_bytes": 4718592,
+            "retained_gates": 16,
+            "splits": 65535,
+            "value": 0.3259078036991011
+          }
+        },
+        {
+          "mode": "sparse-cone",
+          "median_total_ns": 11604157.0,
+          "min_total_ns": 11532944,
+          "max_total_ns": 13213035,
+          "cold_peak_rss_kib": 9668,
+          "stats": {
+            "branching_rotations": 16,
+            "coefficient_l1": 61.750593079557504,
+            "coefficient_l2": 0.9999999999999829,
+            "max_active_qubits": 16,
+            "merges": 0,
+            "mode": "sparse-cone",
+            "peak_candidates": 65536,
+            "peak_terms": 65536,
+            "peak_workspace_bytes": 4718592,
+            "retained_gates": 16,
+            "splits": 65535,
+            "value": 0.3259078036991011
+          }
+        },
+        {
+          "mode": "sv",
+          "median_total_ns": 1937251.5,
+          "min_total_ns": 1893569,
+          "max_total_ns": 1976886,
+          "cold_peak_rss_kib": 5064,
+          "stats": {
+            "mode": "sv",
+            "state_payload_bytes": 1048576,
+            "value": 0.3259078036987784
+          }
+        }
+      ]
+    },
+    {
+      "name": "product16-k2",
+      "reference": 0.869234279364794,
+      "modes": [
+        {
+          "mode": "mps",
+          "median_total_ns": 4734.5,
+          "min_total_ns": 3566,
+          "max_total_ns": 7198,
+          "cold_peak_rss_kib": 3372,
+          "stats": {
+            "max_bond_reached": 1,
+            "mode": "mps",
+            "truncation_weight": 0.0,
+            "value": 0.869234279364794
+          }
+        },
+        {
+          "mode": "sparse",
+          "median_total_ns": 1630.5,
+          "min_total_ns": 1445,
+          "max_total_ns": 2674,
+          "cold_peak_rss_kib": 3480,
+          "stats": {
+            "branching_rotations": 2,
+            "coefficient_l1": 1.674287911628145,
+            "coefficient_l2": 1.0,
+            "max_active_qubits": 16,
+            "merges": 0,
+            "mode": "sparse",
+            "peak_candidates": 4,
+            "peak_terms": 4,
+            "peak_workspace_bytes": 288,
+            "retained_gates": 2,
+            "splits": 3,
+            "value": 0.869234279364794
+          }
+        },
+        {
+          "mode": "sparse-cone",
+          "median_total_ns": 6030.0,
+          "min_total_ns": 3285,
+          "max_total_ns": 8571,
+          "cold_peak_rss_kib": 3448,
+          "stats": {
+            "branching_rotations": 2,
+            "coefficient_l1": 1.674287911628145,
+            "coefficient_l2": 1.0,
+            "max_active_qubits": 16,
+            "merges": 0,
+            "mode": "sparse-cone",
+            "peak_candidates": 4,
+            "peak_terms": 4,
+            "peak_workspace_bytes": 288,
+            "retained_gates": 2,
+            "splits": 3,
+            "value": 0.869234279364794
+          }
+        },
+        {
+          "mode": "sv",
+          "median_total_ns": 759635.5,
+          "min_total_ns": 736246,
+          "max_total_ns": 793420,
+          "cold_peak_rss_kib": 5112,
+          "stats": {
+            "mode": "sv",
+            "state_payload_bytes": 1048576,
+            "value": 0.8692342793647942
+          }
+        }
+      ]
+    },
+    {
+      "name": "product16-k4",
+      "reference": 0.7555682324228328,
+      "modes": [
+        {
+          "mode": "mps",
+          "median_total_ns": 6871.5,
+          "min_total_ns": 5849,
+          "max_total_ns": 7761,
+          "cold_peak_rss_kib": 3728,
+          "stats": {
+            "max_bond_reached": 1,
+            "mode": "mps",
+            "truncation_weight": 0.0,
+            "value": 0.7555682324228329
+          }
+        },
+        {
+          "mode": "sparse",
+          "median_total_ns": 5204.0,
+          "min_total_ns": 4830,
+          "max_total_ns": 6863,
+          "cold_peak_rss_kib": 3132,
+          "stats": {
+            "branching_rotations": 4,
+            "coefficient_l1": 2.803240011024135,
+            "coefficient_l2": 1.0000000000000004,
+            "max_active_qubits": 16,
+            "merges": 0,
+            "mode": "sparse",
+            "peak_candidates": 16,
+            "peak_terms": 16,
+            "peak_workspace_bytes": 1152,
+            "retained_gates": 4,
+            "splits": 15,
+            "value": 0.7555682324228329
+          }
+        },
+        {
+          "mode": "sparse-cone",
+          "median_total_ns": 11968.0,
+          "min_total_ns": 9095,
+          "max_total_ns": 12677,
+          "cold_peak_rss_kib": 3468,
+          "stats": {
+            "branching_rotations": 4,
+            "coefficient_l1": 2.803240011024135,
+            "coefficient_l2": 1.0000000000000004,
+            "max_active_qubits": 16,
+            "merges": 0,
+            "mode": "sparse-cone",
+            "peak_candidates": 16,
+            "peak_terms": 16,
+            "peak_workspace_bytes": 1152,
+            "retained_gates": 4,
+            "splits": 15,
+            "value": 0.7555682324228329
+          }
+        },
+        {
+          "mode": "sv",
+          "median_total_ns": 1147913.5,
+          "min_total_ns": 1108344,
+          "max_total_ns": 1190409,
+          "cold_peak_rss_kib": 5020,
+          "stats": {
+            "mode": "sv",
+            "state_payload_bytes": 1048576,
+            "value": 0.7555682324228329
+          }
+        }
+      ]
+    },
+    {
+      "name": "product16-k8",
+      "reference": 0.5708833538465639,
+      "modes": [
+        {
+          "mode": "mps",
+          "median_total_ns": 6111.0,
+          "min_total_ns": 4125,
+          "max_total_ns": 9057,
+          "cold_peak_rss_kib": 3692,
+          "stats": {
+            "max_bond_reached": 1,
+            "mode": "mps",
+            "truncation_weight": 0.0,
+            "value": 0.5708833538465642
+          }
+        },
+        {
+          "mode": "sparse",
+          "median_total_ns": 62213.5,
+          "min_total_ns": 44816,
+          "max_total_ns": 82132,
+          "cold_peak_rss_kib": 3664,
+          "stats": {
+            "branching_rotations": 8,
+            "coefficient_l1": 7.858154559406622,
+            "coefficient_l2": 1.0000000000000002,
+            "max_active_qubits": 16,
+            "merges": 0,
+            "mode": "sparse",
+            "peak_candidates": 256,
+            "peak_terms": 256,
+            "peak_workspace_bytes": 18432,
+            "retained_gates": 8,
+            "splits": 255,
+            "value": 0.5708833538465641
+          }
+        },
+        {
+          "mode": "sparse-cone",
+          "median_total_ns": 88225.5,
+          "min_total_ns": 50088,
+          "max_total_ns": 100630,
+          "cold_peak_rss_kib": 3428,
+          "stats": {
+            "branching_rotations": 8,
+            "coefficient_l1": 7.858154559406622,
+            "coefficient_l2": 1.0000000000000002,
+            "max_active_qubits": 16,
+            "merges": 0,
+            "mode": "sparse-cone",
+            "peak_candidates": 256,
+            "peak_terms": 256,
+            "peak_workspace_bytes": 18432,
+            "retained_gates": 8,
+            "splits": 255,
+            "value": 0.5708833538465641
+          }
+        },
+        {
+          "mode": "sv",
+          "median_total_ns": 1411479.0,
+          "min_total_ns": 1364977,
+          "max_total_ns": 1528704,
+          "cold_peak_rss_kib": 5396,
+          "stats": {
+            "mode": "sv",
+            "state_payload_bytes": 1048576,
+            "value": 0.5708833538465656
+          }
+        }
+      ]
+    }
+  ]
+}

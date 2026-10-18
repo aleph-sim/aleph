@@ -1,0 +1,131 @@
+Gnuplot not found, using plotters backend
+Benchmarking pauli/ghz18-rotation/sparse-cones-false
+Benchmarking pauli/ghz18-rotation/sparse-cones-false: Warming up for 500.00 ms
+Benchmarking pauli/ghz18-rotation/sparse-cones-false: Collecting 20 samples in estimated 1.0003 s (414k iterations)
+Benchmarking pauli/ghz18-rotation/sparse-cones-false: Analyzing
+pauli/ghz18-rotation/sparse-cones-false
+                        time:   [2.1529 µs 2.1920 µs 2.2418 µs]
+Found 4 outliers among 20 measurements (20.00%)
+  4 (20.00%) high severe
+
+Benchmarking pauli/ghz18-rotation/sparse-cones-true
+Benchmarking pauli/ghz18-rotation/sparse-cones-true: Warming up for 500.00 ms
+Benchmarking pauli/ghz18-rotation/sparse-cones-true: Collecting 20 samples in estimated 1.0019 s (75k iterations)
+Benchmarking pauli/ghz18-rotation/sparse-cones-true: Analyzing
+pauli/ghz18-rotation/sparse-cones-true
+                        time:   [13.367 µs 15.395 µs 18.591 µs]
+Found 2 outliers among 20 measurements (10.00%)
+  2 (10.00%) high severe
+
+Benchmarking pauli/ghz18-rotation/sv
+Benchmarking pauli/ghz18-rotation/sv: Warming up for 500.00 ms
+Benchmarking pauli/ghz18-rotation/sv: Collecting 20 samples in estimated 1.4005 s (60 iterations)
+Benchmarking pauli/ghz18-rotation/sv: Analyzing
+pauli/ghz18-rotation/sv time:   [22.050 ms 22.340 ms 22.699 ms]
+Found 4 outliers among 20 measurements (20.00%)
+  1 (5.00%) high mild
+  3 (15.00%) high severe
+
+Benchmarking pauli/ghz18-rotation/mps
+Benchmarking pauli/ghz18-rotation/mps: Warming up for 500.00 ms
+Benchmarking pauli/ghz18-rotation/mps: Collecting 20 samples in estimated 1.0407 s (1470 iterations)
+Benchmarking pauli/ghz18-rotation/mps: Analyzing
+pauli/ghz18-rotation/mps
+                        time:   [710.32 µs 722.14 µs 735.13 µs]
+
+Benchmarking pauli/local128/sparse-cones-false
+Benchmarking pauli/local128/sparse-cones-false: Warming up for 500.00 ms
+Benchmarking pauli/local128/sparse-cones-false: Collecting 20 samples in estimated 1.0053 s (16k iterations)
+Benchmarking pauli/local128/sparse-cones-false: Analyzing
+pauli/local128/sparse-cones-false
+                        time:   [57.685 µs 57.709 µs 57.735 µs]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+
+Benchmarking pauli/local128/sparse-cones-true
+Benchmarking pauli/local128/sparse-cones-true: Warming up for 500.00 ms
+Benchmarking pauli/local128/sparse-cones-true: Collecting 20 samples in estimated 1.0396 s (5460 iterations)
+Benchmarking pauli/local128/sparse-cones-true: Analyzing
+pauli/local128/sparse-cones-true
+                        time:   [188.53 µs 189.41 µs 190.92 µs]
+Found 4 outliers among 20 measurements (20.00%)
+  4 (20.00%) high severe
+
+Benchmarking pauli/local128/mps
+Benchmarking pauli/local128/mps: Warming up for 500.00 ms
+Benchmarking pauli/local128/mps: Collecting 20 samples in estimated 1.2240 s (1050 iterations)
+Benchmarking pauli/local128/mps: Analyzing
+pauli/local128/mps      time:   [1.1956 ms 1.1975 ms 1.1993 ms]
+Found 4 outliers among 20 measurements (20.00%)
+  4 (20.00%) low mild
+
+Benchmarking pauli/product16-k4/sparse-cones-false
+Benchmarking pauli/product16-k4/sparse-cones-false: Warming up for 500.00 ms
+Benchmarking pauli/product16-k4/sparse-cones-false: Collecting 20 samples in estimated 1.0003 s (423k iterations)
+Benchmarking pauli/product16-k4/sparse-cones-false: Analyzing
+pauli/product16-k4/sparse-cones-false
+                        time:   [2.3304 µs 2.3316 µs 2.3329 µs]
+
+Benchmarking pauli/product16-k4/sparse-cones-true
+Benchmarking pauli/product16-k4/sparse-cones-true: Warming up for 500.00 ms
+Benchmarking pauli/product16-k4/sparse-cones-true: Collecting 20 samples in estimated 1.0005 s (212k iterations)
+Benchmarking pauli/product16-k4/sparse-cones-true: Analyzing
+pauli/product16-k4/sparse-cones-true
+                        time:   [4.5598 µs 4.5770 µs 4.6072 µs]
+Found 3 outliers among 20 measurements (15.00%)
+  2 (10.00%) high mild
+  1 (5.00%) high severe
+
+Benchmarking pauli/product16-k4/sv
+Benchmarking pauli/product16-k4/sv: Warming up for 500.00 ms
+Benchmarking pauli/product16-k4/sv: Collecting 20 samples in estimated 1.0089 s (840 iterations)
+Benchmarking pauli/product16-k4/sv: Analyzing
+pauli/product16-k4/sv   time:   [1.1890 ms 1.1934 ms 1.1983 ms]
+Found 4 outliers among 20 measurements (20.00%)
+  1 (5.00%) high mild
+  3 (15.00%) high severe
+
+Benchmarking pauli/product16-k4/mps
+Benchmarking pauli/product16-k4/mps: Warming up for 500.00 ms
+Benchmarking pauli/product16-k4/mps: Collecting 20 samples in estimated 1.0007 s (319k iterations)
+Benchmarking pauli/product16-k4/mps: Analyzing
+pauli/product16-k4/mps  time:   [3.1635 µs 3.2163 µs 3.2770 µs]
+Found 2 outliers among 20 measurements (10.00%)
+  2 (10.00%) high mild
+
+Benchmarking pauli/product16-k12/sparse-cones-false
+Benchmarking pauli/product16-k12/sparse-cones-false: Warming up for 500.00 ms
+Benchmarking pauli/product16-k12/sparse-cones-false: Collecting 20 samples in estimated 1.0542 s (1470 iterations)
+Benchmarking pauli/product16-k12/sparse-cones-false: Analyzing
+pauli/product16-k12/sparse-cones-false
+                        time:   [715.04 µs 723.11 µs 738.22 µs]
+Found 3 outliers among 20 measurements (15.00%)
+  3 (15.00%) high severe
+
+Benchmarking pauli/product16-k12/sparse-cones-true
+Benchmarking pauli/product16-k12/sparse-cones-true: Warming up for 500.00 ms
+Benchmarking pauli/product16-k12/sparse-cones-true: Collecting 20 samples in estimated 1.0650 s (1470 iterations)
+Benchmarking pauli/product16-k12/sparse-cones-true: Analyzing
+pauli/product16-k12/sparse-cones-true
+                        time:   [725.81 µs 734.29 µs 744.93 µs]
+Found 2 outliers among 20 measurements (10.00%)
+  1 (5.00%) high mild
+  1 (5.00%) high severe
+
+Benchmarking pauli/product16-k12/sv
+Benchmarking pauli/product16-k12/sv: Warming up for 500.00 ms
+Benchmarking pauli/product16-k12/sv: Collecting 20 samples in estimated 1.0798 s (630 iterations)
+Benchmarking pauli/product16-k12/sv: Analyzing
+pauli/product16-k12/sv  time:   [1.7162 ms 1.7195 ms 1.7236 ms]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high severe
+
+Benchmarking pauli/product16-k12/mps
+Benchmarking pauli/product16-k12/mps: Warming up for 500.00 ms
+Benchmarking pauli/product16-k12/mps: Collecting 20 samples in estimated 1.0007 s (291k iterations)
+Benchmarking pauli/product16-k12/mps: Analyzing
+pauli/product16-k12/mps time:   [3.4078 µs 3.4146 µs 3.4285 µs]
+Found 5 outliers among 20 measurements (25.00%)
+  1 (5.00%) high mild
+  4 (20.00%) high severe
+
