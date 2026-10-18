@@ -1,0 +1,23 @@
+{
+  "baseline": "508c4d0e37cfbef380f240cccfaa7a5f2b000c87",
+  "branch": "codex/p7-05-deadline-trace-replay",
+  "remote_directory": "/tmp/aleph-547-508c4d0",
+  "host": "51.159.0.49",
+  "cpu": "2x Intel Xeon Silver 4114, 40 logical CPUs; affinity CPU3, SMT sibling23 monitored",
+  "compiler": "rustc 1.96.0 ac68faa20 2026-05-25 LLVM22.1.2",
+  "os": "Linux x86_64 7.0.0-27-generic",
+  "rayon_num_threads": 1,
+  "services_stopped": false,
+  "valid_capture_runs": 1,
+  "excluded_attempts": 1,
+  "excluded_reason": "Example schema extension did not build; runner continued with stale binary; independent receipt oracle rejected missing job field. Preserved separately, excluded before scientific interpretation.",
+  "source_manifest": "source-sha256.json",
+  "local_tests": {
+    "rust_passed": 271,
+    "ignored_existing": 22,
+    "doc_passed": 10
+  },
+  "review": "Manual self-review; no blocking findings. Not a code-review skill/service.",
+  "scope": "New experiment instrument; no decoder throughput optimization, new RTL, or closed-loop quantum-control claims",
+  "tested_source_commit": "1a45552e4d320beac4793a13268ffb9f63c7d76d"
+}

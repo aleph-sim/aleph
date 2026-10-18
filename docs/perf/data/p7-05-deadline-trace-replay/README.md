@@ -1,0 +1,14 @@
+# P7-05 validation receipts
+
+See [report](../../../qec/p7-05-deadline-trace-replay.md) for units, assumptions, denominators and conclusions.
+
+- `final-receipts.tar.gz`: **valid** Linux campaign (30 cases), recorded primary/conditional-fallback traces, selected complete replay receipts, two no-loss controls, raw Criterion samples/estimates, logs, load trajectories, exact executable paths and successful-run markers. Extract into an empty directory. Paths in historical runners refer to the isolated `/tmp/aleph-547-508c4d0` experiment, not a required production installation.
+- `summary.json`, `oracle.json`: browsable valid results and independent availability-schedule oracle output. `source-sha256.json` identifies the tested source exactly, including Cargo.lock; `provenance.json` identifies baseline/host/limitations.
+- `deadline-sweep.tar.gz`, `deadline-summary.json`, `deadline-oracle.json`: 24 extra deterministic replays of the same recorded near-load service tuples at 2/5/10-period deadlines, with oracle agreement. No new host timing capture. `deadline-sweep.py` reproduces them from the original archive.
+- `cross-platform.json`, `check-cross-platform.py`: 12 Linux-to-Mac complete-receipt comparisons (exact integer/job fields, floating tolerance 1e-12), including both no-loss controls.
+- `local-release-tests.log`, `final-focused-tests.log`, `beta-workspace-clippy.log`: final local suite, Linux focused suite and workspace beta lint receipts. Build logs retain compiler diagnostics.
+- `run-campaign.py`, `run-criterion.py`, `select-binaries.py`, `final-remote-run.sh`: historical runner and artifact selection. The final remote script includes moving the initial failed attempt aside; for a new clean experiment use the report's campaign commands instead.
+- `queue-policy.png` / `.svg`, `plot.py`: scientific plot from recorded synthetic controls. The report explicitly distinguishes these constructed timings from measured host durations.
+- `schema-mismatch-audit.tar.gz`: **INVALID, EXCLUDED** first attempt, retained for audit only. Two example constructors failed compilation after a schema change. A shell-control error continued with an old executable. The independent oracle rejected its missing new per-job field. It is not an alternative valid measurement and was never selected on performance. The corrected runner verifies source hashes, stops on failure and selects exact Cargo artifacts before the single valid capture.
+
+The committed archives are compressed JSON/log receipts, not required runtime assets. Golden timing provenance is host/native model, not silicon. No shared service or CI runner was stopped. Load accounting is coarse and cannot guarantee isolation. All synthetic costs and unmeasured interface overhead assumptions are explicitly labeled in the traces/configs. No IID confidence interval is inferred from the ordered campaigns.

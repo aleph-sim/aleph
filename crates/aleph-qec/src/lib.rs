@@ -94,3 +94,11 @@ pub use robustness::{
     NoiseProcess, NoiseShot, RobustnessOptions, RobustnessResult, RobustnessStream,
     MAX_ROBUSTNESS_STEPS,
 };
+
+mod deadline_replay;
+pub use deadline_replay::{
+    replay_decode_trace, DecodeTrace, DecodeTraceJob, FallbackOverflowPolicy, LateCommitPolicy,
+    LatencyPercentiles, OperationalFailurePolicy, ReplayConfig, ReplayDisposition, ReplayJobResult,
+    ReplayPolicy, ReplayQueueLevel, ReplayResult, ServiceTime, TimedDecision, TraceOrigin,
+    TraceUnit,
+};

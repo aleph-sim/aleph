@@ -39,3 +39,7 @@ harness = false
 [[bench]]
 name = "robustness"
 harness = false
+
+[[bench]]
+name = "deadline_replay"
+harness = false
