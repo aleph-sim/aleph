@@ -1,0 +1,351 @@
+{
+  "schema_version": 1,
+  "checks": "PASS",
+  "ordinary_counts": {
+    "shots": 512,
+    "failures": 56,
+    "selected_shot": 4
+  },
+  "witness_versions": [
+    1,
+    2,
+    3
+  ],
+  "witnesses": [
+    {
+      "file": "surface-reduced.json",
+      "signature": "e11c5f4f3fec78db2b922903a03adcc4502da865251cbf78355f9e8b471c81f5",
+      "version": 1,
+      "source_outcome": {
+        "syndrome": [
+          3
+        ],
+        "truth": [
+          true
+        ],
+        "prediction": [
+          false
+        ],
+        "logical_failure": true,
+        "valid": null,
+        "first_valid_iter": null
+      },
+      "replays": [
+        {
+          "decoder": {
+            "kind": "Mwpm"
+          },
+          "outcome": {
+            "first_valid_iter": null,
+            "logical_failure": true,
+            "prediction": [
+              false
+            ],
+            "syndrome": [
+              3
+            ],
+            "truth": [
+              true
+            ],
+            "valid": null
+          }
+        },
+        {
+          "decoder": {
+            "kind": "UnionFind"
+          },
+          "outcome": {
+            "first_valid_iter": null,
+            "logical_failure": true,
+            "prediction": [
+              false
+            ],
+            "syndrome": [
+              3
+            ],
+            "truth": [
+              true
+            ],
+            "valid": null
+          }
+        }
+      ]
+    },
+    {
+      "file": "surface-conditional-0.json",
+      "signature": "a78a950dc8ade2ba6c15ed5a0268a9377276684fd868f67fd8a4fecc20733116",
+      "version": 2,
+      "source_outcome": {
+        "syndrome": [
+          13,
+          15
+        ],
+        "truth": [
+          true
+        ],
+        "prediction": [
+          false
+        ],
+        "logical_failure": true,
+        "valid": null,
+        "first_valid_iter": null
+      },
+      "replays": [
+        {
+          "decoder": {
+            "kind": "Mwpm"
+          },
+          "outcome": {
+            "first_valid_iter": null,
+            "logical_failure": true,
+            "prediction": [
+              false
+            ],
+            "syndrome": [
+              13,
+              15
+            ],
+            "truth": [
+              true
+            ],
+            "valid": null
+          }
+        },
+        {
+          "decoder": {
+            "kind": "UnionFind"
+          },
+          "outcome": {
+            "first_valid_iter": null,
+            "logical_failure": true,
+            "prediction": [
+              false
+            ],
+            "syndrome": [
+              13,
+              15
+            ],
+            "truth": [
+              true
+            ],
+            "valid": null
+          }
+        }
+      ]
+    },
+    {
+      "file": "tiny-conditional-0.json",
+      "signature": "cd4c12f5a8ebe985ad746382c659353f968f4e8334b3b6f86046a50b9d06f63c",
+      "version": 2,
+      "source_outcome": {
+        "syndrome": [
+          0
+        ],
+        "truth": [
+          true
+        ],
+        "prediction": [
+          false
+        ],
+        "logical_failure": true,
+        "valid": null,
+        "first_valid_iter": null
+      },
+      "replays": [
+        {
+          "decoder": {
+            "kind": "Mwpm"
+          },
+          "outcome": {
+            "first_valid_iter": null,
+            "logical_failure": true,
+            "prediction": [
+              false
+            ],
+            "syndrome": [
+              0
+            ],
+            "truth": [
+              true
+            ],
+            "valid": null
+          }
+        },
+        {
+          "decoder": {
+            "kind": "UnionFind"
+          },
+          "outcome": {
+            "first_valid_iter": null,
+            "logical_failure": false,
+            "prediction": [
+              true
+            ],
+            "syndrome": [
+              0
+            ],
+            "truth": [
+              true
+            ],
+            "valid": null
+          }
+        }
+      ]
+    },
+    {
+      "file": "tiny-dynamic-0.json",
+      "signature": "ebbf6716f07d059b204d6d41abda261d333b2d77ae0fea46769e53b88aabd7ed",
+      "version": 3,
+      "source_outcome": {
+        "syndrome": [
+          0
+        ],
+        "truth": [
+          false
+        ],
+        "prediction": [
+          true
+        ],
+        "logical_failure": true,
+        "valid": null,
+        "first_valid_iter": null
+      },
+      "replays": [
+        {
+          "decoder": {
+            "kind": "Mwpm"
+          },
+          "outcome": {
+            "first_valid_iter": null,
+            "logical_failure": true,
+            "prediction": [
+              true
+            ],
+            "syndrome": [
+              0
+            ],
+            "truth": [
+              false
+            ],
+            "valid": null
+          }
+        },
+        {
+          "decoder": {
+            "kind": "UnionFind"
+          },
+          "outcome": {
+            "first_valid_iter": null,
+            "logical_failure": true,
+            "prediction": [
+              true
+            ],
+            "syndrome": [
+              0
+            ],
+            "truth": [
+              false
+            ],
+            "valid": null
+          }
+        }
+      ]
+    }
+  ],
+  "tiny_exact_truth": 0.124,
+  "surface_calls": 169,
+  "dynamic_streams": [
+    {
+      "stream": 0,
+      "seed": 542,
+      "assumed_failures": 4,
+      "reference_failures": 4,
+      "worse": 2,
+      "better": 2,
+      "assumed_invalid": null,
+      "reference_invalid": null,
+      "active_steps": 1,
+      "burst_starts": 1,
+      "active_adjacent_pairs": 0
+    },
+    {
+      "stream": 1,
+      "seed": 11401840153730349644,
+      "assumed_failures": 4,
+      "reference_failures": 2,
+      "worse": 4,
+      "better": 2,
+      "assumed_invalid": null,
+      "reference_invalid": null,
+      "active_steps": 6,
+      "burst_starts": 4,
+      "active_adjacent_pairs": 2
+    },
+    {
+      "stream": 2,
+      "seed": 18179573074915868927,
+      "assumed_failures": 12,
+      "reference_failures": 3,
+      "worse": 9,
+      "better": 0,
+      "assumed_invalid": null,
+      "reference_invalid": null,
+      "active_steps": 5,
+      "burst_starts": 2,
+      "active_adjacent_pairs": 3
+    },
+    {
+      "stream": 3,
+      "seed": 14759917214692665867,
+      "assumed_failures": 2,
+      "reference_failures": 4,
+      "worse": 2,
+      "better": 4,
+      "assumed_invalid": null,
+      "reference_invalid": null,
+      "active_steps": 5,
+      "burst_starts": 3,
+      "active_adjacent_pairs": 2
+    }
+  ],
+  "queries": [
+    {
+      "case": "ghz8",
+      "query_sha256": "0e08f3cad4a0a31213c7232ba8b3544de6fc74eec73b4931161de04e46553e37",
+      "reference": 1.3073273456060344,
+      "statuses": [
+        "complete",
+        "complete"
+      ]
+    },
+    {
+      "case": "local128",
+      "query_sha256": "e5b292f1c0a33c730ebafc0efc15e37f1a9cc9fc2c4ebfd743f4464f0e626799",
+      "reference": 0.8145652527710875,
+      "statuses": [
+        "not_attempted",
+        "complete"
+      ]
+    },
+    {
+      "case": "ghz128",
+      "query_sha256": "e9e151c83677123c630b4acc1dca5e0db370581ccb29a0e8851b10438c42f6ff",
+      "reference": 1.3073273456060344,
+      "statuses": [
+        "not_attempted",
+        "resource_limit"
+      ]
+    },
+    {
+      "case": "product16",
+      "query_sha256": "4e4c3545589e3721fb92d8e03bcacaf47bc661e93a95246582f80b61d78439e1",
+      "reference": 0.32590780369910105,
+      "statuses": [
+        "complete",
+        "complete"
+      ]
+    }
+  ],
+  "scope": "independent stdlib artifact hashes, CP numeric inversion and analytic controls; native libraries validate witness generation/replay and decoding; no new coverage/speed claim",
+  "cross_run_comparison": "PASS"
+}
