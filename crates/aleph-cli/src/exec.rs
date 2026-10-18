@@ -346,6 +346,7 @@ pub fn run_circuit_with_execution_options<W: Write>(
     if resolved == BackendKind::Metal {
         return run_metal(
             &circuit,
+            parse_ms,
             effective_shots,
             print_statevector,
             &paulis,
@@ -632,6 +633,7 @@ fn metal_available() -> bool {
 #[allow(clippy::too_many_arguments)]
 fn run_metal<W: Write>(
     circuit: &aleph_ir::Circuit,
+    parse_ms: f64,
     effective_shots: Option<u32>,
     print_statevector: bool,
     paulis: &[(String, aleph_core::PauliString)],
@@ -647,6 +649,7 @@ fn run_metal<W: Write>(
     .map_err(|e| anyhow!("initializing the Metal GPU backend: {e}"))?;
     run_with_backend(
         backend,
+        parse_ms,
         circuit,
         effective_shots,
         print_statevector,
@@ -664,6 +667,7 @@ fn run_metal<W: Write>(
 #[allow(clippy::too_many_arguments)]
 fn run_metal<W: Write>(
     _circuit: &aleph_ir::Circuit,
+    _parse_ms: f64,
     _effective_shots: Option<u32>,
     _print_statevector: bool,
     _paulis: &[(String, aleph_core::PauliString)],

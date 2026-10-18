@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, edited, labeled, unlabeled]
+  merge_group:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -12,190 +17,219 @@ concurrency:
 permissions:
   contents: read
 
-# Trusted-PR guard: self-hosted runners must not execute code from
-# untrusted forks. Pushes to our own branches and PRs from this repo's
-# branches are trusted; fork PRs skip self-hosted jobs.
-# See: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#hardening-for-self-hosted-runners
-# The guard is inlined per-job because workflow-level `env` is not in
-# scope for job-level `if:` expressions.
-
 jobs:
+  plan:
+    name: Plan affected checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      docs: ${{ steps.plan.outputs.docs }}
+      fmt: ${{ steps.plan.outputs.fmt }}
+      clippy: ${{ steps.plan.outputs.clippy }}
+      linux: ${{ steps.plan.outputs.linux }}
+      macos: ${{ steps.plan.outputs.macos }}
+      python: ${{ steps.plan.outputs.python }}
+      hardware: ${{ steps.plan.outputs.hardware }}
+      python_os: ${{ steps.plan.outputs.python_os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test planner, command coverage and fail-closed gate
+        run: python -m unittest discover -s scripts/ci -v
+      - name: Select checks from complete diff and Cargo consumer graph
+        id: plan
+        run: python scripts/ci/plan.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ci-plan
+          path: ci-plan.json
+          if-no-files-found: error
+
+  docs:
+    name: Documentation and report checks
+    needs: plan
+    if: needs.plan.outputs.docs == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: ci-plan
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python scripts/ci/docs.py
+
   fmt:
     name: rustfmt
-    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, linux, x64]
+    needs: plan
+    if: needs.plan.outputs.fmt == 'true'
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: ci-plan
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: stable
           components: rustfmt
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo fmt --check
+      - run: python3 scripts/ci/run.py fmt
 
   clippy:
     name: clippy
-    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, linux, x64]
-    timeout-minutes: 15
+    needs: plan
+    if: needs.plan.outputs.clippy == 'true'
+    # The trust decision is in the workflow, never in the PR's generated plan.
+    # Forks get hosted execution and cannot claim a self-hosted label.
+    runs-on: ${{ fromJSON((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && '["self-hosted","linux","x64"]' || '["ubuntu-latest"]') }}
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: ci-plan
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: stable
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy --workspace --all-targets -- -D warnings
-      # P5-01: aleph-cuda is an empty crate without the `cuda` feature, so the
-      # workspace clippy above never sees its GPU code. Lint it explicitly with
-      # the feature on. `cudarc`'s `dynamic-loading` means this compiles with no
-      # CUDA SDK on the runner; the actual GPU test runs on the RTX 4000 box.
-      - name: clippy aleph-cuda (cuda feature)
-        run: cargo clippy -p aleph-cuda --features cuda --all-targets -- -D warnings
-      - name: CUDA full-state planning contracts (no device required)
-        run: cargo test -p aleph-cuda --features cuda --test public_execution pure_planning_contracts
-      - name: BP scratch padding budget (no device required)
-        run: cargo test -p aleph-cuda --features cuda --lib scratch_budget_has_no_padding_or_oversized_single_tile
-      - name: Cooperative BP graph ownership (no device required)
-        run: cargo test -p aleph-cuda --features cuda --lib cooperative_graph_ownership_is_checked_before_device_access
-      - name: Paging residency schedule (no device required)
-        run: cargo test -p aleph-cuda --features cuda --lib sv::paged::tests
-      # P6-01b: the NCCL exchange (cudarc `nccl`, dlopened like the rest of
-      # cudarc), so it lints without libnccl on the runner.
-      - name: clippy aleph-cuda (nccl feature)
-        run: cargo clippy -p aleph-cuda --features nccl --all-targets -- -D warnings
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 scripts/ci/run.py clippy
 
-  test-linux:
+  linux:
     name: test linux ${{ matrix.toolchain }}
-    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, linux, x64]
+    needs: plan
+    if: needs.plan.outputs.linux == 'true'
+    runs-on: ${{ fromJSON((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && '["self-hosted","linux","x64"]' || '["ubuntu-latest"]') }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         toolchain: [stable, beta]
-    continue-on-error: ${{ matrix.toolchain == 'beta' }}
+    # Beta is explicitly blocking: previous merge instructions required its
+    # success even though continue-on-error could make a failed matrix green.
     env:
-      # `rust-toolchain.toml` pins `channel = "stable"` and rustup honours
-      # it on every `cargo` invocation inside the repo, which would silently
-      # override the matrix toolchain. `RUSTUP_TOOLCHAIN` takes precedence
-      # over the file, so the beta row actually runs on beta.
       RUSTUP_TOOLCHAIN: ${{ matrix.toolchain }}
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: ci-plan
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.toolchain }}
       - uses: Swatinem/rust-cache@v2
-      - run: cargo build --workspace
-      - run: cargo test --workspace
-      # Since P3-13 the `parallel` feature (faer/rayon) is ON by default, so
-      # the workspace run above already covers the rayon build (including the
-      # cfg-gated thread-invariance oracle). This step keeps the rayon-FREE
-      # build compiling and green instead — the configuration users get with
-      # `default-features = false` (P1-09 silent-skip class).
-      - name: test aleph-mps without default features
-        run: cargo test -p aleph-mps --no-default-features
-      # P5-01: ensure the CUDA GPU code path compiles. `cudarc` `dynamic-loading`
-      # needs no CUDA SDK at build time, so the (GPU-less) runner can build it;
-      # the round-trip test itself runs on the RTX 4000 Ada box, not here. Stable
-      # only — beta adds no signal for this and would just double the load.
-      - name: build aleph-cuda (cuda feature)
-        if: matrix.toolchain == 'stable'
-        run: cargo build -p aleph-cuda --features cuda
-      - name: build aleph-cuda (nccl feature)
-        if: matrix.toolchain == 'stable'
-        run: cargo build -p aleph-cuda --features nccl
+      - run: python3 scripts/ci/run.py linux --toolchain "$RUSTUP_TOOLCHAIN"
 
-  test-python:
+  python:
     name: test python ${{ matrix.python }}
-    # Trusted-PR guard mirrors the Rust jobs (see header). The job itself runs
-    # on a GitHub-hosted runner — it must NOT add load to the self-hosted box.
-    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    needs: plan
+    if: needs.plan.outputs.python == 'true'
+    # Map to fixed hosted labels; a fork-controlled output is never a runner label.
+    runs-on: ${{ needs.plan.outputs.python_os == 'macos-latest' && 'macos-latest' || 'ubuntu-latest' }}
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.10", "3.12"]
+        python: ['3.10', '3.12']
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: ci-plan
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: stable
-      # Warm the Rust dep tree so the maturin build is the only cold cost.
       - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
       - run: pip install maturin
-      # `features = ["python"]` comes from `[tool.maturin]` in pyproject.toml.
-      # build + pip-install (not `maturin develop`, which needs an active
-      # virtualenv that setup-python does not provide) mirrors release.yml.
-      - name: Build the wheel
-        run: maturin build --release -m crates/aleph-py/Cargo.toml --out dist
-      - name: Install the wheel
-        run: pip install dist/*.whl
-      # stim/sinter/pymatching drive the aleph.qec differential + oracle tests
-      # (scripts/python/test_qec.py, test_sinter.py); without them those skip.
-      - name: Install QEC test deps
-        run: pip install stim sinter pymatching
-      # The suite import-guards on `aleph`, so a build/install failure surfaces
-      # here as a hard error rather than silently-skipped tests.
+      - name: Build feature-appropriate consumer wheel
+        run: python scripts/ci/run.py python
+      - name: Install wheel and test dependencies
+        run: pip install dist/*.whl stim sinter pymatching
       - name: Public benchmark contracts and CPU CLI route
         run: |
-          cargo build -p aleph-cli --release
+          cargo build --locked -p aleph-cli --release
           ALEPH_BENCH_TEST_CLI="$PWD/target/release/aleph" python -m unittest discover -s scripts/benchmarks -v
       - name: Run binding tests
         run: python -m unittest discover -s scripts/python -v
 
-  test-macos:
+  macos:
     name: test macos ${{ matrix.toolchain }}
+    needs: plan
+    if: needs.plan.outputs.macos == 'true'
     runs-on: macos-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         toolchain: [stable, beta]
-    continue-on-error: ${{ matrix.toolchain == 'beta' }}
     env:
       RUSTUP_TOOLCHAIN: ${{ matrix.toolchain }}
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: ci-plan
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.toolchain }}
-          # The metal-feature clippy step below is the first clippy run in this
-          # job. The runner's preinstalled stable ships clippy, but the
-          # action-installed beta toolchain does not — declare it so both rows
-          # have cargo-clippy.
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      # macOS (macos-latest, GitHub-hosted) is ~2x slower than the self-hosted
-      # Linux runner, and the debug aleph-qec suite (heavy circuit-level DEM
-      # construction) alone runs ~24 min there — over the 30-min cap. This job
-      # runs in RELEASE for platform coverage; the Linux job above keeps the
-      # debug profile, so overflow/debug_assert coverage is not lost.
-      - run: cargo build --workspace --release
-      - run: cargo test --workspace --release
-      # P5.5-01: the aleph-metal crate is empty without this feature, so the
-      # workspace steps above only prove the empty-crate compile. These build
-      # and exercise the real Metal path. The smoke test skips gracefully when
-      # the runner exposes no Metal device, so the leg stays green either way.
-      - name: Build aleph-metal (metal feature)
-        run: cargo build -p aleph-metal --features metal --release
-      - name: Test aleph-metal (metal feature)
-        run: cargo test -p aleph-metal --features metal --release
-      - name: Clippy aleph-metal (metal feature)
-        run: cargo clippy -p aleph-metal --features metal --all-targets -- -D warnings
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      # Preserve release platform coverage; Linux keeps debug assertions.
+      - run: python3 scripts/ci/run.py macos --toolchain "$RUSTUP_TOOLCHAIN"
+
+  hardware:
+    name: RTL
+    needs: plan
+    if: needs.plan.outputs.hardware == 'true'
+    uses: ./.github/workflows/hw.yml
+    permissions:
+      contents: read
+
+  required:
+    name: ci-required
+    needs: [plan, docs, fmt, clippy, linux, python, macos, hardware]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: ci-plan
+      - name: All selected groups must have succeeded
+        env:
+          CI_NEEDS: ${{ toJSON(needs) }}
+          CI_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: python3 scripts/ci/gate.py

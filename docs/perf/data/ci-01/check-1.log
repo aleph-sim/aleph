@@ -1,0 +1,20 @@
+test_changed_links_data_and_deleted_assets (test_ci.Documents) ... ok
+test_stale_report_checksum_and_symlinks (test_ci.Documents) ... ok
+test_docs_reject_bad_jsonl_and_nonfinite_json (test_ci.PlannerIntegration) ... ok
+test_real_docs_entrypoint_uses_no_cargo_and_binds_event_identity (test_ci.PlannerIntegration) ... ok
+test_real_docs_gate_never_executes_fenced_shell (test_ci.PlannerIntegration) ... ok
+test_reference_baseline_link_does_not_hide_new_broken_link (test_ci.PlannerIntegration) ... ok
+test_backend_consumers_and_platforms (test_ci.Routing) ... ok
+test_complete_git_diff_deletions_renames_spaces_and_more_than_300 (test_ci.Routing) ... ok
+test_cpu_shared_qec_frontend_and_scripts (test_ci.Routing) ... ok
+test_dependency_cycles_and_optional_dev_build_target_edges (test_ci.Routing) ... ok
+test_docs_and_receipts_do_not_select_code (test_ci.Routing) ... ok
+test_gate_rejects_all_non_success_and_bad_outputs (test_ci.Routing) ... ok
+test_mixed_and_unknown_paths_fall_back (test_ci.Routing) ... ok
+test_selected_argv_cover_real_feature_consumers (test_ci.Routing) ... ok
+test_plan_cannot_supply_a_runner_label (test_ci.WorkflowPolicy) ... ok
+
+----------------------------------------------------------------------
+Ran 15 tests in 2.041s
+
+OK
