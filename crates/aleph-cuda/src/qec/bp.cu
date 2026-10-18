@@ -40,19 +40,37 @@ extern "C" __global__ void bp_decode(
     u32 shot = blockIdx.x * blockDim.x + threadIdx.x;
     if (shot >= n_shots) return;
 
+    // Compile-time layout only: the same serial schedule and FP64 operations below.
+#if defined(BP_WARP_TILED)
+    const size_t step = 32;
+    const size_t tile = shot / 32;
+    const size_t lane = shot % 32;
+    double *m_vc = m_vc_all + tile * n_edges * 32 + lane;
+    double *e_cv = e_cv_all + tile * n_edges * 32 + lane;
+    u8 *ehat = ehat_all + tile * n_vars * 32 + lane;
+    u8 *s = s_all + tile * n_checks * 32 + lane;
+#elif defined(BP_EDGE_MAJOR)
+    const size_t step = n_shots;
+    double *m_vc = m_vc_all + shot;
+    double *e_cv = e_cv_all + shot;
+    u8 *ehat = ehat_all + shot;
+    u8 *s = s_all + shot;
+#else
+    const size_t step = 1;
     double *m_vc = m_vc_all + (size_t)shot * n_edges;
     double *e_cv = e_cv_all + (size_t)shot * n_edges;
     u8 *ehat = ehat_all + (size_t)shot * n_vars;
     u8 *s = s_all + (size_t)shot * n_checks;
+#endif
     const u32 *words = syn_words + (size_t)shot * words_per_shot;
 
     // Syndrome bits over checks (= detectors).
     for (u32 c = 0; c < n_checks; ++c) {
-        s[c] = (words[c >> 5] >> (c & 31)) & 1u;
+        s[(size_t)c * step] = (words[c >> 5] >> (c & 31)) & 1u;
     }
     // Init M_{v→c} = λ_v.
     for (u32 e = 0; e < n_edges; ++e) {
-        m_vc[e] = lambda[edge_var[e]];
+        m_vc[(size_t)e * step] = lambda[edge_var[e]];
     }
 
     const double INF = pos_inf();
@@ -60,12 +78,12 @@ extern "C" __global__ void bp_decode(
         // --- check → variable (min-sum) ---
         for (u32 c = 0; c < n_checks; ++c) {
             u32 lo = check_off[c], hi = check_off[c + 1];
-            bool neg = s[c] != 0;  // running sign: true ⇒ negative
+            bool neg = s[(size_t)c * step] != 0;  // running sign: true ⇒ negative
             double min1 = INF, min2 = INF;
             u32 argmin = 0xffffffffu;
             for (u32 k = lo; k < hi; ++k) {
                 u32 edge = check_edges[k];
-                double m = m_vc[edge];
+                double m = m_vc[(size_t)edge * step];
                 if (m < 0.0) neg = !neg;
                 double a = fabs(m);
                 if (a < min1) {
@@ -78,35 +96,35 @@ extern "C" __global__ void bp_decode(
             }
             for (u32 k = lo; k < hi; ++k) {
                 u32 edge = check_edges[k];
-                double m = m_vc[edge];
+                double m = m_vc[(size_t)edge * step];
                 bool excl_neg = (m < 0.0) ? !neg : neg;
                 double ex_min = (edge == argmin) ? min2 : min1;
                 double mag = alpha * ex_min;
-                e_cv[edge] = excl_neg ? -mag : mag;
+                e_cv[(size_t)edge * step] = excl_neg ? -mag : mag;
             }
         }
         // --- variable → check + posterior hard decision ---
         for (u32 v = 0; v < n_vars; ++v) {
             u32 lo = var_off[v], hi = var_off[v + 1];
             double total = lambda[v];
-            for (u32 e = lo; e < hi; ++e) total += e_cv[e];
-            ehat[v] = (total < 0.0) ? 1 : 0;
-            for (u32 e = lo; e < hi; ++e) m_vc[e] = total - e_cv[e];
+            for (u32 e = lo; e < hi; ++e) total += e_cv[(size_t)e * step];
+            ehat[(size_t)v * step] = (total < 0.0) ? 1 : 0;
+            for (u32 e = lo; e < hi; ++e) m_vc[(size_t)e * step] = total - e_cv[(size_t)e * step];
         }
         // --- convergence: H ê == s ---
         bool ok = true;
         for (u32 c = 0; c < n_checks && ok; ++c) {
             u32 lo = check_off[c], hi = check_off[c + 1];
             u8 parity = 0;
-            for (u32 k = lo; k < hi; ++k) parity ^= ehat[edge_var[check_edges[k]]];
-            if (parity != s[c]) ok = false;
+            for (u32 k = lo; k < hi; ++k) parity ^= ehat[(size_t)edge_var[check_edges[k]] * step];
+            if (parity != s[(size_t)c * step]) ok = false;
         }
         if (ok) break;
     }
 
     u64 mask = 0;
     for (u32 v = 0; v < n_vars; ++v) {
-        if (ehat[v]) mask ^= obs[v];
+        if (ehat[(size_t)v * step]) mask ^= obs[v];
     }
     out_mask[shot] = mask;
 }
