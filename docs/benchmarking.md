@@ -110,6 +110,11 @@ Don't upload local numbers to the project default testbed (`self-hosted-linux-x6
 
 ## Public-route experiment gates
 
+The [Phase 8 recovery report](perf/p8-performance-recovery.md) provides the current
+capability/adoption ledger, timing and memory boundaries, historical evidence and
+remaining hardware gates. Phase 8 is still in progress; its separate speedup ratios
+must not be multiplied into an aggregate claim.
+
 Use the [P8-13 public workflow harness](../scripts/benchmarks/README.md) for
 customer-visible CLI/Python A/B campaigns, in addition to Criterion's kernel-tier
 measurements. It records provenance, exact workloads/argv, interleaved raw pairs,

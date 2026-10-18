@@ -1,0 +1,8 @@
+test_asymmetric_bounds_and_zero_trials (scripts.python.test_qec_threshold_plot.TestThresholdBounds) ... ok
+test_bad_counts_and_bounds (scripts.python.test_qec_threshold_plot.TestThresholdBounds) ... ok
+test_legacy_half_width_is_not_reinterpreted (scripts.python.test_qec_threshold_plot.TestThresholdBounds) ... ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.003s
+
+OK
