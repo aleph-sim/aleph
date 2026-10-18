@@ -1,0 +1,14 @@
+   Compiling aleph-qec v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-qec)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.61s
+     Running tests/robustness.rs (target/debug/deps/robustness-c54b3705bf486daf)
+
+running 7 tests
+test schema_and_process_validation_happens_before_sampling ... ok
+test burst_prefix_does_not_depend_on_future_stream_length_or_other_streams ... ok
+test matched_static_is_exactly_the_existing_harness ... ok
+test zero_drift_and_burst_strength_preserve_shots_and_worker_determinism ... ok
+test correlated_witnesses_replay_state_and_reject_tampering ... ok
+test exact_heterogeneous_truth_and_paired_mismatch ... ok
+test burst_law_has_expected_occupancy_duration_and_correlation ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.24s

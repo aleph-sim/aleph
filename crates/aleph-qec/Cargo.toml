@@ -35,3 +35,7 @@ harness = false
 [[bench]]
 name = "rare_events"
 harness = false
+
+[[bench]]
+name = "robustness"
+harness = false

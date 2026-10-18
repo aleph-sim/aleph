@@ -247,10 +247,25 @@ pub struct WitnessOutcome {
     pub first_valid_iter: Option<u32>,
 }
 
-/// Conditional sampler provenance for a v2 witness. Version 1 keeps ordinary shot provenance.
+/// Sampler provenance: v2 conditional/enumeration, v3 robustness. Version 1 uses ordinary draws.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", deny_unknown_fields)]
 pub enum WitnessSampling {
+    /// Stateful generating process with decoder priors retained in the enclosing witness.
+    RobustnessV1 {
+        /// Original generating model (may differ from assumed decoder probabilities).
+        generating_dem: String,
+        /// Complete deterministic schedule or latent-state law.
+        process_json: String,
+        /// Original campaign sampling seed.
+        campaign_seed: u64,
+        /// Independent stream identity.
+        stream: u64,
+        /// Declared length, needed for drift interpolation and bounded state replay.
+        steps: u64,
+        /// State after the transition before this shot; verified on import.
+        burst_active: bool,
+    },
     /// Log-suffix conditional RNG v1; seed/shot identify a conditional draw, not an ordinary shot.
     FaultCountV1 {
         /// Total fired mechanisms, including p=1 mechanisms.
@@ -263,16 +278,16 @@ pub enum WitnessSampling {
     },
 }
 
-/// Portable v1/v2 artifact. Indices identify DEM mechanisms, not physical circuit locations.
+/// Portable v1/v2/v3 artifact. Indices identify DEM mechanisms, not physical circuit locations.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FailureWitness {
-    /// Schema version: 1 for ordinary draws, 2 for conditional/enumeration provenance.
+    /// Schema version: 1 for ordinary, 2 for stratified, 3 for robustness provenance.
     pub version: u32,
-    /// Absent for legacy ordinary sampling; explicit conditional/rank provenance for v2.
+    /// Absent for legacy ordinary draws; explicit conditional/rank (v2) or generating-process (v3) provenance.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sampling: Option<WitnessSampling>,
-    /// Exact canonical DEM including original probabilities and correlated components.
+    /// Exact canonical decoder-prior DEM including correlated components; v3 generation is in sampling.
     pub dem: String,
     /// SHA-256 of UTF-8 DEM bytes.
     pub dem_sha256: String,
@@ -298,8 +313,18 @@ pub struct FailureWitness {
 }
 impl FailureWitness {
     fn validate_structure(&self) -> Result<DetectorErrorModel> {
-        if !matches!((self.version, &self.sampling), (1, None) | (2, Some(_)))
-            || self.provenance != "dem-mechanisms"
+        if !matches!(
+            (self.version, &self.sampling),
+            (1, None)
+                | (
+                    2,
+                    Some(
+                        WitnessSampling::FaultCountV1 { .. }
+                            | WitnessSampling::FaultCountEnumerationV1 { .. }
+                    )
+                )
+                | (3, Some(WitnessSampling::RobustnessV1 { .. }))
+        ) || self.provenance != "dem-mechanisms"
             || digest(self.dem.as_bytes()) != self.dem_sha256
         {
             return Err(invalid("version, provenance or DEM hash mismatch"));
@@ -307,6 +332,33 @@ impl FailureWitness {
         let dem = DetectorErrorModel::parse(&self.dem)?;
         validate_dem(&dem)?;
         let original = match &self.sampling {
+            Some(WitnessSampling::RobustnessV1 {
+                generating_dem,
+                process_json,
+                campaign_seed,
+                stream,
+                steps,
+                burst_active,
+            }) => {
+                let generating = DetectorErrorModel::parse(generating_dem)?;
+                let process: crate::NoiseProcess =
+                    serde_json::from_str(process_json).map_err(|e| invalid(e.to_string()))?;
+                crate::validate_noise_compatibility(&generating, &dem)?;
+                if self.seed != crate::robustness_stream_seed(*campaign_seed, *stream) {
+                    return Err(invalid("robustness stream seed mismatch"));
+                }
+                let shot = crate::robustness::replay_noise_shot(
+                    &generating,
+                    &process,
+                    *steps,
+                    self.seed,
+                    self.shot,
+                )?;
+                if shot.burst_active != *burst_active {
+                    return Err(invalid("burst state does not replay"));
+                }
+                shot.faults
+            }
             None => sample_faults(&dem, self.seed, self.shot),
             Some(WitnessSampling::FaultCountV1 { faults }) => {
                 crate::FaultCountPlan::new(&dem, *faults, crate::stratified::MAX_CONDITIONAL_CELLS)?
@@ -634,7 +686,7 @@ impl WitnessDecoder {
     }
 }
 
-fn sample_faults(dem: &DetectorErrorModel, seed: u64, shot: u64) -> Vec<usize> {
+pub(crate) fn sample_faults(dem: &DetectorErrorModel, seed: u64, shot: u64) -> Vec<usize> {
     let mut rng = StdRng::seed_from_u64(crate::experiment::splitmix64(seed, shot));
     dem.errors
         .iter()
@@ -684,4 +736,39 @@ impl Decoder for WitnessDecoder {
             Engine::Fixed(d) => d.decode(syndrome),
         }
     }
+}
+
+// Reuse the scored outcome; capture incurs no hidden source-decoder call.
+pub(crate) fn robustness_witness(
+    decoder: &WitnessDecoder,
+    generating: &DetectorErrorModel,
+    process: &crate::NoiseProcess,
+    options: &crate::RobustnessOptions,
+    stream: u64,
+    shot: &crate::NoiseShot,
+    outcome: WitnessOutcome,
+) -> Result<FailureWitness> {
+    let dem = decoder.model().to_dem_string();
+    Ok(FailureWitness {
+        version: 3,
+        sampling: Some(WitnessSampling::RobustnessV1 {
+            generating_dem: generating.to_dem_string(),
+            process_json: serde_json::to_string(process).map_err(|e| invalid(e.to_string()))?,
+            campaign_seed: options.seed,
+            stream,
+            steps: options.steps,
+            burst_active: shot.burst_active,
+        }),
+        dem_sha256: digest(dem.as_bytes()),
+        dem,
+        seed: crate::robustness_stream_seed(options.seed, stream),
+        shot: shot.time,
+        original_faults: shot.faults.clone(),
+        faults: shot.faults.clone(),
+        decoder: decoder.spec.clone(),
+        provenance: "dem-mechanisms".into(),
+        original_outcome: outcome.clone(),
+        outcome,
+        minimization: None,
+    })
 }

@@ -204,3 +204,11 @@ CPU readings were not serialized. All executed feature measurements are retained
 P7-02 adds explicit v2 conditional-draw and enumeration-rank provenance while preserving v1
 ordinary artifacts. See `docs/qec/p7-02-rare-events.md`; a conditional sample index is not an
 ordinary-shot identity. Existing replay/minimization and exact-example signatures remain shared.
+
+## Mismatched and stateful generation extension
+
+P7-04 adds v3 robustness provenance: generating DEM/process, stream seed, absolute time and
+latent burst state are separate from the fixed assumed decoder DEM. Import regenerates the
+stateful prefix before validating source faults and outcomes. v1/v2 bytes stay compatible;
+minimization keeps original generation metadata and only reduces a counterfactual fault set.
+See [the robustness report](p7-04-decoder-robustness.md) for the sampling unit and uncertainty model.
