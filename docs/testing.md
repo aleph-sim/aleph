@@ -191,3 +191,9 @@ Equivalence is pinned three ways:
 When introducing a new state-vector backend (e.g. SIMD-specialised
 variants in P1-03), add it to the workhorse equivalence test
 + `build.rs` codegen rather than relying on the oracle alone.
+
+## Affected CI checks
+
+See [CI selection and merge policy](ci.md) for docs-only checks, dependency-aware
+backend/frontend coverage, the `ci-required` gate, full overrides and hardware
+limitations. A skipped unselected suite is not an executed passing test.

@@ -5561,6 +5561,143 @@ LogicalErrorResult::new computes 1.96*sqrt(p*(1-p)/n). Zero observed failures yi
 
 -----
 
+# Cross-phase CI Infrastructure
+
+### [CI-01] Reduce CI load: docs fast path, then dependency-aware code checks
+
+**GitHub:** [#597](https://github.com/aleph-sim/aleph/issues/597).
+
+**Labels:** `area:infra`, `type:infra`, `priority:high`
+**Estimate:** L (two sequential, independently reviewable stages)
+**Scope:** Implement both stages in one task and one PR, as requested by the user: **A — documentation fast path**, then **B — dependency-aware code checks**. Keep separate validation gates inside the same PR; do not close the issue until both stages are verified.
+
+## Execution order
+
+- [ ] **Stage A:** Fast hosted checks for approved docs-only changes, retaining the existing full route for code/config/unknown changes.
+- [ ] **Stage B:** Select code checks from affected dependencies, consumers, features and platforms; retain conservative full-suite fallbacks and integration audits.
+
+The gate/classifier infrastructure from A is reused by B. Stage B must not delay the docs improvement or silently reduce A's safety guarantees.
+
+## Problem and observed evidence
+
+Documentation-only PRs currently run the same eight CI jobs as production changes. `.github/workflows/ci.yml` has no change classifier or documentation fast path: rustfmt, Clippy (including CUDA/NCCL), Linux stable/beta workspace suites, two Python wheel/test jobs and macOS stable/beta workspace/Metal suites all run.
+
+For example, [report PR #596](https://github.com/aleph-sim/aleph/pull/596), head `d02d8b51dfb3cb6c1d21bff94e81f3ac692e1922`, changes reports, backlog/roadmap and saved validation receipts. In [CI run 39158713634](https://github.com/aleph-sim/aleph/actions/runs/39158713634), macOS stable took **22m45s** and Linux beta **13m16s**; Linux stable did not start until 19:41:25 UTC after the run's first jobs started around 19:25:39. These are individual observed job durations/start times, not a completed-run total, billing estimate or causal proof of every queue delay. No Rust implementation changed.
+
+The desired outcome is concrete: ordinary prose/report PRs should get meaningful checks in minutes without occupying the self-hosted development/measurement runner or rebuilding Python wheels and the Rust workspace.
+
+## Stage A: a safe docs-only route
+
+1. Add a small **GitHub-hosted**, read-only change-planning job. Keep its workflow triggered for every relevant PR, so the merge result always exists. Retain all current heavy checks for every change that is not confidently classified as documentation-only.
+2. Use an explicit allowlist of prose/report locations (for example approved root Markdown files, `docs/**` Markdown/images and identified report receipts). A file extension or `docs/` prefix alone is insufficient: documentation trees can contain fixtures, generated artifacts, scripts or inputs used by tests/builds. Audit repository consumers before approving non-prose paths; unknown formats/paths take the full route. `.rs` documentation edits, rustdoc, examples, Python notebooks/scripts and build inputs remain code-bearing changes.
+3. Compute the **complete** PR diff against the appropriate base/merge-base, including deleted/renamed paths and both sides of a rename. Do not rely on a truncated changed-files response or a shallow-fetch failure. A mixed docs+code PR takes the full route. An incomplete/ambiguous diff falls back to full CI; inability to produce a valid plan fails the merge gate.
+4. The docs route performs useful bounded checks: changed local link/asset targets, relevant Markdown consistency and JSON/JSONL/schema/checksum validation where a known report format declares it. Avoid live external-link checks as a blocking network-flaky gate. Do not execute arbitrary fenced shell snippets. Run only explicitly mapped executable-example checks where required; otherwise classify those changes for the existing full route.
+5. Ordinary docs-only PRs must launch **no self-hosted Rust jobs, no workspace build/test, no CUDA/Metal feature build and no Python wheel build**. Publish a concise job summary explaining the classification and omitted suites. Do not label omitted tests as executed/passed.
+6. CI workflows/actions, classifier scripts/tests, `.github/**` policy, Cargo manifests/lockfile, toolchain/config/build scripts, packaging configuration, source/test scripts and unrecognized paths must never use the docs shortcut. Initially select the unchanged full CI route for all of these.
+
+## Reliable merge semantics
+
+- Add one stable final gate (for example `ci-required`) that always evaluates the successful plan and **all selected jobs**, even when dependencies failed. A job-level `always()`/`needs` design must explicitly reject failed planning, malformed/missing outputs, failed/cancelled/missing selected jobs and a selected job unexpectedly skipped.
+- An intentionally unselected heavy suite is allowed to be skipped only when explained by the valid docs plan and successful docs checks. This is different from treating skipped/cancelled checks as test success.
+- Do not solve this solely with workflow-level `paths-ignore`. A filtered-out workflow can leave expected checks pending; a conditionally skipped job can otherwise appear acceptable without proving the intended checks ran. See [GitHub's required-check semantics](https://docs.github.com/en/pull-requests/how-tos/merge-and-close-pull-requests/troubleshooting-required-status-checks#handling-skipped-but-required-checks).
+- Bind plan/result reporting to the current PR head and relevant base/tested revision; stale results from a previous commit must not authorize a merge. Recompute on every new commit/base update. Preserve existing concurrency cancellation, but a cancelled run cannot satisfy the gate.
+- Audit branch rules and merge-monitor expectations before rollout. On 2026-10-18 the branch-protection API reported `Branch not protected` and the repository ruleset list was empty; therefore the current all-checks policy also lives in our manual/automation merge instructions. Recheck this at implementation time. Do not silently enable/disable protection or relax any current PR's authorized merge conditions.
+- Update the documented merge policy and future monitors to use the new aggregate **only after it is validated and accepted**. Existing monitors requiring eight/nine completed successful jobs retain their contract until explicitly migrated. This task must not retroactively waive PR #596's checks.
+- Preserve fork/self-hosted trust boundaries, read-only token defaults and checkout without persisted credentials. Docs planning/checks should work on hosted runners for forks; untrusted changes must not gain self-hosted execution or secrets. Do not use `pull_request_target` to execute PR code. Changes to the classifier/workflow themselves require the full route and review.
+
+## Main-branch and full-check policy
+
+Use the same safe docs classification for main pushes so merging a report does not immediately re-run the expensive suite there. Define the push comparison range explicitly; an unavailable range selects full CI. Code-bearing main pushes keep existing full validation in this first task.
+
+Provide a documented full-suite override and retain a broad default-branch audit (scheduled or manually requested). Treat separately dispatched validation as extra evidence, not an automatic substitute for the PR's required check; GitHub's event semantics matter. Do not enable timed performance benchmarks on a shared runner as part of this change. `bench.yml` is currently manual-only; preserve that policy. Release/tag/wheel publication behavior remains unchanged.
+
+`hw.yml` already path-filters PRs but runs on every main push. Apply/audit the same docs exception there so a docs merge does not run RTL co-simulation unnecessarily. Preserve checks for RTL, generated hardware inputs and the Rust golden model. Do not simply assume its current `aleph-qec/**` list captures every transitive golden-generator input; record any broader dependency gap as follow-up work rather than weakening it.
+
+## Rollout and tests
+
+1. Add table-driven classifier tests and temporarily report the proposed route in shadow mode while the old merge gates stay authoritative. Exercise both successful routes before skipping expensive jobs.
+2. Cases must include root prose; docs prose/images; known report JSON/JSONL and checksum receipts; malformed receipts; mixed docs+Rust; deleted/renamed files; docs renamed into source and vice versa; paths with whitespace; more than 300 changed files with code at the end; missing/truncated diff; unknown path; workflow/classifier edit; Cargo.lock/toolchain edit; new PR commit/base movement; and fork PRs.
+3. Gate tests must show failure for classifier failure, absent outputs, cancelled/failed selected jobs and unexpected selected-job skips; a valid docs plan plus passing docs checks must succeed with explicitly unselected heavy jobs omitted.
+4. Run a real docs-only PR and a mixed/code-bearing control. Record selected jobs, check conclusions, self-hosted job count, queue wait, elapsed wall and summed runner time separately. Demonstrate that the docs shortcut also holds for a docs-only main push.
+5. Initial docs target: **no expensive jobs and roughly 1–3 minutes active execution with warm hosted tooling**. Queue time is reported separately, not promised. Compare several real runs, retain failures and choose acceptance thresholds from measured setup costs; do not claim a saving based only on predicted job counts.
+
+## Stage A acceptance criteria
+
+- [ ] Pure approved documentation changes receive useful hosted checks and a stable successful merge gate without Rust/Python/GPU/RTL suites or self-hosted allocation.
+- [ ] Mixed, ambiguous and code/config changes retain existing full CI coverage; no regression is hidden by a skipped job or planner failure.
+- [ ] The same docs exception works on main without changing code-bearing main/release behavior.
+- [ ] Classifier and merge-gate edge/security cases have meaningful automated coverage; a real docs and real code control validate routing.
+- [ ] Before/after route, elapsed/queue/runner-time evidence and known limitations are documented.
+- [ ] Merge instructions and future monitors describe selected-success versus intentionally-unselected checks; migration does not bypass existing PR authorization.
+
+## Stage B: dependency-aware checks for code changes
+
+Start only after Stage A routing/gate behavior is verified. Replace the unconditional full route for confidently understood code changes with a conservative affected-check plan. File location is the seed, not the entire affected surface.
+
+### Dependency and configuration model
+
+1. Derive the workspace package graph from Cargo metadata. Include normal, build, dev/test, optional-feature and target-specific dependencies; compute the transitive reverse-consumer closure needed by the selected tests. Shared test/oracle helpers can connect otherwise separate packages. Cycles must terminate deterministically. Record the feature/platform assumptions instead of treating a default-feature graph as complete.
+2. Maintain explicit non-Cargo edges for Python bindings/tests, CLI integration, shader source/includes, generated artifacts, golden-vector generators, scripts, fixtures and benchmark harnesses. Verify actual consumers before excluding checks. Unknown/unmapped inputs take the full route.
+3. Select **package + test scope + platform + feature set**. A crate name alone is not a coverage plan: Metal/CUDA crates are empty without their respective features. Do not use a blanket `--all-features` build that mixes unsupported platform configurations; use audited configurations.
+4. Preserve current contracts: Linux debug, macOS release/cross-platform coverage, stable/beta behavior, MPS no-default-features, CUDA/NCCL feature checks, Metal feature checks, Python 3.10/3.12 wheel/binding contracts, and RTL golden checks where affected. Any reduction of these dimensions is a separate explicit policy decision, not a side effect of path filtering. The aggregate must inspect actual selected job outcomes even when a legacy beta job is marked continue-on-error.
+5. Planner/workflow changes, workspace manifests/lockfile/toolchain/build configuration, ambiguous diffs and unknown paths retain the full route initially. Optimize these broad triggers only after independent evidence that a narrower plan is safe.
+
+### Expected routing examples — validate against the actual graph
+
+| Change seed | Required affected coverage | What it must not assume |
+|---|---|---|
+| Approved prose/report only | Stage A hosted docs checks and aggregate | No Rust/Python/GPU/RTL execution merely because another workflow also handles code |
+| `aleph-metal` / Metal shaders | Real `metal` feature build/lint/tests on macOS; affected feature-enabled CLI/Python consumer builds/contracts; any impacted reference/test packages | Default workspace build proves Metal coverage, or every macOS test is a Metal test |
+| `aleph-cuda` / CUDA kernels | `cuda` and relevant `nccl` checks, pure no-device contracts, affected CUDA-feature CLI/Python consumers; dependency-selected reference tests | CUDA compilation proves execution on a physical GPU |
+| `aleph-sv` / CPU kernels or noise | CPU tests/oracles plus CLI/Python and any transitive GPU/reference consumers; relevant Linux/macOS and toolchain configurations | CPU edits cannot break another backend's oracle or a public frontend |
+| `aleph-core`, `aleph-ir`, `aleph-backend` | Broad consumer closure, normally approaching the full matrix | Shared interfaces are isolated to their own unit tests |
+| `aleph-qec` | QEC plus affected Python/CUDA consumers and RTL golden-model coverage | RTL depends only on files directly inside `hw/` |
+| Parser or CLI | Parser/CLI plus affected frontend/IR consumers and public-route contracts, according to the graph | Source parsing or output semantics are backend-independent in their tests |
+| Python wrappers/scripts | Relevant wheel/binding/integration matrix and explicitly mapped script contracts | A Python-only diff cannot affect CUDA-Q/public workflow behavior |
+| RTL/golden fixtures/generators | Hardware co-simulation plus affected Rust/generator/consumer checks | Generated data are inert documentation |
+| Unknown/mixed/common configuration | Union of all affected scopes; full fallback when uncertain | Pick just the largest edited folder or the first matching rule |
+
+These examples define intended reasoning, not a frozen hand-maintained substitute for graph tests. The closure may legitimately be broad because current dev/oracle dependencies connect packages. Prefer a correct broad result to an impressive but unsafe reduction in job count.
+
+### Execution and merge behavior
+
+- Emit a versioned, deterministic machine-readable plan with changed files, source/base identities, selected configurations and a reason for every selected/omitted suite. The job summary must make the plan reviewable.
+- Build reusable job/configuration groups so selecting one backend does not run the entire workspace inside a supposedly targeted job. Conversely, `cargo test -p ...` alone does not test reverse consumers: add their relevant builds/contracts explicitly.
+- Stage A's always-evaluated aggregate remains the single selection authority. It must validate **every selected matrix entry**, not just one successful sibling. Missing entries, planner errors, malformed/false-string outputs, and unexpected skips/cancellations fail. Intentionally omitted configurations remain visibly unexecuted.
+- Keep broad integration on code-bearing main pushes during initial rollout and provide a full default-branch periodic/manual audit. A main/nightly job is a backstop, not permission to omit a known affected consumer before merge. Docs-only main pushes still take A's fast route. Keep release CI and timed benchmark isolation unchanged.
+- Provide a safe full-check override. An override may broaden coverage; PR text/labels/inputs must not let an untrusted author reduce the computed plan. Preserve the hosted/fork/self-hosted boundaries established by A.
+- Actual Metal/CUDA device validation and performance campaigns remain distinct from compile-only/no-device checks. Route supported hardware checks where available; otherwise report the missing hardware evidence honestly. This task does not provision GPUs or certify performance from a build.
+
+### Validation and rollout
+
+1. Run B in **shadow mode**: compare its selected sets against the existing full CI and replay representative historical diffs before removing jobs. Include shared core/IR, pure Metal, CUDA, QEC, CPU noise, frontend, Python, scripts/fixtures and configuration changes.
+2. Add graph/classifier fixtures for normal/dev/build/optional/target edges, dependency cycles, consumers through shared oracle helpers, new/deleted/renamed packages and shader includes, lock/config changes and unknown inputs. Include deliberate broken-consumer examples proving the consumer is selected, not merely that the graph contains a direct edge.
+3. Test scheduler/aggregate behavior on empty optional matrices, partial matrix failure, unexpected skip, classifier failure, cancelled superseded runs and a new PR head/base. Preserve A's docs tests throughout.
+4. Validate at least a docs-only case and representative Metal, CUDA, CPU, QEC and shared-code selections. Use real applicable build/test runs where infrastructure supports them; explicitly separate routing-fixture proof from physical GPU execution. A deliberate syntax/contract regression in a selected consumer must fail its planned gate.
+5. Compare several before/after code PRs with the same declared coverage boundary. Record queue time, elapsed critical path, summed runner time and self-hosted utilization separately. Report legitimate broad/no-savings cases; do not set a universal speedup target before measuring dependency overlap.
+6. Document the package/configuration map, full override, adding a new crate/feature, failure diagnostics, rollback to full CI, and the updated exact-head merge-monitor contract. Require an accepted shadow-mode report before switching authoritative selection.
+
+### Stage B acceptance criteria
+
+- [ ] Dependency-derived package/consumer/configuration selection is implemented with audited non-Cargo edges and a fail-safe full fallback.
+- [ ] Backend-local edits avoid unrelated expensive suites **where the verified dependency graph permits**, while shared-interface edits keep broad coverage.
+- [ ] Feature-enabled frontend/reference contracts, cross-platform/toolchain and hardware-golden requirements cannot disappear through empty default builds or skipped matrix entries.
+- [ ] Graph, security and aggregate failure cases pass; shadow-mode and representative actual selected builds/tests are documented.
+- [ ] Measured queue/elapsed/runner-time evidence demonstrates the effect, including cases where selection remains broad.
+- [ ] Merge instructions, future monitors, maintenance/override/rollback documentation are migrated deliberately; current PRs are never waived retroactively.
+
+**Issue closure:** both A and B acceptance lists are satisfied in the same reviewed PR. Implement the docs path first, then validate dependency-aware code selection before merging the combined change.
+
+## References
+
+- Repository workflows: [.github/workflows/ci.yml](https://github.com/aleph-sim/aleph/blob/d02d8b51dfb3cb6c1d21bff94e81f3ac692e1922/.github/workflows/ci.yml), [hw.yml](https://github.com/aleph-sim/aleph/blob/d02d8b51dfb3cb6c1d21bff94e81f3ac692e1922/.github/workflows/hw.yml), [bench.yml](https://github.com/aleph-sim/aleph/blob/d02d8b51dfb3cb6c1d21bff94e81f3ac692e1922/.github/workflows/bench.yml).
+- [GitHub workflow filtering/diff limits](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#git-diff-comparisons): do not assume native path filters inspect an unlimited diff.
+- [GitHub required checks / skipped jobs / event semantics](https://docs.github.com/en/pull-requests/how-tos/merge-and-close-pull-requests/troubleshooting-required-status-checks).
+- Phase 8 tracker [#550](https://github.com/aleph-sim/aleph/issues/550), report PR [#596](https://github.com/aleph-sim/aleph/pull/596). This is cross-project CI infrastructure, not an extra capability counted in Phase 8's existing 16-task exit ledger.
+
+
+-----
+
 # Appendix: Counts and Order
 
 - **Phase 0**: 12 issues

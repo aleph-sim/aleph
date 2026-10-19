@@ -1,0 +1,90 @@
+{
+  "base_revision": "f9781d05b3d5087b3265971435849ec8eeafdb12",
+  "date": "2026-10-18",
+  "platform": "macOS-27.0.1-arm64-arm-64bit",
+  "python": "3.9.6",
+  "source_fingerprints": {
+    "scripts/ci/docs.py": "c8e49a60483064dddba28779fb0908e4d89edc2fd56e3e39336decf1c5f9b35f",
+    "scripts/ci/gate.py": "3dd048186a22e25ded25769d85cd340da2f08e829022b851a59a688c999bb8f0",
+    "scripts/ci/plan.py": "d407548a656adf61f6b75bf6759a632339d300abb41e56254a0e01dee99b5c91",
+    "scripts/ci/replay.py": "d6186f72e418b765f004210a309eea051d2e4f67642ad4d72bdf55d05df633c8",
+    "scripts/ci/run.py": "977f8082fb76e212957d160f18e002c75be082785d4587ccc515ed93c399920c",
+    "scripts/ci/test_ci.py": "ba2db5fc469b35baf2b93c16730275692ea3b991029cbfa271894cd51e979500",
+    ".github/workflows/ci.yml": "981de22913b2c96c06d0773d4e15c3026055c6c1cce25a3931d7b5f3dc92e297",
+    ".github/workflows/hw.yml": "766a228ca63ae13990b5ab3ef347cf1dfa66bb74280b6d69a355491fac632153",
+    "crates/aleph-cli/src/exec.rs": "e69f9e25c0888550e2b7ab5b08bb03d8fface07f4e921f2751861bfa621fc26d"
+  },
+  "commands": [
+    {
+      "command": [
+        "python3",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "scripts/ci",
+        "-v"
+      ],
+      "exit_code": 0,
+      "log": "check-1.log"
+    },
+    {
+      "command": [
+        "actionlint",
+        ".github/workflows/ci.yml",
+        ".github/workflows/hw.yml"
+      ],
+      "exit_code": 0,
+      "log": "check-2.log"
+    },
+    {
+      "command": [
+        "cargo",
+        "fmt",
+        "--check"
+      ],
+      "exit_code": 0,
+      "log": "check-3.log"
+    },
+    {
+      "command": [
+        "python3",
+        "scripts/ci/replay.py",
+        "--output",
+        "docs/perf/data/ci-01/shadow.json"
+      ],
+      "exit_code": 0,
+      "log": "check-4.log"
+    }
+  ],
+  "previous_observed_commands": [
+    {
+      "command": "cargo check --locked -p aleph-cli --features metal --all-targets",
+      "before": "failed E0061 at exec.rs:648: missing parse_ms; original CI never built this consumer feature",
+      "after": "passed after forwarding parse_ms through Metal wrapper"
+    },
+    {
+      "command": "cargo check --locked -p aleph-py --features python,metal --all-targets",
+      "result": "passed with bundled Python interpreter"
+    },
+    {
+      "command": "cargo test --locked -p aleph-cli",
+      "result": "78 passed (36 library, 41 CLI, 1 GPU-probe); no ignored tests"
+    },
+    {
+      "command": "cargo clippy --workspace --all-targets -- -D warnings",
+      "result": "passed"
+    },
+    {
+      "command": "cargo clippy --locked -p aleph-cli --features metal --all-targets -- -D warnings",
+      "result": "passed with bundled Python interpreter"
+    }
+  ],
+  "scope": "Local correctness/compile/routing checks, not hosted savings or physical GPU execution",
+  "timeout_followup": {
+    "date": "2026-10-20",
+    "workflow_change": "macOS bounded timeout 30 -> 45 minutes; commands unchanged",
+    "source_sha256": "7dbbf918e3c6e5570c0b156da313fba6a3887dca8b45d269f23c1df533878fc5",
+    "validation": "actionlint; hosted exact-head CI required"
+  }
+}

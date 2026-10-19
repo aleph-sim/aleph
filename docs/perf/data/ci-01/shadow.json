@@ -1,0 +1,417 @@
+[
+  {
+    "schema_version": 1,
+    "mode": "docs",
+    "paths": [
+      "BACKLOG.md",
+      "ROADMAP.md",
+      "docs/benchmarking.md",
+      "docs/perf/data/p8-00/README.md",
+      "docs/perf/data/p8-00/SHA256SUMS",
+      "docs/perf/data/p8-00/check-1.log",
+      "docs/perf/data/p8-00/check-2.log",
+      "docs/perf/data/p8-00/check-3.log",
+      "docs/perf/data/p8-00/check-4.log",
+      "docs/perf/data/p8-00/check-5.log",
+      "docs/perf/data/p8-00/cli-smoke.txt",
+      "docs/perf/data/p8-00/saved-receipts.json",
+      "docs/perf/data/p8-00/status.json",
+      "docs/perf/data/p8-00/validation.json",
+      "docs/perf/p8-13-public-workflow-gates.md",
+      "docs/perf/p8-performance-recovery.md"
+    ],
+    "packages": [],
+    "seeds": [],
+    "jobs": {
+      "docs": true,
+      "fmt": false,
+      "clippy": false,
+      "linux": false,
+      "macos": false,
+      "python": false,
+      "hardware": false
+    },
+    "cuda": false,
+    "metal": false,
+    "mps": false,
+    "python_os": "ubuntu-latest",
+    "python_features": "python",
+    "reasons": [
+      "Approved prose/report files only; no code suites selected"
+    ],
+    "head_sha": "f9781d05b3d5087b3265971435849ec8eeafdb12",
+    "base_sha": "6114dab7e18c4deac0fda3039060e00f7661b653",
+    "tested_sha": "f9781d05b3d5087b3265971435849ec8eeafdb12",
+    "docs_check_seconds": 0.082707625,
+    "case": "report-596-complete-diff",
+    "evidence_scope": "historical file-list/current graph replay; no physical GPU run or hosted queue measurement"
+  },
+  {
+    "schema_version": 1,
+    "mode": "affected",
+    "paths": [
+      "crates/aleph-metal/src/shaders/sv.metal"
+    ],
+    "packages": [
+      "aleph-cli",
+      "aleph-metal",
+      "aleph-py"
+    ],
+    "seeds": [
+      "aleph-metal"
+    ],
+    "jobs": {
+      "docs": true,
+      "fmt": true,
+      "clippy": false,
+      "linux": false,
+      "macos": true,
+      "python": true,
+      "hardware": false
+    },
+    "cuda": false,
+    "metal": true,
+    "mps": false,
+    "python_os": "macos-latest",
+    "python_features": "python,metal",
+    "reasons": [
+      "Reverse normal/dev/build/optional/target consumer closure: aleph-cli, aleph-metal, aleph-py"
+    ],
+    "head_sha": "f9781d05b3d5087b3265971435849ec8eeafdb12",
+    "base_sha": "6114dab7e18c4deac0fda3039060e00f7661b653",
+    "tested_sha": "f9781d05b3d5087b3265971435849ec8eeafdb12",
+    "case": "metal-shader",
+    "evidence_scope": "historical file-list/current graph replay; no physical GPU run or hosted queue measurement"
+  },
+  {
+    "schema_version": 1,
+    "mode": "affected",
+    "paths": [
+      "crates/aleph-cuda/src/sv/backend.rs"
+    ],
+    "packages": [
+      "aleph-cli",
+      "aleph-cuda",
+      "aleph-py"
+    ],
+    "seeds": [
+      "aleph-cuda"
+    ],
+    "jobs": {
+      "docs": true,
+      "fmt": true,
+      "clippy": true,
+      "linux": true,
+      "macos": true,
+      "python": true,
+      "hardware": false
+    },
+    "cuda": true,
+    "metal": false,
+    "mps": false,
+    "python_os": "ubuntu-latest",
+    "python_features": "python,cuda",
+    "reasons": [
+      "Reverse normal/dev/build/optional/target consumer closure: aleph-cli, aleph-cuda, aleph-py"
+    ],
+    "head_sha": "f9781d05b3d5087b3265971435849ec8eeafdb12",
+    "base_sha": "6114dab7e18c4deac0fda3039060e00f7661b653",
+    "tested_sha": "f9781d05b3d5087b3265971435849ec8eeafdb12",
+    "case": "cuda-kernel",
+    "evidence_scope": "historical file-list/current graph replay; no physical GPU run or hosted queue measurement"
+  },
+  {
+    "schema_version": 1,
+    "mode": "affected",
+    "paths": [
+      "crates/aleph-sv/src/kernels/aos.rs"
+    ],
+    "packages": [
+      "aleph-backend",
+      "aleph-benches",
+      "aleph-cli",
+      "aleph-cuda",
+      "aleph-metal",
+      "aleph-mps",
+      "aleph-oracle",
+      "aleph-py",
+      "aleph-qec",
+      "aleph-stab",
+      "aleph-sv"
+    ],
+    "seeds": [
+      "aleph-sv"
+    ],
+    "jobs": {
+      "docs": true,
+      "fmt": true,
+      "clippy": true,
+      "linux": true,
+      "macos": true,
+      "python": true,
+      "hardware": true
+    },
+    "cuda": true,
+    "metal": true,
+    "mps": true,
+    "python_os": "ubuntu-latest",
+    "python_features": "python,cuda",
+    "reasons": [
+      "Reverse normal/dev/build/optional/target consumer closure: aleph-backend, aleph-benches, aleph-cli, aleph-cuda, aleph-metal, aleph-mps, aleph-oracle, aleph-py, aleph-qec, aleph-stab, aleph-sv"
+    ],
+    "head_sha": "f9781d05b3d5087b3265971435849ec8eeafdb12",
+    "base_sha": "6114dab7e18c4deac0fda3039060e00f7661b653",
+    "tested_sha": "f9781d05b3d5087b3265971435849ec8eeafdb12",
+    "case": "cpu-kernel",
+    "evidence_scope": "historical file-list/current graph replay; no physical GPU run or hosted queue measurement"
+  },
+  {
+    "schema_version": 1,
+    "mode": "affected",
+    "paths": [
+      "crates/aleph-qec/src/dem.rs"
+    ],
+    "packages": [
+      "aleph-benches",
+      "aleph-cli",
+      "aleph-cuda",
+      "aleph-metal",
+      "aleph-mps",
+      "aleph-py",
+      "aleph-qec",
+      "aleph-stab"
+    ],
+    "seeds": [
+      "aleph-qec"
+    ],
+    "jobs": {
+      "docs": true,
+      "fmt": true,
+      "clippy": true,
+      "linux": true,
+      "macos": true,
+      "python": true,
+      "hardware": true
+    },
+    "cuda": true,
+    "metal": true,
+    "mps": true,
+    "python_os": "ubuntu-latest",
+    "python_features": "python,cuda",
+    "reasons": [
+      "Reverse normal/dev/build/optional/target consumer closure: aleph-benches, aleph-cli, aleph-cuda, aleph-metal, aleph-mps, aleph-py, aleph-qec, aleph-stab"
+    ],
+    "head_sha": "f9781d05b3d5087b3265971435849ec8eeafdb12",
+    "base_sha": "6114dab7e18c4deac0fda3039060e00f7661b653",
+    "tested_sha": "f9781d05b3d5087b3265971435849ec8eeafdb12",
+    "case": "qec-model",
+    "evidence_scope": "historical file-list/current graph replay; no physical GPU run or hosted queue measurement"
+  },
+  {
+    "schema_version": 1,
+    "mode": "affected",
+    "paths": [
+      "crates/aleph-ir/src/instruction.rs"
+    ],
+    "packages": [
+      "aleph-backend",
+      "aleph-benches",
+      "aleph-cli",
+      "aleph-cuda",
+      "aleph-ir",
+      "aleph-metal",
+      "aleph-mps",
+      "aleph-oracle",
+      "aleph-parser",
+      "aleph-py",
+      "aleph-qec",
+      "aleph-stab",
+      "aleph-sv",
+      "aleph-test"
+    ],
+    "seeds": [
+      "aleph-ir"
+    ],
+    "jobs": {
+      "docs": true,
+      "fmt": true,
+      "clippy": true,
+      "linux": true,
+      "macos": true,
+      "python": true,
+      "hardware": true
+    },
+    "cuda": true,
+    "metal": true,
+    "mps": true,
+    "python_os": "ubuntu-latest",
+    "python_features": "python,cuda",
+    "reasons": [
+      "Reverse normal/dev/build/optional/target consumer closure: aleph-backend, aleph-benches, aleph-cli, aleph-cuda, aleph-ir, aleph-metal, aleph-mps, aleph-oracle, aleph-parser, aleph-py, aleph-qec, aleph-stab, aleph-sv, aleph-test"
+    ],
+    "head_sha": "f9781d05b3d5087b3265971435849ec8eeafdb12",
+    "base_sha": "6114dab7e18c4deac0fda3039060e00f7661b653",
+    "tested_sha": "f9781d05b3d5087b3265971435849ec8eeafdb12",
+    "case": "shared-ir",
+    "evidence_scope": "historical file-list/current graph replay; no physical GPU run or hosted queue measurement"
+  },
+  {
+    "schema_version": 1,
+    "mode": "affected",
+    "paths": [
+      "crates/aleph-py/src/run.rs"
+    ],
+    "packages": [
+      "aleph-py"
+    ],
+    "seeds": [
+      "aleph-py"
+    ],
+    "jobs": {
+      "docs": true,
+      "fmt": true,
+      "clippy": true,
+      "linux": true,
+      "macos": true,
+      "python": true,
+      "hardware": false
+    },
+    "cuda": true,
+    "metal": true,
+    "mps": false,
+    "python_os": "ubuntu-latest",
+    "python_features": "python,cuda",
+    "reasons": [
+      "Reverse normal/dev/build/optional/target consumer closure: aleph-py"
+    ],
+    "head_sha": "f9781d05b3d5087b3265971435849ec8eeafdb12",
+    "base_sha": "6114dab7e18c4deac0fda3039060e00f7661b653",
+    "tested_sha": "f9781d05b3d5087b3265971435849ec8eeafdb12",
+    "case": "python-frontend",
+    "evidence_scope": "historical file-list/current graph replay; no physical GPU run or hosted queue measurement"
+  },
+  {
+    "schema_version": 1,
+    "mode": "affected",
+    "paths": [
+      "hw/bp_relay_decoder.sv"
+    ],
+    "packages": [],
+    "seeds": [],
+    "jobs": {
+      "docs": true,
+      "fmt": false,
+      "clippy": false,
+      "linux": false,
+      "macos": false,
+      "python": false,
+      "hardware": true
+    },
+    "cuda": false,
+    "metal": false,
+    "mps": false,
+    "python_os": "ubuntu-latest",
+    "python_features": "python",
+    "reasons": [
+      "Reverse normal/dev/build/optional/target consumer closure: "
+    ],
+    "head_sha": "f9781d05b3d5087b3265971435849ec8eeafdb12",
+    "base_sha": "6114dab7e18c4deac0fda3039060e00f7661b653",
+    "tested_sha": "f9781d05b3d5087b3265971435849ec8eeafdb12",
+    "case": "hardware",
+    "evidence_scope": "historical file-list/current graph replay; no physical GPU run or hosted queue measurement"
+  },
+  {
+    "schema_version": 1,
+    "mode": "full",
+    "paths": [
+      "scripts/ci/plan.py"
+    ],
+    "packages": [
+      "aleph-backend",
+      "aleph-benches",
+      "aleph-cli",
+      "aleph-core",
+      "aleph-cuda",
+      "aleph-ir",
+      "aleph-metal",
+      "aleph-mps",
+      "aleph-oracle",
+      "aleph-parser",
+      "aleph-py",
+      "aleph-qec",
+      "aleph-stab",
+      "aleph-sv",
+      "aleph-test"
+    ],
+    "seeds": [],
+    "jobs": {
+      "docs": true,
+      "fmt": true,
+      "clippy": true,
+      "linux": true,
+      "macos": true,
+      "python": true,
+      "hardware": true
+    },
+    "cuda": true,
+    "metal": true,
+    "mps": true,
+    "python_os": "ubuntu-latest",
+    "python_features": "python,cuda",
+    "reasons": [
+      "Full fallback for policy/configuration/unmapped input: scripts/ci/plan.py"
+    ],
+    "head_sha": "f9781d05b3d5087b3265971435849ec8eeafdb12",
+    "base_sha": "6114dab7e18c4deac0fda3039060e00f7661b653",
+    "tested_sha": "f9781d05b3d5087b3265971435849ec8eeafdb12",
+    "case": "policy",
+    "evidence_scope": "historical file-list/current graph replay; no physical GPU run or hosted queue measurement"
+  },
+  {
+    "schema_version": 1,
+    "mode": "affected",
+    "paths": [
+      "README.md",
+      "crates/aleph-sv/src/lib.rs"
+    ],
+    "packages": [
+      "aleph-backend",
+      "aleph-benches",
+      "aleph-cli",
+      "aleph-cuda",
+      "aleph-metal",
+      "aleph-mps",
+      "aleph-oracle",
+      "aleph-py",
+      "aleph-qec",
+      "aleph-stab",
+      "aleph-sv"
+    ],
+    "seeds": [
+      "aleph-sv"
+    ],
+    "jobs": {
+      "docs": true,
+      "fmt": true,
+      "clippy": true,
+      "linux": true,
+      "macos": true,
+      "python": true,
+      "hardware": true
+    },
+    "cuda": true,
+    "metal": true,
+    "mps": true,
+    "python_os": "ubuntu-latest",
+    "python_features": "python,cuda",
+    "reasons": [
+      "Reverse normal/dev/build/optional/target consumer closure: aleph-backend, aleph-benches, aleph-cli, aleph-cuda, aleph-metal, aleph-mps, aleph-oracle, aleph-py, aleph-qec, aleph-stab, aleph-sv"
+    ],
+    "head_sha": "f9781d05b3d5087b3265971435849ec8eeafdb12",
+    "base_sha": "6114dab7e18c4deac0fda3039060e00f7661b653",
+    "tested_sha": "f9781d05b3d5087b3265971435849ec8eeafdb12",
+    "case": "mixed-docs-code",
+    "evidence_scope": "historical file-list/current graph replay; no physical GPU run or hosted queue measurement"
+  }
+]
