@@ -34,3 +34,15 @@ those exist, **no measured hosted speedup is claimed**. Full main-code/nightly
 validation is retained as a rollout backstop, not as a substitute for known
 pre-merge consumers. This evidence does not authorize changing branch protection
 or waiving existing merge-monitor conditions.
+
+## First hosted full run: timeout diagnosis (2026-10-20)
+
+Run 39162811229 passed planner/docs, Linux stable/beta, Clippy, both Python
+versions, macOS beta and RTL. macOS stable was cancelled at the 30-minute limit.
+Its workspace suite finished successfully by 20:45:26 UTC on October 18; the
+Metal feature suite finished successfully by 20:50:20. Cancellation at 20:50:35
+occurred during the next Metal Clippy dependency build. The final aggregate
+correctly rejected `macos: cancelled`; no cancelled result is counted as a pass.
+The macOS job budget is now 45 minutes to cover cold release/test compilation
+and the newly checked feature consumers. No command, test or failure gate was
+removed. A fresh exact-head CI run is required after this workflow change.

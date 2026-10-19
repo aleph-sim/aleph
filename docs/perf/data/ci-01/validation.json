@@ -80,5 +80,11 @@
       "result": "passed with bundled Python interpreter"
     }
   ],
-  "scope": "Local correctness/compile/routing checks, not hosted savings or physical GPU execution"
+  "scope": "Local correctness/compile/routing checks, not hosted savings or physical GPU execution",
+  "timeout_followup": {
+    "date": "2026-10-20",
+    "workflow_change": "macOS bounded timeout 30 -> 45 minutes; commands unchanged",
+    "source_sha256": "7dbbf918e3c6e5570c0b156da313fba6a3887dca8b45d269f23c1df533878fc5",
+    "validation": "actionlint; hosted exact-head CI required"
+  }
 }
