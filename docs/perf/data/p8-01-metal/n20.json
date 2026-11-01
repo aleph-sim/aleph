@@ -1,0 +1,1226 @@
+[
+  {
+    "workload": "tiny_bell",
+    "qubits": 2,
+    "backend": "metal",
+    "precision": "auto",
+    "mode": "raw",
+    "wall_ms": 30.356415999999996,
+    "load_before": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "load_after": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "seeded_histogram_matches_raw": true,
+    "source_sha256": "b74bf79a93c549c8a54c685fb48d36f00b26564e3dde64e787c48aa510040f77",
+    "stdout_sha256": "89efdf5502fda9fc49b0b0edfa277e06d9b06d038552af12c0fc7da11bb04def",
+    "input_instructions": 2,
+    "planned_instructions": 2,
+    "planning_us": 0.0
+  },
+  {
+    "workload": "tiny_bell",
+    "qubits": 2,
+    "backend": "metal",
+    "precision": "auto",
+    "mode": "optimized",
+    "wall_ms": 26.09845900000002,
+    "load_before": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "load_after": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "seeded_histogram_matches_raw": true,
+    "source_sha256": "b74bf79a93c549c8a54c685fb48d36f00b26564e3dde64e787c48aa510040f77",
+    "stdout_sha256": "89efdf5502fda9fc49b0b0edfa277e06d9b06d038552af12c0fc7da11bb04def",
+    "input_instructions": 2,
+    "planned_instructions": 1,
+    "diagonal_phases": 0,
+    "fused_gates": 1,
+    "tiled_blocks": 0,
+    "planning_us": 13.958
+  },
+  {
+    "workload": "tiny_bell",
+    "qubits": 2,
+    "backend": "metal",
+    "precision": "auto",
+    "mode": "optimized",
+    "wall_ms": 26.466374999999985,
+    "load_before": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "load_after": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "seeded_histogram_matches_raw": true,
+    "source_sha256": "b74bf79a93c549c8a54c685fb48d36f00b26564e3dde64e787c48aa510040f77",
+    "stdout_sha256": "89efdf5502fda9fc49b0b0edfa277e06d9b06d038552af12c0fc7da11bb04def",
+    "input_instructions": 2,
+    "planned_instructions": 1,
+    "diagonal_phases": 0,
+    "fused_gates": 1,
+    "tiled_blocks": 0,
+    "planning_us": 12.541
+  },
+  {
+    "workload": "tiny_bell",
+    "qubits": 2,
+    "backend": "metal",
+    "precision": "auto",
+    "mode": "raw",
+    "wall_ms": 26.146500000000017,
+    "load_before": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "load_after": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "seeded_histogram_matches_raw": true,
+    "source_sha256": "b74bf79a93c549c8a54c685fb48d36f00b26564e3dde64e787c48aa510040f77",
+    "stdout_sha256": "89efdf5502fda9fc49b0b0edfa277e06d9b06d038552af12c0fc7da11bb04def",
+    "input_instructions": 2,
+    "planned_instructions": 2,
+    "planning_us": 0.0
+  },
+  {
+    "workload": "tiny_bell",
+    "qubits": 2,
+    "backend": "metal",
+    "precision": "auto",
+    "mode": "raw",
+    "wall_ms": 26.08149999999998,
+    "load_before": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "load_after": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "seeded_histogram_matches_raw": true,
+    "source_sha256": "b74bf79a93c549c8a54c685fb48d36f00b26564e3dde64e787c48aa510040f77",
+    "stdout_sha256": "89efdf5502fda9fc49b0b0edfa277e06d9b06d038552af12c0fc7da11bb04def",
+    "input_instructions": 2,
+    "planned_instructions": 2,
+    "planning_us": 0.0
+  },
+  {
+    "workload": "tiny_bell",
+    "qubits": 2,
+    "backend": "metal",
+    "precision": "auto",
+    "mode": "optimized",
+    "wall_ms": 28.401916999999997,
+    "load_before": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "load_after": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "seeded_histogram_matches_raw": true,
+    "source_sha256": "b74bf79a93c549c8a54c685fb48d36f00b26564e3dde64e787c48aa510040f77",
+    "stdout_sha256": "89efdf5502fda9fc49b0b0edfa277e06d9b06d038552af12c0fc7da11bb04def",
+    "input_instructions": 2,
+    "planned_instructions": 1,
+    "diagonal_phases": 0,
+    "fused_gates": 1,
+    "tiled_blocks": 0,
+    "planning_us": 13.667
+  },
+  {
+    "workload": "tiny_bell",
+    "qubits": 2,
+    "backend": "metal",
+    "precision": "auto",
+    "mode": "optimized",
+    "wall_ms": 26.114207999999973,
+    "load_before": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "load_after": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "seeded_histogram_matches_raw": true,
+    "source_sha256": "b74bf79a93c549c8a54c685fb48d36f00b26564e3dde64e787c48aa510040f77",
+    "stdout_sha256": "89efdf5502fda9fc49b0b0edfa277e06d9b06d038552af12c0fc7da11bb04def",
+    "input_instructions": 2,
+    "planned_instructions": 1,
+    "diagonal_phases": 0,
+    "fused_gates": 1,
+    "tiled_blocks": 0,
+    "planning_us": 12.583
+  },
+  {
+    "workload": "tiny_bell",
+    "qubits": 2,
+    "backend": "metal",
+    "precision": "auto",
+    "mode": "raw",
+    "wall_ms": 26.4695840000001,
+    "load_before": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "load_after": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "seeded_histogram_matches_raw": true,
+    "source_sha256": "b74bf79a93c549c8a54c685fb48d36f00b26564e3dde64e787c48aa510040f77",
+    "stdout_sha256": "89efdf5502fda9fc49b0b0edfa277e06d9b06d038552af12c0fc7da11bb04def",
+    "input_instructions": 2,
+    "planned_instructions": 2,
+    "planning_us": 0.0
+  },
+  {
+    "workload": "tiny_bell",
+    "qubits": 2,
+    "backend": "metal",
+    "precision": "auto",
+    "mode": "raw",
+    "wall_ms": 27.364792000000083,
+    "load_before": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "load_after": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "seeded_histogram_matches_raw": true,
+    "source_sha256": "b74bf79a93c549c8a54c685fb48d36f00b26564e3dde64e787c48aa510040f77",
+    "stdout_sha256": "89efdf5502fda9fc49b0b0edfa277e06d9b06d038552af12c0fc7da11bb04def",
+    "input_instructions": 2,
+    "planned_instructions": 2,
+    "planning_us": 0.0
+  },
+  {
+    "workload": "tiny_bell",
+    "qubits": 2,
+    "backend": "metal",
+    "precision": "auto",
+    "mode": "optimized",
+    "wall_ms": 26.701666000000014,
+    "load_before": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "load_after": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "seeded_histogram_matches_raw": true,
+    "source_sha256": "b74bf79a93c549c8a54c685fb48d36f00b26564e3dde64e787c48aa510040f77",
+    "stdout_sha256": "89efdf5502fda9fc49b0b0edfa277e06d9b06d038552af12c0fc7da11bb04def",
+    "input_instructions": 2,
+    "planned_instructions": 1,
+    "diagonal_phases": 0,
+    "fused_gates": 1,
+    "tiled_blocks": 0,
+    "planning_us": 13.083
+  },
+  {
+    "workload": "tiny_bell",
+    "qubits": 2,
+    "backend": "metal",
+    "precision": "auto",
+    "mode": "optimized",
+    "wall_ms": 29.20591699999997,
+    "load_before": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "load_after": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "seeded_histogram_matches_raw": true,
+    "source_sha256": "b74bf79a93c549c8a54c685fb48d36f00b26564e3dde64e787c48aa510040f77",
+    "stdout_sha256": "89efdf5502fda9fc49b0b0edfa277e06d9b06d038552af12c0fc7da11bb04def",
+    "input_instructions": 2,
+    "planned_instructions": 1,
+    "diagonal_phases": 0,
+    "fused_gates": 1,
+    "tiled_blocks": 0,
+    "planning_us": 14.5
+  },
+  {
+    "workload": "tiny_bell",
+    "qubits": 2,
+    "backend": "metal",
+    "precision": "auto",
+    "mode": "raw",
+    "wall_ms": 30.48954100000001,
+    "load_before": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "load_after": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "seeded_histogram_matches_raw": true,
+    "source_sha256": "b74bf79a93c549c8a54c685fb48d36f00b26564e3dde64e787c48aa510040f77",
+    "stdout_sha256": "89efdf5502fda9fc49b0b0edfa277e06d9b06d038552af12c0fc7da11bb04def",
+    "input_instructions": 2,
+    "planned_instructions": 2,
+    "planning_us": 0.0
+  },
+  {
+    "workload": "tiny_bell",
+    "qubits": 2,
+    "backend": "metal",
+    "precision": "auto",
+    "mode": "raw",
+    "wall_ms": 32.59645899999997,
+    "load_before": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "load_after": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "seeded_histogram_matches_raw": true,
+    "source_sha256": "b74bf79a93c549c8a54c685fb48d36f00b26564e3dde64e787c48aa510040f77",
+    "stdout_sha256": "89efdf5502fda9fc49b0b0edfa277e06d9b06d038552af12c0fc7da11bb04def",
+    "input_instructions": 2,
+    "planned_instructions": 2,
+    "planning_us": 0.0
+  },
+  {
+    "workload": "tiny_bell",
+    "qubits": 2,
+    "backend": "metal",
+    "precision": "auto",
+    "mode": "optimized",
+    "wall_ms": 36.244583,
+    "load_before": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "load_after": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "seeded_histogram_matches_raw": true,
+    "source_sha256": "b74bf79a93c549c8a54c685fb48d36f00b26564e3dde64e787c48aa510040f77",
+    "stdout_sha256": "89efdf5502fda9fc49b0b0edfa277e06d9b06d038552af12c0fc7da11bb04def",
+    "input_instructions": 2,
+    "planned_instructions": 1,
+    "diagonal_phases": 0,
+    "fused_gates": 1,
+    "tiled_blocks": 0,
+    "planning_us": 13.916
+  },
+  {
+    "workload": "tiny_bell",
+    "qubits": 2,
+    "backend": "metal",
+    "precision": "auto",
+    "mode": "optimized",
+    "wall_ms": 32.10341700000008,
+    "load_before": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "load_after": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "seeded_histogram_matches_raw": true,
+    "source_sha256": "b74bf79a93c549c8a54c685fb48d36f00b26564e3dde64e787c48aa510040f77",
+    "stdout_sha256": "89efdf5502fda9fc49b0b0edfa277e06d9b06d038552af12c0fc7da11bb04def",
+    "input_instructions": 2,
+    "planned_instructions": 1,
+    "diagonal_phases": 0,
+    "fused_gates": 1,
+    "tiled_blocks": 0,
+    "planning_us": 14.709
+  },
+  {
+    "workload": "tiny_bell",
+    "qubits": 2,
+    "backend": "metal",
+    "precision": "auto",
+    "mode": "raw",
+    "wall_ms": 31.806416999999975,
+    "load_before": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "load_after": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "seeded_histogram_matches_raw": true,
+    "source_sha256": "b74bf79a93c549c8a54c685fb48d36f00b26564e3dde64e787c48aa510040f77",
+    "stdout_sha256": "89efdf5502fda9fc49b0b0edfa277e06d9b06d038552af12c0fc7da11bb04def",
+    "input_instructions": 2,
+    "planned_instructions": 2,
+    "planning_us": 0.0
+  },
+  {
+    "workload": "qft",
+    "qubits": 20,
+    "backend": "metal",
+    "precision": "auto",
+    "mode": "raw",
+    "wall_ms": 91.78708399999991,
+    "load_before": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "load_after": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "seeded_histogram_matches_raw": true,
+    "source_sha256": "ce0e67209ecfb341f06aa14fa6c4c25d8a521331e4b48ab21cc7bbe984c4e99b",
+    "stdout_sha256": "5ad109c109b4c4b32c76a8fadc53215799964b21f7df0a6be56329448928a727",
+    "input_instructions": 980,
+    "planned_instructions": 980,
+    "planning_us": 0.0
+  },
+  {
+    "workload": "qft",
+    "qubits": 20,
+    "backend": "metal",
+    "precision": "auto",
+    "mode": "optimized",
+    "wall_ms": 41.68108399999993,
+    "load_before": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "load_after": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "seeded_histogram_matches_raw": true,
+    "source_sha256": "ce0e67209ecfb341f06aa14fa6c4c25d8a521331e4b48ab21cc7bbe984c4e99b",
+    "stdout_sha256": "5ad109c109b4c4b32c76a8fadc53215799964b21f7df0a6be56329448928a727",
+    "input_instructions": 980,
+    "planned_instructions": 44,
+    "diagonal_phases": 19,
+    "fused_gates": 1,
+    "tiled_blocks": 1,
+    "planning_us": 201.166
+  },
+  {
+    "workload": "qft",
+    "qubits": 20,
+    "backend": "metal",
+    "precision": "auto",
+    "mode": "optimized",
+    "wall_ms": 44.114333,
+    "load_before": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "load_after": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "seeded_histogram_matches_raw": true,
+    "source_sha256": "ce0e67209ecfb341f06aa14fa6c4c25d8a521331e4b48ab21cc7bbe984c4e99b",
+    "stdout_sha256": "5ad109c109b4c4b32c76a8fadc53215799964b21f7df0a6be56329448928a727",
+    "input_instructions": 980,
+    "planned_instructions": 44,
+    "diagonal_phases": 19,
+    "fused_gates": 1,
+    "tiled_blocks": 1,
+    "planning_us": 200.583
+  },
+  {
+    "workload": "qft",
+    "qubits": 20,
+    "backend": "metal",
+    "precision": "auto",
+    "mode": "raw",
+    "wall_ms": 92.07562499999989,
+    "load_before": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "load_after": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "seeded_histogram_matches_raw": true,
+    "source_sha256": "ce0e67209ecfb341f06aa14fa6c4c25d8a521331e4b48ab21cc7bbe984c4e99b",
+    "stdout_sha256": "5ad109c109b4c4b32c76a8fadc53215799964b21f7df0a6be56329448928a727",
+    "input_instructions": 980,
+    "planned_instructions": 980,
+    "planning_us": 0.0
+  },
+  {
+    "workload": "qft",
+    "qubits": 20,
+    "backend": "metal",
+    "precision": "auto",
+    "mode": "raw",
+    "wall_ms": 95.71791699999999,
+    "load_before": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "load_after": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "seeded_histogram_matches_raw": true,
+    "source_sha256": "ce0e67209ecfb341f06aa14fa6c4c25d8a521331e4b48ab21cc7bbe984c4e99b",
+    "stdout_sha256": "5ad109c109b4c4b32c76a8fadc53215799964b21f7df0a6be56329448928a727",
+    "input_instructions": 980,
+    "planned_instructions": 980,
+    "planning_us": 0.0
+  },
+  {
+    "workload": "qft",
+    "qubits": 20,
+    "backend": "metal",
+    "precision": "auto",
+    "mode": "optimized",
+    "wall_ms": 42.832250000000016,
+    "load_before": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "load_after": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "seeded_histogram_matches_raw": true,
+    "source_sha256": "ce0e67209ecfb341f06aa14fa6c4c25d8a521331e4b48ab21cc7bbe984c4e99b",
+    "stdout_sha256": "5ad109c109b4c4b32c76a8fadc53215799964b21f7df0a6be56329448928a727",
+    "input_instructions": 980,
+    "planned_instructions": 44,
+    "diagonal_phases": 19,
+    "fused_gates": 1,
+    "tiled_blocks": 1,
+    "planning_us": 197.208
+  },
+  {
+    "workload": "qft",
+    "qubits": 20,
+    "backend": "metal",
+    "precision": "auto",
+    "mode": "optimized",
+    "wall_ms": 40.21008300000006,
+    "load_before": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "load_after": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "seeded_histogram_matches_raw": true,
+    "source_sha256": "ce0e67209ecfb341f06aa14fa6c4c25d8a521331e4b48ab21cc7bbe984c4e99b",
+    "stdout_sha256": "5ad109c109b4c4b32c76a8fadc53215799964b21f7df0a6be56329448928a727",
+    "input_instructions": 980,
+    "planned_instructions": 44,
+    "diagonal_phases": 19,
+    "fused_gates": 1,
+    "tiled_blocks": 1,
+    "planning_us": 191.125
+  },
+  {
+    "workload": "qft",
+    "qubits": 20,
+    "backend": "metal",
+    "precision": "auto",
+    "mode": "raw",
+    "wall_ms": 97.58287500000007,
+    "load_before": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "load_after": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "seeded_histogram_matches_raw": true,
+    "source_sha256": "ce0e67209ecfb341f06aa14fa6c4c25d8a521331e4b48ab21cc7bbe984c4e99b",
+    "stdout_sha256": "5ad109c109b4c4b32c76a8fadc53215799964b21f7df0a6be56329448928a727",
+    "input_instructions": 980,
+    "planned_instructions": 980,
+    "planning_us": 0.0
+  },
+  {
+    "workload": "qft",
+    "qubits": 20,
+    "backend": "metal",
+    "precision": "auto",
+    "mode": "raw",
+    "wall_ms": 99.71437500000002,
+    "load_before": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "load_after": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "seeded_histogram_matches_raw": true,
+    "source_sha256": "ce0e67209ecfb341f06aa14fa6c4c25d8a521331e4b48ab21cc7bbe984c4e99b",
+    "stdout_sha256": "5ad109c109b4c4b32c76a8fadc53215799964b21f7df0a6be56329448928a727",
+    "input_instructions": 980,
+    "planned_instructions": 980,
+    "planning_us": 0.0
+  },
+  {
+    "workload": "qft",
+    "qubits": 20,
+    "backend": "metal",
+    "precision": "auto",
+    "mode": "optimized",
+    "wall_ms": 44.694167000000064,
+    "load_before": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "load_after": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "seeded_histogram_matches_raw": true,
+    "source_sha256": "ce0e67209ecfb341f06aa14fa6c4c25d8a521331e4b48ab21cc7bbe984c4e99b",
+    "stdout_sha256": "5ad109c109b4c4b32c76a8fadc53215799964b21f7df0a6be56329448928a727",
+    "input_instructions": 980,
+    "planned_instructions": 44,
+    "diagonal_phases": 19,
+    "fused_gates": 1,
+    "tiled_blocks": 1,
+    "planning_us": 218.5
+  },
+  {
+    "workload": "qft",
+    "qubits": 20,
+    "backend": "metal",
+    "precision": "auto",
+    "mode": "optimized",
+    "wall_ms": 38.64504199999996,
+    "load_before": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "load_after": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "seeded_histogram_matches_raw": true,
+    "source_sha256": "ce0e67209ecfb341f06aa14fa6c4c25d8a521331e4b48ab21cc7bbe984c4e99b",
+    "stdout_sha256": "5ad109c109b4c4b32c76a8fadc53215799964b21f7df0a6be56329448928a727",
+    "input_instructions": 980,
+    "planned_instructions": 44,
+    "diagonal_phases": 19,
+    "fused_gates": 1,
+    "tiled_blocks": 1,
+    "planning_us": 194.083
+  },
+  {
+    "workload": "qft",
+    "qubits": 20,
+    "backend": "metal",
+    "precision": "auto",
+    "mode": "raw",
+    "wall_ms": 90.33995799999994,
+    "load_before": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "load_after": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "seeded_histogram_matches_raw": true,
+    "source_sha256": "ce0e67209ecfb341f06aa14fa6c4c25d8a521331e4b48ab21cc7bbe984c4e99b",
+    "stdout_sha256": "5ad109c109b4c4b32c76a8fadc53215799964b21f7df0a6be56329448928a727",
+    "input_instructions": 980,
+    "planned_instructions": 980,
+    "planning_us": 0.0
+  },
+  {
+    "workload": "qft",
+    "qubits": 20,
+    "backend": "metal",
+    "precision": "auto",
+    "mode": "raw",
+    "wall_ms": 89.21004199999993,
+    "load_before": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "load_after": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "seeded_histogram_matches_raw": true,
+    "source_sha256": "ce0e67209ecfb341f06aa14fa6c4c25d8a521331e4b48ab21cc7bbe984c4e99b",
+    "stdout_sha256": "5ad109c109b4c4b32c76a8fadc53215799964b21f7df0a6be56329448928a727",
+    "input_instructions": 980,
+    "planned_instructions": 980,
+    "planning_us": 0.0
+  },
+  {
+    "workload": "qft",
+    "qubits": 20,
+    "backend": "metal",
+    "precision": "auto",
+    "mode": "optimized",
+    "wall_ms": 38.93579199999997,
+    "load_before": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "load_after": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "seeded_histogram_matches_raw": true,
+    "source_sha256": "ce0e67209ecfb341f06aa14fa6c4c25d8a521331e4b48ab21cc7bbe984c4e99b",
+    "stdout_sha256": "5ad109c109b4c4b32c76a8fadc53215799964b21f7df0a6be56329448928a727",
+    "input_instructions": 980,
+    "planned_instructions": 44,
+    "diagonal_phases": 19,
+    "fused_gates": 1,
+    "tiled_blocks": 1,
+    "planning_us": 207.542
+  },
+  {
+    "workload": "qft",
+    "qubits": 20,
+    "backend": "metal",
+    "precision": "auto",
+    "mode": "optimized",
+    "wall_ms": 45.059791000000125,
+    "load_before": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "load_after": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "seeded_histogram_matches_raw": true,
+    "source_sha256": "ce0e67209ecfb341f06aa14fa6c4c25d8a521331e4b48ab21cc7bbe984c4e99b",
+    "stdout_sha256": "5ad109c109b4c4b32c76a8fadc53215799964b21f7df0a6be56329448928a727",
+    "input_instructions": 980,
+    "planned_instructions": 44,
+    "diagonal_phases": 19,
+    "fused_gates": 1,
+    "tiled_blocks": 1,
+    "planning_us": 191.041
+  },
+  {
+    "workload": "qft",
+    "qubits": 20,
+    "backend": "metal",
+    "precision": "auto",
+    "mode": "raw",
+    "wall_ms": 90.80066699999989,
+    "load_before": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "load_after": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "seeded_histogram_matches_raw": true,
+    "source_sha256": "ce0e67209ecfb341f06aa14fa6c4c25d8a521331e4b48ab21cc7bbe984c4e99b",
+    "stdout_sha256": "5ad109c109b4c4b32c76a8fadc53215799964b21f7df0a6be56329448928a727",
+    "input_instructions": 980,
+    "planned_instructions": 980,
+    "planning_us": 0.0
+  },
+  {
+    "workload": "brickwall_d12",
+    "qubits": 20,
+    "backend": "metal",
+    "precision": "auto",
+    "mode": "raw",
+    "wall_ms": 65.86904100000001,
+    "load_before": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "load_after": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "seeded_histogram_matches_raw": true,
+    "source_sha256": "9abf960e899d78de8611639bb494926d4dfc15a1820bea7231892c3a921a91fb",
+    "stdout_sha256": "8f5345ea20b14da90a1a404cb350989a9c7338ba9018898065aeb2a2f68779a9",
+    "input_instructions": 594,
+    "planned_instructions": 594,
+    "planning_us": 0.0
+  },
+  {
+    "workload": "brickwall_d12",
+    "qubits": 20,
+    "backend": "metal",
+    "precision": "auto",
+    "mode": "optimized",
+    "wall_ms": 38.129624999999834,
+    "load_before": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "load_after": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "seeded_histogram_matches_raw": false,
+    "source_sha256": "9abf960e899d78de8611639bb494926d4dfc15a1820bea7231892c3a921a91fb",
+    "stdout_sha256": "f56589121f1ec62f95bbfc0da198003522bb822bc419e686da0b6b16ce623546",
+    "input_instructions": 594,
+    "planned_instructions": 61,
+    "diagonal_phases": 0,
+    "fused_gates": 60,
+    "tiled_blocks": 1,
+    "planning_us": 248.209
+  },
+  {
+    "workload": "brickwall_d12",
+    "qubits": 20,
+    "backend": "metal",
+    "precision": "auto",
+    "mode": "optimized",
+    "wall_ms": 37.20670799999981,
+    "load_before": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "load_after": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "seeded_histogram_matches_raw": false,
+    "source_sha256": "9abf960e899d78de8611639bb494926d4dfc15a1820bea7231892c3a921a91fb",
+    "stdout_sha256": "f56589121f1ec62f95bbfc0da198003522bb822bc419e686da0b6b16ce623546",
+    "input_instructions": 594,
+    "planned_instructions": 61,
+    "diagonal_phases": 0,
+    "fused_gates": 60,
+    "tiled_blocks": 1,
+    "planning_us": 257.875
+  },
+  {
+    "workload": "brickwall_d12",
+    "qubits": 20,
+    "backend": "metal",
+    "precision": "auto",
+    "mode": "raw",
+    "wall_ms": 70.17149999999984,
+    "load_before": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "load_after": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "seeded_histogram_matches_raw": true,
+    "source_sha256": "9abf960e899d78de8611639bb494926d4dfc15a1820bea7231892c3a921a91fb",
+    "stdout_sha256": "8f5345ea20b14da90a1a404cb350989a9c7338ba9018898065aeb2a2f68779a9",
+    "input_instructions": 594,
+    "planned_instructions": 594,
+    "planning_us": 0.0
+  },
+  {
+    "workload": "brickwall_d12",
+    "qubits": 20,
+    "backend": "metal",
+    "precision": "auto",
+    "mode": "raw",
+    "wall_ms": 68.58295799999992,
+    "load_before": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "load_after": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "seeded_histogram_matches_raw": true,
+    "source_sha256": "9abf960e899d78de8611639bb494926d4dfc15a1820bea7231892c3a921a91fb",
+    "stdout_sha256": "8f5345ea20b14da90a1a404cb350989a9c7338ba9018898065aeb2a2f68779a9",
+    "input_instructions": 594,
+    "planned_instructions": 594,
+    "planning_us": 0.0
+  },
+  {
+    "workload": "brickwall_d12",
+    "qubits": 20,
+    "backend": "metal",
+    "precision": "auto",
+    "mode": "optimized",
+    "wall_ms": 38.482625000000326,
+    "load_before": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "load_after": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "seeded_histogram_matches_raw": false,
+    "source_sha256": "9abf960e899d78de8611639bb494926d4dfc15a1820bea7231892c3a921a91fb",
+    "stdout_sha256": "f56589121f1ec62f95bbfc0da198003522bb822bc419e686da0b6b16ce623546",
+    "input_instructions": 594,
+    "planned_instructions": 61,
+    "diagonal_phases": 0,
+    "fused_gates": 60,
+    "tiled_blocks": 1,
+    "planning_us": 242.708
+  },
+  {
+    "workload": "brickwall_d12",
+    "qubits": 20,
+    "backend": "metal",
+    "precision": "auto",
+    "mode": "optimized",
+    "wall_ms": 44.04695900000011,
+    "load_before": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "load_after": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "seeded_histogram_matches_raw": false,
+    "source_sha256": "9abf960e899d78de8611639bb494926d4dfc15a1820bea7231892c3a921a91fb",
+    "stdout_sha256": "f56589121f1ec62f95bbfc0da198003522bb822bc419e686da0b6b16ce623546",
+    "input_instructions": 594,
+    "planned_instructions": 61,
+    "diagonal_phases": 0,
+    "fused_gates": 60,
+    "tiled_blocks": 1,
+    "planning_us": 243.792
+  },
+  {
+    "workload": "brickwall_d12",
+    "qubits": 20,
+    "backend": "metal",
+    "precision": "auto",
+    "mode": "raw",
+    "wall_ms": 67.46883400000003,
+    "load_before": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "load_after": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "seeded_histogram_matches_raw": true,
+    "source_sha256": "9abf960e899d78de8611639bb494926d4dfc15a1820bea7231892c3a921a91fb",
+    "stdout_sha256": "8f5345ea20b14da90a1a404cb350989a9c7338ba9018898065aeb2a2f68779a9",
+    "input_instructions": 594,
+    "planned_instructions": 594,
+    "planning_us": 0.0
+  },
+  {
+    "workload": "brickwall_d12",
+    "qubits": 20,
+    "backend": "metal",
+    "precision": "auto",
+    "mode": "raw",
+    "wall_ms": 72.03233300000011,
+    "load_before": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "load_after": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "seeded_histogram_matches_raw": true,
+    "source_sha256": "9abf960e899d78de8611639bb494926d4dfc15a1820bea7231892c3a921a91fb",
+    "stdout_sha256": "8f5345ea20b14da90a1a404cb350989a9c7338ba9018898065aeb2a2f68779a9",
+    "input_instructions": 594,
+    "planned_instructions": 594,
+    "planning_us": 0.0
+  },
+  {
+    "workload": "brickwall_d12",
+    "qubits": 20,
+    "backend": "metal",
+    "precision": "auto",
+    "mode": "optimized",
+    "wall_ms": 39.11612500000005,
+    "load_before": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "load_after": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "seeded_histogram_matches_raw": false,
+    "source_sha256": "9abf960e899d78de8611639bb494926d4dfc15a1820bea7231892c3a921a91fb",
+    "stdout_sha256": "f56589121f1ec62f95bbfc0da198003522bb822bc419e686da0b6b16ce623546",
+    "input_instructions": 594,
+    "planned_instructions": 61,
+    "diagonal_phases": 0,
+    "fused_gates": 60,
+    "tiled_blocks": 1,
+    "planning_us": 276.417
+  },
+  {
+    "workload": "brickwall_d12",
+    "qubits": 20,
+    "backend": "metal",
+    "precision": "auto",
+    "mode": "optimized",
+    "wall_ms": 38.01254200000015,
+    "load_before": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "load_after": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "seeded_histogram_matches_raw": false,
+    "source_sha256": "9abf960e899d78de8611639bb494926d4dfc15a1820bea7231892c3a921a91fb",
+    "stdout_sha256": "f56589121f1ec62f95bbfc0da198003522bb822bc419e686da0b6b16ce623546",
+    "input_instructions": 594,
+    "planned_instructions": 61,
+    "diagonal_phases": 0,
+    "fused_gates": 60,
+    "tiled_blocks": 1,
+    "planning_us": 246.375
+  },
+  {
+    "workload": "brickwall_d12",
+    "qubits": 20,
+    "backend": "metal",
+    "precision": "auto",
+    "mode": "raw",
+    "wall_ms": 71.98450000000011,
+    "load_before": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "load_after": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "seeded_histogram_matches_raw": true,
+    "source_sha256": "9abf960e899d78de8611639bb494926d4dfc15a1820bea7231892c3a921a91fb",
+    "stdout_sha256": "8f5345ea20b14da90a1a404cb350989a9c7338ba9018898065aeb2a2f68779a9",
+    "input_instructions": 594,
+    "planned_instructions": 594,
+    "planning_us": 0.0
+  },
+  {
+    "workload": "brickwall_d12",
+    "qubits": 20,
+    "backend": "metal",
+    "precision": "auto",
+    "mode": "raw",
+    "wall_ms": 69.66354100000017,
+    "load_before": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "load_after": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "seeded_histogram_matches_raw": true,
+    "source_sha256": "9abf960e899d78de8611639bb494926d4dfc15a1820bea7231892c3a921a91fb",
+    "stdout_sha256": "8f5345ea20b14da90a1a404cb350989a9c7338ba9018898065aeb2a2f68779a9",
+    "input_instructions": 594,
+    "planned_instructions": 594,
+    "planning_us": 0.0
+  },
+  {
+    "workload": "brickwall_d12",
+    "qubits": 20,
+    "backend": "metal",
+    "precision": "auto",
+    "mode": "optimized",
+    "wall_ms": 38.33837499999993,
+    "load_before": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "load_after": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "seeded_histogram_matches_raw": false,
+    "source_sha256": "9abf960e899d78de8611639bb494926d4dfc15a1820bea7231892c3a921a91fb",
+    "stdout_sha256": "f56589121f1ec62f95bbfc0da198003522bb822bc419e686da0b6b16ce623546",
+    "input_instructions": 594,
+    "planned_instructions": 61,
+    "diagonal_phases": 0,
+    "fused_gates": 60,
+    "tiled_blocks": 1,
+    "planning_us": 247.542
+  },
+  {
+    "workload": "brickwall_d12",
+    "qubits": 20,
+    "backend": "metal",
+    "precision": "auto",
+    "mode": "optimized",
+    "wall_ms": 38.91041699999987,
+    "load_before": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "load_after": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "seeded_histogram_matches_raw": false,
+    "source_sha256": "9abf960e899d78de8611639bb494926d4dfc15a1820bea7231892c3a921a91fb",
+    "stdout_sha256": "f56589121f1ec62f95bbfc0da198003522bb822bc419e686da0b6b16ce623546",
+    "input_instructions": 594,
+    "planned_instructions": 61,
+    "diagonal_phases": 0,
+    "fused_gates": 60,
+    "tiled_blocks": 1,
+    "planning_us": 255.041
+  },
+  {
+    "workload": "brickwall_d12",
+    "qubits": 20,
+    "backend": "metal",
+    "precision": "auto",
+    "mode": "raw",
+    "wall_ms": 73.03087500000017,
+    "load_before": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "load_after": [
+      7.4814453125,
+      13.6376953125,
+      8.6533203125
+    ],
+    "seeded_histogram_matches_raw": true,
+    "source_sha256": "9abf960e899d78de8611639bb494926d4dfc15a1820bea7231892c3a921a91fb",
+    "stdout_sha256": "8f5345ea20b14da90a1a404cb350989a9c7338ba9018898065aeb2a2f68779a9",
+    "input_instructions": 594,
+    "planned_instructions": 594,
+    "planning_us": 0.0
+  }
+]

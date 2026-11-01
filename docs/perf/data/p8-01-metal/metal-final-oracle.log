@@ -1,0 +1,13 @@
+   Compiling aleph-metal v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-metal)
+    Finished `release` profile [optimized] target(s) in 2.27s
+warning: the following packages contain code that will be rejected by a future version of Rust: block v0.1.6
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/sv_oracle.rs (target/release/deps/sv_oracle-9c4f4065da4de043)
+
+running 4 tests
+test final_state_plan_restores_permutation_and_partial_measurement ... ok
+test fp32_1q_oracle_matches_naive_sv ... ok
+test tier1_optimized_oracle_matches_naive_sv ... ok
+test tier1_raw_oracle_matches_naive_sv ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s

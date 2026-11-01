@@ -1,0 +1,133 @@
+   Compiling aleph-core v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-core)
+   Compiling float-cmp v0.10.0
+   Compiling criterion v0.5.1
+   Compiling predicates v3.1.4
+   Compiling aleph-ir v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-ir)
+   Compiling assert_cmd v2.2.2
+   Compiling aleph-backend v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-backend)
+   Compiling aleph-parser v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-parser)
+   Compiling aleph-sv v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-sv)
+   Compiling aleph-mps v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-mps)
+   Compiling aleph-stab v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-stab)
+   Compiling aleph-oracle v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-oracle)
+   Compiling aleph-metal v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-metal)
+   Compiling aleph-cli v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-cli)
+    Finished `release` profile [optimized] target(s) in 22.14s
+warning: the following packages contain code that will be rejected by a future version of Rust: block v0.1.6
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running unittests src/lib.rs (target/release/deps/aleph_cli-e5a1e001e322e492)
+
+running 36 tests
+test cli::backend_choice_tests::auto_downgrades_to_sv_when_amplitudes_requested ... ok
+test cli::backend_choice_tests::cli_accepts_python_aliases ... ok
+test cli::backend_choice_tests::auto_keeps_small_dense_on_cpu_even_with_metal ... ok
+test cli::backend_choice_tests::auto_picks_stabilizer_for_clifford ... ok
+test cli::backend_choice_tests::auto_routes_large_dense_to_cuda_and_pages ... ok
+test cli::backend_choice_tests::default_backend_string_parses_to_auto ... ok
+test cli::backend_choice_tests::auto_routes_large_dense_to_metal_when_available ... ok
+test cli::backend_choice_tests::explicit_cuda_pages_past_cap ... ok
+test cli::backend_choice_tests::explicit_choice_overrides_without_analysis ... ok
+test exec::tests::missing_file_error_names_path ... ok
+test exec::tests::expectation_oor_qubit_errors ... ok
+test output::tests::format_bench_header_includes_qasm_and_n ... ok
+test exec::tests::expectation_bad_pauli_errors ... ok
+test exec::tests::bench_writes_all_four_lines ... ok
+test output::tests::format_bench_phase_includes_name_and_duration ... ok
+test output::tests::format_counts_header_contains_seed_label ... ok
+test exec::tests::expectation_zz_on_bell_is_one ... ok
+test exec::tests::default_view_is_shots_1024 ... ok
+test output::tests::format_counts_ordering_ascending ... ok
+test output::tests::format_expectation_emits_pauli_raw ... ok
+test output::tests::format_counts_zero_count_elided ... ok
+test output::tests::format_statevector_two_qubits_bell ... ok
+test output::tests::sparse_counts_preserve_sample_output_and_zero_shots ... ok
+test pauli::tests::parse_drops_identity ... ok
+test pauli::tests::parse_negative_coeff ... ok
+test exec::tests::seeded_run_is_reproducible ... ok
+test exec::tests::statevector_cap_rejects_n11 ... ok
+test pauli::tests::parse_rejects_empty ... ok
+test pauli::tests::parse_rejects_empty_after_coeff ... ok
+test pauli::tests::parse_rejects_invalid_char ... ok
+test pauli::tests::parse_rejects_misplaced_coeff ... ok
+test pauli::tests::parse_with_coeff ... ok
+test pauli::tests::parse_zz ... ok
+test exec::tests::statevector_force_bypasses_cap ... ok
+test pauli::tests::z_only_round_trip ... ok
+test exec::tests::metal_backend_runs_ghz_statevector ... ok
+
+test result: ok. 36 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+     Running unittests src/main.rs (target/release/deps/aleph-a5db553fcb976366)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/cli.rs (target/release/deps/cli-650335bcb12d02b5)
+
+running 41 tests
+test expectation_oor_qubit_error ... ok
+test auto_downgrades_to_sv_for_statevector_view ... ok
+test auto_selects_stabilizer_for_clifford ... ok
+test expectation_bad_pauli_error ... ok
+test bell_statevector ... ok
+test bell_multiple_expects ... ok
+test bell_expectation_zz ... ok
+test bench_prints_phases ... ok
+test bell_state_counts ... ok
+test auto_is_the_default_backend ... ok
+test mps_backend_expectation_zz_on_bell ... ok
+test explicit_backend_has_no_auto_line ... ok
+test mps_backend_reports_truncation ... ok
+test help_lists_subcommands ... ok
+test ghz_3_default_shots ... ok
+test mps_backend_max_bond_runs_ghz ... ok
+test missing_file_error ... ok
+test mps_backend_max_error_runs ... ok
+test mps_backend_rejects_statevector ... ok
+test mps_backend_rejects_nonpositive_max_error ... ok
+test noise_out_of_range_fails ... ok
+test noise_rejects_stabilizer_backend ... ok
+test noise_depol_runs_and_prints_counts ... ok
+test noise_rejects_mps_backend ... ok
+test noise_readout_runs ... ok
+test mps_backend_runs_bell ... ok
+test noise_bad_value_fails ... ok
+test noise_unknown_preset_fails ... ok
+test noise_rejects_statevector_view ... ok
+test parse_error_propagates ... ok
+test precision_f32_ghz_counts_are_all_or_nothing ... ok
+test precision_f32_ghz_statevector ... ok
+test stabilizer_backend_rejects_non_clifford ... ok
+test stabilizer_backend_rejects_statevector ... ok
+test stabilizer_backend_runs_surface_code ... ok
+test statevector_force_bypasses_cap ... ok
+test precision_default_equals_explicit_f64 ... ok
+test version_flag ... ok
+test statevector_n_cap_rejects ... ok
+test seed_reproducibility ... ok
+test noisy_budget_override_and_worker_limit_preserve_counts ... ok
+
+test result: ok. 41 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.26s
+
+     Running tests/gpu_probe.rs (target/release/deps/gpu_probe-adbeec2449d50879)
+
+running 1 test
+test public_cpu_and_clifford_runs_do_not_construct_gpu_backends ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/optimized_execution.rs (target/release/deps/optimized_execution-fee5e539416266a8)
+
+running 3 tests
+test public_optimized_path_reports_retained_fusion_and_smaller_plan ... ok
+test unsupported_reset_is_not_optimized_away ... ok
+test public_views_preserve_measurements_controls_phases_and_barriers ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.26s
+
+   Doc-tests aleph_cli
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s

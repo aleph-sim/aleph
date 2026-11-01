@@ -107,6 +107,16 @@ pub enum Cmd {
         /// Path to the OpenQASM 3.0 source file.
         qasm: PathBuf,
 
+        /// Execute CPU/Metal state-vector gates verbatim (reference/A-B path).
+        /// Other backend families keep their existing drivers.
+        #[arg(long)]
+        raw: bool,
+
+        /// Report CPU/Metal SV retained IR kinds and planning time on stderr.
+        /// Counts are IR instructions, not physical kernel launches.
+        #[arg(long)]
+        execution_stats: bool,
+
         /// Sample N shots from the final state.  Default is 1024
         /// when no other view flag is given.
         #[arg(long)]
@@ -129,7 +139,9 @@ pub enum Cmd {
         expectation: Vec<String>,
 
         /// RNG seed for reproducibility.  Defaults to entropy.
-        /// Reproducibility holds for a given aleph version; the
+        /// Reproducibility holds for a given version/backend/precision/mode;
+        /// raw and optimized floating-point paths may map a seed to different
+        /// outcomes. The
         /// sample-RNG-sequence contract is not stable across
         /// versions.
         #[arg(long)]

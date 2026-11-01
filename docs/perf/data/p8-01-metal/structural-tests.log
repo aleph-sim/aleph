@@ -1,0 +1,12 @@
+   Compiling aleph-cli v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-cli)
+    Finished `release` profile [optimized] target(s) in 2.07s
+warning: the following packages contain code that will be rejected by a future version of Rust: block v0.1.6
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/optimized_execution.rs (target/release/deps/optimized_execution-fee5e539416266a8)
+
+running 3 tests
+test unsupported_reset_is_not_optimized_away ... ok
+test public_optimized_path_reports_retained_fusion_and_smaller_plan ... ok
+test public_views_preserve_measurements_controls_phases_and_barriers ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.32s

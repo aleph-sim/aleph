@@ -105,6 +105,15 @@ pub fn run_circuit<W: Write>(
     )
 }
 
+/// CPU/Metal SV execution controls; other backend families retain their drivers.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SvExecutionOptions {
+    /// Run gates verbatim for a reference comparison.
+    pub raw: bool,
+    /// Print planning diagnostics to stderr without changing result output.
+    pub stats: bool,
+}
+
 /// CUDA-specific execution choices; defaults preserve strict FP32 arithmetic.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct CudaOptions {
@@ -164,6 +173,44 @@ pub fn run_circuit_with_execution_options<W: Write>(
     noise: &[String],
     noise_options: aleph_sv::noise::NoiseOptions,
     cuda_options: CudaOptions,
+    out: &mut W,
+) -> Result<()> {
+    run_circuit_with_all_execution_options(
+        qasm_path,
+        shots_opt,
+        print_statevector,
+        force_statevector,
+        expectations,
+        seed,
+        precision,
+        backend,
+        max_bond,
+        max_error,
+        noise,
+        noise_options,
+        cuda_options,
+        SvExecutionOptions::default(),
+        out,
+    )
+}
+
+/// Execute with independent noise, CUDA and CPU/Metal state-vector controls.
+#[allow(clippy::too_many_arguments)]
+pub fn run_circuit_with_all_execution_options<W: Write>(
+    qasm_path: &Path,
+    shots_opt: Option<u32>,
+    print_statevector: bool,
+    force_statevector: bool,
+    expectations: &[String],
+    seed: Option<u64>,
+    precision: Precision,
+    backend: BackendRequest,
+    max_bond: usize,
+    max_error: Option<f64>,
+    noise: &[String],
+    noise_options: aleph_sv::noise::NoiseOptions,
+    cuda_options: CudaOptions,
+    options: SvExecutionOptions,
     out: &mut W,
 ) -> Result<()> {
     let caller_start = Instant::now();
@@ -305,7 +352,7 @@ pub fn run_circuit_with_execution_options<W: Write>(
     // 5. Allocate backend + run circuit once + print views.  The two
     //    precision backends have different associated `State` types, so
     //    the run-and-view pipeline is factored into a generic helper
-    //    (`run_with_backend`) instantiated per concrete backend here.
+    //    (`run_with_executor`) instantiated per concrete backend here.
     let seed_label = match seed {
         Some(s) => format!("seed={s}"),
         None => "seed=entropy".to_string(),
@@ -353,6 +400,7 @@ pub fn run_circuit_with_execution_options<W: Write>(
             n,
             seed,
             &seed_label,
+            options,
             out,
         );
     }
@@ -382,7 +430,7 @@ pub fn run_circuit_with_execution_options<W: Write>(
                 Some(s) => NaiveSvBackend::with_seed(s),
                 None => NaiveSvBackend::new(),
             };
-            run_with_backend(
+            run_with_executor(
                 backend,
                 parse_ms,
                 &circuit,
@@ -391,6 +439,7 @@ pub fn run_circuit_with_execution_options<W: Write>(
                 &paulis,
                 n,
                 &seed_label,
+                |be, c| execute_cpu(be, c, options),
                 out,
             )
         }
@@ -399,7 +448,7 @@ pub fn run_circuit_with_execution_options<W: Write>(
                 Some(s) => Fp32SvBackend::with_seed(s),
                 None => Fp32SvBackend::new(),
             };
-            run_with_backend(
+            run_with_executor(
                 backend,
                 parse_ms,
                 &circuit,
@@ -408,6 +457,7 @@ pub fn run_circuit_with_execution_options<W: Write>(
                 &paulis,
                 n,
                 &seed_label,
+                |be, c| execute_cpu(be, c, options),
                 out,
             )
         }
@@ -420,7 +470,7 @@ pub fn run_circuit_with_execution_options<W: Write>(
 /// only state-type-specific operation, the `--statevector` amplitude dump,
 /// is routed through the `AmpsF64` bridge.
 #[allow(clippy::too_many_arguments)]
-fn run_with_backend<B, W>(
+fn run_with_executor<B, W, F>(
     mut backend: B,
     parse_ms: f64,
     circuit: &aleph_ir::Circuit,
@@ -429,15 +479,17 @@ fn run_with_backend<B, W>(
     paulis: &[(String, aleph_core::PauliString)],
     n: u32,
     seed_label: &str,
+    execute: F,
     out: &mut W,
 ) -> Result<()>
 where
     B: Backend,
     B::State: AmpsF64,
     W: Write,
+    F: FnOnce(&mut B, &aleph_ir::Circuit) -> Result<B::State, aleph_backend::BackendError>,
 {
     let execution_start = Instant::now();
-    let state = run(&mut backend, circuit).context("running circuit")?;
+    let state = execute(&mut backend, circuit).context("running circuit")?;
     let execution_ms = execution_start.elapsed().as_secs_f64() * 1000.0;
     let (sampling_ms, materialization_ms, formatting_ms) = write_backend_views(
         &mut backend,
@@ -507,6 +559,32 @@ where
         }
     }
     Ok((sampling_ms, materialization_ms, formatting_ms))
+}
+
+fn report_stats(stats: &aleph_backend::OptimizedRunStats) {
+    eprintln!("execution pipeline: final-state optimized; input_instructions={}; planned_instructions={}; diagonal_phases={}; fused_gates={}; tiled_blocks={}; planning_us={:.3}",
+        stats.input_instructions, stats.planned_instructions, stats.diagonal_phases,
+        stats.fused_gates, stats.tiled_blocks, stats.planning_time.as_secs_f64()*1e6);
+}
+
+fn execute_cpu<B: Backend>(
+    be: &mut B,
+    c: &aleph_ir::Circuit,
+    options: SvExecutionOptions,
+) -> Result<B::State, aleph_backend::BackendError> {
+    if options.raw {
+        let state = run(be, c)?;
+        if options.stats {
+            eprintln!("execution pipeline: raw; input_instructions={}; planned_instructions={}; planning_us=0",c.len(),c.len());
+        }
+        Ok(state)
+    } else {
+        let (state, stats) = aleph_backend::run_optimized_cpu_final_state_with_stats(be, c)?;
+        if options.stats {
+            report_stats(&stats);
+        }
+        Ok(state)
+    }
 }
 
 /// Stabilizer-backend run path. Supports `--shots` and `--expectation`;
@@ -626,7 +704,7 @@ fn metal_available() -> bool {
 
 /// Metal GPU state-vector run path (macOS + `metal` feature). FP32; supports
 /// `--shots`, `--statevector`, and `--expectation` through the shared
-/// `run_with_backend` helper (the Metal state implements [`AmpsF64`]). The
+/// `run_with_executor` helper (the Metal state implements [`AmpsF64`]). The
 /// backend is built fallibly — GPU/device acquisition can fail — and a failure
 /// surfaces as a clear error rather than a silent CPU fallback.
 #[cfg(all(target_os = "macos", feature = "metal"))]
@@ -640,6 +718,7 @@ fn run_metal<W: Write>(
     n: u32,
     seed: Option<u64>,
     seed_label: &str,
+    options: SvExecutionOptions,
     out: &mut W,
 ) -> Result<()> {
     let backend = match seed {
@@ -647,7 +726,7 @@ fn run_metal<W: Write>(
         None => aleph_metal::MetalSvBackend::new(),
     }
     .map_err(|e| anyhow!("initializing the Metal GPU backend: {e}"))?;
-    run_with_backend(
+    run_with_executor(
         backend,
         parse_ms,
         circuit,
@@ -656,6 +735,21 @@ fn run_metal<W: Write>(
         paulis,
         n,
         seed_label,
+        |be, c| {
+            if options.raw {
+                let state = be.run(c)?;
+                if options.stats {
+                    eprintln!("execution pipeline: raw; input_instructions={}; planned_instructions={}; planning_us=0",c.len(),c.len());
+                }
+                Ok(state)
+            } else {
+                let (state, stats) = be.run_optimized_final_state_with_stats(c)?;
+                if options.stats {
+                    report_stats(&stats);
+                }
+                Ok(state)
+            }
+        },
         out,
     )
 }
@@ -674,6 +768,7 @@ fn run_metal<W: Write>(
     _n: u32,
     _seed: Option<u64>,
     _seed_label: &str,
+    _options: SvExecutionOptions,
     _out: &mut W,
 ) -> Result<()> {
     Err(anyhow!(

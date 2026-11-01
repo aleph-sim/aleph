@@ -1,0 +1,101 @@
+{
+  "started_utc": "2026-11-01T21:02:01.293669+00:00",
+  "platform": "macOS-27.0.1-arm64-arm-64bit",
+  "machine": "arm64",
+  "binary_sha256": "f98a43420f245304e41868dbf56a814074036ada25d5bc356f49dcc4232787fd",
+  "commands": [
+    [
+      "python3",
+      "scripts/python/bench_cli_optimized.py",
+      "--binary",
+      "/Users/ex/GitHub/aleph/target/release/aleph",
+      "--backend",
+      "metal",
+      "--precision",
+      "auto",
+      "--qubits",
+      "20",
+      "--blocks",
+      "4",
+      "--warmups",
+      "1",
+      "--output",
+      "/Users/ex/GitHub/aleph/docs/perf/data/p8-01-metal/n20.json"
+    ],
+    [
+      "python3",
+      "scripts/python/bench_cli_optimized.py",
+      "--binary",
+      "/Users/ex/GitHub/aleph/target/release/aleph",
+      "--backend",
+      "metal",
+      "--precision",
+      "auto",
+      "--qubits",
+      "24",
+      "--blocks",
+      "4",
+      "--warmups",
+      "1",
+      "--output",
+      "/Users/ex/GitHub/aleph/docs/perf/data/p8-01-metal/n24.json"
+    ],
+    [
+      "cargo",
+      "bench",
+      "-p",
+      "aleph-cli",
+      "--features",
+      "metal",
+      "--bench",
+      "public_pipeline"
+    ]
+  ],
+  "finished_utc": "2026-11-01T21:03:27.284231+00:00",
+  "hardware": {
+    "model": "MacBook Air Mac17,3",
+    "chip": "Apple M5",
+    "cpu_cores": 10,
+    "gpu_cores": 10,
+    "unified_memory_gib": 32
+  },
+  "rust": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "macos": "27.0.1",
+  "rayon_num_threads": 1,
+  "comparison": "Same release binary raw/optimized, whole public process, 32 shots seed 7; not historical binaries",
+  "sampling_contract": "same-mode seeded histograms stable; rounding can change cross-mode alias-bin outcomes",
+  "head_before_integration": "a32d4d2e574cd77b2a3828a130072a573e381945",
+  "integrated_main": "4e72028f437148b9bacd40fafb7c5d9f45cc34bd",
+  "services_stopped": false,
+  "dedicated_host": false,
+  "cpu_idle_percent": {
+    "minimum": 57.11,
+    "median": 74.675,
+    "maximum": 94.36
+  },
+  "source_sha256": {
+    "crates/aleph-cli/src/exec.rs": "538fc8f42a268d9b55c0716f3a1ae4868f896ee3bd64818aa282a91db035bb93",
+    "crates/aleph-cli/src/main.rs": "9cff10ae5291dc7a9b525b0fe2683c9640567b340c906d8369cd878353a7127a",
+    "crates/aleph-metal/src/sv/backend.rs": "98a34af536f961b43cc14ba0070cfbde80eb1e4ce2eaff0d9fc36f0ef94c841a",
+    "crates/aleph-backend/src/lib.rs": "d4ba82a7e95d01733c9aa3ed6b7ac2c5049cf28705653eae04597d95559fcf57",
+    "crates/aleph-ir/src/passes/mod.rs": "0c04161a6c37b28e38e8fbcf30f73b6d682b98bd9d8aaa3410926a5764a66340",
+    "scripts/python/bench_cli_optimized.py": "722120359ebafbc3c697bb784ed4e4a967e1928c2c264d64df72c94a33351597",
+    "crates/aleph-cli/benches/public_pipeline.rs": "f13bf0d4162ca8d5602825fe6f75f110ec388d3f3ff9966eb4714dfb4d7b7b88"
+  },
+  "source_fingerprint_note": "Measured implementation hashes recorded before final comment cleanup and preservation of legacy CPU Criterion group names; Metal benchmark commands/behavior unchanged. Final source hashes recorded separately.",
+  "final_source_sha256": {
+    "crates/aleph-cli/src/exec.rs": "c554369423d840b61c210d11c50fce34e2b256ba708c4968af1feef496aee7e7",
+    "crates/aleph-cli/benches/public_pipeline.rs": "ba6998e12502f0f5be7cfc9d3f85d47522e5e2ecef1148d7aac409a9528693dc",
+    "crates/aleph-metal/tests/sv_oracle.rs": "6ff425c2ffebd752913c6c76f68af47356ed14241a0dfce3834d7765e84da562",
+    "crates/aleph-cli/tests/optimized_execution.rs": "df7632fe5d4723948430b4d47cd68edcb50131b6d968ae1389172aba435db6b4"
+  },
+  "test_results": {
+    "cli": 81,
+    "final_state": 5,
+    "final_state_existing_ignored": 1,
+    "optimized_driver": 4,
+    "metal_oracle": 4,
+    "metal_property": 1,
+    "focused_public_optimizer_repeat": 3
+  }
+}
