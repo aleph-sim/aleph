@@ -174,8 +174,8 @@ bond-saturating case.
 
 ## 2026-11-01 follow-up — remaining timing gate still open
 
-**Status: interrupted, not a completed performance campaign. Issue #520 stays
-open.** The [frozen protocol](data/metal-m5-520/protocol.md) and helper commit
+**Status: interrupted and then explicitly deferred by the user; not a completed
+performance campaign. Issue #520 stays open.** The [frozen protocol](data/metal-m5-520/protocol.md) and helper commit
 `c8e484b` targeted the one unfinished cell retained by PR #526, pre/post CPU and
 SV drift controls, readout/batching refresh, and an API/device reach audit.
 This does not replace the historical n24/26/28 SV or full MPS tables above.
@@ -255,7 +255,8 @@ compiler, exact thread settings, power, display load or thermal conditions.
 
 ### Remaining completion gate
 
-On an uncontended Mac, finish the existing GPU n20/chi512 cell and matched
+The user deferred the long repeat and plans to connect AC power. No AC run is
+claimed here. On an uncontended Mac, finish the existing GPU n20/chi512 cell and matched
 CPU/SV controls under continuously recorded stable supply. Retain every sample,
 interval and adverse case. A >10% median control change is reported as observed
 drift, not attributed to temperature without independent evidence. Keep this

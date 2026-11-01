@@ -1,5 +1,5 @@
 {
-  "status": "PENDING_UNCONTENDED_TIMINGS",
+  "status": "LONG_TIMING_DEFERRED_BY_USER",
   "issue": 520,
   "close_issue": false,
   "protocol_source_commit": "c8e484b",
@@ -41,6 +41,9 @@
     "workspace_all_target_clippy": "passed",
     "beta_metal_all_target_clippy": "passed",
     "fmt": "passed",
-    "incomplete_campaign_rejection": "passed (incomplete data was rejected)"
-  }
+    "incomplete_campaign_rejection": "passed (incomplete data was rejected)",
+    "integrated_research_feature_clippy": "passed",
+    "integrated_ci_contracts": "15 passed"
+  },
+  "user_steering": "User explicitly deferred the long measurement and plans to connect AC. No AC measurement or completed GPU target is claimed."
 }
