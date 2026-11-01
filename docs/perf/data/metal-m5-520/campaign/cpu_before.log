@@ -1,0 +1,11 @@
+Gnuplot not found, using plotters backend
+Benchmarking mps_vs_cpu/large_n/cpu/n20_chi512
+Benchmarking mps_vs_cpu/large_n/cpu/n20_chi512: Warming up for 3.0000 s
+
+Warning: Unable to complete 10 samples in 5.0s. You may wish to increase target time to 102.2s.
+Benchmarking mps_vs_cpu/large_n/cpu/n20_chi512: Collecting 10 samples in estimated 102.17 s (10 iterations)
+Benchmarking mps_vs_cpu/large_n/cpu/n20_chi512: Analyzing
+mps_vs_cpu/large_n/cpu/n20_chi512
+                        time:   [7.4003 s 8.3434 s 9.7054 s]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe

@@ -1,0 +1,224 @@
+{
+  "historical_published_revision": "4850016",
+  "current_base_revision": "ae537adc6747fd9607a597fd6903fa59ae1bc17e",
+  "scope": "Production MPS runtime/shaders and missing-cell bench; this does not prove the unknown historical binary used exactly this published source or matched compiler/power settings.",
+  "all_identical": true,
+  "files": [
+    {
+      "path": "crates/aleph-metal/src/mps/backend.rs",
+      "historical_sha256": "9d68ce9ec16474b3413d01f2051485f1e526a12abc3caff0fecb8f9633ec7272",
+      "current_sha256": "9d68ce9ec16474b3413d01f2051485f1e526a12abc3caff0fecb8f9633ec7272",
+      "identical": true
+    },
+    {
+      "path": "crates/aleph-metal/src/mps/canonical.rs",
+      "historical_sha256": "983289401763fa8972d0a1a99471efbcfcc829123e55219c047a009dd0ffb84d",
+      "current_sha256": "983289401763fa8972d0a1a99471efbcfcc829123e55219c047a009dd0ffb84d",
+      "identical": true
+    },
+    {
+      "path": "crates/aleph-metal/src/mps/gpu_jacobi.rs",
+      "historical_sha256": "d6e860d5b1c80d074f67c0b2df9021a52d8b716121e2de46bfe9f5586654db1d",
+      "current_sha256": "d6e860d5b1c80d074f67c0b2df9021a52d8b716121e2de46bfe9f5586654db1d",
+      "identical": true
+    },
+    {
+      "path": "crates/aleph-metal/src/mps/jacobi.rs",
+      "historical_sha256": "a3b2222d229324fc8f9badd7a01db86c1a93fff9939eb072414ddbdc658ba62a",
+      "current_sha256": "a3b2222d229324fc8f9badd7a01db86c1a93fff9939eb072414ddbdc658ba62a",
+      "identical": true
+    },
+    {
+      "path": "crates/aleph-metal/src/mps/kernel.rs",
+      "historical_sha256": "6d3d96c8f460a6bfcce1f414540edbe13a6b926cd4a4e78d2471fba282c75124",
+      "current_sha256": "6d3d96c8f460a6bfcce1f414540edbe13a6b926cd4a4e78d2471fba282c75124",
+      "identical": true
+    },
+    {
+      "path": "crates/aleph-metal/src/mps/mod.rs",
+      "historical_sha256": "91b99048c39a4f1da91719b1e261d143af39218f58a937b6b23f67b4d2ae8990",
+      "current_sha256": "91b99048c39a4f1da91719b1e261d143af39218f58a937b6b23f67b4d2ae8990",
+      "identical": true
+    },
+    {
+      "path": "crates/aleph-metal/src/mps/move_gpu.rs",
+      "historical_sha256": "0a2978d5b0119d500cb804cf5d70fa9724e373953eb505d79af5a08ba5860088",
+      "current_sha256": "0a2978d5b0119d500cb804cf5d70fa9724e373953eb505d79af5a08ba5860088",
+      "identical": true
+    },
+    {
+      "path": "crates/aleph-metal/src/mps/qr.rs",
+      "historical_sha256": "dbdd02f455bbfc24ec1532c650a7c25fa13b02cdb214e81a079f8530541f3ee0",
+      "current_sha256": "dbdd02f455bbfc24ec1532c650a7c25fa13b02cdb214e81a079f8530541f3ee0",
+      "identical": true
+    },
+    {
+      "path": "crates/aleph-metal/src/mps/readout.rs",
+      "historical_sha256": "b36de32eb3a3c4905af1cc189c26a547da218e4997a35c97da91c41cc2dc6337",
+      "current_sha256": "b36de32eb3a3c4905af1cc189c26a547da218e4997a35c97da91c41cc2dc6337",
+      "identical": true
+    },
+    {
+      "path": "crates/aleph-metal/src/mps/state.rs",
+      "historical_sha256": "a93c209beb8b80713c618a205f606a617f043a5c5ebeb61334b2411c1438df06",
+      "current_sha256": "a93c209beb8b80713c618a205f606a617f043a5c5ebeb61334b2411c1438df06",
+      "identical": true
+    },
+    {
+      "path": "crates/aleph-metal/src/mps/svd.rs",
+      "historical_sha256": "c3deb0f1e1892161c876e4d33b2de6a5056e799c0d38807f7ab48be6f35cd585",
+      "current_sha256": "c3deb0f1e1892161c876e4d33b2de6a5056e799c0d38807f7ab48be6f35cd585",
+      "identical": true
+    },
+    {
+      "path": "crates/aleph-metal/src/shaders/mps_1q.metal",
+      "historical_sha256": "198d77b0403b22896b808bd1ded1a2405b5b6bd1d4cefc7b8fe0d0ad8b616f51",
+      "current_sha256": "198d77b0403b22896b808bd1ded1a2405b5b6bd1d4cefc7b8fe0d0ad8b616f51",
+      "identical": true
+    },
+    {
+      "path": "crates/aleph-metal/src/shaders/mps_apply2q.metal",
+      "historical_sha256": "97a91ebfc72c15d09a20a821a1bd6326d0217c4cbaabad4cdc33cf47d077e8a7",
+      "current_sha256": "97a91ebfc72c15d09a20a821a1bd6326d0217c4cbaabad4cdc33cf47d077e8a7",
+      "identical": true
+    },
+    {
+      "path": "crates/aleph-metal/src/shaders/mps_contract.metal",
+      "historical_sha256": "7f425b9c78e89b9771007814ed6e67477ba10013785cf5d2ae183f7be3e33e03",
+      "current_sha256": "7f425b9c78e89b9771007814ed6e67477ba10013785cf5d2ae183f7be3e33e03",
+      "identical": true
+    },
+    {
+      "path": "crates/aleph-metal/src/shaders/mps_finalize.metal",
+      "historical_sha256": "e17c97f4f2332a4392f2c8e199f6692497ea30c79c4d4221bfcc2257004fec9e",
+      "current_sha256": "e17c97f4f2332a4392f2c8e199f6692497ea30c79c4d4221bfcc2257004fec9e",
+      "identical": true
+    },
+    {
+      "path": "crates/aleph-metal/src/shaders/mps_jacobi.metal",
+      "historical_sha256": "d200e36a30fb64ddb7604740aecfc85999c750e42d178484fc2dea60cf03db11",
+      "current_sha256": "d200e36a30fb64ddb7604740aecfc85999c750e42d178484fc2dea60cf03db11",
+      "identical": true
+    },
+    {
+      "path": "crates/aleph-metal/src/shaders/mps_pack.metal",
+      "historical_sha256": "005a9cbc2733eb32edea5bbf59b9fef224b251574d3b75ad9b70951a04a32c51",
+      "current_sha256": "005a9cbc2733eb32edea5bbf59b9fef224b251574d3b75ad9b70951a04a32c51",
+      "identical": true
+    },
+    {
+      "path": "crates/aleph-metal/src/shaders/mps_qr.metal",
+      "historical_sha256": "33f66dab0c440f0fec551fa5e73ff97f930970f123d510d5ecef458301387abf",
+      "current_sha256": "33f66dab0c440f0fec551fa5e73ff97f930970f123d510d5ecef458301387abf",
+      "identical": true
+    },
+    {
+      "path": "crates/aleph-metal/src/shaders/mps_qr_install.metal",
+      "historical_sha256": "bea381e873dd13d0651572168a3d6ad80f17182839169cd8eadf6f56aca53b38",
+      "current_sha256": "bea381e873dd13d0651572168a3d6ad80f17182839169cd8eadf6f56aca53b38",
+      "identical": true
+    },
+    {
+      "path": "crates/aleph-mps/Cargo.toml",
+      "historical_sha256": "d3641daa16ec6ba2a4a5035eb1420942f5c61a75054f1f8a59335d24fd6b7a26",
+      "current_sha256": "d3641daa16ec6ba2a4a5035eb1420942f5c61a75054f1f8a59335d24fd6b7a26",
+      "identical": true
+    },
+    {
+      "path": "crates/aleph-mps/benches/long_range.rs",
+      "historical_sha256": "56b15d0d38b484b537064cd6e6e9fb15d914320caddb2cc4f1ffe48de8717e4d",
+      "current_sha256": "56b15d0d38b484b537064cd6e6e9fb15d914320caddb2cc4f1ffe48de8717e4d",
+      "identical": true
+    },
+    {
+      "path": "crates/aleph-mps/benches/nn_qaoa.rs",
+      "historical_sha256": "0fb20d8ef202a71476b9b1d6010adf6057aeb872c2f2769fc8557df9b67a16f8",
+      "current_sha256": "0fb20d8ef202a71476b9b1d6010adf6057aeb872c2f2769fc8557df9b67a16f8",
+      "identical": true
+    },
+    {
+      "path": "crates/aleph-mps/benches/parity.rs",
+      "historical_sha256": "f39e5c8f071e29686e3d894c837c75ac71dd5fa10578aff5f2ae09032388a185",
+      "current_sha256": "f39e5c8f071e29686e3d894c837c75ac71dd5fa10578aff5f2ae09032388a185",
+      "identical": true
+    },
+    {
+      "path": "crates/aleph-mps/benches/swap_dense.rs",
+      "historical_sha256": "9ccdb2fc785b6e6a06cec1c8596c280c3f92c666ecfa06d7e525e12bac25d16e",
+      "current_sha256": "9ccdb2fc785b6e6a06cec1c8596c280c3f92c666ecfa06d7e525e12bac25d16e",
+      "identical": true
+    },
+    {
+      "path": "crates/aleph-mps/benches/wide_bond.rs",
+      "historical_sha256": "742a29ef8d898fd10fa0a76ef76905791503aba9186df5b118ef5b893c76e9f7",
+      "current_sha256": "742a29ef8d898fd10fa0a76ef76905791503aba9186df5b118ef5b893c76e9f7",
+      "identical": true
+    },
+    {
+      "path": "crates/aleph-mps/clippy.toml",
+      "historical_sha256": "40194cf958ff3a0a596605a478fd00705f3f7a6420030848ee7207017be44f54",
+      "current_sha256": "40194cf958ff3a0a596605a478fd00705f3f7a6420030848ee7207017be44f54",
+      "identical": true
+    },
+    {
+      "path": "crates/aleph-mps/src/backend.rs",
+      "historical_sha256": "2db929100773d152b0592c6b9f952a5cddfb7c1d61186f62bdd8256bd784598f",
+      "current_sha256": "2db929100773d152b0592c6b9f952a5cddfb7c1d61186f62bdd8256bd784598f",
+      "identical": true
+    },
+    {
+      "path": "crates/aleph-mps/src/gate.rs",
+      "historical_sha256": "f818676a9d8338cc1f9909d99d5645bf8994921bbcbc24c74373c2de7d8647c8",
+      "current_sha256": "f818676a9d8338cc1f9909d99d5645bf8994921bbcbc24c74373c2de7d8647c8",
+      "identical": true
+    },
+    {
+      "path": "crates/aleph-mps/src/lib.rs",
+      "historical_sha256": "6488182dd96184bb36c55f4a9c10a661548ad83eb701ea9186182e92f64f6e9c",
+      "current_sha256": "6488182dd96184bb36c55f4a9c10a661548ad83eb701ea9186182e92f64f6e9c",
+      "identical": true
+    },
+    {
+      "path": "crates/aleph-mps/src/linalg.rs",
+      "historical_sha256": "0387fc8475c74cadcafe9b4fdd975dff8582dfba461178e9edc9aa04a964989e",
+      "current_sha256": "0387fc8475c74cadcafe9b4fdd975dff8582dfba461178e9edc9aa04a964989e",
+      "identical": true
+    },
+    {
+      "path": "crates/aleph-mps/src/mps.rs",
+      "historical_sha256": "f6095d7f1674752b3cc1f70143f226be48d44dc4a6d1af06e4dbc4766aceaf12",
+      "current_sha256": "f6095d7f1674752b3cc1f70143f226be48d44dc4a6d1af06e4dbc4766aceaf12",
+      "identical": true
+    },
+    {
+      "path": "crates/aleph-mps/src/tensor.rs",
+      "historical_sha256": "d6ea9b5975bccf230c9598c108530f45bbb9d473669a9731c11bc08563ba3918",
+      "current_sha256": "d6ea9b5975bccf230c9598c108530f45bbb9d473669a9731c11bc08563ba3918",
+      "identical": true
+    },
+    {
+      "path": "crates/aleph-mps/tests/shallow_100q.rs",
+      "historical_sha256": "05c8120dd12ed490cd8835307aab7f977b41caf6639b186414bb2915f722b99d",
+      "current_sha256": "05c8120dd12ed490cd8835307aab7f977b41caf6639b186414bb2915f722b99d",
+      "identical": true
+    },
+    {
+      "path": "crates/aleph-mps/tests/sv_equivalence.proptest-regressions",
+      "historical_sha256": "5cb9e04d9db7130e583c2e33fd68a7bc9214852645e808e9e16bb335618c12c9",
+      "current_sha256": "5cb9e04d9db7130e583c2e33fd68a7bc9214852645e808e9e16bb335618c12c9",
+      "identical": true
+    },
+    {
+      "path": "crates/aleph-mps/tests/sv_equivalence.rs",
+      "historical_sha256": "9cf8354e7b21dd2c9b371efe49db8e09951fa7bc9e169014612277c9f48dee6b",
+      "current_sha256": "9cf8354e7b21dd2c9b371efe49db8e09951fa7bc9e169014612277c9f48dee6b",
+      "identical": true
+    },
+    {
+      "path": "crates/aleph-metal/benches/mps_vs_cpu.rs",
+      "historical_sha256": "f50fc7ec270ab2dc41d007f2609b36d8924b7538a64e3fd83570074215220886",
+      "current_sha256": "f50fc7ec270ab2dc41d007f2609b36d8924b7538a64e3fd83570074215220886",
+      "identical": true
+    }
+  ]
+}

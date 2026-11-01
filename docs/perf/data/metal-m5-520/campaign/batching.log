@@ -1,0 +1,34 @@
+Gnuplot not found, using plotters backend
+Benchmarking mps_batched/nn_brickwall/gate_by_gate/n12_d24
+Benchmarking mps_batched/nn_brickwall/gate_by_gate/n12_d24: Warming up for 3.0000 s
+Benchmarking mps_batched/nn_brickwall/gate_by_gate/n12_d24: Collecting 10 samples in estimated 7.6607 s (20 iterations)
+Benchmarking mps_batched/nn_brickwall/gate_by_gate/n12_d24: Analyzing
+mps_batched/nn_brickwall/gate_by_gate/n12_d24
+                        time:   [378.87 ms 379.31 ms 379.75 ms]
+Benchmarking mps_batched/nn_brickwall/batched/n12_d24
+Benchmarking mps_batched/nn_brickwall/batched/n12_d24: Warming up for 3.0000 s
+Benchmarking mps_batched/nn_brickwall/batched/n12_d24: Collecting 10 samples in estimated 6.1767 s (20 iterations)
+Benchmarking mps_batched/nn_brickwall/batched/n12_d24: Analyzing
+mps_batched/nn_brickwall/batched/n12_d24
+                        time:   [304.78 ms 305.22 ms 305.75 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+
+Benchmarking mps_batched/bond_saturating/gate_by_gate/n12_l16
+Benchmarking mps_batched/bond_saturating/gate_by_gate/n12_l16: Warming up for 3.0000 s
+Benchmarking mps_batched/bond_saturating/gate_by_gate/n12_l16: Collecting 10 samples in estimated 6.1382 s (30 iterations)
+Context leak detected, CoreAnalytics returned false
+Benchmarking mps_batched/bond_saturating/gate_by_gate/n12_l16: Analyzing
+mps_batched/bond_saturating/gate_by_gate/n12_l16
+                        time:   [202.19 ms 204.32 ms 207.17 ms]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+Benchmarking mps_batched/bond_saturating/batched/n12_l16
+Benchmarking mps_batched/bond_saturating/batched/n12_l16: Warming up for 3.0000 s
+Benchmarking mps_batched/bond_saturating/batched/n12_l16: Collecting 10 samples in estimated 6.7903 s (30 iterations)
+Context leak detected, CoreAnalytics returned false
+Benchmarking mps_batched/bond_saturating/batched/n12_l16: Analyzing
+mps_batched/bond_saturating/batched/n12_l16
+                        time:   [223.97 ms 225.91 ms 228.26 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild

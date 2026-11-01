@@ -1,0 +1,146 @@
+Gnuplot not found, using plotters backend
+Benchmarking sv_readout/measure/20
+Benchmarking sv_readout/measure/20: Warming up for 3.0000 s
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Benchmarking sv_readout/measure/20: Collecting 10 samples in estimated 5.3470 s (770 iterations)
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Benchmarking sv_readout/measure/20: Analyzing
+sv_readout/measure/20   time:   [1.1728 ms 1.2499 ms 1.3052 ms]
+Benchmarking sv_readout/measure/22
+Benchmarking sv_readout/measure/22: Warming up for 3.0000 s
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Benchmarking sv_readout/measure/22: Collecting 10 samples in estimated 5.5283 s (275 iterations)
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Benchmarking sv_readout/measure/22: Analyzing
+sv_readout/measure/22   time:   [2.7191 ms 2.7822 ms 2.8462 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) low mild
+
+Benchmarking sv_readout/expectation_xyz/20
+Benchmarking sv_readout/expectation_xyz/20: Warming up for 3.0000 s
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Benchmarking sv_readout/expectation_xyz/20: Collecting 10 samples in estimated 5.1897 s (660 iterations)
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Benchmarking sv_readout/expectation_xyz/20: Analyzing
+sv_readout/expectation_xyz/20
+                        time:   [2.4543 ms 2.5236 ms 2.5666 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking sv_readout/expectation_xyz/22
+Benchmarking sv_readout/expectation_xyz/22: Warming up for 3.0000 s
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Benchmarking sv_readout/expectation_xyz/22: Collecting 10 samples in estimated 6.3446 s (220 iterations)
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Benchmarking sv_readout/expectation_xyz/22: Analyzing
+sv_readout/expectation_xyz/22
+                        time:   [8.6189 ms 9.8215 ms 11.007 ms]
+
+Benchmarking sv_readout/probabilities/20
+Benchmarking sv_readout/probabilities/20: Warming up for 3.0000 s
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Benchmarking sv_readout/probabilities/20: Collecting 10 samples in estimated 5.0933 s (825 iterations)
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Benchmarking sv_readout/probabilities/20: Analyzing
+sv_readout/probabilities/20
+                        time:   [1.2333 ms 1.3021 ms 1.3660 ms]
+Benchmarking sv_readout/probabilities/22
+Benchmarking sv_readout/probabilities/22: Warming up for 3.0000 s
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Benchmarking sv_readout/probabilities/22: Collecting 10 samples in estimated 5.7971 s (275 iterations)
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Benchmarking sv_readout/probabilities/22: Analyzing
+sv_readout/probabilities/22
+                        time:   [3.1327 ms 3.2780 ms 3.5295 ms]
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) high mild
+  1 (10.00%) high severe

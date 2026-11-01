@@ -24,8 +24,10 @@ measured and documented as the next lever.
 - **Box:** Apple **M4** base Mac Mini — 10-core CPU (4P+6E), 10-core integrated
   GPU, 24 GB unified memory. (The P5.5-04 fusion numbers predate the Mini and were
   taken on an M3 MacBook Air; noted inline below.)
-- **M5 re-run (2026-10-03):** the whole suite re-measured on an M5 MacBook Air, with M3/M4
-  comparisons, is in [`metal-m5.md`](metal-m5.md). GPU/CPU SV at n=28 there is 6.4–7.0×.
+- **M5 evidence:** [`metal-m5.md`](metal-m5.md) preserves the 2026-10-03 M3/M4
+  comparison (historical Criterion mean/slope estimates, GPU/CPU SV n28 6.4–7.0×) and a separate
+  2026-11 follow-up with correctness, cap/device reach and interrupted timing
+  receipts. The remaining n20/chi512 MPS timing/drift gate is explicitly open.
 - **Integrated GPU, unified memory.** Unlike a discrete GPU with dedicated VRAM,
   the M-series GPU draws from the *same* unified-memory bandwidth as the CPU
   cores. There is no separate high-bandwidth pool for the state vector — this

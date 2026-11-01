@@ -1,0 +1,11 @@
+sv_before 2026-11-01T22:33:54.687392+00:00
+readout 2026-11-01T22:34:15.327465+00:00
+batching 2026-11-01T22:35:14.496589+00:00
+cpu_before 2026-11-01T22:35:59.841664+00:00
+gpu_missing 2026-11-01T22:37:36.245789+00:00
+Traceback (most recent call last):
+  File "/Users/ex/GitHub/aleph/scripts/python/bench_metal_m5_followup.py", line 94, in <module>
+    main()
+  File "/Users/ex/GitHub/aleph/scripts/python/bench_metal_m5_followup.py", line 83, in main
+    if code: raise RuntimeError(f'{label} failed with exit {code}')
+RuntimeError: gpu_missing failed with exit -2

@@ -1,0 +1,530 @@
+{
+  "mode_counts": {
+    "Flat": 66,
+    "Linear": 21
+  },
+  "cells": {
+    "sv_fused_random/fused/18/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 4309835.25625,
+      "median_point_ns": 3179856.8125
+    },
+    "sv_fused_random/fused/16/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 3375461.889999999,
+      "median_point_ns": 3172568.9
+    },
+    "sv_fused_random/fused/14/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 2555599.6927272724,
+      "median_point_ns": 2363749.8181818184
+    },
+    "sv_fused_random/unfused/18/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 11223008.002,
+      "median_point_ns": 10696487.6
+    },
+    "sv_fused_random/unfused/16/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 3946016.725454545,
+      "median_point_ns": 3246127.090909091
+    },
+    "sv_fused_random/unfused/14/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 2823410.833333334,
+      "median_point_ns": 2834925.375
+    },
+    "sv_vs_cpu_ghz/gpu/28/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 794788795.6,
+      "median_point_ns": 776099229.0
+    },
+    "sv_vs_cpu_ghz/gpu/26/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 174897731.89999998,
+      "median_point_ns": 174778680.83333334
+    },
+    "sv_vs_cpu_ghz/gpu/24/new/estimates.json": {
+      "sampling_mode": "Linear",
+      "criterion_reported_statistic": "slope",
+      "reported_point_ns": 37756646.60865801,
+      "median_point_ns": 37573114.583333336
+    },
+    "sv_vs_cpu_ghz/cpu_f64/28/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 7053657870.9,
+      "median_point_ns": 7071937375.0
+    },
+    "sv_vs_cpu_ghz/cpu_f64/26/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 1208092220.9,
+      "median_point_ns": 1180352437.5
+    },
+    "sv_vs_cpu_ghz/cpu_f64/24/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 267096885.35,
+      "median_point_ns": 265328854.25
+    },
+    "sv_vs_cpu_ghz/cpu_f32/28/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 5581615716.6,
+      "median_point_ns": 5564027354.0
+    },
+    "sv_vs_cpu_ghz/cpu_f32/26/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 1103098391.5,
+      "median_point_ns": 1098046520.5
+    },
+    "sv_vs_cpu_ghz/cpu_f32/24/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 237168918.1,
+      "median_point_ns": 234189333.5
+    },
+    "mps_vs_cpu_bond_saturating/gpu/10/new/estimates.json": {
+      "sampling_mode": "Linear",
+      "criterion_reported_statistic": "slope",
+      "reported_point_ns": 58605056.74025974,
+      "median_point_ns": 58536293.766666666
+    },
+    "mps_vs_cpu_bond_saturating/gpu/8/new/estimates.json": {
+      "sampling_mode": "Linear",
+      "criterion_reported_statistic": "slope",
+      "reported_point_ns": 42618249.83982684,
+      "median_point_ns": 42824338.28571428
+    },
+    "mps_vs_cpu_bond_saturating/gpu/12/new/estimates.json": {
+      "sampling_mode": "Linear",
+      "criterion_reported_statistic": "slope",
+      "reported_point_ns": 122859901.82337663,
+      "median_point_ns": 123306326.875
+    },
+    "mps_vs_cpu_bond_saturating/gpu/14/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 202609423.59999996,
+      "median_point_ns": 202921951.33333334
+    },
+    "mps_vs_cpu_bond_saturating/cpu/10/new/estimates.json": {
+      "sampling_mode": "Linear",
+      "criterion_reported_statistic": "slope",
+      "reported_point_ns": 936383.6541973491,
+      "median_point_ns": 933200.7010309278
+    },
+    "mps_vs_cpu_bond_saturating/cpu/8/new/estimates.json": {
+      "sampling_mode": "Linear",
+      "criterion_reported_statistic": "slope",
+      "reported_point_ns": 268446.23222307104,
+      "median_point_ns": 266073.9595588235
+    },
+    "mps_vs_cpu_bond_saturating/cpu/12/new/estimates.json": {
+      "sampling_mode": "Linear",
+      "criterion_reported_statistic": "slope",
+      "reported_point_ns": 2675040.778380443,
+      "median_point_ns": 2666816.5398284313
+    },
+    "mps_vs_cpu_bond_saturating/cpu/14/new/estimates.json": {
+      "sampling_mode": "Linear",
+      "criterion_reported_statistic": "slope",
+      "reported_point_ns": 4200887.328571429,
+      "median_point_ns": 4204410.79469697
+    },
+    "mps_vs_cpu_bond_saturating/gpu_batched/10/new/estimates.json": {
+      "sampling_mode": "Linear",
+      "criterion_reported_statistic": "slope",
+      "reported_point_ns": 66588555.66233766,
+      "median_point_ns": 66762976.88333333
+    },
+    "mps_vs_cpu_bond_saturating/gpu_batched/8/new/estimates.json": {
+      "sampling_mode": "Linear",
+      "criterion_reported_statistic": "slope",
+      "reported_point_ns": 51345596.78051948,
+      "median_point_ns": 50718198.87777778
+    },
+    "mps_vs_cpu_bond_saturating/gpu_batched/12/new/estimates.json": {
+      "sampling_mode": "Linear",
+      "criterion_reported_statistic": "slope",
+      "reported_point_ns": 147028983.83116883,
+      "median_point_ns": 147380984.73333335
+    },
+    "mps_vs_cpu_bond_saturating/gpu_batched/14/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 223702512.6,
+      "median_point_ns": 223604653.0
+    },
+    "sv_vs_cpu_grover/gpu/20/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 2471129500.1,
+      "median_point_ns": 2446793458.5
+    },
+    "sv_vs_cpu_grover/cpu_f64/20/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 22362451874.9,
+      "median_point_ns": 22226896042.0
+    },
+    "sv_vs_cpu_grover/cpu_f32/20/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 21578575883.3,
+      "median_point_ns": 21499432604.5
+    },
+    "mps_vs_cpu_large_n/gpu/n16_chi256/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 5143302500.1,
+      "median_point_ns": 5138479188.0
+    },
+    "mps_vs_cpu_large_n/gpu/n20_chi256/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 81005261620.8,
+      "median_point_ns": 80803773771.0
+    },
+    "mps_vs_cpu_large_n/cpu/n20_chi512/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 6725383895.9,
+      "median_point_ns": 6697711895.5
+    },
+    "mps_vs_cpu_large_n/cpu/n16_chi256/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 359041879.15,
+      "median_point_ns": 358021531.25
+    },
+    "mps_vs_cpu_large_n/cpu/n20_chi256/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 4229184783.2,
+      "median_point_ns": 4216391000.0
+    },
+    "sv_vs_cpu_qft/gpu/28/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 4730901587.5,
+      "median_point_ns": 4668840354.5
+    },
+    "sv_vs_cpu_qft/gpu/26/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 1006021320.8,
+      "median_point_ns": 938217520.5
+    },
+    "sv_vs_cpu_qft/gpu/24/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 204694169.23333332,
+      "median_point_ns": 204303256.6666667
+    },
+    "sv_vs_cpu_qft/cpu_f64/28/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 33508660470.9,
+      "median_point_ns": 33434169208.0
+    },
+    "sv_vs_cpu_qft/cpu_f64/26/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 7721199791.6,
+      "median_point_ns": 7752179937.5
+    },
+    "sv_vs_cpu_qft/cpu_f64/24/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 1672111791.8,
+      "median_point_ns": 1666313479.0
+    },
+    "sv_vs_cpu_qft/cpu_f32/28/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 32157963087.7,
+      "median_point_ns": 32108156979.0
+    },
+    "sv_vs_cpu_qft/cpu_f32/26/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 7534861679.2,
+      "median_point_ns": 7541757083.5
+    },
+    "sv_vs_cpu_qft/cpu_f32/24/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 1586528929.2,
+      "median_point_ns": 1571559979.5
+    },
+    "mps_batched_nn_brickwall/batched/n12_d24/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 313124220.9,
+      "median_point_ns": 313517874.75
+    },
+    "mps_batched_nn_brickwall/gate_by_gate/n12_d24/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 381430064.6,
+      "median_point_ns": 381205635.25
+    },
+    "mps_vs_cpu_nn_brickwall/gpu/10/new/estimates.json": {
+      "sampling_mode": "Linear",
+      "criterion_reported_statistic": "slope",
+      "reported_point_ns": 157548326.7064935,
+      "median_point_ns": 153993516.76666665
+    },
+    "mps_vs_cpu_nn_brickwall/gpu/8/new/estimates.json": {
+      "sampling_mode": "Linear",
+      "criterion_reported_statistic": "slope",
+      "reported_point_ns": 109775833.74545455,
+      "median_point_ns": 109433252.60416666
+    },
+    "mps_vs_cpu_nn_brickwall/gpu/12/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 381544437.6,
+      "median_point_ns": 381454573.0
+    },
+    "mps_vs_cpu_nn_brickwall/gpu/14/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 1243113166.8,
+      "median_point_ns": 1242804917.0
+    },
+    "mps_vs_cpu_nn_brickwall/cpu/10/new/estimates.json": {
+      "sampling_mode": "Linear",
+      "criterion_reported_statistic": "slope",
+      "reported_point_ns": 3307537.1450067176,
+      "median_point_ns": 3246067.0603448274
+    },
+    "mps_vs_cpu_nn_brickwall/cpu/8/new/estimates.json": {
+      "sampling_mode": "Linear",
+      "criterion_reported_statistic": "slope",
+      "reported_point_ns": 762272.8531420192,
+      "median_point_ns": 733935.5078725038
+    },
+    "mps_vs_cpu_nn_brickwall/cpu/12/new/estimates.json": {
+      "sampling_mode": "Linear",
+      "criterion_reported_statistic": "slope",
+      "reported_point_ns": 16287752.086580086,
+      "median_point_ns": 16240083.791666668
+    },
+    "mps_vs_cpu_nn_brickwall/cpu/14/new/estimates.json": {
+      "sampling_mode": "Linear",
+      "criterion_reported_statistic": "slope",
+      "reported_point_ns": 89917589.04675324,
+      "median_point_ns": 89563961.85555555
+    },
+    "mps_vs_cpu_nn_brickwall/gpu_batched/10/new/estimates.json": {
+      "sampling_mode": "Linear",
+      "criterion_reported_statistic": "slope",
+      "reported_point_ns": 132334340.9974026,
+      "median_point_ns": 131722621.375
+    },
+    "mps_vs_cpu_nn_brickwall/gpu_batched/8/new/estimates.json": {
+      "sampling_mode": "Linear",
+      "criterion_reported_statistic": "slope",
+      "reported_point_ns": 99374414.24675325,
+      "median_point_ns": 102118680.2875
+    },
+    "mps_vs_cpu_nn_brickwall/gpu_batched/12/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 312003454.05,
+      "median_point_ns": 312655375.0
+    },
+    "mps_vs_cpu_nn_brickwall/gpu_batched/14/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 924343258.5,
+      "median_point_ns": 924797354.5
+    },
+    "sv_fused_qft/fused/18/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 3786054.0866666664,
+      "median_point_ns": 3605960.666666667
+    },
+    "sv_fused_qft/fused/16/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 1523433.9035294112,
+      "median_point_ns": 1645773.2352941176
+    },
+    "sv_fused_qft/fused/14/new/estimates.json": {
+      "sampling_mode": "Linear",
+      "criterion_reported_statistic": "slope",
+      "reported_point_ns": 851543.1473296882,
+      "median_point_ns": 822705.6607142857
+    },
+    "sv_fused_qft/unfused/18/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 2490364.7028571432,
+      "median_point_ns": 2345443.5
+    },
+    "sv_fused_qft/unfused/16/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 1631293.8539999994,
+      "median_point_ns": 1622975.0
+    },
+    "sv_fused_qft/unfused/14/new/estimates.json": {
+      "sampling_mode": "Linear",
+      "criterion_reported_statistic": "slope",
+      "reported_point_ns": 859551.4987793704,
+      "median_point_ns": 781851.6919354838
+    },
+    "sv_vs_cpu_random/gpu/28/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 10719429558.4,
+      "median_point_ns": 10647579187.5
+    },
+    "sv_vs_cpu_random/gpu/26/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 2422676150.0,
+      "median_point_ns": 2406630708.0
+    },
+    "sv_vs_cpu_random/gpu/24/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 473451145.8,
+      "median_point_ns": 484525062.5
+    },
+    "sv_vs_cpu_random/cpu_f64/28/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 77895887683.1,
+      "median_point_ns": 77850283166.5
+    },
+    "sv_vs_cpu_random/cpu_f64/26/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 18444144687.5,
+      "median_point_ns": 18543784583.0
+    },
+    "sv_vs_cpu_random/cpu_f64/24/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 4074115029.1,
+      "median_point_ns": 4063257000.0
+    },
+    "sv_vs_cpu_random/cpu_f32/28/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 68519378733.2,
+      "median_point_ns": 68425227125.0
+    },
+    "sv_vs_cpu_random/cpu_f32/26/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 16255382987.5,
+      "median_point_ns": 16064027520.5
+    },
+    "sv_vs_cpu_random/cpu_f32/24/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 3739836366.6,
+      "median_point_ns": 3742748416.5
+    },
+    "sv_fused_grover/fused/15/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 133287202.12,
+      "median_point_ns": 117634541.0
+    },
+    "sv_fused_grover/unfused/15/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 215371378.76,
+      "median_point_ns": 162347208.0
+    },
+    "sv_readout_expectation_xyz/20/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 2033603.194545455,
+      "median_point_ns": 1888102.2727272727
+    },
+    "sv_readout_expectation_xyz/22/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 9683383.745,
+      "median_point_ns": 9525853.75
+    },
+    "sv_fused_ghz/fused/18/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 2335714.9572727266,
+      "median_point_ns": 2507429.7727272725
+    },
+    "sv_fused_ghz/fused/16/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 1627645.9042857147,
+      "median_point_ns": 1679062.4285714286
+    },
+    "sv_fused_ghz/unfused/18/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 2039248.6818181816,
+      "median_point_ns": 2234973.5454545454
+    },
+    "sv_fused_ghz/unfused/16/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 1312511.7,
+      "median_point_ns": 1292199.9666666668
+    },
+    "sv_readout_probabilities/20/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 856366.6828571431,
+      "median_point_ns": 793915.1785714286
+    },
+    "sv_readout_probabilities/22/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 3352634.4466666663,
+      "median_point_ns": 3179673.5
+    },
+    "sv_readout_measure/20/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 689292.3246666666,
+      "median_point_ns": 637324.9666666667
+    },
+    "sv_readout_measure/22/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 3092698.6233333335,
+      "median_point_ns": 2578986.166666667
+    },
+    "mps_batched_bond_saturating/batched/n12_l16/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 222114156.93333334,
+      "median_point_ns": 222934083.1666667
+    },
+    "mps_batched_bond_saturating/gate_by_gate/n12_l16/new/estimates.json": {
+      "sampling_mode": "Flat",
+      "criterion_reported_statistic": "mean",
+      "reported_point_ns": 202585311.06666666,
+      "median_point_ns": 202765715.1666667
+    }
+  }
+}

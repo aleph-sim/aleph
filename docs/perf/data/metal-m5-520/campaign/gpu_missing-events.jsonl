@@ -1,0 +1,6 @@
+{"utc": "2026-11-01T22:37:36.259000+00:00", "line": "Gnuplot not found, using plotters backend"}
+{"utc": "2026-11-01T22:37:38.439075+00:00", "line": "Benchmarking mps_vs_cpu/large_n/gpu/n20_chi512"}
+{"utc": "2026-11-01T22:37:38.439118+00:00", "line": "Benchmarking mps_vs_cpu/large_n/gpu/n20_chi512: Warming up for 3.0000 s"}
+{"utc": "2026-11-01T22:41:31.256144+00:00", "line": ""}
+{"utc": "2026-11-01T22:41:31.256204+00:00", "line": "Warning: Unable to complete 10 samples in 5.0s. You may wish to increase target time to 2328.2s."}
+{"utc": "2026-11-01T22:41:31.256217+00:00", "line": "Benchmarking mps_vs_cpu/large_n/gpu/n20_chi512: Collecting 10 samples in estimated 2328.2 s (10 iterations)"}

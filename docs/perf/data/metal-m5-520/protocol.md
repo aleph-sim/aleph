@@ -2,9 +2,11 @@
 
 The October report and 87 recovered local Criterion cells are historical data,
 not a fresh rerun. Local mtimes/value matches establish a recovery link but do
-not reconstruct missing source/process metadata. Published tables use mean
-estimates despite the old prose calling them medians. Preserve those numbers and
-correct the label, rather than silently swapping their estimator.
+not reconstruct missing source/process metadata. Recovered sampling modes refine the estimator label: Criterion's reported
+point uses mean for Flat and slope for Linear sampling, despite old prose calling
+both medians. Preserve those numbers and correct the label, rather than silently
+swapping their estimator. This descriptive correction does not change the frozen
+measurement scope, sample counts or median-based drift threshold.
 
 The identified missing performance cell is existing mps_vs_cpu/large_n/gpu/n20_chi512.
 Use the unchanged production MPS runtime, source/fixture and existing Criterion

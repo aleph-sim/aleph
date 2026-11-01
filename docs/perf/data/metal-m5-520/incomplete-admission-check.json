@@ -1,0 +1,6 @@
+{
+  "expected_rejection": true,
+  "returncode": 1,
+  "reason": "incomplete campaign",
+  "stderr": "Traceback (most recent call last):\n  File \"/Users/ex/GitHub/aleph/scripts/python/summarize_metal_m5_followup.py\", line 82, in <module>\n    result=summarize(args.campaign)\n  File \"/Users/ex/GitHub/aleph/scripts/python/summarize_metal_m5_followup.py\", line 28, in summarize\n    raise ValueError('incomplete campaign')\nValueError: incomplete campaign\n"
+}

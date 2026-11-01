@@ -1,0 +1,35 @@
+{"utc": "2026-11-01T22:35:14.769040+00:00", "line": "Gnuplot not found, using plotters backend"}
+{"utc": "2026-11-01T22:35:15.592044+00:00", "line": "Benchmarking mps_batched/nn_brickwall/gate_by_gate/n12_d24"}
+{"utc": "2026-11-01T22:35:15.592099+00:00", "line": "Benchmarking mps_batched/nn_brickwall/gate_by_gate/n12_d24: Warming up for 3.0000 s"}
+{"utc": "2026-11-01T22:35:21.337054+00:00", "line": "Benchmarking mps_batched/nn_brickwall/gate_by_gate/n12_d24: Collecting 10 samples in estimated 7.6607 s (20 iterations)"}
+{"utc": "2026-11-01T22:35:28.974042+00:00", "line": "Benchmarking mps_batched/nn_brickwall/gate_by_gate/n12_d24: Analyzing"}
+{"utc": "2026-11-01T22:35:28.997427+00:00", "line": "mps_batched/nn_brickwall/gate_by_gate/n12_d24"}
+{"utc": "2026-11-01T22:35:28.997463+00:00", "line": "                        time:   [378.87 ms 379.31 ms 379.75 ms]"}
+{"utc": "2026-11-01T22:35:28.997827+00:00", "line": "Benchmarking mps_batched/nn_brickwall/batched/n12_d24"}
+{"utc": "2026-11-01T22:35:28.997838+00:00", "line": "Benchmarking mps_batched/nn_brickwall/batched/n12_d24: Warming up for 3.0000 s"}
+{"utc": "2026-11-01T22:35:33.630372+00:00", "line": "Benchmarking mps_batched/nn_brickwall/batched/n12_d24: Collecting 10 samples in estimated 6.1767 s (20 iterations)"}
+{"utc": "2026-11-01T22:35:39.800276+00:00", "line": "Benchmarking mps_batched/nn_brickwall/batched/n12_d24: Analyzing"}
+{"utc": "2026-11-01T22:35:39.823239+00:00", "line": "mps_batched/nn_brickwall/batched/n12_d24"}
+{"utc": "2026-11-01T22:35:39.823280+00:00", "line": "                        time:   [304.78 ms 305.22 ms 305.75 ms]"}
+{"utc": "2026-11-01T22:35:39.823308+00:00", "line": "Found 1 outliers among 10 measurements (10.00%)"}
+{"utc": "2026-11-01T22:35:39.823335+00:00", "line": "  1 (10.00%) high mild"}
+{"utc": "2026-11-01T22:35:39.823708+00:00", "line": ""}
+{"utc": "2026-11-01T22:35:40.249913+00:00", "line": "Benchmarking mps_batched/bond_saturating/gate_by_gate/n12_l16"}
+{"utc": "2026-11-01T22:35:40.249957+00:00", "line": "Benchmarking mps_batched/bond_saturating/gate_by_gate/n12_l16: Warming up for 3.0000 s"}
+{"utc": "2026-11-01T22:35:43.318136+00:00", "line": "Benchmarking mps_batched/bond_saturating/gate_by_gate/n12_l16: Collecting 10 samples in estimated 6.1382 s (30 iterations)"}
+{"utc": "2026-11-01T22:35:45.765476+00:00", "line": "Context leak detected, CoreAnalytics returned false"}
+{"utc": "2026-11-01T22:35:49.491792+00:00", "line": "Benchmarking mps_batched/bond_saturating/gate_by_gate/n12_l16: Analyzing"}
+{"utc": "2026-11-01T22:35:49.515949+00:00", "line": "mps_batched/bond_saturating/gate_by_gate/n12_l16"}
+{"utc": "2026-11-01T22:35:49.515990+00:00", "line": "                        time:   [202.19 ms 204.32 ms 207.17 ms]"}
+{"utc": "2026-11-01T22:35:49.516030+00:00", "line": "Found 2 outliers among 10 measurements (20.00%)"}
+{"utc": "2026-11-01T22:35:49.516047+00:00", "line": "  2 (20.00%) high severe"}
+{"utc": "2026-11-01T22:35:49.516483+00:00", "line": "Benchmarking mps_batched/bond_saturating/batched/n12_l16"}
+{"utc": "2026-11-01T22:35:49.516506+00:00", "line": "Benchmarking mps_batched/bond_saturating/batched/n12_l16: Warming up for 3.0000 s"}
+{"utc": "2026-11-01T22:35:52.911743+00:00", "line": "Benchmarking mps_batched/bond_saturating/batched/n12_l16: Collecting 10 samples in estimated 6.7903 s (30 iterations)"}
+{"utc": "2026-11-01T22:35:56.857456+00:00", "line": "Context leak detected, CoreAnalytics returned false"}
+{"utc": "2026-11-01T22:35:59.786417+00:00", "line": "Benchmarking mps_batched/bond_saturating/batched/n12_l16: Analyzing"}
+{"utc": "2026-11-01T22:35:59.820759+00:00", "line": "mps_batched/bond_saturating/batched/n12_l16"}
+{"utc": "2026-11-01T22:35:59.820818+00:00", "line": "                        time:   [223.97 ms 225.91 ms 228.26 ms]"}
+{"utc": "2026-11-01T22:35:59.820849+00:00", "line": "Found 1 outliers among 10 measurements (10.00%)"}
+{"utc": "2026-11-01T22:35:59.820873+00:00", "line": "  1 (10.00%) high mild"}
+{"utc": "2026-11-01T22:35:59.822120+00:00", "line": ""}

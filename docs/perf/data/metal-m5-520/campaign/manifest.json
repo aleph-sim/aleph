@@ -1,0 +1,113 @@
+{
+  "started_utc": "2026-11-01T22:33:54.630097+00:00",
+  "source_head": "c8e484bd70bda7939eb9b5c47bff6fd878b4405b",
+  "binaries": {
+    "sv-fused": {
+      "path": "/Users/ex/GitHub/aleph/target/release/deps/sv_fused-c52ba7cb3b68e948",
+      "sha256": "c037fb2381b82c5e47871911e8da5d7f7be76f07929447be4bba113b7ce05847"
+    },
+    "sv-readout": {
+      "path": "/Users/ex/GitHub/aleph/target/release/deps/sv_readout-a92f4ec5c8b05816",
+      "sha256": "6b72b6644c0a3750b6743c609cedcf055b044048714519b0e229c27fb53b573f"
+    },
+    "mps-batched": {
+      "path": "/Users/ex/GitHub/aleph/target/release/deps/mps_batched-64f73713e8bfcd10",
+      "sha256": "21619d1090801b707e877049c28432c91f90e6bf48dfba49fed3345340ddc83c"
+    },
+    "mps-vs-cpu": {
+      "path": "/Users/ex/GitHub/aleph/target/release/deps/mps_vs_cpu-62b16c11e6c6de44",
+      "sha256": "940ca443f4349f61dd0d9a21848470275022872b48fe01f376f4dfedb9bdfeb3"
+    }
+  },
+  "rust": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "macos": "27.0.1",
+  "rayon_num_threads": "10",
+  "commands": [
+    {
+      "label": "sv_before",
+      "started_utc": "2026-11-01T22:33:54.687392+00:00",
+      "command": [
+        "/Users/ex/GitHub/aleph/target/release/deps/sv_fused-c52ba7cb3b68e948",
+        "--bench",
+        "--noplot",
+        "^sv_fused/random/(unfused|fused)/18$",
+        "--sample-size",
+        "10"
+      ],
+      "power_before": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=23527523)\t86%; discharging; 6:58 remaining present: true",
+      "finished_utc": "2026-11-01T22:34:15.319303+00:00",
+      "returncode": 0,
+      "power_after": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=23527523)\t86%; discharging; 6:58 remaining present: true"
+    },
+    {
+      "label": "readout",
+      "started_utc": "2026-11-01T22:34:15.327465+00:00",
+      "command": [
+        "/Users/ex/GitHub/aleph/target/release/deps/sv_readout-a92f4ec5c8b05816",
+        "--bench",
+        "--noplot",
+        "^sv_readout/",
+        "--sample-size",
+        "10"
+      ],
+      "power_before": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=23527523)\t86%; discharging; 6:58 remaining present: true",
+      "finished_utc": "2026-11-01T22:35:14.486556+00:00",
+      "returncode": 0,
+      "power_after": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=23527523)\t85%; discharging; 6:38 remaining present: true"
+    },
+    {
+      "label": "batching",
+      "started_utc": "2026-11-01T22:35:14.496589+00:00",
+      "command": [
+        "/Users/ex/GitHub/aleph/target/release/deps/mps_batched-64f73713e8bfcd10",
+        "--bench",
+        "--noplot",
+        "^mps_batched/",
+        "--sample-size",
+        "10"
+      ],
+      "power_before": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=23527523)\t85%; discharging; 6:38 remaining present: true",
+      "finished_utc": "2026-11-01T22:35:59.826398+00:00",
+      "returncode": 0,
+      "power_after": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=23527523)\t85%; discharging; 6:38 remaining present: true"
+    },
+    {
+      "label": "cpu_before",
+      "started_utc": "2026-11-01T22:35:59.841664+00:00",
+      "command": [
+        "/Users/ex/GitHub/aleph/target/release/deps/mps_vs_cpu-62b16c11e6c6de44",
+        "--bench",
+        "--noplot",
+        "^mps_vs_cpu/large_n/cpu/n20_chi512$",
+        "--sample-size",
+        "10"
+      ],
+      "power_before": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=23527523)\t85%; discharging; 6:38 remaining present: true",
+      "finished_utc": "2026-11-01T22:37:36.236802+00:00",
+      "returncode": 0,
+      "power_after": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=23527523)\t84%; discharging; 6:08 remaining present: true"
+    },
+    {
+      "label": "gpu_missing",
+      "started_utc": "2026-11-01T22:37:36.245789+00:00",
+      "command": [
+        "/Users/ex/GitHub/aleph/target/release/deps/mps_vs_cpu-62b16c11e6c6de44",
+        "--bench",
+        "--noplot",
+        "^mps_vs_cpu/large_n/gpu/n20_chi512$",
+        "--sample-size",
+        "10"
+      ],
+      "power_before": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=23527523)\t84%; discharging; 6:08 remaining present: true",
+      "finished_utc": "2026-11-01T22:46:18.252691+00:00",
+      "returncode": -2,
+      "power_after": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=23527523)\t79%; discharging; 3:58 remaining present: true"
+    }
+  ],
+  "samples": 10,
+  "criterion_warmup_seconds": 3,
+  "criterion_requested_measurement_seconds": 5,
+  "scope": "Missing n20/chi512 MPS CPU/GPU, repeated CPU and SV controls, readout and layer-batching refresh; historical full-suite data remains separate.",
+  "telemetry_errors": [],
+  "finished_utc": "2026-11-01T22:46:18.264917+00:00"
+}
