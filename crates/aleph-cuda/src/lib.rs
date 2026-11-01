@@ -20,6 +20,8 @@ mod common;
 #[cfg(all(target_os = "linux", feature = "cuda"))]
 mod context;
 #[cfg(all(target_os = "linux", feature = "cuda"))]
+pub mod memory;
+#[cfg(all(target_os = "linux", feature = "cuda"))]
 mod pool;
 // cuStateVec (cuQuantum) backend — superset of `cuda`, linked only under the
 // `cuquantum` feature (see `build.rs`).
@@ -64,7 +66,7 @@ pub use fusion::{
     fuse_for_gpu, fuse_for_gpu_tf32, fuse_for_gpu_with, MAX_FUSE_QUBITS, MAX_FUSE_QUBITS_TF32,
 };
 #[cfg(all(target_os = "linux", feature = "cuda"))]
-pub use qec::{mask_to_flips, CellResult, CudaBp, CudaThreshold, CudaUnionFind};
+pub use qec::{mask_to_flips, BpScratchLayout, CellResult, CudaBp, CudaThreshold, CudaUnionFind};
 #[cfg(all(target_os = "linux", feature = "cuda"))]
 pub use stab::{op as stab_op, CudaStab, CudaStabState, Generators, StabOp};
 #[cfg(all(target_os = "linux", feature = "cuda"))]
@@ -78,6 +80,9 @@ pub use sv::{
 #[cfg(all(target_os = "linux", feature = "cuda"))]
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    /// Memory-policy or host-export capacity rejection.
+    #[error("CUDA memory policy: {0}")]
+    Memory(String),
     /// No usable CUDA device at the requested ordinal (e.g. a headless runner
     /// with no GPU). Callers use this to skip GPU work instead of failing.
     #[error("no CUDA device available at ordinal {0}")]
@@ -94,3 +99,13 @@ pub enum Error {
     #[error("cuStateVec error (status {0})")]
     CuStateVec(i32),
 }
+
+#[cfg(all(target_os = "linux", feature = "cuda"))]
+mod execution;
+#[cfg(all(target_os = "linux", feature = "cuda"))]
+pub use execution::{
+    execution_counters, prepare_cuda_execution, CudaExecutionOptions, CudaExecutionPlan,
+    CudaPlanBackend, CudaReadoutRequest,
+};
+#[cfg(all(target_os = "linux", feature = "cuda"))]
+pub use sv::sampling::{sampling_workspace_bytes, SamplingAlgorithm, SamplingStats};

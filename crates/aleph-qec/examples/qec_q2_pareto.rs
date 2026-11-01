@@ -35,6 +35,7 @@ const DISTANCES: &[usize] = &[3, 5, 7, 9, 11];
 const P_SWEEP: &[f64] = &[0.01, 0.02, 0.03, 0.04, 0.05];
 
 fn main() {
+    eprintln!("# Legacy ci/ci95 columns are Wald half-widths; use explicit Clopper-Pearson bounds for inference. Marginal interval overlap is not decoder equivalence.");
     let args: Vec<String> = std::env::args().collect();
     let acc_shots: u64 = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(200_000);
     let tput_shots: usize = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(20_000);

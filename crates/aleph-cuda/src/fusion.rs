@@ -105,3 +105,21 @@ pub fn fuse_for_gpu_with(circuit: &Circuit, kq_max: Option<usize>) -> Circuit {
     let _ = pipe.run(&mut c).expect("GPU fusion pipeline");
     c
 }
+
+/// Full-final-state fusion for frontends. DCE is deliberately excluded: even a
+/// counts query samples every final qubit, and Python retains amplitudes lazily.
+pub(crate) fn fuse_full_state(
+    circuit: &Circuit,
+    width: usize,
+) -> Result<Circuit, aleph_ir::passes::PassError> {
+    let mut c = circuit.clone();
+    PassPipeline::new(vec![
+        Box::new(CancelInversePairs),
+        Box::new(FuseDiagonalRuns),
+        Box::new(Fuse1qRuns),
+        Box::new(Fuse2q),
+        Box::new(FuseKq { max_qubits: width }),
+    ])
+    .run(&mut c)?;
+    Ok(c)
+}

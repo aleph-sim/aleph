@@ -1,0 +1,830 @@
+{
+  "status": "PASS",
+  "observations": 10512,
+  "invocations": 576,
+  "verdict": "GO_OPT_IN",
+  "cells": [
+    {
+      "model": "surface7",
+      "shots": 1,
+      "rate": 0.001,
+      "stats": {
+        "shot": {
+          "median_ns": 458666.0,
+          "p95_ns": 679508,
+          "p99_ns": 679922,
+          "max_ns": 689223
+        },
+        "warp": {
+          "median_ns": 703458.0,
+          "p95_ns": 1015689,
+          "p99_ns": 1022705,
+          "max_ns": 1024299
+        },
+        "coop": {
+          "median_ns": 39628.0,
+          "p95_ns": 48558,
+          "p99_ns": 51635,
+          "max_ns": 58782
+        }
+      },
+      "speedup_best_reference": 11.57429090542041,
+      "block_speedup_best_reference": [
+        14.033922130003825,
+        11.657060775166206,
+        11.631480776551198,
+        11.652797941978044
+      ],
+      "held_out": true,
+      "meets_go": true,
+      "invalid": 0,
+      "logical_failures": 0
+    },
+    {
+      "model": "surface7",
+      "shots": 1,
+      "rate": 0.03,
+      "stats": {
+        "shot": {
+          "median_ns": 20315233.0,
+          "p95_ns": 20323149,
+          "p99_ns": 20857138,
+          "max_ns": 30289626
+        },
+        "warp": {
+          "median_ns": 32259687.5,
+          "p95_ns": 32260799,
+          "p99_ns": 32261969,
+          "max_ns": 32263850
+        },
+        "coop": {
+          "median_ns": 957209.5,
+          "p95_ns": 1178854,
+          "p99_ns": 1179368,
+          "max_ns": 1180439
+        }
+      },
+      "speedup_best_reference": 21.223392580203186,
+      "block_speedup_best_reference": [
+        21.101831429480637,
+        21.223476384044094,
+        18.883344286005087,
+        21.222872463506196
+      ],
+      "held_out": false,
+      "meets_go": false,
+      "invalid": 1,
+      "logical_failures": 1
+    },
+    {
+      "model": "surface7",
+      "shots": 128,
+      "rate": 0.001,
+      "stats": {
+        "shot": {
+          "median_ns": 1678737.0,
+          "p95_ns": 1679732,
+          "p99_ns": 1679809,
+          "max_ns": 1679809
+        },
+        "warp": {
+          "median_ns": 1432809.0,
+          "p95_ns": 1433693,
+          "p99_ns": 1434020,
+          "max_ns": 1434020
+        },
+        "coop": {
+          "median_ns": 56672.5,
+          "p95_ns": 58811,
+          "p99_ns": 58938,
+          "max_ns": 58938
+        }
+      },
+      "speedup_best_reference": 25.282262120075874,
+      "block_speedup_best_reference": [
+        25.084274360351003,
+        24.90638686131387,
+        25.396362476634273,
+        25.29405015137206
+      ],
+      "held_out": true,
+      "meets_go": true,
+      "invalid": 0,
+      "logical_failures": 0
+    },
+    {
+      "model": "surface7",
+      "shots": 128,
+      "rate": 0.03,
+      "stats": {
+        "shot": {
+          "median_ns": 50074295.0,
+          "p95_ns": 50276658,
+          "p99_ns": 50307377,
+          "max_ns": 50307377
+        },
+        "warp": {
+          "median_ns": 40657032.0,
+          "p95_ns": 40666463,
+          "p99_ns": 40674856,
+          "max_ns": 40674856
+        },
+        "coop": {
+          "median_ns": 1130403.0,
+          "p95_ns": 1138670,
+          "p99_ns": 1138959,
+          "max_ns": 1138959
+        }
+      },
+      "speedup_best_reference": 35.966847221743045,
+      "block_speedup_best_reference": [
+        35.992537968415235,
+        35.9642166934516,
+        35.93889359618148,
+        35.97618021706952
+      ],
+      "held_out": false,
+      "meets_go": false,
+      "invalid": 105,
+      "logical_failures": 37
+    },
+    {
+      "model": "surface7",
+      "shots": 4096,
+      "rate": 0.001,
+      "stats": {
+        "shot": {
+          "median_ns": 24326973.0,
+          "p95_ns": 24334647,
+          "p99_ns": 24335166,
+          "max_ns": 24335166
+        },
+        "warp": {
+          "median_ns": 37889031.0,
+          "p95_ns": 37970601,
+          "p99_ns": 37980677,
+          "max_ns": 37980677
+        },
+        "coop": {
+          "median_ns": 1364553.0,
+          "p95_ns": 1477559,
+          "p99_ns": 1513199,
+          "max_ns": 1513199
+        }
+      },
+      "speedup_best_reference": 17.827796355289973,
+      "block_speedup_best_reference": [
+        17.933228192170258,
+        17.70754960361861,
+        17.805129464411515,
+        17.376801211658464
+      ],
+      "held_out": true,
+      "meets_go": true,
+      "invalid": 11,
+      "logical_failures": 3
+    },
+    {
+      "model": "surface7",
+      "shots": 4096,
+      "rate": 0.03,
+      "stats": {
+        "shot": {
+          "median_ns": 73574042.0,
+          "p95_ns": 74209435,
+          "p99_ns": 74346861,
+          "max_ns": 74346861
+        },
+        "warp": {
+          "median_ns": 70172626.5,
+          "p95_ns": 70815444,
+          "p99_ns": 71177169,
+          "max_ns": 71177169
+        },
+        "coop": {
+          "median_ns": 19062700.0,
+          "p95_ns": 19886079,
+          "p99_ns": 20141783,
+          "max_ns": 20141783
+        }
+      },
+      "speedup_best_reference": 3.681148342050182,
+      "block_speedup_best_reference": [
+        3.6543515379298075,
+        3.6509784435715,
+        3.703634909808527,
+        3.611109920884288
+      ],
+      "held_out": false,
+      "meets_go": false,
+      "invalid": 3334,
+      "logical_failures": 1102
+    },
+    {
+      "model": "surface11",
+      "shots": 1,
+      "rate": 0.001,
+      "stats": {
+        "shot": {
+          "median_ns": 1948096.5,
+          "p95_ns": 1956379,
+          "p99_ns": 1957202,
+          "max_ns": 1992903
+        },
+        "warp": {
+          "median_ns": 2793071.0,
+          "p95_ns": 2801132,
+          "p99_ns": 2801811,
+          "max_ns": 2816430
+        },
+        "coop": {
+          "median_ns": 129686.5,
+          "p95_ns": 132068,
+          "p99_ns": 132661,
+          "max_ns": 153728
+        }
+      },
+      "speedup_best_reference": 15.02158281702413,
+      "block_speedup_best_reference": [
+        14.997753964388158,
+        14.952914858429933,
+        14.831140659666856,
+        15.062615955473099
+      ],
+      "held_out": true,
+      "meets_go": true,
+      "invalid": 0,
+      "logical_failures": 0
+    },
+    {
+      "model": "surface11",
+      "shots": 1,
+      "rate": 0.03,
+      "stats": {
+        "shot": {
+          "median_ns": 87608927.0,
+          "p95_ns": 87631929,
+          "p99_ns": 87632358,
+          "max_ns": 87634112
+        },
+        "warp": {
+          "median_ns": 126377644.5,
+          "p95_ns": 126379787,
+          "p99_ns": 126382595,
+          "max_ns": 132020297
+        },
+        "coop": {
+          "median_ns": 5085619.0,
+          "p95_ns": 5094738,
+          "p99_ns": 5096229,
+          "max_ns": 5098123
+        }
+      },
+      "speedup_best_reference": 17.22679717060991,
+      "block_speedup_best_reference": [
+        17.227682678607877,
+        17.223244242105153,
+        17.227383546803868,
+        17.222430004258932
+      ],
+      "held_out": true,
+      "meets_go": true,
+      "invalid": 1,
+      "logical_failures": 1
+    },
+    {
+      "model": "surface11",
+      "shots": 128,
+      "rate": 0.001,
+      "stats": {
+        "shot": {
+          "median_ns": 95570041.0,
+          "p95_ns": 95611204,
+          "p99_ns": 95628091,
+          "max_ns": 95628091
+        },
+        "warp": {
+          "median_ns": 135281290.5,
+          "p95_ns": 135392439,
+          "p99_ns": 135393912,
+          "max_ns": 135393912
+        },
+        "coop": {
+          "median_ns": 4866555.5,
+          "p95_ns": 4874952,
+          "p99_ns": 4875328,
+          "max_ns": 4875328
+        }
+      },
+      "speedup_best_reference": 19.638128240806047,
+      "block_speedup_best_reference": [
+        19.617018543134037,
+        19.61673939802436,
+        19.642026185034418,
+        19.625817907605978
+      ],
+      "held_out": true,
+      "meets_go": true,
+      "invalid": 1,
+      "logical_failures": 0
+    },
+    {
+      "model": "surface11",
+      "shots": 128,
+      "rate": 0.03,
+      "stats": {
+        "shot": {
+          "median_ns": 219211633.5,
+          "p95_ns": 219296285,
+          "p99_ns": 219336610,
+          "max_ns": 219336610
+        },
+        "warp": {
+          "median_ns": 157932041.5,
+          "p95_ns": 158099248,
+          "p99_ns": 158110507,
+          "max_ns": 158110507
+        },
+        "coop": {
+          "median_ns": 6563129.5,
+          "p95_ns": 6578243,
+          "p99_ns": 6578326,
+          "max_ns": 6578326
+        }
+      },
+      "speedup_best_reference": 24.063526630093158,
+      "block_speedup_best_reference": [
+        24.06601939843012,
+        24.050459232535612,
+        24.05628312989239,
+        24.05998883474185
+      ],
+      "held_out": true,
+      "meets_go": true,
+      "invalid": 128,
+      "logical_failures": 61
+    },
+    {
+      "model": "surface11",
+      "shots": 4096,
+      "rate": 0.001,
+      "stats": {
+        "shot": {
+          "median_ns": 118000394.5,
+          "p95_ns": 118093082,
+          "p99_ns": 118098548,
+          "max_ns": 118098548
+        },
+        "warp": {
+          "median_ns": 177841597.0,
+          "p95_ns": 178298943,
+          "p99_ns": 178371260,
+          "max_ns": 178371260
+        },
+        "coop": {
+          "median_ns": 9278442.5,
+          "p95_ns": 9634358,
+          "p99_ns": 9778318,
+          "max_ns": 9778318
+        }
+      },
+      "speedup_best_reference": 12.717694214303748,
+      "block_speedup_best_reference": [
+        12.520164406872336,
+        12.66854195625844,
+        12.755400858821504,
+        12.808309415447614
+      ],
+      "held_out": true,
+      "meets_go": true,
+      "invalid": 38,
+      "logical_failures": 5
+    },
+    {
+      "model": "surface11",
+      "shots": 4096,
+      "rate": 0.03,
+      "stats": {
+        "shot": {
+          "median_ns": 409699761.0,
+          "p95_ns": 411212654,
+          "p99_ns": 411573506,
+          "max_ns": 411573506
+        },
+        "warp": {
+          "median_ns": 288404327.5,
+          "p95_ns": 289791791,
+          "p99_ns": 289936155,
+          "max_ns": 289936155
+        },
+        "coop": {
+          "median_ns": 162169701.5,
+          "p95_ns": 163572249,
+          "p99_ns": 163634808,
+          "max_ns": 163634808
+        }
+      },
+      "speedup_best_reference": 1.7784106700103903,
+      "block_speedup_best_reference": [
+        1.766621085974684,
+        1.7694538304196836,
+        1.8180621395822225,
+        1.7749330040581845
+      ],
+      "held_out": true,
+      "meets_go": true,
+      "invalid": 4093,
+      "logical_failures": 1809
+    },
+    {
+      "model": "gross",
+      "shots": 1,
+      "rate": 0.001,
+      "stats": {
+        "shot": {
+          "median_ns": 232905.5,
+          "p95_ns": 277890,
+          "p99_ns": 278219,
+          "max_ns": 301159
+        },
+        "warp": {
+          "median_ns": 304022.5,
+          "p95_ns": 367793,
+          "p99_ns": 368572,
+          "max_ns": 387449
+        },
+        "coop": {
+          "median_ns": 23568.0,
+          "p95_ns": 31260,
+          "p99_ns": 32354,
+          "max_ns": 44048
+        }
+      },
+      "speedup_best_reference": 9.882276816021724,
+      "block_speedup_best_reference": [
+        8.541254053106652,
+        10.940901074907625,
+        8.520074308818709,
+        11.530663952981246
+      ],
+      "held_out": true,
+      "meets_go": true,
+      "invalid": 0,
+      "logical_failures": 0
+    },
+    {
+      "model": "gross",
+      "shots": 1,
+      "rate": 0.03,
+      "stats": {
+        "shot": {
+          "median_ns": 371055.0,
+          "p95_ns": 468162,
+          "p99_ns": 468501,
+          "max_ns": 479386
+        },
+        "warp": {
+          "median_ns": 499968.5,
+          "p95_ns": 630258,
+          "p99_ns": 630594,
+          "max_ns": 631042
+        },
+        "coop": {
+          "median_ns": 31439.0,
+          "p95_ns": 40168,
+          "p99_ns": 41715,
+          "max_ns": 55060
+        }
+      },
+      "speedup_best_reference": 11.802379210534687,
+      "block_speedup_best_reference": [
+        10.507219548315438,
+        12.446693335873258,
+        10.555593132991916,
+        11.694202030754335
+      ],
+      "held_out": false,
+      "meets_go": false,
+      "invalid": 0,
+      "logical_failures": 0
+    },
+    {
+      "model": "gross",
+      "shots": 128,
+      "rate": 0.001,
+      "stats": {
+        "shot": {
+          "median_ns": 531959.5,
+          "p95_ns": 613760,
+          "p99_ns": 615502,
+          "max_ns": 615502
+        },
+        "warp": {
+          "median_ns": 347845.5,
+          "p95_ns": 402565,
+          "p99_ns": 403096,
+          "max_ns": 403096
+        },
+        "coop": {
+          "median_ns": 24230.5,
+          "p95_ns": 32870,
+          "p99_ns": 32946,
+          "max_ns": 32946
+        }
+      },
+      "speedup_best_reference": 14.355688079073895,
+      "block_speedup_best_reference": [
+        14.119584884470603,
+        14.617477921544465,
+        13.733382306642879,
+        12.199101475052899
+      ],
+      "held_out": true,
+      "meets_go": true,
+      "invalid": 0,
+      "logical_failures": 0
+    },
+    {
+      "model": "gross",
+      "shots": 128,
+      "rate": 0.03,
+      "stats": {
+        "shot": {
+          "median_ns": 10734943.0,
+          "p95_ns": 12166395,
+          "p99_ns": 12175437,
+          "max_ns": 12175437
+        },
+        "warp": {
+          "median_ns": 14477644.0,
+          "p95_ns": 15630259,
+          "p99_ns": 15631328,
+          "max_ns": 15631328
+        },
+        "coop": {
+          "median_ns": 468443.5,
+          "p95_ns": 483457,
+          "p99_ns": 490859,
+          "max_ns": 490859
+        }
+      },
+      "speedup_best_reference": 22.91619586993949,
+      "block_speedup_best_reference": [
+        22.72379661517528,
+        23.00169365024687,
+        22.833991317934828,
+        23.35982945316161
+      ],
+      "held_out": false,
+      "meets_go": false,
+      "invalid": 1,
+      "logical_failures": 1
+    },
+    {
+      "model": "gross",
+      "shots": 4096,
+      "rate": 0.001,
+      "stats": {
+        "shot": {
+          "median_ns": 773703.5,
+          "p95_ns": 917066,
+          "p99_ns": 917670,
+          "max_ns": 917670
+        },
+        "warp": {
+          "median_ns": 558046.0,
+          "p95_ns": 631575,
+          "p99_ns": 631661,
+          "max_ns": 631661
+        },
+        "coop": {
+          "median_ns": 159695.5,
+          "p95_ns": 189417,
+          "p99_ns": 189680,
+          "max_ns": 189680
+        }
+      },
+      "speedup_best_reference": 3.494437852037158,
+      "block_speedup_best_reference": [
+        3.449207219914845,
+        3.3494655619909732,
+        3.582072910194319,
+        3.3588422522222507
+      ],
+      "held_out": true,
+      "meets_go": true,
+      "invalid": 0,
+      "logical_failures": 0
+    },
+    {
+      "model": "gross",
+      "shots": 4096,
+      "rate": 0.03,
+      "stats": {
+        "shot": {
+          "median_ns": 10804984.0,
+          "p95_ns": 13869622,
+          "p99_ns": 13876286,
+          "max_ns": 13876286
+        },
+        "warp": {
+          "median_ns": 14746454.5,
+          "p95_ns": 19237105,
+          "p99_ns": 19242941,
+          "max_ns": 19242941
+        },
+        "coop": {
+          "median_ns": 811280.5,
+          "p95_ns": 982904,
+          "p99_ns": 998874,
+          "max_ns": 998874
+        }
+      },
+      "speedup_best_reference": 13.318431787772539,
+      "block_speedup_best_reference": [
+        13.799072631975706,
+        13.367306112196447,
+        13.562659500510401,
+        13.372727798260602
+      ],
+      "held_out": false,
+      "meets_go": false,
+      "invalid": 33,
+      "logical_failures": 32
+    },
+    {
+      "model": "surface7",
+      "shots": 33,
+      "rate": 0.03,
+      "stats": {
+        "shot": {
+          "median_ns": 36270672.0,
+          "p95_ns": 39517962,
+          "p99_ns": 39527773,
+          "max_ns": 39527773
+        },
+        "warp": {
+          "median_ns": 38778778.0,
+          "p95_ns": 38815181,
+          "p99_ns": 38815794,
+          "max_ns": 38815794
+        },
+        "coop": {
+          "median_ns": 1105523.0,
+          "p95_ns": 1187806,
+          "p99_ns": 1188151,
+          "max_ns": 1188151
+        }
+      },
+      "speedup_best_reference": 32.80860913793743,
+      "block_speedup_best_reference": [
+        34.028970450619795,
+        32.789539965856385,
+        32.81516768774768,
+        32.81552533724181
+      ],
+      "held_out": true,
+      "meets_go": true,
+      "invalid": 25,
+      "logical_failures": 6
+    },
+    {
+      "model": "surface7",
+      "shots": 4097,
+      "rate": 0.03,
+      "stats": {
+        "shot": {
+          "median_ns": 73473777.5,
+          "p95_ns": 74030787,
+          "p99_ns": 74042998,
+          "max_ns": 74042998
+        },
+        "warp": {
+          "median_ns": 70397428.5,
+          "p95_ns": 71002307,
+          "p99_ns": 71092425,
+          "max_ns": 71092425
+        },
+        "coop": {
+          "median_ns": 19471070.5,
+          "p95_ns": 19884897,
+          "p99_ns": 20023497,
+          "max_ns": 20023497
+        }
+      },
+      "speedup_best_reference": 3.6154883471866635,
+      "block_speedup_best_reference": [
+        3.7146555336198035,
+        3.6270913464634744,
+        3.616930255778414,
+        3.627422300350154
+      ],
+      "held_out": true,
+      "meets_go": true,
+      "invalid": 3334,
+      "logical_failures": 1102
+    },
+    {
+      "model": "gross",
+      "shots": 33,
+      "rate": 0.03,
+      "stats": {
+        "shot": {
+          "median_ns": 1232548.0,
+          "p95_ns": 1237074,
+          "p99_ns": 1237538,
+          "max_ns": 1237538
+        },
+        "warp": {
+          "median_ns": 1519185.5,
+          "p95_ns": 1523755,
+          "p99_ns": 1524012,
+          "max_ns": 1524012
+        },
+        "coop": {
+          "median_ns": 56774.0,
+          "p95_ns": 58386,
+          "p99_ns": 58660,
+          "max_ns": 58660
+        }
+      },
+      "speedup_best_reference": 21.709726283157785,
+      "block_speedup_best_reference": [
+        20.152208953671767,
+        21.722748898990076,
+        21.748095564821167,
+        21.910109771331875
+      ],
+      "held_out": true,
+      "meets_go": true,
+      "invalid": 0,
+      "logical_failures": 0
+    },
+    {
+      "model": "gross",
+      "shots": 4097,
+      "rate": 0.03,
+      "stats": {
+        "shot": {
+          "median_ns": 11030576.0,
+          "p95_ns": 12477610,
+          "p99_ns": 12485246,
+          "max_ns": 12485246
+        },
+        "warp": {
+          "median_ns": 14934114.0,
+          "p95_ns": 18580251,
+          "p99_ns": 18588853,
+          "max_ns": 18588853
+        },
+        "coop": {
+          "median_ns": 819571.0,
+          "p95_ns": 999535,
+          "p99_ns": 1048341,
+          "max_ns": 1048341
+        }
+      },
+      "speedup_best_reference": 13.458963286890336,
+      "block_speedup_best_reference": [
+        13.309805224929548,
+        13.345629091859003,
+        13.47344068415391,
+        12.3317950774764
+      ],
+      "held_out": true,
+      "meets_go": true,
+      "invalid": 33,
+      "logical_failures": 32
+    }
+  ],
+  "original_controls": [
+    {
+      "model": "surface7",
+      "original_over_current_reference": [
+        1.00009655185964,
+        1.0000060310727459,
+        0.9993337019401668,
+        0.9997418283434805
+      ]
+    },
+    {
+      "model": "surface11",
+      "original_over_current_reference": [
+        1.000705332288493,
+        1.0024091305331895,
+        0.9997435080692084,
+        1.0002558265684447
+      ]
+    },
+    {
+      "model": "gross",
+      "original_over_current_reference": [
+        1.0001083918660991,
+        0.9999948159205538,
+        0.999917535470303,
+        1.00009326720359
+      ]
+    }
+  ],
+  "scope": "fixed observations and four paired blocks; no statistical confidence or universal speed guarantee; CPU outcomes on identical fault draws are unchanged"
+}

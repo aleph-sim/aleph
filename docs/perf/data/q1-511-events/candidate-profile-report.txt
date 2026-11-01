@@ -1,0 +1,47 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 4K of event 'cycles:u'
+# Event count (approx.): 28560067873
+#
+# Overhead  Command          Shared Object                 Symbol                                                                                                   
+# ........  ...............  ............................  .........................................................................................................
+#
+    51.04%  mwpm_decode-c34  mwpm_decode-c34064fc3d91e724  [.] aleph_qec::sparse_blossom::flooder::<impl aleph_qec::sparse_blossom::state::State>::next_at
+    26.64%  mwpm_decode-c34  mwpm_decode-c34064fc3d91e724  [.] aleph_qec::sparse_blossom::<impl aleph_qec::sparse_blossom::state::State>::run_to_matching
+     6.27%  mwpm_decode-c34  mwpm_decode-c34064fc3d91e724  [.] aleph_qec::sparse_blossom::flooder::<impl aleph_qec::sparse_blossom::state::State>::schedule_node
+     3.25%  mwpm_decode-c34  mwpm_decode-c34064fc3d91e724  [.] aleph_qec::sparse_blossom::state::State::alloc_tree
+     2.87%  mwpm_decode-c34  mwpm_decode-c34064fc3d91e724  [.] aleph_qec::sparse_blossom::flooder::<impl aleph_qec::sparse_blossom::state::State>::collect_subtree
+     2.29%  mwpm_decode-c34  mwpm_decode-c34064fc3d91e724  [.] aleph_qec::sparse_blossom::flooder::<impl aleph_qec::sparse_blossom::state::State>::reschedule_region
+     2.12%  mwpm_decode-c34  mwpm_decode-c34064fc3d91e724  [.] aleph_qec::sparse_blossom::matcher::<impl aleph_qec::sparse_blossom::state::State>::dissolve_tree
+     1.20%  mwpm_decode-c34  mwpm_decode-c34064fc3d91e724  [.] aleph_qec::sparse_blossom::SparseMatcher::with_syndrome::{{closure}}
+     0.80%  mwpm_decode-c34  mwpm_decode-c34064fc3d91e724  [.] aleph_qec::sparse_blossom::matcher::<impl aleph_qec::sparse_blossom::state::State>::descend
+     0.58%  mwpm_decode-c34  mwpm_decode-c34064fc3d91e724  [.] aleph_qec::sparse_blossom::state::State::new_region
+     0.52%  mwpm_decode-c34  mwpm_decode-c34064fc3d91e724  [.] aleph_qec::sparse_blossom::matcher::<impl aleph_qec::sparse_blossom::state::State>::augment
+     0.52%  mwpm_decode-c34  mwpm_decode-c34064fc3d91e724  [.] aleph_qec::sparse_blossom::matcher::<impl aleph_qec::sparse_blossom::state::State>::flip_path_to_root
+     0.32%  mwpm_decode-c34  libc.so.6                     [.] 0x00000000001a79b9
+     0.30%  mwpm_decode-c34  mwpm_decode-c34064fc3d91e724  [.] aleph_qec::sparse_blossom::flooder::<impl aleph_qec::sparse_blossom::state::State>::schedule_shrink
+     0.28%  mwpm_decode-c34  libc.so.6                     [.] 0x00000000001a79be
+     0.21%  mwpm_decode-c34  libc.so.6                     [.] 0x00000000001a79b6
+     0.18%  mwpm_decode-c34  libc.so.6                     [.] 0x00000000001a79ca
+     0.12%  mwpm_decode-c34  libc.so.6                     [.] 0x00000000001a7980
+     0.10%  mwpm_decode-c34  libc.so.6                     [.] 0x00000000001a79b4
+     0.06%  mwpm_decode-c34  mwpm_decode-c34064fc3d91e724  [.] core::slice::sort::unstable::ipnsort
+     0.06%  mwpm_decode-c34  libc.so.6                     [.] 0x00000000001a79c0
+     0.04%  mwpm_decode-c34  libc.so.6                     [.] 0x00000000001a7a05
+     0.04%  mwpm_decode-c34  libc.so.6                     [.] 0x00000000001a798d
+     0.04%  mwpm_decode-c34  libc.so.6                     [.] malloc
+     0.02%  mwpm_decode-c34  libc.so.6                     [.] 0x00000000001a79ea
+     0.02%  mwpm_decode-c34  libc.so.6                     [.] 0x00000000001a7987
+     0.02%  mwpm_decode-c34  mwpm_decode-c34064fc3d91e724  [.] aleph_qec::sparse_blossom::matcher::<impl aleph_qec::sparse_blossom::state::State>::resolve_exposed
+     0.02%  mwpm_decode-c34  mwpm_decode-c34064fc3d91e724  [.] criterion::bencher::Bencher<M>::iter
+     0.02%  mwpm_decode-c34  libc.so.6                     [.] 0x00000000001a7a00
+     0.02%  mwpm_decode-c34  libc.so.6                     [.] 0x00000000001a7984
+     0.02%  mwpm_decode-c34  [unknown]                     [k] 0xffffffff9d800ef0
+
+
+#
+# (Cannot load tips.txt file, please install perf!)
+#

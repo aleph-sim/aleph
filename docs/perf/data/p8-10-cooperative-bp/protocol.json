@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "candidate": "one warp per shot; independent checks/variables parallel; ascending serial within-node FP64 reductions; warp phase fences and uniform convergence ballot; exact integer output XOR",
+  "references": [
+    "original shot-major serial",
+    "P8-09 warp-tiled serial"
+  ],
+  "training_regime": "surface7; gross code-capacity with degree-aware CSR nodes",
+  "held_out": [
+    "surface11",
+    "odd batches",
+    "low rate"
+  ],
+  "correctness_gate": "zero correction/hard-decision/convergence differences; no rate-only equivalence claim",
+  "precision": "FP64; alpha .875; max iterations 64; no altered reductions or approximate acceptance",
+  "go_gate": "at least 1.2x gain vs the faster reference in at least one supported held-out operating cell, all four paired block ratios >1; otherwise no-go and revert prototype",
+  "adoption_scope": "explicit opt-in only; defaults unchanged; throughput and latency evaluated independently, preserve losing cells",
+  "timing": "four mirrored three-arm blocks, rotate first arm; fixed observations retained; warm reused scratch; upload/kernel/download timed; CPU accuracy, packing, construction and warm allocation excluded",
+  "cases": "surface7/surface11/gross; shots 1,128,4096; rates .001,.03; extra surface7/gross shots 33,4097 p=.03",
+  "tails": "single-shot cells get 64 timed observations per invocation (8 invocations per arm); batched cells get 3",
+  "resources": "existing 2 GiB scratch budget; no forced OOM; services/clocks unchanged",
+  "negative_verdict": "allowed if synchronization costs prevent useful operating cell; no unconditional GPU speedup promise",
+  "oracle_cache": "One CPU mask vector/config/count receipt per exact DEM SHA256 + packed-input SHA256 + shots/seed/parameters; first GPU output must match CPU before cache creation; each use validates IDs and every correction; final untimed GPU warmup after CPU validation.",
+  "go_gate_frozen_before_hardware_measurement": true,
+  "supplementary_trace": "Added after primary campaign to distinguish varied-input latency from repeated-input jitter: 64 fixed physical-noise inputs per model/rate, eight replays per arm; never changes go gate."
+}

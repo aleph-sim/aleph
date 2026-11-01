@@ -6,7 +6,7 @@
 
 #![cfg(all(target_os = "linux", feature = "cuda"))]
 
-use aleph_cuda::{mask_to_flips, CudaBp};
+use aleph_cuda::{mask_to_flips, BpScratchLayout, CudaBp};
 use aleph_qec::{
     build_dem, BpDecoder, Decoder, DemError, DetectorErrorModel, SurfaceCode, Syndrome,
 };
@@ -56,25 +56,41 @@ fn repetition_dem(n: usize, p: f64) -> DetectorErrorModel {
 
 /// GPU masks must equal CPU corrections on every shot.
 fn assert_match(bp: &BpDecoder, nd: usize, shots: usize, seed: u64) {
-    let gpu = match CudaBp::new(&bp.tanner()) {
-        Ok(g) => g,
-        Err(e) => {
-            eprintln!("skipping GPU BP oracle (no device): {e}");
-            return;
-        }
-    };
-    let no = bp.num_observables();
-    for (i, &q) in [0.02, 0.05, 0.10, 0.18].iter().enumerate() {
-        let syns = sample(nd, shots, q, seed ^ ((i as u64) << 20));
-        let masks = gpu.decode(&syns).expect("gpu bp decode");
-        for (s, syn) in syns.iter().enumerate() {
-            let want = bp.decode(syn).observable_flips;
-            let got = mask_to_flips(masks[s], no);
-            assert_eq!(
-                got, want,
-                "BP mismatch q={q} shot={s} fired={:?}",
-                syn.fired
-            );
+    for (layout, cooperative) in [
+        (BpScratchLayout::ShotMajor, false),
+        (BpScratchLayout::EdgeMajor, false),
+        (BpScratchLayout::WarpTiled, false),
+        (BpScratchLayout::ShotMajor, true),
+    ] {
+        let built = if cooperative {
+            CudaBp::warp_cooperative(&bp.tanner())
+        } else {
+            CudaBp::with_scratch_layout(&bp.tanner(), layout)
+        };
+        let gpu = match built {
+            Ok(g) => g,
+            Err(e) => {
+                assert!(
+                    std::env::var_os("ALEPH_REQUIRE_CUDA").is_none(),
+                    "required GPU: {e}"
+                );
+                eprintln!("skipping GPU BP oracle (no device): {e}");
+                return;
+            }
+        };
+        let no = bp.num_observables();
+        for (i, &q) in [0.02, 0.05, 0.10, 0.18].iter().enumerate() {
+            let syns = sample(nd, shots, q, seed ^ ((i as u64) << 20));
+            let masks = gpu.decode(&syns).expect("gpu bp decode");
+            for (s, syn) in syns.iter().enumerate() {
+                let want = bp.decode(syn).observable_flips;
+                let got = mask_to_flips(masks[s], no);
+                assert_eq!(
+                    got, want,
+                    "BP mismatch q={q} shot={s} fired={:?}",
+                    syn.fired
+                );
+            }
         }
     }
 }
@@ -104,23 +120,46 @@ fn gpu_bp_matches_cpu_large_batch() {
     let exp = SurfaceCode::new(d).memory_z_experiment(d);
     let dem = build_dem(&exp.annotated, &exp.phenomenological_mechanisms(0.03, 0.03)).unwrap();
     let bp = BpDecoder::with_params(&dem, 64, 0.875);
-    let gpu = match CudaBp::new(&bp.tanner()) {
-        Ok(g) => g,
-        Err(e) => {
-            eprintln!("skipping GPU BP large-batch oracle (no device): {e}");
-            return;
-        }
-    };
-    let no = bp.num_observables();
-    let syns = sample(dem.detectors, 100_000, 0.05, 0xB1A5);
-    let masks = gpu.decode(&syns).expect("gpu bp decode");
-    let mismatches = syns
-        .iter()
-        .enumerate()
-        .filter(|(s, syn)| mask_to_flips(masks[*s], no) != bp.decode(syn).observable_flips)
-        .count();
-    assert_eq!(
-        mismatches, 0,
-        "{mismatches}/100000 GPU/CPU BP corrections disagreed"
-    );
+    for (layout, cooperative) in [
+        (BpScratchLayout::ShotMajor, false),
+        (BpScratchLayout::EdgeMajor, false),
+        (BpScratchLayout::WarpTiled, false),
+        (BpScratchLayout::ShotMajor, true),
+    ] {
+        let built = if cooperative {
+            CudaBp::warp_cooperative(&bp.tanner())
+        } else {
+            CudaBp::with_scratch_layout(&bp.tanner(), layout)
+        };
+        let gpu = match built {
+            Ok(g) => g,
+            Err(e) => {
+                assert!(
+                    std::env::var_os("ALEPH_REQUIRE_CUDA").is_none(),
+                    "required GPU: {e}"
+                );
+                eprintln!("skipping GPU BP large-batch oracle (no device): {e}");
+                return;
+            }
+        };
+        let no = bp.num_observables();
+        let syns = sample(dem.detectors, 100_000, 0.05, 0xB1A5);
+        let masks = gpu.decode(&syns).expect("gpu bp decode");
+        let mismatches = syns
+            .iter()
+            .enumerate()
+            .filter(|(s, syn)| mask_to_flips(masks[*s], no) != bp.decode(syn).observable_flips)
+            .count();
+        assert_eq!(
+            mismatches, 0,
+            "{mismatches}/100000 GPU/CPU BP corrections disagreed"
+        );
+    }
+}
+
+#[test]
+fn gpu_bp_matches_cpu_gross_qldpc() {
+    let dem = aleph_qec::BBCode::gross().code_capacity_dem(0.03);
+    let cpu = BpDecoder::with_params(&dem, 64, 0.875);
+    assert_match(&cpu, dem.detectors, 4_000, 0x0005_60BB);
 }

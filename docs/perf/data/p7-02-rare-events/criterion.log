@@ -1,0 +1,33 @@
+Gnuplot not found, using plotters backend
+Benchmarking rare_events/plan_d3_k5
+Benchmarking rare_events/plan_d3_k5: Warming up for 200.00 ms
+Benchmarking rare_events/plan_d3_k5: Collecting 10 samples in estimated 501.84 ms (13k iterations)
+Benchmarking rare_events/plan_d3_k5: Analyzing
+rare_events/plan_d3_k5  time:   [38.218 µs 38.302 µs 38.537 µs]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+Benchmarking rare_events/conditional_k2
+Benchmarking rare_events/conditional_k2: Warming up for 200.00 ms
+Benchmarking rare_events/conditional_k2: Collecting 10 samples in estimated 500.09 ms (286k iterations)
+Benchmarking rare_events/conditional_k2: Analyzing
+rare_events/conditional_k2
+                        time:   [1.7270 µs 1.7419 µs 1.7510 µs]
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) low severe
+  1 (10.00%) high mild
+Benchmarking rare_events/stratified_fixed_budget
+Benchmarking rare_events/stratified_fixed_budget: Warming up for 200.00 ms
+Benchmarking rare_events/stratified_fixed_budget: Collecting 10 samples in estimated 528.84 ms (110 iterations)
+Benchmarking rare_events/stratified_fixed_budget: Analyzing
+rare_events/stratified_fixed_budget
+                        time:   [4.5796 ms 4.6050 ms 4.6286 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking rare_events/direct_matched_calls
+Benchmarking rare_events/direct_matched_calls: Warming up for 200.00 ms
+Benchmarking rare_events/direct_matched_calls: Collecting 10 samples in estimated 527.47 ms (1045 iterations)
+Benchmarking rare_events/direct_matched_calls: Analyzing
+rare_events/direct_matched_calls
+                        time:   [499.85 µs 504.61 µs 512.08 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild

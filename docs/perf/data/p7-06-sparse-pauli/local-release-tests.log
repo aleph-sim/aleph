@@ -1,0 +1,145 @@
+    Blocking waiting for file lock on build directory
+   Compiling aleph-stab v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-stab)
+    Finished `release` profile [optimized] target(s) in 27.00s
+     Running unittests src/lib.rs (target/release/deps/aleph_stab-b5b50c7e3ab56899)
+
+running 62 tests
+test backend::tests::probabilities_unsupported ... ok
+test backend::tests::bell_apply_and_measure ... ok
+test backend::tests::expectation_value_qubit_out_of_range ... ok
+test backend::tests::expectation_value_bell ... ok
+test backend::tests::rejects_non_clifford ... ok
+test backend::tests::sample_rejects_over_64_qubits ... ok
+test backend::tests::sample_ghz_is_all_zero_or_all_one ... ok
+test bits::tests::grid_rows_accessor ... ok
+test bits::tests::bitvec_set_get_and_words ... ok
+test bits::tests::row_words_roundtrip_and_pair ... ok
+test bits::tests::set_get_roundtrip ... ok
+test bits::tests::transpose64_avx512_matches_scalar_when_available ... ok
+test bits::tests::word_accessors_consistent_with_get_set ... ok
+test dispatch::tests::dispatch_bell ... ok
+test dispatch::tests::rejects_non_clifford ... ok
+test frame::tests::first_random_measurement_marginal_is_unbiased ... ok
+test frame::tests::perf_n1000_depth100_1000shots_under_1s ... ignored, perf: run with `cargo test -p aleph-stab --release -- --ignored perf_`
+test frame::tests::no_error_syndrome_is_silent ... ok
+test frame::tests::propagate_reset_clears_error ... ok
+test frame::tests::propagate_x_error_flips_zz_ancilla ... ok
+test frame::tests::rejects_non_clifford ... ok
+test frame::tests::sympl1_known_gates ... ok
+test frame::tests::sympl2_cnot ... ok
+test frame::tests::x_error_fires_z_ancilla_deterministically ... ok
+test gates::tests::avx512_gates_match_scalar_when_available ... ok
+test gates::tests::cnot_matches_per_bit ... ok
+test gates::tests::h_matches_per_bit ... ok
+test gates::tests::s_matches_per_bit ... ok
+test rowsum::tests::avx512_matches_reference_when_available ... ok
+test tableau::tests::bell_readout_is_xx_and_zz ... ok
+test tableau::tests::bell_state_stabilizers ... ok
+test tableau::tests::cnot_duplicate_qubit_rejected ... ok
+test tableau::tests::copy_and_zero_row ... ok
+test tableau::tests::cz_is_symmetric_and_hch ... ok
+test bits::tests::transpose_roundtrip_and_values ... ok
+test tableau::tests::g_phase_exponent_table ... ok
+test tableau::tests::identity_state_symplectic ... ok
+test tableau::tests::copy_row_matches_scalar_reference ... ok
+test tableau::tests::identity_tableau_is_zero_state ... ok
+test tableau::tests::iswap_then_iswapdg_is_identity ... ok
+test bits::tests::blocked_transpose_matches_scalar ... ok
+test tableau::tests::measure_bell_forces_correlation ... ok
+test tableau::tests::measure_plus_state_is_random ... ok
+test tableau::tests::measure_zero_state_is_deterministic_zero ... ok
+test tableau::tests::orientation_flip_preserves_logical_bits ... ok
+test tableau::tests::out_of_range_qubit_rejected ... ok
+test tableau::tests::pauli_eigenvalue_bell ... ok
+test tableau::tests::pauli_eigenvalue_zero_state ... ok
+test tableau::tests::rowsum_bit_involution ... ok
+test frame::tests::measurement_flip_frequency_matches_p ... ok
+test tableau::tests::sdg_inverts_s ... ok
+test tableau::tests::swap_twice_is_identity ... ok
+test tableau::tests::x_equals_hssh ... ok
+test tableau::tests::y_equals_xz_up_to_phase ... ok
+test tableau::tests::z_equals_ss ... ok
+test tableau::tests::zero_row_matches_scalar_reference ... ok
+test frame::tests::depolarizing_flip_frequency_matches_p ... ok
+test tableau::tests::colmajor_gates_match_scalar_reference ... ok
+test tableau::tests::rowsum_matches_scalar_reference ... ok
+test tableau::tests::measure_ghz_is_balanced_and_consistent ... ok
+test rowsum::tests::words_match_per_bit_reference ... ok
+test frame::tests::frame_matches_chp_frequencies_repetition_code ... ok
+
+test result: ok. 61 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.20s
+
+     Running tests/frame_sampler.rs (target/release/deps/frame_sampler-79b7135d90c165d9)
+
+running 6 tests
+test batched_deterministic_same_seed ... ok
+test batched_partial_final_batch ... ok
+test ghz_batched_only_correlated_outcomes ... ok
+test subset_batched_matches_per_shot_subset ... ok
+test batched_matches_exact_uniform_on_support ... ok
+test batched_matches_exact_over_random_cliffords ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.27s
+
+     Running tests/properties.rs (target/release/deps/properties-ef472e36f4a8074b)
+
+running 2 tests
+test symplectic_invariant_preserved_after_measure ... ok
+test symplectic_invariant_preserved ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/sparse_expectation.rs (target/release/deps/sparse_expectation-7e09675856d96b96)
+
+running 10 tests
+test clifford_only_matches_tableau_without_branching ... ok
+test inverse_t_gates_merging_and_exact_cancellation ... ok
+test tiles_empty_queries_zero_qubits_and_overflow ... ok
+test tiny_coefficients_are_not_pruned_and_malformed_empty_gates_do_not_panic ... ok
+test unsupported_or_invalid_disjoint_operations_rejected_even_for_identity ... ok
+test resource_limits_reject_before_expansion_without_partial_value ... ok
+test exact_quarter_rotations_do_not_branch_but_nearby_angles_do ... ok
+test global_128q_ghz_rotation_matches_independent_analytic_reference ... ok
+test exhaustive_two_qubit_conjugations_on_product_eigenstates ... ok
+test random_supported_circuits_phases_terms_cones_and_permutations_match_fp64 ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/stim_measure_oracle.rs (target/release/deps/stim_measure_oracle-b2ea6ceebe0c97c8)
+
+running 1 test
+test measurement_matches_stim ... ignored, requires python3 + stim; run on the EPYC oracle venv
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/stim_oracle.rs (target/release/deps/stim_oracle-1a77eaa7754006f0)
+
+running 1 test
+test matches_stim_on_random_cliffords ... ignored, requires python3 + stim; run on the EPYC oracle venv
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/sv_cross.rs (target/release/deps/sv_cross-7f880d429e4a383f)
+
+running 3 tests
+test surface_code_cycle_runs_on_stabilizer ... ok
+test sample_support_is_physical ... ok
+test expectation_matches_state_vector ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/sv_equivalence.rs (target/release/deps/sv_equivalence-45bde98ce960ca7d)
+
+running 2 tests
+test composed_gates_match_sv ... ok
+test native_gates_match_sv ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests aleph_stab
+
+running 1 test
+test crates/aleph-stab/src/sparse_expectation.rs - sparse_expectation::SparsePauliQuery::execute (line 178) ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.40s
+

@@ -1,0 +1,682 @@
+{
+  "b1-i3-main.json": {
+    "platform": "Linux-7.0.0-27-generic-x86_64-with-glibc2.43",
+    "python": "3.12.15",
+    "native_module": "/tmp/aleph-511-events-final-python/main-python/aleph/_native.abi3.so",
+    "threads": 1,
+    "numpy_version": "2.5.4",
+    "stim_version": "1.16.0",
+    "pymatching_version": "2.4.0",
+    "rows": [
+      {
+        "distance": 5,
+        "shots": 20000,
+        "probability": 0.003,
+        "seed": 1,
+        "prediction_sha256": "7a96398b572f67a187103ead8b955914f53860fba3fcc4fca19c5cd5ae3dbf5a",
+        "samples_shots_per_second": [
+          {
+            "aleph": 323077.5547595426,
+            "pymatching": 580069.5937547894
+          },
+          {
+            "pymatching": 581371.0270737142,
+            "aleph": 320838.8037699676
+          },
+          {
+            "aleph": 322057.21789335035,
+            "pymatching": 580056.7771189616
+          },
+          {
+            "pymatching": 580437.1612998367,
+            "aleph": 321571.197303663
+          },
+          {
+            "aleph": 322394.0771636095,
+            "pymatching": 578899.414739692
+          },
+          {
+            "pymatching": 579866.0986500831,
+            "aleph": 322059.60387101944
+          },
+          {
+            "aleph": 322394.59988311137,
+            "pymatching": 580375.919980537
+          }
+        ]
+      },
+      {
+        "distance": 9,
+        "shots": 5000,
+        "probability": 0.003,
+        "seed": 1,
+        "prediction_sha256": "1ed52b20328c5429b992771458859cd6089f582111cec8e1ee6f6dad0b21f917",
+        "samples_shots_per_second": [
+          {
+            "aleph": 42100.15118607782,
+            "pymatching": 73337.15178913687
+          },
+          {
+            "pymatching": 73676.88373893405,
+            "aleph": 42156.409396609764
+          },
+          {
+            "aleph": 42091.15152780969,
+            "pymatching": 70254.86086205933
+          },
+          {
+            "pymatching": 72498.37703677935,
+            "aleph": 41936.07599038085
+          },
+          {
+            "aleph": 42041.897580733195,
+            "pymatching": 73543.28153189381
+          },
+          {
+            "pymatching": 72933.60221012878,
+            "aleph": 42105.48757635729
+          },
+          {
+            "aleph": 42156.85826773212,
+            "pymatching": 73596.60329092383
+          }
+        ]
+      }
+    ]
+  },
+  "b1-i2-candidate.json": {
+    "platform": "Linux-7.0.0-27-generic-x86_64-with-glibc2.43",
+    "python": "3.12.15",
+    "native_module": "/tmp/aleph-511-events-final-python/candidate-python/aleph/_native.abi3.so",
+    "threads": 1,
+    "numpy_version": "2.5.4",
+    "stim_version": "1.16.0",
+    "pymatching_version": "2.4.0",
+    "rows": [
+      {
+        "distance": 5,
+        "shots": 20000,
+        "probability": 0.003,
+        "seed": 1,
+        "prediction_sha256": "7a96398b572f67a187103ead8b955914f53860fba3fcc4fca19c5cd5ae3dbf5a",
+        "samples_shots_per_second": [
+          {
+            "aleph": 340442.111717861,
+            "pymatching": 579741.0213022365
+          },
+          {
+            "pymatching": 580588.5631265842,
+            "aleph": 339871.7906797978
+          },
+          {
+            "aleph": 339850.1900469394,
+            "pymatching": 576842.9872200706
+          },
+          {
+            "pymatching": 579289.2203368616,
+            "aleph": 338969.51157933404
+          },
+          {
+            "aleph": 339833.0233747716,
+            "pymatching": 579378.3362059207
+          },
+          {
+            "pymatching": 580549.8263689983,
+            "aleph": 339748.4845361924
+          },
+          {
+            "aleph": 339574.3351510832,
+            "pymatching": 579498.2216892387
+          }
+        ]
+      },
+      {
+        "distance": 9,
+        "shots": 5000,
+        "probability": 0.003,
+        "seed": 1,
+        "prediction_sha256": "1ed52b20328c5429b992771458859cd6089f582111cec8e1ee6f6dad0b21f917",
+        "samples_shots_per_second": [
+          {
+            "aleph": 44317.8193520359,
+            "pymatching": 73049.93285818143
+          },
+          {
+            "pymatching": 73254.678824755,
+            "aleph": 44352.89348212259
+          },
+          {
+            "aleph": 44216.34532542185,
+            "pymatching": 69177.72593111577
+          },
+          {
+            "pymatching": 72050.01048935358,
+            "aleph": 44099.710140203766
+          },
+          {
+            "aleph": 44096.897130188634,
+            "pymatching": 73249.78939373995
+          },
+          {
+            "pymatching": 72858.52946014916,
+            "aleph": 42696.57313958988
+          },
+          {
+            "aleph": 36025.22038946574,
+            "pymatching": 73071.51019242872
+          }
+        ]
+      }
+    ]
+  },
+  "b1-i1-candidate.json": {
+    "platform": "Linux-7.0.0-27-generic-x86_64-with-glibc2.43",
+    "python": "3.12.15",
+    "native_module": "/tmp/aleph-511-events-final-python/candidate-python/aleph/_native.abi3.so",
+    "threads": 1,
+    "numpy_version": "2.5.4",
+    "stim_version": "1.16.0",
+    "pymatching_version": "2.4.0",
+    "rows": [
+      {
+        "distance": 5,
+        "shots": 20000,
+        "probability": 0.003,
+        "seed": 1,
+        "prediction_sha256": "7a96398b572f67a187103ead8b955914f53860fba3fcc4fca19c5cd5ae3dbf5a",
+        "samples_shots_per_second": [
+          {
+            "aleph": 303129.7810176611,
+            "pymatching": 542479.9101550436
+          },
+          {
+            "pymatching": 554524.1895751241,
+            "aleph": 297624.9319095495
+          },
+          {
+            "aleph": 338760.14892119967,
+            "pymatching": 576646.6422637437
+          },
+          {
+            "pymatching": 578162.0923084875,
+            "aleph": 338622.49370535807
+          },
+          {
+            "aleph": 339353.5315775646,
+            "pymatching": 576678.4486305158
+          },
+          {
+            "pymatching": 577739.1698302443,
+            "aleph": 339328.55445535545
+          },
+          {
+            "aleph": 332570.21729645284,
+            "pymatching": 537668.3817438025
+          }
+        ]
+      },
+      {
+        "distance": 9,
+        "shots": 5000,
+        "probability": 0.003,
+        "seed": 1,
+        "prediction_sha256": "1ed52b20328c5429b992771458859cd6089f582111cec8e1ee6f6dad0b21f917",
+        "samples_shots_per_second": [
+          {
+            "aleph": 44244.445237061875,
+            "pymatching": 71846.79938957558
+          },
+          {
+            "pymatching": 67387.60271047146,
+            "aleph": 38838.444628518475
+          },
+          {
+            "aleph": 44106.0003233246,
+            "pymatching": 70509.67797434906
+          },
+          {
+            "pymatching": 71974.9828270908,
+            "aleph": 44275.089926845736
+          },
+          {
+            "aleph": 44383.65341090695,
+            "pymatching": 70363.33537396751
+          },
+          {
+            "pymatching": 69844.97452426217,
+            "aleph": 44398.65907296267
+          },
+          {
+            "aleph": 44389.662239289,
+            "pymatching": 71267.73924783811
+          }
+        ]
+      }
+    ]
+  },
+  "b1-i0-main.json": {
+    "platform": "Linux-7.0.0-27-generic-x86_64-with-glibc2.43",
+    "python": "3.12.15",
+    "native_module": "/tmp/aleph-511-events-final-python/main-python/aleph/_native.abi3.so",
+    "threads": 1,
+    "numpy_version": "2.5.4",
+    "stim_version": "1.16.0",
+    "pymatching_version": "2.4.0",
+    "rows": [
+      {
+        "distance": 5,
+        "shots": 20000,
+        "probability": 0.003,
+        "seed": 1,
+        "prediction_sha256": "7a96398b572f67a187103ead8b955914f53860fba3fcc4fca19c5cd5ae3dbf5a",
+        "samples_shots_per_second": [
+          {
+            "aleph": 323090.0565287783,
+            "pymatching": 573714.5138507894
+          },
+          {
+            "pymatching": 577471.2091771805,
+            "aleph": 321754.0905032602
+          },
+          {
+            "aleph": 322428.657743375,
+            "pymatching": 574864.2662186573
+          },
+          {
+            "pymatching": 579662.182993902,
+            "aleph": 322720.3511512691
+          },
+          {
+            "aleph": 319893.18599534355,
+            "pymatching": 579025.3781408288
+          },
+          {
+            "pymatching": 579774.3595503131,
+            "aleph": 322806.95281715435
+          },
+          {
+            "aleph": 321492.3129592135,
+            "pymatching": 578665.489943566
+          }
+        ]
+      },
+      {
+        "distance": 9,
+        "shots": 5000,
+        "probability": 0.003,
+        "seed": 1,
+        "prediction_sha256": "1ed52b20328c5429b992771458859cd6089f582111cec8e1ee6f6dad0b21f917",
+        "samples_shots_per_second": [
+          {
+            "aleph": 41779.02728921397,
+            "pymatching": 71924.85327888059
+          },
+          {
+            "pymatching": 71145.13564464232,
+            "aleph": 42066.57572982333
+          },
+          {
+            "aleph": 41957.83407005664,
+            "pymatching": 68487.40590093641
+          },
+          {
+            "pymatching": 71726.48989829491,
+            "aleph": 41910.893035326495
+          },
+          {
+            "aleph": 42004.38609325213,
+            "pymatching": 73150.96151650364
+          },
+          {
+            "pymatching": 71329.2498745725,
+            "aleph": 38893.776435472544
+          },
+          {
+            "aleph": 42074.94759038006,
+            "pymatching": 71269.12619051708
+          }
+        ]
+      }
+    ]
+  },
+  "b0-i3-main.json": {
+    "platform": "Linux-7.0.0-27-generic-x86_64-with-glibc2.43",
+    "python": "3.12.15",
+    "native_module": "/tmp/aleph-511-events-final-python/main-python/aleph/_native.abi3.so",
+    "threads": 1,
+    "numpy_version": "2.5.4",
+    "stim_version": "1.16.0",
+    "pymatching_version": "2.4.0",
+    "rows": [
+      {
+        "distance": 5,
+        "shots": 20000,
+        "probability": 0.003,
+        "seed": 1,
+        "prediction_sha256": "7a96398b572f67a187103ead8b955914f53860fba3fcc4fca19c5cd5ae3dbf5a",
+        "samples_shots_per_second": [
+          {
+            "aleph": 322442.18413713516,
+            "pymatching": 578893.7344108593
+          },
+          {
+            "pymatching": 580995.2655897705,
+            "aleph": 322889.9306380537
+          },
+          {
+            "aleph": 322807.9621178853,
+            "pymatching": 579903.8359546897
+          },
+          {
+            "pymatching": 578903.7218765217,
+            "aleph": 323063.13906813407
+          },
+          {
+            "aleph": 322481.1623766209,
+            "pymatching": 578549.408926793
+          },
+          {
+            "pymatching": 580088.1459766265,
+            "aleph": 322049.8186894454
+          },
+          {
+            "aleph": 323088.08301255974,
+            "pymatching": 579768.8811711771
+          }
+        ]
+      },
+      {
+        "distance": 9,
+        "shots": 5000,
+        "probability": 0.003,
+        "seed": 1,
+        "prediction_sha256": "1ed52b20328c5429b992771458859cd6089f582111cec8e1ee6f6dad0b21f917",
+        "samples_shots_per_second": [
+          {
+            "aleph": 42157.8209232851,
+            "pymatching": 72436.64243301001
+          },
+          {
+            "pymatching": 72056.2883919499,
+            "aleph": 42149.10499859885
+          },
+          {
+            "aleph": 42164.19780564652,
+            "pymatching": 68276.14193996598
+          },
+          {
+            "pymatching": 72356.36853293228,
+            "aleph": 41897.91529057712
+          },
+          {
+            "aleph": 42189.955395516154,
+            "pymatching": 70803.27629217507
+          },
+          {
+            "pymatching": 70093.96259440415,
+            "aleph": 37441.09051546615
+          },
+          {
+            "aleph": 42029.97769542618,
+            "pymatching": 72634.90781171568
+          }
+        ]
+      }
+    ]
+  },
+  "b0-i2-candidate.json": {
+    "platform": "Linux-7.0.0-27-generic-x86_64-with-glibc2.43",
+    "python": "3.12.15",
+    "native_module": "/tmp/aleph-511-events-final-python/candidate-python/aleph/_native.abi3.so",
+    "threads": 1,
+    "numpy_version": "2.5.4",
+    "stim_version": "1.16.0",
+    "pymatching_version": "2.4.0",
+    "rows": [
+      {
+        "distance": 5,
+        "shots": 20000,
+        "probability": 0.003,
+        "seed": 1,
+        "prediction_sha256": "7a96398b572f67a187103ead8b955914f53860fba3fcc4fca19c5cd5ae3dbf5a",
+        "samples_shots_per_second": [
+          {
+            "aleph": 340430.48686258047,
+            "pymatching": 579790.0126326339
+          },
+          {
+            "pymatching": 580796.9010659104,
+            "aleph": 339811.28786531376
+          },
+          {
+            "aleph": 335417.63695124397,
+            "pymatching": 571017.2587059457
+          },
+          {
+            "pymatching": 580898.2348349646,
+            "aleph": 339705.62902920047
+          },
+          {
+            "aleph": 339894.99720769585,
+            "pymatching": 578289.8528760169
+          },
+          {
+            "pymatching": 580454.0739617916,
+            "aleph": 339970.65290820156
+          },
+          {
+            "aleph": 339419.7725353369,
+            "pymatching": 579783.219091096
+          }
+        ]
+      },
+      {
+        "distance": 9,
+        "shots": 5000,
+        "probability": 0.003,
+        "seed": 1,
+        "prediction_sha256": "1ed52b20328c5429b992771458859cd6089f582111cec8e1ee6f6dad0b21f917",
+        "samples_shots_per_second": [
+          {
+            "aleph": 43938.54039276325,
+            "pymatching": 73403.41011152645
+          },
+          {
+            "pymatching": 73577.3324037793,
+            "aleph": 44079.56914004189
+          },
+          {
+            "aleph": 44272.29100746665,
+            "pymatching": 69282.30892080834
+          },
+          {
+            "pymatching": 71988.93254675163,
+            "aleph": 44152.07743448863
+          },
+          {
+            "aleph": 44280.63550484886,
+            "pymatching": 72680.69509415144
+          },
+          {
+            "pymatching": 72656.1599995626,
+            "aleph": 44136.13996845373
+          },
+          {
+            "aleph": 44243.36013669722,
+            "pymatching": 73504.37491786957
+          }
+        ]
+      }
+    ]
+  },
+  "b0-i1-candidate.json": {
+    "platform": "Linux-7.0.0-27-generic-x86_64-with-glibc2.43",
+    "python": "3.12.15",
+    "native_module": "/tmp/aleph-511-events-final-python/candidate-python/aleph/_native.abi3.so",
+    "threads": 1,
+    "numpy_version": "2.5.4",
+    "stim_version": "1.16.0",
+    "pymatching_version": "2.4.0",
+    "rows": [
+      {
+        "distance": 5,
+        "shots": 20000,
+        "probability": 0.003,
+        "seed": 1,
+        "prediction_sha256": "7a96398b572f67a187103ead8b955914f53860fba3fcc4fca19c5cd5ae3dbf5a",
+        "samples_shots_per_second": [
+          {
+            "aleph": 340100.79920099536,
+            "pymatching": 579468.0111254388
+          },
+          {
+            "pymatching": 581723.0695383102,
+            "aleph": 339568.9441841177
+          },
+          {
+            "aleph": 339626.6536029736,
+            "pymatching": 580336.7411002285
+          },
+          {
+            "pymatching": 581371.1844636728,
+            "aleph": 339765.36313591624
+          },
+          {
+            "aleph": 339757.2999013613,
+            "pymatching": 580137.6348185294
+          },
+          {
+            "pymatching": 581759.2522910382,
+            "aleph": 339998.99749008374
+          },
+          {
+            "aleph": 339836.45441931597,
+            "pymatching": 579644.1899586886
+          }
+        ]
+      },
+      {
+        "distance": 9,
+        "shots": 5000,
+        "probability": 0.003,
+        "seed": 1,
+        "prediction_sha256": "1ed52b20328c5429b992771458859cd6089f582111cec8e1ee6f6dad0b21f917",
+        "samples_shots_per_second": [
+          {
+            "aleph": 44094.71535668151,
+            "pymatching": 71791.03779467379
+          },
+          {
+            "pymatching": 72899.69699294523,
+            "aleph": 42890.57181079218
+          },
+          {
+            "aleph": 44309.96769959301,
+            "pymatching": 69139.02428257003
+          },
+          {
+            "pymatching": 71846.26480485944,
+            "aleph": 44165.00921682945
+          },
+          {
+            "aleph": 44372.05283643198,
+            "pymatching": 71112.67658430316
+          },
+          {
+            "pymatching": 67770.81715079078,
+            "aleph": 39606.82580989355
+          },
+          {
+            "aleph": 44249.778170412465,
+            "pymatching": 71392.15218243233
+          }
+        ]
+      }
+    ]
+  },
+  "b0-i0-main.json": {
+    "platform": "Linux-7.0.0-27-generic-x86_64-with-glibc2.43",
+    "python": "3.12.15",
+    "native_module": "/tmp/aleph-511-events-final-python/main-python/aleph/_native.abi3.so",
+    "threads": 1,
+    "numpy_version": "2.5.4",
+    "stim_version": "1.16.0",
+    "pymatching_version": "2.4.0",
+    "rows": [
+      {
+        "distance": 5,
+        "shots": 20000,
+        "probability": 0.003,
+        "seed": 1,
+        "prediction_sha256": "7a96398b572f67a187103ead8b955914f53860fba3fcc4fca19c5cd5ae3dbf5a",
+        "samples_shots_per_second": [
+          {
+            "aleph": 320152.71795999014,
+            "pymatching": 577526.0301502348
+          },
+          {
+            "pymatching": 579860.2114471298,
+            "aleph": 319945.7451316774
+          },
+          {
+            "aleph": 319655.37033446966,
+            "pymatching": 577615.1325504354
+          },
+          {
+            "pymatching": 579756.9543152361,
+            "aleph": 318690.6063035894
+          },
+          {
+            "aleph": 319815.51322120696,
+            "pymatching": 579055.9797564263
+          },
+          {
+            "pymatching": 579806.9189109213,
+            "aleph": 319808.79770842707
+          },
+          {
+            "aleph": 316133.5519634921,
+            "pymatching": 545164.8316832971
+          }
+        ]
+      },
+      {
+        "distance": 9,
+        "shots": 5000,
+        "probability": 0.003,
+        "seed": 1,
+        "prediction_sha256": "1ed52b20328c5429b992771458859cd6089f582111cec8e1ee6f6dad0b21f917",
+        "samples_shots_per_second": [
+          {
+            "aleph": 42124.63072649631,
+            "pymatching": 72926.92483789282
+          },
+          {
+            "pymatching": 69813.16781232871,
+            "aleph": 39550.386238660714
+          },
+          {
+            "aleph": 42143.76945693057,
+            "pymatching": 69176.57072245101
+          },
+          {
+            "pymatching": 72769.78177967147,
+            "aleph": 41629.618408555434
+          },
+          {
+            "aleph": 42153.51513566708,
+            "pymatching": 73491.36891627143
+          },
+          {
+            "pymatching": 73232.30991966762,
+            "aleph": 42094.31909012508
+          },
+          {
+            "aleph": 42113.69786427663,
+            "pymatching": 73488.17195187358
+          }
+        ]
+      }
+    ]
+  }
+}

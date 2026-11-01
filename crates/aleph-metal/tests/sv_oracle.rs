@@ -254,3 +254,48 @@ fn tier1_optimized_oracle_matches_naive_sv() {
         );
     }
 }
+
+/// CLI final-state planning must restore logical order and retain unmeasured
+/// preparation even when a measurement appears in the circuit.
+#[test]
+fn final_state_plan_restores_permutation_and_partial_measurement() {
+    let mut gpu = match MetalSvBackend::with_seed(7) {
+        Ok(b) => b,
+        Err(_) => {
+            assert!(
+                std::env::var_os("ALEPH_TEST_CLI_METAL").is_none(),
+                "Metal hardware required"
+            );
+            return;
+        }
+    };
+    let mut circuit = Circuit::new(16, 1);
+    circuit.x(0).unwrap();
+    circuit.x(1).unwrap();
+    for _ in 0..8 {
+        circuit.h(15).unwrap();
+        circuit.t(15).unwrap();
+        circuit.cnot(15, 14).unwrap();
+        circuit.s(14).unwrap();
+        circuit.h(14).unwrap();
+    }
+    circuit.measure(0, 0).unwrap();
+    circuit.h(13).unwrap();
+    circuit.s(13).unwrap();
+    let mut planned = circuit.clone();
+    aleph_ir::passes::PassPipeline::final_state_pipeline()
+        .run(&mut planned)
+        .unwrap();
+    assert!(
+        planned.qubit_permutation().is_some(),
+        "fixture must exercise restoration"
+    );
+    let reference = run(&mut NaiveSvBackend::with_seed(7), &circuit).unwrap();
+    let (state, stats) = gpu.run_optimized_final_state_with_stats(&circuit).unwrap();
+    assert!(stats.planned_instructions < stats.input_instructions);
+    assert_close(
+        "final-state logical order",
+        &state.amplitudes(),
+        &HasAmplitudes::amplitudes(&reference),
+    );
+}

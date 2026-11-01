@@ -176,6 +176,21 @@ impl CudaSvBackend {
         self
     }
 
+    /// Select the seeded sampler; Reference retains the former full-state scan for A/B.
+    pub fn with_sampling_algorithm(mut self, algorithm: crate::SamplingAlgorithm) -> Self {
+        self.readout.algorithm = algorithm;
+        self
+    }
+    /// Enable synchronized sampling-stage diagnostics (off in normal execution).
+    pub fn with_sampling_profile(mut self, enabled: bool) -> Self {
+        self.readout.profile_sampling = enabled;
+        self
+    }
+    /// Diagnostics of the most recent successful sample call.
+    pub fn sampling_stats(&self) -> crate::SamplingStats {
+        self.readout.sampling_stats
+    }
+
     /// Override the qubit cap (default [`MAX_CUDA_QUBITS`]). For large-memory
     /// benchmarks on a GPU that can hold the state.
     pub fn with_qubit_cap(mut self, cap: u32) -> Self {
@@ -222,6 +237,7 @@ impl CudaSvBackend {
                 .arg(&params)
                 .arg(&n_pairs)
                 .launch(cfg)?;
+            crate::execution::record_launch();
         }
         Ok(())
     }
@@ -266,6 +282,7 @@ impl CudaSvBackend {
                 .arg(&params)
                 .arg(&n_groups)
                 .launch(cfg)?;
+            crate::execution::record_launch();
         }
         Ok(())
     }
@@ -303,6 +320,7 @@ impl CudaSvBackend {
                 .arg(&params)
                 .arg(&n_amps)
                 .launch(cfg)?;
+            crate::execution::record_launch();
         }
         Ok(())
     }
@@ -330,6 +348,7 @@ impl CudaSvBackend {
                 .arg(&params)
                 .arg(&n_groups)
                 .launch(cfg)?;
+            crate::execution::record_launch();
         }
         Ok(())
     }
@@ -385,6 +404,7 @@ impl CudaSvBackend {
                 .arg(&n_terms_u)
                 .arg(&n_amps)
                 .launch(cfg)?;
+            crate::execution::record_launch();
         }
         // No host sync: the upload buffers are freed by cudarc's `CudaSlice`
         // drop, which is stream-ordered (`cuMemFreeAsync` after the kernel, or
@@ -434,6 +454,8 @@ impl CudaSvBackend {
                 .arg(&params)
                 .arg(&n_groups)
                 .launch(cfg)?;
+            crate::execution::record_launch();
+            crate::execution::record_layer();
         }
         Ok(())
     }
@@ -629,12 +651,10 @@ pub(crate) fn gate_kq_params(qubits: &[u32], controls: &[u32]) -> GateKqParams {
 }
 
 /// Map a CUDA-layer error to a backend error. Launch/transfer failures on a
-/// working GPU indicate an internal fault, not user input; richer plumbing is a
-/// follow-up (the variant set is shared across all backends).
-pub(crate) fn to_backend_err(_e: Error) -> BackendError {
-    BackendError::InvalidState {
-        reason: "CUDA backend failure (compile/launch/transfer)",
-    }
+/// working GPU retain the driver diagnosis, including allocation failure when
+/// shared-device capacity changes after the advisory preflight.
+pub(crate) fn to_backend_err(e: Error) -> BackendError {
+    BackendError::DeviceFailure(e.to_string())
 }
 
 impl Backend for CudaSvBackend {

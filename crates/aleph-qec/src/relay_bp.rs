@@ -36,6 +36,7 @@ pub struct RelayBpDecoder {
     n_vars: usize,
     n_edges: usize,
     iters_per_leg: u32,
+    early_exit: bool,
     alpha: f64,
     lambda: Vec<f64>,
     obs: Vec<u64>,
@@ -55,8 +56,9 @@ impl RelayBpDecoder {
     }
 
     /// Build with explicit leg count, min-sum `α`, disordered-memory range `(γ_min, γ_max)`, and a
-    /// disorder seed. Each leg runs roughly `DEFAULT_MAX_ITER / legs` iterations so the total work is
-    /// comparable to one plain BP run.
+    /// disorder seed. Each leg runs `max(DEFAULT_MAX_ITER / max(legs, 1), 8)` iterations.
+    /// All iterations run by default, retaining the lightest valid decision; use
+    /// [`Self::with_budget`] for an explicit schedule and [`Self::with_early_exit`] to stop early.
     pub fn with_params(
         dem: &DetectorErrorModel,
         legs: usize,
@@ -65,9 +67,38 @@ impl RelayBpDecoder {
         seed: u64,
     ) -> Self {
         let legs = legs.max(1);
+        let iters_per_leg = ((crate::DEFAULT_MAX_ITER as usize / legs).max(8)) as u32;
+        Self::with_budget(dem, legs, iters_per_leg, alpha, gamma_range, seed)
+    }
+
+    /// Build with an explicit number of message-passing sweeps per relay leg.
+    ///
+    /// Like [`Self::with_params`], but the schedule is `max(legs, 1) × max(iters_per_leg, 1)`;
+    /// zero values are promoted to one, matching [`crate::FixedRelayBp::with_budget`].
+    /// The seed defines the same per-leg disorder regardless of the iteration budget.
+    /// Early exit defaults to false: the full schedule runs and retains the lowest-weight
+    /// syndrome-valid decision. Omitted Python budgets keep [`Self::with_params`]'s schedule.
+    ///
+    /// ```
+    /// use aleph_qec::{DetectorErrorModel, RelayBpDecoder};
+    /// let dem = DetectorErrorModel::parse("error(0.1) D0 L0")?;
+    /// let relay = RelayBpDecoder::with_budget(&dem, 6, 10, 0.875, (-0.3, 0.9), 7)
+    ///     .with_early_exit(true);
+    /// # let _ = relay;
+    /// # Ok::<(), aleph_qec::Error>(())
+    /// ```
+    pub fn with_budget(
+        dem: &DetectorErrorModel,
+        legs: usize,
+        iters_per_leg: u32,
+        alpha: f64,
+        gamma_range: (f64, f64),
+        seed: u64,
+    ) -> Self {
+        let legs = legs.max(1);
+        let iters_per_leg = iters_per_leg.max(1);
         let bp = BpDecoder::with_params(dem, crate::DEFAULT_MAX_ITER, alpha);
         let t = bp.tanner();
-        let iters_per_leg = (t.max_iter / legs as u32).max(8);
 
         // Per-leg disorder pattern γ[leg][v], deterministic via SplitMix64(seed, leg, v).
         let (gmin, gmax) = gamma_range;
@@ -94,6 +125,7 @@ impl RelayBpDecoder {
             n_vars: t.n_vars,
             n_edges: t.n_edges,
             iters_per_leg,
+            early_exit: false,
             alpha,
             lambda: t.lambda.to_vec(),
             obs: t.obs.to_vec(),
@@ -105,8 +137,18 @@ impl RelayBpDecoder {
         }
     }
 
+    /// Stop at the first syndrome-valid hard decision instead of searching the full schedule
+    /// for the lightest one. Disabled by default. Validity is not a guarantee of the correct
+    /// logical class: enabling this can change both correction quality and runtime.
+    /// The returned soft LLRs are from the stopping iteration; if no decision is valid,
+    /// the full schedule still runs and returns its final hard decision/LLRs.
+    pub fn with_early_exit(mut self, on: bool) -> Self {
+        self.early_exit = on;
+        self
+    }
+
     /// Decode, returning the correction and whether a syndrome-valid hard decision was found (relay-BP
-    /// "converged" in some leg). When none is valid, the lowest-weight hard decision seen is returned.
+    /// "converged" in some leg). When none is valid, the final hard decision is returned.
     pub fn decode_relay(&self, syndrome: &Syndrome) -> (Correction, bool) {
         let soft = self.decode_soft(syndrome);
         (self.correction_of(&soft.ehat), soft.converged)
@@ -116,8 +158,15 @@ impl RelayBpDecoder {
     /// `converged` flag. The posterior `L_v = λ_v + Σ_c E_{c→v}` is taken from the final leg's
     /// messages; the hard decision is the lowest-weight syndrome-valid one seen across legs (or the
     /// final hard decision if none was valid). This is the soft information BP+OSD post-processing
-    /// consumes — see [`RelayBpOsdDecoder`].
+    /// consumes — see [`RelayBpOsdDecoder`]. With [`Self::with_early_exit`] enabled, both the
+    /// decision and LLRs come from the first syndrome-valid iteration instead.
     pub fn decode_soft(&self, syndrome: &Syndrome) -> BpSoft {
+        self.decode_soft_observed(syndrome, || {})
+    }
+
+    // The no-op observer is monomorphized away in production. Tests count actual sweeps,
+    // rather than infer stopping from wall time or from two coincidentally equal decisions.
+    fn decode_soft_observed(&self, syndrome: &Syndrome, mut swept: impl FnMut()) -> BpSoft {
         let mut s = vec![0u8; self.num_detectors];
         for &d in &syndrome.fired {
             if (d as usize) < self.num_detectors {
@@ -137,16 +186,20 @@ impl RelayBpDecoder {
         let mut best: Option<(u32, Vec<u8>)> = None; // (hamming weight, ehat)
         let mut found_valid = false;
 
-        for leg in 0..self.gamma.len() {
+        'schedule: for leg in 0..self.gamma.len() {
             let gamma = &self.gamma[leg];
             for _ in 0..self.iters_per_leg {
                 self.check_update(&m_vc, &mut e_cv, &s);
                 self.var_update_memory(&e_cv, &mut m_vc, &mut ehat, gamma);
+                swept();
                 if self.satisfies(&ehat, &s) {
                     found_valid = true;
                     let w = ehat.iter().map(|&b| b as u32).sum();
                     if best.as_ref().is_none_or(|(bw, _)| w < *bw) {
                         best = Some((w, ehat.clone()));
+                    }
+                    if self.early_exit {
+                        break 'schedule;
                     }
                 }
             }
@@ -315,6 +368,90 @@ impl Decoder for RelayBpOsdDecoder {
 mod tests {
     use super::*;
     use crate::bivariate_bicycle::BBCode;
+
+    fn soft_eq(a: &BpSoft, b: &BpSoft) {
+        assert_eq!(a.ehat, b.ehat);
+        assert_eq!(a.converged, b.converged);
+        assert_eq!(
+            a.llr.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+            b.llr.iter().map(|v| v.to_bits()).collect::<Vec<_>>()
+        );
+    }
+
+    fn toy() -> DetectorErrorModel {
+        DetectorErrorModel::parse("error(0.1) D0 L0\nerror(0.1) D0 D1\nerror(0.1) D1").unwrap()
+    }
+
+    #[test]
+    fn omitted_budget_keeps_legacy_schedule_and_disorder() {
+        let dem = toy();
+        for legs in [0usize, 1, 4, 6, 60] {
+            let legacy = RelayBpDecoder::with_params(&dem, legs, 0.875, (-0.3, 0.9), 7);
+            let iterations = ((crate::DEFAULT_MAX_ITER as usize / legs.max(1)).max(8)) as u32;
+            let explicit =
+                RelayBpDecoder::with_budget(&dem, legs, iterations, 0.875, (-0.3, 0.9), 7)
+                    .with_early_exit(false);
+            assert_eq!(legacy.iters_per_leg, iterations);
+            assert!(!legacy.early_exit);
+            assert_eq!(legacy.gamma, explicit.gamma);
+            for fired in [vec![], vec![0], vec![1], vec![0, 1]] {
+                let s = Syndrome::new(2, fired);
+                soft_eq(&legacy.decode_soft(&s), &explicit.decode_soft(&s));
+            }
+        }
+        let zero = RelayBpDecoder::with_budget(&dem, 0, 0, 0.875, (-0.3, 0.9), 7);
+        assert_eq!(
+            (zero.gamma.len(), zero.iters_per_leg, zero.early_exit),
+            (1, 1, false)
+        );
+    }
+
+    #[test]
+    fn explicit_budget_counts_actual_sweeps_and_stops_only_on_valid_decisions() {
+        let mut dem = toy();
+        dem.detectors = 3; // D2 has no incident mechanism; a fired D2 cannot be satisfied.
+        let full = RelayBpDecoder::with_budget(&dem, 3, 4, 0.875, (-0.3, 0.9), 7);
+        let early = full.clone().with_early_exit(true);
+        let count = |decoder: &RelayBpDecoder, syndrome: &Syndrome| {
+            let mut n = 0;
+            let soft = decoder.decode_soft_observed(syndrome, || n += 1);
+            (soft, n)
+        };
+        let empty = Syndrome::default();
+        let (complete, n) = count(&full, &empty);
+        assert!(complete.converged);
+        assert_eq!(n, 12);
+        let (stopped, n) = count(&early, &empty);
+        assert!(stopped.converged);
+        assert_eq!(n, 1);
+        let prefix = RelayBpDecoder::with_budget(&dem, 1, 1, 0.875, (-0.3, 0.9), 7);
+        soft_eq(&stopped, &prefix.decode_soft(&empty));
+
+        let impossible = Syndrome::new(3, vec![2]);
+        let (complete, n) = count(&full, &impossible);
+        let (stopped, early_n) = count(&early, &impossible);
+        assert!(!complete.converged && !stopped.converged);
+        assert_eq!((n, early_n), (12, 12));
+        soft_eq(&complete, &stopped);
+    }
+
+    #[test]
+    fn nonempty_first_valid_result_and_llrs_match_the_stopping_prefix() {
+        let dem = toy();
+        let early =
+            RelayBpDecoder::with_budget(&dem, 6, 10, 0.875, (-0.3, 0.9), 7).with_early_exit(true);
+        let syndrome = Syndrome::new(2, vec![0]);
+        let mut n = 0;
+        let stopped = early.decode_soft_observed(&syndrome, || n += 1);
+        assert!(stopped.converged);
+        assert!(
+            (1..=10).contains(&n),
+            "fixture must converge in the first leg, got {n}"
+        );
+        let prefix = RelayBpDecoder::with_budget(&dem, 1, n, 0.875, (-0.3, 0.9), 7);
+        soft_eq(&stopped, &prefix.decode_soft(&syndrome));
+        assert!(early.satisfies(&stopped.ehat, &[1, 0]));
+    }
 
     /// Relay-BP returns a syndrome-consistent decision whenever it reports one valid, and never
     /// panics. Validity is the prerequisite for a meaningful logical-error rate.

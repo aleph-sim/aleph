@@ -110,6 +110,7 @@ impl DiagKernels {
                 .arg(&params)
                 .arg(&n_amps)
                 .launch(cfg)?;
+            crate::execution::record_launch();
         }
         Ok(())
     }
@@ -148,6 +149,7 @@ impl DiagKernels {
                 .arg(&params)
                 .arg(&n_amps)
                 .launch(cfg)?;
+            crate::execution::record_launch();
         }
         Ok(())
     }

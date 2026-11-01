@@ -40,20 +40,23 @@ mod relay_window;
 mod serial_gather;
 mod sliding;
 mod sparse_blossom;
+mod stratified;
 mod surface;
 mod syndrome;
 mod union_find;
+mod witness;
 
 pub use aswaksman::{aswaksman_apply, aswaksman_control, aswaksman_switch_count};
 pub use benes::{benes_apply, benes_columns, benes_control, complete_partial};
 pub use bivariate_bicycle::{BBCode, BBMemoryExperiment};
 pub use bp::{BpDecoder, BpSoft, TannerGraph, DEFAULT_MAX_ITER};
 pub use builder::{build_dem, AnnotatedCircuit, CircuitNoise, ErrorMechanism};
-pub use decoder::{Decoder, LogicalErrorResult, NullDecoder};
+pub use decoder::{BinomialInterval95, Decoder, LogicalErrorResult, NullDecoder};
 pub use dem::{DemError, DetectorErrorModel};
 pub use error::{Error, Result};
 pub use experiment::{
-    run_dem_experiment, run_memory_experiment, sample_shots, PhenomenologicalNoise,
+    run_dem_experiment, run_dem_experiment_with_options, run_memory_experiment, sample_shots,
+    DemExperimentOptions, PhenomenologicalNoise,
 };
 pub use fixed_bp::{FixedHwView, FixedRelayBp, FixedRelayBpOsd};
 pub use matching::{MatchingEdge, MatchingGraph, NodeId};
@@ -71,3 +74,31 @@ pub use sliding::{SlidingWindowDecoder, WindowExport};
 pub use surface::{MemoryExperiment, SurfaceCode};
 pub use syndrome::{Correction, Syndrome};
 pub use union_find::{DecoderGraph, UnionFindDecoder};
+
+pub use witness::{
+    capture_shot, reconstruct_faults, DecoderSpec, FailureWitness, MinimizationReceipt,
+    MinimizeBudget, MinimizeResult, MinimizeStatus, WitnessDecoder, WitnessOutcome,
+    WitnessSampling,
+};
+
+pub use stratified::{
+    capture_stratified_shot, run_automatic_rare_event, run_stratified, select_rare_event_method,
+    AutomaticRareEventResult, FaultCountPlan, ProbabilityBounds, RareEventDecision,
+    RareEventMethod, StratifiedOptions, StratifiedResult, StratifiedStatus, StratumMode,
+    StratumResult,
+};
+
+mod robustness;
+pub use robustness::{
+    generate_noise_stream, robustness_stream_seed, run_robustness, validate_noise_compatibility,
+    NoiseProcess, NoiseShot, RobustnessOptions, RobustnessResult, RobustnessStream,
+    MAX_ROBUSTNESS_STEPS,
+};
+
+mod deadline_replay;
+pub use deadline_replay::{
+    replay_decode_trace, DecodeTrace, DecodeTraceJob, FallbackOverflowPolicy, LateCommitPolicy,
+    LatencyPercentiles, OperationalFailurePolicy, ReplayConfig, ReplayDisposition, ReplayJobResult,
+    ReplayPolicy, ReplayQueueLevel, ReplayResult, ServiceTime, TimedDecision, TraceOrigin,
+    TraceUnit,
+};

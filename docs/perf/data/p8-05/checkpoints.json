@@ -1,0 +1,36 @@
+{
+  "sweep": {
+    "crates/aleph-cuda/src/sv/sampling.rs": "42ba78de5816a958889f4b9b081e52b8f2482cf230b12c523ea4eaf0dae2b268",
+    "crates/aleph-cuda/src/sv/sampling.cu": "7034f98c1db5e6c1f8f67c8fc5c57d42bbe3793bf920130de80bad2a0b4c7711",
+    "crates/aleph-cuda/src/sv/readout.rs": "9b974d5fca9bebe03e6bb302929fc07887be0866d938b0382c7a6e7684427cda",
+    "crates/aleph-cuda/src/sv/readout_f32.rs": "bc75f6857bbe125e22a2d8190e9810656699dd3f93023c110f4d764a4131ba00",
+    "crates/aleph-cuda/examples/sampling_audit.rs": "dcca2b01f5454128c18ecc702e28211fe1d9ea9cb20d8cd8a4be755387ad75c3",
+    "crates/aleph-cuda/src/memory.rs": "c4e93fd29129bfb5af36520b18d4d3ebc29b847875bad299dcc4ec39235e480e",
+    "crates/aleph-backend/src/memory.rs": "10eab664b089885cd4915bf90e82620c9ca3d365a6e7ee61d1fb87dbe272c96b"
+  },
+  "criterion": {
+    "crates/aleph-cuda/src/sv/sampling.rs": "8dcf8d2aab14c373063c4dccb11a1e392b2d2870a91e64d1129e8655440fbc38",
+    "crates/aleph-cuda/src/sv/sampling.cu": "7034f98c1db5e6c1f8f67c8fc5c57d42bbe3793bf920130de80bad2a0b4c7711",
+    "crates/aleph-cuda/src/sv/readout.rs": "7eff2cc917f26f6f615966ff9a4103d773d5757d69ab468a77ff13a187d969df",
+    "crates/aleph-cuda/src/sv/readout_f32.rs": "f90dad37955cb4536291e55cccd08cca9a46dcc9630b12120aaafb48be0f5768",
+    "crates/aleph-cuda/benches/sampling.rs": "1169100bbf45d9ef0ff0445a198b674fd7c891f5f6147147a7bc970095fbd13e",
+    "crates/aleph-cuda/examples/sampling_audit.rs": "dcca2b01f5454128c18ecc702e28211fe1d9ea9cb20d8cd8a4be755387ad75c3",
+    "crates/aleph-cuda/src/memory.rs": "3327f98523f1e61e2c2394fc8291e869a921bf0a0427cb73f5160256a784168f",
+    "crates/aleph-backend/src/memory.rs": "5c54adb395c4728f7979eb99b5958ad9653e79561a4280e2ff969d2bf179898f"
+  },
+  "final_gpu_validation": {
+    "crates/aleph-cuda/src/sv/sampling.rs": "3e94392ce15521d187dd9632c5c5614665e7e50f604c3fde7ff3bf603d3515bc",
+    "crates/aleph-cuda/src/sv/sampling.cu": "d1b4a951ba6e46ba9d89ec6e88eab1a76b11c90e87c4e5d71578347cac3cefc2",
+    "crates/aleph-cuda/src/sv/readout.rs": "e92ddb3818cdffaf83f98bb2316a7c569cb8b8fc7af1acebf51800fac603ba83",
+    "crates/aleph-cuda/src/sv/readout_f32.rs": "252f7419778fc000048b0a13c3937e100cbb17773308d0a2ac47df90c4d85e97",
+    "crates/aleph-cuda/benches/sampling.rs": "1169100bbf45d9ef0ff0445a198b674fd7c891f5f6147147a7bc970095fbd13e",
+    "crates/aleph-cuda/examples/sampling_audit.rs": "8ca13dca0d9c73cbb7ab767397d3b73b49d0a93259c4f49d7daec6e4d7e87496",
+    "crates/aleph-cuda/src/memory.rs": "d7ca10383e154044b87038cca39f18b467c107b25175fd9ffdae32cdf21dd2d0",
+    "crates/aleph-backend/src/memory.rs": "5c54adb395c4728f7979eb99b5958ad9653e79561a4280e2ff969d2bf179898f"
+  },
+  "notes": {
+    "sweep": "Explicit Reference/Hierarchical/BlockCdf variants, initial prototype. Auto not timed.",
+    "criterion": "Auto policy finalized at N/4096, small states use BlockCdf.",
+    "final_gpu_validation": "Subsequent edits format/comment kernels, align build-stage attribution, document seed scope, and add dense uniform/workspace tests. Sampling algorithm and Auto selection unchanged."
+  }
+}

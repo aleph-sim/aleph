@@ -1,0 +1,105 @@
+   Compiling proc-macro2 v1.0.106
+   Compiling quote v1.0.45
+   Compiling unicode-ident v1.0.24
+   Compiling libc v0.2.186
+   Compiling cfg-if v1.0.4
+   Compiling autocfg v1.5.1
+   Compiling zerocopy v0.8.48
+   Compiling serde_core v1.0.228
+   Compiling num-traits v0.2.19
+   Compiling version_check v0.9.5
+   Compiling generic-array v0.14.7
+   Compiling syn v2.0.117
+   Compiling getrandom v0.3.4
+   Compiling crossbeam-utils v0.8.21
+   Compiling thiserror v1.0.69
+   Compiling zmij v1.0.21
+   Compiling serde v1.0.228
+   Compiling typenum v1.20.1
+   Compiling num-complex v0.4.6
+   Compiling getrandom v0.2.17
+   Compiling smallvec v1.15.1
+   Compiling serde_json v1.0.150
+   Compiling getrandom v0.4.2
+   Compiling rustix v1.1.4
+   Compiling either v1.16.0
+   Compiling rand_core v0.6.4
+   Compiling rand_core v0.9.5
+   Compiling crossbeam-epoch v0.9.18
+   Compiling bitflags v2.11.1
+   Compiling regex-syntax v0.8.10
+   Compiling memchr v2.8.0
+   Compiling rayon-core v1.13.0
+   Compiling once_cell v1.21.4
+   Compiling linux-raw-sys v0.12.1
+   Compiling zerocopy-derive v0.8.48
+   Compiling thiserror-impl v1.0.69
+   Compiling serde_derive v1.0.228
+   Compiling aleph-core v0.3.0 (/tmp/aleph-543-816ef96/patch/crates/aleph-core)
+   Compiling itoa v1.0.18
+   Compiling aleph-ir v0.3.0 (/tmp/aleph-543-816ef96/patch/crates/aleph-ir)
+   Compiling crossbeam-deque v0.8.6
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling ciborium-io v0.2.2
+   Compiling anstyle v1.0.14
+   Compiling fastrand v2.4.1
+   Compiling ppv-lite86 v0.2.21
+   Compiling half v2.7.1
+   Compiling rand_chacha v0.3.1
+   Compiling clap_lex v1.1.0
+   Compiling plotters-backend v0.3.7
+   Compiling clap_builder v4.6.0
+   Compiling rand v0.8.6
+   Compiling plotters-svg v0.3.7
+   Compiling ciborium-ll v0.2.2
+   Compiling tempfile v3.27.0
+   Compiling digest v0.10.7
+   Compiling aleph-backend v0.3.0 (/tmp/aleph-543-816ef96/patch/crates/aleph-backend)
+   Compiling regex-automata v0.4.14
+   Compiling itertools v0.10.5
+   Compiling approx v0.5.1
+   Compiling wait-timeout v0.2.1
+   Compiling cpufeatures v0.2.17
+   Compiling quick-error v1.2.3
+   Compiling cast v0.3.0
+   Compiling bit-vec v0.8.0
+   Compiling same-file v1.0.6
+   Compiling fnv v1.0.7
+   Compiling walkdir v2.5.0
+   Compiling rusty-fork v0.3.1
+   Compiling bit-set v0.8.0
+   Compiling criterion-plot v0.5.0
+   Compiling sha2 v0.10.9
+   Compiling statrs v0.18.0
+   Compiling regex v1.12.3
+   Compiling clap v4.6.1
+   Compiling rayon v1.12.0
+   Compiling aleph-stab v0.3.0 (/tmp/aleph-543-816ef96/patch/crates/aleph-stab)
+   Compiling ciborium v0.2.2
+   Compiling plotters v0.3.7
+   Compiling rand_chacha v0.9.0
+   Compiling tinytemplate v1.2.1
+   Compiling rand v0.9.4
+   Compiling rand_xorshift v0.4.0
+   Compiling is-terminal v0.4.17
+   Compiling unarray v0.1.4
+   Compiling anes v0.1.6
+   Compiling oorandom v11.1.5
+   Compiling aleph-qec v0.3.0 (/tmp/aleph-543-816ef96/patch/crates/aleph-qec)
+   Compiling proptest v1.11.0
+   Compiling criterion v0.5.1
+    Finished `release` profile [optimized] target(s) in 41.00s
+     Running tests/witness.rs (../target-patch/release/deps/witness-2fbb0f060da2cd44)
+
+running 8 tests
+test budgets_tampering_and_incompatible_replay ... ok
+test signatures_group_exact_examples_across_shots_but_keep_decoder_choices ... ok
+test invalid_diagnostics_are_separate_and_fixed_codec_is_checked ... ok
+test malformed_inputs_return_errors_and_pure_logical_tiny_models_certify ... ok
+test capture_matches_ordinary_sampler_and_worker_counts ... ok
+test exhaustive_tiny_reconstruction_and_one_minimality ... ok
+test real_fixtures_replay_certify_and_match_reference_bytes ... ok
+test relay_seed_is_stable_and_nonconvergence_is_not_failure ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s

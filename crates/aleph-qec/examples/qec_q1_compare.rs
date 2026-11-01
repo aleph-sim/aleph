@@ -50,7 +50,7 @@ fn main() {
     );
 
     // ---- Accuracy ----------------------------------------------------------------------------
-    println!("section,d,detectors,p,shots,rate_mwpm,ci_mwpm,rate_pymatching,ci_pymatching,abs_delta,combined_ci,within_ci");
+    println!("section,d,detectors,p,shots,rate_mwpm,ci_mwpm_legacy,rate_pymatching,ci_pymatching_legacy,abs_delta,ours_only_errors,theirs_only_errors,paired_no_detected_difference95");
     let mut acc_rows = Vec::new();
     for &d in DISTANCES {
         let dem = cell_dem(d, P);
@@ -63,20 +63,23 @@ fn main() {
             .decode_batch(&syndromes)
             .expect("PyMatching subprocess (set PYMATCHING_PYTHON)");
 
-        let (eo, et) = logical_errors(&ours, &theirs, &truths);
+        let (eo, et, ours_only, theirs_only) = logical_errors(&ours, &theirs, &truths);
         let (ro, rt) = (eo as f64 / acc_shots as f64, et as f64 / acc_shots as f64);
         let ci_o = ci95(ro, acc_shots);
         let ci_t = ci95(rt, acc_shots);
-        // Combined CI for the difference of two independent proportions.
-        let comb = 1.96 * ((ro * (1.0 - ro) + rt * (1.0 - rt)) / acc_shots as f64).sqrt();
-        let within = (ro - rt).abs() <= comb + 1e-12;
+        // Paired shots: condition on discordance, never assume independent decoder rates.
+        // The exact equal-tail interval tests a 1/2 split (conditional McNemar test).
+        // A non-rejection is not decoder equivalence, and this is per-cell, not family-wise.
+        let paired = aleph_qec::BinomialInterval95::from_counts(ours_only + theirs_only, ours_only)
+            .expect("paired binomial interval");
+        let within = paired.lower <= 0.5 && 0.5 <= paired.upper;
         println!(
-            "accuracy,{d},{},{P},{acc_shots},{ro},{ci_o},{rt},{ci_t},{},{comb},{within}",
+            "accuracy,{d},{},{P},{acc_shots},{ro},{ci_o},{rt},{ci_t},{},{ours_only},{theirs_only},{within}",
             dem.detectors,
             (ro - rt).abs()
         );
         eprintln!(
-            "  acc d={d}: aleph={ro:.4e}±{ci_o:.1e}  pymatching={rt:.4e}±{ci_t:.1e}  |Δ|={:.2e} ci={comb:.2e}  within_ci={within}",
+            "  acc d={d}: aleph={ro:.4e} pymatching={rt:.4e} |Δ|={:.2e}, discordance=({ours_only},{theirs_only}), paired_no_detected_difference95={within} (not equivalence)",
             (ro - rt).abs()
         );
         acc_rows.push(within);
@@ -134,9 +137,9 @@ fn main() {
     }
 
     if acc_rows.iter().all(|&w| w) {
-        eprintln!("# accuracy: all distances within combined CI ✓");
+        eprintln!("# No paired rate difference detected per cell at 95%; this does not establish equivalence.");
     } else {
-        eprintln!("# accuracy: SOME DISTANCE EXCEEDED CI ✗");
+        eprintln!("# Paired rate difference detected in at least one cell; no multiple-comparison correction.");
         std::process::exit(1);
     }
 }
@@ -201,15 +204,19 @@ fn logical_errors(
     ours: &[aleph_qec::Correction],
     theirs: &[aleph_qec::Correction],
     truths: &[bool],
-) -> (u64, u64) {
+) -> (u64, u64, u64, u64) {
     let flip = |c: &aleph_qec::Correction| c.observable_flips.first().copied().unwrap_or(false);
     let mut eo = 0;
     let mut et = 0;
+    let (mut ours_only, mut theirs_only) = (0, 0);
     for ((o, t), truth) in ours.iter().zip(theirs).zip(truths) {
-        eo += (flip(o) != *truth) as u64;
-        et += (flip(t) != *truth) as u64;
+        let (oe, te) = (flip(o) != *truth, flip(t) != *truth);
+        eo += oe as u64;
+        et += te as u64;
+        ours_only += (oe && !te) as u64;
+        theirs_only += (te && !oe) as u64;
     }
-    (eo, et)
+    (eo, et, ours_only, theirs_only)
 }
 
 /// 95% Wald half-width for a proportion.

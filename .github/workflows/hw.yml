@@ -24,18 +24,14 @@ name: Hardware
 # today precisely because that runner hits its timeout. Verilator builds are
 # CPU-heavy and have no business competing with a measurement box.
 
+# CI selects this reusable workflow from the same dependency plan as Rust jobs.
+# Manual dispatch is additional evidence, not a PR merge-check replacement.
 on:
-  push:
-    branches: [main]
-  pull_request:
-    paths:
-      - "hw/**"
-      - "crates/aleph-qec/**"
-      - ".github/workflows/hw.yml"
+  workflow_call:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: rtl-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:

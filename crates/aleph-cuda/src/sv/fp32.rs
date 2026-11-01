@@ -101,6 +101,12 @@ pub struct CudaSvReadoutF32 {
 impl CudaSvReadoutF32 {
     /// Download and widen amplitudes, returning synchronization/copy failures.
     pub fn try_amplitudes_vec(&self) -> Result<Vec<Complex>, Error> {
+        crate::memory::ensure_host_bytes(
+            (self.amps.len() as u64)
+                .checked_mul(16)
+                .ok_or_else(|| Error::Memory("host export size overflow".into()))?,
+        )
+        .map_err(Error::Memory)?;
         let host = self.amps.to_vec_on_stream(&self.stream)?;
         Ok(host
             .as_chunks::<2>()
@@ -153,6 +159,12 @@ impl CudaSvStateF32 {
 
     /// Download and widen amplitudes, returning synchronization/copy failures.
     pub fn try_amplitudes_vec(&self) -> Result<Vec<Complex>, Error> {
+        crate::memory::ensure_host_bytes(
+            (self.amps.len() as u64)
+                .checked_mul(16)
+                .ok_or_else(|| Error::Memory("host export size overflow".into()))?,
+        )
+        .map_err(Error::Memory)?;
         let host = self.amps.to_vec(&self.ctx)?;
         Ok(host
             .as_chunks::<2>()
@@ -273,6 +285,29 @@ impl CudaSvBackendF32 {
             tiled_min_k: 2,
             tf32_kq: true,
         })
+    }
+
+    /// True only when the optional TF32 module loaded successfully.
+    pub fn tf32_available(&self) -> bool {
+        self.tf32.is_some()
+    }
+    pub(crate) fn set_tf32_policy(&mut self, on: bool) {
+        self.tf32_kq = on;
+    }
+
+    /// Select the seeded sampler; Reference retains the former full-state scan for A/B.
+    pub fn with_sampling_algorithm(mut self, algorithm: crate::SamplingAlgorithm) -> Self {
+        self.readout.algorithm = algorithm;
+        self
+    }
+    /// Enable synchronized sampling-stage diagnostics (off in normal execution).
+    pub fn with_sampling_profile(mut self, enabled: bool) -> Self {
+        self.readout.profile_sampling = enabled;
+        self
+    }
+    /// Diagnostics of the most recent successful sample call.
+    pub fn sampling_stats(&self) -> crate::SamplingStats {
+        self.readout.sampling_stats
     }
 
     /// Override the qubit cap (default [`MAX_CUDA_QUBITS_F32`]).
@@ -473,6 +508,7 @@ impl CudaSvBackendF32 {
                 .arg(&params)
                 .arg(&n_pairs)
                 .launch(cfg)?;
+            crate::execution::record_launch();
         }
         Ok(())
     }
@@ -502,6 +538,7 @@ impl CudaSvBackendF32 {
                 .arg(&params)
                 .arg(&n_groups)
                 .launch(cfg)?;
+            crate::execution::record_launch();
         }
         Ok(())
     }
@@ -550,6 +587,7 @@ impl CudaSvBackendF32 {
                 .arg(&params)
                 .arg(&n_groups)
                 .launch(cfg)?;
+            crate::execution::record_launch();
         }
         Ok(())
     }
@@ -587,6 +625,7 @@ impl CudaSvBackendF32 {
                 .arg(&params)
                 .arg(&n_amps)
                 .launch(cfg)?;
+            crate::execution::record_launch();
         }
         Ok(())
     }
@@ -636,6 +675,8 @@ impl CudaSvBackendF32 {
                 .arg(&params)
                 .arg(&n_groups)
                 .launch(cfg)?;
+            crate::execution::record_launch();
+            crate::execution::record_tf32();
         }
         Ok(())
     }
@@ -661,6 +702,8 @@ impl CudaSvBackendF32 {
                 .arg(&params)
                 .arg(&n_groups)
                 .launch(cfg)?;
+            crate::execution::record_launch();
+            crate::execution::record_layer();
         }
         Ok(())
     }
@@ -714,6 +757,7 @@ impl CudaSvBackendF32 {
                 .arg(&n_terms_u)
                 .arg(&n_amps)
                 .launch(cfg)?;
+            crate::execution::record_launch();
         }
         // No host sync: the upload buffers are freed by cudarc's `CudaSlice`
         // drop, which is stream-ordered (`cuMemFreeAsync` after the kernel, or
@@ -852,6 +896,7 @@ impl CudaSvBackendF32 {
                 .arg(&params)
                 .arg(&n_amps)
                 .launch(cfg)?;
+            crate::execution::record_launch();
         }
         Ok(())
     }
@@ -885,6 +930,7 @@ impl CudaSvBackendF32 {
                 .arg(&params)
                 .arg(&n_amps)
                 .launch(cfg)?;
+            crate::execution::record_launch();
         }
         Ok(())
     }

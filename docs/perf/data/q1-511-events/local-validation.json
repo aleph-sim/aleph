@@ -1,0 +1,25 @@
+{
+  "stable_rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "beta_rustc": "rustc 1.100.0-beta.2 (2311729bc 2026-10-01)",
+  "commands": [
+    {
+      "command": "cargo clippy --workspace --all-targets -- -D warnings",
+      "result": "PASS"
+    },
+    {
+      "command": "cargo +beta clippy -p aleph-qec --all-targets -- -D warnings",
+      "result": "PASS"
+    },
+    {
+      "command": "cargo fmt --check",
+      "result": "PASS"
+    },
+    {
+      "command": "cargo test -p aleph-qec --lib queued_now_keeps_heap_sequence_but_future_entries_can_move_earlier",
+      "result": "PASS"
+    }
+  ],
+  "source_hashes_match_remote": true,
+  "cargo_locks_match_snapshot_commits": true,
+  "profile_binary_hashes_match_primary": true
+}

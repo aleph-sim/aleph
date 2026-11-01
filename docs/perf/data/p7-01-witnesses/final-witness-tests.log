@@ -1,0 +1,15 @@
+   Compiling aleph-qec v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-qec)
+    Finished `release` profile [optimized] target(s) in 9.33s
+     Running tests/witness.rs (target/release/deps/witness-0fbae016fa789475)
+
+running 8 tests
+test budgets_tampering_and_incompatible_replay ... ok
+test signatures_group_exact_examples_across_shots_but_keep_decoder_choices ... ok
+test invalid_diagnostics_are_separate_and_fixed_codec_is_checked ... ok
+test malformed_inputs_return_errors_and_pure_logical_tiny_models_certify ... ok
+test capture_matches_ordinary_sampler_and_worker_counts ... ok
+test exhaustive_tiny_reconstruction_and_one_minimality ... ok
+test real_fixtures_replay_certify_and_match_reference_bytes ... ok
+test relay_seed_is_stable_and_nonconvergence_is_not_failure ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s

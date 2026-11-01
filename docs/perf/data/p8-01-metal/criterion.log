@@ -1,0 +1,48 @@
+    Finished `bench` profile [optimized + debuginfo] target(s) in 0.06s
+warning: the following packages contain code that will be rejected by a future version of Rust: block v0.1.6
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running benches/public_pipeline.rs (target/release/deps/public_pipeline-d2567daa9f03dd41)
+Gnuplot not found, using plotters backend
+Benchmarking public_cli/metal/auto/bell2/raw
+Benchmarking public_cli/metal/auto/bell2/raw: Warming up for 1.0000 s
+Benchmarking public_cli/metal/auto/bell2/raw: Collecting 10 samples in estimated 3.2371 s (110 iterations)
+Benchmarking public_cli/metal/auto/bell2/raw: Analyzing
+public_cli/metal/auto/bell2/raw
+                        time:   [26.562 ms 27.099 ms 27.783 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking public_cli/metal/auto/bell2/optimized
+Benchmarking public_cli/metal/auto/bell2/optimized: Warming up for 1.0000 s
+Benchmarking public_cli/metal/auto/bell2/optimized: Collecting 10 samples in estimated 3.0131 s (110 iterations)
+Benchmarking public_cli/metal/auto/bell2/optimized: Analyzing
+public_cli/metal/auto/bell2/optimized
+                        time:   [26.989 ms 27.515 ms 27.981 ms]
+Benchmarking public_cli/metal/auto/qft15/raw
+Benchmarking public_cli/metal/auto/qft15/raw: Warming up for 1.0000 s
+Benchmarking public_cli/metal/auto/qft15/raw: Collecting 10 samples in estimated 3.7124 s (110 iterations)
+Benchmarking public_cli/metal/auto/qft15/raw: Analyzing
+public_cli/metal/auto/qft15/raw
+                        time:   [32.678 ms 33.059 ms 33.292 ms]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) low mild
+Benchmarking public_cli/metal/auto/qft15/optimized
+Benchmarking public_cli/metal/auto/qft15/optimized: Warming up for 1.0000 s
+Benchmarking public_cli/metal/auto/qft15/optimized: Collecting 10 samples in estimated 3.2122 s (110 iterations)
+Benchmarking public_cli/metal/auto/qft15/optimized: Analyzing
+public_cli/metal/auto/qft15/optimized
+                        time:   [28.184 ms 28.687 ms 29.110 ms]
+Benchmarking public_cli/metal/auto/brickwall15_d20/raw
+Benchmarking public_cli/metal/auto/brickwall15_d20/raw: Warming up for 1.0000 s
+Benchmarking public_cli/metal/auto/brickwall15_d20/raw: Collecting 10 samples in estimated 3.6552 s (110 iterations)
+Benchmarking public_cli/metal/auto/brickwall15_d20/raw: Analyzing
+public_cli/metal/auto/brickwall15_d20/raw
+                        time:   [33.122 ms 33.602 ms 34.426 ms]
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) low mild
+  1 (10.00%) high severe
+Benchmarking public_cli/metal/auto/brickwall15_d20/optimized
+Benchmarking public_cli/metal/auto/brickwall15_d20/optimized: Warming up for 1.0000 s
+Benchmarking public_cli/metal/auto/brickwall15_d20/optimized: Collecting 10 samples in estimated 3.6325 s (110 iterations)
+Benchmarking public_cli/metal/auto/brickwall15_d20/optimized: Analyzing
+public_cli/metal/auto/brickwall15_d20/optimized
+                        time:   [33.104 ms 33.638 ms 34.659 ms]

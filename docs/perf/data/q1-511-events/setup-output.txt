@@ -1,0 +1,44 @@
+START main-bench-build
+PASS main-bench-build
+START main-corpus-build
+PASS main-corpus-build
+START main-corpus
+PASS main-corpus
+START candidate-bench-build
+PASS candidate-bench-build
+START candidate-corpus-build
+PASS candidate-corpus-build
+START candidate-corpus
+PASS candidate-corpus
+START original-bench-build
+PASS original-bench-build
+START original-corpus-build
+PASS original-corpus-build
+START original-corpus
+PASS original-corpus
+START neighbor-bench-build
+PASS neighbor-bench-build
+START qec-release
+PASS qec-release
+START sparse-debug
+PASS sparse-debug
+START allocations-debug
+PASS allocations-debug
+START pymatching-oracle
+PASS pymatching-oracle
+START main-wheel-build
+PASS main-wheel-build
+START candidate-wheel-build
+PASS candidate-wheel-build
+START qec-clippy
+Traceback (most recent call last):
+  File "/tmp/aleph-511-events-setup.py", line 39, in <module>
+    run('qec-clippy',['cargo','clippy','-p','aleph-qec','--all-targets','--','-D','warnings'],candidate,extra)
+    ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/aleph-511-events-setup.py", line 11, in run
+    with (out/(name+'.log')).open('w') as f:subprocess.run(argv,cwd=cwd,env=dict(env,**(extra or {})),stdout=f,stderr=subprocess.STDOUT,check=True)
+                                            ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/subprocess.py", line 578, in run
+    raise CalledProcessError(retcode, process.args,
+                             output=stdout, stderr=stderr)
+subprocess.CalledProcessError: Command '['cargo', 'clippy', '-p', 'aleph-qec', '--all-targets', '--', '-D', 'warnings']' returned non-zero exit status 101.

@@ -1,0 +1,77 @@
+{
+  "platform": "macOS arm64; recorded Linux service times replayed, no host timings recaptured",
+  "checks": [
+    {
+      "receipt": "constant-stable-FallbackOnFlag-replay.json",
+      "jobs": 512,
+      "exact_integer_and_job_fields": true,
+      "float_tolerance": 1e-12
+    },
+    {
+      "receipt": "constant-stable-FlagOnly-replay.json",
+      "jobs": 512,
+      "exact_integer_and_job_fields": true,
+      "float_tolerance": 1e-12
+    },
+    {
+      "receipt": "correlated-flags-FallbackOnFlag-replay.json",
+      "jobs": 512,
+      "exact_integer_and_job_fields": true,
+      "float_tolerance": 1e-12
+    },
+    {
+      "receipt": "correlated-flags-FlagOnly-replay.json",
+      "jobs": 512,
+      "exact_integer_and_job_fields": true,
+      "float_tolerance": 1e-12
+    },
+    {
+      "receipt": "golden-f0-near-w1-FallbackOnFlag-replay.json",
+      "jobs": 2048,
+      "exact_integer_and_job_fields": true,
+      "float_tolerance": 1e-12
+    },
+    {
+      "receipt": "golden-f0-near-w1-FlagOnly-replay.json",
+      "jobs": 2048,
+      "exact_integer_and_job_fields": true,
+      "float_tolerance": 1e-12
+    },
+    {
+      "receipt": "golden-f1-near-w1-FallbackOnFlag-replay.json",
+      "jobs": 2048,
+      "exact_integer_and_job_fields": true,
+      "float_tolerance": 1e-12
+    },
+    {
+      "receipt": "golden-f1-near-w1-FlagOnly-replay.json",
+      "jobs": 2048,
+      "exact_integer_and_job_fields": true,
+      "float_tolerance": 1e-12
+    },
+    {
+      "receipt": "rare-spikes-FallbackOnFlag-replay.json",
+      "jobs": 512,
+      "exact_integer_and_job_fields": true,
+      "float_tolerance": 1e-12
+    },
+    {
+      "receipt": "rare-spikes-FlagOnly-replay.json",
+      "jobs": 512,
+      "exact_integer_and_job_fields": true,
+      "float_tolerance": 1e-12
+    },
+    {
+      "receipt": "golden-f0-no-loss-control.json",
+      "jobs": 2048,
+      "exact_integer_and_job_fields": true,
+      "float_tolerance": 1e-12
+    },
+    {
+      "receipt": "golden-f1-no-loss-control.json",
+      "jobs": 2048,
+      "exact_integer_and_job_fields": true,
+      "float_tolerance": 1e-12
+    }
+  ]
+}

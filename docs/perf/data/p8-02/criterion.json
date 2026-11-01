@@ -1,0 +1,50 @@
+[
+  {
+    "case": "brickwall_f64_optimizedfalse",
+    "low_ms": 174.06,
+    "estimate_ms": 174.1,
+    "high_ms": 174.13
+  },
+  {
+    "case": "brickwall_f32_optimizedfalse",
+    "low_ms": 38.079,
+    "estimate_ms": 38.187,
+    "high_ms": 38.288
+  },
+  {
+    "case": "brickwall_f64_optimizedtrue",
+    "low_ms": 74.201,
+    "estimate_ms": 74.389,
+    "high_ms": 74.558
+  },
+  {
+    "case": "brickwall_f32_optimizedtrue",
+    "low_ms": 16.572,
+    "estimate_ms": 16.599,
+    "high_ms": 16.632
+  },
+  {
+    "case": "qft_f64_optimizedfalse",
+    "low_ms": 57.092,
+    "estimate_ms": 57.101,
+    "high_ms": 57.112
+  },
+  {
+    "case": "qft_f32_optimizedfalse",
+    "low_ms": 13.981,
+    "estimate_ms": 13.982,
+    "high_ms": 13.982
+  },
+  {
+    "case": "qft_f64_optimizedtrue",
+    "low_ms": 27.392,
+    "estimate_ms": 27.408,
+    "high_ms": 27.437
+  },
+  {
+    "case": "qft_f32_optimizedtrue",
+    "low_ms": 19.834,
+    "estimate_ms": 19.838,
+    "high_ms": 19.844
+  }
+]

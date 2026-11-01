@@ -1,0 +1,658 @@
+   Compiling aleph-sv v0.3.0 (/tmp/aleph-573-followup/bounded/crates/aleph-sv)
+    Finished `release` profile [optimized] target(s) in 57.63s
+     Running unittests src/lib.rs (target/release/deps/aleph_sv-9ca9a93089d85b2a)
+
+running 409 tests
+test backend::tests::allocate_initialises_zero_state ... ok
+test backend::tests::allocate_zero_qubits_yields_unit_amplitude ... ok
+test backend::tests::allocate_rejects_too_many_qubits ... ok
+test backend::tests::apply_gate_arity_mismatch_rejected ... ok
+test backend::tests::apply_gate_cnot_creates_bell ... ok
+test backend::tests::apply_gate_duplicate_qubit_via_controls ... ok
+test backend::tests::allocated_state_is_cache_line_aligned ... ok
+test backend::tests::apply_gate_legitimate_user_matrix_accepted ... ok
+test backend::tests::apply_gate_external_control_matches_intrinsic_cnot ... ok
+test backend::tests::apply_gate_non_finite_param_rejected ... ok
+test backend::tests::apply_gate_non_unitary_user_matrix_rejected ... ok
+test backend::tests::apply_gate_out_of_range ... ok
+test backend::tests::apply_gate_x_on_q0 ... ok
+test backend::tests::default_cap_still_rejects_above_28 ... ok
+test backend::tests::expectation_identity_string_is_norm ... ok
+test backend::tests::expectation_out_of_range_rejected ... ok
+test backend::tests::expectation_value_rejects_mutated_duplicates ... ok
+test backend::tests::expectation_value_rejects_nan_state ... ok
+test backend::tests::expectation_value_rejects_non_finite_coefficient ... ok
+test backend::tests::cnot_is_involution ... ok
+test backend::tests::expectation_x_on_minus_is_minus_one ... ok
+test backend::tests::expectation_x_on_plus_is_plus_one ... ok
+test backend::tests::expectation_x_on_zero_is_zero ... ok
+test backend::tests::expectation_y_on_zero_is_zero ... ok
+test backend::tests::diagonal_gate_preserves_magnitudes ... ok
+test backend::tests::expectation_z_chain_on_ghz_is_plus_one ... ok
+test backend::tests::expectation_z_on_one_is_minus_one ... ok
+test backend::tests::expectation_z_on_zero_is_plus_one ... ok
+test backend::tests::expectation_zz_sign_table ... ok
+test backend::tests::measure_clamps_p_against_drifted_norm ... ok
+test backend::tests::h_is_involution ... ok
+test backend::tests::measure_plus_state_collapses_to_basis ... ok
+test backend::tests::measure_qubit_out_of_range ... ok
+test backend::tests::measure_rejects_nan_amplitude_state ... ok
+test backend::tests::measure_rejects_nan_in_bit_clear_branch ... ok
+test backend::tests::intrinsic_cnot_matches_external_control ... ok
+test backend::tests::measure_rejects_unnormalised_state ... ok
+test backend::tests::measure_zero_state_returns_false ... ok
+test backend::tests::iswap_then_iswapdg_returns_identity ... ok
+test backend::tests::probabilities_duplicate_qubit_rejected ... ok
+test backend::tests::probabilities_empty_subset_is_one ... ok
+test backend::tests::probabilities_out_of_range_rejected ... ok
+test backend::tests::p1_06_diagonal_fast_path_preserves_norm ... ok
+test backend::tests::probabilities_plus_state_uniform_marginal ... ok
+test backend::tests::probabilities_rejects_nan_state ... ok
+test backend::tests::probabilities_zero_state ... ok
+test backend::tests::raised_cap_allows_more_qubits ... ok
+test backend::tests::sample_bell_state_only_returns_00_or_11 ... ok
+test backend::tests::ry_then_ry_negative_returns_identity ... ok
+test backend::tests::rz_then_rz_negative_returns_identity ... ok
+test backend::tests::sample_rejects_state_with_mismatched_amps_len ... ok
+test backend::tests::rx_then_rx_negative_returns_identity ... ok
+test backend::tests::s_then_sdg_returns_identity ... ok
+test backend::tests::t_then_tdg_returns_identity ... ok
+test backend::tests::sample_rejects_nan_amplitude_state ... ok
+test backend::tests::swap_is_involution ... ok
+test backend::tests::x_squared_is_identity ... ok
+test fp32_measure::tests::expectation_y_on_zero_is_zero ... ok
+test fp32_measure::tests::expectation_zz_sign_table ... ok
+test fp32_measure::tests::measure_plus_state_collapses_to_basis ... ok
+test fp32_measure::tests::probabilities_plus_state_uniform ... ok
+test fp32_measure::tests::measure_qubit_out_of_range ... ok
+test fp32_measure::tests::measure_zero_state_returns_false ... ok
+test fp32_measure::tests::sample_bell_state_only_returns_00_or_11 ... ok
+test backend::tests::sample_zero_shots_returns_empty ... ok
+test fp32_state::tests::getters_and_widen ... ok
+test kernels::aos::apply_3q_prelude_tests::apply_3q_routes_ccz_to_scalar ... ok
+test kernels::aos::apply_3q_prelude_tests::apply_3q_routes_toffoli_to_scalar ... ok
+test kernels::aos::apply_ccz_scalar_tests::ccz_involutive ... ok
+test kernels::aos::apply_ccz_scalar_tests::ccz_symmetric_in_qubit_order ... ok
+test kernels::aos::apply_ccz_scalar_tests::ccz_sign_flips_only_111 ... ok
+test kernels::aos::apply_ccz_scalar_tests::ccz_with_external_control_acts_only_when_ext_set ... ok
+test kernels::aos::apply_toffoli_scalar_tests::ccx_involutive ... ok
+test kernels::aos::apply_toffoli_scalar_tests::ccx_swaps_only_11_target_pair ... ok
+test kernels::aos::apply_toffoli_scalar_tests::ccx_with_external_control_acts_only_when_ext_set ... ok
+test fp32_backend::tests::allocate_initialises_zero_state ... ok
+test backend::tests::sample_zero_state_only_returns_zero ... ok
+test fp32_measure::tests::expectation_y_on_plus_y_eigenstate_is_plus_one ... ok
+test fp32_measure::tests::bell_state_collapse_is_consistent ... ok
+test kernels::aos::apply_3q_prelude_tests::apply_3q_generic_unchanged_on_arbitrary_matrix ... ok
+test kernels::aos::ccz_indexing_tests::ccz_classification_small_n_is_tier_c ... ok
+test kernels::aos::ccz_indexing_tests::ccz_symmetry_mask_is_permutation_invariant ... ok
+test kernels::aos::ccz_tier_a_tests::ccz_tier_a_direct_call_matches_scalar ... ok
+test kernels::aos::ccz_tier_a_tests::ccz_tier_a_outer_walk_low_mask ... ok
+test kernels::aos::ccz_tier_a_tests::ccz_tier_a_with_external_control ... ok
+test kernels::aos::ccz_tier_a_tests::dispatch_ccz_routes_outer_walk_cross_arch ... ok
+test kernels::aos::ccz_tier_a_tests::dispatch_ccz_routes_tier_a_cross_arch ... ok
+test kernels::aos::tests::apply_1q_antidiag_avx512_lowbit_matches_scalar ... ok
+test kernels::aos::ccz_indexing_tests::ccz_pairs_count_exhaustive_n6 ... ok
+test kernels::aos::tests::apply_1q_antidiag_avx512_lowbit_with_control_matches_scalar ... ok
+test kernels::aos::tests::apply_1q_antidiag_avx512_matches_scalar_phased ... ok
+test kernels::aos::tests::apply_1q_antidiag_scalar_matches_generic_phased ... ok
+test kernels::aos::tests::apply_1q_diagonal_avx512_controlled_matches_scalar ... ok
+test kernels::aos::tests::apply_1q_diagonal_scalar_matches_generic_phase ... ok
+test kernels::aos::tests::apply_1q_diagonal_avx512_matches_scalar_on_phase ... ok
+test kernels::aos::tests::apply_1q_diagonal_scalar_with_external_control ... ok
+test kernels::aos::tests::apply_1q_diagonal_scalar_z_on_q0 ... ok
+test kernels::aos::tests::apply_1q_routes_diagonal_phase_through_fast_path ... ok
+test kernels::aos::tests::apply_1q_x_avx512_lowbit_target0_matches_scalar ... ok
+test kernels::aos::tests::apply_1q_routes_non_diagonal_through_generic ... ok
+test kernels::aos::tests::apply_1q_x_avx512_lowbit_target1_matches_scalar ... ok
+test fp32_backend::tests::bell_state_via_h_cnot ... ok
+test backend::tests::unitarity_check_rejects_nan_user_matrix ... ok
+test fp32_measure::tests::expectation_yx_mixed_f32_matches_f64_reference ... ok
+test fp32_backend::tests::allocate_rejects_too_many_qubits ... ok
+test fp32_measure::tests::expectation_z_on_zero_is_plus_one ... ok
+test backend::tests::y_squared_is_identity ... ok
+test fp32_measure::tests::expectation_xz_product_state_f32_matches_f64_reference ... ok
+test backend::tests::z_squared_is_identity ... ok
+test backend::tests::sample_rejects_unnormalised_state ... ok
+test fp32_measure::tests::expectation_x_on_plus_is_plus_one ... ok
+test kernels::aos::tests::apply_1q_x_avx512_lowbit_with_control_matches_scalar ... ok
+test kernels::aos::tests::apply_1q_x_dispatch_n2_no_segfault ... ok
+test kernels::aos::tests::apply_1q_x_avx512_matches_scalar ... ok
+test kernels::aos::tests::apply_1q_x_scalar_external_control_below_target_dispatches_to_scalar ... ok
+test kernels::aos::tests::apply_1q_x_scalar_matches_generic ... ok
+test kernels::aos::tests::apply_1q_x_avx512_matches_scalar_with_control ... ok
+test kernels::aos::tests::apply_1q_y_avx512_lowbit_with_control_matches_scalar ... ok
+test kernels::aos::tests::apply_1q_y_avx512_lowbit_pos_matches_scalar ... ok
+test kernels::aos::tests::apply_1q_y_avx512_neg_matches_scalar ... ok
+test kernels::aos::tests::apply_1q_y_avx512_pos_matches_scalar ... ok
+test kernels::aos::tests::apply_1q_y_scalar_matches_generic_ypos ... ok
+test kernels::aos::tests::apply_1q_y_avx512_matches_generic_pauli_y ... ok
+test backend::tests::normalisation_invariant ... ok
+test kernels::aos::tests::apply_1q_x_dispatch_boundary_n_around_lanes ... ok
+test kernels::aos::tests::apply_2q_avx512_indexing_covers_state_exactly_once ... ok
+test kernels::aos::tests::apply_2q_cnot_avx512_indexing_covers_state_exactly_once ... ok
+test kernels::aos::tests::apply_2q_avx512_generic_with_controls_matches_scalar ... ok
+test kernels::aos::tests::apply_2q_cnot_avx512_tier_bc_indexing_covers_state_exactly_once ... ok
+test kernels::aos::tests::apply_2q_cnot_scalar_matches_dense_scalar_canonical ... ok
+test kernels::aos::tests::apply_2q_cnot_scalar_respects_external_control ... ok
+test kernels::aos::tests::antidiag_classifier_dispatch_matches_generic ... ok
+test kernels::aos::tests::apply_2q_cnot_avx512_tier_c_matches_scalar ... ok
+test kernels::aos::tests::apply_2q_cnot_avx512_tier_a_matches_scalar ... ok
+test kernels::aos::tests::apply_2q_cz_avx512_tier_a_indexing_covers_state_exactly_once ... ok
+test kernels::aos::tests::apply_2q_cnot_avx512_tier_b_matches_scalar ... ok
+test kernels::aos::tests::apply_2q_avx512_generic_matches_scalar ... ok
+test kernels::aos::tests::apply_2q_cz_avx512_tier_a_matches_scalar ... ok
+test kernels::aos::tests::apply_2q_diagonal_avx512_tier_a_with_controls_matches_scalar ... ok
+test kernels::aos::tests::apply_2q_diagonal_scalar_matches_dense_scalar_random_phases ... ok
+test kernels::aos::tests::apply_2q_cz_avx512_tier_a_with_controls_matches_scalar ... ok
+test kernels::aos::tests::apply_2q_prelude_dispatches_cnot_lo_matches_dense ... ok
+test kernels::aos::tests::apply_2q_external_control_skips_when_unset ... ok
+test kernels::aos::tests::apply_2q_diagonal_avx512_tier_a_indexing_covers_state_exactly_once ... ok
+test kernels::aos::tests::apply_2q_prelude_dispatches_cz_matches_dense ... ok
+test kernels::aos::tests::apply_2q_cz_scalar_matches_dense_scalar ... ok
+test kernels::aos::tests::apply_2q_diagonal_avx512_tier_a_matches_scalar ... ok
+test kernels::aos::tests::apply_2q_swap_avx512_tier_a_indexing_covers_state_exactly_once ... ok
+test kernels::aos::tests::apply_2q_prelude_dispatches_cnot_matches_dense ... ok
+test kernels::aos::tests::apply_2q_prelude_dispatches_identity_as_noop ... ok
+test kernels::aos::tests::apply_2q_swap_avx512_tier_a_with_controls_matches_scalar ... ok
+test kernels::aos::tests::apply_2q_prelude_dispatches_swap_matches_dense ... ok
+test kernels::aos::tests::apply_2q_swap_avx512_tier_c_matches_scalar ... ok
+test kernels::aos::tests::apply_2q_swap_scalar_matches_dense_scalar ... ok
+test kernels::aos::tests::apply_2q_swap_avx512_tier_b_matches_scalar ... ok
+test kernels::aos::tests::controls_do_nothing_when_control_zero ... ok
+test kernels::aos::tests::apply_2q_swap_avx512_tier_bc_indexing_covers_state_exactly_once ... ok
+test kernels::aos::tests::h_on_zero_yields_plus ... ok
+test kernels::aos::tests::cnot_flips_target_when_control_set ... ok
+test kernels::aos::tests::cnot_on_zero_state_unchanged ... ok
+test kernels::aos::tests::controls_skip_when_unset ... ok
+test kernels::aos::tests::nan_diagonal_propagates_through_generic_kernel ... ok
+test kernels::aos::tests::nan_off_diagonal_propagates_through_generic_antidiag_kernel ... ok
+test kernels::aos::tests::toffoli_with_single_control_set_is_identity ... ok
+test kernels::aos::tests::x_flips_single_qubit ... ok
+test kernels::aos::tests::x_on_target_1_in_2q_state ... ok
+test kernels::aos::toffoli_indexing_tests::toffoli_classification_clean_tier_a ... ok
+test kernels::aos::tests::prop_2q_diagonal_matches_scalar_aos ... ok
+test kernels::aos::toffoli_indexing_tests::toffoli_classification_tier_b0 ... ok
+test kernels::aos::tests::apply_2q_swap_avx512_tier_a_matches_scalar ... ok
+test kernels::aos::toffoli_indexing_tests::toffoli_classification_tier_b1 ... ok
+test kernels::aos::toffoli_indexing_tests::toffoli_classification_tier_c_small_n ... ok
+test kernels::aos::toffoli_indexing_tests::toffoli_classification_tier_c_mixed_low_controls ... ok
+test kernels::aos::tests::toffoli_flips_target_when_both_controls_set ... ok
+test kernels::aos::tests::tile_2q_matches_whole_state_kernel ... ok
+test kernels::aos::tests::nan_in_both_off_diagonals_still_propagates ... ok
+test kernels::aos::tests::tile_1q_matches_whole_state_kernel ... ok
+test kernels::aos::toffoli_tier_a_tests::dispatch_toffoli_routes_outer_walk_below_target ... ok
+test kernels::aos::toffoli_indexing_tests::toffoli_pairs_disjoint_exhaustive_n6 ... ok
+test kernels::aos::toffoli_tier_a_tests::dispatch_toffoli_falls_through_to_scalar_when_control_below_lanes_bits ... ok
+test kernels::aos::toffoli_tier_a_tests::tier_a_matches_scalar_clean_contract ... ok
+test kernels::aos::toffoli_tier_a_tests::dispatch_toffoli_routes_tier_a_on_avx512 ... ok
+test kernels::aos::toffoli_tier_a_tests::tier_a_with_external_control_clean ... ok
+test kernels::aos::toffoli_tier_a_tests::tier_b1_direct_call_matches_scalar ... ok
+test kernels::aos_f32::tests::cnot_makes_bell_from_plus_zero ... ok
+test kernels::aos::toffoli_tier_a_tests::tier_b0_direct_call_matches_scalar ... ok
+test kernels::aos_f32::tests::x_gate_swaps_q0 ... ok
+test kernels::aos::toffoli_tier_a_tests::dispatch_toffoli_routes_tier_b0_cross_arch ... ok
+test kernels::aos_f32::tests::toffoli_flips_target_when_controls_set ... ok
+test kernels::diagonal_phase::tests::applies_controlled_phase_to_amplitudes ... ok
+test kernels::diagonal_phase::tests::dispatcher_matches_scalar_soa ... ok
+test kernels::aos::tests::aos_apply_1q_matches_scalar_reference ... ok
+test kernels::soa::soa_multi_controlled_tests::apply_3q_soa_identity_is_noop ... ok
+test kernels::shape_8x8_tests::toffoli_tolerates_tiny_noise ... ok
+test kernels::diagonal_phase::tests::soa_matches_aos_on_random_terms ... ok
+test kernels::aos_f32::tests::diag_dispatch_phase_gate ... ok
+test kernels::diagonal_phase::tests::dispatcher_matches_scalar_aos ... ok
+test kernels::aos_f32::tests::diagonal_phase_global_rotation ... ok
+test kernels::aos::toffoli_tier_a_tests::tier_a_outer_walk_control_below_matches_scalar ... ok
+test kernels::par_tests::par_blocks_visits_each_block_once_sequential ... ok
+test kernels::shape_8x8_tests::ccz_tolerates_tiny_noise ... ok
+test kernels::shape_8x8_tests::identity_detected ... ok
+test kernels::shape_8x8_tests::identity_tolerates_tiny_noise ... ok
+test kernels::soa::soa_multi_controlled_tests::apply_ccz_avx512_tier_a_soa_matches_scalar ... ok
+test kernels::soa::soa_multi_controlled_tests::apply_toffoli_avx512_tier_a_outer_walk_soa_matches_scalar ... ok
+test kernels::aos::toffoli_tier_a_tests::dispatch_toffoli_routes_tier_b1_cross_arch ... ok
+test kernels::aos_f32::tests::hadamard_on_zero_is_plus ... ok
+test kernels::soa::soa_multi_controlled_tests::apply_toffoli_avx512_tier_a_soa_matches_scalar ... ok
+test kernels::diagonal_phase::tests::global_phase_applies_to_all ... ok
+test kernels::soa::soa_multi_controlled_tests::apply_toffoli_avx512_tier_b0_soa_matches_scalar ... ok
+test kernels::soa::soa_multi_controlled_tests::apply_toffoli_avx512_tier_b1_soa_matches_scalar ... ok
+test kernels::soa::soa_multi_controlled_tests::apply_toffoli_avx512_tier_b2_soa_matches_scalar ... ok
+test kernels::soa::soa_multi_controlled_tests::ccz_dispatch_soa_involutive_n6_tier_a ... ok
+test kernels::soa::soa_multi_controlled_tests::ccz_scalar_soa_involutive ... ok
+test kernels::diagonal_phase::tests::dispatcher_aos_matches_soa ... ok
+test kernels::soa::soa_multi_controlled_tests::ccz_scalar_soa_sign_flips_only_111 ... ok
+test kernels::soa::soa_multi_controlled_tests::ccz_scalar_soa_matches_dispatch ... ok
+test kernels::diagonal_phase::tests::applies_controlled_phase_soa ... ok
+test kernels::soa::soa_multi_controlled_tests::ccz_soa_dispatch_matches_aos_n5 ... ok
+test kernels::soa::soa_multi_controlled_tests::toffoli_dispatch_soa_involutive_n5_tier_b0 ... ok
+test kernels::shape_8x8_tests::toffoli_detected ... ok
+test kernels::soa::soa_multi_controlled_tests::toffoli_dispatch_soa_involutive_n5_tier_b1 ... ok
+test kernels::soa::soa_multi_controlled_tests::toffoli_dispatch_soa_involutive_n5_tier_b2 ... ok
+test kernels::soa::soa_multi_controlled_tests::toffoli_dispatch_soa_involutive_n6_tier_a ... ok
+test kernels::soa::soa_multi_controlled_tests::toffoli_scalar_soa_external_control_gates ... ok
+test kernels::soa::soa_multi_controlled_tests::toffoli_scalar_soa_flips_target_when_both_controls_set ... ok
+test kernels::shape_8x8_tests::toffoli_rejects_visible_noise ... ok
+test kernels::shape_8x8_tests::ccz_detected ... ok
+test kernels::soa::soa_multi_controlled_tests::ccz_soa_dispatch_matches_aos_n8_tier_a ... ok
+test kernels::soa::soa_multi_controlled_tests::toffoli_scalar_soa_involutive ... ok
+test kernels::soa::soa_multi_controlled_tests::ccz_soa_outer_walk_low_bit_matches_scalar ... ok
+test kernels::soa::soa_multi_controlled_tests::toffoli_scalar_soa_matches_dispatch ... ok
+test kernels::soa::soa_multi_controlled_tests::toffoli_soa_dispatch_matches_aos_n8_tier_a ... ok
+test kernels::soa::soa_multi_controlled_tests::toffoli_soa_outer_walk_control_below_target_matches_scalar ... ok
+test kernels::soa::soa_multi_controlled_tests::apply_ccz_avx512_tier_a_outer_walk_soa_matches_scalar ... ok
+test kernels::soa::tests::apply_1q_antidiag_soa_avx512_matches_scalar ... ok
+test kernels::soa::tests::apply_1q_antidiag_soa_scalar_matches_aos ... ok
+test kernels::soa::tests::apply_1q_diagonal_soa_matches_aos_phase ... ok
+test kernels::soa::tests::apply_1q_diagonal_soa_matches_aos_with_control ... ok
+test kernels::soa::tests::apply_1q_x_soa_avx512_lowbit_all_targets_match_scalar ... ok
+test kernels::aos_f32::tests::kq_k2_swap_matrix ... ok
+test kernels::soa::tests::apply_1q_x_soa_avx512_matches_scalar ... ok
+test kernels::soa::tests::apply_1q_x_soa_dispatch_boundary_n ... ok
+test kernels::soa::tests::apply_1q_y_soa_dispatch_low_target_routes_to_scalar ... ok
+test kernels::soa::tests::apply_1q_y_soa_avx512_pos_matches_scalar ... ok
+test kernels::soa::soa_multi_controlled_tests::toffoli_soa_dispatch_matches_aos_n5 ... ok
+test kernels::soa::tests::apply_1q_y_soa_scalar_pos_matches_aos ... ok
+test kernels::soa::tests::apply_1q_antidiag_soa_dispatch_low_target_routes_to_scalar ... ok
+test kernels::soa::tests::external_control_fires_when_set_soa ... ok
+test kernels::soa::tests::cnot_creates_bell_soa ... ok
+test kernels::soa::soa_multi_controlled_tests::dispatch_toffoli_soa_falls_through_to_scalar_when_control_below_lanes_bits ... ok
+test kernels::soa::tests::h_on_zero_yields_plus_soa ... ok
+test kernels::soa::tests::soa_apply_2q_cnot_avx512_tier_b_matches_scalar ... ok
+test kernels::soa::tests::soa_apply_2q_cnot_avx512_tier_c_matches_scalar ... ok
+test kernels::soa::tests::soa_apply_2q_cnot_scalar_matches_dense_scalar ... ok
+test kernels::soa::tests::apply_1q_soa_matches_aos ... ok
+test kernels::soa::tests::external_control_skips_when_unset_soa ... ok
+test kernels::soa::tests::soa_apply_2q_cz_avx512_tier_a_matches_scalar ... ok
+test kernels::soa::tests::apply_1q_x_soa_scalar_matches_aos ... ok
+test kernels::soa::tests::soa_apply_2q_diagonal_scalar_matches_dense_scalar ... ok
+test kernels::soa::tests::soa_apply_2q_tier_bc_indexing_covers_state_exactly_once ... ok
+test kernels::soa::tests::soa_apply_2q_tier_a_indexing_covers_state_exactly_once ... ok
+test kernels::soa::tests::soa_dispatch_swap_tier_c_rejects_external_control_at_qubit_2 ... ok
+test kernels::soa::tests::soa_apply_2q_cnot_avx512_tier_a_matches_scalar ... ok
+test kernels::soa::tests::toffoli_with_single_control_set_is_identity_soa ... ok
+test kernels::soa::tests::soa_apply_2q_cz_scalar_matches_dense_scalar ... ok
+test kernels::tests::classify_1q_antidiag_pauli_x ... ok
+test backend::tests::tiled_block_equals_gatewise ... ok
+test kernels::tests::classify_1q_antidiag_pauli_y ... ok
+test kernels::tests::classify_perm_accepts_cnot_with_fp_noise_within_perm_tol ... ok
+test kernels::tests::classify_perm_identity ... ok
+test kernels::soa::tests::soa_apply_2q_diagonal_avx512_tier_a_matches_scalar ... ok
+test kernels::tests::classify_perm_rejects_almost_permutation_with_off_diag ... ok
+test kernels::tests::classify_perm_rejects_cnot_with_im_perturbation_only ... ok
+test kernels::tests::classify_perm_rejects_cnot_with_re_perturbation_only ... ok
+test kernels::tests::classify_perm_rejects_cz ... ok
+test kernels::tests::classify_perm_rejects_hadamard_tensor_hadamard ... ok
+test kernels::tests::classify_perm_rejects_nan_entry ... ok
+test kernels::tests::classify_perm_rejects_phased_cnot ... ok
+test kernels::soa::tests::soa_apply_2q_prelude_dispatches_identity_as_noop ... ok
+test kernels::tests::classify_perm_swap ... ok
+test kernels::tests::control_mask_combines_bits ... ok
+test kernels::tests::classify_1q_antidiag_nan_off_diagonal_returns_none ... ok
+test kernels::tests::control_mask_empty_is_zero ... ok
+test kernels::tests::control_mask_is_order_independent ... ok
+test kernels::par_tests::par_blocks_visits_each_block_once_parallel_across_grains ... ok
+test kernels::soa::tests::apply_2q_soa_matches_aos ... ok
+test kernels::tests::cz_signature_rejects_identity_diagonals ... ok
+test kernels::tests::cz_signature_rejects_phase_pi_over_two ... ok
+test kernels::soa::tests::soa_apply_2q_swap_avx512_tier_b_matches_scalar ... ok
+test kernels::tests::cz_signature_rejects_phase_one_microradian ... ok
+test kernels::soa::tests::soa_apply_2q_swap_avx512_tier_a_matches_scalar ... ok
+test kernels::soa::tests::x_flips_single_qubit_soa ... ok
+test kernels::tests::indexing_coverage::coverage_matches_naive_no_controls ... ok
+test kernels::tests::classify_perm_cnot_hi ... ok
+test kernels::tests::classify_perm_rejects_x_kron_i ... ok
+test kernels::tests::cz_signature_accepts_canonical ... ok
+test kernels::tests::is_antidiagonal_2x2_pauli_x ... ok
+test kernels::tests::is_antidiagonal_2x2_rejects_hadamard ... ok
+test kernels::tests::is_antidiagonal_2x2_pauli_y ... ok
+test kernels::tests::indexing_coverage::coverage_matches_naive_with_one_control_above_target ... ok
+test kernels::tests::expand_with_fixed_empty_fixed_is_identity ... ok
+test kernels::tests::is_antidiagonal_2x2_rejects_nan_diagonal ... ok
+test kernels::tests::is_antidiagonal_2x2_rejects_pauli_z ... ok
+test kernels::tests::is_diagonal_2x2_pauli_z ... ok
+test kernels::tests::expand_with_fixed_control_set_high ... ok
+test kernels::tests::is_diagonal_2x2_rejects_hadamard ... ok
+test kernels::tests::is_diagonal_2x2_rejects_nan_off_diagonal ... ok
+test kernels::tests::is_diagonal_2x2_rz_random_theta ... ok
+test kernels::tests::expand_with_fixed_two_controls_around_target ... ok
+test kernels::soa::tests::soa_dispatch_cnot_tier_c_rejects_external_control_at_qubit_2 ... ok
+test kernels::soa::tests::toffoli_flips_target_when_both_controls_set_soa ... ok
+test kernels::tests::is_diagonal_4x4_accepts_identity ... ok
+test kernels::tests::is_diagonal_4x4_rejects_cnot ... ok
+test kernels::tests::is_diagonal_4x4_accepts_subepsilon_off_diagonal ... ok
+test kernels::tests::is_diagonal_4x4_rejects_inf_off_diagonal ... ok
+test kernels::tests::is_diagonal_2x2_accepts_subepsilon_off_diagonal ... ok
+test kernels::soa::tests::soa_apply_2q_swap_avx512_tier_c_matches_scalar ... ok
+test kernels::tests::indexing_coverage::coverage_pairs_are_disjoint_and_in_range ... ok
+test kernels::tests::expand_with_fixed_target_only_passthroughs_k ... ok
+test kernels::tests::is_diagonal_4x4_rejects_nan_off_diagonal ... ok
+test kernels::tests::is_diagonal_4x4_rejects_superepsilon_off_diagonal ... ok
+test kernels::tests::is_diagonal_4x4_rejects_swap ... ok
+test kernels::tests::is_diagonal_2x2_rejects_pauli_x ... ok
+test kernels::tests::classify_perm_cnot_lo ... ok
+test kernels::tests::is_diagonal_2x2_rejects_superepsilon_off_diagonal ... ok
+test kernels::tuning::tests::cpu_model_env_override ... ok
+test kernels::tuning::tests::pos_class_boundaries ... ok
+test kernels::tuning::tests::pos_class_small_n_does_not_underflow ... ok
+test kernels::tests::is_diagonal_4x4_accepts_cz ... ok
+test backend::tests::tiled_block_thread_invariant ... ok
+test kernels::tests::classify_1q_antidiag_generic_anti ... ok
+test kernels::unitary_kq::tests::aos_soa_agree ... ok
+test kernels::unitary_kq::tests::apply_kq_3q_identity_is_noop ... ok
+test kernels::unitary_kq::tests::apply_kq_swap_matches_manual ... ok
+test kernels::tuning::tests::cpu_model_brand_match ... ok
+test kernels::unitary_kq::tests::index_coverage_disjoint_and_complete ... ok
+test kernels::tuning::tests::generic_cell_is_the_legacy_default ... ok
+test kernels::unitary_kq::tests::dispatcher_matches_scalar_dense ... ok
+test kernels::tuning::tests::reference_cpu_high_traffic_cells_measured_as_default ... ok
+test measure_soa::tests::expectation_x_on_zero_is_zero_slow_path ... ok
+test measure_soa::tests::measure_zero_state_returns_false ... ok
+test measure_soa::tests::probabilities_empty_subset_is_one ... ok
+test measure_soa::tests::probabilities_out_of_range_rejected ... ok
+test measure_soa::tests::probabilities_zero_state_full_basis ... ok
+test kernels::unitary_kq::tests::index_coverage_top_qubits_and_nonadjacent ... ok
+test measure_soa::tests::sample_zero_state_only_returns_zero ... ok
+test measure_soa::tests::validate_rejects_empty_state ... ok
+test measure_soa::tests::validate_rejects_mismatched_lens ... ok
+test noise::apply::apply_tests::amplitude_damping_fixes_ground_state ... ok
+test measure_soa::tests::expectation_z_on_zero_is_plus_one ... ok
+test noise::apply::apply_tests::amplitude_damping_gamma1_resets_excited_state ... ok
+test measure_soa::tests::validate_rejects_nan_amplitude ... ok
+test noise::apply::apply_tests::certain_x_flips_basis_state ... ok
+test measure_soa::tests::validate_rejects_unnormalised_state ... ok
+test noise::apply::apply_tests::depolarizing_2q_stays_normalized ... ok
+test noise::apply::apply_tests::phase_damping_preserves_norm ... ok
+test noise::apply::apply_tests::general_channel_preserves_norm ... ok
+test noise::apply::apply_tests::readout_flips_all_bits_when_certain ... ok
+test noise::apply::apply_tests::readout_identity_is_noop ... ok
+test noise::apply::tests::shot_seed_is_deterministic_and_distinct ... ok
+test noise::apply::apply_tests::certain_identity_is_noop ... ok
+test measure::tests::z_fast_path_matches_slow_path ... ok
+test noise::error::tests::amplitude_damping_is_cptp ... ok
+test noise::error::tests::bit_flip_is_pauli_mix ... ok
+test noise::error::tests::depolarizing_1q_weights_sum_to_one_and_match_aer ... ok
+test noise::error::tests::depolarizing_2q_weights_sum_to_one_and_match_aer ... ok
+test noise::error::tests::pauli_error_normalizes_input ... ok
+test noise::error::tests::phase_damping_is_cptp ... ok
+test noise::error::tests::phase_flip_is_pauli_mix ... ok
+test kernels::unitary_kq::tests::target_bit_insertion_matches_general_walk ... ok
+test noise::execution::tests::large_state_budget_can_be_raised_without_allocating_the_state ... ok
+test noise::execution::tests::plan_includes_vectorized_matrix_and_control_spills ... ok
+test noise::execution::tests::malformed_channels_rejected_before_trajectory ... ok
+test noise::execution::tests::fused_matrix_inputs_cannot_bypass_validation ... ok
+test noise::model::tests::all_qubit_and_specific_concatenate_in_order ... ok
+test noise::model::tests::readout_round_trips ... ok
+test noise::execution::tests::zero_shots_and_budget_boundaries ... ok
+test sampling::tests::cumulative_boundaries_skip_zeros_and_keep_tiny_branches ... ok
+test sampling::tests::degenerate_1_0_0_0_always_returns_0 ... ok
+test sampling::tests::near_normalised_1_plus_1e_minus_15_builds_and_draws ... ok
+test sampling::tests::low_shot_validation_and_rng_contract_all_cpu_layouts ... ok
+test sampling::tests::single_index_always_returns_0 ... ok
+test noise::apply::prop_tests::apply_channel_preserves_norm ... ok
+test soa_backend::tests::allocate_rejects_too_many_qubits ... ok
+test soa_backend::tests::allocate_initialises_zero_ket ... ok
+test sampling::tests::multi_shot_mapping_remains_alias_bit_exact ... ok
+test soa_backend::tests::apply_gate_arity_mismatch_rejected ... ok
+test soa_backend::tests::apply_gate_cnot_creates_bell ... ok
+test soa_backend::tests::apply_gate_h_on_zero ... ok
+test soa_backend::tests::apply_gate_non_unitary_user_matrix_rejected ... ok
+test soa_backend::tests::expectation_z_chain_on_ghz_is_plus_one ... ok
+test sampling::tests::bell_only_returns_0_or_3 ... ok
+test soa_backend::tests::measure_rejects_nan_amplitude_state ... ok
+test soa_backend::tests::probabilities_plus_state_uniform_marginal ... ok
+test soa_backend::tests::sample_rejects_unnormalised_state ... ok
+test soa_state::tests::getters_match_construction ... ok
+test soa_state::tests::to_aos_roundtrips_paired_values ... ok
+test state::tests::getters_match_construction ... ok
+test soa_backend::tests::sample_bell_state_only_returns_00_or_11 ... ok
+test validation::tests::identity_is_unitary ... ok
+test validation::tests::nan_entry_propagates_to_output ... ok
+test validation::tests::scaled_identity_is_not_unitary ... ok
+test soa_state::tests::to_aos_rejects_mismatched_lens - should panic ... ok
+test measure::tests::probabilities_full_basis_sums_to_one ... ok
+test sampling::tests::uniform_8_outcomes_within_5_sigma_at_1m_draws ... ok
+test soa_backend::tests::allocated_soa_state_is_cache_line_aligned ... ok
+test noise::execution::tests::sparse_result_avoids_dense_output_limit ... ok
+test noise::execution::tests::reused_chunks_match_fresh_seeded_reference ... ok
+
+test result: ok. 409 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.26s
+
+     Running tests/cancel_oracle.rs (target/release/deps/cancel_oracle-0f6b97befcd9afee)
+
+running 4 tests
+test nested_cancellation_preserves_state ... ok
+test two_qubit_and_controlled_pairs_preserve_state ... ok
+test parametric_and_adjoint_pairs_preserve_state ... ok
+test random_circuit_state_preserved ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/commute_oracle.rs (target/release/deps/commute_oracle-19401b2ac45a96d8)
+
+running 3 tests
+test non_commuting_pairs_differ ... ok
+test commuting_pairs_preserve_state ... ok
+test commute_implies_reorder_equal ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/dce_oracle.rs (target/release/deps/dce_oracle-da3ead92d084a6e6)
+
+running 3 tests
+test dead_ancilla_branch_preserves_data_marginal ... ok
+test entangled_unmeasured_qubit_kept_preserves_marginal ... ok
+test partial_measurement_preserves_marginal ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/dist_oracle.rs (target/release/deps/dist_oracle-3cd96e9a89724da5)
+
+running 23 tests
+test exchange_cpu_multi_bit_is_product_of_swaps ... ok
+test dag_allows_commuting_reorders ... ok
+test lookahead_moves_less_on_brickwall ... ok
+test mutation_dropping_an_exchange_breaks_oracle ... ok
+test reordering_non_commuting_cnots_is_detectable ... ok
+test ghz_all_layouts ... ok
+test required_qubit_in_top_slot_k2_oracle ... ok
+test trailing_relabel_swap ... ok
+test iswap_and_controlled_iswap_on_top_slot_and_globals ... ok
+test rz_on_top_qubit_is_rank_phase_not_global ... ok
+test toffoli_and_controlled_with_global_controls ... ok
+test tight_m_prefetch_cap_oracle ... ok
+test qft_all_layouts ... ok
+test brickwall_all_layouts ... ok
+test mid_circuit_relabel_then_lookahead ... ok
+test every_diagonal_gate_on_global_positions ... ok
+test prop_any_initial_map_matches ... ok
+test prop_initial_placement_matches ... ok
+test prop_random_circuits_match ... ok
+test prop_all_gate_families_with_controls ... ok
+test prop_compile_matches ... ok
+test prop_every_dag_order_is_equivalent ... ok
+test grover_n8_matches ... ok
+
+test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.77s
+
+     Running tests/expectation_query.rs (target/release/deps/expectation_query-6a11b03d62d66635)
+
+running 14 tests
+test barrier_does_not_entangle_support_and_order_is_kept ... ok
+test finite_parameters_diagonal_scope_and_sum_overflow_are_guarded ... ok
+test manual_diagonal_high_bits_and_tiled_controls ... ok
+test global_and_overflow_cones_reject_before_state_allocation ... ok
+test rejects_all_nonunitary_input_even_when_disjoint_or_analytic ... ok
+test rejects_invalid_manual_ir_and_mutated_paulis ... ok
+test identity_zero_coefficients_and_shared_states ... ok
+test reordered_controlled_manual_kq_preserves_msb_operand_contract ... ok
+test nontrivial_relabeling_exposes_logical_maps ... ok
+test canonical_five_qubit_matrix_stays_within_query_workspace_contract ... ok
+test shallow_128q_analytic_pairs_and_disjoint_cones_do_not_union ... ok
+test aer_fixture_amplitudes_independently_contract_pauli_expectations ... ok
+test p3_10_shallow_128q_matches_independent_window_reference ... ok
+test random_controls_fusion_tiling_and_permutation_match_full_sv ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/fp32_equiv.rs (target/release/deps/fp32_equiv-05dd26c6bbbefc5a)
+
+running 3 tests
+test property::fp32_tracks_f64_random ... ok
+test property::fp32_preserves_norm ... ok
+test tier1_f32_matches_f64 ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+     Running tests/fp32_simd_scalar.rs (target/release/deps/fp32_simd_scalar-0bea72cc7ae1844f)
+
+running 5 tests
+test diagonal_phase_simd_matches_scalar ... ok
+test dense_2q_simd_matches_scalar ... ok
+test diag_1q_simd_matches_scalar ... ok
+test dense_1q_simd_matches_scalar ... ok
+test kq_simd_matches_scalar ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/fuse_1q_oracle.rs (target/release/deps/fuse_1q_oracle-f38c71330cc7987e)
+
+running 1 test
+test fused_matches_unfused_on_random_circuit ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/fuse_2q_oracle.rs (target/release/deps/fuse_2q_oracle-1023f366e1ecfd7d)
+
+running 6 tests
+test fuse2q_alone_preserves_state_across_fence ... ok
+test pre_1q_absorption_preserves_state ... ok
+test mixed_chain_preserves_state ... ok
+test reversed_operand_merge_preserves_state ... ok
+test post_1q_absorption_preserves_state ... ok
+test same_pair_merge_preserves_state ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/manual_fused_ir.rs (target/release/deps/manual_fused_ir-a38d48a086652bf7)
+
+running 9 tests
+test aos_rejects_invalid_inputs_without_mutation ... ok
+test fp32_rejects_invalid_inputs_without_mutation ... ok
+test generated_fused_fp32_matches_raw ... ok
+test generated_fused_aos_matches_raw ... ok
+test generated_fused_soa_matches_raw ... ok
+test soa_rejects_invalid_inputs_without_mutation ... ok
+test aos_matches_dense_oracle ... ok
+test fp32_matches_dense_oracle ... ok
+test soa_matches_dense_oracle ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/multi_controlled_proptest.rs (target/release/deps/multi_controlled_proptest-4f6ee711a282c1f2)
+
+running 4 tests
+test ccx_single_application_acts_on_all_ones_basis ... ok
+test ccz_is_involutive ... ok
+test ccz_symmetric_in_qubit_order ... ok
+test ccx_is_involutive ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/noise_driver.rs (target/release/deps/noise_driver-24065a9f0a90dfd5)
+
+running 3 tests
+test empty_model_reproduces_noiseless_distribution ... ok
+test noise_actually_fires_under_correct_gate_name ... ok
+test deterministic_same_seed_same_counts ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/noise_oracle.rs (target/release/deps/noise_oracle-1492b79110d194ea)
+
+running 6 tests
+test oracle_combined_ghz3 ... ok
+test oracle_depol_h ... ok
+test oracle_amp_damp ... ok
+test oracle_depol_cx ... ok
+test oracle_phase_damp ... ok
+test oracle_readout ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/policy_invariance.rs (target/release/deps/policy_invariance-035ef5eb8e28be25)
+
+running 3 tests
+test cnot_is_policy_invariant ... ok
+test dense_2q_is_policy_invariant ... ok
+test one_q_generic_h_is_policy_invariant ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/relabel_oracle.rs (target/release/deps/relabel_oracle-1c4f28136b91e9f1)
+
+running 5 tests
+test measure_qubit_reported_logical_after_relabel ... ok
+test relabel_tile_unpermute_transparent_fp32 ... ok
+test run_optimized_matches_raw_default_pipeline ... ok
+test relabel_tile_unpermute_transparent_soa ... ok
+test relabel_tile_unpermute_transparent ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/relabel_property.rs (target/release/deps/relabel_property-dcb33f099ac78297)
+
+running 3 tests
+test tiled_pipeline_thread_invariant ... ok
+test run_optimized_matches_raw ... ok
+test relabel_tile_small_width_matches_raw ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/sampling_convergence.rs (target/release/deps/sampling_convergence-3e200a11829c73bf)
+
+running 1 test
+test bell_state_1m_shots_converges_to_uniform_on_phi_plus ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/single_shot.rs (target/release/deps/single_shot-09ba0c46ac2d5d57)
+
+running 2 tests
+test noise_with_pauli_kraus_and_readout_is_worker_invariant ... ok
+test single_and_many_draws_match_analytic_distribution ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/tier1.rs (target/release/deps/tier1-f5228fdc971b9c6d)
+
+running 9 tests
+test ghz_25_runs ... ignored, n=25 needs ~512 MiB state vector; ROADMAP Phase-0 exit criterion. Run with `cargo test --release -- --ignored ghz_25_runs`.
+test ghz_2 ... ok
+test ghz_5 ... ok
+test run_with_outcomes_records_in_instruction_order ... ok
+test ghz_10 ... ok
+test random_clifford_t_8q_is_deterministic_and_normalised ... ok
+test grover_3_one_marked ... ok
+test qft_3_on_one_probabilities_are_uniform ... ok
+test ghz_20_runs ... ok
+
+test result: ok. 8 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/tiled_oracle.rs (target/release/deps/tiled_oracle-5f892684c2e01e81)
+
+running 1 test
+test tiled_driver_matches_raw_reference ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests/unitary_1q_diag_dispatch.rs (target/release/deps/unitary_1q_diag_dispatch-2da70811b43bc2eb)
+
+running 1 test
+test naive_backend_executes_unitary_1q_diag ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/unitary_1q_diag_dispatch_soa.rs (target/release/deps/unitary_1q_diag_dispatch_soa-7e01a93c1855bbca)
+
+running 1 test
+test soa_backend_executes_unitary_1q_diag ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s

@@ -1,0 +1,453 @@
+{
+  "method": "two-sided equal-tailed Clopper-Pearson 95%",
+  "seed": 566,
+  "scipy": "1.16.2",
+  "numpy": "2.5.4",
+  "reference_cases": 3633,
+  "max_absolute_reference_error": 6.233347171757941e-13,
+  "numerical_rejections": [],
+  "exact_coverage": [
+    {
+      "shots": 1,
+      "probability": 0,
+      "coverage": 1.0
+    },
+    {
+      "shots": 1,
+      "probability": 0.0001,
+      "coverage": 0.9999
+    },
+    {
+      "shots": 1,
+      "probability": 0.001,
+      "coverage": 0.9989999999999996
+    },
+    {
+      "shots": 1,
+      "probability": 0.01,
+      "coverage": 0.9899999999999999
+    },
+    {
+      "shots": 1,
+      "probability": 0.025,
+      "coverage": 0.9749999999999996
+    },
+    {
+      "shots": 1,
+      "probability": 0.05,
+      "coverage": 0.9999999999999996
+    },
+    {
+      "shots": 1,
+      "probability": 0.2,
+      "coverage": 0.9999999999999996
+    },
+    {
+      "shots": 1,
+      "probability": 0.5,
+      "coverage": 0.9999999999999999
+    },
+    {
+      "shots": 1,
+      "probability": 0.9,
+      "coverage": 1.0
+    },
+    {
+      "shots": 1,
+      "probability": 0.99,
+      "coverage": 0.99
+    },
+    {
+      "shots": 1,
+      "probability": 0.9999,
+      "coverage": 0.9999
+    },
+    {
+      "shots": 1,
+      "probability": 1,
+      "coverage": 1.0
+    },
+    {
+      "shots": 2,
+      "probability": 0,
+      "coverage": 1.0
+    },
+    {
+      "shots": 2,
+      "probability": 0.0001,
+      "coverage": 0.9998000100000014
+    },
+    {
+      "shots": 2,
+      "probability": 0.001,
+      "coverage": 0.9980010000000005
+    },
+    {
+      "shots": 2,
+      "probability": 0.01,
+      "coverage": 0.9801000000000002
+    },
+    {
+      "shots": 2,
+      "probability": 0.025,
+      "coverage": 0.999375
+    },
+    {
+      "shots": 2,
+      "probability": 0.05,
+      "coverage": 0.9975000000000003
+    },
+    {
+      "shots": 2,
+      "probability": 0.2,
+      "coverage": 0.9999999999999999
+    },
+    {
+      "shots": 2,
+      "probability": 0.5,
+      "coverage": 1.0000000000000002
+    },
+    {
+      "shots": 2,
+      "probability": 0.9,
+      "coverage": 0.99
+    },
+    {
+      "shots": 2,
+      "probability": 0.99,
+      "coverage": 0.9801
+    },
+    {
+      "shots": 2,
+      "probability": 0.9999,
+      "coverage": 0.9998000100000001
+    },
+    {
+      "shots": 2,
+      "probability": 1,
+      "coverage": 1.0
+    },
+    {
+      "shots": 5,
+      "probability": 0,
+      "coverage": 1.0
+    },
+    {
+      "shots": 5,
+      "probability": 0.0001,
+      "coverage": 0.9995000999899988
+    },
+    {
+      "shots": 5,
+      "probability": 0.001,
+      "coverage": 0.9950099900049989
+    },
+    {
+      "shots": 5,
+      "probability": 0.01,
+      "coverage": 0.9990198503999996
+    },
+    {
+      "shots": 5,
+      "probability": 0.025,
+      "coverage": 0.9940566796875
+    },
+    {
+      "shots": 5,
+      "probability": 0.05,
+      "coverage": 0.9774075000000002
+    },
+    {
+      "shots": 5,
+      "probability": 0.2,
+      "coverage": 0.9932799999999998
+    },
+    {
+      "shots": 5,
+      "probability": 0.5,
+      "coverage": 0.9999999999999999
+    },
+    {
+      "shots": 5,
+      "probability": 0.9,
+      "coverage": 0.9914399999999999
+    },
+    {
+      "shots": 5,
+      "probability": 0.99,
+      "coverage": 0.9990198504
+    },
+    {
+      "shots": 5,
+      "probability": 0.9999,
+      "coverage": 0.9995000999900006
+    },
+    {
+      "shots": 5,
+      "probability": 1,
+      "coverage": 1.0
+    },
+    {
+      "shots": 10,
+      "probability": 0,
+      "coverage": 1.0
+    },
+    {
+      "shots": 10,
+      "probability": 0.0001,
+      "coverage": 0.9990004498800221
+    },
+    {
+      "shots": 10,
+      "probability": 0.001,
+      "coverage": 0.9900448802097482
+    },
+    {
+      "shots": 10,
+      "probability": 0.01,
+      "coverage": 0.9957337997571686
+    },
+    {
+      "shots": 10,
+      "probability": 0.025,
+      "coverage": 0.9753884979991145
+    },
+    {
+      "shots": 10,
+      "probability": 0.05,
+      "coverage": 0.9884964426207036
+    },
+    {
+      "shots": 10,
+      "probability": 0.2,
+      "coverage": 0.9936306176000005
+    },
+    {
+      "shots": 10,
+      "probability": 0.5,
+      "coverage": 0.9785156250000004
+    },
+    {
+      "shots": 10,
+      "probability": 0.9,
+      "coverage": 0.9872048016000001
+    },
+    {
+      "shots": 10,
+      "probability": 0.99,
+      "coverage": 0.9957337997571686
+    },
+    {
+      "shots": 10,
+      "probability": 0.9999,
+      "coverage": 0.9990004498800211
+    },
+    {
+      "shots": 10,
+      "probability": 1,
+      "coverage": 1.0
+    },
+    {
+      "shots": 20,
+      "probability": 0,
+      "coverage": 1.0
+    },
+    {
+      "shots": 20,
+      "probability": 0.0001,
+      "coverage": 0.9980018988604842
+    },
+    {
+      "shots": 20,
+      "probability": 0.001,
+      "coverage": 0.9801888648295352
+    },
+    {
+      "shots": 20,
+      "probability": 0.01,
+      "coverage": 0.9831406623643484
+    },
+    {
+      "shots": 20,
+      "probability": 0.025,
+      "coverage": 0.9870447149413408
+    },
+    {
+      "shots": 20,
+      "probability": 0.05,
+      "coverage": 0.9840984739802369
+    },
+    {
+      "shots": 20,
+      "probability": 0.2,
+      "coverage": 0.9784889986332086
+    },
+    {
+      "shots": 20,
+      "probability": 0.5,
+      "coverage": 0.958610534667969
+    },
+    {
+      "shots": 20,
+      "probability": 0.9,
+      "coverage": 0.9887468658354911
+    },
+    {
+      "shots": 20,
+      "probability": 0.99,
+      "coverage": 0.9831406623643484
+    },
+    {
+      "shots": 20,
+      "probability": 0.9999,
+      "coverage": 0.9980018988604845
+    },
+    {
+      "shots": 20,
+      "probability": 1,
+      "coverage": 1.0
+    },
+    {
+      "shots": 100,
+      "probability": 0,
+      "coverage": 1.0
+    },
+    {
+      "shots": 100,
+      "probability": 0.0001,
+      "coverage": 0.99004933869137
+    },
+    {
+      "shots": 100,
+      "probability": 0.001,
+      "coverage": 0.9953619316095759
+    },
+    {
+      "shots": 100,
+      "probability": 0.01,
+      "coverage": 0.9816259635553506
+    },
+    {
+      "shots": 100,
+      "probability": 0.025,
+      "coverage": 0.9870223912414503
+    },
+    {
+      "shots": 100,
+      "probability": 0.05,
+      "coverage": 0.9826070607121811
+    },
+    {
+      "shots": 100,
+      "probability": 0.2,
+      "coverage": 0.9674049169197058
+    },
+    {
+      "shots": 100,
+      "probability": 0.5,
+      "coverage": 0.9647997997822947
+    },
+    {
+      "shots": 100,
+      "probability": 0.9,
+      "coverage": 0.9556901071912225
+    },
+    {
+      "shots": 100,
+      "probability": 0.99,
+      "coverage": 0.9816259635553501
+    },
+    {
+      "shots": 100,
+      "probability": 0.9999,
+      "coverage": 0.9900493386913719
+    },
+    {
+      "shots": 100,
+      "probability": 1,
+      "coverage": 1.0
+    }
+  ],
+  "simulated_coverage": [
+    {
+      "shots": 1000,
+      "probability": 1e-06,
+      "repeats": 20000,
+      "coverage": 0.99905,
+      "monte_carlo_standard_error": 0.00021784139872852524
+    },
+    {
+      "shots": 1000,
+      "probability": 0.0001,
+      "repeats": 20000,
+      "coverage": 0.9956,
+      "monte_carlo_standard_error": 0.0004680085469305
+    },
+    {
+      "shots": 1000,
+      "probability": 0.01,
+      "repeats": 20000,
+      "coverage": 0.97765,
+      "monte_carlo_standard_error": 0.0010452386689172952
+    },
+    {
+      "shots": 1000,
+      "probability": 0.5,
+      "repeats": 20000,
+      "coverage": 0.954,
+      "monte_carlo_standard_error": 0.0014812832274754217
+    },
+    {
+      "shots": 1000,
+      "probability": 0.9999,
+      "repeats": 20000,
+      "coverage": 0.99475,
+      "monte_carlo_standard_error": 0.0005110008561636652
+    },
+    {
+      "shots": 1000000,
+      "probability": 1e-06,
+      "repeats": 20000,
+      "coverage": 0.9796,
+      "monte_carlo_standard_error": 0.0009995959183590132
+    },
+    {
+      "shots": 1000000,
+      "probability": 0.0001,
+      "repeats": 20000,
+      "coverage": 0.9575,
+      "monte_carlo_standard_error": 0.0014264247263700946
+    },
+    {
+      "shots": 1000000,
+      "probability": 0.01,
+      "repeats": 20000,
+      "coverage": 0.95045,
+      "monte_carlo_standard_error": 0.0015345161696769438
+    },
+    {
+      "shots": 1000000,
+      "probability": 0.5,
+      "repeats": 20000,
+      "coverage": 0.95065,
+      "monte_carlo_standard_error": 0.0015315772507451266
+    },
+    {
+      "shots": 1000000,
+      "probability": 0.9999,
+      "repeats": 20000,
+      "coverage": 0.95465,
+      "monte_carlo_standard_error": 0.0014712813717980664
+    }
+  ],
+  "provenance": {
+    "base_revision": "bfd939da86dd2cc4b71d83ee476024335fe3caba",
+    "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+    "generated_utc": "2026-10-13T16:38:05.073584+00:00",
+    "decoder_sha256": "910542cf5819e51972794b7fe0429d3cca7614fb538ea02ce25df65157e7949d",
+    "checker_sha256": "76d7af07213ce2deac3c2a9ac1685da8a75170f83fa794f4ea2d98ec2b693357",
+    "binary_sha256": "b5a80a78093c89aa7667cf27a0327e71182f1f0ac893b9aaf0643c68bba645dd",
+    "statrs": "0.18.0",
+    "hardware_execution": "CPU; no GPU needed"
+  }
+}

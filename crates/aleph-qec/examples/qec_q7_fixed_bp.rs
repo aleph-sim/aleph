@@ -22,6 +22,7 @@ const WIDTHS: &[(u32, u32)] = &[(6, 2), (7, 3), (8, 3), (8, 4), (10, 4), (12, 6)
 const PS: &[f64] = &[0.02, 0.03, 0.04, 0.05];
 
 fn main() {
+    eprintln!("# Legacy ci/ci95 columns are Wald half-widths; use explicit Clopper-Pearson bounds for inference. Marginal interval overlap is not decoder equivalence.");
     let args: Vec<String> = std::env::args().collect();
     let shots: u64 = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(20_000);
     let seed: u64 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(2024);
@@ -58,8 +59,11 @@ fn main() {
             } else {
                 f64::NAN
             };
-            // Within CI of the f64 baseline?
-            let within = (r.rate - rf.rate).abs() <= (r.ci95 + rf.ci95);
+            // Descriptive marginal overlap, not a precision-equivalence certificate.
+            let within = r
+                .interval95()
+                .expect("binomial interval")
+                .overlaps(rf.interval95().expect("binomial interval"));
             println!(
                 "{p},{mb},{fb},{:.6},{:.6},{:.6},{ratio:.3}",
                 r.rate, r.ci95, rf.rate
@@ -68,13 +72,17 @@ fn main() {
                 "   ({mb:>2},{fb}) fixed LER = {:.3e} ± {:.1e}  ({ratio:.2}× f64){}",
                 r.rate,
                 r.ci95,
-                if within { "  [within CI]" } else { "" }
+                if within {
+                    "  [marginal intervals overlap]"
+                } else {
+                    ""
+                }
             );
         }
     }
 
     eprintln!(
-        "# The narrowest (msg_bits,frac_bits) whose LER stays within CI of f64 across all p is the \
-         RTL message word to carry (M1+). Wider words waste area; narrower ones lose accuracy."
+        "# Marginal interval overlap is descriptive; choose RTL word width only after paired accuracy \
+         checks with a declared equivalence margin."
     );
 }

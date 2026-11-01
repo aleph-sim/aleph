@@ -1,0 +1,252 @@
+{
+  "issue": 557,
+  "baseline": "e51ba789abc21295c79e1326548099cbb9d3a7d6",
+  "candidate": "working patch: bounded contexts, reusable state/Kraus scratch, sparse frontend counts",
+  "public_timed_api": "aleph_sv::noise::run_noisy (dense compatibility path)",
+  "entrypoint": "crates/aleph-sv/benches/noisy_trajectories.rs",
+  "machine": "Architecture:                            x86_64\nCPU op-mode(s):                          32-bit, 64-bit\nAddress sizes:                           46 bits physical, 48 bits virtual\nByte Order:                              Little Endian\nCPU(s):                                  40\nOn-line CPU(s) list:                     0-39\nVendor ID:                               GenuineIntel\nModel name:                              Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz\nCPU family:                              6\nModel:                                   85\nThread(s) per core:                      2\nCore(s) per socket:                      10\nSocket(s):                               2\nStepping:                                4\nBogoMIPS:                                4400.00\nFlags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush dts acpi mmx fxsr sse sse2 ss ht tm pbe syscall nx pdpe1gb rdtscp lm constant_tsc art arch_perfmon pebs bts rep_good nopl xtopology nonstop_tsc cpuid aperfmperf pni pclmulqdq dtes64 monitor ds_cpl vmx smx est tm2 ssse3 sdbg fma cx16 xtpr pdcm pcid dca sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand lahf_lm abm 3dnowprefetch cpuid_fault epb cat_l3 cdp_l3 pti intel_ppin ssbd mba ibrs ibpb stibp tpr_shadow flexpriority ept vpid ept_ad fsgsbase tsc_adjust bmi1 hle avx2 smep bmi2 erms invpcid rtm cqm mpx rdt_a avx512f avx512dq rdseed adx smap clflushopt clwb intel_pt avx512cd avx512bw avx512vl xsaveopt xsavec xgetbv1 xsaves cqm_llc cqm_occup_llc cqm_mbm_total cqm_mbm_local dtherm ida arat pln pts vnmi pku ospke md_clear flush_l1d arch_capabilities\nVirtualization:                          VT-x\nL1d cache:                               640 KiB (20 instances)\nL1i cache:                               640 KiB (20 instances)\nL2 cache:                                20 MiB (20 instances)\nL3 cache:                                27.5 MiB (2 instances)\nNUMA node(s):                            2\nNUMA node0 CPU(s):                       0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34,36,38\nNUMA node1 CPU(s):                       1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31,33,35,37,39\nVulnerability Gather data sampling:      Vulnerable\nVulnerability Ghostwrite:                Not affected\nVulnerability Indirect target selection: Not affected\nVulnerability Itlb multihit:             KVM: Mitigation: Split huge pages\nVulnerability L1tf:                      Mitigation; PTE Inversion; VMX conditional cache flushes, SMT vulnerable\nVulnerability Mds:                       Mitigation; Clear CPU buffers; SMT vulnerable\nVulnerability Meltdown:                  Mitigation; PTI\nVulnerability Mmio stale data:           Mitigation; Clear CPU buffers; SMT vulnerable\nVulnerability Old microcode:             Not affected\nVulnerability Reg file data sampling:    Not affected\nVulnerability Retbleed:                  Mitigation; IBRS\nVulnerability Spec rstack overflow:      Not affected\nVulnerability Spec store bypass:         Mitigation; Speculative Store Bypass disabled via prctl\nVulnerability Spectre v1:                Mitigation; usercopy/swapgs barriers and __user pointer sanitization\nVulnerability Spectre v2:                Mitigation; IBRS; IBPB conditional; STIBP conditional; RSB filling; PBRSB-eIBRS Not affected; BHI Not affected\nVulnerability Srbds:                     Not affected\nVulnerability Tsa:                       Not affected\nVulnerability Tsx async abort:           Mitigation; Clear CPU buffers; SMT vulnerable\nVulnerability Vmscape:                   Mitigation; IBPB before exit to userspace\nLinux sd-146537 7.0.0-27-generic #27-Ubuntu SMP PREEMPT_DYNAMIC Thu Jun 18 19:13:49 UTC 2026 x86_64 GNU/Linux\nrustc 1.96.0 (ac68faa20 2026-05-25)\nbinary: rustc\ncommit-hash: ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96\ncommit-date: 2026-05-25\nhost: x86_64-unknown-linux-gnu\nrelease: 1.96.0\nLLVM version: 22.1.2\n",
+  "binary_sha256": "dfbc1e1c7fb6af28fdb6345e9e8fb011b2ebd038a28384bc3a2ea4e8e30bedf8  /tmp/aleph-p8-07-d3f5a3a/artifacts/bench-base\n589c067df575dbf76e70daf1060090808cb1171e2db8340164b882215ef307d9  /tmp/aleph-p8-07-d3f5a3a/artifacts/bench-candidate\nacc86084fd326d115f52f4ef2914cc00c03690b35773ac21816fe81a01bfa052  /tmp/aleph-p8-07-d3f5a3a/artifacts/alloc-base\n93e8ad14ecad0d4d0b58f51195c5a852841c6f710220d41f23965c0ac92e93ff  /tmp/aleph-p8-07-d3f5a3a/artifacts/alloc-candidate\n",
+  "source_sha256": "e3007cbb25d36b0a1a7b52e8721eee975ef84cd4c725190ebadcb276c8c4ee7f  /tmp/aleph-p8-07-d3f5a3a/candidate/crates/aleph-sv/src/noise/execution.rs\n9c1d578ac4a9fa0bfb1a970b588c3ed46d0ce238718b31468269b5a11b7615d4  /tmp/aleph-p8-07-d3f5a3a/candidate/crates/aleph-sv/src/noise/apply.rs\ndd6ef6ea022fe3f5cb8a9e5b6e123f5ff7a237a73dc0be42d4cccf8f8372d19a  /tmp/aleph-p8-07-d3f5a3a/candidate/crates/aleph-sv/src/noise/model.rs\n726d786e6445e61243d0cf8cff30e19b49018baf5481540b97a96e893f4595d9  /tmp/aleph-p8-07-d3f5a3a/candidate/crates/aleph-sv/src/noise/mod.rs\n0f93580a7e3e575b2c19b70823ae20cc7e3fcd192a8349f1c723820c83e200c8  /tmp/aleph-p8-07-d3f5a3a/candidate/crates/aleph-sv/benches/noisy_trajectories.rs\n",
+  "count_preflight": {
+    "baseline_sha256": "750d173faf7b69ab6669485e647a4e4dc7c31e53062befea38f4e59e7bc3e2ba",
+    "candidate_sha256": "750d173faf7b69ab6669485e647a4e4dc7c31e53062befea38f4e59e7bc3e2ba",
+    "all_bins_match": true
+  },
+  "affinity": "3,7,9,11 (four distinct physical cores on one socket)",
+  "workers": [
+    1,
+    4
+  ],
+  "matrix": {
+    "state_and_shots": [
+      [
+        4,
+        1024
+      ],
+      [
+        16,
+        64
+      ],
+      [
+        20,
+        8
+      ]
+    ],
+    "models": [
+      "pauli_readout",
+      "pauli_kraus_readout"
+    ],
+    "seed": 557,
+    "gate_sequence": "each q: H; mixed adds Ry(0.73) after each H",
+    "noise": {
+      "H": "depolarizing(0.05,1)",
+      "mixed_Ry": [
+        "amplitude_damping(0.17)",
+        "phase_damping(0.23)"
+      ],
+      "readout_q0": [
+        [
+          0.97,
+          0.03
+        ],
+        [
+          0.07,
+          0.93
+        ]
+      ]
+    }
+  },
+  "protocol": {
+    "order": [
+      "base-1",
+      "candidate-1",
+      "candidate-2",
+      "base-2"
+    ],
+    "sample_size": 10,
+    "warmup_seconds": 0.3,
+    "requested_measurement_seconds": 0.7,
+    "reported_time": "mean of two repeat median point estimates"
+  },
+  "memory": "requested Rust heap allocations/bytes and additional live heap peak; not RSS; warmed pool, input circuit/model excluded, result included",
+  "initial_campaign": "previous host openwebgui full matrix contaminated by CI runner; rejected and retained separately in PR",
+  "local_validation": {
+    "sv_lib_tests": 351,
+    "noise_driver": 3,
+    "aer_fixtures": 6,
+    "single_shot": 2,
+    "cli_unit": 36,
+    "cli_integration": 40,
+    "cli_gpu_probe": 1,
+    "python_noise_tests": 8,
+    "workspace_all_targets_clippy": "passed",
+    "python_feature_clippy": "passed",
+    "fmt": "passed"
+  },
+  "limits": [
+    "shared services remain running",
+    "no GPU/Metal timing claim",
+    "no Python/CLI end-to-end speedup inferred",
+    "dense output reserved conservatively alongside states",
+    "O(shots) outcomes retained",
+    "frontend budget fixed at 1 GiB; Rust callers can customize",
+    "allocator and Rayon runtime overhead not covered by buffer budget",
+    "per-task sampled CPU attribution can miss brief tasks/migrations and cannot isolate shared-cache/turbo effects; dedicated-host performance not claimed"
+  ],
+  "initial_campaign_resources": {
+    "base-1": "see per-case clean guard events",
+    "candidate-1": "see per-case clean guard events",
+    "candidate-2": "see per-case clean guard events",
+    "base-2": "see per-case clean guard events"
+  },
+  "timing_status": "ACCEPTED per-case A/B/B/A on user-selected shared host: monitored physical cores and SMT siblings idle <=2% before each repeat; observed competing CPU time on active benchmark physical cores/SMT siblings <3% of nominal worker CPU capacity during each repeat; earlier accepted repeats passed stricter <1% of one-core wall-time accounting; CI/services not stopped",
+  "core_policy": {
+    "socket": 1,
+    "affinity": [
+      3,
+      7,
+      9,
+      11
+    ],
+    "monitored_smt_siblings": [
+      3,
+      7,
+      9,
+      11,
+      23,
+      27,
+      29,
+      31
+    ],
+    "monitor_cpu": 39,
+    "selection_load": {
+      "3": 0.0,
+      "7": 0.0,
+      "9": 0.0,
+      "11": 0.0,
+      "23": 0.0,
+      "27": 0.0,
+      "29": 0.0,
+      "31": 0.0
+    }
+  },
+  "initial_guard_sha256": "a04e4a480995af1d4bc0db977107fe6e70a7dbc0a918ab85f6d5ebe02ffe85d0",
+  "active_strict_guard_sha256": "9e86fe7c9f5eef4959891f45e0ce0971a152894f3496a9c619d35f0e65352842",
+  "guard_policy_note": "Constant 1-2% shared-host background CPU caused repeated rejection at the initial strict threshold. Before inspecting final speedups, threshold set to 3% of worker CPU capacity for subsequent runs. Earlier rejected runs are not promoted; earlier accepted stricter runs retained. No sub-5% throughput gain claimed.",
+  "candidate_commit": "d3f5a3a99ac2d19e9eacf2400c4072b0d61c9cb1",
+  "guard_source_sha256": "5d94a1b7e5bdadea5762d74edb8391bae1ceccfb4e72c1b62b8be7e38d326cff",
+  "linux_release_validation": {
+    "results": [
+      "test result: ok. 406 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.24s",
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+      "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s"
+    ],
+    "log_sha256": "4b8ee12d1153e39bf4e52f24b8f11ac19fc68708c635640f276dcbd951458516"
+  },
+  "guard_events_file": "p8-07-core-guard.jsonl",
+  "guard_summary": {
+    "accepted_primary": 48,
+    "accepted_followup": 10,
+    "rejected": 32
+  },
+  "host": "51.159.0.49 (user-selected CPU-only server)",
+  "measured_code_revision": "d3f5a3a99ac2d19e9eacf2400c4072b0d61c9cb1",
+  "post_measurement_changes": "Initial d3f5a3a -> b96da98 changes clarified the conservative budget error and added helpers/data. Review follow-up exposes frontend budget/context controls and validates manual fused IR on noisy calls; final-source targeted Criterion data is recorded separately. Full original throughput data and unresolved outlier are retained.",
+  "targeted_replication": {
+    "case": "p8_trajectories/workers4/kraus_n4_shots1024",
+    "reason": "initial candidate repeat 2.802 ms versus 1.514 ms; investigate repeat variability rather than discard slower result",
+    "additional_repeats_per_version": 5,
+    "summary_policy": "all seven repeat median estimates included, including slow initial candidate repeat",
+    "baseline_mean_median_ns": 1578339.4189594355,
+    "candidate_mean_median_ns": 1687471.1363536154,
+    "baseline_repeat_median_ns": [
+      1570209.787037037,
+      1559707.6851851852,
+      1564267.2345679011,
+      1638470.63125,
+      1567021.2037037038,
+      1577952.9722222222,
+      1570746.41875
+    ],
+    "candidate_repeat_median_ns": [
+      2802119.1714285715,
+      1513709.037037037,
+      1501794.5708333333,
+      1499306.512345679,
+      1511883.5694444445,
+      1499944.2063492062,
+      1483540.887037037
+    ],
+    "result": "extra candidate repeats cluster 1.484-1.512 ms; one initial 2.802 ms repeat retained; aggregate mean 6.9% slower, rare latency variability unresolved",
+    "order": [
+      "base-3",
+      "candidate-3",
+      "candidate-4",
+      "base-4",
+      "base-5",
+      "candidate-5",
+      "candidate-6",
+      "base-6",
+      "base-7",
+      "candidate-7"
+    ]
+  },
+  "reproduction_helpers": {
+    "scripts/python/select_noisy_bench_cores.py": "1c1e1e81ca1082192b4569bfcc2bbf9140a3d00eaccc12e894edfeac82fde37d",
+    "scripts/python/bench_noisy_trajectories_guard.py": "2f9c99340bf513ba3cd6dbd84b0942bf2e6eca05a14f10db890ad7cdf480a569"
+  },
+  "pre_review_source_sha256": {
+    "crates/aleph-sv/src/noise/mod.rs": "9ef96e6dcb0c14a2662bcb90971276fb967c17b163db9cf1c4ed34a25c560e8c",
+    "crates/aleph-sv/src/noise/execution.rs": "e3007cbb25d36b0a1a7b52e8721eee975ef84cd4c725190ebadcb276c8c4ee7f",
+    "crates/aleph-sv/src/noise/apply.rs": "9c1d578ac4a9fa0bfb1a970b588c3ed46d0ce238718b31468269b5a11b7615d4",
+    "crates/aleph-sv/src/noise/model.rs": "dd6ef6ea022fe3f5cb8a9e5b6e123f5ff7a237a73dc0be42d4cccf8f8372d19a"
+  },
+  "review_followup": {
+    "manual_review": true,
+    "independent_external_review": false,
+    "reason": "No Code Review skill available; exposed plugin tool reads CI diagnostics only",
+    "final_source_sha256": {
+      "crates/aleph-sv/src/noise/execution.rs": "941114a21f8f68a72996b5043ce9394c6f467d423ba179a274f6da66a39228ad",
+      "crates/aleph-cli/src/cli.rs": "bcfddf84fc173412cc82e82ee1ef0ea1997e68f2053ae0b4035a67b1916c34e3",
+      "crates/aleph-cli/src/exec.rs": "a6e875e0e3ccfda67c7b7edf741efc2c082894fd6476758da9fdd11b4e5aa201",
+      "crates/aleph-cli/src/main.rs": "33596f9838a719090a2f3922fe4670ee4f54ae4afcf8208a99be929d6dad866a",
+      "crates/aleph-py/src/run.rs": "baea89ee54b6a9167ffdcd5cb85ca1ecca7ec75e83d774ad0403b119217f247e"
+    },
+    "measured_patch_sha256": "c9b3ec23ccc4c205a301c43190fe162a3fc1cd32d5d5d3b866e24267f8cf8e18",
+    "post_replication_change": "Adds valid nonidentity and finite-overflow matrix regression assertions only; production code unchanged.",
+    "final_binary_sha256": {
+      "baseline": "dfbc1e1c7fb6af28fdb6345e9e8fb011b2ebd038a28384bc3a2ea4e8e30bedf8",
+      "candidate": "142d23cc83442c4db417903da0ae35411bdd153803fc1ddb12e64220ef1a5678"
+    },
+    "final_case": {
+      "case": "p8_trajectories/workers4/kraus_n4_shots1024",
+      "base1_median_ns": "1592565.0442708335",
+      "base2_median_ns": "1570094.9166666665",
+      "candidate1_median_ns": "1509958.8277777778",
+      "candidate2_median_ns": "1493809.375",
+      "baseline_mean_median_ns": "1581329.98046875",
+      "candidate_mean_median_ns": "1501884.101388889",
+      "speedup": "1.0528974765805115"
+    },
+    "final_guard": {
+      "accepted": 4,
+      "rejected": 0,
+      "order": [
+        "base-1",
+        "candidate-1",
+        "candidate-2",
+        "base-2"
+      ]
+    },
+    "final_files": [
+      "p8-07-review-final-summary.csv",
+      "p8-07-review-final-criterion.json",
+      "p8-07-review-final-guard.jsonl"
+    ],
+    "general_backend_followup": "https://github.com/aleph-sim/aleph/issues/573",
+    "linux_release_test_log_sha256": "f2acea453e00da597e8e38adb302f6845acc24404fd02679bd64f92e2dcfc517",
+    "measured_execution_source_sha256": "7d878d59da8d583a41264c5a2f306ab3bd5cd76c5ad17693156143860ef4b181",
+    "reviewed_code_commit": "d1d3997838236d65f40d61b02be5c9473b61350d"
+  }
+}

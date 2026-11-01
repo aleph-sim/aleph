@@ -53,6 +53,7 @@ const PROBS_CIRCUIT: &[f64] = &[0.002, 0.003, 0.004, 0.005, 0.006, 0.008, 0.010,
 const PROBS_SI1000: &[f64] = &[0.001, 0.002, 0.003, 0.004, 0.005, 0.006, 0.008, 0.010];
 
 fn main() {
+    eprintln!("# Legacy ci/ci95 columns are Wald half-widths; use explicit Clopper-Pearson bounds for inference. Marginal interval overlap is not decoder equivalence.");
     let args: Vec<String> = std::env::args().collect();
     let decoder = args.get(1).map(String::as_str).unwrap_or("mwpm");
     let source = args.get(2).map(String::as_str).unwrap_or("analytic");
@@ -84,7 +85,8 @@ fn main() {
         "# decoder={decoder} source={source} shots={shots} seed={seed} \
          rounds=d noise={noise} basis={basis}"
     );
-    println!("decoder,source,d,rounds,p,shots,logical_errors,rate,ci95");
+    // Preserve the legacy column, append explicit bounds and their interpretation.
+    println!("decoder,source,d,rounds,p,shots,logical_errors,rate,ci95,ci95_lower,ci95_upper,ci95_method,has_estimate");
 
     for &d in DISTANCES {
         let code = SurfaceCode::new(d);
@@ -120,13 +122,20 @@ fn main() {
                 other => panic!("unknown decoder `{other}` (expected mwpm|uf|pymatching)"),
             }
             .expect("sweep cell");
+            let bounds = res.interval95().expect("binomial interval");
             println!(
-                "{decoder},{source},{d},{d},{p},{},{},{},{}",
-                res.shots, res.logical_errors, res.rate, res.ci95
+                "{decoder},{source},{d},{d},{p},{},{},{},{},{},{},clopper-pearson,{}",
+                res.shots,
+                res.logical_errors,
+                res.rate,
+                res.ci95,
+                bounds.lower,
+                bounds.upper,
+                res.shots > 0
             );
             eprintln!(
-                "  d={d} p={p:.3}: rate={:.4e} ± {:.1e} ({} errs / {} shots)",
-                res.rate, res.ci95, res.logical_errors, res.shots
+                "  d={d} p={p:.3}: rate={:.4e}, 95% bounds [{:.4e}, {:.4e}] ({} errs / {} shots, has_estimate={})",
+                res.rate, bounds.lower, bounds.upper, res.logical_errors, res.shots, res.shots > 0
             );
         }
     }

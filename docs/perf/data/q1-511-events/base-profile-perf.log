@@ -1,0 +1,2 @@
+[ perf record: Woken up 82 times to write data ]
+[ perf record: Captured and wrote 20.473 MB /tmp/aleph-511-events-base-profile/perf.data (4958 samples) ]

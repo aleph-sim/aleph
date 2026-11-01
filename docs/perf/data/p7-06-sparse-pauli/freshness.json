@@ -1,0 +1,34 @@
+{
+  "example-artifacts.jsonl": [
+    {
+      "target": "aleph_stab",
+      "kind": [
+        "lib"
+      ],
+      "fresh": false
+    },
+    {
+      "target": "sparse_expectation",
+      "kind": [
+        "example"
+      ],
+      "fresh": false
+    }
+  ],
+  "bench-artifacts.jsonl": [
+    {
+      "target": "aleph_stab",
+      "kind": [
+        "lib"
+      ],
+      "fresh": false
+    },
+    {
+      "target": "sparse_expectation",
+      "kind": [
+        "bench"
+      ],
+      "fresh": false
+    }
+  ]
+}

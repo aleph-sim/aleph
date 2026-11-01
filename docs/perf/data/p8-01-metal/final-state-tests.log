@@ -1,0 +1,18 @@
+   Compiling aleph-core v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-core)
+   Compiling aleph-ir v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-ir)
+   Compiling aleph-backend v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-backend)
+   Compiling aleph-test v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-test)
+   Compiling aleph-parser v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-parser)
+   Compiling aleph-sv v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-sv)
+    Finished `release` profile [optimized] target(s) in 6.56s
+     Running tests/final_state_oracle.rs (target/release/deps/final_state_oracle-adf31b997d51e87d)
+
+running 6 tests
+test brickwall_fp32_distribution_matches_fp64_reference ... ignored, offline n=20 full-state FP32 rounding check
+test external_controls_remain_fences_and_tile_replay_preserves_them ... ok
+test diagonal_and_dense_fusion_are_executed ... ok
+test partial_measurement_retains_unmeasured_and_post_measurement_gates ... ok
+test property::random_final_states_match ... ok
+test relabelling_and_fp32_tile_replay_preserve_complete_amplitudes ... ok
+
+test result: ok. 5 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.01s

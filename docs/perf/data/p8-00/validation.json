@@ -1,0 +1,84 @@
+{
+  "date": "2026-10-18",
+  "purpose": "CPU correctness/documentation smoke; no performance acceptance and no fresh GPU execution",
+  "source_base": "6114dab7e18c4deac0fda3039060e00f7661b653",
+  "platform": "macOS-27.0.1-arm64-arm-64bit",
+  "python": "3.9.6",
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "cli_sha256": "1b9c9396d9b904e3c7e1e8a82a6b541f8f9f7d7f3d372303f798b94e7b34b8f0",
+  "environment": {
+    "RAYON_NUM_THREADS": "2",
+    "ALEPH_BENCH_TEST_CLI": "/Users/ex/GitHub/aleph/target/release/aleph"
+  },
+  "commands": [
+    {
+      "command": [
+        "python3",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "scripts/benchmarks",
+        "-v"
+      ],
+      "exit_code": 0,
+      "log": "check-1.log"
+    },
+    {
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "aleph-backend",
+        "--lib",
+        "memory::tests"
+      ],
+      "exit_code": 0,
+      "log": "check-2.log"
+    },
+    {
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "aleph-sv",
+        "--test",
+        "single_shot",
+        "--test",
+        "noise_driver",
+        "--test",
+        "noise_oracle"
+      ],
+      "exit_code": 0,
+      "log": "check-3.log"
+    },
+    {
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "aleph-qec",
+        "--test",
+        "bounded_dem_experiment",
+        "--test",
+        "binomial_interval"
+      ],
+      "exit_code": 0,
+      "log": "check-4.log"
+    },
+    {
+      "command": [
+        "python3",
+        "-m",
+        "unittest",
+        "scripts/python/test_qec_threshold_plot.py",
+        "-v"
+      ],
+      "exit_code": 0,
+      "log": "check-5.log"
+    }
+  ]
+}

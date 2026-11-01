@@ -29,6 +29,22 @@ ALL = ["mwpm", "union-find", "union-find-weighted", "bp", "bp-osd", "relay-bp", 
 MATCHING = {"mwpm", "union-find", "union-find-weighted"}
 
 
+# A seeded trapping-set fixture: first-valid has weight 5, while the full 3x8
+# schedule finds weight 3. Observable labels make the two valid choices distinct.
+RELAY_BUDGET_DEM = """error(0.15) D0 D2 D3 L0
+error(0.07) D0 D1 D3 L1
+error(0.03) D1 D3 D4 L0
+error(0.07) D0 D1 D2 D3 L1
+error(0.07) D0 D1 D2 D4 L0
+error(0.07) D0 D1 D3
+error(0.07) D0 D2 D3 D4 L0
+error(0.25) D0 D1 D2 D3 D4 L1
+"""
+RELAY_BUDGET_SYNDROME = np.array([[0, 1, 0, 1, 0]], dtype=np.uint8)
+RELAY_BUDGET_FULL = np.array([[0, 0, 1, 1, 0, 0, 0, 1]], dtype=np.uint8)
+RELAY_BUDGET_FIRST = np.array([[0, 1, 1, 1, 0, 1, 0, 1]], dtype=np.uint8)
+
+
 def surface(d, p, rounds=None):
     return stim.Circuit.generated(
         "surface_code:rotated_memory_x",
@@ -68,6 +84,145 @@ def xor_reduce_dem_text(text):
 @unittest.skipUnless(HAVE_ALEPH, "aleph not installed")
 class TestApi(unittest.TestCase):
     DEM = "error(0.1) D0 L0\nerror(0.1) D0 D1\nerror(0.1) D1\n"
+
+    def test_cudaq_float_error_output_matches_public_byte_api(self):
+        dem = qec.DetectorErrorModel("error(0.1) D0 L0\nerror(0.1) D0 D1\nerror(0.1) D1\n")
+        for name in qec.decoder_names():
+            decoder = qec.Decoder(dem, name)
+            for dtype in (np.bool_, np.uint8):
+                rows = np.tile(np.array([[0, 0], [1, 0], [0, 1], [1, 1]], dtype=dtype), (7, 1))
+                for data in (rows, rows[::-1], rows[:, ::-1], rows[:0]):
+                    with self.subTest(name=name, dtype=dtype, shape=data.shape):
+                        ref, rc = decoder.decode_batch_errors(data)
+                        got, gc = decoder._decode_batch_errors_f64(data)
+                        self.assertEqual(got.dtype, np.float64)
+                        np.testing.assert_array_equal(got, ref)
+                        np.testing.assert_array_equal(gc, rc)
+            with self.assertRaisesRegex(ValueError, "last dimension"):
+                decoder._decode_batch_errors_f64(np.zeros((2, 3), dtype=np.uint8))
+        for name in ("mwpm", "union-find", "union-find-weighted"):
+            decoder = qec.Decoder(qec.DetectorErrorModel("error(0.1) D0 ^ D1\n"), name)
+            with self.assertRaisesRegex(ValueError, "split_components"):
+                decoder._decode_batch_errors_f64(np.zeros((1, 2), dtype=np.uint8))
+
+    def test_cudaq_float_output_empty_axes(self):
+        for text, detectors, errors in [("error(0.1) L0\n", 0, 1),
+                                         ("detector D0\n", 1, 0), ("", 0, 0)]:
+            for name in qec.decoder_names():
+                decoder = qec.Decoder(qec.DetectorErrorModel(text), name)
+                for shots in (0, 1, 3):
+                    rows = np.zeros((shots, detectors), dtype=np.uint8)
+                    ref, rc = decoder.decode_batch_errors(rows)
+                    got, gc = decoder._decode_batch_errors_f64(rows)
+                    self.assertEqual(got.shape, (shots, errors))
+                    np.testing.assert_array_equal(got, ref)
+                    np.testing.assert_array_equal(gc, rc)
+
+    def test_split_components_matches_matrices_without_mutation(self):
+        text = ("error(0.125) D0 D0 D2 L0 L0 L2 ^ D1 L1 ^ L2 ^\n"
+                "error(0) D3\ndetector D4\nlogical_observable L3\n")
+        dem = qec.DetectorErrorModel(text)
+        before = dem.to_dem_string()
+        split = dem.split_components()
+        self.assertEqual(dem.to_dem_string(), before)
+        self.assertEqual((split.num_detectors, split.num_observables, split.num_errors), (5, 4, 5))
+        self.assertNotIn("^", split.to_dem_string())
+        self.assertEqual(split.split_components().to_dem_string(), split.to_dem_string())
+        H, O, rates = qec.dem_to_matrices(dem)
+        h, o, p = qec.dem_to_matrices(split)
+        np.testing.assert_array_equal(h, H)
+        np.testing.assert_array_equal(o, O)
+        np.testing.assert_array_equal(p, rates)
+        self.assertEqual(split.to_dem_string(), qec.dem_from_matrices(H, O, rates).to_dem_string())
+        for text in ("", "detector D2\nlogical_observable L1\n", self.DEM):
+            plain = qec.DetectorErrorModel(text)
+            self.assertEqual(plain.split_components().to_dem_string(), plain.to_dem_string())
+
+    def test_split_matching_projects_each_part_exactly_without_ties(self):
+        dem = qec.DetectorErrorModel("error(0.1) D0 L0 ^ D1 L1")
+        split = dem.split_components()
+        H, O, _ = qec.dem_to_matrices(split)
+        dets = np.array([[0, 0], [1, 0], [0, 1], [1, 1]], dtype=np.uint8)
+        for name in sorted(MATCHING):
+            dec = qec.Decoder(split, name)
+            ehat, conv = dec.decode_batch_errors(dets)
+            self.assertEqual(dec.num_errors, 2)
+            self.assertEqual(ehat.shape, (4, 2))
+            self.assertTrue(conv.all())
+            np.testing.assert_array_equal(ehat @ H.T % 2, dets)
+            np.testing.assert_array_equal((ehat @ O.T % 2).astype(bool), dec.decode_batch(dets))
+            empty, converged = dec.decode_batch_errors(np.zeros((0, 2), dtype=np.uint8))
+            self.assertEqual((empty.shape, converged.shape), ((0, 2), (0,)))
+
+    def test_matching_prior_policy_at_construction(self):
+        for probability in (np.nextafter(0.5, 1.0), 0.6, 1.0):
+            dem = qec.DetectorErrorModel(f"error(0.1) D0\nerror({probability}) D1 L0")
+            for name in sorted(MATCHING):
+                with self.subTest(name=name, probability=probability):
+                    with self.assertRaisesRegex(ValueError, r"column 1.*\[0, 0.5\]"):
+                        qec.Decoder(dem, name)
+            # Parsing and BP-family construction still accept priors in [0, 1].
+            for name in sorted(set(ALL) - MATCHING):
+                qec.Decoder(dem, name)
+        for probability in (0.0, 0.5, np.nextafter(0.0, 1.0)):
+            dem = qec.DetectorErrorModel(f"error({probability}) D0 L0")
+            for name in sorted(MATCHING):
+                dec = qec.Decoder(dem, name)
+                if probability > 0:
+                    dets = np.array([[0], [1]], dtype=np.uint8)
+                    estimate, conv = dec.decode_batch_errors(dets)
+                    self.assertTrue(conv.all())
+                    np.testing.assert_array_equal(estimate, dets)
+                    np.testing.assert_array_equal(dec.decode_batch(dets), dets.astype(bool))
+
+    def test_matching_invalid_prior_cannot_hide_in_empty_or_merged_columns(self):
+        for text in ("error(0.6) L0", "error(0.6)",
+                     "error(0.6) D0 ^ D1", "error(0.6) D0\nerror(0.6) D0"):
+            dem = qec.DetectorErrorModel(text)
+            for name in sorted(MATCHING):
+                with self.subTest(name=name, text=text):
+                    with self.assertRaisesRegex(ValueError, r"matching prior at column 0"):
+                        qec.Decoder(dem, name)
+                    with self.assertRaisesRegex(ValueError, r"matching prior at column 0"):
+                        qec.Decoder(dem.split_components(), name)
+
+    def test_relay_budget_and_early_exit_change_the_actual_decision(self):
+        dem = qec.DetectorErrorModel(RELAY_BUDGET_DEM)
+        H, O, _ = qec.dem_to_matrices(dem)
+        for name in ("relay-bp", "relay-bp-osd"):
+            for iterations, early, expected in [(8, False, RELAY_BUDGET_FULL),
+                                                 (8, True, RELAY_BUDGET_FIRST),
+                                                 (1, False, RELAY_BUDGET_FIRST),
+                                                 (0, False, RELAY_BUDGET_FIRST)]:
+                with self.subTest(name=name, iterations=iterations, early=early):
+                    dec = qec.Decoder(dem, name, legs=3, iters_per_leg=iterations,
+                                      early_exit=early, seed=7)
+                    estimate, converged = dec.decode_batch_errors(RELAY_BUDGET_SYNDROME)
+                    np.testing.assert_array_equal(estimate, expected)
+                    self.assertTrue(converged.all())
+                    np.testing.assert_array_equal(estimate @ H.T % 2, RELAY_BUDGET_SYNDROME)
+                    np.testing.assert_array_equal(dec.decode_batch(RELAY_BUDGET_SYNDROME),
+                                                  (expected @ O.T % 2).astype(bool))
+            default = qec.Decoder(dem, name)
+            explicit = qec.Decoder(dem, name, legs=4, iters_per_leg=25, early_exit=False)
+            all_syndromes = ((np.arange(32)[:, None] >> np.arange(5)) & 1).astype(np.uint8)
+            for got, want in zip(default.decode_batch_errors(all_syndromes),
+                                 explicit.decode_batch_errors(all_syndromes)):
+                np.testing.assert_array_equal(got, want)
+
+    def test_relay_budget_parameters_are_scoped_and_typed(self):
+        dem = qec.DetectorErrorModel(self.DEM)
+        for name in sorted(set(ALL) - {"relay-bp", "relay-bp-osd"}):
+            for key, value in [("iters_per_leg", 10), ("early_exit", True)]:
+                with self.assertRaisesRegex(ValueError, key):
+                    qec.Decoder(dem, name, **{key: value})
+        for name in ("relay-bp", "relay-bp-osd"):
+            for value in [-1, 2**32, 1.5, "10", None]:
+                with self.assertRaises((ValueError, TypeError, OverflowError)):
+                    qec.Decoder(dem, name, iters_per_leg=value)
+            for value in ["false", None, 1]:
+                with self.assertRaises((ValueError, TypeError)):
+                    qec.Decoder(dem, name, early_exit=value)
 
     def test_names(self):
         self.assertEqual(sorted(qec.decoder_names()), sorted(ALL))
@@ -246,7 +401,7 @@ class TestStimDems(unittest.TestCase):
         for name in ("mwpm", "union-find", "union-find-weighted"):
             with self.subTest(name=name):
                 dec = qec.Decoder(dem, name)
-                with self.assertRaisesRegex(ValueError, r"\^|decomposed"):
+                with self.assertRaisesRegex(ValueError, r"split_components"):
                     dec.decode_batch_errors(dets)
 
         # BP-family decoders are unaffected: their columns are the parity-reduced mechanisms
@@ -270,6 +425,38 @@ class TestStimDems(unittest.TestCase):
         ehat2, conv2 = qec.Decoder(dem2, "mwpm").decode_batch_errors(dets)
         self.assertTrue(conv2.all())
         np.testing.assert_array_equal((ehat2 @ H2.T) % 2, dets)
+
+    def test_native_split_matches_matrix_roundtrip_on_real_stim_shots(self):
+        for d in (3, 5):
+            circ = surface(d, 0.003)
+            dem = qec.DetectorErrorModel(circ.detector_error_model(decompose_errors=True))
+            before = dem.to_dem_string()
+            native = dem.split_components()
+            H, O, rates = qec.dem_to_matrices(dem)
+            reference = qec.dem_from_matrices(H, O, rates)
+            self.assertEqual(native.to_dem_string(), reference.to_dem_string())
+            self.assertEqual(dem.to_dem_string(), before)
+            dets, _ = circ.compile_detector_sampler(seed=518).sample(2000, separate_observables=True)
+            dets = dets.astype(np.uint8)
+            for name in sorted(MATCHING):
+                with self.subTest(d=d, decoder=name):
+                    dec, ref = qec.Decoder(native, name), qec.Decoder(reference, name)
+                    ehat, conv = dec.decode_batch_errors(dets)
+                    expected, expected_conv = ref.decode_batch_errors(dets)
+                    np.testing.assert_array_equal(ehat, expected)
+                    np.testing.assert_array_equal(conv, expected_conv)
+                    self.assertTrue(conv.all())
+                    np.testing.assert_array_equal(ehat @ H.T % 2, dets)
+                    np.testing.assert_array_equal(dec.decode_batch(dets), ref.decode_batch(dets))
+                    np.testing.assert_array_equal(dec.decode_batch(dets), qec.Decoder(dem, name).decode_batch(dets))
+                    observable = (ehat @ O.T % 2).astype(bool)
+                    if name != "mwpm":
+                        np.testing.assert_array_equal(observable, dec.decode_batch(dets))
+                    else:
+                        # Existing MWPM retrace ties can disagree with decode's observable.
+                        # Native splitting must reproduce the old matrix route exactly,
+                        # including that pre-existing limitation rather than hiding it.
+                        np.testing.assert_array_equal(observable, (expected @ O.T % 2).astype(bool))
 
     def test_hypergraph_dem(self):
         circ = color(3, 0.003)

@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "frozen_before_hardware_measurement": true,
+  "precision": "FP64 only, same unfused gates, no reordered arithmetic",
+  "primary_comparator": "synchronous multi-gate residency at the same tile split",
+  "secondary_comparators": [
+    "per-gate synchronous",
+    "per-gate overlapped"
+  ],
+  "candidate": "event-ordered ring applies maximal low-only runs per load; high gates flush; shallow segments use synchronous fallback",
+  "go_gate": ">=1.05x median end-to-end improvement over synchronous residency in at least one held-out deep-pipeline cell, with all four paired block ratios >1; no-go is acceptable",
+  "training": [
+    "locality-rich, n=24 m=20 depth=4 ring=4"
+  ],
+  "held_out": [
+    "locality-rich n=26 m=22",
+    "alternating low/high n=24 m=20",
+    "short low runs n=24 m=20",
+    "shallow locality-rich n=24 m=22",
+    "unfused QFT n=24 m=20 (same natural ordering, no SWAP relabeling)"
+  ],
+  "measurement": "four mirrored three-arm blocks, rotate leading arm and reverse cell order, all samples retained; one measured run per process after backend compilation, includes pinned/ring allocation, initialization and final stream drain, excludes norm/export",
+  "controls": "per-gate synchronous measured separately on training/alternating cells; no multiplication of historical speedups",
+  "resource_limits": "host state <=1 GiB, ring <=1 GiB in timings; check available memory first, no forced OOM or service/clock changes",
+  "correctness": "forced small tiles, complete FP64 amplitudes vs CPU and synchronous paging, finite errors <=1e-10, norm/reversibility, mixed control/target and high/high flush paths, ring reuse and invalid input rejection",
+  "stage_accounting": "separate allocation/init, total execution/drain endpoint; analytical full-state bytes/pass/group/launch counts labelled model, matched profiler trace if available; never label model counters as observed bandwidth",
+  "equal_ring_payload_control": "same circuit with fixed HOT=m, synchronous residency at m+2 vs combined at m on both deep locality cells; gates crossing to n-1 remain high. Include in decision assessment; reject apparent benefit if dominated by this same-payload synchronous configuration.",
+  "models": "Circuit low hot region fixed independently of tile split; high targets at n-1/n-2; four layers with deterministic angles. These forced-paging states fit device; no out-of-core reach claim."
+}

@@ -1,0 +1,126 @@
+{
+  "method": "Independent availability schedules for primary and fallback, direct waiting-interval integrals; no Rust event heap reused",
+  "cases": [
+    {
+      "name": "f0-d2-w1-FlagOnly",
+      "metrics": "PASS",
+      "full_job_receipts": "PASS"
+    },
+    {
+      "name": "f0-d2-w1-FallbackOnFlag",
+      "metrics": "PASS",
+      "full_job_receipts": "PASS"
+    },
+    {
+      "name": "f0-d2-w2-FlagOnly",
+      "metrics": "PASS",
+      "full_job_receipts": "PASS"
+    },
+    {
+      "name": "f0-d2-w2-FallbackOnFlag",
+      "metrics": "PASS",
+      "full_job_receipts": "PASS"
+    },
+    {
+      "name": "f0-d5-w1-FlagOnly",
+      "metrics": "PASS",
+      "full_job_receipts": "PASS"
+    },
+    {
+      "name": "f0-d5-w1-FallbackOnFlag",
+      "metrics": "PASS",
+      "full_job_receipts": "PASS"
+    },
+    {
+      "name": "f0-d5-w2-FlagOnly",
+      "metrics": "PASS",
+      "full_job_receipts": "PASS"
+    },
+    {
+      "name": "f0-d5-w2-FallbackOnFlag",
+      "metrics": "PASS",
+      "full_job_receipts": "PASS"
+    },
+    {
+      "name": "f0-d10-w1-FlagOnly",
+      "metrics": "PASS",
+      "full_job_receipts": "PASS"
+    },
+    {
+      "name": "f0-d10-w1-FallbackOnFlag",
+      "metrics": "PASS",
+      "full_job_receipts": "PASS"
+    },
+    {
+      "name": "f0-d10-w2-FlagOnly",
+      "metrics": "PASS",
+      "full_job_receipts": "PASS"
+    },
+    {
+      "name": "f0-d10-w2-FallbackOnFlag",
+      "metrics": "PASS",
+      "full_job_receipts": "PASS"
+    },
+    {
+      "name": "f1-d2-w1-FlagOnly",
+      "metrics": "PASS",
+      "full_job_receipts": "PASS"
+    },
+    {
+      "name": "f1-d2-w1-FallbackOnFlag",
+      "metrics": "PASS",
+      "full_job_receipts": "PASS"
+    },
+    {
+      "name": "f1-d2-w2-FlagOnly",
+      "metrics": "PASS",
+      "full_job_receipts": "PASS"
+    },
+    {
+      "name": "f1-d2-w2-FallbackOnFlag",
+      "metrics": "PASS",
+      "full_job_receipts": "PASS"
+    },
+    {
+      "name": "f1-d5-w1-FlagOnly",
+      "metrics": "PASS",
+      "full_job_receipts": "PASS"
+    },
+    {
+      "name": "f1-d5-w1-FallbackOnFlag",
+      "metrics": "PASS",
+      "full_job_receipts": "PASS"
+    },
+    {
+      "name": "f1-d5-w2-FlagOnly",
+      "metrics": "PASS",
+      "full_job_receipts": "PASS"
+    },
+    {
+      "name": "f1-d5-w2-FallbackOnFlag",
+      "metrics": "PASS",
+      "full_job_receipts": "PASS"
+    },
+    {
+      "name": "f1-d10-w1-FlagOnly",
+      "metrics": "PASS",
+      "full_job_receipts": "PASS"
+    },
+    {
+      "name": "f1-d10-w1-FallbackOnFlag",
+      "metrics": "PASS",
+      "full_job_receipts": "PASS"
+    },
+    {
+      "name": "f1-d10-w2-FlagOnly",
+      "metrics": "PASS",
+      "full_job_receipts": "PASS"
+    },
+    {
+      "name": "f1-d10-w2-FallbackOnFlag",
+      "metrics": "PASS",
+      "full_job_receipts": "PASS"
+    }
+  ],
+  "no_loss_controls": "PASS"
+}

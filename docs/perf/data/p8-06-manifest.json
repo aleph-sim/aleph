@@ -1,0 +1,95 @@
+{
+  "base_revision": "8c9223f2d95998e9cd26c484cb35690816d47080",
+  "candidate": "working patch: isolated low-shot helper (v2)",
+  "machine": "Intel Core i5-13500, 20 logical CPUs, Linux 6.8.0-146-generic",
+  "rustc": "1.96.0",
+  "precision": [
+    "FP64 AoS",
+    "FP64 SoA",
+    "FP32 (f64 norm accumulation)"
+  ],
+  "profile": "Cargo bench/release optimized profiles, no custom RUSTFLAGS",
+  "resource_budget": {
+    "affinity": "CPU0, physical P-core0",
+    "rayon_workers": 1,
+    "dedicated_host": false,
+    "shared_services": "left running"
+  },
+  "entry_points": [
+    "Backend::sample",
+    "aleph_sv::noise::run_noisy"
+  ],
+  "sampler_workload": {
+    "state": "uniform product of Hadamards",
+    "qubits": [
+      4,
+      12,
+      20
+    ],
+    "shots": [
+      1,
+      2,
+      4,
+      16,
+      1024
+    ],
+    "state_preparation": "excluded from timing",
+    "rng": "StdRng seed 556 advancing between sampler iterations"
+  },
+  "noise_workload": {
+    "gates": "H on each qubit",
+    "channel": "depolarizing_error(0.05,1) attached to H",
+    "readout": "qubit0 matrix [[0.97,0.03],[0.07,0.93]]",
+    "cases": [
+      [
+        4,
+        1024
+      ],
+      [
+        16,
+        64
+      ],
+      [
+        20,
+        8
+      ]
+    ],
+    "seed": 556,
+    "query": "complete dense histogram per call"
+  },
+  "criterion": {
+    "order": [
+      "base",
+      "candidate",
+      "candidate",
+      "base"
+    ],
+    "samples_per_case": 10,
+    "warmup_seconds": 0.3,
+    "requested_measurement_seconds": 0.7,
+    "datasets": 192,
+    "aggregation": "arithmetic mean of the two per-round median point estimates; not best-of; per-round confidence intervals and samples retained"
+  },
+  "allocation_profile": {
+    "measurement": "requested heap allocation calls/bytes and additional live-heap peak, not RSS",
+    "sample_result_included": true,
+    "prepared_state_excluded": true,
+    "noise_peak": "one warmed worker; full public run includes state, resolved channels and dense result"
+  },
+  "timing_resource_log": " 20:23:11 up 10 days,  4:38,  1 user,  load average: 1.58, 0.64, 0.52\n 20:23:11 up 10 days,  4:38,  1 user,  load average: 1.58, 0.64, 0.52\n 20:24:16 up 10 days,  4:39,  1 user,  load average: 1.29, 0.74, 0.57\n 20:24:16 up 10 days,  4:39,  1 user,  load average: 1.29, 0.74, 0.57\n 20:25:20 up 10 days,  4:40,  1 user,  load average: 1.16, 0.81, 0.61\n 20:25:20 up 10 days,  4:40,  1 user,  load average: 1.16, 0.81, 0.61\n 20:26:23 up 10 days,  4:41,  1 user,  load average: 1.05, 0.85, 0.64\n 20:26:23 up 10 days,  4:41,  1 user,  load average: 1.05, 0.85, 0.64\n 20:27:28 up 10 days,  4:42,  1 user,  load average: 1.02, 0.88, 0.66\n",
+  "binary_hashes": "be826ffeda10ef1e590e3d3ed3923e99a5fc374fa7ba004f53114de0ede1cbc2  /tmp/aleph-p8-06-8c9223f/artifacts/sample-base\n0e946f600a9b48c91ef1b7f871615ef6a8cf717f4df4eae1b1529794a91f9a0e  /tmp/aleph-p8-06-8c9223f/artifacts/sample-v2\nf47523898abd1f4565fda0d181dddaaeb031a5dd5f231dda45ac8ac1278d8f81  /tmp/aleph-p8-06-8c9223f/artifacts/alloc-base\n8a1ae44aa6199fed93c9f98d613c65d8590e6f307927320842f43cabea220c90  /tmp/aleph-p8-06-8c9223f/artifacts/alloc-v2\n",
+  "source_sha256": {
+    "crates/aleph-sv/src/measure.rs": "4d0faf4186eb734b074ac3169c7ded04f47030ee3d32eb1449d3929fbb43c4d8",
+    "crates/aleph-sv/src/measure_soa.rs": "3628e4c31cd7103fa84e64670b003c45cdc275fb7769287e9663e033706f1813",
+    "crates/aleph-sv/src/fp32_measure.rs": "f6f7dfa28096a33d27996f8a8f3ac6779a51d2a09aaa32134b7d37032184a60a",
+    "crates/aleph-sv/src/sampling.rs": "17ba8c6073af009861a3bfb414edf23b8ff95244dc853b0bfabd0086b9d8355a",
+    "crates/aleph-sv/benches/sample.rs": "ab6f5b3dbdc0d73a235a186acb0c70db3e85babfd12b3574beaed464913766ab",
+    "crates/aleph-sv/examples/sampling_allocations.rs": "e66b6c08fab379bceec90f2a8c0befd42170df7526082839c2beb21e42d0d2a0"
+  },
+  "discarded_pilot": "Shared Cargo target cache reused the baseline release executable for candidate (identical hashes and unchanged allocation counts). Pilot excluded from all reported timings; fresh independent targets and allocation preflight required before accepted campaigns.",
+  "initial_helper": "Separately valid initial inline-helper campaign retained in p8-06-initial-helper-criterion.json; tiny many-shot regression motivated v2 helper isolation.",
+  "validation": {
+    "mac": "346 SV unit/property, 6 noise oracles, 3 noise-driver, 2 public single-shot/worker invariance, million-shot convergence and 3 FP32 equivalence tests passed",
+    "linux_final_release": "6 noise oracles and 2 public sampler/worker-invariance tests passed"
+  }
+}

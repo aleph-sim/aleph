@@ -8,6 +8,7 @@ import argparse
 import hashlib
 import json
 import math
+import os
 import pathlib
 import statistics
 import subprocess
@@ -20,7 +21,12 @@ parser.add_argument("--backend", choices=["sv", "metal"], default="sv")
 parser.add_argument("--precision", choices=["f64", "f32", "auto"], default="f64")
 parser.add_argument("--qubits", type=int, default=20)
 parser.add_argument("--output", required=True)
+parser.add_argument("--blocks", type=int, default=0,
+                    help="Use this many ABBA blocks (0 preserves the original six-run campaign)")
+parser.add_argument("--warmups", type=int, default=0, help="Untimed runs per mode and workload")
 args = parser.parse_args()
+if args.blocks < 0 or args.warmups < 0:
+    parser.error("blocks and warmups must be nonnegative")
 
 
 def qft(n):
@@ -58,7 +64,11 @@ with tempfile.TemporaryDirectory(prefix="aleph-cli-p8-01-") as temp:
         path.write_text(source)
         raw_output = None
         stable_outputs = {}
-        for mode in ["raw", "optimized", "optimized", "raw", "raw", "optimized"]:
+        order = (["raw", "optimized", "optimized", "raw"] * args.blocks
+                 if args.blocks else ["raw", "optimized", "optimized", "raw", "raw", "optimized"])
+        warmups = ["raw", "optimized"] * args.warmups
+        for index, mode in enumerate(warmups + order):
+            load_before = os.getloadavg()
             cmd = [args.binary, 'run', str(path), '--backend', args.backend,
                    '--precision', args.precision, '--shots', '32', '--seed', '7',
                    '--execution-stats']
@@ -67,6 +77,8 @@ with tempfile.TemporaryDirectory(prefix="aleph-cli-p8-01-") as temp:
             start = time.perf_counter()
             result = subprocess.run(cmd, capture_output=True, text=True, check=True)
             wall_ms = (time.perf_counter()-start)*1000
+            if index < len(warmups):
+                continue
             if mode == 'raw':
                 raw_output = result.stdout
             if mode in stable_outputs and result.stdout != stable_outputs[mode]:
@@ -85,7 +97,7 @@ with tempfile.TemporaryDirectory(prefix="aleph-cli-p8-01-") as temp:
                 key, value = part.strip().split('=', 1)
                 stats[key] = float(value) if key == 'planning_us' else int(value)
             row = dict(workload=name, qubits=n, backend=args.backend, precision=args.precision,
-                       mode=mode, wall_ms=wall_ms, seeded_histogram_matches_raw=(result.stdout == raw_output), source_sha256=hashlib.sha256(source.encode()).hexdigest(),
+                       mode=mode, wall_ms=wall_ms, load_before=load_before, load_after=os.getloadavg(), seeded_histogram_matches_raw=(result.stdout == raw_output), source_sha256=hashlib.sha256(source.encode()).hexdigest(),
                        stdout_sha256=hashlib.sha256(result.stdout.encode()).hexdigest(), **stats)
             rows.append(row)
             pathlib.Path(args.output).write_text(json.dumps(rows, indent=2)+'\n')

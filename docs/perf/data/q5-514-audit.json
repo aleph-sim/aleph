@@ -1,0 +1,1652 @@
+{
+  "baseline_commit": "bb128f7e3dcc3138b7bb89d20fba070f40f0c677",
+  "candidate_code_commit": "58606d38368e29bd60b04e0696b8218cb3c0a763",
+  "baseline_candidate_signature_pairs_equal": 16,
+  "sample_metadata": [
+    {
+      "case": "toy",
+      "shots": 256,
+      "empty_syndromes": 104,
+      "syndrome_truth_sha256": "16527515c2e81b106d32585d57201eec5a59dfdbaf1322f5cc9cc54b199a717e",
+      "detectors": 5,
+      "columns": 8
+    },
+    {
+      "case": "gross-circuit-r2-p0.003",
+      "shots": 256,
+      "empty_syndromes": 1,
+      "syndrome_truth_sha256": "3bc699431a367b8763d48455ff26f5fef9956449928739eac2b239d00cf01156",
+      "detectors": 216,
+      "columns": 1584
+    }
+  ],
+  "estimator": "256 divided by median of six batch elapsed times per candidate case (two processes, three repeats)",
+  "runs": [
+    {
+      "variant": "base",
+      "round": 1,
+      "data": {
+        "python": "3.12.3",
+        "platform": "Linux-6.8.0-146-generic-x86_64-with-glibc2.39",
+        "numpy": "2.5.3",
+        "native_module": "/tmp/aleph-514-IoS4E1/base/crates/aleph-py/python/aleph/_native.abi3.so",
+        "rows": [
+          {
+            "case": "toy",
+            "decoder": "relay-bp",
+            "mode": "default",
+            "params": {},
+            "shots": 256,
+            "detectors": 5,
+            "columns": 8,
+            "seed": 514,
+            "signature": "d81fbc8a295bb22c125ae4592d83a36c66909f25ec44ff95299f4591e6eb5f25",
+            "nonconverged": 74,
+            "logical_mismatches": 63,
+            "seconds": [
+              0.0031470730900764465,
+              0.003141427878290415,
+              0.003145448863506317
+            ],
+            "median_shots_per_second": 81387.43025522592
+          },
+          {
+            "case": "toy",
+            "decoder": "relay-bp",
+            "mode": "legacy-6",
+            "params": {
+              "legs": 6,
+              "seed": 7
+            },
+            "shots": 256,
+            "detectors": 5,
+            "columns": 8,
+            "seed": 514,
+            "signature": "f4d5975bda1430690c4136dc4b9b18658eed25ac5c3562325f92077c1997d7a8",
+            "nonconverged": 24,
+            "logical_mismatches": 43,
+            "seconds": [
+              0.0035027049016207457,
+              0.003503739135339856,
+              0.0034970780834555626
+            ],
+            "median_shots_per_second": 73086.37387110332
+          },
+          {
+            "case": "toy",
+            "decoder": "relay-bp-osd",
+            "mode": "default",
+            "params": {},
+            "shots": 256,
+            "detectors": 5,
+            "columns": 8,
+            "seed": 514,
+            "signature": "9ee7f048a398b212d3bb244ecaa9b4eafc03f4206833414fed37db8a27e36e68",
+            "nonconverged": 0,
+            "logical_mismatches": 62,
+            "seconds": [
+              0.003192638047039509,
+              0.0031828649807721376,
+              0.0031856230925768614
+            ],
+            "median_shots_per_second": 80361.04478164137
+          },
+          {
+            "case": "toy",
+            "decoder": "relay-bp-osd",
+            "mode": "legacy-6",
+            "params": {
+              "legs": 6,
+              "seed": 7
+            },
+            "shots": 256,
+            "detectors": 5,
+            "columns": 8,
+            "seed": 514,
+            "signature": "fb58fb44f3fa72202a8f08ff2065921f5d2be0eecdf8881c41ed864e33eea85a",
+            "nonconverged": 0,
+            "logical_mismatches": 40,
+            "seconds": [
+              0.0035469001159071922,
+              0.003551532980054617,
+              0.0035492859315127134
+            ],
+            "median_shots_per_second": 72127.18415472722
+          },
+          {
+            "case": "gross-circuit-r2-p0.003",
+            "decoder": "relay-bp",
+            "mode": "default",
+            "params": {},
+            "shots": 256,
+            "detectors": 216,
+            "columns": 1584,
+            "seed": 514,
+            "signature": "b02086a9a1e3174d9dfdd6020df00dd53a5658a52f217e95afc0f34ee4a5dcea",
+            "nonconverged": 1,
+            "logical_mismatches": 0,
+            "seconds": [
+              0.6366508661303669,
+              0.6354811419732869,
+              0.635608792072162
+            ],
+            "median_shots_per_second": 402.76346581898093
+          },
+          {
+            "case": "gross-circuit-r2-p0.003",
+            "decoder": "relay-bp",
+            "mode": "legacy-6",
+            "params": {
+              "legs": 6,
+              "seed": 7
+            },
+            "shots": 256,
+            "detectors": 216,
+            "columns": 1584,
+            "seed": 514,
+            "signature": "2e8700d7d952f4a439cb6ae6fa5b33fbfa84f246735906b4c459d38c3c6d8d13",
+            "nonconverged": 1,
+            "logical_mismatches": 0,
+            "seconds": [
+              0.6437640329822898,
+              0.6437698409426957,
+              0.6481673819944263
+            ],
+            "median_shots_per_second": 397.6576467532711
+          },
+          {
+            "case": "gross-circuit-r2-p0.003",
+            "decoder": "relay-bp-osd",
+            "mode": "default",
+            "params": {},
+            "shots": 256,
+            "detectors": 216,
+            "columns": 1584,
+            "seed": 514,
+            "signature": "39b58441be3ff675d25aef0e95d0c2ad5ca47ce1a80e79ca549ac743e6aa1fda",
+            "nonconverged": 0,
+            "logical_mismatches": 0,
+            "seconds": [
+              0.6388489520177245,
+              0.6393321959767491,
+              0.639208285138011
+            ],
+            "median_shots_per_second": 400.4954346684152
+          },
+          {
+            "case": "gross-circuit-r2-p0.003",
+            "decoder": "relay-bp-osd",
+            "mode": "legacy-6",
+            "params": {
+              "legs": 6,
+              "seed": 7
+            },
+            "shots": 256,
+            "detectors": 216,
+            "columns": 1584,
+            "seed": 514,
+            "signature": "c9634e5089c5f88111393786495e40cea902935bfe12ef8a76ed6811d664814b",
+            "nonconverged": 0,
+            "logical_mismatches": 0,
+            "seconds": [
+              0.6441717508714646,
+              0.6433751459699124,
+              0.6441503090318292
+            ],
+            "median_shots_per_second": 397.4227698264604
+          }
+        ]
+      }
+    },
+    {
+      "variant": "base",
+      "round": 2,
+      "data": {
+        "python": "3.12.3",
+        "platform": "Linux-6.8.0-146-generic-x86_64-with-glibc2.39",
+        "numpy": "2.5.3",
+        "native_module": "/tmp/aleph-514-IoS4E1/base/crates/aleph-py/python/aleph/_native.abi3.so",
+        "rows": [
+          {
+            "case": "toy",
+            "decoder": "relay-bp",
+            "mode": "default",
+            "params": {},
+            "shots": 256,
+            "detectors": 5,
+            "columns": 8,
+            "seed": 514,
+            "signature": "d81fbc8a295bb22c125ae4592d83a36c66909f25ec44ff95299f4591e6eb5f25",
+            "nonconverged": 74,
+            "logical_mismatches": 63,
+            "seconds": [
+              0.00312958681024611,
+              0.003132395911961794,
+              0.0031208209693431854
+            ],
+            "median_shots_per_second": 81799.93574930367
+          },
+          {
+            "case": "toy",
+            "decoder": "relay-bp",
+            "mode": "legacy-6",
+            "params": {
+              "legs": 6,
+              "seed": 7
+            },
+            "shots": 256,
+            "detectors": 5,
+            "columns": 8,
+            "seed": 514,
+            "signature": "f4d5975bda1430690c4136dc4b9b18658eed25ac5c3562325f92077c1997d7a8",
+            "nonconverged": 24,
+            "logical_mismatches": 43,
+            "seconds": [
+              0.0035008308477699757,
+              0.0035038560163229704,
+              0.003496095072478056
+            ],
+            "median_shots_per_second": 73125.49824081664
+          },
+          {
+            "case": "toy",
+            "decoder": "relay-bp-osd",
+            "mode": "default",
+            "params": {},
+            "shots": 256,
+            "detectors": 5,
+            "columns": 8,
+            "seed": 514,
+            "signature": "9ee7f048a398b212d3bb244ecaa9b4eafc03f4206833414fed37db8a27e36e68",
+            "nonconverged": 0,
+            "logical_mismatches": 62,
+            "seconds": [
+              0.0031864261254668236,
+              0.0031956189777702093,
+              0.003195845987647772
+            ],
+            "median_shots_per_second": 80109.67570940757
+          },
+          {
+            "case": "toy",
+            "decoder": "relay-bp-osd",
+            "mode": "legacy-6",
+            "params": {
+              "legs": 6,
+              "seed": 7
+            },
+            "shots": 256,
+            "detectors": 5,
+            "columns": 8,
+            "seed": 514,
+            "signature": "fb58fb44f3fa72202a8f08ff2065921f5d2be0eecdf8881c41ed864e33eea85a",
+            "nonconverged": 0,
+            "logical_mismatches": 40,
+            "seconds": [
+              0.0035219169221818447,
+              0.0035427340772002935,
+              0.003533784067258239
+            ],
+            "median_shots_per_second": 72443.58883496326
+          },
+          {
+            "case": "gross-circuit-r2-p0.003",
+            "decoder": "relay-bp",
+            "mode": "default",
+            "params": {},
+            "shots": 256,
+            "detectors": 216,
+            "columns": 1584,
+            "seed": 514,
+            "signature": "b02086a9a1e3174d9dfdd6020df00dd53a5658a52f217e95afc0f34ee4a5dcea",
+            "nonconverged": 1,
+            "logical_mismatches": 0,
+            "seconds": [
+              0.6362839238718152,
+              0.6368821719661355,
+              0.636277839075774
+            ],
+            "median_shots_per_second": 402.3361119077611
+          },
+          {
+            "case": "gross-circuit-r2-p0.003",
+            "decoder": "relay-bp",
+            "mode": "legacy-6",
+            "params": {
+              "legs": 6,
+              "seed": 7
+            },
+            "shots": 256,
+            "detectors": 216,
+            "columns": 1584,
+            "seed": 514,
+            "signature": "2e8700d7d952f4a439cb6ae6fa5b33fbfa84f246735906b4c459d38c3c6d8d13",
+            "nonconverged": 1,
+            "logical_mismatches": 0,
+            "seconds": [
+              0.6433098709676415,
+              0.6429882240481675,
+              0.643481733975932
+            ],
+            "median_shots_per_second": 397.9419740830882
+          },
+          {
+            "case": "gross-circuit-r2-p0.003",
+            "decoder": "relay-bp-osd",
+            "mode": "default",
+            "params": {},
+            "shots": 256,
+            "detectors": 216,
+            "columns": 1584,
+            "seed": 514,
+            "signature": "39b58441be3ff675d25aef0e95d0c2ad5ca47ce1a80e79ca549ac743e6aa1fda",
+            "nonconverged": 0,
+            "logical_mismatches": 0,
+            "seconds": [
+              0.6371796019375324,
+              0.6367213928606361,
+              0.6368180499412119
+            ],
+            "median_shots_per_second": 401.99865569707504
+          },
+          {
+            "case": "gross-circuit-r2-p0.003",
+            "decoder": "relay-bp-osd",
+            "mode": "legacy-6",
+            "params": {
+              "legs": 6,
+              "seed": 7
+            },
+            "shots": 256,
+            "detectors": 216,
+            "columns": 1584,
+            "seed": 514,
+            "signature": "c9634e5089c5f88111393786495e40cea902935bfe12ef8a76ed6811d664814b",
+            "nonconverged": 0,
+            "logical_mismatches": 0,
+            "seconds": [
+              0.6502993330359459,
+              0.657823986839503,
+              0.6616986480075866
+            ],
+            "median_shots_per_second": 389.1618504669385
+          }
+        ]
+      }
+    },
+    {
+      "variant": "candidate",
+      "round": 1,
+      "data": {
+        "python": "3.12.3",
+        "platform": "Linux-6.8.0-146-generic-x86_64-with-glibc2.39",
+        "numpy": "2.5.3",
+        "native_module": "/tmp/aleph-514-IoS4E1/candidate/crates/aleph-py/python/aleph/_native.abi3.so",
+        "rows": [
+          {
+            "case": "toy",
+            "decoder": "relay-bp",
+            "mode": "default",
+            "params": {},
+            "shots": 256,
+            "detectors": 5,
+            "columns": 8,
+            "seed": 514,
+            "signature": "d81fbc8a295bb22c125ae4592d83a36c66909f25ec44ff95299f4591e6eb5f25",
+            "nonconverged": 74,
+            "logical_mismatches": 63,
+            "seconds": [
+              0.0030874980147928,
+              0.0030975339468568563,
+              0.0030842439737170935
+            ],
+            "median_shots_per_second": 82915.0330699662
+          },
+          {
+            "case": "toy",
+            "decoder": "relay-bp",
+            "mode": "legacy-6",
+            "params": {
+              "legs": 6,
+              "seed": 7
+            },
+            "shots": 256,
+            "detectors": 5,
+            "columns": 8,
+            "seed": 514,
+            "signature": "f4d5975bda1430690c4136dc4b9b18658eed25ac5c3562325f92077c1997d7a8",
+            "nonconverged": 24,
+            "logical_mismatches": 43,
+            "seconds": [
+              0.003475781064480543,
+              0.0034886738285422325,
+              0.0034899290185421705
+            ],
+            "median_shots_per_second": 73380.31945135193
+          },
+          {
+            "case": "toy",
+            "decoder": "relay-bp",
+            "mode": "explicit-default",
+            "params": {
+              "legs": 4,
+              "iters_per_leg": 25,
+              "early_exit": false
+            },
+            "shots": 256,
+            "detectors": 5,
+            "columns": 8,
+            "seed": 514,
+            "signature": "d81fbc8a295bb22c125ae4592d83a36c66909f25ec44ff95299f4591e6eb5f25",
+            "nonconverged": 74,
+            "logical_mismatches": 63,
+            "seconds": [
+              0.0030740401707589626,
+              0.0030850779730826616,
+              0.003082052106037736
+            ],
+            "median_shots_per_second": 83061.54185339577
+          },
+          {
+            "case": "toy",
+            "decoder": "relay-bp",
+            "mode": "explicit-legacy-6",
+            "params": {
+              "legs": 6,
+              "iters_per_leg": 16,
+              "early_exit": false,
+              "seed": 7
+            },
+            "shots": 256,
+            "detectors": 5,
+            "columns": 8,
+            "seed": 514,
+            "signature": "f4d5975bda1430690c4136dc4b9b18658eed25ac5c3562325f92077c1997d7a8",
+            "nonconverged": 24,
+            "logical_mismatches": 43,
+            "seconds": [
+              0.003461102955043316,
+              0.0034760800190269947,
+              0.003476194106042385
+            ],
+            "median_shots_per_second": 73646.17574933103
+          },
+          {
+            "case": "toy",
+            "decoder": "relay-bp",
+            "mode": "6x10-full",
+            "params": {
+              "legs": 6,
+              "iters_per_leg": 10,
+              "early_exit": false,
+              "seed": 7
+            },
+            "shots": 256,
+            "detectors": 5,
+            "columns": 8,
+            "seed": 514,
+            "signature": "1a587cf1f25af3f48e1fca5a699d50935b20dfca7e8bf45978e7a653adce950e",
+            "nonconverged": 39,
+            "logical_mismatches": 45,
+            "seconds": [
+              0.0022495361045002937,
+              0.0022621839307248592,
+              0.002220180816948414
+            ],
+            "median_shots_per_second": 113801.24083710459
+          },
+          {
+            "case": "toy",
+            "decoder": "relay-bp",
+            "mode": "6x10-first",
+            "params": {
+              "legs": 6,
+              "iters_per_leg": 10,
+              "early_exit": true,
+              "seed": 7
+            },
+            "shots": 256,
+            "detectors": 5,
+            "columns": 8,
+            "seed": 514,
+            "signature": "329ffd71e57a882a9d11aeca480b04762df4ba32e02d8ba83c72929ec88d8838",
+            "nonconverged": 39,
+            "logical_mismatches": 61,
+            "seconds": [
+              0.000738062895834446,
+              0.0007239168044179678,
+              0.0007317860145121813
+            ],
+            "median_shots_per_second": 349829.04144547385
+          },
+          {
+            "case": "toy",
+            "decoder": "relay-bp-osd",
+            "mode": "default",
+            "params": {},
+            "shots": 256,
+            "detectors": 5,
+            "columns": 8,
+            "seed": 514,
+            "signature": "9ee7f048a398b212d3bb244ecaa9b4eafc03f4206833414fed37db8a27e36e68",
+            "nonconverged": 0,
+            "logical_mismatches": 62,
+            "seconds": [
+              0.0031401829328387976,
+              0.0031316319946199656,
+              0.003137574065476656
+            ],
+            "median_shots_per_second": 81591.69940140005
+          },
+          {
+            "case": "toy",
+            "decoder": "relay-bp-osd",
+            "mode": "legacy-6",
+            "params": {
+              "legs": 6,
+              "seed": 7
+            },
+            "shots": 256,
+            "detectors": 5,
+            "columns": 8,
+            "seed": 514,
+            "signature": "fb58fb44f3fa72202a8f08ff2065921f5d2be0eecdf8881c41ed864e33eea85a",
+            "nonconverged": 0,
+            "logical_mismatches": 40,
+            "seconds": [
+              0.0035018010530620813,
+              0.003499430138617754,
+              0.0034914689604192972
+            ],
+            "median_shots_per_second": 73154.7680220637
+          },
+          {
+            "case": "toy",
+            "decoder": "relay-bp-osd",
+            "mode": "explicit-default",
+            "params": {
+              "legs": 4,
+              "iters_per_leg": 25,
+              "early_exit": false
+            },
+            "shots": 256,
+            "detectors": 5,
+            "columns": 8,
+            "seed": 514,
+            "signature": "9ee7f048a398b212d3bb244ecaa9b4eafc03f4206833414fed37db8a27e36e68",
+            "nonconverged": 0,
+            "logical_mismatches": 62,
+            "seconds": [
+              0.0031535611487925053,
+              0.0031404311303049326,
+              0.003130357014015317
+            ],
+            "median_shots_per_second": 81517.46985616675
+          },
+          {
+            "case": "toy",
+            "decoder": "relay-bp-osd",
+            "mode": "explicit-legacy-6",
+            "params": {
+              "legs": 6,
+              "iters_per_leg": 16,
+              "early_exit": false,
+              "seed": 7
+            },
+            "shots": 256,
+            "detectors": 5,
+            "columns": 8,
+            "seed": 514,
+            "signature": "fb58fb44f3fa72202a8f08ff2065921f5d2be0eecdf8881c41ed864e33eea85a",
+            "nonconverged": 0,
+            "logical_mismatches": 40,
+            "seconds": [
+              0.0035009928978979588,
+              0.0034943900536745787,
+              0.0035080090165138245
+            ],
+            "median_shots_per_second": 73122.1134877782
+          },
+          {
+            "case": "toy",
+            "decoder": "relay-bp-osd",
+            "mode": "6x10-full",
+            "params": {
+              "legs": 6,
+              "iters_per_leg": 10,
+              "early_exit": false,
+              "seed": 7
+            },
+            "shots": 256,
+            "detectors": 5,
+            "columns": 8,
+            "seed": 514,
+            "signature": "6f59c0dd1d72ae6cb4b9dcb35c11574a763b7c3f187c00640801c173beac0357",
+            "nonconverged": 0,
+            "logical_mismatches": 40,
+            "seconds": [
+              0.002275576116517186,
+              0.0022585769183933735,
+              0.002259257948026061
+            ],
+            "median_shots_per_second": 113311.54117380446
+          },
+          {
+            "case": "toy",
+            "decoder": "relay-bp-osd",
+            "mode": "6x10-first",
+            "params": {
+              "legs": 6,
+              "iters_per_leg": 10,
+              "early_exit": true,
+              "seed": 7
+            },
+            "shots": 256,
+            "detectors": 5,
+            "columns": 8,
+            "seed": 514,
+            "signature": "999a6fb77f46af68f5382ba60f82df3b5da22eee20fa28b18e914b6bdb054346",
+            "nonconverged": 0,
+            "logical_mismatches": 56,
+            "seconds": [
+              0.0007693429943174124,
+              0.0007768499199301004,
+              0.0007718410342931747
+            ],
+            "median_shots_per_second": 331674.5140849319
+          },
+          {
+            "case": "gross-circuit-r2-p0.003",
+            "decoder": "relay-bp",
+            "mode": "default",
+            "params": {},
+            "shots": 256,
+            "detectors": 216,
+            "columns": 1584,
+            "seed": 514,
+            "signature": "b02086a9a1e3174d9dfdd6020df00dd53a5658a52f217e95afc0f34ee4a5dcea",
+            "nonconverged": 1,
+            "logical_mismatches": 0,
+            "seconds": [
+              0.6434669299051166,
+              0.6439754320308566,
+              0.6433822440449148
+            ],
+            "median_shots_per_second": 397.8448434603296
+          },
+          {
+            "case": "gross-circuit-r2-p0.003",
+            "decoder": "relay-bp",
+            "mode": "legacy-6",
+            "params": {
+              "legs": 6,
+              "seed": 7
+            },
+            "shots": 256,
+            "detectors": 216,
+            "columns": 1584,
+            "seed": 514,
+            "signature": "2e8700d7d952f4a439cb6ae6fa5b33fbfa84f246735906b4c459d38c3c6d8d13",
+            "nonconverged": 1,
+            "logical_mismatches": 0,
+            "seconds": [
+              0.6506591259967536,
+              0.6508053350262344,
+              0.6508715399540961
+            ],
+            "median_shots_per_second": 393.3587913652866
+          },
+          {
+            "case": "gross-circuit-r2-p0.003",
+            "decoder": "relay-bp",
+            "mode": "explicit-default",
+            "params": {
+              "legs": 4,
+              "iters_per_leg": 25,
+              "early_exit": false
+            },
+            "shots": 256,
+            "detectors": 216,
+            "columns": 1584,
+            "seed": 514,
+            "signature": "b02086a9a1e3174d9dfdd6020df00dd53a5658a52f217e95afc0f34ee4a5dcea",
+            "nonconverged": 1,
+            "logical_mismatches": 0,
+            "seconds": [
+              0.6433773259632289,
+              0.6437843460589647,
+              0.6433267469983548
+            ],
+            "median_shots_per_second": 397.9002517950581
+          },
+          {
+            "case": "gross-circuit-r2-p0.003",
+            "decoder": "relay-bp",
+            "mode": "explicit-legacy-6",
+            "params": {
+              "legs": 6,
+              "iters_per_leg": 16,
+              "early_exit": false,
+              "seed": 7
+            },
+            "shots": 256,
+            "detectors": 216,
+            "columns": 1584,
+            "seed": 514,
+            "signature": "2e8700d7d952f4a439cb6ae6fa5b33fbfa84f246735906b4c459d38c3c6d8d13",
+            "nonconverged": 1,
+            "logical_mismatches": 0,
+            "seconds": [
+              0.6503074399661273,
+              0.6499358019791543,
+              0.6498357611708343
+            ],
+            "median_shots_per_second": 393.88505637086104
+          },
+          {
+            "case": "gross-circuit-r2-p0.003",
+            "decoder": "relay-bp",
+            "mode": "6x10-full",
+            "params": {
+              "legs": 6,
+              "iters_per_leg": 10,
+              "early_exit": false,
+              "seed": 7
+            },
+            "shots": 256,
+            "detectors": 216,
+            "columns": 1584,
+            "seed": 514,
+            "signature": "ad849ee30fa7350e61bcf98245994107501e9125581b7dbd5478754c7acf028e",
+            "nonconverged": 1,
+            "logical_mismatches": 0,
+            "seconds": [
+              0.4254404290113598,
+              0.42445203219540417,
+              0.42500797705724835
+            ],
+            "median_shots_per_second": 602.3416354971542
+          },
+          {
+            "case": "gross-circuit-r2-p0.003",
+            "decoder": "relay-bp",
+            "mode": "6x10-first",
+            "params": {
+              "legs": 6,
+              "iters_per_leg": 10,
+              "early_exit": true,
+              "seed": 7
+            },
+            "shots": 256,
+            "detectors": 216,
+            "columns": 1584,
+            "seed": 514,
+            "signature": "6fcd3c98454e19999b070643410eca756b6b106442ee94d3e6b6f19e78b669bd",
+            "nonconverged": 1,
+            "logical_mismatches": 0,
+            "seconds": [
+              0.03530619479715824,
+              0.03530817595310509,
+              0.03533813706599176
+            ],
+            "median_shots_per_second": 7250.445345576871
+          },
+          {
+            "case": "gross-circuit-r2-p0.003",
+            "decoder": "relay-bp-osd",
+            "mode": "default",
+            "params": {},
+            "shots": 256,
+            "detectors": 216,
+            "columns": 1584,
+            "seed": 514,
+            "signature": "39b58441be3ff675d25aef0e95d0c2ad5ca47ce1a80e79ca549ac743e6aa1fda",
+            "nonconverged": 0,
+            "logical_mismatches": 0,
+            "seconds": [
+              0.643392011988908,
+              0.6429116199724376,
+              0.643738912185654
+            ],
+            "median_shots_per_second": 397.8911693488874
+          },
+          {
+            "case": "gross-circuit-r2-p0.003",
+            "decoder": "relay-bp-osd",
+            "mode": "legacy-6",
+            "params": {
+              "legs": 6,
+              "seed": 7
+            },
+            "shots": 256,
+            "detectors": 216,
+            "columns": 1584,
+            "seed": 514,
+            "signature": "c9634e5089c5f88111393786495e40cea902935bfe12ef8a76ed6811d664814b",
+            "nonconverged": 0,
+            "logical_mismatches": 0,
+            "seconds": [
+              0.6510879260022193,
+              0.6522031829226762,
+              0.6692705089226365
+            ],
+            "median_shots_per_second": 392.5157170389811
+          },
+          {
+            "case": "gross-circuit-r2-p0.003",
+            "decoder": "relay-bp-osd",
+            "mode": "explicit-default",
+            "params": {
+              "legs": 4,
+              "iters_per_leg": 25,
+              "early_exit": false
+            },
+            "shots": 256,
+            "detectors": 216,
+            "columns": 1584,
+            "seed": 514,
+            "signature": "39b58441be3ff675d25aef0e95d0c2ad5ca47ce1a80e79ca549ac743e6aa1fda",
+            "nonconverged": 0,
+            "logical_mismatches": 0,
+            "seconds": [
+              0.6432156669907272,
+              0.6433327561244369,
+              0.642415493959561
+            ],
+            "median_shots_per_second": 398.0002558048552
+          },
+          {
+            "case": "gross-circuit-r2-p0.003",
+            "decoder": "relay-bp-osd",
+            "mode": "explicit-legacy-6",
+            "params": {
+              "legs": 6,
+              "iters_per_leg": 16,
+              "early_exit": false,
+              "seed": 7
+            },
+            "shots": 256,
+            "detectors": 216,
+            "columns": 1584,
+            "seed": 514,
+            "signature": "c9634e5089c5f88111393786495e40cea902935bfe12ef8a76ed6811d664814b",
+            "nonconverged": 0,
+            "logical_mismatches": 0,
+            "seconds": [
+              0.6520511109847575,
+              0.6521236840635538,
+              0.653375610942021
+            ],
+            "median_shots_per_second": 392.56356770359395
+          },
+          {
+            "case": "gross-circuit-r2-p0.003",
+            "decoder": "relay-bp-osd",
+            "mode": "6x10-full",
+            "params": {
+              "legs": 6,
+              "iters_per_leg": 10,
+              "early_exit": false,
+              "seed": 7
+            },
+            "shots": 256,
+            "detectors": 216,
+            "columns": 1584,
+            "seed": 514,
+            "signature": "077890b191bd07b73fc79c7288fc0a7c34700b809d8fb4b23ce753c1005996f2",
+            "nonconverged": 0,
+            "logical_mismatches": 0,
+            "seconds": [
+              0.42627274594269693,
+              0.4262928990647197,
+              0.4259268140885979
+            ],
+            "median_shots_per_second": 600.5544629269206
+          },
+          {
+            "case": "gross-circuit-r2-p0.003",
+            "decoder": "relay-bp-osd",
+            "mode": "6x10-first",
+            "params": {
+              "legs": 6,
+              "iters_per_leg": 10,
+              "early_exit": true,
+              "seed": 7
+            },
+            "shots": 256,
+            "detectors": 216,
+            "columns": 1584,
+            "seed": 514,
+            "signature": "e82dd97a6cd6144c210bbec1b1c335ccc0f8baf9969b9fc40f6002a8ee7edbea",
+            "nonconverged": 0,
+            "logical_mismatches": 0,
+            "seconds": [
+              0.03574484004639089,
+              0.03579535288736224,
+              0.03575017908588052
+            ],
+            "median_shots_per_second": 7160.80328954511
+          }
+        ]
+      }
+    },
+    {
+      "variant": "candidate",
+      "round": 2,
+      "data": {
+        "python": "3.12.3",
+        "platform": "Linux-6.8.0-146-generic-x86_64-with-glibc2.39",
+        "numpy": "2.5.3",
+        "native_module": "/tmp/aleph-514-IoS4E1/candidate/crates/aleph-py/python/aleph/_native.abi3.so",
+        "rows": [
+          {
+            "case": "toy",
+            "decoder": "relay-bp",
+            "mode": "default",
+            "params": {},
+            "shots": 256,
+            "detectors": 5,
+            "columns": 8,
+            "seed": 514,
+            "signature": "d81fbc8a295bb22c125ae4592d83a36c66909f25ec44ff95299f4591e6eb5f25",
+            "nonconverged": 74,
+            "logical_mismatches": 63,
+            "seconds": [
+              0.0030836029909551144,
+              0.003077354049310088,
+              0.003073024097830057
+            ],
+            "median_shots_per_second": 83188.34813868512
+          },
+          {
+            "case": "toy",
+            "decoder": "relay-bp",
+            "mode": "legacy-6",
+            "params": {
+              "legs": 6,
+              "seed": 7
+            },
+            "shots": 256,
+            "detectors": 5,
+            "columns": 8,
+            "seed": 514,
+            "signature": "f4d5975bda1430690c4136dc4b9b18658eed25ac5c3562325f92077c1997d7a8",
+            "nonconverged": 24,
+            "logical_mismatches": 43,
+            "seconds": [
+              0.003460929961875081,
+              0.0034730660263448954,
+              0.0034615900367498398
+            ],
+            "median_shots_per_second": 73954.45367076565
+          },
+          {
+            "case": "toy",
+            "decoder": "relay-bp",
+            "mode": "explicit-default",
+            "params": {
+              "legs": 4,
+              "iters_per_leg": 25,
+              "early_exit": false
+            },
+            "shots": 256,
+            "detectors": 5,
+            "columns": 8,
+            "seed": 514,
+            "signature": "d81fbc8a295bb22c125ae4592d83a36c66909f25ec44ff95299f4591e6eb5f25",
+            "nonconverged": 74,
+            "logical_mismatches": 63,
+            "seconds": [
+              0.0030874700751155615,
+              0.0030878500547260046,
+              0.0030982240568846464
+            ],
+            "median_shots_per_second": 82905.58008417147
+          },
+          {
+            "case": "toy",
+            "decoder": "relay-bp",
+            "mode": "explicit-legacy-6",
+            "params": {
+              "legs": 6,
+              "iters_per_leg": 16,
+              "early_exit": false,
+              "seed": 7
+            },
+            "shots": 256,
+            "detectors": 5,
+            "columns": 8,
+            "seed": 514,
+            "signature": "f4d5975bda1430690c4136dc4b9b18658eed25ac5c3562325f92077c1997d7a8",
+            "nonconverged": 24,
+            "logical_mismatches": 43,
+            "seconds": [
+              0.003491617040708661,
+              0.003480317071080208,
+              0.0034705668222159147
+            ],
+            "median_shots_per_second": 73556.5164815698
+          },
+          {
+            "case": "toy",
+            "decoder": "relay-bp",
+            "mode": "6x10-full",
+            "params": {
+              "legs": 6,
+              "iters_per_leg": 10,
+              "early_exit": false,
+              "seed": 7
+            },
+            "shots": 256,
+            "detectors": 5,
+            "columns": 8,
+            "seed": 514,
+            "signature": "1a587cf1f25af3f48e1fca5a699d50935b20dfca7e8bf45978e7a653adce950e",
+            "nonconverged": 39,
+            "logical_mismatches": 45,
+            "seconds": [
+              0.002230819081887603,
+              0.0022171440068632364,
+              0.0022360950242727995
+            ],
+            "median_shots_per_second": 114756.05622997726
+          },
+          {
+            "case": "toy",
+            "decoder": "relay-bp",
+            "mode": "6x10-first",
+            "params": {
+              "legs": 6,
+              "iters_per_leg": 10,
+              "early_exit": true,
+              "seed": 7
+            },
+            "shots": 256,
+            "detectors": 5,
+            "columns": 8,
+            "seed": 514,
+            "signature": "329ffd71e57a882a9d11aeca480b04762df4ba32e02d8ba83c72929ec88d8838",
+            "nonconverged": 39,
+            "logical_mismatches": 61,
+            "seconds": [
+              0.0007475309539586306,
+              0.0007397988811135292,
+              0.0007395250722765923
+            ],
+            "median_shots_per_second": 346039.9934840052
+          },
+          {
+            "case": "toy",
+            "decoder": "relay-bp-osd",
+            "mode": "default",
+            "params": {},
+            "shots": 256,
+            "detectors": 5,
+            "columns": 8,
+            "seed": 514,
+            "signature": "9ee7f048a398b212d3bb244ecaa9b4eafc03f4206833414fed37db8a27e36e68",
+            "nonconverged": 0,
+            "logical_mismatches": 62,
+            "seconds": [
+              0.003129773074761033,
+              0.00313246320001781,
+              0.0031306101009249687
+            ],
+            "median_shots_per_second": 81773.19811379972
+          },
+          {
+            "case": "toy",
+            "decoder": "relay-bp-osd",
+            "mode": "legacy-6",
+            "params": {
+              "legs": 6,
+              "seed": 7
+            },
+            "shots": 256,
+            "detectors": 5,
+            "columns": 8,
+            "seed": 514,
+            "signature": "fb58fb44f3fa72202a8f08ff2065921f5d2be0eecdf8881c41ed864e33eea85a",
+            "nonconverged": 0,
+            "logical_mismatches": 40,
+            "seconds": [
+              0.003504789900034666,
+              0.0034842591267079115,
+              0.003499526996165514
+            ],
+            "median_shots_per_second": 73152.74329373745
+          },
+          {
+            "case": "toy",
+            "decoder": "relay-bp-osd",
+            "mode": "explicit-default",
+            "params": {
+              "legs": 4,
+              "iters_per_leg": 25,
+              "early_exit": false
+            },
+            "shots": 256,
+            "detectors": 5,
+            "columns": 8,
+            "seed": 514,
+            "signature": "9ee7f048a398b212d3bb244ecaa9b4eafc03f4206833414fed37db8a27e36e68",
+            "nonconverged": 0,
+            "logical_mismatches": 62,
+            "seconds": [
+              0.003149979980662465,
+              0.003125167917460203,
+              0.003141985973343253
+            ],
+            "median_shots_per_second": 81477.13012467758
+          },
+          {
+            "case": "toy",
+            "decoder": "relay-bp-osd",
+            "mode": "explicit-legacy-6",
+            "params": {
+              "legs": 6,
+              "iters_per_leg": 16,
+              "early_exit": false,
+              "seed": 7
+            },
+            "shots": 256,
+            "detectors": 5,
+            "columns": 8,
+            "seed": 514,
+            "signature": "fb58fb44f3fa72202a8f08ff2065921f5d2be0eecdf8881c41ed864e33eea85a",
+            "nonconverged": 0,
+            "logical_mismatches": 40,
+            "seconds": [
+              0.0034826931077986956,
+              0.003505348926410079,
+              0.0034760090056806803
+            ],
+            "median_shots_per_second": 73506.33319563715
+          },
+          {
+            "case": "toy",
+            "decoder": "relay-bp-osd",
+            "mode": "6x10-full",
+            "params": {
+              "legs": 6,
+              "iters_per_leg": 10,
+              "early_exit": false,
+              "seed": 7
+            },
+            "shots": 256,
+            "detectors": 5,
+            "columns": 8,
+            "seed": 514,
+            "signature": "6f59c0dd1d72ae6cb4b9dcb35c11574a763b7c3f187c00640801c173beac0357",
+            "nonconverged": 0,
+            "logical_mismatches": 40,
+            "seconds": [
+              0.002250696998089552,
+              0.0022614540066570044,
+              0.002262412803247571
+            ],
+            "median_shots_per_second": 113201.50630807308
+          },
+          {
+            "case": "toy",
+            "decoder": "relay-bp-osd",
+            "mode": "6x10-first",
+            "params": {
+              "legs": 6,
+              "iters_per_leg": 10,
+              "early_exit": true,
+              "seed": 7
+            },
+            "shots": 256,
+            "detectors": 5,
+            "columns": 8,
+            "seed": 514,
+            "signature": "999a6fb77f46af68f5382ba60f82df3b5da22eee20fa28b18e914b6bdb054346",
+            "nonconverged": 0,
+            "logical_mismatches": 56,
+            "seconds": [
+              0.0007704989984631538,
+              0.0007694370578974485,
+              0.0007875510491430759
+            ],
+            "median_shots_per_second": 332252.216434571
+          },
+          {
+            "case": "gross-circuit-r2-p0.003",
+            "decoder": "relay-bp",
+            "mode": "default",
+            "params": {},
+            "shots": 256,
+            "detectors": 216,
+            "columns": 1584,
+            "seed": 514,
+            "signature": "b02086a9a1e3174d9dfdd6020df00dd53a5658a52f217e95afc0f34ee4a5dcea",
+            "nonconverged": 1,
+            "logical_mismatches": 0,
+            "seconds": [
+              0.6437785469461232,
+              0.6439340219367296,
+              0.6431605610996485
+            ],
+            "median_shots_per_second": 397.65226911393836
+          },
+          {
+            "case": "gross-circuit-r2-p0.003",
+            "decoder": "relay-bp",
+            "mode": "legacy-6",
+            "params": {
+              "legs": 6,
+              "seed": 7
+            },
+            "shots": 256,
+            "detectors": 216,
+            "columns": 1584,
+            "seed": 514,
+            "signature": "2e8700d7d952f4a439cb6ae6fa5b33fbfa84f246735906b4c459d38c3c6d8d13",
+            "nonconverged": 1,
+            "logical_mismatches": 0,
+            "seconds": [
+              0.6510752851609141,
+              0.6514666778966784,
+              0.6518044641707093
+            ],
+            "median_shots_per_second": 392.9594692801789
+          },
+          {
+            "case": "gross-circuit-r2-p0.003",
+            "decoder": "relay-bp",
+            "mode": "explicit-default",
+            "params": {
+              "legs": 4,
+              "iters_per_leg": 25,
+              "early_exit": false
+            },
+            "shots": 256,
+            "detectors": 216,
+            "columns": 1584,
+            "seed": 514,
+            "signature": "b02086a9a1e3174d9dfdd6020df00dd53a5658a52f217e95afc0f34ee4a5dcea",
+            "nonconverged": 1,
+            "logical_mismatches": 0,
+            "seconds": [
+              0.6433239970356226,
+              0.6421981391031295,
+              0.6432512048631907
+            ],
+            "median_shots_per_second": 397.97826737759027
+          },
+          {
+            "case": "gross-circuit-r2-p0.003",
+            "decoder": "relay-bp",
+            "mode": "explicit-legacy-6",
+            "params": {
+              "legs": 6,
+              "iters_per_leg": 16,
+              "early_exit": false,
+              "seed": 7
+            },
+            "shots": 256,
+            "detectors": 216,
+            "columns": 1584,
+            "seed": 514,
+            "signature": "2e8700d7d952f4a439cb6ae6fa5b33fbfa84f246735906b4c459d38c3c6d8d13",
+            "nonconverged": 1,
+            "logical_mismatches": 0,
+            "seconds": [
+              0.6507108670193702,
+              0.6503745811060071,
+              0.6504427988547832
+            ],
+            "median_shots_per_second": 393.57803707064204
+          },
+          {
+            "case": "gross-circuit-r2-p0.003",
+            "decoder": "relay-bp",
+            "mode": "6x10-full",
+            "params": {
+              "legs": 6,
+              "iters_per_leg": 10,
+              "early_exit": false,
+              "seed": 7
+            },
+            "shots": 256,
+            "detectors": 216,
+            "columns": 1584,
+            "seed": 514,
+            "signature": "ad849ee30fa7350e61bcf98245994107501e9125581b7dbd5478754c7acf028e",
+            "nonconverged": 1,
+            "logical_mismatches": 0,
+            "seconds": [
+              0.42299422807991505,
+              0.42853296105749905,
+              0.4232384590432048
+            ],
+            "median_shots_per_second": 604.8599661257796
+          },
+          {
+            "case": "gross-circuit-r2-p0.003",
+            "decoder": "relay-bp",
+            "mode": "6x10-first",
+            "params": {
+              "legs": 6,
+              "iters_per_leg": 10,
+              "early_exit": true,
+              "seed": 7
+            },
+            "shots": 256,
+            "detectors": 216,
+            "columns": 1584,
+            "seed": 514,
+            "signature": "6fcd3c98454e19999b070643410eca756b6b106442ee94d3e6b6f19e78b669bd",
+            "nonconverged": 1,
+            "logical_mismatches": 0,
+            "seconds": [
+              0.03528605098836124,
+              0.035326929995790124,
+              0.03512083017267287
+            ],
+            "median_shots_per_second": 7254.991500308128
+          },
+          {
+            "case": "gross-circuit-r2-p0.003",
+            "decoder": "relay-bp-osd",
+            "mode": "default",
+            "params": {},
+            "shots": 256,
+            "detectors": 216,
+            "columns": 1584,
+            "seed": 514,
+            "signature": "39b58441be3ff675d25aef0e95d0c2ad5ca47ce1a80e79ca549ac743e6aa1fda",
+            "nonconverged": 0,
+            "logical_mismatches": 0,
+            "seconds": [
+              0.643607263918966,
+              0.6445280069019645,
+              0.6433835669886321
+            ],
+            "median_shots_per_second": 397.75809620481834
+          },
+          {
+            "case": "gross-circuit-r2-p0.003",
+            "decoder": "relay-bp-osd",
+            "mode": "legacy-6",
+            "params": {
+              "legs": 6,
+              "seed": 7
+            },
+            "shots": 256,
+            "detectors": 216,
+            "columns": 1584,
+            "seed": 514,
+            "signature": "c9634e5089c5f88111393786495e40cea902935bfe12ef8a76ed6811d664814b",
+            "nonconverged": 0,
+            "logical_mismatches": 0,
+            "seconds": [
+              0.6516652000136673,
+              0.6549564709421247,
+              0.6523731008637697
+            ],
+            "median_shots_per_second": 392.41348188796434
+          },
+          {
+            "case": "gross-circuit-r2-p0.003",
+            "decoder": "relay-bp-osd",
+            "mode": "explicit-default",
+            "params": {
+              "legs": 4,
+              "iters_per_leg": 25,
+              "early_exit": false
+            },
+            "shots": 256,
+            "detectors": 216,
+            "columns": 1584,
+            "seed": 514,
+            "signature": "39b58441be3ff675d25aef0e95d0c2ad5ca47ce1a80e79ca549ac743e6aa1fda",
+            "nonconverged": 0,
+            "logical_mismatches": 0,
+            "seconds": [
+              0.6432183259166777,
+              0.6437245309352875,
+              0.6439371379092336
+            ],
+            "median_shots_per_second": 397.68563678635894
+          },
+          {
+            "case": "gross-circuit-r2-p0.003",
+            "decoder": "relay-bp-osd",
+            "mode": "explicit-legacy-6",
+            "params": {
+              "legs": 6,
+              "iters_per_leg": 16,
+              "early_exit": false,
+              "seed": 7
+            },
+            "shots": 256,
+            "detectors": 216,
+            "columns": 1584,
+            "seed": 514,
+            "signature": "c9634e5089c5f88111393786495e40cea902935bfe12ef8a76ed6811d664814b",
+            "nonconverged": 0,
+            "logical_mismatches": 0,
+            "seconds": [
+              0.6515114679932594,
+              0.6515926879364997,
+              0.6512709041126072
+            ],
+            "median_shots_per_second": 392.93245411092073
+          },
+          {
+            "case": "gross-circuit-r2-p0.003",
+            "decoder": "relay-bp-osd",
+            "mode": "6x10-full",
+            "params": {
+              "legs": 6,
+              "iters_per_leg": 10,
+              "early_exit": false,
+              "seed": 7
+            },
+            "shots": 256,
+            "detectors": 216,
+            "columns": 1584,
+            "seed": 514,
+            "signature": "077890b191bd07b73fc79c7288fc0a7c34700b809d8fb4b23ce753c1005996f2",
+            "nonconverged": 0,
+            "logical_mismatches": 0,
+            "seconds": [
+              0.42364797089248896,
+              0.42363759595900774,
+              0.42341923294588923
+            ],
+            "median_shots_per_second": 604.2900876643895
+          },
+          {
+            "case": "gross-circuit-r2-p0.003",
+            "decoder": "relay-bp-osd",
+            "mode": "6x10-first",
+            "params": {
+              "legs": 6,
+              "iters_per_leg": 10,
+              "early_exit": true,
+              "seed": 7
+            },
+            "shots": 256,
+            "detectors": 216,
+            "columns": 1584,
+            "seed": 514,
+            "signature": "e82dd97a6cd6144c210bbec1b1c335ccc0f8baf9969b9fc40f6002a8ee7edbea",
+            "nonconverged": 0,
+            "logical_mismatches": 0,
+            "seconds": [
+              0.03565507289022207,
+              0.035760705126449466,
+              0.03573749796487391
+            ],
+            "median_shots_per_second": 7163.344234440258
+          }
+        ]
+      }
+    }
+  ],
+  "candidate_summary": [
+    {
+      "case": "toy",
+      "decoder": "relay-bp",
+      "mode": "default",
+      "shots": 256,
+      "nonconverged": 74,
+      "logical_mismatches": 63,
+      "signature": "d81fbc8a295bb22c125ae4592d83a36c66909f25ec44ff95299f4591e6eb5f25",
+      "median_shots_per_second": 83011.13872192359
+    },
+    {
+      "case": "toy",
+      "decoder": "relay-bp",
+      "mode": "legacy-6",
+      "shots": 256,
+      "nonconverged": 24,
+      "logical_mismatches": 43,
+      "signature": "f4d5975bda1430690c4136dc4b9b18658eed25ac5c3562325f92077c1997d7a8",
+      "median_shots_per_second": 73681.28745788542
+    },
+    {
+      "case": "toy",
+      "decoder": "relay-bp",
+      "mode": "6x10-full",
+      "shots": 256,
+      "nonconverged": 39,
+      "logical_mismatches": 45,
+      "signature": "1a587cf1f25af3f48e1fca5a699d50935b20dfca7e8bf45978e7a653adce950e",
+      "median_shots_per_second": 114620.51605019481
+    },
+    {
+      "case": "toy",
+      "decoder": "relay-bp",
+      "mode": "6x10-first",
+      "shots": 256,
+      "nonconverged": 39,
+      "logical_mismatches": 61,
+      "signature": "329ffd71e57a882a9d11aeca480b04762df4ba32e02d8ba83c72929ec88d8838",
+      "median_shots_per_second": 346510.67215615284
+    },
+    {
+      "case": "toy",
+      "decoder": "relay-bp-osd",
+      "mode": "default",
+      "shots": 256,
+      "nonconverged": 0,
+      "logical_mismatches": 62,
+      "signature": "9ee7f048a398b212d3bb244ecaa9b4eafc03f4206833414fed37db8a27e36e68",
+      "median_shots_per_second": 81735.66717796451
+    },
+    {
+      "case": "toy",
+      "decoder": "relay-bp-osd",
+      "mode": "legacy-6",
+      "shots": 256,
+      "nonconverged": 0,
+      "logical_mismatches": 40,
+      "signature": "fb58fb44f3fa72202a8f08ff2065921f5d2be0eecdf8881c41ed864e33eea85a",
+      "median_shots_per_second": 73153.75564389062
+    },
+    {
+      "case": "toy",
+      "decoder": "relay-bp-osd",
+      "mode": "6x10-full",
+      "shots": 256,
+      "nonconverged": 0,
+      "logical_mismatches": 40,
+      "signature": "6f59c0dd1d72ae6cb4b9dcb35c11574a763b7c3f187c00640801c173beac0357",
+      "median_shots_per_second": 113256.49701472628
+    },
+    {
+      "case": "toy",
+      "decoder": "relay-bp-osd",
+      "mode": "6x10-first",
+      "shots": 256,
+      "nonconverged": 0,
+      "logical_mismatches": 56,
+      "signature": "999a6fb77f46af68f5382ba60f82df3b5da22eee20fa28b18e914b6bdb054346",
+      "median_shots_per_second": 331963.11392177286
+    },
+    {
+      "case": "gross-circuit-r2-p0.003",
+      "decoder": "relay-bp",
+      "mode": "default",
+      "shots": 256,
+      "nonconverged": 1,
+      "logical_mismatches": 0,
+      "signature": "b02086a9a1e3174d9dfdd6020df00dd53a5658a52f217e95afc0f34ee4a5dcea",
+      "median_shots_per_second": 397.74853297788604
+    },
+    {
+      "case": "gross-circuit-r2-p0.003",
+      "decoder": "relay-bp",
+      "mode": "legacy-6",
+      "shots": 256,
+      "nonconverged": 1,
+      "logical_mismatches": 0,
+      "signature": "2e8700d7d952f4a439cb6ae6fa5b33fbfa84f246735906b4c459d38c3c6d8d13",
+      "median_shots_per_second": 393.25722842388086
+    },
+    {
+      "case": "gross-circuit-r2-p0.003",
+      "decoder": "relay-bp",
+      "mode": "6x10-full",
+      "shots": 256,
+      "nonconverged": 1,
+      "logical_mismatches": 0,
+      "signature": "ad849ee30fa7350e61bcf98245994107501e9125581b7dbd5478754c7acf028e",
+      "median_shots_per_second": 602.7358491548686
+    },
+    {
+      "case": "gross-circuit-r2-p0.003",
+      "decoder": "relay-bp",
+      "mode": "6x10-first",
+      "shots": 256,
+      "nonconverged": 1,
+      "logical_mismatches": 0,
+      "signature": "6fcd3c98454e19999b070643410eca756b6b106442ee94d3e6b6f19e78b669bd",
+      "median_shots_per_second": 7250.6487639853485
+    },
+    {
+      "case": "gross-circuit-r2-p0.003",
+      "decoder": "relay-bp-osd",
+      "mode": "default",
+      "shots": 256,
+      "nonconverged": 0,
+      "logical_mismatches": 0,
+      "signature": "39b58441be3ff675d25aef0e95d0c2ad5ca47ce1a80e79ca549ac743e6aa1fda",
+      "median_shots_per_second": 397.82462164854394
+    },
+    {
+      "case": "gross-circuit-r2-p0.003",
+      "decoder": "relay-bp-osd",
+      "mode": "legacy-6",
+      "shots": 256,
+      "nonconverged": 0,
+      "logical_mismatches": 0,
+      "signature": "c9634e5089c5f88111393786495e40cea902935bfe12ef8a76ed6811d664814b",
+      "median_shots_per_second": 392.46459280553074
+    },
+    {
+      "case": "gross-circuit-r2-p0.003",
+      "decoder": "relay-bp-osd",
+      "mode": "6x10-full",
+      "shots": 256,
+      "nonconverged": 0,
+      "logical_mismatches": 0,
+      "signature": "077890b191bd07b73fc79c7288fc0a7c34700b809d8fb4b23ce753c1005996f2",
+      "median_shots_per_second": 602.6544208364165
+    },
+    {
+      "case": "gross-circuit-r2-p0.003",
+      "decoder": "relay-bp-osd",
+      "mode": "6x10-first",
+      "shots": 256,
+      "nonconverged": 0,
+      "logical_mismatches": 0,
+      "signature": "e82dd97a6cd6144c210bbec1b1c335ccc0f8baf9969b9fc40f6002a8ee7edbea",
+      "median_shots_per_second": 7161.338037447892
+    }
+  ]
+}

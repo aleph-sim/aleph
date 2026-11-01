@@ -1,0 +1,18 @@
+test_changed_executable_rejected_before_launch (test_public_workflow.Contracts) ... ok
+test_contamination_aborts_without_launching (test_public_workflow.Contracts) ... ok
+test_deterministic_workload_and_summary (test_public_workflow.Contracts) ... ok
+test_gpu_settling_is_fixed_and_does_not_retry_until_quiet (test_public_workflow.Contracts) ... ok
+test_missing_process_observer_cannot_claim_idle (test_public_workflow.Contracts) ... ok
+test_paired_order_and_inert_parameter_stops_before_measurement (test_public_workflow.Contracts) ... ok
+test_preserves_venv_executable_symlink (test_public_workflow.Contracts) ... ok
+test_real_cpu_cli_entrypoint (test_public_workflow.Contracts) ... ok
+test_receipt_missing_hardware_or_counters_is_failure (test_public_workflow.Contracts) ... ok
+test_schema_and_amdahl_gate (test_public_workflow.Contracts) ... ok
+test_skipped_hardware_never_passes (test_public_workflow.Contracts) ... ok
+test_subprocess_failure_and_bad_receipt (test_public_workflow.Contracts) ... ok
+test_successful_subprocess_with_wrong_receipt_fails (test_public_workflow.Contracts) ... ok
+
+----------------------------------------------------------------------
+Ran 13 tests in 1.140s
+
+OK

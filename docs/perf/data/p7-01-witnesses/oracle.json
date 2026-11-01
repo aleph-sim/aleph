@@ -1,0 +1,31 @@
+{
+  "stim": "1.16.0",
+  "pymatching": "2.4.0",
+  "cases": [
+    {
+      "fixture": "bb-gross-capacity.json",
+      "fault_set": "original_faults",
+      "stim_reconstruction": "PASS",
+      "pymatching": "incompatible hypergraph; not run"
+    },
+    {
+      "fixture": "bb-gross-capacity.json",
+      "fault_set": "faults",
+      "stim_reconstruction": "PASS",
+      "pymatching": "incompatible hypergraph; not run"
+    },
+    {
+      "fixture": "surface-d3-r3.json",
+      "fault_set": "original_faults",
+      "stim_reconstruction": "PASS",
+      "pymatching": "PASS"
+    },
+    {
+      "fixture": "surface-d3-r3.json",
+      "fault_set": "faults",
+      "stim_reconstruction": "PASS",
+      "pymatching": "PASS"
+    }
+  ],
+  "tiny_subsets": 16
+}

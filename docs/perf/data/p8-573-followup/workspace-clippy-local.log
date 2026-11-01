@@ -1,0 +1,11 @@
+    Checking aleph-sv v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-sv)
+    Checking aleph-oracle v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-oracle)
+    Checking aleph-benches v0.3.0 (/Users/ex/GitHub/aleph/benches)
+    Checking aleph-cli v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-cli)
+    Checking aleph-py v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-py)
+    Checking aleph-backend v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-backend)
+    Checking aleph-mps v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-mps)
+    Checking aleph-cuda v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-cuda)
+    Checking aleph-stab v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-stab)
+    Checking aleph-metal v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-metal)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 33.81s

@@ -1,0 +1,36 @@
+{
+  "binary_sha256": "ed4b25ba01068f268c051e040919b8648867b8f43908a13d48dd7aa2f8e28873",
+  "cpu": 3,
+  "sibling": 23,
+  "argv": [
+    "taskset",
+    "-c",
+    "3",
+    "/tmp/aleph-511-events-base-target/release/deps/mwpm_decode-c34064fc3d91e724",
+    "--bench",
+    "sparse/d11",
+    "--profile-time",
+    "20",
+    "--warm-up-time",
+    "1",
+    "--noplot"
+  ],
+  "perf_argv": [
+    "perf",
+    "record",
+    "-e",
+    "cycles:u",
+    "-F",
+    "499",
+    "--call-graph",
+    "dwarf,4096",
+    "-p",
+    "2048339",
+    "-o",
+    "/tmp/aleph-511-events-base-profile/perf.data",
+    "--",
+    "sleep",
+    "10"
+  ],
+  "scope": "profile attached after Criterion steady-state marker; not elapsed-time comparison"
+}

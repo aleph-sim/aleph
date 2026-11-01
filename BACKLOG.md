@@ -1,7 +1,7 @@
 # Quantum Simulator — Detailed Backlog
 
 > **Source of truth for GitHub Issues.**
-> This document contains the mainline phase issues, including Phase 7's cross-track research instruments. Each issue is structured so that an AI agent (e.g., Claude Code) or a human can create a GitHub Issue directly from its contents. The companion QEC backlog is `docs/qec/BACKLOG.md`.
+> This document contains the mainline phase issues, including Phase 7's research instruments and Phase 8's performance recovery. Each issue is structured so that an AI agent (e.g., Claude Code) or a human can create a GitHub Issue directly from its contents. The companion QEC backlog is `docs/qec/BACKLOG.md`.
 
 -----
 
@@ -52,6 +52,7 @@ Each issue follows the same template:
 - Phase 5.5 — Apple/Metal GPU
 - Phase 6 — Multi-GPU & Distributed
 - Phase 7 — Research Instruments
+- Phase 8 — Performance Audit and Recovery
 
 -----
 
@@ -4420,12 +4421,12 @@ unqualified rare-event/real-time claim would not establish useful new capability
 
 **Phase Checklist**
 
-- [ ] [[P7-01] Decoder failure witness capture, minimization, and cross-decoder replay](https://github.com/aleph-sim/aleph/issues/543)
-- [ ] [[P7-02] Rare-event logical error estimation with fault-count stratification](https://github.com/aleph-sim/aleph/issues/544)
-- [ ] [[P7-03] Exact observable-driven execution via causal-cone extraction](https://github.com/aleph-sim/aleph/issues/545)
-- [ ] [[P7-04] Decoder robustness experiments under prior mismatch, drift, and bursts](https://github.com/aleph-sim/aleph/issues/546)
-- [ ] [[P7-05] Deadline-aware syndrome stream and fallback trace replay](https://github.com/aleph-sim/aleph/issues/547)
-- [ ] [[P7-06] Exact near-Clifford expectation engine with sparse Pauli propagation](https://github.com/aleph-sim/aleph/issues/548)
+- [x] [[P7-01] Decoder failure witness capture, minimization, and cross-decoder replay](https://github.com/aleph-sim/aleph/issues/543)
+- [x] [[P7-02] Rare-event logical error estimation with fault-count stratification](https://github.com/aleph-sim/aleph/issues/544)
+- [x] [[P7-03] Exact observable-driven execution via causal-cone extraction](https://github.com/aleph-sim/aleph/issues/545)
+- [x] [[P7-04] Decoder robustness experiments under prior mismatch, drift, and bursts](https://github.com/aleph-sim/aleph/issues/546)
+- [x] [[P7-05] Deadline-aware syndrome stream and fallback trace replay](https://github.com/aleph-sim/aleph/issues/547)
+- [x] [[P7-06] Exact near-Clifford expectation engine with sparse Pauli propagation](https://github.com/aleph-sim/aleph/issues/548)
 
 **Acceptance Criteria**
 
@@ -4864,6 +4865,839 @@ engine, not a universal replacement for state-vector amplitudes or sampling.
 
 -----
 
+# Phase 8 — Performance Audit and Recovery
+
+Tracker: [#550](https://github.com/aleph-sim/aleph/issues/550).
+The [integration report](docs/perf/p8-performance-recovery.md) records the
+2026-10-18 snapshot: 13/16 capabilities closed, with P8-01/P8-11/P8-12 open.
+This phase remains in progress. Closed task state does not imply default adoption
+or a universal speedup; research opt-ins and negative regimes stay explicit.
+
+The specifications below restore the existing GitHub issues to the local backlog.
+Issue links identify the existing items: do not create duplicates. The checkboxes
+in each specification are acceptance requirements, not a synchronized status feed.
+
+-----
+
+### [P8-00] Performance audit integration and end-to-end recovery report
+
+**GitHub:** [#550](https://github.com/aleph-sim/aleph/issues/550) — open as of 2026-10-18.
+
+**Labels:** `area:bench`, `area:docs`, `type:docs`, `priority:high`
+**Milestone:** Phase 8
+**Estimate:** L
+**Depends on:** P8-01 through P8-16 (for closure; coordination starts immediately)
+
+**Description**
+Track the audit findings, coordinate incremental repairs, and publish an end-to-end report showing which public workflows improved and which hypotheses were rejected.
+
+**Context**
+The October 2026 source audit found gaps between benchmark execution and public frontends, eager full-state downloads, sampling scratch omitted from reach policy, and algorithms that retain avoidable work. Historical negative results identify where another broad rewrite is unlikely to pay. Phase 7 adds research capabilities; Phase 8 makes existing execution reliable and efficient.
+
+**Technical Details**
+- Keep confirmed source findings separate from unmeasured performance hypotheses. The local 12-qubit probe validated GPU-safe fusion semantics (brickwall 295→32 instructions, QFT on a prepared state 90→34, amplitude error <2e-16); these are instruction counts, not measured GPU speedups.
+- Coordinate the issue order: P8-08 and P8-01/P8-02 first; P8-03/P8-04 next; P8-05/P8-06/P8-07 for sampling and trajectories. P8-13 supplies measurement discipline throughout. Hardware experiments proceed independently after their baselines are captured.
+- Require one focused PR per capability, meaningful oracle/contract checks, and before/after measurements on an idle relevant machine. Avoid new performance claims from the overloaded audit host or unreviewed synthetic-only fixtures.
+- Publish `docs/perf/p8-performance-recovery.md` with public API commands, startup/compile/execute/sample/materialize timing, launches, transferred bytes, peak memory, precision, seeds, machine/software identity, and negative results.
+- Preserve strong existing practices: sparse algorithms, lazy permutations, pass/traffic reduction, reference implementations, deterministic shots, and numerical fallback guards. Do not remove safety checks to manufacture speed.
+- Research tasks may close with a reproducible no-go result under their stated criteria. The phase report must label that result; it must not imply the speed target was reached.
+
+**Phase Checklist**
+
+- [ ] [P8-01: Use optimized CPU and Metal execution in the CLI](https://github.com/aleph-sim/aleph/issues/551)
+- [x] [P8-02: Integrate CUDA fusion and layered dispatch into public frontends](https://github.com/aleph-sim/aleph/issues/552)
+- [x] [P8-03: Materialize Python GPU amplitudes lazily](https://github.com/aleph-sim/aleph/issues/553)
+- [x] [P8-04: Plan backend reach from requested operations and peak memory](https://github.com/aleph-sim/aleph/issues/554)
+- [x] [P8-05: Replace full-state multi-pass CUDA CDF sampling](https://github.com/aleph-sim/aleph/issues/555)
+- [x] [P8-06: Avoid building CPU alias tables for one or few samples](https://github.com/aleph-sim/aleph/issues/556)
+- [x] [P8-07: Bound noisy trajectory memory and reuse per-worker state](https://github.com/aleph-sim/aleph/issues/557)
+- [x] [P8-08: Probe GPU availability without compiling discarded backends](https://github.com/aleph-sim/aleph/issues/558)
+- [x] [P8-09: Coalesce GPU QEC scratch while retaining serial-shot arithmetic](https://github.com/aleph-sim/aleph/issues/559)
+- [x] [P8-10: Prototype cooperative GPU BP with explicit accuracy and latency trade-offs](https://github.com/aleph-sim/aleph/issues/560)
+- [ ] [P8-11: Prove a competitive Metal MPS factorization before another pipeline rewrite](https://github.com/aleph-sim/aleph/issues/561)
+- [ ] [P8-12: Validate communication-aware plans on real multi-GPU workloads](https://github.com/aleph-sim/aleph/issues/562)
+- [x] [P8-13: Make public-workflow baselines and experiment gates reproducible](https://github.com/aleph-sim/aleph/issues/563)
+- [x] [P8-14: Evaluate combined tile residency and overlapped paging](https://github.com/aleph-sim/aleph/issues/564)
+- [x] [P8-15: Bound DEM experiment batches and validate decoder result contracts](https://github.com/aleph-sim/aleph/issues/565)
+- [x] [P8-16: Use valid logical-error intervals for zero and rare observed failures](https://github.com/aleph-sim/aleph/issues/566)
+
+**Acceptance Criteria**
+- [ ] Every child has a verified repair or its explicitly allowed, measured research verdict.
+- [ ] The report covers at least CPU CLI, CUDA Python counts-only, large-state sampling, and noisy trajectories.
+- [ ] Modelled reach, measured allocation limits, benchmark kernel speed, and public API speed are distinguished.
+- [ ] Current baselines and historical limitations are linked without treating completed work as missing.
+
+**Testing Requirements**
+- Smoke-run documented commands and reuse child oracle/memory/transfer checks.
+- Verify reproducible raw data and current baselines; keep expensive hardware performance campaigns outside correctness CI.
+
+**References**
+- `ROADMAP.md`, Phase 8; `BACKLOG.md`, P8-01 through P8-16.
+- `docs/perf/p5.9-gpu-fusion.md`, `phase5.8.md`, `q1-03b-sparse-blossom.md`.
+- Phase 7 tracker: https://github.com/aleph-sim/aleph/issues/542.
+
+-----
+
+### [P8-01] Use optimized CPU and Metal execution in the CLI
+
+**GitHub:** [#551](https://github.com/aleph-sim/aleph/issues/551) — open as of 2026-10-18.
+
+**Labels:** `area:cli`, `area:ir`, `type:optimization`, `priority:high`
+**Milestone:** Phase 8
+**Estimate:** M
+**Depends on:** P1-09, P1-10, P2-07
+
+**Description**
+Route supported CPU/Metal CLI execution through the backend-appropriate optimized pipeline instead of the generic raw-gate driver.
+
+**Context**
+`crates/aleph-cli/src/exec.rs::run_with_backend` currently calls `aleph_backend::run` directly. CPU Python uses `run_optimized`; Metal Python uses `MetalSvBackend::run_optimized`. Thus public frontends can execute different pipelines for the same backend while performance reports time optimized drivers.
+
+**Technical Details**
+1. Separate execution from output formatting so the helper does not force every backend through raw `run`. Use the existing CPU optimized driver and the Metal supported wrapper; keep an explicit unfused baseline for A/B work.
+2. Preserve CPU/Metal qubit-permutation restoration, amplitude ordering, expectation strings, measurement behavior, barriers, precision flags, and error handling. Do not apply SV fusion to stabilizer/MPS/noisy trajectories.
+3. Check the FP32 CPU backend's optimized-instruction support before enabling the default there. Any unsupported subset needs explicit handling and tests rather than a silent raw fallback.
+4. Cover measurements carefully: CLI returns final-state views, while DCE is seeded by measurements. Optimizing must preserve the CLI's final-state/sample contract, not merely the retained classical measurement distribution; conservatively skip unsafe passes for those queries.
+5. Measure actual CLI wall time including planning and output selection on tiny and large workloads. Record retained instructions and planning cost.
+
+**Acceptance Criteria**
+- [ ] Supported CLI CPU/Metal cases use the intended optimized driver; raw A/B remains available.
+- [ ] Final-state, sampling, expectations, permutation and measurement semantics match the documented contract.
+- [ ] Unsupported FP32/IR combinations fail clearly or use a documented safe policy.
+- [ ] Public CLI before/after measurements show useful workload gains and expose tiny-input planning overhead.
+
+**Testing Requirements**
+- Compare CLI outputs with unfused exact SV and Python equivalents on small fixtures, including nontrivial input preparation, Y terms, controls, barriers and measurements.
+- Use deterministic structural checks to prove the optimized path ran, plus idle-machine workload benchmarks.
+
+**References**
+- `crates/aleph-cli/src/exec.rs`, `crates/aleph-backend/src/lib.rs`.
+- `crates/aleph-py/src/run.rs`, `crates/aleph-metal/src/sv/backend.rs`.
+- `docs/perf/parity.md`.
+
+-----
+
+### [P8-02] Integrate CUDA fusion and layered dispatch into public frontends
+
+**GitHub:** [#552](https://github.com/aleph-sim/aleph/issues/552) — closed as of 2026-10-18.
+
+**Labels:** `area:backend-gpu`, `area:cli`, `area:python`, `area:ir`, `type:optimization`, `priority:high`
+**Milestone:** Phase 8
+**Estimate:** L
+**Depends on:** P5.9-01, P5.9-03, P5.9-06
+
+**Description**
+Make CLI/Python CUDA execution use the existing GPU-safe fusion and layered dispatch mechanisms that the CUDA benchmark suite already measures.
+
+**Context**
+The earlier fusion issue #272 is closed and the kernels/helpers exist. The remaining gap is public integration: Python `run_cuda_py` calls raw `run`, and CLI's generic helper does the same. The audit probe demonstrated substantial instruction-count reduction with the existing GPU-safe passes, but did not measure GPU time.
+
+**Technical Details**
+1. Add a shared CUDA execution-planning/helper boundary used by CLI, Python, and end-to-end benchmarks. Use GPU-safe fusion, not CPU relabel/tile passes, then supported layered execution. Avoid duplicate optimization and retain raw A/B execution.
+2. Preserve measure/reset/barrier behavior, final-state output semantics, controls, seed handling and DiagonalPhase dispatch. If a pass is only safe for measurement-distribution queries, exclude it when frontends request final-state views or re-sample the collapsed final state.
+3. Keep FP64 and ordinary FP32 accuracy contracts. Width-4 TF32 fusion has a different tolerance and optional hardware/module availability: require an explicit precision policy, and use width 3 when TF32 is unavailable/disabled. Do not silently expand FP32 error to the TF32 budget.
+4. Report planning time, resulting gate kinds/launches, execution time, sampling and transfer separately. Include QFT/QPE, brickwall, VQE and QAOA through the actual public entry points.
+5. Reuse existing helpers/oracles and make compiled-plan reuse possible without requiring a new compiler architecture in this issue.
+
+**Acceptance Criteria**
+- [ ] CLI/Python use a shared supported CUDA plan and demonstrably emit/execute fusion and layered batches.
+- [ ] Small public-API results match raw FP64 SV at each declared precision tolerance.
+- [ ] TF32 capability/fallback and precision policy are explicit and tested.
+- [ ] Current frontends are benchmarked before/after against the same workloads and hardware, including planning overhead.
+
+**Testing Requirements**
+- Extend fusion/layered oracles with frontend-path checks, measurements, barriers and nontrivial prepared states.
+- Test no-TF32 capability and unsupported IR; run transfer/launch counters so correctness-only CI cannot pass via a raw path.
+- GPU benchmarks must execute on real supported hardware, not silently skip.
+
+**References**
+- Previous integration issue: https://github.com/aleph-sim/aleph/issues/272 (closed; helper substrate).
+- `crates/aleph-cuda/src/fusion.rs`, `sv/backend.rs`, `sv/fp32.rs`.
+- `crates/aleph-py/src/run.rs`, `crates/aleph-cli/src/exec.rs`.
+- `docs/perf/p5.9-gpu-fusion.md`, `p5.11-05-tf32-fused-block.md`.
+
+-----
+
+### [P8-03] Materialize Python GPU amplitudes lazily
+
+**GitHub:** [#553](https://github.com/aleph-sim/aleph/issues/553) — closed as of 2026-10-18.
+
+**Labels:** `area:python`, `area:backend-gpu`, `type:optimization`, `priority:high`
+**Milestone:** Phase 8
+**Estimate:** L
+**Depends on:** P5-05, P5.11-04
+
+**Description**
+Keep GPU results device-resident for counts-only Python calls and download/widen amplitudes only when statevector() is requested.
+
+**Context**
+CUDA Python always calls `state.amplitudes_vec()` after sampling; Metal Python always calls `to_aos_f64()`. At n=28 FP32 CUDA this downloads 2 GiB and creates a 4 GiB complex128 host vector even when only counts are needed. The core readout's small-result transfer guarantee does not currently cover the frontend.
+
+**Technical Details**
+1. Extend AmpStore/RunResult with feature-gated owned GPU states or a safe lazy materialization holder. Preserve device/context lifetime and satisfy PyO3 sendability/thread ownership without unsafe assertions.
+2. Keep sampling before final result construction and hold only the resources required by the result. Make statevector() produce the established complex128 NumPy representation and correct qubit order; define whether repeated calls reuse a host cache.
+3. Release the GIL appropriately for device synchronization/copy, and surface device-copy errors as Python errors. Do not change counts-only semantics or force GPU availability in CPU-only builds.
+4. Add public-API transfer accounting for CUDA; on Metal use appropriate materialization/allocation counters rather than pretending unified memory transfers are PCIe copies.
+5. Measure counts-only versus requested-statevector time and peak host/device memory. Explain the lifetime/memory trade-off of retaining a GPU result.
+
+**Acceptance Criteria**
+- [ ] Counts-only Python GPU runs perform no full-state host materialization.
+- [ ] statevector() returns oracle-correct complex128 amplitudes on demand, including repeated calls and object cleanup.
+- [ ] Thread/context lifetime and failed-copy paths are tested without new unchecked unsafe assumptions.
+- [ ] Public transfer and peak-memory measurements demonstrate the removed work.
+
+**Testing Requirements**
+- CPU-only, CUDA and Metal feature builds; small amplitude/order oracles and lifetime tests.
+- Assert counts-only DTOH bytes scale with shots/scalars, not 2^n, and materialization happens only on explicit access.
+
+**References**
+- `crates/aleph-py/src/run.rs` (AmpStore, RunResult, run_cuda_py, Metal arm).
+- `crates/aleph-cuda/src/sv/state.rs`, `sv/fp32.rs`.
+- `crates/aleph-cuda/tests/transfer.rs`; `docs/perf/p5-05-lazy-transfer.md`.
+
+-----
+
+### [P8-04] Plan backend reach from requested operations and peak memory
+
+**GitHub:** [#554](https://github.com/aleph-sim/aleph/issues/554) — closed as of 2026-10-18.
+
+**Labels:** `area:backend`, `area:backend-gpu`, `area:cli`, `area:python`, `type:bug`, `priority:high`
+**Milestone:** Phase 8
+**Estimate:** L
+**Depends on:** P5.11-06
+
+**Description**
+Replace state-only CUDA reach assumptions with a capability-aware peak-memory plan that includes sampling, outputs, scratch and runtime device capacity.
+
+**Context**
+Reach::for_kind uses fixed 30/31-qubit caps for the reference card. CUDA sampling allocates two 2^n FP64 CDF buffers. At n=30 FP32, 8 GiB state plus 16 GiB CDF already needs at least 24 GiB; at n=31 it needs 48 GiB. These lower bounds cannot fit the reference 20 GiB card, even though its state-only policy selects in-core execution.
+
+**Technical Details**
+1. Model requested operations explicitly: execute-only, counts, expectation, marginals, amplitude export and precision. Estimate peak concurrent allocations, optional retained pool resources, matrix/readout scratch and transfer/materialization buffers with checked arithmetic.
+2. Probe runtime total/free device capacity cheaply and reserve documented headroom. A snapshot is advisory because other processes may allocate; retain actionable allocation failures.
+3. Keep abstract selection independent of CUDA implementation types. Pass capability/memory data from the frontend and make decisions explainable. Support smaller/larger devices instead of treating one card's cap as universal.
+4. For an operation that does not fit, reject before large allocation or select an explicitly supported route. The current paged path is norm-only: never silently replace requested counts/expectations with a norm.
+5. Coordinate with P8-05 so estimates use the actual sampler's memory model. Cover host export limits separately from device capacity.
+
+**Acceptance Criteria**
+- [ ] Estimates include current sampling scratch and output requirements with overflow guards.
+- [ ] The n=30/n=31 FP32 counts cases cannot be labelled feasible on a 20 GiB budget with the current sampler.
+- [ ] Synthetic capability tests cover multiple card sizes and requested views; explanations identify the limiting allocation.
+- [ ] Allocation failures remain clear under changing shared-device memory; no requested output is silently discarded.
+
+**Testing Requirements**
+- GPU-free budget/overflow boundary tests and real-device constrained-memory checks without intentionally OOMing the host.
+- Compare measured peak allocation with estimates for execution, sampling and export on tractable sizes.
+
+**References**
+- `crates/aleph-backend/src/select.rs` (Reach::for_kind, SelectEnv).
+- `crates/aleph-cuda/src/sv/readout.rs`, `sv/readout_f32.rs`.
+- `crates/aleph-cli/src/exec.rs::run_cuda_paged`, `crates/aleph-py/src/run.rs`.
+
+-----
+
+### [P8-05] Replace full-state multi-pass CUDA CDF sampling
+
+**GitHub:** [#555](https://github.com/aleph-sim/aleph/issues/555) — closed as of 2026-10-18.
+
+**Labels:** `area:backend-gpu`, `type:optimization`, `priority:high`
+**Milestone:** Phase 8
+**Estimate:** XL
+**Depends on:** P5-05, P5.11-04, P8-04
+
+**Description**
+Replace Hillis-Steele full-state scan with an efficient scan or hierarchical sampling method, reducing work and scratch while preserving the distribution contract.
+
+**Context**
+Both precision readouts allocate two FP64 arrays of 2^n entries and launch scan_step for offsets 1,2,4,... . Building a CDF therefore makes n full-state scan passes even for a small shot count. Device-resident execution avoids PCIe traffic but still does avoidable device-memory work.
+
+**Technical Details**
+1. Baseline the existing sampler separately from gate execution, including check_norm, allocation, scan launches and result download. Sweep state size and shot count.
+2. Prototype block-local scan with block totals/offsets, or a hierarchical sampler using block probability totals and selected-block sampling. Compare correctness, memory, read passes and shot-count crossover before selecting a default.
+3. CUB DeviceScan is a reference for efficient scans; the current NVRTC/Rust integration may require a compiled shim or a custom supported kernel path. Do not add an unmeasured build dependency merely to copy an API.
+4. Preserve finite/norm checks, zero-probability bins, deterministic seeded execution within the chosen algorithm, and FP64 accumulation where needed. Parallel summation may alter exact seed-to-outcome mapping; specify that change and verify distributions instead of promising unchanged bits without evidence.
+5. Bound allocation before launch and update P8-04's memory model. Retain the old implementation as an explicit benchmark/reference path until validation completes.
+
+**Acceptance Criteria**
+- [ ] The default avoids n full-array Hillis-Steele passes and has a documented peak-memory bound.
+- [ ] Uniform, sparse, concentrated, mixed-phase and boundary distributions pass numerical/statistical oracles.
+- [ ] Repeated fixed-seed runs are deterministic under the documented policy.
+- [ ] Before/after data cover FP32/FP64 and small/large shot counts, reporting time, passes and peak scratch.
+
+**Testing Requirements**
+- Small exact CDF/reference checks; zero bins, NaNs, norm drift, zero shots and extreme concentration.
+- Real-GPU scaling campaigns and transfer checks; meaningful distribution tests with declared sample sizes/tolerances.
+
+**References**
+- `crates/aleph-cuda/src/sv/readout.rs`, `sv/readout_f32.rs`, `sv/readout.cu`, `sv/readout_f32.cu`.
+- https://nvidia.github.io/cccl/unstable/cub/api/structcub_1_1DeviceScan.html.
+- `docs/perf/p5-05-lazy-transfer.md`.
+
+-----
+
+### [P8-06] Avoid building CPU alias tables for one or few samples
+
+**GitHub:** [#556](https://github.com/aleph-sim/aleph/issues/556) — closed as of 2026-10-18.
+
+**Labels:** `area:backend-sv`, `type:optimization`, `priority:high`
+**Milestone:** Phase 8
+**Estimate:** M
+**Depends on:** P0-11
+
+**Description**
+Add a low-shot CPU sampling path that avoids alias-table construction when its preprocessing cost cannot be amortized.
+
+**Context**
+sample_impl always computes probabilities and builds an AliasTable. Every noisy trajectory calls sample(state, 1), then discards the table. The table builds thresholds, aliases, scaled weights and index stacks over 2^n amplitudes for a single draw.
+
+**Technical Details**
+1. Implement a validated cumulative/streaming weighted draw for shots=1, then measure whether a small-shot threshold is justified. Separate norm/finiteness validation from materializing every probability when possible.
+2. Keep the alias path for repeated draws. Preserve normalization drift handling, zero-probability bins, degenerate states and seeded reproducibility within each algorithm.
+3. Document any seed-to-outcome change from choosing a different sampling algorithm; do not accidentally change the noisy shot-seed derivation or worker-count independence.
+4. Measure sampler-only and end-to-end noisy trajectory workloads, reporting allocation count/bytes, time and crossover by n/shots. Limit the initial PR to the low-shot path rather than rewriting all sampling.
+
+**Acceptance Criteria**
+- [ ] Single-shot execution does not build an alias table and retains required state validation.
+- [ ] Empirical distributions and exact degenerate cases agree with the established sampler contract.
+- [ ] Noisy results remain deterministic across worker counts for fixed configuration/seed.
+- [ ] Allocation/time measurements establish a useful regime and preserve the many-shot baseline.
+
+**Testing Requirements**
+- NaN/invalid norm, tiny valid branches, uniform/Bell/sparse/random states, zero and many shots.
+- Reuse sampling distribution oracles; run paired low-shot versus alias benchmarks on an idle CPU.
+
+**References**
+- `crates/aleph-sv/src/measure.rs::sample_impl`, `sampling.rs::AliasTable`.
+- `crates/aleph-sv/src/noise/mod.rs::run_one_shot`.
+- `crates/aleph-sv/benches/sample.rs`.
+
+-----
+
+### [P8-07] Bound noisy trajectory memory and reuse per-worker state
+
+**GitHub:** [#557](https://github.com/aleph-sim/aleph/issues/557) — closed as of 2026-10-18.
+
+**Labels:** `area:backend-sv`, `area:python`, `area:cli`, `type:optimization`, `priority:medium`
+**Milestone:** Phase 8
+**Estimate:** L
+**Depends on:** P4.6-04, P8-06
+
+**Description**
+Reuse trajectory buffers and choose concurrency from a memory budget rather than allocating a fresh dense state for every active shot.
+
+**Context**
+run_noisy parallelizes over shots; run_one_shot constructs a backend and allocates a state each time. Peak memory scales with active trajectories and sampler scratch, plus a dense 2^n count histogram. Existing channel lookup is already hoisted outside the shot loop, so repeating that optimization would not address this cost.
+
+**Technical Details**
+1. Add a worker/chunk execution context with reusable state and scratch. Reset to |0...0> correctly before each shot and seed stochastic work by the existing absolute shot index, independent of chunking/scheduling.
+2. Estimate per-trajectory state/channel/sampler peak memory and fixed result memory. Select bounded concurrency from a declared memory policy; clarify that Rayon uses a shared pool and nested kernel work is not automatically threads-squared oversubscription.
+3. Start with the current public histogram format, then expose a sparse counts path to frontends if dense 2^n output itself dominates. Preserve the legacy Rust API via an explicit adapter/compatibility policy.
+4. Keep noise attached to original gate boundaries. Generic noiseless fusion cannot cross channel insertions without changing the model. Do not remove unitarity/channel validation; any prevalidated plan must prove its immutable-input contract.
+5. Benchmark state reuse, sampler changes and concurrency separately to attribute gains; include small states and large memory-bound trajectories.
+
+**Acceptance Criteria**
+- [ ] Reused buffers do not leak state between shots; fixed-seed results are worker/chunk invariant.
+- [ ] Concurrency and result allocations respect a documented budget or fail before excessive allocation.
+- [ ] Gate/channel ordering and the legacy output contract remain correct.
+- [ ] Before/after measurements include peak memory, allocations, throughput and noise-model identity.
+
+**Testing Requirements**
+- Independent trajectory oracle versus the existing path, including Pauli and Kraus channels, readout noise and zero noise.
+- Test consecutive shots with different seeds and constrained concurrency; report dense-result limits.
+
+**References**
+- `crates/aleph-sv/src/noise/mod.rs`, `noise/apply.rs`, `noise/model.rs`.
+- `docs/decisions/0014-noise-trajectories.md`.
+- `crates/aleph-py/src/run.rs::hist_to_counts`.
+
+-----
+
+### [P8-08] Probe GPU availability without compiling discarded backends
+
+**GitHub:** [#558](https://github.com/aleph-sim/aleph/issues/558) — closed as of 2026-10-18.
+
+**Labels:** `area:backend-gpu`, `area:cli`, `area:python`, `type:optimization`, `priority:high`
+**Milestone:** Phase 8
+**Estimate:** M
+**Depends on:** P5.11-06
+
+**Description**
+Separate device capability probing from backend/kernel construction and avoid unnecessary GPU probes for explicit backend choices.
+
+**Context**
+Both frontends construct SelectEnv before deciding between Auto and Fixed. CUDA availability calls CudaSvBackendF32::new(), compiling/loading modules; CLI Metal availability constructs MetalSvBackend too. A CUDA-enabled explicit CPU run may therefore pay GPU setup, and a selected GPU is then constructed again.
+
+**Technical Details**
+1. Resolve explicit requests without irrelevant availability probes. For auto, use a cheap device/capability query and circuit structure to determine which environment facts are actually needed.
+2. Separate capabilities from loaded kernels; construct the selected backend once. If module caching is needed, key it by device/context/precision/build configuration and define invalidation/lifetime/error behavior.
+3. Keep auto fallback and explicit-backend errors clear. A discovered device does not guarantee kernel compilation succeeds, so handle construction failures deliberately instead of confusing availability with readiness.
+4. Measure cold process startup and warm repeated Python calls separately, using construction/compilation counters in addition to wall time.
+
+**Acceptance Criteria**
+- [ ] Explicit CPU/stabilizer/MPS requests do not compile CUDA/Metal modules.
+- [ ] Auto probing does not construct and discard a complete backend; selected backend is initialized once.
+- [ ] Device discovery versus compilation failure behavior is documented and tested.
+- [ ] Cold/warm public API measurements and counters show removed setup work.
+
+**Testing Requirements**
+- CPU-only builds, absent devices, explicit GPU failure and mocked capability/constructor paths.
+- Actual CUDA/Metal smoke tests; verify counters without timing-sensitive CI assertions.
+
+**References**
+- `crates/aleph-cli/src/exec.rs::cuda_available`, `metal_available`, run_circuit.
+- `crates/aleph-py/src/run.rs::cuda_available`, run_circuit.
+- `crates/aleph-cuda/src/sv/fp32.rs` constructors; `crates/aleph-metal/src/context.rs`.
+
+-----
+
+### [P8-09] Coalesce GPU QEC scratch while retaining serial-shot arithmetic
+
+**GitHub:** [#559](https://github.com/aleph-sim/aleph/issues/559) — closed as of 2026-10-18.
+
+**Labels:** `area:decoder`, `area:backend-gpu`, `type:optimization`, `priority:medium`, `research`
+**Milestone:** Phase 8
+**Estimate:** L
+**Depends on:** Q3-01, Q3-02
+
+**Description**
+Test transposed/tiled per-shot scratch layouts for GPU BP, retaining the existing per-shot arithmetic schedule; evaluate Union-Find only after the regular BP case.
+
+**Context**
+GPU BP and UF use one thread per shot with scratch indexed as shot*stride+element. At a common edge loop iteration, adjacent warp lanes access addresses separated by a full graph stride. The source identifies a plausible coalescing problem; its magnitude has not been measured with hardware counters.
+
+**Technical Details**
+1. Profile the unchanged kernels with representative graph sizes, shot batches and error rates. Record transactions/bandwidth, occupancy, iteration divergence and scratch footprint.
+2. Add an edge-major or tiled AoSoA BP scratch variant so adjacent lanes access adjacent shot slots for a common edge, preserving each shot's edge order and FP64 operations. Keep the current layout as A/B reference and update scratch/batch budgeting.
+3. Compare layout-only changes before introducing cooperative scheduling or reduced precision. Graph reads shared by lanes and divergent early stops may limit gains; state those regimes explicitly.
+4. UF's irregular parent/BFS accesses may behave differently: profile it independently and only retain a layout variant with measured benefit. Preserve tie-breaking and correction identity.
+
+**Acceptance Criteria**
+- [ ] BP layout-only variant matches the reference corrections and convergence behavior on the established oracle campaign.
+- [ ] Hardware profiling confirms or rejects the proposed coalescing bottleneck.
+- [ ] Time, scratch and batch-size crossover are reported against the same-decoder reference.
+- [ ] A measured no-go with reverted candidate code is acceptable; no unsupported speedup claim.
+
+**Testing Requirements**
+- Existing 100k-shot BP oracle, degree-1 infinities, graph extremes and deterministic repeats.
+- UF correction/tie-order checks if attempted; explicit real-GPU profiling, not construction-skip success.
+
+**References**
+- `crates/aleph-cuda/src/qec/bp.cu`, `bp.rs`, `uf.cu`, `uf.rs`.
+- `docs/perf/qec-q3-gpu-bp.md`, `qec-q3-gpu-uf.md`.
+- https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html (coalesced access).
+
+-----
+
+### [P8-10] Prototype cooperative GPU BP with explicit accuracy and latency trade-offs
+
+**GitHub:** [#560](https://github.com/aleph-sim/aleph/issues/560) — closed as of 2026-10-18.
+
+**Labels:** `area:decoder`, `area:backend-gpu`, `type:optimization`, `priority:low`, `research`
+**Milestone:** Phase 8
+**Estimate:** XL
+**Depends on:** P8-09
+
+**Description**
+Prototype warp/block-cooperative BP after layout profiling, and establish whether it improves throughput or single-shot latency at an acceptable accuracy/resource cost.
+
+**Context**
+The current exact-match BP kernel serializes all checks/variables/iterations inside one thread per shot. Layout fixes do not remove that serial critical path. Cooperative execution is a hypothesis, not a demonstrated improvement, and reductions can alter numerical/tie behavior.
+
+**Technical Details**
+1. Pick a bounded graph/degree regime from P8-09 data. Parallelize independent check updates, then variable updates, with a clear message schedule and synchronization contract.
+2. Keep FP64 initially. Preserve within-node reduction order where practical; otherwise document numeric tolerance and quantify hard-decision/convergence disagreement, paired logical error and latency. A rate agreement alone does not establish bitwise equivalence.
+3. Compare with both original and layout-improved kernels across batch sizes; expose throughput versus single-shot latency, occupancy, scratch and tails. Do not transfer claims from surface codes to qLDPC without a supported fixture.
+4. Keep the exact-match reference and do not change defaults until the target operating regime is measured. FP32, relay-BP and OSD integration are separate follow-ups.
+5. Use a predeclared go/no-go experiment; if synchronization outweighs parallel work, publish the negative result and stop the rewrite.
+
+**Acceptance Criteria**
+- [ ] Supported cooperative prototype has a documented schedule and oracle/accuracy comparison.
+- [ ] Throughput, single-shot/tail latency and memory are measured at matched precision/decoder parameters.
+- [ ] At least one supported qLDPC fixture or an explicit surface-only limitation is included.
+- [ ] Adoption or rejection follows measured data; negative results can close this research issue.
+
+**Testing Requirements**
+- Tiny Tanner graph reference updates, degree-1 and infinity cases, varied syndrome weight and convergence tails.
+- Paired decoder outcomes and real-hardware batch/latency campaigns; report rounding/tie disagreements.
+
+**References**
+- `crates/aleph-cuda/src/qec/bp.cu`, `crates/aleph-qec/src/bp.rs`.
+- `docs/perf/qec-q3-gpu-bp.md`; P8-09.
+
+-----
+
+### [P8-11] Prove a competitive Metal MPS factorization before another pipeline rewrite
+
+**GitHub:** [#561](https://github.com/aleph-sim/aleph/issues/561) — open as of 2026-10-18.
+
+**Labels:** `area:backend-mps`, `area:backend-gpu`, `type:optimization`, `priority:medium`, `research`
+**Milestone:** Phase 8
+**Estimate:** XL
+**Depends on:** P5.8-06
+
+**Description**
+Benchmark and prototype multi-threadgroup/tiled MPS SVD/QR factorization, with a go/no-go gate before integrating another large Metal MPS rewrite.
+
+**Context**
+Phase 5.8 removed major host/pipeline costs but the n=16 chi=256 benchmark changed only a few percent; GPU remained 16–22x slower than CPU. gpu_jacobi and move_gpu still dispatch one threadgroup per factorization, including blocks up to 512x512. The numerical guard/f64 fallback is essential and must stay.
+
+**Technical Details**
+1. Isolate representative two-site split and center-move matrices at chi=32/64/128/256/512, including ill-conditioned and truncating cases. Measure pack/factor/sort/install/guard/fallback separately against the current GPU path and faer CPU.
+2. Prototype blocked Jacobi or QR stages across multiple threadgroups/dispatches with explicit inter-dispatch dependencies. Do not assume increasing threadgroup size unlocks the whole GPU.
+3. Validate reconstruction, orthogonality/canonical form, discarded weight, norm and final observables at the existing tolerance. Quantify fallback frequency and its cost rather than disabling guards.
+4. Establish a useful factorization crossover before wiring a complete MPS pipeline. If it exists, integrate only that regime and rerun end-to-end MPS against CPU with actual bond-size distributions and dispatch/sync costs.
+5. Small-bond CPU fallback and batching are independent controls; avoid claiming fully resident execution when the chosen path falls back to CPU.
+
+**Acceptance Criteria**
+- [ ] A stage-level matrix/shape benchmark explains the existing wall and fallback frequency.
+- [ ] Prototype preserves reconstruction/canonical/truncation correctness on hard fixtures.
+- [ ] An integration go/no-go verdict is backed by factorization and projected/measured end-to-end costs.
+- [ ] No-go can close the research issue with documented limits; only measured beneficial regimes change production routing.
+
+**Testing Requirements**
+- Existing CPU/FP64 SV MPS oracles and chi-saturating examples.
+- Shape/conditioning sweeps, fallback accounting, and idle-Metal before/after timings; preserve current reference implementation.
+
+**References**
+- `crates/aleph-metal/src/mps/gpu_jacobi.rs`, `move_gpu.rs`.
+- `crates/aleph-metal/src/shaders/mps_jacobi.metal`, `mps_qr.metal`.
+- `docs/perf/phase5.7-audit.md`, `phase5.8.md`.
+
+-----
+
+### [P8-12] Validate communication-aware plans on real multi-GPU workloads
+
+**GitHub:** [#562](https://github.com/aleph-sim/aleph/issues/562) — open as of 2026-10-18.
+
+**Labels:** `area:backend-dist`, `area:ir`, `area:bench`, `type:optimization`, `priority:medium`, `research`
+**Milestone:** Phase 8
+**Estimate:** XL
+**Depends on:** P6-05
+
+**Description**
+Benchmark the current compiler on actual multi-GPU hardware and diagnose compute-pass inflation, representation loss and communication before choosing further scheduling changes.
+
+**Context**
+The earlier AWS n=28 random FP32 run measured 0.87x speedup on two L4s and 1.06x on four. Distributed plans inflated local compute/fusion work before link cost. P6-05 and state-aware cost calibration have since improved plans, but a predicted compiler gain on emulated ranks is not an actual multi-device measurement.
+
+**Technical Details**
+1. Establish current fused single-device, naive distributed, lookahead and compiled baselines with identical circuit/precision/query and reported hardware topology. Record NCCL/P2P/host staging capability rather than assuming it.
+2. Decompose wall time into planning, local kernel kinds/passes, exchange bytes/events, synchronization and readout. Detect lost diagonal specialization, extra local swaps, fusion fragmentation and host serialization using the current code, not stale pre-fix reports.
+3. Compare useful work and achieved time for both fixed-size strong scaling and fixed-memory reach. QFT's free SWAP relabeling can make superlinear speedup a change in work, so annotate that baseline.
+4. Select one measured schedule/representation lever and validate it separately. Do not add hardware, widen fusion or tune a link model when compute inflation is the dominant term.
+5. Freeze calibration choices before held-out workload evaluation. Keep predictions and measured results in separate columns and include uncompetitive cases.
+
+**Acceptance Criteria**
+- [ ] Current multi-device measurements compare single-GPU, naive/lookahead and compiled plans on at least 2/4 GPUs when hardware is available.
+- [ ] Kernel/communication/work inflation explains scaling limits with attributable measurements.
+- [ ] A selected optimization has before/after oracle and end-to-end evidence, or a documented no-go conclusion.
+- [ ] Hardware-unavailable results remain labelled prediction-only and do not close measured scaling claims.
+
+**Testing Requirements**
+- Existing distributed equivalence/host-overlap tests, small actual multi-device oracles, held-out plan selection cases.
+- Strong/weak scaling with topology, precision and total-work counters; do not disrupt shared services without the repository's authorized isolation procedure.
+
+**References**
+- `docs/perf/p6-multi-gpu.md`, `p6-05-compiler.md`.
+- `crates/aleph-ir/src/dist/compile.rs`, `specialize.rs`.
+- `crates/aleph-cuda/src/dist/device_sv.rs`, `cost.rs`, `nccl.rs`.
+
+-----
+
+### [P8-13] Make public-workflow baselines and experiment gates reproducible
+
+**GitHub:** [#563](https://github.com/aleph-sim/aleph/issues/563) — closed as of 2026-10-18.
+
+**Labels:** `area:bench`, `area:infra`, `area:docs`, `type:feature`, `priority:high`
+**Milestone:** Phase 8
+**Estimate:** L
+**Depends on:** —
+
+**Description**
+Create a common end-to-end benchmark/provenance workflow and require bottleneck/crossover evidence before expensive optimization campaigns.
+
+**Context**
+Historical evidence includes an inert min_amps axis in a 360-cell chunk sweep, Metal pipeline work ahead of competitive factorization, tiny TF32 margins measured best-of, GPU-MWPM/UF algorithm swaps inside speedup headlines, and cost-model contamination from services restarted by a watchdog. Existing reports are valuable but their comparison contracts differ.
+
+**Technical Details**
+1. Record revision, exact public entry point, precision/error budget, optimizer flags, workload seed/model, shots, threads/workers, warmed/cold state, compiler/device identity, topology and raw repeat data in a machine-readable run manifest.
+2. Time startup, parse/compile, execution, sample and materialization separately, plus total caller wall time. Run the same public route used by customers; kernel-only results are an additional tier.
+3. Use paired/interleaved A/B order and report medians/spread and uncertainty for small wins. Treat best-of as an explicitly labelled throughput ceiling, not sufficient evidence of a stable 2% gain. Verify idleness throughout; obey shared-service isolation authorization and restoration rules.
+4. Require a preflight experiment that the swept parameter changes the executed path/counters. Sweep thresholds near the actual transition instead of spending trials on an inert axis. Use a bottleneck upper bound/crossover estimate and a declared stop condition before broad rewrites.
+5. Compare same algorithm/precision/core budget first. Keep workflow algorithm changes in separate tables with accuracy data. Re-measure MWPM after Sparse Blossom; archive older dense-MWPM numbers as historical.
+6. Add structural/transfer/memory guards through public API paths. Feature compilation or tests that silently skip GPU construction do not establish hardware execution; hardware campaigns must explicitly report executed/skipped status.
+
+**Acceptance Criteria**
+- [ ] Reusable manifests and commands capture total/stage timing, provenance, repeats and resource counters.
+- [ ] At least CPU CLI and CUDA Python reference workflows use the harness.
+- [ ] Current same-decoder and same-resource baselines are separate from historical/cross-algorithm headlines.
+- [ ] Historical no-gain cases are summarized with their causes and experiment stop rules.
+- [ ] CI guards exercise intended frontend paths structurally; real-hardware results cannot be recorded as passes when skipped.
+
+**Testing Requirements**
+- Validate manifest schema, subprocess failures, skipped hardware, warm/cold labels and counter capture.
+- Reproduce a known fusion/transfer improvement and a small/no-gain case; avoid wall-time thresholds in correctness CI.
+
+**References**
+- `docs/perf/phase2-p2-04.md`, `phase5.8.md`, `p5.11-05-tf32-fused-block.md`.
+- `docs/perf/qec-q3-montecarlo.md`, `q1-03b-sparse-blossom.md`, `p6-05-compiler.md`.
+- `.github/workflows/ci.yml`; `docs/benchmarking.md`.
+
+-----
+
+### [P8-14] Evaluate combined tile residency and overlapped paging
+
+**GitHub:** [#564](https://github.com/aleph-sim/aleph/issues/564) — closed as of 2026-10-18.
+
+**Labels:** `area:backend-gpu`, `type:optimization`, `priority:low`, `research`
+**Milestone:** Phase 8
+**Estimate:** L
+**Depends on:** P5.11-02, P5.11-03, P8-13
+
+**Description**
+Evaluate a paging executor that combines existing low-qubit multi-gate residency with copy overlap, using the measured duplex ceiling and real locality distribution to bound expectations.
+
+**Context**
+run_paged_batched amortizes transfers over low-only gate runs and achieved up to 9.93x on a locality-rich fixture. run_paged_overlapped overlaps per-gate copies and measured about 1.10x with a 1.24x duplex ceiling. They are separate entry points; the report's conceptual composability does not establish a combined production path or multiplicative end-to-end gains.
+
+**Technical Details**
+1. Baseline both existing executors and inspect actual low-run lengths/high-qubit interruptions on held-out workloads. Retain synchronous residency as the main comparison.
+2. Prototype an event-ordered ring of resident tile groups: apply a complete safe low-only run per load, overlap independent groups, and enforce prior scatter completion before host-memory reuse and high-gate transitions.
+3. Budget all device buffers and pinned host memory; avoid losing tile size/headroom to an oversized overlap ring. Handle shallow pipelines with the proven synchronous fallback.
+4. Measure copies, bytes, residency, fill/drain and compute separately. Large locality gains are fixture-dependent; overlap benefits cannot exceed the measured link/pipeline opportunity.
+5. Start FP64, mirror FP32 only if worthwhile. Qubit relabelling/locality-aware scheduling is a later measured lever, not necessary to prove safe composition.
+
+**Acceptance Criteria**
+- [ ] Prototype preserves paging order and matches the synchronous reference at declared precision.
+- [ ] Memory budgeting and high-qubit flush/fallback behavior are explicit.
+- [ ] Held-out workload A/B measures traffic, wall time and regimes with no gain.
+- [ ] Adopt only a measured useful configuration; a documented no-go result can close the research issue.
+
+**Testing Requirements**
+- Forced small tiles with mixed controls/targets and alternating low/high gates; compare complete amplitudes against CPU/reference paging.
+- Real-device event-order tests and interleaved idle-machine timing; zero hidden synchronous copies.
+
+**References**
+- `crates/aleph-cuda/src/sv/paged.rs`, `paged_f32.rs`.
+- `docs/perf/p5.11-02-overlapped-paging.md`, `p5.11-03-multi-gate-residency.md`.
+
+-----
+
+### [P8-15] Bound DEM experiment batches and validate decoder result contracts
+
+**GitHub:** [#565](https://github.com/aleph-sim/aleph/issues/565) — closed as of 2026-10-18.
+
+**Labels:** `area:qec`, `area:decoder`, `type:bug`, `priority:medium`
+**Milestone:** Phase 8
+**Estimate:** L
+**Depends on:** Q0-04
+
+**Description**
+Process logical-error experiments in bounded batches and reject incomplete decoder outputs before scoring instead of materializing all shots and silently truncating zip iteration.
+
+**Context**
+run_dem_experiment samples all syndromes/truths into vectors, decodes the full batch, then zips predictions with truths. Memory grows with total shots. If a custom decoder returns fewer predictions, zip skips unreturned shots but the reported denominator is still the requested shot count; missing observable bits are also treated as false by mispredicted.
+
+**Technical Details**
+1. Introduce bounded batch size/memory policy and sample by absolute shot index so chunking preserves the existing deterministic stream. Keep sample_shots as an explicit artifact API for callers needing every shot.
+2. Validate decode_batch output length and each correction's observable schema before scoring. Return a clear decoder-contract error for incomplete results instead of counting only the returned prefix.
+3. Accumulate exact counts across batches with checked arithmetic. Expose processed/requested counts for any intentional partial/budgeted experiment; never silently use an unprocessed denominator.
+4. Consider packed syndromes/truth bits and reusable per-worker sampling scratch after the batch boundary is correct. Benchmark small fast decoders where allocation overhead matters and large campaigns where memory dominates.
+5. Preserve external PyMatching batch amortization and existing decoder thread-local caches.
+
+**Acceptance Criteria**
+- [ ] Total experiment memory is bounded by configured batch size, not total shots.
+- [ ] Short/long prediction vectors and incompatible observable lengths fail explicitly.
+- [ ] Fixed-seed exact tallies match the previous valid full-batch path across batch sizes/workers.
+- [ ] Sampling, decode, scoring time and peak memory are reported for representative campaigns.
+
+**Testing Requirements**
+- Custom intentionally malformed decoders, zero/partial final batches, multiple observables and deterministic mechanisms.
+- Existing CPU/oracle experiments and fixed-seed chunk invariance; packed conversion round trips if introduced.
+
+**References**
+- `crates/aleph-qec/src/experiment.rs::run_dem_experiment`, sample_shots, mispredicted.
+- `crates/aleph-qec/src/decoder.rs::Decoder`, `syndrome.rs`.
+- Phase 7 P7-01/P7-02 rely on trustworthy experiment scoring.
+
+-----
+
+### [P8-16] Use valid logical-error intervals for zero and rare observed failures
+
+**GitHub:** [#566](https://github.com/aleph-sim/aleph/issues/566) — closed as of 2026-10-18.
+
+**Labels:** `area:qec`, `area:bench`, `type:bug`, `priority:high`
+**Milestone:** Phase 8
+**Estimate:** M
+**Depends on:** Q0-04
+
+**Description**
+Replace or supplement the current Wald half-width with a documented interval that remains meaningful for zero/all failures and small counts.
+
+**Context**
+LogicalErrorResult::new computes 1.96*sqrt(p*(1-p)/n). Zero observed failures yields rate=0 and ci95=0, which cannot establish zero logical risk. The same boundary problem occurs at all failures. Phase 7 rare-event estimators need their own interval method; the existing direct Monte Carlo baseline also needs valid uncertainty.
+
+**Technical Details**
+1. Choose and document an interval (Wilson or exact binomial are starting points), its confidence level, two/one-sided interpretation and zero-shot behavior. Represent lower/upper bounds rather than assuming symmetry around the sample proportion.
+2. Inventory Rust/Python/CLI/report consumers of ci95 and define a compatibility/migration policy. Do not silently reinterpret a public half-width as an asymmetric interval.
+3. Update comparison/report helpers to use the declared bounds correctly; overlapping intervals are not a proof of decoder equivalence. Preserve paired comparisons where matching shot streams are available.
+4. Keep ordinary Bernoulli experiment intervals separate from stratified/weighted/correlated estimators in P7-02/P7-04.
+5. Validate coverage offline for small/rare cases and document zero-event upper bounds; zero-shot experiments have no evidence, not a measured zero failure probability.
+
+**Acceptance Criteria**
+- [ ] Zero/all-failure and small-count experiments have valid documented bounds; zero-shot semantics are explicit.
+- [ ] Public result/report consumers follow a compatible, tested migration policy.
+- [ ] Reference binomial cases and offline coverage checks support the stated method.
+- [ ] Weighted/correlated estimators cannot accidentally reuse the ordinary direct-sampling interval.
+
+**Testing Requirements**
+- Exact boundary/reference cases, large n, monotonic bounds and invalid count inputs.
+- Offline repeated-sampling coverage within reported simulation uncertainty; small deterministic cases in CI.
+
+**References**
+- `crates/aleph-qec/src/decoder.rs::LogicalErrorResult::new`.
+- `crates/aleph-qec/src/experiment.rs`.
+- `BACKLOG.md`, P7-02 and P7-04 (distinct estimator contracts).
+
+-----
+
+# Cross-phase CI Infrastructure
+
+### [CI-01] Reduce CI load: docs fast path, then dependency-aware code checks
+
+**GitHub:** [#597](https://github.com/aleph-sim/aleph/issues/597).
+
+**Labels:** `area:infra`, `type:infra`, `priority:high`
+**Estimate:** L (two sequential, independently reviewable stages)
+**Scope:** Implement both stages in one task and one PR, as requested by the user: **A — documentation fast path**, then **B — dependency-aware code checks**. Keep separate validation gates inside the same PR; do not close the issue until both stages are verified.
+
+## Execution order
+
+- [ ] **Stage A:** Fast hosted checks for approved docs-only changes, retaining the existing full route for code/config/unknown changes.
+- [ ] **Stage B:** Select code checks from affected dependencies, consumers, features and platforms; retain conservative full-suite fallbacks and integration audits.
+
+The gate/classifier infrastructure from A is reused by B. Stage B must not delay the docs improvement or silently reduce A's safety guarantees.
+
+## Problem and observed evidence
+
+Documentation-only PRs currently run the same eight CI jobs as production changes. `.github/workflows/ci.yml` has no change classifier or documentation fast path: rustfmt, Clippy (including CUDA/NCCL), Linux stable/beta workspace suites, two Python wheel/test jobs and macOS stable/beta workspace/Metal suites all run.
+
+For example, [report PR #596](https://github.com/aleph-sim/aleph/pull/596), head `d02d8b51dfb3cb6c1d21bff94e81f3ac692e1922`, changes reports, backlog/roadmap and saved validation receipts. In [CI run 39158713634](https://github.com/aleph-sim/aleph/actions/runs/39158713634), macOS stable took **22m45s** and Linux beta **13m16s**; Linux stable did not start until 19:41:25 UTC after the run's first jobs started around 19:25:39. These are individual observed job durations/start times, not a completed-run total, billing estimate or causal proof of every queue delay. No Rust implementation changed.
+
+The desired outcome is concrete: ordinary prose/report PRs should get meaningful checks in minutes without occupying the self-hosted development/measurement runner or rebuilding Python wheels and the Rust workspace.
+
+## Stage A: a safe docs-only route
+
+1. Add a small **GitHub-hosted**, read-only change-planning job. Keep its workflow triggered for every relevant PR, so the merge result always exists. Retain all current heavy checks for every change that is not confidently classified as documentation-only.
+2. Use an explicit allowlist of prose/report locations (for example approved root Markdown files, `docs/**` Markdown/images and identified report receipts). A file extension or `docs/` prefix alone is insufficient: documentation trees can contain fixtures, generated artifacts, scripts or inputs used by tests/builds. Audit repository consumers before approving non-prose paths; unknown formats/paths take the full route. `.rs` documentation edits, rustdoc, examples, Python notebooks/scripts and build inputs remain code-bearing changes.
+3. Compute the **complete** PR diff against the appropriate base/merge-base, including deleted/renamed paths and both sides of a rename. Do not rely on a truncated changed-files response or a shallow-fetch failure. A mixed docs+code PR takes the full route. An incomplete/ambiguous diff falls back to full CI; inability to produce a valid plan fails the merge gate.
+4. The docs route performs useful bounded checks: changed local link/asset targets, relevant Markdown consistency and JSON/JSONL/schema/checksum validation where a known report format declares it. Avoid live external-link checks as a blocking network-flaky gate. Do not execute arbitrary fenced shell snippets. Run only explicitly mapped executable-example checks where required; otherwise classify those changes for the existing full route.
+5. Ordinary docs-only PRs must launch **no self-hosted Rust jobs, no workspace build/test, no CUDA/Metal feature build and no Python wheel build**. Publish a concise job summary explaining the classification and omitted suites. Do not label omitted tests as executed/passed.
+6. CI workflows/actions, classifier scripts/tests, `.github/**` policy, Cargo manifests/lockfile, toolchain/config/build scripts, packaging configuration, source/test scripts and unrecognized paths must never use the docs shortcut. Initially select the unchanged full CI route for all of these.
+
+## Reliable merge semantics
+
+- Add one stable final gate (for example `ci-required`) that always evaluates the successful plan and **all selected jobs**, even when dependencies failed. A job-level `always()`/`needs` design must explicitly reject failed planning, malformed/missing outputs, failed/cancelled/missing selected jobs and a selected job unexpectedly skipped.
+- An intentionally unselected heavy suite is allowed to be skipped only when explained by the valid docs plan and successful docs checks. This is different from treating skipped/cancelled checks as test success.
+- Do not solve this solely with workflow-level `paths-ignore`. A filtered-out workflow can leave expected checks pending; a conditionally skipped job can otherwise appear acceptable without proving the intended checks ran. See [GitHub's required-check semantics](https://docs.github.com/en/pull-requests/how-tos/merge-and-close-pull-requests/troubleshooting-required-status-checks#handling-skipped-but-required-checks).
+- Bind plan/result reporting to the current PR head and relevant base/tested revision; stale results from a previous commit must not authorize a merge. Recompute on every new commit/base update. Preserve existing concurrency cancellation, but a cancelled run cannot satisfy the gate.
+- Audit branch rules and merge-monitor expectations before rollout. On 2026-10-18 the branch-protection API reported `Branch not protected` and the repository ruleset list was empty; therefore the current all-checks policy also lives in our manual/automation merge instructions. Recheck this at implementation time. Do not silently enable/disable protection or relax any current PR's authorized merge conditions.
+- Update the documented merge policy and future monitors to use the new aggregate **only after it is validated and accepted**. Existing monitors requiring eight/nine completed successful jobs retain their contract until explicitly migrated. This task must not retroactively waive PR #596's checks.
+- Preserve fork/self-hosted trust boundaries, read-only token defaults and checkout without persisted credentials. Docs planning/checks should work on hosted runners for forks; untrusted changes must not gain self-hosted execution or secrets. Do not use `pull_request_target` to execute PR code. Changes to the classifier/workflow themselves require the full route and review.
+
+## Main-branch and full-check policy
+
+Use the same safe docs classification for main pushes so merging a report does not immediately re-run the expensive suite there. Define the push comparison range explicitly; an unavailable range selects full CI. Code-bearing main pushes keep existing full validation in this first task.
+
+Provide a documented full-suite override and retain a broad default-branch audit (scheduled or manually requested). Treat separately dispatched validation as extra evidence, not an automatic substitute for the PR's required check; GitHub's event semantics matter. Do not enable timed performance benchmarks on a shared runner as part of this change. `bench.yml` is currently manual-only; preserve that policy. Release/tag/wheel publication behavior remains unchanged.
+
+`hw.yml` already path-filters PRs but runs on every main push. Apply/audit the same docs exception there so a docs merge does not run RTL co-simulation unnecessarily. Preserve checks for RTL, generated hardware inputs and the Rust golden model. Do not simply assume its current `aleph-qec/**` list captures every transitive golden-generator input; record any broader dependency gap as follow-up work rather than weakening it.
+
+## Rollout and tests
+
+1. Add table-driven classifier tests and temporarily report the proposed route in shadow mode while the old merge gates stay authoritative. Exercise both successful routes before skipping expensive jobs.
+2. Cases must include root prose; docs prose/images; known report JSON/JSONL and checksum receipts; malformed receipts; mixed docs+Rust; deleted/renamed files; docs renamed into source and vice versa; paths with whitespace; more than 300 changed files with code at the end; missing/truncated diff; unknown path; workflow/classifier edit; Cargo.lock/toolchain edit; new PR commit/base movement; and fork PRs.
+3. Gate tests must show failure for classifier failure, absent outputs, cancelled/failed selected jobs and unexpected selected-job skips; a valid docs plan plus passing docs checks must succeed with explicitly unselected heavy jobs omitted.
+4. Run a real docs-only PR and a mixed/code-bearing control. Record selected jobs, check conclusions, self-hosted job count, queue wait, elapsed wall and summed runner time separately. Demonstrate that the docs shortcut also holds for a docs-only main push.
+5. Initial docs target: **no expensive jobs and roughly 1–3 minutes active execution with warm hosted tooling**. Queue time is reported separately, not promised. Compare several real runs, retain failures and choose acceptance thresholds from measured setup costs; do not claim a saving based only on predicted job counts.
+
+## Stage A acceptance criteria
+
+- [ ] Pure approved documentation changes receive useful hosted checks and a stable successful merge gate without Rust/Python/GPU/RTL suites or self-hosted allocation.
+- [ ] Mixed, ambiguous and code/config changes retain existing full CI coverage; no regression is hidden by a skipped job or planner failure.
+- [ ] The same docs exception works on main without changing code-bearing main/release behavior.
+- [ ] Classifier and merge-gate edge/security cases have meaningful automated coverage; a real docs and real code control validate routing.
+- [ ] Before/after route, elapsed/queue/runner-time evidence and known limitations are documented.
+- [ ] Merge instructions and future monitors describe selected-success versus intentionally-unselected checks; migration does not bypass existing PR authorization.
+
+## Stage B: dependency-aware checks for code changes
+
+Start only after Stage A routing/gate behavior is verified. Replace the unconditional full route for confidently understood code changes with a conservative affected-check plan. File location is the seed, not the entire affected surface.
+
+### Dependency and configuration model
+
+1. Derive the workspace package graph from Cargo metadata. Include normal, build, dev/test, optional-feature and target-specific dependencies; compute the transitive reverse-consumer closure needed by the selected tests. Shared test/oracle helpers can connect otherwise separate packages. Cycles must terminate deterministically. Record the feature/platform assumptions instead of treating a default-feature graph as complete.
+2. Maintain explicit non-Cargo edges for Python bindings/tests, CLI integration, shader source/includes, generated artifacts, golden-vector generators, scripts, fixtures and benchmark harnesses. Verify actual consumers before excluding checks. Unknown/unmapped inputs take the full route.
+3. Select **package + test scope + platform + feature set**. A crate name alone is not a coverage plan: Metal/CUDA crates are empty without their respective features. Do not use a blanket `--all-features` build that mixes unsupported platform configurations; use audited configurations.
+4. Preserve current contracts: Linux debug, macOS release/cross-platform coverage, stable/beta behavior, MPS no-default-features, CUDA/NCCL feature checks, Metal feature checks, Python 3.10/3.12 wheel/binding contracts, and RTL golden checks where affected. Any reduction of these dimensions is a separate explicit policy decision, not a side effect of path filtering. The aggregate must inspect actual selected job outcomes even when a legacy beta job is marked continue-on-error.
+5. Planner/workflow changes, workspace manifests/lockfile/toolchain/build configuration, ambiguous diffs and unknown paths retain the full route initially. Optimize these broad triggers only after independent evidence that a narrower plan is safe.
+
+### Expected routing examples — validate against the actual graph
+
+| Change seed | Required affected coverage | What it must not assume |
+|---|---|---|
+| Approved prose/report only | Stage A hosted docs checks and aggregate | No Rust/Python/GPU/RTL execution merely because another workflow also handles code |
+| `aleph-metal` / Metal shaders | Real `metal` feature build/lint/tests on macOS; affected feature-enabled CLI/Python consumer builds/contracts; any impacted reference/test packages | Default workspace build proves Metal coverage, or every macOS test is a Metal test |
+| `aleph-cuda` / CUDA kernels | `cuda` and relevant `nccl` checks, pure no-device contracts, affected CUDA-feature CLI/Python consumers; dependency-selected reference tests | CUDA compilation proves execution on a physical GPU |
+| `aleph-sv` / CPU kernels or noise | CPU tests/oracles plus CLI/Python and any transitive GPU/reference consumers; relevant Linux/macOS and toolchain configurations | CPU edits cannot break another backend's oracle or a public frontend |
+| `aleph-core`, `aleph-ir`, `aleph-backend` | Broad consumer closure, normally approaching the full matrix | Shared interfaces are isolated to their own unit tests |
+| `aleph-qec` | QEC plus affected Python/CUDA consumers and RTL golden-model coverage | RTL depends only on files directly inside `hw/` |
+| Parser or CLI | Parser/CLI plus affected frontend/IR consumers and public-route contracts, according to the graph | Source parsing or output semantics are backend-independent in their tests |
+| Python wrappers/scripts | Relevant wheel/binding/integration matrix and explicitly mapped script contracts | A Python-only diff cannot affect CUDA-Q/public workflow behavior |
+| RTL/golden fixtures/generators | Hardware co-simulation plus affected Rust/generator/consumer checks | Generated data are inert documentation |
+| Unknown/mixed/common configuration | Union of all affected scopes; full fallback when uncertain | Pick just the largest edited folder or the first matching rule |
+
+These examples define intended reasoning, not a frozen hand-maintained substitute for graph tests. The closure may legitimately be broad because current dev/oracle dependencies connect packages. Prefer a correct broad result to an impressive but unsafe reduction in job count.
+
+### Execution and merge behavior
+
+- Emit a versioned, deterministic machine-readable plan with changed files, source/base identities, selected configurations and a reason for every selected/omitted suite. The job summary must make the plan reviewable.
+- Build reusable job/configuration groups so selecting one backend does not run the entire workspace inside a supposedly targeted job. Conversely, `cargo test -p ...` alone does not test reverse consumers: add their relevant builds/contracts explicitly.
+- Stage A's always-evaluated aggregate remains the single selection authority. It must validate **every selected matrix entry**, not just one successful sibling. Missing entries, planner errors, malformed/false-string outputs, and unexpected skips/cancellations fail. Intentionally omitted configurations remain visibly unexecuted.
+- Keep broad integration on code-bearing main pushes during initial rollout and provide a full default-branch periodic/manual audit. A main/nightly job is a backstop, not permission to omit a known affected consumer before merge. Docs-only main pushes still take A's fast route. Keep release CI and timed benchmark isolation unchanged.
+- Provide a safe full-check override. An override may broaden coverage; PR text/labels/inputs must not let an untrusted author reduce the computed plan. Preserve the hosted/fork/self-hosted boundaries established by A.
+- Actual Metal/CUDA device validation and performance campaigns remain distinct from compile-only/no-device checks. Route supported hardware checks where available; otherwise report the missing hardware evidence honestly. This task does not provision GPUs or certify performance from a build.
+
+### Validation and rollout
+
+1. Run B in **shadow mode**: compare its selected sets against the existing full CI and replay representative historical diffs before removing jobs. Include shared core/IR, pure Metal, CUDA, QEC, CPU noise, frontend, Python, scripts/fixtures and configuration changes.
+2. Add graph/classifier fixtures for normal/dev/build/optional/target edges, dependency cycles, consumers through shared oracle helpers, new/deleted/renamed packages and shader includes, lock/config changes and unknown inputs. Include deliberate broken-consumer examples proving the consumer is selected, not merely that the graph contains a direct edge.
+3. Test scheduler/aggregate behavior on empty optional matrices, partial matrix failure, unexpected skip, classifier failure, cancelled superseded runs and a new PR head/base. Preserve A's docs tests throughout.
+4. Validate at least a docs-only case and representative Metal, CUDA, CPU, QEC and shared-code selections. Use real applicable build/test runs where infrastructure supports them; explicitly separate routing-fixture proof from physical GPU execution. A deliberate syntax/contract regression in a selected consumer must fail its planned gate.
+5. Compare several before/after code PRs with the same declared coverage boundary. Record queue time, elapsed critical path, summed runner time and self-hosted utilization separately. Report legitimate broad/no-savings cases; do not set a universal speedup target before measuring dependency overlap.
+6. Document the package/configuration map, full override, adding a new crate/feature, failure diagnostics, rollback to full CI, and the updated exact-head merge-monitor contract. Require an accepted shadow-mode report before switching authoritative selection.
+
+### Stage B acceptance criteria
+
+- [ ] Dependency-derived package/consumer/configuration selection is implemented with audited non-Cargo edges and a fail-safe full fallback.
+- [ ] Backend-local edits avoid unrelated expensive suites **where the verified dependency graph permits**, while shared-interface edits keep broad coverage.
+- [ ] Feature-enabled frontend/reference contracts, cross-platform/toolchain and hardware-golden requirements cannot disappear through empty default builds or skipped matrix entries.
+- [ ] Graph, security and aggregate failure cases pass; shadow-mode and representative actual selected builds/tests are documented.
+- [ ] Measured queue/elapsed/runner-time evidence demonstrates the effect, including cases where selection remains broad.
+- [ ] Merge instructions, future monitors, maintenance/override/rollback documentation are migrated deliberately; current PRs are never waived retroactively.
+
+**Issue closure:** both A and B acceptance lists are satisfied in the same reviewed PR. Implement the docs path first, then validate dependency-aware code selection before merging the combined change.
+
+## References
+
+- Repository workflows: [.github/workflows/ci.yml](https://github.com/aleph-sim/aleph/blob/d02d8b51dfb3cb6c1d21bff94e81f3ac692e1922/.github/workflows/ci.yml), [hw.yml](https://github.com/aleph-sim/aleph/blob/d02d8b51dfb3cb6c1d21bff94e81f3ac692e1922/.github/workflows/hw.yml), [bench.yml](https://github.com/aleph-sim/aleph/blob/d02d8b51dfb3cb6c1d21bff94e81f3ac692e1922/.github/workflows/bench.yml).
+- [GitHub workflow filtering/diff limits](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#git-diff-comparisons): do not assume native path filters inspect an unlimited diff.
+- [GitHub required checks / skipped jobs / event semantics](https://docs.github.com/en/pull-requests/how-tos/merge-and-close-pull-requests/troubleshooting-required-status-checks).
+- Phase 8 tracker [#550](https://github.com/aleph-sim/aleph/issues/550), report PR [#596](https://github.com/aleph-sim/aleph/pull/596). This is cross-project CI infrastructure, not an extra capability counted in Phase 8's existing 16-task exit ledger.
+
+
+-----
+
 # Appendix: Counts and Order
 
 - **Phase 0**: 12 issues
@@ -4877,6 +5711,7 @@ engine, not a universal replacement for state-vector amplitudes or sampling.
 **Original Phases 0–6 baseline: 60 issues.** Later sub-phase additions are specified above.
 
 - **Phase 7**: 7 issues (one integration/report tracker + six capability issues).
+- **Phase 8**: 17 issues (one integration/report tracker + sixteen capability issues).
 
 Recommended ordering for first weeks:
 

@@ -1,0 +1,1931 @@
+
+=== allocations-debug.log ===
+   Compiling aleph-qec v0.3.0 (/tmp/aleph-511-events-candidate/crates/aleph-qec)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.42s
+     Running tests/mwpm_allocations.rs (/tmp/aleph-511-events-candidate-target/debug/deps/mwpm_allocations-9f5dddb21b6d717a)
+
+running 2 tests
+test reusable_output_resizes_and_clears_previous_observables ... ok
+test d11_repeated_workload_allocates_only_owned_outputs ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 37.34s
+
+
+=== candidate-bench-build.log ===
+   Compiling aleph-qec v0.3.0 (/tmp/aleph-511-events-candidate/crates/aleph-qec)
+   Compiling aleph-benches v0.3.0 (/tmp/aleph-511-events-candidate/benches)
+    Finished `bench` profile [optimized + debuginfo] target(s) in 34.23s
+  Executable benches/mwpm_decode.rs (/tmp/aleph-511-events-candidate-target/release/deps/mwpm_decode-c34064fc3d91e724)
+
+=== candidate-corpus-build.log ===
+   Compiling aleph-qec v0.3.0 (/tmp/aleph-511-events-candidate/crates/aleph-qec)
+    Finished `release` profile [optimized] target(s) in 19.47s
+
+=== candidate-corpus.log ===
+distance,rate,detectors,observables,shots
+7,0.03,192,1,256
+7,0.003,192,1,256
+9,0.03,400,1,256
+9,0.003,400,1,256
+11,0.03,720,1,256
+11,0.003,720,1,256
+13,0.03,1176,1,256
+13,0.003,1176,1,256
+15,0.03,1792,1,256
+15,0.003,1792,1,256
+17,0.03,2592,1,256
+17,0.003,2592,1,256
+
+=== candidate-wheel-build.log ===
+🍹 Building a mixed python/rust project
+🐍 Found CPython 3.12 at /tmp/aleph-518-K1bhhc/test-venv/bin/python
+🔗 Found pyo3 bindings with abi3-py3.10 support
+📡 Using build options features from pyproject.toml
+   Compiling bytemuck v1.25.0
+   Compiling syn v2.0.117
+   Compiling target-lexicon v0.12.16
+   Compiling paste v1.0.15
+   Compiling num-complex v0.4.6
+   Compiling nano-gemm-codegen v0.2.1
+   Compiling pyo3-build-config v0.22.6
+   Compiling libm v0.2.16
+   Compiling either v1.16.0
+   Compiling bitflags v2.11.1
+   Compiling rayon v1.12.0
+   Compiling raw-cpuid v11.6.0
+   Compiling pulp v0.22.2
+   Compiling once_cell v1.21.4
+   Compiling reborrow v0.5.5
+   Compiling pulp-wasm-simd-flag v0.1.0
+   Compiling dyn-stack-macros v0.1.3
+   Compiling dyn-stack v0.13.2
+   Compiling zerocopy v0.8.48
+   Compiling syn v1.0.109
+   Compiling seq-macro v0.3.6
+   Compiling thiserror-impl v1.0.69
+   Compiling nano-gemm-core v0.2.1
+   Compiling thiserror v1.0.69
+   Compiling aleph-core v0.3.0 (/tmp/aleph-511-events-candidate/crates/aleph-core)
+   Compiling aleph-ir v0.3.0 (/tmp/aleph-511-events-candidate/crates/aleph-ir)
+   Compiling gemm-common v0.19.0
+   Compiling ppv-lite86 v0.2.21
+   Compiling matrixmultiply v0.3.10
+   Compiling interpol v0.2.1
+   Compiling equator-macro v0.4.2
+   Compiling rand_chacha v0.3.1
+   Compiling pyo3-ffi v0.22.6
+   Compiling pyo3-macros-backend v0.22.6
+   Compiling nano-gemm-c32 v0.2.1
+   Compiling nano-gemm-f32 v0.2.1
+   Compiling nano-gemm-c64 v0.2.1
+   Compiling nano-gemm-f64 v0.2.1
+   Compiling crossbeam-channel v0.5.15
+   Compiling crossbeam-queue v0.3.12
+   Compiling num-integer v0.1.46
+   Compiling defer v0.2.1
+   Compiling serde_core v1.0.228
+   Compiling memchr v2.8.0
+   Compiling rawpointer v0.2.1
+   Compiling crossbeam v0.8.4
+   Compiling private-gemm-x86 v0.1.20
+   Compiling equator v0.4.2
+   Compiling rand v0.8.6
+   Compiling aleph-backend v0.3.0 (/tmp/aleph-511-events-candidate/crates/aleph-backend)
+   Compiling equator-macro v0.2.1
+   Compiling safe_arch v0.7.4
+   Compiling atomic-wait v1.1.0
+   Compiling memoffset v0.9.1
+   Compiling heck v0.5.0
+   Compiling wide v0.7.33
+   Compiling spindle v0.2.6
+   Compiling equator v0.2.2
+   Compiling gemm-c32 v0.19.0
+   Compiling gemm-f32 v0.19.0
+   Compiling gemm-c64 v0.19.0
+   Compiling gemm-f64 v0.19.0
+   Compiling qd v0.8.0
+   Compiling pyo3 v0.22.6
+   Compiling num_cpus v1.17.0
+   Compiling minimal-lexical v0.2.1
+   Compiling equator-macro v0.6.0
+   Compiling generativity v1.2.1
+   Compiling serde v1.0.228
+   Compiling equator v0.6.0
+   Compiling faer-traits v0.24.0
+   Compiling gemm v0.19.0
+   Compiling nom v7.1.3
+   Compiling nano-gemm v0.2.2
+   Compiling pyo3-macros v0.22.6
+   Compiling simba v0.9.1
+   Compiling num-rational v0.4.2
+   Compiling nalgebra-macros v0.2.2
+   Compiling serde_derive v1.0.228
+   Compiling unindent v0.2.4
+   Compiling indoc v2.0.7
+   Compiling bytecount v0.6.9
+   Compiling nom_locate v4.2.0
+   Compiling serde_json v1.0.150
+   Compiling nalgebra v0.33.3
+   Compiling faer v0.24.0
+   Compiling aleph-stab v0.3.0 (/tmp/aleph-511-events-candidate/crates/aleph-stab)
+   Compiling ndarray v0.16.1
+   Compiling rustc-hash v1.1.0
+   Compiling aleph-qec v0.3.0 (/tmp/aleph-511-events-candidate/crates/aleph-qec)
+   Compiling numpy v0.22.1
+   Compiling aleph-parser v0.3.0 (/tmp/aleph-511-events-candidate/crates/aleph-parser)
+   Compiling aleph-sv v0.3.0 (/tmp/aleph-511-events-candidate/crates/aleph-sv)
+   Compiling aleph-mps v0.3.0 (/tmp/aleph-511-events-candidate/crates/aleph-mps)
+   Compiling aleph-py v0.3.0 (/tmp/aleph-511-events-candidate/crates/aleph-py)
+    Finished `release` profile [optimized] target(s) in 1m 29s
+📦 Built wheel for abi3 Python ≥ 3.10 to /tmp/aleph-511-events-validation/candidate-wheels/aleph_sim-0.3.0-cp310-abi3-manylinux_2_39_x86_64.whl
+
+=== final-bench-build.log ===
+   Compiling aleph-qec v0.3.0 (/tmp/aleph-511-events-candidate/crates/aleph-qec)
+   Compiling aleph-benches v0.3.0 (/tmp/aleph-511-events-candidate/benches)
+    Finished `bench` profile [optimized + debuginfo] target(s) in 34.41s
+  Executable benches/mwpm_decode.rs (/tmp/aleph-511-events-candidate-target/release/deps/mwpm_decode-c34064fc3d91e724)
+
+=== final-clippy-1.96-scoped.log ===
+    Checking aleph-core v0.3.0 (/tmp/aleph-511-events-candidate/crates/aleph-core)
+    Checking aleph-ir v0.3.0 (/tmp/aleph-511-events-candidate/crates/aleph-ir)
+    Checking aleph-backend v0.3.0 (/tmp/aleph-511-events-candidate/crates/aleph-backend)
+    Checking aleph-stab v0.3.0 (/tmp/aleph-511-events-candidate/crates/aleph-stab)
+    Checking aleph-qec v0.3.0 (/tmp/aleph-511-events-candidate/crates/aleph-qec)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 8.38s
+
+=== final-python-tests.log ===
+test_bad_inputs_raise_value_error (test_qec.TestApi.test_bad_inputs_raise_value_error) ... ok
+test_cudaq_float_error_output_matches_public_byte_api (test_qec.TestApi.test_cudaq_float_error_output_matches_public_byte_api) ... ok
+test_cudaq_float_output_empty_axes (test_qec.TestApi.test_cudaq_float_output_empty_axes) ... ok
+test_decode_batch_errors (test_qec.TestApi.test_decode_batch_errors) ... ok
+test_decode_batch_errors_empty_batch (test_qec.TestApi.test_decode_batch_errors_empty_batch) ... ok
+test_decode_shapes_and_dtypes (test_qec.TestApi.test_decode_shapes_and_dtypes) ... ok
+test_dem_from_matrices_accepts_dense_int64_and_sparse (test_qec.TestApi.test_dem_from_matrices_accepts_dense_int64_and_sparse) ... ok
+test_dem_from_matrices_rejects_bad_input (test_qec.TestApi.test_dem_from_matrices_rejects_bad_input) ... ok
+test_dem_properties (test_qec.TestApi.test_dem_properties) ... ok
+test_gross_code_dem (test_qec.TestApi.test_gross_code_dem) ... ok
+test_matching_invalid_prior_cannot_hide_in_empty_or_merged_columns (test_qec.TestApi.test_matching_invalid_prior_cannot_hide_in_empty_or_merged_columns) ... ok
+test_matching_prior_policy_at_construction (test_qec.TestApi.test_matching_prior_policy_at_construction) ... ok
+test_names (test_qec.TestApi.test_names) ... ok
+test_relay_budget_and_early_exit_change_the_actual_decision (test_qec.TestApi.test_relay_budget_and_early_exit_change_the_actual_decision) ... ok
+test_relay_budget_parameters_are_scoped_and_typed (test_qec.TestApi.test_relay_budget_parameters_are_scoped_and_typed) ... ok
+test_split_components_matches_matrices_without_mutation (test_qec.TestApi.test_split_components_matches_matrices_without_mutation) ... ok
+test_split_matching_projects_each_part_exactly_without_ties (test_qec.TestApi.test_split_matching_projects_each_part_exactly_without_ties) ... ok
+test_mwpm_matches_pymatching (test_qec.TestOracle.test_mwpm_matches_pymatching) ... ok
+test_bp_family_uses_parity_reduced_view (test_qec.TestStimDems.test_bp_family_uses_parity_reduced_view) ... ok
+test_compressed_equals_flattened (test_qec.TestStimDems.test_compressed_equals_flattened) ... ok
+test_every_decoder_on_decomposed_surface_code (test_qec.TestStimDems.test_every_decoder_on_decomposed_surface_code) ... ok
+test_hypergraph_dem (test_qec.TestStimDems.test_hypergraph_dem) ... ok
+test_matching_decode_batch_errors_rejects_decomposed_dem (test_qec.TestStimDems.test_matching_decode_batch_errors_rejects_decomposed_dem) ... ok
+test_native_split_matches_matrix_roundtrip_on_real_stim_shots (test_qec.TestStimDems.test_native_split_matches_matrix_roundtrip_on_real_stim_shots) ... ok
+
+----------------------------------------------------------------------
+Ran 24 tests in 164.636s
+
+OK
+
+=== final-queue-test.log ===
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.21s
+     Running unittests src/lib.rs (/tmp/aleph-511-events-candidate-target/debug/deps/aleph_qec-454c9036724b4024)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 195 filtered out; finished in 0.00s
+
+
+=== final-wheel-build.log ===
+🍹 Building a mixed python/rust project
+🐍 Found CPython 3.12 at /tmp/aleph-518-K1bhhc/test-venv/bin/python
+🔗 Found pyo3 bindings with abi3-py3.10 support
+📡 Using build options features from pyproject.toml
+    Finished `release` profile [optimized] target(s) in 0.12s
+📦 Built wheel for abi3 Python ≥ 3.10 to /tmp/aleph-511-events-validation/final-candidate-wheels/aleph_sim-0.3.0-cp310-abi3-manylinux_2_39_x86_64.whl
+
+=== main-bench-build.log ===
+    Finished `bench` profile [optimized + debuginfo] target(s) in 0.10s
+  Executable benches/mwpm_decode.rs (/tmp/aleph-511-events-base-target/release/deps/mwpm_decode-c34064fc3d91e724)
+
+=== main-corpus-build.log ===
+   Compiling proc-macro2 v1.0.106
+   Compiling quote v1.0.45
+   Compiling unicode-ident v1.0.24
+   Compiling libc v0.2.186
+   Compiling cfg-if v1.0.4
+   Compiling autocfg v1.5.1
+   Compiling zerocopy v0.8.48
+   Compiling num-traits v0.2.19
+   Compiling version_check v0.9.5
+   Compiling syn v2.0.117
+   Compiling serde_core v1.0.228
+   Compiling generic-array v0.14.7
+   Compiling getrandom v0.3.4
+   Compiling thiserror v1.0.69
+   Compiling crossbeam-utils v0.8.21
+   Compiling serde v1.0.228
+   Compiling typenum v1.20.1
+   Compiling zmij v1.0.21
+   Compiling num-complex v0.4.6
+   Compiling getrandom v0.2.17
+   Compiling either v1.16.0
+   Compiling getrandom v0.4.2
+   Compiling rustix v1.1.4
+   Compiling smallvec v1.15.1
+   Compiling serde_json v1.0.150
+   Compiling rand_core v0.6.4
+   Compiling rand_core v0.9.5
+   Compiling crossbeam-epoch v0.9.18
+   Compiling itoa v1.0.18
+   Compiling once_cell v1.21.4
+   Compiling linux-raw-sys v0.12.1
+   Compiling regex-syntax v0.8.10
+   Compiling memchr v2.8.0
+   Compiling rayon-core v1.13.0
+   Compiling bitflags v2.11.1
+   Compiling zerocopy-derive v0.8.48
+   Compiling thiserror-impl v1.0.69
+   Compiling serde_derive v1.0.228
+   Compiling aleph-core v0.3.0 (/tmp/aleph-511-events-base/crates/aleph-core)
+   Compiling aleph-ir v0.3.0 (/tmp/aleph-511-events-base/crates/aleph-ir)
+   Compiling ppv-lite86 v0.2.21
+   Compiling rand_chacha v0.3.1
+   Compiling half v2.7.1
+   Compiling crossbeam-deque v0.8.6
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling fastrand v2.4.1
+   Compiling clap_lex v1.1.0
+   Compiling plotters-backend v0.3.7
+   Compiling ciborium-io v0.2.2
+   Compiling anstyle v1.0.14
+   Compiling ciborium-ll v0.2.2
+   Compiling plotters-svg v0.3.7
+   Compiling clap_builder v4.6.0
+   Compiling tempfile v3.27.0
+   Compiling digest v0.10.7
+   Compiling rand v0.8.6
+   Compiling aleph-backend v0.3.0 (/tmp/aleph-511-events-base/crates/aleph-backend)
+   Compiling regex-automata v0.4.14
+   Compiling itertools v0.10.5
+   Compiling approx v0.5.1
+   Compiling wait-timeout v0.2.1
+   Compiling cast v0.3.0
+   Compiling bit-vec v0.8.0
+   Compiling fnv v1.0.7
+   Compiling cpufeatures v0.2.17
+   Compiling quick-error v1.2.3
+   Compiling same-file v1.0.6
+   Compiling walkdir v2.5.0
+   Compiling criterion-plot v0.5.0
+   Compiling regex v1.12.3
+   Compiling rusty-fork v0.3.1
+   Compiling sha2 v0.10.9
+   Compiling bit-set v0.8.0
+   Compiling clap v4.6.1
+   Compiling statrs v0.18.0
+   Compiling aleph-stab v0.3.0 (/tmp/aleph-511-events-base/crates/aleph-stab)
+   Compiling rayon v1.12.0
+   Compiling plotters v0.3.7
+   Compiling ciborium v0.2.2
+   Compiling rand_chacha v0.9.0
+   Compiling tinytemplate v1.2.1
+   Compiling rand v0.9.4
+   Compiling rand_xorshift v0.4.0
+   Compiling is-terminal v0.4.17
+   Compiling unarray v0.1.4
+   Compiling anes v0.1.6
+   Compiling oorandom v11.1.5
+   Compiling proptest v1.11.0
+   Compiling criterion v0.5.1
+   Compiling aleph-qec v0.3.0 (/tmp/aleph-511-events-base/crates/aleph-qec)
+    Finished `release` profile [optimized] target(s) in 38.28s
+
+=== main-corpus.log ===
+distance,rate,detectors,observables,shots
+7,0.03,192,1,256
+7,0.003,192,1,256
+9,0.03,400,1,256
+9,0.003,400,1,256
+11,0.03,720,1,256
+11,0.003,720,1,256
+13,0.03,1176,1,256
+13,0.003,1176,1,256
+15,0.03,1792,1,256
+15,0.003,1792,1,256
+17,0.03,2592,1,256
+17,0.003,2592,1,256
+
+=== main-qec-clippy.log ===
+   Compiling proc-macro2 v1.0.106
+   Compiling unicode-ident v1.0.24
+   Compiling quote v1.0.45
+   Compiling libc v0.2.186
+    Checking cfg-if v1.0.4
+   Compiling autocfg v1.5.1
+   Compiling zerocopy v0.8.48
+   Compiling num-traits v0.2.19
+   Compiling version_check v0.9.5
+   Compiling syn v2.0.117
+   Compiling serde_core v1.0.228
+   Compiling generic-array v0.14.7
+   Compiling getrandom v0.3.4
+   Compiling thiserror v1.0.69
+   Compiling crossbeam-utils v0.8.21
+   Compiling zmij v1.0.21
+    Checking typenum v1.20.1
+   Compiling serde v1.0.228
+    Checking num-complex v0.4.6
+    Checking getrandom v0.2.17
+   Compiling serde_json v1.0.150
+    Checking smallvec v1.15.1
+    Checking either v1.16.0
+   Compiling getrandom v0.4.2
+   Compiling rustix v1.1.4
+    Checking rand_core v0.6.4
+    Checking rand_core v0.9.5
+    Checking crossbeam-epoch v0.9.18
+    Checking memchr v2.8.0
+   Compiling rayon-core v1.13.0
+    Checking itoa v1.0.18
+    Checking regex-syntax v0.8.10
+    Checking linux-raw-sys v0.12.1
+    Checking once_cell v1.21.4
+    Checking bitflags v2.11.1
+   Compiling zerocopy-derive v0.8.48
+   Compiling thiserror-impl v1.0.69
+   Compiling serde_derive v1.0.228
+    Checking crossbeam-deque v0.8.6
+    Checking block-buffer v0.10.4
+    Checking crypto-common v0.1.7
+    Checking clap_lex v1.1.0
+    Checking ciborium-io v0.2.2
+    Checking fastrand v2.4.1
+    Checking plotters-backend v0.3.7
+    Checking aleph-core v0.3.0 (/tmp/aleph-511-events-base/crates/aleph-core)
+    Checking anstyle v1.0.14
+    Checking aleph-ir v0.3.0 (/tmp/aleph-511-events-base/crates/aleph-ir)
+    Checking clap_builder v4.6.0
+    Checking aleph-backend v0.3.0 (/tmp/aleph-511-events-base/crates/aleph-backend)
+    Checking plotters-svg v0.3.7
+    Checking tempfile v3.27.0
+    Checking digest v0.10.7
+    Checking regex-automata v0.4.14
+    Checking itertools v0.10.5
+    Checking approx v0.5.1
+    Checking wait-timeout v0.2.1
+    Checking quick-error v1.2.3
+    Checking same-file v1.0.6
+    Checking fnv v1.0.7
+    Checking cast v0.3.0
+    Checking cpufeatures v0.2.17
+    Checking bit-vec v0.8.0
+    Checking sha2 v0.10.9
+    Checking criterion-plot v0.5.0
+    Checking bit-set v0.8.0
+    Checking rusty-fork v0.3.1
+    Checking walkdir v2.5.0
+    Checking regex v1.12.3
+    Checking statrs v0.18.0
+    Checking tinytemplate v1.2.1
+    Checking rayon v1.12.0
+    Checking clap v4.6.1
+    Checking plotters v0.3.7
+    Checking ppv-lite86 v0.2.21
+    Checking half v2.7.1
+    Checking rand_chacha v0.3.1
+    Checking ciborium-ll v0.2.2
+    Checking rand v0.8.6
+    Checking ciborium v0.2.2
+    Checking rand_chacha v0.9.0
+    Checking rand v0.9.4
+    Checking rand_xorshift v0.4.0
+    Checking aleph-stab v0.3.0 (/tmp/aleph-511-events-base/crates/aleph-stab)
+    Checking is-terminal v0.4.17
+    Checking unarray v0.1.4
+    Checking anes v0.1.6
+    Checking oorandom v11.1.5
+    Checking proptest v1.11.0
+    Checking criterion v0.5.1
+    Checking aleph-qec v0.3.0 (/tmp/aleph-511-events-base/crates/aleph-qec)
+error: this boolean expression can be simplified
+   --> crates/aleph-qec/src/deadline_replay.rs:573:16
+    |
+573 |             if !self.events.peek().is_some_and(|e| e.0 .0 == t) {
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `self.events.peek().is_none_or(|e| e.0 .0 != t)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#nonminimal_bool
+    = note: `-D clippy::nonminimal-bool` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::nonminimal_bool)]`
+
+error: could not compile `aleph-qec` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `aleph-qec` (lib test) due to 1 previous error
+
+=== main-wheel-build.log ===
+🍹 Building a mixed python/rust project
+🐍 Found CPython 3.12 at /tmp/aleph-518-K1bhhc/test-venv/bin/python
+🔗 Found pyo3 bindings with abi3-py3.10 support
+📡 Using build options features from pyproject.toml
+   Compiling bytemuck v1.25.0
+   Compiling syn v2.0.117
+   Compiling target-lexicon v0.12.16
+   Compiling paste v1.0.15
+   Compiling num-complex v0.4.6
+   Compiling nano-gemm-codegen v0.2.1
+   Compiling pyo3-build-config v0.22.6
+   Compiling either v1.16.0
+   Compiling bitflags v2.11.1
+   Compiling libm v0.2.16
+   Compiling raw-cpuid v11.6.0
+   Compiling rayon v1.12.0
+   Compiling pulp v0.22.2
+   Compiling once_cell v1.21.4
+   Compiling pulp-wasm-simd-flag v0.1.0
+   Compiling reborrow v0.5.5
+   Compiling dyn-stack-macros v0.1.3
+   Compiling dyn-stack v0.13.2
+   Compiling zerocopy v0.8.48
+   Compiling seq-macro v0.3.6
+   Compiling syn v1.0.109
+   Compiling thiserror-impl v1.0.69
+   Compiling nano-gemm-core v0.2.1
+   Compiling thiserror v1.0.69
+   Compiling aleph-core v0.3.0 (/tmp/aleph-511-events-base/crates/aleph-core)
+   Compiling aleph-ir v0.3.0 (/tmp/aleph-511-events-base/crates/aleph-ir)
+   Compiling gemm-common v0.19.0
+   Compiling ppv-lite86 v0.2.21
+   Compiling matrixmultiply v0.3.10
+   Compiling interpol v0.2.1
+   Compiling rand_chacha v0.3.1
+   Compiling equator-macro v0.4.2
+   Compiling pyo3-macros-backend v0.22.6
+   Compiling pyo3-ffi v0.22.6
+   Compiling nano-gemm-c64 v0.2.1
+   Compiling nano-gemm-f32 v0.2.1
+   Compiling nano-gemm-f64 v0.2.1
+   Compiling nano-gemm-c32 v0.2.1
+   Compiling crossbeam-queue v0.3.12
+   Compiling crossbeam-channel v0.5.15
+   Compiling num-integer v0.1.46
+   Compiling serde_core v1.0.228
+   Compiling rawpointer v0.2.1
+   Compiling defer v0.2.1
+   Compiling memchr v2.8.0
+   Compiling private-gemm-x86 v0.1.20
+   Compiling crossbeam v0.8.4
+   Compiling equator v0.4.2
+   Compiling rand v0.8.6
+   Compiling aleph-backend v0.3.0 (/tmp/aleph-511-events-base/crates/aleph-backend)
+   Compiling equator-macro v0.2.1
+   Compiling safe_arch v0.7.4
+   Compiling atomic-wait v1.1.0
+   Compiling memoffset v0.9.1
+   Compiling heck v0.5.0
+   Compiling spindle v0.2.6
+   Compiling wide v0.7.33
+   Compiling equator v0.2.2
+   Compiling gemm-c32 v0.19.0
+   Compiling gemm-f32 v0.19.0
+   Compiling gemm-c64 v0.19.0
+   Compiling gemm-f64 v0.19.0
+   Compiling qd v0.8.0
+   Compiling pyo3 v0.22.6
+   Compiling num_cpus v1.17.0
+   Compiling equator-macro v0.6.0
+   Compiling serde v1.0.228
+   Compiling minimal-lexical v0.2.1
+   Compiling generativity v1.2.1
+   Compiling faer-traits v0.24.0
+   Compiling equator v0.6.0
+   Compiling nom v7.1.3
+   Compiling gemm v0.19.0
+   Compiling nano-gemm v0.2.2
+   Compiling pyo3-macros v0.22.6
+   Compiling simba v0.9.1
+   Compiling num-rational v0.4.2
+   Compiling serde_derive v1.0.228
+   Compiling nalgebra-macros v0.2.2
+   Compiling unindent v0.2.4
+   Compiling bytecount v0.6.9
+   Compiling indoc v2.0.7
+   Compiling nalgebra v0.33.3
+   Compiling serde_json v1.0.150
+   Compiling nom_locate v4.2.0
+   Compiling faer v0.24.0
+   Compiling aleph-stab v0.3.0 (/tmp/aleph-511-events-base/crates/aleph-stab)
+   Compiling ndarray v0.16.1
+   Compiling rustc-hash v1.1.0
+   Compiling aleph-qec v0.3.0 (/tmp/aleph-511-events-base/crates/aleph-qec)
+   Compiling numpy v0.22.1
+   Compiling aleph-parser v0.3.0 (/tmp/aleph-511-events-base/crates/aleph-parser)
+   Compiling aleph-sv v0.3.0 (/tmp/aleph-511-events-base/crates/aleph-sv)
+   Compiling aleph-mps v0.3.0 (/tmp/aleph-511-events-base/crates/aleph-mps)
+   Compiling aleph-py v0.3.0 (/tmp/aleph-511-events-base/crates/aleph-py)
+    Finished `release` profile [optimized] target(s) in 1m 30s
+📦 Built wheel for abi3 Python ≥ 3.10 to /tmp/aleph-511-events-validation/main-wheels/aleph_sim-0.3.0-cp310-abi3-manylinux_2_39_x86_64.whl
+
+=== neighbor-bench-build.log ===
+   Compiling proc-macro2 v1.0.106
+   Compiling quote v1.0.45
+   Compiling unicode-ident v1.0.24
+   Compiling autocfg v1.5.1
+   Compiling zerocopy v0.8.48
+   Compiling cfg-if v1.0.4
+   Compiling libc v0.2.186
+   Compiling num-traits v0.2.19
+   Compiling thiserror v1.0.69
+   Compiling crossbeam-utils v0.8.21
+   Compiling version_check v0.9.5
+   Compiling syn v2.0.117
+   Compiling serde_core v1.0.228
+   Compiling generic-array v0.14.7
+   Compiling num-complex v0.4.6
+   Compiling smallvec v1.15.1
+   Compiling memchr v2.8.0
+   Compiling getrandom v0.2.17
+   Compiling serde v1.0.228
+   Compiling either v1.16.0
+   Compiling typenum v1.20.1
+   Compiling zmij v1.0.21
+   Compiling rand_core v0.6.4
+   Compiling crossbeam-epoch v0.9.18
+   Compiling rayon-core v1.13.0
+   Compiling serde_json v1.0.150
+   Compiling crossbeam-deque v0.8.6
+   Compiling itoa v1.0.18
+   Compiling crypto-common v0.1.7
+   Compiling block-buffer v0.10.4
+   Compiling minimal-lexical v0.2.1
+   Compiling nom v7.1.3
+   Compiling zerocopy-derive v0.8.48
+   Compiling thiserror-impl v1.0.69
+   Compiling aleph-core v0.3.0 (/tmp/aleph-511-events-neighbor/crates/aleph-core)
+   Compiling serde_derive v1.0.228
+   Compiling aleph-ir v0.3.0 (/tmp/aleph-511-events-neighbor/crates/aleph-ir)
+   Compiling rayon v1.12.0
+   Compiling aleph-backend v0.3.0 (/tmp/aleph-511-events-neighbor/crates/aleph-backend)
+   Compiling digest v0.10.7
+   Compiling approx v0.5.1
+   Compiling ppv-lite86 v0.2.21
+   Compiling cpufeatures v0.2.17
+   Compiling bytecount v0.6.9
+   Compiling sha2 v0.10.9
+   Compiling nom_locate v4.2.0
+   Compiling rand_chacha v0.3.1
+   Compiling statrs v0.18.0
+   Compiling rand v0.8.6
+   Compiling aleph-parser v0.3.0 (/tmp/aleph-511-events-neighbor/crates/aleph-parser)
+   Compiling aleph-stab v0.3.0 (/tmp/aleph-511-events-neighbor/crates/aleph-stab)
+   Compiling aleph-sv v0.3.0 (/tmp/aleph-511-events-neighbor/crates/aleph-sv)
+   Compiling aleph-qec v0.3.0 (/tmp/aleph-511-events-neighbor/crates/aleph-qec)
+   Compiling half v2.7.1
+   Compiling ciborium-io v0.2.2
+   Compiling plotters-backend v0.3.7
+   Compiling regex-syntax v0.8.10
+   Compiling anstyle v1.0.14
+   Compiling clap_lex v1.1.0
+   Compiling clap_builder v4.6.0
+   Compiling aleph-benches v0.3.0 (/tmp/aleph-511-events-neighbor/benches)
+   Compiling regex-automata v0.4.14
+   Compiling plotters-svg v0.3.7
+   Compiling ciborium-ll v0.2.2
+   Compiling itertools v0.10.5
+   Compiling cast v0.3.0
+   Compiling same-file v1.0.6
+   Compiling walkdir v2.5.0
+   Compiling criterion-plot v0.5.0
+   Compiling ciborium v0.2.2
+   Compiling regex v1.12.3
+   Compiling plotters v0.3.7
+   Compiling clap v4.6.1
+   Compiling tinytemplate v1.2.1
+   Compiling is-terminal v0.4.17
+   Compiling oorandom v11.1.5
+   Compiling anes v0.1.6
+   Compiling once_cell v1.21.4
+   Compiling criterion v0.5.1
+    Finished `bench` profile [optimized + debuginfo] target(s) in 56.13s
+  Executable benches/mwpm_decode.rs (/tmp/aleph-511-events-neighbor-target/release/deps/mwpm_decode-c34064fc3d91e724)
+
+=== original-bench-build.log ===
+    Finished `bench` profile [optimized + debuginfo] target(s) in 0.09s
+  Executable benches/mwpm_decode.rs (/tmp/aleph-511-events-original-target/release/deps/mwpm_decode-fee274f8dfd3d21f)
+
+=== original-corpus-build.log ===
+   Compiling proc-macro2 v1.0.106
+   Compiling quote v1.0.45
+   Compiling unicode-ident v1.0.24
+   Compiling libc v0.2.186
+   Compiling cfg-if v1.0.4
+   Compiling autocfg v1.5.1
+   Compiling zerocopy v0.8.48
+   Compiling serde_core v1.0.228
+   Compiling num-traits v0.2.19
+   Compiling getrandom v0.3.4
+   Compiling syn v2.0.117
+   Compiling thiserror v1.0.69
+   Compiling crossbeam-utils v0.8.21
+   Compiling num-complex v0.4.6
+   Compiling getrandom v0.2.17
+   Compiling either v1.16.0
+   Compiling getrandom v0.4.2
+   Compiling zmij v1.0.21
+   Compiling rustix v1.1.4
+   Compiling serde v1.0.228
+   Compiling smallvec v1.15.1
+   Compiling rand_core v0.6.4
+   Compiling rand_core v0.9.5
+   Compiling crossbeam-epoch v0.9.18
+   Compiling bitflags v2.11.1
+   Compiling rayon-core v1.13.0
+   Compiling once_cell v1.21.4
+   Compiling serde_json v1.0.150
+   Compiling regex-syntax v0.8.10
+   Compiling linux-raw-sys v0.12.1
+   Compiling crossbeam-deque v0.8.6
+   Compiling plotters-backend v0.3.7
+   Compiling fastrand v2.4.1
+   Compiling zerocopy-derive v0.8.48
+   Compiling thiserror-impl v1.0.69
+   Compiling serde_derive v1.0.228
+   Compiling aleph-core v0.3.0 (/tmp/aleph-511-events-original/crates/aleph-core)
+   Compiling aleph-ir v0.3.0 (/tmp/aleph-511-events-original/crates/aleph-ir)
+   Compiling memchr v2.8.0
+   Compiling anstyle v1.0.14
+   Compiling itoa v1.0.18
+   Compiling clap_lex v1.1.0
+   Compiling ciborium-io v0.2.2
+   Compiling clap_builder v4.6.0
+   Compiling ppv-lite86 v0.2.21
+   Compiling rand_chacha v0.3.1
+   Compiling half v2.7.1
+   Compiling ciborium-ll v0.2.2
+   Compiling rand v0.8.6
+   Compiling aleph-backend v0.3.0 (/tmp/aleph-511-events-original/crates/aleph-backend)
+   Compiling tempfile v3.27.0
+   Compiling regex-automata v0.4.14
+   Compiling plotters-svg v0.3.7
+   Compiling itertools v0.10.5
+   Compiling approx v0.5.1
+   Compiling wait-timeout v0.2.1
+   Compiling bit-vec v0.8.0
+   Compiling same-file v1.0.6
+   Compiling cast v0.3.0
+   Compiling fnv v1.0.7
+   Compiling quick-error v1.2.3
+   Compiling criterion-plot v0.5.0
+   Compiling rusty-fork v0.3.1
+   Compiling bit-set v0.8.0
+   Compiling walkdir v2.5.0
+   Compiling regex v1.12.3
+   Compiling statrs v0.18.0
+   Compiling rayon v1.12.0
+   Compiling plotters v0.3.7
+   Compiling aleph-stab v0.3.0 (/tmp/aleph-511-events-original/crates/aleph-stab)
+   Compiling clap v4.6.1
+   Compiling ciborium v0.2.2
+   Compiling tinytemplate v1.2.1
+   Compiling rand_chacha v0.9.0
+   Compiling rand_xorshift v0.4.0
+   Compiling rand v0.9.4
+   Compiling is-terminal v0.4.17
+   Compiling oorandom v11.1.5
+   Compiling anes v0.1.6
+   Compiling unarray v0.1.4
+   Compiling criterion v0.5.1
+   Compiling aleph-qec v0.3.0 (/tmp/aleph-511-events-original/crates/aleph-qec)
+   Compiling proptest v1.11.0
+    Finished `release` profile [optimized] target(s) in 36.33s
+
+=== original-corpus.log ===
+distance,rate,detectors,observables,shots
+7,0.03,192,1,256
+7,0.003,192,1,256
+9,0.03,400,1,256
+9,0.003,400,1,256
+11,0.03,720,1,256
+11,0.003,720,1,256
+13,0.03,1176,1,256
+13,0.003,1176,1,256
+15,0.03,1792,1,256
+15,0.003,1792,1,256
+17,0.03,2592,1,256
+17,0.003,2592,1,256
+
+=== pymatching-oracle.log ===
+    Finished `release` profile [optimized] target(s) in 0.10s
+     Running tests/mwpm_pymatching_oracle.rs (/tmp/aleph-511-events-candidate-target/release/deps/mwpm_pymatching_oracle-3cc0012b1648c08d)
+
+running 2 tests
+d=3 p=0.03: aleph rate=0.0978 pymatching rate=0.0981 |Δ|=0.0003 ci95=0.0037 nonempty-agreement=0.9824 (38246 nonempty)
+d=3 p=0.006: nonempty-agreement=0.99688 over 25296 nonempty shots
+d=5 p=0.03: aleph rate=0.1097 pymatching rate=0.1075 |Δ|=0.0021 ci95=0.0039 nonempty-agreement=0.9683 (49911 nonempty)
+d=5 p=0.006: nonempty-agreement=0.99943 over 71594 nonempty shots
+d=7 p=0.006: nonempty-agreement=0.99984 over 96514 nonempty shots
+d=7 p=0.03: aleph rate=0.1102 pymatching rate=0.1115 |Δ|=0.0013 ci95=0.0039 nonempty-agreement=0.9590 (50000 nonempty)
+d=9 p=0.006: nonempty-agreement=0.99995 over 99897 nonempty shots
+d=9 p=0.03: aleph rate=0.1125 pymatching rate=0.1113 |Δ|=0.0012 ci95=0.0039 nonempty-agreement=0.9564 (50000 nonempty)
+d=11 p=0.006: nonempty-agreement=1.00000 over 100000 nonempty shots
+test mwpm_corrections_match_pymatching_when_unambiguous ... ok
+d=11 p=0.03: aleph rate=0.1139 pymatching rate=0.1158 |Δ|=0.0019 ci95=0.0040 nonempty-agreement=0.9552 (50000 nonempty)
+test mwpm_logical_error_rate_matches_pymatching ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 20.82s
+
+
+=== qec-clippy.log ===
+    Checking cfg-if v1.0.4
+    Checking libc v0.2.186
+    Checking num-traits v0.2.19
+    Checking zerocopy v0.8.48
+    Checking serde_core v1.0.228
+    Checking typenum v1.20.1
+    Checking getrandom v0.3.4
+    Checking getrandom v0.2.17
+    Checking thiserror v1.0.69
+    Checking num-complex v0.4.6
+    Checking generic-array v0.14.7
+    Checking crossbeam-utils v0.8.21
+    Checking smallvec v1.15.1
+    Checking either v1.16.0
+    Checking aleph-core v0.3.0 (/tmp/aleph-511-events-candidate/crates/aleph-core)
+    Checking serde v1.0.228
+    Checking crossbeam-epoch v0.9.18
+    Checking zmij v1.0.21
+    Checking rand_core v0.6.4
+    Checking rand_core v0.9.5
+    Checking once_cell v1.21.4
+    Checking linux-raw-sys v0.12.1
+    Checking regex-syntax v0.8.10
+    Checking bitflags v2.11.1
+    Checking memchr v2.8.0
+    Checking itoa v1.0.18
+    Checking rustix v1.1.4
+    Checking serde_json v1.0.150
+    Checking ppv-lite86 v0.2.21
+    Checking half v2.7.1
+    Checking rand_chacha v0.3.1
+    Checking crossbeam-deque v0.8.6
+    Checking getrandom v0.4.2
+    Checking aleph-ir v0.3.0 (/tmp/aleph-511-events-candidate/crates/aleph-ir)
+    Checking crypto-common v0.1.7
+    Checking block-buffer v0.10.4
+    Checking ciborium-io v0.2.2
+    Checking plotters-backend v0.3.7
+    Checking clap_lex v1.1.0
+    Checking fastrand v2.4.1
+    Checking anstyle v1.0.14
+    Checking plotters-svg v0.3.7
+    Checking tempfile v3.27.0
+    Checking digest v0.10.7
+    Checking clap_builder v4.6.0
+    Checking ciborium-ll v0.2.2
+    Checking rayon-core v1.13.0
+    Checking regex-automata v0.4.14
+    Checking rand v0.8.6
+    Checking aleph-backend v0.3.0 (/tmp/aleph-511-events-candidate/crates/aleph-backend)
+    Checking itertools v0.10.5
+    Checking wait-timeout v0.2.1
+    Checking approx v0.5.1
+    Checking cpufeatures v0.2.17
+    Checking quick-error v1.2.3
+    Checking fnv v1.0.7
+    Checking bit-vec v0.8.0
+    Checking same-file v1.0.6
+    Checking cast v0.3.0
+    Checking walkdir v2.5.0
+    Checking bit-set v0.8.0
+    Checking regex v1.12.3
+    Checking rusty-fork v0.3.1
+    Checking clap v4.6.1
+    Checking sha2 v0.10.9
+    Checking statrs v0.18.0
+    Checking criterion-plot v0.5.0
+    Checking aleph-stab v0.3.0 (/tmp/aleph-511-events-candidate/crates/aleph-stab)
+    Checking rayon v1.12.0
+    Checking ciborium v0.2.2
+    Checking plotters v0.3.7
+    Checking rand_chacha v0.9.0
+    Checking tinytemplate v1.2.1
+    Checking rand_xorshift v0.4.0
+    Checking rand v0.9.4
+    Checking is-terminal v0.4.17
+    Checking anes v0.1.6
+    Checking unarray v0.1.4
+    Checking oorandom v11.1.5
+    Checking criterion v0.5.1
+    Checking proptest v1.11.0
+    Checking aleph-qec v0.3.0 (/tmp/aleph-511-events-candidate/crates/aleph-qec)
+error: this boolean expression can be simplified
+   --> crates/aleph-qec/src/deadline_replay.rs:573:16
+    |
+573 |             if !self.events.peek().is_some_and(|e| e.0 .0 == t) {
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `self.events.peek().is_none_or(|e| e.0 .0 != t)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#nonminimal_bool
+    = note: `-D clippy::nonminimal-bool` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::nonminimal_bool)]`
+
+error: could not compile `aleph-qec` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `aleph-qec` (lib test) due to 1 previous error
+
+=== qec-release.log ===
+   Compiling aleph-qec v0.3.0 (/tmp/aleph-511-events-candidate/crates/aleph-qec)
+    Finished `release` profile [optimized] target(s) in 3m 38s
+     Running unittests src/lib.rs (/tmp/aleph-511-events-candidate-target/release/deps/aleph_qec-774c7d5c356a7410)
+
+running 195 tests
+test aswaksman::tests::duplicate_target_rejected - should panic ... ok
+test aswaksman::tests::identity_small ... ok
+test aswaksman::tests::odd_sizes ... ok
+test aswaksman::tests::reverse_small ... ok
+test aswaksman::tests::switch_count_closed_form ... ok
+test benes::tests::complete_partial_non_power_of_two ... ok
+test benes::tests::duplicate_target_rejected - should panic ... ok
+test benes::tests::identity_8 ... ok
+test benes::tests::partial_completes_and_routes ... ok
+test benes::tests::random_bijections ... ok
+test benes::tests::reverse_8 ... ok
+test benes::tests::swap_pairs_8 ... ok
+test bivariate_bicycle::tests::checks_are_weight_six ... ok
+test aswaksman::tests::random_permutations ... ok
+test bivariate_bicycle::tests::code_capacity_dem_is_well_formed ... ok
+test bivariate_bicycle::tests::depth7_schedule_is_conflict_free ... ok
+test bivariate_bicycle::tests::gross_code_has_expected_parameters ... ok
+test bivariate_bicycle::tests::logicals_are_dual_and_nontrivial ... ok
+test bivariate_bicycle::tests::memory_x_experiment_shape ... ok
+test bivariate_bicycle::tests::schedule_neighbours_match_check_rows ... ok
+test bivariate_bicycle::tests::small_bb_code_parameters ... ok
+test blossom::tests::blossom_odd_cycle ... ok
+test blossom::tests::empty_graph ... ok
+test blossom::tests::matches_brute_force_on_random_complete_graphs ... ok
+test blossom::tests::min_weight_perfect_via_negation ... ok
+test blossom::tests::nonperfect_matches_brute_force ... ok
+test blossom::tests::picks_heavier_of_two_disjoint ... ok
+test blossom::tests::single_edge ... ok
+test bp::tests::empty_syndrome_no_correction ... ok
+test bp::tests::repetition_recovers_single_errors ... ok
+test bp::tests::surface_low_weight_converges ... ok
+test builder::tests::single_zz_check_dem ... ok
+test builder::tests::xor_combine_is_odd_parity ... ok
+test decoder::tests::decode_batch_default_loops_decode ... ok
+test decoder::tests::decoder_is_object_safe_and_callable ... ok
+test decoder::tests::logical_error_result_rate_and_ci ... ok
+test dem::tests::boundary_count_round_trips_via_trailing_declaration ... ok
+test dem::tests::detector_declaration_is_shifted ... ok
+test dem::tests::detector_offset_u64_overflow_is_an_error ... ok
+test bivariate_bicycle::tests::circuit_level_dem_well_formed ... ok
+test dem::tests::from_check_matrices_builds_one_mechanism_per_column ... ok
+test dem::tests::from_check_matrices_rejects_length_mismatch ... ok
+test dem::tests::merged_view_is_parity_reduced ... ok
+test dem::tests::nested_repeat_and_zero_count ... ok
+test dem::tests::parses_known_stim_snippet ... ok
+test dem::tests::probability_must_be_finite_and_in_unit_interval ... ok
+test dem::tests::rejects_duplicate_index ... ok
+test dem::tests::rejects_garbage ... ok
+test dem::tests::rejects_more_than_64_observables ... ok
+test dem::tests::rejects_non_finite_probability ... ok
+test dem::tests::rejects_out_of_range_index ... ok
+test dem::tests::repeat_errors_are_reported ... ok
+test dem::tests::repeat_unrolls_with_shift ... ok
+test dem::tests::separable_components_are_preserved ... ok
+test dem::tests::shifted_index_overflow_is_an_error ... ok
+test dem::tests::single_part_has_no_components ... ok
+test dem::tests::target_order_is_normalised ... ok
+test dem::tests::emit_parse_round_trip ... ok
+test experiment::tests::deterministic_for_fixed_seed ... ok
+test experiment::tests::p_zero_gives_exactly_zero_rate ... ok
+test experiment::tests::null_decoder_rate_matches_observable_flip_probability ... ok
+test experiment::tests::zero_shots_is_empty_result ... ok
+test experiment::tests::sampler_detector_frequency_matches_edge_probability ... ok
+test fixed_bp::tests::fixed_is_deterministic ... ok
+test fixed_bp::tests::fixed_valid_decisions_reproduce_syndrome ... ok
+test fixed_bp::tests::lambda_q_override_roundtrip ... ok
+test fixed_bp::tests::decode_batch_parallel_matches_serial ... ok
+test fixed_bp::tests::test_osd_tail_does_not_run_on_converged_shots ... ok
+test fixed_bp::tests::test_three_validity_apis_agree ... ok
+test fixed_bp::tests::wide_fixed_tracks_f64_relay ... ok
+test matching::tests::adjacency_consistent_with_edges ... ok
+test matching::tests::all_weights_nonnegative_for_p_le_half ... ok
+test matching::tests::component_with_three_detectors_is_still_rejected ... ok
+test matching::tests::decomposed_hyperedge_becomes_component_edges ... ok
+test matching::tests::different_observables_are_distinct_edges ... ok
+test matching::tests::duplicate_targets_cancel_by_parity ... ok
+test matching::tests::edge_column_is_the_first_mechanism_with_that_key ... ok
+test matching::tests::endpoints_ordered_and_in_range ... ok
+test matching::tests::hyperedge_is_rejected ... ok
+test matching::tests::parallel_edges_merge_by_xor ... ok
+test matching::tests::parallel_edges_stay_below_half_and_keep_weight_nonnegative ... ok
+test matching::tests::repetition_code_hand_drawn_adjacency ... ok
+test matching::tests::single_detector_error_connects_to_boundary ... ok
+test matching::tests::surface_code_d3_d5_node_counts_and_graphlike ... ok
+test matching::tests::two_detector_error_connects_detectors ... ok
+test matching::tests::zero_detector_error_is_dropped ... ok
+test matching::tests::zero_probability_is_skipped_without_renumbering_columns ... ok
+test fixed_bp::tests::osd_tail_runs_and_within_noise ... ok
+test mwpm::tests::duplicate_defects_are_ignored ... ok
+test mwpm::tests::integration_decoder_beats_null_at_low_noise ... ok
+test mwpm::tests::local_still_matches_dense_weight ... ok
+test mwpm::tests::mwpm_weight_is_at_most_greedy ... ok
+test mwpm::tests::no_defects_no_correction ... ok
+test mwpm::tests::p_zero_gives_zero_logical_errors ... ok
+test mwpm::tests::pool_reuse_is_deterministic ... ok
+test mwpm::tests::prefers_cheaper_boundary_over_expensive_pairing ... ok
+test mwpm::tests::profile_local_phases_d11 ... ignored, profiling only: run with --ignored --nocapture
+test mwpm::tests::single_defect_matches_boundary_and_applies_its_parity ... ok
+test mwpm::tests::sparse_matches_dense_on_circuit_level_dems ... ok
+test mwpm::tests::decode_errors_invariants_on_phenomenological_shots has been running for over 60 seconds
+test mwpm::tests::sparse_matches_dense_weight_and_corrections has been running for over 60 seconds
+test mwpm::tests::sparse_matches_dense_weight_and_corrections ... ok
+test mwpm::tests::surface_code_d3_decodes_a_known_single_error ... ok
+test mwpm::tests::two_defects_match_each_other_via_bulk_edge ... ok
+test osd::tests::combination_sweep_is_valid ... ok
+test osd::tests::osd_correction_reproduces_syndrome ... ok
+test osd::tests::test_det_vars_is_transpose_of_var_dets ... ok
+test osd::tests::test_residual_hand_computed_on_small_dem ... ok
+test osd::tests::test_residual_restricted_is_opt_in_and_chains ... ok
+test osd::tests::test_residual_restricted_matches_plain_when_all_vars_are_in_the_residual ... ok
+test osd::tests::test_residual_restricted_still_satisfies_the_syndrome ... ok
+test osd::tests::test_restriction_pool_is_a_strict_subset_on_a_nonconverged_shot ... ok
+test parallel_window::tests::parallel_decode_is_valid ... ok
+test parallel_window::tests::single_window_equals_batch ... ok
+test parallel_window::tests::tiling_and_bounded_working_set ... ok
+test pymatching::tests::caches_dem_and_counts ... ok
+test pymatching::tests::empty_batch_needs_no_subprocess ... ok
+test refvec::tests::test_header_is_four_words_and_payload_is_three_per_shot ... ok
+test refvec::tests::test_legacy_v1_file_is_rejected_not_misparsed ... ok
+test refvec::tests::test_payload_truncated_by_whole_words_is_rejected ... ok
+test refvec::tests::test_round_trip_preserves_every_field ... ok
+test refvec::tests::test_truncated_payload_is_rejected ... ok
+test refvec::tests::test_unknown_version_is_rejected ... ok
+test relay_bp::tests::decode_errors_agrees_with_decode_and_satisfies_syndrome_when_converged ... ok
+test relay_bp::tests::explicit_budget_counts_actual_sweeps_and_stops_only_on_valid_decisions ... ok
+test relay_bp::tests::nonempty_first_valid_result_and_llrs_match_the_stopping_prefix ... ok
+test relay_bp::tests::omitted_budget_keeps_legacy_schedule_and_disorder ... ok
+test relay_bp::tests::relay_is_deterministic ... ok
+test relay_bp::tests::relay_valid_decisions_reproduce_syndrome ... ok
+test mwpm::tests::decode_errors_invariants_on_phenomenological_shots ... ok
+test relay_window::tests::full_window_equals_batch ... ok
+test relay_window::tests::hw_converged_stream_drains_residual ... ignored
+test relay_window::tests::hw_early_exit_differs_and_is_deterministic ... ignored
+test relay_window::tests::converged_stream_drains_residual ... ok
+test relay_window::tests::hw_interior_graph_matches_window_dem_gross ... ignored
+test relay_window::tests::hw_ler_close_to_exact_schedule ... ignored
+test relay_window::tests::hw_interior_graph_matches_window_dem ... ok
+test relay_window::tests::hw_small_early_exit_differs_and_is_deterministic ... ok
+test relay_window::tests::hw_trace_aggregates_to_stream_decode ... ignored
+test relay_window::tests::hw_small_stream_decode_invariants ... ok
+test relay_window::tests::interior_windows_are_translation_invariant ... ok
+test relay_window::tests::soft_priors_decodes_and_is_deterministic has been running for over 60 seconds
+test relay_window::tests::soft_priors_single_window_matches_residual_only ... ok
+test relay_window::tests::truncates_straddling_mechanisms ... ok
+test relay_window::tests::soft_priors_decodes_and_is_deterministic ... ok
+test serial_gather::tests::imbalanced_group_concentrates_in_one_bank_and_succeeds ... ok
+test serial_gather::tests::naive_round_robin_would_collide ... ok
+test serial_gather::tests::p_zero_panics - should panic ... ok
+test serial_gather::tests::serial_steps_ceils ... ok
+test serial_gather::tests::small_synthetic_layout_verifies ... ok
+test serial_gather::tests::sparse_logical_bank_ids_fold_across_banks ... ok
+test serial_gather::tests::stress_100_random_graphs_verify ... ok
+test sliding::tests::full_window_equals_batch ... ok
+test relay_window::tests::working_set_is_bounded has been running for over 60 seconds
+test sliding::tests::working_set_is_bounded has been running for over 60 seconds
+test relay_window::tests::working_set_is_bounded ... ok
+test sparse_blossom::graph::tests::boundary_edge_is_per_node_min_weight ... ok
+test sparse_blossom::graph::tests::csr_holds_each_undirected_edge_on_both_endpoints_with_doubled_weight ... ok
+test sparse_blossom::graph::tests::from_int_edges_doubles_and_mirrors ... ok
+test sparse_blossom::graph::tests::parallel_edges_keep_the_lightest_one ... ok
+test sparse_blossom::state::tests::cedge_reverses_and_chains ... ok
+test sparse_blossom::state::tests::heap_pops_in_time_then_insertion_order ... ok
+test sparse_blossom::state::tests::reset_clears_touched_nodes_only ... ok
+test sparse_blossom::state::tests::varying_evaluates_and_changes_slope_continuously ... ok
+test sparse_blossom::tests::blossom_is_shattered_when_it_becomes_inner ... ok
+test sparse_blossom::tests::blossom_shatter_pairs_the_remaining_cycle ... ok
+test sliding::tests::working_set_is_bounded ... ok
+test sparse_blossom::tests::decode_errors_marks_the_matched_paths ... ok
+test sparse_blossom::tests::decode_errors_terminates_on_negative_weight_edges ... ok
+test sparse_blossom::tests::empty_syndrome_is_zero ... ok
+test sparse_blossom::tests::equilateral_triangle_with_boundary ... ok
+test sparse_blossom::tests::grow_then_augment_through_the_boundary ... ok
+test sparse_blossom::tests::lone_defect_matches_boundary ... ok
+test sparse_blossom::tests::odd_component_without_boundary_is_best_effort ... ok
+test sparse_blossom::tests::pentagon_with_chord_forms_and_uses_a_blossom ... ok
+test sparse_blossom::tests::profile_next_at_work ... ignored, profiling diagnostic; run explicitly with --ignored --nocapture
+test sparse_blossom::tests::repeated_decodes_reuse_state_identically ... ok
+test sparse_blossom::tests::decode_errors_is_weight_and_syndrome_exact ... ok
+test sparse_blossom::tests::sparse_reaches_the_dense_optimum_weight ... ok
+test sparse_blossom::tests::two_defects_on_a_line_match_each_other ... ok
+test sparse_blossom::tests::zero_weight_edge_matches_at_time_zero ... ok
+test sparse_blossom::tests::retained_slots_do_not_leak_between_shots ... ok
+test surface::tests::circuit_level_dem_is_graphlike ... ok
+test surface::tests::d3_single_round_hand_check ... ok
+test surface::tests::circuit_level_dem_sized ... ok
+test surface::tests::dem_is_graphlike_and_sized ... ok
+test surface::tests::geometry_counts ... ok
+test surface::tests::dem_cross_checks_frame_sampler_on_measurement_noise ... ok
+test surface::tests::memory_x_circuit_level_dem_graphlike_and_sized ... ok
+test surface::tests::memory_x_dem_is_graphlike_and_sized ... ok
+test syndrome::tests::from_bits_collects_fired_indices ... ok
+test syndrome::tests::new_sorts_and_dedups ... ok
+test surface::tests::si1000_dem_well_formed_and_graphlike ... ok
+test union_find::tests::correction_reproduces_a_single_edge_syndrome ... ok
+test union_find::tests::arbitrary_syndromes_are_consistent ... ok
+test union_find::tests::decode_errors_satisfies_syndrome_and_reproduces_flips ... ok
+test union_find::tests::empty_syndrome_decodes_to_no_flip ... ok
+test union_find::tests::timed_decode_matches_hot_path ... ok
+test union_find::tests::weighted_equals_unweighted_on_equal_weights ... ok
+test union_find::tests::corrections_are_syndrome_consistent ... ok
+
+test result: ok. 188 passed; 0 failed; 7 ignored; 0 measured; 0 filtered out; finished in 356.98s
+
+     Running tests/bb_circuit_dem_stim_oracle.rs (/tmp/aleph-511-events-candidate-target/release/deps/bb_circuit_dem_stim_oracle-d7b8980a8bcf2fc4)
+
+running 1 test
+test circuit_level_dem_matches_stim ... ignored, requires python3 + stim; run with STIM_PYTHON set on a stim box
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/binomial_interval.rs (/tmp/aleph-511-events-candidate-target/release/deps/binomial_interval-e9dae524fa6979a5)
+
+running 7 tests
+test boundaries_no_evidence_and_invalid_tallies ... ok
+test conditional_paired_comparison_does_not_assume_independent_rates ... ok
+test large_counts_and_overlap_semantics ... ok
+test exact_small_sample_coverage ... ok
+test random_direct_counts_produce_ordered_finite_bounds ... ok
+test reference_values ... ok
+test ordered_monotone_symmetric_bounds ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+
+     Running tests/bounded_dem_experiment.rs (/tmp/aleph-511-events-candidate-target/release/deps/bounded_dem_experiment-ee6cfd18c0d89156)
+
+running 9 tests
+test batch_bound_tail_and_absolute_stream_are_preserved ... ok
+test deterministic_mechanisms_produce_exact_tallies ... ok
+test fixed_seed_matches_full_artifact_path_across_batches_and_workers ... ok
+test huge_requested_count_does_not_materialize_all_shots ... ok
+test pymatching_batch_boundaries_and_zero_observables ... ignored, requires numpy + stim + pymatching; set PYMATCHING_PYTHON
+test short_long_empty_or_wrong_width_predictions_are_rejected_in_later_batches ... ok
+test zero_batch_size_is_rejected_even_for_zero_shots ... ok
+test zero_observables_require_exact_empty_corrections ... ok
+test default_limit_splits_campaign_and_reports_late_schema_index ... ok
+
+test result: ok. 8 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/bposd.rs (/tmp/aleph-511-events-candidate-target/release/deps/bposd-af33a132c12be19d)
+
+running 4 tests
+test combination_sweep_does_not_regress ... ignored, Monte-Carlo (~30s); nightly
+test bposd_decodes_gross_code_at_low_p ... ok
+test osd_beats_plain_bp_on_circuit_level_surface_code ... ok
+test larger_distance_suppresses_more_below_threshold ... ok
+
+test result: ok. 3 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 1.25s
+
+     Running tests/deadline_replay.rs (/tmp/aleph-511-events-candidate-target/release/deps/deadline_replay-5e59e19ca1ba8fba)
+
+running 13 tests
+test blocked_fifo_head_does_not_reorder_another_stream ... ok
+test deadline_is_strict_and_combined_failure_is_a_union_not_a_sum ... ok
+test dependent_traces_reject_policy_switch_and_cancel_changed_fallback_history ... ok
+test fallback_contention_uses_its_own_fifo_and_same_time_resource_release ... ok
+test fallback_overflow_and_missing_trace_never_invent_a_rescue ... ok
+test fifo_constant_service_matches_lindley_recursion_and_utilization ... ok
+test late_missing_and_unobserved_flags_remain_distinct ... ok
+test finite_capacity_and_simultaneous_completion_precedes_arrival ... ok
+test multiple_workers_keep_fifo_and_overheads_occupy_resources ... ok
+test older_fallback_waiter_dispatches_before_new_same_time_flag ... ok
+test trace_roundtrip_cycle_conversion_empty_zero_and_overflow_cases ... ok
+test streaming_dependencies_wait_for_final_commit_and_cascade_after_missing_output ... ok
+test zero_time_primary_and_tail_release_without_artificial_queue_pressure ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/matching_priors.rs (/tmp/aleph-511-events-candidate-target/release/deps/matching_priors-70a39d6984e62b9c)
+
+running 7 tests
+test all_matching_constructors_reject_unsupported_priors ... ok
+test bp_and_dem_construction_keep_the_full_probability_range ... ok
+test ordinary_supported_weights_remain_bit_identical ... ok
+test source_priors_are_checked_before_dropping_or_merging_edges ... ok
+test split_constructor_errors_use_split_column_indices ... ok
+test supported_boundary_priors_decode_and_project_in_debug_and_release ... ok
+test zero_negative_zero_and_empty_models_are_supported ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/memory_experiment.rs (/tmp/aleph-511-events-candidate-target/release/deps/memory_experiment-a60440ebc2c3f97d)
+
+running 5 tests
+test p_zero_is_zero_rate_for_every_distance ... ok
+test pymatching_does_not_suppress_above_threshold ... ignored, requires python3 + numpy + stim + pymatching; set PYMATCHING_PYTHON
+test pymatching_suppresses_errors_with_distance_below_threshold ... ignored, requires python3 + numpy + stim + pymatching; set PYMATCHING_PYTHON
+test threshold_brackets_recorded_value ... ignored, requires python3 + numpy + stim + pymatching; set PYMATCHING_PYTHON
+test null_decoder_rate_grows_with_noise ... ok
+
+test result: ok. 2 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+     Running tests/mwpm_allocations.rs (/tmp/aleph-511-events-candidate-target/release/deps/mwpm_allocations-ae795b12f29aecf5)
+
+running 2 tests
+test reusable_output_resizes_and_clears_previous_observables ... ok
+test d11_repeated_workload_allocates_only_owned_outputs ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.52s
+
+     Running tests/mwpm_pymatching_oracle.rs (/tmp/aleph-511-events-candidate-target/release/deps/mwpm_pymatching_oracle-3cc0012b1648c08d)
+
+running 2 tests
+test mwpm_corrections_match_pymatching_when_unambiguous ... ignored, requires python3 + numpy + stim + pymatching; set PYMATCHING_PYTHON
+test mwpm_logical_error_rate_matches_pymatching ... ignored, requires python3 + numpy + stim + pymatching; set PYMATCHING_PYTHON
+
+test result: ok. 0 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/mwpm_threshold.rs (/tmp/aleph-511-events-candidate-target/release/deps/mwpm_threshold-613abe8cd4f07c1e)
+
+running 1 test
+test native_mwpm_shows_threshold_between_d3_and_d5 ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.20s
+
+     Running tests/parallel_window.rs (/tmp/aleph-511-events-candidate-target/release/deps/parallel_window-b1e3fac6f49cbe46)
+
+running 2 tests
+test parallel_rate_within_ci_of_batch ... ignored, Monte-Carlo oracle (~minutes); runs on the nightly CI schedule
+test parallel_correction_is_valid_on_long_stream ... ok
+
+test result: ok. 1 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.94s
+
+     Running tests/relay_bp.rs (/tmp/aleph-511-events-candidate-target/release/deps/relay_bp-4db747b27d82ad9a)
+
+running 4 tests
+test relay_bp_beats_plain_bp_below_floor ... ignored, Monte-Carlo (~2 min); nightly
+test relay_bp_osd_beats_bposd_circuit_level ... ignored, Monte-Carlo (~minutes); nightly
+test relay_bp_decodes_gross_at_low_p ... ok
+test relay_bp_osd_decodes_circuit_level ... ok
+
+test result: ok. 2 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 3.33s
+
+     Running tests/relay_budget.rs (/tmp/aleph-511-events-candidate-target/release/deps/relay_budget-7e426393f48c6b62)
+
+running 2 tests
+test early_exit_is_first_valid_not_best_over_the_full_schedule ... ok
+test default_budget_and_configured_parallel_decode_match_on_gross_shots ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.26s
+
+     Running tests/research_workflow.rs (/tmp/aleph-511-events-candidate-target/release/deps/research_workflow-e94bd2964c7e4903)
+
+running 1 test
+test sampling_estimation_and_saved_witness_replay_share_model_identity ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/robustness.rs (/tmp/aleph-511-events-candidate-target/release/deps/robustness-1c29d7b4bda36643)
+
+running 7 tests
+test burst_prefix_does_not_depend_on_future_stream_length_or_other_streams ... ok
+test burst_law_has_expected_occupancy_duration_and_correlation ... ok
+test correlated_witnesses_replay_state_and_reject_tampering ... ok
+test matched_static_is_exactly_the_existing_harness ... ok
+test schema_and_process_validation_happens_before_sampling ... ok
+test exact_heterogeneous_truth_and_paired_mismatch ... ok
+test zero_drift_and_burst_strength_preserve_shots_and_worker_determinism ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/sliding_window.rs (/tmp/aleph-511-events-candidate-target/release/deps/sliding_window-d4e7145d6fc6f989)
+
+running 3 tests
+test bounded_memory_independent_of_stream_length ... ok
+test sliding_matches_batch_for_adequate_window ... ignored, minutes-long statistical Monte-Carlo; nightly
+test full_window_is_batch ... ok
+
+test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 3.96s
+
+     Running tests/split_components.rs (/tmp/aleph-511-events-candidate-target/release/deps/split_components-67b960b7671c09ea)
+
+running 7 tests
+test graph_edges_are_identical_except_for_column_indices ... ok
+test hyperedge_parts_still_fail_explicitly ... ok
+test split_constructors_fix_shared_columns_for_all_syndromes_without_ties ... ok
+test split_retains_order_priors_counts_empty_parts_and_independent_parity ... ok
+test splitting_is_not_an_equivalent_noise_sampling_model ... ok
+test undecomposed_and_empty_models_are_unchanged ... ok
+test component_parity_is_preserved_without_cross_contamination ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/stratified.rs (/tmp/aleph-511-events-candidate-target/release/deps/stratified-f8ef5b1d54aa0b57)
+
+running 10 tests
+test automatic_preflight_and_zero_budget_are_explicit ... ok
+test conditional_sampling_is_not_uniform_for_unequal_probabilities ... ok
+test deterministic_faults_enumeration_and_underflow ... ok
+test enumeration_unranking_covers_each_supported_set_once ... ok
+test exact_campaign_agrees_with_enumeration_and_legacy_witnesses_survive ... ok
+test exact_weights_for_equal_heterogeneous_and_deterministic_models ... ok
+test impossible_strata_are_not_silently_sampled_and_invalid_inputs_spend_no_calls ... ok
+test repeated_fixed_budget_coverage_on_tiny_heterogeneous_dem ... ok
+test zero_failures_omitted_mass_and_budget_status_are_explicit ... ok
+test automatic_routing_is_pre_observation_and_preserves_selected_estimator ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.40s
+
+     Running tests/surface_dem_stim_oracle.rs (/tmp/aleph-511-events-candidate-target/release/deps/surface_dem_stim_oracle-1827dde9cc10eb75)
+
+running 4 tests
+test analytic_dem_matches_stim ... ignored, requires python3 + stim; run with STIM_PYTHON set on a stim box
+test circuit_level_dem_matches_stim ... ignored, requires python3 + stim; run with STIM_PYTHON set on a stim box
+test memory_x_circuit_level_dem_matches_stim ... ignored, requires python3 + stim; run with STIM_PYTHON set on a stim box
+test memory_x_dem_matches_stim ... ignored, requires python3 + stim; run with STIM_PYTHON set on a stim box
+
+test result: ok. 0 passed; 0 failed; 4 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/union_find_threshold.rs (/tmp/aleph-511-events-candidate-target/release/deps/union_find_threshold-ff55036cd514669a)
+
+running 1 test
+test union_find_shows_threshold_between_d3_and_d5 ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.32s
+
+     Running tests/witness.rs (/tmp/aleph-511-events-candidate-target/release/deps/witness-aa0e5f6bb7d4faf1)
+
+running 8 tests
+test budgets_tampering_and_incompatible_replay ... ok
+test capture_matches_ordinary_sampler_and_worker_counts ... ok
+test invalid_diagnostics_are_separate_and_fixed_codec_is_checked ... ok
+test malformed_inputs_return_errors_and_pure_logical_tiny_models_certify ... ok
+test exhaustive_tiny_reconstruction_and_one_minimality ... ok
+test real_fixtures_replay_certify_and_match_reference_bytes ... ok
+test signatures_group_exact_examples_across_shots_but_keep_decoder_choices ... ok
+test relay_seed_is_stable_and_nonconvergence_is_not_failure ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+   Doc-tests aleph_qec
+
+running 10 tests
+test crates/aleph-qec/src/deadline_replay.rs - deadline_replay::replay_decode_trace (line 600) - compile ... ok
+test crates/aleph-qec/src/decoder.rs - decoder::LogicalErrorResult::interval95 (line 103) ... ok
+test crates/aleph-qec/src/dem.rs - dem::DetectorErrorModel::split_components (line 161) ... ok
+test crates/aleph-qec/src/experiment.rs - experiment::run_memory_experiment (line 75) - compile ... ok
+test crates/aleph-qec/src/experiment.rs - experiment::run_dem_experiment_with_options (line 153) ... ok
+test crates/aleph-qec/src/mwpm.rs - mwpm::MwpmDecoder::decode_into (line 216) ... ok
+test crates/aleph-qec/src/relay_bp.rs - relay_bp::RelayBpDecoder::with_budget (line 82) ... ok
+test crates/aleph-qec/src/robustness.rs - robustness::run_robustness (line 309) ... ok
+test crates/aleph-qec/src/stratified.rs - stratified::FaultCountPlan::new (line 88) ... ok
+test crates/aleph-qec/src/witness.rs - witness::capture_shot (line 444) ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.91s
+
+
+=== queued-bench-build.log ===
+   Compiling proc-macro2 v1.0.106
+   Compiling unicode-ident v1.0.24
+   Compiling quote v1.0.45
+   Compiling autocfg v1.5.1
+   Compiling cfg-if v1.0.4
+   Compiling zerocopy v0.8.48
+   Compiling libc v0.2.186
+   Compiling num-traits v0.2.19
+   Compiling thiserror v1.0.69
+   Compiling syn v2.0.117
+   Compiling crossbeam-utils v0.8.21
+   Compiling version_check v0.9.5
+   Compiling serde_core v1.0.228
+   Compiling num-complex v0.4.6
+   Compiling generic-array v0.14.7
+   Compiling smallvec v1.15.1
+   Compiling memchr v2.8.0
+   Compiling getrandom v0.2.17
+   Compiling either v1.16.0
+   Compiling typenum v1.20.1
+   Compiling zmij v1.0.21
+   Compiling serde v1.0.228
+   Compiling rand_core v0.6.4
+   Compiling crossbeam-epoch v0.9.18
+   Compiling rayon-core v1.13.0
+   Compiling serde_json v1.0.150
+   Compiling crossbeam-deque v0.8.6
+   Compiling itoa v1.0.18
+   Compiling crypto-common v0.1.7
+   Compiling block-buffer v0.10.4
+   Compiling minimal-lexical v0.2.1
+   Compiling zerocopy-derive v0.8.48
+   Compiling thiserror-impl v1.0.69
+   Compiling serde_derive v1.0.228
+   Compiling aleph-core v0.3.0 (/tmp/aleph-511-events-queued/crates/aleph-core)
+   Compiling aleph-ir v0.3.0 (/tmp/aleph-511-events-queued/crates/aleph-ir)
+   Compiling nom v7.1.3
+   Compiling aleph-backend v0.3.0 (/tmp/aleph-511-events-queued/crates/aleph-backend)
+   Compiling rayon v1.12.0
+   Compiling digest v0.10.7
+   Compiling approx v0.5.1
+   Compiling bytecount v0.6.9
+   Compiling cpufeatures v0.2.17
+   Compiling sha2 v0.10.9
+   Compiling ppv-lite86 v0.2.21
+   Compiling nom_locate v4.2.0
+   Compiling statrs v0.18.0
+   Compiling rand_chacha v0.3.1
+   Compiling rand v0.8.6
+   Compiling aleph-parser v0.3.0 (/tmp/aleph-511-events-queued/crates/aleph-parser)
+   Compiling aleph-stab v0.3.0 (/tmp/aleph-511-events-queued/crates/aleph-stab)
+   Compiling aleph-sv v0.3.0 (/tmp/aleph-511-events-queued/crates/aleph-sv)
+   Compiling aleph-qec v0.3.0 (/tmp/aleph-511-events-queued/crates/aleph-qec)
+   Compiling half v2.7.1
+   Compiling ciborium-io v0.2.2
+   Compiling regex-syntax v0.8.10
+   Compiling plotters-backend v0.3.7
+   Compiling anstyle v1.0.14
+   Compiling clap_lex v1.1.0
+   Compiling clap_builder v4.6.0
+   Compiling aleph-benches v0.3.0 (/tmp/aleph-511-events-queued/benches)
+   Compiling regex-automata v0.4.14
+   Compiling plotters-svg v0.3.7
+   Compiling ciborium-ll v0.2.2
+   Compiling itertools v0.10.5
+   Compiling cast v0.3.0
+   Compiling same-file v1.0.6
+   Compiling walkdir v2.5.0
+   Compiling criterion-plot v0.5.0
+   Compiling ciborium v0.2.2
+   Compiling regex v1.12.3
+   Compiling plotters v0.3.7
+   Compiling clap v4.6.1
+   Compiling tinytemplate v1.2.1
+   Compiling is-terminal v0.4.17
+   Compiling oorandom v11.1.5
+   Compiling once_cell v1.21.4
+   Compiling anes v0.1.6
+   Compiling criterion v0.5.1
+    Finished `bench` profile [optimized + debuginfo] target(s) in 55.34s
+  Executable benches/mwpm_decode.rs (/tmp/aleph-511-events-queued-target/release/deps/mwpm_decode-c34064fc3d91e724)
+
+=== queued-final-allocations.log ===
+   Compiling aleph-qec v0.3.0 (/tmp/aleph-511-events-final/crates/aleph-qec)
+    Finished `release` profile [optimized] target(s) in 20.36s
+     Running tests/mwpm_allocations.rs (/tmp/aleph-511-events-queued-target/release/deps/mwpm_allocations-ae795b12f29aecf5)
+
+running 2 tests
+test reusable_output_resizes_and_clears_previous_observables ... ok
+shots=514 decode_into_allocs=0 decode_allocs=514 decode_errors_allocs=514
+test d11_repeated_workload_allocates_only_owned_outputs ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.50s
+
+
+=== queued-final-bench-build.log ===
+   Compiling aleph-qec v0.3.0 (/tmp/aleph-511-events-final/crates/aleph-qec)
+   Compiling aleph-benches v0.3.0 (/tmp/aleph-511-events-final/benches)
+    Finished `bench` profile [optimized + debuginfo] target(s) in 34.26s
+  Executable benches/mwpm_decode.rs (/tmp/aleph-511-events-queued-target/release/deps/mwpm_decode-c34064fc3d91e724)
+
+=== queued-final-clippy-1.96-scoped.log ===
+   Compiling proc-macro2 v1.0.106
+   Compiling quote v1.0.45
+   Compiling unicode-ident v1.0.24
+   Compiling libc v0.2.186
+    Checking cfg-if v1.0.4
+   Compiling autocfg v1.5.1
+   Compiling zerocopy v0.8.48
+   Compiling num-traits v0.2.19
+   Compiling serde_core v1.0.228
+   Compiling syn v2.0.117
+   Compiling version_check v0.9.5
+   Compiling crossbeam-utils v0.8.21
+   Compiling getrandom v0.3.4
+   Compiling generic-array v0.14.7
+   Compiling thiserror v1.0.69
+   Compiling zmij v1.0.21
+    Checking typenum v1.20.1
+   Compiling serde v1.0.228
+    Checking num-complex v0.4.6
+    Checking getrandom v0.2.17
+    Checking smallvec v1.15.1
+   Compiling serde_json v1.0.150
+    Checking either v1.16.0
+   Compiling getrandom v0.4.2
+   Compiling rustix v1.1.4
+    Checking rand_core v0.6.4
+    Checking rand_core v0.9.5
+    Checking crossbeam-epoch v0.9.18
+    Checking bitflags v2.11.1
+   Compiling rayon-core v1.13.0
+    Checking regex-syntax v0.8.10
+    Checking itoa v1.0.18
+    Checking memchr v2.8.0
+    Checking once_cell v1.21.4
+    Checking linux-raw-sys v0.12.1
+   Compiling zerocopy-derive v0.8.48
+   Compiling thiserror-impl v1.0.69
+   Compiling serde_derive v1.0.228
+    Checking crossbeam-deque v0.8.6
+    Checking crypto-common v0.1.7
+    Checking block-buffer v0.10.4
+    Checking plotters-backend v0.3.7
+    Checking fastrand v2.4.1
+    Checking aleph-core v0.3.0 (/tmp/aleph-511-events-final/crates/aleph-core)
+    Checking anstyle v1.0.14
+    Checking ciborium-io v0.2.2
+    Checking clap_lex v1.1.0
+    Checking aleph-ir v0.3.0 (/tmp/aleph-511-events-final/crates/aleph-ir)
+    Checking clap_builder v4.6.0
+    Checking aleph-backend v0.3.0 (/tmp/aleph-511-events-final/crates/aleph-backend)
+    Checking tempfile v3.27.0
+    Checking plotters-svg v0.3.7
+    Checking digest v0.10.7
+    Checking regex-automata v0.4.14
+    Checking itertools v0.10.5
+    Checking approx v0.5.1
+    Checking wait-timeout v0.2.1
+    Checking bit-vec v0.8.0
+    Checking cast v0.3.0
+    Checking same-file v1.0.6
+    Checking quick-error v1.2.3
+    Checking fnv v1.0.7
+    Checking cpufeatures v0.2.17
+    Checking rusty-fork v0.3.1
+    Checking criterion-plot v0.5.0
+    Checking sha2 v0.10.9
+    Checking walkdir v2.5.0
+    Checking bit-set v0.8.0
+    Checking regex v1.12.3
+    Checking statrs v0.18.0
+    Checking tinytemplate v1.2.1
+    Checking rayon v1.12.0
+    Checking plotters v0.3.7
+    Checking ppv-lite86 v0.2.21
+    Checking half v2.7.1
+    Checking rand_chacha v0.3.1
+    Checking ciborium-ll v0.2.2
+    Checking rand v0.8.6
+    Checking ciborium v0.2.2
+    Checking rand_chacha v0.9.0
+    Checking clap v4.6.1
+    Checking rand_xorshift v0.4.0
+    Checking rand v0.9.4
+    Checking is-terminal v0.4.17
+    Checking aleph-stab v0.3.0 (/tmp/aleph-511-events-final/crates/aleph-stab)
+    Checking anes v0.1.6
+    Checking oorandom v11.1.5
+    Checking unarray v0.1.4
+    Checking criterion v0.5.1
+    Checking proptest v1.11.0
+    Checking aleph-qec v0.3.0 (/tmp/aleph-511-events-final/crates/aleph-qec)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 18.58s
+
+=== queued-final-corpus-build.log ===
+   Compiling aleph-qec v0.3.0 (/tmp/aleph-511-events-final/crates/aleph-qec)
+    Finished `release` profile [optimized] target(s) in 4.39s
+
+=== queued-final-corpus.log ===
+distance,rate,detectors,observables,shots
+7,0.03,192,1,256
+7,0.003,192,1,256
+9,0.03,400,1,256
+9,0.003,400,1,256
+11,0.03,720,1,256
+11,0.003,720,1,256
+13,0.03,1176,1,256
+13,0.003,1176,1,256
+15,0.03,1792,1,256
+15,0.003,1792,1,256
+17,0.03,2592,1,256
+17,0.003,2592,1,256
+
+=== queued-final-mwpm-release.log ===
+   Compiling proc-macro2 v1.0.106
+   Compiling unicode-ident v1.0.24
+   Compiling quote v1.0.45
+   Compiling libc v0.2.186
+   Compiling cfg-if v1.0.4
+   Compiling autocfg v1.5.1
+   Compiling zerocopy v0.8.48
+   Compiling num-traits v0.2.19
+   Compiling getrandom v0.3.4
+   Compiling syn v2.0.117
+   Compiling version_check v0.9.5
+   Compiling serde_core v1.0.228
+   Compiling generic-array v0.14.7
+   Compiling crossbeam-utils v0.8.21
+   Compiling thiserror v1.0.69
+   Compiling zmij v1.0.21
+   Compiling serde v1.0.228
+   Compiling getrandom v0.4.2
+   Compiling rustix v1.1.4
+   Compiling typenum v1.20.1
+   Compiling rand_core v0.9.5
+   Compiling num-complex v0.4.6
+   Compiling getrandom v0.2.17
+   Compiling bitflags v2.11.1
+   Compiling regex-syntax v0.8.10
+   Compiling linux-raw-sys v0.12.1
+   Compiling smallvec v1.15.1
+   Compiling either v1.16.0
+   Compiling once_cell v1.21.4
+   Compiling serde_json v1.0.150
+   Compiling rand_core v0.6.4
+   Compiling crossbeam-epoch v0.9.18
+   Compiling zerocopy-derive v0.8.48
+   Compiling thiserror-impl v1.0.69
+   Compiling serde_derive v1.0.228
+   Compiling aleph-core v0.3.0 (/tmp/aleph-511-events-final/crates/aleph-core)
+   Compiling ciborium-io v0.2.2
+   Compiling itoa v1.0.18
+   Compiling rayon-core v1.13.0
+   Compiling memchr v2.8.0
+   Compiling fastrand v2.4.1
+   Compiling plotters-backend v0.3.7
+   Compiling anstyle v1.0.14
+   Compiling clap_lex v1.1.0
+   Compiling plotters-svg v0.3.7
+   Compiling clap_builder v4.6.0
+   Compiling tempfile v3.27.0
+   Compiling aleph-ir v0.3.0 (/tmp/aleph-511-events-final/crates/aleph-ir)
+   Compiling ppv-lite86 v0.2.21
+   Compiling half v2.7.1
+   Compiling ciborium-ll v0.2.2
+   Compiling rand_chacha v0.3.1
+   Compiling regex-automata v0.4.14
+   Compiling crossbeam-deque v0.8.6
+   Compiling itertools v0.10.5
+   Compiling crypto-common v0.1.7
+   Compiling block-buffer v0.10.4
+   Compiling wait-timeout v0.2.1
+   Compiling fnv v1.0.7
+   Compiling bit-vec v0.8.0
+   Compiling quick-error v1.2.3
+   Compiling same-file v1.0.6
+   Compiling cast v0.3.0
+   Compiling bit-set v0.8.0
+   Compiling criterion-plot v0.5.0
+   Compiling walkdir v2.5.0
+   Compiling rusty-fork v0.3.1
+   Compiling digest v0.10.7
+   Compiling regex v1.12.3
+   Compiling rand v0.8.6
+   Compiling clap v4.6.1
+   Compiling tinytemplate v1.2.1
+   Compiling ciborium v0.2.2
+   Compiling aleph-backend v0.3.0 (/tmp/aleph-511-events-final/crates/aleph-backend)
+   Compiling rand_chacha v0.9.0
+   Compiling plotters v0.3.7
+   Compiling rand v0.9.4
+   Compiling rand_xorshift v0.4.0
+   Compiling approx v0.5.1
+   Compiling is-terminal v0.4.17
+   Compiling cpufeatures v0.2.17
+   Compiling anes v0.1.6
+   Compiling unarray v0.1.4
+   Compiling oorandom v11.1.5
+   Compiling proptest v1.11.0
+   Compiling sha2 v0.10.9
+   Compiling statrs v0.18.0
+   Compiling criterion v0.5.1
+   Compiling aleph-stab v0.3.0 (/tmp/aleph-511-events-final/crates/aleph-stab)
+   Compiling rayon v1.12.0
+   Compiling aleph-qec v0.3.0 (/tmp/aleph-511-events-final/crates/aleph-qec)
+    Finished `release` profile [optimized] target(s) in 1m 05s
+     Running unittests src/lib.rs (/tmp/aleph-511-events-queued-target/release/deps/aleph_qec-774c7d5c356a7410)
+
+running 15 tests
+test mwpm::tests::duplicate_defects_are_ignored ... ok
+test mwpm::tests::integration_decoder_beats_null_at_low_noise ... ok
+test mwpm::tests::local_still_matches_dense_weight ... ok
+test mwpm::tests::mwpm_weight_is_at_most_greedy ... ok
+test mwpm::tests::no_defects_no_correction ... ok
+test mwpm::tests::p_zero_gives_zero_logical_errors ... ok
+test mwpm::tests::pool_reuse_is_deterministic ... ok
+test mwpm::tests::prefers_cheaper_boundary_over_expensive_pairing ... ok
+test mwpm::tests::profile_local_phases_d11 ... ignored, profiling only: run with --ignored --nocapture
+test mwpm::tests::single_defect_matches_boundary_and_applies_its_parity ... ok
+test mwpm::tests::sparse_matches_dense_on_circuit_level_dems ... ok
+test mwpm::tests::decode_errors_invariants_on_phenomenological_shots has been running for over 60 seconds
+test mwpm::tests::sparse_matches_dense_weight_and_corrections has been running for over 60 seconds
+test mwpm::tests::sparse_matches_dense_weight_and_corrections ... ok
+test mwpm::tests::surface_code_d3_decodes_a_known_single_error ... ok
+test mwpm::tests::two_defects_match_each_other_via_bulk_edge ... ok
+test mwpm::tests::decode_errors_invariants_on_phenomenological_shots ... ok
+
+test result: ok. 14 passed; 0 failed; 1 ignored; 0 measured; 181 filtered out; finished in 94.50s
+
+
+=== queued-final-pymatching.log ===
+   Compiling aleph-qec v0.3.0 (/tmp/aleph-511-events-final/crates/aleph-qec)
+    Finished `release` profile [optimized] target(s) in 5.15s
+     Running tests/mwpm_pymatching_oracle.rs (/tmp/aleph-511-events-queued-target/release/deps/mwpm_pymatching_oracle-3cc0012b1648c08d)
+
+running 2 tests
+d=3 p=0.03: aleph rate=0.0978 pymatching rate=0.0981 |Δ|=0.0003 ci95=0.0037 nonempty-agreement=0.9824 (38246 nonempty)
+d=3 p=0.006: nonempty-agreement=0.99688 over 25296 nonempty shots
+d=5 p=0.03: aleph rate=0.1097 pymatching rate=0.1075 |Δ|=0.0021 ci95=0.0039 nonempty-agreement=0.9683 (49911 nonempty)
+d=5 p=0.006: nonempty-agreement=0.99943 over 71594 nonempty shots
+d=7 p=0.006: nonempty-agreement=0.99984 over 96514 nonempty shots
+d=7 p=0.03: aleph rate=0.1102 pymatching rate=0.1115 |Δ|=0.0013 ci95=0.0039 nonempty-agreement=0.9590 (50000 nonempty)
+d=9 p=0.006: nonempty-agreement=0.99995 over 99897 nonempty shots
+d=9 p=0.03: aleph rate=0.1125 pymatching rate=0.1113 |Δ|=0.0012 ci95=0.0039 nonempty-agreement=0.9564 (50000 nonempty)
+d=11 p=0.006: nonempty-agreement=1.00000 over 100000 nonempty shots
+test mwpm_corrections_match_pymatching_when_unambiguous ... ok
+d=11 p=0.03: aleph rate=0.1139 pymatching rate=0.1158 |Δ|=0.0019 ci95=0.0040 nonempty-agreement=0.9552 (50000 nonempty)
+test mwpm_logical_error_rate_matches_pymatching ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 20.72s
+
+
+=== queued-final-python-tests.log ===
+test_mwpm_matches_pymatching (test_qec.TestOracle.test_mwpm_matches_pymatching) ... ok
+test_decode_shapes_and_dtypes (test_qec.TestApi.test_decode_shapes_and_dtypes) ... ok
+test_matching_decode_batch_errors_rejects_decomposed_dem (test_qec.TestStimDems.test_matching_decode_batch_errors_rejects_decomposed_dem) ... ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.396s
+
+OK
+
+=== queued-final-sparse-release.log ===
+    Finished `release` profile [optimized] target(s) in 0.10s
+     Running unittests src/lib.rs (/tmp/aleph-511-events-queued-target/release/deps/aleph_qec-774c7d5c356a7410)
+
+running 26 tests
+test sparse_blossom::graph::tests::boundary_edge_is_per_node_min_weight ... ok
+test sparse_blossom::graph::tests::csr_holds_each_undirected_edge_on_both_endpoints_with_doubled_weight ... ok
+test sparse_blossom::graph::tests::from_int_edges_doubles_and_mirrors ... ok
+test sparse_blossom::graph::tests::parallel_edges_keep_the_lightest_one ... ok
+test sparse_blossom::state::tests::cedge_reverses_and_chains ... ok
+test sparse_blossom::state::tests::heap_pops_in_time_then_insertion_order ... ok
+test sparse_blossom::state::tests::varying_evaluates_and_changes_slope_continuously ... ok
+test sparse_blossom::state::tests::reset_clears_touched_nodes_only ... ok
+test sparse_blossom::tests::blossom_shatter_pairs_the_remaining_cycle ... ok
+test sparse_blossom::tests::blossom_is_shattered_when_it_becomes_inner ... ok
+test sparse_blossom::tests::decode_errors_marks_the_matched_paths ... ok
+test sparse_blossom::tests::decode_errors_terminates_on_negative_weight_edges ... ok
+test sparse_blossom::tests::empty_syndrome_is_zero ... ok
+test sparse_blossom::tests::equilateral_triangle_with_boundary ... ok
+test sparse_blossom::tests::grow_then_augment_through_the_boundary ... ok
+test sparse_blossom::tests::lone_defect_matches_boundary ... ok
+test sparse_blossom::tests::odd_component_without_boundary_is_best_effort ... ok
+test sparse_blossom::tests::pentagon_with_chord_forms_and_uses_a_blossom ... ok
+test sparse_blossom::tests::profile_next_at_work ... ignored, profiling diagnostic; run explicitly with --ignored --nocapture
+test sparse_blossom::tests::queued_now_keeps_heap_sequence_but_future_entries_can_move_earlier ... ok
+test sparse_blossom::tests::repeated_decodes_reuse_state_identically ... ok
+test sparse_blossom::tests::decode_errors_is_weight_and_syndrome_exact ... ok
+test sparse_blossom::tests::retained_slots_do_not_leak_between_shots ... ok
+test sparse_blossom::tests::two_defects_on_a_line_match_each_other ... ok
+test sparse_blossom::tests::zero_weight_edge_matches_at_time_zero ... ok
+test sparse_blossom::tests::sparse_reaches_the_dense_optimum_weight ... ok
+
+test result: ok. 25 passed; 0 failed; 1 ignored; 0 measured; 170 filtered out; finished in 0.11s
+
+
+=== queued-final-wheel-build.log ===
+🍹 Building a mixed python/rust project
+🐍 Found CPython 3.12 at /tmp/aleph-518-K1bhhc/test-venv/bin/python
+🔗 Found pyo3 bindings with abi3-py3.10 support
+📡 Using build options features from pyproject.toml
+   Compiling bytemuck v1.25.0
+   Compiling syn v2.0.117
+   Compiling target-lexicon v0.12.16
+   Compiling paste v1.0.15
+   Compiling num-complex v0.4.6
+   Compiling nano-gemm-codegen v0.2.1
+   Compiling pyo3-build-config v0.22.6
+   Compiling libm v0.2.16
+   Compiling bitflags v2.11.1
+   Compiling either v1.16.0
+   Compiling rayon v1.12.0
+   Compiling raw-cpuid v11.6.0
+   Compiling pulp v0.22.2
+   Compiling once_cell v1.21.4
+   Compiling reborrow v0.5.5
+   Compiling pulp-wasm-simd-flag v0.1.0
+   Compiling dyn-stack-macros v0.1.3
+   Compiling dyn-stack v0.13.2
+   Compiling zerocopy v0.8.48
+   Compiling syn v1.0.109
+   Compiling seq-macro v0.3.6
+   Compiling thiserror-impl v1.0.69
+   Compiling nano-gemm-core v0.2.1
+   Compiling thiserror v1.0.69
+   Compiling aleph-core v0.3.0 (/tmp/aleph-511-events-final/crates/aleph-core)
+   Compiling aleph-ir v0.3.0 (/tmp/aleph-511-events-final/crates/aleph-ir)
+   Compiling gemm-common v0.19.0
+   Compiling ppv-lite86 v0.2.21
+   Compiling matrixmultiply v0.3.10
+   Compiling interpol v0.2.1
+   Compiling equator-macro v0.4.2
+   Compiling rand_chacha v0.3.1
+   Compiling pyo3-ffi v0.22.6
+   Compiling pyo3-macros-backend v0.22.6
+   Compiling nano-gemm-f64 v0.2.1
+   Compiling nano-gemm-c32 v0.2.1
+   Compiling nano-gemm-c64 v0.2.1
+   Compiling nano-gemm-f32 v0.2.1
+   Compiling crossbeam-channel v0.5.15
+   Compiling crossbeam-queue v0.3.12
+   Compiling num-integer v0.1.46
+   Compiling serde_core v1.0.228
+   Compiling defer v0.2.1
+   Compiling memchr v2.8.0
+   Compiling rawpointer v0.2.1
+   Compiling crossbeam v0.8.4
+   Compiling private-gemm-x86 v0.1.20
+   Compiling equator v0.4.2
+   Compiling rand v0.8.6
+   Compiling aleph-backend v0.3.0 (/tmp/aleph-511-events-final/crates/aleph-backend)
+   Compiling equator-macro v0.2.1
+   Compiling safe_arch v0.7.4
+   Compiling atomic-wait v1.1.0
+   Compiling memoffset v0.9.1
+   Compiling heck v0.5.0
+   Compiling wide v0.7.33
+   Compiling spindle v0.2.6
+   Compiling equator v0.2.2
+   Compiling gemm-f32 v0.19.0
+   Compiling gemm-c64 v0.19.0
+   Compiling gemm-c32 v0.19.0
+   Compiling gemm-f64 v0.19.0
+   Compiling qd v0.8.0
+   Compiling pyo3 v0.22.6
+   Compiling num_cpus v1.17.0
+   Compiling generativity v1.2.1
+   Compiling minimal-lexical v0.2.1
+   Compiling serde v1.0.228
+   Compiling equator-macro v0.6.0
+   Compiling nom v7.1.3
+   Compiling faer-traits v0.24.0
+   Compiling equator v0.6.0
+   Compiling gemm v0.19.0
+   Compiling nano-gemm v0.2.2
+   Compiling pyo3-macros v0.22.6
+   Compiling simba v0.9.1
+   Compiling num-rational v0.4.2
+   Compiling nalgebra-macros v0.2.2
+   Compiling serde_derive v1.0.228
+   Compiling unindent v0.2.4
+   Compiling indoc v2.0.7
+   Compiling bytecount v0.6.9
+   Compiling nom_locate v4.2.0
+   Compiling serde_json v1.0.150
+   Compiling nalgebra v0.33.3
+   Compiling faer v0.24.0
+   Compiling aleph-stab v0.3.0 (/tmp/aleph-511-events-final/crates/aleph-stab)
+   Compiling ndarray v0.16.1
+   Compiling rustc-hash v1.1.0
+   Compiling aleph-qec v0.3.0 (/tmp/aleph-511-events-final/crates/aleph-qec)
+   Compiling numpy v0.22.1
+   Compiling aleph-parser v0.3.0 (/tmp/aleph-511-events-final/crates/aleph-parser)
+   Compiling aleph-sv v0.3.0 (/tmp/aleph-511-events-final/crates/aleph-sv)
+   Compiling aleph-mps v0.3.0 (/tmp/aleph-511-events-final/crates/aleph-mps)
+   Compiling aleph-py v0.3.0 (/tmp/aleph-511-events-final/crates/aleph-py)
+    Finished `release` profile [optimized] target(s) in 1m 30s
+📦 Built wheel for abi3 Python ≥ 3.10 to /tmp/aleph-511-events-validation/queued-final-wheels/aleph_sim-0.3.0-cp310-abi3-manylinux_2_39_x86_64.whl
+
+=== queued-final-work.log ===
+    Finished `release` profile [optimized] target(s) in 0.10s
+     Running unittests src/lib.rs (/tmp/aleph-511-events-queued-target/release/deps/aleph_qec-774c7d5c356a7410)
+
+running 1 test
+d=7 rate=0.03 shots=256 calls=38661 queued_now_skips=11834
+d=7 rate=0.003 shots=256 calls=2529 queued_now_skips=808
+d=9 rate=0.03 shots=256 calls=92254 queued_now_skips=27982
+d=9 rate=0.003 shots=256 calls=5678 queued_now_skips=1794
+d=11 rate=0.03 shots=256 calls=173924 queued_now_skips=54796
+d=11 rate=0.003 shots=256 calls=9747 queued_now_skips=3247
+d=13 rate=0.03 shots=256 calls=295216 queued_now_skips=94227
+d=13 rate=0.003 shots=256 calls=15976 queued_now_skips=5355
+d=15 rate=0.03 shots=256 calls=496945 queued_now_skips=158464
+d=15 rate=0.003 shots=256 calls=26044 queued_now_skips=8600
+d=17 rate=0.03 shots=256 calls=748673 queued_now_skips=240776
+d=17 rate=0.003 shots=256 calls=36147 queued_now_skips=12300
+test sparse_blossom::tests::profile_next_at_work ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 195 filtered out; finished in 58.86s
+
+
+=== sparse-debug.log ===
+   Compiling proc-macro2 v1.0.106
+   Compiling quote v1.0.45
+   Compiling unicode-ident v1.0.24
+   Compiling cfg-if v1.0.4
+   Compiling libc v0.2.186
+   Compiling autocfg v1.5.1
+   Compiling zerocopy v0.8.48
+   Compiling num-traits v0.2.19
+   Compiling version_check v0.9.5
+   Compiling syn v2.0.117
+   Compiling getrandom v0.3.4
+   Compiling serde_core v1.0.228
+   Compiling generic-array v0.14.7
+   Compiling thiserror v1.0.69
+   Compiling crossbeam-utils v0.8.21
+   Compiling serde v1.0.228
+   Compiling getrandom v0.4.2
+   Compiling zmij v1.0.21
+   Compiling typenum v1.20.1
+   Compiling rustix v1.1.4
+   Compiling rand_core v0.9.5
+   Compiling num-complex v0.4.6
+   Compiling getrandom v0.2.17
+   Compiling regex-syntax v0.8.10
+   Compiling smallvec v1.15.1
+   Compiling once_cell v1.21.4
+   Compiling linux-raw-sys v0.12.1
+   Compiling serde_json v1.0.150
+   Compiling bitflags v2.11.1
+   Compiling either v1.16.0
+   Compiling rand_core v0.6.4
+   Compiling crossbeam-epoch v0.9.18
+   Compiling zerocopy-derive v0.8.48
+   Compiling thiserror-impl v1.0.69
+   Compiling serde_derive v1.0.228
+   Compiling aleph-core v0.3.0 (/tmp/aleph-511-events-candidate/crates/aleph-core)
+   Compiling clap_lex v1.1.0
+   Compiling rayon-core v1.13.0
+   Compiling ciborium-io v0.2.2
+   Compiling itoa v1.0.18
+   Compiling fastrand v2.4.1
+   Compiling memchr v2.8.0
+   Compiling anstyle v1.0.14
+   Compiling plotters-backend v0.3.7
+   Compiling plotters-svg v0.3.7
+   Compiling clap_builder v4.6.0
+   Compiling tempfile v3.27.0
+   Compiling aleph-ir v0.3.0 (/tmp/aleph-511-events-candidate/crates/aleph-ir)
+   Compiling ppv-lite86 v0.2.21
+   Compiling half v2.7.1
+   Compiling rand_chacha v0.3.1
+   Compiling ciborium-ll v0.2.2
+   Compiling regex-automata v0.4.14
+   Compiling crossbeam-deque v0.8.6
+   Compiling itertools v0.10.5
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling wait-timeout v0.2.1
+   Compiling cast v0.3.0
+   Compiling bit-vec v0.8.0
+   Compiling same-file v1.0.6
+   Compiling quick-error v1.2.3
+   Compiling fnv v1.0.7
+   Compiling walkdir v2.5.0
+   Compiling rusty-fork v0.3.1
+   Compiling bit-set v0.8.0
+   Compiling criterion-plot v0.5.0
+   Compiling digest v0.10.7
+   Compiling regex v1.12.3
+   Compiling aleph-backend v0.3.0 (/tmp/aleph-511-events-candidate/crates/aleph-backend)
+   Compiling ciborium v0.2.2
+   Compiling rand v0.8.6
+   Compiling rand_chacha v0.9.0
+   Compiling clap v4.6.1
+   Compiling tinytemplate v1.2.1
+   Compiling plotters v0.3.7
+   Compiling rand v0.9.4
+   Compiling rand_xorshift v0.4.0
+   Compiling approx v0.5.1
+   Compiling is-terminal v0.4.17
+   Compiling anes v0.1.6
+   Compiling cpufeatures v0.2.17
+   Compiling oorandom v11.1.5
+   Compiling unarray v0.1.4
+   Compiling sha2 v0.10.9
+   Compiling statrs v0.18.0
+   Compiling proptest v1.11.0
+   Compiling criterion v0.5.1
+   Compiling aleph-stab v0.3.0 (/tmp/aleph-511-events-candidate/crates/aleph-stab)
+   Compiling rayon v1.12.0
+   Compiling aleph-qec v0.3.0 (/tmp/aleph-511-events-candidate/crates/aleph-qec)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 26.90s
+     Running unittests src/lib.rs (/tmp/aleph-511-events-candidate-target/debug/deps/aleph_qec-454c9036724b4024)
+
+running 25 tests
+test sparse_blossom::graph::tests::csr_holds_each_undirected_edge_on_both_endpoints_with_doubled_weight ... ok
+test sparse_blossom::graph::tests::boundary_edge_is_per_node_min_weight ... ok
+test sparse_blossom::graph::tests::from_int_edges_doubles_and_mirrors ... ok
+test sparse_blossom::graph::tests::parallel_edges_keep_the_lightest_one ... ok
+test sparse_blossom::state::tests::cedge_reverses_and_chains ... ok
+test sparse_blossom::state::tests::heap_pops_in_time_then_insertion_order ... ok
+test sparse_blossom::state::tests::reset_clears_touched_nodes_only ... ok
+test sparse_blossom::state::tests::varying_evaluates_and_changes_slope_continuously ... ok
+test sparse_blossom::tests::blossom_shatter_pairs_the_remaining_cycle ... ok
+test sparse_blossom::tests::blossom_is_shattered_when_it_becomes_inner ... ok
+test sparse_blossom::tests::decode_errors_marks_the_matched_paths ... ok
+test sparse_blossom::tests::decode_errors_terminates_on_negative_weight_edges ... ok
+test sparse_blossom::tests::empty_syndrome_is_zero ... ok
+test sparse_blossom::tests::equilateral_triangle_with_boundary ... ok
+test sparse_blossom::tests::grow_then_augment_through_the_boundary ... ok
+test sparse_blossom::tests::lone_defect_matches_boundary ... ok
+test sparse_blossom::tests::odd_component_without_boundary_is_best_effort ... ok
+test sparse_blossom::tests::pentagon_with_chord_forms_and_uses_a_blossom ... ok
+test sparse_blossom::tests::profile_next_at_work ... ignored, profiling diagnostic; run explicitly with --ignored --nocapture
+test sparse_blossom::tests::repeated_decodes_reuse_state_identically ... ok
+test sparse_blossom::tests::decode_errors_is_weight_and_syndrome_exact ... ok
+test sparse_blossom::tests::sparse_reaches_the_dense_optimum_weight ... ok
+test sparse_blossom::tests::two_defects_on_a_line_match_each_other ... ok
+test sparse_blossom::tests::zero_weight_edge_matches_at_time_zero ... ok
+test sparse_blossom::tests::retained_slots_do_not_leak_between_shots ... ok
+
+test result: ok. 24 passed; 0 failed; 1 ignored; 0 measured; 170 filtered out; finished in 0.83s
+

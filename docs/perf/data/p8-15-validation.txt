@@ -1,0 +1,107 @@
+=== tests-experiment.log ===
+   Compiling aleph-qec v0.3.0 (/tmp/aleph-565-lWXuPl/candidate/crates/aleph-qec)
+    Finished `release` profile [optimized] target(s) in 29.37s
+     Running unittests src/lib.rs (/tmp/aleph-565-lWXuPl/target-candidate/release/deps/aleph_qec-a1a965ae615cb550)
+
+running 5 tests
+test experiment::tests::deterministic_for_fixed_seed ... ok
+test experiment::tests::p_zero_gives_exactly_zero_rate ... ok
+test experiment::tests::null_decoder_rate_matches_observable_flip_probability ... ok
+test experiment::tests::zero_shots_is_empty_result ... ok
+test experiment::tests::sampler_detector_frequency_matches_edge_probability ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 185 filtered out; finished in 0.14s
+
+
+=== tests-pymatching.log ===
+    Finished `release` profile [optimized] target(s) in 0.10s
+     Running unittests src/lib.rs (/tmp/aleph-565-lWXuPl/target-candidate/release/deps/aleph_qec-a1a965ae615cb550)
+
+running 2 tests
+test pymatching::tests::caches_dem_and_counts ... ok
+test pymatching::tests::empty_batch_needs_no_subprocess ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 188 filtered out; finished in 0.00s
+
+
+=== tests-bounded_dem_experiment.log ===
+   Compiling aleph-qec v0.3.0 (/tmp/aleph-565-lWXuPl/candidate/crates/aleph-qec)
+    Finished `release` profile [optimized] target(s) in 5.61s
+     Running tests/bounded_dem_experiment.rs (/tmp/aleph-565-lWXuPl/target-candidate/release/deps/bounded_dem_experiment-c8504d7ce12d32cd)
+
+running 9 tests
+test batch_bound_tail_and_absolute_stream_are_preserved ... ok
+test deterministic_mechanisms_produce_exact_tallies ... ok
+test fixed_seed_matches_full_artifact_path_across_batches_and_workers ... ok
+test huge_requested_count_does_not_materialize_all_shots ... ok
+test pymatching_batch_boundaries_and_zero_observables ... ignored, requires numpy + stim + pymatching; set PYMATCHING_PYTHON
+test short_long_empty_or_wrong_width_predictions_are_rejected_in_later_batches ... ok
+test zero_batch_size_is_rejected_even_for_zero_shots ... ok
+test zero_observables_require_exact_empty_corrections ... ok
+test default_limit_splits_campaign_and_reports_late_schema_index ... ok
+
+test result: ok. 8 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+
+=== tests-memory_experiment.log ===
+   Compiling aleph-qec v0.3.0 (/tmp/aleph-565-lWXuPl/candidate/crates/aleph-qec)
+    Finished `release` profile [optimized] target(s) in 4.95s
+     Running tests/memory_experiment.rs (/tmp/aleph-565-lWXuPl/target-candidate/release/deps/memory_experiment-65c522ec6b3d20a0)
+
+running 5 tests
+test p_zero_is_zero_rate_for_every_distance ... ok
+test pymatching_does_not_suppress_above_threshold ... ignored, requires python3 + numpy + stim + pymatching; set PYMATCHING_PYTHON
+test pymatching_suppresses_errors_with_distance_below_threshold ... ignored, requires python3 + numpy + stim + pymatching; set PYMATCHING_PYTHON
+test threshold_brackets_recorded_value ... ignored, requires python3 + numpy + stim + pymatching; set PYMATCHING_PYTHON
+test null_decoder_rate_grows_with_noise ... ok
+
+test result: ok. 2 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+
+=== doc-tests.log ===
+    Finished `release` profile [optimized] target(s) in 0.10s
+   Doc-tests aleph_qec
+
+running 3 tests
+test crates/aleph-qec/src/experiment.rs - experiment::run_memory_experiment (line 75) - compile ... ok
+test crates/aleph-qec/src/decoder.rs - decoder::LogicalErrorResult::interval95 (line 103) ... ok
+test crates/aleph-qec/src/experiment.rs - experiment::run_dem_experiment_with_options (line 153) ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.99s
+
+
+=== oracle-contract.log ===
+    Finished `release` profile [optimized] target(s) in 0.10s
+     Running tests/bounded_dem_experiment.rs (/tmp/aleph-565-lWXuPl/target-candidate/release/deps/bounded_dem_experiment-c8504d7ce12d32cd)
+
+running 1 test
+test pymatching_batch_boundaries_and_zero_observables ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 4.71s
+
+
+=== oracle-stim.log ===
+   Compiling aleph-qec v0.3.0 (/tmp/aleph-565-lWXuPl/candidate/crates/aleph-qec)
+    Finished `release` profile [optimized] target(s) in 5.68s
+     Running tests/surface_dem_stim_oracle.rs (/tmp/aleph-565-lWXuPl/target-candidate/release/deps/surface_dem_stim_oracle-3612f8a1c7baba4f)
+
+running 4 tests
+test analytic_dem_matches_stim ... ok
+test circuit_level_dem_matches_stim ... ok
+test memory_x_circuit_level_dem_matches_stim ... ok
+test memory_x_dem_matches_stim ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.11s
+
+
+=== local final clippy ===
+    Checking aleph-qec v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-qec)
+    Checking aleph-benches v0.3.0 (/Users/ex/GitHub/aleph/benches)
+    Checking aleph-cuda v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-cuda)
+    Checking aleph-metal v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-metal)
+    Checking aleph-mps v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-mps)
+    Checking aleph-py v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-py)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 49.09s
+
+=== candidate symbol (absent from baseline) ===
+00000000000e2c70 T aleph_qec::experiment::run_dem_experiment_with_options

@@ -15,6 +15,6 @@ mod bp;
 mod montecarlo;
 mod uf;
 
-pub use bp::CudaBp;
+pub use bp::{BpScratchLayout, CudaBp};
 pub use montecarlo::{CellResult, CudaThreshold};
 pub use uf::{mask_to_flips, CudaUnionFind};

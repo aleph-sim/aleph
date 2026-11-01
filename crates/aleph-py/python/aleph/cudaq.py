@@ -11,13 +11,21 @@ Every decoder takes the parity-check matrix ``H`` (dense or scipy.sparse), the o
 matrix ``O`` and one prior per column (``error_rate_vec``, or a scalar ``error_rate``), plus
 the same keyword parameters as ``aleph.qec.Decoder``. Results are per-column error estimates,
 so ``(O @ (res.result > 0.5).T) % 2`` gives the predicted observable flips, exactly as with
-cudaq's own decoders. Matching decoders need a graph-like ``H`` (every column has at most two
+cudaq's own decoders. Pass NumPy batches directly to ``decode_batch`` when possible;
+``tolist()`` adds a conversion that the SDK does not require. The plugin fills the
+SDK's float64 output directly in native code. Matching decoders need a graph-like ``H`` (every column has at most two
 ones): cudaq keeps ``^``-decomposed hyperedges of a Stim DEM as one column, so pass
 ``dem_to_matrices(dem)`` instead of the DEM string for ``aleph-mwpm`` / ``aleph-union-find*``.
 Matching decoders (``aleph-mwpm``, ``aleph-union-find``, ``aleph-union-find-weighted``) also
-require every prior (``error_rate_vec`` entry, or the scalar ``error_rate``) to be <= 0.5
-(matching on a negative-weight edge is undefined here); BP-family decoders (``aleph-bp``,
-``aleph-bp-osd``, ``aleph-relay-bp``, ``aleph-relay-bp-osd``) have no such restriction.
+require every prior (``error_rate_vec`` entry, or the scalar ``error_rate``) to be finite
+and in [0, 0.5]. Unsupported priors raise at construction with the offending column;
+inputs are never clamped. BP-family decoders (``aleph-bp``, ``aleph-bp-osd``,
+``aleph-relay-bp``, ``aleph-relay-bp-osd``) accept priors in [0, 1].
+
+``aleph-relay-bp`` and ``aleph-relay-bp-osd`` forward ``iters_per_leg`` and
+``early_exit`` to the native decoder. Omitted budgets retain the legacy schedule
+(default 4 x 25); ``early_exit`` defaults to False. True selects the first valid
+estimate instead of the lightest valid estimate seen over the full schedule.
 """
 import cudaq_qec as _qec  # the only cudaq import in aleph; ImportError means "install the extra"
 import numpy as np
@@ -26,8 +34,6 @@ import aleph.qec as _aq
 from aleph.qec import dem_to_matrices  # re-exported: aleph.cudaq.dem_to_matrices (no cudaq dep)
 
 NAMES = tuple(_aq.decoder_names())
-
-_MATCHING = {"mwpm", "union-find", "union-find-weighted"}
 
 __all__ = ["NAMES", "DECODERS", "dem_to_matrices"]
 
@@ -54,14 +60,22 @@ def _rates(n, error_rate_vec, error_rate):
 
 def _to_bits(syndromes, width):
     """float syndromes (rows) -> C-contiguous uint8 (shots, width); values > 0.5 count as fired."""
-    a = np.asarray(syndromes, dtype=np.float64)
-    if a.size == 0:
+    # Stim's bool/uint8 batches need no detector-sized float64 intermediate.
+    if isinstance(syndromes, np.ndarray) and syndromes.dtype in (np.bool_, np.uint8):
+        a = syndromes
+    else:
+        a = np.asarray(syndromes, dtype=np.float64)
+    if a.ndim == 1 and a.size == 0:
         return np.zeros((0, width), dtype=np.uint8)
     if a.ndim == 1:
         a = a[None, :]
     if a.ndim != 2 or a.shape[1] != width:
         raise ValueError(f"syndrome width {a.shape[-1] if a.ndim else 0} != {width} detectors")
-    return np.ascontiguousarray(a > 0.5).astype(np.uint8)
+    if a.dtype == np.bool_:
+        return np.ascontiguousarray(a).view(np.uint8)
+    # NumPy bool occupies one byte and comparison produces canonical 0/1 values.
+    # Viewing it avoids a second detector-sized allocation and copy.
+    return np.ascontiguousarray(a > 0.5).view(np.uint8)
 
 
 def _make(name):
@@ -71,12 +85,8 @@ def _make(name):
             _qec.Decoder.__init__(self, H)
             n = H.shape[1]
             rates = _rates(n, error_rate_vec, error_rate)
-            if name in _MATCHING and rates.size:
-                j = int(np.argmax(rates))
-                if rates[j] > 0.5:
-                    raise ValueError(
-                        f"aleph-{name}: priors must be <= 0.5 for a matching decoder "
-                        f"(max {rates[j]:.3g} at column {j}); clamp or use a BP-family decoder")
+            # Rust's MatchingGraph validates matching priors in the common
+            # construction path; keep the same policy and errors as aleph.qec.
             try:
                 dem = _aq.dem_from_matrices(H, O, rates)
                 self._inner = _aq.Decoder(dem, name, **params)
@@ -93,19 +103,19 @@ def _make(name):
             a = np.asarray(syndrome, dtype=np.float64)
             if a.size != self._width:
                 raise ValueError(f"syndrome width {a.size} != {self._width} detectors")
-            ehat, conv = self._inner.decode_batch_errors(_to_bits(a.reshape(1, -1), self._width))
+            ehat, conv = self._inner._decode_batch_errors_f64(_to_bits(a.reshape(1, -1), self._width))
             r = _qec.DecoderResult()
             r.converged = bool(conv[0])
-            r.result = ehat[0].astype(np.float64).tolist()
+            r.result = ehat[0].tolist()
             r.opt_results = None
             return r
 
         def decode_batch(self, syndromes):
-            ehat, conv = self._inner.decode_batch_errors(_to_bits(syndromes, self._width))
+            ehat, conv = self._inner._decode_batch_errors_f64(_to_bits(syndromes, self._width))
             # `ehat` is already `(0, E)` for an empty batch (Step-0 probe: cudaq's own
             # `(O @ err.T)` breaks on a `(0, 0)` result), so it is returned as-is rather than
             # overridden to `(0, 0)`.
-            return _qec.BatchDecoderResult(result=ehat.astype(np.float64), converged=conv,
+            return _qec.BatchDecoderResult(result=ehat, converged=conv,
                                            opt_results=None, batch_opt_results=None)
 
     AlephDecoder.__name__ = AlephDecoder.__qualname__ = f"Aleph_{name.replace('-', '_')}"

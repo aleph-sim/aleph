@@ -1,0 +1,1510 @@
+
+=== b0-i0-original.log ===
+Gnuplot not found, using plotters backend
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Collecting 15 samples in estimated 3.0551 s (480 iterations)
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Analyzing
+mwpm_decode/sparse/d7_det192_avgdef27
+                        time:   [6.4222 ms 6.4919 ms 6.5962 ms]
+                        thrpt:  [38.810 Kelem/s 39.434 Kelem/s 39.862 Kelem/s]
+Found 3 outliers among 15 measurements (20.00%)
+  1 (6.67%) low severe
+  2 (13.33%) high severe
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Collecting 15 samples in estimated 3.9682 s (240 iterations)
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Analyzing
+mwpm_decode/sparse/d9_det400_avgdef56
+                        time:   [16.443 ms 16.810 ms 17.775 ms]
+                        thrpt:  [14.402 Kelem/s 15.229 Kelem/s 15.569 Kelem/s]
+Found 3 outliers among 15 measurements (20.00%)
+  3 (20.00%) high severe
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Warming up for 1.0000 s
+
+Warning: Unable to complete 15 samples in 3.0s. You may wish to increase target time to 4.0s, enable flat sampling, or reduce sample count to 10.
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Collecting 15 samples in estimated 3.9734 s (120 iterations)
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Analyzing
+mwpm_decode/sparse/d11_det720_avgdef104
+                        time:   [32.792 ms 32.939 ms 33.240 ms]
+                        thrpt:  [7.7015 Kelem/s 7.7719 Kelem/s 7.8069 Kelem/s]
+Found 2 outliers among 15 measurements (13.33%)
+  2 (13.33%) high severe
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Warming up for 1.0000 s
+
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 3.1s or enable flat sampling.
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Collecting 10 samples in estimated 3.1338 s (55 iterations)
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Analyzing
+mwpm_decode/sparse/d13_det1176_avgdef169
+                        time:   [56.766 ms 56.790 ms 56.819 ms]
+                        thrpt:  [4.5055 Kelem/s 4.5079 Kelem/s 4.5097 Kelem/s]
+Found 3 outliers among 10 measurements (30.00%)
+  1 (10.00%) low mild
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Warming up for 1.0000 s
+
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 5.4s or enable flat sampling.
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Collecting 10 samples in estimated 5.3963 s (55 iterations)
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Analyzing
+mwpm_decode/sparse/d15_det1792_avgdef264
+                        time:   [96.948 ms 100.99 ms 106.78 ms]
+                        thrpt:  [2.3974 Kelem/s 2.5349 Kelem/s 2.6406 Kelem/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Collecting 10 samples in estimated 4.4038 s (30 iterations)
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Analyzing
+mwpm_decode/sparse/d17_det2592_avgdef383
+                        time:   [146.89 ms 152.14 ms 161.87 ms]
+                        thrpt:  [1.5815 Kelem/s 1.6826 Kelem/s 1.7428 Kelem/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+
+
+=== b0-i1-main.log ===
+Gnuplot not found, using plotters backend
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Collecting 15 samples in estimated 3.2068 s (600 iterations)
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Analyzing
+mwpm_decode/sparse/d7_det192_avgdef27
+                        time:   [5.3358 ms 5.3417 ms 5.3477 ms]
+                        thrpt:  [47.871 Kelem/s 47.925 Kelem/s 47.978 Kelem/s]
+Found 1 outliers among 15 measurements (6.67%)
+  1 (6.67%) high severe
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Collecting 15 samples in estimated 3.6025 s (240 iterations)
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Analyzing
+mwpm_decode/sparse/d9_det400_avgdef56
+                        time:   [13.840 ms 13.914 ms 14.056 ms]
+                        thrpt:  [18.213 Kelem/s 18.398 Kelem/s 18.498 Kelem/s]
+Found 1 outliers among 15 measurements (6.67%)
+  1 (6.67%) high severe
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Warming up for 1.0000 s
+
+Warning: Unable to complete 15 samples in 3.0s. You may wish to increase target time to 3.3s, enable flat sampling, or reduce sample count to 10.
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Collecting 15 samples in estimated 3.3052 s (120 iterations)
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Analyzing
+mwpm_decode/sparse/d11_det720_avgdef104
+                        time:   [27.481 ms 27.665 ms 28.102 ms]
+                        thrpt:  [9.1095 Kelem/s 9.2537 Kelem/s 9.3154 Kelem/s]
+Found 1 outliers among 15 measurements (6.67%)
+  1 (6.67%) high severe
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Collecting 10 samples in estimated 5.3877 s (110 iterations)
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Analyzing
+mwpm_decode/sparse/d13_det1176_avgdef169
+                        time:   [48.415 ms 48.559 ms 48.800 ms]
+                        thrpt:  [5.2459 Kelem/s 5.2720 Kelem/s 5.2876 Kelem/s]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Warming up for 1.0000 s
+
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 4.7s or enable flat sampling.
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Collecting 10 samples in estimated 4.7003 s (55 iterations)
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Analyzing
+mwpm_decode/sparse/d15_det1792_avgdef264
+                        time:   [85.666 ms 88.916 ms 95.547 ms]
+                        thrpt:  [2.6793 Kelem/s 2.8791 Kelem/s 2.9883 Kelem/s]
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Collecting 10 samples in estimated 4.0019 s (30 iterations)
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Analyzing
+mwpm_decode/sparse/d17_det2592_avgdef383
+                        time:   [132.60 ms 138.02 ms 147.77 ms]
+                        thrpt:  [1.7324 Kelem/s 1.8547 Kelem/s 1.9307 Kelem/s]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+
+
+=== b0-i2-candidate.log ===
+Gnuplot not found, using plotters backend
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Collecting 15 samples in estimated 3.1670 s (720 iterations)
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Analyzing
+mwpm_decode/sparse/d7_det192_avgdef27
+                        time:   [4.4013 ms 4.4372 ms 4.4939 ms]
+                        thrpt:  [56.966 Kelem/s 57.694 Kelem/s 58.164 Kelem/s]
+Found 2 outliers among 15 measurements (13.33%)
+  2 (13.33%) high severe
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Collecting 15 samples in estimated 4.1316 s (360 iterations)
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Analyzing
+mwpm_decode/sparse/d9_det400_avgdef56
+                        time:   [11.484 ms 12.053 ms 12.851 ms]
+                        thrpt:  [19.920 Kelem/s 21.239 Kelem/s 22.291 Kelem/s]
+Found 3 outliers among 15 measurements (20.00%)
+  3 (20.00%) high severe
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Collecting 15 samples in estimated 5.5213 s (240 iterations)
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Analyzing
+mwpm_decode/sparse/d11_det720_avgdef104
+                        time:   [22.718 ms 22.936 ms 23.165 ms]
+                        thrpt:  [11.051 Kelem/s 11.161 Kelem/s 11.269 Kelem/s]
+Found 3 outliers among 15 measurements (20.00%)
+  3 (20.00%) high severe
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Collecting 10 samples in estimated 4.4324 s (110 iterations)
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Analyzing
+mwpm_decode/sparse/d13_det1176_avgdef169
+                        time:   [40.610 ms 40.960 ms 41.167 ms]
+                        thrpt:  [6.2185 Kelem/s 6.2500 Kelem/s 6.3039 Kelem/s]
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Warming up for 1.0000 s
+
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 4.0s or enable flat sampling.
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Collecting 10 samples in estimated 3.9587 s (55 iterations)
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Analyzing
+mwpm_decode/sparse/d15_det1792_avgdef264
+                        time:   [70.875 ms 71.368 ms 72.082 ms]
+                        thrpt:  [3.5515 Kelem/s 3.5871 Kelem/s 3.6120 Kelem/s]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Collecting 10 samples in estimated 3.2884 s (30 iterations)
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Analyzing
+mwpm_decode/sparse/d17_det2592_avgdef383
+                        time:   [109.08 ms 109.34 ms 109.66 ms]
+                        thrpt:  [2.3344 Kelem/s 2.3413 Kelem/s 2.3470 Kelem/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+
+
+=== b0-i3-candidate.log ===
+Gnuplot not found, using plotters backend
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Collecting 15 samples in estimated 3.1701 s (720 iterations)
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Analyzing
+mwpm_decode/sparse/d7_det192_avgdef27
+                        time:   [4.3993 ms 4.4113 ms 4.4313 ms]
+                        thrpt:  [57.770 Kelem/s 58.032 Kelem/s 58.191 Kelem/s]
+Found 3 outliers among 15 measurements (20.00%)
+  1 (6.67%) high mild
+  2 (13.33%) high severe
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Collecting 15 samples in estimated 4.1484 s (360 iterations)
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Analyzing
+mwpm_decode/sparse/d9_det400_avgdef56
+                        time:   [11.475 ms 11.982 ms 13.039 ms]
+                        thrpt:  [19.634 Kelem/s 21.366 Kelem/s 22.309 Kelem/s]
+Found 2 outliers among 15 measurements (13.33%)
+  1 (6.67%) high mild
+  1 (6.67%) high severe
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Collecting 15 samples in estimated 5.5209 s (240 iterations)
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Analyzing
+mwpm_decode/sparse/d11_det720_avgdef104
+                        time:   [22.669 ms 22.713 ms 22.815 ms]
+                        thrpt:  [11.221 Kelem/s 11.271 Kelem/s 11.293 Kelem/s]
+Found 2 outliers among 15 measurements (13.33%)
+  2 (13.33%) high severe
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Collecting 10 samples in estimated 4.4073 s (110 iterations)
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Analyzing
+mwpm_decode/sparse/d13_det1176_avgdef169
+                        time:   [39.867 ms 39.897 ms 39.928 ms]
+                        thrpt:  [6.4115 Kelem/s 6.4165 Kelem/s 6.4213 Kelem/s]
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Warming up for 1.0000 s
+
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 3.9s or enable flat sampling.
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Collecting 10 samples in estimated 3.9071 s (55 iterations)
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Analyzing
+mwpm_decode/sparse/d15_det1792_avgdef264
+                        time:   [70.554 ms 71.788 ms 74.373 ms]
+                        thrpt:  [3.4421 Kelem/s 3.5661 Kelem/s 3.6284 Kelem/s]
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Warming up for 1.0000 s
+
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 6.0s or enable flat sampling.
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Collecting 10 samples in estimated 5.9905 s (55 iterations)
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Analyzing
+mwpm_decode/sparse/d17_det2592_avgdef383
+                        time:   [108.99 ms 112.53 ms 119.88 ms]
+                        thrpt:  [2.1354 Kelem/s 2.2750 Kelem/s 2.3488 Kelem/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+
+
+=== b0-i4-main.log ===
+Gnuplot not found, using plotters backend
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Collecting 15 samples in estimated 3.2335 s (600 iterations)
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Analyzing
+mwpm_decode/sparse/d7_det192_avgdef27
+                        time:   [5.3664 ms 5.3992 ms 5.4303 ms]
+                        thrpt:  [47.143 Kelem/s 47.415 Kelem/s 47.704 Kelem/s]
+Found 2 outliers among 15 measurements (13.33%)
+  1 (6.67%) high mild
+  1 (6.67%) high severe
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Collecting 15 samples in estimated 3.8588 s (240 iterations)
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Analyzing
+mwpm_decode/sparse/d9_det400_avgdef56
+                        time:   [13.830 ms 13.836 ms 13.843 ms]
+                        thrpt:  [18.493 Kelem/s 18.502 Kelem/s 18.510 Kelem/s]
+Found 1 outliers among 15 measurements (6.67%)
+  1 (6.67%) high severe
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Warming up for 1.0000 s
+
+Warning: Unable to complete 15 samples in 3.0s. You may wish to increase target time to 3.3s, enable flat sampling, or reduce sample count to 10.
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Collecting 15 samples in estimated 3.3432 s (120 iterations)
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Analyzing
+mwpm_decode/sparse/d11_det720_avgdef104
+                        time:   [27.489 ms 27.977 ms 28.568 ms]
+                        thrpt:  [8.9611 Kelem/s 9.1505 Kelem/s 9.3127 Kelem/s]
+Found 3 outliers among 15 measurements (20.00%)
+  1 (6.67%) high mild
+  2 (13.33%) high severe
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Collecting 10 samples in estimated 5.3268 s (110 iterations)
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Analyzing
+mwpm_decode/sparse/d13_det1176_avgdef169
+                        time:   [48.470 ms 48.732 ms 49.280 ms]
+                        thrpt:  [5.1948 Kelem/s 5.2533 Kelem/s 5.2816 Kelem/s]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Warming up for 1.0000 s
+
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 4.7s or enable flat sampling.
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Collecting 10 samples in estimated 4.7423 s (55 iterations)
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Analyzing
+mwpm_decode/sparse/d15_det1792_avgdef264
+                        time:   [85.435 ms 89.899 ms 95.762 ms]
+                        thrpt:  [2.6733 Kelem/s 2.8476 Kelem/s 2.9964 Kelem/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Collecting 10 samples in estimated 3.9683 s (30 iterations)
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Analyzing
+mwpm_decode/sparse/d17_det2592_avgdef383
+                        time:   [132.48 ms 138.09 ms 148.06 ms]
+                        thrpt:  [1.7291 Kelem/s 1.8538 Kelem/s 1.9323 Kelem/s]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+
+
+=== b0-i5-original.log ===
+Gnuplot not found, using plotters backend
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Collecting 15 samples in estimated 3.0014 s (480 iterations)
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Analyzing
+mwpm_decode/sparse/d7_det192_avgdef27
+                        time:   [6.1653 ms 6.6112 ms 7.3790 ms]
+                        thrpt:  [34.693 Kelem/s 38.722 Kelem/s 41.523 Kelem/s]
+Found 2 outliers among 15 measurements (13.33%)
+  2 (13.33%) high severe
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Collecting 15 samples in estimated 3.9461 s (240 iterations)
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Analyzing
+mwpm_decode/sparse/d9_det400_avgdef56
+                        time:   [16.502 ms 16.703 ms 16.934 ms]
+                        thrpt:  [15.118 Kelem/s 15.326 Kelem/s 15.513 Kelem/s]
+Found 1 outliers among 15 measurements (6.67%)
+  1 (6.67%) high severe
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Warming up for 1.0000 s
+
+Warning: Unable to complete 15 samples in 3.0s. You may wish to increase target time to 3.9s, enable flat sampling, or reduce sample count to 10.
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Collecting 15 samples in estimated 3.9161 s (120 iterations)
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Analyzing
+mwpm_decode/sparse/d11_det720_avgdef104
+                        time:   [32.746 ms 34.527 ms 37.508 ms]
+                        thrpt:  [6.8252 Kelem/s 7.4144 Kelem/s 7.8177 Kelem/s]
+Found 2 outliers among 15 measurements (13.33%)
+  2 (13.33%) high severe
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Warming up for 1.0000 s
+
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 3.1s or enable flat sampling.
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Collecting 10 samples in estimated 3.1117 s (55 iterations)
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Analyzing
+mwpm_decode/sparse/d13_det1176_avgdef169
+                        time:   [56.437 ms 56.898 ms 57.639 ms]
+                        thrpt:  [4.4414 Kelem/s 4.4993 Kelem/s 4.5360 Kelem/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Warming up for 1.0000 s
+
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 5.3s or enable flat sampling.
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Collecting 10 samples in estimated 5.3293 s (55 iterations)
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Analyzing
+mwpm_decode/sparse/d15_det1792_avgdef264
+                        time:   [97.445 ms 100.45 ms 106.47 ms]
+                        thrpt:  [2.4044 Kelem/s 2.5486 Kelem/s 2.6271 Kelem/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Collecting 10 samples in estimated 4.4511 s (30 iterations)
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Analyzing
+mwpm_decode/sparse/d17_det2592_avgdef383
+                        time:   [146.16 ms 151.53 ms 161.27 ms]
+                        thrpt:  [1.5874 Kelem/s 1.6894 Kelem/s 1.7516 Kelem/s]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+
+
+=== b1-i0-main.log ===
+Gnuplot not found, using plotters backend
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Collecting 15 samples in estimated 3.2108 s (600 iterations)
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Analyzing
+mwpm_decode/sparse/d7_det192_avgdef27
+                        time:   [5.3715 ms 5.7240 ms 6.2382 ms]
+                        thrpt:  [41.038 Kelem/s 44.724 Kelem/s 47.659 Kelem/s]
+Found 3 outliers among 15 measurements (20.00%)
+  3 (20.00%) high severe
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Collecting 15 samples in estimated 3.3279 s (240 iterations)
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Analyzing
+mwpm_decode/sparse/d9_det400_avgdef56
+                        time:   [13.832 ms 13.859 ms 13.887 ms]
+                        thrpt:  [18.435 Kelem/s 18.471 Kelem/s 18.508 Kelem/s]
+Found 2 outliers among 15 measurements (13.33%)
+  2 (13.33%) high mild
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Warming up for 1.0000 s
+
+Warning: Unable to complete 15 samples in 3.0s. You may wish to increase target time to 3.3s, enable flat sampling, or reduce sample count to 10.
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Collecting 15 samples in estimated 3.3282 s (120 iterations)
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Analyzing
+mwpm_decode/sparse/d11_det720_avgdef104
+                        time:   [27.489 ms 28.685 ms 31.634 ms]
+                        thrpt:  [8.0925 Kelem/s 8.9244 Kelem/s 9.3130 Kelem/s]
+Found 2 outliers among 15 measurements (13.33%)
+  1 (6.67%) high mild
+  1 (6.67%) high severe
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Collecting 10 samples in estimated 5.3342 s (110 iterations)
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Analyzing
+mwpm_decode/sparse/d13_det1176_avgdef169
+                        time:   [48.449 ms 50.312 ms 53.449 ms]
+                        thrpt:  [4.7897 Kelem/s 5.0883 Kelem/s 5.2840 Kelem/s]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Warming up for 1.0000 s
+
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 4.7s or enable flat sampling.
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Collecting 10 samples in estimated 4.7396 s (55 iterations)
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Analyzing
+mwpm_decode/sparse/d15_det1792_avgdef264
+                        time:   [85.339 ms 86.278 ms 89.157 ms]
+                        thrpt:  [2.8714 Kelem/s 2.9671 Kelem/s 2.9998 Kelem/s]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Collecting 10 samples in estimated 3.0892 s (20 iterations)
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Analyzing
+mwpm_decode/sparse/d17_det2592_avgdef383
+                        time:   [133.23 ms 135.85 ms 140.53 ms]
+                        thrpt:  [1.8217 Kelem/s 1.8845 Kelem/s 1.9214 Kelem/s]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+
+
+=== b1-i1-candidate.log ===
+Gnuplot not found, using plotters backend
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Collecting 15 samples in estimated 3.1876 s (720 iterations)
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Analyzing
+mwpm_decode/sparse/d7_det192_avgdef27
+                        time:   [4.4011 ms 4.4292 ms 4.4715 ms]
+                        thrpt:  [57.252 Kelem/s 57.799 Kelem/s 58.168 Kelem/s]
+Found 2 outliers among 15 measurements (13.33%)
+  2 (13.33%) high severe
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Collecting 15 samples in estimated 3.0426 s (240 iterations)
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Analyzing
+mwpm_decode/sparse/d9_det400_avgdef56
+                        time:   [11.504 ms 11.616 ms 11.819 ms]
+                        thrpt:  [21.660 Kelem/s 22.039 Kelem/s 22.252 Kelem/s]
+Found 2 outliers among 15 measurements (13.33%)
+  2 (13.33%) high severe
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Collecting 15 samples in estimated 5.4318 s (240 iterations)
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Analyzing
+mwpm_decode/sparse/d11_det720_avgdef104
+                        time:   [22.634 ms 23.529 ms 25.191 ms]
+                        thrpt:  [10.162 Kelem/s 10.880 Kelem/s 11.311 Kelem/s]
+Found 2 outliers among 15 measurements (13.33%)
+  2 (13.33%) high severe
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Collecting 10 samples in estimated 4.3843 s (110 iterations)
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Analyzing
+mwpm_decode/sparse/d13_det1176_avgdef169
+                        time:   [39.851 ms 40.045 ms 40.468 ms]
+                        thrpt:  [6.3260 Kelem/s 6.3927 Kelem/s 6.4239 Kelem/s]
+Found 3 outliers among 10 measurements (30.00%)
+  1 (10.00%) low mild
+  2 (20.00%) high severe
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Warming up for 1.0000 s
+
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 3.9s or enable flat sampling.
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Collecting 10 samples in estimated 3.8622 s (55 iterations)
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Analyzing
+mwpm_decode/sparse/d15_det1792_avgdef264
+                        time:   [70.157 ms 73.530 ms 79.786 ms]
+                        thrpt:  [3.2086 Kelem/s 3.4816 Kelem/s 3.6490 Kelem/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Warming up for 1.0000 s
+
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 6.0s or enable flat sampling.
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Collecting 10 samples in estimated 5.9768 s (55 iterations)
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Analyzing
+mwpm_decode/sparse/d17_det2592_avgdef383
+                        time:   [108.95 ms 111.19 ms 117.02 ms]
+                        thrpt:  [2.1876 Kelem/s 2.3023 Kelem/s 2.3498 Kelem/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+
+
+=== b1-i2-original.log ===
+Gnuplot not found, using plotters backend
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Collecting 15 samples in estimated 3.7011 s (600 iterations)
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Analyzing
+mwpm_decode/sparse/d7_det192_avgdef27
+                        time:   [6.2891 ms 6.5869 ms 7.0424 ms]
+                        thrpt:  [36.351 Kelem/s 38.865 Kelem/s 40.705 Kelem/s]
+Found 3 outliers among 15 measurements (20.00%)
+  1 (6.67%) high mild
+  2 (13.33%) high severe
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Collecting 15 samples in estimated 3.9622 s (240 iterations)
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Analyzing
+mwpm_decode/sparse/d9_det400_avgdef56
+                        time:   [16.544 ms 16.663 ms 16.858 ms]
+                        thrpt:  [15.186 Kelem/s 15.363 Kelem/s 15.474 Kelem/s]
+Found 3 outliers among 15 measurements (20.00%)
+  3 (20.00%) high severe
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Warming up for 1.0000 s
+
+Warning: Unable to complete 15 samples in 3.0s. You may wish to increase target time to 3.9s, enable flat sampling, or reduce sample count to 10.
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Collecting 15 samples in estimated 3.9406 s (120 iterations)
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Analyzing
+mwpm_decode/sparse/d11_det720_avgdef104
+                        time:   [32.846 ms 33.945 ms 35.905 ms]
+                        thrpt:  [7.1299 Kelem/s 7.5415 Kelem/s 7.7939 Kelem/s]
+Found 3 outliers among 15 measurements (20.00%)
+  3 (20.00%) high severe
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Warming up for 1.0000 s
+
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 3.1s or enable flat sampling.
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Collecting 10 samples in estimated 3.0709 s (55 iterations)
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Analyzing
+mwpm_decode/sparse/d13_det1176_avgdef169
+                        time:   [56.062 ms 60.292 ms 65.908 ms]
+                        thrpt:  [3.8842 Kelem/s 4.2460 Kelem/s 4.5664 Kelem/s]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Warming up for 1.0000 s
+
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 5.4s or enable flat sampling.
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Collecting 10 samples in estimated 5.3709 s (55 iterations)
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Analyzing
+mwpm_decode/sparse/d15_det1792_avgdef264
+                        time:   [96.730 ms 98.301 ms 103.47 ms]
+                        thrpt:  [2.4741 Kelem/s 2.6043 Kelem/s 2.6465 Kelem/s]
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Collecting 10 samples in estimated 3.3737 s (20 iterations)
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Analyzing
+mwpm_decode/sparse/d17_det2592_avgdef383
+                        time:   [147.10 ms 147.34 ms 147.63 ms]
+                        thrpt:  [1.7341 Kelem/s 1.7375 Kelem/s 1.7404 Kelem/s]
+
+
+=== b1-i3-original.log ===
+Gnuplot not found, using plotters backend
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Collecting 15 samples in estimated 3.0228 s (480 iterations)
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Analyzing
+mwpm_decode/sparse/d7_det192_avgdef27
+                        time:   [6.2505 ms 6.3085 ms 6.4198 ms]
+                        thrpt:  [39.877 Kelem/s 40.580 Kelem/s 40.956 Kelem/s]
+Found 3 outliers among 15 measurements (20.00%)
+  3 (20.00%) high severe
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Collecting 15 samples in estimated 4.0055 s (240 iterations)
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Analyzing
+mwpm_decode/sparse/d9_det400_avgdef56
+                        time:   [16.638 ms 17.591 ms 19.134 ms]
+                        thrpt:  [13.380 Kelem/s 14.553 Kelem/s 15.386 Kelem/s]
+Found 3 outliers among 15 measurements (20.00%)
+  3 (20.00%) high severe
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Warming up for 1.0000 s
+
+Warning: Unable to complete 15 samples in 3.0s. You may wish to increase target time to 3.9s, enable flat sampling, or reduce sample count to 10.
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Collecting 15 samples in estimated 3.9314 s (120 iterations)
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Analyzing
+mwpm_decode/sparse/d11_det720_avgdef104
+                        time:   [32.807 ms 33.258 ms 33.949 ms]
+                        thrpt:  [7.5406 Kelem/s 7.6974 Kelem/s 7.8033 Kelem/s]
+Found 2 outliers among 15 measurements (13.33%)
+  2 (13.33%) high severe
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Warming up for 1.0000 s
+
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 3.7s or enable flat sampling.
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Collecting 10 samples in estimated 3.6830 s (55 iterations)
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Analyzing
+mwpm_decode/sparse/d13_det1176_avgdef169
+                        time:   [56.416 ms 56.516 ms 56.690 ms]
+                        thrpt:  [4.5158 Kelem/s 4.5297 Kelem/s 4.5377 Kelem/s]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Warming up for 1.0000 s
+
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 5.3s or enable flat sampling.
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Collecting 10 samples in estimated 5.3405 s (55 iterations)
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Analyzing
+mwpm_decode/sparse/d15_det1792_avgdef264
+                        time:   [96.891 ms 97.283 ms 97.691 ms]
+                        thrpt:  [2.6205 Kelem/s 2.6315 Kelem/s 2.6421 Kelem/s]
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Collecting 10 samples in estimated 4.4268 s (30 iterations)
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Analyzing
+mwpm_decode/sparse/d17_det2592_avgdef383
+                        time:   [146.54 ms 146.80 ms 147.22 ms]
+                        thrpt:  [1.7389 Kelem/s 1.7439 Kelem/s 1.7470 Kelem/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+
+
+=== b1-i4-candidate.log ===
+Gnuplot not found, using plotters backend
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Collecting 15 samples in estimated 3.1747 s (720 iterations)
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Analyzing
+mwpm_decode/sparse/d7_det192_avgdef27
+                        time:   [4.4060 ms 4.4137 ms 4.4284 ms]
+                        thrpt:  [57.809 Kelem/s 58.001 Kelem/s 58.103 Kelem/s]
+Found 2 outliers among 15 measurements (13.33%)
+  2 (13.33%) high severe
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Collecting 15 samples in estimated 4.2007 s (360 iterations)
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Analyzing
+mwpm_decode/sparse/d9_det400_avgdef56
+                        time:   [11.507 ms 12.018 ms 13.064 ms]
+                        thrpt:  [19.596 Kelem/s 21.302 Kelem/s 22.248 Kelem/s]
+Found 2 outliers among 15 measurements (13.33%)
+  2 (13.33%) high severe
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Collecting 15 samples in estimated 5.4770 s (240 iterations)
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Analyzing
+mwpm_decode/sparse/d11_det720_avgdef104
+                        time:   [22.746 ms 22.847 ms 23.034 ms]
+                        thrpt:  [11.114 Kelem/s 11.205 Kelem/s 11.255 Kelem/s]
+Found 3 outliers among 15 measurements (20.00%)
+  3 (20.00%) high severe
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Collecting 10 samples in estimated 4.4373 s (110 iterations)
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Analyzing
+mwpm_decode/sparse/d13_det1176_avgdef169
+                        time:   [40.061 ms 40.126 ms 40.239 ms]
+                        thrpt:  [6.3620 Kelem/s 6.3800 Kelem/s 6.3903 Kelem/s]
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) low mild
+  1 (10.00%) high severe
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Warming up for 1.0000 s
+
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 3.9s or enable flat sampling.
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Collecting 10 samples in estimated 3.8740 s (55 iterations)
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Analyzing
+mwpm_decode/sparse/d15_det1792_avgdef264
+                        time:   [70.333 ms 70.759 ms 71.364 ms]
+                        thrpt:  [3.5873 Kelem/s 3.6179 Kelem/s 3.6398 Kelem/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Collecting 10 samples in estimated 3.3435 s (30 iterations)
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Analyzing
+mwpm_decode/sparse/d17_det2592_avgdef383
+                        time:   [110.23 ms 110.52 ms 110.91 ms]
+                        thrpt:  [2.3082 Kelem/s 2.3163 Kelem/s 2.3223 Kelem/s]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+
+
+=== b1-i5-main.log ===
+Gnuplot not found, using plotters backend
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Collecting 15 samples in estimated 3.2502 s (600 iterations)
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Analyzing
+mwpm_decode/sparse/d7_det192_avgdef27
+                        time:   [5.3259 ms 5.3286 ms 5.3312 ms]
+                        thrpt:  [48.019 Kelem/s 48.043 Kelem/s 48.067 Kelem/s]
+Found 1 outliers among 15 measurements (6.67%)
+  1 (6.67%) high severe
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Collecting 15 samples in estimated 3.3268 s (240 iterations)
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Analyzing
+mwpm_decode/sparse/d9_det400_avgdef56
+                        time:   [13.816 ms 14.492 ms 15.952 ms]
+                        thrpt:  [16.048 Kelem/s 17.665 Kelem/s 18.530 Kelem/s]
+Found 3 outliers among 15 measurements (20.00%)
+  1 (6.67%) high mild
+  2 (13.33%) high severe
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Warming up for 1.0000 s
+
+Warning: Unable to complete 15 samples in 3.0s. You may wish to increase target time to 3.3s, enable flat sampling, or reduce sample count to 10.
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Collecting 15 samples in estimated 3.2989 s (120 iterations)
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Analyzing
+mwpm_decode/sparse/d11_det720_avgdef104
+                        time:   [27.446 ms 27.609 ms 27.922 ms]
+                        thrpt:  [9.1683 Kelem/s 9.2725 Kelem/s 9.3275 Kelem/s]
+Found 1 outliers among 15 measurements (6.67%)
+  1 (6.67%) high severe
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Collecting 10 samples in estimated 5.3322 s (110 iterations)
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Analyzing
+mwpm_decode/sparse/d13_det1176_avgdef169
+                        time:   [48.430 ms 48.697 ms 49.002 ms]
+                        thrpt:  [5.2243 Kelem/s 5.2570 Kelem/s 5.2860 Kelem/s]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Warming up for 1.0000 s
+
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 4.7s or enable flat sampling.
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Collecting 10 samples in estimated 4.7239 s (55 iterations)
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Analyzing
+mwpm_decode/sparse/d15_det1792_avgdef264
+                        time:   [85.542 ms 90.217 ms 96.087 ms]
+                        thrpt:  [2.6643 Kelem/s 2.8376 Kelem/s 2.9927 Kelem/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Collecting 10 samples in estimated 4.0223 s (30 iterations)
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Analyzing
+mwpm_decode/sparse/d17_det2592_avgdef383
+                        time:   [132.57 ms 138.21 ms 147.62 ms]
+                        thrpt:  [1.7342 Kelem/s 1.8522 Kelem/s 1.9311 Kelem/s]
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+
+
+=== b2-i0-candidate.log ===
+Gnuplot not found, using plotters backend
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Collecting 15 samples in estimated 3.1840 s (720 iterations)
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Analyzing
+mwpm_decode/sparse/d7_det192_avgdef27
+                        time:   [4.4199 ms 4.4813 ms 4.5564 ms]
+                        thrpt:  [56.185 Kelem/s 57.126 Kelem/s 57.919 Kelem/s]
+Found 3 outliers among 15 measurements (20.00%)
+  3 (20.00%) high severe
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Collecting 15 samples in estimated 4.1699 s (360 iterations)
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Analyzing
+mwpm_decode/sparse/d9_det400_avgdef56
+                        time:   [11.460 ms 11.678 ms 12.101 ms]
+                        thrpt:  [21.155 Kelem/s 21.922 Kelem/s 22.339 Kelem/s]
+Found 3 outliers among 15 measurements (20.00%)
+  3 (20.00%) high severe
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Collecting 15 samples in estimated 5.5290 s (240 iterations)
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Analyzing
+mwpm_decode/sparse/d11_det720_avgdef104
+                        time:   [22.735 ms 23.606 ms 25.100 ms]
+                        thrpt:  [10.199 Kelem/s 10.845 Kelem/s 11.260 Kelem/s]
+Found 2 outliers among 15 measurements (13.33%)
+  1 (6.67%) high mild
+  1 (6.67%) high severe
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Collecting 10 samples in estimated 4.4104 s (110 iterations)
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Analyzing
+mwpm_decode/sparse/d13_det1176_avgdef169
+                        time:   [39.972 ms 40.205 ms 40.740 ms]
+                        thrpt:  [6.2838 Kelem/s 6.3674 Kelem/s 6.4045 Kelem/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Warming up for 1.0000 s
+
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 3.9s or enable flat sampling.
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Collecting 10 samples in estimated 3.8690 s (55 iterations)
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Analyzing
+mwpm_decode/sparse/d15_det1792_avgdef264
+                        time:   [70.379 ms 73.462 ms 77.815 ms]
+                        thrpt:  [3.2898 Kelem/s 3.4848 Kelem/s 3.6375 Kelem/s]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Warming up for 1.0000 s
+
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 6.0s or enable flat sampling.
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Collecting 10 samples in estimated 5.9939 s (55 iterations)
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Analyzing
+mwpm_decode/sparse/d17_det2592_avgdef383
+                        time:   [109.51 ms 112.11 ms 117.59 ms]
+                        thrpt:  [2.1771 Kelem/s 2.2834 Kelem/s 2.3376 Kelem/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+
+
+=== b2-i1-original.log ===
+Gnuplot not found, using plotters backend
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Collecting 15 samples in estimated 3.6949 s (600 iterations)
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Analyzing
+mwpm_decode/sparse/d7_det192_avgdef27
+                        time:   [6.2494 ms 6.5165 ms 7.0793 ms]
+                        thrpt:  [36.162 Kelem/s 39.285 Kelem/s 40.964 Kelem/s]
+Found 3 outliers among 15 measurements (20.00%)
+  3 (20.00%) high severe
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Collecting 15 samples in estimated 3.9570 s (240 iterations)
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Analyzing
+mwpm_decode/sparse/d9_det400_avgdef56
+                        time:   [16.470 ms 16.624 ms 16.804 ms]
+                        thrpt:  [15.235 Kelem/s 15.399 Kelem/s 15.544 Kelem/s]
+Found 3 outliers among 15 measurements (20.00%)
+  3 (20.00%) high severe
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Warming up for 1.0000 s
+
+Warning: Unable to complete 15 samples in 3.0s. You may wish to increase target time to 3.9s, enable flat sampling, or reduce sample count to 10.
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Collecting 15 samples in estimated 3.9275 s (120 iterations)
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Analyzing
+mwpm_decode/sparse/d11_det720_avgdef104
+                        time:   [33.186 ms 34.192 ms 35.997 ms]
+                        thrpt:  [7.1116 Kelem/s 7.4870 Kelem/s 7.7142 Kelem/s]
+Found 1 outliers among 15 measurements (6.67%)
+  1 (6.67%) high severe
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Warming up for 1.0000 s
+
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 3.1s or enable flat sampling.
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Collecting 10 samples in estimated 3.1166 s (55 iterations)
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Analyzing
+mwpm_decode/sparse/d13_det1176_avgdef169
+                        time:   [56.616 ms 60.388 ms 66.620 ms]
+                        thrpt:  [3.8427 Kelem/s 4.2393 Kelem/s 4.5217 Kelem/s]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Warming up for 1.0000 s
+
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 5.4s or enable flat sampling.
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Collecting 10 samples in estimated 5.4470 s (55 iterations)
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Analyzing
+mwpm_decode/sparse/d15_det1792_avgdef264
+                        time:   [96.860 ms 98.054 ms 99.664 ms]
+                        thrpt:  [2.5686 Kelem/s 2.6108 Kelem/s 2.6430 Kelem/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Collecting 10 samples in estimated 3.0698 s (20 iterations)
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Analyzing
+mwpm_decode/sparse/d17_det2592_avgdef383
+                        time:   [147.40 ms 147.51 ms 147.63 ms]
+                        thrpt:  [1.7341 Kelem/s 1.7355 Kelem/s 1.7368 Kelem/s]
+
+
+=== b2-i2-main.log ===
+Gnuplot not found, using plotters backend
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Collecting 15 samples in estimated 3.2060 s (600 iterations)
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Analyzing
+mwpm_decode/sparse/d7_det192_avgdef27
+                        time:   [5.3482 ms 5.3864 ms 5.4607 ms]
+                        thrpt:  [46.880 Kelem/s 47.527 Kelem/s 47.867 Kelem/s]
+Found 1 outliers among 15 measurements (6.67%)
+  1 (6.67%) high mild
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Collecting 15 samples in estimated 3.3390 s (240 iterations)
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Analyzing
+mwpm_decode/sparse/d9_det400_avgdef56
+                        time:   [13.858 ms 14.463 ms 15.542 ms]
+                        thrpt:  [16.471 Kelem/s 17.701 Kelem/s 18.473 Kelem/s]
+Found 2 outliers among 15 measurements (13.33%)
+  2 (13.33%) high severe
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Warming up for 1.0000 s
+
+Warning: Unable to complete 15 samples in 3.0s. You may wish to increase target time to 3.3s, enable flat sampling, or reduce sample count to 10.
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Collecting 15 samples in estimated 3.3286 s (120 iterations)
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Analyzing
+mwpm_decode/sparse/d11_det720_avgdef104
+                        time:   [27.527 ms 27.937 ms 28.352 ms]
+                        thrpt:  [9.0294 Kelem/s 9.1633 Kelem/s 9.3000 Kelem/s]
+Found 3 outliers among 15 measurements (20.00%)
+  1 (6.67%) low mild
+  2 (13.33%) high severe
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Collecting 10 samples in estimated 5.3261 s (110 iterations)
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Analyzing
+mwpm_decode/sparse/d13_det1176_avgdef169
+                        time:   [48.413 ms 48.699 ms 49.138 ms]
+                        thrpt:  [5.2098 Kelem/s 5.2568 Kelem/s 5.2878 Kelem/s]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Warming up for 1.0000 s
+
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 4.7s or enable flat sampling.
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Collecting 10 samples in estimated 4.7034 s (55 iterations)
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Analyzing
+mwpm_decode/sparse/d15_det1792_avgdef264
+                        time:   [85.537 ms 89.619 ms 95.025 ms]
+                        thrpt:  [2.6940 Kelem/s 2.8565 Kelem/s 2.9929 Kelem/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Collecting 10 samples in estimated 3.9805 s (30 iterations)
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Analyzing
+mwpm_decode/sparse/d17_det2592_avgdef383
+                        time:   [132.87 ms 138.23 ms 148.44 ms]
+                        thrpt:  [1.7246 Kelem/s 1.8520 Kelem/s 1.9268 Kelem/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+
+
+=== b2-i3-main.log ===
+Gnuplot not found, using plotters backend
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Collecting 15 samples in estimated 3.2635 s (600 iterations)
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Analyzing
+mwpm_decode/sparse/d7_det192_avgdef27
+                        time:   [5.3663 ms 5.4073 ms 5.4695 ms]
+                        thrpt:  [46.805 Kelem/s 47.343 Kelem/s 47.705 Kelem/s]
+Found 3 outliers among 15 measurements (20.00%)
+  1 (6.67%) high mild
+  2 (13.33%) high severe
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Collecting 15 samples in estimated 3.3705 s (240 iterations)
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Analyzing
+mwpm_decode/sparse/d9_det400_avgdef56
+                        time:   [13.881 ms 14.287 ms 15.149 ms]
+                        thrpt:  [16.899 Kelem/s 17.919 Kelem/s 18.442 Kelem/s]
+Found 3 outliers among 15 measurements (20.00%)
+  1 (6.67%) high mild
+  2 (13.33%) high severe
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Warming up for 1.0000 s
+
+Warning: Unable to complete 15 samples in 3.0s. You may wish to increase target time to 3.4s, enable flat sampling, or reduce sample count to 10.
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Collecting 15 samples in estimated 3.3821 s (120 iterations)
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Analyzing
+mwpm_decode/sparse/d11_det720_avgdef104
+                        time:   [27.573 ms 27.629 ms 27.741 ms]
+                        thrpt:  [9.2282 Kelem/s 9.2657 Kelem/s 9.2844 Kelem/s]
+Found 2 outliers among 15 measurements (13.33%)
+  1 (6.67%) high mild
+  1 (6.67%) high severe
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Collecting 10 samples in estimated 5.3542 s (110 iterations)
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Analyzing
+mwpm_decode/sparse/d13_det1176_avgdef169
+                        time:   [48.408 ms 48.636 ms 48.959 ms]
+                        thrpt:  [5.2289 Kelem/s 5.2635 Kelem/s 5.2884 Kelem/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Warming up for 1.0000 s
+
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 4.7s or enable flat sampling.
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Collecting 10 samples in estimated 4.7060 s (55 iterations)
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Analyzing
+mwpm_decode/sparse/d15_det1792_avgdef264
+                        time:   [85.404 ms 89.043 ms 95.142 ms]
+                        thrpt:  [2.6907 Kelem/s 2.8750 Kelem/s 2.9975 Kelem/s]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Collecting 10 samples in estimated 4.0148 s (30 iterations)
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Analyzing
+mwpm_decode/sparse/d17_det2592_avgdef383
+                        time:   [132.90 ms 137.98 ms 144.82 ms]
+                        thrpt:  [1.7677 Kelem/s 1.8553 Kelem/s 1.9262 Kelem/s]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+
+
+=== b2-i4-original.log ===
+Gnuplot not found, using plotters backend
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Collecting 15 samples in estimated 3.7441 s (600 iterations)
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Analyzing
+mwpm_decode/sparse/d7_det192_avgdef27
+                        time:   [6.2418 ms 6.2473 ms 6.2546 ms]
+                        thrpt:  [40.930 Kelem/s 40.977 Kelem/s 41.014 Kelem/s]
+Found 4 outliers among 15 measurements (26.67%)
+  1 (6.67%) low mild
+  2 (13.33%) high mild
+  1 (6.67%) high severe
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Collecting 15 samples in estimated 4.4508 s (240 iterations)
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Analyzing
+mwpm_decode/sparse/d9_det400_avgdef56
+                        time:   [16.533 ms 16.561 ms 16.615 ms]
+                        thrpt:  [15.408 Kelem/s 15.458 Kelem/s 15.484 Kelem/s]
+Found 2 outliers among 15 measurements (13.33%)
+  1 (6.67%) high mild
+  1 (6.67%) high severe
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Warming up for 1.0000 s
+
+Warning: Unable to complete 15 samples in 3.0s. You may wish to increase target time to 4.0s, enable flat sampling, or reduce sample count to 10.
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Collecting 15 samples in estimated 3.9933 s (120 iterations)
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Analyzing
+mwpm_decode/sparse/d11_det720_avgdef104
+                        time:   [32.815 ms 34.837 ms 37.848 ms]
+                        thrpt:  [6.7639 Kelem/s 7.3486 Kelem/s 7.8014 Kelem/s]
+Found 3 outliers among 15 measurements (20.00%)
+  1 (6.67%) high mild
+  2 (13.33%) high severe
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Warming up for 1.0000 s
+
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 3.1s or enable flat sampling.
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Collecting 10 samples in estimated 3.1413 s (55 iterations)
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Analyzing
+mwpm_decode/sparse/d13_det1176_avgdef169
+                        time:   [56.119 ms 56.163 ms 56.236 ms]
+                        thrpt:  [4.5522 Kelem/s 4.5582 Kelem/s 4.5617 Kelem/s]
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Warming up for 1.0000 s
+
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 5.3s or enable flat sampling.
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Collecting 10 samples in estimated 5.3375 s (55 iterations)
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Analyzing
+mwpm_decode/sparse/d15_det1792_avgdef264
+                        time:   [97.591 ms 100.88 ms 106.61 ms]
+                        thrpt:  [2.4013 Kelem/s 2.5377 Kelem/s 2.6232 Kelem/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Collecting 10 samples in estimated 4.4816 s (30 iterations)
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Analyzing
+mwpm_decode/sparse/d17_det2592_avgdef383
+                        time:   [147.16 ms 152.70 ms 162.91 ms]
+                        thrpt:  [1.5714 Kelem/s 1.6765 Kelem/s 1.7396 Kelem/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+
+
+=== b2-i5-candidate.log ===
+Gnuplot not found, using plotters backend
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Collecting 15 samples in estimated 3.3170 s (720 iterations)
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Analyzing
+mwpm_decode/sparse/d7_det192_avgdef27
+                        time:   [4.4637 ms 4.7936 ms 5.3103 ms]
+                        thrpt:  [48.208 Kelem/s 53.405 Kelem/s 57.351 Kelem/s]
+Found 2 outliers among 15 measurements (13.33%)
+  2 (13.33%) high severe
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Collecting 15 samples in estimated 4.1475 s (360 iterations)
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Analyzing
+mwpm_decode/sparse/d9_det400_avgdef56
+                        time:   [11.505 ms 11.565 ms 11.647 ms]
+                        thrpt:  [21.980 Kelem/s 22.137 Kelem/s 22.250 Kelem/s]
+Found 1 outliers among 15 measurements (6.67%)
+  1 (6.67%) high severe
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Collecting 15 samples in estimated 5.5079 s (240 iterations)
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Analyzing
+mwpm_decode/sparse/d11_det720_avgdef104
+                        time:   [22.798 ms 23.407 ms 24.648 ms]
+                        thrpt:  [10.386 Kelem/s 10.937 Kelem/s 11.229 Kelem/s]
+Found 3 outliers among 15 measurements (20.00%)
+  3 (20.00%) high severe
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Collecting 10 samples in estimated 4.4281 s (110 iterations)
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Analyzing
+mwpm_decode/sparse/d13_det1176_avgdef169
+                        time:   [40.000 ms 41.392 ms 44.685 ms]
+                        thrpt:  [5.7290 Kelem/s 6.1847 Kelem/s 6.3999 Kelem/s]
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Warming up for 1.0000 s
+
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 4.5s or enable flat sampling.
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Collecting 10 samples in estimated 4.4875 s (55 iterations)
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Analyzing
+mwpm_decode/sparse/d15_det1792_avgdef264
+                        time:   [70.673 ms 71.287 ms 71.766 ms]
+                        thrpt:  [3.5671 Kelem/s 3.5911 Kelem/s 3.6223 Kelem/s]
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Collecting 10 samples in estimated 3.5755 s (30 iterations)
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Analyzing
+mwpm_decode/sparse/d17_det2592_avgdef383
+                        time:   [109.26 ms 110.28 ms 111.70 ms]
+                        thrpt:  [2.2918 Kelem/s 2.3214 Kelem/s 2.3430 Kelem/s]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+
+
+=== b3-i0-original.log ===
+Gnuplot not found, using plotters backend
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Collecting 15 samples in estimated 3.6900 s (600 iterations)
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Analyzing
+mwpm_decode/sparse/d7_det192_avgdef27
+                        time:   [6.1358 ms 6.4129 ms 6.8429 ms]
+                        thrpt:  [37.411 Kelem/s 39.919 Kelem/s 41.722 Kelem/s]
+Found 3 outliers among 15 measurements (20.00%)
+  3 (20.00%) high severe
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Collecting 15 samples in estimated 3.9791 s (240 iterations)
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Analyzing
+mwpm_decode/sparse/d9_det400_avgdef56
+                        time:   [16.605 ms 16.744 ms 16.911 ms]
+                        thrpt:  [15.138 Kelem/s 15.289 Kelem/s 15.417 Kelem/s]
+Found 2 outliers among 15 measurements (13.33%)
+  1 (6.67%) high mild
+  1 (6.67%) high severe
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Warming up for 1.0000 s
+
+Warning: Unable to complete 15 samples in 3.0s. You may wish to increase target time to 4.0s, enable flat sampling, or reduce sample count to 10.
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Collecting 15 samples in estimated 3.9557 s (120 iterations)
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Analyzing
+mwpm_decode/sparse/d11_det720_avgdef104
+                        time:   [33.071 ms 34.418 ms 37.120 ms]
+                        thrpt:  [6.8965 Kelem/s 7.4380 Kelem/s 7.7410 Kelem/s]
+Found 2 outliers among 15 measurements (13.33%)
+  2 (13.33%) high severe
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Warming up for 1.0000 s
+
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 3.1s or enable flat sampling.
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Collecting 10 samples in estimated 3.1097 s (55 iterations)
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Analyzing
+mwpm_decode/sparse/d13_det1176_avgdef169
+                        time:   [56.626 ms 61.160 ms 66.575 ms]
+                        thrpt:  [3.8453 Kelem/s 4.1857 Kelem/s 4.5209 Kelem/s]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Warming up for 1.0000 s
+
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 5.3s or enable flat sampling.
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Collecting 10 samples in estimated 5.2998 s (55 iterations)
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Analyzing
+mwpm_decode/sparse/d15_det1792_avgdef264
+                        time:   [96.459 ms 97.893 ms 101.50 ms]
+                        thrpt:  [2.5222 Kelem/s 2.6151 Kelem/s 2.6540 Kelem/s]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Collecting 10 samples in estimated 4.4112 s (30 iterations)
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Analyzing
+mwpm_decode/sparse/d17_det2592_avgdef383
+                        time:   [147.04 ms 148.45 ms 150.43 ms]
+                        thrpt:  [1.7018 Kelem/s 1.7244 Kelem/s 1.7410 Kelem/s]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+
+
+=== b3-i1-main.log ===
+Gnuplot not found, using plotters backend
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Collecting 15 samples in estimated 3.2794 s (600 iterations)
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Analyzing
+mwpm_decode/sparse/d7_det192_avgdef27
+                        time:   [5.3489 ms 5.3514 ms 5.3556 ms]
+                        thrpt:  [47.800 Kelem/s 47.838 Kelem/s 47.860 Kelem/s]
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Collecting 15 samples in estimated 3.3686 s (240 iterations)
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Analyzing
+mwpm_decode/sparse/d9_det400_avgdef56
+                        time:   [13.914 ms 14.268 ms 15.014 ms]
+                        thrpt:  [17.051 Kelem/s 17.943 Kelem/s 18.399 Kelem/s]
+Found 3 outliers among 15 measurements (20.00%)
+  1 (6.67%) high mild
+  2 (13.33%) high severe
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Warming up for 1.0000 s
+
+Warning: Unable to complete 15 samples in 3.0s. You may wish to increase target time to 3.3s, enable flat sampling, or reduce sample count to 10.
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Collecting 15 samples in estimated 3.2988 s (120 iterations)
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Analyzing
+mwpm_decode/sparse/d11_det720_avgdef104
+                        time:   [27.498 ms 27.977 ms 28.836 ms]
+                        thrpt:  [8.8777 Kelem/s 9.1505 Kelem/s 9.3097 Kelem/s]
+Found 1 outliers among 15 measurements (6.67%)
+  1 (6.67%) high severe
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Collecting 10 samples in estimated 5.4072 s (110 iterations)
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Analyzing
+mwpm_decode/sparse/d13_det1176_avgdef169
+                        time:   [48.426 ms 48.635 ms 48.988 ms]
+                        thrpt:  [5.2258 Kelem/s 5.2637 Kelem/s 5.2864 Kelem/s]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Warming up for 1.0000 s
+
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 4.8s or enable flat sampling.
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Collecting 10 samples in estimated 4.7561 s (55 iterations)
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Analyzing
+mwpm_decode/sparse/d15_det1792_avgdef264
+                        time:   [85.569 ms 89.151 ms 95.083 ms]
+                        thrpt:  [2.6924 Kelem/s 2.8715 Kelem/s 2.9917 Kelem/s]
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Collecting 10 samples in estimated 4.0219 s (30 iterations)
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Analyzing
+mwpm_decode/sparse/d17_det2592_avgdef383
+                        time:   [132.72 ms 138.45 ms 148.45 ms]
+                        thrpt:  [1.7245 Kelem/s 1.8490 Kelem/s 1.9289 Kelem/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+
+
+=== b3-i2-candidate.log ===
+Gnuplot not found, using plotters backend
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Collecting 15 samples in estimated 3.2877 s (720 iterations)
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Analyzing
+mwpm_decode/sparse/d7_det192_avgdef27
+                        time:   [4.4966 ms 4.5156 ms 4.5442 ms]
+                        thrpt:  [56.336 Kelem/s 56.692 Kelem/s 56.931 Kelem/s]
+Found 2 outliers among 15 measurements (13.33%)
+  2 (13.33%) high mild
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Collecting 15 samples in estimated 3.0347 s (240 iterations)
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Analyzing
+mwpm_decode/sparse/d9_det400_avgdef56
+                        time:   [11.528 ms 11.556 ms 11.594 ms]
+                        thrpt:  [22.080 Kelem/s 22.152 Kelem/s 22.207 Kelem/s]
+Found 1 outliers among 15 measurements (6.67%)
+  1 (6.67%) high mild
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Collecting 15 samples in estimated 5.4669 s (240 iterations)
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Analyzing
+mwpm_decode/sparse/d11_det720_avgdef104
+                        time:   [22.789 ms 23.702 ms 25.188 ms]
+                        thrpt:  [10.164 Kelem/s 10.801 Kelem/s 11.233 Kelem/s]
+Found 3 outliers among 15 measurements (20.00%)
+  3 (20.00%) high severe
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Collecting 10 samples in estimated 4.3973 s (110 iterations)
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Analyzing
+mwpm_decode/sparse/d13_det1176_avgdef169
+                        time:   [39.960 ms 40.337 ms 41.071 ms]
+                        thrpt:  [6.2331 Kelem/s 6.3466 Kelem/s 6.4064 Kelem/s]
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Warming up for 1.0000 s
+
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 3.9s or enable flat sampling.
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Collecting 10 samples in estimated 3.8750 s (55 iterations)
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Analyzing
+mwpm_decode/sparse/d15_det1792_avgdef264
+                        time:   [70.416 ms 74.184 ms 80.314 ms]
+                        thrpt:  [3.1875 Kelem/s 3.4509 Kelem/s 3.6355 Kelem/s]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Collecting 10 samples in estimated 3.2912 s (30 iterations)
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Analyzing
+mwpm_decode/sparse/d17_det2592_avgdef383
+                        time:   [110.20 ms 115.48 ms 123.04 ms]
+                        thrpt:  [2.0805 Kelem/s 2.2168 Kelem/s 2.3231 Kelem/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+
+
+=== b3-i3-candidate.log ===
+Gnuplot not found, using plotters backend
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Collecting 15 samples in estimated 3.0437 s (600 iterations)
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Analyzing
+mwpm_decode/sparse/d7_det192_avgdef27
+                        time:   [4.3948 ms 4.4199 ms 4.4559 ms]
+                        thrpt:  [57.452 Kelem/s 57.920 Kelem/s 58.251 Kelem/s]
+Found 1 outliers among 15 measurements (6.67%)
+  1 (6.67%) high severe
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Collecting 15 samples in estimated 4.1337 s (360 iterations)
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Analyzing
+mwpm_decode/sparse/d9_det400_avgdef56
+                        time:   [11.489 ms 11.512 ms 11.556 ms]
+                        thrpt:  [22.153 Kelem/s 22.238 Kelem/s 22.283 Kelem/s]
+Found 1 outliers among 15 measurements (6.67%)
+  1 (6.67%) high severe
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Warming up for 1.0000 s
+
+Warning: Unable to complete 15 samples in 3.0s. You may wish to increase target time to 3.0s, enable flat sampling, or reduce sample count to 10.
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Collecting 15 samples in estimated 3.0007 s (120 iterations)
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Analyzing
+mwpm_decode/sparse/d11_det720_avgdef104
+                        time:   [22.666 ms 22.809 ms 23.139 ms]
+                        thrpt:  [11.064 Kelem/s 11.223 Kelem/s 11.295 Kelem/s]
+Found 2 outliers among 15 measurements (13.33%)
+  2 (13.33%) high severe
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Collecting 10 samples in estimated 4.4313 s (110 iterations)
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Analyzing
+mwpm_decode/sparse/d13_det1176_avgdef169
+                        time:   [40.482 ms 42.158 ms 44.790 ms]
+                        thrpt:  [5.7156 Kelem/s 6.0724 Kelem/s 6.3237 Kelem/s]
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Warming up for 1.0000 s
+
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 4.2s or enable flat sampling.
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Collecting 10 samples in estimated 4.1540 s (55 iterations)
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Analyzing
+mwpm_decode/sparse/d15_det1792_avgdef264
+                        time:   [70.658 ms 71.238 ms 72.080 ms]
+                        thrpt:  [3.5516 Kelem/s 3.5936 Kelem/s 3.6231 Kelem/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Collecting 10 samples in estimated 3.5717 s (30 iterations)
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Analyzing
+mwpm_decode/sparse/d17_det2592_avgdef383
+                        time:   [108.94 ms 109.00 ms 109.07 ms]
+                        thrpt:  [2.3472 Kelem/s 2.3485 Kelem/s 2.3499 Kelem/s]
+
+
+=== b3-i4-main.log ===
+Gnuplot not found, using plotters backend
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Collecting 15 samples in estimated 3.2147 s (600 iterations)
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Analyzing
+mwpm_decode/sparse/d7_det192_avgdef27
+                        time:   [5.3356 ms 5.6945 ms 6.3010 ms]
+                        thrpt:  [40.628 Kelem/s 44.956 Kelem/s 47.979 Kelem/s]
+Found 1 outliers among 15 measurements (6.67%)
+  1 (6.67%) high severe
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Collecting 15 samples in estimated 3.3549 s (240 iterations)
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Analyzing
+mwpm_decode/sparse/d9_det400_avgdef56
+                        time:   [13.812 ms 13.826 ms 13.843 ms]
+                        thrpt:  [18.493 Kelem/s 18.516 Kelem/s 18.534 Kelem/s]
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Warming up for 1.0000 s
+
+Warning: Unable to complete 15 samples in 3.0s. You may wish to increase target time to 3.3s, enable flat sampling, or reduce sample count to 10.
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Collecting 15 samples in estimated 3.3233 s (120 iterations)
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Analyzing
+mwpm_decode/sparse/d11_det720_avgdef104
+                        time:   [27.456 ms 29.084 ms 32.310 ms]
+                        thrpt:  [7.9233 Kelem/s 8.8021 Kelem/s 9.3241 Kelem/s]
+Found 3 outliers among 15 measurements (20.00%)
+  3 (20.00%) high severe
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Collecting 10 samples in estimated 5.4480 s (110 iterations)
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Analyzing
+mwpm_decode/sparse/d13_det1176_avgdef169
+                        time:   [48.349 ms 50.118 ms 51.389 ms]
+                        thrpt:  [4.9816 Kelem/s 5.1079 Kelem/s 5.2949 Kelem/s]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Warming up for 1.0000 s
+
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 4.7s or enable flat sampling.
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Collecting 10 samples in estimated 4.7118 s (55 iterations)
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Analyzing
+mwpm_decode/sparse/d15_det1792_avgdef264
+                        time:   [85.416 ms 87.019 ms 90.452 ms]
+                        thrpt:  [2.8302 Kelem/s 2.9419 Kelem/s 2.9971 Kelem/s]
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Collecting 10 samples in estimated 4.3142 s (30 iterations)
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Analyzing
+mwpm_decode/sparse/d17_det2592_avgdef383
+                        time:   [133.86 ms 135.35 ms 137.00 ms]
+                        thrpt:  [1.8686 Kelem/s 1.8914 Kelem/s 1.9125 Kelem/s]
+
+
+=== b3-i5-original.log ===
+Gnuplot not found, using plotters backend
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Collecting 15 samples in estimated 3.0063 s (480 iterations)
+Benchmarking mwpm_decode/sparse/d7_det192_avgdef27: Analyzing
+mwpm_decode/sparse/d7_det192_avgdef27
+                        time:   [6.1973 ms 6.4936 ms 7.1968 ms]
+                        thrpt:  [35.571 Kelem/s 39.423 Kelem/s 41.308 Kelem/s]
+Found 2 outliers among 15 measurements (13.33%)
+  2 (13.33%) high severe
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Collecting 15 samples in estimated 3.9911 s (240 iterations)
+Benchmarking mwpm_decode/sparse/d9_det400_avgdef56: Analyzing
+mwpm_decode/sparse/d9_det400_avgdef56
+                        time:   [16.642 ms 16.774 ms 16.927 ms]
+                        thrpt:  [15.123 Kelem/s 15.261 Kelem/s 15.383 Kelem/s]
+Found 1 outliers among 15 measurements (6.67%)
+  1 (6.67%) high mild
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Warming up for 1.0000 s
+
+Warning: Unable to complete 15 samples in 3.0s. You may wish to increase target time to 3.9s, enable flat sampling, or reduce sample count to 10.
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Collecting 15 samples in estimated 3.9151 s (120 iterations)
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Analyzing
+mwpm_decode/sparse/d11_det720_avgdef104
+                        time:   [32.641 ms 33.775 ms 36.325 ms]
+                        thrpt:  [7.0475 Kelem/s 7.5795 Kelem/s 7.8429 Kelem/s]
+Found 3 outliers among 15 measurements (20.00%)
+  1 (6.67%) high mild
+  2 (13.33%) high severe
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Warming up for 1.0000 s
+
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 3.1s or enable flat sampling.
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Collecting 10 samples in estimated 3.1182 s (55 iterations)
+Benchmarking mwpm_decode/sparse/d13_det1176_avgdef169: Analyzing
+mwpm_decode/sparse/d13_det1176_avgdef169
+                        time:   [56.777 ms 60.949 ms 66.654 ms]
+                        thrpt:  [3.8407 Kelem/s 4.2002 Kelem/s 4.5089 Kelem/s]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Warming up for 1.0000 s
+
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 5.3s or enable flat sampling.
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Collecting 10 samples in estimated 5.3304 s (55 iterations)
+Benchmarking mwpm_decode/sparse/d15_det1792_avgdef264: Analyzing
+mwpm_decode/sparse/d15_det1792_avgdef264
+                        time:   [97.117 ms 99.210 ms 104.34 ms]
+                        thrpt:  [2.4534 Kelem/s 2.5804 Kelem/s 2.6360 Kelem/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Collecting 10 samples in estimated 3.0138 s (20 iterations)
+Benchmarking mwpm_decode/sparse/d17_det2592_avgdef383: Analyzing
+mwpm_decode/sparse/d17_det2592_avgdef383
+                        time:   [147.06 ms 148.92 ms 151.46 ms]
+                        thrpt:  [1.6902 Kelem/s 1.7190 Kelem/s 1.7408 Kelem/s]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+

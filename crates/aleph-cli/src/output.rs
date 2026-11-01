@@ -65,6 +65,23 @@ pub fn format_counts_hist<W: Write>(
     Ok(())
 }
 
+/// Print ascending sparse counts using the same public format as raw samples.
+pub fn format_counts_sparse<W: Write>(
+    out: &mut W,
+    counts: &[(u64, u64)],
+    total: u32,
+    num_qubits: u32,
+    seed_label: &str,
+) -> io::Result<()> {
+    let width = num_qubits as usize;
+    writeln!(out, "counts ({total} shots, {seed_label}):")?;
+    for &(idx, count) in counts {
+        let prob = count as f64 / total as f64;
+        writeln!(out, "  |{idx:0width$b}⟩  {count}  ({prob:.4})")?;
+    }
+    Ok(())
+}
+
 /// Print every amplitude one per line with `{:+.16e}` precision.
 /// Caller has already verified `num_qubits <= 10` (or that the user
 /// passed --force-statevector).
@@ -145,6 +162,19 @@ mod tests {
     fn format_counts_header_contains_seed_label() {
         let s = capture(|out| format_counts(out, &[0], 1, 1, "seed=entropy"));
         assert!(s.contains("counts (1 shots, seed=entropy):"));
+    }
+
+    #[test]
+    fn sparse_counts_preserve_sample_output_and_zero_shots() {
+        let sparse = capture(|out| format_counts_sparse(out, &[(0, 2), (3, 2)], 4, 2, "seed=7"));
+        let samples = capture(|out| format_counts(out, &[3, 0, 3, 0], 4, 2, "seed=7"));
+        assert_eq!(sparse, samples);
+        let dense = capture(|out| format_counts_hist(out, &[2, 0, 0, 2], 4, 2, "seed=7"));
+        assert_eq!(sparse, dense);
+        assert_eq!(
+            capture(|out| format_counts_sparse(out, &[], 0, 2, "seed=7")),
+            "counts (0 shots, seed=7):\n"
+        );
     }
 
     #[test]

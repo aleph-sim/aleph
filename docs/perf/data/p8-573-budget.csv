@@ -1,0 +1,6 @@
+case,allocations,allocated_bytes,additional_peak_heap_bytes
+dense_workers1_planned25167352,53,25167408,16778744
+dense_workers2_planned41944592,55,41944640,33555976
+dense_workers4_planned75499072,59,75499104,67110440
+sparse_workers1_planned16778872,53,16778928,16778744
+fused_cache_workers1_planned192968,396,1344592,160152

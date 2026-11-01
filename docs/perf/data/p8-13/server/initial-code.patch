@@ -1,0 +1,11 @@
+--- a/scripts/benchmarks/public_workflow.py
++++ b/scripts/benchmarks/public_workflow.py
+@@ -285,7 +285,7 @@
+             manifest['status'] = 'skipped'
+             return manifest
+         for arm in s['arms']:
+-            arm['executable'] = str(Path(arm['executable']).resolve())
++            arm['executable'] = os.path.abspath(arm['executable'])
+             arm['executable_sha256'] = sha256(arm['executable'])
+         path = output/'workload.qasm'
+         path.write_text(qasm(s))

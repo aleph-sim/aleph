@@ -1,0 +1,4 @@
+{"variant": "base", "round": 1, "time": 1792143931.0737882, "load": [0.521484375, 1.22998046875, 0.93212890625], "cpu": 2, "siblings": [3], "overall_busy": 0.10005002501250625, "core_busy": 1.0, "sibling_busy": [0.0]}
+{"variant": "candidate", "round": 1, "time": 1792143948.0246553, "load": [0.57763671875, 1.19775390625, 0.92822265625], "cpu": 2, "siblings": [3], "overall_busy": 0.12509382036527394, "core_busy": 0.0, "sibling_busy": [0.0]}
+{"variant": "candidate", "round": 2, "time": 1792143979.5401864, "load": [0.66455078125, 1.16064453125, 0.92529296875], "cpu": 2, "siblings": [3], "overall_busy": 0.10005002501250625, "core_busy": 0.0, "sibling_busy": [0.0]}
+{"variant": "base", "round": 2, "time": 1792144011.0315275, "load": [0.79833984375, 1.1435546875, 0.92822265625], "cpu": 2, "siblings": [3], "overall_busy": 0.10005002501250625, "core_busy": 0.0, "sibling_busy": [0.0]}

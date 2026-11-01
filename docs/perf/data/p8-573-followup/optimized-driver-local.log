@@ -1,0 +1,16 @@
+   Compiling aleph-ir v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-ir)
+   Compiling aleph-backend v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-backend)
+   Compiling aleph-parser v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-parser)
+   Compiling aleph-test v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-test)
+   Compiling aleph-sv v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-sv)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.50s
+     Running tests/run_optimized_oracle.rs (target/debug/deps/run_optimized_oracle-c88451924dd1a128)
+
+running 4 tests
+test barrier_respected_optimized_equals_raw ... ok
+test measurement_outcomes_optimized_equals_raw ... ok
+test property::random_optimized_equals_raw ... ok
+test fixtures_optimized_equals_raw has been running for over 60 seconds
+test fixtures_optimized_equals_raw ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 133.71s

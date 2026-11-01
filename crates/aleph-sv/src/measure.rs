@@ -21,49 +21,21 @@ pub(crate) const DEGENERATE_BRANCH_THRESHOLD: f64 = 1e-300;
 /// the caller used. Without this shared guard the methods drifted into
 /// asymmetric checks (round-2 hardened only `measure` and `sample`).
 pub(crate) fn validate_state(state: &CpuState) -> Result<Vec<f64>, BackendError> {
-    let n = state.amps.len();
-    if n == 0 {
-        return Err(BackendError::InvalidState {
-            reason: "empty state vector",
-        });
-    }
-    // Structural invariant: `amps.len() == 2^num_qubits`. P0-11's alias
-    // sampler enforces a power-of-two table only via `debug_assert!`;
-    // release builds would otherwise silently bias `bits & (n-1)` for a
-    // mismatched length. Catch it here at the validation boundary so the
-    // bug surfaces as `InvalidState`, not as biased samples.
-    let expected = 1usize
-        .checked_shl(state.num_qubits)
-        .ok_or(BackendError::InvalidState {
-            reason: "num_qubits exceeds platform usize::BITS",
-        })?;
-    if n != expected {
-        return Err(BackendError::InvalidState {
-            reason: "amps.len() != 2^num_qubits",
-        });
-    }
+    let n = validate_layout(state)?;
     let mut probs = Vec::with_capacity(n);
-    let mut total = 0.0_f64;
-    for a in state.amps.iter() {
-        let p = a.norm_sqr();
-        if !p.is_finite() {
-            return Err(BackendError::InvalidState {
-                reason: "non-finite amplitude norm²",
-            });
-        }
-        total += p;
-        probs.push(p);
-    }
-    // Drift budget: √n · AMPLITUDE_TOL absorbs the worst-case sum-of-
-    // independent-errors growth over an n-element accumulation while
-    // still rejecting genuinely un-normalised inputs (e.g. norm² = 0.5).
-    let drift_budget = (n as f64).sqrt() * aleph_core::AMPLITUDE_TOL;
-    if (total - 1.0).abs() > drift_budget {
-        return Err(BackendError::InvalidState {
-            reason: "state norm² deviates from 1 beyond drift budget",
-        });
-    }
+    crate::sampling::validate_norm(
+        state.amps.iter().map(|a| a.norm_sqr()),
+        (n as f64).sqrt() * aleph_core::AMPLITUDE_TOL,
+        "state norm² deviates from 1 beyond drift budget",
+        |p| probs.push(p),
+    )?;
     Ok(probs)
+}
+
+fn validate_layout(state: &CpuState) -> Result<usize, BackendError> {
+    let n = state.amps.len();
+    crate::sampling::validate_shape(state.num_qubits, n, "amps.len() != 2^num_qubits")?;
+    Ok(n)
 }
 
 pub(crate) fn measure_impl(
@@ -129,17 +101,19 @@ pub(crate) fn measure_impl(
     Ok(outcome)
 }
 
-/// Sample basis-state indices from `|amps[i]|²` via Vose's alias method.
+/// Sample basis-state indices from `|amps[i]|²`.
 ///
-/// `O(n)` build (`n = 2^num_qubits`) + `O(1)` per shot. Replaces the
-/// `O(log n)`-per-shot inverse-CDF path used in P0-09; see
-/// `crates/aleph-sv/src/sampling.rs` for the build algorithm and
-/// `benches/sample.rs` for the measured speedup.
+/// Zero shots validate without scratch; one shot uses a validated inverse CDF.
+/// Repeated draws retain Vose's `O(n)` build + `O(1)` per shot alias method.
+/// The single-shot seed-to-outcome mapping differs from the historical alias path.
 pub(crate) fn sample_impl(
     rng: &mut StdRng,
     state: &CpuState,
     shots: u32,
 ) -> Result<Vec<u64>, BackendError> {
+    if shots <= 1 {
+        return sample_low_shot(rng, state, shots);
+    }
     let probs = validate_state(state)?;
     let table = crate::sampling::AliasTable::build(&probs);
     let mut out = Vec::with_capacity(shots as usize);
@@ -147,6 +121,30 @@ pub(crate) fn sample_impl(
         out.push(table.draw(rng) as u64);
     }
     Ok(out)
+}
+
+// Keep the one-draw scan out of the repeated-draw alias loop's code/register footprint.
+#[inline(never)]
+fn sample_low_shot(
+    rng: &mut StdRng,
+    state: &CpuState,
+    shots: u32,
+) -> Result<Vec<u64>, BackendError> {
+    let n = validate_layout(state)?;
+    let total = crate::sampling::validate_norm(
+        state.amps.iter().map(|a| a.norm_sqr()),
+        (n as f64).sqrt() * aleph_core::AMPLITUDE_TOL,
+        "state norm² deviates from 1 beyond drift budget",
+        |_| {},
+    )?;
+    if shots == 0 {
+        return Ok(Vec::new());
+    }
+    Ok(vec![crate::sampling::draw_cumulative(
+        rng,
+        state.amps.iter().map(|a| a.norm_sqr()),
+        total,
+    )?])
 }
 
 /// Naive expectation value: copy state, apply each non-identity Pauli

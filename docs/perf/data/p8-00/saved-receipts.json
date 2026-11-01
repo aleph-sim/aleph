@@ -1,0 +1,44 @@
+[
+  {
+    "directory": "docs/perf/data/p8-13/server/cpu-control-run",
+    "status": "executed",
+    "exit_code": 0,
+    "expected_exit_code": 0,
+    "passed": true
+  },
+  {
+    "directory": "docs/perf/data/p8-13/server/cuda-disabled-run",
+    "status": "failed",
+    "exit_code": 2,
+    "expected_exit_code": 2,
+    "passed": true
+  },
+  {
+    "directory": "docs/perf/data/p8-13/server/cuda-f32-run",
+    "status": "executed",
+    "exit_code": 0,
+    "expected_exit_code": 0,
+    "passed": true
+  },
+  {
+    "directory": "docs/perf/data/p8-13/server/cuda-fusion-run",
+    "status": "contaminated",
+    "exit_code": 2,
+    "expected_exit_code": 2,
+    "passed": true
+  },
+  {
+    "directory": "docs/perf/data/p8-13/server/cuda-fusion-settled",
+    "status": "executed",
+    "exit_code": 0,
+    "expected_exit_code": 0,
+    "passed": true
+  },
+  {
+    "directory": "docs/perf/data/p8-13/server/cuda-small-run",
+    "status": "executed",
+    "exit_code": 0,
+    "expected_exit_code": 0,
+    "passed": true
+  }
+]

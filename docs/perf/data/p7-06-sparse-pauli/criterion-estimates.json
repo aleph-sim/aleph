@@ -1,0 +1,137 @@
+{
+  "pauli_ghz18-rotation_mps": {
+    "confidence_interval": {
+      "confidence_level": 0.95,
+      "lower_bound": 710319.7445230661,
+      "upper_bound": 735129.5638054735
+    },
+    "point_estimate": 722139.4981085117,
+    "standard_error": 6361.253844008056
+  },
+  "pauli_ghz18-rotation_sparse-cones-false": {
+    "confidence_interval": {
+      "confidence_level": 0.95,
+      "lower_bound": 2152.8577453082107,
+      "upper_bound": 2241.786548660991
+    },
+    "point_estimate": 2192.0494964440836,
+    "standard_error": 24.560183258047267
+  },
+  "pauli_ghz18-rotation_sparse-cones-true": {
+    "confidence_interval": {
+      "confidence_level": 0.95,
+      "lower_bound": 13366.69867720874,
+      "upper_bound": 18590.642047065656
+    },
+    "point_estimate": 15394.931964469746,
+    "standard_error": 1367.9936025262275
+  },
+  "pauli_ghz18-rotation_sv": {
+    "confidence_interval": {
+      "confidence_level": 0.95,
+      "lower_bound": 22050237.101666663,
+      "upper_bound": 22699365.79708333
+    },
+    "point_estimate": 22340002.48333333,
+    "standard_error": 167139.05860780636
+  },
+  "pauli_local128_mps": {
+    "confidence_interval": {
+      "confidence_level": 0.95,
+      "lower_bound": 1195646.0163021574,
+      "upper_bound": 1199280.6962177674
+    },
+    "point_estimate": 1197549.276236934,
+    "standard_error": 922.9103905162582
+  },
+  "pauli_local128_sparse-cones-false": {
+    "confidence_interval": {
+      "confidence_level": 0.95,
+      "lower_bound": 57685.24515240548,
+      "upper_bound": 57735.454989090445
+    },
+    "point_estimate": 57708.55741981596,
+    "standard_error": 12.827947772614996
+  },
+  "pauli_local128_sparse-cones-true": {
+    "confidence_interval": {
+      "confidence_level": 0.95,
+      "lower_bound": 188530.85241632673,
+      "upper_bound": 190923.41746925542
+    },
+    "point_estimate": 189405.97195121952,
+    "standard_error": 617.3540402871178
+  },
+  "pauli_product16-k12_mps": {
+    "confidence_interval": {
+      "confidence_level": 0.95,
+      "lower_bound": 3407.818494841622,
+      "upper_bound": 3428.5048415764954
+    },
+    "point_estimate": 3414.589183019845,
+    "standard_error": 5.438577300715351
+  },
+  "pauli_product16-k12_sparse-cones-false": {
+    "confidence_interval": {
+      "confidence_level": 0.95,
+      "lower_bound": 715041.1117359984,
+      "upper_bound": 738220.1626898509
+    },
+    "point_estimate": 723108.131110005,
+    "standard_error": 6646.526176559554
+  },
+  "pauli_product16-k12_sparse-cones-true": {
+    "confidence_interval": {
+      "confidence_level": 0.95,
+      "lower_bound": 725812.8794406239,
+      "upper_bound": 744927.5826317251
+    },
+    "point_estimate": 734285.5425087108,
+    "standard_error": 5023.6114705710015
+  },
+  "pauli_product16-k12_sv": {
+    "confidence_interval": {
+      "confidence_level": 0.95,
+      "lower_bound": 1716179.83411034,
+      "upper_bound": 1723559.9551961476
+    },
+    "point_estimate": 1719499.0285714285,
+    "standard_error": 1893.2935708452528
+  },
+  "pauli_product16-k4_mps": {
+    "confidence_interval": {
+      "confidence_level": 0.95,
+      "lower_bound": 3163.469892987255,
+      "upper_bound": 3277.035625860991
+    },
+    "point_estimate": 3216.3442758408987,
+    "standard_error": 29.303615653161817
+  },
+  "pauli_product16-k4_sparse-cones-false": {
+    "confidence_interval": {
+      "confidence_level": 0.95,
+      "lower_bound": 2330.4447982360357,
+      "upper_bound": 2332.8523624109343
+    },
+    "point_estimate": 2331.569437110955,
+    "standard_error": 0.6115112321995034
+  },
+  "pauli_product16-k4_sparse-cones-true": {
+    "confidence_interval": {
+      "confidence_level": 0.95,
+      "lower_bound": 4559.751255931182,
+      "upper_bound": 4607.162431673373
+    },
+    "point_estimate": 4577.029579848151,
+    "standard_error": 12.354051560421473
+  },
+  "pauli_product16-k4_sv": {
+    "confidence_interval": {
+      "confidence_level": 0.95,
+      "lower_bound": 1188951.473097216,
+      "upper_bound": 1198296.4041762268
+    },
+    "point_estimate": 1193351.7796167247,
+    "standard_error": 2386.4229032579224
+  }
+}

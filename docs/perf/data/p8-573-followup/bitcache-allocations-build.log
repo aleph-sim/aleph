@@ -1,0 +1,4 @@
+   Compiling aleph-sv v0.3.0 (/tmp/aleph-573-followup/bitcache/crates/aleph-sv)
+   Compiling aleph-oracle v0.3.0 (/tmp/aleph-573-followup/bitcache/crates/aleph-oracle)
+    Finished `release` profile [optimized] target(s) in 18.73s
+     Running `target/release/examples/trajectory_budget --fused-kernels`

@@ -1,0 +1,49 @@
+{
+  "base_commit": "8e6ddecec9ca947b73765ddc49a8dfd9fef0685f",
+  "date": "2026-10-16",
+  "precision": {
+    "cuda": "FP64, oracle 1e-10",
+    "cuda-f32": "ordinary FP32, oracle 1e-5; TF32 disabled"
+  },
+  "seed": 552,
+  "shots": 32,
+  "qubits": 22,
+  "pairs": 3,
+  "threads": {
+    "OPENBLAS_NUM_THREADS": 1,
+    "OMP_NUM_THREADS": 1
+  },
+  "gpu": "NVIDIA RTX 4000 SFF Ada Generation, 580.178.04, 20475 MiB, 18680 MiB, 0 %",
+  "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)",
+  "public_timing_source_sha256": {
+    "crates/aleph-cuda/src/execution.rs": "46ef927b9a45f39252027ce161250745e59d872cff8d51b77be6c983967043d3",
+    "crates/aleph-cuda/src/fusion.rs": "de89dd551492e71822d5ecf5ec2472c8c3dd42d6c2f0c8502adae1571897e18a",
+    "crates/aleph-cuda/src/sv/backend.rs": "a26698f7ba5811cd4bd2d525525408416b3615b647e87e21b13088285dfeebd3",
+    "crates/aleph-cuda/src/sv/fp32.rs": "0e0562349b1642ea6fcdbde8cce26b70e7d5b891a2a1cdf70d044b0c0a36c413",
+    "crates/aleph-cuda/src/sv/diag.rs": "4a71f39d7b848152ba4332a352846be0b8b5b9767263c7999a4b4aaf541ac187",
+    "crates/aleph-cli/src/exec.rs": "6e757f58b582c204867d95d163c4e1aaa37297bfc375b4edefab651565b770f1",
+    "crates/aleph-py/src/run.rs": "f20916496c09a8339ab78e31203f4f396f2dd99f3e9c07f612e26311bfaf89fb"
+  },
+  "final_validation_source_sha256": {
+    "crates/aleph-cuda/src/execution.rs": "55cdf3d77537ba2613bec512f3e25d44536bf129162fc838f632b0772d6e4abf",
+    "crates/aleph-cuda/src/fusion.rs": "de89dd551492e71822d5ecf5ec2472c8c3dd42d6c2f0c8502adae1571897e18a",
+    "crates/aleph-cuda/src/sv/backend.rs": "a26698f7ba5811cd4bd2d525525408416b3615b647e87e21b13088285dfeebd3",
+    "crates/aleph-cuda/src/sv/fp32.rs": "0e0562349b1642ea6fcdbde8cce26b70e7d5b891a2a1cdf70d044b0c0a36c413",
+    "crates/aleph-cuda/src/sv/diag.rs": "4a71f39d7b848152ba4332a352846be0b8b5b9767263c7999a4b4aaf541ac187",
+    "crates/aleph-cli/src/exec.rs": "6e757f58b582c204867d95d163c4e1aaa37297bfc375b4edefab651565b770f1",
+    "crates/aleph-py/src/run.rs": "f20916496c09a8339ab78e31203f4f396f2dd99f3e9c07f612e26311bfaf89fb"
+  },
+  "source_delta_notes": "After main public timing: structural >32-qubit guard, added pure/manual-width-4/header-unavailable tests and documentation. Gate algorithms, width-3 policy and public n<=22 workload paths unchanged. Final native/CLI rebuilt and public/memory tests rerun. Criterion final includes the structural guard and standard PI QFT angles.",
+  "hardware_executed": true,
+  "services_isolated": false,
+  "public_routes": [
+    "aleph run subprocess (fresh process)",
+    "aleph.run in same process, new backend each call"
+  ],
+  "commands": [
+    "bench_public_cuda_execution.py --qubits 22 --repeats 3 --shots 32",
+    "bench_public_cuda_execution.py --qubits 8 --families brickwall --repeats 3 --shots 32",
+    "bench_public_cuda_native_qft.py",
+    "cargo bench -p aleph-cuda --features cuda --bench public_execution -- --noplot"
+  ]
+}

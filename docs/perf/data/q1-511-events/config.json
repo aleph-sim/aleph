@@ -1,0 +1,11 @@
+{
+  "cpu": 3,
+  "sibling": 23,
+  "main": "/tmp/aleph-511-events-base-target/release/deps/mwpm_decode-c34064fc3d91e724",
+  "candidate": "/tmp/aleph-511-events-queued-target/release/deps/mwpm_decode-c34064fc3d91e724",
+  "original": "/tmp/aleph-511-events-original-target/release/deps/mwpm_decode-fee274f8dfd3d21f",
+  "neighbor": "/tmp/aleph-511-events-neighbor-target/release/deps/mwpm_decode-c34064fc3d91e724",
+  "python": "/tmp/aleph-518-K1bhhc/test-venv/bin/python",
+  "queued": "/tmp/aleph-511-events-validation/queued-training.bin",
+  "both_guards": "/tmp/aleph-511-events-candidate-target/release/deps/mwpm_decode-c34064fc3d91e724"
+}

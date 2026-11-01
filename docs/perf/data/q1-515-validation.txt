@@ -1,0 +1,335 @@
+prior-debug
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 9.08s
+test source_priors_are_checked_before_dropping_or_merging_edges ... ok
+test ordinary_supported_weights_remain_bit_identical ... ok
+test bp_and_dem_construction_keep_the_full_probability_range ... ok
+test all_matching_constructors_reject_unsupported_priors ... ok
+test split_constructor_errors_use_split_column_indices ... ok
+test zero_negative_zero_and_empty_models_are_supported ... ok
+test supported_boundary_priors_decode_and_project_in_debug_and_release ... ok
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+prior-release
+    Finished `release` profile [optimized] target(s) in 17.38s
+test ordinary_supported_weights_remain_bit_identical ... ok
+test bp_and_dem_construction_keep_the_full_probability_range ... ok
+test all_matching_constructors_reject_unsupported_priors ... ok
+test split_constructor_errors_use_split_column_indices ... ok
+test source_priors_are_checked_before_dropping_or_merging_edges ... ok
+test zero_negative_zero_and_empty_models_are_supported ... ok
+test supported_boundary_priors_decode_and_project_in_debug_and_release ... ok
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+dem-tests
+    Finished `release` profile [optimized] target(s) in 13.93s
+test dem::tests::detector_offset_u64_overflow_is_an_error ... ok
+test dem::tests::from_check_matrices_builds_one_mechanism_per_column ... ok
+test dem::tests::detector_declaration_is_shifted ... ok
+test dem::tests::boundary_count_round_trips_via_trailing_declaration ... ok
+test dem::tests::merged_view_is_parity_reduced ... ok
+test dem::tests::from_check_matrices_rejects_length_mismatch ... ok
+test dem::tests::nested_repeat_and_zero_count ... ok
+test dem::tests::parses_known_stim_snippet ... ok
+test dem::tests::rejects_duplicate_index ... ok
+test dem::tests::probability_must_be_finite_and_in_unit_interval ... ok
+test dem::tests::rejects_garbage ... ok
+test dem::tests::rejects_more_than_64_observables ... ok
+test dem::tests::rejects_non_finite_probability ... ok
+test dem::tests::rejects_out_of_range_index ... ok
+test dem::tests::repeat_errors_are_reported ... ok
+test dem::tests::repeat_unrolls_with_shift ... ok
+test dem::tests::separable_components_are_preserved ... ok
+test dem::tests::single_part_has_no_components ... ok
+test dem::tests::target_order_is_normalised ... ok
+test dem::tests::shifted_index_overflow_is_an_error ... ok
+test dem::tests::emit_parse_round_trip ... ok
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 169 filtered out; finished in 0.00s
+
+matching-tests
+    Finished `release` profile [optimized] target(s) in 0.04s
+test matching::tests::component_with_three_detectors_is_still_rejected ... ok
+test matching::tests::duplicate_targets_cancel_by_parity ... ok
+test matching::tests::parallel_edges_merge_by_xor ... ok
+test matching::tests::single_detector_error_connects_to_boundary ... ok
+test matching::tests::hyperedge_is_rejected ... ok
+test matching::tests::different_observables_are_distinct_edges ... ok
+test matching::tests::edge_column_is_the_first_mechanism_with_that_key ... ok
+test matching::tests::repetition_code_hand_drawn_adjacency ... ok
+test matching::tests::decomposed_hyperedge_becomes_component_edges ... ok
+test matching::tests::parallel_edges_stay_below_half_and_keep_weight_nonnegative ... ok
+test matching::tests::two_detector_error_connects_detectors ... ok
+test matching::tests::zero_detector_error_is_dropped ... ok
+test matching::tests::zero_probability_is_skipped_without_renumbering_columns ... ok
+test pymatching::tests::empty_batch_needs_no_subprocess ... ok
+test pymatching::tests::caches_dem_and_counts ... ok
+test matching::tests::endpoints_ordered_and_in_range ... ok
+test matching::tests::adjacency_consistent_with_edges ... ok
+test matching::tests::all_weights_nonnegative_for_p_le_half ... ok
+test matching::tests::surface_code_d3_d5_node_counts_and_graphlike ... ok
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 171 filtered out; finished in 0.01s
+
+split-tests
+    Finished `release` profile [optimized] target(s) in 2.96s
+test graph_edges_are_identical_except_for_column_indices ... ok
+test hyperedge_parts_still_fail_explicitly ... ok
+test split_retains_order_priors_counts_empty_parts_and_independent_parity ... ok
+test split_constructors_fix_shared_columns_for_all_syndromes_without_ties ... ok
+test undecomposed_and_empty_models_are_unchanged ... ok
+test splitting_is_not_an_equivalent_noise_sampling_model ... ok
+test component_parity_is_preserved_without_cross_contamination ... ok
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+doc-tests
+    Finished `release` profile [optimized] target(s) in 0.04s
+test crates/aleph-qec/src/experiment.rs - experiment::run_memory_experiment (line 75) - compile ... ok
+test crates/aleph-qec/src/decoder.rs - decoder::LogicalErrorResult::interval95 (line 103) ... ok
+test crates/aleph-qec/src/dem.rs - dem::DetectorErrorModel::split_components (line 161) ... ok
+test crates/aleph-qec/src/experiment.rs - experiment::run_dem_experiment_with_options (line 153) ... ok
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.49s
+
+environment.txt
+/root/cqvenv/lib/python3.12/site-packages/cudaq_qec/__init__.py:13: FutureWarning: The CUDA-Q `sample` and `observe` algorithmic primitives will change in a future release. Existing code may require updates. See https://nvidia.github.io/cuda-quantum/latest/using/migration/upcoming_changes.html for details.
+  import cudaq
+3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]
+Linux-6.8.0-146-generic-x86_64-with-glibc2.39
+numpy 2.5.3 stim 1.16.0
+cudaq_qec /root/cqvenv/lib/python3.12/site-packages/cudaq_qec/__init__.py
+rustc 1.96.0 (ac68faa20 2026-05-25)
+
+
+python-tests.log
+/root/cqvenv/lib/python3.12/site-packages/cudaq_qec/__init__.py:13: FutureWarning: The CUDA-Q `sample` and `observe` algorithmic primitives will change in a future release. Existing code may require updates. See https://nvidia.github.io/cuda-quantum/latest/using/migration/upcoming_changes.html for details.
+  import cudaq
+test_bad_inputs_raise_value_error (test_qec.TestApi.test_bad_inputs_raise_value_error) ... ok
+test_decode_batch_errors (test_qec.TestApi.test_decode_batch_errors) ... ok
+test_decode_batch_errors_empty_batch (test_qec.TestApi.test_decode_batch_errors_empty_batch) ... ok
+test_decode_shapes_and_dtypes (test_qec.TestApi.test_decode_shapes_and_dtypes) ... ok
+test_dem_from_matrices_accepts_dense_int64_and_sparse (test_qec.TestApi.test_dem_from_matrices_accepts_dense_int64_and_sparse) ... ok
+test_dem_from_matrices_rejects_bad_input (test_qec.TestApi.test_dem_from_matrices_rejects_bad_input) ... ok
+test_dem_properties (test_qec.TestApi.test_dem_properties) ... ok
+test_gross_code_dem (test_qec.TestApi.test_gross_code_dem) ... ok
+test_matching_invalid_prior_cannot_hide_in_empty_or_merged_columns (test_qec.TestApi.test_matching_invalid_prior_cannot_hide_in_empty_or_merged_columns) ... ok
+test_matching_prior_policy_at_construction (test_qec.TestApi.test_matching_prior_policy_at_construction) ... ok
+test_names (test_qec.TestApi.test_names) ... ok
+test_split_components_matches_matrices_without_mutation (test_qec.TestApi.test_split_components_matches_matrices_without_mutation) ... ok
+test_split_matching_projects_each_part_exactly_without_ties (test_qec.TestApi.test_split_matching_projects_each_part_exactly_without_ties) ... ok
+test_native_split_matches_matrix_roundtrip_on_real_stim_shots (test_qec.TestStimDems.test_native_split_matches_matrix_roundtrip_on_real_stim_shots) ... ok
+test_matching_decode_batch_errors_rejects_decomposed_dem (test_qec.TestStimDems.test_matching_decode_batch_errors_rejects_decomposed_dem) ... ok
+test_all_seven_resolve (test_cudaq.TestRegistration.test_all_seven_resolve) ... ok
+test_both_error_rate_forms_rejected (test_cudaq.TestRegistration.test_both_error_rate_forms_rejected) ... ok
+test_decode_accepts_single_row_2d (test_cudaq.TestRegistration.test_decode_accepts_single_row_2d) ... ok
+test_decode_batch_contract (test_cudaq.TestRegistration.test_decode_batch_contract) ... ok
+test_decode_batch_empty (test_cudaq.TestRegistration.test_decode_batch_empty) ... ok
+test_decode_contract (test_cudaq.TestRegistration.test_decode_contract) ... ok
+test_decode_empty_syndrome_raises (test_cudaq.TestRegistration.test_decode_empty_syndrome_raises) ... ok
+test_dem_to_matrices_cancels_duplicate_targets (test_cudaq.TestRegistration.test_dem_to_matrices_cancels_duplicate_targets) ... ok
+test_dem_to_matrices_splits_hat (test_cudaq.TestRegistration.test_dem_to_matrices_splits_hat) ... ok
+test_matching_boundary_priors_are_accepted (test_cudaq.TestRegistration.test_matching_boundary_priors_are_accepted) ... ok
+test_matching_decoder_rejects_hyperedge_column (test_cudaq.TestRegistration.test_matching_decoder_rejects_hyperedge_column) ... ok
+test_matching_decoder_rejects_prior_above_half (test_cudaq.TestRegistration.test_matching_decoder_rejects_prior_above_half) ... ok
+test_matching_prior_message_matches_native_python (test_cudaq.TestRegistration.test_matching_prior_message_matches_native_python) ... ok
+test_nan_priors_rejected (test_cudaq.TestRegistration.test_nan_priors_rejected) ... ok
+test_scalar_error_rate_and_missing_rates (test_cudaq.TestRegistration.test_scalar_error_rate_and_missing_rates) ... ok
+test_scipy_sparse_h (test_cudaq.TestRegistration.test_scipy_sparse_h) ... ok
+test_soft_syndrome_thresholds (test_cudaq.TestRegistration.test_soft_syndrome_thresholds) ... ok
+test_unknown_param_and_wrong_width (test_cudaq.TestRegistration.test_unknown_param_and_wrong_width) ... ok
+
+----------------------------------------------------------------------
+Ran 33 tests in 3.267s
+
+OK
+PRIVATE_ALEPH_MODULE /tmp/aleph-515-LAf0e0/candidate/crates/aleph-py/python/aleph/__init__.py
+PRIVATE_NATIVE_MODULE /tmp/aleph-515-LAf0e0/candidate/crates/aleph-py/python/aleph/_native.abi3.so
+
+
+remote clippy
+   Compiling syn v2.0.117
+    Checking cfg-if v1.0.4
+    Checking bytemuck v1.25.0
+    Checking num-traits v0.2.19
+    Checking libc v0.2.186
+    Checking crossbeam-utils v0.8.21
+    Checking bitflags v2.11.1
+    Checking num-complex v0.4.6
+    Checking crossbeam-epoch v0.9.18
+    Checking either v1.16.0
+    Checking crossbeam-deque v0.8.6
+    Checking once_cell v1.21.4
+    Checking smallvec v1.15.1
+    Checking rayon-core v1.13.0
+    Checking getrandom v0.2.17
+    Checking memchr v2.8.0
+    Checking rand_core v0.6.4
+    Checking rayon v1.12.0
+    Checking approx v0.5.1
+    Checking serde_core v1.0.228
+    Checking getrandom v0.3.4
+    Checking rand_core v0.9.5
+    Checking regex-syntax v0.8.10
+    Checking linux-raw-sys v0.12.1
+    Checking zmij v1.0.21
+    Checking getrandom v0.4.2
+    Checking statrs v0.18.0
+    Checking rustix v1.1.4
+    Checking plotters-backend v0.3.7
+    Checking itoa v1.0.18
+    Checking anstyle v1.0.14
+    Checking fastrand v2.4.1
+    Checking clap_lex v1.1.0
+    Checking ciborium-io v0.2.2
+    Checking serde_json v1.0.150
+    Checking clap_builder v4.6.0
+    Checking tempfile v3.27.0
+    Checking plotters-svg v0.3.7
+   Compiling zerocopy-derive v0.8.48
+   Compiling thiserror-impl v1.0.69
+   Compiling serde_derive v1.0.228
+    Checking regex-automata v0.4.14
+    Checking thiserror v1.0.69
+    Checking aleph-core v0.3.0 (/tmp/aleph-515-LAf0e0/candidate/crates/aleph-core)
+    Checking zerocopy v0.8.48
+    Checking aleph-ir v0.3.0 (/tmp/aleph-515-LAf0e0/candidate/crates/aleph-ir)
+    Checking itertools v0.10.5
+    Checking aleph-backend v0.3.0 (/tmp/aleph-515-LAf0e0/candidate/crates/aleph-backend)
+    Checking wait-timeout v0.2.1
+    Checking bit-vec v0.8.0
+    Checking fnv v1.0.7
+    Checking same-file v1.0.6
+    Checking quick-error v1.2.3
+    Checking cast v0.3.0
+    Checking rusty-fork v0.3.1
+    Checking criterion-plot v0.5.0
+    Checking bit-set v0.8.0
+    Checking walkdir v2.5.0
+    Checking regex v1.12.3
+    Checking clap v4.6.1
+    Checking serde v1.0.228
+    Checking plotters v0.3.7
+    Checking rand v0.9.4
+    Checking tinytemplate v1.2.1
+    Checking rand_xorshift v0.4.0
+    Checking is-terminal v0.4.17
+    Checking anes v0.1.6
+    Checking oorandom v11.1.5
+    Checking unarray v0.1.4
+   Compiling target-lexicon v0.12.16
+   Compiling nano-gemm-codegen v0.2.1
+   Compiling paste v1.0.15
+   Compiling version_check v0.9.5
+   Compiling pyo3-build-config v0.22.6
+   Compiling libm v0.2.16
+    Checking ppv-lite86 v0.2.21
+    Checking half v2.7.1
+   Compiling pulp v0.22.2
+    Checking raw-cpuid v11.6.0
+    Checking rand_chacha v0.3.1
+    Checking ciborium-ll v0.2.2
+    Checking ciborium v0.2.2
+    Checking rand v0.8.6
+    Checking rand_chacha v0.9.0
+    Checking proptest v1.11.0
+    Checking criterion v0.5.1
+    Checking aleph-stab v0.3.0 (/tmp/aleph-515-LAf0e0/candidate/crates/aleph-stab)
+    Checking aleph-qec v0.3.0 (/tmp/aleph-515-LAf0e0/candidate/crates/aleph-qec)
+    Checking pulp-wasm-simd-flag v0.1.0
+    Checking reborrow v0.5.5
+   Compiling dyn-stack-macros v0.1.3
+   Compiling syn v1.0.109
+    Checking dyn-stack v0.13.2
+   Compiling seq-macro v0.3.6
+    Checking nano-gemm-core v0.2.1
+   Compiling matrixmultiply v0.3.10
+   Compiling pyo3-macros-backend v0.22.6
+   Compiling pyo3-ffi v0.22.6
+   Compiling nano-gemm-c32 v0.2.1
+   Compiling nano-gemm-f32 v0.2.1
+   Compiling nano-gemm-f64 v0.2.1
+   Compiling nano-gemm-c64 v0.2.1
+   Compiling equator-macro v0.4.2
+    Checking num-integer v0.1.46
+    Checking crossbeam-channel v0.5.15
+    Checking crossbeam-queue v0.3.12
+    Checking rawpointer v0.2.1
+   Compiling defer v0.2.1
+    Checking crossbeam v0.8.4
+    Checking equator v0.4.2
+   Compiling equator-macro v0.2.1
+    Checking atomic-wait v1.1.0
+    Checking safe_arch v0.7.4
+   Compiling memoffset v0.9.1
+   Compiling heck v0.5.0
+    Checking equator v0.2.2
+    Checking wide v0.7.33
+    Checking gemm-common v0.19.0
+    Checking gemm-c32 v0.19.0
+    Checking gemm-c64 v0.19.0
+    Checking gemm-f64 v0.19.0
+   Compiling interpol v0.2.1
+    Checking gemm-f32 v0.19.0
+    Checking qd v0.8.0
+   Compiling private-gemm-x86 v0.1.20
+    Checking spindle v0.2.6
+   Compiling pyo3 v0.22.6
+    Checking num_cpus v1.17.0
+    Checking minimal-lexical v0.2.1
+   Compiling equator-macro v0.6.0
+    Checking generativity v1.2.1
+    Checking faer-traits v0.24.0
+    Checking equator v0.6.0
+    Checking nom v7.1.3
+    Checking nano-gemm v0.2.2
+   Compiling pyo3-macros v0.22.6
+    Checking gemm v0.19.0
+    Checking simba v0.9.1
+    Checking num-rational v0.4.2
+   Compiling nalgebra-macros v0.2.2
+   Compiling indoc v2.0.7
+    Checking unindent v0.2.4
+    Checking bytecount v0.6.9
+    Checking typenum v1.20.1
+    Checking nom_locate v4.2.0
+    Checking faer v0.24.0
+    Checking ndarray v0.16.1
+    Checking rustc-hash v1.1.0
+    Checking aleph-parser v0.3.0 (/tmp/aleph-515-LAf0e0/candidate/crates/aleph-parser)
+    Checking aleph-sv v0.3.0 (/tmp/aleph-515-LAf0e0/candidate/crates/aleph-sv)
+    Checking nalgebra v0.33.3
+    Checking numpy v0.22.1
+    Checking aleph-mps v0.3.0 (/tmp/aleph-515-LAf0e0/candidate/crates/aleph-mps)
+    Checking aleph-py v0.3.0 (/tmp/aleph-515-LAf0e0/candidate/crates/aleph-py)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 20.00s
+
+
+local python-tests
+Ran 15 tests in 1.605s
+OK
+
+local clippy
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 36.82s
+
+local python-clippy
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 5.67s
+
+before tiny-prior fix
+   Compiling aleph-qec v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-qec)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.49s
+     Running tests/matching_priors.rs (target/debug/deps/matching_priors-517c15419d395118)
+
+running 1 test
+test supported_boundary_priors_decode_and_project_in_debug_and_release ... FAILED
+
+failures:
+
+---- supported_boundary_priors_decode_and_project_in_debug_and_release stdout ----
+
+thread 'supported_boundary_priors_decode_and_project_in_debug_and_release' (9290746) panicked at crates/aleph-qec/tests/matching_priors.rs:125:9:
+assertion failed: graph.edges().iter().all(|e| e.weight.is_finite() && e.weight >= 0.0)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    supported_boundary_priors_decode_and_project_in_debug_and_release
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p aleph-qec --test matching_priors`

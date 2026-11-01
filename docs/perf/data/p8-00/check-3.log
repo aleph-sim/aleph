@@ -1,0 +1,30 @@
+   Compiling aleph-sv v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-sv)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.09s
+     Running tests/noise_driver.rs (target/debug/deps/noise_driver-f298de4eadb158cd)
+
+running 3 tests
+test empty_model_reproduces_noiseless_distribution ... ok
+test deterministic_same_seed_same_counts ... ok
+test noise_actually_fires_under_correct_gate_name ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.77s
+
+     Running tests/noise_oracle.rs (target/debug/deps/noise_oracle-526d05c514191d8c)
+
+running 6 tests
+test oracle_readout ... ok
+test oracle_phase_damp ... ok
+test oracle_combined_ghz3 ... ok
+test oracle_amp_damp ... ok
+test oracle_depol_cx ... ok
+test oracle_depol_h ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.01s
+
+     Running tests/single_shot.rs (target/debug/deps/single_shot-0cb2b9914ec5be40)
+
+running 2 tests
+test noise_with_pauli_kraus_and_readout_is_worker_invariant ... ok
+test single_and_many_draws_match_analytic_distribution ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.54s

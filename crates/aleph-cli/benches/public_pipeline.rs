@@ -20,8 +20,20 @@ fn public_pipeline(c: &mut Criterion) {
             root.join("scripts/qiskit-baseline/circuits/random_brickwall_n15_d20.qasm"),
         ),
     ];
-    for precision in ["f64", "f32"] {
-        let mut group = c.benchmark_group(format!("public_cli/{precision}"));
+    let backend = std::env::var("ALEPH_BENCH_BACKEND").unwrap_or_else(|_| "sv".into());
+    assert!(matches!(backend.as_str(), "sv" | "metal"));
+    let precisions: &[&str] = if backend == "metal" {
+        &["auto"]
+    } else {
+        &["f64", "f32"]
+    };
+    for &precision in precisions {
+        let group_name = if backend == "metal" {
+            format!("public_cli/metal/{precision}")
+        } else {
+            format!("public_cli/{precision}")
+        };
+        let mut group = c.benchmark_group(group_name);
         group
             .sample_size(10)
             .warm_up_time(Duration::from_secs(1))
@@ -36,7 +48,7 @@ fn public_pipeline(c: &mut Criterion) {
                             .arg(path)
                             .args([
                                 "--backend",
-                                "sv",
+                                &backend,
                                 "--precision",
                                 precision,
                                 "--shots",

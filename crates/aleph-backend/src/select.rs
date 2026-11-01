@@ -67,6 +67,8 @@ pub enum Reach {
 }
 
 impl Reach {
+    /// Legacy reference-card hint, not a memory feasibility check. Public CUDA
+    /// frontends validate requested operations with runtime capacity before allocation.
     /// Reach for a concrete `kind` at `num_qubits`: the CUDA kinds page above their
     /// in-core cap (paged tile one qubit below the cap, for streaming headroom);
     /// every other kind is always in-core. Shared by the `auto` policy and the
@@ -416,8 +418,8 @@ fn cuda_selection(num_qubits: u32, precision: Precision) -> Selection {
     };
     let reach = Reach::for_kind(kind, num_qubits);
     let reason = match (use_f32, reach) {
-        (true, Reach::Paged { .. }) => "too large for in-core; CUDA FP32 out-of-core paging",
-        (false, Reach::Paged { .. }) => "too large for in-core; CUDA FP64 out-of-core paging",
+        (true, Reach::Paged { .. }) => "CUDA FP32 candidate; runtime output-memory check required",
+        (false, Reach::Paged { .. }) => "CUDA FP64 candidate; runtime output-memory check required",
         (true, Reach::InCore) => "large dense circuit; CUDA FP32 state vector",
         (false, Reach::InCore) => "large dense circuit; CUDA FP64 state vector",
     };

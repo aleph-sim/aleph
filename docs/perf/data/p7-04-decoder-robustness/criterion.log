@@ -1,0 +1,45 @@
+Gnuplot not found, using plotters backend
+Benchmarking robustness/direct_two_decoders_512_calls
+Benchmarking robustness/direct_two_decoders_512_calls: Warming up for 1.0000 s
+Benchmarking robustness/direct_two_decoders_512_calls: Collecting 20 samples in estimated 2.1133 s (2730 iterations)
+Benchmarking robustness/direct_two_decoders_512_calls: Analyzing
+robustness/direct_two_decoders_512_calls
+                        time:   [765.08 µs 777.82 µs 791.16 µs]
+Found 2 outliers among 20 measurements (10.00%)
+  2 (10.00%) high severe
+
+Benchmarking robustness/static_paired_512_calls
+Benchmarking robustness/static_paired_512_calls: Warming up for 1.0000 s
+Benchmarking robustness/static_paired_512_calls: Collecting 20 samples in estimated 2.1121 s (1260 iterations)
+Benchmarking robustness/static_paired_512_calls: Analyzing
+robustness/static_paired_512_calls
+                        time:   [1.6528 ms 1.6574 ms 1.6622 ms]
+
+Benchmarking robustness/generate_static_256
+Benchmarking robustness/generate_static_256: Warming up for 1.0000 s
+Benchmarking robustness/generate_static_256: Collecting 20 samples in estimated 2.0737 s (2730 iterations)
+Benchmarking robustness/generate_static_256: Analyzing
+robustness/generate_static_256
+                        time:   [776.46 µs 779.43 µs 782.68 µs]
+Found 2 outliers among 20 measurements (10.00%)
+  1 (5.00%) high mild
+  1 (5.00%) high severe
+
+Benchmarking robustness/generate_drift_256
+Benchmarking robustness/generate_drift_256: Warming up for 1.0000 s
+Benchmarking robustness/generate_drift_256: Collecting 20 samples in estimated 2.1223 s (2520 iterations)
+Benchmarking robustness/generate_drift_256: Analyzing
+robustness/generate_drift_256
+                        time:   [852.25 µs 861.80 µs 873.48 µs]
+Found 3 outliers among 20 measurements (15.00%)
+  3 (15.00%) high severe
+
+Benchmarking robustness/generate_bursts_256
+Benchmarking robustness/generate_bursts_256: Warming up for 1.0000 s
+Benchmarking robustness/generate_bursts_256: Collecting 20 samples in estimated 2.1408 s (2520 iterations)
+Benchmarking robustness/generate_bursts_256: Analyzing
+robustness/generate_bursts_256
+                        time:   [771.39 µs 772.16 µs 773.22 µs]
+Found 3 outliers among 20 measurements (15.00%)
+  1 (5.00%) high mild
+  2 (10.00%) high severe

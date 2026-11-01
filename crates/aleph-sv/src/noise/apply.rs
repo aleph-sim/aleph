@@ -13,6 +13,7 @@ use crate::measure::DEGENERATE_BRANCH_THRESHOLD;
 /// state-independent fast path (sample a Pauli, apply via unitary kernels, no
 /// renormalization); general Kraus channels compute `pᵢ=‖Kᵢ|ψ〉‖²`, sample,
 /// apply, and renormalize. Spec §3.
+#[cfg(test)]
 pub(super) fn apply_channel(
     amps: &mut [Complex],
     _num_qubits: u32, // reserved for multi-qubit general Kraus channels (v1.1)
@@ -20,11 +21,23 @@ pub(super) fn apply_channel(
     qubits: &[u32],
     rng: &mut StdRng,
 ) {
+    apply_channel_with_scratch(amps, _num_qubits, err, qubits, rng, &mut Vec::new());
+}
+
+/// Reuse the largest Kraus branch-probability buffer across channels and shots.
+pub(super) fn apply_channel_with_scratch(
+    amps: &mut [Complex],
+    _num_qubits: u32,
+    err: &QuantumError,
+    qubits: &[u32],
+    rng: &mut StdRng,
+    scratch: &mut Vec<f64>,
+) {
     match err {
         QuantumError::Pauli(c) => apply_pauli_channel(amps, c, qubits, rng),
         QuantumError::Kraus(c) => {
             debug_assert_eq!(qubits.len(), 1, "v1 Kraus channels are single-qubit");
-            apply_kraus_1q(amps, c, qubits[0], rng)
+            apply_kraus_1q(amps, c, qubits[0], rng, scratch)
         }
     }
 }
@@ -59,11 +72,18 @@ fn apply_pauli_channel(amps: &mut [Complex], c: &PauliChannel, qubits: &[u32], r
 ///   3. apply Kᵢ to |ψ〉 and renormalize by 1/√pᵢ.
 ///
 /// Works pairwise over the (qubit `q` = 0, qubit `q` = 1) amplitude pairs.
-fn apply_kraus_1q(amps: &mut [Complex], c: &KrausChannel, q: u32, rng: &mut StdRng) {
+fn apply_kraus_1q(
+    amps: &mut [Complex],
+    c: &KrausChannel,
+    q: u32,
+    rng: &mut StdRng,
+    probs: &mut Vec<f64>,
+) {
     let qbit = 1usize << q;
     // Step 1: branch probabilities. For each pair (a0, a1) and each Kraus op,
     // the local image is (K[0][0]a0 + K[0][1]a1, K[1][0]a0 + K[1][1]a1).
-    let mut probs = vec![0.0_f64; c.kraus.len()];
+    probs.resize(c.kraus.len(), 0.0);
+    probs.fill(0.0);
     // Paired index access: amps[i] is qubit-q=0, amps[i|qbit] is qubit-q=1.
     // A plain iterator cannot express this pairwise pattern.
     #[allow(clippy::needless_range_loop)]

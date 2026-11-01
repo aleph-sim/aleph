@@ -1,0 +1,8 @@
+ACCEPTED base-1 p8_fused/fp32/n10_k5 attempt 1 overlap seconds 0
+ACCEPTED candidate-1 p8_fused/fp32/n10_k5 attempt 1 overlap seconds 0
+ACCEPTED candidate-2 p8_fused/fp32/n10_k5 attempt 1 overlap seconds 0
+ACCEPTED base-2 p8_fused/fp32/n10_k5 attempt 1 overlap seconds 0
+ACCEPTED base-1 p8_fused/fp32/n20_k5 attempt 1 overlap seconds 0
+ACCEPTED candidate-1 p8_fused/fp32/n20_k5 attempt 1 overlap seconds 0
+ACCEPTED candidate-2 p8_fused/fp32/n20_k5 attempt 1 overlap seconds 0.02
+ACCEPTED base-2 p8_fused/fp32/n20_k5 attempt 1 overlap seconds 0

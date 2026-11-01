@@ -1,0 +1,24 @@
+--- candidate/flooder.rs
++++ neighbor/flooder.rs
+@@ -194,21 +194,6 @@
+ 
+     /// Queue `u`'s look-at if it is earlier than what is queued.
+     pub(crate) fn schedule_node(&mut self, g: &CompiledGraph, u: NodeId) {
+-        // next_at clamps every candidate to `now`. An entry already queued
+-        // for this instant cannot be improved; keep its original sequence/tie.
+-        if self.nodes[u as usize].queued == self.now {
+-            #[cfg(test)]
+-            {
+-                let mut work = self.look_work.get();
+-                work[5] += 1;
+-                work[6] += g.edges(u).len() as u64;
+-                self.look_work.set(work);
+-                assert!(self
+-                    .next_at_reference(g, u)
+-                    .is_none_or(|(t, _)| t >= self.now));
+-            }
+-            return;
+-        }
+         if let Some((t, _)) = self.next_at(g, u) {
+             let q = self.nodes[u as usize].queued;
+             if q == NO_TIME || t < q {

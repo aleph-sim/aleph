@@ -1,0 +1,24 @@
+{
+  "base_revision": "1de1494a3180e784817ac42039fb501e746465f6",
+  "kernel_sha256": "279d943b07d72ee0e5d94acfbb49f6c2b669bfe5840f2060bbc99e85cd7e841c",
+  "final_host_sha256": "30a95852db6e7a0888f066e920526932d0c9b4dadeeb2b7750d6ed61a8b5b29e",
+  "original_kernel_sha256": "5d0c57cfb7c912cc8721d57532abe9a5ccdaa01c874c122d300e8132c8c9d432",
+  "measured_candidate_patch_sha256": "d8908a67c29cab3d778fdb69a466d51ece069311991b6af3debe05e8715321ee",
+  "baseline_probe_patch_sha256": "1c2ef0bf85715c56689644c01e89c2095593258ab19073de32bcf13378fb9eb2",
+  "gpu_cpu_correction_comparisons": 588000,
+  "mismatches": 0,
+  "checks": {
+    "four_block_624_command_campaign": "PASS",
+    "final_hard_decisions_and_convergence_and_small_tiles": "PASS",
+    "padding_budget": "PASS",
+    "short_input_rejection_and_prefix_compatibility": "PASS",
+    "final_cuda_all_target_clippy_no_deps": "PASS",
+    "stable_beta_workspace_clippy_mac": "PASS",
+    "raw_artifact_tampering_rejected": "PASS",
+    "gpu_iteration_counts_equal_all_layouts_and_logical_checksums_match": "PASS",
+    "CI_budget_test_selected_in_existing_cuda_job": "PASS"
+  },
+  "scope": "Opt-in layouts only. Shot-major remains default; lower-rate and small-batch regressions are retained. Measured CUDA byte-identical to final. Subsequent host delta only preserves trailing-word acceptance and expands tests/comments, validated on GPU.",
+  "iteration_diagnostic_shots": 49152,
+  "manual_self_review": "No blockers: disjoint indexing, padded capacity/budget arithmetic, retained-buffer resize/failure state, prefix compatibility, per-shot FP64 schedule, actual-device oracles, original baseline controls and negative performance regimes checked."
+}

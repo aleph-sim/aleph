@@ -1,0 +1,77 @@
+{
+  "cases": [
+    {
+      "case": "dem_experiment/mwpm_d3_total_1024",
+      "baseline_median_us": 820.2716688095238,
+      "patch_median_us": 811.6008385416667,
+      "ratio": 0.9790725622970159,
+      "bootstrap95": [
+        0.8988138233820497,
+        1.0358882363699204
+      ],
+      "block_ratios": [
+        1.049653324959097,
+        0.8615681637786282,
+        1.0204930327390607,
+        0.9956666197288039
+      ]
+    },
+    {
+      "case": "dem_experiment/sample_1024",
+      "baseline_median_us": 1054.8148302910054,
+      "patch_median_us": 1043.500197089947,
+      "ratio": 0.9825605298501648,
+      "bootstrap95": [
+        0.9578347661910604,
+        1.0079245699741723
+      ],
+      "block_ratios": [
+        0.9482959878940754,
+        0.9674694937407688,
+        1.0071114226801183,
+        1.008738373807818
+      ]
+    },
+    {
+      "case": "dem_experiment/null_total/1024",
+      "baseline_median_us": 1167.7188624131945,
+      "patch_median_us": 1112.1379409722222,
+      "ratio": 0.9833569752251543,
+      "bootstrap95": [
+        0.9557802375594214,
+        1.0027864483189288
+      ],
+      "block_ratios": [
+        0.9918176479059305,
+        0.9924357016858097,
+        1.006469606323081,
+        0.9438651163417883
+      ]
+    }
+  ],
+  "accepted": 16,
+  "rejected": 14,
+  "max_accepted_external_cpu3": 0.016244182431701913,
+  "max_accepted_sibling23": 0.029337379868487605,
+  "feature": {
+    "failure_witness/minimize_d3": {
+      "confidence_interval": {
+        "confidence_level": 0.95,
+        "lower_bound": 59437.509803921566,
+        "upper_bound": 83661.0911764706
+      },
+      "point_estimate": 59670.96323529412,
+      "standard_error": 5340.223537030139
+    },
+    "failure_witness/capture_d3": {
+      "confidence_interval": {
+        "confidence_level": 0.95,
+        "lower_bound": 14217.627566180443,
+        "upper_bound": 14259.571943093822
+      },
+      "point_estimate": 14229.721907077255,
+      "standard_error": 10.539258792897071
+    }
+  },
+  "uncertainty": "Percentile bootstrap of four complete ABBA blocks; descriptive small-sample uncertainty, not a universal non-regression guarantee"
+}

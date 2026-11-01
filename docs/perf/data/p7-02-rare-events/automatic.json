@@ -1,0 +1,76 @@
+{
+  "protocol": "Supplemental final-source CPU correctness runs, one predeclared seed per case; no performance claim. Original 64-run measured campaign retained separately.",
+  "source_sha256": {
+    "crates/aleph-qec/tests/stratified.rs": "29160a478669dd5ca881f5a35376b65a7bdac14e1a0a8c953be964159248ad40",
+    "crates/aleph-qec/examples/rare_events.rs": "1350d350ceaf15f1cbabbcc9a9b79926e4f010336dbb83a6d6b0de3bb702ba9d",
+    "crates/aleph-qec/src/witness.rs": "389265c475451ee7419b843920510f4f3f53f83953a86e0fcbe3e80664211290",
+    "crates/aleph-qec/src/lib.rs": "a6f23b95c92713bea1ad4631c45ecaa08939c73ae25f59f53a74229276ab326d",
+    "crates/aleph-qec/src/stratified.rs": "b4c2c4fddf99aadf592de4adfb57e93667cac570946ab19dbc1479b9e8b57c49"
+  },
+  "cases": [
+    {
+      "case": "surface-low",
+      "decision": {
+        "declared_decoder_calls": 1536,
+        "direct_width_score": 0.050619925368331375,
+        "method": "Stratified",
+        "stratified_width_score": 1.7736075977180124e-06
+      },
+      "decoder_calls": 1065,
+      "failure_probability": {
+        "lower": 9.491785987146719e-07,
+        "upper": 2.172327216885681e-06
+      },
+      "status": "BudgetExhausted",
+      "seed": 544
+    },
+    {
+      "case": "surface-accessible",
+      "decision": {
+        "declared_decoder_calls": 1536,
+        "direct_width_score": 0.050619925368331375,
+        "method": "Direct",
+        "stratified_width_score": 0.06897335665840457
+      },
+      "decoder_calls": 1536,
+      "failure_probability": {
+        "lower": 0.08447722909839836,
+        "upper": 0.11499251417996476
+      },
+      "status": "BudgetExhausted",
+      "seed": 544
+    },
+    {
+      "case": "bb-low",
+      "decision": {
+        "declared_decoder_calls": 1536,
+        "direct_width_score": 0.050619925368331375,
+        "method": "Stratified",
+        "stratified_width_score": 0.0014885657910894059
+      },
+      "decoder_calls": 1169,
+      "failure_probability": {
+        "lower": 0.0,
+        "upper": 0.00018395899474322113
+      },
+      "status": "BudgetExhausted",
+      "seed": 544
+    },
+    {
+      "case": "bb-accessible",
+      "decision": {
+        "declared_decoder_calls": 2304,
+        "direct_width_score": 0.04124462251403371,
+        "method": "Direct",
+        "stratified_width_score": 0.18414352455254915
+      },
+      "decoder_calls": 2304,
+      "failure_probability": {
+        "lower": 0.0017876944098902641,
+        "upper": 0.00740227260978782
+      },
+      "status": "BudgetExhausted",
+      "seed": 544
+    }
+  ]
+}

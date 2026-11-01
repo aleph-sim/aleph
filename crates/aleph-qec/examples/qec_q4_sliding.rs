@@ -1,6 +1,6 @@
 //! Q4-01 sliding-window streaming decoder: logical-error rate vs the full-batch decode as the window
-//! `W` grows (commit `C = d` fixed), on a long memory-Z stream. Shows the rate converging to batch
-//! within CI once the buffer `W − C` is an adequate (d-dependent) size, and reports the per-window
+//! `W` grows (commit `C = d` fixed), on a long memory-Z stream. Reports marginal rate intervals
+//! and their overlap (not decoder equivalence), plus the per-window
 //! working set (bounded, independent of stream length).
 //!
 //! Usage:
@@ -15,13 +15,14 @@ use aleph_qec::{
 };
 
 fn main() {
+    eprintln!("# Legacy ci/ci95 columns are Wald half-widths; use explicit Clopper-Pearson bounds for inference. Marginal interval overlap is not decoder equivalence.");
     let args: Vec<String> = std::env::args().collect();
     let shots: u64 = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(200_000);
     let seed: u64 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(2024);
     let p: f64 = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(0.03);
 
     eprintln!("# Q4-01 sliding window vs batch, memory-Z stream, p={p}, commit C=d");
-    println!("d,rounds,commit,window,buffer,batch_rate,sw_rate,abs_delta,combined_ci,within_ci,window_dets");
+    println!("d,rounds,commit,window,buffer,batch_rate,sw_rate,abs_delta,combined_ci,intervals_overlap95,window_dets");
 
     for &d in &[3usize, 5, 7] {
         let rounds = 6 * d; // long stream
@@ -41,8 +42,12 @@ fn main() {
             let wdets = sw.max_window_detectors();
             let s = run_dem_experiment(&dem, shots, &sw, seed).expect("sliding");
             let delta = (s.rate - b.rate).abs();
-            let cci = b.ci95 + s.ci95;
-            let within = delta <= cci;
+            let cci = b.ci95 + s.ci95; // Legacy diagnostic column; not used for decisions.
+            let overlap = b
+                .interval95()
+                .expect("binomial interval")
+                .overlaps(s.interval95().expect("binomial interval"));
+            let within = overlap;
             println!(
                 "{d},{rounds},{c},{w},{},{:.6},{:.6},{:.6},{:.6},{within},{wdets}",
                 w - c,

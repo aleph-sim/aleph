@@ -1,0 +1,37 @@
+   Compiling aleph-sv v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-sv)
+   Compiling aleph-oracle v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-oracle)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.47s
+     Running tests/expectation_query.rs (target/debug/deps/expectation_query-7284d27e724a05a7)
+
+running 14 tests
+test finite_parameters_diagonal_scope_and_sum_overflow_are_guarded ... ok
+test rejects_all_nonunitary_input_even_when_disjoint_or_analytic ... ok
+test global_and_overflow_cones_reject_before_state_allocation ... ok
+test rejects_invalid_manual_ir_and_mutated_paulis ... ok
+test barrier_does_not_entangle_support_and_order_is_kept ... ok
+test manual_diagonal_high_bits_and_tiled_controls ... ok
+test identity_zero_coefficients_and_shared_states ... ok
+test nontrivial_relabeling_exposes_logical_maps ... ok
+test reordered_controlled_manual_kq_preserves_msb_operand_contract ... ok
+test shallow_128q_analytic_pairs_and_disjoint_cones_do_not_union ... ok
+test canonical_five_qubit_matrix_stays_within_query_workspace_contract ... ok
+test aer_fixture_amplitudes_independently_contract_pauli_expectations ... ok
+test p3_10_shallow_128q_matches_independent_window_reference ... ok
+test random_controls_fusion_tiling_and_permutation_match_full_sv ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+
+     Running tests/manual_fused_ir.rs (target/debug/deps/manual_fused_ir-df6076f902d7b37c)
+
+running 9 tests
+test generated_fused_soa_matches_raw ... ok
+test generated_fused_aos_matches_raw ... ok
+test generated_fused_fp32_matches_raw ... ok
+test soa_rejects_invalid_inputs_without_mutation ... ok
+test aos_rejects_invalid_inputs_without_mutation ... ok
+test fp32_rejects_invalid_inputs_without_mutation ... ok
+test soa_matches_dense_oracle ... ok
+test aos_matches_dense_oracle ... ok
+test fp32_matches_dense_oracle ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s

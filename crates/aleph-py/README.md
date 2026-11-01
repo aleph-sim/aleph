@@ -58,6 +58,21 @@ print(aleph.run(c, shots=100_000, noise=nm, seed=7).counts())
 
 Error factories mirror Qiskit Aer names (`depolarizing_error`, `amplitude_damping_error`, `phase_damping_error`, `pauli_error`, `bit_flip_error`, `phase_flip_error`). Noise runs on the state-vector backend as per-shot Monte-Carlo trajectories. Attach errors by Aer gate mnemonic (`"h"`, `"cx"`); unknown names raise `ValueError`.
 
+Noisy runs use a 1 GiB incremental owned-buffer budget by default. Override it
+with `noise_memory_budget_bytes=...` and optionally cap contexts with
+`noise_max_workers=...` (positive; limited by the shared Rayon pool). Both
+keywords require `noise=`. For example:
+
+```python
+result = aleph.run(c, shots=100_000, noise=nm, seed=7,
+                   noise_memory_budget_bytes=2 * 1024**3, noise_max_workers=2)
+```
+
+The budget excludes the input model, allocator/runtime overhead and Python
+result conversion; it is not an RSS limit. States with 26–28 qubits need an
+explicit budget above 1 GiB even for one context. Fixed-seed counts are invariant
+under changing the budget/context limit.
+
 ## QEC decoding
 
 aleph ships MWPM, Union-Find, BP, BP-OSD and relay-BP decoders for stim
@@ -199,10 +214,17 @@ print("logical error rate:", (pred != obs).any(axis=1).mean())
 
 Names: `aleph-mwpm`, `aleph-union-find`, `aleph-union-find-weighted`, `aleph-bp`,
 `aleph-bp-osd`, `aleph-relay-bp`, `aleph-relay-bp-osd`. Keyword parameters are
-those of `aleph.qec.Decoder` (`legs`, `alpha`, `gamma_min`, `gamma_max`, `seed`,
+those of `aleph.qec.Decoder` (`legs`, `iters_per_leg`, `early_exit`, `alpha`, `gamma_min`, `gamma_max`, `seed`,
 `osd_order`, `max_iter`); priors come from `error_rate_vec` (cudaq fills it in
 when you pass a DEM string) or a scalar `error_rate`. Results are per-column
 error estimates like cudaq's own decoders, so `O @ ê` gives the observable flips.
+
+For `relay-bp` / `relay-bp-osd`, set `legs=6, iters_per_leg=10` for an explicit
+6×10 relay schedule. `early_exit=True` takes the first syndrome-valid decision;
+the default `False` searches the full schedule for the lightest valid one. This
+can change logical quality, not just latency. Omitting `iters_per_leg` preserves
+`max(100 // max(legs, 1), 8)` iterations per leg (default 4×25). Explicit zero
+legs/iterations are promoted to one. See the [budget policy and validation](../../docs/qec/relay-bp-budget.md).
 
 Matching decoders need a graph-like `H` (≤ 2 ones per column). cudaq's DEM
 parser keeps a `^`-decomposed hyperedge as one column, so for `aleph-mwpm` /
@@ -218,3 +240,15 @@ model. A/B numbers against NVIDIA's decoders: `docs/perf/f6-cudaq-plugin.md`.
 
 - Repository: <https://github.com/aleph-sim/aleph>
 - Benchmarks: <https://github.com/aleph-sim/aleph/blob/main/docs/perf/parity.md>
+
+
+### CUDA execution planning
+
+CUDA `run` uses full-final-state-safe fusion and layered dispatch by default.
+`cuda_optimize=False` retains raw dispatch for comparisons or workload-specific
+regressions. Both modes preserve ordinary FP32 arithmetic on `cuda-f32`; public
+execution disables the separate experimental TF32 path, including on capable GPUs.
+`result.execution_stats()` returns plan/stage diagnostics (empty on other backends).
+Launch counters are process-wide deltas and can overlap during concurrent calls.
+Counts still sample a single final collapsed state; amplitude export remains lazy.
+See `docs/perf/p8-02-public-cuda-execution.md` for measurements and known tradeoffs.

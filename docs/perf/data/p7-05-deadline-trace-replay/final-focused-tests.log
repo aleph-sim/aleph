@@ -1,0 +1,20 @@
+    Finished `release` profile [optimized] target(s) in 0.11s
+     Running tests/deadline_replay.rs (../target/release/deps/deadline_replay-5ce69abcccb12a43)
+
+running 13 tests
+test finite_capacity_and_simultaneous_completion_precedes_arrival ... ok
+test fallback_contention_uses_its_own_fifo_and_same_time_resource_release ... ok
+test deadline_is_strict_and_combined_failure_is_a_union_not_a_sum ... ok
+test late_missing_and_unobserved_flags_remain_distinct ... ok
+test fallback_overflow_and_missing_trace_never_invent_a_rescue ... ok
+test blocked_fifo_head_does_not_reorder_another_stream ... ok
+test streaming_dependencies_wait_for_final_commit_and_cascade_after_missing_output ... ok
+test dependent_traces_reject_policy_switch_and_cancel_changed_fallback_history ... ok
+test multiple_workers_keep_fifo_and_overheads_occupy_resources ... ok
+test trace_roundtrip_cycle_conversion_empty_zero_and_overflow_cases ... ok
+test zero_time_primary_and_tail_release_without_artificial_queue_pressure ... ok
+test older_fallback_waiter_dispatches_before_new_same_time_flag ... ok
+test fifo_constant_service_matches_lindley_recursion_and_utilization ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

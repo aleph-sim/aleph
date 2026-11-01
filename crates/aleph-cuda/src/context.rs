@@ -142,6 +142,12 @@ impl CudaContext {
         self.pool.as_ref().and_then(|p| p.used_bytes().ok())
     }
 
+    /// Peak live bytes in the current process's CUDA pool (not reserved/cache bytes).
+    /// Run isolated validation cases in fresh processes to compare their peaks.
+    pub fn pool_used_high_bytes(&self) -> Option<u64> {
+        self.pool.as_ref().and_then(|p| p.used_high_bytes().ok())
+    }
+
     /// Release pool memory cached above `min_keep` bytes back to the OS.
     /// Synchronize first so pending async frees are trimmable. No-op without a
     /// pool.

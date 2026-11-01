@@ -12,6 +12,7 @@
 use aleph_qec::{run_dem_experiment, BBCode, BpDecoder, Syndrome};
 
 fn main() {
+    eprintln!("# Legacy ci/ci95 columns are Wald half-widths; use explicit Clopper-Pearson bounds for inference. Marginal interval overlap is not decoder equivalence.");
     let args: Vec<String> = std::env::args().collect();
     let shots: u64 = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(20_000);
     let seed: u64 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(2024);

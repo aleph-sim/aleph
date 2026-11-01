@@ -1,0 +1,4 @@
+{"fp32":true,"optimize":false,"device_estimate":6310416,"device_live_peak":6308368,"execution_scratch":2048}
+{"fp32":true,"optimize":true,"device_estimate":6310896,"device_live_peak":6308368,"execution_scratch":2528}
+{"fp32":false,"optimize":false,"device_estimate":8407568,"device_live_peak":8405520,"execution_scratch":2048}
+{"fp32":false,"optimize":true,"device_estimate":8408048,"device_live_peak":8405520,"execution_scratch":2528}

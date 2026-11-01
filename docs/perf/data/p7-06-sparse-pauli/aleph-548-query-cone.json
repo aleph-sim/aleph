@@ -1,0 +1,24 @@
+{
+  "initial_state": "zero",
+  "max_terms": 1024,
+  "max_workspace_bytes": 1048576,
+  "original_instructions": 3,
+  "original_qubits": 2,
+  "precision": "f64 untruncated",
+  "result": {
+    "branching_rotations": 1,
+    "coefficient_l1": 1.5939427775709964,
+    "coefficient_l2": 1.044030650891055,
+    "execution_ns": 2042,
+    "max_active_qubits": 2,
+    "merges": 0,
+    "peak_candidates": 3,
+    "peak_terms": 3,
+    "peak_workspace_bytes": 240,
+    "planning_ns": 99875,
+    "retained_gates": 3,
+    "splits": 1,
+    "value": 1.2323273456060344
+  },
+  "use_cones": true
+}

@@ -1,0 +1,66 @@
+Gnuplot not found, using plotters backend
+Benchmarking expectation_query/local18/full
+Benchmarking expectation_query/local18/full: Warming up for 500.00 ms
+
+Warning: Unable to complete 10 samples in 2.0s. You may wish to increase target time to 2.7s or enable flat sampling.
+Benchmarking expectation_query/local18/full: Collecting 10 samples in estimated 2.6651 s (55 iterations)
+Benchmarking expectation_query/local18/full: Analyzing
+expectation_query/local18/full
+                        time:   [47.843 ms 48.461 ms 48.961 ms]
+Benchmarking expectation_query/local18/query
+Benchmarking expectation_query/local18/query: Warming up for 500.00 ms
+Benchmarking expectation_query/local18/query: Collecting 10 samples in estimated 2.0002 s (70k iterations)
+Benchmarking expectation_query/local18/query: Analyzing
+expectation_query/local18/query
+                        time:   [24.132 µs 24.162 µs 24.193 µs]
+Found 3 outliers among 10 measurements (30.00%)
+  1 (10.00%) low severe
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+Benchmarking expectation_query/local18/plan
+Benchmarking expectation_query/local18/plan: Warming up for 500.00 ms
+Benchmarking expectation_query/local18/plan: Collecting 10 samples in estimated 2.0006 s (104k iterations)
+Benchmarking expectation_query/local18/plan: Analyzing
+expectation_query/local18/plan
+                        time:   [19.223 µs 19.293 µs 19.464 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking expectation_query/local18/reuse
+Benchmarking expectation_query/local18/reuse: Warming up for 500.00 ms
+Benchmarking expectation_query/local18/reuse: Collecting 10 samples in estimated 2.0001 s (486k iterations)
+Benchmarking expectation_query/local18/reuse: Analyzing
+expectation_query/local18/reuse
+                        time:   [4.1000 µs 4.1027 µs 4.1057 µs]
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) low mild
+  1 (10.00%) high mild
+Benchmarking expectation_query/global16/full
+Benchmarking expectation_query/global16/full: Warming up for 500.00 ms
+Benchmarking expectation_query/global16/full: Collecting 10 samples in estimated 2.0169 s (2585 iterations)
+Benchmarking expectation_query/global16/full: Analyzing
+expectation_query/global16/full
+                        time:   [779.23 µs 779.44 µs 779.80 µs]
+Benchmarking expectation_query/global16/query
+Benchmarking expectation_query/global16/query: Warming up for 500.00 ms
+Benchmarking expectation_query/global16/query: Collecting 10 samples in estimated 2.0294 s (2585 iterations)
+Benchmarking expectation_query/global16/query: Analyzing
+expectation_query/global16/query
+                        time:   [782.95 µs 784.36 µs 785.63 µs]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high mild
+Benchmarking expectation_query/global16/plan
+Benchmarking expectation_query/global16/plan: Warming up for 500.00 ms
+Benchmarking expectation_query/global16/plan: Collecting 10 samples in estimated 2.0000 s (532k iterations)
+Benchmarking expectation_query/global16/plan: Analyzing
+expectation_query/global16/plan
+                        time:   [3.7824 µs 3.7861 µs 3.7893 µs]
+Benchmarking expectation_query/global16/reuse
+Benchmarking expectation_query/global16/reuse: Warming up for 500.00 ms
+Benchmarking expectation_query/global16/reuse: Collecting 10 samples in estimated 2.0189 s (2585 iterations)
+Benchmarking expectation_query/global16/reuse: Analyzing
+expectation_query/global16/reuse
+                        time:   [779.84 µs 782.71 µs 786.44 µs]
+Found 4 outliers among 10 measurements (40.00%)
+  1 (10.00%) low severe
+  1 (10.00%) low mild
+  2 (20.00%) high severe

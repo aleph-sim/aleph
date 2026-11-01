@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "dem": "error(0.03) D0 L0\nerror(0.03) D0 D2\nerror(0.03) D0 D4\nerror(0.058199999999999995) D1 L0\nerror(0.03) D1 D2\nerror(0.03) D1 D3\nerror(0.03) D1 D5\nerror(0.058199999999999995) D2\nerror(0.03) D2 D6\nerror(0.03) D3\nerror(0.03) D3 D7\nerror(0.03) D4 L0\nerror(0.03) D4 D6\nerror(0.03) D4 D8\nerror(0.058199999999999995) D5 L0\nerror(0.03) D5 D6\nerror(0.03) D5 D7\nerror(0.03) D5 D9\nerror(0.058199999999999995) D6\nerror(0.03) D6 D10\nerror(0.03) D7\nerror(0.03) D7 D11\nerror(0.03) D8 L0\nerror(0.03) D8 D10\nerror(0.03) D8 D12\nerror(0.058199999999999995) D9 L0\nerror(0.03) D9 D10\nerror(0.03) D9 D11\nerror(0.03) D9 D13\nerror(0.058199999999999995) D10\nerror(0.03) D10 D14\nerror(0.03) D11\nerror(0.03) D11 D15\nerror(0.03) D12 L0\nerror(0.03) D12 D14\nerror(0.058199999999999995) D13 L0\nerror(0.03) D13 D14\nerror(0.03) D13 D15\nerror(0.058199999999999995) D14\nerror(0.03) D15\n",
+  "dem_sha256": "93e6d45a66b0af6c32fe15f3f630d772cfa4ff6d7bc57f3691e9822b253c62fe",
+  "seed": 543,
+  "shot": 39,
+  "original_faults": [
+    0,
+    2,
+    28,
+    35,
+    36
+  ],
+  "faults": [
+    35,
+    36
+  ],
+  "decoder": {
+    "kind": "Mwpm"
+  },
+  "provenance": "dem-mechanisms",
+  "original_outcome": {
+    "syndrome": [
+      4,
+      9,
+      13,
+      14
+    ],
+    "truth": [
+      false
+    ],
+    "prediction": [
+      true
+    ],
+    "logical_failure": true,
+    "valid": null,
+    "first_valid_iter": null
+  },
+  "outcome": {
+    "syndrome": [
+      14
+    ],
+    "truth": [
+      true
+    ],
+    "prediction": [
+      false
+    ],
+    "logical_failure": true,
+    "valid": null,
+    "first_valid_iter": null
+  },
+  "minimization": {
+    "status": "OneMinimal",
+    "call_budget": 100000,
+    "time_budget_ms": 60000,
+    "decoder_calls": 6,
+    "elapsed_us": 48
+  }
+}

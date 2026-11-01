@@ -1,0 +1,58 @@
+{
+  "issue": 565,
+  "baseline_commit": "c283272747877863fa4a2723421c8d710a8550b3",
+  "reviewed_code_commit": "bc343e2a4654903263ef62d4d3217b4a9f5fc839",
+  "source_sha256": {
+    "crates/aleph-qec/src/decoder.rs": "c0f319bcb5ce279c9be3da977e1c563056c92c7c0c5578d62a03fc50720029d1",
+    "crates/aleph-qec/src/error.rs": "8ffca6ea2705c9221d36404c8dd7784f9603a1127445b70f1dbfdfe8f58885fa",
+    "crates/aleph-qec/src/experiment.rs": "ddad81f722d2d2939418ba7abbc7974fb5323a9bb4d6beb51d1d8fe413ab5459",
+    "crates/aleph-qec/src/lib.rs": "615795a208d3eaa8c74bfbe8641425515479684baacf2d04046652fc8dca6254",
+    "crates/aleph-qec/src/pymatching.rs": "4de2a26c1b35bc6804bc0fea91826f046f1321f453ae62d0e48b003edb258900",
+    "crates/aleph-qec/benches/dem_experiment.rs": "464318d4d70df226180bef726aa702f5f6900cd7aa763f8a3ca3a8691b017e1b",
+    "crates/aleph-qec/tests/bounded_dem_experiment.rs": "bc537c58b941eb2686bb7e224f8f5b81f0a96ad2f93d81175abc66b2bf85418e",
+    "crates/aleph-qec/examples/dem_experiment_memory.rs": "d118de54e0eab38327ca574cf4b3b3d6cd31e4b084322e41cec38bbb3c59447e",
+    "crates/aleph-qec/Cargo.toml": "47ef7a8ca2f30bdca5e0727c0948b8c326b9be47c50b62b0c80c31102bb26f7a",
+    "Cargo.lock": "2deb9fce6e45fde678ad3598463c0ba2ca5ed723070e9c6c5886b6fa668e4b31"
+  },
+  "binary_sha256": {
+    "/tmp/aleph-565-lWXuPl/artifacts-final/bench-base": "ac37594ea0d17a2f96e6a9cc3c79c6290a8405901a898511cf6f040307524af1",
+    "/tmp/aleph-565-lWXuPl/artifacts-final/bench-candidate": "938a9faa2bcfa55aed5b7bbbe36593390237c15c9a9896b6759a7b94d8d71990",
+    "/tmp/aleph-565-lWXuPl/artifacts-final/memory-baseline": "fdede71a8cf768aa7c58cc69ab4089567ebd16ea712665f83035b95f23a3baab",
+    "/tmp/aleph-565-lWXuPl/artifacts-final/memory-candidate": "a1e542522ceeb6b792b659dabaa6716926d587eeb55fc5d09ec6ca3940e9430a"
+  },
+  "host": {
+    "cpu": "2x Intel Xeon Silver 4114",
+    "logical_cpus": 40,
+    "rustc": "1.96.0 (ac68faa20 2026-05-25)",
+    "rustflags": "-C target-cpu=native",
+    "server_workdir": "/tmp/aleph-565-lWXuPl"
+  },
+  "oracle_versions": {
+    "stim": "1.16.0",
+    "pymatching": "2.4.0",
+    "numpy": "2.5.4"
+  },
+  "guard": {
+    "cpu": 3,
+    "smt_sibling": 23,
+    "monitor": 39,
+    "workers": 1,
+    "accepted": 24,
+    "rejected": 2,
+    "max_accepted_external_cpu_fraction": 0.010769359038896026
+  },
+  "checks": {
+    "linux_targeted_and_doc_tests_passed": 25,
+    "local_new_tests_passed": 8,
+    "workspace_all_target_clippy": "passed",
+    "rustfmt": "passed",
+    "full_qec_suite": "exploratory run interrupted in existing slow decoder tests; not a full-suite pass",
+    "identical_binary_guard_negative_test": "passed"
+  },
+  "limitations": [
+    "bounded shared host; no established throughput gain",
+    "harness batch bound excludes decoder-owned memory and RSS",
+    "external decoder process startups repeat per batch; configurable batch size"
+  ],
+  "guard_script_sha256": "8412e3c033b37428d94440a542d48f1a17a0a5f26a152d3b57cb54d9132abb34"
+}

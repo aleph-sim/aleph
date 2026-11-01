@@ -1,0 +1,68 @@
+
+=== b0-i0-candidate.log ===
+Gnuplot not found, using plotters backend
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Collecting 15 samples in estimated 5.6512 s (240 iterations)
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Analyzing
+mwpm_decode/sparse/d11_det720_avgdef104
+                        time:   [23.586 ms 24.543 ms 26.141 ms]
+                        thrpt:  [9.7932 Kelem/s 10.431 Kelem/s 10.854 Kelem/s]
+Found 2 outliers among 15 measurements (13.33%)
+  1 (6.67%) high mild
+  1 (6.67%) high severe
+
+
+=== b0-i1-queued.log ===
+Gnuplot not found, using plotters backend
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Collecting 15 samples in estimated 5.4557 s (240 iterations)
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Analyzing
+mwpm_decode/sparse/d11_det720_avgdef104
+                        time:   [22.744 ms 22.803 ms 22.887 ms]
+                        thrpt:  [11.186 Kelem/s 11.227 Kelem/s 11.256 Kelem/s]
+Found 2 outliers among 15 measurements (13.33%)
+  2 (13.33%) high severe
+
+
+=== b0-i2-queued.log ===
+Gnuplot not found, using plotters backend
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Collecting 15 samples in estimated 5.4430 s (240 iterations)
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Analyzing
+mwpm_decode/sparse/d11_det720_avgdef104
+                        time:   [22.811 ms 23.321 ms 24.402 ms]
+                        thrpt:  [10.491 Kelem/s 10.977 Kelem/s 11.223 Kelem/s]
+Found 2 outliers among 15 measurements (13.33%)
+  2 (13.33%) high severe
+
+
+=== b0-i3-candidate.log ===
+Gnuplot not found, using plotters backend
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Warming up for 1.0000 s
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Collecting 15 samples in estimated 5.6452 s (240 iterations)
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Analyzing
+mwpm_decode/sparse/d11_det720_avgdef104
+                        time:   [23.526 ms 24.437 ms 26.035 ms]
+                        thrpt:  [9.8329 Kelem/s 10.476 Kelem/s 10.882 Kelem/s]
+Found 2 outliers among 15 measurements (13.33%)
+  2 (13.33%) high severe
+
+
+=== b1-i0-queued.log ===
+Gnuplot not found, using plotters backend
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Warming up for 1.0000 s
+
+Warning: Unable to complete 15 samples in 3.0s. You may wish to increase target time to 3.2s, enable flat sampling, or reduce sample count to 10.
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Collecting 15 samples in estimated 3.2225 s (120 iterations)
+Benchmarking mwpm_decode/sparse/d11_det720_avgdef104: Analyzing
+mwpm_decode/sparse/d11_det720_avgdef104
+                        time:   [23.644 ms 24.005 ms 24.685 ms]
+                        thrpt:  [10.371 Kelem/s 10.664 Kelem/s 10.827 Kelem/s]
+Found 1 outliers among 15 measurements (6.67%)
+  1 (6.67%) high severe
+

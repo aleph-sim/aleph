@@ -113,8 +113,12 @@ fn public_views_preserve_measurements_controls_phases_and_barriers() {
 fn public_optimized_path_reports_retained_fusion_and_smaller_plan() {
     let path =
         fixture("qubit[3] q; h q[0]; s q[0]; t q[0]; s q[0]; cx q[0],q[1]; h q[1]; cx q[1],q[2];");
-    for precision in ["f64", "f32"] {
-        let out = output(&path, "sv", precision, false);
+    let mut backends = vec![("sv", "f64"), ("sv", "f32")];
+    if std::env::var_os("ALEPH_TEST_CLI_METAL").is_some() {
+        backends.push(("metal", "auto"));
+    }
+    for (backend, precision) in backends {
+        let out = output(&path, backend, precision, false);
         let stats = String::from_utf8_lossy(&out.stderr);
         let metric = |name: &str| {
             stats

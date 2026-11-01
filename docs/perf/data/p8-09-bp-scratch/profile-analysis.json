@@ -1,0 +1,382 @@
+[
+  {
+    "distance": 3,
+    "rate": 0.001,
+    "arm": "original",
+    "sectors_per_load_request": 7.967180000370638,
+    "metrics": {
+      "dram__bytes_read.sum": 61056.0,
+      "dram__bytes_write.sum": 0.0,
+      "gpu__time_duration.sum": 2182752.0,
+      "l1tex__t_requests_pipe_lsu_mem_global_op_ld.sum": 215844.0,
+      "l1tex__t_sector_hit_rate.pct": 92.99,
+      "l1tex__t_sectors_pipe_lsu_mem_global_op_ld.sum": 1719668.0,
+      "l1tex__t_sectors_pipe_lsu_mem_global_op_st.sum": 1011952.0,
+      "launch__registers_per_thread": 42.0,
+      "lts__t_sector_hit_rate.pct": 99.27,
+      "sm__warps_active.avg.pct_of_peak_sustained_active": 5.66,
+      "smsp__thread_inst_executed_per_inst_executed.ratio": 17.52
+    }
+  },
+  {
+    "distance": 3,
+    "rate": 0.001,
+    "arm": "shot",
+    "sectors_per_load_request": 7.967180000370638,
+    "metrics": {
+      "dram__bytes_read.sum": 61184.0,
+      "dram__bytes_write.sum": 128.0,
+      "gpu__time_duration.sum": 2181952.0,
+      "l1tex__t_requests_pipe_lsu_mem_global_op_ld.sum": 215844.0,
+      "l1tex__t_sector_hit_rate.pct": 92.96,
+      "l1tex__t_sectors_pipe_lsu_mem_global_op_ld.sum": 1719668.0,
+      "l1tex__t_sectors_pipe_lsu_mem_global_op_st.sum": 1011952.0,
+      "launch__registers_per_thread": 42.0,
+      "lts__t_sector_hit_rate.pct": 99.33,
+      "sm__warps_active.avg.pct_of_peak_sustained_active": 5.66,
+      "smsp__thread_inst_executed_per_inst_executed.ratio": 17.52
+    }
+  },
+  {
+    "distance": 3,
+    "rate": 0.001,
+    "arm": "edge",
+    "sectors_per_load_request": 2.1255536405922797,
+    "metrics": {
+      "dram__bytes_read.sum": 51584.0,
+      "dram__bytes_write.sum": 0.0,
+      "gpu__time_duration.sum": 2135776.0,
+      "l1tex__t_requests_pipe_lsu_mem_global_op_ld.sum": 215844.0,
+      "l1tex__t_sector_hit_rate.pct": 59.63,
+      "l1tex__t_sectors_pipe_lsu_mem_global_op_ld.sum": 458788.0,
+      "l1tex__t_sectors_pipe_lsu_mem_global_op_st.sum": 231024.0,
+      "launch__registers_per_thread": 40.0,
+      "lts__t_sector_hit_rate.pct": 99.55,
+      "sm__warps_active.avg.pct_of_peak_sustained_active": 5.28,
+      "smsp__thread_inst_executed_per_inst_executed.ratio": 17.67
+    }
+  },
+  {
+    "distance": 3,
+    "rate": 0.001,
+    "arm": "warp",
+    "sectors_per_load_request": 2.1255536405922797,
+    "metrics": {
+      "dram__bytes_read.sum": 47616.0,
+      "dram__bytes_write.sum": 0.0,
+      "gpu__time_duration.sum": 2094304.0,
+      "l1tex__t_requests_pipe_lsu_mem_global_op_ld.sum": 215844.0,
+      "l1tex__t_sector_hit_rate.pct": 60.4,
+      "l1tex__t_sectors_pipe_lsu_mem_global_op_ld.sum": 458788.0,
+      "l1tex__t_sectors_pipe_lsu_mem_global_op_st.sum": 231024.0,
+      "launch__registers_per_thread": 40.0,
+      "lts__t_sector_hit_rate.pct": 98.41,
+      "sm__warps_active.avg.pct_of_peak_sustained_active": 5.26,
+      "smsp__thread_inst_executed_per_inst_executed.ratio": 17.5
+    }
+  },
+  {
+    "distance": 7,
+    "rate": 0.001,
+    "arm": "original",
+    "sectors_per_load_request": 3.7236095103184237,
+    "metrics": {
+      "dram__bytes_read.sum": 65467008.0,
+      "dram__bytes_write.sum": 97076096.0,
+      "gpu__time_duration.sum": 35497184.0,
+      "l1tex__t_requests_pipe_lsu_mem_global_op_ld.sum": 9038057.0,
+      "l1tex__t_sector_hit_rate.pct": 84.23,
+      "l1tex__t_sectors_pipe_lsu_mem_global_op_ld.sum": 33654195.0,
+      "l1tex__t_sectors_pipe_lsu_mem_global_op_st.sum": 17356288.0,
+      "launch__registers_per_thread": 42.0,
+      "lts__t_sector_hit_rate.pct": 91.21,
+      "sm__warps_active.avg.pct_of_peak_sustained_active": 4.02,
+      "smsp__thread_inst_executed_per_inst_executed.ratio": 6.51
+    }
+  },
+  {
+    "distance": 7,
+    "rate": 0.001,
+    "arm": "shot",
+    "sectors_per_load_request": 3.7236095103184237,
+    "metrics": {
+      "dram__bytes_read.sum": 65420800.0,
+      "dram__bytes_write.sum": 97158528.0,
+      "gpu__time_duration.sum": 33594656.0,
+      "l1tex__t_requests_pipe_lsu_mem_global_op_ld.sum": 9038057.0,
+      "l1tex__t_sector_hit_rate.pct": 84.22,
+      "l1tex__t_sectors_pipe_lsu_mem_global_op_ld.sum": 33654195.0,
+      "l1tex__t_sectors_pipe_lsu_mem_global_op_st.sum": 17356288.0,
+      "launch__registers_per_thread": 42.0,
+      "lts__t_sector_hit_rate.pct": 91.2,
+      "sm__warps_active.avg.pct_of_peak_sustained_active": 4.04,
+      "smsp__thread_inst_executed_per_inst_executed.ratio": 6.51
+    }
+  },
+  {
+    "distance": 7,
+    "rate": 0.001,
+    "arm": "edge",
+    "sectors_per_load_request": 1.5579393889638005,
+    "metrics": {
+      "dram__bytes_read.sum": 99247232.0,
+      "dram__bytes_write.sum": 122203648.0,
+      "gpu__time_duration.sum": 41802944.0,
+      "l1tex__t_requests_pipe_lsu_mem_global_op_ld.sum": 9038057.0,
+      "l1tex__t_sector_hit_rate.pct": 47.81,
+      "l1tex__t_sectors_pipe_lsu_mem_global_op_ld.sum": 14080745.0,
+      "l1tex__t_sectors_pipe_lsu_mem_global_op_st.sum": 5419136.0,
+      "launch__registers_per_thread": 40.0,
+      "lts__t_sector_hit_rate.pct": 71.69,
+      "sm__warps_active.avg.pct_of_peak_sustained_active": 3.67,
+      "smsp__thread_inst_executed_per_inst_executed.ratio": 6.59
+    }
+  },
+  {
+    "distance": 7,
+    "rate": 0.001,
+    "arm": "warp",
+    "sectors_per_load_request": 1.5579393889638005,
+    "metrics": {
+      "dram__bytes_read.sum": 97519744.0,
+      "dram__bytes_write.sum": 122188032.0,
+      "gpu__time_duration.sum": 37284512.0,
+      "l1tex__t_requests_pipe_lsu_mem_global_op_ld.sum": 9038057.0,
+      "l1tex__t_sector_hit_rate.pct": 49.18,
+      "l1tex__t_sectors_pipe_lsu_mem_global_op_ld.sum": 14080745.0,
+      "l1tex__t_sectors_pipe_lsu_mem_global_op_st.sum": 5419136.0,
+      "launch__registers_per_thread": 40.0,
+      "lts__t_sector_hit_rate.pct": 72.36,
+      "sm__warps_active.avg.pct_of_peak_sustained_active": 3.69,
+      "smsp__thread_inst_executed_per_inst_executed.ratio": 6.49
+    }
+  },
+  {
+    "distance": 7,
+    "rate": 0.03,
+    "arm": "original",
+    "sectors_per_load_request": 11.413285741513981,
+    "metrics": {
+      "dram__bytes_read.sum": 3124677632.0,
+      "dram__bytes_write.sum": 3765131136.0,
+      "gpu__time_duration.sum": 80257536.0,
+      "l1tex__t_requests_pipe_lsu_mem_global_op_ld.sum": 87718717.0,
+      "l1tex__t_sector_hit_rate.pct": 79.51,
+      "l1tex__t_sectors_pipe_lsu_mem_global_op_ld.sum": 1001158782.0,
+      "l1tex__t_sectors_pipe_lsu_mem_global_op_st.sum": 532390656.0,
+      "launch__registers_per_thread": 42.0,
+      "lts__t_sector_hit_rate.pct": 87.23,
+      "sm__warps_active.avg.pct_of_peak_sustained_active": 8.27,
+      "smsp__thread_inst_executed_per_inst_executed.ratio": 24.15
+    }
+  },
+  {
+    "distance": 7,
+    "rate": 0.03,
+    "arm": "shot",
+    "sectors_per_load_request": 11.413285741513981,
+    "metrics": {
+      "dram__bytes_read.sum": 3160748416.0,
+      "dram__bytes_write.sum": 3789779072.0,
+      "gpu__time_duration.sum": 73807008.0,
+      "l1tex__t_requests_pipe_lsu_mem_global_op_ld.sum": 87718717.0,
+      "l1tex__t_sector_hit_rate.pct": 79.58,
+      "l1tex__t_sectors_pipe_lsu_mem_global_op_ld.sum": 1001158782.0,
+      "l1tex__t_sectors_pipe_lsu_mem_global_op_st.sum": 532390656.0,
+      "launch__registers_per_thread": 42.0,
+      "lts__t_sector_hit_rate.pct": 86.56,
+      "sm__warps_active.avg.pct_of_peak_sustained_active": 8.25,
+      "smsp__thread_inst_executed_per_inst_executed.ratio": 24.15
+    }
+  },
+  {
+    "distance": 7,
+    "rate": 0.03,
+    "arm": "edge",
+    "sectors_per_load_request": 3.5142124228743565,
+    "metrics": {
+      "dram__bytes_read.sum": 5526834432.0,
+      "dram__bytes_write.sum": 4139777792.0,
+      "gpu__time_duration.sum": 72068096.0,
+      "l1tex__t_requests_pipe_lsu_mem_global_op_ld.sum": 87718717.0,
+      "l1tex__t_sector_hit_rate.pct": 39.07,
+      "l1tex__t_sectors_pipe_lsu_mem_global_op_ld.sum": 308262205.0,
+      "l1tex__t_sectors_pipe_lsu_mem_global_op_st.sum": 130920704.0,
+      "launch__registers_per_thread": 40.0,
+      "lts__t_sector_hit_rate.pct": 48.53,
+      "sm__warps_active.avg.pct_of_peak_sustained_active": 8.18,
+      "smsp__thread_inst_executed_per_inst_executed.ratio": 24.1
+    }
+  },
+  {
+    "distance": 7,
+    "rate": 0.03,
+    "arm": "warp",
+    "sectors_per_load_request": 3.5142124228743565,
+    "metrics": {
+      "dram__bytes_read.sum": 5448341760.0,
+      "dram__bytes_write.sum": 4151919488.0,
+      "gpu__time_duration.sum": 71727648.0,
+      "l1tex__t_requests_pipe_lsu_mem_global_op_ld.sum": 87718717.0,
+      "l1tex__t_sector_hit_rate.pct": 39.4,
+      "l1tex__t_sectors_pipe_lsu_mem_global_op_ld.sum": 308262205.0,
+      "l1tex__t_sectors_pipe_lsu_mem_global_op_st.sum": 130920704.0,
+      "launch__registers_per_thread": 40.0,
+      "lts__t_sector_hit_rate.pct": 49.38,
+      "sm__warps_active.avg.pct_of_peak_sustained_active": 8.14,
+      "smsp__thread_inst_executed_per_inst_executed.ratio": 24.21
+    }
+  },
+  {
+    "distance": 11,
+    "rate": 0.03,
+    "arm": "original",
+    "sectors_per_load_request": 14.748269331645066,
+    "metrics": {
+      "dram__bytes_read.sum": 23707850368.0,
+      "dram__bytes_write.sum": 22555435776.0,
+      "gpu__time_duration.sum": 413883296.0,
+      "l1tex__t_requests_pipe_lsu_mem_global_op_ld.sum": 305972111.0,
+      "l1tex__t_sector_hit_rate.pct": 72.45,
+      "l1tex__t_sectors_pipe_lsu_mem_global_op_ld.sum": 4512559101.0,
+      "l1tex__t_sectors_pipe_lsu_mem_global_op_st.sum": 2554135552.0,
+      "launch__registers_per_thread": 42.0,
+      "lts__t_sector_hit_rate.pct": 81.87,
+      "sm__warps_active.avg.pct_of_peak_sustained_active": 8.26,
+      "smsp__thread_inst_executed_per_inst_executed.ratio": 30.02
+    }
+  },
+  {
+    "distance": 11,
+    "rate": 0.03,
+    "arm": "shot",
+    "sectors_per_load_request": 14.748269331645066,
+    "metrics": {
+      "dram__bytes_read.sum": 23696884480.0,
+      "dram__bytes_write.sum": 22539204992.0,
+      "gpu__time_duration.sum": 415474624.0,
+      "l1tex__t_requests_pipe_lsu_mem_global_op_ld.sum": 305972111.0,
+      "l1tex__t_sector_hit_rate.pct": 72.44,
+      "l1tex__t_sectors_pipe_lsu_mem_global_op_ld.sum": 4512559101.0,
+      "l1tex__t_sectors_pipe_lsu_mem_global_op_st.sum": 2554135552.0,
+      "launch__registers_per_thread": 42.0,
+      "lts__t_sector_hit_rate.pct": 81.91,
+      "sm__warps_active.avg.pct_of_peak_sustained_active": 8.26,
+      "smsp__thread_inst_executed_per_inst_executed.ratio": 30.02
+    }
+  },
+  {
+    "distance": 11,
+    "rate": 0.03,
+    "arm": "edge",
+    "sectors_per_load_request": 3.8880436099615627,
+    "metrics": {
+      "dram__bytes_read.sum": 16585758976.0,
+      "dram__bytes_write.sum": 16728873984.0,
+      "gpu__time_duration.sum": 299345024.0,
+      "l1tex__t_requests_pipe_lsu_mem_global_op_ld.sum": 305972111.0,
+      "l1tex__t_sector_hit_rate.pct": 37.58,
+      "l1tex__t_sectors_pipe_lsu_mem_global_op_ld.sum": 1189632911.0,
+      "l1tex__t_sectors_pipe_lsu_mem_global_op_st.sum": 523660288.0,
+      "launch__registers_per_thread": 40.0,
+      "lts__t_sector_hit_rate.pct": 51.68,
+      "sm__warps_active.avg.pct_of_peak_sustained_active": 8.08,
+      "smsp__thread_inst_executed_per_inst_executed.ratio": 29.97
+    }
+  },
+  {
+    "distance": 11,
+    "rate": 0.03,
+    "arm": "warp",
+    "sectors_per_load_request": 3.8880436099615627,
+    "metrics": {
+      "dram__bytes_read.sum": 16585841920.0,
+      "dram__bytes_write.sum": 16725373952.0,
+      "gpu__time_duration.sum": 295200032.0,
+      "l1tex__t_requests_pipe_lsu_mem_global_op_ld.sum": 305972111.0,
+      "l1tex__t_sector_hit_rate.pct": 38.19,
+      "l1tex__t_sectors_pipe_lsu_mem_global_op_ld.sum": 1189632911.0,
+      "l1tex__t_sectors_pipe_lsu_mem_global_op_st.sum": 523660288.0,
+      "launch__registers_per_thread": 40.0,
+      "lts__t_sector_hit_rate.pct": 51.64,
+      "sm__warps_active.avg.pct_of_peak_sustained_active": 8.08,
+      "smsp__thread_inst_executed_per_inst_executed.ratio": 30.07
+    }
+  },
+  {
+    "distance": 11,
+    "rate": 0.15,
+    "arm": "original",
+    "sectors_per_load_request": 16.61586557763588,
+    "metrics": {
+      "dram__bytes_read.sum": 24150528256.0,
+      "dram__bytes_write.sum": 22737823744.0,
+      "gpu__time_duration.sum": 417558112.0,
+      "l1tex__t_requests_pipe_lsu_mem_global_op_ld.sum": 263017603.0,
+      "l1tex__t_sector_hit_rate.pct": 70.94,
+      "l1tex__t_sectors_pipe_lsu_mem_global_op_ld.sum": 4370265136.0,
+      "l1tex__t_sectors_pipe_lsu_mem_global_op_st.sum": 2554135552.0,
+      "launch__registers_per_thread": 42.0,
+      "lts__t_sector_hit_rate.pct": 81.55,
+      "sm__warps_active.avg.pct_of_peak_sustained_active": 8.31,
+      "smsp__thread_inst_executed_per_inst_executed.ratio": 31.74
+    }
+  },
+  {
+    "distance": 11,
+    "rate": 0.15,
+    "arm": "shot",
+    "sectors_per_load_request": 16.61586557763588,
+    "metrics": {
+      "dram__bytes_read.sum": 24178899968.0,
+      "dram__bytes_write.sum": 22753001728.0,
+      "gpu__time_duration.sum": 416797024.0,
+      "l1tex__t_requests_pipe_lsu_mem_global_op_ld.sum": 263017603.0,
+      "l1tex__t_sector_hit_rate.pct": 71.0,
+      "l1tex__t_sectors_pipe_lsu_mem_global_op_ld.sum": 4370265136.0,
+      "l1tex__t_sectors_pipe_lsu_mem_global_op_st.sum": 2554135552.0,
+      "launch__registers_per_thread": 42.0,
+      "lts__t_sector_hit_rate.pct": 81.7,
+      "sm__warps_active.avg.pct_of_peak_sustained_active": 8.31,
+      "smsp__thread_inst_executed_per_inst_executed.ratio": 31.74
+    }
+  },
+  {
+    "distance": 11,
+    "rate": 0.15,
+    "arm": "edge",
+    "sectors_per_load_request": 4.3597021260968605,
+    "metrics": {
+      "dram__bytes_read.sum": 16330901632.0,
+      "dram__bytes_write.sum": 16735371520.0,
+      "gpu__time_duration.sum": 262923232.0,
+      "l1tex__t_requests_pipe_lsu_mem_global_op_ld.sum": 263017603.0,
+      "l1tex__t_sector_hit_rate.pct": 37.7,
+      "l1tex__t_sectors_pipe_lsu_mem_global_op_ld.sum": 1146678403.0,
+      "l1tex__t_sectors_pipe_lsu_mem_global_op_st.sum": 523660288.0,
+      "launch__registers_per_thread": 40.0,
+      "lts__t_sector_hit_rate.pct": 51.46,
+      "sm__warps_active.avg.pct_of_peak_sustained_active": 8.3,
+      "smsp__thread_inst_executed_per_inst_executed.ratio": 31.73
+    }
+  },
+  {
+    "distance": 11,
+    "rate": 0.15,
+    "arm": "warp",
+    "sectors_per_load_request": 4.3597021260968605,
+    "metrics": {
+      "dram__bytes_read.sum": 16328409216.0,
+      "dram__bytes_write.sum": 16733598464.0,
+      "gpu__time_duration.sum": 260429472.0,
+      "l1tex__t_requests_pipe_lsu_mem_global_op_ld.sum": 263017603.0,
+      "l1tex__t_sector_hit_rate.pct": 37.69,
+      "l1tex__t_sectors_pipe_lsu_mem_global_op_ld.sum": 1146678403.0,
+      "l1tex__t_sectors_pipe_lsu_mem_global_op_st.sum": 523660288.0,
+      "launch__registers_per_thread": 40.0,
+      "lts__t_sector_hit_rate.pct": 51.55,
+      "sm__warps_active.avg.pct_of_peak_sustained_active": 8.28,
+      "smsp__thread_inst_executed_per_inst_executed.ratio": 31.74
+    }
+  }
+]

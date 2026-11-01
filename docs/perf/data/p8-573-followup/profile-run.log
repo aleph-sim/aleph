@@ -1,0 +1,8 @@
+Gnuplot not found, using plotters backend
+Benchmarking p8_fused/soa/n20_k2
+Benchmarking p8_fused/soa/n20_k2: Warming up for 100.00 ms
+Benchmarking p8_fused/soa/n20_k2: Collecting 10 samples in estimated 425.45 ms (20 iterations)
+Benchmarking p8_fused/soa/n20_k2: Analyzing
+p8_fused/soa/n20_k2     time:   [21.224 ms 21.339 ms 21.488 ms]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe

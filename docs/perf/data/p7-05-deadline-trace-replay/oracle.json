@@ -1,0 +1,156 @@
+{
+  "method": "Independent availability schedules for primary and fallback, direct waiting-interval integrals; no Rust event heap reused",
+  "cases": [
+    {
+      "name": "golden-f0-low-w1-FlagOnly",
+      "metrics": "PASS",
+      "full_job_receipts": "not retained; deterministic replay recipe retained"
+    },
+    {
+      "name": "golden-f0-low-w1-FallbackOnFlag",
+      "metrics": "PASS",
+      "full_job_receipts": "not retained; deterministic replay recipe retained"
+    },
+    {
+      "name": "golden-f0-low-w2-FlagOnly",
+      "metrics": "PASS",
+      "full_job_receipts": "not retained; deterministic replay recipe retained"
+    },
+    {
+      "name": "golden-f0-low-w2-FallbackOnFlag",
+      "metrics": "PASS",
+      "full_job_receipts": "not retained; deterministic replay recipe retained"
+    },
+    {
+      "name": "golden-f0-near-w1-FlagOnly",
+      "metrics": "PASS",
+      "full_job_receipts": "PASS"
+    },
+    {
+      "name": "golden-f0-near-w1-FallbackOnFlag",
+      "metrics": "PASS",
+      "full_job_receipts": "PASS"
+    },
+    {
+      "name": "golden-f0-near-w2-FlagOnly",
+      "metrics": "PASS",
+      "full_job_receipts": "not retained; deterministic replay recipe retained"
+    },
+    {
+      "name": "golden-f0-near-w2-FallbackOnFlag",
+      "metrics": "PASS",
+      "full_job_receipts": "not retained; deterministic replay recipe retained"
+    },
+    {
+      "name": "golden-f0-high-w1-FlagOnly",
+      "metrics": "PASS",
+      "full_job_receipts": "not retained; deterministic replay recipe retained"
+    },
+    {
+      "name": "golden-f0-high-w1-FallbackOnFlag",
+      "metrics": "PASS",
+      "full_job_receipts": "not retained; deterministic replay recipe retained"
+    },
+    {
+      "name": "golden-f0-high-w2-FlagOnly",
+      "metrics": "PASS",
+      "full_job_receipts": "not retained; deterministic replay recipe retained"
+    },
+    {
+      "name": "golden-f0-high-w2-FallbackOnFlag",
+      "metrics": "PASS",
+      "full_job_receipts": "not retained; deterministic replay recipe retained"
+    },
+    {
+      "name": "golden-f1-low-w1-FlagOnly",
+      "metrics": "PASS",
+      "full_job_receipts": "not retained; deterministic replay recipe retained"
+    },
+    {
+      "name": "golden-f1-low-w1-FallbackOnFlag",
+      "metrics": "PASS",
+      "full_job_receipts": "not retained; deterministic replay recipe retained"
+    },
+    {
+      "name": "golden-f1-low-w2-FlagOnly",
+      "metrics": "PASS",
+      "full_job_receipts": "not retained; deterministic replay recipe retained"
+    },
+    {
+      "name": "golden-f1-low-w2-FallbackOnFlag",
+      "metrics": "PASS",
+      "full_job_receipts": "not retained; deterministic replay recipe retained"
+    },
+    {
+      "name": "golden-f1-near-w1-FlagOnly",
+      "metrics": "PASS",
+      "full_job_receipts": "PASS"
+    },
+    {
+      "name": "golden-f1-near-w1-FallbackOnFlag",
+      "metrics": "PASS",
+      "full_job_receipts": "PASS"
+    },
+    {
+      "name": "golden-f1-near-w2-FlagOnly",
+      "metrics": "PASS",
+      "full_job_receipts": "not retained; deterministic replay recipe retained"
+    },
+    {
+      "name": "golden-f1-near-w2-FallbackOnFlag",
+      "metrics": "PASS",
+      "full_job_receipts": "not retained; deterministic replay recipe retained"
+    },
+    {
+      "name": "golden-f1-high-w1-FlagOnly",
+      "metrics": "PASS",
+      "full_job_receipts": "not retained; deterministic replay recipe retained"
+    },
+    {
+      "name": "golden-f1-high-w1-FallbackOnFlag",
+      "metrics": "PASS",
+      "full_job_receipts": "not retained; deterministic replay recipe retained"
+    },
+    {
+      "name": "golden-f1-high-w2-FlagOnly",
+      "metrics": "PASS",
+      "full_job_receipts": "not retained; deterministic replay recipe retained"
+    },
+    {
+      "name": "golden-f1-high-w2-FallbackOnFlag",
+      "metrics": "PASS",
+      "full_job_receipts": "not retained; deterministic replay recipe retained"
+    },
+    {
+      "name": "constant-stable-FlagOnly",
+      "metrics": "PASS",
+      "full_job_receipts": "PASS"
+    },
+    {
+      "name": "constant-stable-FallbackOnFlag",
+      "metrics": "PASS",
+      "full_job_receipts": "PASS"
+    },
+    {
+      "name": "rare-spikes-FlagOnly",
+      "metrics": "PASS",
+      "full_job_receipts": "PASS"
+    },
+    {
+      "name": "rare-spikes-FallbackOnFlag",
+      "metrics": "PASS",
+      "full_job_receipts": "PASS"
+    },
+    {
+      "name": "correlated-flags-FlagOnly",
+      "metrics": "PASS",
+      "full_job_receipts": "PASS"
+    },
+    {
+      "name": "correlated-flags-FallbackOnFlag",
+      "metrics": "PASS",
+      "full_job_receipts": "PASS"
+    }
+  ],
+  "no_loss_controls": "PASS"
+}

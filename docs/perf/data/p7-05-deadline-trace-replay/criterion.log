@@ -1,0 +1,22 @@
+Gnuplot not found, using plotters backend
+Benchmarking deadline_replay/512_jobs
+Benchmarking deadline_replay/512_jobs: Warming up for 1.0000 s
+Benchmarking deadline_replay/512_jobs: Collecting 20 samples in estimated 2.1755 s (1050 iterations)
+Benchmarking deadline_replay/512_jobs: Analyzing
+deadline_replay/512_jobs
+                        time:   [1.9171 ms 1.9304 ms 1.9587 ms]
+Found 3 outliers among 20 measurements (15.00%)
+  3 (15.00%) high severe
+
+Benchmarking deadline_replay/4096_jobs
+Benchmarking deadline_replay/4096_jobs: Warming up for 1.0000 s
+
+Warning: Unable to complete 20 samples in 2.0s. You may wish to increase target time to 3.3s, enable flat sampling, or reduce sample count to 10.
+Benchmarking deadline_replay/4096_jobs: Collecting 20 samples in estimated 3.2763 s (210 iterations)
+Benchmarking deadline_replay/4096_jobs: Analyzing
+deadline_replay/4096_jobs
+                        time:   [15.434 ms 16.059 ms 17.291 ms]
+Found 2 outliers among 20 measurements (10.00%)
+  1 (5.00%) high mild
+  1 (5.00%) high severe
+

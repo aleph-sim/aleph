@@ -1,0 +1,33 @@
+{
+  "baseline": "879e5d299d0bea1338b72e07e129ab5d4b453ef9",
+  "final_source_sha256": {
+    "crates/aleph-qec/Cargo.toml": "06ca5be6d0caeda4705ce199075d31e222da82116f7ed6228223373b234899b6",
+    "crates/aleph-qec/benches/robustness.rs": "36ac972a7fe221a606a627a8e153203ba6f731212d1ff24d9e49f5db8dcb5372",
+    "crates/aleph-qec/examples/decoder_robustness.rs": "6b8abf2cd2a99934459a76077c2a7a0320e847dbd54498ad02f32bf8bc978b4e",
+    "crates/aleph-qec/examples/robustness_coverage.rs": "7ff56a3409fffcde412b17abf1f73ea2b0953487dd66487a73057cb3dbd43faf",
+    "crates/aleph-qec/src/error.rs": "f0bde63bcc40b699a8e7973b3047252b6475c35e0526a9686783824ea2d8186f",
+    "crates/aleph-qec/src/lib.rs": "38efc205e2bdc8aca50ed8eb705805d12f4fb6cd6a7ca862c788ec8aa31426c9",
+    "crates/aleph-qec/src/robustness.rs": "2e89258ecdb20a26ce03528d54fc16124a9e917af29ceebb9ca27e48f5db3019",
+    "crates/aleph-qec/src/witness.rs": "a8065f88aa8af9e8397bcbdb16479e856cdf41d106b0ce904e72a58b65abdf06",
+    "crates/aleph-qec/tests/robustness.rs": "782fc73eb3e238f8ad7047fa56e903ce8c2cb2e2e135413f2fde48a4e2340ce8",
+    "scripts/python/check_decoder_robustness.py": "fb219c1bae5c4bd29370f1e73a08d38cb3567e480035467eee8e31e244cfe223",
+    "scripts/python/plot_decoder_robustness.py": "cc9254f04f5952004f536cf42f39760a616d8169a840234f83c7024a73513631",
+    "Cargo.lock": "dbc328063e68eea4fe58b161d841b62e21df300ecafed6c6decc60712ce1fd49"
+  },
+  "archive_sha256": "a968e9021ca39b81bec1a5768f7b22626167b69a6c4db248fdc9aceae20a6f4d",
+  "campaign_source_patch_sha256": "1892593553299dc926748752f4f5e4024efa0a64c0882e3d6cf330372f0b937a",
+  "final_source_patch_sha256": "26b0ec9b6dc340d15a4d150d57ef607e98120cbacc52c58d3eb0c7d7a7b80180",
+  "stage_note": "Campaign built from original patch; final source adds prefix test, coverage example, Criterion output path and independent oracle/plot scripts; native algorithm differs only in documentation comments. Both patches retained.",
+  "binaries_sha256": {
+    "target/release/examples/decoder_robustness": "6809298a49ba27effb29235cb406cc9620ff2cd9cd421fd75fbf3f65319d8afb",
+    "target/release/examples/robustness_coverage": "cd1cc75dd711d90d09147d523c378269f9a54749116c3bc9fb8f9efd71309f8f",
+    "target/release/examples/decoder_witness": "c0cc67007be423e024fbd7394c9e8145184600b91ae6dcd5dba04d637bd8bf7b",
+    "target/release/deps/robustness-66d0e5d9a9cee957": "cb1414947134e2d500fdf6af2ac6a58031907ccb693476804f5afcfbc68d1fe1",
+    "target/release/deps/robustness-56a5ad1b7d3e447b": "b2f534272b3d0c6400b72500d16234892afe5a97c2fc44fce2230ab2b461160f"
+  },
+  "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)",
+  "platform": "Linux-7.0.0-27-generic-x86_64-with-glibc2.43",
+  "cpu": "processor\t: 0\nvendor_id\t: GenuineIntel\ncpu family\t: 6\nmodel\t\t: 85\nmodel name\t: Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz\nstepping\t: 4\nmicrocode\t: 0x2007006\ncpu MHz\t\t: 800.158\ncache size\t: 14080 KB\nphysical id\t: 0\nsiblings\t: 20\ncore id\t\t: 0\ncpu cores\t: 10\napicid\t\t: 0\ninitial apicid\t: 0\nfpu\t\t: yes\nfpu_exception\t: yes\ncpuid level\t: 22\nwp\t\t: yes\nflags\t\t: fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush dts acpi mmx fxsr sse sse2 ss ht tm pbe syscall nx pdpe1gb rdtscp lm constant_tsc art arch_perfmon pebs bts rep_good nopl xtopology nonstop_tsc cpuid aperfmperf pni pclmulqdq dtes64 monitor ds_cpl vmx smx est tm2 ssse3 sdbg fma cx16 xtpr pdcm pcid dca sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand lahf_lm abm 3dnowprefetch cpuid_fault epb cat_l3 cdp_l3 pti intel_ppin ssbd mba ibrs ibpb stibp tpr_shadow flexpriority ept vpid ept_ad fsgsbase tsc_adjust bmi1 hle avx2 smep bmi2 erms invpcid rtm cqm mpx rdt_a avx512f avx512dq rdseed adx smap clflushopt clwb intel_pt avx512cd avx512bw avx512vl xsaveopt xsavec xgetbv1 xsaves cqm_llc cqm_occup_llc cqm_mbm_total cqm_mbm_local dtherm ida arat pln pts vnmi pku ospke md_clear flush_l1d arch_capabilities\nvmx flags\t: vnmi preemption_timer posted_intr invvpid ept_x_only ept_ad ept_1gb flexpriority apicv tsc_offset vtpr mtf vapic ept vpid unrestricted_guest vapic_reg vid ple shadow_vmcs pml ept_violation_ve ept_mode_based_exec tsc_scaling\nbugs\t\t: cpu_meltdown spectre_v1 spectre_v2 spec_store_bypass l1tf mds swapgs taa itlb_multihit mmio_stale_data retbleed gds spectre_v2_user vmscape\nbogomips\t: 4400.00\nclflush size\t: 64\ncache_alignment\t: 64\naddress sizes\t: 46 bits physical, 48 bits virtual\npower management:",
+  "oracle_environment": "Existing read-only /tmp/aleph-518-K1bhhc/test-venv; no installs or global changes",
+  "services": "No service or CI job stopped"
+}

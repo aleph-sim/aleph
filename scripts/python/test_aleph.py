@@ -226,6 +226,22 @@ class TestNoise(unittest.TestCase):
         c.cx(0, 1)
         return c
 
+    def test_buffer_options_preserve_seeded_counts(self):
+        nm = aleph.NoiseModel()
+        nm.add_all_qubit_quantum_error(aleph.amplitude_damping_error(0.2), ["h"])
+        expected = aleph.run(self._bell(), noise=nm, shots=257, seed=557).counts()
+        for workers in (1, 2, 4):
+            actual = aleph.run(self._bell(), noise=nm, shots=257, seed=557,
+                               noise_memory_budget_bytes=16384,
+                               noise_max_workers=workers).counts()
+            self.assertEqual(actual, expected)
+        with self.assertRaisesRegex(ValueError, "noise_memory_budget_bytes"):
+            aleph.run(self._bell(), noise=nm, noise_memory_budget_bytes=1)
+        with self.assertRaisesRegex(ValueError, "max_workers must be positive"):
+            aleph.run(self._bell(), noise=nm, noise_max_workers=0)
+        with self.assertRaisesRegex(ValueError, "require noise"):
+            aleph.run(self._bell(), noise_memory_budget_bytes=4096)
+
     def test_empty_model_matches_noiseless(self):
         # An empty NoiseModel must reproduce the noiseless distribution
         # (same seed). run() with noise= is per-shot Monte-Carlo, but with

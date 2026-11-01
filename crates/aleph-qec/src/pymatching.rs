@@ -155,6 +155,12 @@ impl PyMatchingOracle {
             )));
         }
 
+        // With zero observables the valid wire response has no bytes, but there
+        // is still one empty correction per shot (not an empty prediction batch).
+        if self.observables == 0 {
+            return Ok((0..shots).map(|_| Correction::none(0)).collect());
+        }
+
         Ok(output
             .stdout
             .chunks_exact(self.observables.max(1))

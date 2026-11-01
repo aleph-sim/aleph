@@ -1,0 +1,20 @@
+{
+  "crates/aleph-backend/src/lib.rs": "958b378f200bffc7122fd852e5e46824bbeb27d32e1f4832146cc369bcfebff4",
+  "crates/aleph-backend/src/memory.rs": "0e0ab57486cc2bcc437b74795e23ffa93b936794758361ac7855fa5d930aeac7",
+  "crates/aleph-backend/src/select.rs": "77b1bc5590fd1b4e9bc4e855dd41fde713bcdbbd3f587a7545c5a7d95298e66c",
+  "crates/aleph-cli/src/cli.rs": "8a71306aa493351f64c8619809083d957d325dc0e18c693e4ba723399d50c11f",
+  "crates/aleph-cli/src/exec.rs": "c22b961f8971c530eac1f45f520b76ca50bacb3b5722f834dd6261e7bda42eb9",
+  "crates/aleph-cuda/examples/memory_plan.rs": "44d60cf341f919860819238e9cee97d9261582db707926f3d46e1a2123f06b3d",
+  "crates/aleph-cuda/src/context.rs": "a560c1ff725fc566c789f09f1e9b8c8db4e56c49784486fafd0cdee85f4546ba",
+  "crates/aleph-cuda/src/lib.rs": "15d2c845db3a2270c2d45417310bc885b64b823485cd692c836b9e2690622c66",
+  "crates/aleph-cuda/src/memory.rs": "615f2e0428f402dbf6440d6cea94b43ce2af723253972c16aafc53492537a78a",
+  "crates/aleph-cuda/src/pool.rs": "7b43718244e9a52e4822ed62d256dddf46f92c51ae1e4691ecc94abcf1027649",
+  "crates/aleph-cuda/src/sv/backend.rs": "0f9d37f1d9bf7ea9e9051a06887ac6f9dc50291a77ef8b6ba4e840c6396b7a0f",
+  "crates/aleph-cuda/src/sv/fp32.rs": "4c4e1ef27077cc7bc3eece4ae91546494c3d4f831841d9373b12b25f1fb92399",
+  "crates/aleph-cuda/src/sv/readout.rs": "acaa52d206aaf4a4af31f2851b8296c91a15a01b44d85ebf4b740c02219bd31c",
+  "crates/aleph-cuda/src/sv/readout_f32.rs": "d5196a385885752f80ae899deee376e38a65a873e12481c114497d22968fac0d",
+  "crates/aleph-cuda/src/sv/state.rs": "364465a543559d7db5f6923ac5eb8ef3d70466850a0dc8db54264d7834eb84a3",
+  "crates/aleph-py/src/run.rs": "3c7a46b138c02e4893025f43dc17e1dc7add59db8f01c3e3fb29a9a7f904bfe0",
+  "scripts/python/audit_cuda_memory_cli.py": "e7a3564b19497773db342dbc47747c60350aa342f29d27a28c278f52c88d0c36",
+  "scripts/python/test_cuda_memory.py": "482d731e324b42e1bfbda46093096ef07f6dae537895a1d5dd767dcf33c1309f"
+}

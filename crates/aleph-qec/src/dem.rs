@@ -6,7 +6,7 @@
 //! `.dem` format so we can cross-check against Stim-generated models (Q0-03) and decode the
 //! same DEMs as PyMatching (Q1).
 //!
-//! Format reference: <https://github.com/quantumlib/Stim/blob/main/doc/file_format_dem.md>
+//! Format reference: <https://github.com/quantumlib/Stim/blob/main/doc/file_format_dem_detector_error_model.md>
 //!
 //! Supported instructions: `error` (with `^` separable components), `detector`,
 //! `logical_observable`, `shift_detectors`, and (nested) `repeat` blocks, which are unrolled
@@ -143,6 +143,50 @@ impl DetectorErrorModel {
             observables: (st.max_obs + 1) as usize,
             errors: st.errors,
         })
+    }
+
+    /// Give every `^` component its own error column for matching-decoder estimates.
+    ///
+    /// Columns retain mechanism order, then component order within each mechanism. Each
+    /// component retains its parent's probability; its detector/observable support is
+    /// parity-reduced independently. Empty and purely logical components are retained.
+    /// Non-decomposed mechanisms and declared detector/observable counts are unchanged.
+    /// The original model is not modified; splitting twice is identical to splitting once.
+    ///
+    /// This is a **decoder representation**, not an equivalent sampling model: components
+    /// of one original mechanism fire together. Sampling the returned independent columns
+    /// loses that correlation. Keep the original DEM for experiment sampling.
+    /// See Stim's [separator semantics](https://github.com/quantumlib/Stim/blob/main/doc/file_format_dem_detector_error_model.md#separator-target).
+    ///
+    /// ```
+    /// use aleph_qec::{DetectorErrorModel, MwpmDecoder};
+    /// let dem = DetectorErrorModel::parse("error(0.1) D0 L0 ^ D1")?;
+    /// let split = dem.split_components();
+    /// assert_eq!(split.errors.len(), 2);
+    /// let decoder = MwpmDecoder::new(&split)?;
+    /// // decode_errors columns now index split.errors, not dem.errors.
+    /// # Ok::<(), aleph_qec::Error>(())
+    /// ```
+    pub fn split_components(&self) -> Self {
+        let mut errors = Vec::new();
+        for error in &self.errors {
+            if error.components.is_empty() {
+                errors.push(error.clone());
+            } else {
+                for (dets, obs) in &error.components {
+                    let (mut dets, mut obs) = (dets.clone(), obs.clone());
+                    // Repeated targets cancel within a part, never across different parts.
+                    parity_reduce(&mut dets);
+                    parity_reduce(&mut obs);
+                    errors.push(DemError::new(error.prob, dets, obs));
+                }
+            }
+        }
+        Self {
+            detectors: self.detectors,
+            observables: self.observables,
+            errors,
+        }
     }
 
     /// Build a model from column lists of a parity-check matrix `H` (`detectors × E`), an

@@ -57,6 +57,29 @@ class TestRegistration(unittest.TestCase):
         ehat = (br.result > 0.5).astype(np.uint8)
         np.testing.assert_array_equal((ehat @ O.T % 2).astype(bool), ref)
 
+    def test_numpy_layouts_and_thresholds_match_native_errors(self):
+        values = np.array([[0.5, np.nextafter(0.5, 1.0)], [np.nan, np.inf],
+                           [-np.inf, -1.0], [0.7, 0.3]])
+        for name in ac.NAMES:
+            decoder = cq.get_decoder(f"aleph-{name}", H, O=O, error_rate_vec=RATES)
+            native = aq.Decoder(aq.dem_from_matrices(H, O, RATES), name)
+            for rows in (values, values[::-1], values[:, ::-1], values.tolist(),
+                         values > .5, (values > .5).astype(np.uint8) * 255):
+                expected, conv = native.decode_batch_errors((np.asarray(rows) > .5).astype(np.uint8))
+                result = decoder.decode_batch(rows)
+                np.testing.assert_array_equal(result.result, expected)
+                np.testing.assert_array_equal(result.converged, conv)
+                self.assertEqual(result.result.dtype, np.float64)
+
+    def test_empty_shape_validation(self):
+        decoder = cq.get_decoder("aleph-mwpm", H, error_rate=.1)
+        for bad in (np.empty((0, 3)), np.empty((1, 0)), np.empty((0, 2, 0))):
+            with self.assertRaisesRegex(ValueError, "width"):
+                decoder.decode_batch(bad)
+        # Zero detectors still represent N shots, rather than an empty batch.
+        rows = ac._to_bits(np.empty((3, 0)), 0)
+        self.assertEqual(rows.shape, (3, 0))
+
     def test_decode_batch_empty(self):
         d = cq.get_decoder("aleph-bp", H, O=O, error_rate_vec=RATES)
         br = d.decode_batch([])
@@ -96,9 +119,64 @@ class TestRegistration(unittest.TestCase):
 
     def test_matching_decoder_rejects_prior_above_half(self):
         for name in ("mwpm", "union-find", "union-find-weighted"):
-            with self.assertRaisesRegex(ValueError, "0.5"):
-                cq.get_decoder(f"aleph-{name}", H, O=O, error_rate_vec=[0.1, 0.6, 0.1])
-        cq.get_decoder("aleph-bp", H, O=O, error_rate_vec=[0.1, 0.6, 0.1])  # BP unaffected
+            for probability in (np.nextafter(0.5, 1.0), 0.6, 1.0):
+                for kwargs in ({"error_rate_vec": [0.1, probability, 0.1]},
+                               {"error_rate": probability}):
+                    with self.subTest(name=name, kwargs=kwargs):
+                        with self.assertRaisesRegex(ValueError, r"matching prior at column [01].*0.5"):
+                            cq.get_decoder(f"aleph-{name}", H, O=O, **kwargs)
+        for name in ("bp", "bp-osd", "relay-bp", "relay-bp-osd"):
+            cq.get_decoder(f"aleph-{name}", H, O=O, error_rate_vec=[0.1, 0.6, 0.1])
+
+    def test_matching_prior_message_matches_native_python(self):
+        rates = [0.1, 0.7, 0.1]
+        dem = aq.dem_from_matrices(H, O, rates)
+        for name in ("mwpm", "union-find", "union-find-weighted"):
+            with self.subTest(name=name):
+                with self.assertRaises(ValueError) as native:
+                    aq.Decoder(dem, name)
+                with self.assertRaises(ValueError) as adapter:
+                    cq.get_decoder(f"aleph-{name}", H, O=O, error_rate_vec=rates)
+                self.assertEqual(str(adapter.exception), str(native.exception))
+
+    def test_matching_boundary_priors_are_accepted(self):
+        for name in ("mwpm", "union-find", "union-find-weighted"):
+            for probability in (0.0, 0.5, np.nextafter(0.0, 1.0)):
+                cq.get_decoder(f"aleph-{name}", H, O=O, error_rate=probability)
+            # Independently constrained columns exercise zero and very large finite weights.
+            for probability in (0.5, np.nextafter(0.0, 1.0)):
+                dec = cq.get_decoder(f"aleph-{name}", np.ones((1, 1), dtype=np.uint8),
+                                     O=np.ones((1, 1), dtype=np.uint8), error_rate=probability)
+                result = dec.decode_batch(np.array([[0], [1]], dtype=float))
+                self.assertTrue(np.asarray(result.converged).all())
+                np.testing.assert_array_equal(np.asarray(result.result) > 0.5, [[0], [1]])
+
+    def test_relay_budget_forwarding_and_typed_rejection(self):
+        from test_qec import (RELAY_BUDGET_DEM, RELAY_BUDGET_SYNDROME,
+                              RELAY_BUDGET_FULL, RELAY_BUDGET_FIRST)
+        H, O, rates = aq.dem_to_matrices(RELAY_BUDGET_DEM)
+        for name in ("relay-bp", "relay-bp-osd"):
+            for iterations, early, expected in [(8, False, RELAY_BUDGET_FULL),
+                                                 (8, True, RELAY_BUDGET_FIRST),
+                                                 (1, False, RELAY_BUDGET_FIRST),
+                                                 (0, False, RELAY_BUDGET_FIRST)]:
+                with self.subTest(name=name, iterations=iterations, early=early):
+                    for source, priors in [(H, {"O": O, "error_rate_vec": rates}),
+                                            (RELAY_BUDGET_DEM, {})]:
+                        dec = cq.get_decoder(f"aleph-{name}", source, **priors,
+                                             legs=3, iters_per_leg=iterations, early_exit=early, seed=7)
+                        result = dec.decode_batch(RELAY_BUDGET_SYNDROME.astype(float))
+                        self.assertTrue(np.asarray(result.converged).all())
+                        np.testing.assert_array_equal(np.asarray(result.result) > 0.5, expected)
+                        single = dec.decode(RELAY_BUDGET_SYNDROME[0].astype(float))
+                        self.assertTrue(single.converged)
+                        np.testing.assert_array_equal(np.asarray(single.result) > 0.5, expected[0])
+            with self.assertRaises((ValueError, TypeError, OverflowError)):
+                cq.get_decoder(f"aleph-{name}", H, error_rate=0.1, iters_per_leg=-1)
+            with self.assertRaises((ValueError, TypeError)):
+                cq.get_decoder(f"aleph-{name}", H, error_rate=0.1, early_exit="false")
+        with self.assertRaisesRegex(ValueError, "iters_per_leg"):
+            cq.get_decoder("aleph-bp", H, error_rate=0.1, iters_per_leg=10)
 
     def test_scipy_sparse_h(self):
         import scipy.sparse as sp

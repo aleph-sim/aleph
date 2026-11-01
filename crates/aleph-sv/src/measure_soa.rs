@@ -18,6 +18,22 @@ const DEGENERATE_BRANCH_THRESHOLD: f64 = 1e-300;
 /// states. Returns the per-amp `re² + im²` vector so the four query
 /// methods share a single pass — same pattern as the AoS path.
 pub(crate) fn validate_state_soa(state: &SoaState) -> Result<Vec<f64>, BackendError> {
+    let n = validate_layout(state)?;
+    let mut probs = Vec::with_capacity(n);
+    crate::sampling::validate_norm(
+        state
+            .re
+            .iter()
+            .zip(state.im.iter())
+            .map(|(r, i)| r * r + i * i),
+        (n as f64).sqrt() * aleph_core::AMPLITUDE_TOL,
+        "state norm² deviates from 1 beyond drift budget",
+        |p| probs.push(p),
+    )?;
+    Ok(probs)
+}
+
+fn validate_layout(state: &SoaState) -> Result<usize, BackendError> {
     let n = state.re.len();
     if n == 0 {
         return Err(BackendError::InvalidState {
@@ -29,35 +45,8 @@ pub(crate) fn validate_state_soa(state: &SoaState) -> Result<Vec<f64>, BackendEr
             reason: "re.len() != im.len()",
         });
     }
-    let expected = 1usize
-        .checked_shl(state.num_qubits)
-        .ok_or(BackendError::InvalidState {
-            reason: "num_qubits exceeds platform usize::BITS",
-        })?;
-    if n != expected {
-        return Err(BackendError::InvalidState {
-            reason: "re.len() != 2^num_qubits",
-        });
-    }
-    let mut probs = Vec::with_capacity(n);
-    let mut total = 0.0_f64;
-    for (r, i) in state.re.iter().zip(state.im.iter()) {
-        let p = r * r + i * i;
-        if !p.is_finite() {
-            return Err(BackendError::InvalidState {
-                reason: "non-finite amplitude norm²",
-            });
-        }
-        total += p;
-        probs.push(p);
-    }
-    let drift_budget = (n as f64).sqrt() * aleph_core::AMPLITUDE_TOL;
-    if (total - 1.0).abs() > drift_budget {
-        return Err(BackendError::InvalidState {
-            reason: "state norm² deviates from 1 beyond drift budget",
-        });
-    }
-    Ok(probs)
+    crate::sampling::validate_shape(state.num_qubits, n, "re.len() != 2^num_qubits")?;
+    Ok(n)
 }
 
 pub(crate) fn measure_impl_soa(
@@ -121,6 +110,9 @@ pub(crate) fn sample_impl_soa(
     state: &SoaState,
     shots: u32,
 ) -> Result<Vec<u64>, BackendError> {
+    if shots <= 1 {
+        return sample_low_shot(rng, state, shots);
+    }
     let probs = validate_state_soa(state)?;
     let table = crate::sampling::AliasTable::build(&probs);
     let mut out = Vec::with_capacity(shots as usize);
@@ -128,6 +120,38 @@ pub(crate) fn sample_impl_soa(
         out.push(table.draw(rng) as u64);
     }
     Ok(out)
+}
+
+// Keep the one-draw scan out of the repeated-draw alias loop's code/register footprint.
+#[inline(never)]
+fn sample_low_shot(
+    rng: &mut StdRng,
+    state: &SoaState,
+    shots: u32,
+) -> Result<Vec<u64>, BackendError> {
+    let n = validate_layout(state)?;
+    let total = crate::sampling::validate_norm(
+        state
+            .re
+            .iter()
+            .zip(state.im.iter())
+            .map(|(r, i)| r * r + i * i),
+        (n as f64).sqrt() * aleph_core::AMPLITUDE_TOL,
+        "state norm² deviates from 1 beyond drift budget",
+        |_| {},
+    )?;
+    if shots == 0 {
+        return Ok(Vec::new());
+    }
+    Ok(vec![crate::sampling::draw_cumulative(
+        rng,
+        state
+            .re
+            .iter()
+            .zip(state.im.iter())
+            .map(|(r, i)| r * r + i * i),
+        total,
+    )?])
 }
 
 pub(crate) fn expectation_value_impl_soa(

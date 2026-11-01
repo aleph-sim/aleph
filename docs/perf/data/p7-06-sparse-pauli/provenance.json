@@ -1,0 +1,22 @@
+{
+  "baseline": "f6a780833ceae79e841d652543894ebc9b9424b1",
+  "tested_source_commit": "da7bca3d4eec5e08dedb10b2ecf9755cb379c6c6",
+  "branch": "codex/p7-06-sparse-pauli-expectations",
+  "remote_host": "51.159.0.49",
+  "remote_directory": "/tmp/aleph-548-f6a7808",
+  "compiler": "Rust1.96.0 ac68faa20 LLVM22.1.2",
+  "cpu": "2x Xeon Silver4114; CPU3 affinity; sibling23 monitored; Rayon1",
+  "valid_measurement_runs": 1,
+  "excluded_capture_runs": 1,
+  "excluded_reason": "stale Cargo benchmark artifact after tar-preserved source mtimes; fresh=true",
+  "blocked_measurement_attempts": "Freshness guards blocked reuse after ineffective default-profile clean and an example already built by cargo test; final build reordered with explicit release clean and fresh=false executable/library verification.",
+  "services_stopped": false,
+  "local_tests": {
+    "passed": 84,
+    "existing_ignored": 3,
+    "doc_passed": 1
+  },
+  "source_manifest": "source-sha256.json",
+  "review": "Manual self-review; no blocking findings; not an external code-review service",
+  "scope": "Opt-in CPU untruncated f64 expectation engine; no new unsafe/library dependencies; no amplitudes/sampling/GPU/approximate pruning"
+}

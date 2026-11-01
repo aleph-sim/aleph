@@ -1,0 +1,23 @@
+START queued-final-bench-build
+PASS queued-final-bench-build
+START queued-final-mwpm-release
+PASS queued-final-mwpm-release
+START queued-final-sparse-release
+PASS queued-final-sparse-release
+START queued-final-work
+PASS queued-final-work
+START queued-final-allocations
+PASS queued-final-allocations
+START queued-final-pymatching
+PASS queued-final-pymatching
+START queued-final-corpus-build
+PASS queued-final-corpus-build
+START queued-final-corpus
+PASS queued-final-corpus
+START queued-final-wheel-build
+PASS queued-final-wheel-build
+START queued-final-python-tests
+PASS queued-final-python-tests
+START queued-final-clippy-1.96-scoped
+PASS queued-final-clippy-1.96-scoped
+FINAL_QUEUED_READY

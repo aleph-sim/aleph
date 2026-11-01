@@ -14,7 +14,32 @@ aleph-stab = { path = "../aleph-stab" }
 thiserror  = { workspace = true }
 rayon      = { workspace = true }
 rand       = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true, features = ["float_roundtrip"] }
+sha2 = "0.10"
+statrs     = { version = "0.18", default-features = false }
 
 [dev-dependencies]
+criterion = { workspace = true }
 proptest = { workspace = true }
 rayon = { workspace = true }
+
+[[bench]]
+name = "dem_experiment"
+harness = false
+
+[[bench]]
+name = "failure_witness"
+harness = false
+
+[[bench]]
+name = "rare_events"
+harness = false
+
+[[bench]]
+name = "robustness"
+harness = false
+
+[[bench]]
+name = "deadline_replay"
+harness = false

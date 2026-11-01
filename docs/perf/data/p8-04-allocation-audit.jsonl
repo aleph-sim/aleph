@@ -1,0 +1,10 @@
+{"precision":"f32","view":"execute","device_estimate":2115600,"pool_live_peak":2097168,"host_estimate":2048,"device_free":19413598208}
+{"precision":"f32","view":"sample","device_estimate":6310928,"pool_live_peak":6308880,"host_estimate":38144,"device_free":19413598208}
+{"precision":"f32","view":"expectation","device_estimate":2115600,"pool_live_peak":2113552,"host_estimate":2048,"device_free":19413598208}
+{"precision":"f32","view":"marginal","device_estimate":2115640,"pool_live_peak":2113592,"host_estimate":2080,"device_free":19413598208}
+{"precision":"f32","view":"export","device_estimate":2115600,"pool_live_peak":2097168,"host_estimate":8390656,"device_free":19413598208}
+{"precision":"f64","view":"execute","device_estimate":4212752,"pool_live_peak":4194320,"host_estimate":2048,"device_free":19413598208}
+{"precision":"f64","view":"sample","device_estimate":8408080,"pool_live_peak":8406032,"host_estimate":38144,"device_free":19413598208}
+{"precision":"f64","view":"expectation","device_estimate":4212752,"pool_live_peak":4210704,"host_estimate":2048,"device_free":19413598208}
+{"precision":"f64","view":"marginal","device_estimate":4212792,"pool_live_peak":4210744,"host_estimate":2080,"device_free":19413598208}
+{"precision":"f64","view":"export","device_estimate":4212752,"pool_live_peak":4194320,"host_estimate":8390656,"device_free":19413598208}

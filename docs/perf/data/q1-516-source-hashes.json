@@ -1,0 +1,11 @@
+{
+  "Cargo.lock": "29825a299038e2a386e65dd1f6ed1b1d23b8c228e3edc027976aeab7e79c421b",
+  "crates/aleph-py/Cargo.toml": "81ea118e4787eef14a8963e0fa5bc7a26b1afc8223911e31d0889f76383e7ad3",
+  "crates/aleph-py/benches/error_output.rs": "1c325bd59f64c78d6cad66716b3053fd46c204b4bf25842890d64fd6c950272d",
+  "crates/aleph-py/src/qec.rs": "b7c73a4a21971547a5a744cb2e6e6e16cccc2b3894f9253d87f451e929e3d7f6",
+  "crates/aleph-py/src/qec_core.rs": "a744de9351f953bf04c33b71e04fe14f33c46eb7e4c11f43579fa9832254b374",
+  "crates/aleph-py/python/aleph/cudaq.py": "f43fc9309b43a3a4bebad723331dee074d7dffa4917c2b2835ac29644aa17391",
+  "scripts/python/test_qec.py": "7acc028ea8dffd2d9a13536278af609e5c1f63617093c9a9aaa6db91c65c82b5",
+  "scripts/python/test_cudaq.py": "8a59da0cc37f9ee85aeb86904b0c6318bf9098c2d5608faf3366a300ee4a0c92",
+  "scripts/python/bench_cudaq_path.py": "1ab954e124b18702d8245414be7dbcf914266413009523a29bee77c5fbfd937f"
+}

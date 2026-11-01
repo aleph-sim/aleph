@@ -56,3 +56,10 @@ aleph-metal = { path = "../aleph-metal", optional = true }
 # with the `cuda` feature (off by default, so default/macOS wheels are unaffected).
 [target.'cfg(target_os = "linux")'.dependencies]
 aleph-cuda = { path = "../aleph-cuda", optional = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "error_output"
+harness = false

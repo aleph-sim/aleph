@@ -1,0 +1,248 @@
+diff --git a/crates/aleph-qec/src/sparse_blossom/flooder.rs b/crates/aleph-qec/src/sparse_blossom/flooder.rs
+index ea886b0..46f0eac 100644
+--- a/crates/aleph-qec/src/sparse_blossom/flooder.rs
++++ b/crates/aleph-qec/src/sparse_blossom/flooder.rs
+@@ -23,7 +23,7 @@ pub(crate) enum MEvent {
+     Shatter { b: RegionId },
+ }
+ 
+-#[derive(Clone, Copy)]
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+ enum Next {
+     Arrive(usize),
+     Collide(usize),
+@@ -60,6 +60,94 @@ impl State {
+ 
+     /// Earliest event at `u` and what it is; `None` if nothing will ever happen at `u`.
+     fn next_at(&self, g: &CompiledGraph, u: NodeId) -> Option<(i64, Next)> {
++        let n = self.nodes[u as usize];
++        if n.region == NONE {
++            return None;
++        }
++        #[cfg(test)]
++        let mut work = [1u64, 0, 0, 0, 0, 0, 0]; // calls/neighbours/free/owner/top/skips/skipped neighbours
++        let (tu, top_u) = self.total(u);
++        let mut best: Option<(i64, Next)> = None;
++        let mut consider = |t: i64, what: Next| {
++            if best.is_none_or(|(bt, _)| t < bt) {
++                best = Some((t, what));
++            }
++        };
++        for (k, e) in g.edges(u).iter().enumerate() {
++            #[cfg(test)]
++            {
++                work[1] += 1;
++            }
++            let m = self.nodes[e.v as usize];
++            if m.region == NONE {
++                #[cfg(test)]
++                {
++                    work[2] += 1;
++                }
++                if tu.slope > 0 {
++                    consider(n.dist + e.w - tu.y0, Next::Arrive(k));
++                }
++                continue;
++            }
++            // Identical direct owners necessarily have the same blossom root.
++            // Internal edges cannot produce an event: avoid the parent walk and
++            // radius loads before doing any neighbour affine arithmetic.
++            if m.region == n.region {
++                #[cfg(test)]
++                {
++                    work[3] += 1;
++                }
++                continue;
++            }
++            let top_v = self.top(m.region);
++            if top_v == top_u {
++                #[cfg(test)]
++                {
++                    work[4] += 1;
++                }
++                continue;
++            }
++            let radius = self.regions[top_v as usize].radius;
++            let tv = Varying {
++                y0: radius.y0 + m.wrapped,
++                slope: radius.slope,
++            };
++            let cs = tu.slope + tv.slope;
++            if cs <= 0 {
++                continue;
++            }
++            let num = n.dist + e.w + m.dist - tu.y0 - tv.y0;
++            let t = if cs == 2 {
++                debug_assert_eq!(num & 1, 0, "collision at a half-integer time");
++                num / 2
++            } else {
++                num
++            };
++            consider(t, Next::Collide(k));
++        }
++        if tu.slope > 0 {
++            if let Some((wb, _)) = g.boundary(u) {
++                consider(n.dist + wb - tu.y0, Next::Boundary);
++            }
++        }
++        let result = best.map(|(t, w)| (t.max(self.now), w));
++        #[cfg(test)]
++        {
++            let mut total = self.look_work.get();
++            for (total, value) in total.iter_mut().zip(work) {
++                *total += value;
++            }
++            self.look_work.set(total);
++            // The unoptimized scanner pins time, event kind, edge index and tie
++            // choice at every actual scheduling/pop call in native unit tests.
++            assert_eq!(result, self.next_at_reference(g, u));
++        }
++        result
++    }
++
++    // Pre-optimization scanner retained only as an exact transition oracle.
++    #[cfg(test)]
++    fn next_at_reference(&self, g: &CompiledGraph, u: NodeId) -> Option<(i64, Next)> {
+         let n = self.nodes[u as usize];
+         if n.region == NONE {
+             return None;
+@@ -106,6 +194,21 @@ impl State {
+ 
+     /// Queue `u`'s look-at if it is earlier than what is queued.
+     pub(crate) fn schedule_node(&mut self, g: &CompiledGraph, u: NodeId) {
++        // next_at clamps every candidate to `now`. An entry already queued
++        // for this instant cannot be improved; keep its original sequence/tie.
++        if self.nodes[u as usize].queued == self.now {
++            #[cfg(test)]
++            {
++                let mut work = self.look_work.get();
++                work[5] += 1;
++                work[6] += g.edges(u).len() as u64;
++                self.look_work.set(work);
++                assert!(self
++                    .next_at_reference(g, u)
++                    .is_none_or(|(t, _)| t >= self.now));
++            }
++            return;
++        }
+         if let Some((t, _)) = self.next_at(g, u) {
+             let q = self.nodes[u as usize].queued;
+             if q == NO_TIME || t < q {
+diff --git a/crates/aleph-qec/src/sparse_blossom/mod.rs b/crates/aleph-qec/src/sparse_blossom/mod.rs
+index c3dd56c..3a0f2f1 100644
+--- a/crates/aleph-qec/src/sparse_blossom/mod.rs
++++ b/crates/aleph-qec/src/sparse_blossom/mod.rs
+@@ -522,6 +522,81 @@ pub(crate) mod tests {
+         })
+     }
+ 
++    #[test]
++    fn queued_now_keeps_heap_sequence_but_future_entries_can_move_earlier() {
++        let graph = CompiledGraph::from_int_edges(2, &[(0, 1, 2, 1)], &[]);
++        let mut state = State::new(2);
++        let region = state.new_region(0);
++        state.nodes[0] = NodeState {
++            region,
++            ..NodeState::FREE
++        };
++        state.now = 10;
++        state.nodes[0].queued = 10;
++        state.push_event(10, EV_NODE, 0);
++        state.push_event(10, EV_SHRINK, region);
++        let pushes = state.stats.pushes;
++        state.schedule_node(&graph, 0);
++        assert_eq!(state.stats.pushes, pushes);
++        assert_eq!(state.pop_event(), Some((10, EV_NODE, 0)));
++        assert_eq!(state.pop_event(), Some((10, EV_SHRINK, region)));
++        assert_eq!(state.look_work.get()[5], 1);
++        state.nodes[0].queued = 11;
++        state.push_event(11, EV_NODE, 0);
++        state.schedule_node(&graph, 0);
++        assert_eq!(state.nodes[0].queued, 10);
++        assert_eq!(state.pop_event(), Some((10, EV_NODE, 0)));
++        assert_eq!(state.pop_event(), Some((11, EV_NODE, 0)));
++    }
++
++    /// Work accounting only, not a timing benchmark: test builds also execute
++    /// the old scanner at every next_at call and assert identical transitions.
++    #[test]
++    #[ignore = "profiling diagnostic; run explicitly with --ignored --nocapture"]
++    fn profile_next_at_work() {
++        use crate::{build_dem, MatchingGraph, SurfaceCode};
++        for d in [7usize, 9, 11, 13, 15, 17] {
++            for p in [0.03, 0.003] {
++                let exp = SurfaceCode::new(d).memory_z_experiment(d);
++                let dem =
++                    build_dem(&exp.annotated, &exp.phenomenological_mechanisms(p, p)).unwrap();
++                let graph = MatchingGraph::from_dem(&dem).unwrap();
++                let graph = CompiledGraph::from_matching_graph(&graph);
++                let mut state = State::new(graph.num_nodes());
++                let mut total = [0u64; 7];
++                for shot in 0..256u64 {
++                    let mut z =
++                        (0x5EED ^ d as u64).wrapping_add(shot.wrapping_mul(0x9E37_79B9_7F4A_7C15));
++                    let mut det = vec![false; dem.detectors];
++                    for error in &dem.errors {
++                        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
++                        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
++                        z ^= z >> 31;
++                        let x = (z >> 11) as f64 / (1u64 << 53) as f64;
++                        if x < error.prob {
++                            for &u in &error.dets {
++                                det[u as usize] ^= true;
++                            }
++                        }
++                    }
++                    let defects: Vec<_> = det
++                        .iter()
++                        .enumerate()
++                        .filter_map(|(u, &f)| f.then_some(u as u32))
++                        .collect();
++                    state.run(&graph, &defects);
++                    for (sum, value) in total.iter_mut().zip(state.look_work.get()) {
++                        *sum += value;
++                    }
++                }
++                let [calls, neighbours, free, same_owner, same_top, queued_now_skips, skipped_neighbours] =
++                    total;
++                assert!(same_owner > 0);
++                eprintln!("d={d} rate={p} shots=256 calls={calls} neighbours={neighbours} free={free} same_owner={same_owner} same_top={same_top} queued_now_skips={queued_now_skips} skipped_neighbours={skipped_neighbours} external={}", neighbours-free-same_owner-same_top);
++            }
++        }
++    }
++
+     proptest! {
+         #![proptest_config(ProptestConfig::with_cases(3000))]
+         #[test]
+diff --git a/crates/aleph-qec/src/sparse_blossom/state.rs b/crates/aleph-qec/src/sparse_blossom/state.rs
+index 5001d8f..2ebdc56 100644
+--- a/crates/aleph-qec/src/sparse_blossom/state.rs
++++ b/crates/aleph-qec/src/sparse_blossom/state.rs
+@@ -202,6 +202,9 @@ pub(crate) struct State {
+     /// Reusable scratch for subtree walks.
+     pub scratch: Vec<NodeId>,
+     pub stats: Stats,
++    /// Test-only scan accounting; production carries no scan counters or Cell.
++    #[cfg(test)]
++    pub look_work: std::cell::Cell<[u64; 7]>,
+     /// Path-retrace scratch (`retrace.rs`, used only by `run_edges`): tentative distance per
+     /// node, `(predecessor node, column)` per node, the nodes touched since the last reset, the
+     /// Dijkstra heap, and the matched edges being retraced. All start empty (no allocation) and
+@@ -236,6 +239,8 @@ impl State {
+             active_trees: 0,
+             scratch: Vec::new(),
+             stats: Stats::default(),
++            #[cfg(test)]
++            look_work: std::cell::Cell::new([0; 7]),
+             rt_dist: Vec::new(),
+             rt_pred: Vec::new(),
+             rt_touched: Vec::new(),
+@@ -257,6 +262,8 @@ impl State {
+         self.now = 0;
+         self.active_trees = 0;
+         self.stats = Stats::default();
++        #[cfg(test)]
++        self.look_work.set([0; 7]);
+     }
+ 
+     /// Reuse the next region's shell/child storage, initializing a leaf or empty blossom.

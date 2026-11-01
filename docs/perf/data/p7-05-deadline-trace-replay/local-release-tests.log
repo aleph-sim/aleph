@@ -1,0 +1,442 @@
+   Compiling aleph-qec v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-qec)
+    Finished `release` profile [optimized] target(s) in 1m 33s
+     Running unittests src/lib.rs (target/release/deps/aleph_qec-11562f6ec5db1a8f)
+
+running 194 tests
+test aswaksman::tests::switch_count_closed_form ... ok
+test aswaksman::tests::duplicate_target_rejected - should panic ... ok
+test benes::tests::complete_partial_non_power_of_two ... ok
+test benes::tests::identity_8 ... ok
+test benes::tests::duplicate_target_rejected - should panic ... ok
+test benes::tests::partial_completes_and_routes ... ok
+test aswaksman::tests::identity_small ... ok
+test aswaksman::tests::reverse_small ... ok
+test benes::tests::reverse_8 ... ok
+test benes::tests::swap_pairs_8 ... ok
+test bivariate_bicycle::tests::checks_are_weight_six ... ok
+test bivariate_bicycle::tests::code_capacity_dem_is_well_formed ... ok
+test aswaksman::tests::odd_sizes ... ok
+test bivariate_bicycle::tests::gross_code_has_expected_parameters ... ok
+test bivariate_bicycle::tests::logicals_are_dual_and_nontrivial ... ok
+test bivariate_bicycle::tests::memory_x_experiment_shape ... ok
+test bivariate_bicycle::tests::depth7_schedule_is_conflict_free ... ok
+test blossom::tests::blossom_odd_cycle ... ok
+test bivariate_bicycle::tests::small_bb_code_parameters ... ok
+test blossom::tests::empty_graph ... ok
+test bivariate_bicycle::tests::schedule_neighbours_match_check_rows ... ok
+test blossom::tests::min_weight_perfect_via_negation ... ok
+test blossom::tests::matches_brute_force_on_random_complete_graphs ... ok
+test bp::tests::repetition_recovers_single_errors ... ok
+test blossom::tests::single_edge ... ok
+test blossom::tests::picks_heavier_of_two_disjoint ... ok
+test bp::tests::empty_syndrome_no_correction ... ok
+test decoder::tests::decoder_is_object_safe_and_callable ... ok
+test dem::tests::boundary_count_round_trips_via_trailing_declaration ... ok
+test builder::tests::xor_combine_is_odd_parity ... ok
+test decoder::tests::decode_batch_default_loops_decode ... ok
+test decoder::tests::logical_error_result_rate_and_ci ... ok
+test dem::tests::detector_offset_u64_overflow_is_an_error ... ok
+test blossom::tests::nonperfect_matches_brute_force ... ok
+test dem::tests::from_check_matrices_builds_one_mechanism_per_column ... ok
+test dem::tests::emit_parse_round_trip ... ok
+test dem::tests::from_check_matrices_rejects_length_mismatch ... ok
+test dem::tests::merged_view_is_parity_reduced ... ok
+test dem::tests::nested_repeat_and_zero_count ... ok
+test dem::tests::parses_known_stim_snippet ... ok
+test dem::tests::probability_must_be_finite_and_in_unit_interval ... ok
+test dem::tests::rejects_duplicate_index ... ok
+test dem::tests::rejects_garbage ... ok
+test dem::tests::rejects_more_than_64_observables ... ok
+test benes::tests::random_bijections ... ok
+test dem::tests::detector_declaration_is_shifted ... ok
+test dem::tests::rejects_non_finite_probability ... ok
+test dem::tests::rejects_out_of_range_index ... ok
+test dem::tests::repeat_errors_are_reported ... ok
+test dem::tests::repeat_unrolls_with_shift ... ok
+test dem::tests::separable_components_are_preserved ... ok
+test dem::tests::shifted_index_overflow_is_an_error ... ok
+test dem::tests::single_part_has_no_components ... ok
+test dem::tests::target_order_is_normalised ... ok
+test experiment::tests::zero_shots_is_empty_result ... ok
+test fixed_bp::tests::fixed_is_deterministic ... ok
+test fixed_bp::tests::fixed_valid_decisions_reproduce_syndrome ... ok
+test fixed_bp::tests::lambda_q_override_roundtrip ... ok
+test experiment::tests::sampler_detector_frequency_matches_edge_probability ... ok
+test aswaksman::tests::random_permutations ... ok
+test builder::tests::single_zz_check_dem ... ok
+test fixed_bp::tests::decode_batch_parallel_matches_serial ... ok
+test experiment::tests::p_zero_gives_exactly_zero_rate ... ok
+test bp::tests::surface_low_weight_converges ... ok
+test matching::tests::component_with_three_detectors_is_still_rejected ... ok
+test matching::tests::decomposed_hyperedge_becomes_component_edges ... ok
+test matching::tests::different_observables_are_distinct_edges ... ok
+test matching::tests::duplicate_targets_cancel_by_parity ... ok
+test matching::tests::edge_column_is_the_first_mechanism_with_that_key ... ok
+test matching::tests::all_weights_nonnegative_for_p_le_half ... ok
+test matching::tests::adjacency_consistent_with_edges ... ok
+test matching::tests::endpoints_ordered_and_in_range ... ok
+test matching::tests::hyperedge_is_rejected ... ok
+test matching::tests::parallel_edges_merge_by_xor ... ok
+test matching::tests::parallel_edges_stay_below_half_and_keep_weight_nonnegative ... ok
+test matching::tests::repetition_code_hand_drawn_adjacency ... ok
+test matching::tests::single_detector_error_connects_to_boundary ... ok
+test matching::tests::two_detector_error_connects_detectors ... ok
+test matching::tests::zero_detector_error_is_dropped ... ok
+test matching::tests::zero_probability_is_skipped_without_renumbering_columns ... ok
+test mwpm::tests::duplicate_defects_are_ignored ... ok
+test bivariate_bicycle::tests::circuit_level_dem_well_formed ... ok
+test mwpm::tests::local_still_matches_dense_weight ... ok
+test matching::tests::surface_code_d3_d5_node_counts_and_graphlike ... ok
+test mwpm::tests::no_defects_no_correction ... ok
+test experiment::tests::null_decoder_rate_matches_observable_flip_probability ... ok
+test mwpm::tests::mwpm_weight_is_at_most_greedy ... ok
+test mwpm::tests::prefers_cheaper_boundary_over_expensive_pairing ... ok
+test mwpm::tests::profile_local_phases_d11 ... ignored, profiling only: run with --ignored --nocapture
+test mwpm::tests::single_defect_matches_boundary_and_applies_its_parity ... ok
+test mwpm::tests::p_zero_gives_zero_logical_errors ... ok
+test mwpm::tests::integration_decoder_beats_null_at_low_noise ... ok
+test experiment::tests::deterministic_for_fixed_seed ... ok
+test mwpm::tests::two_defects_match_each_other_via_bulk_edge ... ok
+test mwpm::tests::surface_code_d3_decodes_a_known_single_error ... ok
+test osd::tests::combination_sweep_is_valid ... ok
+test osd::tests::test_det_vars_is_transpose_of_var_dets ... ok
+test osd::tests::test_residual_hand_computed_on_small_dem ... ok
+test osd::tests::test_residual_restricted_is_opt_in_and_chains ... ok
+test osd::tests::osd_correction_reproduces_syndrome ... ok
+test mwpm::tests::pool_reuse_is_deterministic ... ok
+test osd::tests::test_restriction_pool_is_a_strict_subset_on_a_nonconverged_shot ... ok
+test osd::tests::test_residual_restricted_matches_plain_when_all_vars_are_in_the_residual ... ok
+test osd::tests::test_residual_restricted_still_satisfies_the_syndrome ... ok
+test mwpm::tests::sparse_matches_dense_on_circuit_level_dems ... ok
+test pymatching::tests::caches_dem_and_counts ... ok
+test pymatching::tests::empty_batch_needs_no_subprocess ... ok
+test refvec::tests::test_header_is_four_words_and_payload_is_three_per_shot ... ok
+test refvec::tests::test_legacy_v1_file_is_rejected_not_misparsed ... ok
+test refvec::tests::test_payload_truncated_by_whole_words_is_rejected ... ok
+test refvec::tests::test_round_trip_preserves_every_field ... ok
+test refvec::tests::test_truncated_payload_is_rejected ... ok
+test refvec::tests::test_unknown_version_is_rejected ... ok
+test fixed_bp::tests::wide_fixed_tracks_f64_relay ... ok
+test relay_bp::tests::explicit_budget_counts_actual_sweeps_and_stops_only_on_valid_decisions ... ok
+test relay_bp::tests::nonempty_first_valid_result_and_llrs_match_the_stopping_prefix ... ok
+test relay_bp::tests::omitted_budget_keeps_legacy_schedule_and_disorder ... ok
+test relay_bp::tests::relay_is_deterministic ... ok
+test parallel_window::tests::single_window_equals_batch ... ok
+test fixed_bp::tests::test_osd_tail_does_not_run_on_converged_shots ... ok
+test parallel_window::tests::parallel_decode_is_valid ... ok
+test relay_window::tests::hw_converged_stream_drains_residual ... ignored
+test relay_window::tests::hw_early_exit_differs_and_is_deterministic ... ignored
+test relay_bp::tests::relay_valid_decisions_reproduce_syndrome ... ok
+test relay_window::tests::hw_interior_graph_matches_window_dem_gross ... ignored
+test relay_window::tests::hw_ler_close_to_exact_schedule ... ignored
+test fixed_bp::tests::test_three_validity_apis_agree ... ok
+test fixed_bp::tests::osd_tail_runs_and_within_noise ... ok
+test relay_window::tests::hw_trace_aggregates_to_stream_decode ... ignored
+test relay_window::tests::interior_windows_are_translation_invariant ... ok
+test relay_window::tests::hw_interior_graph_matches_window_dem ... ok
+test relay_window::tests::hw_small_early_exit_differs_and_is_deterministic ... ok
+test relay_window::tests::truncates_straddling_mechanisms ... ok
+test relay_window::tests::hw_small_stream_decode_invariants ... ok
+test serial_gather::tests::imbalanced_group_concentrates_in_one_bank_and_succeeds ... ok
+test serial_gather::tests::naive_round_robin_would_collide ... ok
+test serial_gather::tests::p_zero_panics - should panic ... ok
+test serial_gather::tests::serial_steps_ceils ... ok
+test serial_gather::tests::small_synthetic_layout_verifies ... ok
+test serial_gather::tests::sparse_logical_bank_ids_fold_across_banks ... ok
+test serial_gather::tests::stress_100_random_graphs_verify ... ok
+test sliding::tests::full_window_equals_batch ... ok
+test relay_window::tests::soft_priors_single_window_matches_residual_only ... ok
+test sparse_blossom::graph::tests::boundary_edge_is_per_node_min_weight ... ok
+test sparse_blossom::graph::tests::csr_holds_each_undirected_edge_on_both_endpoints_with_doubled_weight ... ok
+test sparse_blossom::graph::tests::from_int_edges_doubles_and_mirrors ... ok
+test sparse_blossom::graph::tests::parallel_edges_keep_the_lightest_one ... ok
+test sparse_blossom::state::tests::cedge_reverses_and_chains ... ok
+test sparse_blossom::state::tests::heap_pops_in_time_then_insertion_order ... ok
+test sparse_blossom::state::tests::reset_clears_touched_nodes_only ... ok
+test sparse_blossom::state::tests::varying_evaluates_and_changes_slope_continuously ... ok
+test sparse_blossom::tests::blossom_is_shattered_when_it_becomes_inner ... ok
+test sparse_blossom::tests::blossom_shatter_pairs_the_remaining_cycle ... ok
+test sparse_blossom::tests::decode_errors_is_weight_and_syndrome_exact ... ok
+test sparse_blossom::tests::decode_errors_marks_the_matched_paths ... ok
+test sparse_blossom::tests::decode_errors_terminates_on_negative_weight_edges ... ok
+test sparse_blossom::tests::empty_syndrome_is_zero ... ok
+test sparse_blossom::tests::equilateral_triangle_with_boundary ... ok
+test sparse_blossom::tests::grow_then_augment_through_the_boundary ... ok
+test sparse_blossom::tests::lone_defect_matches_boundary ... ok
+test sparse_blossom::tests::odd_component_without_boundary_is_best_effort ... ok
+test sparse_blossom::tests::pentagon_with_chord_forms_and_uses_a_blossom ... ok
+test sparse_blossom::tests::repeated_decodes_reuse_state_identically ... ok
+test sparse_blossom::tests::retained_slots_do_not_leak_between_shots ... ok
+test sparse_blossom::tests::sparse_reaches_the_dense_optimum_weight ... ok
+test sparse_blossom::tests::two_defects_on_a_line_match_each_other ... ok
+test sparse_blossom::tests::zero_weight_edge_matches_at_time_zero ... ok
+test relay_window::tests::full_window_equals_batch ... ok
+test relay_window::tests::soft_priors_decodes_and_is_deterministic ... ok
+test mwpm::tests::decode_errors_invariants_on_phenomenological_shots has been running for over 60 seconds
+test mwpm::tests::sparse_matches_dense_weight_and_corrections has been running for over 60 seconds
+test parallel_window::tests::tiling_and_bounded_working_set has been running for over 60 seconds
+test relay_bp::tests::decode_errors_agrees_with_decode_and_satisfies_syndrome_when_converged has been running for over 60 seconds
+test relay_window::tests::converged_stream_drains_residual has been running for over 60 seconds
+test surface::tests::d3_single_round_hand_check ... ok
+test surface::tests::circuit_level_dem_sized ... ok
+test sliding::tests::working_set_is_bounded ... ok
+test surface::tests::geometry_counts ... ok
+test surface::tests::dem_cross_checks_frame_sampler_on_measurement_noise ... ok
+test surface::tests::memory_x_circuit_level_dem_graphlike_and_sized ... ok
+test surface::tests::circuit_level_dem_is_graphlike ... ok
+test syndrome::tests::from_bits_collects_fired_indices ... ok
+test syndrome::tests::new_sorts_and_dedups ... ok
+test surface::tests::si1000_dem_well_formed_and_graphlike ... ok
+test relay_window::tests::working_set_is_bounded ... ok
+test surface::tests::dem_is_graphlike_and_sized ... ok
+test surface::tests::memory_x_dem_is_graphlike_and_sized ... ok
+test parallel_window::tests::tiling_and_bounded_working_set ... ok
+test union_find::tests::decode_errors_satisfies_syndrome_and_reproduces_flips ... ok
+test union_find::tests::correction_reproduces_a_single_edge_syndrome ... ok
+test union_find::tests::timed_decode_matches_hot_path ... ok
+test union_find::tests::weighted_equals_unweighted_on_equal_weights ... ok
+test union_find::tests::empty_syndrome_decodes_to_no_flip ... ok
+test union_find::tests::arbitrary_syndromes_are_consistent ... ok
+test relay_bp::tests::decode_errors_agrees_with_decode_and_satisfies_syndrome_when_converged ... ok
+test union_find::tests::corrections_are_syndrome_consistent ... ok
+test relay_window::tests::converged_stream_drains_residual ... ok
+test mwpm::tests::sparse_matches_dense_weight_and_corrections ... ok
+test mwpm::tests::decode_errors_invariants_on_phenomenological_shots ... ok
+
+test result: ok. 188 passed; 0 failed; 6 ignored; 0 measured; 0 filtered out; finished in 102.76s
+
+     Running tests/bb_circuit_dem_stim_oracle.rs (target/release/deps/bb_circuit_dem_stim_oracle-bb7019966b2ca6cf)
+
+running 1 test
+test circuit_level_dem_matches_stim ... ignored, requires python3 + stim; run with STIM_PYTHON set on a stim box
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/binomial_interval.rs (target/release/deps/binomial_interval-e3c69535dc791162)
+
+running 7 tests
+test boundaries_no_evidence_and_invalid_tallies ... ok
+test conditional_paired_comparison_does_not_assume_independent_rates ... ok
+test large_counts_and_overlap_semantics ... ok
+test reference_values ... ok
+test exact_small_sample_coverage ... ok
+test random_direct_counts_produce_ordered_finite_bounds ... ok
+test ordered_monotone_symmetric_bounds ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+     Running tests/bounded_dem_experiment.rs (target/release/deps/bounded_dem_experiment-c960b965e5481edf)
+
+running 9 tests
+test pymatching_batch_boundaries_and_zero_observables ... ignored, requires numpy + stim + pymatching; set PYMATCHING_PYTHON
+test zero_batch_size_is_rejected_even_for_zero_shots ... ok
+test huge_requested_count_does_not_materialize_all_shots ... ok
+test zero_observables_require_exact_empty_corrections ... ok
+test deterministic_mechanisms_produce_exact_tallies ... ok
+test batch_bound_tail_and_absolute_stream_are_preserved ... ok
+test short_long_empty_or_wrong_width_predictions_are_rejected_in_later_batches ... ok
+test default_limit_splits_campaign_and_reports_late_schema_index ... ok
+test fixed_seed_matches_full_artifact_path_across_batches_and_workers ... ok
+
+test result: ok. 8 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/bposd.rs (target/release/deps/bposd-1c72386ec337c1c3)
+
+running 4 tests
+test combination_sweep_does_not_regress ... ignored, Monte-Carlo (~30s); nightly
+test bposd_decodes_gross_code_at_low_p ... ok
+test osd_beats_plain_bp_on_circuit_level_surface_code ... ok
+test larger_distance_suppresses_more_below_threshold ... ok
+
+test result: ok. 3 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.45s
+
+     Running tests/deadline_replay.rs (target/release/deps/deadline_replay-9158045acf2b5845)
+
+running 13 tests
+test blocked_fifo_head_does_not_reorder_another_stream ... ok
+test dependent_traces_reject_policy_switch_and_cancel_changed_fallback_history ... ok
+test finite_capacity_and_simultaneous_completion_precedes_arrival ... ok
+test fallback_contention_uses_its_own_fifo_and_same_time_resource_release ... ok
+test fallback_overflow_and_missing_trace_never_invent_a_rescue ... ok
+test deadline_is_strict_and_combined_failure_is_a_union_not_a_sum ... ok
+test multiple_workers_keep_fifo_and_overheads_occupy_resources ... ok
+test older_fallback_waiter_dispatches_before_new_same_time_flag ... ok
+test late_missing_and_unobserved_flags_remain_distinct ... ok
+test fifo_constant_service_matches_lindley_recursion_and_utilization ... ok
+test streaming_dependencies_wait_for_final_commit_and_cascade_after_missing_output ... ok
+test trace_roundtrip_cycle_conversion_empty_zero_and_overflow_cases ... ok
+test zero_time_primary_and_tail_release_without_artificial_queue_pressure ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/matching_priors.rs (target/release/deps/matching_priors-1b79e892e9e58257)
+
+running 7 tests
+test source_priors_are_checked_before_dropping_or_merging_edges ... ok
+test bp_and_dem_construction_keep_the_full_probability_range ... ok
+test split_constructor_errors_use_split_column_indices ... ok
+test ordinary_supported_weights_remain_bit_identical ... ok
+test zero_negative_zero_and_empty_models_are_supported ... ok
+test all_matching_constructors_reject_unsupported_priors ... ok
+test supported_boundary_priors_decode_and_project_in_debug_and_release ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/memory_experiment.rs (target/release/deps/memory_experiment-79b28d1e4fd1cd40)
+
+running 5 tests
+test pymatching_does_not_suppress_above_threshold ... ignored, requires python3 + numpy + stim + pymatching; set PYMATCHING_PYTHON
+test pymatching_suppresses_errors_with_distance_below_threshold ... ignored, requires python3 + numpy + stim + pymatching; set PYMATCHING_PYTHON
+test threshold_brackets_recorded_value ... ignored, requires python3 + numpy + stim + pymatching; set PYMATCHING_PYTHON
+test p_zero_is_zero_rate_for_every_distance ... ok
+test null_decoder_rate_grows_with_noise ... ok
+
+test result: ok. 2 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/mwpm_allocations.rs (target/release/deps/mwpm_allocations-c04f245b72bb43b2)
+
+running 2 tests
+test reusable_output_resizes_and_clears_previous_observables ... ok
+test d11_repeated_workload_allocates_only_owned_outputs ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.49s
+
+     Running tests/mwpm_pymatching_oracle.rs (target/release/deps/mwpm_pymatching_oracle-fdf95d3ab63efde3)
+
+running 2 tests
+test mwpm_corrections_match_pymatching_when_unambiguous ... ignored, requires python3 + numpy + stim + pymatching; set PYMATCHING_PYTHON
+test mwpm_logical_error_rate_matches_pymatching ... ignored, requires python3 + numpy + stim + pymatching; set PYMATCHING_PYTHON
+
+test result: ok. 0 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/mwpm_threshold.rs (target/release/deps/mwpm_threshold-faa51d0964756489)
+
+running 1 test
+test native_mwpm_shows_threshold_between_d3_and_d5 ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.43s
+
+     Running tests/parallel_window.rs (target/release/deps/parallel_window-c0101f95f1367221)
+
+running 2 tests
+test parallel_rate_within_ci_of_batch ... ignored, Monte-Carlo oracle (~minutes); runs on the nightly CI schedule
+test parallel_correction_is_valid_on_long_stream ... ok
+
+test result: ok. 1 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.21s
+
+     Running tests/relay_bp.rs (target/release/deps/relay_bp-fe552133f58e9d8c)
+
+running 4 tests
+test relay_bp_beats_plain_bp_below_floor ... ignored, Monte-Carlo (~2 min); nightly
+test relay_bp_osd_beats_bposd_circuit_level ... ignored, Monte-Carlo (~minutes); nightly
+test relay_bp_decodes_gross_at_low_p ... ok
+test relay_bp_osd_decodes_circuit_level ... ok
+
+test result: ok. 2 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.94s
+
+     Running tests/relay_budget.rs (target/release/deps/relay_budget-6a6e0a32a9d005e1)
+
+running 2 tests
+test early_exit_is_first_valid_not_best_over_the_full_schedule ... ok
+test default_budget_and_configured_parallel_decode_match_on_gross_shots ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+     Running tests/robustness.rs (target/release/deps/robustness-774406173371f1f2)
+
+running 7 tests
+test schema_and_process_validation_happens_before_sampling ... ok
+test burst_prefix_does_not_depend_on_future_stream_length_or_other_streams ... ok
+test zero_drift_and_burst_strength_preserve_shots_and_worker_determinism ... ok
+test matched_static_is_exactly_the_existing_harness ... ok
+test correlated_witnesses_replay_state_and_reject_tampering ... ok
+test exact_heterogeneous_truth_and_paired_mismatch ... ok
+test burst_law_has_expected_occupancy_duration_and_correlation ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/sliding_window.rs (target/release/deps/sliding_window-8ca3b278525d5b7a)
+
+running 3 tests
+test sliding_matches_batch_for_adequate_window ... ignored, minutes-long statistical Monte-Carlo; nightly
+test bounded_memory_independent_of_stream_length ... ok
+test full_window_is_batch ... ok
+
+test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.85s
+
+     Running tests/split_components.rs (target/release/deps/split_components-d3e4abdfa3336c8d)
+
+running 7 tests
+test undecomposed_and_empty_models_are_unchanged ... ok
+test hyperedge_parts_still_fail_explicitly ... ok
+test splitting_is_not_an_equivalent_noise_sampling_model ... ok
+test split_retains_order_priors_counts_empty_parts_and_independent_parity ... ok
+test graph_edges_are_identical_except_for_column_indices ... ok
+test split_constructors_fix_shared_columns_for_all_syndromes_without_ties ... ok
+test component_parity_is_preserved_without_cross_contamination ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/stratified.rs (target/release/deps/stratified-df5d6457dd699d5f)
+
+running 10 tests
+test exact_weights_for_equal_heterogeneous_and_deterministic_models ... ok
+test deterministic_faults_enumeration_and_underflow ... ok
+test enumeration_unranking_covers_each_supported_set_once ... ok
+test impossible_strata_are_not_silently_sampled_and_invalid_inputs_spend_no_calls ... ok
+test zero_failures_omitted_mass_and_budget_status_are_explicit ... ok
+test automatic_preflight_and_zero_budget_are_explicit ... ok
+test exact_campaign_agrees_with_enumeration_and_legacy_witnesses_survive ... ok
+test repeated_fixed_budget_coverage_on_tiny_heterogeneous_dem ... ok
+test conditional_sampling_is_not_uniform_for_unequal_probabilities ... ok
+test automatic_routing_is_pre_observation_and_preserves_selected_estimator ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.57s
+
+     Running tests/surface_dem_stim_oracle.rs (target/release/deps/surface_dem_stim_oracle-2413bf6fcb565700)
+
+running 4 tests
+test analytic_dem_matches_stim ... ignored, requires python3 + stim; run with STIM_PYTHON set on a stim box
+test circuit_level_dem_matches_stim ... ignored, requires python3 + stim; run with STIM_PYTHON set on a stim box
+test memory_x_circuit_level_dem_matches_stim ... ignored, requires python3 + stim; run with STIM_PYTHON set on a stim box
+test memory_x_dem_matches_stim ... ignored, requires python3 + stim; run with STIM_PYTHON set on a stim box
+
+test result: ok. 0 passed; 0 failed; 4 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/union_find_threshold.rs (target/release/deps/union_find_threshold-a7128462eec865af)
+
+running 1 test
+test union_find_shows_threshold_between_d3_and_d5 ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.41s
+
+     Running tests/witness.rs (target/release/deps/witness-0fbae016fa789475)
+
+running 8 tests
+test budgets_tampering_and_incompatible_replay ... ok
+test signatures_group_exact_examples_across_shots_but_keep_decoder_choices ... ok
+test invalid_diagnostics_are_separate_and_fixed_codec_is_checked ... ok
+test capture_matches_ordinary_sampler_and_worker_counts ... ok
+test malformed_inputs_return_errors_and_pure_logical_tiny_models_certify ... ok
+test exhaustive_tiny_reconstruction_and_one_minimality ... ok
+test real_fixtures_replay_certify_and_match_reference_bytes ... ok
+test relay_seed_is_stable_and_nonconvergence_is_not_failure ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+   Doc-tests aleph_qec
+
+running 10 tests
+test crates/aleph-qec/src/deadline_replay.rs - deadline_replay::replay_decode_trace (line 600) - compile ... ok
+test crates/aleph-qec/src/experiment.rs - experiment::run_memory_experiment (line 75) - compile ... ok
+test crates/aleph-qec/src/decoder.rs - decoder::LogicalErrorResult::interval95 (line 103) ... ok
+test crates/aleph-qec/src/experiment.rs - experiment::run_dem_experiment_with_options (line 153) ... ok
+test crates/aleph-qec/src/dem.rs - dem::DetectorErrorModel::split_components (line 161) ... ok
+test crates/aleph-qec/src/stratified.rs - stratified::FaultCountPlan::new (line 88) ... ok
+test crates/aleph-qec/src/relay_bp.rs - relay_bp::RelayBpDecoder::with_budget (line 82) ... ok
+test crates/aleph-qec/src/mwpm.rs - mwpm::MwpmDecoder::decode_into (line 216) ... ok
+test crates/aleph-qec/src/robustness.rs - robustness::run_robustness (line 309) ... ok
+test crates/aleph-qec/src/witness.rs - witness::capture_shot (line 444) ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.52s
+

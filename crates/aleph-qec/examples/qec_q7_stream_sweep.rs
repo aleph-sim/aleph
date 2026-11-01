@@ -49,6 +49,7 @@ fn mispredicted(pred: &Correction, truth: &[bool], observables: usize) -> bool {
 }
 
 fn main() {
+    eprintln!("# Legacy ci/ci95 columns are Wald half-widths; use explicit Clopper-Pearson bounds for inference. Marginal interval overlap is not decoder equivalence.");
     let args: Vec<String> = std::env::args().collect();
     let hw = args.iter().any(|a| a == "--hw");
     let pos: Vec<&String> = args.iter().skip(1).filter(|a| *a != "--hw").collect();
@@ -67,7 +68,9 @@ fn main() {
         MSG_BITS - 1 - FRAC_BITS,
         FRAC_BITS
     );
-    println!("p,W,C,seam,ler_win,ci_win,ler_batch,ci_batch,within_ci,nonconv_frac,resid_frac");
+    println!(
+        "p,W,C,seam,ler_win,ci_win,ler_batch,ci_batch,intervals_overlap95,nonconv_frac,resid_frac"
+    );
 
     for &p in PS {
         let dem = code
@@ -101,7 +104,10 @@ fn main() {
                 let rw = LogicalErrorResult::new(shots, errs);
                 let nonconv = results.iter().filter(|(_, s)| s.nonconverged > 0).count();
                 let resid = results.iter().filter(|(_, s)| s.residual > 0).count();
-                let within = (rw.rate - rb.rate).abs() <= (rw.ci95 + rb.ci95);
+                let within = rw
+                    .interval95()
+                    .expect("binomial interval")
+                    .overlaps(rb.interval95().expect("binomial interval"));
                 let seam_name = match seam {
                     SeamMode::ResidualOnly => "residual",
                     SeamMode::SoftPriors => "soft",
@@ -120,7 +126,7 @@ fn main() {
                     "p={p} W={w} C={c} {seam_name}: LER {:.3e} ± {:.1e} {} | nonconv {:.2}% | resid>0 {:.2}%",
                     rw.rate,
                     rw.ci95,
-                    if within { "[within CI]" } else { "[DIFFERS]" },
+                    if within { "[marginal intervals overlap]" } else { "[marginal intervals disjoint]" },
                     nonconv as f64 / shots as f64 * 100.0,
                     resid as f64 / shots as f64 * 100.0
                 );
@@ -143,7 +149,7 @@ fn hw_sweep(rounds: usize, shots: u64, seed: u64) {
         FRAC_BITS
     );
     println!(
-        "p,ler_batch,ci_batch,ler_exact,ci_exact,ler_hw,ci_hw,hw_within_ci,\
+        "p,ler_batch,ci_batch,ler_exact,ci_exact,ler_hw,ci_hw,hw_intervals_overlap95,\
          hw_nonconv_frac,hw_resid_frac"
     );
 
@@ -187,7 +193,10 @@ fn hw_sweep(rounds: usize, shots: u64, seed: u64) {
             .count();
         let resid = hw_results.iter().filter(|(_, s)| s.residual > 0).count();
         // "Within CI" vs the exact schedule — the HW schedule's own reference.
-        let within = (rh.rate - rs.rate).abs() <= (rh.ci95 + rs.ci95);
+        let within = rh
+            .interval95()
+            .expect("binomial interval")
+            .overlaps(rs.interval95().expect("binomial interval"));
 
         println!(
             "{p},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{},{:.4},{:.4}",
@@ -211,7 +220,7 @@ fn hw_sweep(rounds: usize, shots: u64, seed: u64) {
             rh.rate,
             rh.ci95,
             if within {
-                "[within CI of exact]"
+                "[marginal intervals overlap exact]"
             } else {
                 "[DIFFERS from exact]"
             },

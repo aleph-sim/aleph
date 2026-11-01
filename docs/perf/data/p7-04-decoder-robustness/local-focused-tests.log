@@ -1,0 +1,43 @@
+   Compiling aleph-qec v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-qec)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.31s
+     Running tests/robustness.rs (target/debug/deps/robustness-c54b3705bf486daf)
+
+running 6 tests
+test schema_and_process_validation_happens_before_sampling ... ok
+test matched_static_is_exactly_the_existing_harness ... ok
+test zero_drift_and_burst_strength_preserve_shots_and_worker_determinism ... ok
+test correlated_witnesses_replay_state_and_reject_tampering ... ok
+test exact_heterogeneous_truth_and_paired_mismatch ... ok
+test burst_law_has_expected_occupancy_duration_and_correlation ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.45s
+
+     Running tests/stratified.rs (target/debug/deps/stratified-4dff33b7278bad29)
+
+running 10 tests
+test impossible_strata_are_not_silently_sampled_and_invalid_inputs_spend_no_calls ... ok
+test zero_failures_omitted_mass_and_budget_status_are_explicit ... ok
+test exact_weights_for_equal_heterogeneous_and_deterministic_models ... ok
+test enumeration_unranking_covers_each_supported_set_once ... ok
+test deterministic_faults_enumeration_and_underflow ... ok
+test automatic_preflight_and_zero_budget_are_explicit ... ok
+test exact_campaign_agrees_with_enumeration_and_legacy_witnesses_survive ... ok
+test repeated_fixed_budget_coverage_on_tiny_heterogeneous_dem ... ok
+test conditional_sampling_is_not_uniform_for_unequal_probabilities ... ok
+test automatic_routing_is_pre_observation_and_preserves_selected_estimator ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 16.98s
+
+     Running tests/witness.rs (target/debug/deps/witness-7b38eeb0185fbfe1)
+
+running 8 tests
+test budgets_tampering_and_incompatible_replay ... ok
+test signatures_group_exact_examples_across_shots_but_keep_decoder_choices ... ok
+test invalid_diagnostics_are_separate_and_fixed_codec_is_checked ... ok
+test capture_matches_ordinary_sampler_and_worker_counts ... ok
+test malformed_inputs_return_errors_and_pure_logical_tiny_models_certify ... ok
+test real_fixtures_replay_certify_and_match_reference_bytes ... ok
+test exhaustive_tiny_reconstruction_and_one_minimality ... ok
+test relay_seed_is_stable_and_nonconvergence_is_not_failure ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s

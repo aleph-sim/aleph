@@ -128,9 +128,25 @@ impl MwpmDecoder {
     /// # Errors
     /// Propagates [`crate::Error::NonGraphlike`] if the DEM has a hyperedge (matching needs a
     /// graph-like DEM).
+    /// Returns [`crate::Error::InvalidMatchingPrior`] for any prior outside finite `[0, 0.5]`.
     pub fn new(dem: &DetectorErrorModel) -> Result<Self> {
         let graph = MatchingGraph::from_dem(dem)?;
         Ok(Self::from_graph(&graph))
+    }
+
+    /// Build from one column per `^` component without a caller-side matrix round trip.
+    ///
+    /// Equivalent to `Self::new(&dem.split_components())`. Error estimates index the
+    /// **split** model in mechanism/component order; use that model's H/O columns when
+    /// projecting estimates. Keep the original model for sampling correlated mechanisms.
+    /// The ordinary [`Self::new`] retains the original mechanism-column API.
+    ///
+    /// # Errors
+    /// Returns [`crate::Error::NonGraphlike`] if an individual part is a hyperedge.
+    /// Returns [`crate::Error::InvalidMatchingPrior`] for an unsupported prior; its column
+    /// index refers to the split model.
+    pub fn new_with_split_components(dem: &DetectorErrorModel) -> Result<Self> {
+        Self::new(&dem.split_components())
     }
 
     /// Build a decoder directly from an already-constructed [`MatchingGraph`].
@@ -182,16 +198,38 @@ impl MwpmDecoder {
 
     /// Q1-03b production path: Sparse Blossom on the compiled detector graph.
     pub(crate) fn decode_sparse(&self, syndrome: &Syndrome) -> (Correction, i64) {
-        let defects = self.defects_of(syndrome);
-        if defects.is_empty() {
-            return (Correction::none(self.num_observables), 0);
-        }
-        let d32: Vec<u32> = defects.iter().map(|&d| d as u32).collect();
-        let (acc, weight) = self.sparse.decode(&d32);
+        let (acc, weight) = self.sparse.decode_syndrome(&syndrome.fired);
         let flips = (0..self.num_observables)
             .map(|o| (acc >> o) & 1 == 1)
             .collect();
         (Correction::new(flips), weight)
+    }
+
+    /// Decode into a caller-owned correction, reusing its observable storage.
+    ///
+    /// Produces the same correction as [`Decoder::decode`]. After warming this thread's
+    /// matcher cache and output buffer, repeated workloads that fit the retained capacities
+    /// need no heap allocations. A larger shot may grow those capacities; cache eviction or
+    /// using a new thread requires warming again. The output is resized to this model's
+    /// observable count, including for an empty syndrome.
+    ///
+    /// ```
+    /// use aleph_qec::{Correction, DetectorErrorModel, MwpmDecoder, Syndrome};
+    /// let dem = DetectorErrorModel::parse("error(0.1) D0 L0")?;
+    /// let decoder = MwpmDecoder::new(&dem)?;
+    /// let mut correction = Correction::none(0);
+    /// decoder.decode_into(&Syndrome::new(1, vec![0]), &mut correction);
+    /// assert_eq!(correction.observable_flips, vec![true]);
+    /// # Ok::<(), aleph_qec::Error>(())
+    /// ```
+    pub fn decode_into(&self, syndrome: &Syndrome, correction: &mut Correction) {
+        let (acc, _) = self.sparse.decode_syndrome(&syndrome.fired);
+        correction
+            .observable_flips
+            .resize(self.num_observables, false);
+        for (o, flip) in correction.observable_flips.iter_mut().enumerate() {
+            *flip = (acc >> o) & 1 == 1;
+        }
     }
 
     /// Decode `syndrome` and return the error estimate over DEM columns (`ehat[j] == 1` ⇔ the
@@ -203,18 +241,13 @@ impl MwpmDecoder {
     /// Exceptions:
     /// - an odd component with no boundary has no perfect matching; like `decode`, one defect
     ///   there is left unmatched, so `H ê` misses that detector;
-    /// - mechanisms with p > 0.5 have negative weight `ln((1-p)/p)` and are never retraced
-    ///   through (a negative edge makes the shortest-path search ill-posed): a pair whose path
-    ///   needs one is left unmarked unless a non-negative path within the same bound exists;
     /// - on a DEM with `^`-decomposed mechanisms the estimate is per mechanism, not per part, and
-    ///   `H ê = s` does not hold — split the parts into separate mechanisms first.
+    ///   `H ê = s` does not hold — use [`Self::new_with_split_components`] or construct
+    ///   the decoder against [`DetectorErrorModel::split_components`] first.
     pub fn decode_errors(&self, syndrome: &Syndrome) -> Vec<u8> {
         let mut ehat = vec![0u8; self.graph.num_columns()];
-        let defects = self.defects_of(syndrome);
-        if !defects.is_empty() {
-            let d32: Vec<u32> = defects.iter().map(|&d| d as u32).collect();
-            self.sparse.decode_errors(&d32, &mut ehat);
-        }
+        self.sparse
+            .decode_syndrome_errors(&syndrome.fired, &mut ehat);
         ehat
     }
 
