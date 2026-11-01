@@ -1,0 +1,21 @@
+{
+  "status": "ABORTED_CONTAMINATED",
+  "not_a_completed_benchmark": true,
+  "reason": "External Java and emulator workload occupied the CPU and increased memory compression while the GPU cell was collecting samples. Only our benchmark child was interrupted; no user processes were stopped.",
+  "observation_utc": "2026-11-01T22:45:27Z",
+  "load": [
+    27.74,
+    12.37,
+    7.36
+  ],
+  "cpu_idle_percent": 0.0,
+  "compressed_memory_display": "7421M",
+  "observed_external_cpu_percent": {
+    "java_process_1": 239.8,
+    "java_process_2": 92.2,
+    "qemu_emulator": 84.1
+  },
+  "action": "SIGINT to benchmark child PID 47133; runner preserves command return code and partial logs. No missing GPU cell is counted as measured.",
+  "complete_measured_cells": 13,
+  "gpu_missing_completed_cells": 0
+}

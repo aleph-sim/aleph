@@ -1,0 +1,49 @@
+{"utc": "2026-11-01T22:33:54.698194+00:00", "line": "Gnuplot not found, using plotters backend"}
+{"utc": "2026-11-01T22:33:54.698522+00:00", "line": "Benchmarking sv_fused/random/unfused/18"}
+{"utc": "2026-11-01T22:33:54.698538+00:00", "line": "Benchmarking sv_fused/random/unfused/18: Warming up for 3.0000 s"}
+{"utc": "2026-11-01T22:33:56.077361+00:00", "line": "Context leak detected, CoreAnalytics returned false"}
+{"utc": "2026-11-01T22:33:57.001960+00:00", "line": "Context leak detected, CoreAnalytics returned false"}
+{"utc": "2026-11-01T22:33:58.048379+00:00", "line": "Context leak detected, CoreAnalytics returned false"}
+{"utc": "2026-11-01T22:33:59.114280+00:00", "line": "Context leak detected, CoreAnalytics returned false"}
+{"utc": "2026-11-01T22:33:59.245853+00:00", "line": "Benchmarking sv_fused/random/unfused/18: Collecting 10 samples in estimated 5.8845 s (330 iterations)"}
+{"utc": "2026-11-01T22:34:00.147611+00:00", "line": "Context leak detected, CoreAnalytics returned false"}
+{"utc": "2026-11-01T22:34:01.153017+00:00", "line": "Context leak detected, CoreAnalytics returned false"}
+{"utc": "2026-11-01T22:34:01.595645+00:00", "line": "Context leak detected, CoreAnalytics returned false"}
+{"utc": "2026-11-01T22:34:02.381260+00:00", "line": "Context leak detected, CoreAnalytics returned false"}
+{"utc": "2026-11-01T22:34:03.314559+00:00", "line": "Context leak detected, CoreAnalytics returned false"}
+{"utc": "2026-11-01T22:34:04.350928+00:00", "line": "Context leak detected, CoreAnalytics returned false"}
+{"utc": "2026-11-01T22:34:05.062337+00:00", "line": "Benchmarking sv_fused/random/unfused/18: Analyzing"}
+{"utc": "2026-11-01T22:34:05.105645+00:00", "line": "sv_fused/random/unfused/18"}
+{"utc": "2026-11-01T22:34:05.105692+00:00", "line": "                        time:   [12.891 ms 16.070 ms 18.258 ms]"}
+{"utc": "2026-11-01T22:34:05.105718+00:00", "line": "Found 2 outliers among 10 measurements (20.00%)"}
+{"utc": "2026-11-01T22:34:05.105733+00:00", "line": "  2 (20.00%) low mild"}
+{"utc": "2026-11-01T22:34:05.106176+00:00", "line": "Benchmarking sv_fused/random/fused/18"}
+{"utc": "2026-11-01T22:34:05.106191+00:00", "line": "Benchmarking sv_fused/random/fused/18: Warming up for 3.0000 s"}
+{"utc": "2026-11-01T22:34:05.259164+00:00", "line": "Context leak detected, CoreAnalytics returned false"}
+{"utc": "2026-11-01T22:34:05.742571+00:00", "line": "Context leak detected, CoreAnalytics returned false"}
+{"utc": "2026-11-01T22:34:06.234010+00:00", "line": "Context leak detected, CoreAnalytics returned false"}
+{"utc": "2026-11-01T22:34:06.768703+00:00", "line": "Context leak detected, CoreAnalytics returned false"}
+{"utc": "2026-11-01T22:34:07.310042+00:00", "line": "Context leak detected, CoreAnalytics returned false"}
+{"utc": "2026-11-01T22:34:07.811036+00:00", "line": "Context leak detected, CoreAnalytics returned false"}
+{"utc": "2026-11-01T22:34:08.344798+00:00", "line": "Context leak detected, CoreAnalytics returned false"}
+{"utc": "2026-11-01T22:34:08.857543+00:00", "line": "Context leak detected, CoreAnalytics returned false"}
+{"utc": "2026-11-01T22:34:09.358854+00:00", "line": "Context leak detected, CoreAnalytics returned false"}
+{"utc": "2026-11-01T22:34:09.859671+00:00", "line": "Context leak detected, CoreAnalytics returned false"}
+{"utc": "2026-11-01T22:34:10.353632+00:00", "line": "Benchmarking sv_fused/random/fused/18: Collecting 10 samples in estimated 5.0830 s (495 iterations)"}
+{"utc": "2026-11-01T22:34:10.392746+00:00", "line": "Context leak detected, CoreAnalytics returned false"}
+{"utc": "2026-11-01T22:34:10.893012+00:00", "line": "Context leak detected, CoreAnalytics returned false"}
+{"utc": "2026-11-01T22:34:11.425428+00:00", "line": "Context leak detected, CoreAnalytics returned false"}
+{"utc": "2026-11-01T22:34:11.910008+00:00", "line": "Context leak detected, CoreAnalytics returned false"}
+{"utc": "2026-11-01T22:34:12.383992+00:00", "line": "Context leak detected, CoreAnalytics returned false"}
+{"utc": "2026-11-01T22:34:12.857917+00:00", "line": "Context leak detected, CoreAnalytics returned false"}
+{"utc": "2026-11-01T22:34:13.386428+00:00", "line": "Context leak detected, CoreAnalytics returned false"}
+{"utc": "2026-11-01T22:34:13.858869+00:00", "line": "Context leak detected, CoreAnalytics returned false"}
+{"utc": "2026-11-01T22:34:14.334401+00:00", "line": "Context leak detected, CoreAnalytics returned false"}
+{"utc": "2026-11-01T22:34:14.809391+00:00", "line": "Context leak detected, CoreAnalytics returned false"}
+{"utc": "2026-11-01T22:34:15.244523+00:00", "line": "Benchmarking sv_fused/random/fused/18: Analyzing"}
+{"utc": "2026-11-01T22:34:15.291618+00:00", "line": "sv_fused/random/fused/18"}
+{"utc": "2026-11-01T22:34:15.291693+00:00", "line": "                        time:   [7.6832 ms 7.8952 ms 8.0731 ms]"}
+{"utc": "2026-11-01T22:34:15.291712+00:00", "line": "Found 2 outliers among 10 measurements (20.00%)"}
+{"utc": "2026-11-01T22:34:15.291726+00:00", "line": "  1 (10.00%) low mild"}
+{"utc": "2026-11-01T22:34:15.291739+00:00", "line": "  1 (10.00%) high mild"}
+{"utc": "2026-11-01T22:34:15.292203+00:00", "line": ""}

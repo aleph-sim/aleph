@@ -1,0 +1,48 @@
+Gnuplot not found, using plotters backend
+Benchmarking sv_fused/random/unfused/18
+Benchmarking sv_fused/random/unfused/18: Warming up for 3.0000 s
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Benchmarking sv_fused/random/unfused/18: Collecting 10 samples in estimated 5.8845 s (330 iterations)
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Benchmarking sv_fused/random/unfused/18: Analyzing
+sv_fused/random/unfused/18
+                        time:   [12.891 ms 16.070 ms 18.258 ms]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) low mild
+Benchmarking sv_fused/random/fused/18
+Benchmarking sv_fused/random/fused/18: Warming up for 3.0000 s
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Benchmarking sv_fused/random/fused/18: Collecting 10 samples in estimated 5.0830 s (495 iterations)
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Context leak detected, CoreAnalytics returned false
+Benchmarking sv_fused/random/fused/18: Analyzing
+sv_fused/random/fused/18
+                        time:   [7.6832 ms 7.8952 ms 8.0731 ms]
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) low mild
+  1 (10.00%) high mild

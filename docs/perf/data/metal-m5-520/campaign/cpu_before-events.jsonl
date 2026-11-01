@@ -1,0 +1,12 @@
+{"utc": "2026-11-01T22:36:00.149768+00:00", "line": "Gnuplot not found, using plotters backend"}
+{"utc": "2026-11-01T22:36:02.549714+00:00", "line": "Benchmarking mps_vs_cpu/large_n/cpu/n20_chi512"}
+{"utc": "2026-11-01T22:36:02.549757+00:00", "line": "Benchmarking mps_vs_cpu/large_n/cpu/n20_chi512: Warming up for 3.0000 s"}
+{"utc": "2026-11-01T22:36:12.767329+00:00", "line": ""}
+{"utc": "2026-11-01T22:36:12.767497+00:00", "line": "Warning: Unable to complete 10 samples in 5.0s. You may wish to increase target time to 102.2s."}
+{"utc": "2026-11-01T22:36:12.767553+00:00", "line": "Benchmarking mps_vs_cpu/large_n/cpu/n20_chi512: Collecting 10 samples in estimated 102.17 s (10 iterations)"}
+{"utc": "2026-11-01T22:37:36.201276+00:00", "line": "Benchmarking mps_vs_cpu/large_n/cpu/n20_chi512: Analyzing"}
+{"utc": "2026-11-01T22:37:36.227602+00:00", "line": "mps_vs_cpu/large_n/cpu/n20_chi512"}
+{"utc": "2026-11-01T22:37:36.227649+00:00", "line": "                        time:   [7.4003 s 8.3434 s 9.7054 s]"}
+{"utc": "2026-11-01T22:37:36.227668+00:00", "line": "Found 2 outliers among 10 measurements (20.00%)"}
+{"utc": "2026-11-01T22:37:36.227680+00:00", "line": "  2 (20.00%) high severe"}
+{"utc": "2026-11-01T22:37:36.228048+00:00", "line": ""}

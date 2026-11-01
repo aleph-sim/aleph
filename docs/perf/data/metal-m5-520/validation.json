@@ -1,0 +1,49 @@
+{
+  "status": "LONG_TIMING_DEFERRED_BY_USER",
+  "issue": 520,
+  "close_issue": false,
+  "protocol_source_commit": "c8e484b",
+  "measured_base_commit": "ae537adc6747fd9607a597fd6903fa59ae1bc17e",
+  "hardware": {
+    "model": "MacBook Air Mac17,3",
+    "chip": "Apple M5",
+    "cpu_cores": "4P + 6E",
+    "gpu_cores": 10,
+    "ram_gib": 32
+  },
+  "macos": "27.0.1",
+  "rust": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "normal_metal_suite": {
+    "passed": 82,
+    "failed": 0,
+    "ignored": 2
+  },
+  "explicit_ignored_large_norm": {
+    "passed": 1,
+    "n": [
+      16,
+      20
+    ],
+    "max_bond": 512,
+    "norm_tolerance": 0.002,
+    "elapsed_seconds": 241.39
+  },
+  "reach_probe": "actual n28 full finite/norm scan and pre-allocation n29 policy rejection; no cap override",
+  "performance_admission": "13 early measured cells; GPU target interrupted due external contention; no GPU estimate or post-controls; strict summary rejected incomplete campaign",
+  "historical_archive": "87 recovered local Criterion cells, not newly executed results or exact historical binary reconstruction",
+  "source_sha256": {
+    "crates/aleph-metal/examples/metal_m5_audit.rs": "f8f7383dcf1fd33674266a4f34e4dc04ee6fcd5dcb20aeccbb93c388cfb3b34a",
+    "scripts/python/bench_metal_m5_followup.py": "d488cb4ba94e50e94c515159f2ccf5ed1bcefa68a5bb62e8fc4432bad6efacae",
+    "scripts/python/summarize_metal_m5_followup.py": "6e255662bf62d0a0c6ae783128501b7777790ebe8ebfae0c4623e5b17f69cfa5"
+  },
+  "validation": {
+    "metal_all_target_clippy": "passed",
+    "workspace_all_target_clippy": "passed",
+    "beta_metal_all_target_clippy": "passed",
+    "fmt": "passed",
+    "incomplete_campaign_rejection": "passed (incomplete data was rejected)",
+    "integrated_research_feature_clippy": "passed",
+    "integrated_ci_contracts": "15 passed"
+  },
+  "user_steering": "User explicitly deferred the long measurement and plans to connect AC. No AC measurement or completed GPU target is claimed."
+}
