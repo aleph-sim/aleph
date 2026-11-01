@@ -4869,7 +4869,8 @@ engine, not a universal replacement for state-vector amplitudes or sampling.
 
 Tracker: [#550](https://github.com/aleph-sim/aleph/issues/550).
 The [integration report](docs/perf/p8-performance-recovery.md) records the
-2026-10-18 snapshot: 13/16 capabilities closed, with P8-01/P8-11/P8-12 open.
+2026-11-01 evidence snapshot: 15/16 capability gates resolved; P8-12 remains open.
+P8-01 merged in #569; P8-11 has a measured no-go in `docs/perf/p8-11-metal-factorization.md`.
 This phase remains in progress. Closed task state does not imply default adoption
 or a universal speedup; research opt-ins and negative regimes stay explicit.
 
@@ -4904,7 +4905,7 @@ The October 2026 source audit found gaps between benchmark execution and public 
 
 **Phase Checklist**
 
-- [ ] [P8-01: Use optimized CPU and Metal execution in the CLI](https://github.com/aleph-sim/aleph/issues/551)
+- [x] [P8-01: Use optimized CPU and Metal execution in the CLI](https://github.com/aleph-sim/aleph/issues/551)
 - [x] [P8-02: Integrate CUDA fusion and layered dispatch into public frontends](https://github.com/aleph-sim/aleph/issues/552)
 - [x] [P8-03: Materialize Python GPU amplitudes lazily](https://github.com/aleph-sim/aleph/issues/553)
 - [x] [P8-04: Plan backend reach from requested operations and peak memory](https://github.com/aleph-sim/aleph/issues/554)
@@ -4914,7 +4915,7 @@ The October 2026 source audit found gaps between benchmark execution and public 
 - [x] [P8-08: Probe GPU availability without compiling discarded backends](https://github.com/aleph-sim/aleph/issues/558)
 - [x] [P8-09: Coalesce GPU QEC scratch while retaining serial-shot arithmetic](https://github.com/aleph-sim/aleph/issues/559)
 - [x] [P8-10: Prototype cooperative GPU BP with explicit accuracy and latency trade-offs](https://github.com/aleph-sim/aleph/issues/560)
-- [ ] [P8-11: Prove a competitive Metal MPS factorization before another pipeline rewrite](https://github.com/aleph-sim/aleph/issues/561)
+- [x] [P8-11: Prove a competitive Metal MPS factorization before another pipeline rewrite](https://github.com/aleph-sim/aleph/issues/561)
 - [ ] [P8-12: Validate communication-aware plans on real multi-GPU workloads](https://github.com/aleph-sim/aleph/issues/562)
 - [x] [P8-13: Make public-workflow baselines and experiment gates reproducible](https://github.com/aleph-sim/aleph/issues/563)
 - [x] [P8-14: Evaluate combined tile residency and overlapped paging](https://github.com/aleph-sim/aleph/issues/564)
@@ -4940,7 +4941,7 @@ The October 2026 source audit found gaps between benchmark execution and public 
 
 ### [P8-01] Use optimized CPU and Metal execution in the CLI
 
-**GitHub:** [#551](https://github.com/aleph-sim/aleph/issues/551) — open as of 2026-10-18.
+**GitHub:** [#551](https://github.com/aleph-sim/aleph/issues/551) — closed via #569 on 2026-11-01.
 
 **Labels:** `area:cli`, `area:ir`, `type:optimization`, `priority:high`
 **Milestone:** Phase 8
@@ -5328,7 +5329,9 @@ The current exact-match BP kernel serializes all checks/variables/iterations ins
 
 ### [P8-11] Prove a competitive Metal MPS factorization before another pipeline rewrite
 
-**GitHub:** [#561](https://github.com/aleph-sim/aleph/issues/561) — open as of 2026-10-18.
+**GitHub:** [#561](https://github.com/aleph-sim/aleph/issues/561) — research gate resolved by the 2026-11-01 no-go report; issue closes when its report PR merges.
+
+**Result:** 240 real-M5 receipts, 60 frozen shape/conditioning fixtures; the multi-threadgroup prototype improves old-GPU factor time but no regime meets guarded CPU crossover and accuracy gates. Production routing/guards remain unchanged. See [report](docs/perf/p8-11-metal-factorization.md).
 
 **Labels:** `area:backend-mps`, `area:backend-gpu`, `type:optimization`, `priority:medium`, `research`
 **Milestone:** Phase 8
@@ -5349,10 +5352,10 @@ Phase 5.8 removed major host/pipeline costs but the n=16 chi=256 benchmark chang
 5. Small-bond CPU fallback and batching are independent controls; avoid claiming fully resident execution when the chosen path falls back to CPU.
 
 **Acceptance Criteria**
-- [ ] A stage-level matrix/shape benchmark explains the existing wall and fallback frequency.
-- [ ] Prototype preserves reconstruction/canonical/truncation correctness on hard fixtures.
-- [ ] An integration go/no-go verdict is backed by factorization and projected/measured end-to-end costs.
-- [ ] No-go can close the research issue with documented limits; only measured beneficial regimes change production routing.
+- [x] A stage-level matrix/shape benchmark explains the existing wall and fallback frequency.
+- [x] Prototype preserves reconstruction/canonical/truncation correctness on hard fixtures.
+- [x] An integration go/no-go verdict is backed by factorization and projected/measured end-to-end costs.
+- [x] No-go can close the research issue with documented limits; only measured beneficial regimes change production routing.
 
 **Testing Requirements**
 - Existing CPU/FP64 SV MPS oracles and chi-saturating examples.

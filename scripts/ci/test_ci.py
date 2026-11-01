@@ -147,6 +147,8 @@ class Routing(unittest.TestCase):
         self.assertTrue(any('-p aleph-cli --features metal' in c for c in lines))
         self.assertTrue(any('-p aleph-py --features python,metal' in c for c in lines))
         self.assertTrue(any('test --locked -p aleph-metal --features metal' in c for c in lines))
+        self.assertTrue(any('test --locked -p aleph-metal --features factorization-research --release --lib research::tests' in c for c in lines))
+        self.assertTrue(any('clippy --locked -p aleph-metal --features factorization-research --all-targets' in c for c in lines))
         self.assertIn('python,metal',run.commands(p,'python')[0])
         with self.assertRaises(ValueError):run.commands(sample(['README.md']),'linux')
 

@@ -17,3 +17,6 @@ mod svd;
 
 pub use backend::MetalMpsBackend;
 pub use state::MetalMpsState;
+
+#[cfg(feature = "factorization-research")]
+pub use gpu_jacobi::research as factorization_research;
