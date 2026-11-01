@@ -40,3 +40,7 @@ pub enum Error {
     #[error("Metal pipeline creation failed: {0}")]
     PipelineCreation(String),
 }
+
+/// Opt-in matrix experiments, excluded from normal Metal execution.
+#[cfg(all(target_os = "macos", feature = "factorization-research"))]
+pub use mps::factorization_research;

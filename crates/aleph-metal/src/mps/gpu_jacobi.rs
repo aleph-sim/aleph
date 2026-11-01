@@ -829,3 +829,8 @@ mod tests {
         assert_eq!(pow2_floor(300), 256);
     }
 }
+
+/// Isolated P8-11 research harness; never called by the production backend.
+#[cfg(feature = "factorization-research")]
+#[path = "factorization_research.rs"]
+pub mod research;
