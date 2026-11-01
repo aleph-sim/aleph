@@ -26,7 +26,12 @@ metal = [
     "dep:rayon",
 ]
 
+# Explicit, non-production P8-11 measurement harness and prototype.
+factorization-research = ["metal", "dep:serde", "dep:serde_json"]
+
 [dependencies]
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
 thiserror = { workspace = true, optional = true }
 # Backend trait + IR + Complex live in pure-Rust workspace crates; optional so
 # they are only compiled when the `metal` feature is on (always macOS-only).
@@ -110,3 +115,12 @@ required-features = ["metal"]
 name = "mps_vs_cpu"
 harness = false
 required-features = ["metal"]
+
+[[example]]
+name = "factorization_research"
+required-features = ["factorization-research"]
+
+[[bench]]
+name = "factorization_research"
+harness = false
+required-features = ["factorization-research"]

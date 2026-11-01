@@ -1,0 +1,162 @@
+   Compiling aleph-metal v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-metal)
+    Finished `release` profile [optimized] target(s) in 25.26s
+warning: the following packages contain code that will be rejected by a future version of Rust: block v0.1.6
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running unittests src/lib.rs (target/release/deps/aleph_metal-9b1e68b5305b6c6d)
+
+running 52 tests
+test mps::gpu_jacobi::research::tests::actual_metal_candidate_preserves_small_hard_fixtures ... ignored, requires actual Metal; run research::tests with --include-ignored
+test mps::gpu_jacobi::research::tests::rank_deficient_guard_matches_independent_reconstruction ... ignored, requires actual Metal; run research::tests with --include-ignored
+test mps::gpu_jacobi::tests::pow2_floor_values ... ok
+test mps::jacobi::tests::bell_block_singular_values ... ok
+test mps::jacobi::tests::rank_deficient_block ... ok
+test mps::jacobi::tests::reconstructs_tall_square_wide ... ok
+test mps::jacobi::tests::singular_values_match_faer ... ok
+test mps::svd::tests::svd_split_reports_relative_truncation ... ok
+test mps::svd::tests::truncation_plan_drops_below_cap ... ok
+test mps::gpu_jacobi::research::tests::circle_rounds_cover_each_pair_once_without_column_races ... ok
+test buffer::tests::round_trip_mutate_and_empty ... ok
+test sv::backend::tests::allocate_initialises_zero_state ... ok
+test sv::backend::tests::allocate_rejects_too_many_qubits ... ok
+test mps::kernel::tests::mps_kernels_compile_into_pipelines ... ok
+test mps::gpu_jacobi::tests::gpu_jacobi_bell_block ... ok
+test sv::backend::tests::cnot_flips_target_when_control_set ... ok
+test sv::backend::tests::ccz_phases_all_ones ... ok
+test sv::backend::tests::expectation_z_on_zero_is_plus_one ... ok
+test sv::backend::tests::cz_phases_eleven ... ok
+test sv::backend::tests::expectation_x_on_plus_is_plus_one ... ok
+test sv::backend::tests::diagonal_phase_matches_phase_at ... ok
+test mps::qr::tests::householder_qr_reconstructs_and_is_orthonormal ... ok
+test sv::backend::tests::kq_meta_sorts_positions_keeps_logical_tbit ... ok
+test mps::canonical::tests::move_center_preserves_state ... ok
+test sv::backend::tests::deep_circuit_survives_batch_flush ... ok
+test mps::gpu_jacobi::tests::gpu_jacobi_matches_reference ... ok
+test sv::backend::tests::h_on_zero_is_uniform_superposition ... ok
+test sv::backend::tests::mcx_two_controls_via_1q_path ... ok
+test sv::backend::tests::measure_plus_state_collapses_to_basis ... ok
+test sv::backend::tests::nan_matrix_is_rejected_as_non_unitary ... ok
+test sv::backend::tests::out_of_range_qubit_is_rejected ... ok
+test mps::gpu_jacobi::tests::gpu_jacobi_batch_matches_single ... ok
+test sv::backend::tests::fused_matches_unfused_qft ... ok
+test sv::backend::tests::unitarity_deviation_nan_entry_returns_nan ... ok
+test sv::backend::tests::probabilities_plus_state_uniform ... ok
+test sv::backend::tests::unitary_kq_nan_is_rejected_as_non_unitary ... ok
+test sv::backend::tests::fused_matches_unfused_ghz ... ok
+test sv::backend::tests::sample_collapsed_state_is_deterministic ... ok
+test sv::backend::tests::run_executes_ghz_circuit ... ok
+test sv::backend::tests::toffoli_flips_when_both_controls_set ... ok
+test sv::backend::tests::swap_exchanges_basis ... ok
+test sv::backend::tests::unitary_kq_k2_swap ... ok
+test sv::backend::tests::unitary_kq_non_unitary_is_rejected ... ok
+test sv::backend::tests::unpermute_swaps_bit_order ... ok
+test sv::kernel::tests::sv_diag_kernel_compiles_into_a_pipeline ... ok
+test sv::kernel::tests::sv_1q_kernel_compiles_into_a_pipeline ... ok
+test sv::kernel::tests::sv_kq_kernel_compiles_into_a_pipeline ... ok
+test sv::backend::tests::x_on_qubit_1_of_two ... ok
+test sv::state::tests::widen_and_view_round_trip ... ok
+test sv::backend::tests::x_on_zero_flips_to_one ... ok
+test sv::backend::tests::fused_matches_unfused_grover ... ok
+test sv::backend::tests::fused_matches_unfused_random ... ok
+
+test result: ok. 50 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests/device_probe.rs (target/release/deps/device_probe-5114b7f5f56e0d96)
+
+running 1 test
+test discovery_does_not_construct_a_backend ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+     Running tests/mps_alloc.rs (target/release/deps/mps_alloc-f1c2ebd22acaaa00)
+
+running 1 test
+test steady_state_per_gate_device_allocs_are_zero ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+
+     Running tests/mps_large_n.rs (target/release/deps/mps_large_n-b7ff18cb7c5c266c)
+
+running 3 tests
+test bond_saturating_norm_unit_large_n ... ignored, large-χ GPU run takes minutes; runs on the nightly-ignored schedule
+test ghz_z_string_expectations_large_n ... ok
+test run_vs_batched_agreement_large_n ... ok
+
+test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.50s
+
+     Running tests/mps_oracle.rs (target/release/deps/mps_oracle-4bf9aa0eb280ecc0)
+
+running 10 tests
+test report_svd_roundtrip_cost ... ignored, timing report, not a correctness gate
+test batched_truncation_is_refused ... ok
+test exact_run_records_negligible_truncation ... ok
+test swap_routed_is_reversible ... ok
+test batched_layer_matches_sequential ... ok
+test user_swap_is_relabel_and_correct ... ok
+test swap_routed_non_nn_matches_references ... ok
+test truncation_matches_cpu_mps_at_capped_bond ... ok
+test truncated_state_stays_normalized ... ok
+test mps_metal_matches_cpu_on_nn_circuits ... ok
+
+test result: ok. 9 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.23s
+
+     Running tests/mps_proptest.rs (target/release/deps/mps_proptest-92eae2177c149c89)
+
+running 7 tests
+test rejects_fused_unitary_kq ... ok
+test rejects_external_control ... ok
+test rejects_three_qubit_gate ... ok
+test readout_on_zero_state ... ok
+test non_nearest_neighbour_2q_is_routed ... ok
+test run_batched_non_nn_regression ... ok
+test mps_metal_matches_cpu_on_random ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.48s
+
+     Running tests/mps_readout.rs (target/release/deps/mps_readout-02bb4811137b7650)
+
+running 6 tests
+test measure_ghz_correlated ... ok
+test readout_matches_under_nontrivial_permutation ... ok
+test ghz_large_n_readout_no_dense ... ok
+test sample_matches_probabilities ... ok
+test expectation_matches_references ... ok
+test probabilities_match_references ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+     Running tests/smoke.rs (target/release/deps/smoke-c171f5c54e0be32c)
+
+running 1 test
+test smoke_double_runs_on_gpu ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests/sv_oracle.rs (target/release/deps/sv_oracle-143bc286dc6c4c82)
+
+running 4 tests
+test final_state_plan_restores_permutation_and_partial_measurement ... ok
+test fp32_1q_oracle_matches_naive_sv ... ok
+test tier1_optimized_oracle_matches_naive_sv ... ok
+test tier1_raw_oracle_matches_naive_sv ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+     Running tests/sv_oracle_aer.rs (target/release/deps/sv_oracle_aer-f0d94f0ba91b804e)
+
+running 1 test
+test fp32_tier1_oracle_matches_aer ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+     Running tests/sv_proptest.rs (target/release/deps/sv_proptest-5d42e5fbe44aa95d)
+
+running 1 test
+test fp32_state_stays_normalized ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+
+   Doc-tests aleph_metal
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s

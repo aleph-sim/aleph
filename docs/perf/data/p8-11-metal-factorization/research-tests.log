@@ -1,0 +1,12 @@
+   Compiling aleph-metal v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-metal)
+    Finished `release` profile [optimized] target(s) in 7.88s
+warning: the following packages contain code that will be rejected by a future version of Rust: block v0.1.6
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running unittests src/lib.rs (target/release/deps/aleph_metal-9b1e68b5305b6c6d)
+
+running 3 tests
+test mps::gpu_jacobi::research::tests::circle_rounds_cover_each_pair_once_without_column_races ... ok
+test mps::gpu_jacobi::research::tests::actual_metal_candidate_preserves_small_hard_fixtures ... ok
+test mps::gpu_jacobi::research::tests::rank_deficient_guard_matches_independent_reconstruction ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 49 filtered out; finished in 0.74s
