@@ -1,0 +1,75 @@
+{
+  "started_utc": "2026-11-01T21:56:54.788260+00:00",
+  "implementation_commit": "d928f936cddabd4c3a46cbe88a730b75467cb6f1",
+  "binary_sha256": "70b714e531d11515c1500bdaeebdccd38e09a02ce6686d22c6fc3b1f202caeeb",
+  "rayon_num_threads": 4,
+  "repeats": 2,
+  "comparison": "stage probes, encode/submit/wait included; no production integration",
+  "commands": [
+    [
+      "target/release/examples/factorization_research"
+    ],
+    [
+      "cargo",
+      "bench",
+      "-p",
+      "aleph-metal",
+      "--features",
+      "factorization-research",
+      "--bench",
+      "factorization_research"
+    ]
+  ],
+  "dedicated_host": false,
+  "services_stopped": false,
+  "hardware": {
+    "model": "MacBook Air Mac17,3",
+    "chip": "M5",
+    "cpu_cores": 10,
+    "gpu_cores": 10,
+    "memory_gib": 32
+  },
+  "finished_utc": "2026-11-01T22:08:02.665990+00:00",
+  "rust": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "macos": "27.0.1",
+  "cpu_idle_percent": {
+    "minimum": 53.93,
+    "median": 87.8,
+    "maximum": 95.7
+  },
+  "verdict": "NO_GO",
+  "counts": {
+    "receipts": 240,
+    "fixtures": 60,
+    "reference_guard_declines": 8,
+    "candidate_guard_declines": 8,
+    "reference_strict_rejections": 26,
+    "candidate_strict_rejections": 32
+  },
+  "later_source_change_note": "After the timed source freeze, only cfg(test) annotation/guard-regression changes were made to the matrix runtime source. No candidate algorithm or measurement policy was retuned. CI coverage, summary and reports were added afterward.",
+  "source_sha256": {
+    "crates/aleph-metal/src/mps/factorization_research.rs": "5906fe15e3349fd31421fbf34b8f5d79222180c11eb4f5b5edf9b3d76ec67026",
+    "crates/aleph-metal/src/shaders/mps_jacobi_rounds.metal": "a580bed9f59e0695953ceaef7ea8f24207a49f3bb468a514df695caeb375e3fa",
+    "crates/aleph-metal/examples/factorization_research.rs": "13b4f7ff3baee8672e391a172669ac9bd87cbbd20c766107a7f0c481620c17f2",
+    "crates/aleph-metal/benches/factorization_research.rs": "70cbaf44ac9ed1baf775f42f88fa608c553b3e278b8bfe7680276319bc1eb1bd"
+  },
+  "criterion_binary_sha256": "1eedb69411cc272fb4203e3ad0f4c4f12fd18f0667accf9cd0b3fb2048a79c8b",
+  "validation": {
+    "release_suite_passed": 83,
+    "release_suite_ignored": 4,
+    "explicit_actual_research_filter_passed": 3,
+    "ci_contracts_passed": 15,
+    "long_chi512_circuit_executed": false,
+    "workspace_all_target_clippy": "passed",
+    "research_all_target_clippy": "passed",
+    "actual_research_filter": "3 passed, including both explicitly ignored actual-device tests",
+    "beta_research_all_target_clippy": "passed"
+  },
+  "standalone_profile": "release",
+  "criterion_profile": "bench (optimized with debuginfo)",
+  "rustflags": "",
+  "reference_precision": "FP32 GPU vs exact widening of the same input into the current f64 CPU splitter",
+  "qr_cpu_control": "implicit QR only; excludes explicit Q formation",
+  "rust_beta": "rustc 1.100.0-beta.2 (2311729bc 2026-10-01)",
+  "summary_script_sha256": "2ca6f1f0b0bec91c45cb0163238cbcb3fda80d12521bcb69a766a4babeb9635c"
+}

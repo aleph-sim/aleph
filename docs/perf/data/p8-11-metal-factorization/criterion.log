@@ -1,0 +1,38 @@
+   Compiling aleph-metal v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-metal)
+    Finished `bench` profile [optimized + debuginfo] target(s) in 10.88s
+warning: the following packages contain code that will be rejected by a future version of Rust: block v0.1.6
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running benches/factorization_research.rs (target/release/deps/factorization_research-1038a9a9dc082843)
+Gnuplot not found, using plotters backend
+Benchmarking p8_11_pack_factor/single_group/32
+Benchmarking p8_11_pack_factor/single_group/32: Warming up for 1.0000 s
+Benchmarking p8_11_pack_factor/single_group/32: Collecting 10 samples in estimated 2.2117 s (165 iterations)
+Benchmarking p8_11_pack_factor/single_group/32: Analyzing
+p8_11_pack_factor/single_group/32
+                        time:   [13.309 ms 13.324 ms 13.337 ms]
+Benchmarking p8_11_pack_factor/rounds/32
+Benchmarking p8_11_pack_factor/rounds/32: Warming up for 1.0000 s
+Benchmarking p8_11_pack_factor/rounds/32: Collecting 10 samples in estimated 2.1047 s (715 iterations)
+Benchmarking p8_11_pack_factor/rounds/32: Analyzing
+p8_11_pack_factor/rounds/32
+                        time:   [2.9201 ms 3.2101 ms 3.5217 ms]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high mild
+Benchmarking p8_11_pack_factor/single_group/64
+Benchmarking p8_11_pack_factor/single_group/64: Warming up for 1.0000 s
+
+Warning: Unable to complete 10 samples in 2.0s. You may wish to increase target time to 3.8s or enable flat sampling.
+Benchmarking p8_11_pack_factor/single_group/64: Collecting 10 samples in estimated 3.8149 s (55 iterations)
+Benchmarking p8_11_pack_factor/single_group/64: Analyzing
+p8_11_pack_factor/single_group/64
+                        time:   [68.715 ms 68.922 ms 69.196 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking p8_11_pack_factor/rounds/64
+Benchmarking p8_11_pack_factor/rounds/64: Warming up for 1.0000 s
+Benchmarking p8_11_pack_factor/rounds/64: Collecting 10 samples in estimated 2.0959 s (385 iterations)
+Benchmarking p8_11_pack_factor/rounds/64: Analyzing
+p8_11_pack_factor/rounds/64
+                        time:   [4.3989 ms 4.6706 ms 5.2432 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe

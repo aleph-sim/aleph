@@ -1,6 +1,7 @@
 # Frozen P8-11 experiment protocol
 
-Freeze before hardware pilot (2026-11-01). This is research, with production
+Frozen before the full hardware campaign (2026-11-01), after a bounded wiring
+pilot. This is research, with production
 routing, reconstruction guard and f64 fallback unchanged.
 
 - Compare production single-group Jacobi with one-group-per-independent-pair,

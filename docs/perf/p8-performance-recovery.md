@@ -1,10 +1,12 @@
 # Phase 8: performance recovery and remaining gates
 
-Tracker: [#550](https://github.com/aleph-sim/aleph/issues/550). Status snapshot:
-**2026-10-18**, main `6114dab7e18c4deac0fda3039060e00f7661b653`.
-**13 of 16 capability issues are closed; Phase 8 is not complete.** P8-01,
-P8-11 and P8-12 remain open. This report integrates existing measurements; it is
-not a new all-backend benchmark campaign or a v1.0 release qualification.
+Tracker: [#550](https://github.com/aleph-sim/aleph/issues/550). Evidence snapshot:
+**2026-11-01**, after CPU/Metal CLI #569 and the P8-11 matrix experiment.
+**15 of 16 capability gates have measured results; Phase 8 is not complete.**
+P8-12 still needs actual multi-GPU hardware. P8-11 is a scoped measured no-go,
+not a production speed improvement. This is an integration of linked campaigns,
+not a new all-backend benchmark or v1.0 release qualification. The original
+2026-10-18 timings below retain their original revision/method limits.
 
 ## What changed for callers
 
@@ -39,7 +41,7 @@ retain precise oracles, provenance, raw observations and adverse cases.
 
 | ID / issue | State / PR | Mainline behavior and evidence |
 |---|---|---|
-| P8-01 / [#551](https://github.com/aleph-sim/aleph/issues/551) | Open; draft [#569](https://github.com/aleph-sim/aleph/pull/569) | Optimized CPU/Metal CLI candidate awaits idle-Metal timing. Main CPU CLI still uses the raw driver. Draft CPU measurements are not mainline results. |
+| P8-01 / [#551](https://github.com/aleph-sim/aleph/issues/551) | Closed; [#569](https://github.com/aleph-sim/aleph/pull/569) | CPU/Metal final-state-safe optimized CLI and raw control. M5 public n=24 QFT/brickwall 9.46×/5.52×; small no-gain cases preserved. [Report](p8-01-optimized-cli.md). |
 | P8-02 / [#552](https://github.com/aleph-sim/aleph/issues/552) | Closed; [#583](https://github.com/aleph-sim/aleph/pull/583) | Default strict FP64/FP32 width-3 CUDA plans in CLI/Python; raw control retained. [Report](p8-02-public-cuda-execution.md), [data](data/p8-02/summary.json). |
 | P8-03 / [#553](https://github.com/aleph-sim/aleph/issues/553) | Closed; [#568](https://github.com/aleph-sim/aleph/pull/568) | Lazy Python GPU amplitudes, copy-once host cache; results retain device amplitudes until materialized/dropped. [Report](p8-03-lazy-gpu-amplitudes.md), [manifest](data/p8-03-manifest.json). |
 | P8-04 / [#554](https://github.com/aleph-sim/aleph/issues/554) | Closed; [#581](https://github.com/aleph-sim/aleph/pull/581) | Operation-aware device/host preflight; no counts-to-norm substitution. [Report](p8-04-memory-planning.md), [allocation audit](data/p8-04-allocation-audit.jsonl). |
@@ -49,7 +51,7 @@ retain precise oracles, provenance, raw observations and adverse cases.
 | P8-08 / [#558](https://github.com/aleph-sim/aleph/issues/558) | Closed; [#567](https://github.com/aleph-sim/aleph/pull/567) | Lazy discovery; selected backend still initializes per call. [Report](p8-08-cheap-gpu-probes.md), [cold Python data](data/p8-08-cuda-cold-python.json). |
 | P8-09 / [#559](https://github.com/aleph-sim/aleph/issues/559) | Closed; [#592](https://github.com/aleph-sim/aleph/pull/592) | Explicit edge-major/warp-tiled BP scratch; shot-major default retained. [Report](p8-09-bp-scratch.md), [raw evidence](data/p8-09-bp-scratch/README.md). |
 | P8-10 / [#560](https://github.com/aleph-sim/aleph/issues/560) | Closed; [#593](https://github.com/aleph-sim/aleph/pull/593) | Explicit Rust cooperative FP64 BP; serial default retained. [Report](p8-10-cooperative-bp.md), [raw evidence](data/p8-10-cooperative-bp/README.md). |
-| P8-11 / [#561](https://github.com/aleph-sim/aleph/issues/561) | Open | Competitive multi-threadgroup Metal MPS factorization unproven. [Phase 5.8](phase5.8.md) is historical negative evidence, not a new prototype verdict. |
+| P8-11 / [#561](https://github.com/aleph-sim/aleph/issues/561) | Measured no-go; report PR closes #561 | 240 M5 stage probes plus Criterion. Round-robin factorization improves old GPU but misses guarded CPU/accuracy gates; no production routing change. [Report](p8-11-metal-factorization.md). |
 | P8-12 / [#562](https://github.com/aleph-sim/aleph/issues/562) | Open | Current compiler needs actual multi-GPU measurements. [Compiler model](p6-05-compiler.md) gains do not establish measured scaling. |
 | P8-13 / [#563](https://github.com/aleph-sim/aleph/issues/563) | Closed; [#584](https://github.com/aleph-sim/aleph/pull/584) | Public-route receipts, counter admission and contamination gates. [Report](p8-13-public-workflow-gates.md), [harness](../../scripts/benchmarks/README.md). |
 | P8-14 / [#564](https://github.com/aleph-sim/aleph/issues/564) | Closed; [#594](https://github.com/aleph-sim/aleph/pull/594) | Explicit FP64 residency + overlap; defaults unchanged. [Report](p8-14-resident-overlap.md), [raw evidence](data/p8-14-resident-overlap/README.md). |
@@ -81,9 +83,11 @@ P8-13's current CPU route is a **no-optimization control**: GHZ n=8 /16 shots,
 identical executable, 1.542 vs 1.522 ms; paired bootstrap interval 0.396–1.714.
 It establishes a working receipt boundary, not a CPU fusion win. CPU startup
 cannot be isolated by subtracting overlapping native stages and stays `null`.
-The draft #569 has CPU wins and QFT/tiny-input regressions, but its Metal gate and
-integration review are pending. Its `--raw`/`--execution-stats` switches must not
-be documented as available on this main revision.
+PR #569 subsequently merged CPU/Metal optimization, with public `--raw` and
+`--execution-stats` controls. Its [report](p8-01-optimized-cli.md) records CPU wins
+and no-gain cases, plus M5 Metal public n=20 QFT/brickwall 2.18×/1.82× and n=24
+9.46×/5.52×. Tiny Bell and small brickwall remain no-gain. The old P8-13 CPU
+receipt above is historical evidence, not a test of the new default executor.
 
 ### CUDA Python: execution is only part of caller time
 
@@ -259,20 +263,16 @@ revisions, shared Cargo targets or a busy Mac for performance acceptance.
 
 ## Remaining exit gates and next decisions
 
-1. **P8-01 / #551:** integrate current main into draft #569, review semantics and
-   rerun CPU/Metal oracles. Finish paired public Metal timings on a free Mac,
-   including small planning overhead and losing workloads. Until then CPU/Metal
-   CLI optimizer integration remains pending; CUDA integration is already done.
-2. **P8-11 / #561:** benchmark representative SVD/QR shapes and guards against
-   faer/current Metal before another full pipeline rewrite. Accept a competitive
-   measured regime or a documented no-go. Historical 16–22× MPS slowdowns do not
-   count as having run this experiment.
-3. **P8-12 / #562:** obtain actual 2/4-GPU measurements with topology, work/pass
+1. **P8-12 / #562:** obtain actual 2/4-GPU measurements with topology, work/pass
    inflation and communication attribution. Compiler predictions and emulated
-   ranks do not close measured scaling. MPI/v1.0 work remains separate Phase 6.
-4. **P8-00 / #550:** update this report and tracker as those three land; smoke-run
-   final documented routes and preserve adverse results. Only then evaluate the
-   phase exit criteria and close the tracker. This report PR uses **Refs #550**.
+   ranks do not close measured scaling. MPI/v1.0 remains separate Phase 6 work.
+2. **P8-00 / #550:** update the report/tracker after that last capability gate,
+   smoke-run final documented routes, preserve adverse results, and only then
+   evaluate the phase exit criteria. This research report uses **Refs #550**.
+3. **P8-11 follow-up:** a future candidate needs blocked/lower-dispatch
+   factorization, parallel reconstruction checking and clustered-cutoff accuracy
+   evidence before another end-to-end integration. The current prototype is
+   explicitly rejected; a faster old-GPU factor alone is insufficient.
 
 Measured follow-up opportunities are native-CP FP32 routing, per-call context/JIT
 costs, high-shot host sampling work, and noisy tail variability. Each needs a

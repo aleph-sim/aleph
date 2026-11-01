@@ -529,10 +529,8 @@ fn observable(a: &Mat<Complex<f64>>) -> f64 {
 #[cfg(test)]
 mod tests {
     #[test]
+    #[ignore = "requires actual Metal; run research::tests with --include-ignored"]
     fn actual_metal_candidate_preserves_small_hard_fixtures() {
-        if std::env::var_os("ALEPH_TEST_FACTOR_RESEARCH").is_none() {
-            return;
-        }
         for (m, n) in [(16, 16), (16, 8), (8, 16), (9, 7)] {
             for kind in ["well", "clustered", "ill", "rank_deficient"] {
                 let mut case = super::Case::new(m, n, kind).unwrap();
@@ -544,6 +542,21 @@ mod tests {
                 // Strict canonical/truncation acceptance remains in each receipt;
                 // no performance claim is allowed to override a rejected case.
             }
+        }
+    }
+
+    #[test]
+    #[ignore = "requires actual Metal; run research::tests with --include-ignored"]
+    fn rank_deficient_guard_matches_independent_reconstruction() {
+        let mut case = super::Case::new(512, 512, "rank_deficient").unwrap();
+        let receipt = case.run(true).unwrap();
+        assert!(receipt.reconstruction.is_finite(), "{receipt:?}");
+        assert!(
+            receipt.reconstruction <= 1e-3 || !receipt.guard_accept,
+            "bad factors bypassed guard: {receipt:?}"
+        );
+        if !receipt.guard_accept {
+            assert!(receipt.fallback_ms > 0.0, "{receipt:?}");
         }
     }
 

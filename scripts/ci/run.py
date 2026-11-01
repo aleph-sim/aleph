@@ -28,6 +28,8 @@ def commands(plan, role, toolchain='stable'):
             result += [cargo + ['build', '--locked', '-p', 'aleph-metal', '--features', 'metal', '--release'],
                        cargo + ['test', '--locked', '-p', 'aleph-metal', '--features', 'metal', '--release'],
                        cargo + ['clippy', '--locked', '-p', 'aleph-metal', '--features', 'metal', '--all-targets', '--', '-D', 'warnings'],
+                       cargo + ['test', '--locked', '-p', 'aleph-metal', '--features', 'factorization-research', '--release', '--lib', 'research::tests'],
+                       cargo + ['clippy', '--locked', '-p', 'aleph-metal', '--features', 'factorization-research', '--all-targets', '--', '-D', 'warnings'],
                        cargo + ['check', '--locked', '-p', 'aleph-cli', '--features', 'metal', '--all-targets'],
                        cargo + ['check', '--locked', '-p', 'aleph-py', '--features', 'python,metal', '--all-targets']]
         if role == 'linux' and toolchain == 'stable' and plan['cuda']:

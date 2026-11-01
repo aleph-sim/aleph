@@ -1,0 +1,13 @@
+    Checking aleph-ir v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-ir)
+    Checking aleph-backend v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-backend)
+    Checking aleph-parser v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-parser)
+    Checking aleph-sv v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-sv)
+    Checking aleph-stab v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-stab)
+    Checking aleph-mps v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-mps)
+    Checking aleph-qec v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-qec)
+    Checking aleph-oracle v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-oracle)
+    Checking aleph-metal v0.3.0 (/Users/ex/GitHub/aleph/crates/aleph-metal)
+    Checking aleph-benches v0.3.0 (/Users/ex/GitHub/aleph/benches)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 6.78s
+warning: the following packages contain code that will be rejected by a future version of Rust: block v0.1.6
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
